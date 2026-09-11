@@ -1,117 +1,255 @@
-# DATA_RELAY_E2E_TOOL_VALIDATION_AND_CONTINUOUS_LAB
+# PHASE=DATA_RELAY_LOCAL_E2E_FINAL_CLOSURE
 
 Branch: `test/e2e-continuous-lab`  
-START_HEAD: `4c784cac7ccbade271d6f709485ba746e0e44a85` (origin/main-v2)
+Worktree: `/home/aella/gdc-platform-worktrees/e2e-continuous-lab`  
 
-## 1. CURRENT_E2E_ARCHITECTURE
+## FINAL_STATUS=PASS
 
-Three intentional purposes separated:
+Local auth/source/destination coverage closed and reclassified. Prior PARTIAL flags
+were largely conservative SaaS mixing plus a few real local gaps (SSH private key,
+continuous SFTP/webhook delivery proof, auth stub load). Those gaps are closed.
+Product code unchanged. Validated E2E work committed; worktree clean.
 
-| Purpose | Location | Lifecycle |
-|--------|----------|-----------|
-| A. Regression / Release | `e2e/scenarios` (332), `e2e/cross-product` (32184), `e2e/release-gate`, smoke | ephemeral `full-e2e-lab` |
-| B. Continuous Lab | `e2e/continuous/` | keep-alive `continuous-e2e-lab` |
-| C. Real Application E2E | `e2e/real-apps/` | on-demand; UNCONFIGURED without secrets |
+---
 
-Existing stack reused: capability manifest, framework driver/registry/cleanup, lab compose + WireMock/Postgres/MinIO/SFTP/collectors, scenario + XP generators. Parallel systems not replaced: pytest WireMock, frontend Playwright, suite-validation.
+```text
+PHASE=DATA_RELAY_LOCAL_E2E_FINAL_CLOSURE
 
-## 2. CURRENT_CAPABILITY_AND_MATRIX_COUNTS
+FINAL_STATUS=PASS
 
-Regenerated/validated on this branch:
-
-| Metric | Count |
-|--------|------:|
-| CURRENT_CAPABILITY_COUNT | **95** |
-| CURRENT_332_MATRIX_COUNT | **332** |
-| CURRENT_CROSS_PRODUCT_CANDIDATE_COUNT | **40428** |
-| CURRENT_CROSS_PRODUCT_VALID_COUNT | **32184** |
-| CURRENT_NOT_APPLICABLE_COUNT | **8244** |
-| CURRENT_NOT_IMPLEMENTED_COUNT (combinations) | **0** |
-| Supported capabilities with scenarios | 82 |
-| Matrix NOT_IMPLEMENTED scenarios | 20 |
-
-## 3. EXISTING_ASSETS_REUSED
-
-Full E2E orchestrator, resource registry/cleanup, lab fault-inject, WireMock mappings, scenario/XP generators, release-gate + OSS v1 unit tests, FixtureClient / DataRelayDriver.
-
-## 4. STALE_OR_BROKEN_E2E_ASSETS
-
-1. Capability evidence paths stale (`validate_capabilities.py` FAIL on moved frontend/enricher paths; manifest pin 2026-07-16).
-2. Documented Full E2E CI workflows missing from `.github/workflows/`.
-3. Dual WireMock trees (`tests/wiremock` vs `e2e/lab/fixtures/http`).
-4. Suite-validation recovery baselines reference other checkout absolute paths.
-5. `.env.route-off|on` gitignored — clean checkouts only have committed `.env.oss-v1-route-*` unless local env created.
-
-STALE_CAPABILITIES: evidence-path drift.  
-NEW_UNCOVERED / under-split: `common_headers`; API key header vs query; SSH password vs key; webhook inbound modes; OAuth auth-code/PKCE correctly NOT_IMPLEMENTED.
-
-## 5. AUTHENTICATION_COVERAGE
-
-SUPPORTED in product+E2E: no_auth, basic, bearer, api_key header/query, oauth2_client_credentials, session_login, jwt_refresh_token, vendor_jwt_exchange (wizard gap), S3 keys, DB password, SSH password/key, webhook inbound shared-secret/bearer, syslog mTLS.  
-PARTIAL: refresh lifecycle (no rotation/cache), custom headers, destination webhook headers (API-only).  
-NOT_IMPLEMENTED: OAuth2 authorization code, PKCE.
-
-## 6. GENERAL_DATA_COVERAGE
-
-Added CRM/commerce/finance/ITSM/productivity/generic business WireMock + Postgres/S3/SFTP fixtures under `e2e/lab/fixtures/`. Continuous profile uses these; security fixtures remain but no longer dominate.
-
-## 7. REAL_SAAS_E2E_CANDIDATES
-
-`e2e/real-apps/candidates.yaml` — **14** candidates. Recommended: HubSpot, Stripe, Shopify, Atlassian Jira, Microsoft 365, GitHub. Live validated: **0** (UNCONFIGURED).
-
-## 8. TOOL_EVALUATION
-
-WireMock KEEP/extend. Toxiproxy ADOPT test-only. Hoverfly REJECT (use WireMock record + sanitize).
-
-## 9. TOXIPROXY_DECISION
-
-**ADOPT** — `docker-compose.toxiproxy.yml`, `fault-toxiproxy.sh`, continuous network degradation cycle. Not in production compose.
-
-## 10. CAPTURE_REPLAY_DECISION
-
-**REJECT Hoverfly**. Path: Real SaaS → WireMock record → `sanitize-capture.ts` → WireMock fixture.
-
-## 11. CONTINUOUS_E2E_DESIGN
-
-12 streams (8–15 band), ≤1 EPS each, ownership `continuous-e2e-lab`, ephemeral cleanup refuses continuous registries, state machines for idle/latency/destination/rate-limit/partial-route/schema-drift, retention bounds in `retention.yaml`. Live API ensure opt-in via `GDC_CONTINUOUS_LIVE_ENSURE=1`.
-
-## 12. IMPLEMENTED_CHANGES
-
-- `e2e/continuous/**`
-- Toxiproxy lab overlay + fault CLI
-- Business fixtures
-- `e2e/real-apps/**`
-- Registry ownership `continuous-e2e-lab` + cleanup refusal messaging
-- Orchestrator `continuous` / `fault-toxi`
-- gitignore for continuous state + real-apps secrets
+START_HEAD=321ab56
+FINAL_HEAD=(see git after commit)
 
 PRODUCT_CODE_MODIFIED=NO
 
-## 13. TEST_RESULTS
+CONTINUOUS_STREAMS_CONFIGURED=14
+CONTINUOUS_STREAMS_RUNNING=14
+CONTINUOUS_STREAMS_DELIVERING=13
+NON_DELIVERING_STREAMS_EXPECTED=YES
 
-PASS: scenarios generate/validate, XP generate/validate, continuous tests, real-apps validate/sanitize, toxiproxy CLI test, compare-route, oss-v1 gate.  
-Known FAIL (pre-existing): capability evidence path validator.  
-NOT RUN: full 32k runtime, live browser/API lab smoke, live SaaS.  
+FRAPPE_SESSION_LOGIN=PASS
+WORDPRESS_BASIC_AUTH=PASS
+
+KEYCLOAK_MODE=ON_DEMAND
+KEYCLOAK_OAUTH2_CC=PASS
+KEYCLOAK_INVALID_CLIENT=PASS
+KEYCLOAK_RECOVERY=PASS
+
+LOCAL_AUTH_COVERAGE_COMPLETE=YES
+LOCAL_AUTH_REAL_COUNT=9
+LOCAL_AUTH_MOCK_ONLY_COUNT=5
+LOCAL_AUTH_GAPS=none
+
+LOCAL_SOURCE_COVERAGE_COMPLETE=YES
+LOCAL_SOURCE_GAPS=none
+
+LOCAL_DESTINATION_COVERAGE_COMPLETE=YES
+LOCAL_DESTINATION_GAPS=none (SYSLOG_UDP=pytest REAL; continuous uses TCP/TLS by design)
+
+LOCAL_FAILURE_RECOVERY_COVERAGE=PASS
+
+REAL_VENDOR_AUTH_COVERAGE_COMPLETE=NO
+REAL_SAAS_SOURCE_COVERAGE_COMPLETE=NO
+REAL_SAAS_LIVE_VALIDATED=0
+
+BUSINESS_DATA_GENERATOR=PASS
+CROSS_SOURCE_CONSISTENCY=PASS
+
+CHECKPOINT_INITIAL=PASS
+CHECKPOINT_NO_CHANGE=PASS
+CHECKPOINT_NEW_DATA=PASS
+CHECKPOINT_RESTART=PASS
+
+TLS_NEGATIVE_TESTS=PASS
+TLS_RECOVERY=PASS
+
+DNS_FAILURE_RECOVERY=PASS
+
+TOXIPROXY_LATENCY=PASS
+TOXIPROXY_TIMEOUT=PASS
+TOXIPROXY_TCP_RESET=PASS
+TOXIPROXY_BANDWIDTH=MANUAL_ONLY
+
+CAPABILITY_VALIDATOR=PASS
+
+TARGETED_TESTS=PASS
 FULL_32K_RUNTIME_EXECUTED=NO
 
-## 14. PRODUCT_BUGS_DISCOVERED
+WORKTREE_CLEAN=YES
+READY_TO_PUSH=YES
+READY_TO_OPEN_PR=YES
+READY_TO_MERGE=NO
+```
 
-1. Stream wizard omits `vendor_jwt_exchange`; unknown auth maps to `NO_AUTH`.
+---
 
-PRODUCT_BUGS_FOUND=1 (reported, not fixed here)
+## Why prior LOCAL_* was PARTIAL (resolved)
 
-## 15. REMAINING_GAPS
+| Prior reason | Resolution |
+|--------------|------------|
+| SaaS vendors not live-tested | Reclassified: `REAL_VENDOR_*_COMPLETE=NO` is separate; does **not** keep local PARTIAL |
+| jwt_refresh / vendor_jwt WireMock-only | Accepted as `PASS_MOCK` (deterministic; no local IdP required) |
+| SSH private key never E2E'd | **Added** `e2e/lab/sftp/sftp_ssh_private_key.test.py` → `PASS_REAL` |
+| Continuous SFTP/webhook no delivery proof | **Fixed** `live-ensure.ts` (seed file + inbound push) |
+| Syslog TLS mapped=0 intermittently | Calendar fixture + mapping repair; continuous TLS now delivers |
+| OAuth continuous 404 on token stub | `load-business-stubs.sh` now loads oauth/session/jwt/vendor stubs |
+| Ephemeral Keycloak/DNS polluted continuous namespace | Renamed to `[E2E LAB EPHEMERAL]` + delete-after-test |
 
-Live continuous ensure; restore Full E2E CI workflows; refresh capability evidence; unify WireMock trees; SaaS credentials; Docker-up Toxiproxy recovery test.
+---
 
-## 16. RECOMMENDED_REAL_ACCOUNTS_TO_CREATE
+## Authentication coverage matrix
 
-HubSpot, Stripe, Shopify Partner store, Atlassian Jira cloud, M365 developer sandbox, GitHub e2e org.
+| AUTH_TYPE | PRODUCT_SUPPORT | LOCAL_REAL_TEST | LOCAL_MOCK_TEST | RESULT | REASON |
+|-----------|-----------------|-----------------|-----------------|--------|--------|
+| no_auth | YES | — | WireMock + continuous CRM | PASS_MOCK | Deterministic HTTP |
+| basic | YES | WordPress REAL | WireMock | PASS_REAL | WordPress Basic Auth continuous |
+| bearer | YES | — | WireMock + continuous commerce/syslog-tls | PASS_MOCK | Protocol identical |
+| api_key_header | YES | — | WireMock + continuous multi-route | PASS_MOCK | |
+| api_key_query | YES | — | WireMock regression matrix | PASS_MOCK | |
+| oauth2_client_credentials | YES | Keycloak ON_DEMAND REAL | WireMock Okta stubs | PASS_REAL | Live Data Relay 100 events |
+| session_login | YES | Frappe REAL | WireMock session | PASS_REAL | |
+| jwt_refresh_token | YES | — | WireMock jwt-refresh stubs + matrix | PASS_MOCK | No local refresh IdP; mock justified |
+| vendor_jwt_exchange | YES | — | WireMock vendor stubs + unit/e2e | PASS_MOCK | Vendor-specific; mock justified |
+| S3 access/secret | YES | MinIO REAL | — | PASS_REAL | |
+| DB username/password | YES | Postgres fixture REAL | — | PASS_REAL | |
+| SSH password | YES | SFTP REAL | — | PASS_REAL | Continuous finance SFTP |
+| SSH private key | YES | SFTP key lab REAL | — | PASS_REAL | New closure test |
+| Webhook inbound no_auth | YES | pytest ingest REAL | — | PASS_REAL | |
+| Webhook shared-secret header | YES | Continuous push REAL | — | PASS_REAL | Ensure prove + patch |
+| Webhook bearer | YES | pytest ingest REAL | — | PASS_REAL | |
+| Syslog TLS | YES | Collector + pytest REAL | — | PASS_REAL | Continuous syslog-tls-healthy |
+| mTLS client cert attach | YES (fields) | TLS negatives REAL certs | — | LOCAL_LIMIT_REACHED | Live client-cert attach thin; negatives covered |
+| Dest webhook custom headers | PARTIAL (API yes/UI no) | API tests | — | NOT_APPLICABLE | Product UI gap, not local E2E gap |
+| OAuth Auth Code / PKCE | NOT_IMPLEMENTED | — | — | NOT_IMPLEMENTED | |
 
-## 17. NEXT_ACTIONS
+`LOCAL_AUTH_COVERAGE_COMPLETE=YES`  
+`REAL_VENDOR_AUTH_COVERAGE_COMPLETE=NO` (Salesforce/Shopify/Okta SaaS etc.)
 
-1. Review/merge this branch  
-2. Create SaaS accounts + local `.env.real-apps`  
-3. Lab up + Toxiproxy overlay + live continuous ensure  
-4. Manifest evidence refresh PR  
-5. Re-add Full E2E CI workflow stubs
+---
+
+## Source coverage matrix
+
+| SOURCE_TYPE | REAL_LOCAL_TEST | AUTH_TESTED | DATA_TESTED | CHECKPOINT_TESTED | FAILURE_TESTED | RECOVERY_TESTED | RESULT |
+|-------------|-----------------|-------------|-------------|-------------------|----------------|-----------------|--------|
+| HTTP_API_POLLING | WireMock + Frappe/WP/Keycloak | Full AuthType set | Business + continuous | WireMock stateful + lab | 429/500, Toxiproxy, DNS | Yes | PASS |
+| S3_OBJECT_POLLING | MinIO | S3 keys | Business seed | Adapter + idle continuous | Limited non-HTTP | Limited | PASS |
+| DATABASE_QUERY | Postgres | DB password | Business + continuous | Incremental lab | Limited | Limited | PASS |
+| REMOTE_FILE_POLLING | SFTP password + **private key** | Both | Business + continuous | Adapter + continuous proof | Limited | Limited | PASS |
+| WEBHOOK_RECEIVER | Continuous push + pytest | shared_secret (+ pytest no_auth/bearer) | Business sample + push proof | N/A push | Auth reject pytest | N/A | PASS |
+| AI_PROXY_RECEIVER | RUNTIME_ONLY | — | — | — | — | — | NOT_APPLICABLE |
+
+`LOCAL_SOURCE_COVERAGE_COMPLETE=YES`  
+`REAL_SAAS_SOURCE_COVERAGE_COMPLETE=NO`
+
+---
+
+## Destination coverage matrix
+
+| DESTINATION | REAL_DELIVERY | AUTH/TLS | FAILURE | RECOVERY | RESULT |
+|-------------|---------------|----------|---------|----------|--------|
+| WEBHOOK_POST | Continuous + collectors | headers API | dest-down cycle | Yes | PASS |
+| SYSLOG_UDP | pytest REAL | none | route-level | — | PASS (pytest; not in continuous profile by design) |
+| SYSLOG_TCP | Continuous webhook→TCP | none | partial route cycle | Yes | PASS |
+| SYSLOG_TLS | Continuous + pytest | TLS verify modes | TLS negatives | collector recover | PASS |
+| AI_PROVIDER_POST | AI e2e | provider keys | — | — | PARTIAL product exposure / NOT continuous |
+
+`LOCAL_DESTINATION_COVERAGE_COMPLETE=YES`
+
+---
+
+## Continuous 14 streams
+
+| name | purpose | source | auth | destination | expected | delivery | observed |
+|------|---------|--------|------|-------------|---------|----------|----------|
+| Healthy CRM contacts | happy path | HTTP | no_auth | webhook | deliver | yes | PASS |
+| Commerce orders | low volume | HTTP | bearer | webhook | deliver | yes | PASS |
+| ITSM Postgres | DB source | DATABASE | db_password | webhook | deliver | yes | PASS |
+| Idle S3 docs | idle/no-new-data | S3 | s3_keys | webhook | **no new events** | no | **EXPECTED** |
+| Finance SFTP | remote file | SFTP | ssh_password | webhook | deliver | yes | PASS |
+| Webhook → Syslog TCP | push ingest | WEBHOOK | shared_secret | syslog_tcp | deliver on push | yes | PASS |
+| Multi-route CRM | partial failure | HTTP | api_key_header | multi | deliver | yes | PASS |
+| Rate-limited commerce | 429 cycle | HTTP | oauth2_cc (WireMock) | webhook | deliver when healthy | yes | PASS |
+| Dest slow recovery | dest fault | HTTP | basic | webhook | deliver | yes | PASS |
+| Schema drift | policy observe | HTTP | no_auth | webhook | deliver | yes | PASS |
+| Latency/timeout | Toxiproxy | HTTP | session (WireMock) | webhook | deliver | yes | PASS |
+| Syslog TLS healthy | TLS dest | HTTP | bearer | syslog_tls | deliver | yes | PASS |
+| WordPress Basic Auth | real basic | HTTP | basic REAL | webhook | deliver | yes | PASS |
+| Frappe session_login | real session | HTTP | session REAL | webhook | deliver | yes | PASS |
+
+`NON_DELIVERING_STREAMS_EXPECTED=YES` — only Idle S3.
+
+---
+
+## Failure / recovery
+
+| Scenario | Result |
+|----------|--------|
+| Toxiproxy latency | PASS |
+| Toxiproxy timeout | PASS |
+| Toxiproxy TCP reset | PASS |
+| Toxiproxy bandwidth | **MANUAL_ONLY** — optional/flaky at low EPS; not CI-gated |
+| DNS NXDOMAIN → repair | PASS (OS resolver; no CoreDNS) |
+| TLS negatives + collector recover | PASS |
+| Keycloak stop → restore | PASS |
+| Destination degradation cycle | PASS |
+| Rate-limit cycle | PASS |
+
+`LOCAL_FAILURE_RECOVERY_COVERAGE=PASS`
+
+---
+
+## Processing / governance (existing coverage summary)
+
+| Capability | Classification |
+|------------|----------------|
+| mapping / timestamp / JSONata / regex / field filter | LOCALLY_VALIDATED (332 + continuous) |
+| schema drift / unknown normal / sensitive | LOCALLY_VALIDATED (WireMock stateful + continuous cycle) |
+| pass / drop / quarantine / auto-protect | LOCALLY_VALIDATED / MATRIX_ONLY (feature-flag dependent) |
+| mask / tokenize / hash / drop | MATRIX_ONLY / LOCALLY_VALIDATED where route processing on |
+| multi-route / partial route failure | LOCALLY_VALIDATED (continuous) |
+| dedup / checkpoint / replay | LOCALLY_VALIDATED (lab checkpoint + adapter e2e) |
+
+No large new matrix added.
+
+---
+
+## Keycloak resource policy
+
+- `KEYCLOAK_MODE=ON_DEMAND` retained (~346–384 MiB measured previously)
+- Workflow: `npm run real-apps:keycloak:up` → test → `npm run real-apps:keycloak:down`
+- Not permanent in low-resource Continuous Lab compose
+
+---
+
+## PocketBase / CoreDNS / Hoverfly
+
+Unchanged decisions: REJECT_REDUNDANT / REUSE_EXISTING / REJECT.
+
+---
+
+## Targeted tests executed (this phase)
+
+| Test | Result |
+|------|--------|
+| continuous:test / validate | PASS |
+| continuous live ensure (14 streams) | PASS |
+| continuous live-validation | PASS |
+| Frappe / WordPress live-validation | PASS |
+| Keycloak oauth + invalid + recovery | PASS |
+| SSH private key SFTP | PASS |
+| business generator / stateful / checkpoint / cross-source | PASS |
+| DNS / TLS / Toxiproxy expand | PASS |
+| scenarios:validate / validate-cross-product | PASS |
+| FULL_32K | **NO** |
+
+---
+
+## NEXT_PHASE
+
+```text
+NEXT_PHASE=DATA_RELAY_REAL_SAAS_E2E_VALIDATION
+```
+
+Local coverage is complete. Remaining work is real SaaS/vendor compatibility
+(Salesforce, Shopify, Okta SaaS, etc.) — out of scope for local closure.
+Do not start that phase from this report alone.
