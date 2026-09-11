@@ -1,0 +1,43 @@
+{
+  "id": "a1000001-0001-4000-8000-000000000018",
+  "priority": 1,
+  "scenarioName": "shared-business-pagination",
+  "requiredScenarioState": "page-2",
+  "newScenarioState": "page-empty",
+  "request": {
+    "method": "GET",
+    "urlPath": "/shared-business/customers",
+    "queryParameters": {
+      "page": {
+        "equalTo": "2"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "data": [
+        {
+          "id": "customer-003",
+          "customer_id": "customer-003",
+          "name": "Customer 003",
+          "email": "customer003@example.invalid",
+          "updated_at": "2026-09-11T00:03:00Z"
+        },
+        {
+          "id": "customer-004",
+          "customer_id": "customer-004",
+          "name": "Customer 004",
+          "email": "customer004@example.invalid",
+          "updated_at": "2026-09-11T00:04:00Z"
+        }
+      ],
+      "page": 2,
+      "next_page": 3,
+      "e2e_dataset": "shared-business-v1"
+    }
+  }
+}

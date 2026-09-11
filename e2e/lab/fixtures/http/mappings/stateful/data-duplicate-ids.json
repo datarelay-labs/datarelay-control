@@ -1,0 +1,31 @@
+{
+  "id": "a1000001-0001-4000-8000-000000000004",
+  "priority": 2,
+  "request": {
+    "method": "GET",
+    "urlPath": "/shared-business/data-shapes/duplicate-ids"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "data": [
+        {
+          "id": "customer-001",
+          "customer_id": "customer-001",
+          "name": "Customer 001",
+          "updated_at": "2026-09-11T00:01:00Z"
+        },
+        {
+          "id": "customer-001",
+          "customer_id": "customer-001",
+          "name": "Customer 001 duplicate",
+          "updated_at": "2026-09-11T00:01:30Z"
+        }
+      ],
+      "e2e_dataset": "shared-business-v1"
+    }
+  }
+}

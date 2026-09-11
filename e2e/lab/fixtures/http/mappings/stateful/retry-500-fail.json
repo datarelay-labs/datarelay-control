@@ -1,0 +1,20 @@
+{
+  "id": "a1000001-0001-4000-8000-000000000009",
+  "priority": 1,
+  "scenarioName": "retry-500-then-200",
+  "requiredScenarioState": "Started",
+  "newScenarioState": "recovered",
+  "request": {
+    "method": "GET",
+    "urlPath": "/shared-business/retry-500"
+  },
+  "response": {
+    "status": 500,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "error": "transient_server_error"
+    }
+  }
+}

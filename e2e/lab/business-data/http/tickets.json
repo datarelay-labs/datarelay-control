@@ -1,0 +1,455 @@
+{
+  "data": [
+    {
+      "id": "ticket-001",
+      "ticket_id": "ticket-001",
+      "customer_id": "customer-001",
+      "subject": "Support case 001",
+      "status": "pending",
+      "priority": "high",
+      "updated_at": "2026-09-13T18:41:00Z"
+    },
+    {
+      "id": "ticket-002",
+      "ticket_id": "ticket-002",
+      "customer_id": "customer-002",
+      "subject": "Support case 002",
+      "status": "pending",
+      "priority": "low",
+      "updated_at": "2026-09-13T18:42:00Z"
+    },
+    {
+      "id": "ticket-003",
+      "ticket_id": "ticket-003",
+      "customer_id": "customer-003",
+      "subject": "Support case 003",
+      "status": "resolved",
+      "priority": "low",
+      "updated_at": "2026-09-13T18:43:00Z"
+    },
+    {
+      "id": "ticket-004",
+      "ticket_id": "ticket-004",
+      "customer_id": "customer-004",
+      "subject": "Support case 004",
+      "status": "pending",
+      "priority": "low",
+      "updated_at": "2026-09-13T18:44:00Z"
+    },
+    {
+      "id": "ticket-005",
+      "ticket_id": "ticket-005",
+      "customer_id": "customer-005",
+      "subject": "Support case 005",
+      "status": "resolved",
+      "priority": "high",
+      "updated_at": "2026-09-13T18:45:00Z"
+    },
+    {
+      "id": "ticket-006",
+      "ticket_id": "ticket-006",
+      "customer_id": "customer-006",
+      "subject": "Support case 006",
+      "status": "pending",
+      "priority": "high",
+      "updated_at": "2026-09-13T18:46:00Z"
+    },
+    {
+      "id": "ticket-007",
+      "ticket_id": "ticket-007",
+      "customer_id": "customer-007",
+      "subject": "Support case 007",
+      "status": "open",
+      "priority": "high",
+      "updated_at": "2026-09-13T18:47:00Z"
+    },
+    {
+      "id": "ticket-008",
+      "ticket_id": "ticket-008",
+      "customer_id": "customer-008",
+      "subject": "Support case 008",
+      "status": "open",
+      "priority": "high",
+      "updated_at": "2026-09-13T18:48:00Z"
+    },
+    {
+      "id": "ticket-009",
+      "ticket_id": "ticket-009",
+      "customer_id": "customer-009",
+      "subject": "Support case 009",
+      "status": "pending",
+      "priority": "high",
+      "updated_at": "2026-09-13T18:49:00Z"
+    },
+    {
+      "id": "ticket-010",
+      "ticket_id": "ticket-010",
+      "customer_id": "customer-010",
+      "subject": "Support case 010",
+      "status": "pending",
+      "priority": "high",
+      "updated_at": "2026-09-13T18:50:00Z"
+    },
+    {
+      "id": "ticket-011",
+      "ticket_id": "ticket-011",
+      "customer_id": "customer-011",
+      "subject": "Support case 011",
+      "status": "pending",
+      "priority": "low",
+      "updated_at": "2026-09-13T18:51:00Z"
+    },
+    {
+      "id": "ticket-012",
+      "ticket_id": "ticket-012",
+      "customer_id": "customer-012",
+      "subject": "Support case 012",
+      "status": "open",
+      "priority": "low",
+      "updated_at": "2026-09-13T18:52:00Z"
+    },
+    {
+      "id": "ticket-013",
+      "ticket_id": "ticket-013",
+      "customer_id": "customer-013",
+      "subject": "Support case 013",
+      "status": "open",
+      "priority": "medium",
+      "updated_at": "2026-09-13T18:53:00Z"
+    },
+    {
+      "id": "ticket-014",
+      "ticket_id": "ticket-014",
+      "customer_id": "customer-014",
+      "subject": "Support case 014",
+      "status": "pending",
+      "priority": "low",
+      "updated_at": "2026-09-13T18:54:00Z"
+    },
+    {
+      "id": "ticket-015",
+      "ticket_id": "ticket-015",
+      "customer_id": "customer-015",
+      "subject": "Support case 015",
+      "status": "open",
+      "priority": "low",
+      "updated_at": "2026-09-13T18:55:00Z"
+    },
+    {
+      "id": "ticket-016",
+      "ticket_id": "ticket-016",
+      "customer_id": "customer-016",
+      "subject": "Support case 016",
+      "status": "resolved",
+      "priority": "low",
+      "updated_at": "2026-09-13T18:56:00Z"
+    },
+    {
+      "id": "ticket-017",
+      "ticket_id": "ticket-017",
+      "customer_id": "customer-017",
+      "subject": "Support case 017",
+      "status": "pending",
+      "priority": "medium",
+      "updated_at": "2026-09-13T18:57:00Z"
+    },
+    {
+      "id": "ticket-018",
+      "ticket_id": "ticket-018",
+      "customer_id": "customer-018",
+      "subject": "Support case 018",
+      "status": "pending",
+      "priority": "high",
+      "updated_at": "2026-09-13T18:58:00Z"
+    },
+    {
+      "id": "ticket-019",
+      "ticket_id": "ticket-019",
+      "customer_id": "customer-019",
+      "subject": "Support case 019",
+      "status": "resolved",
+      "priority": "high",
+      "updated_at": "2026-09-13T18:59:00Z"
+    },
+    {
+      "id": "ticket-020",
+      "ticket_id": "ticket-020",
+      "customer_id": "customer-020",
+      "subject": "Support case 020",
+      "status": "resolved",
+      "priority": "medium",
+      "updated_at": "2026-09-13T19:00:00Z"
+    },
+    {
+      "id": "ticket-021",
+      "ticket_id": "ticket-021",
+      "customer_id": "customer-021",
+      "subject": "Support case 021",
+      "status": "resolved",
+      "priority": "high",
+      "updated_at": "2026-09-13T19:01:00Z"
+    },
+    {
+      "id": "ticket-022",
+      "ticket_id": "ticket-022",
+      "customer_id": "customer-022",
+      "subject": "Support case 022",
+      "status": "resolved",
+      "priority": "low",
+      "updated_at": "2026-09-13T19:02:00Z"
+    },
+    {
+      "id": "ticket-023",
+      "ticket_id": "ticket-023",
+      "customer_id": "customer-023",
+      "subject": "Support case 023",
+      "status": "pending",
+      "priority": "high",
+      "updated_at": "2026-09-13T19:03:00Z"
+    },
+    {
+      "id": "ticket-024",
+      "ticket_id": "ticket-024",
+      "customer_id": "customer-024",
+      "subject": "Support case 024",
+      "status": "open",
+      "priority": "medium",
+      "updated_at": "2026-09-13T19:04:00Z"
+    },
+    {
+      "id": "ticket-025",
+      "ticket_id": "ticket-025",
+      "customer_id": "customer-025",
+      "subject": "Support case 025",
+      "status": "resolved",
+      "priority": "medium",
+      "updated_at": "2026-09-13T19:05:00Z"
+    },
+    {
+      "id": "ticket-026",
+      "ticket_id": "ticket-026",
+      "customer_id": "customer-026",
+      "subject": "Support case 026",
+      "status": "pending",
+      "priority": "low",
+      "updated_at": "2026-09-13T19:06:00Z"
+    },
+    {
+      "id": "ticket-027",
+      "ticket_id": "ticket-027",
+      "customer_id": "customer-027",
+      "subject": "Support case 027",
+      "status": "resolved",
+      "priority": "medium",
+      "updated_at": "2026-09-13T19:07:00Z"
+    },
+    {
+      "id": "ticket-028",
+      "ticket_id": "ticket-028",
+      "customer_id": "customer-028",
+      "subject": "Support case 028",
+      "status": "open",
+      "priority": "medium",
+      "updated_at": "2026-09-13T19:08:00Z"
+    },
+    {
+      "id": "ticket-029",
+      "ticket_id": "ticket-029",
+      "customer_id": "customer-029",
+      "subject": "Support case 029",
+      "status": "pending",
+      "priority": "low",
+      "updated_at": "2026-09-13T19:09:00Z"
+    },
+    {
+      "id": "ticket-030",
+      "ticket_id": "ticket-030",
+      "customer_id": "customer-030",
+      "subject": "Support case 030",
+      "status": "pending",
+      "priority": "low",
+      "updated_at": "2026-09-13T19:10:00Z"
+    },
+    {
+      "id": "ticket-031",
+      "ticket_id": "ticket-031",
+      "customer_id": "customer-031",
+      "subject": "Support case 031",
+      "status": "resolved",
+      "priority": "medium",
+      "updated_at": "2026-09-13T19:11:00Z"
+    },
+    {
+      "id": "ticket-032",
+      "ticket_id": "ticket-032",
+      "customer_id": "customer-032",
+      "subject": "Support case 032",
+      "status": "resolved",
+      "priority": "high",
+      "updated_at": "2026-09-13T19:12:00Z"
+    },
+    {
+      "id": "ticket-033",
+      "ticket_id": "ticket-033",
+      "customer_id": "customer-033",
+      "subject": "Support case 033",
+      "status": "pending",
+      "priority": "low",
+      "updated_at": "2026-09-13T19:13:00Z"
+    },
+    {
+      "id": "ticket-034",
+      "ticket_id": "ticket-034",
+      "customer_id": "customer-034",
+      "subject": "Support case 034",
+      "status": "pending",
+      "priority": "medium",
+      "updated_at": "2026-09-13T19:14:00Z"
+    },
+    {
+      "id": "ticket-035",
+      "ticket_id": "ticket-035",
+      "customer_id": "customer-035",
+      "subject": "Support case 035",
+      "status": "open",
+      "priority": "low",
+      "updated_at": "2026-09-13T19:15:00Z"
+    },
+    {
+      "id": "ticket-036",
+      "ticket_id": "ticket-036",
+      "customer_id": "customer-036",
+      "subject": "Support case 036",
+      "status": "pending",
+      "priority": "low",
+      "updated_at": "2026-09-13T19:16:00Z"
+    },
+    {
+      "id": "ticket-037",
+      "ticket_id": "ticket-037",
+      "customer_id": "customer-037",
+      "subject": "Support case 037",
+      "status": "resolved",
+      "priority": "low",
+      "updated_at": "2026-09-13T19:17:00Z"
+    },
+    {
+      "id": "ticket-038",
+      "ticket_id": "ticket-038",
+      "customer_id": "customer-038",
+      "subject": "Support case 038",
+      "status": "resolved",
+      "priority": "high",
+      "updated_at": "2026-09-13T19:18:00Z"
+    },
+    {
+      "id": "ticket-039",
+      "ticket_id": "ticket-039",
+      "customer_id": "customer-039",
+      "subject": "Support case 039",
+      "status": "resolved",
+      "priority": "low",
+      "updated_at": "2026-09-13T19:19:00Z"
+    },
+    {
+      "id": "ticket-040",
+      "ticket_id": "ticket-040",
+      "customer_id": "customer-040",
+      "subject": "Support case 040",
+      "status": "open",
+      "priority": "medium",
+      "updated_at": "2026-09-13T19:20:00Z"
+    },
+    {
+      "id": "ticket-041",
+      "ticket_id": "ticket-041",
+      "customer_id": "customer-041",
+      "subject": "Support case 041",
+      "status": "open",
+      "priority": "low",
+      "updated_at": "2026-09-13T19:21:00Z"
+    },
+    {
+      "id": "ticket-042",
+      "ticket_id": "ticket-042",
+      "customer_id": "customer-042",
+      "subject": "Support case 042",
+      "status": "resolved",
+      "priority": "low",
+      "updated_at": "2026-09-13T19:22:00Z"
+    },
+    {
+      "id": "ticket-043",
+      "ticket_id": "ticket-043",
+      "customer_id": "customer-043",
+      "subject": "Support case 043",
+      "status": "open",
+      "priority": "high",
+      "updated_at": "2026-09-13T19:23:00Z"
+    },
+    {
+      "id": "ticket-044",
+      "ticket_id": "ticket-044",
+      "customer_id": "customer-044",
+      "subject": "Support case 044",
+      "status": "open",
+      "priority": "high",
+      "updated_at": "2026-09-13T19:24:00Z"
+    },
+    {
+      "id": "ticket-045",
+      "ticket_id": "ticket-045",
+      "customer_id": "customer-045",
+      "subject": "Support case 045",
+      "status": "open",
+      "priority": "low",
+      "updated_at": "2026-09-13T19:25:00Z"
+    },
+    {
+      "id": "ticket-046",
+      "ticket_id": "ticket-046",
+      "customer_id": "customer-046",
+      "subject": "Support case 046",
+      "status": "pending",
+      "priority": "low",
+      "updated_at": "2026-09-13T19:26:00Z"
+    },
+    {
+      "id": "ticket-047",
+      "ticket_id": "ticket-047",
+      "customer_id": "customer-047",
+      "subject": "Support case 047",
+      "status": "resolved",
+      "priority": "low",
+      "updated_at": "2026-09-13T19:27:00Z"
+    },
+    {
+      "id": "ticket-048",
+      "ticket_id": "ticket-048",
+      "customer_id": "customer-048",
+      "subject": "Support case 048",
+      "status": "pending",
+      "priority": "low",
+      "updated_at": "2026-09-13T19:28:00Z"
+    },
+    {
+      "id": "ticket-049",
+      "ticket_id": "ticket-049",
+      "customer_id": "customer-049",
+      "subject": "Support case 049",
+      "status": "open",
+      "priority": "high",
+      "updated_at": "2026-09-13T19:29:00Z"
+    },
+    {
+      "id": "ticket-050",
+      "ticket_id": "ticket-050",
+      "customer_id": "customer-050",
+      "subject": "Support case 050",
+      "status": "pending",
+      "priority": "low",
+      "updated_at": "2026-09-13T19:30:00Z"
+    }
+  ],
+  "e2e_dataset": "shared-business-v1"
+}

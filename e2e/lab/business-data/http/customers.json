@@ -1,0 +1,905 @@
+{
+  "data": [
+    {
+      "id": "customer-001",
+      "customer_id": "customer-001",
+      "name": "Customer 001",
+      "email": "customer001@example.invalid",
+      "tier": "platinum",
+      "region": "US",
+      "updated_at": "2026-09-11T00:01:00Z"
+    },
+    {
+      "id": "customer-002",
+      "customer_id": "customer-002",
+      "name": "Customer 002",
+      "email": "customer002@example.invalid",
+      "tier": "standard",
+      "region": "APAC",
+      "updated_at": "2026-09-11T00:02:00Z"
+    },
+    {
+      "id": "customer-003",
+      "customer_id": "customer-003",
+      "name": "Customer 003",
+      "email": "customer003@example.invalid",
+      "tier": "gold",
+      "region": "US",
+      "updated_at": "2026-09-11T00:03:00Z"
+    },
+    {
+      "id": "customer-004",
+      "customer_id": "customer-004",
+      "name": "Customer 004",
+      "email": "customer004@example.invalid",
+      "tier": "standard",
+      "region": "US",
+      "updated_at": "2026-09-11T00:04:00Z"
+    },
+    {
+      "id": "customer-005",
+      "customer_id": "customer-005",
+      "name": "Customer 005",
+      "email": "customer005@example.invalid",
+      "tier": "platinum",
+      "region": "US",
+      "updated_at": "2026-09-11T00:05:00Z"
+    },
+    {
+      "id": "customer-006",
+      "customer_id": "customer-006",
+      "name": "Customer 006",
+      "email": "customer006@example.invalid",
+      "tier": "platinum",
+      "region": "APAC",
+      "updated_at": "2026-09-11T00:06:00Z"
+    },
+    {
+      "id": "customer-007",
+      "customer_id": "customer-007",
+      "name": "Customer 007",
+      "email": "customer007@example.invalid",
+      "tier": "platinum",
+      "region": "US",
+      "updated_at": "2026-09-11T00:07:00Z"
+    },
+    {
+      "id": "customer-008",
+      "customer_id": "customer-008",
+      "name": "Customer 008",
+      "email": "customer008@example.invalid",
+      "tier": "platinum",
+      "region": "EU",
+      "updated_at": "2026-09-11T00:08:00Z"
+    },
+    {
+      "id": "customer-009",
+      "customer_id": "customer-009",
+      "name": "Customer 009",
+      "email": "customer009@example.invalid",
+      "tier": "standard",
+      "region": "US",
+      "updated_at": "2026-09-11T00:09:00Z"
+    },
+    {
+      "id": "customer-010",
+      "customer_id": "customer-010",
+      "name": "Customer 010",
+      "email": "customer010@example.invalid",
+      "tier": "standard",
+      "region": "US",
+      "updated_at": "2026-09-11T00:10:00Z"
+    },
+    {
+      "id": "customer-011",
+      "customer_id": "customer-011",
+      "name": "Customer 011",
+      "email": "customer011@example.invalid",
+      "tier": "standard",
+      "region": "APAC",
+      "updated_at": "2026-09-11T00:11:00Z"
+    },
+    {
+      "id": "customer-012",
+      "customer_id": "customer-012",
+      "name": "Customer 012",
+      "email": "customer012@example.invalid",
+      "tier": "platinum",
+      "region": "US",
+      "updated_at": "2026-09-11T00:12:00Z"
+    },
+    {
+      "id": "customer-013",
+      "customer_id": "customer-013",
+      "name": "Customer 013",
+      "email": "customer013@example.invalid",
+      "tier": "platinum",
+      "region": "US",
+      "updated_at": "2026-09-11T00:13:00Z"
+    },
+    {
+      "id": "customer-014",
+      "customer_id": "customer-014",
+      "name": "Customer 014",
+      "email": "customer014@example.invalid",
+      "tier": "platinum",
+      "region": "APAC",
+      "updated_at": "2026-09-11T00:14:00Z"
+    },
+    {
+      "id": "customer-015",
+      "customer_id": "customer-015",
+      "name": "Customer 015",
+      "email": "customer015@example.invalid",
+      "tier": "platinum",
+      "region": "APAC",
+      "updated_at": "2026-09-11T00:15:00Z"
+    },
+    {
+      "id": "customer-016",
+      "customer_id": "customer-016",
+      "name": "Customer 016",
+      "email": "customer016@example.invalid",
+      "tier": "gold",
+      "region": "US",
+      "updated_at": "2026-09-11T00:16:00Z"
+    },
+    {
+      "id": "customer-017",
+      "customer_id": "customer-017",
+      "name": "Customer 017",
+      "email": "customer017@example.invalid",
+      "tier": "gold",
+      "region": "APAC",
+      "updated_at": "2026-09-11T00:17:00Z"
+    },
+    {
+      "id": "customer-018",
+      "customer_id": "customer-018",
+      "name": "Customer 018",
+      "email": "customer018@example.invalid",
+      "tier": "gold",
+      "region": "US",
+      "updated_at": "2026-09-11T00:18:00Z"
+    },
+    {
+      "id": "customer-019",
+      "customer_id": "customer-019",
+      "name": "Customer 019",
+      "email": "customer019@example.invalid",
+      "tier": "standard",
+      "region": "APAC",
+      "updated_at": "2026-09-11T00:19:00Z"
+    },
+    {
+      "id": "customer-020",
+      "customer_id": "customer-020",
+      "name": "Customer 020",
+      "email": "customer020@example.invalid",
+      "tier": "gold",
+      "region": "EU",
+      "updated_at": "2026-09-11T00:20:00Z"
+    },
+    {
+      "id": "customer-021",
+      "customer_id": "customer-021",
+      "name": "Customer 021",
+      "email": "customer021@example.invalid",
+      "tier": "gold",
+      "region": "US",
+      "updated_at": "2026-09-11T00:21:00Z"
+    },
+    {
+      "id": "customer-022",
+      "customer_id": "customer-022",
+      "name": "Customer 022",
+      "email": "customer022@example.invalid",
+      "tier": "standard",
+      "region": "EU",
+      "updated_at": "2026-09-11T00:22:00Z"
+    },
+    {
+      "id": "customer-023",
+      "customer_id": "customer-023",
+      "name": "Customer 023",
+      "email": "customer023@example.invalid",
+      "tier": "standard",
+      "region": "US",
+      "updated_at": "2026-09-11T00:23:00Z"
+    },
+    {
+      "id": "customer-024",
+      "customer_id": "customer-024",
+      "name": "Customer 024",
+      "email": "customer024@example.invalid",
+      "tier": "gold",
+      "region": "US",
+      "updated_at": "2026-09-11T00:24:00Z"
+    },
+    {
+      "id": "customer-025",
+      "customer_id": "customer-025",
+      "name": "Customer 025",
+      "email": "customer025@example.invalid",
+      "tier": "gold",
+      "region": "EU",
+      "updated_at": "2026-09-11T00:25:00Z"
+    },
+    {
+      "id": "customer-026",
+      "customer_id": "customer-026",
+      "name": "Customer 026",
+      "email": "customer026@example.invalid",
+      "tier": "platinum",
+      "region": "EU",
+      "updated_at": "2026-09-11T00:26:00Z"
+    },
+    {
+      "id": "customer-027",
+      "customer_id": "customer-027",
+      "name": "Customer 027",
+      "email": "customer027@example.invalid",
+      "tier": "standard",
+      "region": "APAC",
+      "updated_at": "2026-09-11T00:27:00Z"
+    },
+    {
+      "id": "customer-028",
+      "customer_id": "customer-028",
+      "name": "Customer 028",
+      "email": "customer028@example.invalid",
+      "tier": "gold",
+      "region": "APAC",
+      "updated_at": "2026-09-11T00:28:00Z"
+    },
+    {
+      "id": "customer-029",
+      "customer_id": "customer-029",
+      "name": "Customer 029",
+      "email": "customer029@example.invalid",
+      "tier": "standard",
+      "region": "EU",
+      "updated_at": "2026-09-11T00:29:00Z"
+    },
+    {
+      "id": "customer-030",
+      "customer_id": "customer-030",
+      "name": "Customer 030",
+      "email": "customer030@example.invalid",
+      "tier": "standard",
+      "region": "APAC",
+      "updated_at": "2026-09-11T00:30:00Z"
+    },
+    {
+      "id": "customer-031",
+      "customer_id": "customer-031",
+      "name": "Customer 031",
+      "email": "customer031@example.invalid",
+      "tier": "gold",
+      "region": "APAC",
+      "updated_at": "2026-09-11T00:31:00Z"
+    },
+    {
+      "id": "customer-032",
+      "customer_id": "customer-032",
+      "name": "Customer 032",
+      "email": "customer032@example.invalid",
+      "tier": "platinum",
+      "region": "EU",
+      "updated_at": "2026-09-11T00:32:00Z"
+    },
+    {
+      "id": "customer-033",
+      "customer_id": "customer-033",
+      "name": "Customer 033",
+      "email": "customer033@example.invalid",
+      "tier": "platinum",
+      "region": "US",
+      "updated_at": "2026-09-11T00:33:00Z"
+    },
+    {
+      "id": "customer-034",
+      "customer_id": "customer-034",
+      "name": "Customer 034",
+      "email": "customer034@example.invalid",
+      "tier": "platinum",
+      "region": "US",
+      "updated_at": "2026-09-11T00:34:00Z"
+    },
+    {
+      "id": "customer-035",
+      "customer_id": "customer-035",
+      "name": "Customer 035",
+      "email": "customer035@example.invalid",
+      "tier": "standard",
+      "region": "APAC",
+      "updated_at": "2026-09-11T00:35:00Z"
+    },
+    {
+      "id": "customer-036",
+      "customer_id": "customer-036",
+      "name": "Customer 036",
+      "email": "customer036@example.invalid",
+      "tier": "standard",
+      "region": "EU",
+      "updated_at": "2026-09-11T00:36:00Z"
+    },
+    {
+      "id": "customer-037",
+      "customer_id": "customer-037",
+      "name": "Customer 037",
+      "email": "customer037@example.invalid",
+      "tier": "standard",
+      "region": "US",
+      "updated_at": "2026-09-11T00:37:00Z"
+    },
+    {
+      "id": "customer-038",
+      "customer_id": "customer-038",
+      "name": "Customer 038",
+      "email": "customer038@example.invalid",
+      "tier": "standard",
+      "region": "EU",
+      "updated_at": "2026-09-11T00:38:00Z"
+    },
+    {
+      "id": "customer-039",
+      "customer_id": "customer-039",
+      "name": "Customer 039",
+      "email": "customer039@example.invalid",
+      "tier": "gold",
+      "region": "EU",
+      "updated_at": "2026-09-11T00:39:00Z"
+    },
+    {
+      "id": "customer-040",
+      "customer_id": "customer-040",
+      "name": "Customer 040",
+      "email": "customer040@example.invalid",
+      "tier": "platinum",
+      "region": "EU",
+      "updated_at": "2026-09-11T00:40:00Z"
+    },
+    {
+      "id": "customer-041",
+      "customer_id": "customer-041",
+      "name": "Customer 041",
+      "email": "customer041@example.invalid",
+      "tier": "standard",
+      "region": "EU",
+      "updated_at": "2026-09-11T00:41:00Z"
+    },
+    {
+      "id": "customer-042",
+      "customer_id": "customer-042",
+      "name": "Customer 042",
+      "email": "customer042@example.invalid",
+      "tier": "gold",
+      "region": "US",
+      "updated_at": "2026-09-11T00:42:00Z"
+    },
+    {
+      "id": "customer-043",
+      "customer_id": "customer-043",
+      "name": "Customer 043",
+      "email": "customer043@example.invalid",
+      "tier": "platinum",
+      "region": "EU",
+      "updated_at": "2026-09-11T00:43:00Z"
+    },
+    {
+      "id": "customer-044",
+      "customer_id": "customer-044",
+      "name": "Customer 044",
+      "email": "customer044@example.invalid",
+      "tier": "platinum",
+      "region": "APAC",
+      "updated_at": "2026-09-11T00:44:00Z"
+    },
+    {
+      "id": "customer-045",
+      "customer_id": "customer-045",
+      "name": "Customer 045",
+      "email": "customer045@example.invalid",
+      "tier": "platinum",
+      "region": "US",
+      "updated_at": "2026-09-11T00:45:00Z"
+    },
+    {
+      "id": "customer-046",
+      "customer_id": "customer-046",
+      "name": "Customer 046",
+      "email": "customer046@example.invalid",
+      "tier": "platinum",
+      "region": "APAC",
+      "updated_at": "2026-09-11T00:46:00Z"
+    },
+    {
+      "id": "customer-047",
+      "customer_id": "customer-047",
+      "name": "Customer 047",
+      "email": "customer047@example.invalid",
+      "tier": "standard",
+      "region": "APAC",
+      "updated_at": "2026-09-11T00:47:00Z"
+    },
+    {
+      "id": "customer-048",
+      "customer_id": "customer-048",
+      "name": "Customer 048",
+      "email": "customer048@example.invalid",
+      "tier": "platinum",
+      "region": "US",
+      "updated_at": "2026-09-11T00:48:00Z"
+    },
+    {
+      "id": "customer-049",
+      "customer_id": "customer-049",
+      "name": "Customer 049",
+      "email": "customer049@example.invalid",
+      "tier": "standard",
+      "region": "EU",
+      "updated_at": "2026-09-11T00:49:00Z"
+    },
+    {
+      "id": "customer-050",
+      "customer_id": "customer-050",
+      "name": "Customer 050",
+      "email": "customer050@example.invalid",
+      "tier": "gold",
+      "region": "EU",
+      "updated_at": "2026-09-11T00:50:00Z"
+    },
+    {
+      "id": "customer-051",
+      "customer_id": "customer-051",
+      "name": "Customer 051",
+      "email": "customer051@example.invalid",
+      "tier": "platinum",
+      "region": "APAC",
+      "updated_at": "2026-09-11T00:51:00Z"
+    },
+    {
+      "id": "customer-052",
+      "customer_id": "customer-052",
+      "name": "Customer 052",
+      "email": "customer052@example.invalid",
+      "tier": "platinum",
+      "region": "US",
+      "updated_at": "2026-09-11T00:52:00Z"
+    },
+    {
+      "id": "customer-053",
+      "customer_id": "customer-053",
+      "name": "Customer 053",
+      "email": "customer053@example.invalid",
+      "tier": "platinum",
+      "region": "EU",
+      "updated_at": "2026-09-11T00:53:00Z"
+    },
+    {
+      "id": "customer-054",
+      "customer_id": "customer-054",
+      "name": "Customer 054",
+      "email": "customer054@example.invalid",
+      "tier": "standard",
+      "region": "US",
+      "updated_at": "2026-09-11T00:54:00Z"
+    },
+    {
+      "id": "customer-055",
+      "customer_id": "customer-055",
+      "name": "Customer 055",
+      "email": "customer055@example.invalid",
+      "tier": "standard",
+      "region": "EU",
+      "updated_at": "2026-09-11T00:55:00Z"
+    },
+    {
+      "id": "customer-056",
+      "customer_id": "customer-056",
+      "name": "Customer 056",
+      "email": "customer056@example.invalid",
+      "tier": "gold",
+      "region": "EU",
+      "updated_at": "2026-09-11T00:56:00Z"
+    },
+    {
+      "id": "customer-057",
+      "customer_id": "customer-057",
+      "name": "Customer 057",
+      "email": "customer057@example.invalid",
+      "tier": "standard",
+      "region": "US",
+      "updated_at": "2026-09-11T00:57:00Z"
+    },
+    {
+      "id": "customer-058",
+      "customer_id": "customer-058",
+      "name": "Customer 058",
+      "email": "customer058@example.invalid",
+      "tier": "platinum",
+      "region": "APAC",
+      "updated_at": "2026-09-11T00:58:00Z"
+    },
+    {
+      "id": "customer-059",
+      "customer_id": "customer-059",
+      "name": "Customer 059",
+      "email": "customer059@example.invalid",
+      "tier": "gold",
+      "region": "US",
+      "updated_at": "2026-09-11T00:59:00Z"
+    },
+    {
+      "id": "customer-060",
+      "customer_id": "customer-060",
+      "name": "Customer 060",
+      "email": "customer060@example.invalid",
+      "tier": "platinum",
+      "region": "EU",
+      "updated_at": "2026-09-11T01:00:00Z"
+    },
+    {
+      "id": "customer-061",
+      "customer_id": "customer-061",
+      "name": "Customer 061",
+      "email": "customer061@example.invalid",
+      "tier": "gold",
+      "region": "APAC",
+      "updated_at": "2026-09-11T01:01:00Z"
+    },
+    {
+      "id": "customer-062",
+      "customer_id": "customer-062",
+      "name": "Customer 062",
+      "email": "customer062@example.invalid",
+      "tier": "gold",
+      "region": "US",
+      "updated_at": "2026-09-11T01:02:00Z"
+    },
+    {
+      "id": "customer-063",
+      "customer_id": "customer-063",
+      "name": "Customer 063",
+      "email": "customer063@example.invalid",
+      "tier": "gold",
+      "region": "US",
+      "updated_at": "2026-09-11T01:03:00Z"
+    },
+    {
+      "id": "customer-064",
+      "customer_id": "customer-064",
+      "name": "Customer 064",
+      "email": "customer064@example.invalid",
+      "tier": "standard",
+      "region": "APAC",
+      "updated_at": "2026-09-11T01:04:00Z"
+    },
+    {
+      "id": "customer-065",
+      "customer_id": "customer-065",
+      "name": "Customer 065",
+      "email": "customer065@example.invalid",
+      "tier": "platinum",
+      "region": "APAC",
+      "updated_at": "2026-09-11T01:05:00Z"
+    },
+    {
+      "id": "customer-066",
+      "customer_id": "customer-066",
+      "name": "Customer 066",
+      "email": "customer066@example.invalid",
+      "tier": "gold",
+      "region": "APAC",
+      "updated_at": "2026-09-11T01:06:00Z"
+    },
+    {
+      "id": "customer-067",
+      "customer_id": "customer-067",
+      "name": "Customer 067",
+      "email": "customer067@example.invalid",
+      "tier": "platinum",
+      "region": "EU",
+      "updated_at": "2026-09-11T01:07:00Z"
+    },
+    {
+      "id": "customer-068",
+      "customer_id": "customer-068",
+      "name": "Customer 068",
+      "email": "customer068@example.invalid",
+      "tier": "platinum",
+      "region": "EU",
+      "updated_at": "2026-09-11T01:08:00Z"
+    },
+    {
+      "id": "customer-069",
+      "customer_id": "customer-069",
+      "name": "Customer 069",
+      "email": "customer069@example.invalid",
+      "tier": "gold",
+      "region": "US",
+      "updated_at": "2026-09-11T01:09:00Z"
+    },
+    {
+      "id": "customer-070",
+      "customer_id": "customer-070",
+      "name": "Customer 070",
+      "email": "customer070@example.invalid",
+      "tier": "standard",
+      "region": "APAC",
+      "updated_at": "2026-09-11T01:10:00Z"
+    },
+    {
+      "id": "customer-071",
+      "customer_id": "customer-071",
+      "name": "Customer 071",
+      "email": "customer071@example.invalid",
+      "tier": "gold",
+      "region": "US",
+      "updated_at": "2026-09-11T01:11:00Z"
+    },
+    {
+      "id": "customer-072",
+      "customer_id": "customer-072",
+      "name": "Customer 072",
+      "email": "customer072@example.invalid",
+      "tier": "standard",
+      "region": "US",
+      "updated_at": "2026-09-11T01:12:00Z"
+    },
+    {
+      "id": "customer-073",
+      "customer_id": "customer-073",
+      "name": "Customer 073",
+      "email": "customer073@example.invalid",
+      "tier": "standard",
+      "region": "APAC",
+      "updated_at": "2026-09-11T01:13:00Z"
+    },
+    {
+      "id": "customer-074",
+      "customer_id": "customer-074",
+      "name": "Customer 074",
+      "email": "customer074@example.invalid",
+      "tier": "standard",
+      "region": "APAC",
+      "updated_at": "2026-09-11T01:14:00Z"
+    },
+    {
+      "id": "customer-075",
+      "customer_id": "customer-075",
+      "name": "Customer 075",
+      "email": "customer075@example.invalid",
+      "tier": "gold",
+      "region": "APAC",
+      "updated_at": "2026-09-11T01:15:00Z"
+    },
+    {
+      "id": "customer-076",
+      "customer_id": "customer-076",
+      "name": "Customer 076",
+      "email": "customer076@example.invalid",
+      "tier": "standard",
+      "region": "EU",
+      "updated_at": "2026-09-11T01:16:00Z"
+    },
+    {
+      "id": "customer-077",
+      "customer_id": "customer-077",
+      "name": "Customer 077",
+      "email": "customer077@example.invalid",
+      "tier": "gold",
+      "region": "APAC",
+      "updated_at": "2026-09-11T01:17:00Z"
+    },
+    {
+      "id": "customer-078",
+      "customer_id": "customer-078",
+      "name": "Customer 078",
+      "email": "customer078@example.invalid",
+      "tier": "gold",
+      "region": "APAC",
+      "updated_at": "2026-09-11T01:18:00Z"
+    },
+    {
+      "id": "customer-079",
+      "customer_id": "customer-079",
+      "name": "Customer 079",
+      "email": "customer079@example.invalid",
+      "tier": "gold",
+      "region": "APAC",
+      "updated_at": "2026-09-11T01:19:00Z"
+    },
+    {
+      "id": "customer-080",
+      "customer_id": "customer-080",
+      "name": "Customer 080",
+      "email": "customer080@example.invalid",
+      "tier": "standard",
+      "region": "APAC",
+      "updated_at": "2026-09-11T01:20:00Z"
+    },
+    {
+      "id": "customer-081",
+      "customer_id": "customer-081",
+      "name": "Customer 081",
+      "email": "customer081@example.invalid",
+      "tier": "platinum",
+      "region": "US",
+      "updated_at": "2026-09-11T01:21:00Z"
+    },
+    {
+      "id": "customer-082",
+      "customer_id": "customer-082",
+      "name": "Customer 082",
+      "email": "customer082@example.invalid",
+      "tier": "platinum",
+      "region": "APAC",
+      "updated_at": "2026-09-11T01:22:00Z"
+    },
+    {
+      "id": "customer-083",
+      "customer_id": "customer-083",
+      "name": "Customer 083",
+      "email": "customer083@example.invalid",
+      "tier": "gold",
+      "region": "APAC",
+      "updated_at": "2026-09-11T01:23:00Z"
+    },
+    {
+      "id": "customer-084",
+      "customer_id": "customer-084",
+      "name": "Customer 084",
+      "email": "customer084@example.invalid",
+      "tier": "gold",
+      "region": "US",
+      "updated_at": "2026-09-11T01:24:00Z"
+    },
+    {
+      "id": "customer-085",
+      "customer_id": "customer-085",
+      "name": "Customer 085",
+      "email": "customer085@example.invalid",
+      "tier": "gold",
+      "region": "EU",
+      "updated_at": "2026-09-11T01:25:00Z"
+    },
+    {
+      "id": "customer-086",
+      "customer_id": "customer-086",
+      "name": "Customer 086",
+      "email": "customer086@example.invalid",
+      "tier": "standard",
+      "region": "EU",
+      "updated_at": "2026-09-11T01:26:00Z"
+    },
+    {
+      "id": "customer-087",
+      "customer_id": "customer-087",
+      "name": "Customer 087",
+      "email": "customer087@example.invalid",
+      "tier": "standard",
+      "region": "APAC",
+      "updated_at": "2026-09-11T01:27:00Z"
+    },
+    {
+      "id": "customer-088",
+      "customer_id": "customer-088",
+      "name": "Customer 088",
+      "email": "customer088@example.invalid",
+      "tier": "platinum",
+      "region": "EU",
+      "updated_at": "2026-09-11T01:28:00Z"
+    },
+    {
+      "id": "customer-089",
+      "customer_id": "customer-089",
+      "name": "Customer 089",
+      "email": "customer089@example.invalid",
+      "tier": "platinum",
+      "region": "US",
+      "updated_at": "2026-09-11T01:29:00Z"
+    },
+    {
+      "id": "customer-090",
+      "customer_id": "customer-090",
+      "name": "Customer 090",
+      "email": "customer090@example.invalid",
+      "tier": "platinum",
+      "region": "US",
+      "updated_at": "2026-09-11T01:30:00Z"
+    },
+    {
+      "id": "customer-091",
+      "customer_id": "customer-091",
+      "name": "Customer 091",
+      "email": "customer091@example.invalid",
+      "tier": "platinum",
+      "region": "EU",
+      "updated_at": "2026-09-11T01:31:00Z"
+    },
+    {
+      "id": "customer-092",
+      "customer_id": "customer-092",
+      "name": "Customer 092",
+      "email": "customer092@example.invalid",
+      "tier": "platinum",
+      "region": "APAC",
+      "updated_at": "2026-09-11T01:32:00Z"
+    },
+    {
+      "id": "customer-093",
+      "customer_id": "customer-093",
+      "name": "Customer 093",
+      "email": "customer093@example.invalid",
+      "tier": "platinum",
+      "region": "US",
+      "updated_at": "2026-09-11T01:33:00Z"
+    },
+    {
+      "id": "customer-094",
+      "customer_id": "customer-094",
+      "name": "Customer 094",
+      "email": "customer094@example.invalid",
+      "tier": "standard",
+      "region": "EU",
+      "updated_at": "2026-09-11T01:34:00Z"
+    },
+    {
+      "id": "customer-095",
+      "customer_id": "customer-095",
+      "name": "Customer 095",
+      "email": "customer095@example.invalid",
+      "tier": "standard",
+      "region": "APAC",
+      "updated_at": "2026-09-11T01:35:00Z"
+    },
+    {
+      "id": "customer-096",
+      "customer_id": "customer-096",
+      "name": "Customer 096",
+      "email": "customer096@example.invalid",
+      "tier": "platinum",
+      "region": "US",
+      "updated_at": "2026-09-11T01:36:00Z"
+    },
+    {
+      "id": "customer-097",
+      "customer_id": "customer-097",
+      "name": "Customer 097",
+      "email": "customer097@example.invalid",
+      "tier": "platinum",
+      "region": "EU",
+      "updated_at": "2026-09-11T01:37:00Z"
+    },
+    {
+      "id": "customer-098",
+      "customer_id": "customer-098",
+      "name": "Customer 098",
+      "email": "customer098@example.invalid",
+      "tier": "gold",
+      "region": "US",
+      "updated_at": "2026-09-11T01:38:00Z"
+    },
+    {
+      "id": "customer-099",
+      "customer_id": "customer-099",
+      "name": "Customer 099",
+      "email": "customer099@example.invalid",
+      "tier": "standard",
+      "region": "EU",
+      "updated_at": "2026-09-11T01:39:00Z"
+    },
+    {
+      "id": "customer-100",
+      "customer_id": "customer-100",
+      "name": "Customer 100",
+      "email": "customer100@example.invalid",
+      "tier": "gold",
+      "region": "US",
+      "updated_at": "2026-09-11T01:40:00Z"
+    }
+  ],
+  "e2e_dataset": "shared-business-v1"
+}

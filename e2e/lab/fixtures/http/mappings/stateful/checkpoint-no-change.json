@@ -1,0 +1,26 @@
+{
+  "id": "a1000001-0001-4000-8000-000000000003",
+  "priority": 1,
+  "scenarioName": "checkpoint-incremental",
+  "requiredScenarioState": "no-change",
+  "newScenarioState": "new-data",
+  "request": {
+    "method": "GET",
+    "urlPath": "/shared-business/checkpoint"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "data": [],
+      "checkpoint": {
+        "cursor": "customer-002",
+        "updated_at": "2026-09-11T00:02:00Z"
+      },
+      "e2e_dataset": "shared-business-v1",
+      "note": "no-change poll"
+    }
+  }
+}

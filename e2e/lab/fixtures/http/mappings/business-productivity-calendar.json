@@ -13,6 +13,8 @@
         {
           "id": "evt-001",
           "e2e_correlation_id": "continuous-productivity-cal-001",
+          "message": "Quarterly planning",
+          "severity": "info",
           "subject": "Quarterly planning",
           "organizer": "example@example.com",
           "starts_at": "2026-09-12T15:00:00Z",

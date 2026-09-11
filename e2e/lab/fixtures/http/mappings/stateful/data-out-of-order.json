@@ -1,0 +1,37 @@
+{
+  "id": "a1000001-0001-4000-8000-000000000006",
+  "priority": 2,
+  "request": {
+    "method": "GET",
+    "urlPath": "/shared-business/data-shapes/out-of-order"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "data": [
+        {
+          "id": "customer-003",
+          "customer_id": "customer-003",
+          "name": "Customer 003",
+          "updated_at": "2026-09-11T00:03:00Z"
+        },
+        {
+          "id": "customer-001",
+          "customer_id": "customer-001",
+          "name": "Customer 001",
+          "updated_at": "2026-09-11T00:01:00Z"
+        },
+        {
+          "id": "customer-002",
+          "customer_id": "customer-002",
+          "name": "Customer 002",
+          "updated_at": "2026-09-11T00:02:00Z"
+        }
+      ],
+      "e2e_dataset": "shared-business-v1"
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "id": "a1000001-0001-4000-8000-000000000014",
+  "priority": 2,
+  "request": {
+    "method": "GET",
+    "urlPath": "/shared-business/schema/new-sensitive-field"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "data": [
+        {
+          "id": "customer-001",
+          "customer_id": "customer-001",
+          "name": "Customer 001",
+          "email": "customer001@example.invalid",
+          "ssn": "000-00-0001",
+          "credit_card": "4111111111111111",
+          "updated_at": "2026-09-11T00:01:00Z"
+        }
+      ],
+      "schema_version": "new-sensitive-field",
+      "e2e_dataset": "shared-business-v1"
+    }
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "id": "a1000001-0001-4000-8000-000000000001",
+  "priority": 1,
+  "scenarioName": "checkpoint-incremental",
+  "requiredScenarioState": "Started",
+  "newScenarioState": "no-change",
+  "request": {
+    "method": "GET",
+    "urlPath": "/shared-business/checkpoint"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "data": [
+        {
+          "id": "customer-001",
+          "customer_id": "customer-001",
+          "name": "Customer 001",
+          "updated_at": "2026-09-11T00:01:00Z"
+        },
+        {
+          "id": "customer-002",
+          "customer_id": "customer-002",
+          "name": "Customer 002",
+          "updated_at": "2026-09-11T00:02:00Z"
+        }
+      ],
+      "checkpoint": {
+        "cursor": "customer-002",
+        "updated_at": "2026-09-11T00:02:00Z"
+      },
+      "e2e_dataset": "shared-business-v1"
+    }
+  }
+}

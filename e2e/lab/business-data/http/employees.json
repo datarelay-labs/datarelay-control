@@ -1,0 +1,245 @@
+{
+  "data": [
+    {
+      "id": "employee-001",
+      "employee_id": "employee-001",
+      "name": "Employee 001",
+      "email": "employee001@example.invalid",
+      "department": "sales",
+      "updated_at": "2026-09-14T11:21:00Z"
+    },
+    {
+      "id": "employee-002",
+      "employee_id": "employee-002",
+      "name": "Employee 002",
+      "email": "employee002@example.invalid",
+      "department": "sales",
+      "updated_at": "2026-09-14T11:22:00Z"
+    },
+    {
+      "id": "employee-003",
+      "employee_id": "employee-003",
+      "name": "Employee 003",
+      "email": "employee003@example.invalid",
+      "department": "support",
+      "updated_at": "2026-09-14T11:23:00Z"
+    },
+    {
+      "id": "employee-004",
+      "employee_id": "employee-004",
+      "name": "Employee 004",
+      "email": "employee004@example.invalid",
+      "department": "sales",
+      "updated_at": "2026-09-14T11:24:00Z"
+    },
+    {
+      "id": "employee-005",
+      "employee_id": "employee-005",
+      "name": "Employee 005",
+      "email": "employee005@example.invalid",
+      "department": "ops",
+      "updated_at": "2026-09-14T11:25:00Z"
+    },
+    {
+      "id": "employee-006",
+      "employee_id": "employee-006",
+      "name": "Employee 006",
+      "email": "employee006@example.invalid",
+      "department": "support",
+      "updated_at": "2026-09-14T11:26:00Z"
+    },
+    {
+      "id": "employee-007",
+      "employee_id": "employee-007",
+      "name": "Employee 007",
+      "email": "employee007@example.invalid",
+      "department": "ops",
+      "updated_at": "2026-09-14T11:27:00Z"
+    },
+    {
+      "id": "employee-008",
+      "employee_id": "employee-008",
+      "name": "Employee 008",
+      "email": "employee008@example.invalid",
+      "department": "sales",
+      "updated_at": "2026-09-14T11:28:00Z"
+    },
+    {
+      "id": "employee-009",
+      "employee_id": "employee-009",
+      "name": "Employee 009",
+      "email": "employee009@example.invalid",
+      "department": "support",
+      "updated_at": "2026-09-14T11:29:00Z"
+    },
+    {
+      "id": "employee-010",
+      "employee_id": "employee-010",
+      "name": "Employee 010",
+      "email": "employee010@example.invalid",
+      "department": "ops",
+      "updated_at": "2026-09-14T11:30:00Z"
+    },
+    {
+      "id": "employee-011",
+      "employee_id": "employee-011",
+      "name": "Employee 011",
+      "email": "employee011@example.invalid",
+      "department": "sales",
+      "updated_at": "2026-09-14T11:31:00Z"
+    },
+    {
+      "id": "employee-012",
+      "employee_id": "employee-012",
+      "name": "Employee 012",
+      "email": "employee012@example.invalid",
+      "department": "support",
+      "updated_at": "2026-09-14T11:32:00Z"
+    },
+    {
+      "id": "employee-013",
+      "employee_id": "employee-013",
+      "name": "Employee 013",
+      "email": "employee013@example.invalid",
+      "department": "eng",
+      "updated_at": "2026-09-14T11:33:00Z"
+    },
+    {
+      "id": "employee-014",
+      "employee_id": "employee-014",
+      "name": "Employee 014",
+      "email": "employee014@example.invalid",
+      "department": "sales",
+      "updated_at": "2026-09-14T11:34:00Z"
+    },
+    {
+      "id": "employee-015",
+      "employee_id": "employee-015",
+      "name": "Employee 015",
+      "email": "employee015@example.invalid",
+      "department": "sales",
+      "updated_at": "2026-09-14T11:35:00Z"
+    },
+    {
+      "id": "employee-016",
+      "employee_id": "employee-016",
+      "name": "Employee 016",
+      "email": "employee016@example.invalid",
+      "department": "eng",
+      "updated_at": "2026-09-14T11:36:00Z"
+    },
+    {
+      "id": "employee-017",
+      "employee_id": "employee-017",
+      "name": "Employee 017",
+      "email": "employee017@example.invalid",
+      "department": "eng",
+      "updated_at": "2026-09-14T11:37:00Z"
+    },
+    {
+      "id": "employee-018",
+      "employee_id": "employee-018",
+      "name": "Employee 018",
+      "email": "employee018@example.invalid",
+      "department": "ops",
+      "updated_at": "2026-09-14T11:38:00Z"
+    },
+    {
+      "id": "employee-019",
+      "employee_id": "employee-019",
+      "name": "Employee 019",
+      "email": "employee019@example.invalid",
+      "department": "sales",
+      "updated_at": "2026-09-14T11:39:00Z"
+    },
+    {
+      "id": "employee-020",
+      "employee_id": "employee-020",
+      "name": "Employee 020",
+      "email": "employee020@example.invalid",
+      "department": "eng",
+      "updated_at": "2026-09-14T11:40:00Z"
+    },
+    {
+      "id": "employee-021",
+      "employee_id": "employee-021",
+      "name": "Employee 021",
+      "email": "employee021@example.invalid",
+      "department": "support",
+      "updated_at": "2026-09-14T11:41:00Z"
+    },
+    {
+      "id": "employee-022",
+      "employee_id": "employee-022",
+      "name": "Employee 022",
+      "email": "employee022@example.invalid",
+      "department": "sales",
+      "updated_at": "2026-09-14T11:42:00Z"
+    },
+    {
+      "id": "employee-023",
+      "employee_id": "employee-023",
+      "name": "Employee 023",
+      "email": "employee023@example.invalid",
+      "department": "ops",
+      "updated_at": "2026-09-14T11:43:00Z"
+    },
+    {
+      "id": "employee-024",
+      "employee_id": "employee-024",
+      "name": "Employee 024",
+      "email": "employee024@example.invalid",
+      "department": "eng",
+      "updated_at": "2026-09-14T11:44:00Z"
+    },
+    {
+      "id": "employee-025",
+      "employee_id": "employee-025",
+      "name": "Employee 025",
+      "email": "employee025@example.invalid",
+      "department": "sales",
+      "updated_at": "2026-09-14T11:45:00Z"
+    },
+    {
+      "id": "employee-026",
+      "employee_id": "employee-026",
+      "name": "Employee 026",
+      "email": "employee026@example.invalid",
+      "department": "sales",
+      "updated_at": "2026-09-14T11:46:00Z"
+    },
+    {
+      "id": "employee-027",
+      "employee_id": "employee-027",
+      "name": "Employee 027",
+      "email": "employee027@example.invalid",
+      "department": "eng",
+      "updated_at": "2026-09-14T11:47:00Z"
+    },
+    {
+      "id": "employee-028",
+      "employee_id": "employee-028",
+      "name": "Employee 028",
+      "email": "employee028@example.invalid",
+      "department": "eng",
+      "updated_at": "2026-09-14T11:48:00Z"
+    },
+    {
+      "id": "employee-029",
+      "employee_id": "employee-029",
+      "name": "Employee 029",
+      "email": "employee029@example.invalid",
+      "department": "eng",
+      "updated_at": "2026-09-14T11:49:00Z"
+    },
+    {
+      "id": "employee-030",
+      "employee_id": "employee-030",
+      "name": "Employee 030",
+      "email": "employee030@example.invalid",
+      "department": "sales",
+      "updated_at": "2026-09-14T11:50:00Z"
+    }
+  ],
+  "e2e_dataset": "shared-business-v1"
+}

@@ -1,0 +1,21 @@
+{
+  "id": "a1000001-0001-4000-8000-000000000007",
+  "priority": 1,
+  "scenarioName": "retry-429-then-200",
+  "requiredScenarioState": "Started",
+  "newScenarioState": "after-retry-after",
+  "request": {
+    "method": "GET",
+    "urlPath": "/shared-business/retry-429"
+  },
+  "response": {
+    "status": 429,
+    "headers": {
+      "Content-Type": "application/json",
+      "Retry-After": "1"
+    },
+    "jsonBody": {
+      "error": "rate_limited"
+    }
+  }
+}
