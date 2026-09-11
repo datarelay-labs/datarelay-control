@@ -46,17 +46,16 @@ Commands: `up` | `reset` | `test` | `matrix` | `collect` | `cleanup` | `cleanup-
 
 ## When Full E2E runs (developers)
 
-You do **not** need to run the Full Matrix (332) locally for routine work.
+You do **not** need to run the Full Matrix (332) or Cross-Product (32,184) for routine PR work.
 
 | Cadence | Who runs it | Scope |
 | ------- | ----------- | ----- |
-| PR | CI | Smoke 4 + capability/scenario coverage + **affected shards only** |
-| Nightly | CI | Full Matrix 332 × route-off/on + browser/API-seeded + merge + Release Gate |
-| Weekly | CI | Fault / recovery / checkpoint / dedup stability |
-| RC | CI (dispatch / RC branch) | Same commit Full Matrix **2×** consecutive PASS |
-| Release | CI (dispatch) | Latest PASS evidence commit match + age + FAIL/BLOCKED/GAP/Missing = 0 |
+| PR | GitHub Actions (path-filtered) | Cheap/unit checks — see **CI** below. Does **not** run Full Matrix 332 or XP 32k. |
+| Nightly (cron) | `e2e-regression.yml` | WireMock/syslog **pytest** regression (`e2e_regression`) — **not** the Playwright Full Matrix. |
+| Full Matrix 332 / XP / Release Gate / Continuous / Keycloak | **Manual** (`./e2e/run-full-e2e-lab.sh`, `npm` scripts under `e2e/`) | Explicit local or operator runs; **not** normal PR CI. |
+| Toxiproxy bandwidth | Manual only | Latency / timeout / TCP reset are automated locally; bandwidth is `MANUAL_ONLY`. |
 
-Local use: smoke, a single scenario, or an affected shard when debugging.
+Local use: smoke, a single scenario, an affected shard, Continuous Lab, or real-apps auth when debugging.
 
 ## Automatic resource cleanup
 
@@ -111,15 +110,16 @@ Generated: `e2e/scenarios/generated/*.json`
 
 ## Release Gate pipeline
 
+Release Gate tooling lives under `e2e/release-gate/` and is invoked **manually** (or via `./e2e/run-full-e2e-lab.sh release-gate …`). There is **no** GitHub Actions workflow that runs Full Matrix → merge → Release Gate on a schedule.
+
 ```text
-Pull Request  → Smoke + Coverage Gate + Baseline compare + Affected Matrix shards
-Main / Nightly → Full Matrix 332 (all shards × route-off/on) + Release Gate evaluate
-Weekly         → Fault + Recovery stability (separate signal)
-Release Candidate → Full Matrix consecutive 2× PASS (same commit, lab reset between)
-Release        → Evidence commit match + age + RC PASS (validation only; no tag/deploy)
+PR CI            → path-filtered backend/frontend + release-gate-unit (+ optional path E2E)
+Manual Full Lab  → smoke / matrix / merge / release-gate evaluate (operator-driven)
+Nightly CI       → WireMock pytest regression only (e2e-regression.yml)
+Full 332 / XP    → not automatically executed by normal PR CI
 ```
 
-Release PASS requires:
+Release PASS (when evaluating local evidence) requires:
 
 - FAIL / BLOCKED / GAP / Missing = 0
 - Browser / route-off / route-on complete
@@ -175,13 +175,28 @@ npm run release-gate:build-baseline -- --run-id <latest-pass-run>
 
 ## CI
 
+Actual workflows under `.github/workflows/` (there are **no** `full-e2e-*.yml` files):
+
 | Workflow | When | Scope |
 | -------- | ---- | ----- |
-| `full-e2e-lab-smoke.yml` | PR + dispatch | Capability/scenario validation, baseline compare, smoke, affected shards |
-| `full-e2e-matrix-nightly.yml` | Nightly + dispatch | Full Matrix shards × route off/on → merge → Release Gate |
-| `full-e2e-fault-weekly.yml` | Weekly + dispatch | Fault/runtime recovery stability |
-| `full-e2e-release-candidate.yml` | RC branch/tag + dispatch | Consecutive 2× Full Matrix PASS |
-| `full-e2e-release-gate.yml` | Dispatch | Commit/age/RC validation only (no tag/deploy) |
+| `backend-tests.yml` | PR/push `main-v2` + dispatch | Path-filtered `detect-paths` → conditional `migration-validation` / `pytest-full` |
+| `frontend-tests.yml` | PR/push `main-v2` + dispatch | Path-filtered `detect-paths` → conditional Vitest + build |
+| `oss-v1-release-validation.yml` | PR/push `main-v2` + dispatch | Always-on cheap `release-gate-unit` (OSS gate + route-compare unit tests) |
+| `e2e-smoke.yml` | PR (path-filtered) | WireMock + syslog pytest smoke |
+| `e2e-regression.yml` | Push `main`/`main-v2` + nightly cron + dispatch | WireMock pytest full regression |
+| `source-adapter-e2e.yml` | PR (path-filtered) + dispatch | Optional S3/DB/remote-file adapter E2E |
+| `external-runtime-e2e.yml` | PR (path-filtered) + dispatch | Optional StreamRunner external runtime E2E |
+| `docker-validate.yml` | PR/push (compose/script paths) + dispatch | Compose config, ShellCheck, lightweight secret scan |
+| `backend-focused.yml` / `frontend-focused.yml` | PR (narrow paths) | Focused pytest / frontend build |
+
+**Not automated by normal PR CI** (available as explicit/manual E2E tooling):
+
+- Full Matrix 332 (`./e2e/run-full-e2e-lab.sh all-matrix …`)
+- Cross-Product 32,184 runtime
+- Continuous E2E Lab (`e2e/continuous/`, `npm run continuous:*`)
+- Keycloak / real-apps auth stacks (`e2e/real-apps/` — Keycloak is ON_DEMAND)
+- Full Release Gate evaluate / RC consecutive Full Matrix PASS
+- Toxiproxy bandwidth faults (`MANUAL_ONLY`)
 
 ## Notes
 

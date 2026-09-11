@@ -298,10 +298,11 @@ CI_REQUIRED_CHECKS=PASS
 CI_FAILURES=none
 CI_FAILURE_CLASSIFICATION=n/a
 
-CI_WORKFLOW_STATE=DOC_STALE
-# README lists full-e2e-*.yml workflows that are not present; existing
+CI_WORKFLOW_STATE=DOC_FIXED
+# Stale full-e2e-*.yml references removed from e2e/README.md and e2e/COVERAGE.md.
+# Docs now describe path-filtered PR CI + manual Full Matrix / Continuous tooling.
 # e2e-smoke / e2e-regression / path-filtered backend+frontend checks remain VALID.
-# Do not add heavy Keycloak/32k PR workflows in this phase.
+# Do not add heavy Keycloak/32k PR workflows.
 
 KEYCLOAK_CI_MODE=ON_DEMAND
 TOXIPROXY_BANDWIDTH=MANUAL_ONLY
@@ -311,4 +312,22 @@ REAL_SAAS_LIVE_VALIDATED=0
 
 READY_TO_MERGE=YES
 MERGED=NO
+```
+
+---
+
+## PHASE=DATA_RELAY_LOCAL_E2E_PR29_FINAL_MERGE_CLOSURE
+
+Documentation/merge closure (no product code changes).
+
+```text
+PHASE=DATA_RELAY_LOCAL_E2E_PR29_FINAL_MERGE_CLOSURE
+
+START_HEAD=02dbf99
+STALE_WORKFLOW_REFERENCES_FOUND=YES
+STALE_WORKFLOW_REFERENCES_FIXED=YES
+CI_DOC_MODEL=path-filtered PR + release-gate-unit + optional path E2E; Full Matrix/XP/Continuous/Keycloak MANUAL
+CI_HEAVY_WORKFLOW_ADDED=NO
+PRODUCT_CODE_MODIFIED=NO
+DOCUMENTED_COMMANDS_VALIDATED=YES
 ```
