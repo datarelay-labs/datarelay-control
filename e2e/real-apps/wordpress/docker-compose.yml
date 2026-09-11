@@ -1,0 +1,35 @@
+# TEST-ONLY WordPress Basic Auth harness (not production).
+# Lightweight WP REST-compatible service. Full WordPress+MySQL deferred under memory pressure.
+
+services:
+  wordpress-basic-lab:
+    image: python:3.12-slim
+    container_name: gdc-wordpress-basic-lab
+    working_dir: /app
+    command: ["python", "-u", "/app/wordpress_basic_lab.py"]
+    volumes:
+      - ./wordpress_basic_lab.py:/app/wordpress_basic_lab.py:ro
+    environment:
+      WP_LAB_PORT: "8088"
+      WP_USER: wp-e2e-user
+      WP_PASSWORD: wp-e2e-pass
+    ports:
+      - "127.0.0.1:8088:8088"
+    networks:
+      - gdc-dev-validation
+    mem_limit: 128m
+    cpus: 0.25
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+    restart: "no"
+    labels:
+      gdc.e2e.ownership: continuous-e2e-lab
+      gdc.e2e.real_app: wordpress
+
+networks:
+  gdc-dev-validation:
+    external: true
+    name: gdc-dev-validation

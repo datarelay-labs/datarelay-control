@@ -1,11 +1,26 @@
 # Real Application E2E candidates (machine-readable).
 # Credentials MUST come from environment / secret store — never commit secrets.
+# Priority model: AUTH_COVERAGE | DATA_GENERATION | LONG_TERM_AVAILABILITY | AUTOMATION | OPERATIONAL_COST
+# Prefer self-hosted real apps for deterministic auth coverage over popular SaaS-only choices.
 # Status values: recommended | optional | defer | reject_for_now
+# priority: P0 | P1 | P2
 
-version: 1
+version: 2
 updated: "2026-09-11"
 credential_source: env
 env_template: .env.real-apps.example
+priority_model:
+  dimensions:
+    - AUTH_COVERAGE
+    - DATA_GENERATION
+    - LONG_TERM_AVAILABILITY
+    - AUTOMATION
+    - OPERATIONAL_COST
+  notes: >
+    Do not prioritize merely because a service is popular. Prefer self-hosted
+    apps when they provide better deterministic auth/data coverage (e.g. Frappe
+    session_login, WordPress Basic Auth). Mark product-unsupported OAuth
+    Authorization Code / PKCE as NOT_IMPLEMENTED — never fake them.
 
 defaults:
   capture_supported: true
@@ -14,35 +29,118 @@ defaults:
   live_validation_status_when_unconfigured: UNCONFIGURED
 
 candidates:
-  - id: hubspot
-    category: crm
-    service: HubSpot
+  # --- P0 -----------------------------------------------------------------
+  - id: frappe_erpnext
+    priority: P0
+    category: erp_crm
+    service: ERPNext/Frappe (self-host TEST-ONLY)
     enabled: false
-    data_profile: [contacts, companies, deals, tickets]
-    auth_type: oauth2_private_app_token
-    credential_source: env:HUBSPOT_ACCESS_TOKEN
-    base_url: https://api.hubapi.com
-    seed_strategy: developer_test_account_sample_data
+    data_profile: [customers, items, sales_orders, invoices, projects, tasks]
+    auth_type: session_login
+    product_auth_mapping: session_login
+    credential_source: env:FRAPPE_BASE_URL,FRAPPE_USER,FRAPPE_PASSWORD
+    base_url: http://127.0.0.1:8087
+    seed_strategy: deterministic_small_fixture_seed
+    capture_supported: true
+    continuous_safe: true
+    rate_limit_strategy: local_unlimited
+    free_or_trial: self_host_test_only
+    account_lifetime: unlimited
+    api_available: true
+    seeded_data: true
+    can_automate: true
+    e2e_value: critical
+    operational_burden: medium
+    recommendation: recommended
+    scores:
+      AUTH_COVERAGE: 5
+      DATA_GENERATION: 5
+      LONG_TERM_AVAILABILITY: 5
+      AUTOMATION: 5
+      OPERATIONAL_COST: 4
+    purpose: session_login + cookie persistence + ERP/CRM business data
+    notes: >
+      Highest-priority session_login reference. Lab compose under
+      e2e/real-apps/frappe/ (lightweight Frappe API-compatible harness when full
+      ERPNext Docker exceeds host memory). Exercises real Data Relay session_login.
+
+  - id: wordpress
+    priority: P0
+    category: cms
+    service: WordPress (self-host TEST-ONLY)
+    enabled: false
+    data_profile: [posts, pages, users, comments, categories]
+    auth_type: basic
+    product_auth_mapping: basic
+    credential_source: env:WORDPRESS_BASE_URL,WORDPRESS_USER,WORDPRESS_APP_PASSWORD
+    base_url: http://127.0.0.1:8088
+    seed_strategy: deterministic_wp_rest_seed
+    capture_supported: true
+    continuous_safe: true
+    rate_limit_strategy: local_unlimited
+    free_or_trial: self_host_test_only
+    account_lifetime: unlimited
+    api_available: true
+    seeded_data: true
+    can_automate: true
+    e2e_value: critical
+    operational_burden: medium
+    recommendation: recommended
+    scores:
+      AUTH_COVERAGE: 5
+      DATA_GENERATION: 4
+      LONG_TERM_AVAILABILITY: 5
+      AUTOMATION: 5
+      OPERATIONAL_COST: 3
+    purpose: HTTP Basic authentication + real REST data
+    notes: >
+      Basic Auth reference against WP REST shapes. Full WordPress+MySQL may be
+      deferred when Docker memory is constrained; lightweight WP-REST-compatible
+      harness preferred over duplicating WireMock Basic protocol tests.
+
+  - id: salesforce
+    priority: P0
+    category: crm
+    service: Salesforce Developer Edition
+    enabled: false
+    data_profile: [contacts, accounts, opportunities, cases]
+    auth_type: oauth2_client_credentials_or_username_password
+    product_auth_mapping: oauth2_client_credentials
+    unsupported_product_flows: [oauth2_authorization_code, pkce]
+    credential_source: env:SALESFORCE_CLIENT_ID,SALESFORCE_CLIENT_SECRET,SALESFORCE_USERNAME,SALESFORCE_PASSWORD
+    base_url: https://{instance}.salesforce.com/services/data/v{version}
+    seed_strategy: developer_edition_sample_objects
     capture_supported: true
     continuous_safe: false
-    rate_limit_strategy: respect_retry_after_backoff
-    free_or_trial: free_developer_test_accounts
-    account_lifetime: test_accounts_up_to_10_enterprise_trial_features_90d
+    rate_limit_strategy: daily_api_limits
+    free_or_trial: developer_edition_free
+    account_lifetime: persistent_with_activity
     api_available: true
     seeded_data: true
     can_automate: true
     e2e_value: high
-    operational_burden: low
+    operational_burden: high
     recommendation: recommended
-    notes: "Strong CRM general-data fit; private app token for automation."
+    scores:
+      AUTH_COVERAGE: 4
+      DATA_GENERATION: 5
+      LONG_TERM_AVAILABILITY: 4
+      AUTOMATION: 3
+      OPERATIONAL_COST: 2
+    purpose: supported OAuth flows / bearer + CRM data
+    notes: >
+      Use only flows Data Relay supports today (client_credentials / password-style
+      where mapped). Authorization Code and PKCE remain NOT_IMPLEMENTED.
 
   - id: shopify
+    priority: P0
     category: commerce
-    service: Shopify
+    service: Shopify Dev Store
     enabled: false
     data_profile: [customers, products, orders, inventory]
-    auth_type: oauth2_admin_api_access_token
-    credential_source: env:SHOPIFY_ADMIN_ACCESS_TOKEN
+    auth_type: header_token_admin_api
+    product_auth_mapping: api_key_header
+    credential_source: env:SHOPIFY_ADMIN_ACCESS_TOKEN,SHOPIFY_SHOP
     base_url: https://{shop}.myshopify.com/admin/api/{version}
     seed_strategy: partner_development_store
     capture_supported: true
@@ -56,37 +154,118 @@ candidates:
     e2e_value: high
     operational_burden: medium
     recommendation: recommended
+    scores:
+      AUTH_COVERAGE: 4
+      DATA_GENERATION: 5
+      LONG_TERM_AVAILABILITY: 4
+      AUTOMATION: 4
+      OPERATIONAL_COST: 3
+    purpose: header token/API key + commerce data
     notes: "Excellent commerce coverage; use development store only."
 
-  - id: stripe
-    category: finance
-    service: Stripe
+  - id: openweather
+    priority: P0
+    category: external_data
+    service: OpenWeather
     enabled: false
-    data_profile: [customers, invoices, subscriptions, payments, events]
-    auth_type: bearer_secret_key_test_mode
-    credential_source: env:STRIPE_TEST_SECRET_KEY
-    base_url: https://api.stripe.com
-    seed_strategy: test_mode_fixtures_and_test_clocks
+    data_profile: [current_weather, forecasts]
+    auth_type: api_key_query
+    product_auth_mapping: api_key_query
+    credential_source: env:OPENWEATHER_API_KEY
+    base_url: https://api.openweathermap.org/data/2.5
+    seed_strategy: live_changing_external_data
     capture_supported: true
-    continuous_safe: false
-    rate_limit_strategy: stripe_rate_limit_headers
-    free_or_trial: test_mode_free
-    account_lifetime: persistent_test_mode
+    continuous_safe: true
+    rate_limit_strategy: free_tier_calls_per_minute
+    free_or_trial: free_tier
+    account_lifetime: unlimited
     api_available: true
-    seeded_data: true
+    seeded_data: live
     can_automate: true
     e2e_value: high
     operational_burden: low
     recommendation: recommended
-    notes: "Best finance candidate; test-mode keys only."
+    scores:
+      AUTH_COVERAGE: 4
+      DATA_GENERATION: 5
+      LONG_TERM_AVAILABILITY: 5
+      AUTOMATION: 5
+      OPERATIONAL_COST: 5
+    purpose: query API key + continuously changing external data
+    notes: "Ideal continuous-data source; free tier key required."
 
+  - id: github
+    priority: P0
+    category: productivity
+    service: GitHub
+    enabled: false
+    data_profile: [issues, pull_requests, repositories, users]
+    auth_type: no_auth_or_bearer_pat
+    product_auth_mapping: [no_auth, bearer]
+    credential_source: env:GITHUB_TOKEN
+    base_url: https://api.github.com
+    seed_strategy: dedicated_e2e_org_fixtures
+    capture_supported: true
+    continuous_safe: false
+    rate_limit_strategy: secondary_rate_limits
+    free_or_trial: free
+    account_lifetime: persistent
+    api_available: true
+    seeded_data: create_own
+    can_automate: true
+    e2e_value: high
+    operational_burden: low
+    recommendation: recommended
+    scores:
+      AUTH_COVERAGE: 5
+      DATA_GENERATION: 4
+      LONG_TERM_AVAILABILITY: 5
+      AUTOMATION: 5
+      OPERATIONAL_COST: 5
+    purpose: no-auth + bearer
+    notes: "Easy dual auth coverage; create dedicated e2e org for bearer."
+
+  - id: neon_postgresql
+    priority: P0
+    category: database
+    service: Neon PostgreSQL
+    enabled: false
+    data_profile: [tables, rows, incremental_queries]
+    auth_type: db_username_password
+    product_auth_mapping: db_password
+    credential_source: env:NEON_DATABASE_URL
+    base_url: postgresql://{user}:{pass}@{host}/{db}
+    seed_strategy: small_remote_schema_seed
+    capture_supported: false
+    continuous_safe: true
+    rate_limit_strategy: connection_limits
+    free_or_trial: free_tier
+    account_lifetime: free_tier_with_suspend
+    api_available: true
+    seeded_data: create_own
+    can_automate: true
+    e2e_value: high
+    operational_burden: low
+    recommendation: recommended
+    scores:
+      AUTH_COVERAGE: 5
+      DATA_GENERATION: 4
+      LONG_TERM_AVAILABILITY: 4
+      AUTOMATION: 5
+      OPERATIONAL_COST: 4
+    purpose: real remote PostgreSQL username/password
+    notes: "Remote DB password auth; prefer over inventing another SaaS."
+
+  # --- P1 -----------------------------------------------------------------
   - id: atlassian_jira
+    priority: P1
     category: itsm_productivity
-    service: Atlassian Jira Cloud
+    service: Atlassian Developer (Jira Cloud)
     enabled: false
     data_profile: [issues, projects, comments, users]
     auth_type: basic_email_api_token
-    credential_source: env:ATLASSIAN_API_TOKEN
+    product_auth_mapping: basic
+    credential_source: env:ATLASSIAN_API_TOKEN,ATLASSIAN_EMAIL,ATLASSIAN_SITE
     base_url: https://{site}.atlassian.net/rest/api/3
     seed_strategy: free_developer_cloud_instance
     capture_supported: true
@@ -99,15 +278,151 @@ candidates:
     can_automate: true
     e2e_value: high
     operational_burden: medium
-    recommendation: recommended
-    notes: "ITSM/productivity; pair with Confluence optionally."
+    recommendation: optional
+    scores:
+      AUTH_COVERAGE: 4
+      DATA_GENERATION: 4
+      LONG_TERM_AVAILABILITY: 3
+      AUTOMATION: 4
+      OPERATIONAL_COST: 3
+    purpose: Basic (email+token) ITSM/productivity
+    notes: "Useful after self-host Basic (WordPress) is covered."
 
+  - id: okta
+    priority: P1
+    category: identity
+    service: Okta Integrator Free
+    enabled: false
+    data_profile: [users, groups, system_logs]
+    auth_type: oauth2_client_credentials_or_ssws_token
+    product_auth_mapping: oauth2_client_credentials
+    credential_source: env:OKTA_DOMAIN,OKTA_API_TOKEN,OKTA_CLIENT_ID,OKTA_CLIENT_SECRET
+    base_url: https://{domain}/api/v1
+    seed_strategy: integrator_org_seed_users
+    capture_supported: true
+    continuous_safe: false
+    rate_limit_strategy: okta_rate_limits
+    free_or_trial: integrator_free_plan
+    account_lifetime: free_with_activity_within_90d
+    api_available: true
+    seeded_data: partial
+    can_automate: true
+    e2e_value: medium
+    operational_burden: medium
+    recommendation: optional
+    scores:
+      AUTH_COVERAGE: 4
+      DATA_GENERATION: 3
+      LONG_TERM_AVAILABILITY: 3
+      AUTOMATION: 4
+      OPERATIONAL_COST: 3
+    purpose: OAuth client_credentials realism
+    notes: "Local WireMock already covers protocol; Okta adds vendor realism."
+
+  - id: hubspot
+    priority: P1
+    category: crm
+    service: HubSpot Developer
+    enabled: false
+    data_profile: [contacts, companies, deals, tickets]
+    auth_type: private_app_token
+    product_auth_mapping: bearer
+    credential_source: env:HUBSPOT_ACCESS_TOKEN
+    base_url: https://api.hubapi.com
+    seed_strategy: developer_test_account_sample_data
+    capture_supported: true
+    continuous_safe: false
+    rate_limit_strategy: respect_retry_after_backoff
+    free_or_trial: free_developer_test_accounts
+    account_lifetime: test_accounts_up_to_10_enterprise_trial_features_90d
+    api_available: true
+    seeded_data: true
+    can_automate: true
+    e2e_value: high
+    operational_burden: low
+    recommendation: optional
+    scores:
+      AUTH_COVERAGE: 3
+      DATA_GENERATION: 5
+      LONG_TERM_AVAILABILITY: 3
+      AUTOMATION: 5
+      OPERATIONAL_COST: 4
+    purpose: CRM bearer token data
+    notes: "Strong CRM data; P1 because Frappe covers session CRM and Salesforce is P0 OAuth/CRM."
+
+  # --- P2 -----------------------------------------------------------------
+  - id: stripe
+    priority: P2
+    category: finance
+    service: Stripe Sandbox
+    enabled: false
+    data_profile: [customers, invoices, subscriptions, payments, events]
+    auth_type: bearer_secret_key_test_mode
+    product_auth_mapping: bearer
+    credential_source: env:STRIPE_TEST_SECRET_KEY
+    base_url: https://api.stripe.com
+    seed_strategy: test_mode_fixtures_and_test_clocks
+    capture_supported: true
+    continuous_safe: false
+    rate_limit_strategy: stripe_rate_limit_headers
+    free_or_trial: test_mode_free
+    account_lifetime: persistent_test_mode
+    api_available: true
+    seeded_data: true
+    can_automate: true
+    e2e_value: medium
+    operational_burden: low
+    recommendation: optional
+    scores:
+      AUTH_COVERAGE: 3
+      DATA_GENERATION: 4
+      LONG_TERM_AVAILABILITY: 5
+      AUTOMATION: 5
+      OPERATIONAL_COST: 4
+    purpose: finance bearer sandbox
+    notes: "Good finance depth; P2 after self-host + P0 auth matrix coverage."
+
+  - id: microsoft_365
+    priority: P2
+    category: productivity_collaboration
+    service: Microsoft 365 Developer
+    enabled: false
+    data_profile: [users, mail_metadata, calendar, teams_messages, files]
+    auth_type: oauth2_client_credentials
+    product_auth_mapping: oauth2_client_credentials
+    unsupported_product_flows: [oauth2_authorization_code, pkce]
+    credential_source: env:M365_CLIENT_ID,M365_CLIENT_SECRET,M365_TENANT_ID
+    base_url: https://graph.microsoft.com/v1.0
+    seed_strategy: e5_instant_sandbox_sample_packs
+    capture_supported: true
+    continuous_safe: false
+    rate_limit_strategy: graph_throttle_headers
+    free_or_trial: free_e5_sandbox_renewable_with_activity
+    account_lifetime: up_to_90_days_renewable
+    api_available: true
+    seeded_data: true
+    can_automate: true
+    e2e_value: medium
+    operational_burden: high
+    recommendation: defer
+    scores:
+      AUTH_COVERAGE: 3
+      DATA_GENERATION: 4
+      LONG_TERM_AVAILABILITY: 2
+      AUTOMATION: 3
+      OPERATIONAL_COST: 1
+    purpose: Graph OAuth client_credentials
+    notes: "High setup burden; auth-code/PKCE NOT_IMPLEMENTED — do not fake."
+
+  # --- retained optional / lower priority ---------------------------------
   - id: atlassian_confluence
+    priority: P2
     category: productivity
     service: Atlassian Confluence Cloud
     enabled: false
     data_profile: [pages, spaces, comments]
     auth_type: basic_email_api_token
+    product_auth_mapping: basic
     credential_source: env:ATLASSIAN_API_TOKEN
     base_url: https://{site}.atlassian.net/wiki/rest/api
     seed_strategy: free_developer_cloud_instance
@@ -122,58 +437,22 @@ candidates:
     e2e_value: medium
     operational_burden: medium
     recommendation: optional
-    notes: "Useful documents/productivity coverage after Jira."
-
-  - id: microsoft_365
-    category: productivity_collaboration
-    service: Microsoft 365 Developer Program
-    enabled: false
-    data_profile: [users, mail_metadata, calendar, teams_messages, files]
-    auth_type: oauth2_client_credentials_or_delegated
-    credential_source: env:M365_CLIENT_ID,M365_CLIENT_SECRET,M365_TENANT_ID
-    base_url: https://graph.microsoft.com/v1.0
-    seed_strategy: e5_instant_sandbox_sample_packs
-    capture_supported: true
-    continuous_safe: false
-    rate_limit_strategy: graph_throttle_headers
-    free_or_trial: free_e5_sandbox_renewable_with_activity
-    account_lifetime: up_to_90_days_renewable
-    api_available: true
-    seeded_data: true
-    can_automate: true
-    e2e_value: high
-    operational_burden: high
-    recommendation: recommended
-    notes: "High value; OAuth app registration + Graph permissions burden."
-
-  - id: salesforce
-    category: crm
-    service: Salesforce Developer Edition
-    enabled: false
-    data_profile: [contacts, accounts, opportunities, cases]
-    auth_type: oauth2_username_password_or_jwt_bearer
-    credential_source: env:SALESFORCE_CLIENT_ID,SALESFORCE_CLIENT_SECRET,SALESFORCE_USERNAME,SALESFORCE_PASSWORD
-    base_url: https://{instance}.salesforce.com/services/data/v{version}
-    seed_strategy: developer_edition_sample_objects
-    capture_supported: true
-    continuous_safe: false
-    rate_limit_strategy: daily_api_limits
-    free_or_trial: developer_edition_free
-    account_lifetime: persistent_with_activity
-    api_available: true
-    seeded_data: true
-    can_automate: true
-    e2e_value: high
-    operational_burden: high
-    recommendation: optional
-    notes: "Strong CRM; heavier auth/setup than HubSpot."
+    scores:
+      AUTH_COVERAGE: 3
+      DATA_GENERATION: 3
+      LONG_TERM_AVAILABILITY: 3
+      AUTOMATION: 4
+      OPERATIONAL_COST: 3
+    notes: "After Jira; documents/productivity."
 
   - id: servicenow
+    priority: P2
     category: itsm
     service: ServiceNow Personal Developer Instance
     enabled: false
     data_profile: [incidents, problems, changes, assets, users]
     auth_type: basic_or_oauth2
+    product_auth_mapping: basic
     credential_source: env:SERVICENOW_INSTANCE_URL,SERVICENOW_USER,SERVICENOW_PASSWORD
     base_url: https://{instance}.service-now.com/api
     seed_strategy: pdi_demo_data
@@ -185,17 +464,25 @@ candidates:
     api_available: true
     seeded_data: true
     can_automate: true
-    e2e_value: high
+    e2e_value: medium
     operational_burden: high
-    recommendation: optional
-    notes: "Best ITSM depth; PDI hibernation operational cost."
+    recommendation: defer
+    scores:
+      AUTH_COVERAGE: 3
+      DATA_GENERATION: 5
+      LONG_TERM_AVAILABILITY: 2
+      AUTOMATION: 3
+      OPERATIONAL_COST: 1
+    notes: "PDI hibernation operational cost; Frappe covers ERP/ITSM-ish session data."
 
   - id: slack
+    priority: P2
     category: collaboration
     service: Slack developer sandbox
     enabled: false
     data_profile: [users, channels, messages]
     auth_type: bot_token_oauth
+    product_auth_mapping: bearer
     credential_source: env:SLACK_BOT_TOKEN
     base_url: https://slack.com/api
     seed_strategy: developer_sandbox_workspace
@@ -207,17 +494,26 @@ candidates:
     api_available: true
     seeded_data: partial
     can_automate: true
-    e2e_value: medium
+    e2e_value: low
     operational_burden: medium
     recommendation: optional
-    notes: "Collaboration coverage; message history/PII sanitization required."
+    scores:
+      AUTH_COVERAGE: 2
+      DATA_GENERATION: 3
+      LONG_TERM_AVAILABILITY: 3
+      AUTOMATION: 4
+      OPERATIONAL_COST: 3
+    notes: "PII sanitization required; lower auth uniqueness vs bearer elsewhere."
 
   - id: quickbooks
+    priority: P2
     category: finance
     service: QuickBooks Online sandbox
     enabled: false
     data_profile: [customers, invoices, payments, items]
     auth_type: oauth2_authorization_code
+    product_auth_mapping: NOT_IMPLEMENTED
+    unsupported_product_flows: [oauth2_authorization_code, pkce]
     credential_source: env:QBO_CLIENT_ID,QBO_CLIENT_SECRET,QBO_REFRESH_TOKEN,QBO_REALM_ID
     base_url: https://sandbox-quickbooks.api.intuit.com/v3
     seed_strategy: sandbox_company_sample_data
@@ -229,61 +525,25 @@ candidates:
     api_available: true
     seeded_data: true
     can_automate: partial
-    e2e_value: medium
+    e2e_value: low
     operational_burden: high
-    recommendation: optional
-    notes: "Auth-code/refresh lifecycle; product lacks auth-code — API mapping gap."
-
-  - id: okta
-    category: identity
-    service: Okta Integrator Free Plan
-    enabled: false
-    data_profile: [users, groups, system_logs]
-    auth_type: oauth2_client_credentials_or_ssws_token
-    credential_source: env:OKTA_DOMAIN,OKTA_API_TOKEN
-    base_url: https://{domain}/api/v1
-    seed_strategy: integrator_org_seed_users
-    capture_supported: true
-    continuous_safe: false
-    rate_limit_strategy: okta_rate_limits
-    free_or_trial: integrator_free_plan
-    account_lifetime: free_with_activity_within_90d
-    api_available: true
-    seeded_data: partial
-    can_automate: true
-    e2e_value: medium
-    operational_burden: medium
-    recommendation: optional
-    notes: "Useful for OAuth/token realism; local WireMock already covers protocol."
-
-  - id: github
-    category: productivity
-    service: GitHub
-    enabled: false
-    data_profile: [issues, pull_requests, repositories, users]
-    auth_type: bearer_pat_or_github_app
-    credential_source: env:GITHUB_TOKEN
-    base_url: https://api.github.com
-    seed_strategy: dedicated_e2e_org_fixtures
-    capture_supported: true
-    continuous_safe: false
-    rate_limit_strategy: secondary_rate_limits
-    free_or_trial: free
-    account_lifetime: persistent
-    api_available: true
-    seeded_data: create_own
-    can_automate: true
-    e2e_value: medium
-    operational_burden: low
-    recommendation: recommended
-    notes: "Easy additional general-data source; create dedicated e2e org."
+    recommendation: reject_for_now
+    scores:
+      AUTH_COVERAGE: 1
+      DATA_GENERATION: 4
+      LONG_TERM_AVAILABILITY: 3
+      AUTOMATION: 2
+      OPERATIONAL_COST: 2
+    notes: "Requires auth-code — product NOT_IMPLEMENTED. Do not fake."
 
   - id: airtable
+    priority: P2
     category: generic_business
     service: Airtable
     enabled: false
     data_profile: [records, tables, users]
     auth_type: bearer_pat
+    product_auth_mapping: bearer
     credential_source: env:AIRTABLE_PAT
     base_url: https://api.airtable.com/v0
     seed_strategy: base_with_sample_tables
@@ -298,14 +558,22 @@ candidates:
     e2e_value: medium
     operational_burden: low
     recommendation: optional
-    notes: "Nested/generic business records; good schema-drift playground."
+    scores:
+      AUTH_COVERAGE: 2
+      DATA_GENERATION: 4
+      LONG_TERM_AVAILABILITY: 4
+      AUTOMATION: 5
+      OPERATIONAL_COST: 4
+    notes: "Schema-drift playground; auth already covered by bearer P0s."
 
   - id: notion
+    priority: P2
     category: productivity
     service: Notion
     enabled: false
     data_profile: [pages, databases, users, comments]
     auth_type: bearer_internal_integration
+    product_auth_mapping: bearer
     credential_source: env:NOTION_TOKEN
     base_url: https://api.notion.com/v1
     seed_strategy: workspace_with_sample_db
@@ -317,7 +585,13 @@ candidates:
     api_available: true
     seeded_data: create_own
     can_automate: true
-    e2e_value: medium
+    e2e_value: low
     operational_burden: low
     recommendation: optional
-    notes: "Documents/productivity; Notion-Version header required."
+    scores:
+      AUTH_COVERAGE: 2
+      DATA_GENERATION: 3
+      LONG_TERM_AVAILABILITY: 4
+      AUTOMATION: 4
+      OPERATIONAL_COST: 4
+    notes: "Notion-Version header required; lower priority vs P0 matrix."
