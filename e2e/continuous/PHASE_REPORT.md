@@ -255,3 +255,60 @@ NEXT_PHASE=DATA_RELAY_REAL_SAAS_E2E_VALIDATION
 Local coverage is complete. Remaining work is real SaaS/vendor compatibility
 (Salesforce, Shopify, Okta SaaS, etc.) — out of scope for local closure.
 Do not start that phase from this report alone.
+
+---
+
+## PHASE=DATA_RELAY_LOCAL_E2E_PUSH_PR_CI_CLOSURE
+
+Publication/CI closure metadata (no product code changes).
+
+```text
+PHASE=DATA_RELAY_LOCAL_E2E_PUSH_PR_CI_CLOSURE
+
+FINAL_STATUS=PASS
+
+START_HEAD=6a5ffcc
+FINAL_HEAD=(see git after this commit)
+
+BASE_REMOTE_HEAD=4c784ca
+MERGE_BASE=4c784ca
+BRANCH_AHEAD=11
+BRANCH_BEHIND=0
+BASE_DRIFT_CLASSIFICATION=NO_DRIFT
+
+PRODUCT_CODE_MODIFIED=NO
+OTHER_PRODUCT_PATHS=0
+
+SECRET_SCAN=PASS
+RUNTIME_ARTIFACT_SCAN=PASS
+
+TARGETED_PRE_PUSH_TESTS=PASS
+FULL_32K_RUNTIME_EXECUTED=NO
+
+PUSH_STATUS=PASS
+REMOTE_BRANCH=origin/test/e2e-continuous-lab
+REMOTE_HEAD=6a5ffcc
+
+PR_STATUS=OPEN
+PR_NUMBER=29
+PR_URL=https://github.com/datarelay-labs/gdc-platform/pull/29
+
+PR_DIFF_REVIEW=PASS
+CI_REQUIRED_CHECKS=PASS
+CI_FAILURES=none
+CI_FAILURE_CLASSIFICATION=n/a
+
+CI_WORKFLOW_STATE=DOC_STALE
+# README lists full-e2e-*.yml workflows that are not present; existing
+# e2e-smoke / e2e-regression / path-filtered backend+frontend checks remain VALID.
+# Do not add heavy Keycloak/32k PR workflows in this phase.
+
+KEYCLOAK_CI_MODE=ON_DEMAND
+TOXIPROXY_BANDWIDTH=MANUAL_ONLY
+
+REAL_SAAS_STARTED=NO
+REAL_SAAS_LIVE_VALIDATED=0
+
+READY_TO_MERGE=YES
+MERGED=NO
+```
