@@ -15,6 +15,7 @@ import {
   CONTINUOUS_ROOT,
 } from './scenario-controller.js'
 import { CONTINUOUS_OWNERSHIP, CONTINUOUS_NAME_PREFIX } from './lifecycle.js'
+import { liveEnsureAll, liveTeardownContinuous, writeEnsureLiveReport } from './live-ensure.js'
 
 function hasFlag(name: string): boolean {
   return process.argv.includes(name)
@@ -38,7 +39,7 @@ async function ensureDryPlan(): Promise<object> {
     ok: true,
     mode: 'ensure-plan',
     note:
-      'API ensure requires a running lab. This command writes the ensure plan and initializes controller state. Live create is opt-in via GDC_CONTINUOUS_LIVE_ENSURE=1.',
+      'API ensure requires a running lab. Live create is opt-in via GDC_CONTINUOUS_LIVE_ENSURE=1.',
     live: process.env.GDC_CONTINUOUS_LIVE_ENSURE === '1',
     plan,
   }
@@ -47,7 +48,7 @@ async function ensureDryPlan(): Promise<object> {
 async function main(): Promise<void> {
   const cmd = process.argv[2]
   if (!cmd) {
-    console.error('Usage: validate|tick|report|ensure|teardown [--force] [--dry-run]')
+    console.error('Usage: validate|tick|report|ensure|teardown|reset [--force] [--dry-run]')
     process.exit(2)
   }
 
@@ -82,7 +83,42 @@ async function main(): Promise<void> {
     const out = path.join(CONTINUOUS_ROOT, 'state', 'ensure-plan.json')
     fs.mkdirSync(path.dirname(out), { recursive: true })
     fs.writeFileSync(out, JSON.stringify(plan, null, 2) + '\n')
+
+    if (process.env.GDC_CONTINUOUS_LIVE_ENSURE === '1') {
+      const live = await liveEnsureAll({ includeRealApps: !hasFlag('--skip-real-apps') })
+      const livePath = writeEnsureLiveReport(live, CONTINUOUS_ROOT)
+      console.log(JSON.stringify({ ...plan, live, liveReportPath: livePath }, null, 2))
+      if (!live.ok) process.exitCode = 1
+      return
+    }
+
     console.log(JSON.stringify(plan, null, 2))
+    return
+  }
+
+  if (cmd === 'reset') {
+    // Safe continuous reset: clear controller fault state + toxiproxy/lab faults; keep platform resources.
+    const profile = loadProfile()
+    const state = emptyState(profile)
+    saveState(state)
+    try {
+      tick({ force: false, dryRun: false })
+    } catch {
+      /* ignore */
+    }
+    const { clearFault } = await import('./scenario-controller.js')
+    clearFault({ kind: 'toxiproxy', toxic: 'latency', target: 'wiremock' })
+    console.log(
+      JSON.stringify(
+        {
+          ok: true,
+          ownership: CONTINUOUS_OWNERSHIP,
+          note: 'Controller state reset; platform continuous resources retained. Use teardown for full continuous delete.',
+        },
+        null,
+        2,
+      ),
+    )
     return
   }
 
@@ -92,12 +128,29 @@ async function main(): Promise<void> {
     if (state && state.ownership !== CONTINUOUS_OWNERSHIP) {
       throw new Error(`refuse teardown: ownership ${state.ownership}`)
     }
+    let live: unknown = null
+    if (process.env.GDC_CONTINUOUS_LIVE_ENSURE === '1' || hasFlag('--live')) {
+      live = await liveTeardownContinuous()
+    }
     if (fs.existsSync(STATE_PATH)) fs.unlinkSync(STATE_PATH)
-    const report = path.join(CONTINUOUS_ROOT, 'state', 'health-report.json')
-    if (fs.existsSync(report)) fs.unlinkSync(report)
-    const plan = path.join(CONTINUOUS_ROOT, 'state', 'ensure-plan.json')
-    if (fs.existsSync(plan)) fs.unlinkSync(plan)
-    console.log(JSON.stringify({ ok: true, toreDownState: true, note: 'Platform resources require explicit API teardown when live-created.' }, null, 2))
+    for (const f of ['health-report.json', 'ensure-plan.json', 'live-ensure-report.json', 'live-validation-report.json']) {
+      const p = path.join(CONTINUOUS_ROOT, 'state', f)
+      if (fs.existsSync(p)) fs.unlinkSync(p)
+    }
+    console.log(
+      JSON.stringify(
+        {
+          ok: true,
+          toreDownState: true,
+          live,
+          note: live
+            ? 'Continuous-owned platform resources deleted by name prefix.'
+            : 'State cleared. Pass --live or GDC_CONTINUOUS_LIVE_ENSURE=1 to delete platform continuous resources.',
+        },
+        null,
+        2,
+      ),
+    )
     return
   }
 

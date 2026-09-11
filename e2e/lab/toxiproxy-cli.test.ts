@@ -27,12 +27,16 @@ function main(): void {
   assert.notEqual(help.status, 0)
   assert.match(help.stdout + help.stderr, /latency|timeout|reset/)
 
-  // Without Toxiproxy up, start should fail deterministically (not hang).
+  // If Toxiproxy is down, start fails deterministically. If already up with proxy, start succeeds.
   const start = spawnSync('bash', [script, 'start', 'latency', 'wiremock', '100', '0'], {
     encoding: 'utf8',
     timeout: 15_000,
   })
-  assert.notEqual(start.status, 0)
+  if (start.status === 0) {
+    spawnSync('bash', [script, 'stop', 'wiremock'], { encoding: 'utf8', timeout: 15_000 })
+  } else {
+    assert.match(start.stdout + start.stderr, /ERROR|not found|toxiproxy/i)
+  }
 
   console.log(JSON.stringify({ ok: true, proxies: proxies.map((p) => p.name), decision: 'ADOPT_TEST_ONLY' }, null, 2))
 }
