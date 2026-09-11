@@ -1,0 +1,323 @@
+# Real Application E2E candidates (machine-readable).
+# Credentials MUST come from environment / secret store — never commit secrets.
+# Status values: recommended | optional | defer | reject_for_now
+
+version: 1
+updated: "2026-09-11"
+credential_source: env
+env_template: .env.real-apps.example
+
+defaults:
+  capture_supported: true
+  continuous_safe: false
+  sanitize_before_commit: true
+  live_validation_status_when_unconfigured: UNCONFIGURED
+
+candidates:
+  - id: hubspot
+    category: crm
+    service: HubSpot
+    enabled: false
+    data_profile: [contacts, companies, deals, tickets]
+    auth_type: oauth2_private_app_token
+    credential_source: env:HUBSPOT_ACCESS_TOKEN
+    base_url: https://api.hubapi.com
+    seed_strategy: developer_test_account_sample_data
+    capture_supported: true
+    continuous_safe: false
+    rate_limit_strategy: respect_retry_after_backoff
+    free_or_trial: free_developer_test_accounts
+    account_lifetime: test_accounts_up_to_10_enterprise_trial_features_90d
+    api_available: true
+    seeded_data: true
+    can_automate: true
+    e2e_value: high
+    operational_burden: low
+    recommendation: recommended
+    notes: "Strong CRM general-data fit; private app token for automation."
+
+  - id: shopify
+    category: commerce
+    service: Shopify
+    enabled: false
+    data_profile: [customers, products, orders, inventory]
+    auth_type: oauth2_admin_api_access_token
+    credential_source: env:SHOPIFY_ADMIN_ACCESS_TOKEN
+    base_url: https://{shop}.myshopify.com/admin/api/{version}
+    seed_strategy: partner_development_store
+    capture_supported: true
+    continuous_safe: false
+    rate_limit_strategy: leaky_bucket_header_aware
+    free_or_trial: partner_development_store_free
+    account_lifetime: development_stores_persistent_while_partner_active
+    api_available: true
+    seeded_data: partial
+    can_automate: true
+    e2e_value: high
+    operational_burden: medium
+    recommendation: recommended
+    notes: "Excellent commerce coverage; use development store only."
+
+  - id: stripe
+    category: finance
+    service: Stripe
+    enabled: false
+    data_profile: [customers, invoices, subscriptions, payments, events]
+    auth_type: bearer_secret_key_test_mode
+    credential_source: env:STRIPE_TEST_SECRET_KEY
+    base_url: https://api.stripe.com
+    seed_strategy: test_mode_fixtures_and_test_clocks
+    capture_supported: true
+    continuous_safe: false
+    rate_limit_strategy: stripe_rate_limit_headers
+    free_or_trial: test_mode_free
+    account_lifetime: persistent_test_mode
+    api_available: true
+    seeded_data: true
+    can_automate: true
+    e2e_value: high
+    operational_burden: low
+    recommendation: recommended
+    notes: "Best finance candidate; test-mode keys only."
+
+  - id: atlassian_jira
+    category: itsm_productivity
+    service: Atlassian Jira Cloud
+    enabled: false
+    data_profile: [issues, projects, comments, users]
+    auth_type: basic_email_api_token
+    credential_source: env:ATLASSIAN_API_TOKEN
+    base_url: https://{site}.atlassian.net/rest/api/3
+    seed_strategy: free_developer_cloud_instance
+    capture_supported: true
+    continuous_safe: false
+    rate_limit_strategy: respect_429_retry_after
+    free_or_trial: free_developer_instance
+    account_lifetime: developer_instances_for_dev_test
+    api_available: true
+    seeded_data: partial
+    can_automate: true
+    e2e_value: high
+    operational_burden: medium
+    recommendation: recommended
+    notes: "ITSM/productivity; pair with Confluence optionally."
+
+  - id: atlassian_confluence
+    category: productivity
+    service: Atlassian Confluence Cloud
+    enabled: false
+    data_profile: [pages, spaces, comments]
+    auth_type: basic_email_api_token
+    credential_source: env:ATLASSIAN_API_TOKEN
+    base_url: https://{site}.atlassian.net/wiki/rest/api
+    seed_strategy: free_developer_cloud_instance
+    capture_supported: true
+    continuous_safe: false
+    rate_limit_strategy: respect_429_retry_after
+    free_or_trial: free_developer_instance
+    account_lifetime: developer_instances_for_dev_test
+    api_available: true
+    seeded_data: partial
+    can_automate: true
+    e2e_value: medium
+    operational_burden: medium
+    recommendation: optional
+    notes: "Useful documents/productivity coverage after Jira."
+
+  - id: microsoft_365
+    category: productivity_collaboration
+    service: Microsoft 365 Developer Program
+    enabled: false
+    data_profile: [users, mail_metadata, calendar, teams_messages, files]
+    auth_type: oauth2_client_credentials_or_delegated
+    credential_source: env:M365_CLIENT_ID,M365_CLIENT_SECRET,M365_TENANT_ID
+    base_url: https://graph.microsoft.com/v1.0
+    seed_strategy: e5_instant_sandbox_sample_packs
+    capture_supported: true
+    continuous_safe: false
+    rate_limit_strategy: graph_throttle_headers
+    free_or_trial: free_e5_sandbox_renewable_with_activity
+    account_lifetime: up_to_90_days_renewable
+    api_available: true
+    seeded_data: true
+    can_automate: true
+    e2e_value: high
+    operational_burden: high
+    recommendation: recommended
+    notes: "High value; OAuth app registration + Graph permissions burden."
+
+  - id: salesforce
+    category: crm
+    service: Salesforce Developer Edition
+    enabled: false
+    data_profile: [contacts, accounts, opportunities, cases]
+    auth_type: oauth2_username_password_or_jwt_bearer
+    credential_source: env:SALESFORCE_CLIENT_ID,SALESFORCE_CLIENT_SECRET,SALESFORCE_USERNAME,SALESFORCE_PASSWORD
+    base_url: https://{instance}.salesforce.com/services/data/v{version}
+    seed_strategy: developer_edition_sample_objects
+    capture_supported: true
+    continuous_safe: false
+    rate_limit_strategy: daily_api_limits
+    free_or_trial: developer_edition_free
+    account_lifetime: persistent_with_activity
+    api_available: true
+    seeded_data: true
+    can_automate: true
+    e2e_value: high
+    operational_burden: high
+    recommendation: optional
+    notes: "Strong CRM; heavier auth/setup than HubSpot."
+
+  - id: servicenow
+    category: itsm
+    service: ServiceNow Personal Developer Instance
+    enabled: false
+    data_profile: [incidents, problems, changes, assets, users]
+    auth_type: basic_or_oauth2
+    credential_source: env:SERVICENOW_INSTANCE_URL,SERVICENOW_USER,SERVICENOW_PASSWORD
+    base_url: https://{instance}.service-now.com/api
+    seed_strategy: pdi_demo_data
+    capture_supported: true
+    continuous_safe: false
+    rate_limit_strategy: instance_specific
+    free_or_trial: free_pdi_with_renewal
+    account_lifetime: hibernates_without_use_renewable
+    api_available: true
+    seeded_data: true
+    can_automate: true
+    e2e_value: high
+    operational_burden: high
+    recommendation: optional
+    notes: "Best ITSM depth; PDI hibernation operational cost."
+
+  - id: slack
+    category: collaboration
+    service: Slack developer sandbox
+    enabled: false
+    data_profile: [users, channels, messages]
+    auth_type: bot_token_oauth
+    credential_source: env:SLACK_BOT_TOKEN
+    base_url: https://slack.com/api
+    seed_strategy: developer_sandbox_workspace
+    capture_supported: true
+    continuous_safe: false
+    rate_limit_strategy: tiered_method_limits
+    free_or_trial: developer_program_sandbox
+    account_lifetime: sandbox_persistent_while_program_active
+    api_available: true
+    seeded_data: partial
+    can_automate: true
+    e2e_value: medium
+    operational_burden: medium
+    recommendation: optional
+    notes: "Collaboration coverage; message history/PII sanitization required."
+
+  - id: quickbooks
+    category: finance
+    service: QuickBooks Online sandbox
+    enabled: false
+    data_profile: [customers, invoices, payments, items]
+    auth_type: oauth2_authorization_code
+    credential_source: env:QBO_CLIENT_ID,QBO_CLIENT_SECRET,QBO_REFRESH_TOKEN,QBO_REALM_ID
+    base_url: https://sandbox-quickbooks.api.intuit.com/v3
+    seed_strategy: sandbox_company_sample_data
+    capture_supported: true
+    continuous_safe: false
+    rate_limit_strategy: intuit_throttle
+    free_or_trial: sandbox_companies_free_up_to_10
+    account_lifetime: up_to_2_years_per_sandbox_company
+    api_available: true
+    seeded_data: true
+    can_automate: partial
+    e2e_value: medium
+    operational_burden: high
+    recommendation: optional
+    notes: "Auth-code/refresh lifecycle; product lacks auth-code — API mapping gap."
+
+  - id: okta
+    category: identity
+    service: Okta Integrator Free Plan
+    enabled: false
+    data_profile: [users, groups, system_logs]
+    auth_type: oauth2_client_credentials_or_ssws_token
+    credential_source: env:OKTA_DOMAIN,OKTA_API_TOKEN
+    base_url: https://{domain}/api/v1
+    seed_strategy: integrator_org_seed_users
+    capture_supported: true
+    continuous_safe: false
+    rate_limit_strategy: okta_rate_limits
+    free_or_trial: integrator_free_plan
+    account_lifetime: free_with_activity_within_90d
+    api_available: true
+    seeded_data: partial
+    can_automate: true
+    e2e_value: medium
+    operational_burden: medium
+    recommendation: optional
+    notes: "Useful for OAuth/token realism; local WireMock already covers protocol."
+
+  - id: github
+    category: productivity
+    service: GitHub
+    enabled: false
+    data_profile: [issues, pull_requests, repositories, users]
+    auth_type: bearer_pat_or_github_app
+    credential_source: env:GITHUB_TOKEN
+    base_url: https://api.github.com
+    seed_strategy: dedicated_e2e_org_fixtures
+    capture_supported: true
+    continuous_safe: false
+    rate_limit_strategy: secondary_rate_limits
+    free_or_trial: free
+    account_lifetime: persistent
+    api_available: true
+    seeded_data: create_own
+    can_automate: true
+    e2e_value: medium
+    operational_burden: low
+    recommendation: recommended
+    notes: "Easy additional general-data source; create dedicated e2e org."
+
+  - id: airtable
+    category: generic_business
+    service: Airtable
+    enabled: false
+    data_profile: [records, tables, users]
+    auth_type: bearer_pat
+    credential_source: env:AIRTABLE_PAT
+    base_url: https://api.airtable.com/v0
+    seed_strategy: base_with_sample_tables
+    capture_supported: true
+    continuous_safe: false
+    rate_limit_strategy: 5_rps_per_base
+    free_or_trial: free_tier
+    account_lifetime: persistent
+    api_available: true
+    seeded_data: true
+    can_automate: true
+    e2e_value: medium
+    operational_burden: low
+    recommendation: optional
+    notes: "Nested/generic business records; good schema-drift playground."
+
+  - id: notion
+    category: productivity
+    service: Notion
+    enabled: false
+    data_profile: [pages, databases, users, comments]
+    auth_type: bearer_internal_integration
+    credential_source: env:NOTION_TOKEN
+    base_url: https://api.notion.com/v1
+    seed_strategy: workspace_with_sample_db
+    capture_supported: true
+    continuous_safe: false
+    rate_limit_strategy: average_3_rps
+    free_or_trial: free
+    account_lifetime: persistent
+    api_available: true
+    seeded_data: create_own
+    can_automate: true
+    e2e_value: medium
+    operational_burden: low
+    recommendation: optional
+    notes: "Documents/productivity; Notion-Version header required."
