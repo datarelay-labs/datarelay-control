@@ -252,8 +252,8 @@ cd e2e && npm run scenarios:generate && npm run scenarios:validate
 | Coverage gate | `e2e/scenarios/validate-scenario-coverage.ts` |
 | Generated matrices | `e2e/scenarios/generated/*.json` |
 | Matrix runner | `e2e/matrix/full-matrix.spec.ts` |
-| Nightly CI | `.github/workflows/full-e2e-matrix-nightly.yml` |
-| Weekly fault CI | `.github/workflows/full-e2e-fault-weekly.yml` |
+| Manual runner | `./e2e/run-full-e2e-lab.sh all-matrix …` |
+| Automated Full Matrix CI | **None** — no `full-e2e-*.yml` workflows in the repo |
 
 Outcomes used (no silent skips): `PASS` | `FAIL` | `BLOCKED` | `NOT_APPLICABLE` | `NOT_IMPLEMENTED`.
 
@@ -265,15 +265,15 @@ Outcomes used (no silent skips): `PASS` | `FAIL` | `BLOCKED` | `NOT_APPLICABLE` 
 
 Release Gate binds Full Matrix evidence to commits and blocks stale/incomplete/regressed releases.
 
-Developers do **not** need to run Full Matrix locally; CI owns Nightly/Weekly/RC/Release. PRs run Smoke + coverage + affected shards only.
+Developers do **not** need to run Full Matrix (332) or Cross-Product (32k) for routine PR work. Those suites are **manual** (`./e2e/run-full-e2e-lab.sh`, `e2e/` npm scripts). Normal PR CI stays path-filtered and cheap.
 
-| Gate | Workflow | Scope |
-| ---- | -------- | ----- |
-| PR | `full-e2e-lab-smoke.yml` | Manifest + scenario validation, baseline compare, smoke 4, affected shards |
-| Nightly | `full-e2e-matrix-nightly.yml` | Full Matrix 332 × route-off/on + merge + Release Gate evaluate |
-| Weekly Fault | `full-e2e-fault-weekly.yml` | Fault/recovery stability (separate from Nightly release evidence) |
-| RC | `full-e2e-release-candidate.yml` | Same commit Full Matrix × 2 consecutive PASS with lab reset |
-| Release | `full-e2e-release-gate.yml` | Commit match, age ≤24h, RC PASS — **validation only** (no tag/deploy) |
+| Gate | Mechanism | Scope |
+| ---- | --------- | ----- |
+| PR (required) | `backend-tests.yml` / `frontend-tests.yml` / `oss-v1-release-validation.yml` | Path-filtered backend/frontend + always-on `release-gate-unit` |
+| PR (path-filtered E2E) | `e2e-smoke.yml`, optional `source-adapter-e2e.yml` / `external-runtime-e2e.yml` | WireMock smoke / adapter / runtime when paths match |
+| Nightly (pytest) | `e2e-regression.yml` | WireMock/syslog pytest regression — **not** Full Matrix 332 |
+| Full Matrix / XP / RC / Release evidence | Manual CLI | `release-gate evaluate` / `rc` / `validate-evidence` against local run evidence |
+| Continuous Lab / Keycloak | Manual / ON_DEMAND | `e2e/continuous/`, `e2e/real-apps/` — not normal PR CI |
 
 ### Resource cleanup policy
 

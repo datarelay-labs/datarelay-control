@@ -1,0 +1,2 @@
+{"id":"inv-sftp-001","e2e_correlation_id":"continuous-sftp-invoice-001","customer":"customer-001","amount":410.25,"currency":"USD","status":"sent","updated_at":"2026-09-11T00:00:00Z"}
+{"id":"inv-sftp-002","e2e_correlation_id":"continuous-sftp-invoice-002","customer":"customer-002","amount":88.0,"currency":"USD","status":"paid","updated_at":"2026-09-11T00:10:00Z"}

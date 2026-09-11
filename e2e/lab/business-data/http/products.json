@@ -1,0 +1,455 @@
+{
+  "data": [
+    {
+      "id": "product-001",
+      "product_id": "product-001",
+      "sku": "SKU-0001",
+      "name": "Product 001",
+      "unit_price": 7.56,
+      "category": "supplies",
+      "updated_at": "2026-09-11T16:41:00Z"
+    },
+    {
+      "id": "product-002",
+      "product_id": "product-002",
+      "sku": "SKU-0002",
+      "name": "Product 002",
+      "unit_price": 10.95,
+      "category": "widgets",
+      "updated_at": "2026-09-11T16:42:00Z"
+    },
+    {
+      "id": "product-003",
+      "product_id": "product-003",
+      "sku": "SKU-0003",
+      "name": "Product 003",
+      "unit_price": 13.23,
+      "category": "widgets",
+      "updated_at": "2026-09-11T16:43:00Z"
+    },
+    {
+      "id": "product-004",
+      "product_id": "product-004",
+      "sku": "SKU-0004",
+      "name": "Product 004",
+      "unit_price": 15.98,
+      "category": "supplies",
+      "updated_at": "2026-09-11T16:44:00Z"
+    },
+    {
+      "id": "product-005",
+      "product_id": "product-005",
+      "sku": "SKU-0005",
+      "name": "Product 005",
+      "unit_price": 18.27,
+      "category": "widgets",
+      "updated_at": "2026-09-11T16:45:00Z"
+    },
+    {
+      "id": "product-006",
+      "product_id": "product-006",
+      "sku": "SKU-0006",
+      "name": "Product 006",
+      "unit_price": 20.66,
+      "category": "supplies",
+      "updated_at": "2026-09-11T16:46:00Z"
+    },
+    {
+      "id": "product-007",
+      "product_id": "product-007",
+      "sku": "SKU-0007",
+      "name": "Product 007",
+      "unit_price": 22.67,
+      "category": "supplies",
+      "updated_at": "2026-09-11T16:47:00Z"
+    },
+    {
+      "id": "product-008",
+      "product_id": "product-008",
+      "sku": "SKU-0008",
+      "name": "Product 008",
+      "unit_price": 25.87,
+      "category": "gadgets",
+      "updated_at": "2026-09-11T16:48:00Z"
+    },
+    {
+      "id": "product-009",
+      "product_id": "product-009",
+      "sku": "SKU-0009",
+      "name": "Product 009",
+      "unit_price": 28.46,
+      "category": "supplies",
+      "updated_at": "2026-09-11T16:49:00Z"
+    },
+    {
+      "id": "product-010",
+      "product_id": "product-010",
+      "sku": "SKU-0010",
+      "name": "Product 010",
+      "unit_price": 30.76,
+      "category": "supplies",
+      "updated_at": "2026-09-11T16:50:00Z"
+    },
+    {
+      "id": "product-011",
+      "product_id": "product-011",
+      "sku": "SKU-0011",
+      "name": "Product 011",
+      "unit_price": 32.7,
+      "category": "gadgets",
+      "updated_at": "2026-09-11T16:51:00Z"
+    },
+    {
+      "id": "product-012",
+      "product_id": "product-012",
+      "sku": "SKU-0012",
+      "name": "Product 012",
+      "unit_price": 35.4,
+      "category": "supplies",
+      "updated_at": "2026-09-11T16:52:00Z"
+    },
+    {
+      "id": "product-013",
+      "product_id": "product-013",
+      "sku": "SKU-0013",
+      "name": "Product 013",
+      "unit_price": 38.15,
+      "category": "gadgets",
+      "updated_at": "2026-09-11T16:53:00Z"
+    },
+    {
+      "id": "product-014",
+      "product_id": "product-014",
+      "sku": "SKU-0014",
+      "name": "Product 014",
+      "unit_price": 40.9,
+      "category": "gadgets",
+      "updated_at": "2026-09-11T16:54:00Z"
+    },
+    {
+      "id": "product-015",
+      "product_id": "product-015",
+      "sku": "SKU-0015",
+      "name": "Product 015",
+      "unit_price": 42.62,
+      "category": "widgets",
+      "updated_at": "2026-09-11T16:55:00Z"
+    },
+    {
+      "id": "product-016",
+      "product_id": "product-016",
+      "sku": "SKU-0016",
+      "name": "Product 016",
+      "unit_price": 45.06,
+      "category": "widgets",
+      "updated_at": "2026-09-11T16:56:00Z"
+    },
+    {
+      "id": "product-017",
+      "product_id": "product-017",
+      "sku": "SKU-0017",
+      "name": "Product 017",
+      "unit_price": 48.09,
+      "category": "widgets",
+      "updated_at": "2026-09-11T16:57:00Z"
+    },
+    {
+      "id": "product-018",
+      "product_id": "product-018",
+      "sku": "SKU-0018",
+      "name": "Product 018",
+      "unit_price": 50.59,
+      "category": "widgets",
+      "updated_at": "2026-09-11T16:58:00Z"
+    },
+    {
+      "id": "product-019",
+      "product_id": "product-019",
+      "sku": "SKU-0019",
+      "name": "Product 019",
+      "unit_price": 52.57,
+      "category": "supplies",
+      "updated_at": "2026-09-11T16:59:00Z"
+    },
+    {
+      "id": "product-020",
+      "product_id": "product-020",
+      "sku": "SKU-0020",
+      "name": "Product 020",
+      "unit_price": 55.06,
+      "category": "widgets",
+      "updated_at": "2026-09-11T17:00:00Z"
+    },
+    {
+      "id": "product-021",
+      "product_id": "product-021",
+      "sku": "SKU-0021",
+      "name": "Product 021",
+      "unit_price": 58.41,
+      "category": "gadgets",
+      "updated_at": "2026-09-11T17:01:00Z"
+    },
+    {
+      "id": "product-022",
+      "product_id": "product-022",
+      "sku": "SKU-0022",
+      "name": "Product 022",
+      "unit_price": 60.07,
+      "category": "widgets",
+      "updated_at": "2026-09-11T17:02:00Z"
+    },
+    {
+      "id": "product-023",
+      "product_id": "product-023",
+      "sku": "SKU-0023",
+      "name": "Product 023",
+      "unit_price": 62.78,
+      "category": "gadgets",
+      "updated_at": "2026-09-11T17:03:00Z"
+    },
+    {
+      "id": "product-024",
+      "product_id": "product-024",
+      "sku": "SKU-0024",
+      "name": "Product 024",
+      "unit_price": 65.21,
+      "category": "widgets",
+      "updated_at": "2026-09-11T17:04:00Z"
+    },
+    {
+      "id": "product-025",
+      "product_id": "product-025",
+      "sku": "SKU-0025",
+      "name": "Product 025",
+      "unit_price": 68.22,
+      "category": "supplies",
+      "updated_at": "2026-09-11T17:05:00Z"
+    },
+    {
+      "id": "product-026",
+      "product_id": "product-026",
+      "sku": "SKU-0026",
+      "name": "Product 026",
+      "unit_price": 70.58,
+      "category": "widgets",
+      "updated_at": "2026-09-11T17:06:00Z"
+    },
+    {
+      "id": "product-027",
+      "product_id": "product-027",
+      "sku": "SKU-0027",
+      "name": "Product 027",
+      "unit_price": 73.28,
+      "category": "gadgets",
+      "updated_at": "2026-09-11T17:07:00Z"
+    },
+    {
+      "id": "product-028",
+      "product_id": "product-028",
+      "sku": "SKU-0028",
+      "name": "Product 028",
+      "unit_price": 75.19,
+      "category": "widgets",
+      "updated_at": "2026-09-11T17:08:00Z"
+    },
+    {
+      "id": "product-029",
+      "product_id": "product-029",
+      "sku": "SKU-0029",
+      "name": "Product 029",
+      "unit_price": 78.16,
+      "category": "gadgets",
+      "updated_at": "2026-09-11T17:09:00Z"
+    },
+    {
+      "id": "product-030",
+      "product_id": "product-030",
+      "sku": "SKU-0030",
+      "name": "Product 030",
+      "unit_price": 80.42,
+      "category": "gadgets",
+      "updated_at": "2026-09-11T17:10:00Z"
+    },
+    {
+      "id": "product-031",
+      "product_id": "product-031",
+      "sku": "SKU-0031",
+      "name": "Product 031",
+      "unit_price": 83.36,
+      "category": "widgets",
+      "updated_at": "2026-09-11T17:11:00Z"
+    },
+    {
+      "id": "product-032",
+      "product_id": "product-032",
+      "sku": "SKU-0032",
+      "name": "Product 032",
+      "unit_price": 85.67,
+      "category": "supplies",
+      "updated_at": "2026-09-11T17:12:00Z"
+    },
+    {
+      "id": "product-033",
+      "product_id": "product-033",
+      "sku": "SKU-0033",
+      "name": "Product 033",
+      "unit_price": 87.6,
+      "category": "gadgets",
+      "updated_at": "2026-09-11T17:13:00Z"
+    },
+    {
+      "id": "product-034",
+      "product_id": "product-034",
+      "sku": "SKU-0034",
+      "name": "Product 034",
+      "unit_price": 90.73,
+      "category": "widgets",
+      "updated_at": "2026-09-11T17:14:00Z"
+    },
+    {
+      "id": "product-035",
+      "product_id": "product-035",
+      "sku": "SKU-0035",
+      "name": "Product 035",
+      "unit_price": 92.75,
+      "category": "widgets",
+      "updated_at": "2026-09-11T17:15:00Z"
+    },
+    {
+      "id": "product-036",
+      "product_id": "product-036",
+      "sku": "SKU-0036",
+      "name": "Product 036",
+      "unit_price": 95.54,
+      "category": "widgets",
+      "updated_at": "2026-09-11T17:16:00Z"
+    },
+    {
+      "id": "product-037",
+      "product_id": "product-037",
+      "sku": "SKU-0037",
+      "name": "Product 037",
+      "unit_price": 97.92,
+      "category": "gadgets",
+      "updated_at": "2026-09-11T17:17:00Z"
+    },
+    {
+      "id": "product-038",
+      "product_id": "product-038",
+      "sku": "SKU-0038",
+      "name": "Product 038",
+      "unit_price": 100.46,
+      "category": "widgets",
+      "updated_at": "2026-09-11T17:18:00Z"
+    },
+    {
+      "id": "product-039",
+      "product_id": "product-039",
+      "sku": "SKU-0039",
+      "name": "Product 039",
+      "unit_price": 102.94,
+      "category": "supplies",
+      "updated_at": "2026-09-11T17:19:00Z"
+    },
+    {
+      "id": "product-040",
+      "product_id": "product-040",
+      "sku": "SKU-0040",
+      "name": "Product 040",
+      "unit_price": 5.1,
+      "category": "supplies",
+      "updated_at": "2026-09-11T17:20:00Z"
+    },
+    {
+      "id": "product-041",
+      "product_id": "product-041",
+      "sku": "SKU-0041",
+      "name": "Product 041",
+      "unit_price": 8.5,
+      "category": "widgets",
+      "updated_at": "2026-09-11T17:21:00Z"
+    },
+    {
+      "id": "product-042",
+      "product_id": "product-042",
+      "sku": "SKU-0042",
+      "name": "Product 042",
+      "unit_price": 10.97,
+      "category": "widgets",
+      "updated_at": "2026-09-11T17:22:00Z"
+    },
+    {
+      "id": "product-043",
+      "product_id": "product-043",
+      "sku": "SKU-0043",
+      "name": "Product 043",
+      "unit_price": 12.67,
+      "category": "gadgets",
+      "updated_at": "2026-09-11T17:23:00Z"
+    },
+    {
+      "id": "product-044",
+      "product_id": "product-044",
+      "sku": "SKU-0044",
+      "name": "Product 044",
+      "unit_price": 15.48,
+      "category": "gadgets",
+      "updated_at": "2026-09-11T17:24:00Z"
+    },
+    {
+      "id": "product-045",
+      "product_id": "product-045",
+      "sku": "SKU-0045",
+      "name": "Product 045",
+      "unit_price": 18.4,
+      "category": "widgets",
+      "updated_at": "2026-09-11T17:25:00Z"
+    },
+    {
+      "id": "product-046",
+      "product_id": "product-046",
+      "sku": "SKU-0046",
+      "name": "Product 046",
+      "unit_price": 20.38,
+      "category": "gadgets",
+      "updated_at": "2026-09-11T17:26:00Z"
+    },
+    {
+      "id": "product-047",
+      "product_id": "product-047",
+      "sku": "SKU-0047",
+      "name": "Product 047",
+      "unit_price": 22.77,
+      "category": "gadgets",
+      "updated_at": "2026-09-11T17:27:00Z"
+    },
+    {
+      "id": "product-048",
+      "product_id": "product-048",
+      "sku": "SKU-0048",
+      "name": "Product 048",
+      "unit_price": 25.29,
+      "category": "supplies",
+      "updated_at": "2026-09-11T17:28:00Z"
+    },
+    {
+      "id": "product-049",
+      "product_id": "product-049",
+      "sku": "SKU-0049",
+      "name": "Product 049",
+      "unit_price": 28.46,
+      "category": "supplies",
+      "updated_at": "2026-09-11T17:29:00Z"
+    },
+    {
+      "id": "product-050",
+      "product_id": "product-050",
+      "sku": "SKU-0050",
+      "name": "Product 050",
+      "unit_price": 30.66,
+      "category": "gadgets",
+      "updated_at": "2026-09-11T17:30:00Z"
+    }
+  ],
+  "e2e_dataset": "shared-business-v1"
+}

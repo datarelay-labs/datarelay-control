@@ -26,19 +26,24 @@ export type ResourceKind =
   | 'enrichment'
   | 'governance'
 
+/** Ephemeral Full E2E vs Continuous Lab ownership — cleanup is ownership-scoped. */
+export type ResourceOwnership = 'full-e2e-lab' | 'continuous-e2e-lab'
+
 export type CreatedResourceRecord = {
   kind: ResourceKind
   id?: number | string
   name?: string
   scenarioId?: string
   createdAt: string
-  ownership: 'full-e2e-lab'
+  ownership: ResourceOwnership
+  /** Lifecycle hint; continuous resources must not be removed by ephemeral cleanup. */
+  lifecycle?: 'ephemeral' | 'continuous'
   meta?: Record<string, unknown>
 }
 
 export type CreatedResourcesFile = {
   runId: string
-  ownership: 'full-e2e-lab'
+  ownership: ResourceOwnership
   updatedAt: string
   resources: CreatedResourceRecord[]
 }
@@ -61,10 +66,13 @@ export function loadCreatedResources(runId: string): CreatedResourcesFile | null
   }
 }
 
-export function emptyRegistry(runId: string): CreatedResourcesFile {
+export function emptyRegistry(
+  runId: string,
+  ownership: ResourceOwnership = 'full-e2e-lab',
+): CreatedResourcesFile {
   return {
     runId,
-    ownership: 'full-e2e-lab',
+    ownership,
     updatedAt: new Date().toISOString(),
     resources: [],
   }
@@ -102,9 +110,15 @@ export class ResourceRegistry {
   constructor(
     readonly runId: string,
     readonly scenarioId?: string,
+    readonly ownership: ResourceOwnership = 'full-e2e-lab',
   ) {
     const existing = loadCreatedResources(runId)
-    this.file = existing ?? emptyRegistry(runId)
+    this.file = existing ?? emptyRegistry(runId, ownership)
+    if (existing && existing.ownership !== ownership) {
+      throw new Error(
+        `registry ownership mismatch for ${runId}: file=${existing.ownership} requested=${ownership}`,
+      )
+    }
   }
 
   get path(): string {
@@ -123,7 +137,8 @@ export class ResourceRegistry {
       ...partial,
       scenarioId: partial.scenarioId ?? this.scenarioId,
       createdAt: partial.createdAt ?? new Date().toISOString(),
-      ownership: 'full-e2e-lab',
+      ownership: this.ownership,
+      lifecycle: this.ownership === 'continuous-e2e-lab' ? 'continuous' : 'ephemeral',
     }
     this.file.resources = mergeResources(this.file.resources, [record])
     this.dirty = true
@@ -203,6 +218,18 @@ export class ResourceRegistry {
 
 /** List run ids that have a created-resources.json with full-e2e-lab ownership. */
 export function listOwnedRunIds(reportsRoot = REPORTS_ROOT): string[] {
+  return listOwnedRunIdsByOwnership('full-e2e-lab', reportsRoot)
+}
+
+/** Continuous Lab registries — never returned by ephemeral cleanup helpers. */
+export function listContinuousOwnedRunIds(reportsRoot = REPORTS_ROOT): string[] {
+  return listOwnedRunIdsByOwnership('continuous-e2e-lab', reportsRoot)
+}
+
+export function listOwnedRunIdsByOwnership(
+  ownership: ResourceOwnership,
+  reportsRoot = REPORTS_ROOT,
+): string[] {
   if (!fs.existsSync(reportsRoot)) return []
   return fs
     .readdirSync(reportsRoot, { withFileTypes: true })
@@ -210,7 +237,7 @@ export function listOwnedRunIds(reportsRoot = REPORTS_ROOT): string[] {
     .map((d) => d.name)
     .filter((name) => {
       const f = loadCreatedResources(name)
-      return f?.ownership === 'full-e2e-lab' && (f.resources?.length ?? 0) > 0
+      return f?.ownership === ownership && (f.resources?.length ?? 0) > 0
     })
     .sort()
 }

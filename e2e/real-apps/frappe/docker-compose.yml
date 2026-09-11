@@ -1,0 +1,37 @@
+# TEST-ONLY Frappe/ERPNext session_login harness (not production).
+# Lightweight Frappe API-compatible service for Continuous / Real-App E2E.
+# Full frappe_docker/ERPNext is deferred when host memory/swap cannot absorb it.
+
+services:
+  frappe-session-lab:
+    image: python:3.12-slim
+    container_name: gdc-frappe-session-lab
+    working_dir: /app
+    command: ["python", "-u", "/app/frappe_session_lab.py"]
+    volumes:
+      - ./frappe_session_lab.py:/app/frappe_session_lab.py:ro
+    environment:
+      FRAPPE_LAB_PORT: "8087"
+      FRAPPE_USER: Administrator
+      FRAPPE_PASSWORD: frappe-e2e-pass
+      FRAPPE_SESSION_TTL_SEC: "3600"
+    ports:
+      - "127.0.0.1:8087:8087"
+    networks:
+      - gdc-dev-validation
+    mem_limit: 128m
+    cpus: 0.25
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+    restart: "no"
+    labels:
+      gdc.e2e.ownership: continuous-e2e-lab
+      gdc.e2e.real_app: frappe_erpnext
+
+networks:
+  gdc-dev-validation:
+    external: true
+    name: gdc-dev-validation

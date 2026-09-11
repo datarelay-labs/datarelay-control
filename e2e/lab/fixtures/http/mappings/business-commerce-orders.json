@@ -1,0 +1,29 @@
+{
+  "id": "b1000003-0001-4000-8000-000000000003",
+  "priority": 1,
+  "request": {
+    "method": "GET",
+    "urlPath": "/business/commerce/orders"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": {
+      "data": [
+        {
+          "id": "order-1001",
+          "e2e_correlation_id": "continuous-commerce-order-1001",
+          "customer_id": "customer-001",
+          "status": "paid",
+          "currency": "USD",
+          "total": 129.99,
+          "line_items": [
+            { "sku": "SKU-100", "qty": 1, "unit_price": 99.99 },
+            { "sku": "SKU-200", "qty": 2, "unit_price": 15.0 }
+          ],
+          "updated_at": "2026-09-11T01:00:00Z"
+        }
+      ]
+    }
+  }
+}

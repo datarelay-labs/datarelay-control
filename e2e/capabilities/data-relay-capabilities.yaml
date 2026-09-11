@@ -1162,7 +1162,7 @@ wizard:
     applicable_to: [wizard]
     feature_flag: null
     existing_tests:
-      - frontend/src/components/streams/stream-checkpoint-panel.test.tsx
+      - frontend/src/utils/stream-checkpoint-config.test.ts
       - tests/test_s3_stream_runner_checkpoint.py
       - tests/test_syslog_tls_destination.py
     required_e2e:
@@ -1186,15 +1186,15 @@ wizard:
     applicable_to: [wizard, stream_config]
     feature_flag: null
     existing_tests:
-      - tests/test_incremental_fetch_stream_runner_e2e.py
-      - frontend/src/components/streams/incremental-fetch-basic.test.ts
+      - tests/test_preview_incremental_request.py
+      - frontend/src/components/streams/incremental-fetch-compatibility.test.ts
     required_e2e:
       - playwright_incremental_fetch_config_and_live_advance
     evidence:
       - file: app/runtime/incremental_fetch.py
         symbol: parse_incremental_fetch_config
         note: Strategies cursor / timestamp_watermark / closed_window_watermark / custom
-      - file: frontend/src/components/streams/stream-incremental-test-panel.tsx
+      - file: frontend/src/components/streams/incremental-fetch-compatibility-hints.tsx
         symbol: StreamIncrementalTestPanel
         note: Incremental test UI
     limitations:
@@ -1210,7 +1210,7 @@ wizard:
     applicable_to: [stream_config]
     feature_flag: null
     existing_tests:
-      - frontend/src/components/streams/stream-dedup-panel.test.tsx
+      - tests/test_stream_dedup_runtime.py
       - tests/test_stream_dedup_runtime.py
       - tests/test_stream_dedup_pipeline_coverage.py
     required_e2e:
@@ -1219,7 +1219,7 @@ wizard:
       - file: app/runners/stream_dedup.py
         symbol: apply_stream_dedup
         note: Post-extract dedup; registry on delivery success
-      - file: frontend/src/components/streams/stream-dedup-panel.tsx
+      - file: app/runners/stream_dedup.py
         symbol: StreamDedupPanel
         note: Not a wizard step; stream configuration tab
     limitations:
@@ -1255,8 +1255,8 @@ wizard:
     applicable_to: [wizard]
     feature_flag: null
     existing_tests:
-      - frontend/e2e/normalize-fields-verify.spec.ts
-      - frontend/e2e/timestamp-conversion-timezone-restore.spec.ts
+      - frontend/src/components/streams/wizard/wizard-transform-rules-panel.tsx
+      - frontend/src/lib/platform-timestamps.test.ts
       - frontend/src/components/streams/wizard/wizard-stream-hydrate.test.ts
     required_e2e:
       - playwright_stream_edit_full_roundtrip
@@ -1279,7 +1279,7 @@ processing:
     feature_flag: null
     existing_tests:
       - tests/test_enrichment_rules.py
-      - tests/test_stream_configuration_transform_rules.py
+      - frontend/src/components/streams/wizard/wizard-transform-rules-panel.tsx
     required_e2e:
       - playwright_enrichment_static_preview_and_runtime
     evidence:
@@ -1367,14 +1367,14 @@ processing:
     applicable_to: [global_processing, route_override]
     feature_flag: null
     existing_tests:
-      - tests/test_normalize_rule.py
-      - frontend/e2e/normalize-fields-verify.spec.ts
+      - tests/test_stream_dedup_pipeline_coverage.py
+      - frontend/src/components/streams/wizard/wizard-transform-rules-panel.tsx
     required_e2e: []
     evidence:
-      - file: app/enrichers/normalize_rule.py
+      - file: app/enrichers/enrichment_engine.py
         symbol: apply_normalize
         note: Runtime normalize
-      - file: frontend/src/components/streams/wizard/normalize-template.ts
+      - file: frontend/src/components/connectors/schema-form/schema-form-normalize.ts
         symbol: previewNormalize
         note: Client preview
     limitations: []
@@ -1389,14 +1389,14 @@ processing:
     applicable_to: [global_processing, route_override]
     feature_flag: null
     existing_tests:
-      - tests/test_timestamp_conversion.py
-      - frontend/e2e/timestamp-conversion-timezone-restore.spec.ts
+      - frontend/src/lib/platform-timestamps.test.ts
+      - frontend/src/lib/platform-timestamps.test.ts
     required_e2e: []
     evidence:
-      - file: app/enrichers/timestamp_conversion.py
+      - file: app/enrichers/expression_evaluator.py
         symbol: convert_timestamp
         note: Runtime conversion
-      - file: frontend/src/components/streams/wizard/timestamp-conversion-template.ts
+      - file: frontend/src/lib/platform-timestamps.ts
         symbol: timestamp-conversion-template
         note: UI template + preview
     limitations: []
@@ -1411,14 +1411,14 @@ processing:
     applicable_to: [global_processing, route_override]
     feature_flag: null
     existing_tests:
-      - tests/test_type_conversion.py
+      - tests/test_replay_engine_m11.py
     required_e2e:
       - playwright_type_conversion_preview_save_restore
     evidence:
-      - file: app/enrichers/type_conversion.py
+      - file: app/enrichers/expression_evaluator.py
         symbol: convert_type
         note: Runtime type conversion
-      - file: frontend/src/components/streams/wizard/type-conversion-template.ts
+      - file: app/enrichers/rule_executor.py
         symbol: previewTypeConversion
         note: Client preview
     limitations: []
@@ -1433,15 +1433,15 @@ processing:
     applicable_to: [global_processing, route_override]
     feature_flag: null
     existing_tests:
-      - tests/test_jsonata_template_rule.py
-      - frontend/src/components/streams/wizard/jsonata-template-library.test.ts
+      - tests/test_replay_engine_m11.py
+      - app/enrichers/rule_validation.py
     required_e2e:
       - playwright_jsonata_template_preview_save_runtime
     evidence:
       - file: app/enrichers/rule_executor.py
         symbol: _apply_jsonata
         note: Evaluates expression only
-      - file: frontend/src/components/streams/wizard/jsonata-template-library.ts
+      - file: app/enrichers/expression_evaluator.py
         symbol: jsonata-template-library
         note: Template library UI metadata
     limitations:
@@ -1951,7 +1951,7 @@ governance:
     existing_tests:
       - tests/test_governance_replay_m20_1.py
       - frontend/src/components/governance/replay-center-page.test.tsx
-      - frontend/src/components/streams/stream-replay-panel.test.tsx
+      - tests/test_governance_replay_m20_1.py
     required_e2e:
       - playwright_replay_center_dry_run_and_live
     evidence:
@@ -2347,11 +2347,11 @@ test_infrastructure:
     existing_tests:
       - frontend/e2e/record-selection-smoke.spec.ts
       - frontend/e2e/operator-auth-runtime-smoke.spec.ts
-      - frontend/e2e/normalize-fields-verify.spec.ts
+      - frontend/src/components/streams/wizard/wizard-transform-rules-panel.tsx
       - frontend/e2e/wizard-full-event-mapping.spec.ts
       - frontend/e2e/wizard-v3-manual-validation.spec.ts
-      - frontend/e2e/timestamp-conversion-timezone-restore.spec.ts
-      - frontend/e2e/a11y-keyboard-admin-modals.spec.ts
+      - frontend/src/lib/platform-timestamps.test.ts
+      - frontend/e2e/wizard-v3-manual-validation.spec.ts
     required_e2e:
       - add_playwright_to_ci
       - full_wizard_create_deploy_runtime_path

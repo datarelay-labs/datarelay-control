@@ -1,0 +1,44 @@
+# Optional Toxiproxy overlay for Full E2E / Continuous Lab (TEST ONLY).
+# Does NOT replace hard-stop fault-inject.sh; adds latency/timeout/reset/bandwidth.
+#
+# Usage:
+#   docker compose \
+#     -f e2e/lab/docker-compose.full-e2e.yml \
+#     -f e2e/lab/docker-compose.toxiproxy.yml \
+#     --env-file e2e/lab/.env.route-off \
+#     --profile e2e up -d toxiproxy
+#
+# Point continuous network-degradation streams at Toxiproxy listen ports
+# (e.g. WireMock via 127.0.0.1:28081 → upstream wiremock:8080).
+
+services:
+  toxiproxy:
+    profiles: ["e2e", "test"]
+    image: ghcr.io/shopify/toxiproxy:2.9.0
+    container_name: ${GDC_TEST_CONTAINER_PREFIX:-gdc}-toxiproxy
+    networks:
+      - gdc-dev-validation
+    ports:
+      - "127.0.0.1:${GDC_E2E_TOXIPROXY_API_PORT:-28474}:8474"
+      # Proxied upstream ports (host → toxiproxy → fixture)
+      - "127.0.0.1:${GDC_E2E_TOXI_WIREMOCK_PORT:-28081}:18080"
+      - "127.0.0.1:${GDC_E2E_TOXI_PG_PORT:-55434}:15432"
+      - "127.0.0.1:${GDC_E2E_TOXI_MINIO_PORT:-59002}:19000"
+      - "127.0.0.1:${GDC_E2E_TOXI_SFTP_PORT:-22223}:12222"
+      - "127.0.0.1:${GDC_E2E_TOXI_WEBHOOK_PORT:-18194}:18092"
+      - "127.0.0.1:${GDC_E2E_TOXI_SYSLOG_PORT:-15615}:15514"
+    volumes:
+      - ./toxiproxy/proxies.json:/config/proxies.json:ro
+    command: ["-host", "0.0.0.0", "-config", "/config/proxies.json"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8474/version >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: "no"

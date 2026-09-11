@@ -93,6 +93,13 @@ e2e/cross-product/diagnostics/
 e2e/reports/.pids/
 e2e/reports/.locks/
 
+# Continuous E2E controller runtime state (regenerable)
+e2e/continuous/state/
+
+# Real-apps local secrets (never commit)
+e2e/real-apps/.env.real-apps
+e2e/real-apps/captures/
+
 # Runtime uploads / local artifact sinks
 uploads/
 local_uploads/

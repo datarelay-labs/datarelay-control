@@ -1,0 +1,28 @@
+{
+  "id": "a1000001-0001-4000-8000-000000000019",
+  "priority": 1,
+  "scenarioName": "shared-business-pagination",
+  "requiredScenarioState": "page-empty",
+  "newScenarioState": "Started",
+  "request": {
+    "method": "GET",
+    "urlPath": "/shared-business/customers",
+    "queryParameters": {
+      "page": {
+        "equalTo": "3"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "data": [],
+      "page": 3,
+      "next_page": null,
+      "e2e_dataset": "shared-business-v1"
+    }
+  }
+}

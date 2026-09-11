@@ -1,0 +1,27 @@
+{
+  "id": "b1000008-0001-4000-8000-000000000008",
+  "priority": 1,
+  "request": {
+    "method": "GET",
+    "urlPath": "/business/generic/events"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": {
+      "data": [
+        {
+          "id": "evt-gen-001",
+          "e2e_correlation_id": "continuous-generic-event-001",
+          "event_type": "account.updated",
+          "account": {
+            "id": "acct-e2e-001",
+            "name": "Tenant E2E",
+            "plan": "standard"
+          },
+          "timestamp": "2026-09-11T04:00:00Z"
+        }
+      ]
+    }
+  }
+}

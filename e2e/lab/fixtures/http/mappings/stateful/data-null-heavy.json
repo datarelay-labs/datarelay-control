@@ -1,0 +1,29 @@
+{
+  "id": "a1000001-0001-4000-8000-000000000005",
+  "priority": 2,
+  "request": {
+    "method": "GET",
+    "urlPath": "/shared-business/data-shapes/null-heavy"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "data": [
+        {
+          "id": "customer-001",
+          "customer_id": "customer-001",
+          "name": "Customer 001",
+          "email": null,
+          "tier": null,
+          "region": "US",
+          "optional_note": null,
+          "updated_at": "2026-09-11T00:01:00Z"
+        }
+      ],
+      "e2e_dataset": "shared-business-v1"
+    }
+  }
+}

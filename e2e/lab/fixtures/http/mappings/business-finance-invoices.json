@@ -1,0 +1,26 @@
+{
+  "id": "b1000005-0001-4000-8000-000000000005",
+  "priority": 1,
+  "request": {
+    "method": "GET",
+    "urlPath": "/business/finance/invoices"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": {
+      "data": [
+        {
+          "id": "inv-5001",
+          "e2e_correlation_id": "continuous-finance-invoice-5001",
+          "customer_id": "customer-001",
+          "status": "open",
+          "amount_due": 250.0,
+          "currency": "USD",
+          "due_date": "2026-09-30",
+          "updated_at": "2026-09-11T02:00:00Z"
+        }
+      ]
+    }
+  }
+}

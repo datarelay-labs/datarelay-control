@@ -1,0 +1,97 @@
+# TEST-ONLY Keycloak for real oauth2_client_credentials E2E.
+# NOT production. Classify lifecycle: ON_DEMAND (start when validating OAuth).
+#
+# Resource note: Keycloak Quarkus needs hundreds of MiB. Prefer ON_DEMAND over
+# always-on continuous lab. mem_limit below is a hard ceiling.
+#
+# Usage:
+#   docker compose -f e2e/real-apps/keycloak/docker-compose.yml up -d
+#   docker compose -f e2e/real-apps/keycloak/docker-compose.yml down
+
+services:
+  keycloak-e2e:
+    image: quay.io/keycloak/keycloak:26.0.2
+    container_name: gdc-keycloak-e2e
+    command:
+      - start-dev
+      - --http-port=8089
+      - --hostname-strict=false
+      - --import-realm
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: keycloak-e2e-admin
+      KC_HEALTH_ENABLED: "true"
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+      # Aggressive heap for lab hosts under memory/swap pressure.
+      JAVA_OPTS_KC_HEAP: "-Xms64m -Xmx384m"
+    volumes:
+      - ./realm-import:/opt/keycloak/data/import:ro
+    ports:
+      - "127.0.0.1:8089:8089"
+    networks:
+      - gdc-dev-validation
+    mem_limit: 768m
+    cpus: 1.0
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "exec 3<>/dev/tcp/127.0.0.1/8089 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '200\\|UP' || exit 1",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+    restart: "no"
+    labels:
+      gdc.e2e.ownership: continuous-e2e-lab
+      gdc.e2e.real_app: keycloak
+      gdc.e2e.lifecycle: on_demand
+
+  # Minimal protected HTTP resource validating Bearer JWTs via Keycloak JWKS.
+  keycloak-resource-lab:
+    image: python:3.12-slim
+    container_name: gdc-keycloak-resource-lab
+    working_dir: /app
+    command: ["python", "-u", "/app/protected_resource.py"]
+    volumes:
+      - ./protected_resource.py:/app/protected_resource.py:ro
+      - ../../lab/business-data:/app/business-data:ro
+    environment:
+      RESOURCE_PORT: "8090"
+      KEYCLOAK_ISSUER: http://gdc-keycloak-e2e:8089/realms/gdc-e2e
+      KEYCLOAK_JWKS_URL: http://gdc-keycloak-e2e:8089/realms/gdc-e2e/protocol/openid-connect/certs
+      # Host-side Data Relay may use host-mapped Keycloak; accept both issuers.
+      KEYCLOAK_ISSUER_ALIASES: "http://127.0.0.1:8089/realms/gdc-e2e,http://gdc-keycloak-e2e:8089/realms/gdc-e2e"
+      BUSINESS_DATASET_PATH: /app/business-data/dataset.json
+    ports:
+      - "127.0.0.1:8090:8090"
+    networks:
+      - gdc-dev-validation
+    depends_on:
+      keycloak-e2e:
+        condition: service_started
+    mem_limit: 128m
+    cpus: 0.25
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+    restart: "no"
+    labels:
+      gdc.e2e.ownership: continuous-e2e-lab
+      gdc.e2e.real_app: keycloak
+      gdc.e2e.lifecycle: on_demand
+
+networks:
+  gdc-dev-validation:
+    external: true
+    name: gdc-dev-validation

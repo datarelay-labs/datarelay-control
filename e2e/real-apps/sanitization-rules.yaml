@@ -1,0 +1,48 @@
+# Sanitization rules for captured SaaS payloads before becoming fixtures.
+version: 1
+replacement_defaults:
+  email: example@example.com
+  phone: "+1-555-0100"
+  person_name: user-001
+  tenant: tenant-e2e
+  token: token-redacted
+  api_key: key-redacted
+  account_id: acct-e2e-001
+  url_host: example.test
+
+remove_header_names:
+  - authorization
+  - cookie
+  - set-cookie
+  - x-api-key
+  - x-amz-security-token
+  - x-hubspot-signature
+  - x-shopify-access-token
+
+redact_key_patterns:
+  - "access[_-]?token"
+  - "refresh[_-]?token"
+  - "api[_-]?key"
+  - "client[_-]?secret"
+  - "password"
+  - "authorization"
+  - "cookie"
+  - "private[_-]?key"
+  - "secret"
+  - "bearer"
+  - "session"
+  - "tenant[_-]?id"
+  - "account[_-]?id"
+  - "email"
+  - "phone"
+  - "mobile"
+  - "ssn"
+  - "credit[_-]?card"
+
+email_pattern: "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}"
+phone_pattern: "\\+?[0-9][0-9\\-().\\s]{7,}[0-9]"
+
+preserve_schema: true
+notes: >
+  Prefer deterministic replacements so fixtures remain schema-realistic.
+  Never commit unsanitized captures.

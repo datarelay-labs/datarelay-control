@@ -1,0 +1,26 @@
+{
+  "id": "b1000002-0001-4000-8000-000000000002",
+  "priority": 1,
+  "request": {
+    "method": "GET",
+    "urlPath": "/business/crm/companies"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": {
+      "data": [
+        {
+          "id": "company-001",
+          "e2e_correlation_id": "continuous-crm-company-001",
+          "name": "Acme Manufacturing",
+          "domain": "acme.example.com",
+          "industry": "manufacturing",
+          "employee_count": 120,
+          "annual_revenue": 4500000,
+          "updated_at": "2026-09-11T00:00:00Z"
+        }
+      ]
+    }
+  }
+}

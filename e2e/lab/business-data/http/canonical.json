@@ -1,0 +1,211 @@
+{
+  "data": {
+    "customers": [
+      {
+        "id": "customer-001",
+        "customer_id": "customer-001",
+        "name": "Customer 001",
+        "email": "customer001@example.invalid",
+        "tier": "platinum",
+        "region": "US",
+        "updated_at": "2026-09-11T00:01:00Z"
+      },
+      {
+        "id": "customer-002",
+        "customer_id": "customer-002",
+        "name": "Customer 002",
+        "email": "customer002@example.invalid",
+        "tier": "standard",
+        "region": "APAC",
+        "updated_at": "2026-09-11T00:02:00Z"
+      },
+      {
+        "id": "customer-003",
+        "customer_id": "customer-003",
+        "name": "Customer 003",
+        "email": "customer003@example.invalid",
+        "tier": "gold",
+        "region": "US",
+        "updated_at": "2026-09-11T00:03:00Z"
+      },
+      {
+        "id": "customer-004",
+        "customer_id": "customer-004",
+        "name": "Customer 004",
+        "email": "customer004@example.invalid",
+        "tier": "standard",
+        "region": "US",
+        "updated_at": "2026-09-11T00:04:00Z"
+      },
+      {
+        "id": "customer-005",
+        "customer_id": "customer-005",
+        "name": "Customer 005",
+        "email": "customer005@example.invalid",
+        "tier": "platinum",
+        "region": "US",
+        "updated_at": "2026-09-11T00:05:00Z"
+      }
+    ],
+    "products": [
+      {
+        "id": "product-001",
+        "product_id": "product-001",
+        "sku": "SKU-0001",
+        "name": "Product 001",
+        "unit_price": 7.56,
+        "category": "supplies",
+        "updated_at": "2026-09-11T16:41:00Z"
+      },
+      {
+        "id": "product-002",
+        "product_id": "product-002",
+        "sku": "SKU-0002",
+        "name": "Product 002",
+        "unit_price": 10.95,
+        "category": "widgets",
+        "updated_at": "2026-09-11T16:42:00Z"
+      },
+      {
+        "id": "product-003",
+        "product_id": "product-003",
+        "sku": "SKU-0003",
+        "name": "Product 003",
+        "unit_price": 13.23,
+        "category": "widgets",
+        "updated_at": "2026-09-11T16:43:00Z"
+      },
+      {
+        "id": "product-004",
+        "product_id": "product-004",
+        "sku": "SKU-0004",
+        "name": "Product 004",
+        "unit_price": 15.98,
+        "category": "supplies",
+        "updated_at": "2026-09-11T16:44:00Z"
+      },
+      {
+        "id": "product-005",
+        "product_id": "product-005",
+        "sku": "SKU-0005",
+        "name": "Product 005",
+        "unit_price": 18.27,
+        "category": "widgets",
+        "updated_at": "2026-09-11T16:45:00Z"
+      }
+    ],
+    "orders": [
+      {
+        "id": "order-001",
+        "order_id": "order-001",
+        "customer_id": "customer-001",
+        "product_id": "product-001",
+        "quantity": 2,
+        "amount": 15.12,
+        "status": "paid",
+        "ordered_at": "2026-09-12T09:21:00Z",
+        "updated_at": "2026-09-12T09:22:00Z"
+      },
+      {
+        "id": "order-002",
+        "order_id": "order-002",
+        "customer_id": "customer-002",
+        "product_id": "product-002",
+        "quantity": 3,
+        "amount": 32.85,
+        "status": "paid",
+        "ordered_at": "2026-09-12T09:22:00Z",
+        "updated_at": "2026-09-12T09:23:00Z"
+      },
+      {
+        "id": "order-003",
+        "order_id": "order-003",
+        "customer_id": "customer-003",
+        "product_id": "product-003",
+        "quantity": 4,
+        "amount": 52.92,
+        "status": "shipped",
+        "ordered_at": "2026-09-12T09:23:00Z",
+        "updated_at": "2026-09-12T09:24:00Z"
+      },
+      {
+        "id": "order-004",
+        "order_id": "order-004",
+        "customer_id": "customer-004",
+        "product_id": "product-004",
+        "quantity": 5,
+        "amount": 79.9,
+        "status": "paid",
+        "ordered_at": "2026-09-12T09:24:00Z",
+        "updated_at": "2026-09-12T09:25:00Z"
+      },
+      {
+        "id": "order-005",
+        "order_id": "order-005",
+        "customer_id": "customer-005",
+        "product_id": "product-005",
+        "quantity": 1,
+        "amount": 18.27,
+        "status": "open",
+        "ordered_at": "2026-09-12T09:25:00Z",
+        "updated_at": "2026-09-12T09:26:00Z"
+      },
+      {
+        "id": "order-101",
+        "order_id": "order-101",
+        "customer_id": "customer-001",
+        "product_id": "product-001",
+        "quantity": 2,
+        "amount": 15.12,
+        "status": "paid",
+        "ordered_at": "2026-09-12T11:01:00Z",
+        "updated_at": "2026-09-12T11:02:00Z"
+      },
+      {
+        "id": "order-102",
+        "order_id": "order-102",
+        "customer_id": "customer-002",
+        "product_id": "product-002",
+        "quantity": 3,
+        "amount": 32.85,
+        "status": "cancelled",
+        "ordered_at": "2026-09-12T11:02:00Z",
+        "updated_at": "2026-09-12T11:03:00Z"
+      },
+      {
+        "id": "order-103",
+        "order_id": "order-103",
+        "customer_id": "customer-003",
+        "product_id": "product-003",
+        "quantity": 4,
+        "amount": 52.92,
+        "status": "open",
+        "ordered_at": "2026-09-12T11:03:00Z",
+        "updated_at": "2026-09-12T11:04:00Z"
+      },
+      {
+        "id": "order-104",
+        "order_id": "order-104",
+        "customer_id": "customer-004",
+        "product_id": "product-004",
+        "quantity": 5,
+        "amount": 79.9,
+        "status": "paid",
+        "ordered_at": "2026-09-12T11:04:00Z",
+        "updated_at": "2026-09-12T11:05:00Z"
+      },
+      {
+        "id": "order-105",
+        "order_id": "order-105",
+        "customer_id": "customer-005",
+        "product_id": "product-005",
+        "quantity": 1,
+        "amount": 18.27,
+        "status": "shipped",
+        "ordered_at": "2026-09-12T11:05:00Z",
+        "updated_at": "2026-09-12T11:06:00Z"
+      }
+    ]
+  },
+  "e2e_dataset": "shared-business-v1-canonical"
+}

@@ -1,0 +1,50 @@
+{
+  "data": [
+    {
+      "id": "customer-001",
+      "customer_id": "customer-001",
+      "name": "Customer 001",
+      "email": "customer001@example.invalid",
+      "tier": "platinum",
+      "region": "US",
+      "updated_at": "2026-09-11T00:01:00Z"
+    },
+    {
+      "id": "customer-002",
+      "customer_id": "customer-002",
+      "name": "Customer 002",
+      "email": "customer002@example.invalid",
+      "tier": "standard",
+      "region": "APAC",
+      "updated_at": "2026-09-11T00:02:00Z"
+    },
+    {
+      "id": "customer-003",
+      "customer_id": "customer-003",
+      "name": "Customer 003",
+      "email": "customer003@example.invalid",
+      "tier": "gold",
+      "region": "US",
+      "updated_at": "2026-09-11T00:03:00Z"
+    },
+    {
+      "id": "customer-004",
+      "customer_id": "customer-004",
+      "name": "Customer 004",
+      "email": "customer004@example.invalid",
+      "tier": "standard",
+      "region": "US",
+      "updated_at": "2026-09-11T00:04:00Z"
+    },
+    {
+      "id": "customer-005",
+      "customer_id": "customer-005",
+      "name": "Customer 005",
+      "email": "customer005@example.invalid",
+      "tier": "platinum",
+      "region": "US",
+      "updated_at": "2026-09-11T00:05:00Z"
+    }
+  ],
+  "e2e_dataset": "shared-business-v1-canonical"
+}

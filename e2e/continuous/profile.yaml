@@ -1,0 +1,178 @@
+# Continuous E2E Lab — curated long-lived profile (NOT the 332/32k matrices).
+# Ownership tag: continuous-e2e-lab
+# Name prefix: [CONTINUOUS E2E]
+# Target: 8–15 representative streams, low EPS, bounded retention.
+
+metadata:
+  id: continuous-e2e-lab-v1
+  ownership: continuous-e2e-lab
+  name_prefix: "[CONTINUOUS E2E]"
+  purpose: continuous_operational_lab
+  distinct_from:
+    - regression_332_matrix
+    - cross_product_32184
+    - real_saas_live_validation
+
+resource_limits:
+  target_stream_count_min: 8
+  target_stream_count_max: 15
+  max_eps_per_stream: 1.0
+  default_eps_per_stream: 0.2
+  collector_history_max_events: 500
+  evidence_retention_hours: 72
+  docker_log_max_size: 10m
+  docker_log_max_files: 3
+  fixture_object_max_count: 50
+  db_row_max_per_table: 200
+
+streams:
+  - id: crm-contacts-http-webhook
+    label: Healthy CRM contacts
+    intended_state: healthy
+    source: http_business_crm
+    destination: webhook
+    auth: no_auth
+    path: /business/crm/contacts
+    eps: 0.3
+
+  - id: commerce-orders-http-webhook
+    label: Healthy low-volume commerce orders
+    intended_state: healthy_low_volume
+    source: http_business_commerce
+    destination: webhook
+    auth: bearer
+    path: /business/commerce/orders
+    eps: 0.1
+
+  - id: itsm-tickets-postgres-webhook
+    label: Healthy ITSM tickets (PostgreSQL)
+    intended_state: healthy
+    source: postgres_business
+    destination: webhook
+    auth: db_password
+    eps: 0.2
+
+  - id: productivity-docs-s3-webhook
+    label: Idle / no-new-data S3 docs
+    intended_state: idle
+    source: s3_business
+    destination: webhook
+    auth: s3_keys
+    eps: 0.05
+    state_machine: idle_cycle
+
+  - id: finance-invoices-sftp-webhook
+    label: Healthy finance invoices (SFTP)
+    intended_state: healthy
+    source: sftp_business
+    destination: webhook
+    auth: ssh_password
+    eps: 0.15
+
+  - id: collab-messages-webhook-syslog-tcp
+    label: Collaboration webhook push → Syslog TCP
+    intended_state: healthy
+    source: webhook_receiver
+    destination: syslog_tcp
+    auth: inbound_shared_secret_header
+    eps: 0.2
+
+  - id: crm-multi-route-partial
+    label: Multi-route CRM (partial failure cycle)
+    intended_state: recovering
+    source: http_business_crm
+    destination: multi_route_webhook_syslog
+    auth: api_key_header
+    path: /business/crm/companies
+    eps: 0.2
+    state_machine: partial_route_failure_cycle
+
+  - id: commerce-rate-limited
+    label: Source rate-limited commerce API
+    intended_state: warning
+    source: http_business_commerce
+    destination: webhook
+    auth: oauth2_client_credentials
+    path: /business/commerce/products
+    eps: 0.1
+    state_machine: rate_limit_cycle
+
+  - id: destination-slow-webhook
+    label: Destination slow/down recovery
+    intended_state: recovering
+    source: http_business_finance
+    destination: webhook
+    auth: basic
+    path: /business/finance/invoices
+    eps: 0.2
+    state_machine: destination_degradation_cycle
+
+  - id: schema-drift-http
+    label: Schema drift policy observation
+    intended_state: warning
+    source: http_business_schema_drift
+    destination: webhook
+    auth: no_auth
+    path: /business/generic/events
+    eps: 0.1
+    state_machine: schema_drift_cycle
+
+  - id: latency-recovering-http
+    label: Source latency → timeout → recovery
+    intended_state: recovering
+    source: http_business_itsm
+    destination: webhook
+    auth: session_login
+    path: /business/itsm/incidents
+    eps: 0.2
+    state_machine: network_degradation_cycle
+    toxiproxy_target: wiremock
+
+  - id: syslog-tls-healthy
+    label: Healthy Syslog TLS delivery
+    intended_state: healthy
+    source: http_business_productivity
+    destination: syslog_tls
+    auth: bearer
+    path: /business/productivity/calendar
+    eps: 0.15
+
+state_machines:
+  idle_cycle:
+    phases:
+      - { name: NORMAL_DATA, duration_sec: 300 }
+      - { name: NO_NEW_DATA, duration_sec: 180 }
+      - { name: IDLE_LOW_VOLUME, duration_sec: 120 }
+      - { name: DATA_RESUMES, duration_sec: 180 }
+
+  network_degradation_cycle:
+    phases:
+      - { name: NORMAL, duration_sec: 240, fault: null }
+      - { name: LATENCY, duration_sec: 120, fault: { kind: toxiproxy, toxic: latency, latency_ms: 2500, jitter_ms: 500 } }
+      - { name: TIMEOUT, duration_sec: 90, fault: { kind: toxiproxy, toxic: timeout, timeout_ms: 1 } }
+      - { name: RECOVERY, duration_sec: 180, fault: null }
+
+  destination_degradation_cycle:
+    phases:
+      - { name: NORMAL, duration_sec: 240, fault: null }
+      - { name: DESTINATION_DOWN, duration_sec: 90, fault: { kind: lab, target: webhook } }
+      - { name: RECOVERY, duration_sec: 180, fault: null }
+
+  rate_limit_cycle:
+    phases:
+      - { name: NORMAL, duration_sec: 240, fault: null }
+      - { name: RATE_LIMITED, duration_sec: 120, fault: { kind: wiremock_stub, stub: fault-429 } }
+      - { name: RECOVERY, duration_sec: 180, fault: null }
+
+  partial_route_failure_cycle:
+    phases:
+      - { name: NORMAL, duration_sec: 240, fault: null }
+      - { name: PARTIAL_ROUTE_FAILURE, duration_sec: 120, fault: { kind: lab, target: syslog } }
+      - { name: RECOVERY, duration_sec: 180, fault: null }
+
+  schema_drift_cycle:
+    phases:
+      - { name: BASELINE_SCHEMA, duration_sec: 240 }
+      - { name: NEW_NORMAL_FIELD, duration_sec: 180 }
+      - { name: SENSITIVE_UNKNOWN_FIELD, duration_sec: 180 }
+      - { name: POLICY_ACTION, duration_sec: 120 }

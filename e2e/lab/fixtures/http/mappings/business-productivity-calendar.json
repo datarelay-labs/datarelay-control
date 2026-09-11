@@ -1,0 +1,27 @@
+{
+  "id": "b1000007-0001-4000-8000-000000000007",
+  "priority": 1,
+  "request": {
+    "method": "GET",
+    "urlPath": "/business/productivity/calendar"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": {
+      "data": [
+        {
+          "id": "evt-001",
+          "e2e_correlation_id": "continuous-productivity-cal-001",
+          "message": "Quarterly planning",
+          "severity": "info",
+          "subject": "Quarterly planning",
+          "organizer": "example@example.com",
+          "starts_at": "2026-09-12T15:00:00Z",
+          "ends_at": "2026-09-12T16:00:00Z",
+          "attendees": ["user-001", "user-002"]
+        }
+      ]
+    }
+  }
+}

@@ -250,6 +250,11 @@ export async function cleanupRegisteredResources(
 
   if (!file || file.ownership !== 'full-e2e-lab') {
     const finishedAt = new Date().toISOString()
+    const ownershipMsg = file
+      ? file.ownership === 'continuous-e2e-lab'
+        ? 'created-resources.json ownership is continuous-e2e-lab; ephemeral cleanup refuses continuous resources (use continuous:teardown)'
+        : `created-resources.json ownership is ${file.ownership}, refuse cleanup`
+      : `missing created-resources.json for run ${runId}`
     const report: CleanupReport = {
       runId,
       startedAt,
@@ -257,11 +262,7 @@ export async function cleanupRegisteredResources(
       actions: [],
       remaining: { connectors: [], streams: [], routes: [], destinations: [], checkpoints: [] },
       ok: false,
-      errors: [
-        file
-          ? `created-resources.json ownership is ${file.ownership}, refuse cleanup`
-          : `missing created-resources.json for run ${runId}`,
-      ],
+      errors: [ownershipMsg],
     }
     writeCleanupReport(runId, report)
     return report
