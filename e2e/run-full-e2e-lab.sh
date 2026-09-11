@@ -66,6 +66,20 @@ if [[ "$CMD" == "release-gate" ]]; then
   set --
 fi
 
+# Continuous E2E subcommands + passthrough
+CONTINUOUS_ARGS=()
+if [[ "$CMD" == "continuous" ]]; then
+  CONTINUOUS_ARGS=("$@")
+  set --
+fi
+
+# Toxiproxy fault subcommands + passthrough
+TOXI_ARGS=()
+if [[ "$CMD" == "fault-toxi" ]]; then
+  TOXI_ARGS=("$@")
+  set --
+fi
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --route-processing=off)
@@ -144,6 +158,22 @@ else
   ROUTE_MODE="off"
 fi
 export GDC_E2E_ENV_FILE="$ENV_FILE"
+
+# Continuous / toxiproxy CLI helpers do not require lab env files for dry validation.
+if [[ "$CMD" == "continuous" ]]; then
+  cmd_continuous() {
+    (cd "$ROOT/e2e" && npx tsx continuous/cli.ts "${CONTINUOUS_ARGS[@]:-validate}")
+  }
+  cmd_continuous
+  exit $?
+fi
+if [[ "$CMD" == "fault-toxi" ]]; then
+  cmd_fault_toxi() {
+    bash "$LAB_DIR/fault-toxiproxy.sh" "${TOXI_ARGS[@]}"
+  }
+  cmd_fault_toxi
+  exit $?
+fi
 
 load_env_file() {
   local file="$1"
@@ -742,6 +772,14 @@ cmd_report_cross_product() {
   (cd "$ROOT/e2e" && npm run report-cross-product)
 }
 
+cmd_continuous() {
+  (cd "$ROOT/e2e" && npx tsx continuous/cli.ts "${CONTINUOUS_ARGS[@]}")
+}
+
+cmd_fault_toxi() {
+  bash "$LAB_DIR/fault-toxiproxy.sh" "${TOXI_ARGS[@]}"
+}
+
 case "$CMD" in
   up) cmd_up ;;
   reset) cmd_reset ;;
@@ -757,6 +795,8 @@ case "$CMD" in
   all) cmd_all ;;
   all-matrix) cmd_all_matrix ;;
   fault) cmd_fault ;;
+  fault-toxi) cmd_fault_toxi ;;
+  continuous) cmd_continuous ;;
   merge-results) cmd_merge_results ;;
   validate-results) cmd_validate_results ;;
   release-gate) cmd_release_gate ;;
@@ -770,7 +810,7 @@ case "$CMD" in
   report-cross-product) cmd_report_cross_product ;;
   *)
     cat <<EOF
-Usage: $0 {up|reset|test|matrix|scenario|triage|collect|cleanup|cleanup-stale|validate-cleanup|down|all|all-matrix|fault|merge-results|validate-results|release-gate|generate-cross-product|validate-cross-product|run-cross-product|run-cross-product-shard|merge-cross-product-results|validate-cross-product-results|cleanup-cross-product|report-cross-product} [options]
+Usage: $0 {up|reset|test|matrix|scenario|triage|collect|cleanup|cleanup-stale|validate-cleanup|down|all|all-matrix|fault|fault-toxi|continuous|merge-results|validate-results|release-gate|generate-cross-product|validate-cross-product|run-cross-product|run-cross-product-shard|merge-cross-product-results|validate-cross-product-results|cleanup-cross-product|report-cross-product} [options]
 
   scenario --id <scenario-id> --route-processing=off|on
   triage
@@ -778,7 +818,11 @@ Usage: $0 {up|reset|test|matrix|scenario|triage|collect|cleanup|cleanup-stale|va
   cleanup --run-id <id>
   cleanup-stale
   validate-cleanup --run-id <id>
+  continuous {validate|tick|report|ensure|teardown}
   fault start|stop|reset|status <target>
+  fault-toxi start latency|timeout|reset|bandwidth <target> [args]
+  fault-toxi stop|status <target>
+  fault-toxi reset
   merge-results [--from <dir>]
   validate-results
   release-gate evaluate --run-id <id>
@@ -799,6 +843,7 @@ Lab profile (optional isolation):
   GDC_E2E_LAB_PROFILE / COMPOSE_PROJECT_NAME / GDC_TEST_CONTAINER_PREFIX
 
 Targets: database s3 sftp api runtime webhook syslog syslog-tls
+Toxiproxy targets: wiremock postgres minio sftp webhook syslog
 EOF
     exit 2
     ;;

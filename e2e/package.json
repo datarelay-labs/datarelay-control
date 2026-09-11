@@ -39,7 +39,16 @@
     "cleanup": "tsx framework/cleanup-cli.ts cleanup",
     "cleanup:stale": "tsx framework/cleanup-cli.ts cleanup-stale",
     "cleanup:validate": "tsx framework/cleanup-cli.ts validate-cleanup",
-    "cleanup:inventory": "tsx framework/cleanup-cli.ts inventory-owned"
+    "cleanup:inventory": "tsx framework/cleanup-cli.ts inventory-owned",
+    "continuous:validate": "tsx continuous/cli.ts validate",
+    "continuous:tick": "tsx continuous/cli.ts tick",
+    "continuous:report": "tsx continuous/cli.ts report",
+    "continuous:ensure": "tsx continuous/cli.ts ensure",
+    "continuous:teardown": "tsx continuous/cli.ts teardown",
+    "continuous:test": "tsx continuous/continuous.test.ts",
+    "real-apps:validate": "tsx real-apps/real-apps.test.ts",
+    "real-apps:sanitize": "tsx real-apps/sanitize-capture.ts",
+    "lab:toxiproxy-test": "tsx lab/toxiproxy-cli.test.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",
