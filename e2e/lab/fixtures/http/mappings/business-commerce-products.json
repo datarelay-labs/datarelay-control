@@ -1,0 +1,25 @@
+{
+  "id": "b1000004-0001-4000-8000-000000000004",
+  "priority": 1,
+  "request": {
+    "method": "GET",
+    "urlPath": "/business/commerce/products"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": {
+      "data": [
+        {
+          "id": "product-100",
+          "e2e_correlation_id": "continuous-commerce-product-100",
+          "sku": "SKU-100",
+          "name": "Standard Widget",
+          "inventory": 42,
+          "price": 99.99,
+          "updated_at": "2026-09-11T01:10:00Z"
+        }
+      ]
+    }
+  }
+}

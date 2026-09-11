@@ -1,0 +1,25 @@
+{
+  "id": "b1000006-0001-4000-8000-000000000006",
+  "priority": 1,
+  "request": {
+    "method": "GET",
+    "urlPath": "/business/itsm/incidents"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": {
+      "data": [
+        {
+          "id": "INC-001",
+          "e2e_correlation_id": "continuous-itsm-incident-001",
+          "title": "VPN intermittent disconnect",
+          "priority": "P3",
+          "status": "in_progress",
+          "assignee": "user-001",
+          "updated_at": "2026-09-11T03:00:00Z"
+        }
+      ]
+    }
+  }
+}

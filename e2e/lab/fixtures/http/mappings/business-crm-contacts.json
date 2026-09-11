@@ -1,0 +1,36 @@
+{
+  "id": "b1000001-0001-4000-8000-000000000001",
+  "priority": 1,
+  "request": {
+    "method": "GET",
+    "urlPath": "/business/crm/contacts"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": {
+      "data": [
+        {
+          "id": "contact-001",
+          "e2e_correlation_id": "continuous-crm-contact-001",
+          "full_name": "user-001",
+          "email": "example@example.com",
+          "company_id": "company-001",
+          "title": "Account Manager",
+          "lifecycle_stage": "customer",
+          "updated_at": "2026-09-11T00:00:00Z"
+        },
+        {
+          "id": "contact-002",
+          "e2e_correlation_id": "continuous-crm-contact-002",
+          "full_name": "user-002",
+          "email": "example@example.com",
+          "company_id": "company-002",
+          "title": "Buyer",
+          "lifecycle_stage": "lead",
+          "updated_at": "2026-09-11T00:05:00Z"
+        }
+      ]
+    }
+  }
+}

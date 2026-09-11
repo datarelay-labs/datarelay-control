@@ -1,0 +1,38 @@
+[
+  {
+    "name": "wiremock",
+    "listen": "0.0.0.0:18080",
+    "upstream": "wiremock:8080",
+    "enabled": true
+  },
+  {
+    "name": "postgres",
+    "listen": "0.0.0.0:15432",
+    "upstream": "postgres-query-test:5432",
+    "enabled": true
+  },
+  {
+    "name": "minio",
+    "listen": "0.0.0.0:19000",
+    "upstream": "minio-test:9000",
+    "enabled": true
+  },
+  {
+    "name": "sftp",
+    "listen": "0.0.0.0:12222",
+    "upstream": "sftp-test:22",
+    "enabled": true
+  },
+  {
+    "name": "webhook",
+    "listen": "0.0.0.0:18092",
+    "upstream": "webhook-collector:8080",
+    "enabled": true
+  },
+  {
+    "name": "syslog",
+    "listen": "0.0.0.0:15514",
+    "upstream": "syslog-collector:5514",
+    "enabled": true
+  }
+]
