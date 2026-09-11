@@ -2,6 +2,16 @@
 
 Unified lab + Playwright framework for connector → runtime → collector delivery.
 
+## Purpose separation
+
+| Purpose | Entry |
+|---------|-------|
+| Regression / Release (332 + XP) | `./e2e/run-full-e2e-lab.sh` smoke / matrix / release-gate |
+| Continuous operational lab | `e2e/continuous/` — `npm run continuous:validate` |
+| Real SaaS E2E candidates | `e2e/real-apps/` |
+
+See `e2e/continuous/PHASE_REPORT.md` for the tool-validation phase report.
+
 ## Quick start
 
 ```bash
