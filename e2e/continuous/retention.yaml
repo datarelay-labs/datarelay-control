@@ -1,0 +1,41 @@
+# Continuous E2E retention / resource boundaries (test-only).
+# Prefer count + size + time limits. Never targets production/developer data.
+
+ownership: continuous-e2e-lab
+name_prefix: "[CONTINUOUS E2E]"
+
+limits:
+  streams:
+    max_count: 15
+    max_eps_each: 1.0
+  collectors:
+    webhook_max_events: 500
+    syslog_max_events: 500
+    prune_interval_sec: 300
+  evidence:
+    max_age_hours: 72
+    max_dir_bytes_mb: 200
+  docker_logs:
+    max_size: 10m
+    max_file: "3"
+  fixtures:
+    http_business_max_payload_kb: 64
+    s3_max_objects: 50
+    sftp_max_files: 50
+    postgres_max_rows_per_table: 200
+  state:
+    controller_state_max_age_hours: 168
+
+prune_policy:
+  - component: continuous_state
+    by: time
+    max_age_hours: 168
+  - component: evidence
+    by: time
+    max_age_hours: 72
+  - component: collectors
+    by: count
+    max_events: 500
+  - component: object_store
+    by: count
+    max_objects: 50
