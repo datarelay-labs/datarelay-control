@@ -50,6 +50,11 @@ services:
     ports:
       - "127.0.0.1:${GDC_PLATFORM_POSTGRES_HOST_PORT:-55432}:5432"
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
 
   api:
     build:
@@ -148,6 +153,11 @@ services:
     # Cap runaway RSS while allowing modest swap spill (host has ~20GiB RAM + swap).
     mem_limit: ${GDC_API_MEM_LIMIT:-10g}
     memswap_limit: ${GDC_API_MEMSWAP_LIMIT:-14g}
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
     command: ["sh", "-c", "alembic upgrade head && python -m app.db.seed --platform-admin-only && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${GDC_UVICORN_WORKERS:-2}"]
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8000/health"]
@@ -188,6 +198,11 @@ services:
       - gdc-dev-validation
     mem_limit: ${GDC_SCHEDULER_MEM_LIMIT:-4g}
     memswap_limit: ${GDC_SCHEDULER_MEMSWAP_LIMIT:-6g}
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
     command: ["sh", "-c", "python -m app.scheduler.standalone"]
     # Override image HEALTHCHECK (Dockerfile.api probes uvicorn :8000). Standalone
     # scheduler has no HTTP listener; verify the process itself is running.
@@ -207,7 +222,8 @@ services:
     image: wiremock/wiremock:3.9.1
     volumes:
       - ./tests/wiremock:/home/wiremock
-    command: ["--verbose", "--max-request-journal-entries", "500"]
+    # Avoid --verbose request dumps (primary cause of 100G+ json-file growth).
+    command: ["--max-request-journal-entries", "500"]
     expose:
       - "8080"
     networks:
@@ -217,6 +233,13 @@ services:
     restart: unless-stopped
     mem_limit: 512m
     memswap_limit: 768m
+    cpus: "1.0"
+    pids_limit: 512
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
 
   gdc-webhook-receiver-test:
     image: mendhak/http-https-echo:33
@@ -225,6 +248,15 @@ services:
     expose:
       - "8080"
     restart: unless-stopped
+    mem_limit: 256m
+    memswap_limit: 384m
+    cpus: "0.5"
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
 
   gdc-syslog-test:
     build:
@@ -235,6 +267,15 @@ services:
       - "5514/tcp"
       - "5514/udp"
     restart: unless-stopped
+    mem_limit: 256m
+    memswap_limit: 384m
+    cpus: "0.5"
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
 
   frontend:
     build:
@@ -252,6 +293,11 @@ services:
       retries: 10
       start_period: 120s
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
 
   reverse-proxy:
     build:
@@ -283,6 +329,11 @@ services:
       retries: 8
       start_period: 20s
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
 
 volumes:
   gdc_platform_postgres_data:

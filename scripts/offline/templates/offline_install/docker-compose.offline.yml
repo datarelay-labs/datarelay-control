@@ -19,6 +19,11 @@ services:
       timeout: 5s
       retries: 20
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
 
   api:
     image: gdc-platform-api:offline
@@ -48,6 +53,11 @@ services:
       retries: 10
       start_period: 90s
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
 
   frontend:
     image: gdc-platform-frontend:offline
@@ -62,6 +72,11 @@ services:
       retries: 10
       start_period: 120s
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
 
   reverse-proxy:
     image: gdc-platform-reverse-proxy:offline
@@ -87,6 +102,11 @@ services:
       retries: 8
       start_period: 20s
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
 
 volumes:
   gdc_platform_postgres_data:
