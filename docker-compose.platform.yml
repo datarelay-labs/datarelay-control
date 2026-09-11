@@ -189,6 +189,18 @@ services:
     mem_limit: ${GDC_SCHEDULER_MEM_LIMIT:-4g}
     memswap_limit: ${GDC_SCHEDULER_MEMSWAP_LIMIT:-6g}
     command: ["sh", "-c", "python -m app.scheduler.standalone"]
+    # Override image HEALTHCHECK (Dockerfile.api probes uvicorn :8000). Standalone
+    # scheduler has no HTTP listener; verify the process itself is running.
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import pathlib; raise SystemExit(0 if any(b'app.scheduler.standalone' in p.read_bytes() for p in pathlib.Path('/proc').glob('[0-9]*/cmdline')) else 1)\"",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 40s
     restart: unless-stopped
 
   gdc-wiremock-test:
@@ -259,7 +271,13 @@ services:
       - gdc_platform_tls:/var/gdc/tls
       - gdc_platform_nginx:/etc/nginx/conf.d
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/health"]
+      # HTTPS-enabled nginx redirects :80 → HTTPS; probe HTTPS first. Fall back to
+      # HTTP 200 without following redirects (bootstrap HTTP-only mode).
+      test:
+        [
+          "CMD-SHELL",
+          "wget --no-check-certificate -qO- https://127.0.0.1/health >/dev/null 2>&1 || wget --max-redirect=0 -S -O /dev/null http://127.0.0.1/health 2>&1 | grep -q ' 200 '",
+        ]
       interval: 15s
       timeout: 5s
       retries: 8
