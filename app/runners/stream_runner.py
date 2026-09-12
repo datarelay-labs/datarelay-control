@@ -716,6 +716,7 @@ class StreamRunner(BaseRunner):
                             summary["message"] = (
                                 "Destination delivery failed; no events delivered"
                             )
+                        processed_events = len(events)
                         delivered_events = len(successful_events)
                         failed_events = max(0, processed_events - delivered_events)
                         partial_success = bool(successful_events) and (
