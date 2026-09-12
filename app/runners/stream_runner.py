@@ -490,6 +490,25 @@ class StreamRunner(BaseRunner):
                         )
                     successful_events = fan_out.successful_events
                     summary["delivered_batch_event_count"] = len(successful_events) if successful_events else 0
+                    delivery_failures = int(route_pipeline.metrics.route_delivery_failure_count or 0)
+                    delivery_successes = int(route_pipeline.metrics.route_delivery_success_count or 0)
+                    if delivery_failures > 0:
+                        if delivery_successes <= 0 and not successful_events:
+                            summary["message"] = (
+                                f"Destination delivery failed "
+                                f"({delivery_failures} route failure(s)); no events delivered"
+                            )
+                        elif delivery_successes <= 0:
+                            summary["message"] = (
+                                f"Destination delivery failed "
+                                f"({delivery_failures} route failure(s)); "
+                                "failure absorbed by route failure policy"
+                            )
+                        else:
+                            summary["message"] = (
+                                f"Partial destination delivery failure "
+                                f"({delivery_failures} route failure(s))"
+                            )
 
                     processed_events = len(events)
                     delivered_events = len(successful_events)
@@ -682,8 +701,21 @@ class StreamRunner(BaseRunner):
                             )
                         successful_events = fan_out.successful_events
                         summary["delivered_batch_event_count"] = len(successful_events) if successful_events else 0
-
-                        processed_events = len(events)
+                        if fan_out.log_continue_failed_route_ids and not successful_events:
+                            summary["message"] = (
+                                f"Destination delivery failed "
+                                f"({len(fan_out.log_continue_failed_route_ids)} route failure(s)); "
+                                "no events delivered"
+                            )
+                        elif fan_out.log_continue_failed_route_ids:
+                            summary["message"] = (
+                                f"Partial destination delivery failure "
+                                f"({len(fan_out.log_continue_failed_route_ids)} route failure(s))"
+                            )
+                        elif not successful_events and events:
+                            summary["message"] = (
+                                "Destination delivery failed; no events delivered"
+                            )
                         delivered_events = len(successful_events)
                         failed_events = max(0, processed_events - delivered_events)
                         partial_success = bool(successful_events) and (

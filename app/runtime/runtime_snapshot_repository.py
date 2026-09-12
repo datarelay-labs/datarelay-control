@@ -403,15 +403,21 @@ def recompute_and_upsert_snapshots(
         last_success_at = last.last_success_at if last else None
         last_error_at = last.last_failure_at if last else None
         last_error_message = last.last_error_message if last else None
+        route_ids_for_stream = routes_by_stream.get(stream.id, [])
+        route_healths = [route_health_by_id[rid] for rid in route_ids_for_stream]
+        route_count = routes_per_stream.get(stream.id, len(route_ids_for_stream))
+        healthy_route_count = sum(1 for h in route_healths if h == "HEALTHY")
+        failed_route_count = sum(1 for h in route_healths if h in ("ERROR", "DEGRADED"))
         health = classify_stream_health(
             enabled=stream.enabled,
             status=stream.status,
             last_success_at=last_success_at,
             last_error_at=last_error_at,
             failure_rate_5m=failure_rate_5m,
+            failed_route_count=failed_route_count,
+            healthy_route_count=healthy_route_count,
+            route_count=route_count,
         )
-        route_ids_for_stream = routes_by_stream.get(stream.id, [])
-        route_healths = [route_health_by_id[rid] for rid in route_ids_for_stream]
         cp = checkpoints.get(stream.id)
         checkpoint_updated_at = cp.updated_at if cp is not None else None
         stream_rows.append(
@@ -425,9 +431,9 @@ def recompute_and_upsert_snapshots(
                 "failure_rate_5m": failure_rate_5m,
                 "retry_rate_5m": retry_rate_5m,
                 "avg_latency_ms": agg_5m.avg_latency_ms if agg_5m else None,
-                "route_count": routes_per_stream.get(stream.id, len(route_ids_for_stream)),
-                "healthy_route_count": sum(1 for h in route_healths if h == "HEALTHY"),
-                "failed_route_count": sum(1 for h in route_healths if h in ("ERROR", "DEGRADED")),
+                "route_count": route_count,
+                "healthy_route_count": healthy_route_count,
+                "failed_route_count": failed_route_count,
                 "last_success_at": last_success_at,
                 "last_error_at": last_error_at,
                 "last_error_message": last_error_message,

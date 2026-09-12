@@ -890,6 +890,8 @@ class RuntimeStreamRunOnceResponse(BaseModel):
     mapped_event_count: int | None = None
     enriched_event_count: int | None = None
     delivered_batch_event_count: int | None = None
+    route_delivery_success_count: int | None = None
+    route_delivery_failure_count: int | None = None
     checkpoint_updated: bool = False
     transaction_committed: bool = False
     runtime_run_id: str | None = None
