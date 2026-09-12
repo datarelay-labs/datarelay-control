@@ -86,3 +86,15 @@ Rotates webhook dest, syslog dest, WireMock source, Toxiproxy timeout, Idle S3.
 ## FINAL_STATUS
 
 **PASS** — destination delivery failures are visible in operational and scored health; No Data / Idle preserved; recovery verified; WireMock harness revalidated with stub reload.
+
+## Overnight soak findings closure
+
+Historical overnight soak remains **PARTIAL** (do not rewrite). Closure of its findings:
+
+| Finding | Class | Resolution | Status |
+|---------|-------|------------|--------|
+| A — WireMock restart/stub reload | E2E_INFRA_BUG | Harness stub reload revalidated in short soak / live | FIXED → PASS |
+| B — Webhook destination false Healthy | PRODUCT BUG | PR #30 delivery-health hardening | FIXED → PASS |
+| C — Syslog destination false Healthy | PRODUCT BUG | Same shared root cause; PR #30 | FIXED → PASS |
+
+`OVERNIGHT_FINDINGS_CLOSED=YES` (product-bug closure via PR #30; original soak result unchanged).
