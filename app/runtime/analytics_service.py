@@ -783,25 +783,9 @@ def _build_retry_summary(
     destination_id: int | None,
     snapshot_id: str | None = None,
 ) -> RetrySummaryResponse:
-    from app.runtime.runtime_snapshot_analytics_repository import (
-        load_retry_summary as _snapshot_retry_summary,
-        snapshot_analytics_available,
-    )
-
-    if snapshot_analytics_available(db):
-        try:
-            return _snapshot_retry_summary(
-                db,
-                window=window,
-                since=since,
-                stream_id=stream_id,
-                route_id=route_id,
-                destination_id=destination_id,
-                snapshot_id=snapshot_id,
-            )
-        except Exception:
-            logger.exception("analytics_retry_summary_snapshot_degraded")
-
+    # Retry success/failure are factual delivery_log stages. Snapshot EPS × retry_rate
+    # reconstruction undercounts single-retry successes (retry_events - 1 → 0) and becomes
+    # reachable immediately after run-once snapshot refresh. Prefer delivery_logs here.
     token, start, until, resolved_snapshot_id = resolve_analytics_window(
         window=window,
         since=since,
