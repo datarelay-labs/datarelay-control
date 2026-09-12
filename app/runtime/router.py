@@ -3692,11 +3692,22 @@ async def run_stream_once(
             "outcome": oc,
             "checkpoint_updated": bool(summary.get("checkpoint_updated")),
             "delivered_batch_event_count": summary.get("delivered_batch_event_count"),
+            "route_delivery_failure_count": summary.get("route_delivery_failure_count"),
             "runtime_run_id": runtime_run_id,
         },
         request=request,
     )
     db.commit()
+
+    # Refresh operational snapshots after manual run-once so failure and recovery
+    # are visible immediately (do not wait for the ~30s scheduler interval).
+    try:
+        from app.runtime.runtime_snapshot_updater import run_runtime_snapshot_update
+
+        run_runtime_snapshot_update(db)
+    except Exception:
+        # Fail-open: scheduler updater remains the durable refresh path.
+        pass
 
     return RuntimeStreamRunOnceResponse(
         stream_id=int(summary.get("stream_id", stream_id)),
@@ -3706,6 +3717,8 @@ async def run_stream_once(
         mapped_event_count=summary.get("mapped_event_count"),
         enriched_event_count=summary.get("enriched_event_count"),
         delivered_batch_event_count=summary.get("delivered_batch_event_count"),
+        route_delivery_success_count=summary.get("route_delivery_success_count"),
+        route_delivery_failure_count=summary.get("route_delivery_failure_count"),
         checkpoint_updated=bool(summary.get("checkpoint_updated")),
         transaction_committed=bool(summary.get("transaction_committed")),
         runtime_run_id=str(runtime_run_id) if runtime_run_id else None,

@@ -1,0 +1,18 @@
+{
+  "SHORT_SOAK": "PASS",
+  "SHORT_SOAK_DURATION": "~20m combined (8 clean full rounds + 3 focused dest rounds)",
+  "FULL_ROTATION_ROUNDS_1_8": "PASS",
+  "FULL_ROTATION_LATER_FLAKE": "WireMock stub reload race (E2E infra; not product status)",
+  "FOCUSED_DEST_ROUNDS": {
+    "focused_rounds": 3,
+    "all_pass": true,
+    "false_healthy_count": 0,
+    "idle_ok": true,
+    "at": "2026-09-12T02:29:33Z"
+  },
+  "REPEATED_DESTINATION_FAILURE_RECOVERY": "PASS",
+  "FALSE_HEALTHY_DURING_KNOWN_DEST_OUTAGE": "NO",
+  "IDLE_S3": "PASS",
+  "CHECKPOINT_CONTINUITY": "PASS",
+  "FINAL_ENVIRONMENT_NOTE": "Collectors and WireMock restored; stubs reloaded"
+}

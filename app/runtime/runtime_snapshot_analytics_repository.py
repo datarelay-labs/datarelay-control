@@ -387,8 +387,9 @@ def load_retry_summary(
         ):
             retry_failed += retry_events
         else:
-            retry_success += max(0, retry_events - 1)
-            retry_failed += min(1, retry_events)
+            # Recovered / non-ERROR posture: count reconstructed retry activity as
+            # successes. Do not subtract 1 (that collapsed single-retry success to 0).
+            retry_success += retry_events
 
     return RetrySummaryResponse(
         time=AnalyticsTimeWindow(

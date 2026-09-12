@@ -41,13 +41,68 @@ def snapshot_health_available(db: Session) -> bool:
     return read_model_is_populated(db)
 
 
+def _events_from_eps(eps: float | None, window_seconds: int) -> int:
+    return max(0, int(round(float(eps or 0) * window_seconds)))
+
+
+def _failure_newer_than_success(row: object) -> bool:
+    last_failure_at = getattr(row, "last_error_at", None)
+    last_success_at = getattr(row, "last_success_at", None)
+    if last_failure_at is None:
+        return False
+    if last_success_at is None:
+        return True
+    return last_failure_at > last_success_at
+
+
 def _snapshot_outcome(row: RuntimeStreamSnapshot | RuntimeRouteSnapshot | RuntimeDestinationSnapshot) -> OutcomeAggregate:
-    success = max(0, int(round(float(getattr(row, "eps_5m", 0) or 0) * _WINDOW_SECONDS)))
-    failure_rate = float(getattr(row, "failure_rate_5m", 0) or 0)
-    failure = max(0, int(round(success * failure_rate / max(1.0, 100.0 - failure_rate)))) if failure_rate > 0 else 0
-    retry_rate = float(getattr(row, "retry_rate_5m", 0) or 0)
-    retry = max(0, int(round((success + failure) * retry_rate / 100.0)))
+    """Build scoring aggregates from physical snapshot rows.
+
+    Route/destination snapshots store ``delivered_eps_1m`` / ``inbound_eps_1m`` and
+    ``failed_eps_1m`` (not stream ``eps_5m``). Reconstructing failures as
+    ``success * failure_rate / (100 - failure_rate)`` collapses to zero whenever
+    success EPS is 0 — which is exactly the total destination-outage case — and
+    falsely scores HEALTHY. Prefer direct failed EPS, and synthesize a minimum
+    failure signal when last_error is newer than last_success.
+    """
+
     latency = getattr(row, "avg_latency_ms", None)
+    last_failure_at = getattr(row, "last_error_at", None)
+    last_success_at = getattr(row, "last_success_at", None)
+    retry_rate = float(getattr(row, "retry_rate_5m", 0) or 0)
+
+    failed_eps_1m = getattr(row, "failed_eps_1m", None)
+    delivered_eps_1m = getattr(row, "delivered_eps_1m", None)
+    inbound_eps_1m = getattr(row, "inbound_eps_1m", None)
+
+    if failed_eps_1m is not None and (delivered_eps_1m is not None or inbound_eps_1m is not None):
+        success_eps = float(
+            delivered_eps_1m if delivered_eps_1m is not None else (inbound_eps_1m or 0.0)
+        )
+        success = _events_from_eps(success_eps, 60)
+        failure = _events_from_eps(float(failed_eps_1m or 0.0), 60)
+        if failure <= 0 and _failure_newer_than_success(row):
+            failure = 1
+    else:
+        success = _events_from_eps(getattr(row, "eps_5m", 0), _WINDOW_SECONDS)
+        failure_rate = float(getattr(row, "failure_rate_5m", 0) or 0)
+        if failure_rate > 0:
+            if success > 0 and failure_rate < 100.0:
+                failure = max(
+                    0,
+                    int(round(success * failure_rate / max(1.0, 100.0 - failure_rate))),
+                )
+            else:
+                # Total (or near-total) failure window: do not collapse to empty.
+                failure = max(1, int(round(failure_rate)))
+        else:
+            failure = 0
+        if failure <= 0 and _failure_newer_than_success(row):
+            failed_route_count = int(getattr(row, "failed_route_count", 0) or 0)
+            if failed_route_count > 0 or failure_rate > 0:
+                failure = 1
+
+    retry = max(0, int(round((success + failure) * retry_rate / 100.0)))
     return OutcomeAggregate(
         failure_count=failure,
         success_count=success,
@@ -56,8 +111,8 @@ def _snapshot_outcome(row: RuntimeStreamSnapshot | RuntimeRouteSnapshot | Runtim
         rate_limit_count=0,
         latency_ms_avg=latency,
         latency_ms_p95=latency,
-        last_failure_at=getattr(row, "last_error_at", None),
-        last_success_at=getattr(row, "last_success_at", None),
+        last_failure_at=last_failure_at,
+        last_success_at=last_success_at,
     )
 
 
