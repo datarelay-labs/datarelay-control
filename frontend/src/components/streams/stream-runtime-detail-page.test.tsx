@@ -442,6 +442,8 @@ describe('StreamRuntimeDetailPage backfill modal', () => {
     expect(screen.getByTestId('stream-backfill-modal')).toBeInTheDocument()
 
     await user.click(screen.getByTestId('stream-backfill-submit'))
+    expect(await screen.findByTestId('stream-backfill-live-confirm-dialog')).toBeInTheDocument()
+    await user.click(screen.getByTestId('stream-backfill-live-confirm-dialog-confirm'))
     expect(gdcBackfill.replayStreamBackfill).toHaveBeenCalled()
     expect(await screen.findByTestId('stream-backfill-result')).toBeInTheDocument()
     expect(screen.getByText('Sent').closest('li')).toHaveTextContent('2')
