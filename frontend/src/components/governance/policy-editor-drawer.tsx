@@ -34,6 +34,7 @@ import {
 } from './policy-lifecycle'
 import { PolicyRuntimeNotice } from './policy-runtime-notice'
 import { PolicySimulationPanel } from './policy-simulation-panel'
+import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
 
 const CATEGORIES: { value: PolicyCategory; label: string }[] = [
   { value: 'DATA_PROTECTION', label: 'Data Protection' },
@@ -87,6 +88,7 @@ export function PolicyEditorDrawer({ open, policy, readOnly = false, onClose, on
   const [mode, setMode] = useState<'guided' | 'advanced'>('guided')
   const [saving, setSaving] = useState(false)
   const [lifecycleLoading, setLifecycleLoading] = useState(false)
+  const [retireDialogOpen, setRetireDialogOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
@@ -240,6 +242,10 @@ export function PolicyEditorDrawer({ open, policy, readOnly = false, onClose, on
 
   const handleLifecycle = async () => {
     if (!isEdit || !policy || readOnly || lifecycleAction == null) return
+    if (lifecycleAction === 'retire') {
+      setRetireDialogOpen(true)
+      return
+    }
     setLifecycleLoading(true)
     setError(null)
     try {
@@ -248,12 +254,26 @@ export function PolicyEditorDrawer({ open, policy, readOnly = false, onClose, on
         result = await submitPolicyForReview(policy.id)
       } else if (lifecycleAction === 'activate') {
         result = await activateGovernancePolicy(policy.id)
-      } else if (lifecycleAction === 'retire') {
-        if (!window.confirm(`Retire policy "${policy.name}"?`)) return
-        result = await retireGovernancePolicy(policy.id)
       }
       if (!result?.policy) throw new Error('Lifecycle action failed.')
       setStatus(result.policy.status)
+      onSaved()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setLifecycleLoading(false)
+    }
+  }
+
+  const executeRetire = async () => {
+    if (!policy) return
+    setLifecycleLoading(true)
+    setError(null)
+    try {
+      const result = await retireGovernancePolicy(policy.id)
+      if (!result?.policy) throw new Error('Lifecycle action failed.')
+      setStatus(result.policy.status)
+      setRetireDialogOpen(false)
       onSaved()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -677,6 +697,30 @@ export function PolicyEditorDrawer({ open, policy, readOnly = false, onClose, on
           ) : null}
         </footer>
       </aside>
+      <DangerousActionDialog
+        open={retireDialogOpen}
+        onOpenChange={(open) => {
+          if (!open && !lifecycleLoading) setRetireDialogOpen(false)
+        }}
+        title="Retire policy?"
+        targetName={policy?.name}
+        impactBullets={[
+          'Stops new assignments from using this policy in active workflows.',
+          'Existing stream assignments may need review after retirement.',
+        ]}
+        dependencies={
+          selectedStreamIds.length > 0
+            ? [{ label: 'Assigned streams', count: selectedStreamIds.length }]
+            : []
+        }
+        reversibility="Retired policies can be reviewed later; delete is a separate permanent step."
+        risk="medium"
+        primaryLabel="Retire policy"
+        busy={lifecycleLoading}
+        error={error}
+        onConfirm={() => void executeRetire()}
+        dataTestId="policy-retire-dialog"
+      />
     </div>
   )
 }

@@ -15,6 +15,7 @@ import { S3ConnectorFields } from './s3-connector-fields'
 import { DatabaseConnectorFields } from './database-connector-fields'
 import { RemoteFileConnectorFields } from './remote-file-connector-fields'
 import { WebhookReceiverFields } from './webhook-receiver-fields'
+import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
 
 type ConfiguredSecrets = Partial<
   Record<
@@ -46,6 +47,9 @@ export function ConnectorDetailPage() {
   const [form, setForm] = useState<ConnectorWritePayload | null>(null)
   const [configuredSecrets, setConfiguredSecrets] = useState<ConfiguredSecrets>({})
   const [backupBusy, setBackupBusy] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deleteBusy, setDeleteBusy] = useState(false)
+  const [connectorSummary, setConnectorSummary] = useState<{ name: string; stream_count: number } | null>(null)
 
   useEffect(() => {
     let active = true
@@ -167,6 +171,7 @@ export function ConnectorDetailPage() {
         webhook_shared_secret: Boolean(row.webhook_shared_secret_configured),
         webhook_bearer_token: Boolean(row.webhook_bearer_token_configured),
       })
+      setConnectorSummary({ name: row.name, stream_count: row.stream_count ?? 0 })
       setLoading(false)
     })()
     return () => {
@@ -335,11 +340,18 @@ export function ConnectorDetailPage() {
     }
   }
 
-  async function onDelete() {
-    const ok = window.confirm('Delete this connector?')
-    if (!ok) return
-    await deleteConnector(Number(connectorId))
-    navigate('/connectors')
+  async function executeDelete() {
+    setDeleteBusy(true)
+    setError(null)
+    try {
+      await deleteConnector(Number(connectorId))
+      setDeleteOpen(false)
+      navigate('/connectors')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setDeleteBusy(false)
+    }
   }
 
   async function onExportConnectorJson() {
@@ -513,10 +525,33 @@ export function ConnectorDetailPage() {
         <button type="button" disabled={busy} onClick={() => void onSave()} className="h-9 rounded bg-violet-600 px-3 text-sm font-semibold text-white">
           {busy ? 'Saving...' : 'Save'}
         </button>
-        <button type="button" disabled={busy} onClick={() => void onDelete()} className="h-9 rounded border border-red-300 px-3 text-sm text-red-700">
+        <button type="button" disabled={busy} onClick={() => setDeleteOpen(true)} className="h-9 rounded border border-red-300 px-3 text-sm text-red-700">
           Delete
         </button>
       </div>
+      <DangerousActionDialog
+        open={deleteOpen}
+        onOpenChange={(open) => {
+          if (!open && !deleteBusy) setDeleteOpen(false)
+        }}
+        title="Delete connector permanently?"
+        targetName={connectorSummary?.name ?? form?.name}
+        impactBullets={[
+          'Removes this connector and its source configuration.',
+          'Delete fails while streams still reference this connector.',
+        ]}
+        dependencies={
+          (connectorSummary?.stream_count ?? 0) > 0
+            ? [{ label: 'Connected streams', count: connectorSummary?.stream_count }]
+            : []
+        }
+        reversibility="Delete is permanent. Stop or remove dependent streams first if needed."
+        primaryLabel="Delete connector"
+        busy={deleteBusy}
+        error={error}
+        onConfirm={() => void executeDelete()}
+        dataTestId="connector-detail-delete-dialog"
+      />
     </div>
   )
 }

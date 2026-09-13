@@ -40,6 +40,7 @@ import {
 } from '../../localPreferences'
 import { destinationDetailPath } from '../../config/nav-paths'
 import { cn } from '../../lib/utils'
+import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
 import { HelpTooltip } from '../ui/help-tooltip'
 import { HELP_COPY } from '../ui/help-tooltip-copy'
 import { DestinationsKpiStrip, computeDestinationsKpi } from './destination-kpi-strip'
@@ -690,6 +691,7 @@ export function DestinationsManagementPage() {
   const [deleteBlocked, setDeleteBlocked] = useState<{ title: string; message: string; destinationId?: number } | null>(null)
   const [deleteModal, setDeleteModal] = useState<{ row: DestinationListItem; confirm: string } | null>(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
+  const [disableDialogRow, setDisableDialogRow] = useState<DestinationListItem | null>(null)
   const [testBottomToast, setTestBottomToast] = useState<TestBottomToast | null>(null)
   const testToastClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -947,10 +949,29 @@ export function DestinationsManagementPage() {
   }
 
   async function onToggleEnabled(row: DestinationListItem, nextEnabled: boolean) {
+    if (!nextEnabled) {
+      setDisableDialogRow(row)
+      return
+    }
     setActionBusyId(row.id)
     setLocalError(null)
     try {
-      await updateDestination(row.id, { enabled: nextEnabled })
+      await updateDestination(row.id, { enabled: true })
+      await refresh()
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : 'Update failed.')
+    } finally {
+      setActionBusyId(null)
+    }
+  }
+
+  async function executeDisableDestination() {
+    if (!disableDialogRow) return
+    setActionBusyId(disableDialogRow.id)
+    setLocalError(null)
+    try {
+      await updateDestination(disableDialogRow.id, { enabled: false })
+      setDisableDialogRow(null)
       await refresh()
     } catch (err) {
       setLocalError(err instanceof Error ? err.message : 'Update failed.')
@@ -1871,36 +1892,59 @@ export function DestinationsManagementPage() {
         </div>
       )}
 
-      {/* ─── Delete Confirm Modal ─────────────────────────────────────────────── */}
       {deleteModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4" role="dialog" aria-modal="true">
-          <div className="w-full max-w-md rounded-xl border border-[#1e2a3b] bg-[#070f1c] p-5 shadow-xl">
-            <h3 className="text-sm font-semibold text-slate-100">Delete destination</h3>
-            <p className="mt-2 text-[12px] leading-relaxed text-slate-400">
-              This will permanently remove <span className="font-semibold text-slate-100">{deleteModal.row.name}</span>. Type the destination name to confirm.
-            </p>
-            <input
-              value={deleteModal.confirm}
-              onChange={(e) => setDeleteModal((m) => (m ? { ...m, confirm: e.target.value } : m))}
-              placeholder="Destination name"
-              className="mt-3 h-9 w-full rounded-md border border-[#1e2a3b] bg-[#0a1628] px-2 text-[12px] text-slate-100 placeholder:text-slate-600"
-            />
-            <div className="mt-4 flex justify-end gap-2">
-              <button type="button" onClick={() => setDeleteModal(null)} className="rounded-md px-3 py-1.5 text-[12px] font-semibold text-slate-400 hover:text-slate-200">
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={deleteBusy || deleteModal.confirm.trim() !== deleteModal.row.name.trim()}
-                onClick={() => void executeDelete()}
-                className="rounded-md bg-red-600 px-3 py-1.5 text-[12px] font-semibold text-white disabled:opacity-50 hover:bg-red-500"
-              >
-                {deleteBusy ? 'Deleting…' : 'Delete'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <DangerousActionDialog
+          open
+          onOpenChange={(open) => {
+            if (!open && !deleteBusy) setDeleteModal(null)
+          }}
+          title="Delete destination permanently?"
+          targetName={deleteModal.row.name}
+          impactBullets={[
+            'Removes this destination configuration permanently.',
+            'Stream routes must be removed before delete succeeds.',
+          ]}
+          reversibility="Delete is permanent. Disable instead to stop delivery while keeping configuration."
+          confirmMode="type-name"
+          expectedTypeName={deleteModal.row.name}
+          typeNameValue={deleteModal.confirm}
+          onTypeNameChange={(value) => setDeleteModal((m) => (m ? { ...m, confirm: value } : m))}
+          primaryLabel="Delete destination"
+          busy={deleteBusy}
+          error={localError}
+          onConfirm={() => void executeDelete()}
+          dataTestId="destination-delete-dialog"
+        />
       )}
+      {disableDialogRow ? (
+        <DangerousActionDialog
+          open
+          onOpenChange={(open) => {
+            if (!open && actionBusyId == null) setDisableDialogRow(null)
+          }}
+          title="Disable destination?"
+          targetName={disableDialogRow.name}
+          impactBullets={[
+            'Stops delivery on routes that use this destination.',
+            'Configuration is kept — re-enable when ready.',
+          ]}
+          dependencies={
+            disableDialogRow.routes.length > 0
+              ? [
+                  { label: 'Connected routes', count: disableDialogRow.routes.length },
+                  { label: 'Streams using destination', count: disableDialogRow.streams_using_count },
+                ]
+              : []
+          }
+          reversibility="Reversible — enable the destination again to resume delivery."
+          risk="medium"
+          primaryLabel="Disable destination"
+          busy={actionBusyId === disableDialogRow.id}
+          error={localError}
+          onConfirm={() => void executeDisableDestination()}
+          dataTestId="destination-disable-dialog"
+        />
+      ) : null}
     </div>
   )
 }
