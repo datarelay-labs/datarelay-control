@@ -178,3 +178,76 @@ def test_fetch_last_outcomes_degraded_on_operational_error(db_session: Session) 
     ):
         result = fetch_stream_last_outcomes(db_session, group_ids=[h["stream_id"]])
     assert result == {}
+
+
+def test_fetch_stream_last_outcomes_includes_run_failed(db_session: Session) -> None:
+    """Source outage stage run_failed must update stream last_failure (not route)."""
+
+    h = _mk_hierarchy(db_session, stream_name="source-outage-stream")
+    now = datetime.now(UTC)
+    success_at = now - timedelta(minutes=20)
+    failure_at = now - timedelta(minutes=2)
+    _log(
+        db_session,
+        connector_id=h["connector_id"],
+        stream_id=h["stream_id"],
+        route_id=h["route_id"],
+        destination_id=h["destination_id"],
+        stage="route_send_success",
+        created_at=success_at,
+    )
+    db_session.add(
+        DeliveryLog(
+            connector_id=h["connector_id"],
+            stream_id=h["stream_id"],
+            route_id=None,
+            destination_id=None,
+            stage="run_failed",
+            level="ERROR",
+            status="ERROR",
+            message="HTTP polling failed after retries",
+            payload_sample={},
+            retry_count=0,
+            created_at=failure_at,
+        )
+    )
+    db_session.commit()
+
+    stream_last = fetch_stream_last_outcomes(db_session, group_ids=[h["stream_id"]])
+    route_last = fetch_route_last_outcomes(db_session, group_ids=[h["route_id"]])
+
+    assert stream_last[h["stream_id"]].last_success_at == success_at
+    assert stream_last[h["stream_id"]].last_failure_at == failure_at
+    assert "HTTP polling failed" in (stream_last[h["stream_id"]].last_error_message or "")
+    # Route posture remains delivery-only — source outage must not mark the route failed.
+    assert route_last[h["route_id"]].last_success_at == success_at
+    assert route_last[h["route_id"]].last_failure_at is None
+
+
+def test_fetch_stream_window_aggregates_count_run_failed(db_session: Session) -> None:
+    from app.runtime.operational_snapshot_repository import fetch_stream_window_aggregates
+
+    h = _mk_hierarchy(db_session, stream_name="source-window-stream")
+    now = datetime.now(UTC)
+    db_session.add(
+        DeliveryLog(
+            connector_id=h["connector_id"],
+            stream_id=h["stream_id"],
+            route_id=None,
+            destination_id=None,
+            stage="run_failed",
+            level="ERROR",
+            status="ERROR",
+            message="source down",
+            payload_sample={},
+            retry_count=0,
+            created_at=now - timedelta(minutes=1),
+        )
+    )
+    db_session.commit()
+    agg = fetch_stream_window_aggregates(
+        db_session, since=now - timedelta(minutes=5), until=now + timedelta(seconds=1)
+    )
+    assert h["stream_id"] in agg
+    assert agg[h["stream_id"]].failure_count >= 1
+    assert agg[h["stream_id"]].success_count == 0

@@ -65,6 +65,10 @@ def classify_stream_health(
     Total delivery failure (high failure rate, or every enabled route failed with
     no healthy routes) must not remain HEALTHY merely because a prior success
     still exists. Partial route failure stays DEGRADED.
+
+    Source outages persist as ``run_failed`` and raise stream failure_rate; once
+    a newer success lands with no failed routes, recovery must not stay stuck on
+    the lagging 5m failure window.
     """
 
     if not enabled:
@@ -74,15 +78,25 @@ def classify_stream_health(
         return "ERROR"
     if "PAUSED" in status_upper or "RATE_LIMITED" in status_upper:
         return "DEGRADED"
+
+    enabled_routes = max(0, int(route_count or 0))
+    failed_routes = max(0, int(failed_route_count or 0))
+    healthy_routes = max(0, int(healthy_route_count or 0))
+
+    recovered = (
+        last_success_at is not None
+        and (last_error_at is None or last_success_at >= last_error_at)
+        and failed_routes == 0
+    )
+    if recovered:
+        return "HEALTHY"
+
     if last_error_at is not None and last_success_at is None:
         return "ERROR"
     # Apply rate / total-route failure before the newer-error DEGRADED shortcut so
     # sustained destination outages surface as ERROR rather than soft DEGRADED.
     if failure_rate_5m >= 50.0:
         return "ERROR"
-    enabled_routes = max(0, int(route_count or 0))
-    failed_routes = max(0, int(failed_route_count or 0))
-    healthy_routes = max(0, int(healthy_route_count or 0))
     if (
         enabled_routes > 0
         and failed_routes >= enabled_routes
