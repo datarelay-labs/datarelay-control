@@ -20,6 +20,7 @@ import { humanizeQuarantineReason } from '../../lib/humanize-quarantine-reason'
 import { cn } from '../../lib/utils'
 import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
 import { formatTimestampWithResolvedTimezone } from '../../lib/platform-timestamps'
+import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
 import { GovernanceInvestigationDrawer } from './governance-investigation-drawer'
 
 const WINDOWS: readonly ReplayWindow[] = ['24h', '7d', '30d'] as const
@@ -238,6 +239,9 @@ export function ReplayCenterPage() {
   const [drawerId, setDrawerId] = useState<number | null>(null)
   const [detail, setDetail] = useState<GovernanceReplayDetailResponse | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
+  const [pendingIds, setPendingIds] = useState<number[] | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [confirmTypeValue, setConfirmTypeValue] = useState('')
 
   const readOnly = !canExecuteReplay()
   const readOnlyReason = governanceReadOnlyReason()
@@ -315,27 +319,50 @@ export function ReplayCenterPage() {
     }
   }
 
-  const runExecute = async (ids: number[]) => {
+  const requestExecute = (ids: number[]) => {
     if (readOnly || ids.length === 0) return
+    setActionError(null)
+    setError(null)
+    setConfirmTypeValue('')
+    setPendingIds(ids)
+  }
+
+  const runExecute = async (ids: number[]) => {
+    requestExecute(ids)
+  }
+
+  const executePending = async () => {
+    if (readOnly || !pendingIds || pendingIds.length === 0) return
+    const ids = pendingIds
     setActionLoading(true)
+    setActionError(null)
     setError(null)
     try {
       if (ids.length === 1) {
         const result = await executeGovernanceReplay(ids[0])
         if (result.outcome !== 'replayed') {
-          setError(result.message || 'Replay failed.')
+          const msg = result.message || 'Replay failed.'
+          setActionError(msg)
+          setError(msg)
+          return
         }
       } else {
         const result = await bulkExecuteGovernanceReplay(ids)
         if (result.failed > 0) {
-          setError(result.results.find((r) => r.outcome !== 'replayed')?.message ?? 'Some replays failed.')
+          const msg = result.results.find((r) => r.outcome !== 'replayed')?.message ?? 'Some replays failed.'
+          setActionError(msg)
+          setError(msg)
+          return
         }
       }
+      setPendingIds(null)
       setSelectedIds(new Set())
       closeDetail()
       await load()
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      const msg = e instanceof Error ? e.message : String(e)
+      setActionError(msg)
+      setError(msg)
     } finally {
       setActionLoading(false)
     }
@@ -577,6 +604,46 @@ export function ReplayCenterPage() {
           readOnly={readOnly}
           onClose={closeDetail}
           onExecute={() => void runExecute([drawerId])}
+        />
+      ) : null}
+
+      {pendingIds ? (
+        <DangerousActionDialog
+          open
+          onOpenChange={(open) => {
+            if (!open && !actionLoading) {
+              setPendingIds(null)
+              setActionError(null)
+              setConfirmTypeValue('')
+            }
+          }}
+          title={
+            pendingIds.length > 1
+              ? `Execute ${pendingIds.length} replay jobs?`
+              : 'Execute replay job?'
+          }
+          targetName={
+            pendingIds.length === 1
+              ? `replay #${pendingIds[0]}`
+              : `${pendingIds.length} selected replay jobs`
+          }
+          risk="high"
+          confirmMode={pendingIds.length > 1 ? 'type-name' : 'click'}
+          expectedTypeName={pendingIds.length > 1 ? 'REPLAY' : ''}
+          typeNameValue={confirmTypeValue}
+          onTypeNameChange={setConfirmTypeValue}
+          impactBullets={[
+            'Re-delivers stored payloads to destinations without advancing production checkpoints.',
+            'Duplicate downstream delivery is possible; platform deduplication is not assumed.',
+            'Already-completed replay jobs are rejected by the backend.',
+          ]}
+          dependencies={[{ label: 'Selected replay jobs', count: pendingIds.length }]}
+          reversibility="Replay cannot be undone. Destination systems may receive duplicate records."
+          primaryLabel={pendingIds.length > 1 ? 'Execute selected' : 'Execute replay'}
+          busy={actionLoading}
+          error={actionError}
+          onConfirm={() => void executePending()}
+          dataTestId="replay-center-execute-dialog"
         />
       ) : null}
     </div>

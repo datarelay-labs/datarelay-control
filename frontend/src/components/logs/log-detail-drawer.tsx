@@ -16,6 +16,7 @@ import {
 } from '../../config/nav-paths'
 import { resolveStreamRouteIdentifier } from '../../utils/streamWorkflow'
 import { cn } from '../../lib/utils'
+import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
 import {
   buildRetryTimelineEntries,
   deliveryStatusPresentation,
@@ -389,6 +390,7 @@ export function LogDetailDrawer({
   const [replayBusy, setReplayBusy] = useState(false)
   const [replayResult, setReplayResult] = useState<DeliveryLogReplayResponse | null>(null)
   const [replayError, setReplayError] = useState<string | null>(null)
+  const [liveReplayConfirmOpen, setLiveReplayConfirmOpen] = useState(false)
   const preview = useMemo(() => getEventPreview(row), [row])
   const payloadObject = useMemo(() => {
     const base: Record<string, unknown> = { ...row.contextJson }
@@ -452,6 +454,7 @@ export function LogDetailDrawer({
     try {
       const res = await replayDeliveryLog(logDbId, { dry_run: dryRun })
       setReplayResult(res)
+      if (!dryRun) setLiveReplayConfirmOpen(false)
     } catch (err) {
       const msg =
         err instanceof Error
@@ -689,8 +692,12 @@ export function LogDetailDrawer({
               <button
                 type="button"
                 disabled={replayBusy}
-                onClick={() => void runReplay(false)}
+                onClick={() => {
+                  setReplayError(null)
+                  setLiveReplayConfirmOpen(true)
+                }}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-violet-600 bg-violet-600 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-violet-700 disabled:opacity-60"
+                data-testid="delivery-log-live-replay-open"
               >
                 {replayBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <RotateCcw className="h-3.5 w-3.5" aria-hidden />}
                 Replay delivery
@@ -806,6 +813,31 @@ export function LogDetailDrawer({
           Worker {getWorker(row)} · Host {getHost(row)} · Summary stage {pipelineStageLabel(row)}
         </p>
       </div>
+
+      {liveReplayConfirmOpen ? (
+        <DangerousActionDialog
+          open
+          onOpenChange={(open) => {
+            if (!open && !replayBusy) {
+              setLiveReplayConfirmOpen(false)
+            }
+          }}
+          title="Replay failed delivery live?"
+          targetName={logDbId != null ? `delivery log #${logDbId}` : undefined}
+          risk="high"
+          impactBullets={[
+            'Re-sends events from this failed delivery log to the destination.',
+            'Production checkpoint is not updated by this action.',
+            'Duplicate downstream delivery is possible; platform deduplication is not assumed.',
+          ]}
+          reversibility="Live replay cannot be undone. Prefer dry-run first when unsure."
+          primaryLabel="Replay delivery"
+          busy={replayBusy}
+          error={replayError}
+          onConfirm={() => void runReplay(false)}
+          dataTestId="delivery-log-live-replay-dialog"
+        />
+      ) : null}
     </>
   )
 }

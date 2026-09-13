@@ -20,7 +20,13 @@ import { NAV_PATH, logsExplorerPath } from '../../config/nav-paths'
 import { canDiscardQuarantine, canExecuteReplay, canReleaseQuarantine, governanceReadOnlyReason } from '../../lib/governance-rbac'
 import { cn } from '../../lib/utils'
 import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
+import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
 import { GovernanceInvestigationDrawer } from './governance-investigation-drawer'
+
+type PendingQuarantineCenterAction = {
+  kind: 'release' | 'discard' | 'replay'
+  ids: number[]
+}
 
 const WINDOWS: readonly QuarantineWindow[] = ['24h', '7d', '30d'] as const
 const STATUSES: readonly QuarantineDisplayStatus[] = ['QUARANTINED', 'RELEASED', 'DISCARDED', 'REPLAYED'] as const
@@ -249,6 +255,9 @@ export function QuarantineCenterPage() {
   const [drawerId, setDrawerId] = useState<number | null>(null)
   const [detail, setDetail] = useState<GovernanceQuarantineDetailResponse | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
+  const [pendingAction, setPendingAction] = useState<PendingQuarantineCenterAction | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [confirmTypeValue, setConfirmTypeValue] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -316,79 +325,116 @@ export function QuarantineCenterPage() {
     }
   }
 
-  const runBulk = async (action: 'release' | 'discard') => {
+  const requestAction = (kind: PendingQuarantineCenterAction['kind'], ids: number[]) => {
+    if (readOnly || ids.length === 0) return
+    setActionError(null)
+    setError(null)
+    setConfirmTypeValue('')
+    setPendingAction({ kind, ids })
+  }
+
+  const runBulk = (action: 'release' | 'discard') => {
     if (readOnly || selectedIds.size === 0) return
+    requestAction(action, Array.from(selectedIds))
+  }
+
+  const executePendingAction = async () => {
+    if (!pendingAction || readOnly) return
+    const { kind, ids } = pendingAction
     setActionLoading(true)
+    setActionError(null)
     setError(null)
     try {
-      const ids = Array.from(selectedIds)
-      const result =
-        action === 'release'
-          ? await releaseGovernanceQuarantineEvents(ids)
-          : await discardGovernanceQuarantineEvents(ids)
-      if (result.failed > 0) {
-        setError(`${result.failed} of ${result.total} operations failed.`)
+      if (kind === 'release') {
+        const result = await releaseGovernanceQuarantineEvents(ids)
+        if (result.failed > 0) {
+          const msg =
+            ids.length > 1
+              ? `${result.failed} of ${result.total} operations failed.`
+              : (result.results.find((r) => r.outcome !== 'released')?.message ?? 'Release failed.')
+          setActionError(msg)
+          setError(msg)
+          return
+        }
+      } else if (kind === 'discard') {
+        const result = await discardGovernanceQuarantineEvents(ids)
+        if (result.failed > 0) {
+          const msg =
+            ids.length > 1
+              ? `${result.failed} of ${result.total} operations failed.`
+              : (result.results.find((r) => r.outcome !== 'discarded')?.message ?? 'Discard failed.')
+          setActionError(msg)
+          setError(msg)
+          return
+        }
+      } else {
+        const result = await replayGovernanceQuarantineEvents(ids)
+        if (result.failed > 0) {
+          const msg = result.results.find((r) => r.outcome !== 'replayed')?.message ?? 'Replay failed.'
+          setActionError(msg)
+          setError(msg)
+          return
+        }
       }
+      setPendingAction(null)
       setSelectedIds(new Set())
       closeDetail()
       await load()
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      const msg = e instanceof Error ? e.message : String(e)
+      setActionError(msg)
+      setError(msg)
     } finally {
       setActionLoading(false)
     }
   }
 
   const runRelease = async (ids: number[]) => {
-    if (readOnly || ids.length === 0) return
-    setActionLoading(true)
-    setError(null)
-    try {
-      const result = await releaseGovernanceQuarantineEvents(ids)
-      if (result.failed > 0) setError(result.results.find((r) => r.outcome !== 'released')?.message ?? 'Release failed.')
-      closeDetail()
-      await load()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setActionLoading(false)
-    }
+    requestAction('release', ids)
   }
 
   const runDiscard = async (ids: number[]) => {
-    if (readOnly || ids.length === 0) return
-    setActionLoading(true)
-    setError(null)
-    try {
-      await discardGovernanceQuarantineEvents(ids)
-      closeDetail()
-      await load()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setActionLoading(false)
-    }
+    requestAction('discard', ids)
   }
 
   const runReplay = async (ids: number[]) => {
-    if (readOnly || ids.length === 0) return
-    setActionLoading(true)
-    setError(null)
-    try {
-      const result = await replayGovernanceQuarantineEvents(ids)
-      if (result.failed > 0) setError(result.results.find((r) => r.outcome !== 'replayed')?.message ?? 'Replay failed.')
-      closeDetail()
-      await load()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setActionLoading(false)
-    }
+    requestAction('replay', ids)
   }
 
   const policyOptions = useMemo(() => policies.map((p) => ({ id: p.id, name: p.name })), [policies])
   const streamOptions = useMemo(() => streams.map((s) => ({ id: s.id, name: s.name })), [streams])
 
+  const pendingCount = pendingAction?.ids.length ?? 0
+  const pendingTitle =
+    pendingAction?.kind === 'release'
+      ? pendingCount > 1
+        ? `Release ${pendingCount} quarantine events?`
+        : 'Release quarantine event?'
+      : pendingAction?.kind === 'discard'
+        ? pendingCount > 1
+          ? `Discard ${pendingCount} quarantine events permanently?`
+          : 'Discard quarantine event permanently?'
+        : pendingCount > 1
+          ? `Replay ${pendingCount} quarantine-linked events?`
+          : 'Replay quarantine-linked event?'
+  const pendingImpact =
+    pendingAction?.kind === 'release'
+      ? [
+          'Delivers held quarantine payload(s) to configured destinations.',
+          'Release may advance stream checkpoint(s).',
+          'Duplicate downstream delivery is possible; platform deduplication is not assumed.',
+        ]
+      : pendingAction?.kind === 'discard'
+        ? [
+            'Permanently discards held quarantine payload(s).',
+            'Events will not be delivered to destinations.',
+            'This cannot be undone from the product UI.',
+          ]
+        : [
+            'Executes linked pending replay job(s) for the selected quarantine event(s).',
+            'Production checkpoint is not advanced by replay.',
+            'Duplicate downstream delivery is possible.',
+          ]
   return (
     <div className="space-y-4" data-testid="quarantine-center-page">
       {readOnlyReason ? (
@@ -646,6 +692,56 @@ export function QuarantineCenterPage() {
           onRelease={() => void runRelease([drawerId])}
           onDiscard={() => void runDiscard([drawerId])}
           onReplay={() => void runReplay([drawerId])}
+        />
+      ) : null}
+
+      {pendingAction ? (
+        <DangerousActionDialog
+          open
+          onOpenChange={(open) => {
+            if (!open && !actionLoading) {
+              setPendingAction(null)
+              setActionError(null)
+              setConfirmTypeValue('')
+            }
+          }}
+          title={pendingTitle}
+          targetName={
+            pendingCount === 1
+              ? `quarantine #${pendingAction.ids[0]}`
+              : `${pendingCount} selected quarantine events`
+          }
+          risk={pendingAction.kind === 'discard' ? 'critical' : 'high'}
+          confirmMode={pendingAction.kind === 'discard' && pendingCount > 1 ? 'type-name' : 'click'}
+          expectedTypeName={pendingAction.kind === 'discard' && pendingCount > 1 ? 'DISCARD' : ''}
+          typeNameValue={confirmTypeValue}
+          onTypeNameChange={setConfirmTypeValue}
+          impactBullets={pendingImpact}
+          dependencies={[{ label: 'Selected items', count: pendingCount }]}
+          reversibility={
+            pendingAction.kind === 'discard'
+              ? 'Discard is irreversible.'
+              : pendingAction.kind === 'release'
+                ? 'Release cannot be undone. Checkpoint movement and duplicate delivery are possible.'
+                : 'Replay cannot be undone. Duplicate destination delivery is possible.'
+          }
+          primaryLabel={
+            pendingAction.kind === 'release'
+              ? pendingCount > 1
+                ? 'Release selected'
+                : 'Release event'
+              : pendingAction.kind === 'discard'
+                ? pendingCount > 1
+                  ? 'Discard selected'
+                  : 'Discard event'
+                : pendingCount > 1
+                  ? 'Replay selected'
+                  : 'Replay event'
+          }
+          busy={actionLoading}
+          error={actionError}
+          onConfirm={() => void executePendingAction()}
+          dataTestId={`quarantine-center-${pendingAction.kind}-dialog`}
         />
       ) : null}
     </div>

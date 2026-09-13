@@ -12,6 +12,12 @@ import { notifyStreamGovernanceChanged } from '../../lib/stream-governance-event
 import { compatibleGovernancePreload } from '../../lib/stream-governance-snapshot'
 import { cn } from '../../lib/utils'
 import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
+import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
+
+type PendingReplayAction = {
+  kind: 'replay' | 'discard'
+  row: ReplayEventItem
+}
 
 function statusBadge(status: string): string {
   switch (status) {
@@ -44,8 +50,10 @@ export function ReplayPanel({
   const [error, setError] = useState<string | null>(null)
   const [summary, setSummary] = useState<StreamReplaySummaryResponse | null>(preload ?? null)
   const [events, setEvents] = useState<ReplayEventItem[]>([])
-  const [actionBusy, setActionBusy] = useState<number | null>(null)
+  const [actionBusy, setActionBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
+  const [pending, setPending] = useState<PendingReplayAction | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   useEffect(() => {
     if (preload != null) setSummary(preload)
@@ -85,35 +93,23 @@ export function ReplayPanel({
     void load({ skipSummary })
   }, [streamId, load])
 
-  async function onReplay(row: ReplayEventItem) {
-    if (!canOperate || (row.status !== 'pending' && row.status !== 'failed')) return
-    setActionBusy(row.id)
+  async function executePending() {
+    if (!pending || !canOperate) return
+    const { kind, row } = pending
+    setActionBusy(true)
+    setActionError(null)
     setMessage(null)
     try {
-      const res = await replayStreamReplayEvent(row.id)
+      const res =
+        kind === 'replay' ? await replayStreamReplayEvent(row.id) : await discardStreamReplayEvent(row.id)
       setMessage(res.message)
+      setPending(null)
       await load()
       notifyStreamGovernanceChanged(streamId)
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : String(err))
+      setActionError(err instanceof Error ? err.message : String(err))
     } finally {
-      setActionBusy(null)
-    }
-  }
-
-  async function onDiscard(row: ReplayEventItem) {
-    if (!canOperate || row.status === 'discarded' || row.status === 'replayed') return
-    setActionBusy(row.id)
-    setMessage(null)
-    try {
-      const res = await discardStreamReplayEvent(row.id)
-      setMessage(res.message)
-      await load()
-      notifyStreamGovernanceChanged(streamId)
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : String(err))
-    } finally {
-      setActionBusy(null)
+      setActionBusy(false)
     }
   }
 
@@ -205,24 +201,26 @@ export function ReplayPanel({
                       {(row.status === 'pending' || row.status === 'failed') && canOperate ? (
                         <button
                           type="button"
-                          disabled={actionBusy === row.id}
-                          onClick={() => void onReplay(row)}
+                          disabled={actionBusy}
+                          onClick={() => {
+                            setActionError(null)
+                            setPending({ kind: 'replay', row })
+                          }}
                           className="inline-flex items-center gap-0.5 rounded border border-violet-300 px-1.5 py-0.5 font-semibold text-violet-800 hover:bg-violet-50 disabled:opacity-50 dark:border-violet-800 dark:text-violet-200 dark:hover:bg-violet-950/40"
                           data-testid={`replay-event-replay-${row.id}`}
                         >
-                          {actionBusy === row.id ? (
-                            <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-                          ) : (
-                            <RotateCcw className="h-3 w-3" aria-hidden />
-                          )}
+                          <RotateCcw className="h-3 w-3" aria-hidden />
                           Replay
                         </button>
                       ) : null}
                       {row.status !== 'discarded' && row.status !== 'replayed' && canOperate ? (
                         <button
                           type="button"
-                          disabled={actionBusy === row.id}
-                          onClick={() => void onDiscard(row)}
+                          disabled={actionBusy}
+                          onClick={() => {
+                            setActionError(null)
+                            setPending({ kind: 'discard', row })
+                          }}
                           className="inline-flex items-center gap-0.5 rounded border border-slate-300 px-1.5 py-0.5 font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-gdc-border dark:text-slate-200 dark:hover:bg-gdc-rowHover"
                           data-testid={`replay-event-discard-${row.id}`}
                         >
@@ -238,6 +236,48 @@ export function ReplayPanel({
           </tbody>
         </table>
       </div>
+
+      {pending ? (
+        <DangerousActionDialog
+          open
+          onOpenChange={(open) => {
+            if (!open && !actionBusy) {
+              setPending(null)
+              setActionError(null)
+            }
+          }}
+          title={pending.kind === 'replay' ? 'Replay stored event?' : 'Discard replay event?'}
+          targetName={`replay #${pending.row.id} · stream ${streamId} · destination ${pending.row.destination_id}`}
+          risk={pending.kind === 'replay' ? 'high' : 'medium'}
+          impactBullets={
+            pending.kind === 'replay'
+              ? [
+                  'Re-delivers the stored payload to the destination without advancing the production checkpoint.',
+                  'Duplicate downstream delivery is possible; platform deduplication is not assumed.',
+                  'Already-replayed events are rejected by the backend (409).',
+                ]
+              : [
+                  'Marks this replay job discarded so it will not execute.',
+                  'The original failure history remains for audit.',
+                ]
+          }
+          dependencies={[
+            { label: 'Events in payload', count: pending.row.event_count },
+            { label: 'Delivery kind', detail: pending.row.delivery_kind },
+            { label: 'Retries so far', count: pending.row.retry_count },
+          ]}
+          reversibility={
+            pending.kind === 'replay'
+              ? 'Replay cannot be undone. Destination systems may receive duplicate records.'
+              : 'Discard is permanent for this replay job.'
+          }
+          primaryLabel={pending.kind === 'replay' ? 'Execute replay' : 'Discard replay'}
+          busy={actionBusy}
+          error={actionError}
+          onConfirm={() => void executePending()}
+          dataTestId={pending.kind === 'replay' ? 'replay-execute-dialog' : 'replay-discard-dialog'}
+        />
+      ) : null}
     </section>
   )
 }
