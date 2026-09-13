@@ -416,9 +416,24 @@ export function StreamEditWizardPage() {
     if (!refreshed) return
     setState((prev) => {
       if (!prev) return prev
+      const localByKey = new Map(prev.destinations.routeDrafts.map((d) => [d.key, d]))
+      const mergedDrafts = refreshed.destinations.routeDrafts.map((server) => {
+        const local = localByKey.get(server.key)
+        if (!local) return server
+        // Keep local processing/protection/classification overrides; sync delivery fields from API.
+        return {
+          ...local,
+          destinationId: server.destinationId,
+          enabled: server.enabled,
+          failurePolicy: server.failurePolicy,
+        }
+      })
       return {
         ...prev,
-        destinations: refreshed.destinations,
+        destinations: {
+          ...refreshed.destinations,
+          routeDrafts: mergedDrafts,
+        },
         outcome: {
           ...prev.outcome,
           routeId: refreshed.routeIds[0] ?? prev.outcome?.routeId ?? null,
@@ -497,6 +512,21 @@ export function StreamEditWizardPage() {
       }
     }
   }, [backendStreamId, handleSave, isSaving, state])
+
+  // Flush pending autosave on leave so debounce window cannot silently drop route edits.
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current != null) {
+        window.clearTimeout(saveTimerRef.current)
+        saveTimerRef.current = null
+      }
+      const latest = latestStateRef.current
+      if (!latest || backendStreamId == null) return
+      const snapshot = JSON.stringify(latest)
+      if (snapshot === saveSnapshotRef.current) return
+      void persistWizardStreamEdits(backendStreamId, latest)
+    }
+  }, [backendStreamId])
 
   const runStreamControl = useCallback(
     async (action: 'start' | 'stop') => {

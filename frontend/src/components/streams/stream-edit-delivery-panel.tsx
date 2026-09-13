@@ -1,5 +1,5 @@
 import { Loader2, Plus, Save, Trash2 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { fetchDestinationsList, type DestinationRead } from '../../api/gdcDestinations'
 import {
   fetchStreamMappingUiConfig,
@@ -13,6 +13,7 @@ import { DEFAULT_MESSAGE_PREFIX_TEMPLATE, defaultMessagePrefixEnabled } from '..
 import { DELIVERY_PREVIEW_SAMPLE_EVENT } from '../../utils/deliveryPreviewSample'
 import { MessagePrefixDeliveryPreview } from './message-prefix-delivery-preview'
 import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
+import { mergeMessagePrefixDrafts, type MessagePrefixDraft } from '../routes/route-delivery-dirty'
 
 const FAILURE_POLICIES = ['LOG_AND_CONTINUE', 'RETRY_AND_BACKOFF', 'PAUSE_STREAM_ON_FAILURE', 'DISABLE_ROUTE_ON_FAILURE'] as const
 
@@ -90,12 +91,17 @@ export function StreamEditDeliveryPanel({ streamId, onSaved }: Props) {
   const [routeBusyId, setRouteBusyId] = useState<number | null>(null)
   const [newRouteDestinationId, setNewRouteDestinationId] = useState('')
   const [newRouteFailurePolicy, setNewRouteFailurePolicy] = useState<(typeof FAILURE_POLICIES)[number]>('LOG_AND_CONTINUE')
-  const [prefixDraft, setPrefixDraft] = useState<
-    Record<number, { enabled: boolean; template: string }>
-  >({})
-  const [deleteRouteDialog, setDeleteRouteDialog] = useState<{ routeId: number; destinationName: string } | null>(
-    null,
-  )
+  const [prefixDraft, setPrefixDraft] = useState<Record<number, MessagePrefixDraft>>({})
+  const [prefixBaseline, setPrefixBaseline] = useState<Record<number, MessagePrefixDraft>>({})
+  const prefixDraftRef = useRef(prefixDraft)
+  const prefixBaselineRef = useRef(prefixBaseline)
+  prefixDraftRef.current = prefixDraft
+  prefixBaselineRef.current = prefixBaseline
+  const [deleteRouteDialog, setDeleteRouteDialog] = useState<{
+    routeId: number
+    destinationName: string
+    hasUnsavedPrefix: boolean
+  } | null>(null)
 
   const load = useCallback(async () => {
     setLoadError(null)
@@ -128,24 +134,29 @@ export function StreamEditDeliveryPanel({ streamId, onSaved }: Props) {
   useEffect(() => {
     const rows = mappingCfg?.routes
     if (!rows) return
-    const next: Record<number, { enabled: boolean; template: string }> = {}
-    for (const r of rows) {
-      const fc = r.formatter_config ?? {}
-      const kind = r.destination_type ?? ''
-      const defEn = defaultMessagePrefixEnabled(kind)
-      next[r.route_id] = {
-        enabled: typeof fc.message_prefix_enabled === 'boolean' ? fc.message_prefix_enabled : defEn,
-        template:
-          typeof fc.message_prefix_template === 'string' && fc.message_prefix_template.trim()
-            ? String(fc.message_prefix_template)
-            : DEFAULT_MESSAGE_PREFIX_TEMPLATE,
-      }
-    }
-    setPrefixDraft(next)
+    const { drafts, baseline } = mergeMessagePrefixDrafts({
+      routes: rows,
+      prevDrafts: prefixDraftRef.current,
+      prevBaseline: prefixBaselineRef.current,
+      defaultEnabled: defaultMessagePrefixEnabled,
+      defaultTemplate: DEFAULT_MESSAGE_PREFIX_TEMPLATE,
+    })
+    setPrefixDraft(drafts)
+    setPrefixBaseline(baseline)
   }, [mappingCfg])
 
   const routes = mappingCfg?.routes ?? []
   const destinationById = useMemo(() => new Map(destinations.map((d) => [d.id, d])), [destinations])
+
+  const isPrefixDirty = useCallback(
+    (routeId: number) => {
+      const draft = prefixDraft[routeId]
+      const base = prefixBaseline[routeId]
+      if (!draft || !base) return false
+      return draft.enabled !== base.enabled || draft.template !== base.template
+    },
+    [prefixBaseline, prefixDraft],
+  )
 
   const applyRouteRemoved = useCallback((routeId: number) => {
     setMappingCfg((prev) =>
@@ -157,8 +168,13 @@ export function StreamEditDeliveryPanel({ streamId, onSaved }: Props) {
       delete next[routeId]
       return next
     })
+    setPrefixBaseline((prev) => {
+      if (!(routeId in prev)) return prev
+      const next = { ...prev }
+      delete next[routeId]
+      return next
+    })
   }, [])
-
   async function onAddRoute() {
     const destinationId = Number(newRouteDestinationId)
     if (!Number.isFinite(destinationId)) return
@@ -260,6 +276,13 @@ export function StreamEditDeliveryPanel({ streamId, onSaved }: Props) {
           message_prefix_template: draft.template.trim() || DEFAULT_MESSAGE_PREFIX_TEMPLATE,
         },
       })
+      setPrefixBaseline((base) => ({
+        ...base,
+        [routeId]: {
+          enabled: draft.enabled,
+          template: draft.template.trim() || DEFAULT_MESSAGE_PREFIX_TEMPLATE,
+        },
+      }))
       setNotice('Message prefix settings saved.')
       await load()
       onSaved?.()
@@ -471,11 +494,13 @@ export function StreamEditDeliveryPanel({ streamId, onSaved }: Props) {
                         data-testid={`save-prefix-action-${r.route_id}`}
                       >
                         <p className="text-[10px] font-medium leading-snug text-violet-900 dark:text-violet-100">
-                          Prefix changes are not applied until you save this route.
+                          {isPrefixDirty(r.route_id)
+                            ? 'Unsaved prefix edits — runtime still uses the last saved template until you save.'
+                            : 'Prefix changes are not applied until you save this route.'}
                         </p>
                         <button
                           type="button"
-                          disabled={routeBusyId === r.route_id}
+                          disabled={routeBusyId === r.route_id || !isPrefixDirty(r.route_id)}
                           onClick={() => void onSaveMessagePrefix(r.route_id)}
                           className="mt-2 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-md bg-violet-600 px-3 text-[11px] font-semibold text-white shadow-sm ring-1 ring-violet-500/40 hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
                           data-testid={`save-prefix-${r.route_id}`}
@@ -531,6 +556,7 @@ export function StreamEditDeliveryPanel({ streamId, onSaved }: Props) {
                         setDeleteRouteDialog({
                           routeId: r.route_id,
                           destinationName: r.destination_name ?? destinationById.get(r.destination_id)?.name ?? 'destination',
+                          hasUnsavedPrefix: isPrefixDirty(r.route_id),
                         })
                       }
                       className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-red-200/90 bg-white text-red-700 shadow-sm hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-red-900/60 dark:bg-gdc-card dark:text-red-300 dark:hover:bg-red-950/40"
@@ -561,6 +587,9 @@ export function StreamEditDeliveryPanel({ streamId, onSaved }: Props) {
           impactBullets={[
             'Removes this delivery path from the stream only.',
             'The destination configuration is kept and can be used by other routes.',
+            ...(deleteRouteDialog.hasUnsavedPrefix
+              ? ['Unsaved message-prefix edits for this route will also be discarded.']
+              : []),
           ]}
           reversibility="You can add a new route to the same destination later."
           primaryLabel="Remove route"
