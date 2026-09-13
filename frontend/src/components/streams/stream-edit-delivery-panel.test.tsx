@@ -21,6 +21,7 @@ vi.mock('../../api/gdcRoutes', () => ({
   createRoute: vi.fn(),
   deleteRoute: (...args: unknown[]) => deleteRoute(...args),
   updateRoute: vi.fn(),
+  updateRouteWithFreshToken: vi.fn(),
 }))
 
 vi.mock('./message-prefix-delivery-preview', () => ({

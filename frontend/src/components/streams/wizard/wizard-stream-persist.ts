@@ -1,4 +1,4 @@
-import { createRoute, deleteRoute, updateRoute } from '../../../api/gdcRoutes'
+import { createRoute, deleteRoute, updateRouteWithFreshToken } from '../../../api/gdcRoutes'
 import { saveStreamMappingUiConfigStrict } from '../../../api/gdcRuntimeUi'
 import { fetchStreamById, updateStream } from '../../../api/gdcStreams'
 import {
@@ -40,7 +40,7 @@ async function syncRoutes(streamId: number, state: WizardState): Promise<string[
 
     try {
       if (routeId != null) {
-        await updateRoute(routeId, {
+        await updateRouteWithFreshToken(routeId, {
           stream_id: streamId,
           enabled: payload.enabled,
           failure_policy: payload.failure_policy,

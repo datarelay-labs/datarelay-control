@@ -75,7 +75,11 @@ function installRouteEditSpies() {
     failure_policy: 'LOG_AND_CONTINUE',
     formatter_config_json: { delivery_mode: 'Reliable' },
     rate_limit_json: {},
+    updated_at: '2026-01-01T00:00:00Z',
   } as never)
+  vi.spyOn(gdcRoutes, 'fetchRouteByIdFresh').mockImplementation((...args: unknown[]) =>
+    gdcRoutes.fetchRouteById(...(args as [number])),
+  )
   vi.spyOn(gdcStreams, 'fetchStreamById').mockResolvedValue({ id: 10, name: 'Stream A', connector_id: 1 } as never)
   vi.spyOn(gdcConnectors, 'fetchConnectorById').mockResolvedValue({ id: 1, name: 'Connector A' } as never)
   vi.spyOn(gdcDestinations, 'fetchDestinationsList').mockResolvedValue([{ id: 5, name: 'Dest A' }] as never)

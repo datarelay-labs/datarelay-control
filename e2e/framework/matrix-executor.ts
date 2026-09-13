@@ -579,8 +579,11 @@ async function runMultiRouteScenario(
   if (scenario.tags.includes('partial_failure') || scenario.id.includes('partial_failure')) {
     // Disable second route to simulate partial path; keep webhook
     if (stream.routeIds[1]) {
-      await opts.request.put(`${env.apiBaseUrl}/api/v1/routes/${stream.routeIds[1]}`, {
-        data: { enabled: false },
+      const routeId = stream.routeIds[1]
+      const current = await opts.request.get(`${env.apiBaseUrl}/api/v1/routes/${routeId}`)
+      const token = (await current.json()).updated_at as string
+      await opts.request.put(`${env.apiBaseUrl}/api/v1/routes/${routeId}`, {
+        data: { enabled: false, expected_updated_at: token },
       })
     }
   }

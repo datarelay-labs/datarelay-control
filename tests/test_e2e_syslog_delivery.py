@@ -134,6 +134,14 @@ def _assert_run_id_on_stages(db: Session, stream_id: int, stages: tuple[str, ...
 @pytest.mark.e2e_smoke
 @pytest.mark.e2e_delivery
 @pytest.mark.e2e_checkpoint
+
+def _put_route_with_token(client, route_id, payload):
+    get_res = client.get(f"/api/v1/routes/{route_id}")
+    assert get_res.status_code == 200, get_res.text
+    body = dict(payload)
+    body["expected_updated_at"] = get_res.json()["updated_at"]
+    return client.put(f"/api/v1/routes/{route_id}", json=body)
+
 def test_e2e_syslog_udp_http_mapping_enrichment_delivery(
     client: TestClient,
     db_session: Session,
@@ -297,7 +305,7 @@ def test_e2e_syslog_pause_on_unreachable_tcp_no_checkpoint(
     cp_before = dict(db_session.get(Checkpoint, ck_id).checkpoint_value_json or {})  # type: ignore[union-attr]
 
     assert (
-        client.put(f"/api/v1/routes/{route_id}", json={"failure_policy": "PAUSE_STREAM_ON_FAILURE"}).status_code == 200
+        _put_route_with_token(client, route_id, {"failure_policy": "PAUSE_STREAM_ON_FAILURE"}).status_code == 200
     )
 
     _apply_single_object_mapping_and_endpoint(client, stream_id)
@@ -371,7 +379,7 @@ def test_e2e_syslog_tcp_retry_success_advances_checkpoint(
     )
     stream_id = int(out["stream_id"])
     route_id = int(out["route_id"])
-    assert client.put(f"/api/v1/routes/{route_id}", json={"failure_policy": "RETRY_AND_BACKOFF"}).status_code == 200
+    assert _put_route_with_token(client, route_id, {"failure_policy": "RETRY_AND_BACKOFF"}).status_code == 200
 
     _apply_single_object_mapping_and_endpoint(client, stream_id)
 

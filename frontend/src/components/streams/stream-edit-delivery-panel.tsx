@@ -7,7 +7,7 @@ import {
   saveRuntimeRouteFailurePolicy,
 } from '../../api/gdcRuntime'
 import type { MappingUIConfigResponse } from '../../api/types/gdcApi'
-import { createRoute, deleteRoute, updateRoute } from '../../api/gdcRoutes'
+import { createRoute, deleteRoute, updateRouteWithFreshToken } from '../../api/gdcRoutes'
 import { cn } from '../../lib/utils'
 import { DEFAULT_MESSAGE_PREFIX_TEMPLATE, defaultMessagePrefixEnabled } from '../../utils/messagePrefixDefaults'
 import { DELIVERY_PREVIEW_SAMPLE_EVENT } from '../../utils/deliveryPreviewSample'
@@ -208,7 +208,7 @@ export function StreamEditDeliveryPanel({ streamId, onSaved }: Props) {
     setRouteBusyId(routeId)
     setNotice(null)
     try {
-      await updateRoute(routeId, { destination_id: destinationId, stream_id: streamId })
+      await updateRouteWithFreshToken(routeId, { destination_id: destinationId, stream_id: streamId })
       setNotice('Destination updated for this route.')
       await load()
       onSaved?.()
@@ -268,7 +268,7 @@ export function StreamEditDeliveryPanel({ streamId, onSaved }: Props) {
     setNotice(null)
     try {
       const prev = { ...(row.formatter_config ?? {}) }
-      await updateRoute(routeId, {
+      await updateRouteWithFreshToken(routeId, {
         stream_id: streamId,
         formatter_config_json: {
           ...prev,

@@ -67,6 +67,14 @@ def _assert_checkpoint_last_success(db: Session, stream_id: int) -> dict[str, An
 @pytest.mark.e2e_smoke
 @pytest.mark.e2e_delivery
 @pytest.mark.e2e_checkpoint
+
+def _put_route_with_token(client, route_id, payload):
+    get_res = client.get(f"/api/v1/routes/{route_id}")
+    assert get_res.status_code == 200, get_res.text
+    body = dict(payload)
+    body["expected_updated_at"] = get_res.json()["updated_at"]
+    return client.put(f"/api/v1/routes/{route_id}", json=body)
+
 def test_template_generic_rest_polling_run_once_delivery_logs_checkpoint(
     client: TestClient, db_session: Session
 ) -> None:
@@ -284,9 +292,10 @@ def test_template_destination_failure_blocks_checkpoint_analytics_health(
 
     cp_before = dict(db_session.get(Checkpoint, int(ins.json()["checkpoint_id"])).checkpoint_value_json or {})
 
-    rput = client.put(
-        f"/api/v1/routes/{route_id}",
-        json={"failure_policy": "PAUSE_STREAM_ON_FAILURE"},
+    rput = _put_route_with_token(
+        client,
+        route_id,
+        {"failure_policy": "PAUSE_STREAM_ON_FAILURE"},
     )
     assert rput.status_code == 200, rput.text
 
@@ -350,9 +359,10 @@ def test_template_route_retry_then_success_checkpoint_and_retry_analytics(
     stream_id = int(ins.json()["stream_id"])
     route_id = int(ins.json()["route_id"])
 
-    rput = client.put(
-        f"/api/v1/routes/{route_id}",
-        json={"failure_policy": "RETRY_AND_BACKOFF"},
+    rput = _put_route_with_token(
+        client,
+        route_id,
+        {"failure_policy": "RETRY_AND_BACKOFF"},
     )
     assert rput.status_code == 200, rput.text
 

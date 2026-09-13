@@ -87,7 +87,11 @@ describe('route by-id request cache', () => {
 
     const clearSpy = vi.spyOn(requestCache, 'clearSharedRequestCache')
     requestJson.mockResolvedValue({ id: 7, name: 'R7-updated', enabled: false })
-    await updateRoute(7, { name: 'R7-updated', enabled: false })
+    await updateRoute(7, {
+      name: 'R7-updated',
+      enabled: false,
+      expected_updated_at: '2026-01-01T00:00:00Z',
+    })
     expect(clearSpy).toHaveBeenCalledWith('catalog-routes', CATALOG_ROUTES_LIST_KEY)
     expect(clearSpy).toHaveBeenCalledWith('catalog-route-by-id', '7')
     expect(clearSpy).not.toHaveBeenCalledWith('catalog-route-by-id', '8')

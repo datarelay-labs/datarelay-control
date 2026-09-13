@@ -5,7 +5,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { cn } from '../../lib/utils'
 import { StatusBadge } from '../shell/status-badge'
 import { PanelChrome } from '../streams/mapping-json-tree'
-import { createRoute, fetchRouteById, updateRoute } from '../../api/gdcRoutes'
+import { createRoute, fetchRouteById, fetchRouteByIdFresh, isRouteStaleWriteError, updateRoute } from '../../api/gdcRoutes'
 import { fetchStreamById } from '../../api/gdcStreams'
 import { fetchConnectorById } from '../../api/gdcConnectors'
 import { fetchRouteTransformEffective, type RouteTransformEffective } from '../../api/gdcRouteTransform'
@@ -152,11 +152,14 @@ export function RouteEditPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null)
+  const [staleConflict, setStaleConflict] = useState(false)
+  const [routeUpdatedAt, setRouteUpdatedAt] = useState<string | null>(null)
+  const [discardOpen, setDiscardOpen] = useState(false)
+  const [refreshConfirmOpen, setRefreshConfirmOpen] = useState(false)
   const [deliveryBaseline, setDeliveryBaseline] = useState<RouteDeliveryFormState | null>(
     isCreateMode ? defaultsRouteDeliveryFormState() : null,
   )
   const [transformDirty, setTransformDirty] = useState(false)
-  const [discardOpen, setDiscardOpen] = useState(false)
   const [connectorLabel, setConnectorLabel] = useState('—')
   const [streamLabel, setStreamLabel] = useState('—')
   const destinationLabel = useMemo(() => {
@@ -261,27 +264,18 @@ export function RouteEditPage() {
     setPolicyEffective(policyEffective)
   }, [])
 
-  useEffect(() => {
-    let cancelled = false
-    if (backendRouteId == null) {
-      setTransformEffective(null)
-      setProtectionEffective(null)
-      setClassificationEffective(null)
-      setPolicyEffective(null)
-      setDeliveryBaseline(defaultsRouteDeliveryFormState())
-      setTransformDirty(false)
-      return
-    }
-    const routeId = backendRouteId
-    setTransformEffective(null)
-    setProtectionEffective(null)
-    setClassificationEffective(null)
-    setPolicyEffective(null)
-    setDeliveryBaseline(null)
-    setTransformDirty(false)
-    ;(async () => {
-      const found = await fetchRouteById(routeId)
-      if (!found || cancelled) return
+  const applyServerRoute = useCallback(
+    (found: {
+      name?: string | null
+      description?: string | null
+      enabled?: boolean | null
+      destination_id?: number | null
+      stream_id?: number | null
+      failure_policy?: string | null
+      formatter_config_json?: Record<string, unknown> | null
+      rate_limit_json?: Record<string, unknown> | null
+      updated_at?: string | null
+    }) => {
       const delivery = applyRouteDeliveryFields(found)
       const form: RouteDeliveryFormState = {
         routeName: found.name?.trim() || d.routeName,
@@ -303,15 +297,69 @@ export function RouteEditPage() {
       if (typeof found.stream_id === 'number') setBackendStreamId(found.stream_id)
       applyDeliveryForm(form)
       setDeliveryBaseline(form)
+      setRouteUpdatedAt(typeof found.updated_at === 'string' ? found.updated_at : null)
+      setTransformDirty(false)
+      setStaleConflict(false)
       setSaveError(null)
       setSaveSuccess(null)
+    },
+    [applyDeliveryForm, d.routeName, d.status],
+  )
+
+  const reloadLatestFromServer = useCallback(async () => {
+    if (backendRouteId == null) return
+    const found = await fetchRouteByIdFresh(backendRouteId)
+    if (!found) {
+      setSaveError('Could not refresh the latest route from the server.')
+      return
+    }
+    applyServerRoute(found)
+    void refreshProcessingStatus(backendRouteId)
+  }, [applyServerRoute, backendRouteId, refreshProcessingStatus])
+
+  const requestRefreshLatest = useCallback(() => {
+    if (hasUnsavedChanges) {
+      setRefreshConfirmOpen(true)
+      return
+    }
+    void reloadLatestFromServer()
+  }, [hasUnsavedChanges, reloadLatestFromServer])
+
+  useEffect(() => {
+    let cancelled = false
+    if (backendRouteId == null) {
+      setTransformEffective(null)
+      setProtectionEffective(null)
+      setClassificationEffective(null)
+      setPolicyEffective(null)
+      setDeliveryBaseline(defaultsRouteDeliveryFormState())
+      setRouteUpdatedAt(null)
+      setTransformDirty(false)
+      setStaleConflict(false)
+      return
+    }
+    const routeId = backendRouteId
+    setTransformEffective(null)
+    setProtectionEffective(null)
+    setClassificationEffective(null)
+    setPolicyEffective(null)
+    setDeliveryBaseline(null)
+    setRouteUpdatedAt(null)
+    setTransformDirty(false)
+    setStaleConflict(false)
+    ;(async () => {
+      const found = await fetchRouteById(routeId)
+      if (!found || cancelled) return
+      // Dirty-safety: never clobber local edits if the operator already changed the form
+      // before this in-flight load resolves (e.g. remount race / delayed response).
+      applyServerRoute(found)
       void refreshProcessingStatus(routeId)
     })()
     return () => {
       cancelled = true
       processingStatusGenRef.current += 1
     }
-  }, [applyDeliveryForm, backendRouteId, d.routeName, d.status, refreshProcessingStatus])
+  }, [applyServerRoute, backendRouteId, refreshProcessingStatus])
 
   useEffect(() => {
     let cancelled = false
@@ -369,6 +417,7 @@ export function RouteEditPage() {
     setIsSaving(true)
     setSaveError(null)
     setSaveSuccess(null)
+    setStaleConflict(false)
     try {
       const policy =
         failurePolicy === 'Retry'
@@ -403,7 +452,19 @@ export function RouteEditPage() {
             }
           : { enabled: false },
       }
-      const saved = isCreateMode ? await createRoute(routePayload) : await updateRoute(backendRouteId, routePayload)
+      if (!isCreateMode) {
+        if (!routeUpdatedAt) {
+          setSaveError('Route concurrency token missing. Refresh the latest route before saving.')
+          setStaleConflict(true)
+          return
+        }
+      }
+      const saved = isCreateMode
+        ? await createRoute(routePayload)
+        : await updateRoute(backendRouteId, {
+            ...routePayload,
+            expected_updated_at: routeUpdatedAt as string,
+          })
       const delivery = applyRouteDeliveryFields(saved)
       const nextBaseline: RouteDeliveryFormState = {
         routeName: saved.name?.trim() || routeName,
@@ -424,11 +485,21 @@ export function RouteEditPage() {
       }
       applyDeliveryForm(nextBaseline)
       setDeliveryBaseline(nextBaseline)
+      setRouteUpdatedAt(typeof saved.updated_at === 'string' ? saved.updated_at : null)
+      setStaleConflict(false)
       setSaveSuccess(isCreateMode ? 'Route created. Moving to stream runtime…' : 'Route saved. Moving to stream runtime…')
       const runtimeStreamId = typeof saved.stream_id === 'number' ? saved.stream_id : backendStreamId
       if (typeof runtimeStreamId === 'number') navigate(streamRuntimePath(String(runtimeStreamId)))
       else navigate('/routes')
     } catch (err) {
+      if (isRouteStaleWriteError(err)) {
+        setStaleConflict(true)
+        setSaveError(
+          'This route changed since you started editing. Your unsaved changes are still preserved. Refresh/review the latest route before saving again.',
+        )
+        setSaveSuccess(null)
+        return
+      }
       const message = err instanceof Error ? err.message : 'Route save failed.'
       setSaveError(`API save failed: ${message}`)
       setSaveSuccess(null)
@@ -439,13 +510,15 @@ export function RouteEditPage() {
 
   const saveStatusLabel = isSaving
     ? 'Saving…'
-    : saveError
-      ? 'Save failed'
-      : saveSuccess
-        ? 'Saved'
-        : hasUnsavedChanges
-          ? 'Unsaved changes'
-          : 'Saved'
+    : staleConflict
+      ? 'Conflict'
+      : saveError
+        ? 'Save failed'
+        : saveSuccess
+          ? 'Saved'
+          : hasUnsavedChanges
+            ? 'Unsaved changes'
+            : 'Saved'
   return (
     <div className="w-full min-w-0 space-y-3">
       <header className="flex flex-wrap items-start justify-between gap-2 rounded-lg border border-slate-200/70 bg-white/80 p-3 dark:border-gdc-border dark:bg-gdc-card">
@@ -538,7 +611,41 @@ export function RouteEditPage() {
           Unsaved edits are local only. Runtime continues using the last persisted route configuration until Save succeeds.
         </p>
       ) : null}
-      {saveError ? <p className="text-[12px] font-medium text-red-700 dark:text-red-300">{saveError}</p> : null}
+      {staleConflict ? (
+        <div
+          className="space-y-2 rounded-md border border-amber-300/80 bg-amber-50/90 p-3 dark:border-amber-700/60 dark:bg-amber-950/40"
+          data-testid="route-edit-stale-conflict"
+          role="alert"
+        >
+          <p className="text-[12px] font-medium text-amber-950 dark:text-amber-100">
+            This route changed since you started editing. Your unsaved changes are still preserved. Refresh/review the
+            latest route before saving again.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="inline-flex h-8 items-center rounded-md border border-slate-200 bg-white px-3 text-[12px] font-medium hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card"
+              data-testid="route-edit-stale-keep-editing"
+              onClick={() => setStaleConflict(false)}
+            >
+              Keep editing
+            </button>
+            <button
+              type="button"
+              className="inline-flex h-8 items-center rounded-md border border-amber-400 bg-amber-100 px-3 text-[12px] font-semibold text-amber-950 hover:bg-amber-200 dark:border-amber-600 dark:bg-amber-900/50 dark:text-amber-50"
+              data-testid="route-edit-stale-refresh"
+              onClick={requestRefreshLatest}
+            >
+              Refresh latest
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {saveError && !staleConflict ? (
+        <p className="text-[12px] font-medium text-red-700 dark:text-red-300" data-testid="route-edit-save-error">
+          {saveError}
+        </p>
+      ) : null}
       {saveSuccess ? <p className="text-[12px] font-medium text-emerald-700 dark:text-emerald-300">{saveSuccess}</p> : null}
       {!isCreateMode && backendRouteId != null ? (
         <RouteDetailHealthPanel routeId={backendRouteId} streamId={backendStreamId} />
@@ -874,6 +981,29 @@ export function RouteEditPage() {
             leaveWithoutSaving()
           }}
           dataTestId="route-edit-discard-dialog"
+        />
+      ) : null}
+      {refreshConfirmOpen ? (
+        <DangerousActionDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setRefreshConfirmOpen(false)
+          }}
+          title="Refresh and discard unsaved route changes?"
+          targetName={routeName.trim() || `Route #${backendRouteId}`}
+          risk="medium"
+          impactBullets={[
+            'Your unsaved local edits will be discarded.',
+            'The form will reload the latest server route configuration.',
+            'Runtime continues using the last successfully persisted route configuration.',
+          ]}
+          reversibility="Unsaved edits cannot be recovered after refresh."
+          primaryLabel="Refresh latest"
+          onConfirm={() => {
+            setRefreshConfirmOpen(false)
+            void reloadLatestFromServer()
+          }}
+          dataTestId="route-edit-refresh-discard-dialog"
         />
       ) : null}
     </div>

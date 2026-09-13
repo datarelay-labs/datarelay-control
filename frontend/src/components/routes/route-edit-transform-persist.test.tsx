@@ -19,8 +19,11 @@ const saveRouteEnrichmentUiConfig = vi.fn()
 
 vi.mock('../../api/gdcRoutes', () => ({
   fetchRouteById: (...args: unknown[]) => fetchRouteById(...args),
+  fetchRouteByIdFresh: (...args: unknown[]) => fetchRouteById(...args),
   updateRoute: (...args: unknown[]) => updateRoute(...args),
   createRoute: vi.fn(),
+  isRouteStaleWriteError: (err: unknown) =>
+    err instanceof Error && /ROUTE_STALE_WRITE/i.test(err.message),
 }))
 
 vi.mock('../../api/gdcStreams', () => ({
@@ -101,6 +104,7 @@ describe('RouteEditPage transform persist', () => {
       failure_policy: 'LOG_AND_CONTINUE',
       formatter_config_json: { delivery_mode: 'Reliable' },
       rate_limit_json: { enabled: true, per_second: 50, burst_size: 100 },
+      updated_at: '2026-01-01T00:00:00Z',
     })
     fetchStreamById.mockResolvedValue({ id: 10, name: 'Stream A', connector_id: 1 })
     fetchConnectorById.mockResolvedValue({ id: 1, name: 'Connector A' })

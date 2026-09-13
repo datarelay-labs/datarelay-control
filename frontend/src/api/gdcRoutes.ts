@@ -32,6 +32,9 @@ export type RouteRead = {
   failure_policy?: string | null
   formatter_config_json?: Record<string, unknown> | null
   rate_limit_json?: Record<string, unknown> | null
+  /** Server-managed optimistic-concurrency token (ISO timestamp). */
+  updated_at?: string | null
+  created_at?: string | null
 }
 
 export type RouteWritePayload = {
@@ -44,6 +47,19 @@ export type RouteWritePayload = {
   failure_policy?: string | null
   formatter_config_json?: Record<string, unknown> | null
   rate_limit_json?: Record<string, unknown> | null
+  /** Required on PUT — last known Route.updated_at from GET/save. */
+  expected_updated_at?: string
+}
+
+export const ROUTE_STALE_WRITE_CODE = 'ROUTE_STALE_WRITE'
+
+export function isRouteStaleWriteError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false
+  return (
+    err.message.includes(`[${ROUTE_STALE_WRITE_CODE}]`) ||
+    err.message.includes(ROUTE_STALE_WRITE_CODE) ||
+    /ROUTE_STALE_WRITE/i.test(err.message)
+  )
 }
 
 async function fetchRouteByIdUncached(routeId: number, signal?: AbortSignal): Promise<RouteRead | null> {
@@ -63,6 +79,12 @@ export async function fetchRouteById(routeId: number, options?: GdcSignalOptions
     (signal) => fetchRouteByIdUncached(routeId, signal),
     { ttlMs: CATALOG_LIST_CACHE_TTL_MS, signal: options?.signal },
   )
+}
+
+/** Bypass catalog TTL so concurrency tokens and conflict refresh see the latest server row. */
+export async function fetchRouteByIdFresh(routeId: number, options?: GdcSignalOptions): Promise<RouteRead | null> {
+  clearSharedRequestCache(ROUTE_BY_ID_CACHE_NS, String(routeId))
+  return fetchRouteById(routeId, options)
 }
 
 export async function createRoute(payload: RouteWritePayload): Promise<RouteRead> {
@@ -103,6 +125,9 @@ export async function fetchRoutesList(options?: GdcSignalOptions): Promise<Route
 }
 
 export async function updateRoute(routeId: number, payload: RouteWritePayload): Promise<RouteRead> {
+  if (!payload.expected_updated_at) {
+    throw new Error('expected_updated_at is required for route updates')
+  }
   const updated = await requestJson<RouteRead>(`${GDC_API_PREFIX}/routes/${routeId}`, {
     method: 'PUT',
     body: JSON.stringify(payload),
@@ -112,6 +137,22 @@ export async function updateRoute(routeId: number, payload: RouteWritePayload): 
     invalidateStreamMappingUiConfigCache(payload.stream_id)
   }
   return updated
+}
+
+/**
+ * Fetch a fresh concurrency token then PUT. Used by surfaces that do not already
+ * hold the Route.updated_at baseline from the route editor dirty-tracking path.
+ */
+export async function updateRouteWithFreshToken(
+  routeId: number,
+  payload: Omit<RouteWritePayload, 'expected_updated_at'>,
+): Promise<RouteRead> {
+  const current = await fetchRouteByIdFresh(routeId)
+  const token = current?.updated_at
+  if (typeof token !== 'string' || !token) {
+    throw new Error('Route concurrency token unavailable')
+  }
+  return updateRoute(routeId, { ...payload, expected_updated_at: token })
 }
 
 export type DeleteRouteOptions = {
