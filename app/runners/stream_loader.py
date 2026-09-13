@@ -32,6 +32,50 @@ def _get(data: Any, key: str, default: Any = None) -> Any:
     return getattr(data, key, default)
 
 
+def _mapping_snapshot(row: Mapping | None) -> dict[str, Any] | None:
+    """Copy mapping fields into a plain dict so later runs do not touch a detached ORM row."""
+
+    if row is None:
+        return None
+    return {
+        "id": int(row.id),
+        "field_mappings_json": dict(row.field_mappings_json or {}),
+        "event_array_path": row.event_array_path,
+        "event_root_path": row.event_root_path,
+    }
+
+
+def _enrichment_snapshot(row: Enrichment | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    return {
+        "id": int(row.id),
+        "enrichment_json": dict(row.enrichment_json or {}),
+        "override_policy": row.override_policy,
+    }
+
+
+def _route_mapping_snapshot(row: RouteMapping | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    return {
+        "id": int(row.id),
+        "route_id": int(row.route_id),
+        "field_mappings_json": dict(row.field_mappings_json or {}),
+    }
+
+
+def _route_enrichment_snapshot(row: RouteEnrichment | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    return {
+        "id": int(row.id),
+        "route_id": int(row.route_id),
+        "enrichment_json": dict(row.enrichment_json or {}),
+        "override_policy": row.override_policy,
+    }
+
+
 def _extract_stream_config(stream: Any) -> dict[str, Any]:
     return stream.config_json or {}
 
@@ -78,22 +122,28 @@ def load_stream_context(
 
     mapping = db.query(Mapping).filter(Mapping.stream_id == stream_id).first()
     enrichment = db.query(Enrichment).filter(Enrichment.stream_id == stream_id).first()
+    mapping_snap = _mapping_snapshot(mapping)
+    enrichment_snap = _enrichment_snapshot(enrichment)
 
     routes = get_enabled_routes_by_stream_id(db, stream_id)
     if not routes:
         raise ValueError(f"no enabled routes for stream {stream_id}")
 
     route_ids = [int(_get(route, "id")) for route in routes]
-    route_mapping_by_route: dict[int, RouteMapping] = {}
-    route_enrichment_by_route: dict[int, RouteEnrichment] = {}
+    route_mapping_by_route: dict[int, dict[str, Any]] = {}
+    route_enrichment_by_route: dict[int, dict[str, Any]] = {}
     route_protection_by_route: dict[int, list[RouteProtectionRule]] = {}
     route_classification_by_route: dict[int, list[RouteClassificationRule]] = {}
     route_policy_by_route: dict[int, list[RoutePolicyRule]] = {}
     if route_ids:
         for row in db.query(RouteMapping).filter(RouteMapping.route_id.in_(route_ids)).all():
-            route_mapping_by_route[int(row.route_id)] = row
+            snap = _route_mapping_snapshot(row)
+            if snap is not None:
+                route_mapping_by_route[int(row.route_id)] = snap
         for row in db.query(RouteEnrichment).filter(RouteEnrichment.route_id.in_(route_ids)).all():
-            route_enrichment_by_route[int(row.route_id)] = row
+            snap = _route_enrichment_snapshot(row)
+            if snap is not None:
+                route_enrichment_by_route[int(row.route_id)] = snap
         for row in (
             db.query(RouteProtectionRule)
             .filter(RouteProtectionRule.route_id.in_(route_ids), RouteProtectionRule.enabled.is_(True))
@@ -198,14 +248,14 @@ def load_stream_context(
         "source_id": int(stream.source_id),
         "source_type": str(source.source_type),
         "stream_config": coerce_stream_body_fields_to_json_objects(_extract_stream_config(stream)),
-        "event_array_path": mapping.event_array_path if mapping is not None else None,
-        "event_root_path": mapping.event_root_path if mapping is not None else None,
+        "event_array_path": mapping_snap.get("event_array_path") if mapping_snap else None,
+        "event_root_path": mapping_snap.get("event_root_path") if mapping_snap else None,
         "source_config": _extract_source_config(source),
-        "field_mappings": mapping.field_mappings_json if mapping else {},
-        "enrichment": enrichment.enrichment_json if enrichment else {},
-        "override_policy": enrichment.override_policy if enrichment else "KEEP_EXISTING",
-        "mapping_row": mapping,
-        "enrichment_row": enrichment,
+        "field_mappings": dict((mapping_snap or {}).get("field_mappings_json") or {}),
+        "enrichment": dict((enrichment_snap or {}).get("enrichment_json") or {}),
+        "override_policy": (enrichment_snap or {}).get("override_policy") or "KEEP_EXISTING",
+        "mapping_row": mapping_snap,
+        "enrichment_row": enrichment_snap,
         "stream_protection_rules": stream_protection_rules,
         "stream_classification_rules": stream_classification_rules,
         "stream_policy_rules": stream_policy_rules,
@@ -217,8 +267,8 @@ def load_stream_context(
     return StreamContext(
         stream=stream_runtime,
         source=source,
-        mapping=mapping,
-        enrichment=enrichment,
+        mapping=mapping_snap,
+        enrichment=enrichment_snap,
         routes=runtime_routes,
         destinations_by_route=destination_by_route,
         checkpoint=checkpoint,

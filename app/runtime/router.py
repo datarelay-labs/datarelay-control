@@ -3604,6 +3604,14 @@ async def run_stream_once(
     try:
         summary = runner.run(context, db=db)
     except SourceFetchError as exc:
+        # Refresh posture before raising so persistent source outages are visible
+        # immediately (mirrors success-path refresh; fail-open to scheduler).
+        try:
+            from app.runtime.runtime_snapshot_updater import run_runtime_snapshot_update
+
+            run_runtime_snapshot_update(db)
+        except Exception:
+            pass
         detail: dict = {
             "error_code": "SOURCE_FETCH_FAILED",
             "message": str(exc),
@@ -3614,6 +3622,13 @@ async def run_stream_once(
             detail.update(exc.detail)
         raise HTTPException(status_code=502, detail=detail) from exc
     except Exception as exc:
+        # Same posture refresh for unwrapped source/runtime failures (e.g. SFTP DNS).
+        try:
+            from app.runtime.runtime_snapshot_updater import run_runtime_snapshot_update
+
+            run_runtime_snapshot_update(db)
+        except Exception:
+            pass
         raise HTTPException(
             status_code=500,
             detail={

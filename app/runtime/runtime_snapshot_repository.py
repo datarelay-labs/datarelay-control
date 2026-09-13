@@ -18,6 +18,9 @@ from app.runtime.models import (
 )
 from app.runtime.operational_snapshot_repository import (
     FAILURE_STAGES,
+    STREAM_FAILURE_STAGES,
+    STREAM_OUTCOME_STAGES,
+    STREAM_SUCCESS_STAGES,
     LastOutcomeRow,
     _fetch_last_outcomes,
     count_routes_per_destination,
@@ -297,7 +300,9 @@ def recompute_and_upsert_snapshots(
                 db,
                 group_column="stream_id",
                 group_ids=sorted(delta_streams),
-                failure_stages=tuple(FAILURE_STAGES),
+                failure_stages=tuple(STREAM_FAILURE_STAGES),
+                outcome_stages=tuple(STREAM_OUTCOME_STAGES),
+                success_stages=tuple(STREAM_SUCCESS_STAGES),
                 since=scan_since,
             )
             if delta_streams

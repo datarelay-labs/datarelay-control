@@ -97,10 +97,10 @@ def _snapshot_outcome(row: RuntimeStreamSnapshot | RuntimeRouteSnapshot | Runtim
                 failure = max(1, int(round(failure_rate)))
         else:
             failure = 0
+        # Source outages set last_error via run_failed without route failure counts.
+        # Synthesize a minimum failure signal whenever the error is newer than success.
         if failure <= 0 and _failure_newer_than_success(row):
-            failed_route_count = int(getattr(row, "failed_route_count", 0) or 0)
-            if failed_route_count > 0 or failure_rate > 0:
-                failure = 1
+            failure = 1
 
     retry = max(0, int(round((success + failure) * retry_rate / 100.0)))
     return OutcomeAggregate(

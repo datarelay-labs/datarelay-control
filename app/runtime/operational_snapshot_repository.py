@@ -25,11 +25,22 @@ POLICY_DISPOSITION_STAGES = frozenset(
         "policy_quarantine",
     }
 )
+# Destination/route delivery failures (PR #30). Keep route/destination aggregates
+# delivery-only so source outages do not falsely attribute to destinations.
 FAILURE_STAGES = frozenset(
     {"route_send_failed", "route_retry_failed", "route_unknown_failure_policy"}
 )
+# Stream posture also consumes run_failed (source/collection outage after retries).
+# Idle / no_events paths never emit run_failed — only exhausted source failures do.
+STREAM_FAILURE_STAGES = FAILURE_STAGES | frozenset({"run_failed"})
+# Successful source collection (including legitimate empty/no-data) must advance
+# stream last_success so recovery after an outage is visible without requiring a
+# delivery. Keep EPS/window success delivery-only — do not count source_fetch as
+# throughput.
+STREAM_SUCCESS_STAGES = SUCCESS_STAGES | frozenset({"source_fetch"})
 RETRY_STAGES = frozenset({"route_retry_success", "route_retry_failed"})
 OUTCOME_STAGES = SUCCESS_STAGES | FAILURE_STAGES
+STREAM_OUTCOME_STAGES = STREAM_SUCCESS_STAGES | STREAM_FAILURE_STAGES
 
 UTC = timezone.utc
 _WINDOW_1M = timedelta(minutes=1)
@@ -100,6 +111,10 @@ def is_failure_stage(stage: str | None) -> bool:
     return stage in FAILURE_STAGES
 
 
+def is_stream_failure_stage(stage: str | None) -> bool:
+    return stage in STREAM_FAILURE_STAGES
+
+
 def is_retry_stage(stage: str | None) -> bool:
     return stage in RETRY_STAGES
 
@@ -111,21 +126,31 @@ def _event_count_expr():
     )
 
 
-def _window_clauses(since: datetime, until: datetime) -> list:
+def _window_clauses(
+    since: datetime,
+    until: datetime,
+    *,
+    outcome_stages: frozenset[str] = OUTCOME_STAGES,
+) -> list:
     return [
         DeliveryLog.created_at >= since,
         DeliveryLog.created_at < until,
-        DeliveryLog.stage.in_(OUTCOME_STAGES),
+        DeliveryLog.stage.in_(outcome_stages),
         func.upper(func.coalesce(DeliveryLog.level, "")) != "DEBUG",
     ]
 
 
-def _window_aggregate_exprs(group_col):
+def _window_aggregate_exprs(
+    group_col,
+    *,
+    failure_stages: frozenset[str] = FAILURE_STAGES,
+    outcome_stages: frozenset[str] = OUTCOME_STAGES,
+):
     ec = _event_count_expr()
     success_expr = case((DeliveryLog.stage.in_(SUCCESS_STAGES), ec), else_=0)
-    failure_expr = case((DeliveryLog.stage.in_(FAILURE_STAGES), ec), else_=0)
+    failure_expr = case((DeliveryLog.stage.in_(failure_stages), ec), else_=0)
     retry_expr = case((DeliveryLog.stage.in_(RETRY_STAGES), 1), else_=0)
-    latency_expr = case((DeliveryLog.stage.in_(OUTCOME_STAGES), DeliveryLog.latency_ms))
+    latency_expr = case((DeliveryLog.stage.in_(outcome_stages), DeliveryLog.latency_ms))
     return [
         group_col.label("group_id"),
         func.coalesce(func.sum(success_expr), 0).label("success_count"),
@@ -157,9 +182,18 @@ def _row_to_window_aggregate(row) -> WindowAggregateRow:
 def fetch_stream_window_aggregates(
     db: Session, *, since: datetime, until: datetime
 ) -> dict[int, WindowAggregateRow]:
+    # Throughput (success EPS) stays delivery-only; failures include run_failed so
+    # source outages raise failure_rate without attributing delivery success to empty
+    # source_fetch completions.
     rows = (
-        db.query(*_window_aggregate_exprs(DeliveryLog.stream_id))
-        .filter(*_window_clauses(since, until))
+        db.query(
+            *_window_aggregate_exprs(
+                DeliveryLog.stream_id,
+                failure_stages=STREAM_FAILURE_STAGES,
+                outcome_stages=STREAM_OUTCOME_STAGES,
+            )
+        )
+        .filter(*_window_clauses(since, until, outcome_stages=STREAM_OUTCOME_STAGES))
         .filter(DeliveryLog.stream_id.isnot(None))
         .group_by(DeliveryLog.stream_id)
         .all()
@@ -219,12 +253,14 @@ def _fetch_last_outcomes(
     group_column: str,
     group_ids: list[int],
     failure_stages: tuple[str, ...],
+    outcome_stages: tuple[str, ...] | None = None,
+    success_stages: tuple[str, ...] | None = None,
     since: datetime | None = None,
 ) -> dict[int, LastOutcomeRow]:
     """Bulk last success/failure timestamps and latest failure message per group.
 
     Scoped to ``group_ids`` and at most the last 24 hours of ``delivery_logs`` (or
-  ``since`` when provided for incremental snapshot refresh). Uses index-friendly
+    ``since`` when provided for incremental snapshot refresh). Uses index-friendly
     ``GROUP BY`` + ``MAX`` aggregates instead of wide CTE scans.
     """
 
@@ -233,11 +269,17 @@ def _fetch_last_outcomes(
         return {}
 
     since_bound = since if since is not None else _last_outcome_since()
+    resolved_outcome_stages = (
+        list(outcome_stages) if outcome_stages is not None else list(OUTCOME_STAGES)
+    )
+    resolved_success_stages = (
+        list(success_stages) if success_stages is not None else list(SUCCESS_STAGES)
+    )
     params = {
         "group_ids": ids,
         "since": since_bound,
-        "outcome_stages": list(OUTCOME_STAGES),
-        "success_stages": list(SUCCESS_STAGES),
+        "outcome_stages": resolved_outcome_stages,
+        "success_stages": resolved_success_stages,
         "failure_stages": list(failure_stages),
     }
     time_sql = text(
@@ -317,7 +359,9 @@ def fetch_stream_last_outcomes(
         db,
         group_column="stream_id",
         group_ids=ids,
-        failure_stages=tuple(FAILURE_STAGES),
+        failure_stages=tuple(STREAM_FAILURE_STAGES),
+        outcome_stages=tuple(STREAM_OUTCOME_STAGES),
+        success_stages=tuple(STREAM_SUCCESS_STAGES),
     )
 
 
