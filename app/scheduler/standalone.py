@@ -8,6 +8,7 @@ import threading
 import time
 
 from app.config import settings
+from app.db.orm_bootstrap import ensure_orm_models_registered
 from app.db.partition_maintenance_scheduler import (
     PartitionMaintenanceScheduler,
     register_partition_maintenance_scheduler,
@@ -35,6 +36,9 @@ def run_standalone_scheduler() -> None:
     if not startup_snapshot.scheduler_active:
         logger.error("%s", {"stage": "standalone_scheduler_not_ready", "reason": "schema_or_db_unavailable"})
         raise SystemExit(1)
+
+    # Register relationship targets before background threads touch ORM mappers.
+    ensure_orm_models_registered()
 
     stop = threading.Event()
 

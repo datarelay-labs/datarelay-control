@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 
 from app.config import settings
 from app.database import SessionLocal
+from app.db.orm_bootstrap import ensure_orm_models_registered
 from app.platform_admin.cleanup_service import collect_due_categories, run_cleanup
 from app.platform_admin.repository import get_retention_policy_row
 from app.retention.service import run_supplement_bundle, supplement_due
@@ -87,6 +88,7 @@ class OperationalRetentionScheduler:
     def start(self) -> None:
         if self.is_running():
             return
+        ensure_orm_models_registered()
         self._stop_event.clear()
         self._started_at = datetime.now(UTC)
         self._thread = threading.Thread(
