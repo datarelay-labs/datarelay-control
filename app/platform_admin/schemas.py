@@ -331,6 +331,14 @@ class ConfigVersionCompareResponse(BaseModel):
 
 class ConfigSnapshotApplyRequest(BaseModel):
     target: Literal["before", "after"]
+    expected_version: int = Field(
+        ...,
+        ge=1,
+        description=(
+            "Current target configuration tip: max(platform_config_versions.version) "
+            "for this entity_type/entity_id at preview time. Mismatch yields HTTP 409."
+        ),
+    )
 
 
 class ConfigSnapshotApplyResponse(BaseModel):

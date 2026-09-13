@@ -31,7 +31,15 @@ Snapshots are self-describing JSON objects with a `kind` field matching the enti
 
 ## Rollback / Apply Snapshot
 
-`POST /api/v1/admin/config-versions/{id}/apply-snapshot` with `{ "target": "before" | "after" }` writes the selected snapshot onto the live configuration row.
+`POST /api/v1/admin/config-versions/{id}/apply-snapshot` with
+`{ "target": "before" | "after", "expected_version": <int> }` writes the selected
+snapshot onto the live configuration row.
+
+`expected_version` is the current **target** tip
+(`MAX(platform_config_versions.version)` for the same `entity_type` / `entity_id`),
+captured at preview time. It is not the historical snapshot row's own version.
+Mismatch yields HTTP **409** `CONFIG_APPLY_STALE_VERSION` and must not mutate state
+or record a successful apply audit.
 
 Safety rules:
 
@@ -40,6 +48,7 @@ Safety rules:
 - For `STREAM_CONFIG` or `MAPPING_CONFIG` affecting `stream_id` S: stream S must have `status != "RUNNING"`.
 - For `ROUTE_CONFIG` on route R: parent stream `R.stream_id` must have `status != "RUNNING"`.
 - For `DESTINATION_CONFIG` on destination D: every stream that has an enabled or disabled route referencing D must have `status != "RUNNING"` (conservative guard).
+- Reject apply when `expected_version` does not equal the live entity tip (stale restore).
 
 Successful apply appends a new audit event and a new `platform_config_versions` row documenting the rollback transaction (current live state as `before`, applied snapshot as `after`).
 

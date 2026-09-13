@@ -43,7 +43,10 @@ Harden Restore / Replay / Recovery / Quarantine destructive actions with the sha
 
 - Backup apply requires matching `preview_token` (stale preview rejected)
 - Full restore additionally requires no RUNNING streams
-- Config snapshot apply has no expected-version optimistic lock (`STALE_RESTORE_SAFETY=GAP` for that API-only path)
+- Config snapshot apply requires `expected_version` = current target tip
+  (`MAX(platform_config_versions.version)` for the entity). Mismatch → **409**
+  `CONFIG_APPLY_STALE_VERSION` with no mutate / no success audit
+  (`STALE_RESTORE_SAFETY=PASS`)
 
 ## Duplicate delivery
 
