@@ -118,6 +118,7 @@ describe('StreamEditDeliveryPanel route removal', () => {
     })
 
     fireEvent.click(screen.getByRole('button', { name: 'Remove route' }))
+    fireEvent.click(await screen.findByTestId('route-remove-dialog-confirm'))
 
     await waitFor(() => {
       expect(deleteRoute).toHaveBeenCalledWith(22, { streamId: 10 })
@@ -153,6 +154,7 @@ describe('StreamEditDeliveryPanel route removal', () => {
     })
 
     fireEvent.click(screen.getByRole('button', { name: 'Remove route' }))
+    fireEvent.click(await screen.findByTestId('route-remove-dialog-confirm'))
 
     await waitFor(() => {
       expect(screen.getByText('Routes (0)')).toBeInTheDocument()

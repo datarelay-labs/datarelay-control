@@ -7,6 +7,7 @@ import { formatThroughputEps } from '../../lib/observability-format'
 import { cn } from '../../lib/utils'
 import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
 import { StatusBadge } from '../shell/status-badge'
+import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
 import type {
   RecentRouteErrorItem,
   RouteRuntimeConnectivityState,
@@ -144,6 +145,9 @@ export function RouteOperationalPanel({
   const rows = resolveRouteRuntimeRows(metrics)
   const [testBusyId, setTestBusyId] = useState<number | null>(null)
   const [testHint, setTestHint] = useState<string | null>(null)
+  const [disableDialog, setDisableDialog] = useState<{ routeId: number; destinationName: string } | null>(null)
+  const [enableDialog, setEnableDialog] = useState<{ routeId: number; destinationName: string } | null>(null)
+  const [disableReason, setDisableReason] = useState('')
 
   const runDestinationTest = useCallback(async (destinationId: number, routeId: number) => {
     setTestBusyId(routeId)
@@ -159,23 +163,19 @@ export function RouteOperationalPanel({
     }
   }, [])
 
-  const handleDisable = useCallback(
-    async (routeId: number) => {
-      if (!window.confirm('Disable this route? Delivery to this destination stops until re-enabled.')) return
-      const reasonRaw = window.prompt('Optional disable reason (stored on route)', '') ?? ''
-      const trimmed = reasonRaw.trim()
-      await onToggleEnabled(routeId, false, trimmed ? { disable_reason: trimmed } : undefined)
-    },
-    [onToggleEnabled],
-  )
+  const executeDisable = useCallback(async () => {
+    if (!disableDialog) return
+    const trimmed = disableReason.trim()
+    await onToggleEnabled(disableDialog.routeId, false, trimmed ? { disable_reason: trimmed } : undefined)
+    setDisableDialog(null)
+    setDisableReason('')
+  }, [disableDialog, disableReason, onToggleEnabled])
 
-  const handleEnable = useCallback(
-    async (routeId: number) => {
-      if (!window.confirm('Enable this route?')) return
-      await onToggleEnabled(routeId, true)
-    },
-    [onToggleEnabled],
-  )
+  const executeEnable = useCallback(async () => {
+    if (!enableDialog) return
+    await onToggleEnabled(enableDialog.routeId, true)
+    setEnableDialog(null)
+  }, [enableDialog, onToggleEnabled])
 
   if (backendStreamId == null) {
     return (
@@ -326,7 +326,9 @@ export function RouteOperationalPanel({
                             <button
                               type="button"
                               disabled={routeToggleBusyId === r.route_id}
-                              onClick={() => void handleDisable(r.route_id)}
+                              onClick={() =>
+                                setDisableDialog({ routeId: r.route_id, destinationName: r.destination_name })
+                              }
                               className="inline-flex h-7 items-center rounded border border-slate-200/90 bg-white px-1.5 text-[10px] font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100 dark:hover:bg-gdc-rowHover"
                             >
                               Disable
@@ -335,7 +337,9 @@ export function RouteOperationalPanel({
                             <button
                               type="button"
                               disabled={routeToggleBusyId === r.route_id}
-                              onClick={() => void handleEnable(r.route_id)}
+                              onClick={() =>
+                                setEnableDialog({ routeId: r.route_id, destinationName: r.destination_name })
+                              }
                               className="inline-flex h-7 items-center rounded border border-emerald-200/90 bg-emerald-500/[0.08] px-1.5 text-[10px] font-semibold text-emerald-900 hover:bg-emerald-500/[0.12] disabled:opacity-50 dark:border-emerald-500/30 dark:text-emerald-100"
                             >
                               Enable
@@ -382,6 +386,49 @@ export function RouteOperationalPanel({
           </tbody>
         </table>
       </div>
+      {disableDialog ? (
+        <DangerousActionDialog
+          open
+          onOpenChange={(open) => {
+            if (!open && routeToggleBusyId == null) {
+              setDisableDialog(null)
+              setDisableReason('')
+            }
+          }}
+          title="Disable route?"
+          targetName={disableDialog.destinationName}
+          impactBullets={['Delivery to this destination stops until the route is enabled again.']}
+          reversibility="Reversible — enable the route again to resume delivery."
+          risk="medium"
+          optionalNote={{
+            label: 'Optional disable reason (stored on route)',
+            value: disableReason,
+            onChange: setDisableReason,
+            placeholder: 'Maintenance, incident, capacity…',
+          }}
+          primaryLabel="Disable route"
+          busy={routeToggleBusyId === disableDialog.routeId}
+          onConfirm={() => void executeDisable()}
+          dataTestId="route-disable-dialog"
+        />
+      ) : null}
+      {enableDialog ? (
+        <DangerousActionDialog
+          open
+          onOpenChange={(open) => {
+            if (!open && routeToggleBusyId == null) setEnableDialog(null)
+          }}
+          title="Enable route?"
+          targetName={enableDialog.destinationName}
+          impactBullets={['Resumes delivery from this stream to the destination.']}
+          reversibility="You can disable the route again later without deleting it."
+          risk="medium"
+          primaryLabel="Enable route"
+          busy={routeToggleBusyId === enableDialog.routeId}
+          onConfirm={() => void executeEnable()}
+          dataTestId="route-enable-dialog"
+        />
+      ) : null}
     </div>
   )
 }

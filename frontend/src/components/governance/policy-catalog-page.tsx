@@ -11,6 +11,7 @@ import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operati
 import { PolicyEditorDrawer } from './policy-editor-drawer'
 import { policyCanDelete, policyStatusBadgeClass, policyStatusLabel } from './policy-lifecycle'
 import { PolicyRuntimeNotice } from './policy-runtime-notice'
+import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
 
 function StatusBadge({ status }: { status: string }) {
   return (
@@ -35,6 +36,7 @@ export function PolicyCatalogPage() {
   const [editorOpen, setEditorOpen] = useState(false)
   const [editingPolicy, setEditingPolicy] = useState<GovernancePolicyEntry | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [deleteDialogPolicy, setDeleteDialogPolicy] = useState<GovernancePolicyEntry | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -65,13 +67,13 @@ export function PolicyCatalogPage() {
     setEditorOpen(true)
   }
 
-  const handleDelete = async (policy: GovernancePolicyEntry) => {
+  const executeDelete = async (policy: GovernancePolicyEntry) => {
     if (!canEdit) return
-    if (!window.confirm(`Delete policy "${policy.name}"?`)) return
     setDeletingId(policy.id)
     try {
       const ok = await deleteGovernancePolicy(policy.id)
       if (!ok) throw new Error('Delete failed.')
+      setDeleteDialogPolicy(null)
       await load()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -191,7 +193,7 @@ export function PolicyCatalogPage() {
                         <button
                           type="button"
                           disabled={deletingId === policy.id}
-                          onClick={() => void handleDelete(policy)}
+                          onClick={() => setDeleteDialogPolicy(policy)}
                           className="inline-flex items-center gap-0.5 rounded border border-red-200/90 px-2 py-0.5 text-[10px] font-semibold text-red-700 disabled:opacity-50 dark:border-red-500/30 dark:text-red-300"
                           data-testid={`policy-catalog-delete-${policy.id}`}
                         >
@@ -226,6 +228,30 @@ export function PolicyCatalogPage() {
         onClose={() => setEditorOpen(false)}
         onSaved={() => void load()}
       />
+      {deleteDialogPolicy ? (
+        <DangerousActionDialog
+          open
+          onOpenChange={(open) => {
+            if (!open && deletingId == null) setDeleteDialogPolicy(null)
+          }}
+          title="Delete policy permanently?"
+          targetName={deleteDialogPolicy.name}
+          impactBullets={[
+            'Removes the retired policy definition from the catalog.',
+            'Stream assignments for this policy are removed with it.',
+          ]}
+          dependencies={
+            deleteDialogPolicy.assigned_stream_count > 0
+              ? [{ label: 'Assigned streams', count: deleteDialogPolicy.assigned_stream_count }]
+              : []
+          }
+          reversibility="Delete is permanent. Retire instead if you may need the policy again."
+          primaryLabel="Delete policy"
+          busy={deletingId === deleteDialogPolicy.id}
+          onConfirm={() => void executeDelete(deleteDialogPolicy)}
+          dataTestId="policy-delete-dialog"
+        />
+      ) : null}
     </div>
   )
 }

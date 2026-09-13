@@ -57,6 +57,7 @@ import {
   normalizeEventRootPath,
 } from '../../utils/eventExtractionPaths'
 import { normalizeCheckpointRelativePath } from '../../utils/recordSelectionPaths'
+import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
 
 const EDIT_NEXT_STEP_LABEL: Partial<Record<WizardStepKey, string>> = {
   connect: 'Sample & Record Selection',
@@ -804,50 +805,35 @@ export function StreamEditWizardPage() {
           )}
         </div>
       </nav>
-      {streamDeleteOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" role="dialog" aria-modal="true">
-          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-xl dark:border-gdc-border dark:bg-gdc-card">
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-50">Delete stream permanently?</h3>
-            <ul className="mt-2 list-inside list-disc space-y-1 text-[12px] text-slate-600 dark:text-gdc-muted">
-              <li>This will permanently remove the stream configuration.</li>
-              <li>Checkpoint and runtime state will also be removed.</li>
-              <li>Routes will be detached but destinations will remain.</li>
-            </ul>
-            <p className="mt-3 text-[11px] text-slate-500">
-              Type the stream name <span className="font-semibold text-slate-800 dark:text-slate-200">{state?.stream.name}</span> to confirm.
-            </p>
-            <input
-              value={streamDeleteConfirm}
-              onChange={(e) => setStreamDeleteConfirm(e.target.value)}
-              placeholder="Stream name"
-              className="mt-2 h-9 w-full rounded-md border border-slate-200 px-2 text-[12px] dark:border-gdc-border dark:bg-gdc-section"
-            />
-            {streamDeleteError ? (
-              <p className="mt-2 text-[11px] font-medium text-red-700 dark:text-red-300">{streamDeleteError}</p>
-            ) : null}
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setStreamDeleteOpen(false)}
-                className="rounded-md px-3 py-1.5 text-[12px] font-semibold text-slate-700 dark:text-slate-200"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={
-                  streamDeleteBusy ||
-                  runtimeStatus === 'RUNNING' ||
-                  streamDeleteConfirm.trim() !== (state?.stream.name ?? '').trim()
-                }
-                onClick={() => void executeStreamDelete()}
-                className="rounded-md bg-red-600 px-3 py-1.5 text-[12px] font-semibold text-white disabled:opacity-50"
-              >
-                {streamDeleteBusy ? 'Deleting…' : 'Delete stream'}
-              </button>
-            </div>
-          </div>
-        </div>
+      {streamDeleteOpen && state ? (
+        <DangerousActionDialog
+          open
+          onOpenChange={(open) => {
+            if (!open && !streamDeleteBusy) {
+              setStreamDeleteOpen(false)
+              setStreamDeleteConfirm('')
+              setStreamDeleteError(null)
+            }
+          }}
+          title="Delete stream permanently?"
+          targetName={state.stream.name}
+          impactBullets={[
+            'Permanently removes the stream configuration.',
+            'Checkpoint and runtime state are removed.',
+            'Routes are detached; destinations remain.',
+          ]}
+          reversibility="Delete is permanent. Stop the stream first if it is still running."
+          confirmMode="type-name"
+          expectedTypeName={state.stream.name}
+          typeNameValue={streamDeleteConfirm}
+          onTypeNameChange={setStreamDeleteConfirm}
+          primaryLabel="Delete stream"
+          busy={streamDeleteBusy}
+          error={streamDeleteError}
+          blockReason={runtimeStatus === 'RUNNING' ? 'Stop the stream before deleting.' : null}
+          onConfirm={() => void executeStreamDelete()}
+          dataTestId="stream-delete-dialog"
+        />
       ) : null}
     </div>
   )

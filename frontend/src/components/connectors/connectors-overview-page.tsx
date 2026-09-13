@@ -21,6 +21,7 @@ import { ConnectorRowActions } from './connector-row-actions'
 import { ConnectorRowExpand } from './connector-row-expand'
 import { ConnectorStreamsPopover } from './connector-streams-popover'
 import { CurlImportPanel, PostmanImportPanel } from './http-import-panel'
+import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
 
 function formatEventsToday(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
@@ -58,6 +59,8 @@ export function ConnectorsOverviewPage() {
   const [labFilterOnly, setLabFilterOnly] = useState(false)
   const [expandedConnectorId, setExpandedConnectorId] = useState<number | null>(null)
   const [authTestingId, setAuthTestingId] = useState<number | null>(null)
+  const [deleteDialogRow, setDeleteDialogRow] = useState<ConnectorDashboardRow | null>(null)
+  const [deleteBusy, setDeleteBusy] = useState(false)
 
   const visibleRows = useMemo(
     () => (labFilterOnly ? rows.filter((r) => isDevValidationLabEntityName(r.name)) : rows),
@@ -76,16 +79,18 @@ export function ConnectorsOverviewPage() {
     [navigate],
   )
 
-  async function onDelete(row: ConnectorDashboardRow) {
-    const ok = window.confirm(`Delete connector "${row.name}"?`)
-    if (!ok) return
+  async function executeDelete(row: ConnectorDashboardRow) {
     try {
       setDeleteError(null)
+      setDeleteBusy(true)
       await deleteConnector(row.id)
       if (expandedConnectorId === row.id) setExpandedConnectorId(null)
+      setDeleteDialogRow(null)
       reload({ bustCache: true })
     } catch (e) {
       setDeleteError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setDeleteBusy(false)
     }
   }
 
@@ -467,7 +472,7 @@ export function ConnectorsOverviewPage() {
                             onAuthCheckComplete={(connectorId, patch) => {
                               patchConnector(connectorId, patch)
                             }}
-                            onDelete={() => void onDelete(row)}
+                            onDelete={() => setDeleteDialogRow(row)}
                             onViewStreams={() => navigate(connectorStreamsFilterPath(row.id, row.name))}
                           />
                         </td>
@@ -492,6 +497,32 @@ export function ConnectorsOverviewPage() {
           </div>
         )}
       </div>
+      {deleteDialogRow ? (
+        <DangerousActionDialog
+          open
+          onOpenChange={(open) => {
+            if (!open && !deleteBusy) setDeleteDialogRow(null)
+          }}
+          title="Delete connector permanently?"
+          targetName={deleteDialogRow.name}
+          impactBullets={[
+            'Removes this connector and its source configuration.',
+            'Streams using this connector must be removed or reassigned before delete succeeds.',
+          ]}
+          dependencies={
+            (deleteDialogRow.stream_count ?? 0) > 0
+              ? [{ label: 'Connected streams', count: deleteDialogRow.stream_count }]
+              : []
+          }
+          reversibility="Delete is permanent. Disable streams first if you only need to stop processing."
+          confirmMode="click"
+          primaryLabel="Delete connector"
+          busy={deleteBusy}
+          error={deleteError}
+          onConfirm={() => void executeDelete(deleteDialogRow)}
+          dataTestId="connector-delete-dialog"
+        />
+      ) : null}
     </div>
   )
 }

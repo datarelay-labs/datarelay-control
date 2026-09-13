@@ -12,6 +12,7 @@ import { cn } from '../../lib/utils'
 import { DEFAULT_MESSAGE_PREFIX_TEMPLATE, defaultMessagePrefixEnabled } from '../../utils/messagePrefixDefaults'
 import { DELIVERY_PREVIEW_SAMPLE_EVENT } from '../../utils/deliveryPreviewSample'
 import { MessagePrefixDeliveryPreview } from './message-prefix-delivery-preview'
+import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
 
 const FAILURE_POLICIES = ['LOG_AND_CONTINUE', 'RETRY_AND_BACKOFF', 'PAUSE_STREAM_ON_FAILURE', 'DISABLE_ROUTE_ON_FAILURE'] as const
 
@@ -92,6 +93,9 @@ export function StreamEditDeliveryPanel({ streamId, onSaved }: Props) {
   const [prefixDraft, setPrefixDraft] = useState<
     Record<number, { enabled: boolean; template: string }>
   >({})
+  const [deleteRouteDialog, setDeleteRouteDialog] = useState<{ routeId: number; destinationName: string } | null>(
+    null,
+  )
 
   const load = useCallback(async () => {
     setLoadError(null)
@@ -218,10 +222,7 @@ export function StreamEditDeliveryPanel({ streamId, onSaved }: Props) {
     }
   }
 
-  async function onDeleteRoute(routeId: number) {
-    if (!window.confirm('Remove this route from the stream? You can add a different destination with Add Route.')) {
-      return
-    }
+  async function executeDeleteRoute(routeId: number) {
     setRouteBusyId(routeId)
     setNotice(null)
     setLoadError(null)
@@ -232,6 +233,7 @@ export function StreamEditDeliveryPanel({ streamId, onSaved }: Props) {
         if (!isRouteNotFoundDeleteError(e)) throw e
       }
       applyRouteRemoved(routeId)
+      setDeleteRouteDialog(null)
       setNotice('Route removed from this stream.')
       await load()
       onSaved?.()
@@ -525,7 +527,12 @@ export function StreamEditDeliveryPanel({ streamId, onSaved }: Props) {
                           : 'Remove this route from the stream'
                       }
                       disabled={routeBusyId === r.route_id || r.route_enabled}
-                      onClick={() => void onDeleteRoute(r.route_id)}
+                      onClick={() =>
+                        setDeleteRouteDialog({
+                          routeId: r.route_id,
+                          destinationName: r.destination_name ?? destinationById.get(r.destination_id)?.name ?? 'destination',
+                        })
+                      }
                       className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-red-200/90 bg-white text-red-700 shadow-sm hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-red-900/60 dark:bg-gdc-card dark:text-red-300 dark:hover:bg-red-950/40"
                       aria-label={r.route_enabled ? 'Remove route (disabled until route is off)' : 'Remove route'}
                     >
@@ -543,6 +550,26 @@ export function StreamEditDeliveryPanel({ streamId, onSaved }: Props) {
           </table>
         </div>
       )}
+      {deleteRouteDialog ? (
+        <DangerousActionDialog
+          open
+          onOpenChange={(open) => {
+            if (!open && routeBusyId == null) setDeleteRouteDialog(null)
+          }}
+          title="Remove route from stream?"
+          targetName={deleteRouteDialog.destinationName}
+          impactBullets={[
+            'Removes this delivery path from the stream only.',
+            'The destination configuration is kept and can be used by other routes.',
+          ]}
+          reversibility="You can add a new route to the same destination later."
+          primaryLabel="Remove route"
+          busy={routeBusyId === deleteRouteDialog.routeId}
+          error={loadError}
+          onConfirm={() => void executeDeleteRoute(deleteRouteDialog.routeId)}
+          dataTestId="route-remove-dialog"
+        />
+      ) : null}
     </section>
   )
 }
