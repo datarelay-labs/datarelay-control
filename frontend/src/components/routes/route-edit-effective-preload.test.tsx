@@ -17,6 +17,14 @@ vi.mock('./route-detail-health-panel', () => ({
   RouteDetailHealthPanel: () => null,
 }))
 
+vi.mock('../mappings/mapping-workspace', () => ({
+  MappingWorkspace: () => <div data-testid="mapping-workspace-stub">Mapping workspace</div>,
+}))
+
+vi.mock('../../utils/mappingSourceSample', () => ({
+  loadMappingWorkspaceContext: vi.fn(async () => null),
+}))
+
 function installRouteEditSpies() {
   const transformEff = vi.spyOn(gdcRouteTransform, 'fetchRouteTransformEffective').mockResolvedValue({
     route_id: 42,
