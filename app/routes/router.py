@@ -1,9 +1,11 @@
 """Route HTTP routes — placeholder responses only."""
 
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from app.database import get_db
+from app.database import get_db, utcnow
 from app.platform_admin import journal
 from app.platform_admin.config_entity_snapshots import serialize_route_config
 from app.destinations.models import Destination
@@ -13,6 +15,12 @@ from app.routes.schemas import RouteCreate, RouteRead, RouteUpdate
 from app.streams.models import Stream
 
 router = APIRouter()
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 @router.get("/", response_model=list[RouteRead])
@@ -89,7 +97,8 @@ async def get_route(route_id: int, db: Session = Depends(get_db)) -> RouteRead:
 
 @router.put("/{route_id}", response_model=RouteRead)
 async def update_route(route_id: int, payload: RouteUpdate, request: Request, db: Session = Depends(get_db)) -> RouteRead:
-    row = db.query(Route).filter(Route.id == route_id).first()
+    # Row lock makes the expected_updated_at precondition authoritative for concurrent writers.
+    row = db.query(Route).filter(Route.id == route_id).with_for_update().first()
     if row is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -97,6 +106,22 @@ async def update_route(route_id: int, payload: RouteUpdate, request: Request, db
         )
 
     update = payload.model_dump(exclude_unset=True)
+    expected_updated_at = update.pop("expected_updated_at")
+    current_updated_at = getattr(row, "updated_at", None)
+    if current_updated_at is None or _as_utc(current_updated_at) != _as_utc(expected_updated_at):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error_code": "ROUTE_STALE_WRITE",
+                "message": (
+                    "Route changed since you started editing. Refresh the latest route "
+                    "before saving again; unsaved local edits are not applied."
+                ),
+                "expected_updated_at": expected_updated_at.isoformat(),
+                "current_updated_at": current_updated_at.isoformat() if current_updated_at is not None else None,
+            },
+        )
+
     if "stream_id" in update:
         stream = db.query(Stream).filter(Stream.id == int(update["stream_id"])).first()
         if stream is None:
@@ -116,6 +141,8 @@ async def update_route(route_id: int, payload: RouteUpdate, request: Request, db
     route_before = serialize_route_config(row)
     for key, value in update.items():
         setattr(row, key, value)
+    # Ensure concurrency token advances even when SQLAlchemy onupdate is skipped in tests.
+    row.updated_at = utcnow()
     stream = db.query(Stream).filter(Stream.id == int(row.stream_id)).first()
     stream_name = str(stream.name) if stream is not None else None
     if prev_enabled and not bool(row.enabled):

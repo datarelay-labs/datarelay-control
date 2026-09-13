@@ -5,7 +5,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { cn } from '../../lib/utils'
 import { StatusBadge } from '../shell/status-badge'
 import { PanelChrome } from '../streams/mapping-json-tree'
-import { createRoute, fetchRouteById, updateRoute } from '../../api/gdcRoutes'
+import { createRoute, fetchRouteById, fetchRouteByIdFresh, isRouteStaleWriteError, updateRoute } from '../../api/gdcRoutes'
 import { fetchStreamById } from '../../api/gdcStreams'
 import { fetchConnectorById } from '../../api/gdcConnectors'
 import { fetchRouteTransformEffective, type RouteTransformEffective } from '../../api/gdcRouteTransform'
@@ -13,6 +13,11 @@ import { fetchRouteProtectionEffective, type RouteProtectionEffective } from '..
 import { fetchRouteClassificationEffective, type RouteClassificationEffective } from '../../api/gdcRouteClassification'
 import { fetchRoutePolicyEffective, type RoutePolicyEffective } from '../../api/gdcRoutePolicy'
 import { ROUTE_EDIT_DEFAULTS, type RouteDeliveryMode, type RouteFailurePolicy, type RouteRetryBackoff } from './route-edit-defaults'
+import {
+  defaultsRouteDeliveryFormState,
+  isRouteDeliveryDirty,
+  type RouteDeliveryFormState,
+} from './route-delivery-dirty'
 import { streamRuntimePath } from '../../config/nav-paths'
 import { RouteDetailHealthPanel } from './route-detail-health-panel'
 import { RouteEditTransformPanel } from './route-edit-transform-panel'
@@ -22,6 +27,7 @@ import { PolicyPanel } from '../streams/policy-panel'
 import { fetchDestinationsList } from '../../api/gdcDestinations'
 import { HelpTooltip } from '../ui/help-tooltip'
 import { HELP_COPY } from '../ui/help-tooltip-copy'
+import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
 
 type RouteEditTab = 'delivery' | 'transform' | 'protection' | 'classification' | 'policy'
 
@@ -130,6 +136,7 @@ export function RouteEditPage() {
   const [perSecond, setPerSecond] = useState(d.perSecond)
   const [burstSize, setBurstSize] = useState(d.burstSize)
   const [activeTab, setActiveTab] = useState<RouteEditTab>('delivery')
+  const [visitedTabs, setVisitedTabs] = useState<Set<RouteEditTab>>(() => new Set<RouteEditTab>(['delivery']))
   const [transformEffective, setTransformEffective] = useState<RouteTransformEffective | null>(null)
   const [protectionEffective, setProtectionEffective] = useState<RouteProtectionEffective | null>(null)
   const [classificationEffective, setClassificationEffective] = useState<RouteClassificationEffective | null>(null)
@@ -145,13 +152,101 @@ export function RouteEditPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null)
-  const [savedLocally, setSavedLocally] = useState(false)
+  const [staleConflict, setStaleConflict] = useState(false)
+  const [routeUpdatedAt, setRouteUpdatedAt] = useState<string | null>(null)
+  const [discardOpen, setDiscardOpen] = useState(false)
+  const [refreshConfirmOpen, setRefreshConfirmOpen] = useState(false)
+  const [deliveryBaseline, setDeliveryBaseline] = useState<RouteDeliveryFormState | null>(
+    isCreateMode ? defaultsRouteDeliveryFormState() : null,
+  )
+  const [transformDirty, setTransformDirty] = useState(false)
   const [connectorLabel, setConnectorLabel] = useState('—')
   const [streamLabel, setStreamLabel] = useState('—')
   const destinationLabel = useMemo(() => {
     const found = destinationOptions.find((o) => o.id === backendDestinationId)
     return found?.label ?? '—'
   }, [destinationOptions, backendDestinationId])
+
+  const currentDeliveryForm = useMemo<RouteDeliveryFormState>(
+    () => ({
+      routeName,
+      description,
+      enabled,
+      destinationId: backendDestinationId,
+      deliveryMode,
+      failurePolicy,
+      maxRetry,
+      retryBackoff,
+      initialBackoffSec,
+      maxBackoffSec,
+      maxDeliveryTimeSec,
+      batchSize,
+      rateLimitEnabled,
+      perSecond,
+      burstSize,
+    }),
+    [
+      routeName,
+      description,
+      enabled,
+      backendDestinationId,
+      deliveryMode,
+      failurePolicy,
+      maxRetry,
+      retryBackoff,
+      initialBackoffSec,
+      maxBackoffSec,
+      maxDeliveryTimeSec,
+      batchSize,
+      rateLimitEnabled,
+      perSecond,
+      burstSize,
+    ],
+  )
+
+  const deliveryDirty = isRouteDeliveryDirty(deliveryBaseline, currentDeliveryForm)
+  const hasUnsavedChanges = deliveryDirty || transformDirty
+
+  const applyDeliveryForm = useCallback((form: RouteDeliveryFormState) => {
+    setRouteName(form.routeName)
+    setDescription(form.description)
+    setEnabled(form.enabled)
+    setBackendDestinationId(form.destinationId)
+    setFailurePolicy(form.failurePolicy)
+    setDeliveryMode(form.deliveryMode)
+    setRateLimitEnabled(form.rateLimitEnabled)
+    setPerSecond(form.perSecond)
+    setBurstSize(form.burstSize)
+    setMaxRetry(form.maxRetry)
+    setRetryBackoff(form.retryBackoff)
+    setInitialBackoffSec(form.initialBackoffSec)
+    setMaxBackoffSec(form.maxBackoffSec)
+    setMaxDeliveryTimeSec(form.maxDeliveryTimeSec)
+    setBatchSize(form.batchSize)
+  }, [])
+
+  const leaveWithoutSaving = useCallback(() => {
+    if (backendStreamId != null) navigate(streamRuntimePath(String(backendStreamId)))
+    else navigate(isCreateMode ? '/routes' : '/streams')
+  }, [backendStreamId, isCreateMode, navigate])
+
+  const requestLeave = useCallback(() => {
+    if (hasUnsavedChanges) {
+      setDiscardOpen(true)
+      return
+    }
+    leaveWithoutSaving()
+  }, [hasUnsavedChanges, leaveWithoutSaving])
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) return
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [hasUnsavedChanges])
 
   const processingStatusGenRef = useRef(0)
   const refreshProcessingStatus = useCallback(async (routeId: number) => {
@@ -169,6 +264,67 @@ export function RouteEditPage() {
     setPolicyEffective(policyEffective)
   }, [])
 
+  const applyServerRoute = useCallback(
+    (found: {
+      name?: string | null
+      description?: string | null
+      enabled?: boolean | null
+      destination_id?: number | null
+      stream_id?: number | null
+      failure_policy?: string | null
+      formatter_config_json?: Record<string, unknown> | null
+      rate_limit_json?: Record<string, unknown> | null
+      updated_at?: string | null
+    }) => {
+      const delivery = applyRouteDeliveryFields(found)
+      const form: RouteDeliveryFormState = {
+        routeName: found.name?.trim() || d.routeName,
+        description: typeof found.description === 'string' ? found.description : '',
+        enabled: typeof found.enabled === 'boolean' ? found.enabled : d.status === 'ENABLED',
+        destinationId: typeof found.destination_id === 'number' ? found.destination_id : null,
+        deliveryMode: delivery.deliveryMode,
+        failurePolicy: delivery.failurePolicy,
+        maxRetry: delivery.maxRetry,
+        retryBackoff: delivery.retryBackoff,
+        initialBackoffSec: delivery.initialBackoffSec,
+        maxBackoffSec: delivery.maxBackoffSec,
+        maxDeliveryTimeSec: delivery.maxDeliveryTimeSec,
+        batchSize: delivery.batchSize,
+        rateLimitEnabled: delivery.rateLimitEnabled,
+        perSecond: delivery.perSecond,
+        burstSize: delivery.burstSize,
+      }
+      if (typeof found.stream_id === 'number') setBackendStreamId(found.stream_id)
+      applyDeliveryForm(form)
+      setDeliveryBaseline(form)
+      setRouteUpdatedAt(typeof found.updated_at === 'string' ? found.updated_at : null)
+      setTransformDirty(false)
+      setStaleConflict(false)
+      setSaveError(null)
+      setSaveSuccess(null)
+    },
+    [applyDeliveryForm, d.routeName, d.status],
+  )
+
+  const reloadLatestFromServer = useCallback(async () => {
+    if (backendRouteId == null) return
+    const found = await fetchRouteByIdFresh(backendRouteId)
+    if (!found) {
+      setSaveError('Could not refresh the latest route from the server.')
+      return
+    }
+    applyServerRoute(found)
+    void refreshProcessingStatus(backendRouteId)
+  }, [applyServerRoute, backendRouteId, refreshProcessingStatus])
+
+  const requestRefreshLatest = useCallback(() => {
+    if (hasUnsavedChanges) {
+      setRefreshConfirmOpen(true)
+      return
+    }
+    void reloadLatestFromServer()
+  }, [hasUnsavedChanges, reloadLatestFromServer])
+
   useEffect(() => {
     let cancelled = false
     if (backendRouteId == null) {
@@ -176,6 +332,10 @@ export function RouteEditPage() {
       setProtectionEffective(null)
       setClassificationEffective(null)
       setPolicyEffective(null)
+      setDeliveryBaseline(defaultsRouteDeliveryFormState())
+      setRouteUpdatedAt(null)
+      setTransformDirty(false)
+      setStaleConflict(false)
       return
     }
     const routeId = backendRouteId
@@ -183,33 +343,23 @@ export function RouteEditPage() {
     setProtectionEffective(null)
     setClassificationEffective(null)
     setPolicyEffective(null)
+    setDeliveryBaseline(null)
+    setRouteUpdatedAt(null)
+    setTransformDirty(false)
+    setStaleConflict(false)
     ;(async () => {
       const found = await fetchRouteById(routeId)
       if (!found || cancelled) return
-      if (found.name) setRouteName(found.name)
-      if (typeof found.description === 'string') setDescription(found.description)
-      if (typeof found.enabled === 'boolean') setEnabled(found.enabled)
-      if (typeof found.stream_id === 'number') setBackendStreamId(found.stream_id)
-      if (typeof found.destination_id === 'number') setBackendDestinationId(found.destination_id)
-      const delivery = applyRouteDeliveryFields(found)
-      setFailurePolicy(delivery.failurePolicy)
-      setDeliveryMode(delivery.deliveryMode)
-      setRateLimitEnabled(delivery.rateLimitEnabled)
-      setPerSecond(delivery.perSecond)
-      setBurstSize(delivery.burstSize)
-      setMaxRetry(delivery.maxRetry)
-      setRetryBackoff(delivery.retryBackoff)
-      setInitialBackoffSec(delivery.initialBackoffSec)
-      setMaxBackoffSec(delivery.maxBackoffSec)
-      setMaxDeliveryTimeSec(delivery.maxDeliveryTimeSec)
-      setBatchSize(delivery.batchSize)
+      // Dirty-safety: never clobber local edits if the operator already changed the form
+      // before this in-flight load resolves (e.g. remount race / delayed response).
+      applyServerRoute(found)
       void refreshProcessingStatus(routeId)
     })()
     return () => {
       cancelled = true
       processingStatusGenRef.current += 1
     }
-  }, [backendRouteId, refreshProcessingStatus])
+  }, [applyServerRoute, backendRouteId, refreshProcessingStatus])
 
   useEffect(() => {
     let cancelled = false
@@ -241,10 +391,17 @@ export function RouteEditPage() {
       const rows = await fetchDestinationsList()
       if (cancelled) return
       if (rows?.length) {
-        const next = rows.map((d) => ({ id: d.id, label: (d.name ?? '').trim() || `Destination #${d.id}` }))
+        const next = rows.map((row) => ({ id: row.id, label: (row.name ?? '').trim() || `Destination #${row.id}` }))
         setDestinationOptions(next)
         setDestinationSource('api')
-        setBackendDestinationId((prev) => prev ?? next[0]?.id ?? null)
+        setBackendDestinationId((prev) => {
+          if (prev != null) return prev
+          const id = next[0]?.id ?? null
+          if (id != null && isCreateMode) {
+            setDeliveryBaseline((base) => (base ? { ...base, destinationId: base.destinationId ?? id } : base))
+          }
+          return id
+        })
         return
       }
       setDestinationOptions([])
@@ -253,14 +410,14 @@ export function RouteEditPage() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [isCreateMode])
 
   async function handleSaveRoute() {
-    if (isSaving) return
+    if (isSaving || (!isCreateMode && !deliveryDirty)) return
     setIsSaving(true)
     setSaveError(null)
     setSaveSuccess(null)
-    setSavedLocally(false)
+    setStaleConflict(false)
     try {
       const policy =
         failurePolicy === 'Retry'
@@ -295,28 +452,73 @@ export function RouteEditPage() {
             }
           : { enabled: false },
       }
-      const saved = isCreateMode ? await createRoute(routePayload) : await updateRoute(backendRouteId, routePayload)
-      const runtimeStreamId = typeof saved.stream_id === 'number' ? saved.stream_id : backendStreamId
+      if (!isCreateMode) {
+        if (!routeUpdatedAt) {
+          setSaveError('Route concurrency token missing. Refresh the latest route before saving.')
+          setStaleConflict(true)
+          return
+        }
+      }
+      const saved = isCreateMode
+        ? await createRoute(routePayload)
+        : await updateRoute(backendRouteId, {
+            ...routePayload,
+            expected_updated_at: routeUpdatedAt as string,
+          })
+      const delivery = applyRouteDeliveryFields(saved)
+      const nextBaseline: RouteDeliveryFormState = {
+        routeName: saved.name?.trim() || routeName,
+        description: typeof saved.description === 'string' ? saved.description : description,
+        enabled: typeof saved.enabled === 'boolean' ? saved.enabled : enabled,
+        destinationId: typeof saved.destination_id === 'number' ? saved.destination_id : backendDestinationId,
+        deliveryMode: delivery.deliveryMode,
+        failurePolicy: delivery.failurePolicy,
+        maxRetry: delivery.maxRetry,
+        retryBackoff: delivery.retryBackoff,
+        initialBackoffSec: delivery.initialBackoffSec,
+        maxBackoffSec: delivery.maxBackoffSec,
+        maxDeliveryTimeSec: delivery.maxDeliveryTimeSec,
+        batchSize: delivery.batchSize,
+        rateLimitEnabled: delivery.rateLimitEnabled,
+        perSecond: delivery.perSecond,
+        burstSize: delivery.burstSize,
+      }
+      applyDeliveryForm(nextBaseline)
+      setDeliveryBaseline(nextBaseline)
+      setRouteUpdatedAt(typeof saved.updated_at === 'string' ? saved.updated_at : null)
+      setStaleConflict(false)
       setSaveSuccess(isCreateMode ? 'Route created. Moving to stream runtime…' : 'Route saved. Moving to stream runtime…')
+      const runtimeStreamId = typeof saved.stream_id === 'number' ? saved.stream_id : backendStreamId
       if (typeof runtimeStreamId === 'number') navigate(streamRuntimePath(String(runtimeStreamId)))
       else navigate('/routes')
     } catch (err) {
+      if (isRouteStaleWriteError(err)) {
+        setStaleConflict(true)
+        setSaveError(
+          'This route changed since you started editing. Your unsaved changes are still preserved. Refresh/review the latest route before saving again.',
+        )
+        setSaveSuccess(null)
+        return
+      }
       const message = err instanceof Error ? err.message : 'Route save failed.'
       setSaveError(`API save failed: ${message}`)
-      setSaveSuccess('API unavailable. Changes kept locally only.')
-      setSavedLocally(true)
+      setSaveSuccess(null)
     } finally {
       setIsSaving(false)
     }
   }
 
-  const hasUnsavedChanges =
-    routeName !== d.routeName ||
-    description !== d.description ||
-    enabled !== (d.status === 'ENABLED') ||
-    deliveryMode !== d.deliveryMode ||
-    failurePolicy !== d.failurePolicy
-
+  const saveStatusLabel = isSaving
+    ? 'Saving…'
+    : staleConflict
+      ? 'Conflict'
+      : saveError
+        ? 'Save failed'
+        : saveSuccess
+          ? 'Saved'
+          : hasUnsavedChanges
+            ? 'Unsaved changes'
+            : 'Saved'
   return (
     <div className="w-full min-w-0 space-y-3">
       <header className="flex flex-wrap items-start justify-between gap-2 rounded-lg border border-slate-200/70 bg-white/80 p-3 dark:border-gdc-border dark:bg-gdc-card">
@@ -372,8 +574,9 @@ export function RouteEditPage() {
         <div
           className="inline-flex h-7 items-center rounded-full border border-slate-200/90 bg-slate-50 px-2.5 text-[11px] font-semibold text-slate-700 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200"
           aria-live="polite"
+          data-testid="route-edit-save-status"
         >
-          {isSaving ? 'Saving…' : saveError ? 'Save failed' : saveSuccess ? 'Saved' : hasUnsavedChanges ? 'Unsaved changes' : 'Saved'}
+          {saveStatusLabel}
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -385,26 +588,65 @@ export function RouteEditPage() {
           </button>
           <button
             type="button"
-            onClick={() => (backendStreamId != null ? navigate(streamRuntimePath(String(backendStreamId))) : navigate('/streams'))}
+            onClick={requestLeave}
+            data-testid="route-edit-cancel"
             className="inline-flex h-8 items-center rounded-md border border-slate-200 bg-white px-3 text-[12px] font-medium hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card"
           >
             Cancel
           </button>
           <button
             type="button"
-            disabled={isSaving}
+            disabled={isSaving || (!isCreateMode && !deliveryDirty) || (isCreateMode && !deliveryDirty && backendDestinationId == null)}
             onClick={() => void handleSaveRoute()}
-            className="inline-flex h-8 items-center gap-1 rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white hover:bg-violet-700"
+            data-testid="route-edit-save"
+            className="inline-flex h-8 items-center gap-1 rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
           >
             <Save className="h-3.5 w-3.5" />
             {isSaving ? 'Saving…' : isCreateMode ? 'Create Route' : 'Save Route'}
           </button>
         </div>
       </header>
-      {saveError ? <p className="text-[12px] font-medium text-red-700 dark:text-red-300">{saveError}</p> : null}
+      {hasUnsavedChanges ? (
+        <p className="text-[11px] text-amber-800 dark:text-amber-200" data-testid="route-edit-unsaved-hint">
+          Unsaved edits are local only. Runtime continues using the last persisted route configuration until Save succeeds.
+        </p>
+      ) : null}
+      {staleConflict ? (
+        <div
+          className="space-y-2 rounded-md border border-amber-300/80 bg-amber-50/90 p-3 dark:border-amber-700/60 dark:bg-amber-950/40"
+          data-testid="route-edit-stale-conflict"
+          role="alert"
+        >
+          <p className="text-[12px] font-medium text-amber-950 dark:text-amber-100">
+            This route changed since you started editing. Your unsaved changes are still preserved. Refresh/review the
+            latest route before saving again.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="inline-flex h-8 items-center rounded-md border border-slate-200 bg-white px-3 text-[12px] font-medium hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card"
+              data-testid="route-edit-stale-keep-editing"
+              onClick={() => setStaleConflict(false)}
+            >
+              Keep editing
+            </button>
+            <button
+              type="button"
+              className="inline-flex h-8 items-center rounded-md border border-amber-400 bg-amber-100 px-3 text-[12px] font-semibold text-amber-950 hover:bg-amber-200 dark:border-amber-600 dark:bg-amber-900/50 dark:text-amber-50"
+              data-testid="route-edit-stale-refresh"
+              onClick={requestRefreshLatest}
+            >
+              Refresh latest
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {saveError && !staleConflict ? (
+        <p className="text-[12px] font-medium text-red-700 dark:text-red-300" data-testid="route-edit-save-error">
+          {saveError}
+        </p>
+      ) : null}
       {saveSuccess ? <p className="text-[12px] font-medium text-emerald-700 dark:text-emerald-300">{saveSuccess}</p> : null}
-      {savedLocally ? <p className="text-[11px] text-slate-500 dark:text-gdc-muted">Route state is local only until the API is reachable.</p> : null}
-
       {!isCreateMode && backendRouteId != null ? (
         <RouteDetailHealthPanel routeId={backendRouteId} streamId={backendStreamId} />
       ) : null}
@@ -440,7 +682,15 @@ export function RouteEditPage() {
           <button
             key={key}
             type="button"
-            onClick={() => setActiveTab(key)}
+            onClick={() => {
+              setActiveTab(key)
+              setVisitedTabs((prev) => {
+                if (prev.has(key)) return prev
+                const next = new Set(prev)
+                next.add(key)
+                return next
+              })
+            }}
             data-testid={`route-edit-tab-${key}`}
             className={cn(
               'rounded-md px-3 py-1.5 text-[12px] font-semibold',
@@ -456,43 +706,52 @@ export function RouteEditPage() {
 
       <div className="grid grid-cols-12 gap-3">
         <div className="col-span-12 space-y-3 xl:col-span-9">
-          {activeTab === 'transform' && !isCreateMode && backendRouteId != null ? (
-            <RouteEditTransformPanel
-              routeId={backendRouteId}
-              streamId={backendStreamId}
-              initialEffective={transformEffective}
-              onEffectiveChange={setTransformEffective}
-            />
+          {!isCreateMode && backendRouteId != null && visitedTabs.has('transform') ? (
+            <div className={cn(activeTab !== 'transform' && 'hidden')} aria-hidden={activeTab !== 'transform'}>
+              <RouteEditTransformPanel
+                routeId={backendRouteId}
+                streamId={backendStreamId}
+                initialEffective={transformEffective}
+                onEffectiveChange={setTransformEffective}
+                onDirtyChange={setTransformDirty}
+              />
+            </div>
           ) : null}
 
-          {activeTab === 'protection' && !isCreateMode && backendRouteId != null && backendStreamId != null ? (
-            <ProtectionPanel
-              streamId={backendStreamId}
-              routeId={backendRouteId}
-              canOperate
-              initialEffective={protectionEffective}
-              onEffectiveChange={setProtectionEffective}
-            />
+          {!isCreateMode && backendRouteId != null && backendStreamId != null && visitedTabs.has('protection') ? (
+            <div className={cn(activeTab !== 'protection' && 'hidden')} aria-hidden={activeTab !== 'protection'}>
+              <ProtectionPanel
+                streamId={backendStreamId}
+                routeId={backendRouteId}
+                canOperate
+                initialEffective={protectionEffective}
+                onEffectiveChange={setProtectionEffective}
+              />
+            </div>
           ) : null}
 
-          {activeTab === 'classification' && !isCreateMode && backendRouteId != null && backendStreamId != null ? (
-            <ClassificationPanel
-              streamId={backendStreamId}
-              routeId={backendRouteId}
-              canOperate
-              initialEffective={classificationEffective}
-              onEffectiveChange={setClassificationEffective}
-            />
+          {!isCreateMode && backendRouteId != null && backendStreamId != null && visitedTabs.has('classification') ? (
+            <div className={cn(activeTab !== 'classification' && 'hidden')} aria-hidden={activeTab !== 'classification'}>
+              <ClassificationPanel
+                streamId={backendStreamId}
+                routeId={backendRouteId}
+                canOperate
+                initialEffective={classificationEffective}
+                onEffectiveChange={setClassificationEffective}
+              />
+            </div>
           ) : null}
 
-          {activeTab === 'policy' && !isCreateMode && backendRouteId != null && backendStreamId != null ? (
-            <PolicyPanel
-              streamId={backendStreamId}
-              routeId={backendRouteId}
-              canOperate
-              initialEffective={policyEffective}
-              onEffectiveChange={setPolicyEffective}
-            />
+          {!isCreateMode && backendRouteId != null && backendStreamId != null && visitedTabs.has('policy') ? (
+            <div className={cn(activeTab !== 'policy' && 'hidden')} aria-hidden={activeTab !== 'policy'}>
+              <PolicyPanel
+                streamId={backendStreamId}
+                routeId={backendRouteId}
+                canOperate
+                initialEffective={policyEffective}
+                onEffectiveChange={setPolicyEffective}
+              />
+            </div>
           ) : null}
 
           {activeTab === 'delivery' ? (
@@ -699,6 +958,54 @@ export function RouteEditPage() {
         <ShieldCheck className="h-3 w-3" />
         Delivery settings persist on the route entity; transform overrides use route_mappings and route_enrichments when enabled.
       </p>
+
+      {discardOpen ? (
+        <DangerousActionDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setDiscardOpen(false)
+          }}
+          title="Discard unsaved route changes?"
+          targetName={routeName.trim() || (isCreateMode ? 'New Route' : `Route #${backendRouteId}`)}
+          risk="medium"
+          impactBullets={[
+            'Local delivery and transform edits that were not saved will be discarded.',
+            'Runtime continues using the last successfully persisted route configuration.',
+          ]}
+          reversibility="Unsaved edits cannot be recovered after discard."
+          primaryLabel="Discard changes"
+          onConfirm={() => {
+            setDiscardOpen(false)
+            if (deliveryBaseline) applyDeliveryForm(deliveryBaseline)
+            setTransformDirty(false)
+            leaveWithoutSaving()
+          }}
+          dataTestId="route-edit-discard-dialog"
+        />
+      ) : null}
+      {refreshConfirmOpen ? (
+        <DangerousActionDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setRefreshConfirmOpen(false)
+          }}
+          title="Refresh and discard unsaved route changes?"
+          targetName={routeName.trim() || `Route #${backendRouteId}`}
+          risk="medium"
+          impactBullets={[
+            'Your unsaved local edits will be discarded.',
+            'The form will reload the latest server route configuration.',
+            'Runtime continues using the last successfully persisted route configuration.',
+          ]}
+          reversibility="Unsaved edits cannot be recovered after refresh."
+          primaryLabel="Refresh latest"
+          onConfirm={() => {
+            setRefreshConfirmOpen(false)
+            void reloadLatestFromServer()
+          }}
+          dataTestId="route-edit-refresh-discard-dialog"
+        />
+      ) : null}
     </div>
   )
 }

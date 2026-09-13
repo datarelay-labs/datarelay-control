@@ -84,8 +84,17 @@ def _assert_logs_mask_secrets(db: Session, stream_id: int, secrets: tuple[str, .
         json_blob_excludes_secrets(r.message, secrets)
 
 
+def _put_route_with_token(client, route_id, payload):
+    get_res = client.get(f"/api/v1/routes/{route_id}")
+    assert get_res.status_code == 200, get_res.text
+    body = dict(payload)
+    body["expected_updated_at"] = get_res.json()["updated_at"]
+    return client.put(f"/api/v1/routes/{route_id}", json=body)
+
+
 @skip_no_wiremock
 @pytest.mark.e2e_auth
+
 def test_e2e_auth_no_auth_fetch_delivery_masked_connector_response(
     client: TestClient, db_session: Session
 ) -> None:
@@ -672,7 +681,7 @@ def test_e2e_checkpoint_pause_on_failure_keeps_checkpoint_extracts_events(
     ck_id = int(out["checkpoint_id"])
 
     assert (
-        client.put(f"/api/v1/routes/{route_id}", json={"failure_policy": "PAUSE_STREAM_ON_FAILURE"}).status_code
+        _put_route_with_token(client, route_id, {"failure_policy": "PAUSE_STREAM_ON_FAILURE"}).status_code
         == 200
     )
 
@@ -715,9 +724,10 @@ def test_e2e_route_fanout_one_log_continue_fail_one_success_checkpoint_advances(
     route_ok = int(out["route_id"])
 
     assert (
-        client.put(
-            f"/api/v1/routes/{route_ok}",
-            json={"failure_policy": "LOG_AND_CONTINUE"},
+        _put_route_with_token(
+            client,
+            route_ok,
+            {"failure_policy": "LOG_AND_CONTINUE"},
         ).status_code
         == 200
     )
@@ -787,7 +797,7 @@ def test_e2e_route_db_disabled_excluded_other_route_delivers(
     assert r2.status_code == 201, r2.text
     route_b = int(r2.json()["id"])
 
-    assert client.put(f"/api/v1/routes/{route_b}", json={"enabled": False}).status_code == 200
+    assert _put_route_with_token(client, route_b, {"enabled": False}).status_code == 200
 
     enable_stream_for_run(client, stream_id)
     run = client.post(f"/api/v1/runtime/streams/{stream_id}/run-once")
@@ -925,7 +935,7 @@ def test_e2e_analytics_and_health_after_route_failure(
     route_id = int(out["route_id"])
 
     assert (
-        client.put(f"/api/v1/routes/{route_id}", json={"failure_policy": "PAUSE_STREAM_ON_FAILURE"}).status_code
+        _put_route_with_token(client, route_id, {"failure_policy": "PAUSE_STREAM_ON_FAILURE"}).status_code
         == 200
     )
 

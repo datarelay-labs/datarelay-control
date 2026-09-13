@@ -19,8 +19,11 @@ const saveRouteEnrichmentUiConfig = vi.fn()
 
 vi.mock('../../api/gdcRoutes', () => ({
   fetchRouteById: (...args: unknown[]) => fetchRouteById(...args),
+  fetchRouteByIdFresh: (...args: unknown[]) => fetchRouteById(...args),
   updateRoute: (...args: unknown[]) => updateRoute(...args),
   createRoute: vi.fn(),
+  isRouteStaleWriteError: (err: unknown) =>
+    err instanceof Error && /ROUTE_STALE_WRITE/i.test(err.message),
 }))
 
 vi.mock('../../api/gdcStreams', () => ({
@@ -101,6 +104,7 @@ describe('RouteEditPage transform persist', () => {
       failure_policy: 'LOG_AND_CONTINUE',
       formatter_config_json: { delivery_mode: 'Reliable' },
       rate_limit_json: { enabled: true, per_second: 50, burst_size: 100 },
+      updated_at: '2026-01-01T00:00:00Z',
     })
     fetchStreamById.mockResolvedValue({ id: 10, name: 'Stream A', connector_id: 1 })
     fetchConnectorById.mockResolvedValue({ id: 1, name: 'Connector A' })
@@ -146,7 +150,7 @@ describe('RouteEditPage transform persist', () => {
     fetchRouteMappingUiConfig.mockResolvedValue({
       route_id: 42,
       stream_id: 10,
-      inherit_stream_mapping: true,
+      inherit_stream_mapping: false,
       mapping: {
         exists: true,
         event_array_path: '$.items',
@@ -166,7 +170,7 @@ describe('RouteEditPage transform persist', () => {
     fetchRouteEnrichmentUiConfig.mockResolvedValue({
       route_id: 42,
       stream_id: 10,
-      inherit_stream_enrichment: true,
+      inherit_stream_enrichment: false,
       enrichment: { exists: true, enabled: true, enrichment: { vendor: 'stream' }, override_policy: 'KEEP_EXISTING' },
       stream_enrichment: { exists: true, enabled: true, enrichment: { vendor: 'stream' }, override_policy: 'KEEP_EXISTING' },
       message: 'ok',
@@ -186,7 +190,10 @@ describe('RouteEditPage transform persist', () => {
   it('persists inherit transform from transform tab', async () => {
     renderRouteEdit()
     fireEvent.click(await screen.findByTestId('route-edit-tab-transform'))
-    expect(await screen.findByTestId('route-transform-inherit')).toBeChecked()
+    expect(await screen.findByTestId('route-transform-override')).toBeChecked()
+    fireEvent.click(screen.getByTestId('route-transform-inherit'))
+    expect(screen.getByTestId('route-transform-inherit')).toBeChecked()
+    await waitFor(() => expect(screen.getByTestId('route-transform-save')).not.toBeDisabled())
     fireEvent.click(screen.getByTestId('route-transform-save'))
     await waitFor(() => {
       expect(saveRouteMappingUiConfig).toHaveBeenCalledWith(42, { inherit: true })

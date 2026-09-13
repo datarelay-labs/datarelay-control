@@ -21,6 +21,7 @@ vi.mock('../../api/gdcRoutes', () => ({
   createRoute: vi.fn(),
   deleteRoute: (...args: unknown[]) => deleteRoute(...args),
   updateRoute: vi.fn(),
+  updateRouteWithFreshToken: vi.fn(),
 }))
 
 vi.mock('./message-prefix-delivery-preview', () => ({
@@ -160,5 +161,39 @@ describe('StreamEditDeliveryPanel route removal', () => {
       expect(screen.getByText('Routes (0)')).toBeInTheDocument()
     })
     expect(screen.queryByText(/Remove route:/)).not.toBeInTheDocument()
+  })
+
+  it('marks prefix save available only when the draft differs from persisted baseline', async () => {
+    fetchStreamMappingUiConfig.mockResolvedValue(
+      mappingConfig([
+        {
+          route_id: 22,
+          destination_id: 150,
+          destination_name: 'AS4 SYNC',
+          destination_type: 'SYSLOG_TCP',
+          route_enabled: true,
+          destination_enabled: true,
+          formatter_config: {
+            message_prefix_enabled: false,
+            message_prefix_template: '<134> gdc generic-connector event:',
+          },
+          route_rate_limit: {},
+          failure_policy: 'RETRY_AND_BACKOFF',
+        },
+      ]),
+    )
+
+    render(<StreamEditDeliveryPanel streamId={10} />)
+    await waitFor(() => expect(screen.getByTestId('save-prefix-22')).toBeDisabled())
+
+    const textarea = screen.getByDisplayValue('<134> gdc generic-connector event:')
+    fireEvent.change(textarea, { target: { value: 'CUSTOM-PREFIX' } })
+    await waitFor(() => expect(screen.getByTestId('save-prefix-22')).not.toBeDisabled())
+    expect(screen.getByTestId('save-prefix-action-22')).toHaveTextContent(/Unsaved prefix edits/)
+
+    fireEvent.change(screen.getByDisplayValue('CUSTOM-PREFIX'), {
+      target: { value: '<134> gdc generic-connector event:' },
+    })
+    await waitFor(() => expect(screen.getByTestId('save-prefix-22')).toBeDisabled())
   })
 })

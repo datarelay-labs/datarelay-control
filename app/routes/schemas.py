@@ -22,7 +22,9 @@ class RouteCreate(RouteBase):
 
 
 class RouteUpdate(RouteBase):
-    pass
+    """Partial route update. ``expected_updated_at`` is the optimistic-concurrency token."""
+
+    expected_updated_at: datetime
 
 
 class RouteRead(RouteBase):
