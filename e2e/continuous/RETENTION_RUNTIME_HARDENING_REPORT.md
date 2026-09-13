@@ -192,8 +192,84 @@ Production remains: destructive + production deletes only for explicit manual ru
 | Unexpected data loss | NO |
 | Full 32k / real SaaS | NO |
 
-## Next recommended action
+## Next recommended action (post-hardening; historical)
 
-1. Explicitly approve July-only controlled DROP via product retention path above  
-2. After July reclaim, decide non-prod automatic flag set + whether to schedule partition DROP outside production  
+1. ~~Explicitly approve July-only controlled DROP~~ → **completed 2026-09-13** (see section below)  
+2. Decide non-prod automatic flag set + whether to schedule partition DROP outside production  
 3. Follow-up: `platform_alert_history` retention policy design (no duration invented here)
+
+---
+
+## Controlled July partition DROP validation (2026-09-13)
+
+Phase: `DATA_RELAY_RETENTION_JULY_CONTROLLED_DROP_VALIDATION`  
+Approval scope: **`delivery_logs_2026_07` only**  
+`AUTOMATIC_DELETES` remained **false**. August / September / future / default were not authorized.
+
+### Pre-drop revalidation
+
+| Field | Value |
+|-------|-------|
+| Clock (UTC) | `2026-09-13T06:15:20Z` |
+| `RETENTION_CUTOFF` | `2026-08-14T06:15:20Z` (30d) |
+| `PRE_DROP_CANDIDATES` | `["delivery_logs_2026_07"]` |
+| July rows | `0` |
+| July bounds | `FROM ('2026-07-01') TO ('2026-08-01')` |
+| July total size | `2738348032` bytes (~2611 MB) |
+| August | `4480118` rows, `2026-08-29`..`2026-08-31` — **not** eligible |
+| Active | `delivery_logs_2026_09` (writes continuing) |
+| DB total before | `34877905943` bytes (~32 GB) |
+| Filesystem free before | `260915380224` bytes |
+
+### Final dry-run
+
+```text
+FINAL_DRY_RUN=PASS
+FINAL_DRY_RUN_DROP_COUNT=1
+FINAL_DRY_RUN_DROP_PARTITION=delivery_logs_2026_07
+row matched_count=0
+```
+
+### Execution
+
+Invocation-local env only (API/scheduler process env unchanged):
+
+```text
+GDC_RETENTION_DESTRUCTIVE_ACTIONS_ENABLED=true
+GDC_RETENTION_DELIVERY_LOG_PARTITION_DROP_ENABLED=true
+GDC_RETENTION_AUTOMATIC_DELETES_ENABLED=false
+```
+
+Product path: `run_operational_retention(..., dry_run=False, tables={"delivery_logs"}, trigger="manual")`  
+(same service function as `POST /api/v1/retention/run`).
+
+Observed SQL: `DROP TABLE IF EXISTS "delivery_logs_2026_07"` (~5.9s).
+
+| Field | Value |
+|-------|-------|
+| `PARTITIONS_DROPPED` | `delivery_logs_2026_07` |
+| `PARTITIONS_DROPPED_COUNT` | `1` |
+| `ROWS_DELETED` | `0` |
+| August row count after | `4480118` (unchanged) |
+| September / Oct / Nov / default | present |
+
+### Space
+
+| Metric | Before | After |
+|--------|--------|-------|
+| DB total | ~32 GB (`34877905943`) | ~30 GB (`32142097431`) |
+| Filesystem free | `260915380224` | `263652081664` |
+
+`RECLAIMED_DB_BYTES` ≈ `2735808512` (~2.55 GB) — matches July partition size. Host free space rose by a similar magnitude; PostgreSQL dropped the relation immediately.
+
+### Post-drop health
+
+- Active delivery logging into `delivery_logs_2026_09`: **PASS**
+- Checkpoint updates continuing: **PASS**
+- Retention scheduler ticks: guarded `logs:skipped(0)` — **PASS**; `ORM_FAILURE_AFTER_DROP=NO`; no July catalog errors
+- `POST_DROP_CANDIDATES=[]`
+- Destructive flags on API/scheduler/host defaults: remain **false** (`DESTRUCTIVE_FLAGS_RESTORED=YES`; were never process-persisted)
+
+### Outcome
+
+`JULY_DROPPED=YES` · `AUGUST_MODIFIED=NO` · `SEPTEMBER_MODIFIED=NO` · `FINAL_STATUS=PASS`
