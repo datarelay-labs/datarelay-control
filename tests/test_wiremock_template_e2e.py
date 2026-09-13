@@ -63,17 +63,17 @@ def _assert_checkpoint_last_success(db: Session, stream_id: int) -> dict[str, An
     return ev
 
 
-@skip_no_wiremock
-@pytest.mark.e2e_smoke
-@pytest.mark.e2e_delivery
-@pytest.mark.e2e_checkpoint
-
 def _put_route_with_token(client, route_id, payload):
     get_res = client.get(f"/api/v1/routes/{route_id}")
     assert get_res.status_code == 200, get_res.text
     body = dict(payload)
     body["expected_updated_at"] = get_res.json()["updated_at"]
     return client.put(f"/api/v1/routes/{route_id}", json=body)
+
+@skip_no_wiremock
+@pytest.mark.e2e_smoke
+@pytest.mark.e2e_delivery
+@pytest.mark.e2e_checkpoint
 
 def test_template_generic_rest_polling_run_once_delivery_logs_checkpoint(
     client: TestClient, db_session: Session

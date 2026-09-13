@@ -84,15 +84,16 @@ def _assert_logs_mask_secrets(db: Session, stream_id: int, secrets: tuple[str, .
         json_blob_excludes_secrets(r.message, secrets)
 
 
-@skip_no_wiremock
-@pytest.mark.e2e_auth
-
 def _put_route_with_token(client, route_id, payload):
     get_res = client.get(f"/api/v1/routes/{route_id}")
     assert get_res.status_code == 200, get_res.text
     body = dict(payload)
     body["expected_updated_at"] = get_res.json()["updated_at"]
     return client.put(f"/api/v1/routes/{route_id}", json=body)
+
+
+@skip_no_wiremock
+@pytest.mark.e2e_auth
 
 def test_e2e_auth_no_auth_fetch_delivery_masked_connector_response(
     client: TestClient, db_session: Session

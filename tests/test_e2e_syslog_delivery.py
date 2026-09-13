@@ -130,17 +130,17 @@ def _assert_run_id_on_stages(db: Session, stream_id: int, stages: tuple[str, ...
     return run_id
 
 
-@skip_no_wiremock
-@pytest.mark.e2e_smoke
-@pytest.mark.e2e_delivery
-@pytest.mark.e2e_checkpoint
-
 def _put_route_with_token(client, route_id, payload):
     get_res = client.get(f"/api/v1/routes/{route_id}")
     assert get_res.status_code == 200, get_res.text
     body = dict(payload)
     body["expected_updated_at"] = get_res.json()["updated_at"]
     return client.put(f"/api/v1/routes/{route_id}", json=body)
+
+@skip_no_wiremock
+@pytest.mark.e2e_smoke
+@pytest.mark.e2e_delivery
+@pytest.mark.e2e_checkpoint
 
 def test_e2e_syslog_udp_http_mapping_enrichment_delivery(
     client: TestClient,
