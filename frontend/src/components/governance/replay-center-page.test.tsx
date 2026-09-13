@@ -163,6 +163,11 @@ describe('ReplayCenterPage', () => {
     await user.click(await screen.findByTestId('replay-select-8'))
     await user.click(await screen.findByTestId('replay-bulk-execute'))
 
+    expect(await screen.findByTestId('replay-center-execute-dialog')).toBeInTheDocument()
+    expect(bulkSpy).not.toHaveBeenCalled()
+    await user.type(screen.getByTestId('replay-center-execute-dialog-type-name'), 'REPLAY')
+    await user.click(screen.getByTestId('replay-center-execute-dialog-confirm'))
+
     await waitFor(() => {
       expect(bulkSpy).toHaveBeenCalledWith([7, 8])
     })
