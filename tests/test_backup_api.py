@@ -338,6 +338,9 @@ def test_full_restore_replaces_operational_state(client: TestClient, db_session:
 
     extra = Connector(name="extra-before-restore", description=None, status="STOPPED")
     db_session.add(extra)
+    # Stop running streams before full restore (authoritative backend guard).
+    for st in db_session.query(Stream).filter(Stream.status == "RUNNING").all():
+        st.status = "STOPPED"
     db_session.commit()
     assert db_session.query(Connector).count() == 2
 
@@ -374,6 +377,29 @@ def test_full_restore_replaces_operational_state(client: TestClient, db_session:
     assert restored_stream.name == "backup-seed-stream"
     assert restored_stream.enabled is True
     assert restored_stream.status == "RUNNING"
+
+
+def test_full_restore_blocked_while_stream_running(client: TestClient, db_session: Session) -> None:
+    _seed_connector_graph(db_session)
+    bundle = client.get("/api/v1/backup/workspace/export?include_destinations=true").json()
+    prev = client.post("/api/v1/backup/import/preview", json={"bundle": bundle, "mode": "full_restore"})
+    assert prev.status_code == 200
+    token = prev.json()["preview_token"]
+
+    apply_res = client.post(
+        "/api/v1/backup/import/apply",
+        json={
+            "bundle": bundle,
+            "mode": "full_restore",
+            "confirm": True,
+            "confirm_destructive": True,
+            "preview_token": token,
+        },
+    )
+    assert apply_res.status_code == 409
+    detail = apply_res.json().get("detail") or {}
+    assert detail.get("error_code") == "FULL_RESTORE_BLOCKED_STREAM_RUNNING"
+    assert db_session.query(Stream).filter(Stream.status == "RUNNING").count() == 1
 
 
 def test_full_restore_requires_destructive_confirm(client: TestClient, db_session: Session) -> None:

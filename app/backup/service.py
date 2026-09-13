@@ -127,6 +127,24 @@ def _assert_apply_allowed(db: Session, body: ImportApplyRequest) -> ValidationOu
                 "message": "Set confirm_destructive=true after acknowledging full restore will replace operational configuration.",
             },
         )
+    if body.mode == "full_restore":
+        running = (
+            db.query(Stream.id, Stream.name)
+            .filter(Stream.status == "RUNNING")
+            .order_by(Stream.id.asc())
+            .limit(20)
+            .all()
+        )
+        if running:
+            names = [f"{row.name or 'stream'}#{row.id}" for row in running]
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "error_code": "FULL_RESTORE_BLOCKED_STREAM_RUNNING",
+                    "message": "Stop all running streams before applying a full restore.",
+                    "running_streams": names,
+                },
+            )
     return outcome
 
 
