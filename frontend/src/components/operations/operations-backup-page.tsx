@@ -14,6 +14,7 @@ import { cn } from '../../lib/utils'
 import { useSessionCapabilities } from '../../lib/rbac'
 import { navigateToConnectorWizardWithDraft } from '../../utils/httpImportDraft'
 import { CurlImportPanel, PostmanImportPanel } from '../connectors/http-import-panel'
+import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
 
 const MODE_HELP: Record<ImportMode, { title: string; body: string; destructive?: boolean }> = {
   full_restore: {
@@ -46,6 +47,8 @@ export function OperationsBackupPage() {
   const [applyBusy, setApplyBusy] = useState(false)
   const [confirmApply, setConfirmApply] = useState(false)
   const [confirmDestructive, setConfirmDestructive] = useState(false)
+  const [applyDialogOpen, setApplyDialogOpen] = useState(false)
+  const [confirmTypeValue, setConfirmTypeValue] = useState('')
   const [pageError, setPageError] = useState<string | null>(null)
   const [pageInfo, setPageInfo] = useState<string | null>(null)
   const isFullRestore = importMode === 'full_restore'
@@ -118,8 +121,10 @@ export function OperationsBackupPage() {
       const bundle = JSON.parse(jsonText || '{}') as unknown
       const res = await postImportApply(bundle, importMode, preview.preview_token, {
         confirm: true,
-        confirm_destructive: isFullRestore ? confirmDestructive : false,
+        confirm_destructive: isFullRestore ? true : false,
       })
+      setApplyDialogOpen(false)
+      setConfirmTypeValue('')
       if (res.redirect_path) {
         navigate(res.redirect_path)
       } else {
@@ -131,6 +136,22 @@ export function OperationsBackupPage() {
       setApplyBusy(false)
     }
   }, [canApplyImport, confirmApply, confirmDestructive, importMode, isFullRestore, jsonText, navigate, preview])
+
+  const openApplyDialog = useCallback(() => {
+    if (!canApplyImport) return
+    if (!preview?.preview_token || !preview.ok) return
+    if (!confirmApply) {
+      setPageError('Enable confirmation before applying import.')
+      return
+    }
+    if (isFullRestore && !confirmDestructive) {
+      setPageError('Acknowledge the destructive full restore scope before applying.')
+      return
+    }
+    setPageError(null)
+    setConfirmTypeValue('')
+    setApplyDialogOpen(true)
+  }, [canApplyImport, confirmApply, confirmDestructive, isFullRestore, preview])
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-4">
@@ -365,7 +386,8 @@ export function OperationsBackupPage() {
               type="button"
               disabled={applyBusy || !preview.ok || !preview.preview_token || !canApplyImport}
               title={!canApplyImport ? 'Administrator role required to apply restore.' : undefined}
-              onClick={() => void onApply()}
+              onClick={() => openApplyDialog()}
+              data-testid="backup-apply-open"
               className={cn(
                 'inline-flex h-9 items-center gap-2 rounded-md px-3 text-[12px] font-semibold text-white disabled:opacity-50',
                 isFullRestore
@@ -379,6 +401,59 @@ export function OperationsBackupPage() {
           </div>
         ) : null}
       </section>
+
+      {applyDialogOpen ? (
+        <DangerousActionDialog
+          open
+          onOpenChange={(open) => {
+            if (!open && !applyBusy) {
+              setApplyDialogOpen(false)
+              setConfirmTypeValue('')
+            }
+          }}
+          title={isFullRestore ? 'Apply destructive full restore?' : 'Apply import?'}
+          targetName={`${MODE_HELP[importMode].title} · mode=${importMode}`}
+          risk={isFullRestore ? 'critical' : 'high'}
+          confirmMode={isFullRestore ? 'type-name' : 'click'}
+          expectedTypeName={isFullRestore ? 'FULL RESTORE' : ''}
+          typeNameValue={confirmTypeValue}
+          onTypeNameChange={setConfirmTypeValue}
+          impactBullets={
+            isFullRestore
+              ? [
+                  'Removes existing connectors, streams, routes, and destinations, then recreates them from the snapshot.',
+                  'Running streams must be stopped first; the backend rejects full restore while any stream is RUNNING.',
+                  'Preview token must match the latest preview; stale previews are rejected.',
+                  'Secrets remain masked — re-enter credentials after restore when required.',
+                ]
+              : [
+                  'Applies the selected import mode to the current workspace.',
+                  'Matching entities may be overwritten depending on mode.',
+                  'Preview token must match the latest preview; stale previews are rejected.',
+                ]
+          }
+          dependencies={
+            isFullRestore && preview?.full_restore_purge
+              ? [
+                  { label: 'Connectors replaced', count: preview.full_restore_purge.connectors },
+                  { label: 'Streams replaced', count: preview.full_restore_purge.streams },
+                  { label: 'Destinations replaced', count: preview.full_restore_purge.destinations },
+                  { label: 'Routes replaced', count: preview.full_restore_purge.routes },
+                ]
+              : [{ label: 'Mode', detail: importMode }]
+          }
+          reversibility={
+            isFullRestore
+              ? 'Full restore is not reversible except by importing a prior backup.'
+              : 'Import effects depend on mode; keep a fresh export before applying.'
+          }
+          primaryLabel={isFullRestore ? 'Apply full restore' : 'Apply import'}
+          busy={applyBusy}
+          error={pageError}
+          onConfirm={() => void onApply()}
+          dataTestId="backup-apply-dialog"
+        />
+      ) : null}
     </div>
   )
 }

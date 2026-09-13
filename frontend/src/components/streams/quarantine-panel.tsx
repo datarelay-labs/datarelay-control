@@ -13,6 +13,12 @@ import { notifyStreamGovernanceChanged } from '../../lib/stream-governance-event
 import { compatibleGovernancePreload } from '../../lib/stream-governance-snapshot'
 import { cn } from '../../lib/utils'
 import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
+import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
+
+type PendingQuarantineAction = {
+  kind: 'release' | 'discard'
+  row: QuarantineEventItem
+}
 
 function statusBadge(status: string): string {
   switch (status) {
@@ -43,8 +49,10 @@ export function QuarantinePanel({
   const [error, setError] = useState<string | null>(null)
   const [summary, setSummary] = useState<StreamQuarantineSummaryResponse | null>(preload ?? null)
   const [events, setEvents] = useState<QuarantineEventItem[]>([])
-  const [actionBusy, setActionBusy] = useState<number | null>(null)
+  const [actionBusy, setActionBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
+  const [pending, setPending] = useState<PendingQuarantineAction | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   useEffect(() => {
     if (preload != null) setSummary(preload)
@@ -84,35 +92,26 @@ export function QuarantinePanel({
     void load({ skipSummary })
   }, [streamId, load])
 
-  async function onRelease(row: QuarantineEventItem) {
-    if (!canOperate || row.status !== 'quarantined') return
-    setActionBusy(row.id)
+  async function executePending() {
+    if (!pending || !canOperate) return
+    const { kind, row } = pending
+    if (row.status !== 'quarantined') return
+    setActionBusy(true)
+    setActionError(null)
     setMessage(null)
     try {
-      const res = await releaseStreamQuarantineEvent(row.id)
+      const res =
+        kind === 'release'
+          ? await releaseStreamQuarantineEvent(row.id)
+          : await discardStreamQuarantineEvent(row.id)
       setMessage(res.message)
+      setPending(null)
       await load()
       notifyStreamGovernanceChanged(streamId)
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : String(err))
+      setActionError(err instanceof Error ? err.message : String(err))
     } finally {
-      setActionBusy(null)
-    }
-  }
-
-  async function onDiscard(row: QuarantineEventItem) {
-    if (!canOperate || row.status !== 'quarantined') return
-    setActionBusy(row.id)
-    setMessage(null)
-    try {
-      const res = await discardStreamQuarantineEvent(row.id)
-      setMessage(res.message)
-      await load()
-      notifyStreamGovernanceChanged(streamId)
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : String(err))
-    } finally {
-      setActionBusy(null)
+      setActionBusy(false)
     }
   }
 
@@ -204,22 +203,24 @@ export function QuarantinePanel({
                         <>
                           <button
                             type="button"
-                            disabled={actionBusy === row.id}
-                            onClick={() => void onRelease(row)}
+                            disabled={actionBusy}
+                            onClick={() => {
+                              setActionError(null)
+                              setPending({ kind: 'release', row })
+                            }}
                             className="inline-flex items-center gap-0.5 rounded border border-emerald-300 px-1.5 py-0.5 font-semibold text-emerald-800 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-800 dark:text-emerald-200 dark:hover:bg-emerald-950/40"
                             data-testid={`quarantine-event-release-${row.id}`}
                           >
-                            {actionBusy === row.id ? (
-                              <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-                            ) : (
-                              <Send className="h-3 w-3" aria-hidden />
-                            )}
+                            <Send className="h-3 w-3" aria-hidden />
                             Release
                           </button>
                           <button
                             type="button"
-                            disabled={actionBusy === row.id}
-                            onClick={() => void onDiscard(row)}
+                            disabled={actionBusy}
+                            onClick={() => {
+                              setActionError(null)
+                              setPending({ kind: 'discard', row })
+                            }}
                             className="inline-flex items-center gap-0.5 rounded border border-slate-300 px-1.5 py-0.5 font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-gdc-border dark:text-slate-200 dark:hover:bg-gdc-rowHover"
                             data-testid={`quarantine-event-discard-${row.id}`}
                           >
@@ -236,6 +237,48 @@ export function QuarantinePanel({
           </tbody>
         </table>
       </div>
+
+      {pending ? (
+        <DangerousActionDialog
+          open
+          onOpenChange={(open) => {
+            if (!open && !actionBusy) {
+              setPending(null)
+              setActionError(null)
+            }
+          }}
+          title={pending.kind === 'release' ? 'Release quarantine event?' : 'Discard quarantine event permanently?'}
+          targetName={`quarantine #${pending.row.id} · stream ${streamId}`}
+          risk={pending.kind === 'discard' ? 'critical' : 'high'}
+          impactBullets={
+            pending.kind === 'release'
+              ? [
+                  'Delivers the held payload to the configured destination.',
+                  'May advance the stream checkpoint as part of release.',
+                  'Duplicate downstream delivery is possible if the event was partially processed earlier.',
+                ]
+              : [
+                  'Permanently discards this held quarantine payload.',
+                  'The event will not be delivered to destinations.',
+                  'This cannot be undone from the product UI.',
+                ]
+          }
+          dependencies={[
+            { label: 'Held events', count: pending.row.event_count },
+            { label: 'Reason', detail: humanizeQuarantineReason(pending.row.quarantine_reason, { quarantineSource: pending.row.quarantine_source }) },
+          ]}
+          reversibility={
+            pending.kind === 'release'
+              ? 'Release is not reversible. Deduplication is not guaranteed unless the destination enforces it.'
+              : 'Discard is irreversible. Re-fetch or re-quarantine would be required to recover equivalent data.'
+          }
+          primaryLabel={pending.kind === 'release' ? 'Release event' : 'Discard event'}
+          busy={actionBusy}
+          error={actionError}
+          onConfirm={() => void executePending()}
+          dataTestId={pending.kind === 'release' ? 'quarantine-release-dialog' : 'quarantine-discard-dialog'}
+        />
+      ) : null}
     </section>
   )
 }

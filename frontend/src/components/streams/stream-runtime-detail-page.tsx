@@ -99,6 +99,7 @@ import { StreamIssueRail } from './stream-issue-rail'
 import { StreamRunControlSwitch } from './stream-run-control-switch'
 import { StatusBadge } from '../shell/status-badge'
 import { RuntimeChartCard } from '../shell/runtime-chart-card'
+import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
 import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
 import type { RecentLogLine, RunHistoryRow } from './stream-runtime-detail-model'
 import { emptyStreamRuntimeDetail } from './stream-runtime-detail-model'
@@ -187,6 +188,7 @@ export function StreamRuntimeDetailPage() {
   const [bfEnd, setBfEnd] = useState('')
   const [bfDryRun, setBfDryRun] = useState(false)
   const [bfBusy, setBfBusy] = useState(false)
+  const [bfLiveConfirmOpen, setBfLiveConfirmOpen] = useState(false)
   const [bfResult, setBfResult] = useState<BackfillJobDto | null>(null)
   const [bfLastWasDryRun, setBfLastWasDryRun] = useState<boolean | null>(null)
   const [bfError, setBfError] = useState<string | null>(null)
@@ -554,6 +556,7 @@ export function StreamRuntimeDetailPage() {
       })
       setBfResult(job)
       setBfLastWasDryRun(bfDryRun)
+      setBfLiveConfirmOpen(false)
     } catch (e) {
       setBfError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -561,6 +564,14 @@ export function StreamRuntimeDetailPage() {
     }
   }, [backendStreamId, bfBusy, bfDryRun, bfEnd, bfStart, canBackfill])
 
+  const onBackfillSubmit = useCallback(() => {
+    if (bfDryRun) {
+      void executeBackfill()
+      return
+    }
+    setBfError(null)
+    setBfLiveConfirmOpen(true)
+  }, [bfDryRun, executeBackfill])
   const onExportStreamBackup = useCallback(async () => {
     if (backendStreamId == null) return
     setBackupBusy(true)
@@ -1683,7 +1694,7 @@ export function StreamRuntimeDetailPage() {
                 type="button"
                 data-testid="stream-backfill-submit"
                 disabled={bfBusy || !bfStart || !bfEnd}
-                onClick={() => void executeBackfill()}
+                onClick={() => onBackfillSubmit()}
                 className="inline-flex items-center gap-1.5 rounded-md bg-violet-600 px-3 py-1.5 text-[12px] font-semibold text-white disabled:opacity-50"
               >
                 {bfBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
@@ -1692,6 +1703,29 @@ export function StreamRuntimeDetailPage() {
             </div>
           </div>
         </div>
+      ) : null}
+
+      {bfLiveConfirmOpen ? (
+        <DangerousActionDialog
+          open
+          onOpenChange={(open) => {
+            if (!open && !bfBusy) setBfLiveConfirmOpen(false)
+          }}
+          title="Run live historical replay?"
+          targetName={`${streamDisplayName} · ${bfStart || '…'} → ${bfEnd || '…'}`}
+          risk="high"
+          impactBullets={[
+            'Replays historical rows through mapping, enrichment, and routes for the selected window.',
+            'Production checkpoint is not advanced by this job.',
+            'Live mode may deliver duplicate events to destinations; platform deduplication is not assumed.',
+          ]}
+          reversibility="Live historical replay cannot be undone. Prefer dry-run first when unsure."
+          primaryLabel="Run live replay"
+          busy={bfBusy}
+          error={bfError}
+          onConfirm={() => void executeBackfill()}
+          dataTestId="stream-backfill-live-confirm-dialog"
+        />
       ) : null}
     </div>
   )

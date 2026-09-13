@@ -166,4 +166,29 @@ describe('QuarantineCenterPage', () => {
     expect(screen.getByTestId('quarantine-filter-stream')).toBeInTheDocument()
     expect(screen.getByTestId('quarantine-filter-classification')).toBeInTheDocument()
   })
+
+  it('opens confirmation dialog before discard from investigation drawer', async () => {
+    vi.spyOn(gdcGovernanceQuarantine, 'fetchGovernanceQuarantineEvents').mockResolvedValue({
+      window: '24h',
+      total: 1,
+      quarantine_events: [sampleEntry],
+    })
+    vi.spyOn(gdcGovernanceQuarantine, 'fetchGovernanceQuarantineDetail').mockResolvedValue(sampleDetail)
+    const discardSpy = vi.spyOn(gdcGovernanceQuarantine, 'discardGovernanceQuarantineEvents').mockResolvedValue({
+      total: 1,
+      succeeded: 1,
+      failed: 0,
+      results: [{ id: 42, outcome: 'discarded', message: 'ok' }],
+    })
+
+    renderPage()
+    const user = userEvent.setup()
+    await user.click(await screen.findByTestId('quarantine-row-42'))
+    await waitFor(() => expect(screen.getByTestId('quarantine-action-discard')).toBeInTheDocument())
+    await user.click(screen.getByTestId('quarantine-action-discard'))
+    expect(await screen.findByTestId('quarantine-center-discard-dialog')).toBeInTheDocument()
+    expect(discardSpy).not.toHaveBeenCalled()
+    await user.click(screen.getByTestId('quarantine-center-discard-dialog-confirm'))
+    await waitFor(() => expect(discardSpy).toHaveBeenCalled())
+  })
 })

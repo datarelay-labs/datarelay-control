@@ -226,8 +226,17 @@ def _alert_read(row: object) -> AlertSettingsRead:
     )
 
 
-def _http_error(code: str, message: str, status_code: int = HTTP_422_UNPROCESSABLE_CONTENT) -> HTTPException:
-    return HTTPException(status_code=status_code, detail={"error_code": code, "message": message})
+def _http_error(
+    code: str,
+    message: str,
+    status_code: int = HTTP_422_UNPROCESSABLE_CONTENT,
+    *,
+    extra: dict[str, Any] | None = None,
+) -> HTTPException:
+    detail: dict[str, Any] = {"error_code": code, "message": message}
+    if extra:
+        detail.update(extra)
+    return HTTPException(status_code=status_code, detail=detail)
 
 
 def _tls_paths() -> tuple[Path, Path]:
@@ -991,9 +1000,15 @@ def apply_config_version_snapshot(
     if row is None:
         raise _http_error("CONFIG_VERSION_NOT_FOUND", f"config version not found: {row_id}", status.HTTP_404_NOT_FOUND)
     try:
-        new_v, _ = apply_versioned_snapshot(db, version_row=row, target=body.target, actor_username="system")
+        new_v, _ = apply_versioned_snapshot(
+            db,
+            version_row=row,
+            target=body.target,
+            expected_version=int(body.expected_version),
+            actor_username="system",
+        )
     except ConfigSnapshotApplyError as exc:
-        raise _http_error(exc.error_code, str(exc), exc.http_status) from exc
+        raise _http_error(exc.error_code, str(exc), exc.http_status, extra=exc.details or None) from exc
     except ValueError as exc:
         raise _http_error("CONFIG_SNAPSHOT_APPLY_FAILED", str(exc), HTTP_422_UNPROCESSABLE_CONTENT) from exc
     return ConfigSnapshotApplyResponse(

@@ -121,11 +121,13 @@ def test_apply_snapshot_rollback_restores_values(client: TestClient, db_session:
     )
     assert r1.status_code == 200
     lst = client.get(f"/api/v1/admin/config-versions?entity_type=STREAM_CONFIG&entity_id={sid}&limit=1")
-    row_id = lst.json()["items"][0]["id"]
+    tip = lst.json()["items"][0]
+    row_id = tip["id"]
+    expected_version = tip["version"]
 
     ap = client.post(
         f"/api/v1/admin/config-versions/{row_id}/apply-snapshot",
-        json={"target": "before"},
+        json={"target": "before", "expected_version": expected_version},
     )
     assert ap.status_code == 200, ap.text
     assert ap.json()["applied_target"] == "before"
@@ -143,16 +145,101 @@ def test_apply_snapshot_blocked_when_stream_running(client: TestClient, db_sessi
         json={"name": "s1", "polling_interval": 77, "config_json": {"endpoint": "/x"}, "rate_limit_json": {}},
     )
     lst = client.get(f"/api/v1/admin/config-versions?entity_type=STREAM_CONFIG&entity_id={sid}&limit=1")
-    row_id = lst.json()["items"][0]["id"]
+    tip = lst.json()["items"][0]
+    row_id = tip["id"]
+    expected_version = tip["version"]
 
     db_session.query(Stream).filter(Stream.id == sid).update({"status": "RUNNING"})
     db_session.commit()
 
     ap = client.post(
         f"/api/v1/admin/config-versions/{row_id}/apply-snapshot",
-        json={"target": "before"},
+        json={"target": "before", "expected_version": expected_version},
     )
     assert ap.status_code == 409
+    assert ap.json()["detail"]["error_code"] == "CONFIG_APPLY_BLOCKED_STREAM_RUNNING"
+
+
+def test_apply_snapshot_rejects_stale_expected_version(client: TestClient, db_session: Session) -> None:
+    """Stale restore must be side-effect free when the live target tip advanced after preview."""
+    from app.platform_admin.models import PlatformAuditEvent, PlatformConfigVersion
+
+    sid = _seed_stream(db_session)
+    first = client.put(
+        f"/api/v1/streams/{sid}",
+        json={"name": "s1", "polling_interval": 111, "config_json": {"endpoint": "/v1"}, "rate_limit_json": {}},
+    )
+    assert first.status_code == 200
+
+    lst_n = client.get(f"/api/v1/admin/config-versions?entity_type=STREAM_CONFIG&entity_id={sid}&limit=1")
+    tip_n = lst_n.json()["items"][0]
+    historical_row_id = tip_n["id"]
+    version_n = int(tip_n["version"])
+
+    # Concurrent actor advances the target tip to N+1 after preview captured N.
+    second = client.put(
+        f"/api/v1/streams/{sid}",
+        json={"name": "s1", "polling_interval": 222, "config_json": {"endpoint": "/v2"}, "rate_limit_json": {}},
+    )
+    assert second.status_code == 200
+    lst_n1 = client.get(f"/api/v1/admin/config-versions?entity_type=STREAM_CONFIG&entity_id={sid}&limit=1")
+    version_n1 = int(lst_n1.json()["items"][0]["version"])
+    assert version_n1 > version_n
+
+    versions_before = (
+        db_session.query(PlatformConfigVersion)
+        .filter(
+            PlatformConfigVersion.entity_type == "STREAM_CONFIG",
+            PlatformConfigVersion.entity_id == sid,
+        )
+        .count()
+    )
+    audits_before = (
+        db_session.query(PlatformAuditEvent)
+        .filter(PlatformAuditEvent.action == "CONFIG_SNAPSHOT_APPLIED")
+        .count()
+    )
+
+    stale = client.post(
+        f"/api/v1/admin/config-versions/{historical_row_id}/apply-snapshot",
+        json={"target": "before", "expected_version": version_n},
+    )
+    assert stale.status_code == 409, stale.text
+    detail = stale.json()["detail"]
+    assert detail["error_code"] == "CONFIG_APPLY_STALE_VERSION"
+    assert detail["expected_version"] == version_n
+    assert detail["current_version"] == version_n1
+
+    cur = client.get(f"/api/v1/streams/{sid}")
+    assert cur.status_code == 200
+    assert cur.json()["polling_interval"] == 222
+    assert cur.json()["config_json"]["endpoint"] == "/v2"
+
+    versions_after = (
+        db_session.query(PlatformConfigVersion)
+        .filter(
+            PlatformConfigVersion.entity_type == "STREAM_CONFIG",
+            PlatformConfigVersion.entity_id == sid,
+        )
+        .count()
+    )
+    audits_after = (
+        db_session.query(PlatformAuditEvent)
+        .filter(PlatformAuditEvent.action == "CONFIG_SNAPSHOT_APPLIED")
+        .count()
+    )
+    assert versions_after == versions_before
+    assert audits_after == audits_before
+
+    fresh = client.post(
+        f"/api/v1/admin/config-versions/{historical_row_id}/apply-snapshot",
+        json={"target": "before", "expected_version": version_n1},
+    )
+    assert fresh.status_code == 200, fresh.text
+    restored = client.get(f"/api/v1/streams/{sid}")
+    assert restored.status_code == 200
+    assert restored.json()["polling_interval"] == 60
+    assert restored.json()["config_json"]["endpoint"] == "/e"
 
 
 def test_config_versions_entity_id_without_type_is_400(client: TestClient) -> None:
