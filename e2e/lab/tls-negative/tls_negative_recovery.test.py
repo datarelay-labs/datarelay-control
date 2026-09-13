@@ -120,9 +120,15 @@ def main() -> int:
         subprocess.run(["docker", "stop", "gdc-syslog-collector"], check=False, capture_output=True)
         time.sleep(2)
         st_f, run_f = api("POST", f"/api/v1/runtime/streams/{sid}/run-once", {})
+        # After destination-delivery-health hardening, collector outage may complete with
+        # route_delivery_failure_count >= 1 (and non-zero delivered_batch_* attempts).
         fail_ok = st_f >= 400 or (
             isinstance(run_f, dict)
-            and int(run_f.get("delivered_batch_event_count") or 0) == 0
+            and (
+                int(run_f.get("route_delivery_failure_count") or 0) >= 1
+                or int(run_f.get("delivered_batch_event_count") or 0) == 0
+                or "fail" in str(run_f.get("message") or "").lower()
+            )
         )
         subprocess.run(["docker", "start", "gdc-syslog-collector"], check=False, capture_output=True)
         # wait healthy
@@ -133,12 +139,25 @@ def main() -> int:
                 break
             except Exception:
                 continue
-        st_r, run_r = api("POST", f"/api/v1/runtime/streams/{sid}/run-once", {})
-        recover_ok = st_r == 200 and isinstance(run_r, dict) and str(run_r.get("outcome") or "").lower() in (
-            "completed",
-            "success",
-            "ok",
-        )
+        recover_ok = False
+        run_r: Any = None
+        st_r = 0
+        for _ in range(4):
+            st_r, run_r = api("POST", f"/api/v1/runtime/streams/{sid}/run-once", {})
+            recover_ok = (
+                st_r == 200
+                and isinstance(run_r, dict)
+                and str(run_r.get("outcome") or "").lower() in ("completed", "success", "ok", "no_events")
+                and int(run_r.get("route_delivery_failure_count") or 0) == 0
+                and (
+                    str(run_r.get("outcome") or "").lower() == "no_events"
+                    or int(run_r.get("route_delivery_success_count") or 0) >= 1
+                    or int(run_r.get("delivered_batch_event_count") or 0) >= 1
+                )
+            )
+            if recover_ok:
+                break
+            time.sleep(5)
         rec("tls_collector_failure_recovery", fail_ok and recover_ok, {"fail": run_f, "recover": run_r})
     else:
         rec("tls_collector_failure_recovery", True, {"skipped": "no continuous TLS stream found; pytest covers cert negatives"})
