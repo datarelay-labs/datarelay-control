@@ -117,8 +117,9 @@ export function StreamEditDeliveryPanel({ streamId, onSaved }: Props) {
         return
       }
       setMappingCfg(cfg)
-      setDestinations(dests)
-      setNewRouteDestinationId((prev) => prev || (dests[0]?.id != null ? String(dests[0].id) : ''))
+      const destRows = dests ?? []
+      setDestinations(destRows)
+      setNewRouteDestinationId((prev) => prev || (destRows[0]?.id != null ? String(destRows[0].id) : ''))
     } catch (e) {
       setLoadError(formatDeliveryPanelApiError(e, 'Load delivery configuration'))
       setMappingCfg(null)

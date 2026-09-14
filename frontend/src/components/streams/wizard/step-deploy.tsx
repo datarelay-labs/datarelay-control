@@ -847,7 +847,7 @@ export function StepDeploy({
   useEffect(() => {
     let cancelled = false
     void (async () => {
-      const rows = await fetchDestinationsList()
+      const rows = (await fetchDestinationsList()) ?? []
       if (!cancelled) setDestinations(rows)
     })()
     return () => {

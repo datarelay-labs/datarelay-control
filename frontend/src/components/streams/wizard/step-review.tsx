@@ -282,7 +282,7 @@ export function StepReview({
   useEffect(() => {
     let cancelled = false
     void (async () => {
-      const rows = await fetchDestinationsList()
+      const rows = (await fetchDestinationsList()) ?? []
       if (!cancelled) setDestinations(rows)
     })()
     return () => {

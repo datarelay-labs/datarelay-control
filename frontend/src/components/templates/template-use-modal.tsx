@@ -50,7 +50,9 @@ export function TemplateUseModal({
     setCreateRoute(true)
     setRedirectTo('stream_runtime')
     setCreds({})
-    void fetchDestinationsList().then(setDestinations).catch(() => setDestinations([]))
+    void fetchDestinationsList()
+      .then((rows) => setDestinations(rows ?? []))
+      .catch(() => setDestinations([]))
   }, [open, template])
 
   const credFields = useMemo(() => {
