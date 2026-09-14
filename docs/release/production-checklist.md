@@ -9,11 +9,24 @@ Use this checklist before exposing Data Relay to production traffic.
 - [ ] **HTTPS enabled** — terminate TLS at reverse proxy or platform nginx (`docs/deployment/https-reverse-proxy.md`)
 - [ ] **Reverse proxy** configured with trusted headers (`GDC_TRUST_PROXY_HEADERS=true`)
 - [ ] Default **admin password changed** on first login
-- [ ] **JWT_SECRET_KEY** (JWT signing secret) set to a strong random value (≥ 32 bytes)
-- [ ] **SECRET_KEY** and **ENCRYPTION_KEY** set to unique production values
-- [ ] **POSTGRES_PASSWORD** changed from default `gdc`
-- [ ] **GDC_PROXY_RELOAD_TOKEN** set if using dynamic nginx reload
+- [ ] **JWT_SECRET_KEY** (JWT signing secret) set to a strong random value (≥ 32 characters; not a known placeholder)
+- [ ] **SECRET_KEY** and **ENCRYPTION_KEY** set to unique production values (≥ 32 characters)
+- [ ] **POSTGRES_PASSWORD** set explicitly (never ship default `gdc`)
+- [ ] **GDC_PROXY_RELOAD_TOKEN** set to a unique value (never ship `devtoken`)
+- [ ] **REQUIRE_AUTH=true** and **AUTH_DEV_HEADER_TRUST=false** (`APP_ENV=production` fail-closes otherwise)
+- [ ] Production compose (`deploy/docker-compose.https.yml` / offline) requires the secrets above via `${VAR:?...}` — no silent insecure defaults
 
+Required production env (HTTPS / offline compose interpolation):
+
+| Variable | Notes |
+|----------|--------|
+| `POSTGRES_PASSWORD` | Also interpolated into `DATABASE_URL` |
+| `JWT_SECRET_KEY` | HS256 signing material |
+| `SECRET_KEY` | Platform secret fallback / general signing |
+| `ENCRYPTION_KEY` | Credential encryption material |
+| `GDC_PROXY_RELOAD_TOKEN` | Shared by API and nginx reload hook |
+
+`install.sh` / offline install replace known placeholders (`change-me-in-production`, `devtoken`, `gdc`, …) with generated secrets.
 ---
 
 ## Database

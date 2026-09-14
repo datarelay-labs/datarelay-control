@@ -59,8 +59,8 @@ class TokenClaims:
 def _signing_key() -> str:
     key = (settings.JWT_SECRET_KEY or "").strip() or (settings.SECRET_KEY or "").strip()
     if not key or key == "change-me-in-production":
-        # The default placeholder is still allowed (development / tests) but we
-        # log a one-shot warning so operators notice in production.
+        # Development / tests may keep the placeholder; production startup fail-closes
+        # via ``app.production_security`` before serving traffic.
         _warn_default_secret()
         return key or "insecure-dev-secret"
     return key

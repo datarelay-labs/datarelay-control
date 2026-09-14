@@ -307,6 +307,38 @@ def test_logout_revoke_all_bumps_token_version(client: TestClient, db_session: S
     assert w.json()["detail"]["error_code"] == "AUTH_TOKEN_REVOKED"
 
 
+def test_stale_access_token_tv_still_passes_non_auth_routes_until_ttl(
+    client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """INTENTIONAL_BY_CONTRACT: middleware does not live-check token_version.
+
+    After ``token_version`` bumps, access JWTs remain usable on ordinary APIs
+    until TTL; only refresh / whoami / change-password enforce live TV.
+    """
+
+    monkeypatch.setattr(settings, "REQUIRE_AUTH", True)
+    user = _seed_user(db_session, username="stale-tv-api", role="OPERATOR")
+    user_id = int(user.id)
+    tv = int(user.token_version)
+    token, _ = issue_access_token(
+        username=user.username, user_id=user_id, role=user.role, token_version=tv
+    )
+
+    row = db_session.get(PlatformUser, user_id)
+    assert row is not None
+    row.token_version = tv + 1
+    db_session.commit()
+
+    # Live TV mismatch → whoami revoked.
+    who = client.get("/api/v1/auth/whoami", headers={"Authorization": f"Bearer {token}"})
+    assert who.status_code == 401
+    assert who.json()["detail"]["error_code"] == "AUTH_TOKEN_REVOKED"
+
+    # Same access token still authorizes a non-auth API (signature + role only).
+    api = client.get("/api/v1/connectors/", headers={"Authorization": f"Bearer {token}"})
+    assert api.status_code == 200, api.text
+
+
 def test_logout_without_revoke_all_leaves_token_version_unchanged(
     client: TestClient, db_session: Session
 ) -> None:

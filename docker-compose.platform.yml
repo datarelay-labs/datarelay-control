@@ -23,8 +23,17 @@
 #
 # Browser (via nginx): http://localhost:${GDC_HTTP_PORT:-18080}
 #   HTTPS (after Admin → HTTPS): https://localhost:${GDC_HTTPS_PORT:-18443}
-# Direct API on the host: http://localhost:${GDC_API_HOST_PORT:-8000} (see `api` service `ports` below).
+# Direct API on the host: http://127.0.0.1:${GDC_API_HOST_PORT:-8000} (loopback by default).
 # Production-style host ports: set GDC_HTTP_PORT=80 GDC_HTTPS_PORT=443 GDC_PUBLIC_HTTPS_PORT=443.
+#
+# Host bind defaults (local E2E / workstation safety):
+#   API and reverse-proxy publish on 127.0.0.1 unless overridden.
+#   Remote lab opt-in: export GDC_API_BIND=0.0.0.0 GDC_PROXY_BIND=0.0.0.0
+#   (REQUIRE_AUTH remains false for continuous E2E — do not use these binds on untrusted networks.)
+#
+# Docker socket: mounted on the API service for Admin reverse-proxy port apply
+# (`docker compose ...`). Production HTTPS compose does not mount the socket.
+# Treat socket access as host-equivalent privilege; keep the lab stack on trusted hosts.
 
 services:
   postgres:
@@ -131,7 +140,7 @@ services:
       gdc-syslog-test:
         condition: service_started
     ports:
-      - "${GDC_API_HOST_PORT:-8000}:8000"
+      - "${GDC_API_BIND:-127.0.0.1}:${GDC_API_HOST_PORT:-8000}:8000"
     networks:
       - default
       - gdc-dev-validation
@@ -242,8 +251,8 @@ services:
       GDC_UPSTREAM_UI_HOST: frontend
       GDC_UPSTREAM_UI_PORT: "80"
     ports:
-      - "${GDC_HTTP_PORT:-18080}:80"
-      - "${GDC_HTTPS_PORT:-18443}:443"
+      - "${GDC_PROXY_BIND:-127.0.0.1}:${GDC_HTTP_PORT:-18080}:80"
+      - "${GDC_PROXY_BIND:-127.0.0.1}:${GDC_HTTPS_PORT:-18443}:443"
     volumes:
       - gdc_platform_tls:/var/gdc/tls
       - gdc_platform_nginx:/etc/nginx/conf.d

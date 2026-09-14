@@ -34,8 +34,8 @@ WebSocket-ready headers: `Upgrade` and `Connection` are passed using the standar
 | File | Use case |
 |------|-----------|
 | `docker-compose.yml` | Local dev: PostgreSQL (and optional WireMock `test` profile). Ports unchanged. |
-| `docker-compose.platform.yml` | Full stack: DB + API + nginx; default HTTP **:18080**, optional HTTPS **:18443** after TLS is enabled; API also published on host `${GDC_API_HOST_PORT:-8000}`. |
-| `deploy/docker-compose.https.yml` | **Production-style**: DB not on host, API not on host, default HTTP **:80** / HTTPS **:443**, TLS PEM bind-mounted from `deploy/tls/`. |
+| `docker-compose.platform.yml` | Full stack: DB + API + nginx; default HTTP **:18080**, optional HTTPS **:18443** after TLS is enabled; API also published on host `${GDC_API_HOST_PORT:-8000}` bound to **127.0.0.1** by default (`GDC_API_BIND` / `GDC_PROXY_BIND=0.0.0.0` for remote lab). Mounts Docker socket for Admin reverse-proxy port apply (lab only). |
+| `deploy/docker-compose.https.yml` | **Production-style**: DB not on host, API not on host, **no Docker socket**, default HTTP **:80** / HTTPS **:443**, TLS PEM bind-mounted from `deploy/tls/`. Secrets required via env (no `change-me` / `devtoken` / `gdc` defaults). |
 
 ## Self-signed TLS material
 
@@ -76,9 +76,13 @@ When no `admin` user exists yet, production seeding creates **`admin/admin`** un
 
 Copy root `.env.example` to `.env` and set at least:
 
-- `JWT_SECRET_KEY` — strong random secret (required for auth in production).
-- `GDC_PROXY_RELOAD_TOKEN` — long random string shared by API and nginx reload hook (defaults to `devtoken` in examples; **change for production**).
-- Optional: `POSTGRES_PASSWORD` — must match `DATABASE_URL` construction if you change it (compose uses the same variable for the superuser password).
+- `POSTGRES_PASSWORD` — required for production HTTPS/offline compose (no default).
+- `JWT_SECRET_KEY` — strong random secret (required; production startup fail-closes on placeholders).
+- `SECRET_KEY` / `ENCRYPTION_KEY` — unique production values (required in production compose).
+- `GDC_PROXY_RELOAD_TOKEN` — long random string shared by API and nginx reload hook (required; never leave as `devtoken`).
+- `REQUIRE_AUTH=true` with `APP_ENV=production` (compose pins these for HTTPS/offline).
+
+Lab / platform compose (`docker-compose.platform.yml`) may keep development defaults and `REQUIRE_AUTH=false` for continuous E2E. Browser and API ports default to loopback; for remote lab access set `GDC_API_BIND=0.0.0.0` and `GDC_PROXY_BIND=0.0.0.0` explicitly.
 
 Root `docker-compose.yml` **dev ports** (e.g. `5432:5432`) are unaffected by the HTTPS deploy file.
 

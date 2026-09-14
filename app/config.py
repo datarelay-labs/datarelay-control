@@ -224,6 +224,13 @@ class Settings(BaseSettings):
         object.__setattr__(self, "_dev_validation_lab_defaults_meta", meta)
         return self
 
+    @model_validator(mode="after")
+    def _fail_closed_production_security(self) -> "Settings":
+        from app.production_security import validate_production_security_settings
+
+        validate_production_security_settings(self)
+        return self
+
     @property
     def dev_validation_lab_defaults_meta(self) -> dict[str, Any]:
         return dict(getattr(self, "_dev_validation_lab_defaults_meta", None) or {})
