@@ -4,6 +4,8 @@ import { listAuditLogs, type AuditLogItemDto } from '../../api/gdcAudit'
 import { gdcUi } from '../../lib/gdc-ui-tokens'
 import { cn } from '../../lib/utils'
 
+const PAGE_SIZE = 100
+
 function formatTs(iso: string | null | undefined) {
   if (!iso) return '—'
   try {
@@ -25,38 +27,62 @@ function resultBadgeClass(result: string) {
   return 'border-gdc-border bg-gdc-panel text-gdc-muted'
 }
 
+type AppliedFilters = {
+  action: string
+  entity_type: string
+  result: string
+}
+
 export function AuditLogsPage() {
   const [rows, setRows] = useState<AuditLogItemDto[]>([])
   const [total, setTotal] = useState(0)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [actionFilter, setActionFilter] = useState('')
-  const [entityFilter, setEntityFilter] = useState('')
-  const [resultFilter, setResultFilter] = useState('')
+  const [actionDraft, setActionDraft] = useState('')
+  const [entityDraft, setEntityDraft] = useState('')
+  const [resultDraft, setResultDraft] = useState('')
+  const [applied, setApplied] = useState<AppliedFilters>({ action: '', entity_type: '', result: '' })
+  const [offset, setOffset] = useState(0)
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (nextOffset: number, filters: AppliedFilters) => {
     setBusy(true)
     setError(null)
     try {
       const res = await listAuditLogs({
-        action: actionFilter.trim() || undefined,
-        entity_type: entityFilter.trim() || undefined,
-        result: resultFilter.trim() || undefined,
-        limit: 100,
-        offset: 0,
+        action: filters.action.trim() || undefined,
+        entity_type: filters.entity_type.trim() || undefined,
+        result: filters.result.trim() || undefined,
+        limit: PAGE_SIZE,
+        offset: nextOffset,
       })
       setRows(res.items)
       setTotal(res.total)
+      setOffset(nextOffset)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load audit logs')
     } finally {
       setBusy(false)
     }
-  }, [actionFilter, entityFilter, resultFilter])
+  }, [])
 
   useEffect(() => {
-    void load()
+    void load(0, { action: '', entity_type: '', result: '' })
   }, [load])
+
+  const applyFilters = () => {
+    const next = {
+      action: actionDraft,
+      entity_type: entityDraft,
+      result: resultDraft,
+    }
+    setApplied(next)
+    void load(0, next)
+  }
+
+  const pageStart = total === 0 ? 0 : offset + 1
+  const pageEnd = offset + rows.length
+  const canPrev = offset > 0 && !busy
+  const canNext = offset + rows.length < total && !busy
 
   return (
     <div className="space-y-6" data-testid="audit-logs-page">
@@ -71,7 +97,7 @@ export function AuditLogsPage() {
           type="button"
           className={gdcUi.secondaryBtn}
           disabled={busy}
-          onClick={() => void load()}
+          onClick={() => void load(offset, applied)}
           data-testid="audit-logs-refresh"
         >
           <RefreshCw className={cn('h-4 w-4', busy && 'animate-spin')} />
@@ -85,8 +111,8 @@ export function AuditLogsPage() {
             Action
             <input
               className={gdcUi.input}
-              value={actionFilter}
-              onChange={(e) => setActionFilter(e.target.value)}
+              value={actionDraft}
+              onChange={(e) => setActionDraft(e.target.value)}
               placeholder="USER_LOGIN"
               data-testid="audit-filter-action"
             />
@@ -95,8 +121,8 @@ export function AuditLogsPage() {
             Entity type
             <input
               className={gdcUi.input}
-              value={entityFilter}
-              onChange={(e) => setEntityFilter(e.target.value)}
+              value={entityDraft}
+              onChange={(e) => setEntityDraft(e.target.value)}
               placeholder="STREAM"
               data-testid="audit-filter-entity"
             />
@@ -105,8 +131,8 @@ export function AuditLogsPage() {
             Result
             <select
               className={gdcUi.input}
-              value={resultFilter}
-              onChange={(e) => setResultFilter(e.target.value)}
+              value={resultDraft}
+              onChange={(e) => setResultDraft(e.target.value)}
               data-testid="audit-filter-result"
             >
               <option value="">All</option>
@@ -114,7 +140,13 @@ export function AuditLogsPage() {
               <option value="failure">failure</option>
             </select>
           </label>
-          <button type="button" className={gdcUi.primaryBtn} disabled={busy} onClick={() => void load()}>
+          <button
+            type="button"
+            className={gdcUi.primaryBtn}
+            disabled={busy}
+            onClick={applyFilters}
+            data-testid="audit-filter-apply"
+          >
             Apply filters
           </button>
         </div>
@@ -170,10 +202,32 @@ export function AuditLogsPage() {
             </tbody>
           </table>
         </div>
-        <p className="mt-3 flex items-center gap-2 text-xs text-gdc-muted">
-          <ClipboardList className="h-3.5 w-3.5" />
-          Showing {rows.length} of {total} entries
-        </p>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs text-gdc-muted">
+          <p className="flex items-center gap-2">
+            <ClipboardList className="h-3.5 w-3.5" />
+            Showing {pageStart}-{pageEnd} of {total} entries
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className={gdcUi.secondaryBtn}
+              disabled={!canPrev}
+              onClick={() => void load(Math.max(0, offset - PAGE_SIZE), applied)}
+              data-testid="audit-logs-prev"
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              className={gdcUi.secondaryBtn}
+              disabled={!canNext}
+              onClick={() => void load(offset + PAGE_SIZE, applied)}
+              data-testid="audit-logs-next"
+            >
+              Next
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   )
