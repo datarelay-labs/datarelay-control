@@ -22,6 +22,12 @@ from app.auth.jwt_service import (
     TokenClaims,
     decode_token,
 )
+from app.auth.login_throttle import (
+    check_login_allowed,
+    client_ip_from_request,
+    record_login_failure,
+    record_login_success,
+)
 from app.auth.route_access import build_capabilities
 from app.auth.role_guard import (
     KNOWN_ROLES,
@@ -122,8 +128,11 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
     """
 
     username = (payload.username or "").strip()
+    ip = client_ip_from_request(request)
+    check_login_allowed(username=username, ip=ip)
     user = get_user_by_username(db, username)
     if user is None or user.status != "ACTIVE" or not verify_password(payload.password, user.password_hash):
+        record_login_failure(username=username, ip=ip)
         journal.record_audit_event(
             db,
             action="USER_LOGIN_FAILED",
@@ -156,6 +165,7 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
         request=request,
     )
     db.commit()
+    record_login_success(username=username, ip=ip)
     return build_token_bundle(
         user_id=int(user.id),
         username=username,
@@ -170,9 +180,10 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
 def refresh(payload: RefreshRequest, db: Session = Depends(get_db)) -> TokenBundle:
     """Exchange a valid refresh JWT for a fresh access + refresh pair.
 
-    Token rotation: every refresh produces a new refresh token alongside the
-    new access token.  Token version mismatches (e.g. after a password change
-    or admin-initiated logout) are rejected.
+    Refresh tokens are single-use: a successful refresh bumps
+    ``platform_users.token_version`` so the presented refresh JWT cannot be
+    replayed. Access-token middleware still honors access TTL without a live
+    ``token_version`` check (existing product contract).
     """
 
     try:
@@ -184,10 +195,13 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)) -> TokenBund
     if user is None or user.status != "ACTIVE":
         raise _auth_error("AUTH_USER_INACTIVE", "Account is inactive or removed.")
     if int(getattr(user, "token_version", 1) or 1) != claims.token_version:
-        raise _auth_error("AUTH_TOKEN_REVOKED", "Session was invalidated; please sign in again.")
+        raise _auth_error("AUTH_TOKEN_REVOKED", "Refresh token was already used or revoked; please sign in again.")
 
     role = _normalize_role(user.role)
     must_change = bool(getattr(user, "must_change_password", False))
+    # Consume this refresh token (and any sibling refresh JWTs at the same tv).
+    user.token_version = int(getattr(user, "token_version", 1) or 1) + 1
+    new_tv = int(user.token_version)
     journal.record_audit_event(
         db,
         action="USER_TOKEN_REFRESHED",
@@ -195,14 +209,14 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)) -> TokenBund
         entity_type="PLATFORM_USER",
         entity_id=int(user.id),
         entity_name=str(user.username),
-        details={"role": role},
+        details={"role": role, "refresh_rotated": True},
     )
     db.commit()
     return build_token_bundle(
         user_id=int(user.id),
         username=str(user.username),
         role=role,
-        token_version=int(getattr(user, "token_version", 1) or 1),
+        token_version=new_tv,
         user_status=str(user.status),
         must_change_password=must_change,
     )
