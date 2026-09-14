@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, CheckCircle2, ExternalLink, Loader2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, CheckCircle2, Loader2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { NAV_PATH, runtimeOverviewPath } from '../../config/nav-paths'
@@ -935,17 +935,6 @@ export function NewStreamWizardPage() {
                     </>
                   )}
                 </button>
-              ) : null}
-              {!isDeployStep ? (
-                <a
-                  href="https://example.com/docs/streams/onboarding"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex h-9 items-center gap-1 text-[12px] font-semibold text-violet-700 hover:underline dark:text-violet-300"
-                >
-                  View onboarding docs
-                  <ExternalLink className="h-3.5 w-3.5" aria-hidden />
-                </a>
               ) : null}
             </>
           )}
