@@ -28,6 +28,8 @@ class BackfillRuntimeCoordinator:
         self._lock = threading.Lock()
         self._ephemeral_by_job: dict[int, dict[str, Any]] = {}
         self._cancel_requested: set[int] = set()
+        # Process-local live worker ownership (not durable). Lost on restart → startup reconcile.
+        self._owned_jobs: set[int] = set()
 
     @staticmethod
     def capture_checkpoint_snapshot(db: Session, stream_id: int) -> dict[str, Any] | None:
@@ -72,8 +74,28 @@ class BackfillRuntimeCoordinator:
 
     def clear_job_session(self, job_id: int) -> None:
         with self._lock:
-            self._ephemeral_by_job.pop(int(job_id), None)
-            self._cancel_requested.discard(int(job_id))
+            jid = int(job_id)
+            self._ephemeral_by_job.pop(jid, None)
+            self._cancel_requested.discard(jid)
+            self._owned_jobs.discard(jid)
+
+    def claim_job_owner(self, job_id: int) -> bool:
+        """Mark this process as the live worker owner for ``job_id`` (exclusive)."""
+
+        with self._lock:
+            jid = int(job_id)
+            if jid in self._owned_jobs:
+                return False
+            self._owned_jobs.add(jid)
+            return True
+
+    def release_job_owner(self, job_id: int) -> None:
+        with self._lock:
+            self._owned_jobs.discard(int(job_id))
+
+    def is_job_owned(self, job_id: int) -> bool:
+        with self._lock:
+            return int(job_id) in self._owned_jobs
 
     def request_cancel(self, job_id: int) -> None:
         with self._lock:
@@ -89,6 +111,7 @@ class BackfillRuntimeCoordinator:
         with self._lock:
             self._ephemeral_by_job.clear()
             self._cancel_requested.clear()
+            self._owned_jobs.clear()
 
     def iter_chunk_placeholders(self, job_id: int, *, total_chunks: int | None = None) -> list[dict[str, Any]]:
         """Placeholder chunk orchestration (no source IO). Future: drive per-source strategies."""

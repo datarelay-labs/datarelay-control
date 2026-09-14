@@ -139,6 +139,32 @@ async def lifespan(_: FastAPI):
                         "message": str(exc),
                     },
                 )
+            try:
+                from app.backfill.service import reconcile_orphaned_backfill_jobs
+                from app.database import SessionLocal
+
+                db = SessionLocal()
+                try:
+                    summary = reconcile_orphaned_backfill_jobs(db)
+                    logger.info(
+                        "%s",
+                        {
+                            "stage": "backfill_orphan_reconcile",
+                            "orphaned_failed": int(summary.get("orphaned_failed") or 0),
+                            "orphaned_cancelled": int(summary.get("orphaned_cancelled") or 0),
+                        },
+                    )
+                finally:
+                    db.close()
+            except Exception as exc:  # pragma: no cover - fail-open boot guard
+                logger.warning(
+                    "%s",
+                    {
+                        "stage": "backfill_orphan_reconcile_failed",
+                        "error_type": type(exc).__name__,
+                        "message": str(exc),
+                    },
+                )
         if startup_snapshot.scheduler_active and bool(settings.GDC_ENABLE_IN_PROCESS_SCHEDULER):
             try:
                 from app.dev_validation_lab.runtime import run_dev_validation_lab_startup

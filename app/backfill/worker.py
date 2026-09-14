@@ -58,22 +58,28 @@ class BackfillWorker:
     def start_job(self, job_id: int) -> None:
         """Delegates to replay execution when a time window is present."""
 
-        job = get_backfill_job(self._db, int(job_id))
-        if job is None:
+        if not self._coord.claim_job_owner(int(job_id)):
             return
-        opts = job.runtime_options_json or {}
-        if opts.get("start_time") and opts.get("end_time"):
-            self.run_replay_job(int(job_id))
-        else:
-            self.run_dry_lifecycle(int(job_id))
+        try:
+            job = get_backfill_job(self._db, int(job_id))
+            if job is None:
+                return
+            opts = job.runtime_options_json or {}
+            if opts.get("start_time") and opts.get("end_time"):
+                self.run_replay_job(int(job_id))
+            else:
+                self.run_dry_lifecycle(int(job_id))
+        finally:
+            self._coord.release_job_owner(int(job_id))
 
     def run_replay_job(self, job_id: int) -> None:
         """Fetch → map → enrich → routes → destinations via StreamRunner; never advances production checkpoint."""
 
         job = get_backfill_job(self._db, int(job_id))
-        if job is None or job.status != "RUNNING":
+        if job is None or job.status not in ("RUNNING", "CANCELLING"):
             return
-        if self._coord.is_cancel_requested(int(job_id)):
+        if self._coord.is_cancel_requested(int(job_id)) or job.status == "CANCELLING":
+            self._cancel_terminal(job_id, int(job.stream_id))
             return
 
         opts = job.runtime_options_json or {}
@@ -125,7 +131,12 @@ class BackfillWorker:
             return
 
         job2 = get_backfill_job(self._db, int(job_id))
-        if job2 is None or job2.status != "RUNNING":
+        if job2 is None:
+            return
+        if job2.status == "CANCELLING" or self._coord.is_cancel_requested(int(job_id)):
+            self._cancel_terminal(job_id, stream_id)
+            return
+        if job2.status != "RUNNING":
             return
 
         outcome = str(summary.get("outcome") or "")
@@ -172,6 +183,8 @@ class BackfillWorker:
         job = get_backfill_job(self._db, int(job_id))
         if job is None:
             return
+        if job.status not in ("RUNNING", "CANCELLING"):
+            return
         job.status = "FAILED"
         job.failed_at = utcnow()
         job.error_summary = message[:8000]
@@ -186,11 +199,16 @@ class BackfillWorker:
         )
 
     def _cancel_terminal(self, job_id: int, stream_id: int) -> None:
+        """Worker ack: RUNNING/CANCELLING → CANCELLED."""
+
         job = get_backfill_job(self._db, int(job_id))
         if job is None:
             return
+        if job.status not in ("RUNNING", "CANCELLING"):
+            return
         job.status = "CANCELLED"
-        job.completed_at = utcnow()
+        if job.completed_at is None:
+            job.completed_at = utcnow()
         save_job(self._db, job)
         self.emit_event(
             backfill_job_id=int(job_id),
@@ -199,14 +217,16 @@ class BackfillWorker:
             level="INFO",
             message="Replay cancelled before completion",
         )
+        self._coord.clear_job_session(int(job_id))
 
     def run_dry_lifecycle(self, job_id: int) -> None:
         """Legacy no-op chunk markers when no replay window is configured."""
 
         job = get_backfill_job(self._db, int(job_id))
-        if job is None or job.status != "RUNNING":
+        if job is None or job.status not in ("RUNNING", "CANCELLING"):
             return
-        if self._coord.is_cancel_requested(int(job_id)):
+        if self._coord.is_cancel_requested(int(job_id)) or job.status == "CANCELLING":
+            self._cancel_terminal(job_id, int(job.stream_id))
             return
 
         stream_id = int(job.stream_id)
@@ -239,9 +259,12 @@ class BackfillWorker:
         )
 
         job = get_backfill_job(self._db, int(job_id))
-        if job is None or job.status != "RUNNING":
+        if job is None:
             return
-        if self._coord.is_cancel_requested(int(job_id)):
+        if job.status == "CANCELLING" or self._coord.is_cancel_requested(int(job_id)):
+            self._cancel_terminal(job_id, stream_id)
+            return
+        if job.status != "RUNNING":
             return
 
         merged = copy.deepcopy(job.progress_json or {})
