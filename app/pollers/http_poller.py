@@ -9,6 +9,7 @@ import httpx
 
 from app.http.outbound_httpx_timeout import outbound_httpx_timeout
 from app.http.shared_request_builder import build_outbound_debug_detail, build_shared_http_request
+from app.http_util.retry_after import parse_retry_after_seconds
 from app.pollers.http_query_params import httpx_body_kwargs
 from app.connectors.auth import apply_auth_to_http_request, normalize_connector_auth
 from app.runtime.errors import PreviewRequestError, SourceFetchError
@@ -135,7 +136,10 @@ class HttpPoller:
 
                     if response.status_code == 429:
                         retry_after = response.headers.get("Retry-After")
-                        sleep_seconds = float(retry_after) if retry_after else initial_backoff * (2 ** (attempt - 1))
+                        sleep_seconds = parse_retry_after_seconds(
+                            retry_after,
+                            fallback_seconds=initial_backoff * (2 ** (attempt - 1)),
+                        )
                         if attempt < attempts:
                             time.sleep(max(sleep_seconds, 0))
                             continue
