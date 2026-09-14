@@ -33,6 +33,10 @@ JWT 기반 플랫폼 운영자 세션(스펙 020)의 동작, 무효화, 환경 �
 
 그 외 대부분의 API 미들웨어는 서명·만료·역할만 검사합니다. 즉, **`token_version`이 올라간 뒤에도 액세스 토큰이 만료되기 전까지는 일반 API 호출이 통과할 수 있습니다.** 운영상 리스크는 `ACCESS_TOKEN_EXPIRE_MINUTES`로 상한이 있습니다. 전 구간에서 즉시 무효화가 필요하면(추가 DB 조회) 별도 설계가 필요합니다.
 
+### Contract note (vs `specs/020-jwt-session-auth`)
+
+**INTENTIONAL_BY_CONTRACT:** Live `token_version` is checked on refresh / whoami / change-password only. Global `role_guard` middleware validates signature, expiry, issuer, and role — it does **not** re-read `platform_users.token_version` on every request. Spec 020 wording that the role guard rejects stale `tv` against the current user row is aspirational / outdated relative to this ops contract; do not treat middleware live-TV invalidation as implemented unless product docs change.
+
 시드/운영 절차에서 `admin` 비밀번호를 리셋하면(`app.db.seed.reset_or_create_platform_admin_password` 등) `token_version`이 올라가므로, 기존 브라우저 세션은 **다음 `whoami` 또는 리프레시 시점**에 거부됩니다.
 
 ## `must_change_password`와 미들웨어
