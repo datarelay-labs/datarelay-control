@@ -11,7 +11,7 @@ import { clearSession, getAccessToken, getRefreshToken, persistSession, readSess
 export { PasswordChangeRequiredError } from './auth/password-change-gate'
 export { createAbortError, isRequestAborted, throwIfAborted } from './lib/request-abort'
 
-/** Shown when protected APIs return 401/403 after refresh failure. */
+/** Shown when protected APIs return 401 after refresh failure. */
 export const GDC_AUTH_REQUIRED_MESSAGE =
   'Session expired or authentication is required. Sign in again to load this data.'
 
@@ -20,7 +20,8 @@ export type GdcJsonResult<T> =
   | { ok: false; status: number; message: string; authRequired: boolean }
 
 function isAuthHttpStatus(status: number): boolean {
-  return status === 401 || status === 403
+  // 401 = unauthenticated (re-auth). 403 = authenticated but forbidden — not authRequired.
+  return status === 401
 }
 
 function formatHttpErrorBody(status: number, body: unknown): string {
