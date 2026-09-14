@@ -76,8 +76,8 @@ def test_validate_network_ports_rejects_invalid_values(http_port: str, https_por
 
 def test_compose_uses_required_reverse_proxy_port_variables() -> None:
     text = (ROOT / "docker-compose.platform.yml").read_text(encoding="utf-8")
-    assert '"${GDC_HTTP_PORT:-18080}:80"' in text
-    assert '"${GDC_HTTPS_PORT:-18443}:443"' in text
+    assert '"${GDC_PROXY_BIND:-127.0.0.1}:${GDC_HTTP_PORT:-18080}:80"' in text
+    assert '"${GDC_PROXY_BIND:-127.0.0.1}:${GDC_HTTPS_PORT:-18443}:443"' in text
     assert "GDC_ENTRY_HTTP_PORT" not in text
     assert "GDC_ENTRY_HTTPS_PORT" not in text
 
@@ -111,10 +111,22 @@ def test_docker_compose_effective_reverse_proxy_bindings_keep_http_and_https_dis
         pytest.skip(f"docker compose is not available: {completed.stderr}")
     assert completed.returncode == 0, completed.stderr
     ports = json.loads(completed.stdout)["services"]["reverse-proxy"]["ports"]
-    assert {"published": "18443", "target": 80, "protocol": "tcp", "mode": "ingress"} in ports
-    assert {"published": "18080", "target": 443, "protocol": "tcp", "mode": "ingress"} in ports
-    assert {"published": "18443", "target": 443, "protocol": "tcp", "mode": "ingress"} not in ports
-    assert {"published": "18080", "target": 80, "protocol": "tcp", "mode": "ingress"} not in ports
+    assert {
+        "published": "18443",
+        "target": 80,
+        "protocol": "tcp",
+        "mode": "ingress",
+        "host_ip": "127.0.0.1",
+    } in ports
+    assert {
+        "published": "18080",
+        "target": 443,
+        "protocol": "tcp",
+        "mode": "ingress",
+        "host_ip": "127.0.0.1",
+    } in ports
+    assert not any(p.get("published") == "18443" and p.get("target") == 443 for p in ports)
+    assert not any(p.get("published") == "18080" and p.get("target") == 80 for p in ports)
 
 
 def test_network_settings_row_defaults(db_session: Session) -> None:

@@ -33,7 +33,7 @@ def test_reverse_proxy_entrypoint_generates_cert_only_for_rendered_https_config(
 def test_platform_compose_keeps_configurable_external_ports_and_writable_tls_volume() -> None:
     text = COMPOSE.read_text(encoding="utf-8")
 
-    assert '"${GDC_HTTP_PORT:-18080}:80"' in text
-    assert '"${GDC_HTTPS_PORT:-18443}:443"' in text
+    assert '"${GDC_PROXY_BIND:-127.0.0.1}:${GDC_HTTP_PORT:-18080}:80"' in text
+    assert '"${GDC_PROXY_BIND:-127.0.0.1}:${GDC_HTTPS_PORT:-18443}:443"' in text
     assert "gdc_platform_tls:/var/gdc/tls:ro" not in text
     assert "gdc_platform_tls:/var/gdc/tls" in text

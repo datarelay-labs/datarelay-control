@@ -26,6 +26,14 @@ jobs:
       - name: Validate platform compose (production-style stack)
         run: docker compose -f docker-compose.platform.yml config -q
       - name: Validate HTTPS production-style compose
+        # Production compose intentionally fail-closes without required secrets; supply
+        # CI-only placeholders so `config` can validate interpolation/structure.
+        env:
+          POSTGRES_PASSWORD: ci-only-not-for-deploy
+          JWT_SECRET_KEY: ci-only-not-for-deploy-jwt-secret-key-32b
+          SECRET_KEY: ci-only-not-for-deploy-secret-key-32bytes
+          ENCRYPTION_KEY: ci-only-not-for-deploy-encryption-key32
+          GDC_PROXY_RELOAD_TOKEN: ci-only-not-for-deploy-token
         run: docker compose -f deploy/docker-compose.https.yml config -q
 
   shellcheck-release:
