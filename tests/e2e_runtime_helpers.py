@@ -498,12 +498,13 @@ def create_webhook_receiver_stack(
             "config_json": {},
             "polling_interval": 60,
             "enabled": enabled_stream,
-            "status": "RUNNING" if enabled_stream else "STOPPED",
             "rate_limit_json": {"max_requests": 1000, "per_seconds": 60},
         },
     )
     assert sr.status_code == 201, sr.text
     stream_id = int(sr.json()["id"])
+    if enabled_stream:
+        enable_stream_for_run(client, stream_id)
     save_mapping_enrichment(client, stream_id, vendor="WebhookRuntimeE2E")
     ensure_checkpoint(db, stream_id)
     return {

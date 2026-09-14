@@ -119,10 +119,11 @@ def create_webhook_destination(client: TestClient, base: str, *, path: str, retr
 
 
 def enable_stream_for_run(client: TestClient, stream_id: int) -> None:
-    r = client.put(
-        f"/api/v1/streams/{stream_id}",
-        json={"enabled": True, "status": "RUNNING"},
-    )
+    """Start a stream via the canonical control API (enabled + RUNNING).
+
+    Stream PUT no longer accepts ``status`` and requires ``expected_updated_at``.
+    """
+    r = client.post(f"/api/v1/streams/{stream_id}/start")
     assert r.status_code == 200, r.text
 
 
