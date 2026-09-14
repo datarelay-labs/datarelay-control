@@ -290,7 +290,10 @@ class StreamRunner(BaseRunner):
             run_started_committed = True
             summary["transaction_committed"] = True
 
-            if not self.source_limiter.allow(stream_id):
+            if not self.source_limiter.allow(
+                stream_id,
+                dict(_get(runtime_stream, "rate_limit_json") or {}),
+            ):
                 self._set_stream_status(runtime_stream, "RATE_LIMITED_SOURCE")
                 self._log(
                     {

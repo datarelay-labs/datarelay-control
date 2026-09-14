@@ -251,6 +251,7 @@ def load_stream_context(
         "event_array_path": mapping_snap.get("event_array_path") if mapping_snap else None,
         "event_root_path": mapping_snap.get("event_root_path") if mapping_snap else None,
         "source_config": _extract_source_config(source),
+        "rate_limit_json": dict(stream.rate_limit_json or {}),
         "field_mappings": dict((mapping_snap or {}).get("field_mappings_json") or {}),
         "enrichment": dict((enrichment_snap or {}).get("enrichment_json") or {}),
         "override_policy": (enrichment_snap or {}).get("override_policy") or "KEEP_EXISTING",
