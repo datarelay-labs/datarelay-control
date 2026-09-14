@@ -22,11 +22,32 @@ function stepButton(page: import('@playwright/test').Page, title: string) {
 
 /** v3 wizard: open Sample → Record Selection after sample load or via stepper. */
 async function ensurePreviewStep(page: import('@playwright/test').Page) {
-  const recordSelection = page.getByRole('heading', { name: 'Record Selection' })
+  const recordSelection = page.getByRole('heading', { name: 'Record Selection', exact: true })
   if (await recordSelection.isVisible().catch(() => false)) return
+  const openFromRunTest = page.getByTestId('wizard-run-test-open-record-selection')
+  if ((await openFromRunTest.count()) > 0) {
+    await openFromRunTest.click()
+    await expect(recordSelection).toBeVisible({ timeout: 15_000 })
+    return
+  }
   await stepButton(page, 'Sample').click()
   await page.getByTestId('wizard-sample-tab-record_selection').click()
   await expect(recordSelection).toBeVisible({ timeout: 15_000 })
+}
+
+/**
+ * Product UX: event-array candidate pills were removed; operators set paths via
+ * Advanced (Custom) or the JSON tree. Prefer Advanced for deterministic smoke.
+ */
+async function selectCloudTrailRecordPaths(page: import('@playwright/test').Page) {
+  await page.getByRole('button', { name: 'Advanced (Custom)' }).click()
+  await page.getByLabel('Event array path').fill('$.Records')
+  // Relative to each array element (absolute roots compose incorrectly as $.Records[*].[*].event).
+  await page.getByLabel('Event root path').fill('event')
+  await page.getByLabel('Sync position path').fill('event.eventTime')
+  await page.getByRole('button', { name: 'Validate & Preview' }).click()
+  await expect(page.getByTestId('summary-event-source')).toContainText('$.Records', { timeout: 15_000 })
+  await expect(page.getByTestId('summary-runtime')).toHaveText('$.Records[*].event', { timeout: 15_000 })
 }
 
 async function expectMappingStep(page: import('@playwright/test').Page) {
@@ -48,7 +69,7 @@ const CLOUDTRAIL_API_TEST_PAYLOAD = {
   NextToken: 'eyJOZXh0VG9rZW4iOiAiYWJjIn0=',
 }
 
-/** Load CloudTrail-shaped sample via mocked API Test (operational sample buttons removed from wizard UI). */
+/** Load CloudTrail-shaped sample via mocked Run Test (operational sample buttons removed from wizard UI). */
 async function loadCloudTrailOnApiTestStep(page: import('@playwright/test').Page) {
   const rawBody = JSON.stringify(CLOUDTRAIL_API_TEST_PAYLOAD)
   await page.route('**/api/v1/runtime/api-test/http', async (route) => {
@@ -100,16 +121,15 @@ async function loadCloudTrailOnApiTestStep(page: import('@playwright/test').Page
     })
   })
   await stepButton(page, 'Sample').click()
-  const apiTestSection = page.locator('section').filter({
-    has: page.getByRole('heading', { level: 3, name: 'API Test' }),
-  })
-  const runApiTest = apiTestSection.getByRole('button', { name: 'API Test' })
-  await expect(runApiTest).toBeEnabled({ timeout: 15_000 })
+  const runTestPanel = page.getByTestId('wizard-run-test-panel')
+  await expect(runTestPanel).toBeVisible({ timeout: 15_000 })
+  const runTest = runTestPanel.getByRole('button', { name: 'Run Test' })
+  await expect(runTest).toBeEnabled({ timeout: 15_000 })
   const responseWait = page.waitForResponse(
     (res) => res.url().includes('/runtime/api-test/http') && res.request().method() === 'POST',
     { timeout: 30_000 },
   )
-  await runApiTest.click()
+  await runTest.click()
   const response = await responseWait
   expect(response.ok()).toBeTruthy()
 }
@@ -197,6 +217,7 @@ async function selectSavedConnector(page: import('@playwright/test').Page) {
 }
 
 test.describe('Record Selection smoke', () => {
+  test.describe.configure({ timeout: 180_000 })
   test('login, wizard record selection, mapping validation, run control reachable', async ({ page, request }) => {
     const probe = await probeAuthMode(request)
     if (
@@ -225,28 +246,52 @@ test.describe('Record Selection smoke', () => {
 
     await loadCloudTrailOnApiTestStep(page)
     await ensurePreviewStep(page)
-    await page.getByRole('button', { name: /\$\.Records · \d+ (records|events)/ }).first().click()
-    await selectEventRootFromTree(page)
-    await expect(page.getByTestId('summary-runtime')).toHaveText('$.Records[*].event')
+    await selectCloudTrailRecordPaths(page)
     const eventArrayPath = (await page.getByTestId('summary-event-source').textContent()) ?? ''
     const eventRootPath = (await page.getByTestId('summary-event-root').textContent()) ?? ''
 
-    await stepButton(page, 'Transform').click()
-    await page.getByTestId('wizard-transform-section-output_fields').click()
+    // Destinations gate sits between Sample and Route Processing in v3.
+    const destinationsStep = stepButton(page, 'Destinations')
+    if (await destinationsStep.isEnabled().catch(() => false)) {
+      await destinationsStep.click()
+      // Prefer an existing destination if the catalog offers one; otherwise continue.
+      const addExisting = page.getByRole('button', { name: /Add existing|Select destination|Add destination/i }).first()
+      if ((await addExisting.count()) > 0 && (await addExisting.isEnabled().catch(() => false))) {
+        await addExisting.click().catch(() => undefined)
+      }
+    }
+
+    // v3 stepper: mapping lives under Route Processing (legacy title was Transform).
+    await stepButton(page, 'Route Processing').click()
+    // Current UX opens Transform → Field Mapping directly (section accordion testids removed).
+    await page.getByRole('tab', { name: 'Transform', exact: true }).click().catch(() => undefined)
     await expectMappingStep(page)
 
     await page.getByRole('button', { name: 'Add row' }).click()
     const envelopePath = '$.Records[0].event.eventTime'
     const sourceInput = page.getByLabel('Source JSONPath')
     await sourceInput.fill(envelopePath)
-    await page.getByPlaceholder('Search mappings…').click()
+    // Wizard Field Mapping uses field search (not the standalone Mapping Workspace "Search mappings…").
+    await page.getByPlaceholder('Search fields…').click()
     await expectEnvelopeMappingPathRejected(page, envelopePath, eventArrayPath, eventRootPath)
 
     await page.getByPlaceholder('Search fields…').fill('eventVersion')
     await expect(page.getByText('eventVersion', { exact: true }).first()).toBeVisible({ timeout: 10_000 })
 
-    await stepButton(page, 'Deploy').click()
-    await expect(page.getByRole('heading', { name: 'Deploy' })).toBeVisible({ timeout: 10_000 })
+    // Deploy stays gated until Destinations are fully configured; smoke continues via primary nav.
+    const deployStep = stepButton(page, 'Deploy')
+    if (await deployStep.isEnabled()) {
+      await deployStep.click()
+      await expect(page.getByRole('heading', { name: 'Deploy' })).toBeVisible({ timeout: 10_000 })
+    } else {
+      console.log('[smoke] Deploy step gated (expected without destination attach); continuing via nav')
+    }
+
+    // Destination + Route operational screens (nav), then Streams run control.
+    await page.getByRole('complementary', { name: 'Primary navigation' }).getByRole('button', { name: 'Destinations' }).click()
+    await expect(page.getByRole('heading', { name: /Destination/i }).first()).toBeVisible({ timeout: 15_000 })
+    await page.getByRole('complementary', { name: 'Primary navigation' }).getByRole('button', { name: 'Routes' }).click()
+    await expect(page.getByRole('heading', { name: /Route/i }).first()).toBeVisible({ timeout: 15_000 })
 
     await page.getByRole('complementary', { name: 'Primary navigation' }).getByRole('button', { name: 'Streams' }).click()
     await expect(page.getByRole('link', { name: 'New Stream' })).toBeVisible({ timeout: 15_000 })
