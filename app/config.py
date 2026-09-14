@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_MINUTES: int = 60 * 24
     REQUIRE_AUTH: bool = False
     AUTH_DEV_HEADER_TRUST: bool = False
+    # When APP_ENV is production, OpenAPI/docs are off unless this is true.
+    EXPOSE_OPENAPI: bool = False
     ENCRYPTION_KEY: str = "replace-with-fernet-or-aes-key-placeholder"
     DEFAULT_COLLECTOR_NAME: str = "generic-connector-01"
 

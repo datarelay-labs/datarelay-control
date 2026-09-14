@@ -38,7 +38,7 @@ from app.audit.router import router as audit_router
 from app.backup.router import router as backup_router
 from app.backfill.router import router as backfill_router
 from app.config import settings
-from app.production_security import ensure_production_security_settings
+from app.production_security import ensure_production_security_settings, is_production_app_env
 from app.connectors.router import router as connectors_router
 from app.delivery.router import router as delivery_router
 from app.destinations.router import router as destinations_router
@@ -224,10 +224,19 @@ async def lifespan(_: FastAPI):
             pass
 
 
+# Production must not accidentally expose unrestricted OpenAPI/docs when the
+# rest of the product requires authentication. Dev/lab keep the interactive docs.
+_expose_openapi = (not is_production_app_env(settings.APP_ENV)) or bool(
+    getattr(settings, "EXPOSE_OPENAPI", False)
+)
+
 app = FastAPI(
     title="Generic Data Connector Platform API",
     version="0.1.0",
     lifespan=lifespan,
+    docs_url="/docs" if _expose_openapi else None,
+    redoc_url="/redoc" if _expose_openapi else None,
+    openapi_url="/openapi.json" if _expose_openapi else None,
 )
 
 if settings.GDC_TRUST_PROXY_HEADERS:
