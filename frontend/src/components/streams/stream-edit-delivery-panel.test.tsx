@@ -196,4 +196,17 @@ describe('StreamEditDeliveryPanel route removal', () => {
     })
     await waitFor(() => expect(screen.getByTestId('save-prefix-22')).toBeDisabled())
   })
+
+  it('does not crash when destination list API returns null (failure != empty)', async () => {
+    fetchStreamMappingUiConfig.mockResolvedValue(mappingConfig([]))
+    fetchDestinationsList.mockResolvedValue(null)
+
+    render(<StreamEditDeliveryPanel streamId={10} />)
+
+    await waitFor(() => {
+      expect(screen.getByText(/Routes \(0\)/)).toBeInTheDocument()
+    })
+    expect(screen.queryByText(/Could not load stream delivery configuration/i)).not.toBeInTheDocument()
+  })
+
 })

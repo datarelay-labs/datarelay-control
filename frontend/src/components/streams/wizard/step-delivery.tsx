@@ -189,7 +189,8 @@ type StepDeliveryProps = {
 export function StepDelivery({ state, onChange }: StepDeliveryProps) {
   const [loading, setLoading] = useState(true)
   const [destinations, setDestinations] = useState<DestinationListItem[]>([])
-  const [apiBacked, setApiBacked] = useState(false)
+  /** True when fetchDestinationsList returned null (failure), not a valid empty catalog. */
+  const [catalogLoadFailed, setCatalogLoadFailed] = useState(false)
   const [sampleEvent, setSampleEvent] = useState<Record<string, unknown>>(DELIVERY_PREVIEW_SAMPLE_EVENT)
   const [search, setSearch] = useState('')
   const [tab, setTab] = useState<DestinationLibraryTab>('all')
@@ -248,18 +249,26 @@ export function StepDelivery({ state, onChange }: StepDeliveryProps) {
   useEffect(() => {
     let cancelled = false
     void (async () => {
-      const rows = (await fetchDestinationsList()) ?? []
+      const rows = await fetchDestinationsList()
       if (cancelled) return
+      if (rows === null) {
+        // Failure != empty catalog: keep route drafts; do not crash on null.
+        setCatalogLoadFailed(true)
+        setDestinations([])
+        onChange({ destinationApiBacked: false })
+        setLoading(false)
+        return
+      }
+      setCatalogLoadFailed(false)
       setDestinations(rows)
       if (rows.length > 0) {
-        setApiBacked(true)
         onChange({
           destinationApiBacked: true,
           destinationKindsById: Object.fromEntries(rows.map((r) => [r.id, r.destination_type])),
         })
       } else {
-        setApiBacked(false)
-        onChange({ destinationApiBacked: false, routeDrafts: [] })
+        // Valid empty list from API.
+        onChange({ destinationApiBacked: true, routeDrafts: [] })
       }
       setLoading(false)
     })()
@@ -433,7 +442,13 @@ export function StepDelivery({ state, onChange }: StepDeliveryProps) {
           <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
           Loading destinations…
         </p>
-      ) : !apiBacked || destinations.length === 0 ? (
+      ) : catalogLoadFailed ? (
+        <div className="rounded-xl border border-dashed border-amber-300/80 bg-amber-50/80 p-4 dark:border-amber-500/40 dark:bg-amber-500/10">
+          <p className="text-[12px] text-amber-900 dark:text-amber-100">
+            Failed to load destinations. Check authentication and API connectivity.
+          </p>
+        </div>
+      ) : destinations.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-300 bg-white p-4 dark:border-gdc-border dark:bg-gdc-card">
           <p className="text-[12px] text-slate-600 dark:text-gdc-muted">No destinations configured yet. Create a destination first.</p>
           <Link to={NAV_PATH.destinations} className="mt-2 inline-flex h-9 items-center rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white">
