@@ -30,6 +30,28 @@ type WizardDraftEnvelopeV1 = {
   state?: Partial<WizardState>
 }
 
+/** Secret-bearing connector fields never persist in localStorage drafts. */
+const SECRET_CONNECTOR_FIELDS = [
+  'basicPassword',
+  'bearerToken',
+  'apiKeyValue',
+  'oauthClientSecret',
+  'loginPassword',
+  'refreshToken',
+] as const
+
+const SENSITIVE_PARAM_NAMES = new Set([
+  'api_key',
+  'access_token',
+  'client_secret',
+  'token',
+  'password',
+  'bearer_token',
+  'refresh_token',
+  'secret',
+  'private_key',
+])
+
 function isWizardStepKey(value: unknown): value is WizardStepKey {
   return typeof value === 'string' && (WIZARD_STEP_KEYS as readonly string[]).includes(value)
 }
@@ -39,10 +61,131 @@ function normalizeDraftStepKey(stepKey: unknown): WizardStepKey {
   return isWizardStepKey(stepKey) ? stepKey : 'connect'
 }
 
+function isSensitiveName(name: string): boolean {
+  const key = name.toLowerCase().replace(/-/g, '_')
+  if (SENSITIVE_PARAM_NAMES.has(key)) return true
+  return key.includes('password') || key.includes('secret') || key.includes('token') || key.includes('api_key')
+}
+
+function scrubKvRows<T extends { key: string; value: string }>(rows: T[] | undefined): T[] {
+  if (!Array.isArray(rows)) return []
+  return rows.map((row) =>
+    isSensitiveName(row.key) && row.value
+      ? { ...row, value: '' }
+      : row,
+  )
+}
+
+function scrubRecordSecrets(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((item) => scrubRecordSecrets(item))
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (isSensitiveName(k) && v != null && v !== '') {
+        out[k] = ''
+        continue
+      }
+      out[k] = scrubRecordSecrets(v)
+    }
+    return out
+  }
+  return value
+}
+
+/**
+ * Whitelist-safe draft persistence: keep wizard progress, strip secrets and raw samples.
+ * Applied on save and on load (migrates/scrubs legacy drafts).
+ */
+export function scrubWizardDraftState(state: WizardState): WizardState {
+  const base = buildInitialState()
+  const connector = { ...base.connector, ...state.connector }
+  for (const field of SECRET_CONNECTOR_FIELDS) {
+    connector[field] = ''
+  }
+  connector.commonHeaders = scrubKvRows(connector.commonHeaders)
+  connector.loginHeaders = scrubRecordSecrets(connector.loginHeaders ?? {}) as Record<string, string>
+  connector.schemaFormValues = scrubRecordSecrets(connector.schemaFormValues ?? {}) as Record<
+    string,
+    string | boolean | number
+  >
+
+  const stream = { ...base.stream, ...state.stream }
+  stream.headers = scrubKvRows(stream.headers)
+  stream.params = scrubKvRows(stream.params)
+
+  const apiTest = {
+    ...base.apiTest,
+    ...state.apiTest,
+    // Never persist raw response / sample material in browser storage.
+    rawBody: null,
+    parsedJson: null,
+    rawResponse: null,
+    extractedEvents: [],
+    responseSample: null,
+    responseHeaders: {},
+    targetResponseBody: null,
+    unionSchema: state.apiTest.unionSchema ?? null,
+    eventCount: state.apiTest.eventCount ?? 0,
+    analysis: state.apiTest.analysis
+      ? {
+          ...state.apiTest.analysis,
+          sampleEvent: null,
+        }
+      : null,
+    actualRequestSent: state.apiTest.actualRequestSent
+      ? {
+          ...state.apiTest.actualRequestSent,
+          queryParams: scrubRecordSecrets(state.apiTest.actualRequestSent.queryParams ?? {}) as Record<
+            string,
+            unknown
+          >,
+          jsonBodyMasked: scrubRecordSecrets(state.apiTest.actualRequestSent.jsonBodyMasked),
+        }
+      : null,
+  }
+
+  return {
+    ...base,
+    ...state,
+    connector,
+    stream,
+    apiTest,
+    destinations: normalizeWizardDestinations(state.destinations),
+    dataPolicy: { ...base.dataPolicy, ...state.dataPolicy },
+    dataProtection: {
+      ...base.dataProtection,
+      ...state.dataProtection,
+      unknownNormalFieldPolicy: normalizeUnknownNormalFieldPolicy(
+        state.dataProtection?.unknownNormalFieldPolicy,
+      ),
+      unknownSensitiveFieldPolicy: normalizeUnknownSensitiveFieldPolicy(
+        state.dataProtection?.unknownSensitiveFieldPolicy,
+      ),
+      intents: Array.isArray(state.dataProtection?.intents)
+        ? state.dataProtection.intents.map((intent) => ({
+            key: intent.key || `dp-${Math.random().toString(36).slice(2, 10)}`,
+            detectedField: intent.detectedField ?? '',
+            protectionAction: normalizeWizardProtectionAction(intent.protectionAction),
+            deliveryBehavior: intent.deliveryBehavior ?? 'continue',
+          }))
+        : base.dataProtection.intents,
+      routeOverrides: Array.isArray(state.dataProtection?.routeOverrides)
+        ? state.dataProtection.routeOverrides.map((override) => normalizeWizardRouteProtectionOverride(override))
+        : base.dataProtection.routeOverrides,
+    },
+    mapping: Array.isArray(state.mapping) ? state.mapping : base.mapping,
+    enrichment: Array.isArray(state.enrichment) ? state.enrichment : base.enrichment,
+    transformRules: Array.isArray(state.transformRules) ? state.transformRules : base.transformRules,
+    unmappedFieldsPolicy:
+      state.unmappedFieldsPolicy === 'drop_unmapped' ? 'drop_unmapped' : base.unmappedFieldsPolicy,
+    outcome: state.outcome?.streamId == null ? state.outcome : null,
+  }
+}
+
 function hydrateWizardState(raw: Partial<WizardState> | undefined): WizardState {
   const base = buildInitialState()
-  if (!raw) return base
-  return {
+  if (!raw) return scrubWizardDraftState(base)
+  return scrubWizardDraftState({
     ...base,
     ...raw,
     connector: { ...base.connector, ...raw.connector },
@@ -76,7 +219,7 @@ function hydrateWizardState(raw: Partial<WizardState> | undefined): WizardState 
     transformRules: Array.isArray(raw.transformRules) ? raw.transformRules : base.transformRules,
     unmappedFieldsPolicy:
       raw.unmappedFieldsPolicy === 'drop_unmapped' ? 'drop_unmapped' : base.unmappedFieldsPolicy,
-  }
+  })
 }
 
 function stepKeyFromLegacyEnvelope(envelope: WizardDraftEnvelopeV1): WizardStepKey {
@@ -129,7 +272,15 @@ export function loadWizardDraft(): WizardDraftEnvelopeV2 | null {
   const v2Raw = localStorage.getItem(WIZARD_DRAFT_KEY_V2)
   if (v2Raw) {
     const parsed = parseWizardDraftV2(v2Raw)
-    if (parsed) return parsed
+    if (parsed) {
+      // Rewrite legacy drafts that still contain secrets / raw samples.
+      try {
+        localStorage.setItem(WIZARD_DRAFT_KEY_V2, JSON.stringify(parsed))
+      } catch {
+        /* ignore quota errors during scrub rewrite */
+      }
+      return parsed
+    }
   }
   const v1Raw = localStorage.getItem(WIZARD_DRAFT_KEY_V1)
   if (!v1Raw) return null
@@ -137,6 +288,7 @@ export function loadWizardDraft(): WizardDraftEnvelopeV2 | null {
   if (!migrated) return null
   try {
     localStorage.setItem(WIZARD_DRAFT_KEY_V2, JSON.stringify(migrated))
+    localStorage.removeItem(WIZARD_DRAFT_KEY_V1)
   } catch {
     /* ignore quota errors during migration */
   }
@@ -145,8 +297,7 @@ export function loadWizardDraft(): WizardDraftEnvelopeV2 | null {
 
 /** Strip creation outcome so drafts stay reusable for a new stream. */
 export function stateForDraftPersistence(state: WizardState): WizardState {
-  if (state.outcome?.streamId == null) return state
-  return { ...state, outcome: null }
+  return scrubWizardDraftState(state.outcome?.streamId == null ? state : { ...state, outcome: null })
 }
 
 export function saveWizardDraft(state: WizardState, stepKey: WizardStepKey): void {

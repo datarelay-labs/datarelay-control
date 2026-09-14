@@ -45,6 +45,7 @@ from app.platform_admin.health_summary import build_admin_health_summary
 from app.platform_admin.maintenance_health import build_maintenance_health
 from app.platform_admin.config_json_diff import diff_json
 from app.platform_admin.config_rollback_service import ConfigSnapshotApplyError, apply_versioned_snapshot
+from app.security.secrets import mask_config_payload
 from app.platform_admin.repository import (
     count_administrators,
     count_audit_events,
@@ -336,6 +337,13 @@ def _mask_database_url(url: str) -> str:
     except Exception:
         pass
     return "****"
+
+
+def _mask_config_version_snapshot(entity_type: str, snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Defense-in-depth masking for config-version API responses (covers legacy rows)."""
+
+    mask_all_headers = str(entity_type or "") == "DESTINATION_CONFIG"
+    return mask_config_payload(snapshot, mask_all_header_values=mask_all_headers)
 
 
 def _effective_network_ports(row: object) -> NetworkPortConfig:
@@ -942,12 +950,13 @@ def compare_config_versions(
         )
 
     def _side_doc(row: object) -> dict:
+        entity_type = str(getattr(row, "entity_type", "") or "")
         after = getattr(row, "snapshot_after_json", None)
         before = getattr(row, "snapshot_before_json", None)
         if after is not None:
-            return dict(after)
+            return _mask_config_version_snapshot(entity_type, dict(after))
         if before is not None:
-            return dict(before)
+            return _mask_config_version_snapshot(entity_type, dict(before))
         return {}
 
     changes = diff_json(_side_doc(left), _side_doc(right))
@@ -967,8 +976,9 @@ def read_config_version_detail(row_id: int, db: Session = Depends(get_db)) -> Co
         raise _http_error("CONFIG_VERSION_NOT_FOUND", f"config version not found: {row_id}", status.HTTP_404_NOT_FOUND)
     before = row.snapshot_before_json
     after = row.snapshot_after_json
-    before_d = dict(before) if before is not None else None
-    after_d = dict(after) if after is not None else None
+    entity_type = str(row.entity_type)
+    before_d = _mask_config_version_snapshot(entity_type, dict(before)) if before is not None else None
+    after_d = _mask_config_version_snapshot(entity_type, dict(after)) if after is not None else None
     if before_d is not None or after_d is not None:
         inline = diff_json(before_d if before_d is not None else {}, after_d if after_d is not None else {})
     else:

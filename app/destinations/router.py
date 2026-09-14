@@ -23,8 +23,15 @@ from app.destinations.test_service import run_destination_connectivity_probe, ru
 from app.platform_admin import journal
 from app.platform_admin.config_entity_snapshots import serialize_destination_config
 from app.routes.models import Route
+from app.security.secrets import mask_config_payload, preserve_masked_secrets
 
 router = APIRouter()
+
+
+def _masked_read(row: Destination) -> DestinationRead:
+    item = DestinationRead.model_validate(row).model_dump()
+    item["config_json"] = mask_config_payload(item.get("config_json") or {}, mask_all_header_values=True)
+    return DestinationRead.model_validate(item)
 
 
 def _usage_by_destination(db: Session, destination_ids: list[int]) -> dict[int, list[DestinationRouteUsage]]:
@@ -60,7 +67,7 @@ async def list_destinations(db: Session = Depends(get_db_read_bounded)) -> list[
     for row in dest_rows:
         routes = usage_map.get(int(row.id), [])
         distinct_streams = {r.stream_id for r in routes}
-        base = DestinationRead.model_validate(row)
+        base = _masked_read(row)
         items.append(
             DestinationListItem(
                 **base.model_dump(),
@@ -110,7 +117,7 @@ async def create_destination(payload: DestinationCreate, request: Request, db: S
     )
     db.commit()
     db.refresh(row)
-    return DestinationRead.model_validate(row)
+    return _masked_read(row)
 
 
 @router.post("/preview-test", response_model=DestinationTestResult)
@@ -166,7 +173,7 @@ async def get_destination(destination_id: int, db: Session = Depends(get_db)) ->
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"error_code": "DESTINATION_NOT_FOUND", "message": f"destination not found: {destination_id}"},
         )
-    return DestinationRead.model_validate(row)
+    return _masked_read(row)
 
 
 @router.put("/{destination_id}", response_model=DestinationRead)
@@ -192,6 +199,10 @@ async def update_destination(
     merged_type = str(update.get("destination_type", row.destination_type))
     merged_cfg = dict(row.config_json or {})
     if "config_json" in update and update["config_json"] is not None:
+        update["config_json"] = preserve_masked_secrets(
+            dict(update["config_json"]),
+            dict(row.config_json or {}),
+        )
         merged_cfg = dict(update["config_json"])
     try:
         validate_destination_config(merged_type, merged_cfg)
@@ -228,7 +239,7 @@ async def update_destination(
     )
     db.commit()
     db.refresh(row)
-    return DestinationRead.model_validate(row)
+    return _masked_read(row)
 
 
 @router.delete("/{destination_id}", status_code=status.HTTP_204_NO_CONTENT)

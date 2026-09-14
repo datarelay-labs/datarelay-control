@@ -130,6 +130,15 @@ def verify_export_masking(bundle: dict[str, Any]) -> list[str]:
                 if val not in (None, "", _MASK) and str(val).strip() != _MASK:
                     issues.append(f"destinations[{i}] config_json {path} must be masked or empty")
 
+    for i, c in enumerate(bundle.get("checkpoints") or []):
+        if not isinstance(c, dict):
+            continue
+        cp = c.get("checkpoint_value_json") or {}
+        if isinstance(cp, dict):
+            for path, val in _sensitive_leaf_values(cp):
+                if val not in (None, "", _MASK) and str(val).strip() != _MASK:
+                    issues.append(f"checkpoints[{i}] checkpoint_value_json {path} must be masked or empty")
+
     return issues
 
 

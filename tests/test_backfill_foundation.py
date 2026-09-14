@@ -43,8 +43,8 @@ def _seed_stream_with_checkpoint(db: Session) -> Stream:
     source = Source(
         connector_id=connector.id,
         source_type="HTTP_API_POLLING",
-        config_json={"u": "https://ex.example"},
-        auth_json={},
+        config_json={"u": "https://ex.example", "api_key": "source-cfg-api-key-secret"},
+        auth_json={"bearer_token": "auth-should-not-be-snapshotted"},
         enabled=True,
     )
     db.add(source)
@@ -54,7 +54,7 @@ def _seed_stream_with_checkpoint(db: Session) -> Stream:
         source_id=source.id,
         name="stream-bf",
         stream_type="HTTP_API_POLLING",
-        config_json={"path": "/x"},
+        config_json={"path": "/x", "token": "stream-cfg-token-secret"},
         polling_interval=60,
         enabled=True,
         status="RUNNING",
@@ -111,6 +111,14 @@ def test_checkpoint_snapshot_persistence_and_protection(client: TestClient, db_s
     assert res.status_code == 201, res.text
     body = res.json()
     assert body["checkpoint_snapshot_json"]["checkpoint_value_json"] == before_val
+    snap = body["source_config_snapshot_json"]
+    assert "source-cfg-api-key-secret" not in str(snap)
+    assert "stream-cfg-token-secret" not in str(snap)
+    assert "auth-should-not-be-snapshotted" not in str(snap)
+    assert "auth_json" not in (snap.get("source") or {})
+    assert snap["source"]["config_json"]["api_key"] == "********"
+    assert snap["stream"]["config_json"]["token"] == "********"
+    assert snap["stream"]["config_json"]["path"] == "/x"
 
     after = db_session.get(Checkpoint, stream.id)
     assert after is not None

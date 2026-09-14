@@ -77,6 +77,14 @@ def _seed_stream(db: Session) -> int:
     return int(st.id)
 
 
+def _stream_token(client: TestClient, stream_id: int) -> str:
+    return client.get(f"/api/v1/streams/{stream_id}").json()["updated_at"]
+
+
+def _dest_token(client: TestClient, destination_id: int) -> str:
+    return client.get(f"/api/v1/destinations/{destination_id}").json()["updated_at"]
+
+
 def test_config_version_detail_and_compare(client: TestClient, db_session: Session) -> None:
     sid = _seed_stream(db_session)
     r1 = put_stream(client, sid, {"name": "s1", "polling_interval": 120, "config_json": {"endpoint": "/e2"}, "rate_limit_json": {}})
@@ -228,3 +236,73 @@ def test_apply_snapshot_rejects_stale_expected_version(client: TestClient, db_se
 def test_config_versions_entity_id_without_type_is_400(client: TestClient) -> None:
     r = client.get("/api/v1/admin/config-versions?entity_id=1")
     assert r.status_code == 400
+
+
+def test_config_version_history_masks_stream_and_destination_secrets(
+    client: TestClient, db_session: Session
+) -> None:
+    sid = _seed_stream(db_session)
+    stream = db_session.get(Stream, sid)
+    assert stream is not None
+    dest = db_session.query(Destination).filter(Destination.name == "d1").one()
+
+    r_stream = client.put(
+        f"/api/v1/streams/{sid}",
+        json={
+            "name": "s1",
+            "polling_interval": 90,
+            "config_json": {
+                "endpoint": "/secure",
+                "api_key": "stream-history-secret-xyz",
+                "headers": {"Authorization": "Bearer hist-token"},
+            },
+            "rate_limit_json": {},
+            "expected_updated_at": _stream_token(client, sid),
+        },
+    )
+    assert r_stream.status_code == 200, r_stream.text
+
+    r_dest = client.put(
+        f"/api/v1/destinations/{dest.id}",
+        json={
+            "name": "d1",
+            "destination_type": "WEBHOOK_POST",
+            "enabled": True,
+            "config_json": {
+                "url": "https://hook.example.com/h",
+                "api_key": "dest-history-secret-xyz",
+                "headers": {"Authorization": "Bearer dest-hist-auth", "X-Api-Key": "dest-hist-key"},
+            },
+            "rate_limit_json": {},
+            "expected_updated_at": _dest_token(client, int(dest.id)),
+        },
+    )
+    assert r_dest.status_code == 200, r_dest.text
+    assert "dest-history-secret-xyz" not in r_dest.text
+    assert "dest-hist-auth" not in r_dest.text
+
+    stream_tip = client.get(
+        f"/api/v1/admin/config-versions?entity_type=STREAM_CONFIG&entity_id={sid}&limit=1"
+    ).json()["items"][0]
+    stream_det = client.get(f"/api/v1/admin/config-versions/{stream_tip['id']}")
+    assert stream_det.status_code == 200
+    assert "stream-history-secret-xyz" not in stream_det.text
+    assert "hist-token" not in stream_det.text
+    assert stream_det.json()["snapshot_after"]["config_json"]["api_key"] == "********"
+
+    dest_tip = client.get(
+        f"/api/v1/admin/config-versions?entity_type=DESTINATION_CONFIG&entity_id={dest.id}&limit=1"
+    ).json()["items"][0]
+    dest_det = client.get(f"/api/v1/admin/config-versions/{dest_tip['id']}")
+    assert dest_det.status_code == 200
+    assert "dest-history-secret-xyz" not in dest_det.text
+    assert "dest-hist-auth" not in dest_det.text
+    assert "dest-hist-key" not in dest_det.text
+    cfg = dest_det.json()["snapshot_after"]["config_json"]
+    assert cfg["api_key"] == "********"
+    assert cfg["headers"]["Authorization"] == "********"
+    assert cfg["headers"]["X-Api-Key"] == "********"
+
+    # Live destination row still holds the real secret for runtime delivery.
+    db_session.refresh(dest)
+    assert dest.config_json["api_key"] == "dest-history-secret-xyz"
