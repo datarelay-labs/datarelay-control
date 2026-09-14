@@ -99,3 +99,37 @@ def mask_secrets_and_pem(value: Any) -> Any:
     """Apply :func:`mask_secrets` then strip PEM material from any remaining strings."""
 
     return redact_pem_literals(mask_secrets(value))
+
+
+MASKED_SECRET_SENTINEL = _MASK
+
+
+def preserve_masked_secrets(incoming: Any, existing: Any) -> Any:
+    """Merge update payloads so masked sentinels keep previously stored secrets.
+
+    When a client round-trips a masked GET response into a PUT, secret fields
+    arrive as ``********``. Those must not overwrite real stored values.
+    """
+
+    if isinstance(incoming, dict):
+        existing_dict = existing if isinstance(existing, dict) else {}
+        out: dict[str, Any] = {}
+        for key, item in incoming.items():
+            key_str = str(key).lower()
+            prior = existing_dict.get(key)
+            if key_str in SENSITIVE_FIELD_NAMES and item == _MASK and prior not in (None, ""):
+                out[key] = prior
+                continue
+            if item == _MASK and isinstance(prior, str) and prior not in (None, ""):
+                # Nested opaque secret strings (e.g. PEM blobs) also use the sentinel.
+                out[key] = prior
+                continue
+            out[key] = preserve_masked_secrets(item, prior)
+        return out
+    if isinstance(incoming, list):
+        existing_list = existing if isinstance(existing, list) else []
+        return [
+            preserve_masked_secrets(item, existing_list[idx] if idx < len(existing_list) else None)
+            for idx, item in enumerate(incoming)
+        ]
+    return incoming

@@ -4,6 +4,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from tests.config_mutation_test_helpers import put_stream
 from sqlalchemy.orm import Session
 
 from app.connectors.models import Connector
@@ -72,9 +73,10 @@ def test_stream_create_list_get_update(client: TestClient, db_session: Session) 
     assert get_res.status_code == 200
     assert get_res.json()["id"] == stream_id
 
-    update_res = client.put(
-        f"/api/v1/streams/{stream_id}",
-        json={"name": "streams-crud-stream-updated", "polling_interval": 45, "enabled": False},
+    update_res = put_stream(
+        client,
+        stream_id,
+        {"name": "streams-crud-stream-updated", "polling_interval": 45, "enabled": False},
     )
     assert update_res.status_code == 200
     body = update_res.json()
@@ -132,9 +134,10 @@ def test_stream_update_preserves_http_config_when_merging_schema_drift_policy(
             "snapshot_at": "2026-06-22T00:00:00Z",
         },
     }
-    update_res = client.put(
-        f"/api/v1/streams/{stream_id}",
-        json={"config_json": merged_config},
+    update_res = put_stream(
+        client,
+        stream_id,
+        {"config_json": merged_config},
     )
     assert update_res.status_code == 200
     body = update_res.json()

@@ -22,7 +22,11 @@ describe('connector mutation catalog invalidation', () => {
     const clearSpy = vi.spyOn(requestCache, 'clearSharedRequestCache')
     requestJson.mockResolvedValue({ id: 9, name: 'Updated' })
     const { updateConnector } = await import('./gdcConnectors')
-    await updateConnector(9, { name: 'Updated' })
+    await updateConnector(9, {
+      name: 'Updated',
+      expected_updated_at: '2026-01-01T00:00:00Z',
+      expected_source_updated_at: '2026-01-01T00:00:00Z',
+    })
     expect(clearSpy).toHaveBeenCalledWith('catalog-connectors', CATALOG_CONNECTORS_LIST_KEY)
     expect(clearSpy).toHaveBeenCalledWith('catalog-connector-by-id', '9')
   })

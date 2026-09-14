@@ -4,6 +4,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from tests.config_mutation_test_helpers import put_connector
 from sqlalchemy.orm import Session
 
 from app.connectors.models import Connector
@@ -102,7 +103,7 @@ def test_update_partial_preserves_session_login_body_mode_and_raw(client: TestCl
     payload["login_body_raw"] = "username={{username}}&password={{password}}"
     created = client.post("/api/v1/connectors/", json=payload).json()
     cid = created["id"]
-    res = client.put(f"/api/v1/connectors/{cid}", json={"name": "renamed"})
+    res = put_connector(client, cid, {"name": "renamed"})
     assert res.status_code == 200
     db_session.expire_all()
     src = db_session.query(Source).filter(Source.connector_id == cid).first()
@@ -147,7 +148,7 @@ def test_secret_masking_on_get_list_detail(client: TestClient) -> None:
 def test_update_without_secret_preserves_existing_secret(client: TestClient, db_session: Session) -> None:
     created = client.post("/api/v1/connectors/", json=_create_payload("bearer")).json()
     cid = created["id"]
-    res = client.put(f"/api/v1/connectors/{cid}", json={"name": "updated"})
+    res = put_connector(client, cid, {"name": "updated"})
     assert res.status_code == 200
     db_session.expire_all()
     src = db_session.query(Source).filter(Source.connector_id == cid).first()
@@ -158,7 +159,7 @@ def test_update_without_secret_preserves_existing_secret(client: TestClient, db_
 def test_update_with_secret_replaces_existing_secret(client: TestClient, db_session: Session) -> None:
     created = client.post("/api/v1/connectors/", json=_create_payload("bearer")).json()
     cid = created["id"]
-    res = client.put(f"/api/v1/connectors/{cid}", json={"bearer_token": "new-token", "auth_type": "bearer"})
+    res = put_connector(client, cid, {"bearer_token": "new-token", "auth_type": "bearer"})
     assert res.status_code == 200
     db_session.expire_all()
     src = db_session.query(Source).filter(Source.connector_id == cid).first()

@@ -19,6 +19,7 @@ from app.logs.models import DeliveryLog
 from app.main import app
 from app.templates.registry import clear_template_cache
 from tests.e2e_wiremock_helpers import (
+from tests.config_mutation_test_helpers import put_destination, put_stream
     DEFAULT_WIREMOCK,
     assert_connector_api_masks_common_secrets,
     assert_run_observability_core,
@@ -121,7 +122,7 @@ def test_e2e_auth_no_auth_fetch_delivery_masked_connector_response(
     st = client.get(f"/api/v1/streams/{stream_id}").json()
     cfg = dict(st.get("config_json") or {})
     cfg["endpoint"] = "/api/v1/e2e-auth/no-auth-events"
-    assert client.put(f"/api/v1/streams/{stream_id}", json={"config_json": cfg}).status_code == 200
+    assert put_stream(client, stream_id, {"config_json": cfg}).status_code == 200
 
     enable_stream_for_run(client, stream_id)
     run = client.post(f"/api/v1/runtime/streams/{stream_id}/run-once")
@@ -173,7 +174,7 @@ def test_e2e_auth_basic_fetch_delivery_and_masking(
     st = client.get(f"/api/v1/streams/{stream_id}").json()
     cfg = dict(st.get("config_json") or {})
     cfg["endpoint"] = "/api/v1/e2e-auth/basic-events"
-    assert client.put(f"/api/v1/streams/{stream_id}", json={"config_json": cfg}).status_code == 200
+    assert put_stream(client, stream_id, {"config_json": cfg}).status_code == 200
 
     enable_stream_for_run(client, stream_id)
     run = client.post(f"/api/v1/runtime/streams/{stream_id}/run-once")
@@ -220,7 +221,7 @@ def test_e2e_auth_api_key_header_success_and_masked_key_on_source_http_error(
     st = client.get(f"/api/v1/streams/{stream_id}").json()
     cfg = dict(st.get("config_json") or {})
     cfg["endpoint"] = "/api/v1/e2e-auth/apikey-header-events"
-    assert client.put(f"/api/v1/streams/{stream_id}", json={"config_json": cfg}).status_code == 200
+    assert put_stream(client, stream_id, {"config_json": cfg}).status_code == 200
 
     enable_stream_for_run(client, stream_id)
     run = client.post(f"/api/v1/runtime/streams/{stream_id}/run-once")
@@ -231,7 +232,7 @@ def test_e2e_auth_api_key_header_success_and_masked_key_on_source_http_error(
     st2 = client.get(f"/api/v1/streams/{stream_id}").json()
     cfg2 = dict(st2.get("config_json") or {})
     cfg2["endpoint"] = "/api/v1/events-auth-fail"
-    assert client.put(f"/api/v1/streams/{stream_id}", json={"config_json": cfg2}).status_code == 200
+    assert put_stream(client, stream_id, {"config_json": cfg2}).status_code == 200
 
     run2 = client.post(f"/api/v1/runtime/streams/{stream_id}/run-once")
     assert run2.status_code == 502, run2.text
@@ -271,7 +272,7 @@ def test_e2e_auth_api_key_query_params_fetch(
     st = client.get(f"/api/v1/streams/{stream_id}").json()
     cfg = dict(st.get("config_json") or {})
     cfg["endpoint"] = "/api/v1/e2e-auth/apikey-query-events"
-    assert client.put(f"/api/v1/streams/{stream_id}", json={"config_json": cfg}).status_code == 200
+    assert put_stream(client, stream_id, {"config_json": cfg}).status_code == 200
 
     enable_stream_for_run(client, stream_id)
     run = client.post(f"/api/v1/runtime/streams/{stream_id}/run-once")
@@ -421,7 +422,7 @@ def test_e2e_data_single_object_root_event_mapping_delivery_logs(
     st = client.get(f"/api/v1/streams/{stream_id}").json()
     cfg = dict(st.get("config_json") or {})
     cfg["endpoint"] = "/api/v1/e2e-data/single-object"
-    assert client.put(f"/api/v1/streams/{stream_id}", json={"config_json": cfg}).status_code == 200
+    assert put_stream(client, stream_id, {"config_json": cfg}).status_code == 200
 
     enable_stream_for_run(client, stream_id)
     run = client.post(f"/api/v1/runtime/streams/{stream_id}/run-once")
@@ -472,7 +473,7 @@ def test_e2e_data_nested_array_extraction_mapping_delivery(
     st = client.get(f"/api/v1/streams/{stream_id}").json()
     cfg = dict(st.get("config_json") or {})
     cfg["endpoint"] = "/api/v1/e2e-data/nested-array"
-    assert client.put(f"/api/v1/streams/{stream_id}", json={"config_json": cfg}).status_code == 200
+    assert put_stream(client, stream_id, {"config_json": cfg}).status_code == 200
 
     enable_stream_for_run(client, stream_id)
     run = client.post(f"/api/v1/runtime/streams/{stream_id}/run-once")
@@ -505,7 +506,7 @@ def test_e2e_data_empty_array_no_checkpoint_update_delivery_logs_minimal(
     st = client.get(f"/api/v1/streams/{stream_id}").json()
     cfg = dict(st.get("config_json") or {})
     cfg["endpoint"] = "/api/v1/e2e-data/empty-array"
-    assert client.put(f"/api/v1/streams/{stream_id}", json={"config_json": cfg}).status_code == 200
+    assert put_stream(client, stream_id, {"config_json": cfg}).status_code == 200
 
     enable_stream_for_run(client, stream_id)
     run = client.post(f"/api/v1/runtime/streams/{stream_id}/run-once")
@@ -541,7 +542,7 @@ def test_e2e_data_get_with_query_params_mapping_delivery(
     cfg = dict(st.get("config_json") or {})
     cfg["endpoint"] = "/api/v1/e2e-data/filtered"
     cfg["params"] = {"filter": "e2e-matrix", "tenant": "acme"}
-    assert client.put(f"/api/v1/streams/{stream_id}", json={"config_json": cfg}).status_code == 200
+    assert put_stream(client, stream_id, {"config_json": cfg}).status_code == 200
 
     enable_stream_for_run(client, stream_id)
     run = client.post(f"/api/v1/runtime/streams/{stream_id}/run-once")
@@ -575,7 +576,7 @@ def test_e2e_data_post_json_body_mapping_delivery(
     cfg["method"] = "POST"
     cfg["endpoint"] = "/api/v1/e2e-data/search"
     cfg["body"] = {"q": "malware", "size": 10}
-    assert client.put(f"/api/v1/streams/{stream_id}", json={"config_json": cfg}).status_code == 200
+    assert put_stream(client, stream_id, {"config_json": cfg}).status_code == 200
 
     enable_stream_for_run(client, stream_id)
     run = client.post(f"/api/v1/runtime/streams/{stream_id}/run-once")
@@ -608,7 +609,7 @@ def test_e2e_data_static_pagination_response_shape(
     cfg = dict(st.get("config_json") or {})
     cfg["endpoint"] = "/api/v1/e2e-data/paged"
     cfg["params"] = {"page": "1"}
-    assert client.put(f"/api/v1/streams/{stream_id}", json={"config_json": cfg}).status_code == 200
+    assert put_stream(client, stream_id, {"config_json": cfg}).status_code == 200
 
     enable_stream_for_run(client, stream_id)
     run = client.post(f"/api/v1/runtime/streams/{stream_id}/run-once")
@@ -641,7 +642,7 @@ def test_e2e_checkpoint_source_ok_but_destination_disabled_skips_delivery(
     ck_id = int(out["checkpoint_id"])
     cp_before = dict(db_session.get(Checkpoint, ck_id).checkpoint_value_json or {})  # type: ignore[union-attr]
 
-    assert client.put(f"/api/v1/destinations/{dest_id}", json={"enabled": False}).status_code == 200
+    assert put_destination(client, dest_id, {"enabled": False}).status_code == 200
 
     enable_stream_for_run(client, stream_id)
     run = client.post(f"/api/v1/runtime/streams/{stream_id}/run-once")

@@ -19,7 +19,9 @@ class SourceCreate(SourceBase):
 
 
 class SourceUpdate(SourceBase):
-    pass
+    """Partial source update. ``expected_updated_at`` is the optimistic-concurrency token."""
+
+    expected_updated_at: datetime
 
 
 class SourceRead(SourceBase):

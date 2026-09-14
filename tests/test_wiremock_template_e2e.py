@@ -15,6 +15,7 @@ from app.main import app
 from app.mappings.models import Mapping
 from app.templates.registry import clear_template_cache
 from tests.e2e_wiremock_helpers import (
+from tests.config_mutation_test_helpers import put_stream
     DEFAULT_WIREMOCK,
     assert_run_observability_core,
     create_webhook_destination,
@@ -418,7 +419,7 @@ def test_template_generic_source_http_401_no_checkpoint_no_delivery_logs(
     st = client.get(f"/api/v1/streams/{stream_id}").json()
     cfg = dict(st.get("config_json") or {})
     cfg["endpoint"] = "/api/v1/events-auth-fail"
-    up = client.put(f"/api/v1/streams/{stream_id}", json={"config_json": cfg})
+    up = put_stream(client, stream_id, {"config_json": cfg})
     assert up.status_code == 200, up.text
 
     cp_before = dict(db_session.get(Checkpoint, ck_id).checkpoint_value_json or {})

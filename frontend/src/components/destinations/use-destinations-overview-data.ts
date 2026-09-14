@@ -63,8 +63,16 @@ export function useDestinationsOverviewData({
     try {
       const data = await fetchDestinationsList({ signal: abort.signal })
       if (gen !== catalogGenRef.current || abort.signal.aborted) return
+      if (data === null) {
+        setCatalogError('Failed to load destinations. Check authentication and API connectivity.')
+        if (!background) {
+          // Keep any previously loaded rows; do not masquerade failure as an empty catalog.
+        }
+        return
+      }
       setCatalogRows(data)
       writeDestinationsListSnapshot(data)
+      setCatalogError(null)
     } catch (err) {
       if (abort.signal.aborted || gen !== catalogGenRef.current) return
       if (!isRequestAborted(err)) {

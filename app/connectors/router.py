@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
+from app.config_concurrency import as_utc, pop_expected_updated_at, require_fresh_updated_at
 from app.connectors.models import Connector
 from app.connectors.product_group import infer_product_group_from_connector_name
 from app.connectors.schemas import (
@@ -33,7 +34,7 @@ from app.connectors.read_cache import (
     get_connectors_operations_summary_cached,
     invalidate_connectors_read_cache_after_auth_check,
 )
-from app.database import SessionLocal, get_db, get_db_read_bounded
+from app.database import SessionLocal, get_db, get_db_read_bounded, utcnow
 from app.sources.models import Source
 from app.platform_admin import journal
 from app.streams.models import Stream
@@ -893,6 +894,7 @@ def _serialize(connector: Connector, source: Source | None, stream_count: int) -
         auth=masked_auth if isinstance(masked_auth, dict) else {"auth_type": "no_auth"},
         created_at=connector.created_at,
         updated_at=connector.updated_at,
+        source_updated_at=source.updated_at if source is not None else None,
         **_operational_read_fields(config if isinstance(config, dict) else {}),
     )
     if st == "S3_OBJECT_POLLING" and isinstance(config, dict):
@@ -1052,16 +1054,16 @@ def _serialize(connector: Connector, source: Source | None, stream_count: int) -
     return ConnectorRead.model_validate(read_kw)
 
 
-def _load_source(db: Session, connector_id: int) -> Source | None:
-    http = (
-        db.query(Source)
-        .filter(Source.connector_id == connector_id, Source.source_type == "HTTP_API_POLLING")
-        .order_by(Source.id.asc())
-        .first()
-    )
+def _load_source(db: Session, connector_id: int, *, for_update: bool = False) -> Source | None:
+    q_http = db.query(Source).filter(Source.connector_id == connector_id, Source.source_type == "HTTP_API_POLLING")
+    q_any = db.query(Source).filter(Source.connector_id == connector_id)
+    if for_update:
+        q_http = q_http.with_for_update()
+        q_any = q_any.with_for_update()
+    http = q_http.order_by(Source.id.asc()).first()
     if http is not None:
         return http
-    return db.query(Source).filter(Source.connector_id == connector_id).order_by(Source.id.asc()).first()
+    return q_any.order_by(Source.id.asc()).first()
 
 
 def _bulk_load_sources(db: Session, connector_ids: list[int]) -> dict[int, Source]:
@@ -1253,10 +1255,47 @@ async def update_connector(
     request: Request,
     db: Session = Depends(get_db),
 ) -> ConnectorRead:
-    row = db.query(Connector).filter(Connector.id == connector_id).first()
+    # Lock connector + primary source so compound mutations cannot silently overwrite.
+    row = db.query(Connector).filter(Connector.id == connector_id).with_for_update().first()
     if row is None:
         raise _not_found(connector_id)
-    source = _load_source(db, row.id)
+    source = _load_source(db, row.id, for_update=True)
+
+    update = payload.model_dump(exclude_unset=True)
+    expected_updated_at = pop_expected_updated_at(update)
+    require_fresh_updated_at(
+        entity_label="Connector",
+        error_code="CONNECTOR_STALE_WRITE",
+        current_updated_at=getattr(row, "updated_at", None),
+        expected_updated_at=expected_updated_at,
+    )
+    expected_source_updated_at = update.pop("expected_source_updated_at", None)
+    if source is not None:
+        if expected_source_updated_at is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "error_code": "EXPECTED_SOURCE_UPDATED_AT_REQUIRED",
+                    "message": "expected_source_updated_at is required when the connector owns a Source row",
+                },
+            )
+        source_updated_at = getattr(source, "updated_at", None)
+        if source_updated_at is None or as_utc(source_updated_at) != as_utc(expected_source_updated_at):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "error_code": "CONNECTOR_SOURCE_STALE_WRITE",
+                    "message": (
+                        "Connector source configuration changed since you started editing. "
+                        "Refresh the latest connector before saving again; unsaved local edits are not applied."
+                    ),
+                    "expected_source_updated_at": expected_source_updated_at.isoformat(),
+                    "current_source_updated_at": (
+                        source_updated_at.isoformat() if source_updated_at is not None else None
+                    ),
+                },
+            )
+
     if source is None:
         st_new = _normalize_source_type(payload.source_type)
         st_init = (
@@ -1278,7 +1317,6 @@ async def update_connector(
     if payload.source_type is not None and _normalize_source_type(str(payload.source_type)) != st_source:
         raise _bad_request("Changing source_type is not supported on connector update")
 
-    update = payload.model_dump(exclude_unset=True)
     if "name" in update and payload.name is not None:
         row.name = payload.name.strip()
     if "product_group" in update:
@@ -1314,6 +1352,9 @@ async def update_connector(
         source.auth_json = _build_auth_json(payload, existing_auth=source.auth_json, partial=True)
 
     source.config_json = _apply_operational_from_payload(source.config_json, payload, partial=True)
+    now = utcnow()
+    row.updated_at = now
+    source.updated_at = now
 
     journal.record_audit_event(
         db,
@@ -1321,7 +1362,7 @@ async def update_connector(
         entity_type="CONNECTOR",
         entity_id=int(row.id),
         entity_name=str(row.name),
-        details={"updated_fields": sorted(update.keys())},
+        details={"updated_fields": sorted(k for k in update.keys() if not k.startswith("expected_"))},
         request=request,
     )
     db.commit()

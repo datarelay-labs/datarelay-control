@@ -98,7 +98,7 @@ describe('destination by-id request cache', () => {
       config_json: {},
       rate_limit_json: {},
     })
-    await updateDestination(7, { name: 'D7-updated' })
+    await updateDestination(7, { name: 'D7-updated', expected_updated_at: '2026-01-01T00:00:00Z' })
     expect(clearSpy).toHaveBeenCalledWith('catalog-destinations', CATALOG_DESTINATIONS_LIST_KEY)
     expect(clearSpy).toHaveBeenCalledWith('catalog-destination-by-id', '7')
     expect(clearSpy).not.toHaveBeenCalledWith('catalog-destination-by-id', '8')

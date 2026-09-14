@@ -5,8 +5,9 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
+from app.config_concurrency import pop_expected_updated_at, require_fresh_updated_at
 from app.connectors.models import Connector
-from app.database import get_db, get_db_read_bounded
+from app.database import get_db, get_db_read_bounded, utcnow
 from app.sources.models import Source
 from app.streams import repository as streams_repository
 from app.streams.delete_scope import delete_stream_and_dependencies
@@ -67,7 +68,8 @@ async def create_stream(payload: StreamCreate, request: Request, db: Session = D
         config_json=dict(payload.config_json or {}),
         polling_interval=int(payload.polling_interval or 60),
         enabled=True if payload.enabled is None else bool(payload.enabled),
-        status=payload.status or "STOPPED",
+        # Runtime status is owned by /start and /stop — never forge RUNNING via create.
+        status="STOPPED",
         rate_limit_json=dict(payload.rate_limit_json or {}),
     )
     db.add(row)
@@ -109,7 +111,8 @@ async def get_stream(stream_id: int, db: Session = Depends(get_db)) -> StreamRea
 
 @router.put("/{stream_id}", response_model=StreamRead)
 async def update_stream(stream_id: int, payload: StreamUpdate, request: Request, db: Session = Depends(get_db)) -> StreamRead:
-    row = streams_repository.get_stream_by_id(db, stream_id)
+    # Row lock makes the expected_updated_at precondition authoritative for concurrent writers.
+    row = db.query(Stream).filter(Stream.id == stream_id).with_for_update().first()
     if row is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -117,6 +120,16 @@ async def update_stream(stream_id: int, payload: StreamUpdate, request: Request,
         )
 
     update = payload.model_dump(exclude_unset=True)
+    expected_updated_at = pop_expected_updated_at(update)
+    require_fresh_updated_at(
+        entity_label="Stream",
+        error_code="STREAM_STALE_WRITE",
+        current_updated_at=getattr(row, "updated_at", None),
+        expected_updated_at=expected_updated_at,
+    )
+    # Defense in depth: status / source_type must never mutate via configuration PUT.
+    update.pop("status", None)
+    update.pop("source_type", None)
     if "connector_id" in update:
         connector = db.query(Connector).filter(Connector.id == int(update["connector_id"])).first()
         if connector is None:
@@ -145,6 +158,7 @@ async def update_stream(stream_id: int, payload: StreamUpdate, request: Request,
     before_snap = serialize_stream_config(row)
     for key, value in update.items():
         setattr(row, key, value)
+    row.updated_at = utcnow()
     after_snap = serialize_stream_config(row)
     journal.record_audit_event(
         db,

@@ -61,6 +61,7 @@ export type ConnectorRead = {
   auth: Record<string, unknown>
   created_at?: string | null
   updated_at?: string | null
+  source_updated_at?: string | null
   endpoint_url?: string | null
   bucket?: string | null
   region?: string | null
@@ -210,6 +211,8 @@ export type ConnectorWritePayload = {
   access_token_injection?: string | null
   access_token_query_name?: string | null
   token_custom_headers?: Record<string, string> | null
+  expected_updated_at?: string
+  expected_source_updated_at?: string | null
 }
 
 export { GDC_AUTH_REQUIRED_MESSAGE }
@@ -284,9 +287,26 @@ export async function fetchConnectorById(connectorId: number, options?: GdcSigna
 }
 
 export async function updateConnector(connectorId: number, payload: ConnectorWritePayload): Promise<ConnectorRead> {
+  let expectedUpdatedAt = payload.expected_updated_at
+  let expectedSourceUpdatedAt = payload.expected_source_updated_at
+  if (!expectedUpdatedAt || expectedSourceUpdatedAt === undefined) {
+    const current = await fetchConnectorById(connectorId)
+    expectedUpdatedAt = expectedUpdatedAt ?? current?.updated_at ?? undefined
+    if (expectedSourceUpdatedAt === undefined) {
+      expectedSourceUpdatedAt = current?.source_updated_at ?? null
+    }
+  }
+  if (!expectedUpdatedAt) {
+    throw new Error('expected_updated_at is required for connector updates')
+  }
+  const body: ConnectorWritePayload = {
+    ...payload,
+    expected_updated_at: expectedUpdatedAt,
+    expected_source_updated_at: expectedSourceUpdatedAt ?? null,
+  }
   const updated = await requestJson<ConnectorRead>(`${GDC_API_PREFIX}/connectors/${connectorId}`, {
     method: 'PUT',
-    body: JSON.stringify(payload),
+    body: JSON.stringify(body),
   })
   invalidateConnectorsCatalogCache(connectorId)
   return updated
