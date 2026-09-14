@@ -8,7 +8,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.auth.role_guard import role_guard_middleware
@@ -295,32 +295,56 @@ app.include_router(ai_gateway_router, prefix=f"{_prefix}/ai-gateway", tags=["ai-
 app.include_router(governance_router, prefix=f"{_prefix}/governance", tags=["governance"])
 
 
-@app.get("/health")
-async def health() -> dict[str, Any]:
-    """Liveness/readiness probe; includes ``delivery_logs`` index catalog when PostgreSQL is reachable."""
+def _build_readiness_payload() -> tuple[dict[str, Any], int]:
+    """DB-backed readiness body and HTTP status (503 when PostgreSQL is unreachable)."""
 
     body: dict[str, Any] = {"status": "ok"}
     try:
         with engine.connect() as conn:
             probe = probe_delivery_logs_indexes(conn)
+        probe_error = probe.get("error")
         body["delivery_logs_indexes"] = {
-            "ok": probe.get("error") is None and not bool(probe.get("reindex_suggested")),
+            "ok": probe_error is None and not bool(probe.get("reindex_suggested")),
             "checked": bool(probe.get("checked")),
             "invalid_indexes": list(probe.get("invalid_indexes") or []),
             "reindex_suggested": bool(probe.get("reindex_suggested")),
-            "error": probe.get("error"),
+            # Never leak raw exception internals to clients.
+            "error": "index_probe_failed" if probe_error else None,
         }
         if bool(probe.get("reindex_suggested")):
             body["status"] = "degraded"
-    except Exception as exc:
-        body["delivery_logs_indexes"] = {
-            "ok": None,
-            "checked": False,
-            "invalid_indexes": [],
-            "reindex_suggested": False,
-            "error": f"{type(exc).__name__}: {str(exc)[:160]}",
-        }
-    return body
+        return body, 200
+    except Exception:
+        logging.getLogger(__name__).exception("health_readiness_database_unavailable")
+        return (
+            {
+                "status": "not_ready",
+                "delivery_logs_indexes": {
+                    "ok": False,
+                    "checked": False,
+                    "invalid_indexes": [],
+                    "reindex_suggested": False,
+                    "error": "database_unavailable",
+                },
+            },
+            503,
+        )
+
+
+@app.get("/health/live")
+async def health_live() -> dict[str, str]:
+    """Process liveness — does not depend on database readiness."""
+
+    return {"status": "ok"}
+
+
+@app.get("/health/ready")
+@app.get("/health")
+async def health_ready() -> JSONResponse:
+    """Readiness probe; top-level status is never ``ok`` when the database is down."""
+
+    body, status_code = _build_readiness_payload()
+    return JSONResponse(content=body, status_code=status_code)
 
 
 _FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
