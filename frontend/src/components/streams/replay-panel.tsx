@@ -23,6 +23,8 @@ function statusBadge(status: string): string {
   switch (status) {
     case 'pending':
       return 'bg-amber-100 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200'
+    case 'replaying':
+      return 'bg-violet-100 text-violet-900 dark:bg-violet-950/50 dark:text-violet-200'
     case 'replayed':
       return 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-200'
     case 'failed':
@@ -144,6 +146,12 @@ export function ReplayPanel({
             <span className="text-slate-500 dark:text-gdc-muted">Pending </span>
             <span className="font-semibold text-amber-800 dark:text-amber-200">{summary.pending_count}</span>
           </li>
+          {(summary.replaying_count ?? 0) > 0 ? (
+            <li>
+              <span className="text-slate-500 dark:text-gdc-muted">Replaying </span>
+              <span className="font-semibold text-violet-800 dark:text-violet-200">{summary.replaying_count}</span>
+            </li>
+          ) : null}
           <li>
             <span className="text-slate-500 dark:text-gdc-muted">Failed </span>
             <span className="font-semibold text-red-700 dark:text-red-300">{summary.failed_count}</span>
@@ -198,7 +206,10 @@ export function ReplayPanel({
                   <td className={cn(opTd, 'tabular-nums')}>{row.retry_count}</td>
                   <td className={opTd}>
                     <div className="flex flex-wrap gap-1">
-                      {(row.status === 'pending' || row.status === 'failed') && canOperate ? (
+                      {(row.status === 'pending' ||
+                        row.status === 'failed' ||
+                        row.status === 'replaying') &&
+                      canOperate ? (
                         <button
                           type="button"
                           disabled={actionBusy}
@@ -210,7 +221,7 @@ export function ReplayPanel({
                           data-testid={`replay-event-replay-${row.id}`}
                         >
                           <RotateCcw className="h-3 w-3" aria-hidden />
-                          Replay
+                          {row.status === 'replaying' ? 'Retry' : 'Replay'}
                         </button>
                       ) : null}
                       {row.status !== 'discarded' && row.status !== 'replayed' && canOperate ? (

@@ -20,10 +20,12 @@ class WebhookPostDestinationAdapter(DestinationAdapter):
         formatter_override: dict[str, Any] | None = None,
         *,
         prefix_context: MessagePrefixResolveContext | None = None,
+        idempotency_key: str | None = None,
     ) -> None:
         self._sender.send(
             events,
             destination_config,
             formatter_override=formatter_override,
             prefix_context=prefix_context,
+            idempotency_key=idempotency_key,
         )

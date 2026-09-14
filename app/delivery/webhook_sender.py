@@ -59,11 +59,13 @@ class WebhookSender:
         formatter_override: dict[str, Any] | None = None,
         *,
         prefix_context: MessagePrefixResolveContext | None = None,
+        idempotency_key: str | None = None,
     ) -> None:
         """Send events to webhook endpoint.
 
         Config supports: url, headers, timeout_seconds, retry_count, retry_backoff_seconds, batch_size.
         formatter_override: Route-level formatter when non-empty (same resolution as syslog).
+        idempotency_key: optional Idempotency-Key header for sinks that support dedupe.
         """
 
         # StreamRunner skips calling send when extract_events returns []; keep guard for callers/tests.
@@ -80,6 +82,8 @@ class WebhookSender:
             raise DestinationSendError("Webhook destination requires url")
 
         headers = dict(config.get("headers", {}))
+        if idempotency_key:
+            headers = {**headers, "Idempotency-Key": str(idempotency_key)}
         timeout_seconds = float(config.get("timeout_seconds", 10))
         retries = int(config.get("retry_count", 2))
         backoff = float(config.get("retry_backoff_seconds", 1.0))

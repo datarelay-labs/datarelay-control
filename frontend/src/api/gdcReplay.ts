@@ -6,7 +6,7 @@ const RT = `${GDC_API_PREFIX}/runtime`
 
 const readJsonOpts = { timeoutMs: GDC_DEFAULT_READ_JSON_TIMEOUT_MS }
 
-export type ReplayEventStatus = 'pending' | 'replayed' | 'failed' | 'discarded'
+export type ReplayEventStatus = 'pending' | 'replaying' | 'replayed' | 'failed' | 'discarded'
 
 export type ReplayEventItem = {
   id: number
@@ -24,6 +24,11 @@ export type ReplayEventItem = {
   created_at: string
   updated_at: string
   last_replay_at: string | null
+  attempt_id?: string | null
+  idempotency_key?: string | null
+  delivery_guarantee?: string | null
+  prior_delivery_uncertain?: boolean | null
+  claimed_at?: string | null
 }
 
 export type StreamReplayEventsResponse = {
@@ -35,6 +40,7 @@ export type StreamReplayEventsResponse = {
 export type StreamReplaySummaryResponse = {
   stream_id: number
   pending_count: number
+  replaying_count?: number
   replayed_count: number
   failed_count: number
   discarded_count: number
@@ -51,6 +57,10 @@ export type ReplayEventActionResponse = {
   retry_count: number
   outcome: string
   message: string
+  attempt_id?: string | null
+  idempotency_key?: string | null
+  delivery_guarantee?: string | null
+  prior_delivery_uncertain?: boolean | null
 }
 
 export async function fetchStreamReplayEvents(

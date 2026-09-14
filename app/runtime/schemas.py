@@ -1541,6 +1541,11 @@ class ReplayEventItem(BaseModel):
     created_at: datetime
     updated_at: datetime
     last_replay_at: datetime | None = None
+    attempt_id: str | None = None
+    idempotency_key: str | None = None
+    delivery_guarantee: str | None = None
+    prior_delivery_uncertain: bool | None = None
+    claimed_at: str | None = None
 
 
 class StreamReplayEventsResponse(BaseModel):
@@ -1572,6 +1577,11 @@ class ReplayEventActionResponse(BaseModel):
     created_at: datetime | None = None
     updated_at: datetime | None = None
     last_replay_at: datetime | None = None
+    attempt_id: str | None = None
+    idempotency_key: str | None = None
+    delivery_guarantee: str | None = None
+    prior_delivery_uncertain: bool | None = None
+    claimed_at: str | None = None
 
 
 class StreamReplaySummaryResponse(BaseModel):
@@ -1579,6 +1589,7 @@ class StreamReplaySummaryResponse(BaseModel):
 
     stream_id: int
     pending_count: int
+    replaying_count: int = 0
     replayed_count: int
     failed_count: int
     discarded_count: int
@@ -1590,6 +1601,7 @@ class PlatformReplaySummaryResponse(BaseModel):
     """GET /runtime/replay/summary response."""
 
     pending_count: int
+    replaying_count: int = 0
     replayed_count: int
     failed_count: int
     discarded_count: int

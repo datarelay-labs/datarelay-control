@@ -11,6 +11,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 
 REPLAY_STATUS_PENDING = "pending"
+REPLAY_STATUS_REPLAYING = "replaying"
 REPLAY_STATUS_REPLAYED = "replayed"
 REPLAY_STATUS_FAILED = "failed"
 REPLAY_STATUS_DISCARDED = "discarded"
@@ -18,6 +19,7 @@ REPLAY_STATUS_DISCARDED = "discarded"
 REPLAY_STATUSES = frozenset(
     {
         REPLAY_STATUS_PENDING,
+        REPLAY_STATUS_REPLAYING,
         REPLAY_STATUS_REPLAYED,
         REPLAY_STATUS_FAILED,
         REPLAY_STATUS_DISCARDED,
@@ -25,6 +27,11 @@ REPLAY_STATUSES = frozenset(
 )
 
 REPLAY_TERMINAL_STATUSES = frozenset({REPLAY_STATUS_REPLAYED, REPLAY_STATUS_DISCARDED})
+
+# Claim / attempt metadata lives in delivery_context_json["delivery_attempt"] —
+# no schema migration required (status String(16) already fits "replaying").
+DELIVERY_ATTEMPT_CONTEXT_KEY = "delivery_attempt"
+REPLAY_DELIVERY_GUARANTEE_AT_LEAST_ONCE = "at_least_once"
 
 DELIVERY_KIND_BASE_ROUTE = "base_route"
 DELIVERY_KIND_FAILOVER_SECONDARY = "failover_secondary"

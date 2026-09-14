@@ -20,7 +20,9 @@ class SyslogTlsDestinationAdapter(DestinationAdapter):
         formatter_override: dict[str, Any] | None = None,
         *,
         prefix_context: MessagePrefixResolveContext | None = None,
+        idempotency_key: str | None = None,
     ) -> None:
+        _ = idempotency_key  # syslog has no request-level dedupe header
         self._sender.send(
             events,
             destination_config,
