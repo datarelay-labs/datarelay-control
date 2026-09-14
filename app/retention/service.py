@@ -8,9 +8,11 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
-from sqlalchemy import and_, not_, select
+from sqlalchemy import and_, func, not_, select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import ColumnElement
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import cast, DateTime
 
 from app.backfill.models import BackfillJob, BackfillProgressEvent
 from app.config import settings
@@ -29,7 +31,21 @@ UTC = timezone.utc
 
 RetentionRunStatus = Literal["ok", "skipped", "error"]
 
-ACTIVE_BACKFILL_STATUSES = ("RUNNING", "CANCELLING")
+ACTIVE_BACKFILL_STATUSES = ("PENDING", "RUNNING", "CANCELLING")
+
+
+def _backfill_retention_time_column():
+    """Terminal retention basis: completed_at when set, else created_at fallback."""
+
+    return func.coalesce(BackfillJob.completed_at, BackfillJob.created_at)
+
+
+def _validation_snapshot_time_column():
+    """Prefer embedded snapshot captured_at; fall back to updated_at for legacy rows."""
+
+    captured_raw = cast(ContinuousValidation.last_perf_snapshot_json, JSONB).op("->>")("captured_at")
+    captured = cast(captured_raw, DateTime(timezone=True))
+    return func.coalesce(captured, ContinuousValidation.updated_at)
 
 ALL_TABLE_KEYS = frozenset(
     {
@@ -145,12 +161,13 @@ def preview_retention(db: Session, row: PlatformRetentionPolicy) -> list[Retenti
     )
 
     c_vs = retention_cutoff(days=pol["validation_snapshots_days"])
+    vs_time = _validation_snapshot_time_column()
     flt_vs = and_(
-        ContinuousValidation.updated_at < c_vs,
+        vs_time < c_vs,
         ContinuousValidation.last_perf_snapshot_json.is_not(None),
     )
     n4 = int(db.query(ContinuousValidation).filter(flt_vs).count())
-    o4 = db.scalar(select(ContinuousValidation.updated_at).where(flt_vs).order_by(ContinuousValidation.updated_at.asc()).limit(1))
+    o4 = db.scalar(select(vs_time).where(flt_vs).order_by(vs_time.asc()).limit(1))
     out.append(
         RetentionPreviewRow(
             table="continuous_validations (last_perf_snapshot_json)",
@@ -158,14 +175,18 @@ def preview_retention(db: Session, row: PlatformRetentionPolicy) -> list[Retenti
             oldest_row_timestamp=o4,
             retention_days=pol["validation_snapshots_days"],
             cutoff_utc=c_vs,
-            notes={"column": "last_perf_snapshot_json", "time_basis": "updated_at"},
+            notes={
+                "column": "last_perf_snapshot_json",
+                "time_basis": "coalesce(captured_at, updated_at)",
+            },
         )
     )
 
     c_bf = retention_cutoff(days=pol["backfill_jobs_days"])
-    flt_bf = and_(BackfillJob.created_at < c_bf, _backfill_job_guard())
+    bf_time = _backfill_retention_time_column()
+    flt_bf = and_(bf_time < c_bf, _backfill_job_guard())
     n5 = int(db.query(BackfillJob).filter(flt_bf).count())
-    o5 = db.scalar(select(BackfillJob.created_at).where(flt_bf).order_by(BackfillJob.created_at.asc()).limit(1))
+    o5 = db.scalar(select(bf_time).where(flt_bf).order_by(bf_time.asc()).limit(1))
     out.append(
         RetentionPreviewRow(
             table="backfill_jobs",
@@ -173,7 +194,10 @@ def preview_retention(db: Session, row: PlatformRetentionPolicy) -> list[Retenti
             oldest_row_timestamp=o5,
             retention_days=pol["backfill_jobs_days"],
             cutoff_utc=c_bf,
-            notes={"protected_statuses": list(ACTIVE_BACKFILL_STATUSES)},
+            notes={
+                "protected_statuses": list(ACTIVE_BACKFILL_STATUSES),
+                "time_basis": "coalesce(completed_at, created_at)",
+            },
         )
     )
 
@@ -252,8 +276,9 @@ def _clear_validation_snapshots_batched(
     batch_size: int,
     dry_run: bool,
 ) -> tuple[int, int]:
+    vs_time = _validation_snapshot_time_column()
     flt = and_(
-        ContinuousValidation.updated_at < cutoff,
+        vs_time < cutoff,
         ContinuousValidation.last_perf_snapshot_json.is_not(None),
     )
     matched = int(db.query(ContinuousValidation).filter(flt).count())
@@ -267,7 +292,7 @@ def _clear_validation_snapshots_batched(
         ids = db.scalars(
             select(ContinuousValidation.id)
             .where(flt)
-            .order_by(ContinuousValidation.updated_at.asc(), ContinuousValidation.id.asc())
+            .order_by(vs_time.asc(), ContinuousValidation.id.asc())
             .limit(max(1, int(batch_size)))
         ).all()
         if not ids:
@@ -380,7 +405,7 @@ def run_operational_retention(
             m, d = batch_delete_by_time_before(
                 db,
                 model=BackfillJob,
-                time_column=BackfillJob.created_at,
+                time_column=_backfill_retention_time_column(),
                 cutoff=cutoff_bf,
                 batch_size=bs,
                 dry_run=effective_dry_run,
@@ -395,7 +420,10 @@ def run_operational_retention(
                 cutoff=cutoff_bf,
                 start=t0,
                 message=f"matched={m}, deleted={d}" if not effective_dry_run else f"dry_run matched={m}",
-                notes={"protected_statuses": list(ACTIVE_BACKFILL_STATUSES)},
+                notes={
+                    "protected_statuses": list(ACTIVE_BACKFILL_STATUSES),
+                    "time_basis": "coalesce(completed_at, created_at)",
+                },
             )
         except Exception as exc:  # pragma: no cover
             db.rollback()
