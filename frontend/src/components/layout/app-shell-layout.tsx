@@ -30,6 +30,30 @@ function PlaceholderPage({ title }: { title: string }) {
   )
 }
 
+function NotFoundPage() {
+  return (
+    <section
+      role="region"
+      aria-label="Page not found"
+      className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-gdc-border dark:bg-gdc-card dark:shadow-gdc-card dark:ring-1 dark:ring-[rgba(120,150,220,0.07)]"
+    >
+      <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-gdc-muted">Error</p>
+      <h2 className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100">Page not found</h2>
+      <p className="mt-2 text-sm text-slate-600 dark:text-gdc-muted">
+        The URL you opened does not match a known page. Use the sidebar to continue, or return to Streams.
+      </p>
+      <p className="mt-4">
+        <Link
+          to={NAV_PATH.streams}
+          className="text-sm font-semibold text-violet-700 hover:underline dark:text-violet-300"
+        >
+          Go to Streams
+        </Link>
+      </p>
+    </section>
+  )
+}
+
 export function AppShellLayout() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -591,4 +615,4 @@ export function AppShellLayout() {
   )
 }
 
-export { PlaceholderPage }
+export { PlaceholderPage, NotFoundPage }
