@@ -256,9 +256,11 @@ def import_preview(body: ImportPreviewRequest, db: Session = Depends(get_db)) ->
 
 
 @router.post("/import/apply", response_model=ImportApplyResponse)
-def import_apply(body: ImportApplyRequest, db: Session = Depends(get_db)) -> ImportApplyResponse:
+def import_apply(
+    body: ImportApplyRequest, request: Request, db: Session = Depends(get_db)
+) -> ImportApplyResponse:
     try:
-        return apply_import(db, body)
+        return apply_import(db, body, request=request)
     except HTTPException:
         raise
     except Exception as exc:

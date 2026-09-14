@@ -124,11 +124,16 @@ class Scheduler:
         with self._workers_lock:
             for event in self._stream_stop_events.values():
                 event.set()
+            workers = list(self._workers.values())
         for thread in self._threads:
             thread.join(timeout=5.0)
         self._threads.clear()
+        # Bounded join for per-stream workers (supervisor join alone is not enough).
+        for worker in workers:
+            worker.join(timeout=5.0)
         with self._workers_lock:
             self._workers.clear()
+            self._stream_stop_events.clear()
         logger.info("%s", {"stage": "scheduler_stopped"})
 
     def run_stream(self, stream: Any) -> dict[str, Any]:

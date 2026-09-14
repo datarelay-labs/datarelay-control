@@ -3,6 +3,7 @@
 from collections import defaultdict
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 from starlette.status import HTTP_422_UNPROCESSABLE_CONTENT
 
@@ -20,6 +21,8 @@ from app.destinations.schemas import (
     DestinationUpdate,
 )
 from app.destinations.test_service import run_destination_connectivity_probe, run_destination_connectivity_test
+from app.dynamic_routing.models import StreamDynamicRoute
+from app.failover_routing.models import StreamFailoverRoute
 from app.platform_admin import journal
 from app.platform_admin.config_entity_snapshots import serialize_destination_config
 from app.routes.models import Route
@@ -121,10 +124,29 @@ async def create_destination(payload: DestinationCreate, request: Request, db: S
 
 
 @router.post("/preview-test", response_model=DestinationTestResult)
-async def preview_test_destination(payload: DestinationPreviewTest) -> DestinationTestResult:
+async def preview_test_destination(
+    payload: DestinationPreviewTest, request: Request, db: Session = Depends(get_db)
+) -> DestinationTestResult:
     """Connectivity probe using unsaved form values (does not persist results on a destination row)."""
 
     raw = run_destination_connectivity_probe(str(payload.destination_type), dict(payload.config_json or {}))
+    # Outbound side effect — record who initiated the probe.
+    journal.record_audit_event(
+        db,
+        action="DESTINATION_PREVIEW_TESTED",
+        entity_type="DESTINATION",
+        entity_id=None,
+        entity_name=None,
+        result="success" if bool(raw.get("success")) else "failure",
+        details={
+            "destination_type": str(payload.destination_type),
+            "latency_ms": raw.get("latency_ms"),
+            "message": raw.get("message"),
+            "preview": True,
+        },
+        request=request,
+    )
+    db.commit()
     return DestinationTestResult.model_validate(raw)
 
 
@@ -273,6 +295,43 @@ async def delete_destination(destination_id: int, request: Request, db: Session 
                 ),
                 "route_count": route_count,
                 "stream_count": distinct_streams,
+            },
+        )
+    failover_count = (
+        db.query(StreamFailoverRoute)
+        .filter(
+            or_(
+                StreamFailoverRoute.primary_destination_id == destination_id,
+                StreamFailoverRoute.secondary_destination_id == destination_id,
+            )
+        )
+        .count()
+    )
+    if failover_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error_code": "DESTINATION_DELETE_BLOCKED_FAILOVER",
+                "message": (
+                    f"Destination is still referenced by {failover_count} failover binding(s). "
+                    "Remove or reassign failover routes first."
+                ),
+                "failover_count": failover_count,
+            },
+        )
+    dynamic_count = (
+        db.query(StreamDynamicRoute).filter(StreamDynamicRoute.destination_id == destination_id).count()
+    )
+    if dynamic_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error_code": "DESTINATION_DELETE_BLOCKED_DYNAMIC_ROUTE",
+                "message": (
+                    f"Destination is still referenced by {dynamic_count} dynamic route(s). "
+                    "Remove or reassign dynamic routes first."
+                ),
+                "dynamic_route_count": dynamic_count,
             },
         )
     dest_name = str(row.name)

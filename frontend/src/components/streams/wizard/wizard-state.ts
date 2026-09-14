@@ -583,6 +583,8 @@ export type WizardApiTestState = {
   s3ConnectivityPassed: boolean
   /** REMOTE_FILE_POLLING: last connector-auth probe (SSH/SFTP listing) before sample fetch. */
   remoteProbe?: ConnectorAuthTestResponse | null
+  /** Fingerprint of connector/stream config this result was produced for; used to drop stale success. */
+  configFingerprint?: string | null
 }
 
 /**
@@ -812,6 +814,7 @@ export const INITIAL_API_TEST: WizardApiTestState = {
   analysis: null,
   s3ConnectivityPassed: false,
   remoteProbe: null,
+  configFingerprint: null,
 }
 
 export const INITIAL_DESTINATIONS: WizardDestinationsState = {

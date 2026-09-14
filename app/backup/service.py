@@ -109,11 +109,11 @@ def _record_import_apply_operation(
     idempotency_key: str,
     mode: str,
     response: ImportApplyResponse,
+    request: Any = None,
 ) -> None:
     journal.record_audit_event(
         db,
         action=_IMPORT_APPLY_OPERATION_ACTION,
-        actor_username="system",
         entity_type="IMPORT_APPLY",
         details={
             "idempotency_key": idempotency_key,
@@ -121,6 +121,7 @@ def _record_import_apply_operation(
             "mode": mode,
             "response": response.model_dump(mode="json"),
         },
+        request=request,
     )
 
 
@@ -223,7 +224,7 @@ def _assert_apply_allowed(db: Session, body: ImportApplyRequest) -> ValidationOu
     return outcome
 
 
-def apply_import(db: Session, body: ImportApplyRequest) -> ImportApplyResponse:
+def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) -> ImportApplyResponse:
     idempotency_key = _normalize_idempotency_key(body.idempotency_key)
     if idempotency_key is not None:
         _acquire_import_apply_idempotency_lock(db, idempotency_key)
@@ -450,8 +451,8 @@ def apply_import(db: Session, body: ImportApplyRequest) -> ImportApplyResponse:
     journal.record_audit_event(
         db,
         action="FULL_RESTORE_APPLIED" if mode == "full_restore" else "IMPORT_APPLIED",
-        actor_username="system",
         details=audit_details,
+        request=request,
     )
 
     redirect_path = None
@@ -479,6 +480,7 @@ def apply_import(db: Session, body: ImportApplyRequest) -> ImportApplyResponse:
             idempotency_key=idempotency_key,
             mode=mode,
             response=response.model_copy(update={"idempotent_replay": False}),
+            request=request,
         )
     db.commit()
     return response

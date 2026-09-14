@@ -192,3 +192,68 @@ def test_stream_delete_removes_stream_and_routes_only(client: TestClient, db_ses
     dest_after = db_session.query(Destination).filter(Destination.id == did).first()
     assert dest_after is not None
     assert dest_after.name == "kept-dest"
+
+
+def test_destination_delete_blocked_when_failover_exists(client: TestClient, db_session: Session) -> None:
+    from app.failover_routing.models import StreamFailoverRoute
+
+    connector, source = _seed_connector_source(db_session)
+    stream = Stream(
+        name="failover-holder",
+        connector_id=connector.id,
+        source_id=source.id,
+        stream_type="HTTP_API_POLLING",
+        config_json={},
+        polling_interval=60,
+        enabled=True,
+        status="STOPPED",
+        rate_limit_json={},
+    )
+    db_session.add(stream)
+    db_session.flush()
+    primary = Destination(
+        name="failover-primary",
+        destination_type="SYSLOG_UDP",
+        config_json={"host": "127.0.0.1", "port": 5514},
+        rate_limit_json={},
+        enabled=False,
+    )
+    secondary = Destination(
+        name="failover-secondary",
+        destination_type="SYSLOG_UDP",
+        config_json={"host": "127.0.0.1", "port": 5515},
+        rate_limit_json={},
+        enabled=False,
+    )
+    db_session.add_all([primary, secondary])
+    db_session.flush()
+    db_session.add(
+        Route(
+            stream_id=stream.id,
+            destination_id=primary.id,
+            enabled=True,
+            failure_policy="LOG_AND_CONTINUE",
+            formatter_config_json={},
+            rate_limit_json={},
+            status="ENABLED",
+        )
+    )
+    db_session.add(
+        StreamFailoverRoute(
+            stream_id=stream.id,
+            primary_destination_id=primary.id,
+            secondary_destination_id=secondary.id,
+            enabled=True,
+        )
+    )
+    db_session.commit()
+
+    # Primary still has a route — blocked as IN_USE first.
+    res_primary = client.delete(f"/api/v1/destinations/{primary.id}")
+    assert res_primary.status_code == 409
+
+    # Secondary only referenced by failover.
+    res = client.delete(f"/api/v1/destinations/{secondary.id}")
+    assert res.status_code == 409
+    body = res.json()
+    assert body["detail"]["error_code"] == "DESTINATION_DELETE_BLOCKED_FAILOVER"

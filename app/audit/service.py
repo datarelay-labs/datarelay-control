@@ -99,8 +99,16 @@ def record_audit_log(
 
     if request is not None:
         actor = audit_actor_from_request(request, fallback_username=actor_username or "system")
-        actor_user_id = actor_user_id if actor_user_id is not None else actor.actor_user_id
-        actor_username = actor_username if actor_username is not None else actor.actor_username
+        auth_ctx = getattr(request.state, "auth", None)
+        authenticated = bool(auth_ctx is not None and getattr(auth_ctx, "username", None))
+        if authenticated:
+            # Authenticated HTTP caller is the canonical actor.
+            actor_username = actor.actor_username
+            if actor_user_id is None:
+                actor_user_id = actor.actor_user_id
+        else:
+            actor_user_id = actor_user_id if actor_user_id is not None else actor.actor_user_id
+            actor_username = actor_username if actor_username is not None else actor.actor_username
         ip_address = ip_address if ip_address is not None else actor.ip_address
         user_agent = user_agent if user_agent is not None else actor.user_agent
 

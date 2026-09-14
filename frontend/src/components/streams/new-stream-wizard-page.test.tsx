@@ -249,7 +249,7 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
     expect(screen.queryByTestId('wizard-draft-banner')).not.toBeInTheDocument()
   })
 
-  it('enables Next on sample step when draft has paths and a successful API test', async () => {
+  it('keeps Next disabled after draft resume because scrubbed drafts drop API samples', async () => {
     localStorage.setItem('gdc-platform-persona', 'connector')
 
     const state = buildInitialState()
@@ -258,6 +258,7 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
     state.apiTest.ok = true
     state.apiTest.parsedJson = { events: [{ id: '1' }] }
     state.apiTest.finishedAt = finishedAt
+    state.apiTest.eventCount = 1
     state.stream.eventArrayPath = '$.events'
     state.stream.checkpointSourcePath = '$.ts'
     localStorage.setItem(
@@ -273,7 +274,9 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
     )
 
     await user.click(screen.getByTestId('wizard-draft-resume'))
-    expect(screen.getByRole('button', { name: /Next: Destinations/i })).toBeEnabled()
+    const next = screen.getByRole('button', { name: /Next: Destinations/i })
+    expect(next).toBeDisabled()
+    expect(next).toHaveAttribute('title', expect.stringMatching(/API Test/i))
   })
 
   it('keeps Next disabled on sample step when checkpoint is missing', async () => {
@@ -322,6 +325,7 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
     state.destinations.routeDrafts = [
       { key: 'r1', destinationId: 1, enabled: true, failurePolicy: 'RETRY_THEN_DLQ', rateLimitJson: {} },
     ]
+    // Creation outcome is stripped on draft load; Create Another is in-session only.
     state.outcome = {
       streamId: 999,
       routeId: 1,
@@ -345,15 +349,23 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
     )
 
     const user = userEvent.setup()
-    render(
+    const { unmount } = render(
       <MemoryRouter initialEntries={['/streams/new']}>
         <NewStreamWizardPage />
       </MemoryRouter>,
     )
 
     await user.click(screen.getByTestId('wizard-draft-resume'))
-    await user.click(screen.getByRole('button', { name: /Create Another Stream/i }))
+    expect(screen.queryByRole('button', { name: /Create Another Stream/i })).not.toBeInTheDocument()
+    expect(localStorage.getItem(WIZARD_DRAFT_KEY_V2)).not.toBeNull()
 
+    unmount()
+    render(
+      <MemoryRouter initialEntries={['/streams/new']}>
+        <NewStreamWizardPage />
+      </MemoryRouter>,
+    )
+    await user.click(screen.getByTestId('wizard-draft-start-fresh'))
     expect(localStorage.getItem(WIZARD_DRAFT_KEY_V2)).toBeNull()
     expect(screen.getByTestId('wizard-step-connect')).toBeInTheDocument()
   })

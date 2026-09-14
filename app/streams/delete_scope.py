@@ -8,6 +8,7 @@ from app.checkpoints.models import Checkpoint
 from app.enrichments.models import Enrichment
 from app.logs.models import DeliveryLog
 from app.mappings.models import Mapping
+from app.route_transform.models import RouteEnrichment, RouteMapping
 from app.routes.models import Route
 from app.streams.models import Stream
 from app.streams.repository import get_stream_by_id
@@ -29,6 +30,8 @@ def delete_stream_and_dependencies(db: Session, stream_id: int) -> None:
     route_ids = [int(r[0]) for r in db.query(Route.id).filter(Route.stream_id == stream_id).all()]
     if route_ids:
         db.query(DeliveryLog).filter(DeliveryLog.route_id.in_(route_ids)).delete(synchronize_session=False)
+        db.query(RouteMapping).filter(RouteMapping.route_id.in_(route_ids)).delete(synchronize_session=False)
+        db.query(RouteEnrichment).filter(RouteEnrichment.route_id.in_(route_ids)).delete(synchronize_session=False)
     db.query(DeliveryLog).filter(DeliveryLog.stream_id == stream_id).delete(synchronize_session=False)
 
     db.query(Route).filter(Route.stream_id == stream_id).delete(synchronize_session=False)
