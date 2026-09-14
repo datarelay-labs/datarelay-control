@@ -35,6 +35,10 @@ import {
   formatWizardSyslogLabel,
 } from './wizard-delivery-helpers'
 import { computeLegacySubstepCompletion, type WizardCreateOutcome, type WizardLegacySubstepKey, type WizardState } from './wizard-state'
+import {
+  wizardCreateIsConfigurationIncomplete,
+  wizardCreateIsStartEligible,
+} from './wizard-create-fail-closed'
 
 type StepDoneProps = {
   state: WizardState
@@ -130,10 +134,11 @@ function describeBanner(outcome: WizardCreateOutcome | null): {
       tone: 'warning',
     }
   }
-  if (outcome.errors.length > 0) {
+  if (wizardCreateIsConfigurationIncomplete(outcome)) {
     return {
-      title: 'Stream created with warnings',
-      subtitle: 'Some optional save calls failed — see warnings below.',
+      title: 'Stream configuration incomplete',
+      subtitle:
+        'The stream row was created, but required follow-up saves failed. Start is blocked until you repair the errors below. Your local draft was kept.',
       tone: 'warning',
     }
   }
@@ -388,16 +393,23 @@ export function StepDone({
   }, [runBusy, streamNumericId])
 
   const handlePrimaryStart = useCallback(() => {
-    if (streamNumericId == null) return
+    if (!wizardCreateIsStartEligible(outcome)) return
     if (startMode === 'now') {
       onStart()
       return
     }
     navigate(streamRuntimePath(streamSlug))
-  }, [navigate, onStart, startMode, streamNumericId, streamSlug])
+  }, [navigate, onStart, outcome, startMode, streamSlug])
 
+  const startEligible = wizardCreateIsStartEligible(outcome)
   const primaryLabel =
-    startMode === 'now' ? (isStarting ? 'Starting…' : 'Start Stream Now') : 'Continue Without Starting'
+    startMode === 'now'
+      ? isStarting
+        ? 'Starting…'
+        : startEligible
+          ? 'Start Stream Now'
+          : 'Start Blocked'
+      : 'Continue Without Starting'
 
   const checkpointFieldDisplay = state.stream.checkpointSourcePath.trim()
     ? state.stream.checkpointSourcePath.trim()
@@ -797,7 +809,11 @@ export function StepDone({
             <button
               type="button"
               onClick={() => void handlePrimaryStart()}
-              disabled={streamNumericId == null || (startMode === 'now' && isStarting)}
+              disabled={
+                startMode === 'now'
+                  ? !startEligible || isStarting
+                  : streamNumericId == null
+              }
               className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-violet-600 text-[13px] font-semibold text-white shadow-sm hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {startMode === 'now' && isStarting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}

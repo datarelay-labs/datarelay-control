@@ -55,6 +55,10 @@ import {
   type WizardLegacySubstepKey,
   type WizardState,
 } from './wizard-state'
+import {
+  wizardCreateIsConfigurationIncomplete,
+  wizardCreateIsStartEligible,
+} from './wizard-create-fail-closed'
 
 export type StepDeployProps = {
   state: WizardState
@@ -753,11 +757,20 @@ function DeployCreatedPanel({
             <button
               type="button"
               onClick={() => onStart()}
-              disabled={streamNumericId == null || isStarting}
+              disabled={!wizardCreateIsStartEligible(outcome) || isStarting}
               className="inline-flex h-9 items-center gap-1.5 rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white shadow-sm hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
+              title={
+                wizardCreateIsConfigurationIncomplete(outcome)
+                  ? 'Resolve configuration errors before starting'
+                  : undefined
+              }
             >
               {isStarting ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Zap className="h-3.5 w-3.5" aria-hidden />}
-              {isStarting ? 'Starting…' : 'Start Stream'}
+              {isStarting
+                ? 'Starting…'
+                : wizardCreateIsConfigurationIncomplete(outcome)
+                  ? 'Start Blocked'
+                  : 'Start Stream'}
             </button>
             <button
               type="button"
