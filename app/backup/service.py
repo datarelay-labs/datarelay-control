@@ -304,6 +304,7 @@ def apply_import(db: Session, body: ImportApplyRequest) -> ImportApplyResponse:
             db.add(row)
 
     created_dest_ids = list(dest_old_to_new.values())
+    unresolved_route_destinations: list[dict[str, Any]] = []
     for r in routes:
         if not isinstance(r, dict):
             continue
@@ -311,9 +312,16 @@ def apply_import(db: Session, body: ImportApplyRequest) -> ImportApplyResponse:
         if new_stream is None:
             continue
         old_dest = int(r.get("destination_id", -1))
-        new_dest = dest_old_to_new.get(old_dest, old_dest)
-        if db.get(Destination, new_dest) is None:
+        if old_dest not in dest_old_to_new:
+            unresolved_route_destinations.append(
+                {
+                    "route_export_id": r.get("id"),
+                    "destination_export_id": old_dest,
+                    "stream_id": new_stream,
+                }
+            )
             continue
+        new_dest = int(dest_old_to_new[old_dest])
         row = Route(
             stream_id=new_stream,
             destination_id=new_dest,
@@ -325,6 +333,19 @@ def apply_import(db: Session, body: ImportApplyRequest) -> ImportApplyResponse:
             disable_reason=r.get("disable_reason"),
         )
         db.add(row)
+
+    if unresolved_route_destinations:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error_code": "IMPORT_ROUTE_DESTINATION_UNMAPPED",
+                "message": (
+                    "Import refused to bind routes to foreign destination IDs. "
+                    "Every route destination_id must remap via destinations included in the bundle."
+                ),
+                "unresolved": unresolved_route_destinations[:20],
+            },
+        )
 
     audit_details: dict[str, Any] = {
         "mode": mode,

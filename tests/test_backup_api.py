@@ -546,3 +546,135 @@ def test_clone_stream_preserves_route_formatter_and_rate_limits(client: TestClie
     assert cloned.formatter_config_json == orig.formatter_config_json
     assert cloned.rate_limit_json == orig.rate_limit_json
     assert cloned.failure_policy == orig.failure_policy
+
+
+def test_import_apply_never_binds_foreign_destination_ids(
+    client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Defense in depth: unresolved route destination IDs must not fall back to local numeric IDs."""
+
+    from app.backup import import_validator, service as backup_service
+    from app.backup.schemas import ImportApplyRequest
+
+    # Local destination that must never be silently selected by foreign export id 7.
+    local = Destination(
+        name="local-siem-b",
+        destination_type="WEBHOOK_POST",
+        config_json={"url": "https://local.example/hook"},
+        rate_limit_json={},
+        enabled=True,
+    )
+    db_session.add(local)
+    db_session.flush()
+    # Force known local id collision surface when possible.
+    assert int(local.id) >= 1
+
+    c = Connector(name="import-dest-safe-conn", description=None, status="STOPPED")
+    db_session.add(c)
+    db_session.flush()
+    s = Source(
+        connector_id=c.id,
+        source_type="HTTP_API_POLLING",
+        config_json={},
+        auth_json={},
+        enabled=True,
+    )
+    db_session.add(s)
+    db_session.flush()
+    st = Stream(
+        connector_id=c.id,
+        source_id=s.id,
+        name="import-dest-safe-stream",
+        stream_type="HTTP_API_POLLING",
+        config_json={},
+        polling_interval=60,
+        enabled=False,
+        status="STOPPED",
+        rate_limit_json={},
+    )
+    db_session.add(st)
+    db_session.commit()
+
+    bundle = {
+        "schema_version": 1,
+        "connectors": [
+            {"id": 101, "name": "bundle-conn", "description": None, "status": "STOPPED", "product_group": None}
+        ],
+        "sources": [
+            {
+                "id": 201,
+                "connector_id": 101,
+                "source_type": "HTTP_API_POLLING",
+                "config_json": {},
+                "auth_json": {},
+                "enabled": True,
+            }
+        ],
+        "streams": [
+            {
+                "id": 301,
+                "connector_id": 101,
+                "source_id": 201,
+                "name": "bundle-stream",
+                "stream_type": "HTTP_API_POLLING",
+                "config_json": {},
+                "polling_interval": 60,
+                "enabled": False,
+                "status": "STOPPED",
+                "rate_limit_json": {},
+            }
+        ],
+        "mappings": [
+            {
+                "stream_id": 301,
+                "event_array_path": "$.items",
+                "event_root_path": None,
+                "field_mappings_json": {},
+                "raw_payload_mode": None,
+            }
+        ],
+        "enrichments": [],
+        "destinations": [],
+        "routes": [
+            {
+                "id": 401,
+                "stream_id": 301,
+                "destination_id": int(local.id),
+                "enabled": True,
+                "failure_policy": "LOG_AND_CONTINUE",
+                "formatter_config_json": {},
+                "rate_limit_json": {},
+                "status": "ENABLED",
+            }
+        ],
+        "checkpoints": [],
+    }
+
+    class _Ok:
+        ok = True
+        conflicts: list = []
+        warnings: list = []
+        unsupported: list = []
+        findings: list = []
+        classification_summary = None
+        dry_run = None
+        full_restore_purge = None
+
+    monkeypatch.setattr(import_validator, "validate_import_bundle", lambda *a, **k: _Ok())
+    monkeypatch.setattr(backup_service, "validate_import_bundle", lambda *a, **k: _Ok())
+    token = backup_service.preview_token_for(bundle, "additive")
+    body = ImportApplyRequest(
+        bundle=bundle,
+        mode="additive",
+        confirm=True,
+        preview_token=token,
+    )
+    with pytest.raises(Exception) as exc:
+        backup_service.apply_import(db_session, body)
+    detail = getattr(exc.value, "detail", None) or {}
+    if isinstance(detail, dict):
+        assert detail.get("error_code") == "IMPORT_ROUTE_DESTINATION_UNMAPPED"
+    else:
+        assert "IMPORT_ROUTE_DESTINATION_UNMAPPED" in str(exc.value)
+    # Local destination must remain unbound by the foreign route.
+    assert db_session.query(Route).filter(Route.destination_id == int(local.id)).count() == 0
