@@ -14,8 +14,8 @@ from app.checkpoints.models import Checkpoint
 from app.database import get_db
 from app.main import app
 from app.templates.registry import clear_template_cache
-from tests.e2e_syslog_helpers import (
 from tests.config_mutation_test_helpers import put_stream
+from tests.e2e_syslog_helpers import (
     assert_syslog_contains_mapped_and_enrichment,
     create_syslog_tcp_destination,
     create_syslog_udp_destination,

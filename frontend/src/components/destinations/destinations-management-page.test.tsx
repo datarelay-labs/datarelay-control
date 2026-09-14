@@ -50,6 +50,8 @@ vi.mock('../../api/gdcDestinations', () => ({
     tested_at: '2026-05-09T12:00:00Z',
     detail: null,
   })),
+  isDestinationStaleWriteError: () => false,
+  DESTINATION_STALE_WRITE_CODE: 'DESTINATION_STALE_WRITE',
 }))
 
 describe('DestinationsManagementPage', () => {

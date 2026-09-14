@@ -18,8 +18,8 @@ from app.database import get_db
 from app.logs.models import DeliveryLog
 from app.main import app
 from app.templates.registry import clear_template_cache
-from tests.e2e_wiremock_helpers import (
 from tests.config_mutation_test_helpers import put_destination, put_stream
+from tests.e2e_wiremock_helpers import (
     DEFAULT_WIREMOCK,
     assert_connector_api_masks_common_secrets,
     assert_run_observability_core,
