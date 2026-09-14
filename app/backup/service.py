@@ -128,21 +128,18 @@ def _assert_apply_allowed(db: Session, body: ImportApplyRequest) -> ValidationOu
             },
         )
     if body.mode == "full_restore":
-        running = (
-            db.query(Stream.id, Stream.name)
-            .filter(Stream.status == "RUNNING")
-            .order_by(Stream.id.asc())
-            .limit(20)
-            .all()
-        )
-        if running:
-            names = [f"{row.name or 'stream'}#{row.id}" for row in running]
+        from app.streams.runtime_eligibility import reconcile_and_list_active_streams_for_destructive_ops
+
+        active = reconcile_and_list_active_streams_for_destructive_ops(db, limit=20)
+        if active:
+            names = [label for _sid, label in active]
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail={
-                    "error_code": "FULL_RESTORE_BLOCKED_STREAM_RUNNING",
-                    "message": "Stop all running streams before applying a full restore.",
+                    "error_code": "FULL_RESTORE_BLOCKED_STREAM_ACTIVE",
+                    "message": "Stop all active streams (and wait for workers to exit) before applying a full restore.",
                     "running_streams": names,
+                    "active_streams": names,
                 },
             )
     return outcome

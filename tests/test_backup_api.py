@@ -340,6 +340,7 @@ def test_full_restore_replaces_operational_state(client: TestClient, db_session:
     db_session.add(extra)
     # Stop running streams before full restore (authoritative backend guard).
     for st in db_session.query(Stream).filter(Stream.status == "RUNNING").all():
+        st.enabled = False
         st.status = "STOPPED"
     db_session.commit()
     assert db_session.query(Connector).count() == 2
@@ -398,8 +399,108 @@ def test_full_restore_blocked_while_stream_running(client: TestClient, db_sessio
     )
     assert apply_res.status_code == 409
     detail = apply_res.json().get("detail") or {}
-    assert detail.get("error_code") == "FULL_RESTORE_BLOCKED_STREAM_RUNNING"
+    assert detail.get("error_code") == "FULL_RESTORE_BLOCKED_STREAM_ACTIVE"
     assert db_session.query(Stream).filter(Stream.status == "RUNNING").count() == 1
+
+
+def test_full_restore_blocked_for_enabled_stopped_inconsistent(client: TestClient, db_session: Session) -> None:
+    _seed_connector_graph(db_session)
+    for st in db_session.query(Stream).all():
+        st.enabled = True
+        st.status = "STOPPED"
+    db_session.commit()
+    bundle = client.get("/api/v1/backup/workspace/export?include_destinations=true").json()
+    token = client.post("/api/v1/backup/import/preview", json={"bundle": bundle, "mode": "full_restore"}).json()[
+        "preview_token"
+    ]
+    apply_res = client.post(
+        "/api/v1/backup/import/apply",
+        json={
+            "bundle": bundle,
+            "mode": "full_restore",
+            "confirm": True,
+            "confirm_destructive": True,
+            "preview_token": token,
+        },
+    )
+    assert apply_res.status_code == 409
+    assert apply_res.json()["detail"]["error_code"] == "FULL_RESTORE_BLOCKED_STREAM_ACTIVE"
+
+
+def test_full_restore_allowed_when_disabled_stopped_no_owner(client: TestClient, db_session: Session) -> None:
+    _seed_connector_graph(db_session)
+    for st in db_session.query(Stream).all():
+        st.enabled = False
+        st.status = "STOPPED"
+    db_session.commit()
+    bundle = client.get("/api/v1/backup/workspace/export?include_destinations=true").json()
+    token = client.post("/api/v1/backup/import/preview", json={"bundle": bundle, "mode": "full_restore"}).json()[
+        "preview_token"
+    ]
+    apply_res = client.post(
+        "/api/v1/backup/import/apply",
+        json={
+            "bundle": bundle,
+            "mode": "full_restore",
+            "confirm": True,
+            "confirm_destructive": True,
+            "preview_token": token,
+        },
+    )
+    assert apply_res.status_code == 200, apply_res.text
+
+
+def test_full_restore_blocked_while_stopping_with_worker_alive(
+    client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed_connector_graph(db_session)
+    for st in db_session.query(Stream).all():
+        st.enabled = False
+        st.status = "STOPPING"
+    db_session.commit()
+    monkeypatch.setattr(
+        "app.streams.runtime_eligibility.stream_has_local_runtime_owner",
+        lambda _sid: True,
+    )
+    bundle = client.get("/api/v1/backup/workspace/export?include_destinations=true").json()
+    token = client.post("/api/v1/backup/import/preview", json={"bundle": bundle, "mode": "full_restore"}).json()[
+        "preview_token"
+    ]
+    apply_res = client.post(
+        "/api/v1/backup/import/apply",
+        json={
+            "bundle": bundle,
+            "mode": "full_restore",
+            "confirm": True,
+            "confirm_destructive": True,
+            "preview_token": token,
+        },
+    )
+    assert apply_res.status_code == 409
+    assert apply_res.json()["detail"]["error_code"] == "FULL_RESTORE_BLOCKED_STREAM_ACTIVE"
+
+
+def test_full_restore_reconciles_stale_stopping_without_owner(client: TestClient, db_session: Session) -> None:
+    _seed_connector_graph(db_session)
+    for st in db_session.query(Stream).all():
+        st.enabled = False
+        st.status = "STOPPING"
+    db_session.commit()
+    bundle = client.get("/api/v1/backup/workspace/export?include_destinations=true").json()
+    token = client.post("/api/v1/backup/import/preview", json={"bundle": bundle, "mode": "full_restore"}).json()[
+        "preview_token"
+    ]
+    apply_res = client.post(
+        "/api/v1/backup/import/apply",
+        json={
+            "bundle": bundle,
+            "mode": "full_restore",
+            "confirm": True,
+            "confirm_destructive": True,
+            "preview_token": token,
+        },
+    )
+    assert apply_res.status_code == 200, apply_res.text
 
 
 def test_full_restore_requires_destructive_confirm(client: TestClient, db_session: Session) -> None:
