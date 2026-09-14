@@ -400,6 +400,39 @@ def test_release_all_log_and_continue_failures_keeps_quarantined(db_session: Ses
     assert row.released_at is None
 
 
+def test_release_checkpoint_failure_keeps_quarantined(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Checkpoint update failure after delivery must not silently mark RELEASED."""
+    fixture = _seed_stream_runtime(db_session, failure_policies=["LOG_AND_CONTINUE"])
+    stream_id = fixture["stream_id"]
+
+    row = StreamQuarantineEvent(
+        stream_id=stream_id,
+        quarantine_reason="policy:test",
+        quarantine_source=QUARANTINE_SOURCE_POLICY,
+        status=QUARANTINE_STATUS_QUARANTINED,
+        protected_payload_json={"events": [{"id": "e1", "message": "ok"}]},
+        metadata_json={"event_count": 1},
+    )
+    db_session.add(row)
+    db_session.commit()
+
+    from app.destinations.adapters.registry import DestinationAdapterRegistry
+    from app.quarantine import service as quarantine_service
+
+    def _boom(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        raise RuntimeError("checkpoint write failed")
+
+    monkeypatch.setattr(quarantine_service, "_update_checkpoint_after_release", _boom)
+
+    registry = DestinationAdapterRegistry(webhook_sender=_QuarantineWebhookSender())
+    result = execute_quarantine_release(db_session, int(row.id), destination_registry=registry)
+    assert result["outcome"] == "failed"
+    assert "checkpoint" in str(result.get("message") or "").lower()
+    db_session.refresh(row)
+    assert row.status == QUARANTINE_STATUS_QUARANTINED
+    assert row.released_at is None
+
+
 def test_discard_no_checkpoint(db_session: Session) -> None:
     fixture = _seed_stream_runtime(db_session)
     stream_id = fixture["stream_id"]

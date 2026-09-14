@@ -346,6 +346,31 @@ def execute_quarantine_release(
             checkpoint_after = _update_checkpoint_after_release(db, int(row.stream_id), events)
         except Exception:
             logger.exception("quarantine_release_checkpoint_failed stream_id=%s", row.stream_id)
+            persist_quarantine_observability_log(
+                db,
+                stage=QUARANTINE_EVENT_RELEASE_FAILED_STAGE,
+                stream_id=int(row.stream_id),
+                quarantine_event_id=int(row.id),
+                status=row.status,
+                quarantine_reason=str(row.quarantine_reason),
+                message="quarantine release checkpoint update failed",
+                level="ERROR",
+                log_status="FAILED",
+                error_code="QUARANTINE_CHECKPOINT_FAILED",
+                extra={
+                    "latency_ms": latency_ms,
+                    "event_count": len(events),
+                    "checkpoint_before": before_value,
+                },
+            )
+            row.updated_at = now
+            db.flush()
+            return {
+                **quarantine_event_to_dict(row),
+                "outcome": "failed",
+                "message": "Release delivery succeeded but checkpoint update failed.",
+                "checkpoint_updated": False,
+            }
 
     row.status = QUARANTINE_STATUS_RELEASED
     row.updated_at = now
