@@ -1,4 +1,4 @@
-import { GDC_DEFAULT_READ_JSON_TIMEOUT_MS, requestJson, safeRequestJson } from '../api'
+import { GDC_DEFAULT_READ_JSON_TIMEOUT_MS, GDC_AUTH_REQUIRED_MESSAGE, requestJson, safeRequestJson, safeRequestJsonResult, type GdcJsonResult } from '../api'
 import { CATALOG_DESTINATIONS_LIST_KEY, CATALOG_LIST_CACHE_TTL_MS } from './catalogListCache'
 import { GDC_API_PREFIX } from './gdcApiPrefix'
 import { readJsonWithSignal, type GdcSignalOptions } from './gdcSignalOptions'
@@ -57,6 +57,18 @@ export type DestinationWritePayload = {
   config_json: Record<string, unknown>
   rate_limit_json?: Record<string, unknown>
   enabled?: boolean
+  expected_updated_at?: string
+}
+
+export const DESTINATION_STALE_WRITE_CODE = 'DESTINATION_STALE_WRITE'
+
+export function isDestinationStaleWriteError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false
+  return (
+    err.message.includes(`[${DESTINATION_STALE_WRITE_CODE}]`) ||
+    err.message.includes(DESTINATION_STALE_WRITE_CODE) ||
+    /DESTINATION_STALE_WRITE/i.test(err.message)
+  )
 }
 
 function isDestinationListItem(row: unknown): row is DestinationListItem {
@@ -69,28 +81,51 @@ function isDestinationListItem(row: unknown): row is DestinationListItem {
   )
 }
 
-async function fetchDestinationsListUncached(signal?: AbortSignal): Promise<DestinationListItem[]> {
-  const raw = await safeRequestJson<unknown>(
+async function fetchDestinationsListResultUncached(signal?: AbortSignal): Promise<GdcJsonResult<DestinationListItem[]>> {
+  const result = await safeRequestJsonResult<unknown>(
     `${GDC_API_PREFIX}/destinations/`,
     readJsonWithSignal(readJsonOpts, signal),
   )
-  if (!Array.isArray(raw)) return []
+  if (result.ok === false) {
+    return {
+      ok: false,
+      status: result.status,
+      message: result.authRequired ? GDC_AUTH_REQUIRED_MESSAGE : result.message,
+      authRequired: result.authRequired,
+    }
+  }
+  if (!Array.isArray(result.data)) {
+    return {
+      ok: false,
+      status: result.status,
+      message: 'Destinations API returned an unexpected response. Check authentication and API base URL.',
+      authRequired: false,
+    }
+  }
   const out: DestinationListItem[] = []
-  for (const row of raw) {
+  for (const row of result.data) {
     if (isDestinationListItem(row)) {
       out.push(row)
     }
   }
-  return out
+  return { ok: true, data: out, status: result.status }
 }
 
-export async function fetchDestinationsList(options?: GdcSignalOptions): Promise<DestinationListItem[]> {
+export async function fetchDestinationsListResult(
+  options?: GdcSignalOptions,
+): Promise<GdcJsonResult<DestinationListItem[]>> {
   return cachedRequest(
     DESTINATIONS_LIST_CACHE_NS,
     CATALOG_DESTINATIONS_LIST_KEY,
-    (signal) => fetchDestinationsListUncached(signal),
+    (signal) => fetchDestinationsListResultUncached(signal),
     { ttlMs: CATALOG_LIST_CACHE_TTL_MS, signal: options?.signal },
   )
+}
+
+/** Returns destination rows, or null on auth/HTTP/parse failure (empty list is `[]`, not null). */
+export async function fetchDestinationsList(options?: GdcSignalOptions): Promise<DestinationListItem[] | null> {
+  const result = await fetchDestinationsListResult(options)
+  return result.ok ? result.data : null
 }
 
 async function fetchDestinationByIdUncached(
@@ -127,13 +162,32 @@ export async function createDestination(payload: DestinationWritePayload): Promi
   return created
 }
 
-export async function updateDestination(destinationId: number, payload: Partial<DestinationWritePayload>): Promise<DestinationRead> {
+export async function updateDestination(
+  destinationId: number,
+  payload: Partial<DestinationWritePayload> & { expected_updated_at: string },
+): Promise<DestinationRead> {
+  if (!payload.expected_updated_at) {
+    throw new Error('expected_updated_at is required for destination updates')
+  }
   const updated = await requestJson<DestinationRead>(`${GDC_API_PREFIX}/destinations/${destinationId}`, {
     method: 'PUT',
     body: JSON.stringify(payload),
   })
   invalidateDestinationsCatalogCache(destinationId)
   return updated
+}
+
+/** Fetch the latest concurrency token then apply a partial destination update. */
+export async function updateDestinationWithFreshToken(
+  destinationId: number,
+  payload: Omit<Partial<DestinationWritePayload>, 'expected_updated_at'>,
+): Promise<DestinationRead> {
+  const current = await fetchDestinationById(destinationId)
+  const token = current?.updated_at
+  if (!token) {
+    throw new Error('Could not load destination updated_at for optimistic concurrency')
+  }
+  return updateDestination(destinationId, { ...payload, expected_updated_at: token })
 }
 
 export async function deleteDestination(destinationId: number): Promise<void> {

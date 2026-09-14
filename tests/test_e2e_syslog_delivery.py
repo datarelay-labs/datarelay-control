@@ -14,6 +14,7 @@ from app.checkpoints.models import Checkpoint
 from app.database import get_db
 from app.main import app
 from app.templates.registry import clear_template_cache
+from tests.config_mutation_test_helpers import put_stream
 from tests.e2e_syslog_helpers import (
     assert_syslog_contains_mapped_and_enrichment,
     create_syslog_tcp_destination,
@@ -103,7 +104,7 @@ def _apply_single_object_mapping_and_endpoint(client: TestClient, stream_id: int
     st = client.get(f"/api/v1/streams/{stream_id}").json()
     cfg = dict(st.get("config_json") or {})
     cfg["endpoint"] = "/api/v1/e2e-data/single-object"
-    assert client.put(f"/api/v1/streams/{stream_id}", json={"config_json": cfg}).status_code == 200
+    assert put_stream(client, stream_id, {"config_json": cfg}).status_code == 200
 
 
 def _assert_destination_and_route_rows(client: TestClient, destination_id: int, route_id: int) -> None:

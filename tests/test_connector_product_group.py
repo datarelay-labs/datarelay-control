@@ -4,6 +4,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from tests.config_mutation_test_helpers import put_connector
 from app.connectors.product_group import infer_product_group_from_connector_name
 from app.database import get_db, get_db_read_bounded
 from app.main import app
@@ -70,7 +71,7 @@ def test_update_connector_product_group(client: TestClient) -> None:
     ).json()
     cid = created["id"]
 
-    res = client.put(f"/api/v1/connectors/{cid}", json={"product_group": "Microsoft 365"})
+    res = put_connector(client, cid, {"product_group": "Microsoft 365"})
     assert res.status_code == 200
     assert res.json()["product_group"] == "Microsoft 365"
 

@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session, joinedload
 from starlette.status import HTTP_422_UNPROCESSABLE_CONTENT
 
+from app.config_concurrency import pop_expected_updated_at, require_fresh_updated_at
 from app.database import get_db, get_db_read_bounded, utcnow
 from app.destinations.config_validation import validate_destination_config
 from app.destinations.models import Destination
@@ -172,7 +173,8 @@ async def get_destination(destination_id: int, db: Session = Depends(get_db)) ->
 async def update_destination(
     destination_id: int, payload: DestinationUpdate, request: Request, db: Session = Depends(get_db)
 ) -> DestinationRead:
-    row = db.query(Destination).filter(Destination.id == destination_id).first()
+    # Row lock makes the expected_updated_at precondition authoritative for concurrent writers.
+    row = db.query(Destination).filter(Destination.id == destination_id).with_for_update().first()
     if row is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -180,6 +182,13 @@ async def update_destination(
         )
 
     update = payload.model_dump(exclude_unset=True)
+    expected_updated_at = pop_expected_updated_at(update)
+    require_fresh_updated_at(
+        entity_label="Destination",
+        error_code="DESTINATION_STALE_WRITE",
+        current_updated_at=getattr(row, "updated_at", None),
+        expected_updated_at=expected_updated_at,
+    )
     merged_type = str(update.get("destination_type", row.destination_type))
     merged_cfg = dict(row.config_json or {})
     if "config_json" in update and update["config_json"] is not None:
@@ -198,6 +207,7 @@ async def update_destination(
             setattr(row, key, dict(value))
         else:
             setattr(row, key, value)
+    row.updated_at = utcnow()
     journal.record_audit_event(
         db,
         action="DESTINATION_UPDATED",

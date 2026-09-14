@@ -34,7 +34,9 @@ class DestinationPreviewTest(DestinationBase):
 
 
 class DestinationUpdate(DestinationBase):
-    pass
+    """Partial destination update. ``expected_updated_at`` is the optimistic-concurrency token."""
+
+    expected_updated_at: datetime
 
 
 class DestinationRead(DestinationBase):

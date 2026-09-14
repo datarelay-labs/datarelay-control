@@ -94,8 +94,19 @@ export type StreamWritePayload = {
   config_json?: Record<string, unknown> | null
   polling_interval?: number | null
   enabled?: boolean | null
-  status?: string | null
   rate_limit_json?: Record<string, unknown> | null
+  expected_updated_at?: string
+}
+
+export const STREAM_STALE_WRITE_CODE = 'STREAM_STALE_WRITE'
+
+export function isStreamStaleWriteError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false
+  return (
+    err.message.includes(`[${STREAM_STALE_WRITE_CODE}]`) ||
+    err.message.includes(STREAM_STALE_WRITE_CODE) ||
+    /STREAM_STALE_WRITE/i.test(err.message)
+  )
 }
 
 async function fetchStreamByIdUncached(streamId: number, signal?: AbortSignal): Promise<StreamRead | null> {
@@ -126,10 +137,21 @@ export async function createStream(payload: StreamWritePayload): Promise<StreamR
   return created
 }
 
-export async function updateStream(streamId: number, payload: StreamWritePayload): Promise<StreamRead> {
+export async function updateStream(
+  streamId: number,
+  payload: StreamWritePayload & { expected_updated_at?: string },
+): Promise<StreamRead> {
+  let token = payload.expected_updated_at
+  if (!token) {
+    const current = await fetchStreamById(streamId)
+    token = current?.updated_at ?? undefined
+  }
+  if (!token) {
+    throw new Error('expected_updated_at is required for stream updates')
+  }
   const updated = await requestJson<StreamRead>(`${GDC_API_PREFIX}/streams/${streamId}`, {
     method: 'PUT',
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ ...payload, expected_updated_at: token }),
   })
   invalidateStreamCatalogCache(streamId)
   return updated

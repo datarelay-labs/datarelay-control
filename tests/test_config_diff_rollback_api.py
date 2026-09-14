@@ -13,6 +13,7 @@ from app.main import app
 from app.routes.models import Route
 from app.sources.models import Source
 from app.streams.models import Stream
+from tests.config_mutation_test_helpers import put_stream
 
 
 @pytest.fixture
@@ -78,15 +79,9 @@ def _seed_stream(db: Session) -> int:
 
 def test_config_version_detail_and_compare(client: TestClient, db_session: Session) -> None:
     sid = _seed_stream(db_session)
-    r1 = client.put(
-        f"/api/v1/streams/{sid}",
-        json={"name": "s1", "polling_interval": 120, "config_json": {"endpoint": "/e2"}, "rate_limit_json": {}},
-    )
+    r1 = put_stream(client, sid, {"name": "s1", "polling_interval": 120, "config_json": {"endpoint": "/e2"}, "rate_limit_json": {}})
     assert r1.status_code == 200, r1.text
-    r2 = client.put(
-        f"/api/v1/streams/{sid}",
-        json={"name": "s1", "polling_interval": 300, "config_json": {"endpoint": "/e3"}, "rate_limit_json": {}},
-    )
+    r2 = put_stream(client, sid, {"name": "s1", "polling_interval": 300, "config_json": {"endpoint": "/e3"}, "rate_limit_json": {}})
     assert r2.status_code == 200, r2.text
 
     lst = client.get(f"/api/v1/admin/config-versions?entity_type=STREAM_CONFIG&entity_id={sid}&limit=5")
@@ -115,10 +110,7 @@ def test_config_version_detail_and_compare(client: TestClient, db_session: Sessi
 
 def test_apply_snapshot_rollback_restores_values(client: TestClient, db_session: Session) -> None:
     sid = _seed_stream(db_session)
-    r1 = client.put(
-        f"/api/v1/streams/{sid}",
-        json={"name": "s1", "polling_interval": 999, "config_json": {"endpoint": "/bad"}, "rate_limit_json": {}},
-    )
+    r1 = put_stream(client, sid, {"name": "s1", "polling_interval": 999, "config_json": {"endpoint": "/bad"}, "rate_limit_json": {}})
     assert r1.status_code == 200
     lst = client.get(f"/api/v1/admin/config-versions?entity_type=STREAM_CONFIG&entity_id={sid}&limit=1")
     tip = lst.json()["items"][0]
@@ -140,10 +132,7 @@ def test_apply_snapshot_rollback_restores_values(client: TestClient, db_session:
 
 def test_apply_snapshot_blocked_when_stream_running(client: TestClient, db_session: Session) -> None:
     sid = _seed_stream(db_session)
-    client.put(
-        f"/api/v1/streams/{sid}",
-        json={"name": "s1", "polling_interval": 77, "config_json": {"endpoint": "/x"}, "rate_limit_json": {}},
-    )
+    put_stream(client, sid, {"name": "s1", "polling_interval": 77, "config_json": {"endpoint": "/x"}, "rate_limit_json": {}})
     lst = client.get(f"/api/v1/admin/config-versions?entity_type=STREAM_CONFIG&entity_id={sid}&limit=1")
     tip = lst.json()["items"][0]
     row_id = tip["id"]
@@ -165,10 +154,7 @@ def test_apply_snapshot_rejects_stale_expected_version(client: TestClient, db_se
     from app.platform_admin.models import PlatformAuditEvent, PlatformConfigVersion
 
     sid = _seed_stream(db_session)
-    first = client.put(
-        f"/api/v1/streams/{sid}",
-        json={"name": "s1", "polling_interval": 111, "config_json": {"endpoint": "/v1"}, "rate_limit_json": {}},
-    )
+    first = put_stream(client, sid, {"name": "s1", "polling_interval": 111, "config_json": {"endpoint": "/v1"}, "rate_limit_json": {}})
     assert first.status_code == 200
 
     lst_n = client.get(f"/api/v1/admin/config-versions?entity_type=STREAM_CONFIG&entity_id={sid}&limit=1")
@@ -177,10 +163,7 @@ def test_apply_snapshot_rejects_stale_expected_version(client: TestClient, db_se
     version_n = int(tip_n["version"])
 
     # Concurrent actor advances the target tip to N+1 after preview captured N.
-    second = client.put(
-        f"/api/v1/streams/{sid}",
-        json={"name": "s1", "polling_interval": 222, "config_json": {"endpoint": "/v2"}, "rate_limit_json": {}},
-    )
+    second = put_stream(client, sid, {"name": "s1", "polling_interval": 222, "config_json": {"endpoint": "/v2"}, "rate_limit_json": {}})
     assert second.status_code == 200
     lst_n1 = client.get(f"/api/v1/admin/config-versions?entity_type=STREAM_CONFIG&entity_id={sid}&limit=1")
     version_n1 = int(lst_n1.json()["items"][0]["version"])

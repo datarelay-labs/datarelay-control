@@ -15,6 +15,7 @@ from app.runners.stream_loader import load_stream_context
 from tests.test_stream_runner_e2e import _seed_stream_runtime
 
 
+from tests.config_mutation_test_helpers import put_stream
 @pytest.fixture
 def streams_client(db_session: Session) -> TestClient:
     def _override_db() -> Any:
@@ -55,7 +56,7 @@ def test_union_schema_persist_round_trip(streams_client: TestClient, db_session:
     cfg = dict(current.json().get("config_json") or {})
     cfg["union_schema"] = union_schema_payload
 
-    put = streams_client.put(f"/api/v1/streams/{stream_id}", json={"config_json": cfg})
+    put = put_stream(streams_client, stream_id, {"config_json": cfg})
     assert put.status_code == 200
     saved = put.json().get("config_json", {}).get("union_schema")
     assert saved == union_schema_payload

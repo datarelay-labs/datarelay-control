@@ -160,9 +160,14 @@ class ConnectorCreate(ConnectorBase):
 
 
 class ConnectorUpdate(ConnectorBase):
-    """Partial update connector."""
+    """Partial update connector.
 
-    pass
+    ``expected_updated_at`` guards the Connector row.
+    ``expected_source_updated_at`` guards the owned primary Source row when present.
+    """
+
+    expected_updated_at: datetime
+    expected_source_updated_at: datetime | None = None
 
 
 class ConnectorAuthLabStep(BaseModel):
@@ -252,6 +257,7 @@ class ConnectorRead(BaseModel):
     auth: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    source_updated_at: datetime | None = None
     # Populated when source_type is S3_OBJECT_POLLING (secret_key never returned; use secret_key_configured).
     endpoint_url: str | None = None
     bucket: str | None = None

@@ -5,11 +5,13 @@ from __future__ import annotations
 import copy
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app.audit.service import record_audit_log
 from app.platform_admin.models import PlatformAuditEvent, PlatformConfigVersion
+
+_CONFIG_VERSION_LOCK_KEY = "platform_config_version_allocator"
 
 
 def record_audit_event(
@@ -57,6 +59,21 @@ def record_audit_event(
     db.flush()
 
 
+def _allocate_next_config_version(db: Session) -> int:
+    """Allocate the next globally unique config version under a transaction lock.
+
+    Uses PostgreSQL advisory locks so concurrent MAX(version)+1 readers cannot
+    both choose the same next value. The unique constraint remains as a backstop.
+    """
+
+    bind = db.get_bind()
+    dialect = getattr(getattr(bind, "dialect", None), "name", "") or ""
+    if dialect == "postgresql":
+        db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"), {"lock_key": _CONFIG_VERSION_LOCK_KEY})
+    cur = db.scalar(select(func.coalesce(func.max(PlatformConfigVersion.version), 0)))
+    return int(cur or 0) + 1
+
+
 def record_config_version(
     db: Session,
     *,
@@ -68,8 +85,7 @@ def record_config_version(
     snapshot_before: dict[str, Any] | None = None,
     snapshot_after: dict[str, Any] | None = None,
 ) -> int:
-    cur = db.scalar(select(func.coalesce(func.max(PlatformConfigVersion.version), 0)))
-    nxt = int(cur or 0) + 1
+    nxt = _allocate_next_config_version(db)
     db.add(
         PlatformConfigVersion(
             version=nxt,

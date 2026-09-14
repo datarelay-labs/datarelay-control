@@ -20,13 +20,16 @@ import { Link } from 'react-router-dom'
 import {
   createDestination,
   deleteDestination,
+  isDestinationStaleWriteError,
   previewTestDestination,
   testDestination,
   updateDestination,
+  updateDestinationWithFreshToken,
   type DestinationListItem,
   type DestinationWritePayload,
   type DestinationTestResult,
 } from '../../api/gdcDestinations'
+import { isDestinationFormDirty } from './destination-form-dirty'
 import { useDestinationsOverviewData, type DestinationOverviewRow } from './use-destinations-overview-data'
 import type { DestinationUiHealth } from './destination-runtime-metrics'
 import type { StreamsMetricsWindow } from '../../constants/streamConsoleFilters'
@@ -682,6 +685,9 @@ export function DestinationsManagementPage() {
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editingRow, setEditingRow] = useState<DestinationOverviewRow | null>(null)
   const [form, setForm] = useState<FormState>(INITIAL_FORM)
+  const [formBaseline, setFormBaseline] = useState<FormState | null>(null)
+  const [expectedUpdatedAt, setExpectedUpdatedAt] = useState<string | null>(null)
+  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false)
   const [probeOk, setProbeOk] = useState<boolean | null>(null)
   const [probeBusy, setProbeBusy] = useState(false)
   const [probeBanner, setProbeBanner] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
@@ -770,6 +776,9 @@ export function DestinationsManagementPage() {
     setEditingRow(null)
     setSheetMode('create')
     setForm(INITIAL_FORM)
+    setFormBaseline(INITIAL_FORM)
+    setExpectedUpdatedAt(null)
+    setDiscardConfirmOpen(false)
     setProbeOk(null)
     setProbeBanner(null)
     setProbeResult(null)
@@ -777,24 +786,35 @@ export function DestinationsManagementPage() {
   }
 
   function openEditSheet(row: DestinationOverviewRow) {
+    const next = formFromRow(row)
     setEditingId(row.id)
     setEditingRow(row)
     setSheetMode('edit')
-    setForm(formFromRow(row))
+    setForm(next)
+    setFormBaseline(next)
+    setExpectedUpdatedAt(row.updated_at ?? null)
+    setDiscardConfirmOpen(false)
     setProbeOk(null)
     setProbeBanner(null)
     setProbeResult(null)
     setLocalError(null)
   }
 
-  function closeSheet() {
+  function forceCloseSheet() {
     setSheetMode('closed')
     setEditingId(null)
     setEditingRow(null)
-    setForm(INITIAL_FORM)
-    setProbeOk(null)
-    setProbeBanner(null)
-    setProbeResult(null)
+    setFormBaseline(null)
+    setExpectedUpdatedAt(null)
+    setDiscardConfirmOpen(false)
+  }
+
+  function closeSheet() {
+    if (sheetMode !== 'closed' && isDestinationFormDirty(formBaseline, form)) {
+      setDiscardConfirmOpen(true)
+      return
+    }
+    forceCloseSheet()
   }
 
   async function onProbeForm() {
@@ -851,16 +871,31 @@ export function DestinationsManagementPage() {
       const payload = payloadFromForm(form)
       if (sheetMode === 'create') {
         await createDestination(payload)
+        forceCloseSheet()
       } else if (sheetMode === 'edit' && editingId != null) {
-        await updateDestination(editingId, payload)
+        if (!expectedUpdatedAt) {
+          throw new Error('Missing destination concurrency token; refresh and try again.')
+        }
+        const updated = await updateDestination(editingId, {
+          ...payload,
+          expected_updated_at: expectedUpdatedAt,
+        })
+        setFormBaseline(form)
+        setExpectedUpdatedAt(updated.updated_at ?? expectedUpdatedAt)
+        forceCloseSheet()
       }
-      closeSheet()
       await refresh()
       if (probeOk === false) {
         setLocalError('Saved. Last connection test had not succeeded — verify connectivity when possible.')
       }
     } catch (err) {
-      setLocalError(err instanceof Error ? err.message : 'Save failed.')
+      if (isDestinationStaleWriteError(err)) {
+        setLocalError(
+          'This destination changed since you started editing. Your unsaved changes are still preserved. Refresh/review the latest destination before saving again.',
+        )
+      } else {
+        setLocalError(err instanceof Error ? err.message : 'Save failed.')
+      }
     } finally {
       setSaving(false)
     }
@@ -956,7 +991,7 @@ export function DestinationsManagementPage() {
     setActionBusyId(row.id)
     setLocalError(null)
     try {
-      await updateDestination(row.id, { enabled: true })
+      await updateDestinationWithFreshToken(row.id, { enabled: true })
       await refresh()
     } catch (err) {
       setLocalError(err instanceof Error ? err.message : 'Update failed.')
@@ -970,7 +1005,7 @@ export function DestinationsManagementPage() {
     setActionBusyId(disableDialogRow.id)
     setLocalError(null)
     try {
-      await updateDestination(disableDialogRow.id, { enabled: false })
+      await updateDestinationWithFreshToken(disableDialogRow.id, { enabled: false })
       setDisableDialogRow(null)
       await refresh()
     } catch (err) {
@@ -1943,6 +1978,25 @@ export function DestinationsManagementPage() {
           error={localError}
           onConfirm={() => void executeDisableDestination()}
           dataTestId="destination-disable-dialog"
+        />
+      ) : null}
+      {discardConfirmOpen ? (
+        <DangerousActionDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setDiscardConfirmOpen(false)
+          }}
+          title="Discard unsaved destination changes?"
+          targetName={form.name.trim() || 'Destination'}
+          impactBullets={[
+            'Unsaved edits in this editor will be discarded.',
+            'The destination on the server is unchanged until you save.',
+          ]}
+          reversibility="Your current draft will be lost. Re-open the destination to continue editing."
+          risk="medium"
+          primaryLabel="Discard changes"
+          onConfirm={() => forceCloseSheet()}
+          dataTestId="destination-discard-dirty-dialog"
         />
       ) : null}
     </div>

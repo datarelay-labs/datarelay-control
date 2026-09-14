@@ -19,6 +19,8 @@ vi.mock('../../api/gdcDestinations', () => ({
   previewTestDestination: (...args: unknown[]) => previewTestDestination(...args),
   testDestination: (...args: unknown[]) => testDestination(...args),
   deleteDestination: vi.fn(),
+  isDestinationStaleWriteError: () => false,
+  DESTINATION_STALE_WRITE_CODE: 'DESTINATION_STALE_WRITE',
 }))
 
 vi.mock('../../api/operationalSnapshot', () => ({
