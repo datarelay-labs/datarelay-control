@@ -249,10 +249,9 @@ def test_validation_recovery_after_success(client: TestClient, db_session: Sessi
     assert int(v.consecutive_failures or 0) >= 1
 
     cid = int(ins.json()["connector_id"])
-    ur = client.put(
-        f"/api/v1/connectors/{cid}",
-        json={"bearer_token": "template-e2e-generic-bearer"},
-    )
+    from tests.config_mutation_test_helpers import put_connector
+
+    ur = put_connector(client, cid, {"bearer_token": "template-e2e-generic-bearer"})
     assert ur.status_code == 200, ur.text
 
     r2 = client.post(f"/api/v1/validation/{v.id}/run")
