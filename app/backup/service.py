@@ -397,7 +397,13 @@ def apply_import(db: Session, body: ImportApplyRequest) -> ImportApplyResponse:
         if new_stream is None:
             continue
         old_dest = int(r.get("destination_id", -1))
-        if old_dest not in dest_old_to_new:
+        if old_dest in dest_old_to_new:
+            new_dest = int(dest_old_to_new[old_dest])
+        elif mode == "clone" and db.get(Destination, old_dest) is not None:
+            # Same-environment clone reuses existing local destinations. Cross-env
+            # import/full_restore must never fall back to raw foreign numeric IDs.
+            new_dest = old_dest
+        else:
             unresolved_route_destinations.append(
                 {
                     "route_export_id": r.get("id"),
@@ -406,7 +412,6 @@ def apply_import(db: Session, body: ImportApplyRequest) -> ImportApplyResponse:
                 }
             )
             continue
-        new_dest = int(dest_old_to_new[old_dest])
         row = Route(
             stream_id=new_stream,
             destination_id=new_dest,
