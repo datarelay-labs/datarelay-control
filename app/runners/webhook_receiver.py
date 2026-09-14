@@ -279,6 +279,27 @@ class WebhookReceiver:
         )
         raise WebhookAuthFailed("Webhook authentication failed")
 
+    def max_request_bytes_for_key(self, db: Session, receiver_key: str) -> int:
+        """Look up configured max body size without consuming the request body.
+
+        Returns ``DEFAULT_MAX_REQUEST_BYTES`` when the receiver is unknown so the
+        HTTP layer can still refuse oversized bodies before ``request.body()``.
+        """
+
+        key = _norm_receiver_key(receiver_key)
+        if not key:
+            return DEFAULT_MAX_REQUEST_BYTES
+        source = (
+            db.query(Source)
+            .filter(Source.source_type.in_(sorted(WEBHOOK_SOURCE_TYPES)))
+            .filter(Source.config_json["receiver_key"].as_string() == key)
+            .order_by(Source.id.asc())
+            .first()
+        )
+        if source is None:
+            return DEFAULT_MAX_REQUEST_BYTES
+        return self._max_request_bytes(source)
+
     def _max_request_bytes(self, source: Source) -> int:
         raw = (source.config_json or {}).get("max_request_bytes", DEFAULT_MAX_REQUEST_BYTES)
         try:
