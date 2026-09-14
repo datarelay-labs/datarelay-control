@@ -373,6 +373,33 @@ def test_release_failure_keeps_quarantined(db_session: Session) -> None:
     assert row.status == QUARANTINE_STATUS_QUARANTINED
 
 
+def test_release_all_log_and_continue_failures_keeps_quarantined(db_session: Session) -> None:
+    """LOG_AND_CONTINUE must not falsely RELEASE when every destination send fails."""
+    fixture = _seed_stream_runtime(db_session, failure_policies=["LOG_AND_CONTINUE"])
+    stream_id = fixture["stream_id"]
+
+    row = StreamQuarantineEvent(
+        stream_id=stream_id,
+        quarantine_reason="policy:test",
+        quarantine_source=QUARANTINE_SOURCE_POLICY,
+        status=QUARANTINE_STATUS_QUARANTINED,
+        protected_payload_json={"events": [{"id": "e1"}]},
+        metadata_json={},
+    )
+    db_session.add(row)
+    db_session.commit()
+
+    from app.destinations.adapters.registry import DestinationAdapterRegistry
+
+    registry = DestinationAdapterRegistry(webhook_sender=_QuarantineWebhookSender(fail=True))
+    result = execute_quarantine_release(db_session, int(row.id), destination_registry=registry)
+    assert result["outcome"] == "failed"
+    assert result["status"] == QUARANTINE_STATUS_QUARANTINED
+    db_session.refresh(row)
+    assert row.status == QUARANTINE_STATUS_QUARANTINED
+    assert row.released_at is None
+
+
 def test_discard_no_checkpoint(db_session: Session) -> None:
     fixture = _seed_stream_runtime(db_session)
     stream_id = fixture["stream_id"]
