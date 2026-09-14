@@ -66,7 +66,11 @@ def _seed_connector_graph(db: Session) -> dict[str, int]:
     db.add(m)
     e = Enrichment(stream_id=st.id, enrichment_json={"vendor": "acme"}, override_policy="KEEP_EXISTING", enabled=True)
     db.add(e)
-    cp = Checkpoint(stream_id=st.id, checkpoint_type="CUSTOM_FIELD", checkpoint_value_json={"cursor": "1"})
+    cp = Checkpoint(
+        stream_id=st.id,
+        checkpoint_type="CUSTOM_FIELD",
+        checkpoint_value_json={"cursor": "1", "access_token": "checkpoint-opaque-token-xyz"},
+    )
     db.add(cp)
     d = Destination(
         name="backup-seed-dest",
@@ -112,10 +116,15 @@ def test_export_masks_secrets(client: TestClient, db_session: Session) -> None:
     raw = res.text
     assert "super-secret-token-xyz" not in raw
     assert "dest-secret" not in raw
+    assert "checkpoint-opaque-token-xyz" not in raw
     data = res.json()
     auth = (data.get("sources") or [{}])[0].get("auth_json") or {}
     assert auth.get("bearer_token") in (None, "", "********")
-
+    checkpoints = data.get("checkpoints") or []
+    assert checkpoints
+    cp_val = checkpoints[0].get("checkpoint_value_json") or {}
+    assert cp_val.get("access_token") == "********"
+    assert cp_val.get("cursor") == "1"
 
 def test_export_route_includes_destination_ref(client: TestClient, db_session: Session) -> None:
     ids = _seed_connector_graph(db_session)
@@ -134,7 +143,9 @@ def test_export_route_includes_destination_ref(client: TestClient, db_session: S
 
 def test_import_preview_and_additive_apply(client: TestClient, db_session: Session) -> None:
     ids = _seed_connector_graph(db_session)
-    bundle = client.get(f"/api/v1/backup/connectors/{ids['connector_id']}/export").json()
+    bundle = client.get(
+        f"/api/v1/backup/connectors/{ids['connector_id']}/export?include_destinations=true"
+    ).json()
     prev = client.post("/api/v1/backup/import/preview", json={"bundle": bundle, "mode": "additive"})
     assert prev.status_code == 200
     body = prev.json()
@@ -525,7 +536,9 @@ def test_full_restore_requires_destructive_confirm(client: TestClient, db_sessio
 
 def test_additive_import_still_duplicates_when_entities_exist(client: TestClient, db_session: Session) -> None:
     ids = _seed_connector_graph(db_session)
-    bundle = client.get(f"/api/v1/backup/connectors/{ids['connector_id']}/export").json()
+    bundle = client.get(
+        f"/api/v1/backup/connectors/{ids['connector_id']}/export?include_destinations=true"
+    ).json()
     token = client.post("/api/v1/backup/import/preview", json={"bundle": bundle, "mode": "additive"}).json()[
         "preview_token"
     ]
@@ -535,6 +548,92 @@ def test_additive_import_still_duplicates_when_entities_exist(client: TestClient
     )
     assert apply_res.status_code == 200
     assert db_session.query(Connector).count() == 2
+
+
+def test_import_apply_idempotency_same_key_replays_without_recreate(
+    client: TestClient, db_session: Session
+) -> None:
+    ids = _seed_connector_graph(db_session)
+    bundle = client.get(
+        f"/api/v1/backup/connectors/{ids['connector_id']}/export?include_destinations=true"
+    ).json()
+    token = client.post("/api/v1/backup/import/preview", json={"bundle": bundle, "mode": "additive"}).json()[
+        "preview_token"
+    ]
+    op_key = "op-import-apply-retry-1"
+    first = client.post(
+        "/api/v1/backup/import/apply",
+        json={
+            "bundle": bundle,
+            "mode": "additive",
+            "confirm": True,
+            "preview_token": token,
+            "idempotency_key": op_key,
+        },
+    )
+    assert first.status_code == 200, first.text
+    first_body = first.json()
+    assert first_body["idempotent_replay"] is False
+    assert first_body["idempotency_key"] == op_key
+    created_streams = list(first_body["created"]["stream_ids"])
+    connectors_after_first = db_session.query(Connector).count()
+
+    # Timeout/retry simulation: client lost the first response and resends the same operation key.
+    second = client.post(
+        "/api/v1/backup/import/apply",
+        json={
+            "bundle": bundle,
+            "mode": "additive",
+            "confirm": True,
+            "preview_token": token,
+            "idempotency_key": op_key,
+        },
+    )
+    assert second.status_code == 200, second.text
+    second_body = second.json()
+    assert second_body["idempotent_replay"] is True
+    assert second_body["created"]["stream_ids"] == created_streams
+    assert second_body["created"]["connector_ids"] == first_body["created"]["connector_ids"]
+    assert db_session.query(Connector).count() == connectors_after_first
+
+
+def test_import_apply_new_operation_same_bundle_creates_again(
+    client: TestClient, db_session: Session
+) -> None:
+    ids = _seed_connector_graph(db_session)
+    bundle = client.get(
+        f"/api/v1/backup/connectors/{ids['connector_id']}/export?include_destinations=true"
+    ).json()
+    token = client.post("/api/v1/backup/import/preview", json={"bundle": bundle, "mode": "additive"}).json()[
+        "preview_token"
+    ]
+    first = client.post(
+        "/api/v1/backup/import/apply",
+        json={
+            "bundle": bundle,
+            "mode": "additive",
+            "confirm": True,
+            "preview_token": token,
+            "idempotency_key": "op-import-apply-A",
+        },
+    )
+    assert first.status_code == 200, first.text
+    after_first = db_session.query(Connector).count()
+
+    second = client.post(
+        "/api/v1/backup/import/apply",
+        json={
+            "bundle": bundle,
+            "mode": "additive",
+            "confirm": True,
+            "preview_token": token,
+            "idempotency_key": "op-import-apply-B",
+        },
+    )
+    assert second.status_code == 200, second.text
+    assert second.json()["idempotent_replay"] is False
+    assert db_session.query(Connector).count() == after_first + 1
+    assert second.json()["created"]["stream_ids"] != first.json()["created"]["stream_ids"]
 
 
 def test_clone_stream_preserves_route_formatter_and_rate_limits(client: TestClient, db_session: Session) -> None:

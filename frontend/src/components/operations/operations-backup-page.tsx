@@ -1,5 +1,5 @@
 import { AlertTriangle, Download, FileJson, Loader2, Upload } from 'lucide-react'
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   buildWorkspaceExportPath,
@@ -51,6 +51,7 @@ export function OperationsBackupPage() {
   const [confirmTypeValue, setConfirmTypeValue] = useState('')
   const [pageError, setPageError] = useState<string | null>(null)
   const [pageInfo, setPageInfo] = useState<string | null>(null)
+  const applyIdempotencyKeyRef = useRef<string | null>(null)
   const isFullRestore = importMode === 'full_restore'
   const modeHelp = MODE_HELP[importMode]
 
@@ -117,18 +118,32 @@ export function OperationsBackupPage() {
     }
     setPageError(null)
     setApplyBusy(true)
+    if (!applyIdempotencyKeyRef.current) {
+      applyIdempotencyKeyRef.current =
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `import-apply-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    }
     try {
       const bundle = JSON.parse(jsonText || '{}') as unknown
       const res = await postImportApply(bundle, importMode, preview.preview_token, {
         confirm: true,
         confirm_destructive: isFullRestore ? true : false,
+        idempotency_key: applyIdempotencyKeyRef.current,
       })
+      applyIdempotencyKeyRef.current = null
       setApplyDialogOpen(false)
       setConfirmTypeValue('')
       if (res.redirect_path) {
         navigate(res.redirect_path)
       } else {
-        setPageInfo(isFullRestore ? 'Full restore completed. Platform configuration matches the snapshot.' : 'Import completed.')
+        setPageInfo(
+          res.idempotent_replay
+            ? 'Import already applied (idempotent replay).'
+            : isFullRestore
+              ? 'Full restore completed. Platform configuration matches the snapshot.'
+              : 'Import completed.',
+        )
       }
     } catch (e) {
       setPageError(e instanceof Error ? e.message : String(e))
@@ -148,6 +163,7 @@ export function OperationsBackupPage() {
       setPageError('Acknowledge the destructive full restore scope before applying.')
       return
     }
+    applyIdempotencyKeyRef.current = null
     setPageError(null)
     setConfirmTypeValue('')
     setApplyDialogOpen(true)

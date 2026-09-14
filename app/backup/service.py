@@ -6,6 +6,7 @@ from copy import deepcopy
 from typing import Any
 
 from fastapi import HTTPException, status
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.backup.export_builder import (
@@ -32,10 +33,13 @@ from app.connectors.models import Connector
 from app.destinations.models import Destination
 from app.enrichments.models import Enrichment
 from app.mappings.models import Mapping
+from app.platform_admin.models import PlatformAuditEvent
 from app.routes.models import Route
 from app.sources.models import Source
 from app.platform_admin import journal
 from app.streams.models import Stream
+
+_IMPORT_APPLY_OPERATION_ACTION = "IMPORT_APPLY_OPERATION"
 
 
 def _strip_mask_placeholders(value: Any) -> Any:
@@ -44,6 +48,80 @@ def _strip_mask_placeholders(value: Any) -> Any:
     if isinstance(value, list):
         return [_strip_mask_placeholders(v) for v in value if v != "********"]
     return value
+
+
+def _normalize_idempotency_key(raw: str | None) -> str | None:
+    if raw is None:
+        return None
+    key = str(raw).strip()
+    if not key:
+        return None
+    if len(key) > 128:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error_code": "IMPORT_IDEMPOTENCY_KEY_INVALID",
+                "message": "idempotency_key must be 1..128 characters.",
+            },
+        )
+    return key
+
+
+def _acquire_import_apply_idempotency_lock(db: Session, idempotency_key: str) -> None:
+    """Serialize concurrent apply retries for the same operation key within a transaction."""
+
+    bind = db.get_bind()
+    dialect = getattr(getattr(bind, "dialect", None), "name", "") or ""
+    if dialect != "postgresql":
+        return
+    lock_key = f"import_apply_idempotency:{idempotency_key}"
+    db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"), {"lock_key": lock_key})
+
+
+def _find_completed_import_apply(db: Session, idempotency_key: str) -> ImportApplyResponse | None:
+    rows = (
+        db.query(PlatformAuditEvent)
+        .filter(PlatformAuditEvent.action == _IMPORT_APPLY_OPERATION_ACTION)
+        .order_by(PlatformAuditEvent.id.desc())
+        .limit(200)
+        .all()
+    )
+    for row in rows:
+        details = row.details_json if isinstance(row.details_json, dict) else {}
+        if str(details.get("idempotency_key") or "") != idempotency_key:
+            continue
+        if str(details.get("status") or "") != "completed":
+            continue
+        response_payload = details.get("response")
+        if not isinstance(response_payload, dict):
+            continue
+        try:
+            replay = ImportApplyResponse.model_validate(response_payload)
+        except Exception:
+            continue
+        return replay.model_copy(update={"idempotent_replay": True, "idempotency_key": idempotency_key})
+    return None
+
+
+def _record_import_apply_operation(
+    db: Session,
+    *,
+    idempotency_key: str,
+    mode: str,
+    response: ImportApplyResponse,
+) -> None:
+    journal.record_audit_event(
+        db,
+        action=_IMPORT_APPLY_OPERATION_ACTION,
+        actor_username="system",
+        entity_type="IMPORT_APPLY",
+        details={
+            "idempotency_key": idempotency_key,
+            "status": "completed",
+            "mode": mode,
+            "response": response.model_dump(mode="json"),
+        },
+    )
 
 
 def preview_import(db: Session, bundle: dict[str, Any], mode: str, *, dry_run: bool = True) -> ImportPreviewResponse:
@@ -146,6 +224,13 @@ def _assert_apply_allowed(db: Session, body: ImportApplyRequest) -> ValidationOu
 
 
 def apply_import(db: Session, body: ImportApplyRequest) -> ImportApplyResponse:
+    idempotency_key = _normalize_idempotency_key(body.idempotency_key)
+    if idempotency_key is not None:
+        _acquire_import_apply_idempotency_lock(db, idempotency_key)
+        prior = _find_completed_import_apply(db, idempotency_key)
+        if prior is not None:
+            return prior
+
     _assert_apply_allowed(db, body)
     bundle = deepcopy(body.bundle)
     mode = body.mode
@@ -355,13 +440,14 @@ def apply_import(db: Session, body: ImportApplyRequest) -> ImportApplyResponse:
     }
     if replaced_preview is not None:
         audit_details["replaced"] = replaced_preview.model_dump()
+    if idempotency_key is not None:
+        audit_details["idempotency_key"] = idempotency_key
     journal.record_audit_event(
         db,
         action="FULL_RESTORE_APPLIED" if mode == "full_restore" else "IMPORT_APPLIED",
         actor_username="system",
         details=audit_details,
     )
-    db.commit()
 
     redirect_path = None
     if len(created_streams) == 1:
@@ -369,7 +455,7 @@ def apply_import(db: Session, body: ImportApplyRequest) -> ImportApplyResponse:
     elif len(created_connectors) == 1:
         redirect_path = f"/connectors/{created_connectors[0]}"
 
-    return ImportApplyResponse(
+    response = ImportApplyResponse(
         ok=True,
         created=ImportApplyEntityIds(
             connector_ids=created_connectors,
@@ -379,7 +465,18 @@ def apply_import(db: Session, body: ImportApplyRequest) -> ImportApplyResponse:
         ),
         replaced=replaced_preview,
         redirect_path=redirect_path,
+        idempotency_key=idempotency_key,
+        idempotent_replay=False,
     )
+    if idempotency_key is not None:
+        _record_import_apply_operation(
+            db,
+            idempotency_key=idempotency_key,
+            mode=mode,
+            response=response.model_copy(update={"idempotent_replay": False}),
+        )
+    db.commit()
+    return response
 
 
 def clone_connector(db: Session, connector_id: int, name_suffix: str) -> tuple[int, list[int], str]:

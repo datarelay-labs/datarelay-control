@@ -131,7 +131,18 @@ class ImportApplyRequest(BaseModel):
         default=False,
         description="Must be true when mode=full_restore after reviewing destructive purge scope.",
     )
-    preview_token: str = Field(default="", description="Must match the token returned by /import/preview.")
+    preview_token: str = Field(
+        default="",
+        description="Integrity token from /import/preview (bundle+mode). Not an apply idempotency key.",
+    )
+    idempotency_key: str | None = Field(
+        default=None,
+        max_length=128,
+        description=(
+            "Durable apply operation identity. When set, a successfully completed apply with the "
+            "same key returns the prior result and does not recreate objects. Distinct from preview_token."
+        ),
+    )
     clone_name_suffix: str = Field(default=" (copy)", max_length=64, description="Appended to connector/stream names when mode=clone.")
 
 
@@ -150,6 +161,14 @@ class ImportApplyResponse(BaseModel):
         description="Populated when mode=full_restore: operational rows removed before import.",
     )
     redirect_path: str | None = None
+    idempotency_key: str | None = Field(
+        default=None,
+        description="Echo of the request idempotency_key when apply idempotency was used.",
+    )
+    idempotent_replay: bool = Field(
+        default=False,
+        description="True when this response was replayed from a prior successful apply with the same key.",
+    )
 
 
 class CloneConnectorBody(BaseModel):

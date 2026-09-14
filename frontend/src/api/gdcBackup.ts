@@ -59,6 +59,8 @@ export type ImportApplyResult = {
   }
   replaced?: FullRestorePurgePreview | null
   redirect_path: string | null
+  idempotency_key?: string | null
+  idempotent_replay?: boolean
 }
 
 export type CloneBackupResponse = {
@@ -145,7 +147,12 @@ export async function postImportApply(
   bundle: unknown,
   mode: ImportMode,
   previewToken: string,
-  opts: { confirm?: boolean; confirm_destructive?: boolean; clone_name_suffix?: string } = {},
+  opts: {
+    confirm?: boolean
+    confirm_destructive?: boolean
+    clone_name_suffix?: string
+    idempotency_key?: string
+  } = {},
 ): Promise<ImportApplyResult> {
   return requestJson<ImportApplyResult>(`${GDC_API_PREFIX}/backup/import/apply`, {
     method: 'POST',
@@ -156,6 +163,7 @@ export async function postImportApply(
       confirm: opts.confirm ?? true,
       confirm_destructive: opts.confirm_destructive ?? false,
       clone_name_suffix: opts.clone_name_suffix ?? ' (copy)',
+      ...(opts.idempotency_key ? { idempotency_key: opts.idempotency_key } : {}),
     }),
   })
 }
