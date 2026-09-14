@@ -65,6 +65,8 @@ jobs:
       - if: needs.detect-paths.outputs.frontend == 'true'
         run: npm ci
       - if: needs.detect-paths.outputs.frontend == 'true'
+        run: npm run lint
+      - if: needs.detect-paths.outputs.frontend == 'true'
         run: npm test -- --run
       - if: needs.detect-paths.outputs.frontend == 'true'
         run: npm run build
