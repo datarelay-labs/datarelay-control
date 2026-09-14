@@ -38,6 +38,7 @@ from app.audit.router import router as audit_router
 from app.backup.router import router as backup_router
 from app.backfill.router import router as backfill_router
 from app.config import settings
+from app.production_security import ensure_production_security_settings
 from app.connectors.router import router as connectors_router
 from app.delivery.router import router as delivery_router
 from app.destinations.router import router as destinations_router
@@ -74,6 +75,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    ensure_production_security_settings(settings)
     startup_snapshot = evaluate_startup_readiness()
     try:
         bootstrap_registry()
