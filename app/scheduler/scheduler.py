@@ -13,6 +13,7 @@ from app.scheduler.context_cache import load_scheduler_stream_context
 from app.scheduler.enabled_state import StreamSchedulerGate, enabled_state_cache
 from app.runners.stream_runner import StreamRunner
 from app.streams.repository import get_enabled_stream_ids, get_stream_by_id
+from app.streams.runtime_eligibility import is_stream_scheduler_runnable
 from app.scheduler import runtime_state as scheduler_runtime_state
 
 logger = logging.getLogger(__name__)
@@ -277,10 +278,16 @@ class Scheduler:
                             {"stage": "scheduler_loop_exit", "stream_id": stream_id, "reason": "stream_missing"},
                         )
                         break
-                    if not gate.enabled:
+                    if not is_stream_scheduler_runnable(enabled=gate.enabled, status=gate.status):
                         logger.info(
                             "%s",
-                            {"stage": "scheduler_loop_exit", "stream_id": stream_id, "reason": "stream_disabled"},
+                            {
+                                "stage": "scheduler_loop_exit",
+                                "stream_id": stream_id,
+                                "reason": "stream_not_runnable",
+                                "enabled": bool(gate.enabled),
+                                "status": str(gate.status),
+                            },
                         )
                         break
                     interval = float(gate.polling_interval)

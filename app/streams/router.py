@@ -67,7 +67,8 @@ async def create_stream(payload: StreamCreate, request: Request, db: Session = D
         stream_type=payload.stream_type or "HTTP_API_POLLING",
         config_json=dict(payload.config_json or {}),
         polling_interval=int(payload.polling_interval or 60),
-        enabled=True if payload.enabled is None else bool(payload.enabled),
+        # Create ≠ Start: default disabled + STOPPED so scheduler cannot deliver until /start.
+        enabled=False if payload.enabled is None else bool(payload.enabled),
         # Runtime status is owned by /start and /stop — never forge RUNNING via create.
         status="STOPPED",
         rate_limit_json=dict(payload.rate_limit_json or {}),

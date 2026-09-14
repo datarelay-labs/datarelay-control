@@ -1600,7 +1600,8 @@ export function buildStreamCreatePayload(state: WizardState): {
     source_id: state.connector.sourceId,
     stream_type,
     polling_interval: state.stream.pollingIntervalSec,
-    enabled: true,
+    // Create ≠ Start: wizard create must leave the stream stopped until explicit Start.
+    enabled: false,
     status: 'STOPPED',
     config_json,
     rate_limit_json: {

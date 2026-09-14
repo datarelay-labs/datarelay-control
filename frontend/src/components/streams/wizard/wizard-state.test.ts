@@ -336,6 +336,8 @@ describe('wizard-state buildStreamCreatePayload', () => {
     state.stream.maxFileSizeMb = 2
     const payload = buildStreamCreatePayload(state)
     expect(payload?.stream_type).toBe('REMOTE_FILE_POLLING')
+    expect(payload?.enabled).toBe(false)
+    expect(payload?.status).toBe('STOPPED')
     expect(payload?.config_json).toMatchObject({
       remote_directory: '/data/logs',
       file_pattern: '*.ndjson',

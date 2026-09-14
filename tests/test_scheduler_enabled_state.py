@@ -118,6 +118,7 @@ def test_enabled_state_bulk_query_does_not_scale_with_stream_count(db_session: S
                 int(row.stream_id): StreamSchedulerGate(
                     stream_id=int(row.stream_id),
                     enabled=bool(row.enabled),
+                    status="RUNNING",
                     polling_interval=float(row.polling_interval),
                     name=row.name,
                 )
@@ -152,7 +153,7 @@ def test_enabled_state_cache_single_flight_across_workers() -> None:
         ready.set()
         release.wait(timeout=2.0)
         return {
-            i: StreamSchedulerGate(stream_id=i, enabled=True, polling_interval=60.0, name=f"s-{i}")
+            i: StreamSchedulerGate(stream_id=i, enabled=True, status="RUNNING", polling_interval=60.0, name=f"s-{i}")
             for i in range(1, 101)
         }
 
@@ -178,7 +179,7 @@ def test_case_a_enabled_stream_is_scheduler_candidate() -> None:
     cache = EnabledStateCache(
         ttl_sec=60.0,
         loader=lambda: {
-            1: StreamSchedulerGate(stream_id=1, enabled=True, polling_interval=30.0, name="ok")
+            1: StreamSchedulerGate(stream_id=1, enabled=True, status="RUNNING", polling_interval=30.0, name="ok")
         },
     )
     gate = cache.get_gate(1)
@@ -191,7 +192,7 @@ def test_case_b_disabled_stream_excluded() -> None:
     cache = EnabledStateCache(
         ttl_sec=60.0,
         loader=lambda: {
-            2: StreamSchedulerGate(stream_id=2, enabled=False, polling_interval=30.0, name="off")
+            2: StreamSchedulerGate(stream_id=2, enabled=False, status="RUNNING", polling_interval=30.0, name="off")
         },
     )
     assert cache.is_enabled(2) is False
@@ -205,6 +206,7 @@ def test_case_c_enabled_to_disabled_after_refresh() -> None:
             3: StreamSchedulerGate(
                 stream_id=3,
                 enabled=bool(state["enabled"]),
+                    status="RUNNING",
                 polling_interval=10.0,
                 name="toggle",
             )
@@ -225,6 +227,7 @@ def test_case_d_disabled_to_enabled_after_refresh() -> None:
             4: StreamSchedulerGate(
                 stream_id=4,
                 enabled=bool(state["enabled"]),
+                    status="RUNNING",
                 polling_interval=10.0,
                 name="toggle-on",
             )
@@ -287,7 +290,7 @@ def test_loop_exits_when_gate_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
             ttl_sec=60.0,
             loader=lambda: {
                 42: StreamSchedulerGate(
-                    stream_id=42, enabled=False, polling_interval=0.01, name="disabled"
+                    stream_id=42, enabled=False, status="RUNNING", polling_interval=0.01, name="disabled"
                 )
             },
         ),
@@ -327,6 +330,7 @@ def test_loop_runs_when_gate_enabled_then_disables(
             stream_id: StreamSchedulerGate(
                 stream_id=stream_id,
                 enabled=bool(state["enabled"]),
+                    status="RUNNING",
                 polling_interval=0.01,
                 name=f"pytest-enabled-toggle-{stream_id}",
             )
@@ -353,7 +357,7 @@ def test_interruptible_wait_uses_bulk_cache_not_per_check_query(
     def _loader() -> dict[int, StreamSchedulerGate]:
         loads["count"] += 1
         return {
-            7: StreamSchedulerGate(stream_id=7, enabled=True, polling_interval=60.0, name="wait")
+            7: StreamSchedulerGate(stream_id=7, enabled=True, status="RUNNING", polling_interval=60.0, name="wait")
         }
 
     cache = EnabledStateCache(ttl_sec=0.5, loader=_loader)

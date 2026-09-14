@@ -50,7 +50,7 @@ def test_scheduler_loop_skips_full_e2e_without_run(monkeypatch) -> None:
             loader=lambda: {
                 99999: StreamSchedulerGate(
                     stream_id=99999,
-                    enabled=True,
+                    enabled=True, status="RUNNING",
                     polling_interval=1.0,
                     name="[FULL E2E]xp-test-stream",
                 )

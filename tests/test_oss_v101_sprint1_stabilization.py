@@ -58,6 +58,7 @@ def test_scheduler_rate_limit_persists_across_poll_cycles(
             int(stream_id): StreamSchedulerGate(
                 stream_id=int(stream_id),
                 enabled=enabled,
+                    status="RUNNING",
                 polling_interval=0.01,
                 name=f"pytest-scheduler-rate-limit-{stream_id}",
             )
