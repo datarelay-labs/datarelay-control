@@ -251,7 +251,11 @@ export function StreamRouteProcessingOverview({ streamId }: { streamId: number }
       if (!isCurrent()) return
       const streamRoutes = (allRoutes ?? []).filter((r) => r.stream_id === streamId)
       setRoutes(streamRoutes)
-      setDestinations(dests ?? [])
+      if (dests === null) {
+        setError('Failed to load destinations. Check authentication and API connectivity.')
+      } else {
+        setDestinations(dests)
+      }
       setSelectedRouteId((prev) => {
         if (prev != null && streamRoutes.some((r) => r.id === prev)) return prev
         return streamRoutes[0]?.id ?? null

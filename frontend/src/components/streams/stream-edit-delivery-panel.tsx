@@ -117,9 +117,13 @@ export function StreamEditDeliveryPanel({ streamId, onSaved }: Props) {
         return
       }
       setMappingCfg(cfg)
-      const destRows = dests ?? []
-      setDestinations(destRows)
-      setNewRouteDestinationId((prev) => prev || (destRows[0]?.id != null ? String(destRows[0].id) : ''))
+      if (dests === null) {
+        // Failure != empty catalog: keep any prior rows; surface error instead of clearing the picker.
+        setLoadError('Failed to load destinations. Check authentication and API connectivity.')
+        return
+      }
+      setDestinations(dests)
+      setNewRouteDestinationId((prev) => prev || (dests[0]?.id != null ? String(dests[0].id) : ''))
     } catch (e) {
       setLoadError(formatDeliveryPanelApiError(e, 'Load delivery configuration'))
       setMappingCfg(null)

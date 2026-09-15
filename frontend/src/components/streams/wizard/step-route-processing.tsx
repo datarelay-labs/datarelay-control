@@ -74,8 +74,11 @@ export function StepRouteProcessing({
   useEffect(() => {
     let cancelled = false
     void (async () => {
-      const rows = (await fetchDestinationsList()) ?? []
-      if (!cancelled) setDestinations(rows)
+      const rows = await fetchDestinationsList()
+      if (cancelled) return
+      // Failure != empty catalog: keep prior rows (initially []) and avoid false "missing destination" labels.
+      if (rows === null) return
+      setDestinations(rows)
     })()
     return () => {
       cancelled = true

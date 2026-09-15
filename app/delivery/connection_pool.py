@@ -31,10 +31,12 @@ class HttpxClientPool:
                 self._clients[pool_key] = client
             else:
                 self._clients.move_to_end(pool_key)
+            # Evict LRU entries from the registry, but never close them here:
+            # another thread may still be using a client returned from a prior get().
+            # Orphans are closed via invalidate() once callers drop their references,
+            # or when the process exits.
             while len(self._clients) > self._max_clients:
-                _evicted_key, evicted = self._clients.popitem(last=False)
-                if evicted is not None and not getattr(evicted, "is_closed", False):
-                    evicted.close()
+                self._clients.popitem(last=False)
             return client
 
     def invalidate(self, pool_key: str) -> None:

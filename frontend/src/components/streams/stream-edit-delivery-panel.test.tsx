@@ -197,16 +197,18 @@ describe('StreamEditDeliveryPanel route removal', () => {
     await waitFor(() => expect(screen.getByTestId('save-prefix-22')).toBeDisabled())
   })
 
-  it('does not crash when destination list API returns null (failure != empty)', async () => {
+  it('surfaces destination list API failure without clearing the catalog as empty', async () => {
     fetchStreamMappingUiConfig.mockResolvedValue(mappingConfig([]))
     fetchDestinationsList.mockResolvedValue(null)
 
     render(<StreamEditDeliveryPanel streamId={10} />)
 
     await waitFor(() => {
-      expect(screen.getByText(/Routes \(0\)/)).toBeInTheDocument()
+      expect(screen.getByText(/Failed to load destinations/i)).toBeInTheDocument()
     })
     expect(screen.queryByText(/Could not load stream delivery configuration/i)).not.toBeInTheDocument()
+    // Mapping still loads; destination picker must not pretend the catalog is empty-success.
+    expect(screen.getByText(/Routes \(0\)/)).toBeInTheDocument()
   })
 
 })

@@ -236,8 +236,10 @@ export function StepDone({
     let cancelled = false
     void (async () => {
       const rows = await fetchDestinationsList()
-      if (!cancelled) setDestinations(rows ?? [])
-    })()
+      if (!cancelled) {
+        // Failure != empty catalog: keep prior rows (initially []).
+        if (rows !== null) setDestinations(rows)
+      }    })()
     return () => {
       cancelled = true
     }

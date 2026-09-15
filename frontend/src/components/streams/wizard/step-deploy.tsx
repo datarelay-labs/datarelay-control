@@ -843,12 +843,21 @@ export function StepDeploy({
 }: StepDeployProps) {
   const created = state.outcome?.streamId != null
   const [destinations, setDestinations] = useState<DestinationListItem[]>([])
+  /** True when fetchDestinationsList returned null (failure), not a valid empty catalog. */
+  const [catalogLoadFailed, setCatalogLoadFailed] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     void (async () => {
-      const rows = (await fetchDestinationsList()) ?? []
-      if (!cancelled) setDestinations(rows)
+      const rows = await fetchDestinationsList()
+      if (cancelled) return
+      if (rows === null) {
+        // Failure != empty: do not invent "Destination not found" from a load error.
+        setCatalogLoadFailed(true)
+        return
+      }
+      setCatalogLoadFailed(false)
+      setDestinations(rows)
     })()
     return () => {
       cancelled = true
@@ -858,6 +867,7 @@ export function StepDeploy({
   const connectivityForRoutes = useMemo(() => {
     const routeDrafts = state.destinations.routeDrafts
     if (routeDrafts.length === 0) return { ok: true, failed: false, unknown: false }
+    if (catalogLoadFailed) return { ok: false, failed: false, unknown: true }
     const destById = new Map(destinations.map((d) => [d.id, d]))
     let failed = false
     let unknown = false
@@ -871,7 +881,7 @@ export function StepDeploy({
       else if (!isDestinationConnectivityVerified(meta)) unknown = true
     }
     return { ok: !failed && !unknown, failed, unknown }
-  }, [destinations, state.destinations.routeDrafts])
+  }, [catalogLoadFailed, destinations, state.destinations.routeDrafts])
 
   const readiness = useMemo(
     () => computeDeployReadiness(state, connectivityForRoutes),
@@ -881,8 +891,8 @@ export function StepDeploy({
   const routeProcessingSummary = useMemo(() => buildRouteProcessingSummary(state), [state])
 
   const routeDeployReadiness = useMemo(
-    () => computeRouteDeployReadiness(state, destinations),
-    [destinations, state],
+    () => (catalogLoadFailed ? null : computeRouteDeployReadiness(state, destinations)),
+    [catalogLoadFailed, destinations, state],
   )
 
   return (
@@ -898,6 +908,12 @@ export function StepDeploy({
           </p>
         </div>
       </header>
+
+      {catalogLoadFailed ? (
+        <p className="rounded-md border border-red-200/80 bg-red-50 px-3 py-2 text-[12px] font-medium text-red-800 dark:border-red-500/40 dark:bg-red-950/40 dark:text-red-200">
+          Failed to load destinations. Check authentication and API connectivity.
+        </p>
+      ) : null}
 
       {busy ? (
         <p className="flex items-center gap-2 rounded-md border border-violet-200/80 bg-violet-500/[0.06] px-3 py-2 text-[12px] text-violet-900 dark:border-violet-500/35 dark:text-violet-100">
@@ -920,7 +936,7 @@ export function StepDeploy({
               onNavigateToLegacySubstep={onNavigateToLegacySubstep}
             />
           )}
-          {!created ? <DeployRouteHealthCards snapshot={routeDeployReadiness} /> : null}
+          {!created && routeDeployReadiness ? <DeployRouteHealthCards snapshot={routeDeployReadiness} /> : null}
           <DeployConfigurationSummary
             state={state}
             destinations={destinations}
@@ -942,15 +958,23 @@ export function StepDeploy({
                 label="Routes"
                 value={`${routeProcessingSummary.totalRoutes} Configured`}
               />
-              <li>
-                <DeployRouteReadinessSummary snapshot={routeDeployReadiness} />
-              </li>
-              <li className="pt-1">
-                <DeployRouteOverrideList summary={routeProcessingSummary} routeReadiness={routeDeployReadiness} />
-              </li>
-              <li className="border-t border-slate-100 pt-3 dark:border-gdc-border">
-                <DeploySharedProcessingSummary snapshot={routeDeployReadiness} />
-              </li>
+              {routeDeployReadiness ? (
+                <>
+                  <li>
+                    <DeployRouteReadinessSummary snapshot={routeDeployReadiness} />
+                  </li>
+                  <li className="pt-1">
+                    <DeployRouteOverrideList summary={routeProcessingSummary} routeReadiness={routeDeployReadiness} />
+                  </li>
+                  <li className="border-t border-slate-100 pt-3 dark:border-gdc-border">
+                    <DeploySharedProcessingSummary snapshot={routeDeployReadiness} />
+                  </li>
+                </>
+              ) : (
+                <li className="text-amber-800 dark:text-amber-200">
+                  Destination catalog unavailable — route readiness cannot be evaluated until destinations load.
+                </li>
+              )}
               <SummaryLine
                 label="Enabled routes"
                 value={`${routeProcessingSummary.enabledRoutes} / ${routeProcessingSummary.totalRoutes}`}
