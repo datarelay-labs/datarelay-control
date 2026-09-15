@@ -262,3 +262,18 @@ def test_route_delete_ok_when_disabled(client: TestClient, db_session: Session) 
     del_res = client.delete(f"/api/v1/routes/{route_id}")
     assert del_res.status_code == 204
     assert db_session.query(Route).filter(Route.id == route_id).first() is None
+
+
+def test_route_create_rejects_invalid_failure_policy(client: TestClient, db_session: Session) -> None:
+    stream, destination = _seed_stream_destination(db_session)
+    res = client.post(
+        "/api/v1/routes/",
+        json={
+            "stream_id": stream.id,
+            "destination_id": destination.id,
+            "enabled": True,
+            "failure_policy": "NOT_A_REAL_POLICY",
+            "status": "ENABLED",
+        },
+    )
+    assert res.status_code == 422

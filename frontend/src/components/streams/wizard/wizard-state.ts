@@ -583,6 +583,8 @@ export type WizardApiTestState = {
   s3ConnectivityPassed: boolean
   /** REMOTE_FILE_POLLING: last connector-auth probe (SSH/SFTP listing) before sample fetch. */
   remoteProbe?: ConnectorAuthTestResponse | null
+  /** Fingerprint of connector/stream config this result was produced for; used to drop stale success. */
+  configFingerprint?: string | null
 }
 
 /**
@@ -812,6 +814,7 @@ export const INITIAL_API_TEST: WizardApiTestState = {
   analysis: null,
   s3ConnectivityPassed: false,
   remoteProbe: null,
+  configFingerprint: null,
 }
 
 export const INITIAL_DESTINATIONS: WizardDestinationsState = {
@@ -1600,7 +1603,8 @@ export function buildStreamCreatePayload(state: WizardState): {
     source_id: state.connector.sourceId,
     stream_type,
     polling_interval: state.stream.pollingIntervalSec,
-    enabled: true,
+    // Create ≠ Start: wizard create must leave the stream stopped until explicit Start.
+    enabled: false,
     status: 'STOPPED',
     config_json,
     rate_limit_json: {

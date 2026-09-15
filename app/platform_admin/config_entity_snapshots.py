@@ -11,6 +11,7 @@ from app.destinations.config_validation import validate_destination_config
 from app.destinations.models import Destination
 from app.mappings.models import Mapping
 from app.routes.models import Route
+from app.security.secrets import mask_config_payload, preserve_masked_secrets
 from app.streams.models import Stream
 
 KIND_STREAM = "STREAM_CONFIG"
@@ -31,7 +32,7 @@ def serialize_stream_config(stream: Stream) -> dict[str, Any]:
         "name": str(stream.name or ""),
         "enabled": bool(stream.enabled),
         "polling_interval": int(stream.polling_interval or 60),
-        "config_json": copy.deepcopy(stream.config_json or {}),
+        "config_json": mask_config_payload(copy.deepcopy(stream.config_json or {})),
         "rate_limit_json": copy.deepcopy(stream.rate_limit_json or {}),
     }
 
@@ -87,7 +88,10 @@ def serialize_destination_config(destination: Destination) -> dict[str, Any]:
         "name": str(destination.name or ""),
         "destination_type": str(destination.destination_type or ""),
         "enabled": bool(destination.enabled),
-        "config_json": copy.deepcopy(destination.config_json or {}),
+        "config_json": mask_config_payload(
+            copy.deepcopy(destination.config_json or {}),
+            mask_all_header_values=True,
+        ),
         "rate_limit_json": copy.deepcopy(destination.rate_limit_json or {}),
     }
 
@@ -115,7 +119,8 @@ def apply_stream_config(db: Session, snap: dict[str, Any]) -> None:
     row.name = str(snap.get("name") or row.name)
     row.enabled = bool(snap.get("enabled", row.enabled))
     row.polling_interval = int(snap.get("polling_interval", row.polling_interval or 60))
-    row.config_json = copy.deepcopy(snap.get("config_json") or {})
+    incoming_cfg = copy.deepcopy(snap.get("config_json") or {})
+    row.config_json = preserve_masked_secrets(incoming_cfg, dict(row.config_json or {}))
     row.rate_limit_json = copy.deepcopy(snap.get("rate_limit_json") or {})
 
 
@@ -164,7 +169,10 @@ def apply_destination_config(db: Session, snap: dict[str, Any]) -> None:
     if row is None:
         raise ValueError(f"destination not found: {did}")
     dtype = str(snap.get("destination_type", row.destination_type))
-    cfg = copy.deepcopy(snap.get("config_json") or {})
+    cfg = preserve_masked_secrets(
+        copy.deepcopy(snap.get("config_json") or {}),
+        dict(row.config_json or {}),
+    )
     validate_destination_config(dtype, cfg)
     row.name = str(snap.get("name", row.name))
     row.destination_type = dtype

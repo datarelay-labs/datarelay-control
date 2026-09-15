@@ -83,3 +83,25 @@ def test_api_curl_parse_rejects_empty(client: TestClient) -> None:
     res = client.post("/api/v1/backup/curl/parse", json={"curl_command": "curl"})
     assert res.status_code == 422
     assert res.json()["detail"]["error_code"] == "CURL_PARSE_FAILED"
+
+
+def test_curl_draft_masks_query_and_body_secrets() -> None:
+    raw = (
+        "curl -X POST 'https://api.vendor.example/v1/token?api_key=qk-literal-secret&limit=1' "
+        "-H 'Content-Type: application/json' "
+        "-d '{\"password\":\"body-pass-secret\",\"client_secret\":\"cs-secret\",\"q\":\"ok\"}'"
+    )
+    draft = build_curl_import_draft(parse_curl_command(raw))
+    dumped = str(draft)
+    assert "qk-literal-secret" not in dumped
+    assert "body-pass-secret" not in dumped
+    assert "cs-secret" not in dumped
+    params = draft["stream"]["config_json"]["params"]
+    assert params["api_key"] == "********"
+    assert params["limit"] == "1"
+    body = draft["stream"]["config_json"]["body"]
+    assert body["password"] == "********"
+    assert body["client_secret"] == "********"
+    assert body["q"] == "ok"
+    assert "qk-literal-secret" not in draft["parsed"]["url"]
+    assert draft["secrets_included"] is False

@@ -3,6 +3,7 @@
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db, utcnow
@@ -10,6 +11,7 @@ from app.platform_admin import journal
 from app.platform_admin.config_entity_snapshots import serialize_route_config
 from app.destinations.models import Destination
 from app.logs.models import DeliveryLog
+from app.route_transform.models import RouteEnrichment, RouteMapping
 from app.routes.models import Route
 from app.routes.schemas import RouteCreate, RouteRead, RouteUpdate
 from app.streams.models import Stream
@@ -21,6 +23,19 @@ def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
     return value.astimezone(UTC)
+
+
+def _canonicalize_route_enabled_status(update: dict) -> None:
+    """Keep ``enabled`` and ``status`` coherent on write; ``enabled`` wins when both set."""
+
+    if "enabled" in update and "status" not in update:
+        update["status"] = "ENABLED" if bool(update["enabled"]) else "DISABLED"
+    elif "status" in update and "enabled" not in update:
+        status_value = str(update["status"] or "").strip().upper() or "DISABLED"
+        update["status"] = status_value
+        update["enabled"] = status_value == "ENABLED"
+    elif "enabled" in update and "status" in update:
+        update["status"] = "ENABLED" if bool(update["enabled"]) else "DISABLED"
 
 
 @router.get("/", response_model=list[RouteRead])
@@ -44,14 +59,21 @@ async def create_route(payload: RouteCreate, request: Request, db: Session = Dep
             detail={"error_code": "DESTINATION_NOT_FOUND", "message": f"destination not found: {payload.destination_id}"},
         )
 
+    enabled = True if payload.enabled is None else bool(payload.enabled)
+    if payload.status is not None and payload.enabled is None:
+        status_value = str(payload.status).strip().upper() or "DISABLED"
+        enabled = status_value == "ENABLED"
+        route_status = status_value
+    else:
+        route_status = "ENABLED" if enabled else "DISABLED"
     row = Route(
         stream_id=payload.stream_id,
         destination_id=payload.destination_id,
-        enabled=True if payload.enabled is None else bool(payload.enabled),
+        enabled=enabled,
         failure_policy=payload.failure_policy or "LOG_AND_CONTINUE",
         formatter_config_json=dict(payload.formatter_config_json or {}),
         rate_limit_json=dict(payload.rate_limit_json or {}),
-        status=payload.status or ("ENABLED" if payload.enabled is not False else "DISABLED"),
+        status=route_status,
     )
     db.add(row)
     db.flush()
@@ -139,6 +161,7 @@ async def update_route(route_id: int, payload: RouteUpdate, request: Request, db
 
     prev_enabled = bool(row.enabled)
     route_before = serialize_route_config(row)
+    _canonicalize_route_enabled_status(update)
     for key, value in update.items():
         setattr(row, key, value)
     # Ensure concurrency token advances even when SQLAlchemy onupdate is skipped in tests.
@@ -209,16 +232,34 @@ async def delete_route(route_id: int, request: Request, db: Session = Depends(ge
         {DeliveryLog.route_id: None},
         synchronize_session=False,
     )
+    # Owned 1:1 transform rows lack ON DELETE CASCADE — remove them with the route.
+    db.query(RouteMapping).filter(RouteMapping.route_id == route_id).delete(synchronize_session=False)
+    db.query(RouteEnrichment).filter(RouteEnrichment.route_id == route_id).delete(synchronize_session=False)
     stream = db.query(Stream).filter(Stream.id == int(row.stream_id)).first()
     stream_name = str(stream.name) if stream is not None else None
-    db.delete(row)
-    journal.record_audit_event(
-        db,
-        action="ROUTE_DELETED",
-        entity_type="ROUTE",
-        entity_id=int(route_id),
-        entity_name=stream_name,
-        details={"stream_id": int(row.stream_id), "destination_id": int(row.destination_id)},
-        request=request,
-    )
-    db.commit()
+    stream_id = int(row.stream_id)
+    destination_id = int(row.destination_id)
+    try:
+        db.delete(row)
+        journal.record_audit_event(
+            db,
+            action="ROUTE_DELETED",
+            entity_type="ROUTE",
+            entity_id=int(route_id),
+            entity_name=stream_name,
+            details={"stream_id": stream_id, "destination_id": destination_id},
+            request=request,
+        )
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error_code": "ROUTE_DELETE_BLOCKED_DEPENDENCY",
+                "message": (
+                    "Route cannot be deleted while dependent configuration still references it. "
+                    "Remove route-scoped dependencies first."
+                ),
+            },
+        ) from exc

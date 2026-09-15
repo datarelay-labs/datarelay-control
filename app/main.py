@@ -8,7 +8,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.auth.role_guard import role_guard_middleware
@@ -38,7 +38,7 @@ from app.audit.router import router as audit_router
 from app.backup.router import router as backup_router
 from app.backfill.router import router as backfill_router
 from app.config import settings
-from app.production_security import ensure_production_security_settings
+from app.production_security import ensure_production_security_settings, is_production_app_env
 from app.connectors.router import router as connectors_router
 from app.delivery.router import router as delivery_router
 from app.destinations.router import router as destinations_router
@@ -139,6 +139,32 @@ async def lifespan(_: FastAPI):
                         "message": str(exc),
                     },
                 )
+            try:
+                from app.backfill.service import reconcile_orphaned_backfill_jobs
+                from app.database import SessionLocal
+
+                db = SessionLocal()
+                try:
+                    summary = reconcile_orphaned_backfill_jobs(db)
+                    logger.info(
+                        "%s",
+                        {
+                            "stage": "backfill_orphan_reconcile",
+                            "orphaned_failed": int(summary.get("orphaned_failed") or 0),
+                            "orphaned_cancelled": int(summary.get("orphaned_cancelled") or 0),
+                        },
+                    )
+                finally:
+                    db.close()
+            except Exception as exc:  # pragma: no cover - fail-open boot guard
+                logger.warning(
+                    "%s",
+                    {
+                        "stage": "backfill_orphan_reconcile_failed",
+                        "error_type": type(exc).__name__,
+                        "message": str(exc),
+                    },
+                )
         if startup_snapshot.scheduler_active and bool(settings.GDC_ENABLE_IN_PROCESS_SCHEDULER):
             try:
                 from app.dev_validation_lab.runtime import run_dev_validation_lab_startup
@@ -198,10 +224,19 @@ async def lifespan(_: FastAPI):
             pass
 
 
+# Production must not accidentally expose unrestricted OpenAPI/docs when the
+# rest of the product requires authentication. Dev/lab keep the interactive docs.
+_expose_openapi = (not is_production_app_env(settings.APP_ENV)) or bool(
+    getattr(settings, "EXPOSE_OPENAPI", False)
+)
+
 app = FastAPI(
     title="Generic Data Connector Platform API",
     version="0.1.0",
     lifespan=lifespan,
+    docs_url="/docs" if _expose_openapi else None,
+    redoc_url="/redoc" if _expose_openapi else None,
+    openapi_url="/openapi.json" if _expose_openapi else None,
 )
 
 if settings.GDC_TRUST_PROXY_HEADERS:
@@ -269,32 +304,56 @@ app.include_router(ai_gateway_router, prefix=f"{_prefix}/ai-gateway", tags=["ai-
 app.include_router(governance_router, prefix=f"{_prefix}/governance", tags=["governance"])
 
 
-@app.get("/health")
-async def health() -> dict[str, Any]:
-    """Liveness/readiness probe; includes ``delivery_logs`` index catalog when PostgreSQL is reachable."""
+def _build_readiness_payload() -> tuple[dict[str, Any], int]:
+    """DB-backed readiness body and HTTP status (503 when PostgreSQL is unreachable)."""
 
     body: dict[str, Any] = {"status": "ok"}
     try:
         with engine.connect() as conn:
             probe = probe_delivery_logs_indexes(conn)
+        probe_error = probe.get("error")
         body["delivery_logs_indexes"] = {
-            "ok": probe.get("error") is None and not bool(probe.get("reindex_suggested")),
+            "ok": probe_error is None and not bool(probe.get("reindex_suggested")),
             "checked": bool(probe.get("checked")),
             "invalid_indexes": list(probe.get("invalid_indexes") or []),
             "reindex_suggested": bool(probe.get("reindex_suggested")),
-            "error": probe.get("error"),
+            # Never leak raw exception internals to clients.
+            "error": "index_probe_failed" if probe_error else None,
         }
         if bool(probe.get("reindex_suggested")):
             body["status"] = "degraded"
-    except Exception as exc:
-        body["delivery_logs_indexes"] = {
-            "ok": None,
-            "checked": False,
-            "invalid_indexes": [],
-            "reindex_suggested": False,
-            "error": f"{type(exc).__name__}: {str(exc)[:160]}",
-        }
-    return body
+        return body, 200
+    except Exception:
+        logging.getLogger(__name__).exception("health_readiness_database_unavailable")
+        return (
+            {
+                "status": "not_ready",
+                "delivery_logs_indexes": {
+                    "ok": False,
+                    "checked": False,
+                    "invalid_indexes": [],
+                    "reindex_suggested": False,
+                    "error": "database_unavailable",
+                },
+            },
+            503,
+        )
+
+
+@app.get("/health/live")
+async def health_live() -> dict[str, str]:
+    """Process liveness — does not depend on database readiness."""
+
+    return {"status": "ok"}
+
+
+@app.get("/health/ready")
+@app.get("/health")
+async def health_ready() -> JSONResponse:
+    """Readiness probe; top-level status is never ``ok`` when the database is down."""
+
+    body, status_code = _build_readiness_payload()
+    return JSONResponse(content=body, status_code=status_code)
 
 
 _FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"

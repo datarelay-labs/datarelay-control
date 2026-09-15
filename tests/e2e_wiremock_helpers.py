@@ -19,7 +19,9 @@ from app.checkpoints.models import Checkpoint
 from app.logs.models import DeliveryLog
 
 WIREMOCK_ENV = "WIREMOCK_BASE_URL"
-DEFAULT_WIREMOCK = os.getenv(WIREMOCK_ENV, "http://127.0.0.1:18080")
+# Align with scripts/testing/_env.sh (GDC_TEST_WIREMOCK_HOST_PORT=28080).
+# Host :18080 is the platform reverse-proxy (HTTP→HTTPS 301), not WireMock.
+DEFAULT_WIREMOCK = os.getenv(WIREMOCK_ENV, "http://127.0.0.1:28080")
 
 
 def wiremock_reachable(base: str | None = None) -> bool:

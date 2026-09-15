@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, CheckCircle2, ExternalLink, Loader2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, CheckCircle2, Loader2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { NAV_PATH, runtimeOverviewPath } from '../../config/nav-paths'
@@ -8,6 +8,14 @@ import { materializeConnectorTemplates } from '../../api/gdcConnectorTemplates'
 import { saveStreamMappingUiConfigStrict } from '../../api/gdcRuntimeUi'
 import { createRoute } from '../../api/gdcRoutes'
 import { startRuntimeStream } from '../../api/gdcRuntime'
+import {
+  wizardCreateIsConfigurationIncomplete,
+  wizardCreateIsStartEligible,
+} from './wizard/wizard-create-fail-closed'
+import {
+  buildStreamsToConfigureFromMaterialization,
+  wizardPersistErrorLabel,
+} from './wizard/wizard-multi-template-configure'
 import { StepConnect } from './wizard/step-connect'
 import { StepSample } from './wizard/step-sample'
 import { StepDelivery } from './wizard/step-delivery'
@@ -390,7 +398,8 @@ export function NewStreamWizardPage() {
       workingState.connector.registryModuleId != null &&
       workingState.connector.selectedTemplateIds.length > 0
 
-    let streamConfigJson: Record<string, unknown> | undefined
+    /** Stream ids that receive downstream wizard configuration (protection, routes, governance, …). */
+    const streamsToConfigure: Array<{ streamId: number; configJson?: Record<string, unknown> }> = []
 
     try {
       if (useTemplateMaterialization) {
@@ -408,13 +417,10 @@ export function NewStreamWizardPage() {
         }
         outcome.materializedStreamIds = createdStreams.map((row) => row.stream_id)
         outcome.streamId = createdStreams[0]?.stream_id ?? null
-        streamConfigJson =
-          createdStreams[0]?.config_json && typeof createdStreams[0].config_json === 'object'
-            ? { ...(createdStreams[0].config_json as Record<string, unknown>) }
-            : undefined
         outcome.mappingSaved = true
         outcome.enrichmentSaved = true
         outcome.apiBacked = true
+        streamsToConfigure.push(...buildStreamsToConfigureFromMaterialization(createdStreams))
       } else {
         if (workingState.connector.connectorId == null || workingState.connector.sourceId == null) {
           throw new Error('Select a saved connector and its linked source before creating a stream.')
@@ -429,7 +435,7 @@ export function NewStreamWizardPage() {
         outcome.streamId = created.id
         outcome.apiBacked = true
         outcome.createdAt = created.created_at ?? null
-        streamConfigJson =
+        const createdConfigJson =
           created.config_json && typeof created.config_json === 'object' && !Array.isArray(created.config_json)
             ? { ...(created.config_json as Record<string, unknown>) }
             : { ...payload.config_json }
@@ -474,35 +480,45 @@ export function NewStreamWizardPage() {
             )
           }
         }
+        streamsToConfigure.push({ streamId: created.id, configJson: createdConfigJson })
       }
 
-      if (outcome.streamId != null && workingState.dataProtection.intents.length > 0) {
-        try {
-          const protectionResult = await persistWizardDataProtectionIntents(
-            outcome.streamId,
-            workingState,
-          )
-          outcome.dataProtectionSaved = protectionResult.saved
-          outcome.dataProtectionEnforcementIncomplete = protectionResult.enforcementIncomplete
-          outcome.dataProtectionWarnings = protectionResult.warnings
-          if (protectionResult.errors.length > 0) {
-            outcome.errors.push(...protectionResult.errors.map((err) => `data-protection: ${err}`))
+      const multiStream = streamsToConfigure.length > 1
+      const label = (streamId: number, message: string) =>
+        wizardPersistErrorLabel(streamId, message, { multiStream })
+
+      for (const target of streamsToConfigure) {
+        let streamConfigJson = target.configJson
+
+        if (workingState.dataProtection.intents.length > 0) {
+          try {
+            const protectionResult = await persistWizardDataProtectionIntents(target.streamId, workingState)
+            outcome.dataProtectionSaved = outcome.dataProtectionSaved || protectionResult.saved
+            outcome.dataProtectionEnforcementIncomplete =
+              outcome.dataProtectionEnforcementIncomplete || protectionResult.enforcementIncomplete
+            outcome.dataProtectionWarnings.push(...protectionResult.warnings)
+            if (protectionResult.errors.length > 0) {
+              outcome.errors.push(
+                ...protectionResult.errors.map((err) => label(target.streamId, `data-protection: ${err}`)),
+              )
+            }
+          } catch (err) {
+            outcome.errors.push(
+              label(
+                target.streamId,
+                `data-protection persist failed: ${err instanceof Error ? err.message : String(err)}`,
+              ),
+            )
           }
-        } catch (err) {
-          outcome.errors.push(
-            `data-protection persist failed: ${err instanceof Error ? err.message : String(err)}`,
-          )
         }
-      }
 
-      if (outcome.streamId != null) {
         try {
           const driftPolicyResult = await persistWizardSchemaDriftPolicy(
-            outcome.streamId,
+            target.streamId,
             workingState.dataProtection,
             { existingConfigJson: streamConfigJson },
           )
-          outcome.schemaDriftPolicySaved = driftPolicyResult.saved
+          outcome.schemaDriftPolicySaved = outcome.schemaDriftPolicySaved || driftPolicyResult.saved
           if (driftPolicyResult.saved && streamConfigJson) {
             streamConfigJson = mergeSchemaDriftPolicyIntoConfigJson(
               streamConfigJson,
@@ -510,67 +526,84 @@ export function NewStreamWizardPage() {
             )
           }
           if (driftPolicyResult.errors.length > 0) {
-            outcome.errors.push(...driftPolicyResult.errors)
+            outcome.errors.push(
+              ...driftPolicyResult.errors.map((err) => label(target.streamId, err)),
+            )
           }
         } catch (err) {
           outcome.errors.push(
-            `schema-drift-policy persist failed: ${err instanceof Error ? err.message : String(err)}`,
+            label(
+              target.streamId,
+              `schema-drift-policy persist failed: ${err instanceof Error ? err.message : String(err)}`,
+            ),
           )
         }
-      }
 
-      if (outcome.streamId != null && workingState.apiTest.unionSchema) {
-        try {
-          const unionSchemaResult = await persistWizardUnionSchema(
-            outcome.streamId,
-            workingState.apiTest.unionSchema,
-            { existingConfigJson: streamConfigJson },
-          )
-          if (unionSchemaResult.errors.length > 0) {
-            outcome.errors.push(...unionSchemaResult.errors)
-          }
-        } catch (err) {
-          outcome.errors.push(
-            `union-schema persist failed: ${err instanceof Error ? err.message : String(err)}`,
-          )
-        }
-      }
-
-      if (
-        outcome.streamId != null &&
-        workingState.destinations.destinationApiBacked &&
-        workingState.destinations.routeDrafts.length > 0
-      ) {
-        for (const routePayload of buildRouteCreatePayloads(outcome.streamId, workingState.destinations)) {
+        if (workingState.apiTest.unionSchema) {
           try {
-            const route = await createRoute(routePayload)
-            outcome.routeId = route.id
-            outcome.routeIds.push(route.id)
+            const unionSchemaResult = await persistWizardUnionSchema(
+              target.streamId,
+              workingState.apiTest.unionSchema,
+              { existingConfigJson: streamConfigJson },
+            )
+            if (unionSchemaResult.errors.length > 0) {
+              outcome.errors.push(
+                ...unionSchemaResult.errors.map((err) => label(target.streamId, err)),
+              )
+            }
           } catch (err) {
             outcome.errors.push(
-              `POST /routes/ failed (destination_id=${routePayload.destination_id}): ${err instanceof Error ? err.message : String(err)}`,
+              label(
+                target.streamId,
+                `union-schema persist failed: ${err instanceof Error ? err.message : String(err)}`,
+              ),
             )
           }
         }
-      }
 
-      if (outcome.streamId != null) {
+        const routeIdsForStream: number[] = []
+        if (
+          workingState.destinations.destinationApiBacked &&
+          workingState.destinations.routeDrafts.length > 0
+        ) {
+          for (const routePayload of buildRouteCreatePayloads(target.streamId, workingState.destinations)) {
+            try {
+              const route = await createRoute(routePayload)
+              routeIdsForStream.push(route.id)
+              outcome.routeId = route.id
+              outcome.routeIds.push(route.id)
+            } catch (err) {
+              outcome.errors.push(
+                label(
+                  target.streamId,
+                  `POST /routes/ failed (destination_id=${routePayload.destination_id}): ${err instanceof Error ? err.message : String(err)}`,
+                ),
+              )
+            }
+          }
+        }
+
         try {
           const governanceResult = await persistWizardStreamGovernance(
-            outcome.streamId,
+            target.streamId,
             workingState,
-            outcome.routeIds,
+            routeIdsForStream,
           )
-          outcome.governanceSaved = governanceResult.saved
+          outcome.governanceSaved = outcome.governanceSaved || governanceResult.saved
           if (governanceResult.warnings.length > 0) {
             outcome.dataProtectionWarnings.push(...governanceResult.warnings)
           }
           if (governanceResult.errors.length > 0) {
-            outcome.errors.push(...governanceResult.errors)
+            outcome.errors.push(
+              ...governanceResult.errors.map((err) => label(target.streamId, err)),
+            )
           }
         } catch (err) {
           outcome.errors.push(
-            `governance persist failed: ${err instanceof Error ? err.message : String(err)}`,
+            label(
+              target.streamId,
+              `governance persist failed: ${err instanceof Error ? err.message : String(err)}`,
+            ),
           )
         }
       }
@@ -582,32 +615,64 @@ export function NewStreamWizardPage() {
       setCreationError(message)
     } finally {
       setState((s) => ({ ...s, outcome }))
-      if (outcome.streamId != null) {
+      // Fail-closed: keep draft when configuration is incomplete so the operator can repair.
+      if (wizardCreateIsStartEligible(outcome)) {
         clearWizardDraft()
       }
       navigateToWizardStep('deploy')
       setBusy(false)
     }
 
-    if (startAfter && outcome.streamId != null) {
+    if (startAfter && wizardCreateIsStartEligible(outcome)) {
       setIsStarting(true)
       try {
-        const res = await startRuntimeStream(outcome.streamId)
-        setState((s) => ({ ...s, startMessage: res?.message ?? 'Runtime API unavailable.' }))
+        const ids =
+          outcome.materializedStreamIds && outcome.materializedStreamIds.length > 0
+            ? outcome.materializedStreamIds
+            : outcome.streamId != null
+              ? [outcome.streamId]
+              : []
+        const messages: string[] = []
+        for (const sid of ids) {
+          const res = await startRuntimeStream(sid)
+          messages.push(res?.message ?? `stream ${sid}: Runtime API unavailable.`)
+        }
+        setState((s) => ({
+          ...s,
+          startMessage: messages.length <= 1 ? (messages[0] ?? null) : messages.join(' · '),
+        }))
       } finally {
         setIsStarting(false)
       }
+    } else if (startAfter && wizardCreateIsConfigurationIncomplete(outcome)) {
+      setState((s) => ({
+        ...s,
+        startMessage: 'Start blocked: stream configuration is incomplete. Resolve persist errors before starting.',
+      }))
     }
   }, [busy, navigateToWizardStep, state])
 
   const handleStart = useCallback(async () => {
-    const id = state.outcome?.streamId
-    if (id == null || isStarting) return
+    if (!wizardCreateIsStartEligible(state.outcome) || isStarting) return
+    const ids =
+      state.outcome?.materializedStreamIds && state.outcome.materializedStreamIds.length > 0
+        ? state.outcome.materializedStreamIds
+        : state.outcome?.streamId != null
+          ? [state.outcome.streamId]
+          : []
+    if (ids.length === 0) return
     setIsStarting(true)
-    const res = await startRuntimeStream(id)
-    setState((s) => ({ ...s, startMessage: res?.message ?? 'Runtime API unavailable.' }))
+    const messages: string[] = []
+    for (const sid of ids) {
+      const res = await startRuntimeStream(sid)
+      messages.push(res?.message ?? `stream ${sid}: Runtime API unavailable.`)
+    }
+    setState((s) => ({
+      ...s,
+      startMessage: messages.length <= 1 ? (messages[0] ?? null) : messages.join(' · '),
+    }))
     setIsStarting(false)
-  }, [isStarting, state.outcome?.streamId])
+  }, [isStarting, state.outcome])
 
   const saveDraft = useCallback(() => {
     try {
@@ -870,17 +935,6 @@ export function NewStreamWizardPage() {
                     </>
                   )}
                 </button>
-              ) : null}
-              {!isDeployStep ? (
-                <a
-                  href="https://example.com/docs/streams/onboarding"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex h-9 items-center gap-1 text-[12px] font-semibold text-violet-700 hover:underline dark:text-violet-300"
-                >
-                  View onboarding docs
-                  <ExternalLink className="h-3.5 w-3.5" aria-hidden />
-                </a>
               ) : null}
             </>
           )}

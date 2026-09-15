@@ -20,7 +20,8 @@ from app.main import app
 # Isolated test DB: set TEST_DATABASE_URL (see tests/conftest.py). This test never touches dev data
 # when TEST_DATABASE_URL points at a dedicated database.
 _WIREMOCK_ENV = "WIREMOCK_BASE_URL"
-_DEFAULT_WIREMOCK = os.getenv(_WIREMOCK_ENV, "http://127.0.0.1:18080")
+# Align with scripts/testing/_env.sh — not the platform reverse-proxy on :18080.
+_DEFAULT_WIREMOCK = os.getenv(_WIREMOCK_ENV, "http://127.0.0.1:28080")
 
 
 def _wiremock_reachable(base: str) -> bool:

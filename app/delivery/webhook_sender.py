@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import threading
 import time
 from typing import Any
 
 import httpx
 
 from app.http.outbound_httpx_timeout import outbound_httpx_timeout
+from app.delivery.connection_pool import get_httpx_client, invalidate_httpx_client
 from app.delivery.webhook_payload_mode import (
     WEBHOOK_PAYLOAD_MODE_BATCH,
     WEBHOOK_PAYLOAD_MODE_SINGLE,
@@ -25,29 +25,6 @@ from app.formatters.message_prefix import (
 )
 from app.runtime.errors import DestinationSendError
 
-_httpx_pool_lock = threading.Lock()
-_httpx_pool: dict[str, httpx.Client] = {}
-
-
-def _borrow_httpx_client(*, pool_key: str, timeout: httpx.Timeout) -> httpx.Client:
-    with _httpx_pool_lock:
-        client = _httpx_pool.get(pool_key)
-        if (
-            client is None
-            or getattr(client, "is_closed", False)
-            or not isinstance(client, httpx.Client)
-        ):
-            client = httpx.Client(timeout=timeout)
-            _httpx_pool[pool_key] = client
-        return client
-
-
-def _invalidate_httpx_client(pool_key: str) -> None:
-    with _httpx_pool_lock:
-        client = _httpx_pool.pop(pool_key, None)
-    if client is not None and not getattr(client, "is_closed", False):
-        client.close()
-
 
 class WebhookSender:
     """Post event batches to webhook destinations with retry/backoff."""
@@ -59,11 +36,13 @@ class WebhookSender:
         formatter_override: dict[str, Any] | None = None,
         *,
         prefix_context: MessagePrefixResolveContext | None = None,
+        idempotency_key: str | None = None,
     ) -> None:
         """Send events to webhook endpoint.
 
         Config supports: url, headers, timeout_seconds, retry_count, retry_backoff_seconds, batch_size.
         formatter_override: Route-level formatter when non-empty (same resolution as syslog).
+        idempotency_key: optional Idempotency-Key header for sinks that support dedupe.
         """
 
         # StreamRunner skips calling send when extract_events returns []; keep guard for callers/tests.
@@ -80,6 +59,8 @@ class WebhookSender:
             raise DestinationSendError("Webhook destination requires url")
 
         headers = dict(config.get("headers", {}))
+        if idempotency_key:
+            headers = {**headers, "Idempotency-Key": str(idempotency_key)}
         timeout_seconds = float(config.get("timeout_seconds", 10))
         retries = int(config.get("retry_count", 2))
         backoff = float(config.get("retry_backoff_seconds", 1.0))
@@ -103,7 +84,7 @@ class WebhookSender:
 
         httpx_timeout = outbound_httpx_timeout(timeout_seconds)
         pool_key = f"webhook:{url}"
-        client = _borrow_httpx_client(pool_key=pool_key, timeout=httpx_timeout)
+        client = get_httpx_client(pool_key=pool_key, timeout=httpx_timeout)
         try:
             for batch in batches:
                 if prefix_on:
@@ -129,7 +110,7 @@ class WebhookSender:
                     except httpx.HTTPStatusError as exc:
                         status = int(exc.response.status_code) if exc.response is not None else None
                         if attempt >= attempts:
-                            _invalidate_httpx_client(pool_key)
+                            invalidate_httpx_client(pool_key)
                             raise DestinationSendError(
                                 f"Webhook send failed after retries: {exc}",
                                 http_status=status,
@@ -137,7 +118,7 @@ class WebhookSender:
                         time.sleep(max(backoff * (2 ** (attempt - 1)), 0))
                     except httpx.HTTPError as exc:
                         if attempt >= attempts:
-                            _invalidate_httpx_client(pool_key)
+                            invalidate_httpx_client(pool_key)
                             raise DestinationSendError(
                                 f"Webhook send failed after retries: {exc}"
                             ) from exc
@@ -145,5 +126,5 @@ class WebhookSender:
         except DestinationSendError:
             raise
         except httpx.HTTPError as exc:
-            _invalidate_httpx_client(pool_key)
+            invalidate_httpx_client(pool_key)
             raise DestinationSendError(f"Webhook send failed: {exc}") from exc

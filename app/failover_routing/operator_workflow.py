@@ -91,6 +91,27 @@ def build_failover_routing_summary(db: Session, stream_id: int) -> dict[str, Any
     }
 
 
+def _assert_primary_on_stream_topology(db: Session, *, stream_id: int, primary_destination_id: int) -> None:
+    """Primary must be a destination already attached to the stream via a Route."""
+
+    from app.routes.models import Route
+
+    # Same-transaction route inserts must be visible (tests use autoflush=False).
+    db.flush()
+    linked = (
+        db.query(Route.id)
+        .filter(
+            Route.stream_id == int(stream_id),
+            Route.destination_id == int(primary_destination_id),
+        )
+        .first()
+    )
+    if linked is None:
+        raise FailoverRouteValidationError(
+            f"primary destination {primary_destination_id} is not on stream {stream_id} route topology"
+        )
+
+
 def create_failover_route(
     db: Session,
     *,
@@ -105,6 +126,7 @@ def create_failover_route(
         raise FailoverRouteValidationError("primary and secondary destinations must differ")
     _validate_destination(db, primary_id)
     _validate_destination(db, secondary_id)
+    _assert_primary_on_stream_topology(db, stream_id=stream_id, primary_destination_id=primary_id)
 
     existing = db.execute(
         select(StreamFailoverRoute).where(
@@ -152,6 +174,7 @@ def patch_failover_route(
         raise FailoverRouteValidationError("primary and secondary destinations must differ")
     if primary_destination_id is not None:
         _validate_destination(db, new_primary)
+        _assert_primary_on_stream_topology(db, stream_id=stream_id, primary_destination_id=new_primary)
         conflict = db.execute(
             select(StreamFailoverRoute).where(
                 StreamFailoverRoute.stream_id == stream_id,

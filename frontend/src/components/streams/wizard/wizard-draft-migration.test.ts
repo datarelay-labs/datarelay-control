@@ -10,6 +10,7 @@ import {
 } from './wizard-state'
 import {
   parseWizardDraftV2,
+  loadWizardDraft,
   WIZARD_DRAFT_KEY_V1,
   WIZARD_DRAFT_KEY_V2,
   WIZARD_DRAFT_VERSION,
@@ -282,5 +283,85 @@ describe('wizard-draft-migration', () => {
       routeDraftKey: 'r1',
       protectionAction: 'tokenize',
     })
+  })
+
+  it('scrubs secrets and raw samples from browser drafts on save and load', () => {
+    const state = buildInitialState()
+    state.connector.bearerToken = 'wizard-bearer-secret'
+    state.connector.apiKeyValue = 'wizard-api-key-secret'
+    state.connector.basicPassword = 'wizard-basic-pass'
+    state.connector.oauthClientSecret = 'wizard-oauth-secret'
+    state.connector.loginPassword = 'wizard-login-pass'
+    state.connector.refreshToken = 'wizard-refresh-secret'
+    state.stream.params = [{ id: 'p1', key: 'api_key', value: 'query-secret' }]
+    state.apiTest.rawBody = '{"token":"raw-body-secret"}'
+    state.apiTest.parsedJson = { access_token: 'parsed-secret' }
+    state.apiTest.rawResponse = { password: 'raw-response-secret' }
+    state.apiTest.extractedEvents = [{ token: 'event-secret' }]
+    state.apiTest.responseSample = { client_secret: 'sample-secret' }
+    state.apiTest.analysis = {
+      responseSummary: {
+        root_type: 'object',
+        approx_size_bytes: 1,
+        top_level_keys: [],
+        item_count_root: null,
+        truncation: null,
+      },
+      detectedArrays: [],
+      detectedCheckpointCandidates: [],
+      sampleEvent: { token: 'analysis-sample-secret' },
+      selectedEventArrayDefault: null,
+      flatPreviewFields: [],
+      previewError: null,
+    }
+
+    saveWizardDraft(state, 'connect')
+    const raw = localStorage.getItem(WIZARD_DRAFT_KEY_V2) ?? ''
+    expect(raw).not.toContain('wizard-bearer-secret')
+    expect(raw).not.toContain('wizard-api-key-secret')
+    expect(raw).not.toContain('query-secret')
+    expect(raw).not.toContain('raw-body-secret')
+    expect(raw).not.toContain('parsed-secret')
+    expect(raw).not.toContain('event-secret')
+    expect(raw).not.toContain('analysis-sample-secret')
+
+    const loaded = parseWizardDraftV2(raw)
+    expect(loaded?.state.connector.bearerToken).toBe('')
+    expect(loaded?.state.connector.apiKeyValue).toBe('')
+    expect(loaded?.state.stream.params[0]?.value).toBe('')
+    expect(loaded?.state.apiTest.rawBody).toBeNull()
+    expect(loaded?.state.apiTest.parsedJson).toBeNull()
+    expect(loaded?.state.apiTest.rawResponse).toBeNull()
+    expect(loaded?.state.apiTest.extractedEvents).toEqual([])
+    expect(loaded?.state.apiTest.responseSample).toBeNull()
+    expect(loaded?.state.apiTest.analysis?.sampleEvent).toBeNull()
+  })
+
+  it('scrubs legacy drafts that still contain secrets on load', () => {
+    const legacy = {
+      version: WIZARD_DRAFT_VERSION,
+      savedAt: 1,
+      stepKey: 'connect' as const,
+      state: {
+        ...buildInitialState(),
+        connector: {
+          ...buildInitialState().connector,
+          bearerToken: 'legacy-draft-secret',
+        },
+        apiTest: {
+          ...buildInitialState().apiTest,
+          rawBody: 'legacy-raw-body',
+          extractedEvents: [{ id: 1 }],
+        },
+      },
+    }
+    localStorage.setItem(WIZARD_DRAFT_KEY_V2, JSON.stringify(legacy))
+    const loaded = loadWizardDraft()
+    expect(loaded?.state.connector.bearerToken).toBe('')
+    expect(loaded?.state.apiTest.rawBody).toBeNull()
+    expect(loaded?.state.apiTest.extractedEvents).toEqual([])
+    const rewritten = localStorage.getItem(WIZARD_DRAFT_KEY_V2) ?? ''
+    expect(rewritten).not.toContain('legacy-draft-secret')
+    expect(rewritten).not.toContain('legacy-raw-body')
   })
 })

@@ -67,6 +67,17 @@ def count_active_backfills_on_stream(db: Session, stream_id: int, *, exclude_job
     return int(db.execute(q).scalar_one())
 
 
+def list_active_backfill_jobs(db: Session) -> list[BackfillJob]:
+    """Jobs in RUNNING/CANCELLING that can block stream-level backfill starts."""
+
+    q = (
+        select(BackfillJob)
+        .where(BackfillJob.status.in_(("RUNNING", "CANCELLING")))
+        .order_by(BackfillJob.id.asc())
+    )
+    return list(db.scalars(q).all())
+
+
 def stage_progress_event(
     db: Session,
     *,

@@ -1,4 +1,5 @@
 import { ShieldCheck } from 'lucide-react'
+import { useEffect, useRef } from 'react'
 import { isGovernanceModeEnabled } from '../../../utils/governance-mode'
 
 type WizardGovernanceStartModalProps = {
@@ -16,6 +17,18 @@ export function WizardGovernanceStartModal({
   onStart,
   onCancel,
 }: WizardGovernanceStartModalProps) {
+  const cancelRef = useRef<HTMLButtonElement>(null)
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    previouslyFocusedRef.current = document.activeElement as HTMLElement | null
+    cancelRef.current?.focus()
+    return () => {
+      previouslyFocusedRef.current?.focus?.()
+    }
+  }, [open])
+
   if (!open) return null
 
   const tenantGov = isGovernanceModeEnabled()
@@ -27,6 +40,31 @@ export function WizardGovernanceStartModal({
       aria-modal="true"
       aria-labelledby="wizard-governance-modal-title"
       data-testid="wizard-governance-start-modal"
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          onCancel()
+          return
+        }
+        if (event.key !== 'Tab') return
+        const root = event.currentTarget
+        const focusable = Array.from(
+          root.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), input:not([disabled]), [href], select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+          ),
+        ).filter((el) => !el.hasAttribute('disabled') && el.tabIndex !== -1)
+        if (focusable.length === 0) return
+        const first = focusable[0]
+        const last = focusable[focusable.length - 1]
+        const active = document.activeElement as HTMLElement | null
+        if (event.shiftKey && active === first) {
+          event.preventDefault()
+          last.focus()
+        } else if (!event.shiftKey && active === last) {
+          event.preventDefault()
+          first.focus()
+        }
+      }}
     >
       <div className="w-full max-w-md rounded-xl border border-slate-200/90 bg-white p-5 shadow-xl dark:border-gdc-border dark:bg-gdc-card">
         <div className="flex items-start gap-3">
@@ -68,6 +106,7 @@ export function WizardGovernanceStartModal({
 
         <div className="mt-5 flex justify-end gap-2">
           <button
+            ref={cancelRef}
             type="button"
             onClick={onCancel}
             className="inline-flex h-9 items-center rounded-md border border-slate-200/90 bg-white px-3 text-[12px] font-semibold text-slate-700 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200"

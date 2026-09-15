@@ -279,11 +279,18 @@ export function StepReview({
   const moreEnrichment = Math.max(0, enrichmentRows.length - enrichmentChips.length)
 
   const [destinations, setDestinations] = useState<DestinationListItem[]>([])
+  const [catalogLoadFailed, setCatalogLoadFailed] = useState(false)
   useEffect(() => {
     let cancelled = false
     void (async () => {
       const rows = await fetchDestinationsList()
-      if (!cancelled) setDestinations(rows)
+      if (cancelled) return
+      if (rows === null) {
+        setCatalogLoadFailed(true)
+        return
+      }
+      setCatalogLoadFailed(false)
+      setDestinations(rows)
     })()
     return () => {
       cancelled = true
@@ -298,6 +305,7 @@ export function StepReview({
 
   const connectivityForRoutes = useMemo(() => {
     if (routeDrafts.length === 0) return { ok: true, failed: false, unknown: false }
+    if (catalogLoadFailed) return { ok: false, failed: false, unknown: true }
     let failed = false
     let unknown = false
     for (const r of routeDrafts) {
@@ -311,7 +319,7 @@ export function StepReview({
     }
     const ok = !failed && !unknown
     return { ok, failed, unknown }
-  }, [routeDrafts, destById])
+  }, [routeDrafts, destById, catalogLoadFailed])
 
   const enrichmentValid =
     state.enrichment.length === 0 || state.enrichment.every((e) => e.fieldName.trim().length > 0)
@@ -471,6 +479,11 @@ export function StepReview({
   return (
     <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
       <div className="min-w-0 flex-[2] space-y-4">
+        {catalogLoadFailed ? (
+          <p className="rounded-md border border-red-200/80 bg-red-50 px-3 py-2 text-[12px] font-medium text-red-800 dark:border-red-500/40 dark:bg-red-950/40 dark:text-red-200">
+            Failed to load destinations. Check authentication and API connectivity.
+          </p>
+        ) : null}
         {incrementalTestWarn.level === 'warning' ? (
           <p
             className="flex items-start gap-2 rounded-md border border-amber-200/80 bg-amber-500/[0.06] px-3 py-2 text-[12px] text-amber-900 dark:border-amber-500/35 dark:text-amber-100"

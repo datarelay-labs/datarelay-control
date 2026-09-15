@@ -50,7 +50,19 @@ export function TemplateUseModal({
     setCreateRoute(true)
     setRedirectTo('stream_runtime')
     setCreds({})
-    void fetchDestinationsList().then(setDestinations).catch(() => setDestinations([]))
+    void fetchDestinationsList()
+      .then((rows) => {
+        if (rows === null) {
+          setDestinations([])
+          setError('Failed to load destinations. Check authentication and API connectivity.')
+          return
+        }
+        setDestinations(rows)
+      })
+      .catch(() => {
+        setDestinations([])
+        setError('Failed to load destinations. Check authentication and API connectivity.')
+      })
   }, [open, template])
 
   const credFields = useMemo(() => {

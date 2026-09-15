@@ -98,6 +98,7 @@ def test_scheduler_worker_loop_reuses_thread_local_runner(
             int(stream_id): StreamSchedulerGate(
                 stream_id=int(stream_id),
                 enabled=enabled,
+                    status="RUNNING",
                 polling_interval=0.01,
                 name=f"pytest-scheduler-isolation-{stream_id}",
             )

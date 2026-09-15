@@ -858,6 +858,15 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     expect(screen.queryByTestId('governance-read-only-banner')).not.toBeInTheDocument()
   })
 
+  it('shows an explicit 404 page for unknown URLs instead of redirecting to /streams', async () => {
+    renderApp('/this-route-does-not-exist-xyz')
+    expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Page not found' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Go to Streams' })).toHaveAttribute('href', '/streams')
+    // Must not silently Navigate to the streams console route.
+    expect(screen.queryByTestId('streams-console')).not.toBeInTheDocument()
+  })
+
   it('shows read-only banner on Governance pages for CONNECTOR_OPERATOR (M20 RBAC)', async () => {
     persistTestSession('CONNECTOR_OPERATOR')
     renderApp('/governance')

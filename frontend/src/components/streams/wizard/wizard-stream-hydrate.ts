@@ -187,10 +187,11 @@ export async function refreshWizardDestinationsFromStream(streamId: number): Pro
     fetchDestinationsList(),
   ])
   const streamRoutes = (allRoutes ?? []).filter((route) => route.stream_id === streamId)
+  if (destinations === null) return null
   const merged = buildWizardDestinationsFromRouteSources(
     mapping?.routes ?? [],
     streamRoutes,
-    destinations ?? [],
+    destinations,
   )
   const routeIds = merged.routeDrafts
     .map((draft) => Number(/^route-(\d+)$/.exec(draft.key)?.[1] ?? NaN))
@@ -287,10 +288,11 @@ export async function hydrateWizardStateFromStream(streamId: number): Promise<Wi
   if (!found) return null
 
   const streamRoutes = (allRoutes ?? []).filter((route) => route.stream_id === streamId)
+  if (destinations === null) return null
   const hydratedDestinations = buildWizardDestinationsFromRouteSources(
     mapping?.routes ?? [],
     streamRoutes,
-    destinations ?? [],
+    destinations,
   )
   const hydratedRouteIds = hydratedDestinations.routeDrafts
     .map((draft) => Number(/^route-(\d+)$/.exec(draft.key)?.[1] ?? NaN))

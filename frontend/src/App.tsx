@@ -1,5 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
-import { AppShellLayout, PlaceholderPage } from './components/layout/app-shell-layout'
+import { AppShellLayout, NotFoundPage, PlaceholderPage } from './components/layout/app-shell-layout'
 import { PreserveSearchRedirect } from './components/layout/preserve-search-redirect'
 import { OssRouteGuard } from './components/oss/oss-route-guard'
 import { NAV_PATH } from './config/nav-paths'
@@ -144,7 +144,7 @@ export default function App() {
         {PLACEHOLDER_NAV_KEYS.map((key) => (
           <Route key={key} path={key} element={<PlaceholderPage title={PAGE_TITLE[key]} />} />
         ))}
-        <Route path="*" element={<Navigate to="/streams" replace />} />
+        <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>
     </DisplayTimezoneProvider>

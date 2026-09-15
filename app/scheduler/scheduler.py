@@ -13,6 +13,7 @@ from app.scheduler.context_cache import load_scheduler_stream_context
 from app.scheduler.enabled_state import StreamSchedulerGate, enabled_state_cache
 from app.runners.stream_runner import StreamRunner
 from app.streams.repository import get_enabled_stream_ids, get_stream_by_id
+from app.streams.runtime_eligibility import is_stream_scheduler_runnable
 from app.scheduler import runtime_state as scheduler_runtime_state
 
 logger = logging.getLogger(__name__)
@@ -123,11 +124,16 @@ class Scheduler:
         with self._workers_lock:
             for event in self._stream_stop_events.values():
                 event.set()
+            workers = list(self._workers.values())
         for thread in self._threads:
             thread.join(timeout=5.0)
         self._threads.clear()
+        # Bounded join for per-stream workers (supervisor join alone is not enough).
+        for worker in workers:
+            worker.join(timeout=5.0)
         with self._workers_lock:
             self._workers.clear()
+            self._stream_stop_events.clear()
         logger.info("%s", {"stage": "scheduler_stopped"})
 
     def run_stream(self, stream: Any) -> dict[str, Any]:
@@ -277,10 +283,16 @@ class Scheduler:
                             {"stage": "scheduler_loop_exit", "stream_id": stream_id, "reason": "stream_missing"},
                         )
                         break
-                    if not gate.enabled:
+                    if not is_stream_scheduler_runnable(enabled=gate.enabled, status=gate.status):
                         logger.info(
                             "%s",
-                            {"stage": "scheduler_loop_exit", "stream_id": stream_id, "reason": "stream_disabled"},
+                            {
+                                "stage": "scheduler_loop_exit",
+                                "stream_id": stream_id,
+                                "reason": "stream_not_runnable",
+                                "enabled": bool(gate.enabled),
+                                "status": str(gate.status),
+                            },
                         )
                         break
                     interval = float(gate.polling_interval)

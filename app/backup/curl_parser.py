@@ -10,9 +10,15 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from app.security.secrets import mask_http_headers
+from app.security.secrets import (
+    MASKED_SECRET_SENTINEL,
+    mask_config_payload,
+    mask_http_headers,
+    mask_param_map,
+    mask_url_query_secrets,
+)
 
-_MASK = "********"
+_MASK = MASKED_SECRET_SENTINEL
 
 
 @dataclass
@@ -228,21 +234,35 @@ def build_curl_import_draft(parsed: ParsedCurlRequest, *, connector_name: str | 
             continue
         common_headers[hk] = hv
 
+    # Header masking alone is insufficient: query/body may carry api_key, token, password, etc.
+    safe_query = mask_param_map(parsed.query_params)
+    safe_body: Any | None
+    if parsed.json_body is not None:
+        safe_body = mask_config_payload(parsed.json_body)
+    elif parsed.raw_body:
+        safe_body = _MASK if any(
+            token in (parsed.raw_body or "").lower()
+            for token in ("password=", "api_key=", "access_token=", "client_secret=", "token=")
+        ) else parsed.raw_body
+    else:
+        safe_body = None
+
     stream_config: dict[str, Any] = {
         "endpoint": parsed.endpoint,
         "method": parsed.method,
     }
-    if parsed.query_params:
-        stream_config["params"] = dict(parsed.query_params)
-    if parsed.json_body is not None:
-        stream_config["body"] = parsed.json_body
-    elif parsed.raw_body:
-        stream_config["body"] = parsed.raw_body
+    if safe_query:
+        stream_config["params"] = dict(safe_query)
+    if safe_body is not None:
+        stream_config["body"] = safe_body
 
     suggested_stream_name = "Imported stream"
     if parsed.endpoint and parsed.endpoint != "/":
         slug = parsed.endpoint.strip("/").split("/")[-1] or "stream"
         suggested_stream_name = f"Imported {slug}"
+
+    safe_url = mask_url_query_secrets(parsed.url)
+    base_url = parsed.base_url or urljoin(safe_url, "/")
 
     return {
         "draft_kind": "curl_http",
@@ -252,7 +272,7 @@ def build_curl_import_draft(parsed: ParsedCurlRequest, *, connector_name: str | 
             "status": "STOPPED",
             "source_type": "HTTP_API_POLLING",
             "connector_type": "generic_http",
-            "base_url": parsed.base_url or urljoin(parsed.url, "/"),
+            "base_url": base_url,
             "verify_ssl": True,
             "common_headers": common_headers,
             "auth_type": auth_type,
@@ -260,7 +280,7 @@ def build_curl_import_draft(parsed: ParsedCurlRequest, *, connector_name: str | 
         },
         "source_config_json": {
             "connector_type": "generic_http",
-            "base_url": parsed.base_url or urljoin(parsed.url, "/"),
+            "base_url": base_url,
             "verify_ssl": True,
             "common_headers": common_headers,
         },
@@ -274,10 +294,10 @@ def build_curl_import_draft(parsed: ParsedCurlRequest, *, connector_name: str | 
         },
         "parsed": {
             "method": parsed.method,
-            "url": parsed.url,
+            "url": safe_url,
             "base_url": parsed.base_url,
             "endpoint": parsed.endpoint,
-            "query_params": parsed.query_params,
+            "query_params": safe_query,
             "headers_masked": parsed.headers_masked,
             "has_json_body": parsed.json_body is not None,
             "has_raw_body": parsed.raw_body is not None,

@@ -19,5 +19,11 @@ class DestinationAdapter(ABC):
         formatter_override: dict[str, Any] | None = None,
         *,
         prefix_context: MessagePrefixResolveContext | None = None,
+        idempotency_key: str | None = None,
     ) -> None:
-        """Deliver events; raise :class:`DestinationSendError` on failure."""
+        """Deliver events; raise :class:`DestinationSendError` on failure.
+
+        ``idempotency_key`` is best-effort: destinations that support request
+        dedupe (e.g. webhook ``Idempotency-Key``) should propagate it. Callers
+        must not assume exactly-once delivery when the sink cannot dedupe.
+        """

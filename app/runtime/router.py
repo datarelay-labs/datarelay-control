@@ -3154,7 +3154,7 @@ async def get_stream_replay_summary(
 @router.get("/streams/{stream_id}/replay-events", response_model=StreamReplayEventsResponse)
 async def list_stream_replay_events(
     stream_id: int,
-    status: str | None = Query(None, description="Filter by pending, replayed, failed, or discarded."),
+    status: str | None = Query(None, description="Filter by pending, replaying, replayed, failed, or discarded."),
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db_read_bounded),
 ) -> StreamReplayEventsResponse:

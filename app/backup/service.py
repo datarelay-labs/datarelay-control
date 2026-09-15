@@ -6,6 +6,7 @@ from copy import deepcopy
 from typing import Any
 
 from fastapi import HTTPException, status
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.backup.export_builder import (
@@ -32,10 +33,13 @@ from app.connectors.models import Connector
 from app.destinations.models import Destination
 from app.enrichments.models import Enrichment
 from app.mappings.models import Mapping
+from app.platform_admin.models import PlatformAuditEvent
 from app.routes.models import Route
 from app.sources.models import Source
 from app.platform_admin import journal
 from app.streams.models import Stream
+
+_IMPORT_APPLY_OPERATION_ACTION = "IMPORT_APPLY_OPERATION"
 
 
 def _strip_mask_placeholders(value: Any) -> Any:
@@ -44,6 +48,81 @@ def _strip_mask_placeholders(value: Any) -> Any:
     if isinstance(value, list):
         return [_strip_mask_placeholders(v) for v in value if v != "********"]
     return value
+
+
+def _normalize_idempotency_key(raw: str | None) -> str | None:
+    if raw is None:
+        return None
+    key = str(raw).strip()
+    if not key:
+        return None
+    if len(key) > 128:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error_code": "IMPORT_IDEMPOTENCY_KEY_INVALID",
+                "message": "idempotency_key must be 1..128 characters.",
+            },
+        )
+    return key
+
+
+def _acquire_import_apply_idempotency_lock(db: Session, idempotency_key: str) -> None:
+    """Serialize concurrent apply retries for the same operation key within a transaction."""
+
+    bind = db.get_bind()
+    dialect = getattr(getattr(bind, "dialect", None), "name", "") or ""
+    if dialect != "postgresql":
+        return
+    lock_key = f"import_apply_idempotency:{idempotency_key}"
+    db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"), {"lock_key": lock_key})
+
+
+def _find_completed_import_apply(db: Session, idempotency_key: str) -> ImportApplyResponse | None:
+    rows = (
+        db.query(PlatformAuditEvent)
+        .filter(PlatformAuditEvent.action == _IMPORT_APPLY_OPERATION_ACTION)
+        .order_by(PlatformAuditEvent.id.desc())
+        .limit(200)
+        .all()
+    )
+    for row in rows:
+        details = row.details_json if isinstance(row.details_json, dict) else {}
+        if str(details.get("idempotency_key") or "") != idempotency_key:
+            continue
+        if str(details.get("status") or "") != "completed":
+            continue
+        response_payload = details.get("response")
+        if not isinstance(response_payload, dict):
+            continue
+        try:
+            replay = ImportApplyResponse.model_validate(response_payload)
+        except Exception:
+            continue
+        return replay.model_copy(update={"idempotent_replay": True, "idempotency_key": idempotency_key})
+    return None
+
+
+def _record_import_apply_operation(
+    db: Session,
+    *,
+    idempotency_key: str,
+    mode: str,
+    response: ImportApplyResponse,
+    request: Any = None,
+) -> None:
+    journal.record_audit_event(
+        db,
+        action=_IMPORT_APPLY_OPERATION_ACTION,
+        entity_type="IMPORT_APPLY",
+        details={
+            "idempotency_key": idempotency_key,
+            "status": "completed",
+            "mode": mode,
+            "response": response.model_dump(mode="json"),
+        },
+        request=request,
+    )
 
 
 def preview_import(db: Session, bundle: dict[str, Any], mode: str, *, dry_run: bool = True) -> ImportPreviewResponse:
@@ -128,27 +207,31 @@ def _assert_apply_allowed(db: Session, body: ImportApplyRequest) -> ValidationOu
             },
         )
     if body.mode == "full_restore":
-        running = (
-            db.query(Stream.id, Stream.name)
-            .filter(Stream.status == "RUNNING")
-            .order_by(Stream.id.asc())
-            .limit(20)
-            .all()
-        )
-        if running:
-            names = [f"{row.name or 'stream'}#{row.id}" for row in running]
+        from app.streams.runtime_eligibility import reconcile_and_list_active_streams_for_destructive_ops
+
+        active = reconcile_and_list_active_streams_for_destructive_ops(db, limit=20)
+        if active:
+            names = [label for _sid, label in active]
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail={
-                    "error_code": "FULL_RESTORE_BLOCKED_STREAM_RUNNING",
-                    "message": "Stop all running streams before applying a full restore.",
+                    "error_code": "FULL_RESTORE_BLOCKED_STREAM_ACTIVE",
+                    "message": "Stop all active streams (and wait for workers to exit) before applying a full restore.",
                     "running_streams": names,
+                    "active_streams": names,
                 },
             )
     return outcome
 
 
-def apply_import(db: Session, body: ImportApplyRequest) -> ImportApplyResponse:
+def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) -> ImportApplyResponse:
+    idempotency_key = _normalize_idempotency_key(body.idempotency_key)
+    if idempotency_key is not None:
+        _acquire_import_apply_idempotency_lock(db, idempotency_key)
+        prior = _find_completed_import_apply(db, idempotency_key)
+        if prior is not None:
+            return prior
+
     _assert_apply_allowed(db, body)
     bundle = deepcopy(body.bundle)
     mode = body.mode
@@ -307,6 +390,7 @@ def apply_import(db: Session, body: ImportApplyRequest) -> ImportApplyResponse:
             db.add(row)
 
     created_dest_ids = list(dest_old_to_new.values())
+    unresolved_route_destinations: list[dict[str, Any]] = []
     for r in routes:
         if not isinstance(r, dict):
             continue
@@ -314,8 +398,20 @@ def apply_import(db: Session, body: ImportApplyRequest) -> ImportApplyResponse:
         if new_stream is None:
             continue
         old_dest = int(r.get("destination_id", -1))
-        new_dest = dest_old_to_new.get(old_dest, old_dest)
-        if db.get(Destination, new_dest) is None:
+        if old_dest in dest_old_to_new:
+            new_dest = int(dest_old_to_new[old_dest])
+        elif mode == "clone" and db.get(Destination, old_dest) is not None:
+            # Same-environment clone reuses existing local destinations. Cross-env
+            # import/full_restore must never fall back to raw foreign numeric IDs.
+            new_dest = old_dest
+        else:
+            unresolved_route_destinations.append(
+                {
+                    "route_export_id": r.get("id"),
+                    "destination_export_id": old_dest,
+                    "stream_id": new_stream,
+                }
+            )
             continue
         row = Route(
             stream_id=new_stream,
@@ -329,6 +425,19 @@ def apply_import(db: Session, body: ImportApplyRequest) -> ImportApplyResponse:
         )
         db.add(row)
 
+    if unresolved_route_destinations:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error_code": "IMPORT_ROUTE_DESTINATION_UNMAPPED",
+                "message": (
+                    "Import refused to bind routes to foreign destination IDs. "
+                    "Every route destination_id must remap via destinations included in the bundle."
+                ),
+                "unresolved": unresolved_route_destinations[:20],
+            },
+        )
+
     audit_details: dict[str, Any] = {
         "mode": mode,
         "streams_created": len(created_streams),
@@ -337,13 +446,14 @@ def apply_import(db: Session, body: ImportApplyRequest) -> ImportApplyResponse:
     }
     if replaced_preview is not None:
         audit_details["replaced"] = replaced_preview.model_dump()
+    if idempotency_key is not None:
+        audit_details["idempotency_key"] = idempotency_key
     journal.record_audit_event(
         db,
         action="FULL_RESTORE_APPLIED" if mode == "full_restore" else "IMPORT_APPLIED",
-        actor_username="system",
         details=audit_details,
+        request=request,
     )
-    db.commit()
 
     redirect_path = None
     if len(created_streams) == 1:
@@ -351,7 +461,7 @@ def apply_import(db: Session, body: ImportApplyRequest) -> ImportApplyResponse:
     elif len(created_connectors) == 1:
         redirect_path = f"/connectors/{created_connectors[0]}"
 
-    return ImportApplyResponse(
+    response = ImportApplyResponse(
         ok=True,
         created=ImportApplyEntityIds(
             connector_ids=created_connectors,
@@ -361,7 +471,19 @@ def apply_import(db: Session, body: ImportApplyRequest) -> ImportApplyResponse:
         ),
         replaced=replaced_preview,
         redirect_path=redirect_path,
+        idempotency_key=idempotency_key,
+        idempotent_replay=False,
     )
+    if idempotency_key is not None:
+        _record_import_apply_operation(
+            db,
+            idempotency_key=idempotency_key,
+            mode=mode,
+            response=response.model_copy(update={"idempotent_replay": False}),
+            request=request,
+        )
+    db.commit()
+    return response
 
 
 def clone_connector(db: Session, connector_id: int, name_suffix: str) -> tuple[int, list[int], str]:

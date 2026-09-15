@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.runners.stream_runner_db import run_with_db
 from app.streams.repository import list_stream_scheduler_gates
+from app.streams.runtime_eligibility import is_stream_scheduler_runnable
 
 DEFAULT_TTL_SEC = 0.5
 
@@ -26,6 +27,7 @@ class StreamSchedulerGate:
 
     stream_id: int
     enabled: bool
+    status: str
     polling_interval: float
     name: str | None
 
@@ -82,8 +84,12 @@ class EnabledStateCache:
             return self._gates.get(int(stream_id))
 
     def is_enabled(self, stream_id: int) -> bool:
+        """True when the stream is scheduler-runnable (enabled + RUNNING)."""
+
         gate = self.get_gate(stream_id)
-        return bool(gate is not None and gate.enabled)
+        if gate is None:
+            return False
+        return is_stream_scheduler_runnable(enabled=gate.enabled, status=gate.status)
 
     def snapshot_gates(self) -> dict[int, StreamSchedulerGate]:
         """Return a shallow copy of the current gate map (after refresh)."""
@@ -139,6 +145,7 @@ class EnabledStateCache:
                 int(row.stream_id): StreamSchedulerGate(
                     stream_id=int(row.stream_id),
                     enabled=bool(row.enabled),
+                    status=str(row.status or ""),
                     polling_interval=float(row.polling_interval),
                     name=row.name,
                 )

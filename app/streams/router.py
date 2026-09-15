@@ -34,7 +34,24 @@ async def list_streams(db: Session = Depends(get_db_read_bounded)) -> list[Strea
         try:
             out.append(StreamRead.model_validate(row))
         except Exception:
-            logger.exception("streams_list_row_skipped stream_id=%s", getattr(row, "id", None))
+            logger.exception("streams_list_row_degraded stream_id=%s", getattr(row, "id", None))
+            # Do not silently hide the stream — return a degraded representation.
+            out.append(
+                StreamRead(
+                    id=int(row.id),
+                    name=str(getattr(row, "name", None) or f"stream-{getattr(row, 'id', '?')}"),
+                    connector_id=int(getattr(row, "connector_id", 0) or 0),
+                    source_id=int(getattr(row, "source_id", 0) or 0),
+                    stream_type=str(getattr(row, "stream_type", None) or "UNKNOWN"),
+                    config_json={},
+                    polling_interval=int(getattr(row, "polling_interval", 0) or 0),
+                    enabled=bool(getattr(row, "enabled", False)),
+                    status="ERROR",
+                    rate_limit_json={},
+                    created_at=getattr(row, "created_at", None),
+                    updated_at=getattr(row, "updated_at", None),
+                )
+            )
     return out
 
 
@@ -67,7 +84,8 @@ async def create_stream(payload: StreamCreate, request: Request, db: Session = D
         stream_type=payload.stream_type or "HTTP_API_POLLING",
         config_json=dict(payload.config_json or {}),
         polling_interval=int(payload.polling_interval or 60),
-        enabled=True if payload.enabled is None else bool(payload.enabled),
+        # Create ≠ Start: default disabled + STOPPED so scheduler cannot deliver until /start.
+        enabled=False if payload.enabled is None else bool(payload.enabled),
         # Runtime status is owned by /start and /stop — never forge RUNNING via create.
         status="STOPPED",
         rate_limit_json=dict(payload.rate_limit_json or {}),
@@ -219,6 +237,7 @@ async def delete_stream(stream_id: int, request: Request, db: Session = Depends(
             request=request,
         )
         delete_stream_and_dependencies(db, stream_id)
+        StreamRunner.discard_lock(stream_id)
     except ValueError as exc:
         if str(exc) == "STREAM_NOT_FOUND":
             raise HTTPException(

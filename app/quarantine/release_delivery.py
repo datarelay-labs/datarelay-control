@@ -31,7 +31,11 @@ def deliver_protected_events_to_routes(
     destination_registry: DestinationAdapterRegistry | None = None,
     route_id: int | None = None,
 ) -> tuple[bool, str | None]:
-    """Fan-out protected events to enabled routes; LOG_AND_CONTINUE failures absorbed."""
+    """Fan-out protected events to enabled routes.
+
+    LOG_AND_CONTINUE absorbs *partial* route failures, but if every actionable
+    destination send fails the release is unsuccessful (must not become RELEASED).
+    """
 
     ctx = load_stream_context(db, stream_id)
     if ctx is None:
@@ -49,7 +53,9 @@ def deliver_protected_events_to_routes(
     )
     stream_name = str(_get(ctx, "name", "") or "")
     saw_actionable = False
+    any_send_ok = False
     all_required_ok = True
+    last_error: str | None = None
 
     for route in routes:
         current_route_id = int(_get(route, "id", 0))
@@ -87,8 +93,10 @@ def deliver_protected_events_to_routes(
                 prefix_context=prefix_context,
             )
             _ = max(0, int((time.monotonic() - send_started) * 1000))
+            any_send_ok = True
         except Exception as exc:
             _ = max(0, int((time.monotonic() - send_started) * 1000))
+            last_error = str(exc) or type(exc).__name__
             logger.warning(
                 "quarantine_release_route_failed stream_id=%s route_id=%s destination_id=%s error=%s",
                 stream_id,
@@ -101,4 +109,8 @@ def deliver_protected_events_to_routes(
 
     if not saw_actionable:
         return False, "no actionable routes"
+    # LOG_AND_CONTINUE may absorb partial route failures, but total send failure must not
+    # report success (would falsely mark quarantine RELEASED).
+    if not any_send_ok:
+        return False, last_error or "all destination sends failed"
     return all_required_ok, None

@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fetchDestinationsList } from '../../../api/gdcDestinations'
 import { StepDeploy } from './step-deploy'
 import { buildInitialState } from './wizard-state'
 
@@ -100,6 +101,46 @@ function multiRouteReadyState() {
 }
 
 describe('StepDeploy', () => {
+  beforeEach(() => {
+    vi.mocked(fetchDestinationsList).mockReset()
+    vi.mocked(fetchDestinationsList).mockResolvedValue([
+      {
+        id: 10,
+        name: 'MSS Syslog',
+        destination_type: 'SYSLOG_UDP',
+        config_json: { host: '10.0.0.1', port: 514 },
+        last_connectivity_test_success: true,
+      },
+      {
+        id: 11,
+        name: 'Stellar Cyber',
+        destination_type: 'HTTP',
+        config_json: { url: 'https://example.test' },
+        last_connectivity_test_success: true,
+      },
+      {
+        id: 12,
+        name: 'Data Lake',
+        destination_type: 'S3',
+        config_json: { bucket: 'lake' },
+        last_connectivity_test_success: true,
+      },
+    ] as never)
+  })
+
+  it('surfaces destination list API failure without inventing Destination not found', async () => {
+    vi.mocked(fetchDestinationsList).mockResolvedValueOnce(null)
+    render(
+      <MemoryRouter>
+        <StepDeploy state={readyState()} onStart={vi.fn()} onNavigateToLegacySubstep={vi.fn()} />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByText(/Failed to load destinations/i)).toBeInTheDocument()
+    expect(screen.queryByText(/Destination not found/i)).not.toBeInTheDocument()
+    expect(screen.getByText(/route readiness cannot be evaluated/i)).toBeInTheDocument()
+  })
+
   it('renders Deployment Decision Center with seven checklist categories', () => {
     render(
       <MemoryRouter>

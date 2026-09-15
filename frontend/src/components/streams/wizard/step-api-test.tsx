@@ -1,5 +1,5 @@
 import { AlertCircle, CheckCircle2, Loader2, Play } from 'lucide-react'
-import { type ReactNode, useCallback, useMemo, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { runHttpApiTest, runConnectorAuthTest, type ConnectorAuthTestResponse, type HttpApiTestAnalysisPayload } from '../../../api/gdcRuntimePreview'
 import { WIZARD_LABEL } from '../../../lib/operator-vocabulary'
 import { cn } from '../../../lib/utils'
@@ -8,6 +8,7 @@ import {
   buildSourceAuthPayload,
   buildSourceConfig,
   buildStreamConfigPayload,
+  INITIAL_API_TEST,
   type WizardApiTestStep,
   type WizardApiTestState,
   type WizardConfigState,
@@ -80,6 +81,71 @@ export function StepApiTest({
   onAdvanceToRecordSelection,
 }: StepApiTestProps) {
   const [busy, setBusy] = useState(false)
+  const requestGenRef = useRef(0)
+
+  const apiTestConfigFingerprint = useMemo(
+    () =>
+      JSON.stringify({
+        connectorId: state.connector.connectorId,
+        sourceId: state.connector.sourceId,
+        sourceType: state.connector.sourceType,
+        hostBaseUrl: state.connector.hostBaseUrl,
+        endpoint: state.stream.endpoint,
+        httpMethod: state.stream.httpMethod,
+        requestBody: state.stream.requestBody,
+        params: state.stream.params,
+        headers: state.stream.headers,
+        remoteDirectory: state.stream.remoteDirectory,
+        filePattern: state.stream.filePattern,
+        remoteRecursive: state.stream.remoteRecursive,
+      }),
+    [
+      state.connector.connectorId,
+      state.connector.sourceId,
+      state.connector.sourceType,
+      state.connector.hostBaseUrl,
+      state.stream.endpoint,
+      state.stream.httpMethod,
+      state.stream.requestBody,
+      state.stream.params,
+      state.stream.headers,
+      state.stream.remoteDirectory,
+      state.stream.filePattern,
+      state.stream.remoteRecursive,
+    ],
+  )
+
+  // Stamp draft-hydrated results with the current config once; clear only when config drifts.
+  useEffect(() => {
+    const status = state.apiTest.status
+    if (status !== 'success' && status !== 'error' && status !== 'running') return
+    const stored = state.apiTest.configFingerprint ?? null
+    if (stored == null && (status === 'success' || status === 'error')) {
+      onChange({ ...state.apiTest, configFingerprint: apiTestConfigFingerprint })
+      return
+    }
+    if (stored != null && stored !== apiTestConfigFingerprint) {
+      requestGenRef.current += 1
+      onChange({
+        ...INITIAL_API_TEST,
+        status: 'idle',
+        ok: false,
+        configFingerprint: null,
+      })
+      setBusy(false)
+    }
+  }, [apiTestConfigFingerprint, onChange, state.apiTest])
+
+  const commitApiTest = useCallback(
+    (gen: number, next: WizardApiTestState) => {
+      if (gen !== requestGenRef.current) return
+      onChange({
+        ...next,
+        configFingerprint: apiTestConfigFingerprint,
+      })
+    },
+    [apiTestConfigFingerprint, onChange],
+  )
 
   const sourcePres = useMemo(
     () => resolveSourceTypePresentation(state.connector.sourceType),
@@ -107,11 +173,12 @@ export function StepApiTest({
 
   const run = useCallback(async () => {
     if (busy || !canRunLiveApiTest) return
+    const gen = ++requestGenRef.current
 
     if (state.connector.sourceType === 'S3_OBJECT_POLLING') {
       setBusy(true)
       const startedAt = Date.now()
-      onChange({
+      commitApiTest(gen, {
         ...state.apiTest,
         status: 'running',
         startedAt,
@@ -132,7 +199,7 @@ export function StepApiTest({
           test_path: '/',
         })
         if (!res.ok) {
-          onChange({
+          commitApiTest(gen, {
             status: 'error',
             ok: false,
             requestUrl: null,
@@ -184,7 +251,7 @@ export function StepApiTest({
           eventRootCandidates: detectEventRootCandidates(sample),
           previewError: null,
         }
-        onChange({
+        commitApiTest(gen, {
           status: 'success',
           ok: true,
           requestUrl: state.connector.hostBaseUrl || null,
@@ -223,7 +290,7 @@ export function StepApiTest({
         })
       } catch (err) {
         const message = err instanceof Error ? err.message : 'S3 probe failed.'
-        onChange({
+        commitApiTest(gen, {
           status: 'error',
           ok: false,
           requestUrl: null,
@@ -253,7 +320,7 @@ export function StepApiTest({
           s3ConnectivityPassed: false,
         })
       } finally {
-        setBusy(false)
+        if (gen === requestGenRef.current) setBusy(false)
       }
       return
     }
@@ -261,7 +328,7 @@ export function StepApiTest({
     if (isRemote) {
       setBusy(true)
       const startedAt = Date.now()
-      onChange({
+      commitApiTest(gen, {
         ...state.apiTest,
         status: 'running',
         startedAt,
@@ -299,7 +366,7 @@ export function StepApiTest({
           },
         })
         if (!probe.ok) {
-          onChange({
+          commitApiTest(gen, {
             status: 'error',
             ok: false,
             requestUrl: null,
@@ -371,7 +438,7 @@ export function StepApiTest({
         const hasPayload = parsedBody != null || (res.response?.raw_body ?? null) != null
         const outcome = resolveHttpApiTestResult(statusCode, hasPayload)
         const samplePatch = outcome.ok ? buildApiTestSuccessPatch(parsedBody, analysisModel) : buildApiTestSuccessPatch(null, null)
-        onChange({
+        commitApiTest(gen, {
           status: outcome.status,
           ok: outcome.ok,
           requestUrl: res.request.url,
@@ -415,7 +482,7 @@ export function StepApiTest({
         })
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Remote file sample fetch failed.'
-        onChange({
+        commitApiTest(gen, {
           status: 'error',
           ok: false,
           requestUrl: null,
@@ -446,7 +513,7 @@ export function StepApiTest({
           remoteProbe: lastProbe,
         })
       } finally {
-        setBusy(false)
+        if (gen === requestGenRef.current) setBusy(false)
       }
       return
     }
@@ -454,7 +521,7 @@ export function StepApiTest({
     const syntax = validateJsonBodyForApi(state.stream.requestBody)
     if (syntax.ok === false) {
       const startedAt = Date.now()
-      onChange({
+      commitApiTest(gen, {
         status: 'error',
         ok: false,
         requestUrl: null,
@@ -487,7 +554,7 @@ export function StepApiTest({
     }
     setBusy(true)
     const startedAt = Date.now()
-      onChange({
+      commitApiTest(gen, {
         ...state.apiTest,
         status: 'running',
         ok: false,
@@ -514,7 +581,7 @@ export function StepApiTest({
       const hasPayload = parsedBody != null || (res.response?.raw_body ?? null) != null
       const outcome = resolveHttpApiTestResult(statusCode, hasPayload)
       const samplePatch = outcome.ok ? buildApiTestSuccessPatch(parsedBody, analysisModel) : buildApiTestSuccessPatch(null, null)
-      onChange({
+      commitApiTest(gen, {
         status: outcome.status,
         ok: outcome.ok,
         requestUrl: res.request.url,
@@ -618,7 +685,7 @@ export function StepApiTest({
       } catch {
         /* leave defaults */
       }
-      onChange({
+      commitApiTest(gen, {
         status: 'error',
         ok: false,
         requestUrl: null,
@@ -648,9 +715,9 @@ export function StepApiTest({
         s3ConnectivityPassed: false,
       })
     } finally {
-      setBusy(false)
+      if (gen === requestGenRef.current) setBusy(false)
     }
-  }, [busy, canRunLiveApiTest, onChange, state])
+  }, [busy, canRunLiveApiTest, commitApiTest, state])
 
   const t = state.apiTest
   const copy = sourcePres.wizardApiTest

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.platform_admin import journal
 from app.validation.echo_receiver import router as echo_router
 from app.validation import alert_service
 from app.validation.ops_read import list_recovery_events
@@ -43,8 +44,20 @@ async def list_validations(
 
 
 @router.post("/", response_model=ContinuousValidationRead, status_code=status.HTTP_201_CREATED)
-async def create_validation(payload: ContinuousValidationCreate, db: Session = Depends(get_db)) -> ContinuousValidationRead:
+async def create_validation(
+    payload: ContinuousValidationCreate, request: Request, db: Session = Depends(get_db)
+) -> ContinuousValidationRead:
     row = service.create_validation(db, payload)
+    journal.record_audit_event(
+        db,
+        action="CONTINUOUS_VALIDATION_CREATED",
+        entity_type="CONTINUOUS_VALIDATION",
+        entity_id=int(row.id),
+        entity_name=str(row.name),
+        details={"enabled": bool(row.enabled), "validation_type": str(row.validation_type)},
+        request=request,
+    )
+    db.commit()
     return ContinuousValidationRead.model_validate(row)
 
 
@@ -97,7 +110,9 @@ async def get_alert(alert_id: int, db: Session = Depends(get_db)) -> ValidationA
 
 
 @router.post("/alerts/{alert_id}/acknowledge", response_model=ValidationAlertRead)
-async def acknowledge_alert(alert_id: int, db: Session = Depends(get_db)) -> ValidationAlertRead:
+async def acknowledge_alert(
+    alert_id: int, request: Request, db: Session = Depends(get_db)
+) -> ValidationAlertRead:
     snap = alert_service.get_alert(db, alert_id)
     if snap is None:
         raise HTTPException(status_code=404, detail={"error_code": "VALIDATION_ALERT_NOT_FOUND", "message": str(alert_id)})
@@ -108,11 +123,20 @@ async def acknowledge_alert(alert_id: int, db: Session = Depends(get_db)) -> Val
         )
     row = alert_service.acknowledge_alert(db, alert_id)
     assert row is not None
+    journal.record_audit_event(
+        db,
+        action="CONTINUOUS_VALIDATION_ALERT_ACKNOWLEDGED",
+        entity_type="VALIDATION_ALERT",
+        entity_id=int(alert_id),
+        details={"validation_id": int(row.validation_id)},
+        request=request,
+    )
+    db.commit()
     return ValidationAlertRead.model_validate(row)
 
 
 @router.post("/alerts/{alert_id}/resolve", response_model=ValidationAlertRead)
-async def resolve_alert(alert_id: int, db: Session = Depends(get_db)) -> ValidationAlertRead:
+async def resolve_alert(alert_id: int, request: Request, db: Session = Depends(get_db)) -> ValidationAlertRead:
     snap = alert_service.get_alert(db, alert_id)
     if snap is None:
         raise HTTPException(status_code=404, detail={"error_code": "VALIDATION_ALERT_NOT_FOUND", "message": str(alert_id)})
@@ -123,6 +147,15 @@ async def resolve_alert(alert_id: int, db: Session = Depends(get_db)) -> Validat
         )
     row = alert_service.resolve_alert_manual(db, alert_id)
     assert row is not None
+    journal.record_audit_event(
+        db,
+        action="CONTINUOUS_VALIDATION_ALERT_RESOLVED",
+        entity_type="VALIDATION_ALERT",
+        entity_id=int(alert_id),
+        details={"validation_id": int(row.validation_id)},
+        request=request,
+    )
+    db.commit()
     return ValidationAlertRead.model_validate(row)
 
 
@@ -136,19 +169,47 @@ async def get_validation(validation_id: int, db: Session = Depends(get_db)) -> C
 
 @router.patch("/{validation_id}", response_model=ContinuousValidationRead)
 async def patch_validation(
-    validation_id: int, payload: ContinuousValidationUpdate, db: Session = Depends(get_db)
+    validation_id: int,
+    payload: ContinuousValidationUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
 ) -> ContinuousValidationRead:
     row = service.update_validation(db, validation_id, payload)
     if row is None:
         raise HTTPException(status_code=404, detail={"error_code": "VALIDATION_NOT_FOUND", "message": str(validation_id)})
+    journal.record_audit_event(
+        db,
+        action="CONTINUOUS_VALIDATION_UPDATED",
+        entity_type="CONTINUOUS_VALIDATION",
+        entity_id=int(row.id),
+        entity_name=str(row.name),
+        details={"updated_fields": sorted(payload.model_dump(exclude_unset=True).keys())},
+        request=request,
+    )
+    db.commit()
     return ContinuousValidationRead.model_validate(row)
 
 
 @router.post("/{validation_id}/run", response_model=ValidationManualRunResponse)
-async def run_validation(validation_id: int, db: Session = Depends(get_db)) -> ValidationManualRunResponse:
+async def run_validation(
+    validation_id: int, request: Request, db: Session = Depends(get_db)
+) -> ValidationManualRunResponse:
     out = service.run_validation_now(db, validation_id)
     if out.get("error") == "not_found":
         raise HTTPException(status_code=404, detail={"error_code": "VALIDATION_NOT_FOUND", "message": str(validation_id)})
+    journal.record_audit_event(
+        db,
+        action="CONTINUOUS_VALIDATION_RUN",
+        entity_type="CONTINUOUS_VALIDATION",
+        entity_id=int(validation_id),
+        details={
+            "overall_status": out.get("overall_status"),
+            "run_id": out.get("run_id"),
+            "skipped": bool(out.get("skipped")),
+        },
+        request=request,
+    )
+    db.commit()
     if out.get("skipped"):
         return ValidationManualRunResponse(
             validation_id=validation_id,
@@ -171,16 +232,38 @@ async def run_validation(validation_id: int, db: Session = Depends(get_db)) -> V
 
 
 @router.post("/{validation_id}/enable", response_model=ContinuousValidationRead)
-async def enable_validation(validation_id: int, db: Session = Depends(get_db)) -> ContinuousValidationRead:
+async def enable_validation(
+    validation_id: int, request: Request, db: Session = Depends(get_db)
+) -> ContinuousValidationRead:
     row = service.set_enabled(db, validation_id, enabled=True)
     if row is None:
         raise HTTPException(status_code=404, detail={"error_code": "VALIDATION_NOT_FOUND", "message": str(validation_id)})
+    journal.record_audit_event(
+        db,
+        action="CONTINUOUS_VALIDATION_ENABLED",
+        entity_type="CONTINUOUS_VALIDATION",
+        entity_id=int(row.id),
+        entity_name=str(row.name),
+        request=request,
+    )
+    db.commit()
     return ContinuousValidationRead.model_validate(row)
 
 
 @router.post("/{validation_id}/disable", response_model=ContinuousValidationRead)
-async def disable_validation(validation_id: int, db: Session = Depends(get_db)) -> ContinuousValidationRead:
+async def disable_validation(
+    validation_id: int, request: Request, db: Session = Depends(get_db)
+) -> ContinuousValidationRead:
     row = service.set_enabled(db, validation_id, enabled=False)
     if row is None:
         raise HTTPException(status_code=404, detail={"error_code": "VALIDATION_NOT_FOUND", "message": str(validation_id)})
+    journal.record_audit_event(
+        db,
+        action="CONTINUOUS_VALIDATION_DISABLED",
+        entity_type="CONTINUOUS_VALIDATION",
+        entity_id=int(row.id),
+        entity_name=str(row.name),
+        request=request,
+    )
+    db.commit()
     return ContinuousValidationRead.model_validate(row)

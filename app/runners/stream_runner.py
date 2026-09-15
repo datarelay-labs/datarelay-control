@@ -290,7 +290,10 @@ class StreamRunner(BaseRunner):
             run_started_committed = True
             summary["transaction_committed"] = True
 
-            if not self.source_limiter.allow(stream_id):
+            if not self.source_limiter.allow(
+                stream_id,
+                dict(_get(runtime_stream, "rate_limit_json") or {}),
+            ):
                 self._set_stream_status(runtime_stream, "RATE_LIMITED_SOURCE")
                 self._log(
                     {
@@ -2879,7 +2882,30 @@ class StreamRunner(BaseRunner):
         with cls._locks_guard:
             if stream_id not in cls._locks:
                 cls._locks[stream_id] = threading.Lock()
+                cls._prune_unlocked_locks_locked()
             return cls._locks[stream_id]
+
+    @classmethod
+    def discard_lock(cls, stream_id: int) -> None:
+        """Drop an unlocked per-stream lock entry (e.g. after stream delete)."""
+
+        with cls._locks_guard:
+            lock = cls._locks.get(int(stream_id))
+            if lock is not None and not lock.locked():
+                cls._locks.pop(int(stream_id), None)
+
+    @classmethod
+    def _prune_unlocked_locks_locked(cls) -> None:
+        """Bound unlocked lock registry growth; caller must hold ``_locks_guard``."""
+
+        max_entries = 4096
+        if len(cls._locks) <= max_entries:
+            return
+        for sid, lock in list(cls._locks.items()):
+            if len(cls._locks) <= max_entries:
+                break
+            if not lock.locked():
+                cls._locks.pop(sid, None)
 
     @classmethod
     def is_lock_held(cls, stream_id: int) -> bool:

@@ -29,6 +29,20 @@ def record_audit_event(
     user_agent: str | None = None,
     request: Any = None,
 ) -> None:
+    if request is not None:
+        from app.audit.service import audit_actor_from_request
+
+        actor = audit_actor_from_request(request, fallback_username=actor_username or "system")
+        auth_ctx = getattr(getattr(request, "state", None), "auth", None)
+        if auth_ctx is not None and getattr(auth_ctx, "username", None):
+            actor_username = str(actor.actor_username or actor_username)
+            if actor_user_id is None:
+                actor_user_id = actor.actor_user_id
+            if ip_address is None:
+                ip_address = actor.ip_address
+            if user_agent is None:
+                user_agent = actor.user_agent
+
     meta = dict(details or {})
     if entity_name:
         meta["entity_name"] = entity_name

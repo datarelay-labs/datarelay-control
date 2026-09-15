@@ -11,7 +11,7 @@
     "test": "vitest",
     "test:e2e": "playwright test",
     "validate:playwright-smoke": "node ./scripts/validate-playwright-smoke-env.mjs",
-    "pretest:playwright-smoke": "node ./scripts/validate-playwright-smoke-env.mjs || true",
+    "pretest:playwright-smoke": "node ./scripts/validate-playwright-smoke-env.mjs",
     "test:playwright-smoke": "playwright test --config=playwright.config.smoke.ts",
     "test:playwright-full-event-mapping": "playwright test --config=playwright.config.full-event-mapping.ts",
     "validate": "npm run test -- --run && npm run build && npm run lint"

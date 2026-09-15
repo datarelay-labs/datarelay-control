@@ -66,7 +66,11 @@ def _seed_connector_graph(db: Session) -> dict[str, int]:
     db.add(m)
     e = Enrichment(stream_id=st.id, enrichment_json={"vendor": "acme"}, override_policy="KEEP_EXISTING", enabled=True)
     db.add(e)
-    cp = Checkpoint(stream_id=st.id, checkpoint_type="CUSTOM_FIELD", checkpoint_value_json={"cursor": "1"})
+    cp = Checkpoint(
+        stream_id=st.id,
+        checkpoint_type="CUSTOM_FIELD",
+        checkpoint_value_json={"cursor": "1", "access_token": "checkpoint-opaque-token-xyz"},
+    )
     db.add(cp)
     d = Destination(
         name="backup-seed-dest",
@@ -112,10 +116,15 @@ def test_export_masks_secrets(client: TestClient, db_session: Session) -> None:
     raw = res.text
     assert "super-secret-token-xyz" not in raw
     assert "dest-secret" not in raw
+    assert "checkpoint-opaque-token-xyz" not in raw
     data = res.json()
     auth = (data.get("sources") or [{}])[0].get("auth_json") or {}
     assert auth.get("bearer_token") in (None, "", "********")
-
+    checkpoints = data.get("checkpoints") or []
+    assert checkpoints
+    cp_val = checkpoints[0].get("checkpoint_value_json") or {}
+    assert cp_val.get("access_token") == "********"
+    assert cp_val.get("cursor") == "1"
 
 def test_export_route_includes_destination_ref(client: TestClient, db_session: Session) -> None:
     ids = _seed_connector_graph(db_session)
@@ -134,7 +143,9 @@ def test_export_route_includes_destination_ref(client: TestClient, db_session: S
 
 def test_import_preview_and_additive_apply(client: TestClient, db_session: Session) -> None:
     ids = _seed_connector_graph(db_session)
-    bundle = client.get(f"/api/v1/backup/connectors/{ids['connector_id']}/export").json()
+    bundle = client.get(
+        f"/api/v1/backup/connectors/{ids['connector_id']}/export?include_destinations=true"
+    ).json()
     prev = client.post("/api/v1/backup/import/preview", json={"bundle": bundle, "mode": "additive"})
     assert prev.status_code == 200
     body = prev.json()
@@ -340,6 +351,7 @@ def test_full_restore_replaces_operational_state(client: TestClient, db_session:
     db_session.add(extra)
     # Stop running streams before full restore (authoritative backend guard).
     for st in db_session.query(Stream).filter(Stream.status == "RUNNING").all():
+        st.enabled = False
         st.status = "STOPPED"
     db_session.commit()
     assert db_session.query(Connector).count() == 2
@@ -398,8 +410,108 @@ def test_full_restore_blocked_while_stream_running(client: TestClient, db_sessio
     )
     assert apply_res.status_code == 409
     detail = apply_res.json().get("detail") or {}
-    assert detail.get("error_code") == "FULL_RESTORE_BLOCKED_STREAM_RUNNING"
+    assert detail.get("error_code") == "FULL_RESTORE_BLOCKED_STREAM_ACTIVE"
     assert db_session.query(Stream).filter(Stream.status == "RUNNING").count() == 1
+
+
+def test_full_restore_blocked_for_enabled_stopped_inconsistent(client: TestClient, db_session: Session) -> None:
+    _seed_connector_graph(db_session)
+    for st in db_session.query(Stream).all():
+        st.enabled = True
+        st.status = "STOPPED"
+    db_session.commit()
+    bundle = client.get("/api/v1/backup/workspace/export?include_destinations=true").json()
+    token = client.post("/api/v1/backup/import/preview", json={"bundle": bundle, "mode": "full_restore"}).json()[
+        "preview_token"
+    ]
+    apply_res = client.post(
+        "/api/v1/backup/import/apply",
+        json={
+            "bundle": bundle,
+            "mode": "full_restore",
+            "confirm": True,
+            "confirm_destructive": True,
+            "preview_token": token,
+        },
+    )
+    assert apply_res.status_code == 409
+    assert apply_res.json()["detail"]["error_code"] == "FULL_RESTORE_BLOCKED_STREAM_ACTIVE"
+
+
+def test_full_restore_allowed_when_disabled_stopped_no_owner(client: TestClient, db_session: Session) -> None:
+    _seed_connector_graph(db_session)
+    for st in db_session.query(Stream).all():
+        st.enabled = False
+        st.status = "STOPPED"
+    db_session.commit()
+    bundle = client.get("/api/v1/backup/workspace/export?include_destinations=true").json()
+    token = client.post("/api/v1/backup/import/preview", json={"bundle": bundle, "mode": "full_restore"}).json()[
+        "preview_token"
+    ]
+    apply_res = client.post(
+        "/api/v1/backup/import/apply",
+        json={
+            "bundle": bundle,
+            "mode": "full_restore",
+            "confirm": True,
+            "confirm_destructive": True,
+            "preview_token": token,
+        },
+    )
+    assert apply_res.status_code == 200, apply_res.text
+
+
+def test_full_restore_blocked_while_stopping_with_worker_alive(
+    client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed_connector_graph(db_session)
+    for st in db_session.query(Stream).all():
+        st.enabled = False
+        st.status = "STOPPING"
+    db_session.commit()
+    monkeypatch.setattr(
+        "app.streams.runtime_eligibility.stream_has_local_runtime_owner",
+        lambda _sid: True,
+    )
+    bundle = client.get("/api/v1/backup/workspace/export?include_destinations=true").json()
+    token = client.post("/api/v1/backup/import/preview", json={"bundle": bundle, "mode": "full_restore"}).json()[
+        "preview_token"
+    ]
+    apply_res = client.post(
+        "/api/v1/backup/import/apply",
+        json={
+            "bundle": bundle,
+            "mode": "full_restore",
+            "confirm": True,
+            "confirm_destructive": True,
+            "preview_token": token,
+        },
+    )
+    assert apply_res.status_code == 409
+    assert apply_res.json()["detail"]["error_code"] == "FULL_RESTORE_BLOCKED_STREAM_ACTIVE"
+
+
+def test_full_restore_reconciles_stale_stopping_without_owner(client: TestClient, db_session: Session) -> None:
+    _seed_connector_graph(db_session)
+    for st in db_session.query(Stream).all():
+        st.enabled = False
+        st.status = "STOPPING"
+    db_session.commit()
+    bundle = client.get("/api/v1/backup/workspace/export?include_destinations=true").json()
+    token = client.post("/api/v1/backup/import/preview", json={"bundle": bundle, "mode": "full_restore"}).json()[
+        "preview_token"
+    ]
+    apply_res = client.post(
+        "/api/v1/backup/import/apply",
+        json={
+            "bundle": bundle,
+            "mode": "full_restore",
+            "confirm": True,
+            "confirm_destructive": True,
+            "preview_token": token,
+        },
+    )
+    assert apply_res.status_code == 200, apply_res.text
 
 
 def test_full_restore_requires_destructive_confirm(client: TestClient, db_session: Session) -> None:
@@ -424,7 +536,9 @@ def test_full_restore_requires_destructive_confirm(client: TestClient, db_sessio
 
 def test_additive_import_still_duplicates_when_entities_exist(client: TestClient, db_session: Session) -> None:
     ids = _seed_connector_graph(db_session)
-    bundle = client.get(f"/api/v1/backup/connectors/{ids['connector_id']}/export").json()
+    bundle = client.get(
+        f"/api/v1/backup/connectors/{ids['connector_id']}/export?include_destinations=true"
+    ).json()
     token = client.post("/api/v1/backup/import/preview", json={"bundle": bundle, "mode": "additive"}).json()[
         "preview_token"
     ]
@@ -436,6 +550,92 @@ def test_additive_import_still_duplicates_when_entities_exist(client: TestClient
     assert db_session.query(Connector).count() == 2
 
 
+def test_import_apply_idempotency_same_key_replays_without_recreate(
+    client: TestClient, db_session: Session
+) -> None:
+    ids = _seed_connector_graph(db_session)
+    bundle = client.get(
+        f"/api/v1/backup/connectors/{ids['connector_id']}/export?include_destinations=true"
+    ).json()
+    token = client.post("/api/v1/backup/import/preview", json={"bundle": bundle, "mode": "additive"}).json()[
+        "preview_token"
+    ]
+    op_key = "op-import-apply-retry-1"
+    first = client.post(
+        "/api/v1/backup/import/apply",
+        json={
+            "bundle": bundle,
+            "mode": "additive",
+            "confirm": True,
+            "preview_token": token,
+            "idempotency_key": op_key,
+        },
+    )
+    assert first.status_code == 200, first.text
+    first_body = first.json()
+    assert first_body["idempotent_replay"] is False
+    assert first_body["idempotency_key"] == op_key
+    created_streams = list(first_body["created"]["stream_ids"])
+    connectors_after_first = db_session.query(Connector).count()
+
+    # Timeout/retry simulation: client lost the first response and resends the same operation key.
+    second = client.post(
+        "/api/v1/backup/import/apply",
+        json={
+            "bundle": bundle,
+            "mode": "additive",
+            "confirm": True,
+            "preview_token": token,
+            "idempotency_key": op_key,
+        },
+    )
+    assert second.status_code == 200, second.text
+    second_body = second.json()
+    assert second_body["idempotent_replay"] is True
+    assert second_body["created"]["stream_ids"] == created_streams
+    assert second_body["created"]["connector_ids"] == first_body["created"]["connector_ids"]
+    assert db_session.query(Connector).count() == connectors_after_first
+
+
+def test_import_apply_new_operation_same_bundle_creates_again(
+    client: TestClient, db_session: Session
+) -> None:
+    ids = _seed_connector_graph(db_session)
+    bundle = client.get(
+        f"/api/v1/backup/connectors/{ids['connector_id']}/export?include_destinations=true"
+    ).json()
+    token = client.post("/api/v1/backup/import/preview", json={"bundle": bundle, "mode": "additive"}).json()[
+        "preview_token"
+    ]
+    first = client.post(
+        "/api/v1/backup/import/apply",
+        json={
+            "bundle": bundle,
+            "mode": "additive",
+            "confirm": True,
+            "preview_token": token,
+            "idempotency_key": "op-import-apply-A",
+        },
+    )
+    assert first.status_code == 200, first.text
+    after_first = db_session.query(Connector).count()
+
+    second = client.post(
+        "/api/v1/backup/import/apply",
+        json={
+            "bundle": bundle,
+            "mode": "additive",
+            "confirm": True,
+            "preview_token": token,
+            "idempotency_key": "op-import-apply-B",
+        },
+    )
+    assert second.status_code == 200, second.text
+    assert second.json()["idempotent_replay"] is False
+    assert db_session.query(Connector).count() == after_first + 1
+    assert second.json()["created"]["stream_ids"] != first.json()["created"]["stream_ids"]
+
+
 def test_clone_stream_preserves_route_formatter_and_rate_limits(client: TestClient, db_session: Session) -> None:
     ids = _seed_connector_graph(db_session)
     orig = db_session.query(Route).filter(Route.stream_id == ids["stream_id"]).one()
@@ -445,3 +645,135 @@ def test_clone_stream_preserves_route_formatter_and_rate_limits(client: TestClie
     assert cloned.formatter_config_json == orig.formatter_config_json
     assert cloned.rate_limit_json == orig.rate_limit_json
     assert cloned.failure_policy == orig.failure_policy
+
+
+def test_import_apply_never_binds_foreign_destination_ids(
+    client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Defense in depth: unresolved route destination IDs must not fall back to local numeric IDs."""
+
+    from app.backup import import_validator, service as backup_service
+    from app.backup.schemas import ImportApplyRequest
+
+    # Local destination that must never be silently selected by foreign export id 7.
+    local = Destination(
+        name="local-siem-b",
+        destination_type="WEBHOOK_POST",
+        config_json={"url": "https://local.example/hook"},
+        rate_limit_json={},
+        enabled=True,
+    )
+    db_session.add(local)
+    db_session.flush()
+    # Force known local id collision surface when possible.
+    assert int(local.id) >= 1
+
+    c = Connector(name="import-dest-safe-conn", description=None, status="STOPPED")
+    db_session.add(c)
+    db_session.flush()
+    s = Source(
+        connector_id=c.id,
+        source_type="HTTP_API_POLLING",
+        config_json={},
+        auth_json={},
+        enabled=True,
+    )
+    db_session.add(s)
+    db_session.flush()
+    st = Stream(
+        connector_id=c.id,
+        source_id=s.id,
+        name="import-dest-safe-stream",
+        stream_type="HTTP_API_POLLING",
+        config_json={},
+        polling_interval=60,
+        enabled=False,
+        status="STOPPED",
+        rate_limit_json={},
+    )
+    db_session.add(st)
+    db_session.commit()
+
+    bundle = {
+        "schema_version": 1,
+        "connectors": [
+            {"id": 101, "name": "bundle-conn", "description": None, "status": "STOPPED", "product_group": None}
+        ],
+        "sources": [
+            {
+                "id": 201,
+                "connector_id": 101,
+                "source_type": "HTTP_API_POLLING",
+                "config_json": {},
+                "auth_json": {},
+                "enabled": True,
+            }
+        ],
+        "streams": [
+            {
+                "id": 301,
+                "connector_id": 101,
+                "source_id": 201,
+                "name": "bundle-stream",
+                "stream_type": "HTTP_API_POLLING",
+                "config_json": {},
+                "polling_interval": 60,
+                "enabled": False,
+                "status": "STOPPED",
+                "rate_limit_json": {},
+            }
+        ],
+        "mappings": [
+            {
+                "stream_id": 301,
+                "event_array_path": "$.items",
+                "event_root_path": None,
+                "field_mappings_json": {},
+                "raw_payload_mode": None,
+            }
+        ],
+        "enrichments": [],
+        "destinations": [],
+        "routes": [
+            {
+                "id": 401,
+                "stream_id": 301,
+                "destination_id": int(local.id),
+                "enabled": True,
+                "failure_policy": "LOG_AND_CONTINUE",
+                "formatter_config_json": {},
+                "rate_limit_json": {},
+                "status": "ENABLED",
+            }
+        ],
+        "checkpoints": [],
+    }
+
+    class _Ok:
+        ok = True
+        conflicts: list = []
+        warnings: list = []
+        unsupported: list = []
+        findings: list = []
+        classification_summary = None
+        dry_run = None
+        full_restore_purge = None
+
+    monkeypatch.setattr(import_validator, "validate_import_bundle", lambda *a, **k: _Ok())
+    monkeypatch.setattr(backup_service, "validate_import_bundle", lambda *a, **k: _Ok())
+    token = backup_service.preview_token_for(bundle, "additive")
+    body = ImportApplyRequest(
+        bundle=bundle,
+        mode="additive",
+        confirm=True,
+        preview_token=token,
+    )
+    with pytest.raises(Exception) as exc:
+        backup_service.apply_import(db_session, body)
+    detail = getattr(exc.value, "detail", None) or {}
+    if isinstance(detail, dict):
+        assert detail.get("error_code") == "IMPORT_ROUTE_DESTINATION_UNMAPPED"
+    else:
+        assert "IMPORT_ROUTE_DESTINATION_UNMAPPED" in str(exc.value)
+    # Local destination must remain unbound by the foreign route.
+    assert db_session.query(Route).filter(Route.destination_id == int(local.id)).count() == 0

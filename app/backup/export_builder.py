@@ -16,7 +16,7 @@ from app.destinations.models import Destination
 from app.enrichments.models import Enrichment
 from app.mappings.models import Mapping
 from app.routes.models import Route
-from app.security.secrets import mask_http_headers, mask_secrets
+from app.security.secrets import mask_config_payload, mask_http_headers, mask_secrets, mask_secrets_and_pem
 from app.sources.models import Source
 from app.streams.models import Stream
 
@@ -71,7 +71,7 @@ def _stream_dict(st: Stream) -> dict[str, Any]:
         "source_id": st.source_id,
         "name": st.name,
         "stream_type": st.stream_type,
-        "config_json": mask_secrets(dict(st.config_json or {})),
+        "config_json": mask_config_payload(dict(st.config_json or {})),
         "polling_interval": st.polling_interval,
         "enabled": st.enabled,
         "status": st.status,
@@ -106,22 +106,12 @@ def _enrichment_dict(e: Enrichment) -> dict[str, Any]:
     }
 
 
-def _mask_destination_config_json(cfg: dict[str, Any]) -> dict[str, Any]:
-    """Apply generic masking plus full masking of outbound delivery header values (export-only)."""
-
-    base = dict(cfg or {})
-    hdrs = base.get("headers")
-    if isinstance(hdrs, dict):
-        base["headers"] = {str(k): ("********" if str(v).strip() else v) for k, v in hdrs.items()}
-    return mask_secrets(base)
-
-
 def _destination_dict(d: Destination) -> dict[str, Any]:
     return {
         "id": d.id,
         "name": d.name,
         "destination_type": d.destination_type,
-        "config_json": _mask_destination_config_json(dict(d.config_json or {})),
+        "config_json": mask_config_payload(dict(d.config_json or {}), mask_all_header_values=True),
         "rate_limit_json": dict(d.rate_limit_json or {}),
         "enabled": d.enabled,
         "created_at": _iso(d.created_at),
@@ -165,7 +155,7 @@ def _checkpoint_dict(c: Checkpoint) -> dict[str, Any]:
         "id": c.id,
         "stream_id": c.stream_id,
         "checkpoint_type": c.checkpoint_type,
-        "checkpoint_value_json": dict(c.checkpoint_value_json or {}),
+        "checkpoint_value_json": mask_secrets_and_pem(dict(c.checkpoint_value_json or {})),
         "updated_at": _iso(c.updated_at),
     }
 

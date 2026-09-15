@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.ingest.body_limits import read_request_body_capped
 from app.runners.ai_proxy_receiver import AiProxyReceiver, AiProxyReceiverError
 from app.runners.webhook_receiver import WebhookReceiver, WebhookReceiverError
 
@@ -23,13 +24,15 @@ async def ingest_webhook(
 ) -> dict[str, object]:
     """Receive an authenticated webhook event batch and run the stream pipeline."""
 
-    body = await request.body()
+    receiver = WebhookReceiver()
+    max_bytes = receiver.max_request_bytes_for_key(db, receiver_key)
+    body = await read_request_body_capped(request, max_bytes)
     loop = asyncio.get_event_loop()
     try:
         summary = await loop.run_in_executor(
             None,
             partial(
-                WebhookReceiver().dispatch,
+                receiver.dispatch,
                 db,
                 receiver_key=receiver_key,
                 headers=dict(request.headers),

@@ -126,8 +126,9 @@ class AiProviderPostDestinationAdapter(DestinationAdapter):
         formatter_override: dict[str, Any] | None = None,
         *,
         prefix_context: MessagePrefixResolveContext | None = None,
+        idempotency_key: str | None = None,
     ) -> None:
-        _ = formatter_override, prefix_context
+        _ = formatter_override, prefix_context, idempotency_key
         if not events:
             return
 
