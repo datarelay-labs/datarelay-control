@@ -95,4 +95,3 @@ def test_preserve_masked_secrets_keeps_prior_values():
     assert merged["api_key"] == "real-key"
     assert merged["headers"]["Authorization"] == "Bearer real"
     assert merged["url"] == "https://x"
-

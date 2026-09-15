@@ -105,4 +105,3 @@ def test_curl_draft_masks_query_and_body_secrets() -> None:
     assert body["q"] == "ok"
     assert "qk-literal-secret" not in draft["parsed"]["url"]
     assert draft["secrets_included"] is False
-
