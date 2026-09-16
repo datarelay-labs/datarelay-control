@@ -1,12 +1,14 @@
 # Data Relay — Enterprise Data Control Gateway
 
-**Version:** GA v1.0.2 (OSS)
+**Version:** GA v1.0.2 (Source Available)
 
-Data Relay is an open-source **Enterprise Data Control Gateway**. It collects data from external systems (HTTP API polling, webhook receiver), applies Mapping and Enrichment, runs schema drift detection, sensitive-data detection, protection, classification, and policy enforcement, then delivers events to multiple Destinations with governance, RBAC, and audit controls.
+Data Relay is a source-available **Enterprise Data Control Gateway**. It collects data from external systems (HTTP API polling, webhook receiver), applies Mapping and Enrichment, runs schema drift detection, sensitive-data detection, protection, classification, and policy enforcement, then delivers events to multiple Destinations with governance, RBAC, and audit controls.
 
 Single source of truth for architecture: [`docs/master-design.md`](docs/master-design.md)
 
 Release documentation: [`docs/release/`](docs/release/) · Documentation hub: [`docs/README.md`](docs/README.md)
+
+> **License — Source Available, not Open Source:** Free for personal use, education/research, evaluation, internal commercial use, internal modification, and customer-owned deployment. Resale, OEM/embedding, white-labeling, commercial redistribution, derivative commercial products, SaaS/MSP offerings of Data Relay functionality, and competing products/services require a separate written commercial license. See [`LICENSE`](LICENSE).
 
 ---
 
@@ -28,8 +30,8 @@ See the [Product Charter](docs/source-of-truth/PRODUCT-CHARTER-Version-1.2.1-FIN
 
 ## Core Capabilities
 
-| Capability | OSS v1.0 GA |
-|------------|-------------|
+| Capability | v1.0 GA |
+|------------|---------|
 | HTTP API polling & Webhook sources | ✅ |
 | Database Query source (PostgreSQL runtime) | ✅ (PG only) |
 | Mapping & Enrichment (JSONPath, JSONata, regex_extract) | ✅ |
@@ -144,7 +146,7 @@ After deploy, monitor on **Dashboard** (`/monitoring`) and **Streams** console. 
 
 ---
 
-## Known Limitations (OSS v1.0 GA)
+## Known Limitations (v1.0 GA)
 
 GA ships with documented gaps — not release blockers for the default deployment path:
 
@@ -247,7 +249,7 @@ cd frontend && npm run validate
 | Document | Description |
 |----------|-------------|
 | [`docs/getting-started/GETTING-STARTED.md`](docs/getting-started/GETTING-STARTED.md) | First pipeline walkthrough (GA) |
-| [`docs/architecture/OSS-v1-ARCHITECTURE.md`](docs/architecture/OSS-v1-ARCHITECTURE.md) | OSS v1 mental model and runtime |
+| [`docs/architecture/OSS-v1-ARCHITECTURE.md`](docs/architecture/OSS-v1-ARCHITECTURE.md) | v1 mental model and runtime |
 | [`docs/release/OSS-v1.0-GA-RELEASE-NOTES.md`](docs/release/OSS-v1.0-GA-RELEASE-NOTES.md) | GA release notes |
 | [`docs/release/KNOWN-LIMITATIONS.md`](docs/release/KNOWN-LIMITATIONS.md) | Known gaps reference |
 | [`docs/release/OSS-v1.0-GA-CHECKLIST.md`](docs/release/OSS-v1.0-GA-CHECKLIST.md) | GA verification checklist |
@@ -258,10 +260,16 @@ cd frontend && npm run validate
 | [`docs/release/release-readiness-audit.md`](docs/release/release-readiness-audit.md) | M20.4 release audit |
 | [`docs/operator-runbook.md`](docs/operator-runbook.md) | Operator procedures |
 | [`CHANGELOG.md`](CHANGELOG.md) | Release history (v1.0.0 – v1.0.2) |
-| [`LICENSE`](LICENSE) | Apache License 2.0 |
+| [`LICENSE`](LICENSE) | Data Relay Source Available License 1.0 |
 
 ---
 
 ## License
 
-Licensed under the Apache License 2.0. See [LICENSE](LICENSE) for terms.
+**Data Relay is source-available, not open source.** It is licensed under the **Data Relay Source Available License 1.0**.
+
+Free use includes personal use, education/research, evaluation, internal commercial use, internal modification, and customer-owned deployments. Paid installation, integration, migration, support, or training for a customer-owned deployment is allowed when the customer directly controls and uses the deployment.
+
+Without a separate written commercial license, you may not resell or commercially redistribute Data Relay; OEM/embed or white-label it; use it to create a derivative commercial or competing product/service; or provide Data Relay functionality as SaaS, MSP, hosted, shared, or multi-tenant service.
+
+See [`LICENSE`](LICENSE) for the complete terms. Specific earlier versions or materials that were already distributed under Apache License 2.0 remain subject to those previously granted Apache terms; those earlier grants are not revoked by the new license.
