@@ -272,4 +272,4 @@ Free use includes personal use, education/research, evaluation, internal commerc
 
 Without a separate written commercial license, you may not resell or commercially redistribute Data Relay; OEM/embed or white-label it; use it to create a derivative commercial or competing product/service; or provide Data Relay functionality as SaaS, MSP, hosted, shared, or multi-tenant service.
 
-See [`LICENSE`](LICENSE) for the complete terms. Specific earlier versions or materials that were already distributed under Apache License 2.0 remain subject to those previously granted Apache terms; those earlier grants are not revoked by the new license.
+See [`LICENSE`](LICENSE) for the complete terms.
