@@ -576,7 +576,6 @@ function OverallHealthBeacon({ kpi, loading }: { kpi: StreamsPageKpi; loading?: 
 function computeHealthSummaryItems(rows: readonly StreamConsoleRow[]) {
   let noData = 0, lowVolume = 0, checkpointLag = 0, destFailure = 0, deliveryRetry = 0, disabled = 0
   for (const row of rows) {
-    if ((row.openSchemaFieldDriftCount ?? 0) > 0) schemaDrift++
     if (row.enabled === false) {
       disabled++
       continue

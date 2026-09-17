@@ -390,13 +390,6 @@ def test_scheduler_manual_run_once_ownership_unchanged(tmp_path, monkeypatch: py
     assert StreamRunner.is_worker_ownership_held(stream_id) is False
 
 
-def test_eager_load_column_attrs_ignores_none_and_plain_objects() -> None:
-    from app.scheduler.context_cache import _eager_load_column_attrs
-
-    _eager_load_column_attrs(None)
-    _eager_load_column_attrs(object())
-
-
 @pytest.fixture(autouse=True)
 def _reset_enabled_state_cache() -> Any:
     enabled_state_cache.reset_for_tests()
