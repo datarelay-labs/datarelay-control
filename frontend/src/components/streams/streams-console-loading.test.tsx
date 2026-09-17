@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { StreamsConsole } from './streams-console'
 import { GDC_AUTH_REQUIRED_MESSAGE } from '../../api/gdcStreams'
@@ -29,8 +30,16 @@ vi.mock('../../api/gdcRuntime', () => ({
 }))
 
 vi.mock('../../api/gdcConnectors', () => ({
-  fetchConnectorsList: vi.fn(async () => []),
-  fetchConnectorById: vi.fn(async () => null),
+  fetchConnectorsList: vi.fn(async () => [
+    { id: 1, name: 'db-connector', product_group: 'Database Query' },
+    { id: 2, name: 's3-connector', product_group: 'Amazon S3' },
+    { id: 3, name: 'sftp-connector', product_group: 'Remote File' },
+  ]),
+  fetchConnectorById: vi.fn(async (id: number) => ({
+    id,
+    name: id === 1 ? 'db-connector' : id === 2 ? 's3-connector' : 'sftp-connector',
+    product_group: id === 1 ? 'Database Query' : id === 2 ? 'Amazon S3' : 'Remote File',
+  })),
 }))
 vi.mock('../../api/operationalSnapshot', () => ({
   clearOperationalSnapshotCache: vi.fn(),
@@ -104,6 +113,7 @@ describe('StreamsConsole loading states', () => {
           name: '[DEV VALIDATION] Database Query PostgreSQL E2E',
           connector_id: 1,
           source_id: 11,
+          enabled: true,
           stream_type: 'DATABASE_QUERY',
           source_type: 'DATABASE_QUERY',
           status: 'RUNNING',
@@ -113,6 +123,7 @@ describe('StreamsConsole loading states', () => {
           name: '[DEV VALIDATION] S3 Object Polling E2E',
           connector_id: 2,
           source_id: 12,
+          enabled: true,
           stream_type: 'S3_OBJECT_POLLING',
           source_type: 'S3_OBJECT_POLLING',
           status: 'RUNNING',
@@ -122,6 +133,7 @@ describe('StreamsConsole loading states', () => {
           name: '[DEV VALIDATION] Remote File SFTP E2E',
           connector_id: 3,
           source_id: 13,
+          enabled: true,
           stream_type: 'REMOTE_FILE_POLLING',
           source_type: 'REMOTE_FILE_POLLING',
           status: 'RUNNING',
@@ -129,15 +141,26 @@ describe('StreamsConsole loading states', () => {
       ],
     })
 
+    const user = userEvent.setup()
     render(
       <MemoryRouter>
         <StreamsConsole />
       </MemoryRouter>,
     )
 
-    expect((await screen.findAllByText('[DEV VALIDATION] Database Query PostgreSQL E2E')).length).toBeGreaterThan(0)
-    expect(screen.getAllByText('[DEV VALIDATION] S3 Object Polling E2E').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('[DEV VALIDATION] Remote File SFTP E2E').length).toBeGreaterThan(0)
+    // Product-group console hides child stream names until a group is expanded
+    // (legacy flat-table visibility was removed).
+    await user.click(await screen.findByTestId('stream-group-row-Database Query'))
+    expect(await screen.findByTestId('stream-group-child-row-101')).toBeInTheDocument()
+    expect(screen.getByText('[DEV VALIDATION] Database Query PostgreSQL E2E')).toBeInTheDocument()
+
+    await user.click(await screen.findByTestId('stream-group-row-Amazon S3'))
+    expect(await screen.findByTestId('stream-group-child-row-102')).toBeInTheDocument()
+    expect(screen.getByText('[DEV VALIDATION] S3 Object Polling E2E')).toBeInTheDocument()
+
+    await user.click(await screen.findByTestId('stream-group-row-Remote File'))
+    expect(await screen.findByTestId('stream-group-child-row-103')).toBeInTheDocument()
+    expect(screen.getByText('[DEV VALIDATION] Remote File SFTP E2E')).toBeInTheDocument()
   })
 
   it('restores cached rows on remount without showing the full-screen loader', async () => {
