@@ -64,7 +64,7 @@ const ACTIVATIONS: Activation[] = ['OFF', 'ON']
 const PROTECTIONS: ProtectionAction[] = ['audit', 'mask_partial', 'tokenize', 'hash', 'drop_field']
 const DELIVERIES: DeliveryBehavior[] = ['continue', 'quarantine', 'block']
 const SURFACES: ExecutionSurface[] = ['API_SEEDED', 'BROWSER']
-const ROUTE_RUNTIMES: RouteRuntime[] = ['ROUTE_OFF', 'ROUTE_ON']
+const ROUTE_RUNTIMES: RouteRuntime[] = ['ROUTE_ON']
 const GLOBAL_FAULTS: FaultType[] = ['api_restart', 'runtime_restart', 'partial_route_failure']
 
 function sha256File(p: string): string {

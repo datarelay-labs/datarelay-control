@@ -207,7 +207,8 @@ def test_governance_summary_aggregates_rules_pending_and_24h(
 
     assert body["classification_rules"] == 1
     assert body["protection_rules"] == 1
-    assert body["ai_gateway_policies"] == 1
+    # AI Gateway is out of Data Relay OSS product scope — governance no longer couples to AI tables.
+    assert body["ai_gateway_policies"] == 0
     assert body["has_governance_rules"] is True
     assert body["pending_quarantine_events"] == 1
     assert body["pending_replay_events"] == 1
@@ -215,14 +216,14 @@ def test_governance_summary_aggregates_rules_pending_and_24h(
     assert body["recent_24h"]["protected_events"] == 5
     assert body["recent_24h"]["quarantined_events"] == 1
     assert body["recent_24h"]["replayed_events"] == 1
-    assert body["recent_24h"]["blocked_ai_requests"] == 1
+    assert body["recent_24h"]["blocked_ai_requests"] == 0
     assert body["risk_overview"]["restricted_events"] == 3
     assert body["risk_overview"]["confidential_events"] == 2
     assert body["risk_overview"]["quarantine_pending"] == body["pending_quarantine_events"]
     assert body["risk_overview"]["replay_pending"] == body["pending_replay_events"]
-    assert body["risk_overview"]["ai_gateway_blocks"] == body["recent_24h"]["blocked_ai_requests"]
+    assert body["risk_overview"]["ai_gateway_blocks"] == 0
     assert body["health"]["status"] == "healthy"
-    assert body["health"]["ai_gateway_blocks_24h"] == 1
+    assert body["health"]["ai_gateway_blocks_24h"] == 0
     assert len(body["activity_timeline"]) >= 2
     assert body["cards"]["quarantine"]["top_stream_id"] == stream_id
     assert body["cards"]["replay"]["top_stream_id"] == stream_id
@@ -397,7 +398,7 @@ def test_governance_summary_performance_large_dataset(db_session: Session) -> No
 
 
 def test_governance_summary_no_unbounded_ai_gateway_count_query(db_session: Session) -> None:
-    """Ensure summary does not issue unbounded ai_gateway_requests COUNT (decision=block only)."""
+    """OSS governance must not query ai_gateway_* tables at all."""
 
     engine = db_session.get_bind()
     statements: list[str] = []
@@ -411,11 +412,5 @@ def test_governance_summary_no_unbounded_ai_gateway_count_query(db_session: Sess
     finally:
         event.remove(engine, "before_cursor_execute", _capture)
 
-    unbounded_ai = [
-        sql
-        for sql in statements
-        if "ai_gateway_requests" in sql.lower()
-        and "decision" in sql.lower()
-        and "created_at" not in sql.lower()
-    ]
-    assert unbounded_ai == []
+    ai_queries = [sql for sql in statements if "ai_gateway" in sql.lower()]
+    assert ai_queries == []

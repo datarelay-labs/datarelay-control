@@ -263,50 +263,46 @@ def resolve_vendor_preset(
     *,
     entry: ConnectorModuleEntry | None = None,
 ) -> PresetResolution | None:
-    """Resolve mapping/enrichment/stream preset with module priority over legacy templates."""
+    """Resolve mapping/enrichment/stream preset from the connector module only.
+
+    Compatibility reader for obsolete flat templates is ``resolve_legacy_template_id``
+    (explicit legacy template_id reads). Product operation must not silently fall
+    back from a present module package to flat templates.
+    """
 
     if entry is not None:
-        module_preset = _module_stream_preset(entry, stream_id)
-        if module_preset is not None:
-            return module_preset
+        return _module_stream_preset(entry, stream_id)
 
-    legacy_template_id = MODULE_LEGACY_TEMPLATE.get(module_id)
-    for template_id, (mapped_module, mapped_stream) in LEGACY_TEMPLATE_MAP.items():
-        if mapped_module == module_id and (mapped_stream is None or mapped_stream == stream_id):
-            legacy_template_id = template_id
-            break
+    try:
+        from app.connectors_registry.service import _require_cache
 
-    if not legacy_template_id:
-        return None
+        cache = _require_cache()
+        module_entry = cache.get(module_id)
+    except Exception:
+        module_entry = None
 
-    logger.warning(
+    if module_entry is not None:
+        return _module_stream_preset(module_entry, stream_id)
+
+    # No module package loaded — do not invent legacy fallback here.
+    logger.info(
         "%s",
         {
-            "stage": "legacy_preset_fallback",
+            "stage": "vendor_preset_module_miss",
             "module_id": module_id,
             "stream_id": stream_id,
-            "legacy_template_id": legacy_template_id,
-            "message": "Using legacy flat template preset; migrate to connectors/{vendor}/ module structure",
+            "message": "No module preset; use resolve_legacy_template_id for explicit legacy template reads only",
         },
     )
-
-    legacy = _load_legacy_template(legacy_template_id)
-    if legacy is None:
-        return None
-
-    return PresetResolution(
-        source="legacy",
-        module_id=module_id,
-        stream_id=stream_id,
-        legacy_template_id=legacy_template_id,
-        mapping=dict(legacy.get("mapping_defaults") or {}),
-        enrichment=dict(legacy.get("enrichment_defaults") or {}),
-        stream_template=dict(legacy.get("stream_defaults") or {}),
-    )
+    return None
 
 
 def resolve_legacy_template_id(template_id: str) -> PresetResolution | None:
-    """Resolve a legacy template_id with module priority when a migrated module exists."""
+    """Compatibility reader for persisted/explicit legacy flat template_id values.
+
+    Prefer module presets when the vendor package exists. Do not use for new writes —
+    new connector configuration must use ``connectors/{vendor}/`` modules.
+    """
 
     mapped = LEGACY_TEMPLATE_MAP.get(template_id)
     if mapped is None:
@@ -342,11 +338,11 @@ def resolve_legacy_template_id(template_id: str) -> PresetResolution | None:
     logger.warning(
         "%s",
         {
-            "stage": "legacy_template_in_use",
+            "stage": "legacy_template_compat_read",
             "legacy_template_id": template_id,
             "module_id": module_id,
             "stream_id": stream_id,
-            "message": "Legacy flat template in use; complete connectors/{vendor}/ migration",
+            "message": "Compatibility read of legacy flat template; complete connectors/{vendor}/ migration",
         },
     )
 

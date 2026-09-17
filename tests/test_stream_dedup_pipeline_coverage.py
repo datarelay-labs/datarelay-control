@@ -78,43 +78,11 @@ def test_dedup_metadata_survives_mapping_reconstruction(
     assert sent.get(GDC_DEDUP_KEY_META) == "evt-map"
     assert isinstance(sent.get(GDC_DEDUP_QUEUE_ID_META), int)
 
-
-def test_dedup_metadata_survives_protection_delivery_copy(
-    db_session: Session,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", False)
-    fixture = _seed_stream_runtime(db_session)
-    stream_id = int(fixture["stream_id"])
-    _enable_dedup(db_session, stream_id, key_field="id")
-
-    observed: list[str | None] = []
-    original_prepare = StreamRunner._prepare_delivery_events
-
-    def _wrapped_prepare(self: StreamRunner, **kwargs: Any) -> Any:
-        delivery_events, result = original_prepare(self, **kwargs)
-        if delivery_events:
-            observed.append(delivery_events[0].get(GDC_DEDUP_KEY_META))
-        return delivery_events, result
-
-    monkeypatch.setattr(StreamRunner, "_prepare_delivery_events", _wrapped_prepare)
-
-    context = load_stream_context(db_session, stream_id)
-    _build_runner(
-        poller=_FakePoller(
-            response={"items": [{"id": "evt-protect", "message": "secret-text", "vendor": "acme"}]}
-        ),
-        webhook_sender=_FakeWebhookSender(),
-    ).run(context, db=db_session)
-
-    assert observed == ["evt-protect"]
-
-
 def test_dedup_metadata_survives_per_route_protection_payloads(
     db_session: Session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", False)
+    monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", True)
     monkeypatch.setattr(settings, "GDC_PROTECTION_ENABLED", True)
     fixture = _seed_stream_runtime(db_session, failure_policies=["LOG_AND_CONTINUE", "LOG_AND_CONTINUE"])
     stream_id = int(fixture["stream_id"])

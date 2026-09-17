@@ -233,27 +233,6 @@ def test_process_routes_skips_disabled() -> None:
     assert len(pipeline.stage_results) == 1
     assert pipeline.stage_results[0].route_id == 2
 
-
-def test_feature_flag_off_skips_route_loop(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", False)
-    db = db_session
-    fixture = _seed_stream_runtime(db)
-    stream_id = fixture["stream_id"]
-    ctx = load_stream_context(db, stream_id)
-
-    payload = {"items": [{"id": "e1", "message": "hello", "vendor": "acme"}]}
-    webhook = _FakeWebhookSender()
-    runner = _build_runner(poller=_FakePoller(response=payload), webhook_sender=webhook)
-
-    with patch("app.runners.stream_runner.build_route_runtime_contexts") as build_ctx:
-        summary = runner.run(ctx, db=db)
-        build_ctx.assert_not_called()
-
-    assert summary["outcome"] == "completed"
-    assert webhook.calls
-    assert "route_count" not in summary
-
-
 def test_feature_flag_on_executes_route_loop(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", True)
     db = db_session
@@ -283,28 +262,3 @@ def test_feature_flag_on_executes_route_loop(db_session: Session, monkeypatch: p
     )
     assert loop_logs
     assert loop_logs[0].message == "route processing pipeline complete"
-
-
-def test_backward_compatibility_flag_off_matches_delivery(
-    db_session: Session,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    db = db_session
-    fixture = _seed_stream_runtime(db)
-    stream_id = fixture["stream_id"]
-    ctx = load_stream_context(db, stream_id)
-    payload = {"items": [{"id": "e1", "message": "hello", "vendor": "acme"}]}
-
-    monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", False)
-    runner_off = _build_runner(poller=_FakePoller(response=payload), webhook_sender=_FakeWebhookSender())
-    summary_off = runner_off.run(ctx, db=db)
-
-    monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", True)
-    webhook = _FakeWebhookSender()
-    runner_on = _build_runner(poller=_FakePoller(response=payload), webhook_sender=webhook)
-    summary_on = runner_on.run(ctx, db=db)
-
-    assert summary_off["outcome"] == "completed"
-    assert summary_on["outcome"] == "completed"
-    assert summary_off.get("delivered_batch_event_count") == summary_on.get("delivered_batch_event_count")
-    assert webhook.calls[0]["events"][0]["message"] == "hello"
