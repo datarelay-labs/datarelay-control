@@ -52,3 +52,31 @@ Superseded documents: [`docs/archive/legacy-design/`](../archive/legacy-design/)
 ## Staging
 
 Upload staging area (optional): `docs/source-of-truth/_incoming/`
+
+---
+
+## Runtime (current)
+
+Route Processing (`GDC_ROUTE_PROCESSING_ENABLED=true`) is the only supported product runtime. Explicit `false` is rejected at settings load. Rollback uses a previous release image, not an in-process dual runtime.
+
+---
+
+## SUPERSEDED (historical; do not implement from these)
+
+These were valid at a snapshot date. A later charter, spec, or the implemented wizard replaced them.
+
+| Document | Why superseded | Superseded by |
+|----------|----------------|---------------|
+| [`docs/master-design.md`](../master-design.md) | Pre-charter “Generic Data Connector” master design; Mapping-first product framing | PRODUCT-CHARTER + this index + OSS-v1-ARCHITECTURE |
+| [`docs/v1-readiness-checklist.md`](../v1-readiness-checklist.md) | Pre-GA GDC checklist; Mapping/Enrichment/Routes as primary nav | docs/release/OSS-v1.0-GA-CHECKLIST.md + UX Charter nav |
+| [`docs/archive/historical-audits/route-architecture-gap-analysis.md`](../archive/historical-audits/route-architecture-gap-analysis.md) | Snapshot: Transform → Destinations wizard as “current” | STREAM-WIZARD-UX-CHARTER v5.2 + wizard-state.ts |
+| [`docs/archive/historical-audits/m13-destination-first-full-audit.md`](../archive/historical-audits/m13-destination-first-full-audit.md) | Snapshot: Destination First FAIL | Implemented 5-step Destination First wizard |
+| [`docs/archive/historical-audits/m13-route-processing-ui-deferral.md`](../archive/historical-audits/m13-route-processing-ui-deferral.md) | Snapshot: Destination First not implemented | STREAM-WIZARD-UX-CHARTER + specs/097 |
+| [`docs/archive/historical-audits/m13-route-architecture-completion-audit.md`](../archive/historical-audits/m13-route-architecture-completion-audit.md) | Snapshot: Transform-first wizard | Current wizard-state.ts |
+| [`docs/archive/historical-audits/route-processing-foundation-implementation-spec.md`](../archive/historical-audits/route-processing-foundation-implementation-spec.md) | Pre–Destination First implementation plan | specs/091–097 |
+| [`docs/release/OSS-v1.0-GA-RELEASE-NOTES.md`](../release/OSS-v1.0-GA-RELEASE-NOTES.md) | Historical GA snapshot (2026-06-20); flag OFF / unwired drift KPI | KNOWN-LIMITATIONS + OSS-v1-ARCHITECTURE |
+| [`docs/release/OSS-v1-RC-RELEASE-NOTES.md`](../release/OSS-v1-RC-RELEASE-NOTES.md) | Historical RC snapshot; flag historically defaulted off | KNOWN-LIMITATIONS |
+| [`docs/release/OSS-v1.0-GA-CHECKLIST.md`](../release/OSS-v1.0-GA-CHECKLIST.md) | Historical GA checklist (item 37 flag false) | KNOWN-LIMITATIONS + this index |
+| Other `docs/architecture/m13-*` design reviews / flag reports | Point-in-time M13 engineering records | specs/091–097 + Runtime code |
+
+Stub files remain under `docs/architecture/` so old links resolve to a SUPERSEDED notice.
