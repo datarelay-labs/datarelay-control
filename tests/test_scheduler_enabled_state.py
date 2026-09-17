@@ -59,6 +59,7 @@ def test_standalone_uses_shared_enabled_stream_loader() -> None:
     assert "from app.scheduler.enabled_streams import load_enabled_stream_contexts" in standalone_src
     assert "from app.scheduler.enabled_streams import load_enabled_stream_contexts" in main_src
     assert "from app.main import" not in standalone_src
+    assert "from app.connectors.models import Connector" in standalone_src
     assert "load_enabled_stream_contexts" in standalone_src
     assert callable(load_enabled_stream_contexts)
 
@@ -383,6 +384,13 @@ def test_scheduler_manual_run_once_ownership_unchanged(tmp_path, monkeypatch: py
     finally:
         StreamRunner.release_worker_ownership(stream_id)
     assert StreamRunner.is_worker_ownership_held(stream_id) is False
+
+
+def test_eager_load_column_attrs_ignores_none_and_plain_objects() -> None:
+    from app.scheduler.context_cache import _eager_load_column_attrs
+
+    _eager_load_column_attrs(None)
+    _eager_load_column_attrs(object())
 
 
 @pytest.fixture(autouse=True)

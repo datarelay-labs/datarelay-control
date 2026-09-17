@@ -25,9 +25,84 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
 COPY alembic ./alembic
 COPY alembic.ini .
+COPY docker/Dockerfile.api ./docker/Dockerfile.api
 COPY tests/wiremock/mappings ./tests/wiremock/mappings
 COPY tests/wiremock/__files ./tests/wiremock/__files
 COPY --from=fe /fe/dist ./frontend/dist
+
+# Runtime source identity (API ↔ Scheduler must share this image lineage).
+# GIT_SHA alone is insufficient on dirty worktrees — SOURCE_DIGEST + GIT_DIRTY required.
+ARG GDC_BUILD_GIT_SHA=unknown
+ARG GDC_BUILD_GIT_DIRTY=unknown
+ARG GDC_BUILD_SOURCE_DIGEST=
+ARG GDC_BUILD_WORKTREE=unknown
+ARG GDC_BUILD_TIME=unknown
+ENV GDC_BUILD_GIT_SHA=${GDC_BUILD_GIT_SHA} \
+    GDC_BUILD_GIT_DIRTY=${GDC_BUILD_GIT_DIRTY} \
+    GDC_BUILD_SOURCE_DIGEST=${GDC_BUILD_SOURCE_DIGEST} \
+    GDC_BUILD_WORKTREE=${GDC_BUILD_WORKTREE} \
+    GDC_BUILD_TIME=${GDC_BUILD_TIME}
+RUN python - <<'PY'
+from pathlib import Path
+import hashlib
+import json
+import os
+
+repo = Path("/app")
+skip_dirs = {"__pycache__", ".git", "node_modules", "cache", "logs"}
+inputs = [
+    repo / "app",
+    repo / "alembic",
+    repo / "alembic.ini",
+    repo / "requirements.txt",
+    repo / "docker" / "Dockerfile.api",
+]
+hasher = hashlib.sha256()
+files: list[Path] = []
+for target in inputs:
+    if target.is_file():
+        files.append(target)
+    elif target.is_dir():
+        for path in sorted(target.rglob("*")):
+            if not path.is_file():
+                continue
+            if any(part in skip_dirs for part in path.parts):
+                continue
+            if path.name == "BUILD_IDENTITY.json" or path.suffix == ".pyc":
+                continue
+            files.append(path)
+for path in sorted(set(files)):
+    rel = path.relative_to(repo).as_posix()
+    hasher.update(rel.encode("utf-8"))
+    hasher.update(b"\0")
+    hasher.update(path.read_bytes())
+    hasher.update(b"\0")
+computed = hasher.hexdigest()
+provided = (os.environ.get("GDC_BUILD_SOURCE_DIGEST") or "").strip()
+source_digest = provided or computed
+
+dirty_raw = (os.environ.get("GDC_BUILD_GIT_DIRTY") or "unknown").strip().lower()
+if dirty_raw in {"true", "1", "yes", "on"}:
+    git_dirty: bool | str = True
+elif dirty_raw in {"false", "0", "no", "off"}:
+    git_dirty = False
+else:
+    git_dirty = os.environ.get("GDC_BUILD_GIT_DIRTY") or "unknown"
+
+ident = {
+    "git_sha": os.environ.get("GDC_BUILD_GIT_SHA") or "unknown",
+    "git_dirty": git_dirty,
+    "source_digest": source_digest,
+    "worktree": os.environ.get("GDC_BUILD_WORKTREE") or "unknown",
+    "built_at": os.environ.get("GDC_BUILD_TIME") or "unknown",
+    "route_processing_canonical": True,
+}
+Path("/app/app/BUILD_IDENTITY.json").write_text(
+    json.dumps(ident, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+)
+print("baked_source_digest", ident["source_digest"][:16])
+print("baked_git_dirty", ident["git_dirty"])
+PY
 
 ENV PYTHONUNBUFFERED=1
 EXPOSE 8000

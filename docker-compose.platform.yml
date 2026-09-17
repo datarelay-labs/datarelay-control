@@ -57,9 +57,16 @@ services:
         max-file: "3"
 
   api:
+    image: gdc-platform-runtime:${GDC_RUNTIME_IMAGE_TAG:-local}
     build:
       context: .
       dockerfile: docker/Dockerfile.api
+      args:
+        GDC_BUILD_GIT_SHA: ${GDC_BUILD_GIT_SHA:-unknown}
+        GDC_BUILD_GIT_DIRTY: ${GDC_BUILD_GIT_DIRTY:-unknown}
+        GDC_BUILD_SOURCE_DIGEST: ${GDC_BUILD_SOURCE_DIGEST:-}
+        GDC_BUILD_WORKTREE: ${GDC_BUILD_WORKTREE:-${PWD:-/workspace}}
+        GDC_BUILD_TIME: ${GDC_BUILD_TIME:-unknown}
     container_name: gdc-platform-api
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-gdc}:${POSTGRES_PASSWORD:-gdc}@postgres:5432/${POSTGRES_DB:-gdc}
@@ -68,6 +75,7 @@ services:
       # Reduce glibc per-thread arena fragmentation in long-lived uvicorn workers.
       MALLOC_ARENA_MAX: ${MALLOC_ARENA_MAX:-2}
       GDC_RUNTIME_IN_CONTAINER: "true"
+      # Canonical Route Processing only (explicit false fails startup; do not set false).
       GDC_ROUTE_PROCESSING_ENABLED: ${GDC_ROUTE_PROCESSING_ENABLED:-true}
       GDC_ENABLE_IN_PROCESS_SCHEDULER: ${GDC_ENABLE_IN_PROCESS_SCHEDULER:-false}
       GDC_UVICORN_WORKERS: ${GDC_UVICORN_WORKERS:-2}
@@ -168,9 +176,16 @@ services:
     restart: unless-stopped
 
   scheduler:
+    image: gdc-platform-runtime:${GDC_RUNTIME_IMAGE_TAG:-local}
     build:
       context: .
       dockerfile: docker/Dockerfile.api
+      args:
+        GDC_BUILD_GIT_SHA: ${GDC_BUILD_GIT_SHA:-unknown}
+        GDC_BUILD_GIT_DIRTY: ${GDC_BUILD_GIT_DIRTY:-unknown}
+        GDC_BUILD_SOURCE_DIGEST: ${GDC_BUILD_SOURCE_DIGEST:-}
+        GDC_BUILD_WORKTREE: ${GDC_BUILD_WORKTREE:-${PWD:-/workspace}}
+        GDC_BUILD_TIME: ${GDC_BUILD_TIME:-unknown}
     container_name: gdc-platform-scheduler
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-gdc}:${POSTGRES_PASSWORD:-gdc}@postgres:5432/${POSTGRES_DB:-gdc}
@@ -178,6 +193,7 @@ services:
       GDC_DB_MAX_OVERFLOW: ${GDC_SCHEDULER_DB_MAX_OVERFLOW:-8}
       MALLOC_ARENA_MAX: ${MALLOC_ARENA_MAX:-2}
       GDC_RUNTIME_IN_CONTAINER: "true"
+      # Canonical Route Processing only (explicit false fails startup; do not set false).
       GDC_ROUTE_PROCESSING_ENABLED: ${GDC_ROUTE_PROCESSING_ENABLED:-true}
       GDC_ENABLE_IN_PROCESS_SCHEDULER: "true"
       APP_ENV: ${APP_ENV:-development}
