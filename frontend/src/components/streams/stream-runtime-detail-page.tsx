@@ -124,6 +124,8 @@ function statusTone(s: StreamRuntimeStatus) {
       return 'error' as const
     case 'STOPPED':
       return 'neutral' as const
+    case 'IDLE':
+      return 'neutral' as const
     case 'UNKNOWN':
       return 'neutral' as const
     default: {
