@@ -59,13 +59,14 @@ export function resolveSourceProductLabel(
   return raw
 }
 
-export type StreamRuntimeStatus = 'RUNNING' | 'DEGRADED' | 'ERROR' | 'STOPPED' | 'UNKNOWN'
+export type StreamRuntimeStatus = 'RUNNING' | 'DEGRADED' | 'ERROR' | 'STOPPED' | 'IDLE' | 'UNKNOWN'
 
 const STATUS_RANK: Record<StreamRuntimeStatus, number> = {
   ERROR: 4,
   DEGRADED: 3,
   RUNNING: 2,
   STOPPED: 1,
+  IDLE: 1,
   UNKNOWN: 0,
 }
 
