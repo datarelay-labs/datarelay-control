@@ -7,7 +7,7 @@ import { createRoute } from '../../api/gdcRoutes'
 import { startRuntimeStream } from '../../api/gdcRuntime'
 import { NewStreamWizardPage } from './new-stream-wizard-page'
 import { persistWizardRouteProtection } from './wizard/wizard-route-protection-persist'
-import { StepMapping } from './wizard/step-mapping'
+import { StepMappingCombined } from './wizard/step-mapping-combined'
 import { EnrichmentRulesEditor } from './wizard/enrichment-rules-editor'
 import { FinalEventPreviewPanel } from '../mappings/final-event-preview-panel'
 import { buildInitialState, DEFAULT_ROUTE_PROCESSING_INHERIT } from './wizard/wizard-state'
@@ -124,30 +124,23 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
     expect(screen.queryByTestId('wizard-connect-tab-connection')).not.toBeInTheDocument()
   })
 
-  it('StepMapping renders Basic, Advanced, and Expert tabs with wizard sample', () => {
+  it('StepMappingCombined renders for route processing transform', () => {
     const state = buildInitialState()
-    state.apiTest.status = 'success'
-    state.apiTest.parsedJson = { events: [{ id: 'evt-1', message: 'hello' }] }
-    state.apiTest.extractedEvents = [{ id: 'evt-1', message: 'hello' }]
-    state.apiTest.eventCount = 1
-    state.apiTest.finishedAt = Date.now()
-    state.stream.useWholeResponseAsEvent = true
-
+    state.apiTest.sampleResponse = { id: '1', message: 'hello' }
     render(
-      <StepMapping
-        state={state}
-        onChangeMapping={() => {}}
-        onChangeMappingMode={() => {}}
-        onChangeFullEventJsonata={() => {}}
-        onChangeFullEventRegexConfigJson={() => {}}
-        transformRules={[]}
-        onChangeTransformRules={() => {}}
-      />,
+      <MemoryRouter>
+        <StepMappingCombined
+          state={state}
+          onChangeMapping={() => undefined}
+          onChangeMappingMode={() => undefined}
+          onChangeFullEventJsonata={() => undefined}
+          onChangeFullEventRegexConfigJson={() => undefined}
+          onChangeEnrichment={() => undefined}
+          onChangeDataProtection={() => undefined}
+        />
+      </MemoryRouter>,
     )
-
-    expect(screen.getByRole('tab', { name: /Basic · JSONPath/i })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /Advanced · JSONata/i })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /Expert · Full Event Regex/i })).toBeInTheDocument()
+    expect(screen.getByTestId('wizard-step-transform')).toBeInTheDocument()
   })
 
   it('shows deploy decision center on deploy step after resuming draft', async () => {

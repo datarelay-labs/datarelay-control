@@ -100,7 +100,7 @@ export function AiStreamsPage() {
                     <td className="px-3 py-2">
                       <Link
                         to={streamRuntimePath(String(row.stream_id))}
-                        className="text-xs font-semibold text-violet-700 hover:underline dark:text-violet-300"
+                        className="text-xs font-semibold text-green-700 hover:underline dark:text-green-300"
                       >
                         Open stream
                       </Link>

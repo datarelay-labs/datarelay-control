@@ -33,7 +33,7 @@ export function AiGatewayFoundationShell() {
               cn(
                 'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
                 isActive
-                  ? 'bg-violet-600 text-white shadow-sm dark:bg-violet-500'
+                  ? 'bg-gdc-buttonPrimary text-white shadow-sm dark:bg-gdc-buttonPrimary'
                   : 'text-slate-600 hover:bg-slate-100 dark:text-gdc-mutedStrong dark:hover:bg-gdc-rowHover',
               )
             }

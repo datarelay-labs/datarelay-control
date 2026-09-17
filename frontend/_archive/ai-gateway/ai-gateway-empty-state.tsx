@@ -27,14 +27,14 @@ export function AiGatewayEmptyState({
   return (
     <section
       data-testid={testId}
-      className="rounded-xl border border-violet-200/80 bg-violet-50/40 px-5 py-8 text-center dark:border-violet-500/30 dark:bg-violet-500/10"
+      className="rounded-xl border border-green-200/80 bg-green-50/40 px-5 py-8 text-center dark:border-green-500/30 dark:bg-green-500/10"
     >
       <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">{title}</h2>
       <p className="mx-auto mt-2 max-w-md text-[13px] text-slate-600 dark:text-gdc-muted">{description}</p>
       <div className="mt-5 flex flex-wrap justify-center gap-2">
         <Link
           to={primaryTo}
-          className="inline-flex items-center rounded-md bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-700"
+          className="inline-flex items-center rounded-md bg-gdc-buttonPrimary px-3 py-1.5 text-xs font-semibold text-white hover:bg-gdc-buttonPrimaryHover"
         >
           {primaryLabel}
         </Link>
