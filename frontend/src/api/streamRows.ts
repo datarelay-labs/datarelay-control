@@ -11,7 +11,7 @@ import { normalizeGdcStreamSourceType } from '../utils/sourceTypePresentation'
 import { deriveStreamIssuesFromSnapshot, operationalStreamSuccessRatePct, selectStreamKpi } from '../lib/operational-snapshot-selectors'
 
 /** Maps to Stream.status / runtime-derived operational badge. */
-export type StreamRuntimeStatus = 'RUNNING' | 'DEGRADED' | 'ERROR' | 'STOPPED' | 'UNKNOWN'
+export type StreamRuntimeStatus = 'RUNNING' | 'DEGRADED' | 'ERROR' | 'STOPPED' | 'IDLE' | 'UNKNOWN'
 
 /** Streams console table + selected panel row shape (API-backed; never demo-filled). */
 export type StreamConsoleRow = {
@@ -23,6 +23,8 @@ export type StreamConsoleRow = {
   connectorProductGroup?: string | null
   sourceTypeLabel: string
   status: StreamRuntimeStatus
+  /** Stream enabled flag from config/snapshot; false → Disabled (not Stopped/No Data). */
+  enabled?: boolean
   /** False until runtime stats/health fetch completed for this row. */
   runtimeStatsAttempted: boolean
   /** True when either stats or health API returned a body for this stream. */
