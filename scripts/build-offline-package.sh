@@ -33,11 +33,36 @@ require_docker() {
 }
 
 build_images() {
-  echo "[build] Building offline images (api, frontend, reverse-proxy)..."
+  # Match docker-compose.platform.yml shared runtime image + identity build args.
+  local runtime_image="gdc-platform-runtime:${GDC_RUNTIME_IMAGE_TAG:-local}"
+
+  if [[ -z "${GDC_BUILD_GIT_SHA:-}" ]] && command -v git >/dev/null 2>&1; then
+    export GDC_BUILD_GIT_SHA="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+  fi
+  if [[ -z "${GDC_BUILD_GIT_DIRTY:-}" ]] && command -v git >/dev/null 2>&1; then
+    if [[ -n "$(git -C "$ROOT" status --porcelain 2>/dev/null || true)" ]]; then
+      export GDC_BUILD_GIT_DIRTY=true
+    else
+      export GDC_BUILD_GIT_DIRTY=false
+    fi
+  fi
+  if [[ -z "${GDC_BUILD_SOURCE_DIGEST:-}" ]]; then
+    export GDC_BUILD_SOURCE_DIGEST="$(
+      PYTHONPATH="$ROOT" python3 - <<'PY' 2>/dev/null || true
+from app.build_identity import compute_build_source_digest
+print(compute_build_source_digest())
+PY
+    )"
+  fi
+  export GDC_BUILD_TIME="${GDC_BUILD_TIME:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
+  export GDC_BUILD_WORKTREE="${GDC_BUILD_WORKTREE:-$ROOT}"
+
+  echo "[build] Building offline images (shared runtime api, frontend, reverse-proxy)..."
+  echo "[build] runtime_image=${runtime_image} git_sha=${GDC_BUILD_GIT_SHA:-unknown} dirty=${GDC_BUILD_GIT_DIRTY:-unknown}"
   docker compose -f docker-compose.platform.yml build api frontend reverse-proxy
 
   echo "[build] Tagging images as :offline..."
-  docker tag gdc-platform-api gdc-platform-api:offline
+  docker tag "$runtime_image" gdc-platform-api:offline
   docker tag gdc-platform-frontend gdc-platform-frontend:offline
   docker tag gdc-platform-reverse-proxy gdc-platform-reverse-proxy:offline
 

@@ -307,7 +307,14 @@ app.include_router(governance_router, prefix=f"{_prefix}/governance", tags=["gov
 def _build_readiness_payload() -> tuple[dict[str, Any], int]:
     """DB-backed readiness body and HTTP status (503 when PostgreSQL is unreachable)."""
 
-    body: dict[str, Any] = {"status": "ok"}
+    from app.build_identity import load_build_identity
+    from app.config import settings as _settings
+
+    body: dict[str, Any] = {
+        "status": "ok",
+        "build_identity": load_build_identity(),
+        "route_processing_enabled": bool(_settings.GDC_ROUTE_PROCESSING_ENABLED),
+    }
     try:
         with engine.connect() as conn:
             probe = probe_delivery_logs_indexes(conn)

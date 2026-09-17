@@ -48,9 +48,18 @@ services:
     restart: unless-stopped
 
   api:
+    # Same runtime image contract as docker-compose.platform.yml (identity baked at build).
+    # This topology has no separate scheduler service; API image still carries SOURCE_DIGEST.
+    image: gdc-platform-runtime:${GDC_RUNTIME_IMAGE_TAG:-local}
     build:
       context: ..
       dockerfile: docker/Dockerfile.api
+      args:
+        GDC_BUILD_GIT_SHA: ${GDC_BUILD_GIT_SHA:-unknown}
+        GDC_BUILD_GIT_DIRTY: ${GDC_BUILD_GIT_DIRTY:-unknown}
+        GDC_BUILD_SOURCE_DIGEST: ${GDC_BUILD_SOURCE_DIGEST:-}
+        GDC_BUILD_WORKTREE: ${GDC_BUILD_WORKTREE:-${PWD:-/workspace}}
+        GDC_BUILD_TIME: ${GDC_BUILD_TIME:-unknown}
     container_name: gdc-platform-https-api
     environment:
       DATABASE_URL: postgresql://gdc:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/gdc
