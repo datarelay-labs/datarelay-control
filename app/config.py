@@ -203,7 +203,9 @@ class Settings(BaseSettings):
     GDC_IDENTITY_VAULT_HASH_SALT: str = ""
 
     # Route Processing runtime — Transform → Protection → Classification → Policy → Delivery.
-    # Default ON. Set false to use the legacy stream-scoped path (rollback / compatibility).
+    # Canonical product path only (Product Charter: No Parallel Pipeline).
+    # Explicit false is rejected at settings load (no silent coercion / no dual runtime).
+    # Rollback = previous release image, not a flag-OFF pipeline in this codebase.
     GDC_ROUTE_PROCESSING_ENABLED: bool = True
 
     # Governance / operational notifications (M20.2) — platform-level SMTP.
@@ -236,6 +238,18 @@ class Settings(BaseSettings):
         from app.production_security import validate_production_security_settings
 
         validate_production_security_settings(self)
+        return self
+
+    @model_validator(mode="after")
+    def _reject_route_processing_disabled(self) -> "Settings":
+        """Refuse obsolete Route-OFF configuration; do not silently coerce to ON."""
+
+        if not bool(self.GDC_ROUTE_PROCESSING_ENABLED):
+            raise ValueError(
+                "GDC_ROUTE_PROCESSING_ENABLED=false is no longer supported. "
+                "Route Processing is the canonical Data Relay runtime. "
+                "Remove the obsolete setting or set it to true."
+            )
         return self
 
     @property

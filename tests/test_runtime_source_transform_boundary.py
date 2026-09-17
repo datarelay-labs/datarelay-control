@@ -104,44 +104,6 @@ def test_collect_source_events_fetches_once_and_skips_stream_transform(runner: S
     runner._classify_events.assert_not_called()
     runner._apply_schema_drift_policy.assert_not_called()
 
-
-def test_apply_stream_global_transform_does_not_fetch_source(runner: StreamRunner) -> None:
-    """OFF stream/global transform must not re-acquire source."""
-
-    events = [{"message": "hello", "vendor": "acme"}]
-    before = len(runner.poller.calls)  # type: ignore[attr-defined]
-    raw, enriched, stats = runner._apply_stream_global_transform(
-        runtime_stream=_runtime_stream(),
-        events=events,
-        stream_id=42,
-    )
-    after = len(runner.poller.calls)  # type: ignore[attr-defined]
-
-    assert after == before
-    assert raw is events or raw == events
-    assert stats["mapped_count"] == 1
-    assert stats["enriched_count"] == 1
-    assert enriched[0].get("product") == "GDC"
-    assert enriched[0].get("message") == "hello"
-    runner._classify_events.assert_called_once()
-    runner._apply_schema_drift_policy.assert_called_once()
-
-
-def test_collect_and_transform_orchestrates_off_path(runner: StreamRunner, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", False)
-    events, enriched, stats = runner._collect_and_transform_events(
-        runtime_stream=_runtime_stream(),
-        checkpoint=None,
-        stream_id=42,
-        run_opts=StreamRunOptions(),
-    )
-    assert len(runner.poller.calls) == 1  # type: ignore[attr-defined]
-    assert stats["mapped_count"] == 1
-    assert stats["enriched_count"] == 1
-    assert enriched[0].get("product") == "GDC"
-    assert events[0].get("message") == "hello"
-
-
 def test_collect_and_transform_orchestrates_on_path_skips_stream_transform(
     runner: StreamRunner, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -170,29 +132,28 @@ def test_collect_and_transform_orchestrates_on_path_skips_stream_transform(
 def test_multi_route_run_fetches_source_once(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """SOURCE_FETCH_COUNT_MULTI_ROUTE=1 for both ON and OFF."""
+    """SOURCE_FETCH_COUNT_MULTI_ROUTE=1 on canonical Route Processing path."""
 
     db = db_session
     fixture = _seed_stream_runtime(db, failure_policies=["LOG_AND_CONTINUE", "LOG_AND_CONTINUE"])
     stream_id = fixture["stream_id"]
     payload = {"items": [{"id": "e1", "message": "hello", "vendor": "acme"}]}
 
-    for flag in (False, True):
-        monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", flag)
-        ctx = load_stream_context(db, stream_id)
-        poller = _FakePoller(response=payload)
-        webhook = _FakeWebhookSender()
-        runner = _build_runner(poller=poller, webhook_sender=webhook)
-        summary = runner.run(ctx, db=db)
-        assert summary.get("outcome") == "completed"
-        assert len(poller.calls) == 1, f"flag={flag} fetch_count={len(poller.calls)}"
-        assert len(webhook.calls) == 2
+    monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", True)
+    ctx = load_stream_context(db, stream_id)
+    poller = _FakePoller(response=payload)
+    webhook = _FakeWebhookSender()
+    runner = _build_runner(poller=poller, webhook_sender=webhook)
+    summary = runner.run(ctx, db=db)
+    assert summary.get("outcome") == "completed"
+    assert len(poller.calls) == 1
+    assert len(webhook.calls) == 2
 
 
 def test_persist_checkpoint_false_still_fetches_once_without_checkpoint_advance(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", False)
+    monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", True)
     db = db_session
     fixture = _seed_stream_runtime(db, failure_policies=["LOG_AND_CONTINUE"])
     stream_id = fixture["stream_id"]
@@ -205,25 +166,3 @@ def test_persist_checkpoint_false_still_fetches_once_without_checkpoint_advance(
     assert len(poller.calls) == 1
     assert summary.get("checkpoint_updated") is False
     assert len(webhook.calls) == 1
-
-
-def test_source_collect_does_not_own_checkpoint_or_delivery(runner: StreamRunner) -> None:
-    runner._update_checkpoint_after_success = MagicMock()  # type: ignore[method-assign]
-    runner._send_route_events = MagicMock()  # type: ignore[method-assign]
-    runner._fan_out = MagicMock()  # type: ignore[method-assign]
-
-    runner._collect_source_events(
-        runtime_stream=_runtime_stream(),
-        checkpoint=None,
-        stream_id=42,
-        run_opts=StreamRunOptions(),
-    )
-    runner._apply_stream_global_transform(
-        runtime_stream=_runtime_stream(),
-        events=[{"message": "hello", "vendor": "acme"}],
-        stream_id=42,
-    )
-
-    runner._update_checkpoint_after_success.assert_not_called()
-    runner._send_route_events.assert_not_called()
-    runner._fan_out.assert_not_called()

@@ -27,7 +27,7 @@ axes:
     capability_ids: [test.playwright.browser_e2e, test.pytest.wiremock_e2e]
 
   route_runtime:
-    values: [ROUTE_OFF, ROUTE_ON]
+    values: [ROUTE_ON]  # ROUTE_OFF retired with legacy stream-scoped runtime
     capability_ids: [flag.gdc_route_processing_enabled, routes.architecture.one_stream_many_routes]
 
   source_type:

@@ -22,13 +22,11 @@ def test_route_processing_default_is_on() -> None:
     assert Settings.model_fields["GDC_ROUTE_PROCESSING_ENABLED"].default is True
 
 
-@pytest.mark.parametrize("route_on", [False, True], ids=["flag_off", "flag_on"])
 def test_failover_primary_fail_secondary_success_flag_matrix(
     db_session: Session,
     monkeypatch: pytest.MonkeyPatch,
-    route_on: bool,
 ) -> None:
-    monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", route_on)
+    monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", True)
     ctx = _seed_primary_backup(db_session)
     poller = _FakePoller(response={"items": [{"id": "e1", "message": "hi", "vendor": "v"}]})
     sender = _FailoverWebhookSender(fail_urls={ctx["primary_url"]})
@@ -69,13 +67,11 @@ def test_failover_primary_fail_secondary_success_flag_matrix(
     assert int(sample.get("success_count") or 0) >= 1
 
 
-@pytest.mark.parametrize("route_on", [False, True], ids=["flag_off", "flag_on"])
 def test_replay_records_on_route_failure_flag_matrix(
     db_session: Session,
     monkeypatch: pytest.MonkeyPatch,
-    route_on: bool,
 ) -> None:
-    monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", route_on)
+    monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", True)
     seeded = _seed_stream_runtime(db_session)
     poller = _FakePoller(
         response={"items": [{"id": "evt-replay-1", "message": "replay-record", "vendor": "MappedVendor"}]}
@@ -96,13 +92,11 @@ def test_replay_records_on_route_failure_flag_matrix(
     assert rows[0].protected_payload_json.get("events")
 
 
-@pytest.mark.parametrize("route_on", [False, True], ids=["flag_off", "flag_on"])
 def test_failover_bindings_present_log_complete_on_primary_success(
     db_session: Session,
     monkeypatch: pytest.MonkeyPatch,
-    route_on: bool,
 ) -> None:
-    monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", route_on)
+    monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", True)
     ctx = _seed_primary_backup(db_session)
     poller = _FakePoller(response={"items": [{"id": "e1", "message": "hi", "vendor": "v"}]})
     sender = _FailoverWebhookSender()

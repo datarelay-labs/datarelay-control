@@ -260,12 +260,6 @@ def test_checkpoint_reference_on_success() -> None:
     assert dr is not None
     assert dr.delivery_success is True
 
-
-def test_feature_flag_off_route_delivery_not_in_legacy(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", False)
-    assert settings.GDC_ROUTE_PROCESSING_ENABLED is False
-
-
 def test_process_route_no_double_policy_in_delivery(classification_enabled: None) -> None:
     shared = _shared()
     route_ctx = _route_ctx()

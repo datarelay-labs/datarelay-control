@@ -5,6 +5,7 @@
  */
 
 export type ExecutionSurface = 'API_SEEDED' | 'BROWSER'
+/** ROUTE_OFF is retired (historical matrix only; generator emits ROUTE_ON). */
 export type RouteRuntime = 'ROUTE_OFF' | 'ROUTE_ON'
 
 export type SourceType =

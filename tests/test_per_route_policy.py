@@ -25,10 +25,6 @@ from app.protection.policy_engine import (
 from app.quarantine.models import StreamQuarantineEvent
 from app.route_policy.config import RoutePolicyConfig
 from app.route_policy.decision import delivery_allowed_for_decision, merge_route_policy_decision
-from app.route_policy.legacy_gates import (
-    build_legacy_route_delivery_gates,
-    has_active_delivery_behavior_route_overrides,
-)
 from app.route_policy.models import RoutePolicyRule
 from app.route_policy.resolver import resolve_route_policy_config
 from app.route_protection.resolver import resolve_route_protection_config
@@ -486,21 +482,6 @@ def test_route_policy_metrics(classification_enabled: None) -> None:
     assert pipeline.metrics.route_policy_count == 1
     assert pipeline.metrics.route_policy_allow_count == 1
 
-
-def test_feature_flag_off_legacy_unchanged(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", False)
-    db = db_session
-    fixture = _seed_stream_runtime(db)
-    ctx = load_stream_context(db, fixture["stream_id"])
-    runner = _build_runner(
-        poller=_FakePoller(response={"items": [{"id": "e1", "message": "hello", "vendor": "acme"}]}),
-        webhook_sender=_FakeWebhookSender(),
-    )
-    with patch("app.runners.route_stage.process_routes") as route_mock:
-        runner.run(ctx, db=db)
-        route_mock.assert_not_called()
-
-
 def test_flag_on_policy_stage_active(classification_enabled: None) -> None:
     shared = _minimal_shared()
     route_ctx = _minimal_route_ctx()
@@ -508,108 +489,3 @@ def test_flag_on_policy_stage_active(classification_enabled: None) -> None:
     stages = [entry.get("stage") for entry in result.stage_timeline if entry.get("stage")]
     assert "policy" in stages
     assert "policy_stub" not in stages
-
-
-def test_has_active_delivery_behavior_route_overrides() -> None:
-    assert has_active_delivery_behavior_route_overrides([]) is False
-    assert has_active_delivery_behavior_route_overrides(
-        [{"route_id": 1, "enabled": True, "delivery_behavior": "block"}]
-    ) is True
-    assert has_active_delivery_behavior_route_overrides(
-        [{"route_id": 1, "enabled": True, "delivery_behavior": "continue"}]
-    ) is True
-    assert has_active_delivery_behavior_route_overrides(
-        [{"route_id": 1, "enabled": False, "delivery_behavior": "block"}]
-    ) is False
-    assert has_active_delivery_behavior_route_overrides(
-        [{"route_id": 1, "enabled": True}]
-    ) is False
-
-
-def test_legacy_fanout_delivery_behavior_block_skips_route(
-    db_session: Session,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", False)
-    db = db_session
-    fixture = _seed_stream_runtime(db, failure_policies=["LOG_AND_CONTINUE", "LOG_AND_CONTINUE"])
-    stream_id = fixture["stream_id"]
-    route_a, route_b = fixture["route_ids"]
-    stream = db.get(Stream, stream_id)
-    assert stream is not None
-    config = dict(stream.config_json or {})
-    config["governance"] = {
-        "route_overrides": [
-            {
-                "route_id": route_a,
-                "field_path": "$.email",
-                "delivery_behavior": "block",
-                "enabled": True,
-            },
-            {
-                "route_id": route_b,
-                "field_path": "$.email",
-                "delivery_behavior": "continue",
-                "enabled": True,
-            },
-        ]
-    }
-    stream.config_json = config
-    db.commit()
-
-    webhook = _FakeWebhookSender()
-    runner = _build_runner(
-        poller=_FakePoller(response={"items": [{"id": "e1", "email": "user@example.com", "vendor": "acme"}]}),
-        webhook_sender=webhook,
-    )
-    ctx = load_stream_context(db, stream_id)
-    runner.run(ctx, db=db)
-
-    delivered_urls = {call["config"]["url"] for call in webhook.calls}
-    assert "https://receiver-0.example.com/events" not in delivered_urls
-    assert "https://receiver-1.example.com/events" in delivered_urls
-
-
-def test_legacy_fanout_no_delivery_behavior_overrides_delivers_all(
-    db_session: Session,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", False)
-    db = db_session
-    fixture = _seed_stream_runtime(db, failure_policies=["LOG_AND_CONTINUE", "LOG_AND_CONTINUE"])
-    stream_id = fixture["stream_id"]
-    webhook = _FakeWebhookSender()
-    runner = _build_runner(
-        poller=_FakePoller(response={"items": [{"id": "e1", "message": "hello", "vendor": "acme"}]}),
-        webhook_sender=webhook,
-    )
-    ctx = load_stream_context(db, stream_id)
-    runner.run(ctx, db=db)
-    assert len(webhook.calls) == 2
-
-
-def test_build_legacy_route_delivery_gates_block_and_continue(
-    db_session: Session,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", False)
-    db = db_session
-    fixture = _seed_stream_runtime(db, failure_policies=["LOG_AND_CONTINUE", "LOG_AND_CONTINUE"])
-    stream_id = fixture["stream_id"]
-    route_a, route_b = fixture["route_ids"]
-    stream = db.get(Stream, stream_id)
-    assert stream is not None
-    config = dict(stream.config_json or {})
-    config["governance"] = {
-        "route_overrides": [
-            {"route_id": route_a, "enabled": True, "delivery_behavior": "block"},
-            {"route_id": route_b, "enabled": True, "delivery_behavior": "continue"},
-        ]
-    }
-    stream.config_json = config
-    db.commit()
-
-    ctx = load_stream_context(db, stream_id)
-    gates = build_legacy_route_delivery_gates(runtime_stream=ctx.stream)
-    assert gates[route_a] is False
-    assert gates[route_b] is True

@@ -441,7 +441,7 @@ class StreamRunner(BaseRunner):
                         })
                     )
                     should_commit = True
-                elif self._route_processing_enabled():
+                else:
                     self._release_caller_db_before_io(runtime_stream=runtime_stream, stream_arg=stream)
                     route_pipeline = self._execute_route_pipeline(
                         stream_id=stream_id,
@@ -624,199 +624,6 @@ class StreamRunner(BaseRunner):
                         })
                     )
                     should_commit = True
-                else:
-                    with PhaseTimer(self._run_timing, "protection"):
-                        delivery_events, protection_result = self._prepare_delivery_events(
-                            stream_id=stream_id,
-                            enriched_events=enriched_events,
-                        )
-                    with PhaseTimer(self._run_timing, "policy"):
-                        policy_result = self._evaluate_policies(
-                            stream_id=stream_id,
-                            enriched_events=enriched_events,
-                        )
-                        policy_result = self._merge_schema_drift_policy_quarantine(policy_result)
-                    quarantined = self._try_policy_quarantine(
-                        stream_id=stream_id,
-                        delivery_events=delivery_events,
-                        policy_result=policy_result,
-                    )
-                    if quarantined:
-                        processed_events = len(events)
-                        self._log(
-                            self._with_run_timing(
-                            {
-                                "stage": "run_complete",
-                                "stream_id": stream_id,
-                                "input_events": len(events),
-                                "mapped_events": tx_stats.get("mapped_count"),
-                                "success_events": 0,
-                                "extracted_event_count": tx_stats.get("extracted_count"),
-                                "mapped_event_count": tx_stats.get("mapped_count"),
-                                "delivered_event_count": 0,
-                                "checkpoint_before": checkpoint_before_snapshot,
-                                "checkpoint_after": None,
-                                "checkpoint_type": checkpoint_type,
-                                "checkpoint_updated": False,
-                                "processed_events": processed_events,
-                                "delivered_events": 0,
-                                "failed_events": 0,
-                                "partial_success": False,
-                                "update_reason": "policy_quarantine",
-                                "retry_pending": False,
-                            })
-                        )
-                        summary["delivered_batch_event_count"] = 0
-                        summary["quarantined"] = True
-                        should_commit = True
-                    else:
-                        with PhaseTimer(self._run_timing, "routing"):
-                            dynamic_routing = self._evaluate_dynamic_routes(
-                                stream_id=stream_id,
-                                enriched_events=enriched_events,
-                            )
-                        self._release_caller_db_before_io(runtime_stream=runtime_stream, stream_arg=stream)
-                        with PhaseTimer(self._run_timing, "destination_send"):
-                            from app.route_classification.legacy_payloads import (
-                                build_legacy_route_classification_payloads,
-                                has_active_classification_route_overrides,
-                            )
-                            from app.route_policy.legacy_gates import (
-                                apply_legacy_delivery_behavior_gates,
-                                has_active_delivery_behavior_sources,
-                            )
-                            from app.route_protection.legacy_payloads import (
-                                build_legacy_route_protection_payloads,
-                                has_active_protection_route_overrides,
-                            )
-
-                            route_overrides = list(_get(runtime_stream, "route_overrides", []) or [])
-                            governance_rules = list(_get(runtime_stream, "governance_rules", []) or [])
-                            route_payloads = None
-                            if has_active_protection_route_overrides(route_overrides):
-                                route_payloads = build_legacy_route_protection_payloads(
-                                    runtime_stream=runtime_stream,
-                                    enriched_events=enriched_events,
-                                    db=None,
-                                    use_short_db=True,
-                                    log_fn=self._log,
-                                    schema_drift_policy_result=self._schema_drift_policy_result,
-                                    sensitive_detection_result=self._sensitive_detection_context,
-                                    batch_id=self._run_id or "",
-                                )
-                            if has_active_classification_route_overrides(route_overrides):
-                                route_payloads = build_legacy_route_classification_payloads(
-                                    runtime_stream=runtime_stream,
-                                    base_events=delivery_events,
-                                    existing_route_payloads=route_payloads,
-                                )
-                            if has_active_delivery_behavior_sources(
-                                route_overrides=route_overrides,
-                                governance_rules=governance_rules,
-                            ):
-                                route_payloads = apply_legacy_delivery_behavior_gates(
-                                    runtime_stream=runtime_stream,
-                                    existing_route_payloads=route_payloads,
-                                    schema_drift_policy_result=self._schema_drift_policy_result,
-                                )
-                            fan_out = self._fan_out(
-                                runtime_stream,
-                                delivery_events,
-                                dynamic_routing=dynamic_routing,
-                                enriched_events=enriched_events,
-                                route_payloads=route_payloads,
-                            )
-                        successful_events = fan_out.successful_events
-                        summary["delivered_batch_event_count"] = len(successful_events) if successful_events else 0
-
-                        processed_events = len(events)
-                        delivered_events = len(successful_events)
-                        failed_events = max(0, processed_events - delivered_events)
-                        partial_success = bool(successful_events) and (
-                            len(fan_out.log_continue_failed_route_ids) > 0 or delivered_events < processed_events
-                        )
-
-                        checkpoint_after_snapshot = None
-                        if successful_events:
-                            cand = successful_events[-1]
-                            cand_preview = list(cand.keys())[:40] if isinstance(cand, dict) else None
-                            self._emit_obs(
-                                {
-                                    "stage": "checkpoint_candidate",
-                                    "stream_id": stream_id,
-                                    "checkpoint_type": checkpoint_type,
-                                    "last_event_keys_preview": cand_preview,
-                                }
-                            )
-                            if run_opts.persist_checkpoint:
-                                with PhaseTimer(self._run_timing, "checkpoint"):
-                                    update_reason = (
-                                        "partial_delivery_success"
-                                        if fan_out.log_continue_failed_route_ids
-                                        else "full_delivery_success"
-                                    )
-                                    checkpoint_after_snapshot = self._update_checkpoint_after_success(
-                                        stream_id=stream_id,
-                                        checkpoint_type=checkpoint_type,
-                                        successful_events=enriched_events,
-                                        checkpoint_before=checkpoint_before_snapshot,
-                                        processed_events=processed_events,
-                                        delivered_events=delivered_events,
-                                        failed_events=failed_events,
-                                        partial_success=partial_success,
-                                        update_reason=update_reason,
-                                        log_continue_failed_route_ids=fan_out.log_continue_failed_route_ids,
-                                    )
-                                self._emit_obs(
-                                    {
-                                        "stage": "checkpoint_update_staged",
-                                        "stream_id": stream_id,
-                                        "checkpoint_type": checkpoint_type,
-                                    }
-                                )
-                                summary["checkpoint_updated"] = True
-
-                        complete_reason = (
-                            "skipped_due_to_failure"
-                            if not successful_events
-                            else ("partial_delivery_success" if partial_success else "full_delivery_success")
-                        )
-                        retry_pending = processed_events > 0 and delivered_events == 0 and not successful_events
-
-                        self._dedup_summary = finalize_dedup_registry_summary(
-                            stream_id=stream_id,
-                            successful_events=successful_events,
-                            summary=self._dedup_summary,
-                            dry_run=False,
-                            log_fn=self._log,
-                        )
-                        if self._dedup_summary is not None:
-                            summary["dedup_summary"] = self._dedup_summary.to_dict()
-
-                        self._log(
-                            self._with_run_timing(
-                            {
-                                "stage": "run_complete",
-                                "stream_id": stream_id,
-                                "input_events": len(events),
-                                "mapped_events": tx_stats.get("mapped_count"),
-                                "success_events": len(successful_events),
-                                "extracted_event_count": tx_stats.get("extracted_count"),
-                                "mapped_event_count": tx_stats.get("mapped_count"),
-                                "delivered_event_count": len(successful_events),
-                                "checkpoint_before": checkpoint_before_snapshot,
-                                "checkpoint_after": checkpoint_after_snapshot,
-                                "checkpoint_type": checkpoint_type,
-                                "checkpoint_updated": bool(successful_events and run_opts.persist_checkpoint),
-                                "processed_events": processed_events,
-                                "delivered_events": delivered_events,
-                                "failed_events": failed_events,
-                                "partial_success": partial_success if successful_events else False,
-                                "update_reason": complete_reason,
-                                "retry_pending": retry_pending,
-                            })
-                        )
-                        should_commit = True
         except Exception as exc:
             # Drop uncommitted work from the failed run transaction, but preserve
             # already-committed run_started and write run_failed out-of-band.
@@ -898,10 +705,6 @@ class StreamRunner(BaseRunner):
         self._parked_caller_pending = merge_parked_caller_pending(self._parked_caller_pending, parked)
         if was_active or parked:
             self._caller_txn_released = True
-
-    @staticmethod
-    def _route_processing_enabled() -> bool:
-        return bool(settings.GDC_ROUTE_PROCESSING_ENABLED)
 
     def _execute_route_pipeline(
         self,
@@ -2224,63 +2027,6 @@ class StreamRunner(BaseRunner):
             logger.exception("schema_drift_policy_failed stream_id=%s", stream_id)
             return None
 
-    def _prepare_delivery_events(
-        self,
-        *,
-        stream_id: int,
-        enriched_events: list[dict[str, Any]],
-    ) -> tuple[list[dict[str, Any]], Any]:
-        """Build masked outbound copy; enriched batch stays unmodified for checkpoint."""
-
-        from app.protection.engine import ProtectBatchResult
-        from app.protection.service import protect_events_for_delivery
-
-        if not enriched_events:
-            empty = ProtectBatchResult(events=[])
-            return [], empty
-
-        drift_result = self._schema_drift_policy_result
-        ephemeral_rules = None
-        if drift_result is not None and getattr(drift_result, "ephemeral_protection_rules", None):
-            ephemeral_rules = drift_result.ephemeral_protection_rules
-
-        delivery_events, result = self._db_write(
-            lambda db: protect_events_for_delivery(
-                db,
-                stream_id=stream_id,
-                enriched_events=enriched_events,
-                ephemeral_rules=ephemeral_rules,
-            )
-        )
-        for warn in result.warnings:
-            self._log(
-                {
-                    "stage": "protection",
-                    "stream_id": stream_id,
-                    "message": warn.error_message,
-                    **warn.to_log_fields(),
-                }
-            )
-        cumulative = {"total_protected_events": 0, "total_protected_fields": 0}
-        try:
-            from app.protection.metrics import (
-                build_protection_complete_payload,
-                load_cumulative_protection_totals,
-            )
-
-            cumulative = self._db_read(lambda db: load_cumulative_protection_totals(db, stream_id))
-        except Exception:
-            logger.exception("protection_cumulative_totals_failed stream_id=%s", stream_id)
-        self._log(
-            build_protection_complete_payload(
-                stream_id=stream_id,
-                result=result,
-                enriched_event_count=len(enriched_events),
-                cumulative_totals=cumulative,
-            )
-        )
-        return delivery_events, result
-
     def _log_route_policy_evaluation_complete(
         self,
         *,
@@ -2618,150 +2364,6 @@ class StreamRunner(BaseRunner):
             self._run_timing.end_phase("schema_drift")
         return events
 
-    def _apply_stream_global_transform(
-        self,
-        *,
-        runtime_stream: Any,
-        events: list[dict[str, Any]],
-        stream_id: int,
-    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, int]]:
-        """Route Processing OFF: stream-scoped mapping/enrichment/classify/drift.
-
-        Does not fetch source, does not deliver, and does not write checkpoint.
-        """
-
-        field_mappings = _get(runtime_stream, "field_mappings", {}) or {}
-        t_mapping = time.monotonic()
-        mapping_results = apply_mappings_with_results(events, field_mappings)
-        if self._run_timing is not None:
-            self._run_timing.add_ms("mapping", max(0, int((time.monotonic() - t_mapping) * 1000)))
-        mapped_events: list[dict[str, Any]] = []
-        for mapping_result in mapping_results:
-            if mapping_result.event_error is not None:
-                err = mapping_result.event_error
-                self._log(
-                    {
-                        "stage": "mapping",
-                        "stream_id": stream_id,
-                        "message": err.error_message,
-                        "error_code": err.error_code,
-                        **err.to_delivery_log_fields(),
-                    }
-                )
-                raise MappingError(err.error_message)
-            mapped_events.append(mapping_result.mapped_event)
-            for field_err in mapping_result.field_errors:
-                self._log(
-                    {
-                        "stage": "mapping",
-                        "stream_id": stream_id,
-                        "message": field_err.error_message,
-                        "status": "FIELD_TRANSFORM_WARNING",
-                        **field_err.to_delivery_log_fields(),
-                    }
-                )
-        self._emit_obs(
-            {
-                "stage": "mapping",
-                "stream_id": stream_id,
-                "message": "mapping applied",
-                "mapped_event_count": len(mapped_events),
-            }
-        )
-        enrichment_cfg = _get(runtime_stream, "enrichment", {}) or {}
-        t_enrichment = time.monotonic()
-        batch_result = apply_enrichments_batch(
-            mapped_events,
-            enrichment_cfg,
-            override_policy=str(_get(runtime_stream, "override_policy", "KEEP_EXISTING")),
-        )
-        if self._run_timing is not None:
-            self._run_timing.add_ms(
-                "enrichment",
-                max(0, int(batch_result.duration_ms or max(0, int((time.monotonic() - t_enrichment) * 1000)))),
-            )
-        enriched_events = batch_result.events
-        if len(events) == len(enriched_events):
-            s3_meta_keys = ("s3_bucket", "s3_key", "s3_last_modified", "s3_etag", "s3_size")
-            db_meta_keys = ("gdc_db_watermark", "gdc_db_order_value")
-            remote_meta_keys = (
-                "remote_path",
-                "remote_mtime",
-                "remote_size",
-                "gdc_remote_path",
-                "gdc_remote_mtime",
-                "gdc_remote_size",
-                "gdc_remote_offset",
-                "gdc_remote_hash",
-                "gdc_remote_protocol",
-                "gdc_remote_host",
-            )
-            for idx, enriched in enumerate(enriched_events):
-                raw_ev = events[idx]
-                if not isinstance(raw_ev, dict) or not isinstance(enriched, dict):
-                    continue
-                for mk in s3_meta_keys:
-                    if mk in raw_ev and mk not in enriched:
-                        enriched[mk] = raw_ev[mk]
-                for mk in db_meta_keys:
-                    if mk in raw_ev and mk not in enriched:
-                        enriched[mk] = raw_ev[mk]
-                for mk in remote_meta_keys:
-                    if mk in raw_ev and mk not in enriched:
-                        enriched[mk] = raw_ev[mk]
-                propagate_dedup_metadata(raw_ev, enriched)
-        for field_err in batch_result.field_errors:
-            self._log(
-                {
-                    "stage": "enrichment",
-                    "stream_id": stream_id,
-                    "message": field_err.error_message,
-                    "status": "FIELD_TRANSFORM_WARNING",
-                    **field_err.to_delivery_log_fields(),
-                }
-            )
-        self._emit_obs(
-            {
-                "stage": "enrichment",
-                "stream_id": stream_id,
-                "message": "enrichment applied",
-                "enriched_event_count": len(enriched_events),
-                "duration_ms": batch_result.duration_ms,
-                "warning_count": batch_result.warning_count,
-            }
-        )
-        if self._run_timing is not None:
-            self._run_timing.start_phase("sensitive_detection")
-        self._detect_sensitive_fields(stream_id=stream_id, events=enriched_events)
-        if self._run_timing is not None:
-            self._run_timing.end_phase("sensitive_detection")
-
-        if self._run_timing is not None:
-            self._run_timing.start_phase("classification")
-        self._classify_events(stream_id=stream_id, events=enriched_events)
-        if self._run_timing is not None:
-            self._run_timing.end_phase("classification")
-        self._schema_drift_policy_result = self._apply_schema_drift_policy(
-            stream_id=stream_id,
-            runtime_stream=runtime_stream,
-            enriched_events=enriched_events,
-        )
-        stats = {
-            "extracted_count": len(events),
-            "mapped_count": len(mapped_events),
-            "enriched_count": len(enriched_events),
-        }
-        self._emit_obs(
-            {
-                "stage": "pipeline_transform",
-                "stream_id": stream_id,
-                "extracted_event_count": stats["extracted_count"],
-                "mapped_event_count": stats["mapped_count"],
-                "enriched_event_count": stats["enriched_count"],
-            }
-        )
-        return events, enriched_events, stats
-
     def _collect_and_transform_events(
         self,
         *,
@@ -2770,10 +2372,10 @@ class StreamRunner(BaseRunner):
         stream_id: int,
         run_opts: StreamRunOptions,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, int]]:
-        """Orchestrate Stream-owned source collect then OFF-only stream/global transform.
+        """Orchestrate Stream-owned source collect for canonical Route Processing.
 
-        Route Processing ON skips stream transform here and hands the shared extracted
-        batch to the existing per-route pipeline. Checkpoint and delivery remain outside.
+        Stream-scoped transform is retired. Shared extracted events are handed to the
+        per-route pipeline. Checkpoint and delivery remain outside.
         """
 
         events = self._collect_source_events(
@@ -2785,32 +2387,26 @@ class StreamRunner(BaseRunner):
         if not events:
             return [], [], {"extracted_count": 0, "mapped_count": 0, "enriched_count": 0}
 
-        if self._route_processing_enabled():
-            if self._run_timing is not None:
-                self._run_timing.start_phase("sensitive_detection")
-            self._detect_sensitive_fields(stream_id=stream_id, events=events)
-            if self._run_timing is not None:
-                self._run_timing.end_phase("sensitive_detection")
-            stats = {
-                "extracted_count": len(events),
-                "mapped_count": 0,
-                "enriched_count": 0,
+        # Canonical Route Processing only (legacy stream-scoped transform retired).
+        if self._run_timing is not None:
+            self._run_timing.start_phase("sensitive_detection")
+        self._detect_sensitive_fields(stream_id=stream_id, events=events)
+        if self._run_timing is not None:
+            self._run_timing.end_phase("sensitive_detection")
+        stats = {
+            "extracted_count": len(events),
+            "mapped_count": 0,
+            "enriched_count": 0,
+        }
+        self._emit_obs(
+            {
+                "stage": "pipeline_shared_phase",
+                "stream_id": stream_id,
+                "extracted_event_count": stats["extracted_count"],
+                "route_processing": True,
             }
-            self._emit_obs(
-                {
-                    "stage": "pipeline_shared_phase",
-                    "stream_id": stream_id,
-                    "extracted_event_count": stats["extracted_count"],
-                    "route_processing": True,
-                }
-            )
-            return events, list(events), stats
-
-        return self._apply_stream_global_transform(
-            runtime_stream=runtime_stream,
-            events=events,
-            stream_id=stream_id,
         )
+        return events, list(events), stats
 
     def _update_checkpoint_after_success(
         self,
