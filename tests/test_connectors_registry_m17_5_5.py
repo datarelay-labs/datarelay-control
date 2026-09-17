@@ -77,14 +77,19 @@ def test_module_priority_over_legacy_template() -> None:
     assert resolution.enrichment is not None
 
 
-def test_legacy_fallback_when_module_incomplete() -> None:
+def test_vendor_preset_does_not_silently_fallback_when_module_incomplete() -> None:
     result = load_connector_modules()
     entry = result.modules["cybereason"]
+    # Module package is present but hunting stream assets are incomplete — no silent flat-template fallback.
     resolution = resolve_vendor_preset("cybereason", "hunting", entry=entry)
-    assert resolution is not None
-    assert resolution.source == "legacy"
-    assert resolution.legacy_template_id == "stellar_cyber_hunting_api"
-    assert resolution.mapping is not None
+    assert resolution is None
+
+    # Explicit legacy template_id reads remain a compatibility path (READ OLD).
+    legacy = resolve_legacy_template_id("stellar_cyber_hunting_api")
+    assert legacy is not None
+    assert legacy.source == "legacy"
+    assert legacy.legacy_template_id == "stellar_cyber_hunting_api"
+    assert legacy.mapping is not None
 
 
 def test_legacy_template_map_covers_known_templates() -> None:
