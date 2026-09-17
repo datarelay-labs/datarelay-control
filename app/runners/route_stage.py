@@ -418,6 +418,16 @@ def process_routes(
 
     for route_ctx in route_contexts:
         if not route_ctx.enabled:
+            if log_fn is not None:
+                log_fn(
+                    {
+                        "stage": "route_skip",
+                        "stream_id": route_ctx.stream_id,
+                        "route_id": route_ctx.route_id,
+                        "skip_reason": "route_disabled",
+                        "message": "route_disabled",
+                    }
+                )
             continue
         stage_started = time.monotonic()
         stage_result = process_route_pipeline(

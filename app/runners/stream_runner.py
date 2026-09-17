@@ -779,16 +779,27 @@ class StreamRunner(BaseRunner):
 
         Delivery success and failure absorption are distinct:
         - delivery_success=False means the destination send failed (never disguised as success).
-        - failure_absorbed=True (LOG_AND_CONTINUE) keeps checkpoint eligibility, matching OFF _fan_out.
+        - failure_absorbed=True (LOG_AND_CONTINUE) avoids blocking sibling routes; checkpoint
+          advances only when at least one route actually delivered.
         """
 
         log_continue_failed: list[int] = []
         all_required_routes_succeeded = True
+        any_delivery_success = False
         saw_send_route = False
+        failover_attempt_count = 0
+        failover_success_count = 0
+        failover_failure_count = 0
         for result in pipeline.stage_results:
             delivery = result.delivery_result
             if delivery is None:
                 continue
+            if bool(getattr(delivery, "failover_attempted", False)):
+                failover_attempt_count += 1
+                if bool(getattr(delivery, "failover_succeeded", False)):
+                    failover_success_count += 1
+                else:
+                    failover_failure_count += 1
             if not delivery.delivery_allowed:
                 continue
             if delivery.skip_reason in ("no_events", "rate_limited", "destination_disabled"):
@@ -797,27 +808,43 @@ class StreamRunner(BaseRunner):
                 continue
             saw_send_route = True
             if delivery.delivery_success is True:
+                any_delivery_success = True
                 continue
             if delivery.delivery_success is False:
                 if bool(getattr(delivery, "failure_absorbed", False)):
                     log_continue_failed.append(result.route_id)
-                    # Absorbed: do not block checkpoint (parity with OFF LOG_AND_CONTINUE).
+                    # Absorbed: do not block other routes, but checkpoint needs a real delivery.
                     continue
                 all_required_routes_succeeded = False
                 continue
             all_required_routes_succeeded = False
 
+        failover_processing_time_ms = int(getattr(pipeline.metrics, "route_delivery_duration_ms", 0) or 0)
         if not saw_send_route:
-            return FanOutOutcome(successful_events=[])
+            return FanOutOutcome(
+                successful_events=[],
+                failover_attempt_count=failover_attempt_count,
+                failover_success_count=failover_success_count,
+                failover_failure_count=failover_failure_count,
+                failover_processing_time_ms=failover_processing_time_ms,
+            )
 
-        if all_required_routes_succeeded:
+        if all_required_routes_succeeded and any_delivery_success:
             return FanOutOutcome(
                 successful_events=copy_events(reference_events),
                 log_continue_failed_route_ids=tuple(log_continue_failed),
+                failover_attempt_count=failover_attempt_count,
+                failover_success_count=failover_success_count,
+                failover_failure_count=failover_failure_count,
+                failover_processing_time_ms=failover_processing_time_ms,
             )
         return FanOutOutcome(
             successful_events=[],
             log_continue_failed_route_ids=tuple(log_continue_failed),
+            failover_attempt_count=failover_attempt_count,
+            failover_success_count=failover_success_count,
+            failover_failure_count=failover_failure_count,
+            failover_processing_time_ms=failover_processing_time_ms,
         )
 
     def _make_route_delivery_send_fn(self, runtime_stream: Any):
@@ -841,7 +868,12 @@ class StreamRunner(BaseRunner):
         route = next((r for r in routes if int(_get(r, "id", 0)) == route_id), None)
         if route is None:
             return RouteSendOutcome(success=False, latency_ms=0, error="route not found", adapter_stage="route_send_failed")
-        return self._send_route_events(stream, route, route_events)
+        return self._send_route_events(
+            stream,
+            route,
+            route_events,
+            record_replay_on_failure=True,
+        )
 
     def _send_route_events(
         self,
