@@ -1126,6 +1126,16 @@ class StreamRunner(BaseRunner):
                 if dest_id is not None:
                     base_destination_ids.add(int(dest_id))
 
+            failover_bindings: dict[int, Any] = {}
+            try:
+                from app.failover_routing.failover_engine import load_failover_bindings_by_primary
+
+                failover_bindings = self._db_read(lambda db: load_failover_bindings_by_primary(db, stream_id))
+            except Exception:
+                logger.exception("failover_bindings_load_failed stream_id=%s", stream_id)
+            for binding in failover_bindings.values():
+                base_destination_ids.add(int(binding.secondary_destination_id))
+
             dynamic_deliveries_sent = 0
             if dynamic_routing is not None:
                 dynamic_deliveries_sent = self._deliver_dynamic_routes(
@@ -1134,7 +1144,39 @@ class StreamRunner(BaseRunner):
                     dynamic_routing=dynamic_routing,
                     skip_destination_ids=base_destination_ids,
                 )
+                try:
+                    from app.dynamic_routing.dynamic_routing_service import log_dynamic_routing_complete
+
+                    self._db_write(
+                        lambda db: log_dynamic_routing_complete(
+                            db,
+                            stream_id=stream_id,
+                            result=dynamic_routing,
+                            dynamic_deliveries_this_run=dynamic_deliveries_sent,
+                            log_fn=self._log,
+                        )
+                    )
+                except Exception:
+                    logger.exception("dynamic_routing_complete_log_failed stream_id=%s", stream_id)
             outcome = route_delivery_outcome
+            if failover_bindings:
+                try:
+                    from app.failover_routing.failover_metrics import log_failover_routing_complete
+
+                    self._db_write(
+                        lambda db: log_failover_routing_complete(
+                            db,
+                            stream_id=stream_id,
+                            failover_route_count=len(failover_bindings),
+                            attempt_count=outcome.failover_attempt_count,
+                            success_count=outcome.failover_success_count,
+                            failure_count=outcome.failover_failure_count,
+                            processing_time_ms=outcome.failover_processing_time_ms,
+                            log_fn=self._log,
+                        )
+                    )
+                except Exception:
+                    logger.exception("failover_routing_complete_log_failed stream_id=%s", stream_id)
             return FanOutOutcome(
                 successful_events=outcome.successful_events,
                 log_continue_failed_route_ids=outcome.log_continue_failed_route_ids,
