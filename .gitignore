@@ -39,6 +39,9 @@ tmp/
 !.cursor/hooks/
 !.cursor/hooks/**
 .cursor/hooks/state/
+# Keep SoT / anti-resurrection agent rules trackable
+!.cursor/rules/
+!.cursor/rules/**
 .DS_Store
 *.log
 offline-release/

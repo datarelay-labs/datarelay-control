@@ -1,0 +1,43 @@
+{
+  "files.watcherExclude": {
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true,
+    "**/node_modules/**": true,
+    "**/.venv/**": true,
+    "**/venv/**": true,
+    "**/__pycache__/**": true,
+    "**/.pytest_cache/**": true,
+    "**/.mypy_cache/**": true,
+    "**/.ruff_cache/**": true,
+    "**/frontend/dist/**": true,
+    "**/frontend/node_modules/.tmp/**": true,
+    "**/archify/**": true,
+    "**/dagre/**": true,
+    "**/kumo/**": true,
+    "**/shadcn-ui/**": true,
+    "**/table/**": true,
+    "**/virtual/**": true,
+    "**/archive/**": true,
+    "**/docs/archive/**": true,
+    "**/docs/session-recovery/**": true,
+    "**/frontend/_archive/**": true,
+    "**/e2e/reports/**": true,
+    "**/e2e/cross-product/generated/**": true,
+    "**/.test-history/**": true
+  },
+  "search.exclude": {
+    "**/archify": true,
+    "**/dagre": true,
+    "**/kumo": true,
+    "**/shadcn-ui": true,
+    "**/table": true,
+    "**/virtual": true,
+    "**/archive": true,
+    "**/docs/archive": true,
+    "**/docs/session-recovery": true,
+    "**/frontend/_archive": true,
+    "**/e2e/reports": true,
+    "**/node_modules": true,
+    "**/frontend/dist": true
+  }
+}

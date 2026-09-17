@@ -1,0 +1,50 @@
+# Cursor context hygiene — keep agents focused on current Data Relay product source.
+# Do NOT ignore authoritative tests or CURRENT docs under docs/source-of-truth/.
+
+# Nested / unrelated repositories and experiments
+archify/
+dagre/
+kumo/
+shadcn-ui/
+table/
+virtual/
+
+# Historical archives (not current Source of Truth)
+archive/
+docs/archive/
+docs/session-recovery/
+frontend/_archive/
+
+# Build / dependency / cache noise
+node_modules/
+**/node_modules/
+frontend/dist/
+dist/
+build/
+coverage/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+**/__pycache__/
+.venv/
+venv/
+
+# Large generated E2E evidence and reports (keep generators + golden maps)
+e2e/reports/
+e2e/cross-product/generated/
+frontend/test-results/
+frontend/playwright-report/
+.test-history/
+
+# Local/tmp
+tmp/
+.tmp/
+*.log
+*.pyc
+
+# Large binary audit artifacts
+docs/audits/theme-p0-visual/
+docs/audits/theme-p0/before/
+docs/audits/theme-p0/after/
+docs/audits/theme-p0/final/
+*.zip
