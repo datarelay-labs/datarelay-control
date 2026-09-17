@@ -1,8 +1,8 @@
 # M13 Route Architecture + Destination First Wizard — 전수 SoT 감사
 
-**Date:** 2026-06-17  
-**Branch:** `feature/sensitive-detection-m5-clean` (HEAD `5205960`)  
-**Mode:** Read-only — 실제 코드 기준, 추측 없음  
+**Date:** 2026-06-17
+**Branch:** `feature/sensitive-detection-m5-clean` (HEAD `5205960`)
+**Mode:** Read-only — 실제 코드 기준, 추측 없음
 **SoT:** `docs/source-of-truth/` (10문서)
 
 ---
@@ -18,8 +18,8 @@
 | **Unknown Normal Pass Through (runtime)** | **PASS** — schema drift policy 기본값·orchestrator·테스트 확인 |
 | **Stream 복제 회피** | **PASS** — `routeDrafts` / multi-route, stream 복제 패턴 없음 |
 
-**Route Architecture 점수:** **62 / 100**  
-**Destination First UX 점수:** **52 / 100**  
+**Route Architecture 점수:** **62 / 100**
+**Destination First UX 점수:** **52 / 100**
 **OSS v1 SoT 적합성:** **FAIL** (Product Charter Route Processing Model·Wizard v5.2 미충족; 기본 GA 경로는 stream-scoped fan-out)
 
 ---

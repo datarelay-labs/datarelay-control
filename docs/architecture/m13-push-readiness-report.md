@@ -1,8 +1,14 @@
-# SUPERSEDED — Historical snapshot
+# SUPERSEDED — m13-push-readiness-report.md
 
-**Status:** SUPERSEDED  
-**Superseded By:** [`source-of-truth-index.md`](source-of-truth-index.md)
+**Status:** SUPERSEDED / ARCHIVE
 
-Point-in-time push readiness. Not product Source of Truth.
+This M13 point-in-time engineering record is historical only.
+
+Canonical authority:
+- `docs/architecture/source-of-truth-index.md`
+- Product Charter v1.2.1
+- specs/091–097 (Route Processing)
 
 Archived copy: [`docs/archive/historical-audits/m13-push-readiness-report.md`](../archive/historical-audits/m13-push-readiness-report.md)
+
+Do not implement from this document. Route Processing ON is the only supported product runtime.

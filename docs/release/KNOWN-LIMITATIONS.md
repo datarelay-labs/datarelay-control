@@ -138,23 +138,23 @@ MySQL/MariaDB adapters may exist for dev validation lab but are **not** producti
 GDC_ROUTE_PROCESSING_ENABLED: bool = True  # app/config.py
 ```
 
-### When true (product default)
+### When true (product default — only supported path)
 
 - Per-route pipeline: Transform → Protection → Classification → Policy → Delivery
 - Shared StreamRunner delivery primitive (adapter send, failure policy, Failover, Replay recording)
 - Stream checkpoint after successful / absorbed delivery
 - OSS install / docker-compose inherit this default when the env var is unset
 
-### When false (rollback / compatibility)
+### When false (retired)
 
-- Stream-scoped mapping, enrichment, protection, classification, policy
-- Legacy multi-route fan-out using the same `_send_route_events` primitive
-- Same Failover engine and Replay recording semantics
+- Setting `GDC_ROUTE_PROCESSING_ENABLED=false` is **rejected** at settings load.
+- The legacy stream-scoped dual runtime was removed (Product Charter: No Parallel Pipeline).
+- Emergency rollback = previous release image / maintenance branch, not an in-process flag.
 
 ### What you should do
 
-- Leave default **true** unless rolling back to the legacy stream-scoped path.
-- Set `GDC_ROUTE_PROCESSING_ENABLED=false` only for compatibility investigation.
+- Leave default **true**. Do not rely on a flag-OFF runtime path.
+- For investigation of historical behavior, use an archived release image.
 
 **Reference:** [`OSS-v1-ARCHITECTURE.md`](../architecture/OSS-v1-ARCHITECTURE.md)
 

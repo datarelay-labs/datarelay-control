@@ -1,14 +1,14 @@
-# SUPERSEDED — Historical snapshot
+# SUPERSEDED — m13-destination-first-full-audit.md
 
-**Status:** SUPERSEDED  
-**Superseded By:** [`source-of-truth-index.md`](source-of-truth-index.md), [`STREAM-WIZARD-UX-CHARTER v5.2`](../source-of-truth/DATA-RELAY-STREAM-WIZARD-UX-CHARTER-v5.2-FINAL.txt)
+**Status:** SUPERSEDED / ARCHIVE
 
-Do **not** use this document as Source of Truth. It recorded a pre–Destination First audit (Transform-first wizard).
+This M13 point-in-time engineering record is historical only.
 
-The product wizard is now:
-
-```text
-Connect → Sample & Record Selection → Destinations → Route Processing → Deploy
-```
+Canonical authority:
+- `docs/architecture/source-of-truth-index.md`
+- Product Charter v1.2.1
+- specs/091–097 (Route Processing)
 
 Archived copy: [`docs/archive/historical-audits/m13-destination-first-full-audit.md`](../archive/historical-audits/m13-destination-first-full-audit.md)
+
+Do not implement from this document. Route Processing ON is the only supported product runtime.

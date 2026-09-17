@@ -1,8 +1,8 @@
 # M13 Commit Readiness Report
 
-**Date:** 2026-06-17  
-**Branch:** `feature/sensitive-detection-m5-clean` (up to date with `origin/feature/sensitive-detection-m5-clean`)  
-**Mode:** Read-only repository audit — no `git add`, `git commit`, or code changes performed  
+**Date:** 2026-06-17
+**Branch:** `feature/sensitive-detection-m5-clean` (up to date with `origin/feature/sensitive-detection-m5-clean`)
+**Mode:** Read-only repository audit — no `git add`, `git commit`, or code changes performed
 **Context:** Runtime circular-import blocker fixed; M13 test suite 75/75 passing locally
 
 ---
@@ -74,19 +74,19 @@ M13 Route Architecture **exists on disk and is functional**, but the repository 
 
 ### 3.2 Route package file inventory (all untracked)
 
-**`app/route_transform/` (2)**  
+**`app/route_transform/` (2)**
 `__init__.py`, `models.py`
 
-**`app/route_protection/` (4)**  
+**`app/route_protection/` (4)**
 `config.py`, `models.py`, `resolver.py`, `stage.py`
 
-**`app/route_classification/` (6)**  
+**`app/route_classification/` (6)**
 `__init__.py`, `config.py`, `engine_adapter.py`, `models.py`, `resolver.py`, `stage.py`
 
-**`app/route_policy/` (9)**  
+**`app/route_policy/` (9)**
 `__init__.py`, `config.py`, `decision.py`, `drift_gates.py`, `engine_adapter.py`, `governance_behavior.py`, `models.py`, `resolver.py`, `stage.py`
 
-**`app/route_delivery/` (5)**  
+**`app/route_delivery/` (5)**
 `__init__.py`, `config.py`, `health.py`, `metrics.py`, `stage.py`
 
 **Total new route modules:** 26 files
@@ -193,7 +193,7 @@ python3 -m alembic heads
 # 20260616_0057_route_policy (head)
 ```
 
-**Chain integrity:** ✅ Valid linear chain; parent `0053` is tracked in git.  
+**Chain integrity:** ✅ Valid linear chain; parent `0053` is tracked in git.
 **Git tracking:** ❌ All four M13 migrations are untracked — **deployments cloning this branch without local WIP will not receive M13 schema.**
 
 ---
@@ -206,9 +206,9 @@ python3 -m alembic heads
 
 See §4.1 for full list. Summary:
 
-- 26 × `app/route_*` modules  
-- 4 × `app/runners/route_*.py`  
-- 4 × `alembic/versions/2026061*_*.py`  
+- 26 × `app/route_*` modules
+- 4 × `app/runners/route_*.py`
+- 4 × `alembic/versions/2026061*_*.py`
 - 7 × `tests/test_*route*` / `test_per_route_*`
 
 ### 6.2 Missing from index — M13 specs (6 files)
@@ -261,9 +261,9 @@ See §4.1 for full list. Summary:
 
 A **backend-focused M13 commit** can be made safely if:
 
-1. All 41 core files in §4.1 are added.  
-2. All modified integration files in §6.3 are staged.  
-3. Specs 091–096 are added (recommended).  
+1. All 41 core files in §4.1 are added.
+2. All modified integration files in §6.3 are staged.
+3. Specs 091–096 are added (recommended).
 4. Operator chooses whether frontend/governance WIP belongs in the same commit or a follow-up.
 
 ---
@@ -380,9 +380,9 @@ docs/architecture/route-processing-foundation-implementation-spec.md
 
 ### Immediate operator actions (outside this audit)
 
-1. Stage §8.1 minimum list (+ §8.2 if governance/drift is in scope).  
-2. Run M13 pytest collection + full 75-test suite on staged tree.  
-3. Commit with message scoped to M13 Route Architecture backend.  
+1. Stage §8.1 minimum list (+ §8.2 if governance/drift is in scope).
+2. Run M13 pytest collection + full 75-test suite on staged tree.
+3. Commit with message scoped to M13 Route Architecture backend.
 4. Consider splitting frontend (§8.4) into a separate commit.
 
 ---

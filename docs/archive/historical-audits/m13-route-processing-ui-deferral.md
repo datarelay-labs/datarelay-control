@@ -1,7 +1,7 @@
 # M13 Route Processing UI — OSS v1 Deferral
 
-**Date:** 2026-06-17  
-**Status:** Active deferral (OSS v1 stabilization)  
+**Date:** 2026-06-17
+**Status:** Active deferral (OSS v1 stabilization)
 **Related:** `docs/architecture/m13-destination-first-full-audit.md`, `docs/architecture/route-architecture-gap-analysis.md`, specs 091–096
 
 ---

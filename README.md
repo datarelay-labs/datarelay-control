@@ -152,7 +152,7 @@ GA ships with documented gaps — not release blockers for the default deploymen
 - **Governance Workspace scale** — 4 API calls per route on load (slow at 50+ routes)
 - **Streams scale** — per-stream runtime stats at 50–100 streams (see performance docs)
 - **Database Query** — PostgreSQL runtime only
-- **`GDC_ROUTE_PROCESSING_ENABLED`** — default ON (Route Processing runtime); set `false` to use the legacy stream-scoped path
+- **`GDC_ROUTE_PROCESSING_ENABLED`** — canonical ON (Route Processing only). Explicit `false` is rejected at startup; rollback uses a previous release image
 
 Full reference: [`docs/release/KNOWN-LIMITATIONS.md`](docs/release/KNOWN-LIMITATIONS.md)
 

@@ -1,8 +1,8 @@
 # M13 Push Readiness Report
 
-**Date:** 2026-06-17  
-**Branch:** `feature/sensitive-detection-m5-clean`  
-**Remote:** `origin` → `git@github.com:RickLee-kr/gdc-platform.git`  
+**Date:** 2026-06-17
+**Branch:** `feature/sensitive-detection-m5-clean`
+**Remote:** `origin` → `git@github.com:RickLee-kr/gdc-platform.git`
 **Mode:** Read-only validation — no push executed
 
 ---

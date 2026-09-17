@@ -1,9 +1,9 @@
 # M13 Pre-Commit Final Validation
 
-**Date:** 2026-06-17  
-**Branch:** `feature/sensitive-detection-m5-clean`  
-**Mode:** Read-only validation — no commit, no push, no code changes  
-**Staged files:** 72  
+**Date:** 2026-06-17
+**Branch:** `feature/sensitive-detection-m5-clean`
+**Mode:** Read-only validation — no commit, no push, no code changes
+**Staged files:** 72
 **M13 test gate:** 75/75 passed (re-run during this validation)
 
 ---
@@ -90,10 +90,10 @@ The staged index contains a **complete M13 Route Architecture backend commit**: 
                  └─ 20260616_0057_route_policy [STAGED, HEAD]
 ```
 
-- **Linear chain:** ✅ No branches  
-- **Upgrade path:** `alembic upgrade head` reaches all four  
-- **Downgrade path:** Each `downgrade()` reverses its `upgrade()`; order 0057→0056→0055→0054→0053  
-- **Missing dependency:** None — parent `0053` exists in tracked `alembic/versions/`  
+- **Linear chain:** ✅ No branches
+- **Upgrade path:** `alembic upgrade head` reaches all four
+- **Downgrade path:** Each `downgrade()` reverses its `upgrade()`; order 0057→0056→0055→0054→0053
+- **Missing dependency:** None — parent `0053` exists in tracked `alembic/versions/`
 - **`alembic/env.py`:** Staged import of `app.route_transform.models` for autogenerate consistency ✅
 
 ---
@@ -244,12 +244,12 @@ All 72 staged files map to:
 
 ### Rationale
 
-1. Staged index is complete for M13.1–M13.6 backend runtime.  
-2. No frontend, governance WIP, or archive leakage.  
-3. Migrations form valid linear chain with upgrade/downgrade.  
-4. Specs 091–096 and index entries present.  
-5. Architecture matches Stream execution / Route processing / Route delivery.  
-6. Flag defaults OFF; both paths tested green.  
+1. Staged index is complete for M13.1–M13.6 backend runtime.
+2. No frontend, governance WIP, or archive leakage.
+3. Migrations form valid linear chain with upgrade/downgrade.
+4. Specs 091–096 and index entries present.
+5. Architecture matches Stream execution / Route processing / Route delivery.
+6. Flag defaults OFF; both paths tested green.
 7. Prior critical blockers (import cycle, test collection) resolved.
 
 ### Recommended commit message
@@ -266,8 +266,8 @@ policy, and delivery stages. Includes Alembic migrations 0054–0057, specs
 
 ### Post-commit reminders (not blockers for this commit)
 
-1. Apply `alembic upgrade head` on target environments after merge.  
-2. Keep frontend/governance WIP for separate commits.  
+1. Apply `alembic upgrade head` on target environments after merge.
+2. Keep frontend/governance WIP for separate commits.
 3. Do not enable `GDC_ROUTE_PROCESSING_ENABLED=true` in production until route APIs/UI exist.
 
 ---

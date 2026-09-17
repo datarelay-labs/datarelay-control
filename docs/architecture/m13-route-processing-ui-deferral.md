@@ -1,8 +1,14 @@
-# SUPERSEDED — Historical snapshot
+# SUPERSEDED — m13-route-processing-ui-deferral.md
 
-**Status:** SUPERSEDED  
-**Superseded By:** [`source-of-truth-index.md`](source-of-truth-index.md), [`STREAM-WIZARD-UX-CHARTER v5.2`](../source-of-truth/DATA-RELAY-STREAM-WIZARD-UX-CHARTER-v5.2-FINAL.txt), [`specs/097`](../../specs/097-route-processing-ux/spec.md)
+**Status:** SUPERSEDED / ARCHIVE
 
-Do **not** use this document as Source of Truth. Destination First + Route Processing UX deferral described here is historical.
+This M13 point-in-time engineering record is historical only.
+
+Canonical authority:
+- `docs/architecture/source-of-truth-index.md`
+- Product Charter v1.2.1
+- specs/091–097 (Route Processing)
 
 Archived copy: [`docs/archive/historical-audits/m13-route-processing-ui-deferral.md`](../archive/historical-audits/m13-route-processing-ui-deferral.md)
+
+Do not implement from this document. Route Processing ON is the only supported product runtime.

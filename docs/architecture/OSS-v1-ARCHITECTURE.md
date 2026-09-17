@@ -113,10 +113,10 @@ When `GDC_ROUTE_PROCESSING_ENABLED=true` (product default):
 
 When `GDC_ROUTE_PROCESSING_ENABLED=false`:
 
-- Stream-scoped mapping, enrichment, protection, classification, policy
-- Legacy fan-out still uses the same `_send_route_events` primitive (Failover + Replay)
+- **Retired.** The dual stream-scoped runtime was removed (Product Charter: No Parallel Pipeline).
+- Explicit `false` is rejected at settings load (no silent coercion / no dual runtime).
+- Emergency rollback = previous release image / maintenance branch.
 
----
 
 ## Checkpoint
 

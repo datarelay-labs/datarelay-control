@@ -1,8 +1,8 @@
 # M13 Route Architecture — Completion Audit
 
-**Date:** 2026-06-16  
-**Scope:** M13.1–M13.6 (Route Processing Foundation through Route Runtime Delivery)  
-**Mode:** Read-only audit — no implementation, no spec changes  
+**Date:** 2026-06-16
+**Scope:** M13.1–M13.6 (Route Processing Foundation through Route Runtime Delivery)
+**Mode:** Read-only audit — no implementation, no spec changes
 **Authority chain:** `docs/source-of-truth/` → `specs/091`–`096` → `app/runners/`, `app/route_*`, migrations, APIs, frontend
 
 ---
