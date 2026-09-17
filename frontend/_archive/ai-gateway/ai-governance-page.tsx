@@ -22,10 +22,10 @@ function MetricCard({ label, value, hint }: { label: string; value: string; hint
 function StatusBadge({ status }: { status: string }) {
   const tone =
     status === 'OPEN'
-      ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200'
+      ? 'bg-gdc-warningSubtle text-gdc-warningFg dark:bg-gdc-warningSubtle dark:text-gdc-warningFg'
       : status === 'ACKNOWLEDGED'
         ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200'
-        : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200'
+        : 'bg-gdc-successSubtle text-gdc-successFg dark:bg-gdc-successSubtle dark:text-gdc-successFg'
   return (
     <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${tone}`}>{status}</span>
   )
@@ -201,7 +201,7 @@ export function AiGovernancePage() {
                 onClick={() => setStatusFilter(value)}
                 className={
                   statusFilter === value
-                    ? 'rounded-md bg-violet-600 px-2.5 py-1 text-xs font-medium text-white'
+                    ? 'rounded-md bg-gdc-buttonPrimary px-2.5 py-1 text-xs font-medium text-white'
                     : 'rounded-md px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 dark:text-gdc-mutedStrong dark:hover:bg-gdc-rowHover'
                 }
               >
@@ -244,7 +244,7 @@ export function AiGovernancePage() {
                         type="button"
                         disabled={actionId === row.id}
                         onClick={() => void handleAcknowledge(row.id)}
-                        className="mr-2 text-xs font-medium text-violet-600 hover:underline disabled:opacity-50"
+                        className="mr-2 text-xs font-medium text-green-600 hover:underline disabled:opacity-50"
                       >
                         Acknowledge
                       </button>
@@ -254,7 +254,7 @@ export function AiGovernancePage() {
                         type="button"
                         disabled={actionId === row.id}
                         onClick={() => void handleResolve(row.id)}
-                        className="text-xs font-medium text-emerald-600 hover:underline disabled:opacity-50"
+                        className="text-xs font-medium text-gdc-successFg hover:underline disabled:opacity-50"
                       >
                         Resolve
                       </button>

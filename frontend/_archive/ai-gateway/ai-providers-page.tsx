@@ -71,7 +71,7 @@ export function AiProvidersPage() {
                   <td className="px-3 py-2">
                     <button
                       type="button"
-                      className="rounded-md bg-violet-600 px-2 py-1 text-xs text-white disabled:opacity-50"
+                      className="rounded-md bg-gdc-buttonPrimary px-2 py-1 text-xs text-white disabled:opacity-50"
                       disabled={validatingId === row.id}
                       onClick={() => void onValidate(row.id)}
                     >

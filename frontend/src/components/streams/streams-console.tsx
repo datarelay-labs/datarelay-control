@@ -3,8 +3,6 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
-  Cpu,
-  FlaskConical,
   Loader2,
   MinusCircle,
   MoreHorizontal,
@@ -12,8 +10,6 @@ import {
   Play,
   Plus,
   ScrollText,
-  Sparkles,
-  Wand2,
   Workflow,
   XCircle,
 } from 'lucide-react'
@@ -31,22 +27,15 @@ import {
 } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { cn } from '../../lib/utils'
-import { computeFixedRowVirtualRange } from '../../lib/fixed-row-virtual-window'
-import { formatRunOnceSummaryLines } from '../../utils/formatRunOnceSummary'
-import { StatusBadge } from '../shell/status-badge'
-import { opStateRow, opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
+import { opTable, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
 import {
   logsPath,
   newStreamPath,
-  streamApiTestPath,
   streamEditPath,
-  streamEnrichmentPath,
-  streamMappingPath,
   streamRuntimePath,
 } from '../../config/nav-paths'
 import {
   fetchStreamMappingUiConfig,
-  runStreamOnce,
 } from '../../api/gdcRuntime'
 import { fetchConnectorsList } from '../../api/gdcConnectors'
 import { fetchStreamsListResult, GDC_AUTH_REQUIRED_MESSAGE } from '../../api/gdcStreams'
@@ -62,11 +51,9 @@ import {
   type StreamConsoleRow,
   type StreamRuntimeStatus,
 } from '../../api/streamRows'
-import { computeStreamWorkflow, type StreamWorkflowInput, type StreamWorkflowSnapshot } from '../../utils/streamWorkflow'
+import { type StreamWorkflowInput } from '../../utils/streamWorkflow'
 import { workflowOverridesFromMappingUi } from '../../utils/mappingUiWorkflow'
-import { resolveSourceTypePresentation } from '../../utils/sourceTypePresentation'
 import { streamsSectionKpiFromOperationalSnapshot, type StreamsSectionKpi } from '../../api/streamsKpi'
-import { StreamWorkflowProgressBadge } from './stream-workflow-checklist'
 import { groupRowsBySourceProduct } from '../../lib/source-product-group'
 import {
   aggregateGroupIssueBreakdown,
@@ -110,8 +97,6 @@ import {
 import type { StreamsMetricsWindow } from '../../constants/streamConsoleFilters'
 import { parseConnectorFilterFromSearch, connectorFilterIsNumericId } from '../../constants/streamConsoleFilters'
 import { isDevValidationLabUiEnabled } from '../../lib/feature-flags'
-import { operationalRunControlTooltipSupplement } from '../../utils/streamOperationalBadges'
-import { DevValidationBadge } from '../shell/dev-validation-badge'
 import {
   loadStreamsAutoRefresh,
   loadStreamsTimeRange,
@@ -266,24 +251,6 @@ export async function enrichMappingUiForStreamIds(
   return fetchedIds
 }
 
-function statusTone(s: StreamRuntimeStatus) {
-  switch (s) {
-    case 'RUNNING':
-      return 'success' as const
-    case 'DEGRADED':
-      return 'warning' as const
-    case 'ERROR':
-      return 'error' as const
-    case 'STOPPED':
-      return 'neutral' as const
-    case 'UNKNOWN':
-      return 'neutral' as const
-    default: {
-      const _exhaustive: never = s
-      return _exhaustive
-    }
-  }
-}
 
 function GroupHealthBadge({
   label,
@@ -325,6 +292,7 @@ function eventsSparklineClass(status: StreamRuntimeStatus) {
     case 'ERROR':
       return 'text-red-600 dark:text-red-400'
     case 'STOPPED':
+    case 'IDLE':
       return 'text-slate-400 dark:text-gdc-muted'
     case 'UNKNOWN':
       return 'text-slate-400 dark:text-gdc-muted'
@@ -358,52 +326,7 @@ function MiniSparkline({ values }: { values: readonly number[] }) {
   )
 }
 
-function RouteFanOut({ row }: { row: StreamConsoleRow }) {
-  const dots: Array<{ tone: 'ok' | 'deg' | 'err' }> = []
-  for (let i = 0; i < row.routesOk; i += 1) dots.push({ tone: 'ok' })
-  for (let i = 0; i < row.routesDegraded; i += 1) dots.push({ tone: 'deg' })
-  for (let i = 0; i < row.routesError; i += 1) dots.push({ tone: 'err' })
-  const summaryParts: string[] = []
-  if (row.routesOk) summaryParts.push(`${row.routesOk} OK`)
-  if (row.routesDegraded) summaryParts.push(`${row.routesDegraded} DEG`)
-  if (row.routesError) summaryParts.push(`${row.routesError} ERR`)
-  const summary = summaryParts.length ? summaryParts.join(', ') : '—'
-  return (
-    <div className="flex min-w-0 flex-col gap-0.5">
-      <div className="flex items-center gap-1">
-        <span className="text-[12px] font-semibold tabular-nums text-slate-800 dark:text-slate-100">{row.routesTotal}</span>
-        <span className="flex items-center gap-0.5" aria-hidden>
-          {dots.map((d, idx) => (
-            <span
-              key={`${d.tone}-${idx}`}
-              className={cn(
-                'h-1.5 w-1.5 rounded-full',
-                d.tone === 'ok' && 'bg-emerald-500',
-                d.tone === 'deg' && 'bg-amber-500',
-                d.tone === 'err' && 'bg-red-500',
-              )}
-            />
-          ))}
-        </span>
-      </div>
-      <p className="truncate text-[10px] font-medium text-slate-500 dark:text-gdc-muted">{summary}</p>
-    </div>
-  )
-}
 
-function DeliveryMeter({ pct }: { pct: number }) {
-  const tone =
-    pct >= 99 ? 'bg-emerald-500' : pct >= 90 ? 'bg-amber-500' : pct <= 0 ? 'bg-slate-300 dark:bg-slate-600' : 'bg-red-500'
-  const width = `${Math.min(100, Math.max(0, pct))}%`
-  return (
-    <div className="flex min-w-0 flex-col gap-0.5">
-      <p className="text-[12px] font-semibold tabular-nums text-slate-800 dark:text-slate-100">{pct.toFixed(pct >= 100 ? 0 : 2)}%</p>
-      <div className="h-1 w-full max-w-[88px] overflow-hidden rounded-full bg-slate-200/90 dark:bg-gdc-elevated">
-        <div className={cn('h-full rounded-full transition-[width]', tone)} style={{ width }} />
-      </div>
-    </div>
-  )
-}
 
 /** Format EPS as compact decimal without unit suffix (for table cell). */
 function epsCompact(eps: number): string {
@@ -653,8 +576,19 @@ function OverallHealthBeacon({ kpi, loading }: { kpi: StreamsPageKpi; loading?: 
 function computeHealthSummaryItems(rows: readonly StreamConsoleRow[]) {
   let noData = 0, lowVolume = 0, checkpointLag = 0, destFailure = 0, deliveryRetry = 0, disabled = 0
   for (const row of rows) {
-    if (row.status === 'STOPPED') { disabled++; continue }
-    if (!row.hasRuntimeApiSnapshot) { noData++; continue }
+    if ((row.openSchemaFieldDriftCount ?? 0) > 0) schemaDrift++
+    if (row.enabled === false) {
+      disabled++
+      continue
+    }
+    if (row.status === 'IDLE' || !row.hasRuntimeApiSnapshot) {
+      noData++
+      continue
+    }
+    if (row.status === 'STOPPED') {
+      // Explicit runtime stop — distinct from Disabled / No Data.
+      continue
+    }
     if (row.ingestEps <= 0 && (row.eps1m ?? 0) <= 0 && (row.eps5m ?? 0) <= 0) lowVolume++
     if (row.checkpointLagLabel && row.checkpointLagLabel !== '—') checkpointLag++
     if (row.routesError > 0) destFailure++
@@ -720,24 +654,6 @@ function emptyStreamsKpi(): StreamsSectionKpi {
   }
 }
 
-function streamWorkflowFromRow(row: StreamConsoleRow, extras?: Partial<StreamWorkflowInput>): StreamWorkflowSnapshot {
-  return computeStreamWorkflow({
-    streamId: row.id,
-    status: row.status,
-    events1h: row.events1h,
-    deliveryPct: row.deliveryPct,
-    routesTotal: row.routesTotal,
-    routesOk: row.routesOk,
-    routesDegraded: row.routesDegraded,
-    routesError: row.routesError,
-    sourceType: row.streamTypeKey,
-    ...extras,
-  })
-}
-
-const STREAMS_CONSOLE_ROW_HEIGHT = 56
-const STREAMS_CONSOLE_VIRTUALIZE_MIN = 50
-const STREAMS_CONSOLE_VIRTUAL_VIEWPORT = 560
 
 const streamsGroupTableThClass =
   'px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:text-gdc-mutedStrong'
@@ -818,8 +734,6 @@ export function StreamsConsole() {
   const [selectedStreamRow, setSelectedStreamRow] = useState<StreamConsoleRow | null>(null)
   const [panelTopOffset, setPanelTopOffset] = useState(0)
   const outerContainerRef = useRef<HTMLDivElement>(null)
-  const [runOnceStreamId, setRunOnceStreamId] = useState<number | null>(null)
-  const [runOnceBanner, setRunOnceBanner] = useState<{ variant: 'success' | 'error'; lines: string[] } | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [quickFilter, setQuickFilter] = useState<StreamsQuickFilter>('all')
   const [groupFilter, setGroupFilter] = useState('all')
@@ -850,23 +764,6 @@ export function StreamsConsole() {
     () => new URLSearchParams(location.search).get('expand_group')?.trim() ?? null,
     [location.search],
   )
-  const executeRunOnce = useCallback(async (streamIdNum: number | null) => {
-    if (streamIdNum == null || runOnceStreamId !== null) return
-    setRunOnceStreamId(streamIdNum)
-    setRunOnceBanner(null)
-      try {
-      const r = await runStreamOnce(streamIdNum)
-      const lines = formatRunOnceSummaryLines(r)
-      setRunOnceBanner({ variant: 'success', lines })
-      setRefreshVersion((v) => v + 1)
-      window.dispatchEvent(new CustomEvent('gdc-runtime-run-once', { detail: { streamId: streamIdNum, response: r } }))
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      setRunOnceBanner({ variant: 'error', lines: [msg] })
-    } finally {
-      setRunOnceStreamId(null)
-    }
-  }, [runOnceStreamId])
 
   useEffect(() => {
     if (displayRows.length === 0) return
@@ -1065,35 +962,6 @@ export function StreamsConsole() {
     setRefreshVersion((v) => v + 1)
   }, [])
 
-  const streamsTableScrollRef = useRef<HTMLDivElement>(null)
-  const [streamsTableScrollTop, setStreamsTableScrollTop] = useState(0)
-  const [streamsTableViewportHeight, setStreamsTableViewportHeight] = useState(STREAMS_CONSOLE_VIRTUAL_VIEWPORT)
-  const virtualizeStreamsTable = filteredRows.length >= STREAMS_CONSOLE_VIRTUALIZE_MIN
-
-  const streamsTableVirtualRange = useMemo(() => {
-    if (!virtualizeStreamsTable) {
-      return {
-        startIndex: 0,
-        endIndex: Math.max(filteredRows.length - 1, -1),
-        offsetTop: 0,
-        totalSize: 0,
-      }
-    }
-    return computeFixedRowVirtualRange(
-      filteredRows.length,
-      STREAMS_CONSOLE_ROW_HEIGHT,
-      streamsTableScrollTop,
-      streamsTableViewportHeight,
-    )
-  }, [virtualizeStreamsTable, filteredRows.length, streamsTableScrollTop, streamsTableViewportHeight])
-
-  const visibleStreamRows = useMemo(() => {
-    if (!virtualizeStreamsTable) return filteredRows
-    const { startIndex, endIndex } = streamsTableVirtualRange
-    if (endIndex < startIndex) return []
-    return filteredRows.slice(startIndex, endIndex + 1)
-  }, [virtualizeStreamsTable, filteredRows, streamsTableVirtualRange])
-
   const streamIdsForLazyMappingUi = useMemo(() => {
     const ids = new Set<number>()
     for (const group of productGroups) {
@@ -1103,14 +971,8 @@ export function StreamsConsole() {
         if (Number.isFinite(sid) && sid > 0 && /^\d+$/.test(row.id)) ids.add(sid)
       }
     }
-    if (virtualizeStreamsTable) {
-      for (const row of visibleStreamRows) {
-        const sid = Number(row.id)
-        if (Number.isFinite(sid) && sid > 0 && /^\d+$/.test(row.id)) ids.add(sid)
-      }
-    }
     return [...ids]
-  }, [productGroups, selectedGroupLabel, visibleStreamRows, virtualizeStreamsTable])
+  }, [productGroups, selectedGroupLabel])
 
   useEffect(() => {
     if (!streamIdsForLazyMappingUi.length) return
@@ -1136,20 +998,6 @@ export function StreamsConsole() {
       cancelled = true
     }
   }, [streamIdsForLazyMappingUi, refreshVersion, abortRef])
-
-  const streamsTablePaddingBottom = useMemo(() => {
-    if (!virtualizeStreamsTable) return 0
-    const { endIndex, totalSize, offsetTop, startIndex } = streamsTableVirtualRange
-    const rendered = Math.max(0, endIndex - startIndex + 1) * STREAMS_CONSOLE_ROW_HEIGHT
-    return Math.max(0, totalSize - offsetTop - rendered)
-  }, [virtualizeStreamsTable, streamsTableVirtualRange])
-
-  const onStreamsTableScroll = useCallback(() => {
-    const el = streamsTableScrollRef.current
-    if (el == null) return
-    setStreamsTableScrollTop(el.scrollTop)
-    setStreamsTableViewportHeight(el.clientHeight)
-  }, [])
 
   const streamsEmptyMessage = useMemo(() => {
     if (streamsAuthRequired) return GDC_AUTH_REQUIRED_MESSAGE
@@ -1202,25 +1050,6 @@ export function StreamsConsole() {
 
       <RuntimeFixtureModeBanner surface="streams" />
 
-      {runOnceBanner ? (
-        <div
-          role="status"
-          aria-live="polite"
-          className={cn(
-            'rounded-lg border px-3 py-2 text-[11px] shadow-sm',
-            runOnceBanner.variant === 'success'
-              ? 'border-emerald-300/80 bg-emerald-500/[0.07] text-emerald-950 dark:border-emerald-500/35 dark:bg-emerald-500/10 dark:text-emerald-100'
-              : 'border-red-300/80 bg-red-500/[0.07] text-red-950 dark:border-red-500/35 dark:bg-red-500/10 dark:text-red-100',
-          )}
-        >
-          <p className="font-semibold">{runOnceBanner.variant === 'success' ? 'Run once finished' : 'Run once failed'}</p>
-          <ul className="mt-1 list-inside list-disc space-y-0.5 font-medium opacity-95">
-            {runOnceBanner.lines.map((line, i) => (
-              <li key={`run-once-${i}-${line.slice(0, 24)}`}>{line}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
 
       {/* Overall Health Beacon */}
       <OverallHealthBeacon kpi={streamsPageKpi} loading={streamsLoading && displayRows.length === 0} />
@@ -1635,280 +1464,6 @@ export function StreamsConsole() {
             </div>
           </>
         )}
-      </div>
-
-      {/* Legacy flat table (hidden — kept for virtualized regression tests) */}
-      <div className="hidden overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm dark:border-gdc-border dark:bg-gdc-card">
-        <div
-          ref={streamsTableScrollRef}
-          data-testid={virtualizeStreamsTable ? 'streams-console-virtual-scroll' : undefined}
-          className={cn('overflow-x-auto', virtualizeStreamsTable && 'max-h-[min(70vh,560px)] overflow-y-auto')}
-          onScroll={virtualizeStreamsTable ? onStreamsTableScroll : undefined}
-        >
-          <table className={opTable}>
-            <thead>
-              <tr className={opThRow}>
-                <th scope="col" className={cn(opTh, 'min-w-[140px]')}>
-                  Stream
-                </th>
-                <th scope="col" className={cn(opTh, 'min-w-[160px]')}>
-                  Source connection / Source
-                </th>
-                <th scope="col" className={cn(opTh, 'min-w-[96px]')}>
-                  Status
-                </th>
-                <th scope="col" className={cn(opTh, 'min-w-[150px]')}>
-                  <span title="Source input events from run_complete.">Processed events (window)</span>
-                </th>
-                <th scope="col" className={cn(opTh, 'min-w-[130px]')}>
-                  Last sync position
-                </th>
-                <th scope="col" className={cn(opTh, 'min-w-[100px]')}>
-                  Delivery paths
-                </th>
-                <th scope="col" className={cn(opTh, 'min-w-[100px]')}>
-                  Delivery
-                </th>
-                <th scope="col" className={cn(opTh, 'min-w-[100px]')}>
-                  Latency (p95)
-                </th>
-                <th scope="col" className={cn(opTh, 'min-w-[88px]')}>
-                  Last Activity
-                </th>
-                <th scope="col" className={cn(opTh, 'min-w-[220px] text-right')}>
-                  Workflow & actions
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredRows.length === 0 ? (
-                <tr className={cn(opTr, opStateRow)}>
-                  <td className={cn(opTd, 'py-8 text-center text-[12px] text-slate-500 dark:text-gdc-muted')} colSpan={10}>
-                    {streamsLoading && displayRows.length === 0 ? (
-                      <span className="inline-flex items-center justify-center gap-2">
-                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                        Loading streams…
-                      </span>
-                    ) : (
-                      <div className="flex flex-col items-center gap-3">
-                        <span
-                          className={cn(
-                            streamsAuthRequired && 'font-medium text-amber-800 dark:text-amber-200',
-                          )}
-                        >
-                          {streamsEmptyMessage}
-                        </span>
-                        {!streamsAuthRequired && displayRows.length === 0 && filteredRows.length === 0 ? (
-                          <Link
-                            to="/streams/new"
-                            className="inline-flex items-center gap-1.5 rounded-md bg-violet-600 px-3 py-1.5 text-[12px] font-semibold text-white shadow-sm hover:bg-violet-700 dark:bg-violet-500 dark:hover:bg-violet-600"
-                          >
-                            <Plus className="h-3.5 w-3.5" aria-hidden />
-                            Create First Stream
-                          </Link>
-                        ) : null}
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              ) : null}
-              {virtualizeStreamsTable && streamsTableVirtualRange.offsetTop > 0 ? (
-                <tr aria-hidden="true" style={{ height: streamsTableVirtualRange.offsetTop }}>
-                  <td colSpan={10} className="p-0" />
-                </tr>
-              ) : null}
-              {visibleStreamRows.map((row) => {
-                const workflow = streamWorkflowFromRow(row, workflowExtrasByStreamId[row.id])
-                const rowUi = resolveSourceTypePresentation(row.streamTypeKey)
-                const runNowExtra = operationalRunControlTooltipSupplement(row.name)
-                return (
-                  <tr key={row.id} className={opTr}>
-                    <td className={opTd}>
-                      <button type="button" className="w-full text-left">
-                        <span className="flex flex-wrap items-center gap-1.5">
-                          <span className="block text-[12px] font-semibold text-slate-900 dark:text-slate-100">{row.name}</span>
-                          <DevValidationBadge name={row.name} />
-                        </span>
-                        <span className="mt-0.5 block text-[11px] text-slate-500 dark:text-gdc-muted">{row.id}</span>
-                      </button>
-                    </td>
-                    <td className={opTd}>
-                      <div className="flex min-w-0 items-start gap-2">
-                        <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-slate-100 dark:bg-gdc-elevated">
-                          <Workflow className="h-3.5 w-3.5 text-slate-600 dark:text-gdc-mutedStrong" aria-hidden />
-                        </span>
-                        <div className="min-w-0">
-                          <p className="truncate text-[12px] font-semibold text-slate-800 dark:text-slate-100">{row.connectorName}</p>
-                          <p className="truncate text-[11px] text-slate-500 dark:text-gdc-muted">{row.sourceTypeLabel}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className={opTd}>
-                      <StatusBadge tone={statusTone(row.status)} className="font-bold uppercase tracking-wide">
-                        {row.status}
-                      </StatusBadge>
-                    </td>
-                    <td className={opTd}>
-                      {!row.hasRuntimeApiSnapshot ? (
-                        <span className="text-[11px] text-slate-500 dark:text-gdc-muted">No runtime data yet</span>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <span className="text-[12px] font-semibold tabular-nums text-slate-800 dark:text-slate-100">
-                            {row.events1h.toLocaleString()}
-                          </span>
-                          {sparklineHasTrend(row.eventsTrend) ? (
-                            <span className={eventsSparklineClass(row.status)}>
-                              <MiniSparkline values={row.eventsTrend} />
-                            </span>
-                          ) : null}
-                        </div>
-                      )}
-                    </td>
-                    <td className={opTd}>
-                      {!row.hasRuntimeApiSnapshot ? (
-                        <span className="text-[11px] text-slate-500 dark:text-gdc-muted">No runtime data yet</span>
-                      ) : (
-                        <>
-                          <p className="text-[11px] font-medium text-slate-800 dark:text-slate-200">{row.lastCheckpointDisplay}</p>
-                          <p className="text-[10px] text-slate-500 dark:text-gdc-muted">{row.lastCheckpointRelative}</p>
-                        </>
-                      )}
-                    </td>
-                    <td className={opTd}>
-                      <RouteFanOut row={row} />
-                    </td>
-                    <td className={opTd}>
-                      {!row.hasRuntimeApiSnapshot ? (
-                        <span className="text-[11px] text-slate-500 dark:text-gdc-muted">No runtime data yet</span>
-                      ) : !row.deliveryPctKnown ? (
-                        <span className="text-[11px] text-slate-500 dark:text-gdc-muted">No delivery outcomes</span>
-                      ) : (
-                        <DeliveryMeter pct={row.deliveryPct} />
-                      )}
-                    </td>
-                    <td className={opTd}>
-                      {!row.hasRuntimeApiSnapshot ? (
-                        <span className="text-[11px] text-slate-500 dark:text-gdc-muted">No runtime data yet</span>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <span className="text-[12px] font-semibold tabular-nums text-slate-800 dark:text-slate-100">
-                            {row.latencyP95Ms > 0 ? `${row.latencyP95Ms} ms` : '—'}
-                          </span>
-                          <span className="text-slate-400 dark:text-gdc-muted">
-                            <MiniSparkline values={row.latencyTrend} />
-                          </span>
-                        </div>
-                      )}
-                    </td>
-                    <td className={opTd}>
-                      {!row.hasRuntimeApiSnapshot ? (
-                        <span className="text-[11px] text-slate-500 dark:text-gdc-muted">No runtime data yet</span>
-                      ) : (
-                        <span
-                          className={cn(
-                            'text-[12px] font-semibold tabular-nums',
-                            row.lastActivityWarn ? 'text-red-600 dark:text-red-400' : 'text-slate-800 dark:text-slate-200',
-                          )}
-                        >
-                          {formatRelativeShort(row.lastActivityRelative)}
-                        </span>
-                      )}
-                    </td>
-                    <td className={cn(opTd, 'text-right')}>
-                      <div
-                        className="inline-flex max-w-[280px] flex-wrap items-center justify-end gap-0.5"
-                        title={rowUi.runtime.operationsWorkflowTooltip}
-                      >
-                        <StreamWorkflowProgressBadge
-                          snapshot={workflow}
-                          className="mr-1"
-                          ariaLabel={`Continue setup: ${row.name}`}
-                        />
-                        <Link
-                          to={streamApiTestPath(row.id)}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-600 hover:bg-sky-500/10 hover:text-sky-800 dark:text-gdc-mutedStrong dark:hover:bg-sky-500/15 dark:hover:text-sky-200"
-                          aria-label={`${rowUi.runtime.operationsTestIconAriaLabelPrefix}: ${row.name}`}
-                          title={rowUi.runtime.operationsTestIconTitle}
-                        >
-                          <FlaskConical className="h-3.5 w-3.5" />
-                        </Link>
-                        <Link
-                          to={streamMappingPath(row.id)}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-600 hover:bg-violet-500/10 hover:text-violet-800 dark:text-gdc-mutedStrong dark:hover:bg-violet-500/15 dark:hover:text-violet-200"
-                          aria-label={`Field mapping: ${row.name}`}
-                          title="Mapping"
-                        >
-                          <Sparkles className="h-3.5 w-3.5" />
-                        </Link>
-                        <Link
-                          to={streamEnrichmentPath(row.id)}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-600 hover:bg-emerald-500/10 hover:text-emerald-800 dark:text-gdc-mutedStrong dark:hover:bg-emerald-500/15 dark:hover:text-emerald-200"
-                          aria-label={`Enrichment: ${row.name}`}
-                          title="Enrichment"
-                        >
-                          <Wand2 className="h-3.5 w-3.5" />
-                        </Link>
-                        <Link
-                          to={streamRuntimePath(row.id)}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100 dark:text-gdc-mutedStrong dark:hover:bg-gdc-rowHover"
-                          aria-label={`Stream monitoring: ${row.name}`}
-                          title="Monitoring"
-                        >
-                          <Cpu className="h-3.5 w-3.5" />
-                        </Link>
-                        <Link
-                          to={streamEditPath(row.id)}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100 dark:text-gdc-mutedStrong dark:hover:bg-gdc-rowHover"
-                          aria-label={`Edit stream: ${row.name}`}
-                          title="Edit stream"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Link>
-                        <Link
-                          to={logsPath(row.id)}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100 dark:text-gdc-mutedStrong dark:hover:bg-gdc-rowHover"
-                          aria-label={`Stream logs: ${row.name}`}
-                          title="Logs"
-                        >
-                          <ScrollText className="h-3.5 w-3.5" />
-                        </Link>
-                        <button
-                          type="button"
-                          disabled={!/^\d+$/.test(row.id) || runOnceStreamId !== null}
-                          onClick={() => void executeRunOnce(Number(row.id))}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gdc-mutedStrong dark:hover:bg-gdc-rowHover"
-                          aria-label={`Run now: ${row.name}`}
-                          title={runNowExtra ? `Run now (execute pipeline once). ${runNowExtra}` : 'Run now (execute pipeline once)'}
-                        >
-                          {runOnceStreamId === Number(row.id) ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                          ) : (
-                            <Play className="h-3.5 w-3.5" aria-hidden />
-                          )}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
-              {virtualizeStreamsTable && streamsTablePaddingBottom > 0 ? (
-                <tr aria-hidden="true" style={{ height: streamsTablePaddingBottom }}>
-                  <td colSpan={10} className="p-0" />
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-          {virtualizeStreamsTable ? (
-            <p className="sr-only" aria-live="polite">
-              Showing {visibleStreamRows.length} of {filteredRows.length} streams in viewport
-            </p>
-          ) : null}
-        </div>
-        <div className="flex flex-col gap-2 border-t border-slate-200/80 px-3 py-2 text-[11px] text-slate-600 dark:border-gdc-border dark:text-gdc-muted sm:flex-row sm:items-center sm:justify-between">
-          <p className="tabular-nums">
-            Showing {filteredRows.length} stream{filteredRows.length === 1 ? '' : 's'} (total {sectionKpi.total})
-          </p>
-        </div>
       </div>
 
       <p className="text-[11px] tabular-nums text-slate-500 dark:text-gdc-muted">
