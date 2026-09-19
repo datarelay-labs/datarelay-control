@@ -22,3 +22,14 @@ def test_docs_hidden_when_app_env_production() -> None:
     expose_dev = (not is_production_app_env("development")) or False
     assert expose_prod is False
     assert expose_dev is True
+
+
+def test_openapi_schema_generates_successfully() -> None:
+    """Regression: undefined forward refs must not break /openapi.json (R3-001)."""
+    schema = app.openapi()
+    assert isinstance(schema.get("paths"), dict)
+    assert len(schema["paths"]) > 0
+    comps = schema.get("components", {}).get("schemas", {})
+    assert "StreamIncrementalFetchSaveRequest" in comps or any(
+        "IncrementalFetch" in k for k in comps
+    )

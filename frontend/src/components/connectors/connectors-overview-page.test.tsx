@@ -421,3 +421,57 @@ describe('ConnectorsOverviewPage loading UX', () => {
     expect(screen.getByTestId('connectors-auth-required')).toHaveTextContent(GDC_AUTH_REQUIRED_MESSAGE)
   })
 })
+
+describe('ConnectorsOverviewPage — Test Auth visibility', () => {
+  beforeEach(() => {
+    resetConnectorMocks()
+  })
+
+  it('shows list Test Auth success and failure in a visible status, not sr-only', async () => {
+    const { runConnectorAuthCheck } = await import('../../api/gdcConnectorsOperations')
+    vi.mocked(runConnectorAuthCheck)
+      .mockResolvedValueOnce({
+        success: true,
+        status_code: 200,
+        message: 'ok',
+        error_code: null,
+        last_auth_check_at: '2026-09-18T00:00:00Z',
+        last_auth_check_status: 'success',
+        last_auth_error: null,
+        response_time_ms: 12,
+      })
+      .mockResolvedValueOnce({
+        success: false,
+        status_code: 401,
+        message: 'unauthorized',
+        error_code: 'unauthorized',
+        last_auth_check_at: '2026-09-18T00:00:01Z',
+        last_auth_check_status: 'failed',
+        last_auth_error: 'Invalid bearer token',
+        response_time_ms: 8,
+      })
+    fetchConnectorsListResultMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: [fakeConnector(1, 'Production Okta')],
+    })
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <ConnectorsOverviewPage />
+      </MemoryRouter>,
+    )
+    expect(await screen.findByText('Production Okta')).toBeInTheDocument()
+    await user.click(screen.getByLabelText('Connector actions'))
+    await user.click(screen.getByRole('menuitem', { name: 'Test Auth' }))
+    const success = await screen.findByTestId('connector-row-auth-result')
+    expect(success).toHaveTextContent('Auth test succeeded')
+    expect(success.className).not.toMatch(/\bsr-only\b/)
+
+    await user.click(screen.getByLabelText('Connector actions'))
+    await user.click(screen.getByRole('menuitem', { name: 'Test Auth' }))
+    const failure = await screen.findByText('Invalid bearer token')
+    expect(failure).toHaveAttribute('data-testid', 'connector-row-auth-result')
+    expect(failure.className).not.toMatch(/\bsr-only\b/)
+  })
+})

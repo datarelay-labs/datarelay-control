@@ -81,7 +81,18 @@ export function ConnectorRowActions({ row, onAuthCheckStart, onAuthCheckEnd, onA
   return (
     <div ref={rootRef} className="relative flex items-center justify-end gap-1">
       {toast ? (
-        <span className="sr-only" role="status">
+        <span
+          role="status"
+          data-testid="connector-row-auth-result"
+          title={toast}
+          className={
+            /succeed|success/i.test(toast)
+              ? 'max-w-[240px] truncate rounded border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-900 dark:border-emerald-500/40 dark:bg-emerald-950/40 dark:text-emerald-100'
+              : /fail|error|invalid|denied|unauthor/i.test(toast)
+                ? 'max-w-[240px] truncate rounded border border-red-300 bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-900 dark:border-red-500/40 dark:bg-red-950/40 dark:text-red-100'
+                : 'max-w-[240px] truncate rounded border border-slate-300 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-800 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100'
+          }
+        >
           {toast}
         </span>
       ) : null}

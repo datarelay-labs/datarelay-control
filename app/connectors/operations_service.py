@@ -397,6 +397,58 @@ def _auth_check_outcome_from_result(result) -> tuple[bool, int | None, str | Non
     return success, status_code, message, error_code
 
 
+def _normalize_auth_probe_path(raw: str | None) -> str | None:
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    return text if text.startswith("/") else f"/{text}"
+
+
+def _resolve_connector_auth_check_path(
+    db: Session,
+    connector_id: int,
+    *,
+    source_config: dict[str, Any] | None,
+    requested_path: str,
+) -> str:
+    """Prefer an explicit auth probe path or a real stream endpoint over bare ``/``.
+
+    Dashboard auth-check historically probed ``base_url/``. Many APIs return 403/404
+    on root while a configured stream endpoint authenticates successfully. Prefer:
+
+    1. Non-default ``requested_path`` from the caller
+    2. Source/operational ``auth_test_path`` / ``auth_check_path`` / ``health_check_path``
+    3. First non-root stream ``config_json.endpoint`` for this connector
+    4. ``/`` as last resort
+    """
+
+    requested = _normalize_auth_probe_path(requested_path)
+    if requested and requested != "/":
+        return requested
+
+    cfg = source_config if isinstance(source_config, dict) else {}
+    op = cfg.get("operational") if isinstance(cfg.get("operational"), dict) else {}
+    for key in ("auth_test_path", "auth_check_path", "health_check_path"):
+        for bag in (op, cfg):
+            candidate = _normalize_auth_probe_path(bag.get(key) if isinstance(bag, dict) else None)
+            if candidate and candidate != "/":
+                return candidate
+
+    streams = (
+        db.query(Stream)
+        .filter(Stream.connector_id == connector_id)
+        .order_by(Stream.id.asc())
+        .all()
+    )
+    for stream in streams:
+        stream_cfg = stream.config_json if isinstance(stream.config_json, dict) else {}
+        endpoint = _normalize_auth_probe_path(stream_cfg.get("endpoint"))
+        if endpoint and endpoint != "/":
+            return endpoint
+
+    return requested or "/"
+
+
 def run_connector_auth_check_and_persist(
     connector_id: int,
     *,
@@ -424,6 +476,12 @@ def run_connector_auth_check_and_persist(
         source_config = _load_source_config_for_connector(db, connector_id)
         if source_config is None:
             raise ValueError(f"No Source row for connector_id={connector_id}")
+        resolved_path = _resolve_connector_auth_check_path(
+            db,
+            connector_id,
+            source_config=source_config,
+            requested_path=test_path,
+        )
     finally:
         db.close()
 
@@ -431,7 +489,7 @@ def run_connector_auth_check_and_persist(
     payload = ConnectorAuthTestRequest(
         inline_flat_source=source_config,
         method=method,
-        test_path=test_path,
+        test_path=resolved_path,
     )
     result = run_connector_auth_test(payload, None)
     finished = datetime.now(UTC)
