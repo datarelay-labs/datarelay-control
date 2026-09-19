@@ -46,6 +46,12 @@ Environment:
   GDC_TEST_CONTAINER_PREFIX Container name prefix (default: gdc-smoke; avoids colliding with
                             full-e2e-lab containers named gdc-wiremock-test)
   GDC_TEST_WIREMOCK_HOST_PORT Host port for WireMock (default: 28080)
+  GDC_TEST_WEBHOOK_ECHO_HOST_PORT Host port for webhook echo (default: 18091).
+                            If that port is already serving (e.g. full-e2e-lab), the script
+                            reuses it instead of recreating webhook-receiver-test.
+  Fixture reuse            Also reuses Postgres/MinIO/SFTP/syslog when their canonical
+                            host ports are already listening (avoids colliding with
+                            gdc-full-e2e-lab).
 
 If Docker cannot bind the smoke PostgreSQL port, start or free
 the lab Postgres, then re-run.
@@ -72,6 +78,8 @@ done
 export TEST_DATABASE_URL="$CANONICAL_TEST_DB_URL"
 export DATABASE_URL="$CANONICAL_TEST_DB_URL"
 export WIREMOCK_BASE_URL="${WIREMOCK_BASE_URL:-http://127.0.0.1:${GDC_TEST_WIREMOCK_HOST_PORT:-28080}}"
+export GDC_TEST_WEBHOOK_ECHO_HOST_PORT="${GDC_TEST_WEBHOOK_ECHO_HOST_PORT:-18091}"
+export E2E_WEBHOOK_ECHO_URL="${E2E_WEBHOOK_ECHO_URL:-http://127.0.0.1:${GDC_TEST_WEBHOOK_ECHO_HOST_PORT}}"
 
 export SOURCE_E2E_MINIO_ENDPOINT="${SOURCE_E2E_MINIO_ENDPOINT:-http://127.0.0.1:59000}"
 export SOURCE_E2E_MINIO_ACCESS_KEY="${SOURCE_E2E_MINIO_ACCESS_KEY:-gdcminioaccess}"
@@ -192,29 +200,120 @@ wiremock_already_healthy() {
   curl -sf "${WIREMOCK_BASE_URL}/__admin/mappings" >/dev/null 2>&1
 }
 
+webhook_echo_already_healthy() {
+  # mendhak/http-https-echo answers GET / with JSON; any HTTP response means the port is owned.
+  curl -sf -o /dev/null -w '' "http://127.0.0.1:${GDC_TEST_WEBHOOK_ECHO_HOST_PORT}/" >/dev/null 2>&1 \
+    || curl -s -o /dev/null -w '' --max-time 2 "http://127.0.0.1:${GDC_TEST_WEBHOOK_ECHO_HOST_PORT}/" >/dev/null 2>&1
+}
+
+host_tcp_open() {
+  local host="$1"
+  local port="$2"
+  python3 - "$host" "$port" <<'PY'
+import socket, sys
+host, port = sys.argv[1], int(sys.argv[2])
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.settimeout(1.5)
+try:
+    s.connect((host, port))
+except OSError:
+    sys.exit(1)
+finally:
+    s.close()
+sys.exit(0)
+PY
+}
+
+postgres_already_healthy() {
+  host_tcp_open 127.0.0.1 "${GDC_TEST_POSTGRES_HOST_PORT}"
+}
+
+minio_already_healthy() {
+  local port="${GDC_TEST_MINIO_API_HOST_PORT:-59000}"
+  curl -sf -o /dev/null --max-time 2 "http://127.0.0.1:${port}/minio/health/live" >/dev/null 2>&1 \
+    || host_tcp_open 127.0.0.1 "$port"
+}
+
+pg_fixture_already_healthy() {
+  host_tcp_open 127.0.0.1 "${GDC_TEST_PG_FIXTURE_HOST_PORT:-55433}"
+}
+
+sftp_already_healthy() {
+  host_tcp_open 127.0.0.1 "${GDC_TEST_SFTP_HOST_PORT:-22222}"
+}
+
+syslog_already_healthy() {
+  host_tcp_open 127.0.0.1 "${GDC_TEST_SYSLOG_HOST_PORT:-15514}"
+}
+
 compose_up() {
   docker compose -p "$COMPOSE_PROJECT_NAME" -f "$COMPOSE_FILE" up -d "$@"
 }
 
 if command -v docker >/dev/null 2>&1; then
   echo "==> docker compose -p $COMPOSE_PROJECT_NAME up (postgres-test + fixtures) …"
-  FIXTURE_SERVICES=(
-    postgres-test
-    webhook-receiver-test
-    syslog-test
-    minio-test
-    postgres-query-test
-    sftp-test
-  )
+  FIXTURE_SERVICES=()
+  # Prefer reusing lab/e2e fixtures already bound on canonical host ports over killing them.
+  if postgres_already_healthy; then
+    echo "  Postgres already listening on 127.0.0.1:${GDC_TEST_POSTGRES_HOST_PORT} — reusing (not recreating container)."
+  else
+    FIXTURE_SERVICES+=(postgres-test)
+  fi
+  if syslog_already_healthy; then
+    echo "  Syslog sink already listening on 127.0.0.1:${GDC_TEST_SYSLOG_HOST_PORT:-15514} — reusing."
+  else
+    FIXTURE_SERVICES+=(syslog-test)
+  fi
+  if minio_already_healthy; then
+    echo "  MinIO already healthy at 127.0.0.1:${GDC_TEST_MINIO_API_HOST_PORT:-59000} — reusing."
+  else
+    FIXTURE_SERVICES+=(minio-test)
+  fi
+  if pg_fixture_already_healthy; then
+    echo "  Postgres fixture already listening on 127.0.0.1:${GDC_TEST_PG_FIXTURE_HOST_PORT:-55433} — reusing."
+  else
+    FIXTURE_SERVICES+=(postgres-query-test)
+  fi
+  if sftp_already_healthy; then
+    echo "  SFTP fixture already listening on 127.0.0.1:${GDC_TEST_SFTP_HOST_PORT:-22222} — reusing."
+  else
+    FIXTURE_SERVICES+=(sftp-test)
+  fi
+  if webhook_echo_already_healthy; then
+    echo "  Webhook echo already healthy at http://127.0.0.1:${GDC_TEST_WEBHOOK_ECHO_HOST_PORT} — reusing (not recreating container)."
+  else
+    FIXTURE_SERVICES+=(webhook-receiver-test)
+  fi
   if wiremock_already_healthy; then
     echo "  WireMock already healthy at $WIREMOCK_BASE_URL — reusing (not recreating container)."
   else
     FIXTURE_SERVICES+=(wiremock-test)
   fi
-  compose_up "${FIXTURE_SERVICES[@]}"
+  if [[ "${#FIXTURE_SERVICES[@]}" -gt 0 ]]; then
+    compose_up "${FIXTURE_SERVICES[@]}"
+  else
+    echo "  All fixture ports already healthy — skipping compose up."
+  fi
+
+  # When reusing full-e2e-lab containers (gdc-* prefix), point seed helpers at those names.
+  if ! docker ps --format '{{.Names}}' | grep -qx "${GDC_TEST_CONTAINER_PREFIX}-sftp-test"; then
+    if docker ps --format '{{.Names}}' | grep -qx "gdc-sftp-test"; then
+      export SOURCE_E2E_SFTP_CONTAINER="gdc-sftp-test"
+      echo "  Seed SFTP container override: $SOURCE_E2E_SFTP_CONTAINER"
+    fi
+  fi
+  if ! docker ps --format '{{.Names}}' | grep -qx "${GDC_TEST_CONTAINER_PREFIX}-postgres-query-test"; then
+    if docker ps --format '{{.Names}}' | grep -qx "gdc-postgres-query-test"; then
+      export SOURCE_E2E_PG_FIXTURE_CONTAINER="gdc-postgres-query-test"
+      echo "  Seed PG fixture container override: $SOURCE_E2E_PG_FIXTURE_CONTAINER"
+    fi
+  fi
 
   echo "==> Waiting for postgres-test container healthy (if present) …"
   for i in $(seq 1 90); do
+    if postgres_already_healthy; then
+      break
+    fi
     if docker compose -p "$COMPOSE_PROJECT_NAME" -f "$COMPOSE_FILE" ps postgres-test 2>/dev/null | grep -qE "(healthy|running)"; then
       if docker compose -p "$COMPOSE_PROJECT_NAME" -f "$COMPOSE_FILE" ps postgres-test 2>/dev/null | grep -q "healthy"; then
         break

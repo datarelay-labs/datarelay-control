@@ -208,6 +208,9 @@ def process_route_pipeline(
 
     route_ctx.processing_state.current_events = current_events
 
+    # Preserve pre-protection transform output for checkpoint (mask delivery only).
+    checkpoint_events = [dict(ev) if isinstance(ev, dict) else ev for ev in current_events]
+
     protection_started = time.monotonic()
     stream_protection_rules = list(shared_batch.shared_runtime_data.get("stream_protection_rules") or [])
     route_overrides = list(shared_batch.shared_runtime_data.get("route_overrides") or [])
@@ -353,6 +356,7 @@ def process_route_pipeline(
     return RouteStageResult(
         route_id=route_ctx.route_id,
         events=output_events,
+        checkpoint_events=checkpoint_events,
         modified=modified,
         stage_timeline=timeline,
         protection_duration_ms=protection_duration_ms,
@@ -494,9 +498,13 @@ def process_routes(
                 and delivery_result.delivery_success is True
                 and stage_result.events
             ):
-                checkpoint_reference = list(stage_result.events)
+                checkpoint_reference = list(
+                    stage_result.checkpoint_events or stage_result.events
+                )
         elif stage_result.events and stage_result.delivery_allowed:
-            checkpoint_reference = list(stage_result.events)
+            checkpoint_reference = list(
+                stage_result.checkpoint_events or stage_result.events
+            )
 
     metrics = RouteProcessingMetrics(
         route_count=base_metrics.route_count if base_metrics else len(route_contexts),

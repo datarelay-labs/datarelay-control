@@ -32,6 +32,7 @@ import {
   wizardCheckpointStale,
   wizardRecordPathConfirmed,
   wizardRecordPathStale,
+  wizardSourceRequiresHttpRecordSelection,
 } from './wizard-step-gates'
 import { flattenSampleFields, wizardExtractEvents } from './wizard-json-extract'
 import type { OperationalSampleId } from './wizard-operational-samples'
@@ -360,7 +361,7 @@ export function RecordSelectionWorkspace({
     )
   }
 
-  const sampleStale = t.status !== 'success' || !t.ok
+  const sampleStale = wizardSourceRequiresHttpRecordSelection(state) && (t.status !== 'success' || !t.ok)
   const recordPathConfirmed = wizardRecordPathConfirmed(state)
   const checkpointConfirmed = wizardCheckpointConfirmed(state)
   const recordPathStale = wizardRecordPathStale(state) || sampleStale
@@ -535,11 +536,12 @@ export function RecordSelectionWorkspace({
         ) : null}
 
         {(() => {
+          const httpRecords = wizardSourceRequiresHttpRecordSelection(state)
           const eventSourceMissing =
-            !state.stream.useWholeResponseAsEvent && paths.eventArrayPath.trim().length === 0
-          const checkpointMissing = state.stream.checkpointSourcePath.trim().length === 0
-          const needsReconfirm = recordPathStale || checkpointStale
-          if (!eventSourceMissing && !checkpointMissing && !needsReconfirm) return null
+            httpRecords && !state.stream.useWholeResponseAsEvent && paths.eventArrayPath.trim().length === 0
+          const checkpointMissing = httpRecords && state.stream.checkpointSourcePath.trim().length === 0
+          const needsReconfirm = httpRecords && (recordPathStale || checkpointStale)
+          if (!httpRecords || (!eventSourceMissing && !checkpointMissing && !needsReconfirm)) return null
           const missing: string[] = []
           if (eventSourceMissing || (recordPathStale && !eventSourceMissing)) missing.push('Record Path')
           if (checkpointMissing || (checkpointStale && !checkpointMissing)) missing.push('Checkpoint')

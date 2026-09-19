@@ -77,6 +77,22 @@ def ensure_source_e2e_webhook_stub(base: str) -> None:
         raise AssertionError(f"WireMock source-e2e stub failed: {r.status_code} {r.text}")
 
 
+def ensure_functional_regression_webhook_stub(base: str) -> None:
+    """Register a permissive 200 OK stub for POST /functional-regression/* receivers."""
+
+    mid = "d5b9e7c1-2222-4333-9444-555566667777"
+    doc: dict[str, Any] = {
+        "id": mid,
+        "name": "functional-regression-webhook-receiver",
+        "request": {"method": "POST", "urlPathPattern": "/functional-regression/.*"},
+        "response": {"status": 200, "body": "OK", "headers": {"Content-Type": "text/plain"}},
+    }
+    httpx.delete(f"{base.rstrip('/')}/__admin/mappings/{mid}", timeout=5.0)
+    r = httpx.post(f"{base.rstrip('/')}/__admin/mappings", json=doc, timeout=15.0)
+    if r.status_code not in (200, 201):
+        raise AssertionError(f"WireMock functional-regression stub failed: {r.status_code} {r.text}")
+
+
 def wiremock_received_json_bodies(base: str, *, path_contains: str) -> list[Any]:
     r = httpx.get(f"{base.rstrip('/')}/__admin/requests", timeout=10.0)
     r.raise_for_status()

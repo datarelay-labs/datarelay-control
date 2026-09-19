@@ -12,6 +12,8 @@ import {
   enrichmentDictFromRows,
   fieldMappingsFromRows,
   wizardFieldMappingsReady,
+  buildRouteTransformPersistPlans,
+  DEFAULT_ROUTE_PROCESSING_INHERIT,
 } from './wizard-state'
 
 function withConfirmedSample(state: ReturnType<typeof buildInitialState>) {
@@ -107,6 +109,21 @@ describe('wizard-state computeLegacySubstepCompletion', () => {
     expect(computeLegacySubstepCompletion(state).api_test).toBe('in_progress')
     state.apiTest.remoteProbe = { ok: true, auth_type: 'REMOTE_FILE_POLLING' }
     expect(computeLegacySubstepCompletion(state).api_test).toBe('complete')
+  })
+
+  it('marks preview complete for REMOTE_FILE_POLLING without HTTP record-path confirmation', () => {
+    const state = buildInitialState()
+    state.connector.connectorId = 1
+    state.connector.sourceId = 2
+    state.connector.sourceType = 'REMOTE_FILE_POLLING'
+    state.stream.name = 'RF'
+    state.stream.remoteDirectory = '/data'
+    state.apiTest.status = 'success'
+    state.apiTest.ok = true
+    state.apiTest.remoteProbe = { ok: true, auth_type: 'REMOTE_FILE_POLLING' }
+    const out = computeLegacySubstepCompletion(state)
+    expect(out.api_test).toBe('complete')
+    expect(out.preview).toBe('complete')
   })
 
   it('marks api_test complete after success and preview in_progress until events', () => {
@@ -346,6 +363,26 @@ describe('wizard-state buildStreamCreatePayload', () => {
       max_file_size_mb: 2,
     })
   })
+
+  it('returns DATABASE_QUERY stream_type and SELECT query config when connector is DATABASE_QUERY', () => {
+    const state = buildInitialState()
+    state.connector.connectorId = 11
+    state.connector.sourceId = 22
+    state.connector.sourceType = 'DATABASE_QUERY'
+    state.stream.name = 'DB stream'
+    state.stream.sqlQuery = 'SELECT id, message FROM source_e2e_orders'
+    state.stream.dbCheckpointColumn = 'id'
+    state.stream.dbCheckpointMode = 'SINGLE_COLUMN'
+    const payload = buildStreamCreatePayload(state)
+    expect(payload?.stream_type).toBe('DATABASE_QUERY')
+    expect(payload?.enabled).toBe(false)
+    expect(payload?.config_json).toMatchObject({
+      query: 'SELECT id, message FROM source_e2e_orders',
+      checkpoint_mode: 'SINGLE_COLUMN',
+      checkpoint_column: 'id',
+    })
+    expect(payload?.config_json).not.toHaveProperty('endpoint')
+  })
 })
 
 describe('wizard-state buildSourceConfig', () => {
@@ -423,6 +460,44 @@ describe('wizard-state mapping/enrichment helpers', () => {
         { id: '3', outputField: 'severity', sourceJsonPath: '   ' },
       ]),
     ).toEqual({ event_id: '$.id' })
+  })
+
+  it('builds route transform persist plans only for override drafts with mappings', () => {
+    const inherited = {
+      key: 'r1',
+      destinationId: 1,
+      enabled: true,
+      failurePolicy: 'LOG_AND_CONTINUE' as const,
+      rateLimitJson: {},
+      inherit: { ...DEFAULT_ROUTE_PROCESSING_INHERIT },
+    }
+    const overridden = {
+      key: 'r2',
+      destinationId: 2,
+      enabled: true,
+      failurePolicy: 'LOG_AND_CONTINUE' as const,
+      rateLimitJson: {},
+      inherit: { transform: false, protection: true, classification: true, policy: true },
+      overrides: {
+        transform: {
+          mapping: [{ id: 'm1', outputField: 'transformed_message', sourceJsonPath: '$.message' }],
+          mappingMode: 'basic_jsonpath' as const,
+          fullEventJsonataExpression: '',
+          fullEventRegexConfigJson: '',
+          transformRules: [],
+          enrichment: [],
+          unmappedFieldsPolicy: 'pass_through' as const,
+        },
+      },
+    }
+    const plans = buildRouteTransformPersistPlans([inherited, overridden], [10, 20])
+    expect(plans).toEqual([
+      {
+        routeId: 20,
+        inherit: false,
+        fieldMappings: expect.objectContaining({ transformed_message: '$.message' }),
+      },
+    ])
   })
 
   it('skips empty enrichment rows', () => {

@@ -183,5 +183,18 @@ def route_delivery_stage(
         policy_result=policy_result,
         delivery_result=result,
     )
+    if log_fn is not None and skip_reason in {"destination_disabled", "route_disabled"}:
+        log_fn(
+            {
+                "stage": "route_skip",
+                "stream_id": route_ctx.stream_id,
+                "route_id": route_ctx.route_id,
+                "destination_id": route_ctx.destination_id,
+                "skip_reason": skip_reason,
+                "message": skip_reason,
+                "run_id": run_id,
+                "batch_id": shared_batch.batch_id,
+            }
+        )
 
     return result

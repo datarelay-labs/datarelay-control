@@ -19,6 +19,7 @@ from tests.e2e_wiremock_helpers import (
     delivery_log_stages,
     delivery_logs_by_stage,
     enable_stream_for_run,
+    ensure_functional_regression_webhook_stub,
     reset_wiremock_journal,
     wiremock_received_json_bodies,
     wiremock_reachable as _wiremock_reachable,
@@ -36,6 +37,8 @@ def ensure_functional_regression_wiremock_mappings(base: str) -> None:
     """Ensure functional-regression WireMock stubs exist (probe first; admin API fallback)."""
 
     admin = base.rstrip("/")
+    # Receiver path is dynamic per test; always ensure the permissive webhook stub.
+    ensure_functional_regression_webhook_stub(admin)
     try:
         probe = httpx.get(f"{admin}/api/v1/functional-regression/records-envelope", timeout=5.0)
         if probe.status_code == 200:

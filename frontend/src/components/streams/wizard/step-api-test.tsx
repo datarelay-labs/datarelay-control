@@ -98,6 +98,7 @@ export function StepApiTest({
         remoteDirectory: state.stream.remoteDirectory,
         filePattern: state.stream.filePattern,
         remoteRecursive: state.stream.remoteRecursive,
+        sqlQuery: state.stream.sqlQuery,
       }),
     [
       state.connector.connectorId,
@@ -112,6 +113,7 @@ export function StepApiTest({
       state.stream.remoteDirectory,
       state.stream.filePattern,
       state.stream.remoteRecursive,
+      state.stream.sqlQuery,
     ],
   )
 
@@ -154,20 +156,28 @@ export function StepApiTest({
 
   const isS3 = state.connector.sourceType === 'S3_OBJECT_POLLING'
   const isRemote = state.connector.sourceType === 'REMOTE_FILE_POLLING'
+  const isWebhook = state.connector.sourceType === 'WEBHOOK_RECEIVER'
+  const isDatabase = state.connector.sourceType === 'DATABASE_QUERY'
   const canRunLiveApiTest = useMemo(
     () =>
       state.connector.connectorId != null &&
       state.connector.sourceId != null &&
-      (isS3 || isRemote || state.stream.endpoint.trim().length > 0) &&
-      (!isRemote || state.stream.remoteDirectory.trim().length > 0),
+      (isS3 ||
+        isWebhook ||
+        (isRemote && state.stream.remoteDirectory.trim().length > 0) ||
+        (isDatabase && state.stream.sqlQuery.trim().length > 0) ||
+        (!isS3 && !isRemote && !isWebhook && !isDatabase && state.stream.endpoint.trim().length > 0)),
     [
       state.connector.connectorId,
       state.connector.sourceId,
       state.connector.sourceType,
       state.stream.endpoint,
       state.stream.remoteDirectory,
+      state.stream.sqlQuery,
       isS3,
       isRemote,
+      isWebhook,
+      isDatabase,
     ],
   )
 
@@ -407,6 +417,44 @@ export function StepApiTest({
           fetch_sample: true,
         })
         const parsedBody = res.response?.parsed_json ?? null
+        const probeShapedSample =
+          parsedBody != null &&
+          typeof parsedBody === 'object' &&
+          !Array.isArray(parsedBody) &&
+          ('ssh_reachable' in (parsedBody as object) || 'sftp_available' in (parsedBody as object))
+        if (probeShapedSample || (Array.isArray(parsedBody) && parsedBody.length === 0)) {
+          commitApiTest(gen, {
+            status: 'success',
+            ok: true,
+            requestUrl: res.request.url,
+            method: 'REMOTE_FILE_POLLING',
+            statusCode: res.response?.status_code ?? 200,
+            responseHeaders: res.response?.headers ?? {},
+            rawBody: res.response?.raw_body ?? null,
+            parsedJson: parsedBody,
+            rawResponse: parsedBody ?? res.response?.raw_body ?? null,
+            extractedEvents: [],
+            eventCount: 0,
+            unionSchema: null,
+            startedAt,
+            finishedAt: Date.now(),
+            errorCode: null,
+            errorType: null,
+            errorMessage: null,
+            targetStatusCode: null,
+            targetResponseBody: null,
+            hint: 'Remote connectivity succeeded. File events were not returned yet — Destinations can still proceed. Verify directory and file pattern if you expected sample rows.',
+            apiBacked: true,
+            steps: mapApiSteps(res.steps),
+            responseSample: parsedBody,
+            effectiveHeadersMasked: res.request.headers_masked ?? null,
+            actualRequestSent: null,
+            analysis: null,
+            s3ConnectivityPassed: false,
+            remoteProbe: probe,
+          })
+          return
+        }
         let analysisModel = res.analysis ? mapApiAnalysis(res.analysis) : null
         if (
           !analysisModel &&
@@ -482,6 +530,38 @@ export function StepApiTest({
         })
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Remote file sample fetch failed.'
+        if (lastProbe?.ok) {
+          commitApiTest(gen, {
+            status: 'success',
+            ok: true,
+            requestUrl: null,
+            method: 'REMOTE_FILE_POLLING',
+            statusCode: 200,
+            responseHeaders: {},
+            rawBody: null,
+            parsedJson: lastProbe,
+            rawResponse: lastProbe,
+            extractedEvents: [],
+            eventCount: 0,
+            unionSchema: null,
+            startedAt,
+            finishedAt: Date.now(),
+            errorCode: null,
+            errorType: null,
+            errorMessage: null,
+            targetStatusCode: null,
+            targetResponseBody: null,
+            hint: message,
+            apiBacked: true,
+            steps: [],
+            responseSample: lastProbe,
+            effectiveHeadersMasked: null,
+            actualRequestSent: null,
+            analysis: null,
+            s3ConnectivityPassed: false,
+            remoteProbe: lastProbe,
+          })
+        } else {
         commitApiTest(gen, {
           status: 'error',
           ok: false,
@@ -512,13 +592,84 @@ export function StepApiTest({
           s3ConnectivityPassed: false,
           remoteProbe: lastProbe,
         })
+        }
       } finally {
         if (gen === requestGenRef.current) setBusy(false)
       }
       return
     }
 
-    const syntax = validateJsonBodyForApi(state.stream.requestBody)
+    if (isWebhook) {
+      setBusy(true)
+      const startedAt = Date.now()
+      commitApiTest(gen, {
+        ...state.apiTest,
+        status: 'running',
+        startedAt,
+        finishedAt: null,
+        errorCode: null,
+        errorType: null,
+        errorMessage: null,
+      })
+      try {
+        const sample = {
+          webhook_receiver: true,
+          items: [{ id: 'sample', message: 'webhook-receiver-ready' }],
+        }
+        commitApiTest(gen, {
+          status: 'success',
+          ok: true,
+          requestUrl: null,
+          method: 'WEBHOOK_RECEIVER',
+          statusCode: 200,
+          responseHeaders: {},
+          rawBody: JSON.stringify(sample),
+          parsedJson: sample,
+          rawResponse: sample,
+          extractedEvents: [sample.items[0]],
+          eventCount: 1,
+          unionSchema: null,
+          startedAt,
+          finishedAt: Date.now(),
+          errorCode: null,
+          errorType: null,
+          errorMessage: null,
+          targetStatusCode: null,
+          targetResponseBody: null,
+          hint: 'Inbound receiver is ready. External systems POST to the generated webhook URL after deploy.',
+          apiBacked: true,
+          steps: [],
+          responseSample: sample,
+          effectiveHeadersMasked: null,
+          actualRequestSent: null,
+          analysis: {
+            responseSummary: {
+              root_type: 'object',
+              approx_size_bytes: JSON.stringify(sample).length,
+              top_level_keys: ['webhook_receiver', 'items'],
+              item_count_root: null,
+              truncation: null,
+            },
+            detectedArrays: [
+              { path: '$.items', count: 1, confidence: 1, reason: 'webhook sample items', sample_item_preview: sample.items[0] },
+            ],
+            detectedCheckpointCandidates: [],
+            sampleEvent: sample.items[0],
+            selectedEventArrayDefault: '$.items',
+            flatPreviewFields: ['id', 'message'],
+            eventRootCandidates: [],
+            previewError: null,
+          },
+          s3ConnectivityPassed: false,
+          remoteProbe: null,
+        })
+      } finally {
+        if (gen === requestGenRef.current) setBusy(false)
+      }
+      return
+    }
+
+    const syntax = isDatabase ? ({ ok: true } as const) : validateJsonBodyForApi(state.stream.requestBody)
     if (syntax.ok === false) {
       const startedAt = Date.now()
       commitApiTest(gen, {

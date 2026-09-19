@@ -164,6 +164,8 @@ class RouteStageResult:
 
     route_id: int
     events: list[dict[str, Any]] = field(default_factory=list)
+    # Pre-protection transformed events for checkpoint (delivery may be masked).
+    checkpoint_events: list[dict[str, Any]] = field(default_factory=list)
     modified: bool = False
     stage_timeline: list[dict[str, Any]] = field(default_factory=list)
     protection_duration_ms: int = 0

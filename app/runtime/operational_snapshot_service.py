@@ -654,6 +654,17 @@ def _build_problems(
                     last_seen_at=stream.last_error_at,
                 )
             )
+        elif stream.health_status == "DEGRADED" and (stream.last_error_message or stream.last_error_at):
+            problems.append(
+                OperationalProblem(
+                    severity="warning",
+                    scope="stream",
+                    stream_id=stream.stream_id,
+                    title=f"Stream {stream.stream_name} is degraded",
+                    message=stream.last_error_message or "Recent source or delivery error",
+                    last_seen_at=stream.last_error_at,
+                )
+            )
         if should_flag_checkpoint_stale(stream):
             problems.append(
                 OperationalProblem(

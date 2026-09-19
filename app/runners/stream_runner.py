@@ -678,10 +678,17 @@ class StreamRunner(BaseRunner):
 
         if self._run_timing is not None:
             self._run_timing.start_phase("schema_drift")
+        # Project extracted events through stream mapping/enrichment for shared-phase
+        # path resolution (schema drift auto-protect / drop_field). Per-route transform
+        # still owns the delivery event shape; this avoids resurrecting stream-global send.
+        drift_events = self._project_stream_transform_for_shared_phase(
+            runtime_stream=runtime_stream,
+            extracted_events=extracted_events,
+        )
         self._schema_drift_policy_result = self._apply_schema_drift_policy(
             stream_id=stream_id,
             runtime_stream=runtime_stream,
-            enriched_events=extracted_events,
+            enriched_events=drift_events,
         )
         if self._run_timing is not None:
             self._run_timing.end_phase("schema_drift")
@@ -709,7 +716,7 @@ class StreamRunner(BaseRunner):
             route_contexts,
             shared_batch,
             log_fn=self._log,
-            db=None,
+            db=self._flush_db,
             base_metrics=build_metrics,
             send_fn=self._make_route_delivery_send_fn(runtime_stream),
             run_id=self._run_id,
@@ -1900,6 +1907,49 @@ class StreamRunner(BaseRunner):
             )
         except Exception:
             logger.exception("classification_failed stream_id=%s", stream_id)
+
+    def _project_stream_transform_for_shared_phase(
+        self,
+        *,
+        runtime_stream: Any,
+        extracted_events: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Map+enrich extracted events with stream transform for shared-phase path resolution.
+
+        Route Processing owns delivery transform per route; this projection only aligns
+        schema-drift / auto-protect field paths with the post-mapping event shape.
+        """
+
+        if not extracted_events:
+            return []
+        field_mappings = dict(_get(runtime_stream, "field_mappings", {}) or {})
+        enrichment = dict(_get(runtime_stream, "enrichment", {}) or {})
+        override_policy = str(_get(runtime_stream, "override_policy") or "KEEP_EXISTING")
+        if not field_mappings and not enrichment:
+            return list(extracted_events)
+        try:
+            from app.enrichers.enrichment_engine import apply_enrichments_batch
+            from app.mappers.mapper import apply_mappings_with_results
+
+            mapping_results = apply_mappings_with_results(extracted_events, field_mappings)
+            mapped_events = [
+                dict(result.mapped_event) if isinstance(result.mapped_event, dict) else {}
+                for result in mapping_results
+            ]
+            if not enrichment:
+                return mapped_events
+            batch_result = apply_enrichments_batch(
+                mapped_events,
+                enrichment,
+                override_policy=override_policy,
+            )
+            return list(batch_result.events)
+        except Exception:
+            logger.exception(
+                "stream_transform_projection_failed stream_id=%s",
+                _get(runtime_stream, "id"),
+            )
+            return list(extracted_events)
 
     def _apply_schema_drift_policy(
         self,

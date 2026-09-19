@@ -121,6 +121,88 @@ def test_load_stream_context_success(db_session: Session) -> None:
     assert context.destinations_by_route[route.id].id == dst.id
 
 
+def test_load_stream_context_protection_rules_survive_session_expire(db_session: Session) -> None:
+    """Scheduler closes the load session; protection rules must not be live ORM rows."""
+
+    from types import SimpleNamespace
+
+    from app.protection.models import PROTECTION_MODE_PARTIAL_MASK, StreamProtectionRule
+    from app.route_protection.resolver import resolve_route_protection_config
+    from app.sensitive_detection.models import SENSITIVITY_CLASS_PII
+
+    db = db_session
+    connector = Connector(name="c-prot", description=None, status="RUNNING")
+    db.add(connector)
+    db.flush()
+    source = Source(
+        connector_id=connector.id,
+        source_type="HTTP_API_POLLING",
+        config_json={"base_url": "https://api.example.com"},
+        auth_json={},
+        enabled=True,
+    )
+    db.add(source)
+    db.flush()
+    stream = Stream(
+        connector_id=connector.id,
+        source_id=source.id,
+        name="protected",
+        stream_type="HTTP_API_POLLING",
+        config_json={"endpoint": "/events"},
+        polling_interval=15,
+        enabled=True,
+        status="RUNNING",
+        rate_limit_json={},
+    )
+    db.add(stream)
+    db.flush()
+    dst = Destination(
+        name="webhook-prot",
+        destination_type="WEBHOOK_POST",
+        config_json={"url": "https://dest"},
+        rate_limit_json={},
+        enabled=True,
+    )
+    db.add(dst)
+    db.flush()
+    route = Route(
+        stream_id=stream.id,
+        destination_id=dst.id,
+        enabled=True,
+        failure_policy="LOG_AND_CONTINUE",
+        formatter_config_json={},
+        rate_limit_json={},
+        status="ENABLED",
+    )
+    db.add(route)
+    db.add(
+        StreamProtectionRule(
+            stream_id=stream.id,
+            field_path="$.email",
+            sensitivity_class=SENSITIVITY_CLASS_PII,
+            protection_mode=PROTECTION_MODE_PARTIAL_MASK,
+            enabled=True,
+            created_by="test",
+        )
+    )
+    db.commit()
+
+    context = load_stream_context(db, stream.id)
+    db.expire_all()
+    rules = context.stream["stream_protection_rules"]
+    assert len(rules) == 1
+    assert isinstance(rules[0], SimpleNamespace)
+    assert rules[0].field_path == "$.email"
+    assert rules[0].protection_mode == PROTECTION_MODE_PARTIAL_MASK
+    cfg = resolve_route_protection_config(
+        route_id=int(route.id),
+        stream_id=int(stream.id),
+        stream_protection_rules=rules,
+    )
+    assert cfg.rules
+    assert cfg.rules[0].field_path == "$.email"
+
+
 def test_load_stream_context_requires_enabled_routes(db_session: Session) -> None:
     db = db_session
     connector = Connector(name="c1", description=None, status="RUNNING")

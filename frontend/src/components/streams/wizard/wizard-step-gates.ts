@@ -83,10 +83,27 @@ export function wizardApiTestHttpStatusOk(state: Pick<WizardState, 'apiTest'>): 
   return code == null || code < 400
 }
 
+/** HTTP/S3/DATABASE sample still requires record path + checkpoint; SFTP/webhook do not. */
+export function wizardSourceRequiresHttpRecordSelection(state: {
+  connector?: Pick<WizardState['connector'], 'sourceType'>
+}): boolean {
+  const sourceType = state.connector?.sourceType
+  return sourceType !== 'REMOTE_FILE_POLLING' && sourceType !== 'WEBHOOK_RECEIVER'
+}
+
 /** Latest API test result is authoritative — success + ok + payload + HTTP < 400. */
-export function wizardApiTestReady(state: Pick<WizardState, 'apiTest'>): boolean {
+export function wizardApiTestReady(
+  state: Pick<WizardState, 'apiTest'> & { connector?: Pick<WizardState['connector'], 'sourceType'> },
+): boolean {
   const t = state.apiTest
   if (t.status !== 'success' || !t.ok) return false
+  const sourceType = state.connector?.sourceType
+  if (sourceType === 'REMOTE_FILE_POLLING') {
+    return t.remoteProbe?.ok === true || wizardApiTestHasResponsePayload(state)
+  }
+  if (sourceType === 'WEBHOOK_RECEIVER') {
+    return wizardApiTestHttpStatusOk(state)
+  }
   if (!wizardApiTestHasResponsePayload(state)) return false
   return wizardApiTestHttpStatusOk(state)
 }
@@ -179,8 +196,14 @@ export function wizardCustomExtractionReady(state: Pick<WizardState, 'stream' | 
 
 /** Sample step gate — latest API test + confirmed record path + confirmed sync position. */
 export function wizardSampleStepGateReady(state: WizardState): boolean {
+  if (!wizardApiTestReady(state)) return false
+  if (!wizardSourceRequiresHttpRecordSelection(state)) {
+    if (state.connector.sourceType === 'REMOTE_FILE_POLLING') {
+      return state.stream.remoteDirectory.trim().length > 0
+    }
+    return true
+  }
   return (
-    wizardApiTestReady(state) &&
     wizardRecordPathConfirmed(state) &&
     wizardCheckpointConfirmed(state) &&
     wizardCustomExtractionReady(state)
@@ -214,7 +237,22 @@ export function wizardSampleStepBlockReason(state: WizardState): string {
     return 'Wait for Run Test to finish.'
   }
   if (!wizardApiTestReady(state)) {
+    if (state.connector.sourceType === 'REMOTE_FILE_POLLING') {
+      return 'Run a successful remote file probe on the Run Test tab.'
+    }
+    if (state.connector.sourceType === 'WEBHOOK_RECEIVER') {
+      return 'Run a successful webhook receiver test on the Run Test tab.'
+    }
     return 'Run a successful API Test on the Run Test tab.'
+  }
+  if (!wizardSourceRequiresHttpRecordSelection(state)) {
+    if (
+      state.connector.sourceType === 'REMOTE_FILE_POLLING' &&
+      state.stream.remoteDirectory.trim().length === 0
+    ) {
+      return 'Set a remote directory on Stream Configuration.'
+    }
+    return 'Complete required fields on this step before continuing.'
   }
   if (!wizardRecordPathReady(state)) {
     return 'Confirm Record Path on Record Selection (pick a detected candidate or event array in the tree).'

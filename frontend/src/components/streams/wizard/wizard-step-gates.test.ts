@@ -15,6 +15,7 @@ import {
   wizardIncrementalFetchGuidanceComplete,
   wizardSampleStepBlockReason,
   wizardSampleStepGateReady,
+  wizardSourceRequiresHttpRecordSelection,
   wizardStepReachable,
   wizardSyncPositionReady,
 } from './wizard-step-gates'
@@ -220,5 +221,47 @@ describe('wizard-step-gates', () => {
     state.stream.customExtractionValidatedForApiTestAt = state.apiTest.finishedAt
     expect(wizardCustomExtractionReady(state)).toBe(true)
     expect(wizardSampleStepGateReady(state)).toBe(true)
+  })
+
+  it('does not require HTTP record path / checkpoint for REMOTE_FILE_POLLING after a successful probe', () => {
+    const state = buildInitialState()
+    state.connector.sourceType = 'REMOTE_FILE_POLLING'
+    state.stream.remoteDirectory = '/data'
+    state.apiTest.status = 'success'
+    state.apiTest.ok = true
+    state.apiTest.remoteProbe = { ok: true, auth_type: 'REMOTE_FILE_POLLING' }
+    state.apiTest.finishedAt = Date.now()
+    expect(wizardSourceRequiresHttpRecordSelection(state)).toBe(false)
+    expect(wizardApiTestReady(state)).toBe(true)
+    expect(wizardSampleStepGateReady(state)).toBe(true)
+    expect(canAdvanceFromWizardStep('sample', state)).toBe(true)
+    expect(wizardStepReachable('destinations', state)).toBe(true)
+  })
+
+  it('does not require HTTP record path / checkpoint for WEBHOOK_RECEIVER after a successful test', () => {
+    const state = buildInitialState()
+    state.connector.sourceType = 'WEBHOOK_RECEIVER'
+    state.apiTest.status = 'success'
+    state.apiTest.ok = true
+    state.apiTest.statusCode = 200
+    state.apiTest.parsedJson = { webhook_receiver: true }
+    state.apiTest.rawResponse = state.apiTest.parsedJson
+    state.apiTest.finishedAt = Date.now()
+    expect(wizardSourceRequiresHttpRecordSelection(state)).toBe(false)
+    expect(wizardSampleStepGateReady(state)).toBe(true)
+    expect(canAdvanceFromWizardStep('sample', state)).toBe(true)
+  })
+
+  it('still requires record path and checkpoint for HTTP_API_POLLING', () => {
+    const state = buildInitialState()
+    state.connector.sourceType = 'HTTP_API_POLLING'
+    state.apiTest.status = 'success'
+    state.apiTest.ok = true
+    state.apiTest.statusCode = 200
+    state.apiTest.parsedJson = { items: [{ id: '1' }] }
+    state.apiTest.rawResponse = state.apiTest.parsedJson
+    state.apiTest.finishedAt = Date.now()
+    expect(wizardSourceRequiresHttpRecordSelection(state)).toBe(true)
+    expect(wizardSampleStepGateReady(state)).toBe(false)
   })
 })

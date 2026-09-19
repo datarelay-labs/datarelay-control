@@ -185,6 +185,8 @@ def test_unknown_normal_require_review_delivers_with_review_log(
     db_session: Session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Route Processing ON: require_review blocks delivery but still emits review evidence."""
+
     fixture = _seed_stream_runtime(db_session)
     stream_id = fixture["stream_id"]
     _configure_nickname_mapping(db_session, stream_id)
@@ -206,7 +208,7 @@ def test_unknown_normal_require_review_delivers_with_review_log(
     ctx = load_stream_context(db_session, stream_id)
     runner.run(ctx, db=db_session)
 
-    assert len(sender.calls) == 1
+    assert len(sender.calls) == 0
     review_logs = [
         log
         for log in runner.captured_logs
@@ -218,7 +220,7 @@ def test_unknown_normal_require_review_delivers_with_review_log(
     assert review_logs[0]["sensitive"] is False
 
     cp_after = db_session.query(Checkpoint).filter(Checkpoint.stream_id == stream_id).one()
-    assert cp_after.checkpoint_value_json != cp_before
+    assert cp_after.checkpoint_value_json == cp_before
 
 
 def test_unknown_normal_quarantine_blocks_delivery_and_checkpoint(
@@ -278,6 +280,8 @@ def test_unknown_sensitive_require_review_delivers_with_review_log(
     db_session: Session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Route Processing ON: sensitive require_review blocks delivery with review evidence."""
+
     fixture = _seed_stream_runtime(db_session)
     stream_id = fixture["stream_id"]
     _configure_email_mapping(db_session, stream_id)
@@ -294,7 +298,7 @@ def test_unknown_sensitive_require_review_delivers_with_review_log(
     ctx = load_stream_context(db_session, stream_id)
     runner.run(ctx, db=db_session)
 
-    assert len(sender.calls) == 1
+    assert len(sender.calls) == 0
     review_logs = [
         log
         for log in runner.captured_logs

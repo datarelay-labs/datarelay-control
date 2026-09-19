@@ -87,6 +87,27 @@ def route_policy_stage(
             not should_quarantine_batch(policy_batch_result)
             and config.resolution.drift_quarantine_required
         )
+        if drift_only:
+            from app.schema_drift_policy.orchestrator import merge_schema_drift_quarantine
+
+            drift = shared_batch.schema_drift_policy_result
+            policy_type = str(getattr(drift, "quarantine_policy_type", None) or "unknown_normal")
+            field_paths = [
+                str(getattr(item, "enriched_path", "") or "")
+                for item in list(getattr(drift, "unknown_fields", []) or [])
+                if str(getattr(item, "applied_policy", "") or "") == "quarantine"
+            ]
+            if not field_paths and drift is not None:
+                field_paths = [
+                    str(getattr(item, "enriched_path", "") or "")
+                    for item in list(getattr(drift, "unknown_fields", []) or [])
+                    if getattr(item, "enriched_path", None)
+                ]
+            policy_batch_result = merge_schema_drift_quarantine(
+                policy_batch_result,
+                policy_type=policy_type,
+                field_paths=[p for p in field_paths if p],
+            )
         row = record_route_policy_quarantine_event(
             db,
             stream_id=route_ctx.stream_id,
@@ -141,7 +162,19 @@ def route_policy_stage(
                 "delivery_allowed": delivery_allowed,
                 "classification_level": getattr(cls_result, "effective_level", None) if cls_result else None,
                 "duration_ms": duration_ms,
+                "processing_time_ms": duration_ms,
             }
+        )
+        from app.protection.policy_metrics import build_policy_evaluation_complete_payload
+
+        policy_batch_result.duration_ms = duration_ms
+        if not getattr(policy_batch_result, "policy_count", None):
+            policy_batch_result.policy_count = len(engine_rules)
+        log_fn(
+            build_policy_evaluation_complete_payload(
+                stream_id=route_ctx.stream_id,
+                result=policy_batch_result,
+            )
         )
 
     return output_events, policy_result, config

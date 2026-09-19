@@ -1,4 +1,5 @@
 import { createRoute, deleteRoute, updateRouteWithFreshToken } from '../../../api/gdcRoutes'
+import { saveRouteMappingUiConfig } from '../../../api/gdcRouteTransform'
 import { saveStreamMappingUiConfigStrict } from '../../../api/gdcRuntimeUi'
 import { fetchStreamById, updateStream } from '../../../api/gdcStreams'
 import {
@@ -7,10 +8,12 @@ import {
 } from './wizard-stream-config-sync'
 import {
   buildRouteCreatePayloads,
+  buildRouteTransformPersistPlans,
   buildStreamCreatePayload,
   buildWizardFieldMappingsPayload,
   enrichmentDictFromRows,
   wizardFieldMappingsReady,
+  type WizardRouteDraft,
   type WizardState,
 } from './wizard-state'
 import { persistWizardDataProtectionIntents } from './wizard-data-protection-persist'
@@ -70,6 +73,26 @@ async function syncRoutes(streamId: number, state: WizardState): Promise<string[
     }
   }
 
+  return errors
+}
+
+export async function persistWizardRouteTransformOverrides(
+  drafts: WizardRouteDraft[],
+  routeIdsInDraftOrder: number[],
+): Promise<string[]> {
+  const errors: string[] = []
+  for (const plan of buildRouteTransformPersistPlans(drafts, routeIdsInDraftOrder)) {
+    try {
+      await saveRouteMappingUiConfig(plan.routeId, {
+        inherit: plan.inherit,
+        mapping: { field_mappings: plan.fieldMappings },
+      })
+    } catch (err) {
+      errors.push(
+        `route ${plan.routeId} transform: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+  }
   return errors
 }
 
@@ -145,6 +168,12 @@ export async function persistWizardStreamEdits(streamId: number, state: WizardSt
   }
 
   errors.push(...(await syncRoutes(streamId, state)))
+  const orderedRouteIds = state.destinations.routeDrafts.map(
+    (draft, index) => routeKeyToId(draft.key) ?? (state.outcome?.routeIds ?? [])[index] ?? 0,
+  )
+  errors.push(
+    ...(await persistWizardRouteTransformOverrides(state.destinations.routeDrafts, orderedRouteIds)),
+  )
 
   if (state.dataProtection.intents.length > 0) {
     const protectionResult = await persistWizardDataProtectionIntents(streamId, state)
