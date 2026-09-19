@@ -496,8 +496,137 @@ describe('wizard-state mapping/enrichment helpers', () => {
         routeId: 20,
         inherit: false,
         fieldMappings: expect.objectContaining({ transformed_message: '$.message' }),
+        enrichment: {},
       },
     ])
+  })
+
+  it('plans enrichment-only route override without requiring field mappings', () => {
+    const enrichmentOnly = {
+      key: 'r2',
+      destinationId: 2,
+      enabled: true,
+      failurePolicy: 'LOG_AND_CONTINUE' as const,
+      rateLimitJson: {},
+      inherit: { transform: false, protection: true, classification: true, policy: true },
+      overrides: {
+        transform: {
+          mapping: [],
+          mappingMode: 'basic_jsonpath' as const,
+          fullEventJsonataExpression: '',
+          fullEventRegexConfigJson: '',
+          transformRules: [],
+          enrichment: [
+            {
+              id: 'e1',
+              label: 'Tenant',
+              fieldName: 'tenant',
+              type: 'static' as const,
+              enabled: true,
+              staticValue: 'acme',
+              expression: '',
+              lookupTable: 'aws-regions',
+              lookupKeyField: '',
+              conditions: [],
+              conditionalDefault: '',
+              normalizeSourceField: '',
+              normalizeFormat: 'iso8601' as const,
+            },
+          ],
+          unmappedFieldsPolicy: 'pass_through' as const,
+        },
+      },
+    }
+    const plans = buildRouteTransformPersistPlans([enrichmentOnly], [20])
+    expect(plans).toEqual([
+      {
+        routeId: 20,
+        inherit: false,
+        fieldMappings: {},
+        enrichment: { tenant: 'acme' },
+      },
+    ])
+  })
+
+  it('plans mapping+enrichment route override together', () => {
+    const both = {
+      key: 'r2',
+      destinationId: 2,
+      enabled: true,
+      failurePolicy: 'LOG_AND_CONTINUE' as const,
+      rateLimitJson: {},
+      inherit: { transform: false, protection: true, classification: true, policy: true },
+      overrides: {
+        transform: {
+          mapping: [{ id: 'm1', outputField: 'msg', sourceJsonPath: '$.message' }],
+          mappingMode: 'basic_jsonpath' as const,
+          fullEventJsonataExpression: '',
+          fullEventRegexConfigJson: '',
+          transformRules: [],
+          enrichment: [
+            {
+              id: 'e1',
+              label: 'Env',
+              fieldName: 'env',
+              type: 'static' as const,
+              enabled: true,
+              staticValue: 'prod',
+              expression: '',
+              lookupTable: 'aws-regions',
+              lookupKeyField: '',
+              conditions: [],
+              conditionalDefault: '',
+              normalizeSourceField: '',
+              normalizeFormat: 'iso8601' as const,
+            },
+          ],
+          unmappedFieldsPolicy: 'pass_through' as const,
+        },
+      },
+    }
+    const plans = buildRouteTransformPersistPlans([both], [20])
+    expect(plans).toHaveLength(1)
+    expect(plans[0]?.fieldMappings).toEqual(expect.objectContaining({ msg: '$.message' }))
+    expect(plans[0]?.enrichment).toEqual({ env: 'prod' })
+  })
+
+  it('does not plan when inherit.transform is true', () => {
+    const inherited = {
+      key: 'r1',
+      destinationId: 1,
+      enabled: true,
+      failurePolicy: 'LOG_AND_CONTINUE' as const,
+      rateLimitJson: {},
+      inherit: { ...DEFAULT_ROUTE_PROCESSING_INHERIT },
+      overrides: {
+        transform: {
+          mapping: [{ id: 'm1', outputField: 'msg', sourceJsonPath: '$.message' }],
+          mappingMode: 'basic_jsonpath' as const,
+          fullEventJsonataExpression: '',
+          fullEventRegexConfigJson: '',
+          transformRules: [],
+          enrichment: [
+            {
+              id: 'e1',
+              label: 'Env',
+              fieldName: 'env',
+              type: 'static' as const,
+              enabled: true,
+              staticValue: 'prod',
+              expression: '',
+              lookupTable: 'aws-regions',
+              lookupKeyField: '',
+              conditions: [],
+              conditionalDefault: '',
+              normalizeSourceField: '',
+              normalizeFormat: 'iso8601' as const,
+            },
+          ],
+          unmappedFieldsPolicy: 'pass_through' as const,
+        },
+      },
+    }
+    expect(buildRouteTransformPersistPlans([inherited], [10])).toEqual([])
   })
 
   it('skips empty enrichment rows', () => {

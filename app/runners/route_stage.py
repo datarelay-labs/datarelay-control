@@ -419,6 +419,7 @@ def process_routes(
     delivery_quarantine_count = 0
     delivery_duration_ms = 0
     checkpoint_reference: list[dict[str, Any]] = []
+    delivery_reference: list[dict[str, Any]] = []
 
     for route_ctx in route_contexts:
         if not route_ctx.enabled:
@@ -498,13 +499,16 @@ def process_routes(
                 and delivery_result.delivery_success is True
                 and stage_result.events
             ):
+                # Checkpoint may need pre-protection fields; delivery must not.
                 checkpoint_reference = list(
                     stage_result.checkpoint_events or stage_result.events
                 )
+                delivery_reference = list(stage_result.events)
         elif stage_result.events and stage_result.delivery_allowed:
             checkpoint_reference = list(
                 stage_result.checkpoint_events or stage_result.events
             )
+            delivery_reference = list(stage_result.events)
 
     metrics = RouteProcessingMetrics(
         route_count=base_metrics.route_count if base_metrics else len(route_contexts),
@@ -537,4 +541,5 @@ def process_routes(
         stage_results=results,
         metrics=metrics,
         checkpoint_reference_events=checkpoint_reference,
+        delivery_reference_events=delivery_reference,
     )

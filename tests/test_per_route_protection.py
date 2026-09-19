@@ -377,3 +377,147 @@ def _add_email_mapping(db: Session, stream_id: int) -> None:
     mapping.field_mappings_json = field_mappings
     db.add(mapping)
     db.commit()
+
+
+def test_checkpoint_vs_delivery_reference_separated_under_protection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Checkpoint may retain pre-protection fields; delivery reference must be protected."""
+    monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", True)
+    monkeypatch.setattr(settings, "GDC_PROTECTION_ENABLED", True)
+
+    from types import SimpleNamespace
+
+    from app.route_delivery.config import RouteSendOutcome
+    from app.runners.route_context import RouteEffectiveConfig, RouteRuntimeContext, RouteTransformConfig
+    from app.sensitive_detection.models import SENSITIVITY_CLASS_PII
+
+    raw_email = "sensitive@example.invalid"
+    stream_rule = SimpleNamespace(
+        id=1,
+        stream_id=10,
+        field_path="$.email",
+        sensitivity_class=SENSITIVITY_CLASS_PII,
+        protection_mode=PROTECTION_MODE_FULL_MASK,
+        enabled=True,
+        source_finding_id=None,
+    )
+    transform = RouteTransformConfig(
+        field_mappings={"id": "$.id", "email": "$.email"},
+        enrichment={},
+        override_policy="KEEP_EXISTING",
+        mapping_source="stream",
+        enrichment_source="stream",
+    )
+    route_ctx = RouteRuntimeContext(
+        route_id=1,
+        stream_id=10,
+        destination_id=20,
+        route_name="r1",
+        route_type="WEBHOOK_POST",
+        formatter={},
+        delivery_policy="LOG_AND_CONTINUE",
+        rate_limit={},
+        metadata={},
+        effective_config=RouteEffectiveConfig(transform=transform),
+    )
+    shared = SharedBatchContext(
+        stream_id=10,
+        batch_id="batch-sec",
+        event_root=None,
+        union_schema=[],
+        extracted_events=[{"id": "SEC-PROT-1", "email": raw_email}],
+        schema_observation={},
+        sensitive_detection_result=None,
+        checkpoint_cursor_before=None,
+        shared_runtime_data={
+            "stream_protection_rules": [stream_rule],
+            "route_overrides": [],
+        },
+    )
+    delivered: list[dict[str, Any]] = []
+
+    def ok_send(_ctx: Any, events: list[dict[str, Any]]) -> RouteSendOutcome:
+        delivered.extend(dict(e) for e in events)
+        return RouteSendOutcome(success=True, latency_ms=1, adapter_stage="route_send_success")
+
+    pipeline = process_routes([route_ctx], shared, send_fn=ok_send)
+    assert pipeline.checkpoint_reference_events
+    assert pipeline.delivery_reference_events
+    assert pipeline.checkpoint_reference_events[0]["email"] == raw_email
+    assert pipeline.delivery_reference_events[0]["email"] != raw_email
+    assert delivered[0]["email"] != raw_email
+    assert raw_email not in str(delivered)
+
+
+def test_dynamic_route_delivery_uses_protected_payload(
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Dynamic additive fan-out must not receive pre-protection sensitive fields."""
+    monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", True)
+    monkeypatch.setattr(settings, "GDC_PROTECTION_ENABLED", True)
+    monkeypatch.setattr(settings, "GDC_SENSITIVE_DETECTION_ENABLED", True)
+
+    from app.destinations.models import Destination
+    from app.dynamic_routing.operator_workflow import create_dynamic_route
+
+    db = db_session
+    fixture = _seed_stream_runtime(db)
+    stream_id = fixture["stream_id"]
+    _add_email_mapping(db, stream_id)
+    db.add(
+        StreamProtectionRule(
+            stream_id=stream_id,
+            field_path="$.email",
+            sensitivity_class=SENSITIVITY_CLASS_PII,
+            protection_mode=PROTECTION_MODE_FULL_MASK,
+            enabled=True,
+            created_by="test",
+        )
+    )
+    security = Destination(
+        name="Security Webhook",
+        destination_type="WEBHOOK_POST",
+        config_json={"url": "https://security-webhook.example.com/events"},
+        rate_limit_json={"max_events": 100, "per_seconds": 1},
+        enabled=True,
+    )
+    db.add(security)
+    db.flush()
+    mapping = db.query(Mapping).filter(Mapping.stream_id == stream_id).one()
+    field_mappings = dict(mapping.field_mappings_json or {})
+    field_mappings["api_key"] = "$.api_key"
+    mapping.field_mappings_json = field_mappings
+    create_dynamic_route(
+        db,
+        stream_id=stream_id,
+        name="Secret Security",
+        enabled=True,
+        condition_json={"sensitivity_class": "secret"},
+        destination_id=security.id,
+    )
+    db.commit()
+
+    raw_email = "sensitive@example.invalid"
+    payload = {
+        "items": [
+            {
+                "id": "SEC-PROT-dyn",
+                "email": raw_email,
+                "api_key": "super-secret-token-value",
+                "message": "hello",
+                "vendor": "acme",
+            }
+        ]
+    }
+    webhook = _FakeWebhookSender()
+    runner = _build_runner(poller=_FakePoller(response=payload), webhook_sender=webhook)
+    ctx = load_stream_context(db, stream_id)
+    runner.run(ctx, db=db)
+
+    assert len(webhook.calls) >= 2
+    for call in webhook.calls:
+        for event in call["events"]:
+            assert event.get("email") != raw_email
+            assert raw_email not in str(event)

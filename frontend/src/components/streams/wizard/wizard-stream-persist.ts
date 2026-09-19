@@ -1,5 +1,5 @@
 import { createRoute, deleteRoute, updateRouteWithFreshToken } from '../../../api/gdcRoutes'
-import { saveRouteMappingUiConfig } from '../../../api/gdcRouteTransform'
+import { saveRouteEnrichmentUiConfig, saveRouteMappingUiConfig } from '../../../api/gdcRouteTransform'
 import { saveStreamMappingUiConfigStrict } from '../../../api/gdcRuntimeUi'
 import { fetchStreamById, updateStream } from '../../../api/gdcStreams'
 import {
@@ -25,6 +25,12 @@ export type WizardStreamPersistResult = {
   errors: string[]
 }
 
+export type SyncRoutesResult = {
+  errors: string[]
+  /** Server route id keyed by draft key (existing `route-N` or newly created). */
+  routeIdsByDraftKey: Record<string, number>
+}
+
 function routeKeyToId(key: string): number | null {
   const match = /^route-(\d+)$/.exec(key)
   if (!match) return null
@@ -32,8 +38,9 @@ function routeKeyToId(key: string): number | null {
   return Number.isFinite(id) ? id : null
 }
 
-async function syncRoutes(streamId: number, state: WizardState): Promise<string[]> {
+export async function syncRoutes(streamId: number, state: WizardState): Promise<SyncRoutesResult> {
   const errors: string[] = []
+  const routeIdsByDraftKey: Record<string, number> = {}
   const payloads = buildRouteCreatePayloads(streamId, state.destinations)
 
   for (const draft of state.destinations.routeDrafts) {
@@ -51,19 +58,17 @@ async function syncRoutes(streamId: number, state: WizardState): Promise<string[
           formatter_config_json: payload.formatter_config_json,
           rate_limit_json: payload.rate_limit_json,
         })
+        routeIdsByDraftKey[draft.key] = routeId
       } else {
-        await createRoute(payload)
+        const created = await createRoute(payload)
+        routeIdsByDraftKey[draft.key] = created.id
       }
     } catch (err) {
       errors.push(`route ${draft.destinationId}: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 
-  const keptIds = new Set(
-    state.destinations.routeDrafts
-      .map((draft) => routeKeyToId(draft.key))
-      .filter((id): id is number => id != null),
-  )
+  const keptIds = new Set(Object.values(routeIdsByDraftKey))
   for (const priorId of state.outcome?.routeIds ?? []) {
     if (keptIds.has(priorId)) continue
     try {
@@ -73,7 +78,7 @@ async function syncRoutes(streamId: number, state: WizardState): Promise<string[
     }
   }
 
-  return errors
+  return { errors, routeIdsByDraftKey }
 }
 
 export async function persistWizardRouteTransformOverrides(
@@ -82,15 +87,35 @@ export async function persistWizardRouteTransformOverrides(
 ): Promise<string[]> {
   const errors: string[] = []
   for (const plan of buildRouteTransformPersistPlans(drafts, routeIdsInDraftOrder)) {
-    try {
-      await saveRouteMappingUiConfig(plan.routeId, {
-        inherit: plan.inherit,
-        mapping: { field_mappings: plan.fieldMappings },
-      })
-    } catch (err) {
-      errors.push(
-        `route ${plan.routeId} transform: ${err instanceof Error ? err.message : String(err)}`,
-      )
+    const hasMapping = Object.keys(plan.fieldMappings).length > 0
+    const hasEnrichment = Object.keys(plan.enrichment).length > 0
+    if (hasMapping) {
+      try {
+        await saveRouteMappingUiConfig(plan.routeId, {
+          inherit: plan.inherit,
+          mapping: { field_mappings: plan.fieldMappings },
+        })
+      } catch (err) {
+        errors.push(
+          `route ${plan.routeId} mapping: ${err instanceof Error ? err.message : String(err)}`,
+        )
+      }
+    }
+    if (hasEnrichment) {
+      try {
+        await saveRouteEnrichmentUiConfig(plan.routeId, {
+          inherit: plan.inherit,
+          enrichment: {
+            enabled: true,
+            enrichment: plan.enrichment,
+            override_policy: 'KEEP_EXISTING',
+          },
+        })
+      } catch (err) {
+        errors.push(
+          `route ${plan.routeId} enrichment: ${err instanceof Error ? err.message : String(err)}`,
+        )
+      }
     }
   }
   return errors
@@ -167,9 +192,10 @@ export async function persistWizardStreamEdits(streamId: number, state: WizardSt
     }
   }
 
-  errors.push(...(await syncRoutes(streamId, state)))
+  const synced = await syncRoutes(streamId, state)
+  errors.push(...synced.errors)
   const orderedRouteIds = state.destinations.routeDrafts.map(
-    (draft, index) => routeKeyToId(draft.key) ?? (state.outcome?.routeIds ?? [])[index] ?? 0,
+    (draft) => synced.routeIdsByDraftKey[draft.key] ?? routeKeyToId(draft.key) ?? 0,
   )
   errors.push(
     ...(await persistWizardRouteTransformOverrides(state.destinations.routeDrafts, orderedRouteIds)),
@@ -182,7 +208,7 @@ export async function persistWizardStreamEdits(streamId: number, state: WizardSt
 
   try {
     const routeIds = state.destinations.routeDrafts
-      .map((draft) => routeKeyToId(draft.key))
+      .map((draft) => synced.routeIdsByDraftKey[draft.key] ?? routeKeyToId(draft.key))
       .filter((id): id is number => id != null)
     const governanceResult = await persistWizardStreamGovernance(streamId, state, routeIds)
     if (!governanceResult.saved) errors.push(...governanceResult.errors)

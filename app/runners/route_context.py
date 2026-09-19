@@ -185,4 +185,7 @@ class RoutePipelineResult:
 
     stage_results: list[RouteStageResult]
     metrics: RouteProcessingMetrics
+    # Pre-protection events for checkpoint cursor fields (may retain raw values).
     checkpoint_reference_events: list[dict[str, Any]] = field(default_factory=list)
+    # Post-protection delivery payloads for dynamic routing / additive fan-out.
+    delivery_reference_events: list[dict[str, Any]] = field(default_factory=list)

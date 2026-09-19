@@ -461,7 +461,10 @@ class StreamRunner(BaseRunner):
                     summary["mapped_event_count"] = tx_stats.get("mapped_count")
                     summary["enriched_event_count"] = tx_stats.get("enriched_count")
 
-                    reference_events = route_pipeline.checkpoint_reference_events or enriched_events
+                    # Checkpoint cursor may retain pre-protection fields; dynamic
+                    # delivery must use post-protection pipeline payloads only.
+                    checkpoint_events = route_pipeline.checkpoint_reference_events or enriched_events
+                    delivery_events = route_pipeline.delivery_reference_events or enriched_events
                     route_dispositions = [
                         {
                             "route_id": r.route_id,
@@ -476,19 +479,19 @@ class StreamRunner(BaseRunner):
                     with PhaseTimer(self._run_timing, "routing"):
                         dynamic_routing = self._evaluate_dynamic_routes(
                             stream_id=stream_id,
-                            enriched_events=reference_events,
+                            enriched_events=delivery_events,
                         )
                     with PhaseTimer(self._run_timing, "destination_send"):
                         fan_out = self._fan_out(
                             runtime_stream,
-                            reference_events,
+                            delivery_events,
                             dynamic_routing=dynamic_routing,
-                            enriched_events=reference_events,
+                            enriched_events=delivery_events,
                             route_payloads=None,
                             skip_base_route_delivery=True,
                             route_delivery_outcome=self._route_delivery_fan_out_outcome(
                                 route_pipeline,
-                                reference_events,
+                                checkpoint_events,
                             ),
                         )
                     successful_events = fan_out.successful_events
@@ -543,7 +546,7 @@ class StreamRunner(BaseRunner):
                                 checkpoint_after_snapshot = self._update_checkpoint_after_success(
                                     stream_id=stream_id,
                                     checkpoint_type=checkpoint_type,
-                                    successful_events=reference_events,
+                                    successful_events=checkpoint_events,
                                     checkpoint_before=checkpoint_before_snapshot,
                                     processed_events=processed_events,
                                     delivered_events=delivered_events,

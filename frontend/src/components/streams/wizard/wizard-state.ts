@@ -611,10 +611,11 @@ export type WizardMappingRow = {
 
 import type { WizardEnrichmentRule } from './enrichment-rules-model'
 export type { WizardEnrichmentRule as WizardEnrichmentRow } from './enrichment-rules-model'
-export {
+import {
   enrichmentDictFromRules as enrichmentDictFromRows,
   normalizeWizardEnrichmentRules,
 } from './enrichment-rules-model'
+export { enrichmentDictFromRows, normalizeWizardEnrichmentRules }
 
 /** Per-concern inherit flags — default all true (Route Processing UX v2). */
 export type WizardRouteProcessingInherit = {
@@ -1707,9 +1708,10 @@ export type RouteTransformPersistPlan = {
   routeId: number
   inherit: boolean
   fieldMappings: Record<string, unknown>
+  enrichment: Record<string, unknown>
 }
 
-/** Plans for existing route-mapping API — wizard override drafts that must not stay client-only. */
+/** Plans for existing route-mapping / route-enrichment APIs — wizard override drafts that must not stay client-only. */
 export function buildRouteTransformPersistPlans(
   drafts: WizardRouteDraft[],
   routeIdsInDraftOrder: number[],
@@ -1721,8 +1723,9 @@ export function buildRouteTransformPersistPlans(
     const override = draft.overrides?.transform
     if (!override) return
     const fieldMappings = buildWizardFieldMappingsPayload(override)
-    if (Object.keys(fieldMappings).length === 0) return
-    plans.push({ routeId, inherit: false, fieldMappings })
+    const enrichment = enrichmentDictFromRows(override.enrichment)
+    if (Object.keys(fieldMappings).length === 0 && Object.keys(enrichment).length === 0) return
+    plans.push({ routeId, inherit: false, fieldMappings, enrichment })
   })
   return plans
 }
