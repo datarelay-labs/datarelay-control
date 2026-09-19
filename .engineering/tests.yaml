@@ -87,3 +87,17 @@ scenarios:
       - "Full regression runs only after cheaper blocking checks pass."
     origin: "docs/testing/cursor-development-workflow.md"
     release_gate: true
+
+  - id: DEV-VALIDATION-EPS-GUARDRAIL
+    name: Dev Validation Lab and visible E2E throughput guardrail
+    level: integration
+    domains: [runtime, e2e]
+    triggers: [affected, pr]
+    platforms: [linux]
+    command: "python3 -m pytest -q tests/test_lab_throughput_config.py tests/test_dev_validation_lab.py tests/test_visible_e2e_seed.py"
+    invariants:
+      - "DEV VALIDATION and DEV E2E streams remain present and runtime-visible."
+      - "Every configured validation/E2E stream remains within the 5-20 EPS target range."
+      - "Validation changes do not silently reduce or inflate configured throughput outside the guardrail."
+    origin: "Data Relay Control project invariant"
+    release_gate: true
