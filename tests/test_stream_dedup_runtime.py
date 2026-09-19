@@ -357,22 +357,6 @@ def test_stream_runner_applies_dedup_when_enabled(
         "app.runners.stream_runner.SourceAdapterRegistry.get",
         lambda self, _source_type: _FakeAdapter(),
     )
-    monkeypatch.setattr(
-        "app.runners.stream_runner.StreamRunner._fan_out",
-        lambda self, *args, **kwargs: type(
-            "Fan",
-            (),
-            {
-                "successful_events": args[1] if len(args) > 1 else [],
-                "log_continue_failed_route_ids": tuple(),
-            },
-        )(),
-    )
-    monkeypatch.setattr(
-        "app.runners.stream_runner.StreamRunner._prepare_delivery_events",
-        lambda self, **kwargs: (kwargs.get("enriched_events") or [], None),
-    )
-
     ctx = load_stream_context(db_session, stream_id, require_enabled_stream=False)
     ctx.dry_run = True
     summary = StreamRunner().run(ctx, db=db_session)

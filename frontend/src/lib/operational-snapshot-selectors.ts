@@ -13,7 +13,15 @@ import { isCheckpointStaleLagMessage } from './stream-console-issue-causes'
 import { formatThroughputEps } from './observability-format'
 import { formatTimestampWithResolvedTimezone } from './platform-timestamps'
 
-export type OperationalUiHealthLabel = 'Healthy' | 'Warning' | 'Error' | 'Idle' | 'Disabled' | 'Critical'
+export type OperationalUiHealthLabel =
+  | 'Healthy'
+  | 'Warning'
+  | 'Error'
+  | 'Idle'
+  | 'No Data'
+  | 'Disabled'
+  | 'Stopped'
+  | 'Critical'
 
 export type OperationalHealthPresentation = {
   raw: OperationalHealthStatus | null
@@ -142,7 +150,15 @@ export function computeSuccessRateFromEps(delivered: number, failed: number): nu
 export function formatOperationalHealth(
   status: OperationalHealthStatus | null | undefined,
   enabled = true,
+  runtimeStatus?: string | null,
 ): OperationalHealthPresentation {
+  const rt = String(runtimeStatus ?? '')
+    .trim()
+    .toUpperCase()
+  // Explicit scheduler/runtime stop takes precedence over enabled=false (Stop vs Disabled).
+  if (rt === 'STOPPED' || rt === 'PAUSED' || rt === 'STOPPING' || rt === 'STOP_FAILED') {
+    return { raw: status ?? null, label: 'Stopped', tone: 'neutral' }
+  }
   if (!enabled) {
     return { raw: status ?? null, label: 'Disabled', tone: 'neutral' }
   }
@@ -154,8 +170,9 @@ export function formatOperationalHealth(
     case 'ERROR':
       return { raw: 'ERROR', label: 'Error', tone: 'error' }
     case 'IDLE':
+      return { raw: 'IDLE', label: 'No Data', tone: 'neutral' }
     default:
-      return { raw: status ?? 'IDLE', label: 'Idle', tone: 'neutral' }
+      return { raw: status ?? 'IDLE', label: 'No Data', tone: 'neutral' }
   }
 }
 
@@ -181,7 +198,7 @@ export function operationalHealthToStreamStatus(
     case 'ERROR':
       return 'ERROR'
     case 'IDLE':
-      return 'STOPPED'
+      return 'IDLE'
     default:
       return 'UNKNOWN'
   }
@@ -193,7 +210,8 @@ function mapOperationalRuntimeStatus(raw: string | null | undefined): StreamRunt
   if (u === 'RUNNING') return 'RUNNING'
   if (u === 'ERROR') return 'ERROR'
   if (u === 'RATE_LIMITED_SOURCE' || u === 'RATE_LIMITED_DESTINATION') return 'DEGRADED'
-  if (u === 'PAUSED' || u === 'STOPPED' || u === 'IDLE') return 'STOPPED'
+  if (u === 'PAUSED' || u === 'STOPPED' || u === 'STOPPING' || u === 'STOP_FAILED') return 'STOPPED'
+  if (u === 'IDLE') return 'IDLE'
   if (u === 'UNKNOWN') return 'UNKNOWN'
   return 'UNKNOWN'
 }
@@ -335,7 +353,7 @@ export function selectStreamKpi(
       : operationalHealthToStreamStatus(stream.health_status, stream.enabled)
 
   return {
-    health: formatOperationalHealth(stream.health_status, stream.enabled),
+    health: formatOperationalHealth(stream.health_status, stream.enabled, stream.status),
     enabled: stream.enabled,
     eps1m: safeFinite(stream.eps_1m),
     eps5m: safeFinite(stream.eps_5m),

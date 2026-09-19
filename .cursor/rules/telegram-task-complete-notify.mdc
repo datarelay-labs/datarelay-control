@@ -1,0 +1,17 @@
+---
+description: HARD GATE — run notify.sh COMPLETE before finishing any task.
+alwaysApply: true
+---
+
+# Telegram COMPLETE (HARD GATE)
+
+Before the final reply ending requested work, run:
+
+```bash
+/usr/local/bin/notify.sh COMPLETE "Task: <name>
+Status: PASS|PARTIAL|BLOCKED
+Branch: $(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo n/a)
+HEAD: $(git rev-parse --short HEAD 2>/dev/null || echo n/a)"
+```
+
+No done/PASS claim until that command runs. Stop-hook is backup only.

@@ -1,3 +1,4 @@
+<!-- SUPERSEDED historical GA checklist — see source-of-truth-index.md and KNOWN-LIMITATIONS.md -->
 # OSS v1.0 GA Checklist
 
 **Release:** Data Relay OSS v1.0 GA  
@@ -82,7 +83,7 @@
 | 34 | **Multi-route delivery** | Events delivered to all enabled routes | ☐ |
 | 35 | **Checkpoint** | Advances only after successful delivery | ☐ |
 | 36 | **Delivery logs** | Structural delivery logs written | ☐ |
-| 37 | **Default runtime path** | `GDC_ROUTE_PROCESSING_ENABLED=false` verified | ☐ |
+| 37 | **Default runtime path** | HISTORICAL: was false at GA snapshot; **current** default is `true` (flag-OFF retired) | ☐ |
 
 ---
 

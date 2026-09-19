@@ -11,7 +11,7 @@ import { normalizeGdcStreamSourceType } from '../utils/sourceTypePresentation'
 import { deriveStreamIssuesFromSnapshot, operationalStreamSuccessRatePct, selectStreamKpi } from '../lib/operational-snapshot-selectors'
 
 /** Maps to Stream.status / runtime-derived operational badge. */
-export type StreamRuntimeStatus = 'RUNNING' | 'DEGRADED' | 'ERROR' | 'STOPPED' | 'UNKNOWN'
+export type StreamRuntimeStatus = 'RUNNING' | 'DEGRADED' | 'ERROR' | 'STOPPED' | 'IDLE' | 'UNKNOWN'
 
 /** Streams console table + selected panel row shape (API-backed; never demo-filled). */
 export type StreamConsoleRow = {
@@ -23,6 +23,8 @@ export type StreamConsoleRow = {
   connectorProductGroup?: string | null
   sourceTypeLabel: string
   status: StreamRuntimeStatus
+  /** Stream enabled flag from config/snapshot; false → Disabled (not Stopped/No Data). */
+  enabled?: boolean
   /** False until runtime stats/health fetch completed for this row. */
   runtimeStatsAttempted: boolean
   /** True when either stats or health API returned a body for this stream. */
@@ -90,7 +92,8 @@ export function mapBackendStreamStatus(s: string | null | undefined): StreamRunt
   if (u === 'RUNNING') return 'RUNNING'
   if (u === 'ERROR') return 'ERROR'
   if (u === 'RATE_LIMITED_SOURCE' || u === 'RATE_LIMITED_DESTINATION') return 'DEGRADED'
-  if (u === 'PAUSED' || u === 'STOPPED' || u === 'IDLE') return 'STOPPED'
+  if (u === 'PAUSED' || u === 'STOPPED' || u === 'STOPPING' || u === 'STOP_FAILED') return 'STOPPED'
+  if (u === 'IDLE') return 'IDLE'
   if (u === 'UNKNOWN') return 'UNKNOWN'
   return 'UNKNOWN'
 }
@@ -256,6 +259,7 @@ function baseRowFromStreamRead(s: StreamRead): StreamConsoleRow {
     connectorName: s.connector_id != null ? `Connector #${s.connector_id}` : '—',
     sourceTypeLabel: s.source_id != null ? `Source #${s.source_id}` : '—',
     status: mapBackendStreamStatus(s.status),
+    enabled: s.enabled == null ? undefined : Boolean(s.enabled),
     runtimeStatsAttempted: false,
     hasRuntimeApiSnapshot: false,
     events1h: 0,
@@ -346,6 +350,7 @@ export function enrichStreamRowFromOperationalSnapshot(
     ...base,
     name: (snapshot.stream_name ?? '').trim() || base.name,
     status: kpi.runtimeStatus,
+    enabled: kpi.enabled,
     runtimeStatsAttempted: true,
     hasRuntimeApiSnapshot: true,
     eps1m: eps1m > 0 ? eps1m : base.eps1m,

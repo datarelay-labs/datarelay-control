@@ -67,7 +67,9 @@
     "lab:dns:test": "python3 lab/dns/dns_failure_recovery.test.py",
     "lab:tls:test": "python3 lab/tls-negative/tls_negative_recovery.test.py",
     "lab:sftp-key:test": "python3 lab/sftp/sftp_ssh_private_key.test.py",
-    "lab:local-coverage:test": "python3 lab/business-data/business_data_generator.test.py && python3 lab/business-data/wiremock_stateful_scenarios.test.py && python3 lab/business-data/checkpoint_incremental.test.py && python3 lab/business-data/cross_source_consistency.test.py && python3 lab/sftp/sftp_ssh_private_key.test.py"
+    "lab:local-coverage:test": "python3 lab/business-data/business_data_generator.test.py && python3 lab/business-data/wiremock_stateful_scenarios.test.py && python3 lab/business-data/checkpoint_incremental.test.py && python3 lab/business-data/cross_source_consistency.test.py && python3 lab/sftp/sftp_ssh_private_key.test.py",
+    "user-lifecycle": "tsx user-lifecycle/cli/main.ts",
+    "user-lifecycle:smoke": "bash user-lifecycle/run-user-lifecycle-e2e.sh --smoke"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",

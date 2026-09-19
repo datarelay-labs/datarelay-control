@@ -217,3 +217,85 @@ def test_auth_check_endpoint_uses_stale_preserving_invalidation(
     patched = next(row for row in stale if row.id == connector_id)
     assert patched.last_auth_check_status == "success"
     clear_connectors_read_cache()
+
+
+def test_auth_check_uses_stream_endpoint_not_root_403(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CASE A: root / → 403 must not mark auth failed when stream endpoint is 200."""
+    from app.streams.models import Stream
+
+    connector_id, source_id = _seed_http_connector(db_session, name="Root Forbidden")
+    stream = Stream(
+        connector_id=connector_id,
+        source_id=source_id,
+        name="alerts",
+        stream_type="HTTP_API_POLLING",
+        config_json={"endpoint": "/api/v1/alerts", "method": "GET"},
+        enabled=True,
+        status="STOPPED",
+    )
+    db_session.add(stream)
+    db_session.commit()
+
+    seen_paths: list[str] = []
+
+    def probe(payload, _db):
+        path = str(getattr(payload, "test_path", None) or "/")
+        seen_paths.append(path)
+        if path in {"/", ""}:
+            return ConnectorAuthTestResponse(
+                ok=False,
+                auth_type="NO_AUTH",
+                message="Forbidden",
+                response_status_code=403,
+            )
+        return ConnectorAuthTestResponse(
+            ok=True,
+            auth_type="NO_AUTH",
+            message="ok",
+            response_status_code=200,
+        )
+
+    monkeypatch.setattr("app.connectors.operations_service.run_connector_auth_test", probe)
+    result = run_connector_auth_check_and_persist(connector_id)
+    assert seen_paths == ["/api/v1/alerts"]
+    assert result.success is True
+    assert result.last_auth_check_status == "success"
+
+
+def test_auth_check_fails_when_stream_endpoint_unauthorized(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CASE B: configured usable endpoint → 401/403 remains auth failure."""
+    from app.streams.models import Stream
+
+    connector_id, source_id = _seed_http_connector(db_session, name="Endpoint Unauthorized")
+    stream = Stream(
+        connector_id=connector_id,
+        source_id=source_id,
+        name="alerts",
+        stream_type="HTTP_API_POLLING",
+        config_json={"endpoint": "/api/v1/alerts", "method": "GET"},
+        enabled=True,
+        status="STOPPED",
+    )
+    db_session.add(stream)
+    db_session.commit()
+
+    def probe(payload, _db):
+        path = str(getattr(payload, "test_path", None) or "/")
+        assert path == "/api/v1/alerts"
+        return ConnectorAuthTestResponse(
+            ok=False,
+            auth_type="BEARER_TOKEN",
+            message="Unauthorized",
+            response_status_code=401,
+            error_type="http_error",
+        )
+
+    monkeypatch.setattr("app.connectors.operations_service.run_connector_auth_test", probe)
+    result = run_connector_auth_check_and_persist(connector_id)
+    assert result.success is False
+    assert result.last_auth_check_status == "failed"
+    assert result.status_code == 401

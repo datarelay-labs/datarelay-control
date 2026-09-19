@@ -9,8 +9,8 @@ from typing import Any
 from sqlalchemy import Integer, case, cast, func, select
 from sqlalchemy.orm import Session
 
-from app.ai_gateway.metrics import AI_GATEWAY_EVALUATION_COMPLETE_STAGE
-from app.ai_gateway.models import AiGatewayPolicy, AiGatewayRequest
+# AI Gateway / AI Proxy is out of Data Relay OSS product scope.
+# Governance keeps zeroed AI card fields for API shape compatibility only.
 from app.classification.metrics import (
     CLASSIFICATION_COMPLETE_STAGE,
     build_platform_classification_summary,
@@ -42,14 +42,12 @@ _TIMELINE_DELIVERY_STAGES = (
     CLASSIFICATION_COMPLETE_STAGE,
     QUARANTINE_EVENT_CREATED_STAGE,
     REPLAY_EVENT_REPLAYED_STAGE,
-    AI_GATEWAY_EVALUATION_COMPLETE_STAGE,
 )
 _CARD_LAST_ACTIVITY_STAGES = (
     CLASSIFICATION_COMPLETE_STAGE,
     PROTECTION_COMPLETE_STAGE,
     POLICY_EVALUATION_COMPLETE_STAGE,
     REPLAY_EVENT_REPLAYED_STAGE,
-    AI_GATEWAY_EVALUATION_COMPLETE_STAGE,
 )
 _TIMELINE_LIMIT = 20
 
@@ -57,9 +55,6 @@ _HEALTH_PENDING_QUARANTINE_WARNING = 5
 _HEALTH_PENDING_QUARANTINE_CRITICAL = 25
 _HEALTH_PENDING_REPLAY_WARNING = 5
 _HEALTH_PENDING_REPLAY_CRITICAL = 25
-_HEALTH_AI_BLOCKS_24H_WARNING = 10
-_HEALTH_AI_BLOCKS_24H_CRITICAL = 50
-
 
 @dataclass(frozen=True)
 class _GovernanceRuleCounts:
@@ -90,9 +85,7 @@ def _load_governance_rule_counts(db: Session) -> _GovernanceRuleCounts:
         failover_routes=int(
             db.execute(select(func.count()).select_from(StreamFailoverRoute)).scalar_one() or 0
         ),
-        ai_gateway_policies=int(
-            db.execute(select(func.count()).select_from(AiGatewayPolicy)).scalar_one() or 0
-        ),
+        ai_gateway_policies=0,  # OSS: AI Gateway out of product scope
     )
 
 
@@ -192,16 +185,10 @@ def _build_24h_delivery_log_metrics(
 
 
 def _build_24h_blocked_ai_requests(db: Session, *, since: datetime, until: datetime) -> int:
-    return int(
-        db.query(func.count(AiGatewayRequest.id))
-        .filter(
-            AiGatewayRequest.created_at >= since,
-            AiGatewayRequest.created_at < until,
-            AiGatewayRequest.decision == "block",
-        )
-        .scalar()
-        or 0
-    )
+    """OSS: AI Gateway out of product scope — always zero (schema field retained)."""
+
+    _ = (db, since, until)
+    return 0
 
 
 def _build_recent_24h(db: Session, *, since: datetime, until: datetime) -> GovernanceRecent24h:
@@ -243,8 +230,6 @@ def _timeline_label(event_type: str) -> str:
         CLASSIFICATION_COMPLETE_STAGE: "Classification complete",
         QUARANTINE_EVENT_CREATED_STAGE: "Quarantine event created",
         REPLAY_EVENT_REPLAYED_STAGE: "Replay event replayed",
-        AI_GATEWAY_EVALUATION_COMPLETE_STAGE: "AI Gateway evaluation complete",
-        "ai_gateway_block": "AI Gateway request blocked",
     }
     return labels.get(event_type, event_type.replace("_", " ").title())
 
@@ -269,18 +254,6 @@ def _build_activity_timeline(
         .limit(limit)
         .all()
     )
-    ai_rows = (
-        db.query(AiGatewayRequest)
-        .filter(
-            AiGatewayRequest.created_at >= since,
-            AiGatewayRequest.created_at < until,
-            AiGatewayRequest.decision == "block",
-        )
-        .order_by(AiGatewayRequest.created_at.desc(), AiGatewayRequest.id.desc())
-        .limit(limit)
-        .all()
-    )
-
     events: list[GovernanceTimelineEvent] = []
     for row in log_rows:
         events.append(
@@ -289,15 +262,6 @@ def _build_activity_timeline(
                 occurred_at=row.created_at,
                 stream_id=int(row.stream_id) if row.stream_id is not None else None,
                 label=_timeline_label(row.stage),
-            )
-        )
-    for row in ai_rows:
-        events.append(
-            GovernanceTimelineEvent(
-                event_type="ai_gateway_block",
-                occurred_at=row.created_at,
-                stream_id=int(row.stream_id) if row.stream_id is not None else None,
-                label=_timeline_label("ai_gateway_block"),
             )
         )
 
@@ -338,12 +302,6 @@ def _build_health(
         _raise_level(GovernanceHealthLevel.warning)
         reasons.append(f"{pending_replay_events} replay events pending")
 
-    if ai_gateway_blocks_24h >= _HEALTH_AI_BLOCKS_24H_CRITICAL:
-        _raise_level(GovernanceHealthLevel.critical)
-        reasons.append(f"{ai_gateway_blocks_24h} AI Gateway blocks in 24h (critical threshold)")
-    elif ai_gateway_blocks_24h >= _HEALTH_AI_BLOCKS_24H_WARNING:
-        _raise_level(GovernanceHealthLevel.warning)
-        reasons.append(f"{ai_gateway_blocks_24h} AI Gateway blocks in 24h")
 
     return GovernanceHealth(
         status=level,
@@ -441,8 +399,8 @@ def build_governance_summary(db: Session) -> GovernanceSummaryResponse:
         ai_gateway=GovernanceCardSummary(
             rule_count=ai_gateway_policies,
             pending_count=0,
-            recent_activity_count=recent_24h.blocked_ai_requests,
-            last_activity_at=last_activity.get(AI_GATEWAY_EVALUATION_COMPLETE_STAGE),
+            recent_activity_count=0,
+            last_activity_at=None,
         ),
     )
 

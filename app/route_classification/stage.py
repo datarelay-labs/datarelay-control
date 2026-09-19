@@ -98,6 +98,7 @@ def route_classification_stage(
                 "override_count": config.resolution.override_count,
                 "override_applied": override_applied,
                 "duration_ms": duration_ms,
+                "processing_time_ms": duration_ms,
                 "events_classified": batch_result.events_classified,
             }
         )

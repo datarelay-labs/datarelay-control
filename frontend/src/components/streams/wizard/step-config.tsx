@@ -34,6 +34,7 @@ export function StepConfig({ state, section = 'request', onChange }: StepConfigP
   const isS3 = connector.sourceType === 'S3_OBJECT_POLLING'
   const isRemote = connector.sourceType === 'REMOTE_FILE_POLLING'
   const isWebhook = connector.sourceType === 'WEBHOOK_RECEIVER'
+  const isDatabase = connector.sourceType === 'DATABASE_QUERY'
   const fullUrl = buildFullRequestUrl(connector.hostBaseUrl, c.endpoint)
   const mergedHeaders = effectiveRequestHeaders(connector, c)
   const inheritedRows = connector.commonHeaders.filter((r) => r.key.trim())
@@ -141,6 +142,38 @@ export function StepConfig({ state, section = 'request', onChange }: StepConfigP
               Push ingestion uses the connector receiver URL. Configure event extraction in the preview and mapping steps.
             </p>
           </div>
+        ) : isDatabase ? (
+          <>
+            <Field label="SQL query *">
+              <textarea
+                value={c.sqlQuery}
+                onChange={(e) => onChange({ sqlQuery: e.target.value })}
+                placeholder="SELECT id, event_id, message, email FROM source_e2e_orders"
+                rows={5}
+                className={`${inputCls} h-auto min-h-[6rem] py-2 font-mono text-[11px] md:col-span-1`}
+                data-testid="wizard-database-sql-query"
+              />
+            </Field>
+            <div className="space-y-2">
+              <Field label="Checkpoint column">
+                <input
+                  value={c.dbCheckpointColumn}
+                  onChange={(e) =>
+                    onChange({
+                      dbCheckpointColumn: e.target.value,
+                      dbCheckpointMode: e.target.value.trim() ? 'SINGLE_COLUMN' : 'NONE',
+                    })
+                  }
+                  placeholder="id (optional)"
+                  className={`${inputCls} font-mono text-[11px]`}
+                  data-testid="wizard-database-checkpoint-column"
+                />
+              </Field>
+              <p className="text-[11px] text-slate-500 dark:text-gdc-muted">
+                SELECT-only queries. Leave checkpoint empty for NONE mode, or set a monotonic column for incremental fetch.
+              </p>
+            </div>
+          </>
         ) : (
           <>
             <Field label="HTTP method">
@@ -173,7 +206,7 @@ export function StepConfig({ state, section = 'request', onChange }: StepConfigP
         )}
       </div>
 
-      {!isS3 && !isRemote && !isWebhook ? (
+      {!isS3 && !isRemote && !isWebhook && !isDatabase ? (
         <>
           <div className="mt-3 rounded-md border border-slate-200/80 bg-slate-50/70 p-2 dark:border-gdc-border dark:bg-gdc-card">
             <p className="text-[11px] font-semibold text-slate-800 dark:text-slate-200">Inherited Connector Headers</p>

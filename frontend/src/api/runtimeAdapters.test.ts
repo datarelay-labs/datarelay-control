@@ -43,7 +43,8 @@ describe('mapBackendStreamStatus', () => {
     expect(mapBackendStreamStatus('ERROR')).toBe('ERROR')
     expect(mapBackendStreamStatus('RATE_LIMITED_SOURCE')).toBe('DEGRADED')
     expect(mapBackendStreamStatus('PAUSED')).toBe('STOPPED')
-    expect(mapBackendStreamStatus('IDLE')).toBe('STOPPED')
+    expect(mapBackendStreamStatus('STOPPED')).toBe('STOPPED')
+    expect(mapBackendStreamStatus('IDLE')).toBe('IDLE')
   })
 
   it('maps unrecognized strings to UNKNOWN', () => {

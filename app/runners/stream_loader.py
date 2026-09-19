@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Session
 
 from app.ai_providers.destination_config import resolve_ai_provider_destination_config
@@ -80,6 +82,21 @@ def _extract_stream_config(stream: Any) -> dict[str, Any]:
     return stream.config_json or {}
 
 
+def _orm_rule_snapshot(row: Any) -> SimpleNamespace:
+    """Copy scalar columns while the load session is open.
+
+    Scheduler closes the load session before StreamRunner runs. Leaving ORM
+    protection/classification/policy rows attached causes DetachedInstanceError
+    at route processing (observed on StreamProtectionRule).
+    """
+
+    data: dict[str, Any] = {}
+    mapper = sa_inspect(row).mapper
+    for attr in mapper.column_attrs:
+        data[attr.key] = getattr(row, attr.key)
+    return SimpleNamespace(**data)
+
+
 def _extract_source_config(source: Any) -> dict[str, Any]:
     config = source.config_json or {}
     st = str(getattr(source, "source_type", "") or "").strip().upper()
@@ -149,39 +166,41 @@ def load_stream_context(
             .filter(RouteProtectionRule.route_id.in_(route_ids), RouteProtectionRule.enabled.is_(True))
             .all()
         ):
-            route_protection_by_route.setdefault(int(row.route_id), []).append(row)
+            route_protection_by_route.setdefault(int(row.route_id), []).append(_orm_rule_snapshot(row))
         for row in (
             db.query(RouteClassificationRule)
             .filter(RouteClassificationRule.route_id.in_(route_ids), RouteClassificationRule.enabled.is_(True))
             .all()
         ):
-            route_classification_by_route.setdefault(int(row.route_id), []).append(row)
+            route_classification_by_route.setdefault(int(row.route_id), []).append(_orm_rule_snapshot(row))
         for row in (
             db.query(RoutePolicyRule)
             .filter(RoutePolicyRule.route_id.in_(route_ids), RoutePolicyRule.enabled.is_(True))
             .all()
         ):
-            route_policy_by_route.setdefault(int(row.route_id), []).append(row)
+            route_policy_by_route.setdefault(int(row.route_id), []).append(_orm_rule_snapshot(row))
 
-    stream_protection_rules = load_enabled_rules(db, stream_id)
-    stream_classification_rules = list(
-        db.query(StreamClassificationRule)
+    stream_protection_rules = [_orm_rule_snapshot(row) for row in load_enabled_rules(db, stream_id)]
+    stream_classification_rules = [
+        _orm_rule_snapshot(row)
+        for row in db.query(StreamClassificationRule)
         .filter(
             StreamClassificationRule.stream_id == int(stream_id),
             StreamClassificationRule.enabled.is_(True),
         )
         .order_by(StreamClassificationRule.id)
         .all()
-    )
-    stream_policy_rules = list(
-        db.query(StreamPolicyRule)
+    ]
+    stream_policy_rules = [
+        _orm_rule_snapshot(row)
+        for row in db.query(StreamPolicyRule)
         .filter(
             StreamPolicyRule.stream_id == int(stream_id),
             StreamPolicyRule.enabled.is_(True),
         )
         .order_by(StreamPolicyRule.id)
         .all()
-    )
+    ]
     stream_config_raw = _extract_stream_config(stream)
     governance = stream_config_raw.get("governance") if isinstance(stream_config_raw.get("governance"), dict) else {}
     route_overrides = governance.get("route_overrides") if isinstance(governance.get("route_overrides"), list) else []

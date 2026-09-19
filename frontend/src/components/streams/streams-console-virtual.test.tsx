@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 import { StreamsConsole } from './streams-console'
@@ -17,6 +18,7 @@ vi.mock('../../api/gdcStreams', async (importOriginal) => {
         source_id: 1,
         enabled: true,
         stream_type: 'HTTP_API_POLLING',
+        status: 'IDLE',
         polling_interval: 60,
       })),
     })),
@@ -25,7 +27,7 @@ vi.mock('../../api/gdcStreams', async (importOriginal) => {
 })
 vi.mock('../../api/gdcConnectors', () => ({
   fetchConnectorsList: vi.fn(async () => [{ id: 1, name: 'Connector 1', product_group: 'Connector 1' }]),
-  fetchConnectorById: vi.fn(async () => ({ id: 1, name: 'Connector 1' })),
+  fetchConnectorById: vi.fn(async () => ({ id: 1, name: 'Connector 1', product_group: 'Connector 1' })),
 }))
 vi.mock('../../api/gdcRuntime', () => ({
   fetchRuntimeDashboardSummary: vi.fn(async () => null),
@@ -47,8 +49,36 @@ vi.mock('../../api/gdcDestinations', () => ({ fetchDestinationsList: vi.fn(async
 vi.mock('../../api/operationalSnapshot', () => ({
   clearOperationalSnapshotCache: vi.fn(),
   getOperationalSnapshot: vi.fn(async () => ({
-    global: { health_status: 'HEALTHY', total_streams: 0, running_streams: 0, total_eps_1m: 0 },
-    streams: [],
+    global: {
+      health_status: 'HEALTHY',
+      total_streams: 60,
+      enabled_streams: 60,
+      running_streams: 0,
+      error_streams: 0,
+      total_eps_1m: 0,
+    },
+    streams: Array.from({ length: 60 }, (_, i) => ({
+      stream_id: i + 1,
+      stream_name: `Stream ${i + 1}`,
+      connector_id: 1,
+      source_id: 1,
+      enabled: true,
+      status: 'IDLE',
+      health_status: 'HEALTHY',
+      eps_1m: 0,
+      eps_5m: 0,
+      success_rate_5m: null,
+      failure_rate_5m: null,
+      avg_latency_ms: null,
+      route_count: 0,
+      healthy_route_count: 0,
+      failed_route_count: 0,
+      last_success_at: null,
+      last_error_at: null,
+      last_error_message: null,
+      checkpoint_updated_at: null,
+      checkpoint_lag_seconds: null,
+    })),
     routes: [],
     destinations: [],
     problems: [],
@@ -56,18 +86,27 @@ vi.mock('../../api/operationalSnapshot', () => ({
   })),
 }))
 
-describe('StreamsConsole virtualization', () => {
+describe('StreamsConsole large grouped rendering', () => {
   it(
-    'enables virtual scroll when stream count exceeds threshold',
+    'renders large stream sets as product groups without legacy flat virtualization',
     async () => {
+      const user = userEvent.setup()
       render(
         <MemoryRouter>
           <StreamsConsole />
         </MemoryRouter>,
       )
 
-      expect(await screen.findByTestId('streams-console-virtual-scroll')).toBeInTheDocument()
-      expect(screen.getByText(/Showing 60 streams/i)).toBeInTheDocument()
+      expect(await screen.findByTestId('streams-product-groups')).toBeInTheDocument()
+      expect(screen.queryByTestId('streams-console-virtual-scroll')).not.toBeInTheDocument()
+      expect(screen.getByText(/1 Stream Group \| 60 Streams/i)).toBeInTheDocument()
+
+      const groupRow = await screen.findByTestId('stream-group-row-Connector 1')
+      await user.click(groupRow)
+
+      expect(await screen.findByTestId('stream-group-child-row-1')).toBeInTheDocument()
+      expect(screen.getByText('Stream 1')).toBeInTheDocument()
+      expect(screen.getByTestId('stream-group-child-row-60')).toBeInTheDocument()
     },
     15000,
   )

@@ -226,47 +226,6 @@ def test_fanout_uses_route_payloads(db_session: Session, monkeypatch: pytest.Mon
     assert route_event["mapped_only"] == "hello"
     assert "event_id" not in route_event
 
-
-def test_feature_flag_off_parity(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
-    db = db_session
-    fixture = _seed_stream_runtime(db)
-    stream_id = fixture["stream_id"]
-    ctx = load_stream_context(db, stream_id)
-    payload = {"items": [{"id": "e1", "message": "hello", "vendor": "acme"}]}
-
-    monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", False)
-    webhook_off = _FakeWebhookSender()
-    runner_off = _build_runner(poller=_FakePoller(response=payload), webhook_sender=webhook_off)
-    runner_off.run(ctx, db=db)
-
-    monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", True)
-    webhook_on = _FakeWebhookSender()
-    runner_on = _build_runner(poller=_FakePoller(response=payload), webhook_sender=webhook_on)
-    runner_on.run(ctx, db=db)
-
-    off_event = webhook_off.calls[0]["events"][0]
-    on_event = webhook_on.calls[0]["events"][0]
-    for key in ("event_id", "message", "vendor", "product"):
-        assert off_event.get(key) == on_event.get(key)
-
-
-def test_flag_on_skips_stream_protection(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", True)
-    db = db_session
-    fixture = _seed_stream_runtime(db)
-    ctx = load_stream_context(db, fixture["stream_id"])
-    runner = _build_runner(
-        poller=_FakePoller(response={"items": [{"id": "e1", "message": "hello", "vendor": "acme"}]}),
-        webhook_sender=_FakeWebhookSender(),
-    )
-
-    with patch.object(runner, "_prepare_delivery_events", wraps=runner._prepare_delivery_events) as protection_mock:
-        with patch.object(runner, "_evaluate_policies", wraps=runner._evaluate_policies) as policy_mock:
-            runner.run(ctx, db=db)
-            protection_mock.assert_not_called()
-            policy_mock.assert_not_called()
-
-
 def test_route_transform_metrics_emitted(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", True)
     db = db_session

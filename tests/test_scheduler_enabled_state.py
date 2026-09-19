@@ -59,6 +59,7 @@ def test_standalone_uses_shared_enabled_stream_loader() -> None:
     assert "from app.scheduler.enabled_streams import load_enabled_stream_contexts" in standalone_src
     assert "from app.scheduler.enabled_streams import load_enabled_stream_contexts" in main_src
     assert "from app.main import" not in standalone_src
+    assert "from app.connectors.models import Connector" in standalone_src
     assert "load_enabled_stream_contexts" in standalone_src
     assert callable(load_enabled_stream_contexts)
 

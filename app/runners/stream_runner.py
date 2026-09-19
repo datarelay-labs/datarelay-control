@@ -425,7 +425,7 @@ class StreamRunner(BaseRunner):
                         })
                     )
                     should_commit = True
-                elif self._route_processing_enabled():
+                else:
                     route_pipeline = self._execute_route_pipeline(
                         stream_id=stream_id,
                         runtime_stream=runtime_stream,
@@ -461,7 +461,10 @@ class StreamRunner(BaseRunner):
                     summary["mapped_event_count"] = tx_stats.get("mapped_count")
                     summary["enriched_event_count"] = tx_stats.get("enriched_count")
 
-                    reference_events = route_pipeline.checkpoint_reference_events or enriched_events
+                    # Checkpoint cursor may retain pre-protection fields; dynamic
+                    # delivery must use post-protection pipeline payloads only.
+                    checkpoint_events = route_pipeline.checkpoint_reference_events or enriched_events
+                    delivery_events = route_pipeline.delivery_reference_events or enriched_events
                     route_dispositions = [
                         {
                             "route_id": r.route_id,
@@ -476,19 +479,19 @@ class StreamRunner(BaseRunner):
                     with PhaseTimer(self._run_timing, "routing"):
                         dynamic_routing = self._evaluate_dynamic_routes(
                             stream_id=stream_id,
-                            enriched_events=reference_events,
+                            enriched_events=delivery_events,
                         )
                     with PhaseTimer(self._run_timing, "destination_send"):
                         fan_out = self._fan_out(
                             runtime_stream,
-                            reference_events,
+                            delivery_events,
                             dynamic_routing=dynamic_routing,
-                            enriched_events=reference_events,
+                            enriched_events=delivery_events,
                             route_payloads=None,
                             skip_base_route_delivery=True,
                             route_delivery_outcome=self._route_delivery_fan_out_outcome(
                                 route_pipeline,
-                                reference_events,
+                                checkpoint_events,
                             ),
                         )
                     successful_events = fan_out.successful_events
@@ -543,7 +546,7 @@ class StreamRunner(BaseRunner):
                                 checkpoint_after_snapshot = self._update_checkpoint_after_success(
                                     stream_id=stream_id,
                                     checkpoint_type=checkpoint_type,
-                                    successful_events=reference_events,
+                                    successful_events=checkpoint_events,
                                     checkpoint_before=checkpoint_before_snapshot,
                                     processed_events=processed_events,
                                     delivered_events=delivered_events,
@@ -602,211 +605,6 @@ class StreamRunner(BaseRunner):
                         })
                     )
                     should_commit = True
-                else:
-                    with PhaseTimer(self._run_timing, "protection"):
-                        delivery_events, protection_result = self._prepare_delivery_events(
-                            stream_id=stream_id,
-                            enriched_events=enriched_events,
-                        )
-                    with PhaseTimer(self._run_timing, "policy"):
-                        policy_result = self._evaluate_policies(
-                            stream_id=stream_id,
-                            enriched_events=enriched_events,
-                        )
-                        policy_result = self._merge_schema_drift_policy_quarantine(policy_result)
-                    quarantined = self._try_policy_quarantine(
-                        stream_id=stream_id,
-                        delivery_events=delivery_events,
-                        policy_result=policy_result,
-                    )
-                    if quarantined:
-                        processed_events = len(events)
-                        self._log(
-                            self._with_run_timing(
-                            {
-                                "stage": "run_complete",
-                                "stream_id": stream_id,
-                                "input_events": len(events),
-                                "mapped_events": tx_stats.get("mapped_count"),
-                                "success_events": 0,
-                                "extracted_event_count": tx_stats.get("extracted_count"),
-                                "mapped_event_count": tx_stats.get("mapped_count"),
-                                "delivered_event_count": 0,
-                                "checkpoint_before": checkpoint_before_snapshot,
-                                "checkpoint_after": None,
-                                "checkpoint_type": checkpoint_type,
-                                "checkpoint_updated": False,
-                                "processed_events": processed_events,
-                                "delivered_events": 0,
-                                "failed_events": 0,
-                                "partial_success": False,
-                                "update_reason": "policy_quarantine",
-                                "retry_pending": False,
-                            })
-                        )
-                        summary["delivered_batch_event_count"] = 0
-                        summary["quarantined"] = True
-                        should_commit = True
-                    else:
-                        with PhaseTimer(self._run_timing, "routing"):
-                            dynamic_routing = self._evaluate_dynamic_routes(
-                                stream_id=stream_id,
-                                enriched_events=enriched_events,
-                            )
-                        with PhaseTimer(self._run_timing, "destination_send"):
-                            from app.route_classification.legacy_payloads import (
-                                build_legacy_route_classification_payloads,
-                                has_active_classification_route_overrides,
-                            )
-                            from app.route_policy.legacy_gates import (
-                                apply_legacy_delivery_behavior_gates,
-                                has_active_delivery_behavior_sources,
-                            )
-                            from app.route_protection.legacy_payloads import (
-                                build_legacy_route_protection_payloads,
-                                has_active_protection_route_overrides,
-                            )
-
-                            route_overrides = list(_get(runtime_stream, "route_overrides", []) or [])
-                            governance_rules = list(_get(runtime_stream, "governance_rules", []) or [])
-                            route_payloads = None
-                            if has_active_protection_route_overrides(route_overrides):
-                                route_payloads = build_legacy_route_protection_payloads(
-                                    runtime_stream=runtime_stream,
-                                    enriched_events=enriched_events,
-                                    db=self._flush_db,
-                                    log_fn=self._log,
-                                    schema_drift_policy_result=self._schema_drift_policy_result,
-                                    sensitive_detection_result=self._sensitive_detection_context,
-                                    batch_id=self._run_id or "",
-                                )
-                            if has_active_classification_route_overrides(route_overrides):
-                                route_payloads = build_legacy_route_classification_payloads(
-                                    runtime_stream=runtime_stream,
-                                    base_events=delivery_events,
-                                    existing_route_payloads=route_payloads,
-                                )
-                            if has_active_delivery_behavior_sources(
-                                route_overrides=route_overrides,
-                                governance_rules=governance_rules,
-                            ):
-                                route_payloads = apply_legacy_delivery_behavior_gates(
-                                    runtime_stream=runtime_stream,
-                                    existing_route_payloads=route_payloads,
-                                    schema_drift_policy_result=self._schema_drift_policy_result,
-                                )
-                            fan_out = self._fan_out(
-                                runtime_stream,
-                                delivery_events,
-                                dynamic_routing=dynamic_routing,
-                                enriched_events=enriched_events,
-                                route_payloads=route_payloads,
-                            )
-                        successful_events = fan_out.successful_events
-                        summary["delivered_batch_event_count"] = len(successful_events) if successful_events else 0
-                        if fan_out.log_continue_failed_route_ids and not successful_events:
-                            summary["message"] = (
-                                f"Destination delivery failed "
-                                f"({len(fan_out.log_continue_failed_route_ids)} route failure(s)); "
-                                "no events delivered"
-                            )
-                        elif fan_out.log_continue_failed_route_ids:
-                            summary["message"] = (
-                                f"Partial destination delivery failure "
-                                f"({len(fan_out.log_continue_failed_route_ids)} route failure(s))"
-                            )
-                        elif not successful_events and events:
-                            summary["message"] = (
-                                "Destination delivery failed; no events delivered"
-                            )
-                        processed_events = len(events)
-                        delivered_events = len(successful_events)
-                        failed_events = max(0, processed_events - delivered_events)
-                        partial_success = bool(successful_events) and (
-                            len(fan_out.log_continue_failed_route_ids) > 0 or delivered_events < processed_events
-                        )
-
-                        checkpoint_after_snapshot = None
-                        if successful_events:
-                            cand = successful_events[-1]
-                            cand_preview = list(cand.keys())[:40] if isinstance(cand, dict) else None
-                            self._emit_obs(
-                                {
-                                    "stage": "checkpoint_candidate",
-                                    "stream_id": stream_id,
-                                    "checkpoint_type": checkpoint_type,
-                                    "last_event_keys_preview": cand_preview,
-                                }
-                            )
-                            if run_opts.persist_checkpoint:
-                                with PhaseTimer(self._run_timing, "checkpoint"):
-                                    update_reason = (
-                                        "partial_delivery_success"
-                                        if fan_out.log_continue_failed_route_ids
-                                        else "full_delivery_success"
-                                    )
-                                    checkpoint_after_snapshot = self._update_checkpoint_after_success(
-                                        stream_id=stream_id,
-                                        checkpoint_type=checkpoint_type,
-                                        successful_events=enriched_events,
-                                        checkpoint_before=checkpoint_before_snapshot,
-                                        processed_events=processed_events,
-                                        delivered_events=delivered_events,
-                                        failed_events=failed_events,
-                                        partial_success=partial_success,
-                                        update_reason=update_reason,
-                                        log_continue_failed_route_ids=fan_out.log_continue_failed_route_ids,
-                                    )
-                                self._emit_obs(
-                                    {
-                                        "stage": "checkpoint_update_staged",
-                                        "stream_id": stream_id,
-                                        "checkpoint_type": checkpoint_type,
-                                    }
-                                )
-                                summary["checkpoint_updated"] = True
-
-                        complete_reason = (
-                            "skipped_due_to_failure"
-                            if not successful_events
-                            else ("partial_delivery_success" if partial_success else "full_delivery_success")
-                        )
-                        retry_pending = processed_events > 0 and delivered_events == 0 and not successful_events
-
-                        self._dedup_summary = finalize_dedup_registry_summary(
-                            stream_id=stream_id,
-                            successful_events=successful_events,
-                            summary=self._dedup_summary,
-                            dry_run=False,
-                            log_fn=self._log,
-                        )
-                        if self._dedup_summary is not None:
-                            summary["dedup_summary"] = self._dedup_summary.to_dict()
-
-                        self._log(
-                            self._with_run_timing(
-                            {
-                                "stage": "run_complete",
-                                "stream_id": stream_id,
-                                "input_events": len(events),
-                                "mapped_events": tx_stats.get("mapped_count"),
-                                "success_events": len(successful_events),
-                                "extracted_event_count": tx_stats.get("extracted_count"),
-                                "mapped_event_count": tx_stats.get("mapped_count"),
-                                "delivered_event_count": len(successful_events),
-                                "checkpoint_before": checkpoint_before_snapshot,
-                                "checkpoint_after": checkpoint_after_snapshot,
-                                "checkpoint_type": checkpoint_type,
-                                "checkpoint_updated": bool(successful_events and run_opts.persist_checkpoint),
-                                "processed_events": processed_events,
-                                "delivered_events": delivered_events,
-                                "failed_events": failed_events,
-                                "partial_success": partial_success if successful_events else False,
-                                "update_reason": complete_reason,
-                                "retry_pending": retry_pending,
-                            })
-                        )
-                        should_commit = True
         except Exception as exc:
             # Drop uncommitted work from the failed run transaction, but preserve
             # already-committed run_started and write run_failed out-of-band.
@@ -862,9 +660,6 @@ class StreamRunner(BaseRunner):
 
         return summary
 
-    @staticmethod
-    def _route_processing_enabled() -> bool:
-        return bool(settings.GDC_ROUTE_PROCESSING_ENABLED)
 
     def _execute_route_pipeline(
         self,
@@ -886,10 +681,17 @@ class StreamRunner(BaseRunner):
 
         if self._run_timing is not None:
             self._run_timing.start_phase("schema_drift")
+        # Project extracted events through stream mapping/enrichment for shared-phase
+        # path resolution (schema drift auto-protect / drop_field). Per-route transform
+        # still owns the delivery event shape; this avoids resurrecting stream-global send.
+        drift_events = self._project_stream_transform_for_shared_phase(
+            runtime_stream=runtime_stream,
+            extracted_events=extracted_events,
+        )
         self._schema_drift_policy_result = self._apply_schema_drift_policy(
             stream_id=stream_id,
             runtime_stream=runtime_stream,
-            enriched_events=extracted_events,
+            enriched_events=drift_events,
         )
         if self._run_timing is not None:
             self._run_timing.end_phase("schema_drift")
@@ -917,7 +719,7 @@ class StreamRunner(BaseRunner):
             route_contexts,
             shared_batch,
             log_fn=self._log,
-            db=None,
+            db=self._flush_db,
             base_metrics=build_metrics,
             send_fn=self._make_route_delivery_send_fn(runtime_stream),
             run_id=self._run_id,
@@ -987,16 +789,27 @@ class StreamRunner(BaseRunner):
 
         Delivery success and failure absorption are distinct:
         - delivery_success=False means the destination send failed (never disguised as success).
-        - failure_absorbed=True (LOG_AND_CONTINUE) keeps checkpoint eligibility, matching OFF _fan_out.
+        - failure_absorbed=True (LOG_AND_CONTINUE) avoids blocking sibling routes; checkpoint
+          advances only when at least one route actually delivered.
         """
 
         log_continue_failed: list[int] = []
         all_required_routes_succeeded = True
+        any_delivery_success = False
         saw_send_route = False
+        failover_attempt_count = 0
+        failover_success_count = 0
+        failover_failure_count = 0
         for result in pipeline.stage_results:
             delivery = result.delivery_result
             if delivery is None:
                 continue
+            if bool(getattr(delivery, "failover_attempted", False)):
+                failover_attempt_count += 1
+                if bool(getattr(delivery, "failover_succeeded", False)):
+                    failover_success_count += 1
+                else:
+                    failover_failure_count += 1
             if not delivery.delivery_allowed:
                 continue
             if delivery.skip_reason in ("no_events", "rate_limited", "destination_disabled"):
@@ -1005,27 +818,43 @@ class StreamRunner(BaseRunner):
                 continue
             saw_send_route = True
             if delivery.delivery_success is True:
+                any_delivery_success = True
                 continue
             if delivery.delivery_success is False:
                 if bool(getattr(delivery, "failure_absorbed", False)):
                     log_continue_failed.append(result.route_id)
-                    # Absorbed: do not block checkpoint (parity with OFF LOG_AND_CONTINUE).
+                    # Absorbed: do not block other routes, but checkpoint needs a real delivery.
                     continue
                 all_required_routes_succeeded = False
                 continue
             all_required_routes_succeeded = False
 
+        failover_processing_time_ms = int(getattr(pipeline.metrics, "route_delivery_duration_ms", 0) or 0)
         if not saw_send_route:
-            return FanOutOutcome(successful_events=[])
+            return FanOutOutcome(
+                successful_events=[],
+                failover_attempt_count=failover_attempt_count,
+                failover_success_count=failover_success_count,
+                failover_failure_count=failover_failure_count,
+                failover_processing_time_ms=failover_processing_time_ms,
+            )
 
-        if all_required_routes_succeeded:
+        if all_required_routes_succeeded and any_delivery_success:
             return FanOutOutcome(
                 successful_events=copy_events(reference_events),
                 log_continue_failed_route_ids=tuple(log_continue_failed),
+                failover_attempt_count=failover_attempt_count,
+                failover_success_count=failover_success_count,
+                failover_failure_count=failover_failure_count,
+                failover_processing_time_ms=failover_processing_time_ms,
             )
         return FanOutOutcome(
             successful_events=[],
             log_continue_failed_route_ids=tuple(log_continue_failed),
+            failover_attempt_count=failover_attempt_count,
+            failover_success_count=failover_success_count,
+            failover_failure_count=failover_failure_count,
+            failover_processing_time_ms=failover_processing_time_ms,
         )
 
     def _make_route_delivery_send_fn(self, runtime_stream: Any):
@@ -1049,7 +878,12 @@ class StreamRunner(BaseRunner):
         route = next((r for r in routes if int(_get(r, "id", 0)) == route_id), None)
         if route is None:
             return RouteSendOutcome(success=False, latency_ms=0, error="route not found", adapter_stage="route_send_failed")
-        return self._send_route_events(stream, route, route_events)
+        return self._send_route_events(
+            stream,
+            route,
+            route_events,
+            record_replay_on_failure=True,
+        )
 
     def _send_route_events(
         self,
@@ -1334,6 +1168,16 @@ class StreamRunner(BaseRunner):
                 if dest_id is not None:
                     base_destination_ids.add(int(dest_id))
 
+            failover_bindings: dict[int, Any] = {}
+            try:
+                from app.failover_routing.failover_engine import load_failover_bindings_by_primary
+
+                failover_bindings = self._db_read(lambda db: load_failover_bindings_by_primary(db, stream_id))
+            except Exception:
+                logger.exception("failover_bindings_load_failed stream_id=%s", stream_id)
+            for binding in failover_bindings.values():
+                base_destination_ids.add(int(binding.secondary_destination_id))
+
             dynamic_deliveries_sent = 0
             if dynamic_routing is not None:
                 dynamic_deliveries_sent = self._deliver_dynamic_routes(
@@ -1342,7 +1186,39 @@ class StreamRunner(BaseRunner):
                     dynamic_routing=dynamic_routing,
                     skip_destination_ids=base_destination_ids,
                 )
+                try:
+                    from app.dynamic_routing.dynamic_routing_service import log_dynamic_routing_complete
+
+                    self._db_write(
+                        lambda db: log_dynamic_routing_complete(
+                            db,
+                            stream_id=stream_id,
+                            result=dynamic_routing,
+                            dynamic_deliveries_this_run=dynamic_deliveries_sent,
+                            log_fn=self._log,
+                        )
+                    )
+                except Exception:
+                    logger.exception("dynamic_routing_complete_log_failed stream_id=%s", stream_id)
             outcome = route_delivery_outcome
+            if failover_bindings:
+                try:
+                    from app.failover_routing.failover_metrics import log_failover_routing_complete
+
+                    self._db_write(
+                        lambda db: log_failover_routing_complete(
+                            db,
+                            stream_id=stream_id,
+                            failover_route_count=len(failover_bindings),
+                            attempt_count=outcome.failover_attempt_count,
+                            success_count=outcome.failover_success_count,
+                            failure_count=outcome.failover_failure_count,
+                            processing_time_ms=outcome.failover_processing_time_ms,
+                            log_fn=self._log,
+                        )
+                    )
+                except Exception:
+                    logger.exception("failover_routing_complete_log_failed stream_id=%s", stream_id)
             return FanOutOutcome(
                 successful_events=outcome.successful_events,
                 log_continue_failed_route_ids=outcome.log_continue_failed_route_ids,
@@ -2035,6 +1911,49 @@ class StreamRunner(BaseRunner):
         except Exception:
             logger.exception("classification_failed stream_id=%s", stream_id)
 
+    def _project_stream_transform_for_shared_phase(
+        self,
+        *,
+        runtime_stream: Any,
+        extracted_events: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Map+enrich extracted events with stream transform for shared-phase path resolution.
+
+        Route Processing owns delivery transform per route; this projection only aligns
+        schema-drift / auto-protect field paths with the post-mapping event shape.
+        """
+
+        if not extracted_events:
+            return []
+        field_mappings = dict(_get(runtime_stream, "field_mappings", {}) or {})
+        enrichment = dict(_get(runtime_stream, "enrichment", {}) or {})
+        override_policy = str(_get(runtime_stream, "override_policy") or "KEEP_EXISTING")
+        if not field_mappings and not enrichment:
+            return list(extracted_events)
+        try:
+            from app.enrichers.enrichment_engine import apply_enrichments_batch
+            from app.mappers.mapper import apply_mappings_with_results
+
+            mapping_results = apply_mappings_with_results(extracted_events, field_mappings)
+            mapped_events = [
+                dict(result.mapped_event) if isinstance(result.mapped_event, dict) else {}
+                for result in mapping_results
+            ]
+            if not enrichment:
+                return mapped_events
+            batch_result = apply_enrichments_batch(
+                mapped_events,
+                enrichment,
+                override_policy=override_policy,
+            )
+            return list(batch_result.events)
+        except Exception:
+            logger.exception(
+                "stream_transform_projection_failed stream_id=%s",
+                _get(runtime_stream, "id"),
+            )
+            return list(extracted_events)
+
     def _apply_schema_drift_policy(
         self,
         *,
@@ -2472,150 +2391,6 @@ class StreamRunner(BaseRunner):
             self._run_timing.end_phase("schema_drift")
         return events
 
-    def _apply_stream_global_transform(
-        self,
-        *,
-        runtime_stream: Any,
-        events: list[dict[str, Any]],
-        stream_id: int,
-    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, int]]:
-        """Route Processing OFF: stream-scoped mapping/enrichment/classify/drift.
-
-        Does not fetch source, does not deliver, and does not write checkpoint.
-        """
-
-        field_mappings = _get(runtime_stream, "field_mappings", {}) or {}
-        t_mapping = time.monotonic()
-        mapping_results = apply_mappings_with_results(events, field_mappings)
-        if self._run_timing is not None:
-            self._run_timing.add_ms("mapping", max(0, int((time.monotonic() - t_mapping) * 1000)))
-        mapped_events: list[dict[str, Any]] = []
-        for mapping_result in mapping_results:
-            if mapping_result.event_error is not None:
-                err = mapping_result.event_error
-                self._log(
-                    {
-                        "stage": "mapping",
-                        "stream_id": stream_id,
-                        "message": err.error_message,
-                        "error_code": err.error_code,
-                        **err.to_delivery_log_fields(),
-                    }
-                )
-                raise MappingError(err.error_message)
-            mapped_events.append(mapping_result.mapped_event)
-            for field_err in mapping_result.field_errors:
-                self._log(
-                    {
-                        "stage": "mapping",
-                        "stream_id": stream_id,
-                        "message": field_err.error_message,
-                        "status": "FIELD_TRANSFORM_WARNING",
-                        **field_err.to_delivery_log_fields(),
-                    }
-                )
-        self._emit_obs(
-            {
-                "stage": "mapping",
-                "stream_id": stream_id,
-                "message": "mapping applied",
-                "mapped_event_count": len(mapped_events),
-            }
-        )
-        enrichment_cfg = _get(runtime_stream, "enrichment", {}) or {}
-        t_enrichment = time.monotonic()
-        batch_result = apply_enrichments_batch(
-            mapped_events,
-            enrichment_cfg,
-            override_policy=str(_get(runtime_stream, "override_policy", "KEEP_EXISTING")),
-        )
-        if self._run_timing is not None:
-            self._run_timing.add_ms(
-                "enrichment",
-                max(0, int(batch_result.duration_ms or max(0, int((time.monotonic() - t_enrichment) * 1000)))),
-            )
-        enriched_events = batch_result.events
-        if len(events) == len(enriched_events):
-            s3_meta_keys = ("s3_bucket", "s3_key", "s3_last_modified", "s3_etag", "s3_size")
-            db_meta_keys = ("gdc_db_watermark", "gdc_db_order_value")
-            remote_meta_keys = (
-                "remote_path",
-                "remote_mtime",
-                "remote_size",
-                "gdc_remote_path",
-                "gdc_remote_mtime",
-                "gdc_remote_size",
-                "gdc_remote_offset",
-                "gdc_remote_hash",
-                "gdc_remote_protocol",
-                "gdc_remote_host",
-            )
-            for idx, enriched in enumerate(enriched_events):
-                raw_ev = events[idx]
-                if not isinstance(raw_ev, dict) or not isinstance(enriched, dict):
-                    continue
-                for mk in s3_meta_keys:
-                    if mk in raw_ev and mk not in enriched:
-                        enriched[mk] = raw_ev[mk]
-                for mk in db_meta_keys:
-                    if mk in raw_ev and mk not in enriched:
-                        enriched[mk] = raw_ev[mk]
-                for mk in remote_meta_keys:
-                    if mk in raw_ev and mk not in enriched:
-                        enriched[mk] = raw_ev[mk]
-                propagate_dedup_metadata(raw_ev, enriched)
-        for field_err in batch_result.field_errors:
-            self._log(
-                {
-                    "stage": "enrichment",
-                    "stream_id": stream_id,
-                    "message": field_err.error_message,
-                    "status": "FIELD_TRANSFORM_WARNING",
-                    **field_err.to_delivery_log_fields(),
-                }
-            )
-        self._emit_obs(
-            {
-                "stage": "enrichment",
-                "stream_id": stream_id,
-                "message": "enrichment applied",
-                "enriched_event_count": len(enriched_events),
-                "duration_ms": batch_result.duration_ms,
-                "warning_count": batch_result.warning_count,
-            }
-        )
-        if self._run_timing is not None:
-            self._run_timing.start_phase("sensitive_detection")
-        self._detect_sensitive_fields(stream_id=stream_id, events=enriched_events)
-        if self._run_timing is not None:
-            self._run_timing.end_phase("sensitive_detection")
-
-        if self._run_timing is not None:
-            self._run_timing.start_phase("classification")
-        self._classify_events(stream_id=stream_id, events=enriched_events)
-        if self._run_timing is not None:
-            self._run_timing.end_phase("classification")
-        self._schema_drift_policy_result = self._apply_schema_drift_policy(
-            stream_id=stream_id,
-            runtime_stream=runtime_stream,
-            enriched_events=enriched_events,
-        )
-        stats = {
-            "extracted_count": len(events),
-            "mapped_count": len(mapped_events),
-            "enriched_count": len(enriched_events),
-        }
-        self._emit_obs(
-            {
-                "stage": "pipeline_transform",
-                "stream_id": stream_id,
-                "extracted_event_count": stats["extracted_count"],
-                "mapped_event_count": stats["mapped_count"],
-                "enriched_event_count": stats["enriched_count"],
-            }
-        )
-        return events, enriched_events, stats
-
     def _collect_and_transform_events(
         self,
         *,
@@ -2624,10 +2399,10 @@ class StreamRunner(BaseRunner):
         stream_id: int,
         run_opts: StreamRunOptions,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, int]]:
-        """Orchestrate Stream-owned source collect then OFF-only stream/global transform.
+        """Orchestrate Stream-owned source collect for canonical Route Processing.
 
-        Route Processing ON skips stream transform here and hands the shared extracted
-        batch to the existing per-route pipeline. Checkpoint and delivery remain outside.
+        Skips stream/global transform here and hands the shared extracted batch to the
+        per-route pipeline. Checkpoint and delivery remain outside.
         """
 
         events = self._collect_source_events(
@@ -2639,32 +2414,25 @@ class StreamRunner(BaseRunner):
         if not events:
             return [], [], {"extracted_count": 0, "mapped_count": 0, "enriched_count": 0}
 
-        if self._route_processing_enabled():
-            if self._run_timing is not None:
-                self._run_timing.start_phase("sensitive_detection")
-            self._detect_sensitive_fields(stream_id=stream_id, events=events)
-            if self._run_timing is not None:
-                self._run_timing.end_phase("sensitive_detection")
-            stats = {
-                "extracted_count": len(events),
-                "mapped_count": 0,
-                "enriched_count": 0,
+        if self._run_timing is not None:
+            self._run_timing.start_phase("sensitive_detection")
+        self._detect_sensitive_fields(stream_id=stream_id, events=events)
+        if self._run_timing is not None:
+            self._run_timing.end_phase("sensitive_detection")
+        stats = {
+            "extracted_count": len(events),
+            "mapped_count": 0,
+            "enriched_count": 0,
+        }
+        self._emit_obs(
+            {
+                "stage": "pipeline_shared_phase",
+                "stream_id": stream_id,
+                "extracted_event_count": stats["extracted_count"],
+                "route_processing": True,
             }
-            self._emit_obs(
-                {
-                    "stage": "pipeline_shared_phase",
-                    "stream_id": stream_id,
-                    "extracted_event_count": stats["extracted_count"],
-                    "route_processing": True,
-                }
-            )
-            return events, list(events), stats
-
-        return self._apply_stream_global_transform(
-            runtime_stream=runtime_stream,
-            events=events,
-            stream_id=stream_id,
         )
+        return events, list(events), stats
 
     def _update_checkpoint_after_success(
         self,

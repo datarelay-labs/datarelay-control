@@ -13,7 +13,6 @@ from app.protection.ephemeral import EphemeralProtectionRule
 from app.protection.models import PROTECTION_MODE_FULL_MASK, PROTECTION_MODE_PARTIAL_MASK, PROTECTION_MODE_TOKENIZATION, StreamProtectionRule
 from app.mappings.models import Mapping
 from app.checkpoints.models import Checkpoint
-from app.route_protection.legacy_payloads import has_active_protection_route_overrides
 from app.route_protection.config import RouteProtectionConfig
 from app.route_protection.models import RouteProtectionRule
 from app.route_protection.resolver import merge_ephemeral_for_route, resolve_route_protection_config
@@ -254,41 +253,6 @@ def test_fanout_protected_payload_per_route(db_session: Session, monkeypatch: py
     assert captured[route_a][0]["message"] != "hello@example.com"
     assert captured[route_b][0]["message"] == "hello@example.com"
 
-
-def test_feature_flag_off_parity_with_protection_rules(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "GDC_PROTECTION_ENABLED", True)
-    db = db_session
-    fixture = _seed_stream_runtime(db)
-    stream_id = fixture["stream_id"]
-    db.add(
-        StreamProtectionRule(
-            stream_id=stream_id,
-            field_path="$.message",
-            sensitivity_class=SENSITIVITY_CLASS_PII,
-            protection_mode=PROTECTION_MODE_FULL_MASK,
-            enabled=True,
-            created_by="test",
-        )
-    )
-    db.commit()
-    ctx = load_stream_context(db, stream_id)
-    payload = {"items": [{"id": "e1", "message": "secret", "vendor": "acme"}]}
-
-    monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", False)
-    webhook_off = _FakeWebhookSender()
-    _build_runner(poller=_FakePoller(response=payload), webhook_sender=webhook_off).run(ctx, db=db)
-
-    monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", True)
-    webhook_on = _FakeWebhookSender()
-    _build_runner(poller=_FakePoller(response=payload), webhook_sender=webhook_on).run(ctx, db=db)
-
-    # Legacy OFF-path must apply stream protection via SessionLocal/run_with_db the
-    # same way the route ON-path does — not silently passthrough plaintext.
-    assert webhook_off.calls[0]["events"][0]["message"] == "********"
-    assert webhook_on.calls[0]["events"][0]["message"] == "********"
-    assert webhook_off.calls[0]["events"][0]["message"] == webhook_on.calls[0]["events"][0]["message"]
-
-
 def test_feature_flag_on_protection_active(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", True)
     monkeypatch.setattr(settings, "GDC_PROTECTION_ENABLED", True)
@@ -415,169 +379,93 @@ def _add_email_mapping(db: Session, stream_id: int) -> None:
     db.commit()
 
 
-def test_has_active_protection_route_overrides() -> None:
-    assert has_active_protection_route_overrides([]) is False
-    assert has_active_protection_route_overrides(
-        [{"route_id": 1, "field_path": "$.email", "protection_action": "tokenize", "enabled": True}]
-    ) is True
-    assert has_active_protection_route_overrides(
-        [{"route_id": 1, "field_path": "$.email", "protection_action": "tokenize", "enabled": False}]
-    ) is False
-    assert has_active_protection_route_overrides(
-        [{"route_id": 1, "field_path": "$.email", "enabled": True}]
-    ) is False
-
-
-def test_legacy_fanout_protection_route_overrides_tokenize_and_full_mask(
-    db_session: Session,
+def test_checkpoint_vs_delivery_reference_separated_under_protection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", False)
+    """Checkpoint may retain pre-protection fields; delivery reference must be protected."""
+    monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", True)
     monkeypatch.setattr(settings, "GDC_PROTECTION_ENABLED", True)
-    db = db_session
-    fixture = _seed_stream_runtime(db, failure_policies=["LOG_AND_CONTINUE", "LOG_AND_CONTINUE"])
-    stream_id = fixture["stream_id"]
-    route_a, route_b = fixture["route_ids"]
-    _add_email_mapping(db, stream_id)
 
-    db.add(
-        StreamProtectionRule(
-            stream_id=stream_id,
-            field_path="$.email",
-            sensitivity_class=SENSITIVITY_CLASS_PII,
-            protection_mode=PROTECTION_MODE_PARTIAL_MASK,
-            enabled=True,
-            created_by="test",
-        )
+    from types import SimpleNamespace
+
+    from app.route_delivery.config import RouteSendOutcome
+    from app.runners.route_context import RouteEffectiveConfig, RouteRuntimeContext, RouteTransformConfig
+    from app.sensitive_detection.models import SENSITIVITY_CLASS_PII
+
+    raw_email = "sensitive@example.invalid"
+    stream_rule = SimpleNamespace(
+        id=1,
+        stream_id=10,
+        field_path="$.email",
+        sensitivity_class=SENSITIVITY_CLASS_PII,
+        protection_mode=PROTECTION_MODE_FULL_MASK,
+        enabled=True,
+        source_finding_id=None,
     )
-    stream = db.query(Stream).filter_by(id=stream_id).one()
-    config = dict(stream.config_json or {})
-    config["governance"] = {
-        "route_overrides": [
-            {
-                "route_id": route_a,
-                "field_path": "$.email",
-                "protection_action": "tokenize",
-                "enabled": True,
-            },
-            {
-                "route_id": route_b,
-                "field_path": "$.email",
-                "protection_action": "mask_full",
-                "enabled": True,
-            },
-        ]
-    }
-    stream.config_json = config
-    db.commit()
-
-    payload = {"items": [{"id": "e1", "email": "user@example.com", "vendor": "acme"}]}
-    webhook = _FakeWebhookSender()
-    runner = _build_runner(poller=_FakePoller(response=payload), webhook_sender=webhook)
-    ctx = load_stream_context(db, stream_id)
-    runner.run(ctx, db=db)
-
-    by_url = {call["config"]["url"]: call["events"][0] for call in webhook.calls}
-    route_a_event = by_url["https://receiver-0.example.com/events"]
-    route_b_event = by_url["https://receiver-1.example.com/events"]
-    assert route_a_event["email"] != "user@example.com"
-    assert route_a_event["email"] != "********"
-    assert route_b_event["email"] == "********"
-    assert route_a_event["vendor"] == "acme"
-
-
-def test_legacy_fanout_no_overrides_matches_stream_protection(
-    db_session: Session,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", False)
-    monkeypatch.setattr(settings, "GDC_PROTECTION_ENABLED", True)
-    db = db_session
-    fixture = _seed_stream_runtime(db, failure_policies=["LOG_AND_CONTINUE", "LOG_AND_CONTINUE"])
-    stream_id = fixture["stream_id"]
-    db.add(
-        StreamProtectionRule(
-            stream_id=stream_id,
-            field_path="$.message",
-            sensitivity_class=SENSITIVITY_CLASS_PII,
-            protection_mode=PROTECTION_MODE_FULL_MASK,
-            enabled=True,
-            created_by="test",
-        )
+    transform = RouteTransformConfig(
+        field_mappings={"id": "$.id", "email": "$.email"},
+        enrichment={},
+        override_policy="KEEP_EXISTING",
+        mapping_source="stream",
+        enrichment_source="stream",
     )
-    db.commit()
-    ctx = load_stream_context(db, stream_id)
-    event_payload = {"items": [{"id": "e1", "message": "secret-text", "vendor": "acme"}]}
-
-    webhook_a = _FakeWebhookSender()
-    _build_runner(poller=_FakePoller(response=event_payload), webhook_sender=webhook_a).run(ctx, db=db)
-    masked_a = webhook_a.calls[0]["events"][0]["message"]
-    masked_b = webhook_a.calls[1]["events"][0]["message"]
-    assert masked_a == "********"
-    assert masked_a == masked_b
-    assert masked_a != "secret-text"
-
-
-def test_legacy_fanout_audit_only_override_route_plaintext(
-    db_session: Session,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", False)
-    monkeypatch.setattr(settings, "GDC_PROTECTION_ENABLED", True)
-    db = db_session
-    fixture = _seed_stream_runtime(db, failure_policies=["LOG_AND_CONTINUE", "LOG_AND_CONTINUE"])
-    stream_id = fixture["stream_id"]
-    route_a, route_b = fixture["route_ids"]
-    _add_email_mapping(db, stream_id)
-
-    db.add(
-        StreamProtectionRule(
-            stream_id=stream_id,
-            field_path="$.email",
-            sensitivity_class=SENSITIVITY_CLASS_PII,
-            protection_mode=PROTECTION_MODE_PARTIAL_MASK,
-            enabled=True,
-            created_by="test",
-        )
+    route_ctx = RouteRuntimeContext(
+        route_id=1,
+        stream_id=10,
+        destination_id=20,
+        route_name="r1",
+        route_type="WEBHOOK_POST",
+        formatter={},
+        delivery_policy="LOG_AND_CONTINUE",
+        rate_limit={},
+        metadata={},
+        effective_config=RouteEffectiveConfig(transform=transform),
     )
-    stream = db.query(Stream).filter_by(id=stream_id).one()
-    config = dict(stream.config_json or {})
-    config["governance"] = {
-        "route_overrides": [
-            {
-                "route_id": route_a,
-                "field_path": "$.email",
-                "protection_action": "audit_only",
-                "enabled": True,
-            }
-        ]
-    }
-    stream.config_json = config
-    db.commit()
+    shared = SharedBatchContext(
+        stream_id=10,
+        batch_id="batch-sec",
+        event_root=None,
+        union_schema=[],
+        extracted_events=[{"id": "SEC-PROT-1", "email": raw_email}],
+        schema_observation={},
+        sensitive_detection_result=None,
+        checkpoint_cursor_before=None,
+        shared_runtime_data={
+            "stream_protection_rules": [stream_rule],
+            "route_overrides": [],
+        },
+    )
+    delivered: list[dict[str, Any]] = []
 
-    payload = {"items": [{"id": "e1", "email": "user@example.com", "vendor": "acme"}]}
-    webhook = _FakeWebhookSender()
-    runner = _build_runner(poller=_FakePoller(response=payload), webhook_sender=webhook)
-    ctx = load_stream_context(db, stream_id)
-    runner.run(ctx, db=db)
+    def ok_send(_ctx: Any, events: list[dict[str, Any]]) -> RouteSendOutcome:
+        delivered.extend(dict(e) for e in events)
+        return RouteSendOutcome(success=True, latency_ms=1, adapter_stage="route_send_success")
 
-    by_url = {call["config"]["url"]: call["events"][0] for call in webhook.calls}
-    assert by_url["https://receiver-0.example.com/events"]["email"] == "user@example.com"
-    assert by_url["https://receiver-1.example.com/events"]["email"] != "user@example.com"
+    pipeline = process_routes([route_ctx], shared, send_fn=ok_send)
+    assert pipeline.checkpoint_reference_events
+    assert pipeline.delivery_reference_events
+    assert pipeline.checkpoint_reference_events[0]["email"] == raw_email
+    assert pipeline.delivery_reference_events[0]["email"] != raw_email
+    assert delivered[0]["email"] != raw_email
+    assert raw_email not in str(delivered)
 
 
-def test_legacy_protection_override_preserves_checkpoint_policy_classification(
+def test_dynamic_route_delivery_uses_protected_payload(
     db_session: Session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", False)
+    """Dynamic additive fan-out must not receive pre-protection sensitive fields."""
+    monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", True)
     monkeypatch.setattr(settings, "GDC_PROTECTION_ENABLED", True)
+    monkeypatch.setattr(settings, "GDC_SENSITIVE_DETECTION_ENABLED", True)
+
+    from app.destinations.models import Destination
+    from app.dynamic_routing.operator_workflow import create_dynamic_route
+
     db = db_session
     fixture = _seed_stream_runtime(db)
     stream_id = fixture["stream_id"]
-    route_id = fixture["route_ids"][0]
     _add_email_mapping(db, stream_id)
-
     db.add(
         StreamProtectionRule(
             stream_id=stream_id,
@@ -588,47 +476,48 @@ def test_legacy_protection_override_preserves_checkpoint_policy_classification(
             created_by="test",
         )
     )
-    stream = db.query(Stream).filter_by(id=stream_id).one()
-    config = dict(stream.config_json or {})
-    config["governance"] = {
-        "route_overrides": [
+    security = Destination(
+        name="Security Webhook",
+        destination_type="WEBHOOK_POST",
+        config_json={"url": "https://security-webhook.example.com/events"},
+        rate_limit_json={"max_events": 100, "per_seconds": 1},
+        enabled=True,
+    )
+    db.add(security)
+    db.flush()
+    mapping = db.query(Mapping).filter(Mapping.stream_id == stream_id).one()
+    field_mappings = dict(mapping.field_mappings_json or {})
+    field_mappings["api_key"] = "$.api_key"
+    mapping.field_mappings_json = field_mappings
+    create_dynamic_route(
+        db,
+        stream_id=stream_id,
+        name="Secret Security",
+        enabled=True,
+        condition_json={"sensitivity_class": "secret"},
+        destination_id=security.id,
+    )
+    db.commit()
+
+    raw_email = "sensitive@example.invalid"
+    payload = {
+        "items": [
             {
-                "route_id": route_id,
-                "field_path": "$.email",
-                "protection_action": "tokenize",
-                "enabled": True,
+                "id": "SEC-PROT-dyn",
+                "email": raw_email,
+                "api_key": "super-secret-token-value",
+                "message": "hello",
+                "vendor": "acme",
             }
         ]
     }
-    stream.config_json = config
-    db.commit()
-
+    webhook = _FakeWebhookSender()
+    runner = _build_runner(poller=_FakePoller(response=payload), webhook_sender=webhook)
     ctx = load_stream_context(db, stream_id)
-    runner = _build_runner(
-        poller=_FakePoller(response={"items": [{"id": "e1", "email": "user@example.com", "vendor": "acme"}]}),
-        webhook_sender=_FakeWebhookSender(),
-    )
-    classify_calls: list[int] = []
-    policy_calls: list[int] = []
-    original_classify = runner._classify_events
-    original_policy = runner._evaluate_policies
+    runner.run(ctx, db=db)
 
-    def _track_classify(**kwargs: Any) -> None:
-        classify_calls.append(int(kwargs["stream_id"]))
-        original_classify(**kwargs)
-
-    def _track_policy(**kwargs: Any) -> Any:
-        policy_calls.append(int(kwargs["stream_id"]))
-        return original_policy(**kwargs)
-
-    runner._classify_events = _track_classify  # type: ignore[method-assign]
-    runner._evaluate_policies = _track_policy  # type: ignore[method-assign]
-
-    before = db.query(Checkpoint).filter_by(stream_id=stream_id).one().checkpoint_value_json
-    summary = runner.run(ctx, db=db)
-    after = db.query(Checkpoint).filter_by(stream_id=stream_id).one().checkpoint_value_json
-
-    assert classify_calls == [stream_id]
-    assert policy_calls == [stream_id]
-    assert summary.get("checkpoint_updated") is True
-    assert before != after
+    assert len(webhook.calls) >= 2
+    for call in webhook.calls:
+        for event in call["events"]:
+            assert event.get("email") != raw_email
+            assert raw_email not in str(event)

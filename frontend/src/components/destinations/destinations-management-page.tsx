@@ -861,9 +861,27 @@ export function DestinationsManagementPage() {
 
   async function onSubmitSheet(e: React.FormEvent) {
     e.preventDefault()
-    if (!form.name.trim()) return
-    if (form.destination_type === 'WEBHOOK_POST' && !form.url.trim()) return
-    if (form.destination_type !== 'WEBHOOK_POST' && (!form.host.trim() || !form.port.trim())) return
+    if (!form.name.trim()) {
+      setLocalError('Destination name is required. Enter a name before saving.')
+      return
+    }
+    if (form.destination_type === 'WEBHOOK_POST') {
+      const url = form.url.trim()
+      if (!url) {
+        setLocalError('Webhook URL is required. Use an http:// or https:// URL, for example https://example.com/hook')
+        return
+      }
+      if (!/^https?:\/\//i.test(url) || !url.slice(url.indexOf('://') + 3).trim()) {
+        setLocalError(
+          'Webhook URL must start with http:// or https:// and include a host. Example: https://example.com/hook',
+        )
+        return
+      }
+    }
+    if (form.destination_type !== 'WEBHOOK_POST' && (!form.host.trim() || !form.port.trim())) {
+      setLocalError('Host and port are required for this destination type.')
+      return
+    }
 
     setSaving(true)
     setLocalError(null)
@@ -1037,6 +1055,7 @@ export function DestinationsManagementPage() {
           {/* New Destination button */}
           <button
             type="button"
+            data-testid="destinations-new"
             onClick={openCreateSheet}
             className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-violet-600 px-3 text-[12px] font-semibold text-white shadow-sm hover:bg-violet-500 transition-colors"
           >
@@ -1089,7 +1108,11 @@ export function DestinationsManagementPage() {
 
       {/* Error banners */}
       {(error || localError) && (
-        <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-[13px] text-red-300">
+        <div
+          role="alert"
+          data-testid="destination-page-error"
+          className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-[13px] text-red-300"
+        >
           {error ?? localError}
         </div>
       )}
@@ -1210,6 +1233,7 @@ export function DestinationsManagementPage() {
                       return (
                         <Fragment key={row.id}>
                           <tr
+                            data-testid={`destination-row-${row.id}`}
                             className={cn(
                               'border-b border-[#1e2a3b] last:border-0 transition-colors hover:bg-[#0f1a2a]/80 cursor-pointer',
                               dimmed && 'opacity-55'
@@ -1358,6 +1382,17 @@ export function DestinationsManagementPage() {
               </button>
             </div>
 
+            {localError ? (
+              <div
+                role="alert"
+                data-testid="destination-form-error"
+                className="mx-6 mt-3 rounded-lg border border-red-500/40 bg-red-950/35 px-4 py-3 text-[13px] leading-relaxed text-red-100"
+              >
+                <p className="font-semibold">Cannot save destination</p>
+                <p className="mt-1">{localError}</p>
+                <p className="mt-1 text-[12px] text-red-200/90">Fix the highlighted fields, then save again.</p>
+              </div>
+            ) : null}
             {probeBanner && (
               <div
                 role="status"

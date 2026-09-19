@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.checkpoints.models import Checkpoint
 from app.connectors.models import Connector
+from app.destinations.adapters.registry import DestinationAdapterRegistry
 from app.destinations.models import Destination
 from app.enrichments.models import Enrichment
 from app.logs.models import DeliveryLog
@@ -50,6 +51,18 @@ class _AllowAllLimiter:
 class _FakeWebhookSender:
     def send(self, events: list[dict[str, Any]], config: dict[str, Any], **kwargs: Any) -> None:
         return None
+
+
+def _install_fake_webhook_sender(runner: StreamRunner) -> _FakeWebhookSender:
+    """Wire FakeWebhookSender into both attribute and destination registry."""
+
+    fake = _FakeWebhookSender()
+    runner.webhook_sender = fake
+    runner.destination_registry = DestinationAdapterRegistry(
+        syslog_sender=runner.syslog_sender,
+        webhook_sender=fake,
+    )
+    return fake
 
 
 def _seed_s3_stream(db: Session) -> int:
@@ -185,7 +198,7 @@ def test_a_normal_s3_run_once_has_lifecycle_telemetry(
 
     def _init(self: StreamRunner, *a: Any, **k: Any) -> None:
         orig_init(self, *a, **k)
-        self.webhook_sender = _FakeWebhookSender()
+        _install_fake_webhook_sender(self)
         self.source_limiter = _AllowAllLimiter()
         self.destination_limiter = _AllowAllLimiter()
 
@@ -338,7 +351,7 @@ def test_f_empty_delivery_reseed_rerun_distinct_run_ids(
 
     def _init(self: StreamRunner, *a: Any, **k: Any) -> None:
         orig_init(self, *a, **k)
-        self.webhook_sender = _FakeWebhookSender()
+        _install_fake_webhook_sender(self)
         self.source_limiter = _AllowAllLimiter()
         self.destination_limiter = _AllowAllLimiter()
 
@@ -382,7 +395,7 @@ def test_g_api_and_direct_runner_share_lifecycle_policy(
 
     def _init(self: StreamRunner, *a: Any, **k: Any) -> None:
         orig_init(self, *a, **k)
-        self.webhook_sender = _FakeWebhookSender()
+        _install_fake_webhook_sender(self)
         self.source_limiter = _AllowAllLimiter()
         self.destination_limiter = _AllowAllLimiter()
 
@@ -454,7 +467,7 @@ def test_lock_contention_concurrent_run_once_one_success(
 
     def _init(self: StreamRunner, *a: Any, **k: Any) -> None:
         orig_init(self, *a, **k)
-        self.webhook_sender = _FakeWebhookSender()
+        _install_fake_webhook_sender(self)
         self.source_limiter = _AllowAllLimiter()
         self.destination_limiter = _AllowAllLimiter()
 

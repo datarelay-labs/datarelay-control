@@ -489,6 +489,11 @@ export type WizardConfigState = {
   csvDelimiter: string
   lineEventField: string
   includeFileMetadata: boolean
+  /** DATABASE_QUERY: SELECT-only SQL text persisted as config_json.query. */
+  sqlQuery: string
+  /** DATABASE_QUERY checkpoint column (optional; NONE mode when empty). */
+  dbCheckpointColumn: string
+  dbCheckpointMode: string
   /**
    * Incremental request template selected on the JSON Preview step.
    * This is used for incremental-request test previews only and must never
@@ -606,10 +611,11 @@ export type WizardMappingRow = {
 
 import type { WizardEnrichmentRule } from './enrichment-rules-model'
 export type { WizardEnrichmentRule as WizardEnrichmentRow } from './enrichment-rules-model'
-export {
+import {
   enrichmentDictFromRules as enrichmentDictFromRows,
   normalizeWizardEnrichmentRules,
 } from './enrichment-rules-model'
+export { enrichmentDictFromRows, normalizeWizardEnrichmentRules }
 
 /** Per-concern inherit flags — default all true (Route Processing UX v2). */
 export type WizardRouteProcessingInherit = {
@@ -772,6 +778,9 @@ export const INITIAL_CONFIG: WizardConfigState = {
   csvDelimiter: ',',
   lineEventField: 'line',
   includeFileMetadata: false,
+  sqlQuery: '',
+  dbCheckpointColumn: '',
+  dbCheckpointMode: 'NONE',
   incrementalRequestPattern: 'json_body',
   incrementalRequestDraft: '',
   incrementalRequestTestSignature: null,
@@ -1198,7 +1207,9 @@ export function wizardConnectorPatchFromApi(row: ConnectorRead): Partial<WizardC
         ? 'REMOTE_FILE_POLLING'
         : stRaw === 'WEBHOOK_RECEIVER'
           ? 'WEBHOOK_RECEIVER'
-          : 'HTTP_API_POLLING'
+          : stRaw === 'DATABASE_QUERY'
+            ? 'DATABASE_QUERY'
+            : 'HTTP_API_POLLING'
   const baseUrl =
     st === 'S3_OBJECT_POLLING'
       ? String(row.endpoint_url ?? row.base_url ?? row.host ?? '').trim()
@@ -1298,32 +1309,39 @@ export function computeLegacySubstepCompletion(state: WizardState): WizardLegacy
   const isS3 = state.connector.sourceType === 'S3_OBJECT_POLLING'
   const isRemote = state.connector.sourceType === 'REMOTE_FILE_POLLING'
   const isWebhook = state.connector.sourceType === 'WEBHOOK_RECEIVER'
+  const isDatabase = state.connector.sourceType === 'DATABASE_QUERY'
   const streamReady =
     state.stream.name.trim().length > 0 &&
     (isS3 ||
       isRemote ||
       isWebhook ||
-      (!isS3 && !isRemote && !isWebhook && state.stream.endpoint.trim().length > 0)) &&
+      isDatabase ||
+      (!isS3 && !isRemote && !isWebhook && !isDatabase && state.stream.endpoint.trim().length > 0)) &&
     (!isS3 || (Number.isFinite(state.stream.maxObjectsPerRun) && state.stream.maxObjectsPerRun >= 1)) &&
-    (!isRemote || state.stream.remoteDirectory.trim().length > 0)
+    (!isRemote || state.stream.remoteDirectory.trim().length > 0) &&
+    (!isDatabase || state.stream.sqlQuery.trim().length > 0)
   const apiTestRan =
     state.apiTest.status === 'success' &&
     (!isS3 || state.apiTest.s3ConnectivityPassed) &&
     (!isRemote || state.apiTest.remoteProbe?.ok === true)
   const previewErr = state.apiTest.analysis?.previewError
   const recordsGateReady =
-    state.apiTest.status === 'success' &&
-    state.apiTest.ok &&
-    (state.apiTest.parsedJson ?? state.apiTest.rawResponse) != null &&
-    (state.apiTest.statusCode == null || state.apiTest.statusCode < 400) &&
-    state.apiTest.finishedAt != null &&
-    state.stream.recordPathConfirmedForApiTestAt === state.apiTest.finishedAt &&
-    state.stream.checkpointConfirmedForApiTestAt === state.apiTest.finishedAt &&
-    (state.stream.useWholeResponseAsEvent || state.stream.eventArrayPath.trim().length > 0) &&
-    state.stream.checkpointSourcePath.trim().length > 0
-  const previewReady = recordsGateReady && !previewErr
+    isRemote || isWebhook
+      ? apiTestRan
+      : state.apiTest.status === 'success' &&
+        state.apiTest.ok &&
+        (state.apiTest.parsedJson ?? state.apiTest.rawResponse) != null &&
+        (state.apiTest.statusCode == null || state.apiTest.statusCode < 400) &&
+        state.apiTest.finishedAt != null &&
+        state.stream.recordPathConfirmedForApiTestAt === state.apiTest.finishedAt &&
+        state.stream.checkpointConfirmedForApiTestAt === state.apiTest.finishedAt &&
+        (state.stream.useWholeResponseAsEvent || state.stream.eventArrayPath.trim().length > 0) &&
+        state.stream.checkpointSourcePath.trim().length > 0
+  const previewReady = isRemote || isWebhook ? apiTestRan : recordsGateReady && !previewErr
   const mappingReady =
-    wizardMappingContentReady(state) || state.transformRules.some((r) => r.outputField.trim())
+    wizardMappingContentReady(state) ||
+    state.transformRules.some((r) => r.outputField.trim()) ||
+    ((isRemote || isWebhook) && state.unmappedFieldsPolicy === 'pass_through')
   const enrichmentReady = state.enrichment.length === 0 || state.enrichment.every((e) => e.fieldName.trim().length > 0)
   const enrichmentHasRows = state.enrichment.length > 0
   const destinationsReady = state.destinations.routeDrafts.some((r) => r.enabled)
@@ -1476,6 +1494,7 @@ export function buildSourceAuthPayload(state: WizardState): Record<string, unkno
 export function buildStreamConfigPayload(state: WizardState): Record<string, unknown> {
   const isRemote = state.connector.sourceType === 'REMOTE_FILE_POLLING'
   const isWebhook = state.connector.sourceType === 'WEBHOOK_RECEIVER'
+  const isDatabase = state.connector.sourceType === 'DATABASE_QUERY'
   if (isRemote) {
     return {
       remote_directory: state.stream.remoteDirectory.trim(),
@@ -1489,6 +1508,17 @@ export function buildStreamConfigPayload(state: WizardState): Record<string, unk
       line_event_field: state.stream.lineEventField.trim() || 'line',
       include_file_metadata: state.stream.includeFileMetadata,
     }
+  }
+  if (isDatabase) {
+    const ckCol = state.stream.dbCheckpointColumn.trim()
+    const ckMode = (state.stream.dbCheckpointMode.trim() || (ckCol ? 'SINGLE_COLUMN' : 'NONE')).toUpperCase()
+    const out: Record<string, unknown> = {
+      query: state.stream.sqlQuery.trim(),
+      checkpoint_mode: ckMode,
+      timeout_seconds: state.stream.timeoutSec,
+    }
+    if (ckCol) out.checkpoint_column = ckCol
+    return out
   }
   if (isWebhook) {
     const out: Record<string, unknown> = {
@@ -1549,7 +1579,8 @@ export function buildStreamConfigPayload(state: WizardState): Record<string, unk
 export function buildIncrementalTestStreamConfigPayload(state: WizardState): Record<string, unknown> {
   const isRemote = state.connector.sourceType === 'REMOTE_FILE_POLLING'
   const isWebhook = state.connector.sourceType === 'WEBHOOK_RECEIVER'
-  if (isRemote || isWebhook) {
+  const isDatabase = state.connector.sourceType === 'DATABASE_QUERY'
+  if (isRemote || isWebhook || isDatabase) {
     return buildStreamConfigPayload(state)
   }
   const base = buildStreamConfigPayload(state)
@@ -1585,17 +1616,19 @@ export function buildStreamCreatePayload(state: WizardState): {
   const isS3 = state.connector.sourceType === 'S3_OBJECT_POLLING'
   const isRemote = state.connector.sourceType === 'REMOTE_FILE_POLLING'
   const isWebhook = state.connector.sourceType === 'WEBHOOK_RECEIVER'
+  const isDatabase = state.connector.sourceType === 'DATABASE_QUERY'
   const maxOb = Math.max(1, Math.floor(Number(state.stream.maxObjectsPerRun) || 20))
   let stream_type = 'HTTP_API_POLLING'
   if (isS3) stream_type = 'S3_OBJECT_POLLING'
   else if (isRemote) stream_type = 'REMOTE_FILE_POLLING'
   else if (isWebhook) stream_type = 'WEBHOOK_RECEIVER'
+  else if (isDatabase) stream_type = 'DATABASE_QUERY'
   const config_json: Record<string, unknown> = isS3
     ? { max_objects_per_run: maxOb }
     : mergeStreamConfigJson(
         {},
         buildStreamConfigPayload(state),
-        buildAdvancedStreamConfigJsonPatch(state.stream),
+        isDatabase ? {} : buildAdvancedStreamConfigJsonPatch(state.stream),
       )
   return {
     name: state.stream.name.trim() || 'Untitled Stream',
@@ -1669,6 +1702,32 @@ export function wizardFieldMappingsReady(
     Object.keys(fieldMappingsFromRows(state.mapping)).length > 0 ||
     state.transformRules.some((r) => r.outputField.trim())
   )
+}
+
+export type RouteTransformPersistPlan = {
+  routeId: number
+  inherit: boolean
+  fieldMappings: Record<string, unknown>
+  enrichment: Record<string, unknown>
+}
+
+/** Plans for existing route-mapping / route-enrichment APIs — wizard override drafts that must not stay client-only. */
+export function buildRouteTransformPersistPlans(
+  drafts: WizardRouteDraft[],
+  routeIdsInDraftOrder: number[],
+): RouteTransformPersistPlan[] {
+  const plans: RouteTransformPersistPlan[] = []
+  drafts.forEach((draft, index) => {
+    const routeId = routeIdsInDraftOrder[index]
+    if (!routeId || draft.inherit.transform !== false) return
+    const override = draft.overrides?.transform
+    if (!override) return
+    const fieldMappings = buildWizardFieldMappingsPayload(override)
+    const enrichment = enrichmentDictFromRows(override.enrichment)
+    if (Object.keys(fieldMappings).length === 0 && Object.keys(enrichment).length === 0) return
+    plans.push({ routeId, inherit: false, fieldMappings, enrichment })
+  })
+  return plans
 }
 
 export function buildRouteCreatePayloads(streamId: number, destinations: WizardDestinationsState): Array<{

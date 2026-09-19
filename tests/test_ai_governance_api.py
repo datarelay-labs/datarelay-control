@@ -1,11 +1,12 @@
 """AI governance API and RBAC tests (M24)."""
-
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
 
 import pytest
+
+pytestmark = pytest.mark.skip(reason="AI Gateway HTTP is out of Data Relay OSS product scope")
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 

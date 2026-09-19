@@ -325,3 +325,33 @@ def test_idle_s3_canonical_no_data_not_error() -> None:
         route_count=1,
     )
     assert health == "HEALTHY"
+
+
+def test_degraded_source_outage_surfaces_dashboard_operational_problem() -> None:
+    """Source 500 after prior success is DEGRADED; dashboard must still list a problem."""
+
+    from app.runtime.operational_snapshot_schemas import OperationalStreamSnapshot
+    from app.runtime.operational_snapshot_service import _build_problems
+
+    stream = OperationalStreamSnapshot(
+        stream_id=7,
+        stream_name="e2e-http-source",
+        enabled=True,
+        status="RUNNING",
+        health_status="DEGRADED",
+        eps_1m=0.0,
+        eps_5m=0.2,
+        success_rate_5m=80.0,
+        failure_rate_5m=0.0,
+        route_count=2,
+        healthy_route_count=2,
+        failed_route_count=0,
+        last_success_at=NOW - timedelta(minutes=5),
+        last_error_at=NOW,
+        last_error_message="HTTP 500 from source",
+    )
+    problems = _build_problems(stream_snapshots=[stream], route_snapshots=[], destination_snapshots=[])
+    assert len(problems) >= 1
+    assert problems[0].severity == "warning"
+    assert problems[0].stream_id == 7
+    assert "500" in (problems[0].message or "")

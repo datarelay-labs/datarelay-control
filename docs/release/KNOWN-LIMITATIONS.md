@@ -125,34 +125,33 @@ MySQL/MariaDB adapters may exist for dev validation lab but are **not** producti
 
 ---
 
-## GDC_ROUTE_PROCESSING_ENABLED (Experimental)
+## GDC_ROUTE_PROCESSING_ENABLED
 
 ### Default
 
 ```python
-GDC_ROUTE_PROCESSING_ENABLED: bool = False  # app/config.py
+GDC_ROUTE_PROCESSING_ENABLED: bool = True  # app/config.py
 ```
 
-### When false (OSS v1.0 GA recommended)
+### When true (product default — only supported path)
 
-- Stream-scoped mapping, enrichment, protection, classification, policy
-- Legacy multi-route fan-out delivery
-- Failover and Replay on delivery path
-- Production-proven path
+- Per-route pipeline: Transform → Protection → Classification → Policy → Delivery
+- Shared StreamRunner delivery primitive (adapter send, failure policy, Failover, Replay recording)
+- Stream checkpoint after successful / absorbed delivery
+- OSS install / docker-compose inherit this default when the env var is unset
 
-### When true (experimental)
+### When false (retired)
 
-- Per-route processing pipeline loop
-- Stream-level pre-route governance batch skipped
-- Failover and Replay **not** connected on per-route delivery
-- Intended for evaluation and v1.x graduation — **not GA-recommended**
+- Setting `GDC_ROUTE_PROCESSING_ENABLED=false` is **rejected** at settings load.
+- The legacy stream-scoped dual runtime was removed (Product Charter: No Parallel Pipeline).
+- Emergency rollback = previous release image / maintenance branch, not an in-process flag.
 
 ### What you should do
 
-- Leave default **false** in production unless explicitly testing per-route pipeline.
-- Persist route bundles via Route Edit regardless of flag — data is durable either way.
+- Leave default **true**. Do not rely on a flag-OFF runtime path.
+- For investigation of historical behavior, use an archived release image.
 
-**Reference:** [`OSS-v1-RC-RELEASE-NOTES.md`](./OSS-v1-RC-RELEASE-NOTES.md)
+**Reference:** [`OSS-v1-ARCHITECTURE.md`](../architecture/OSS-v1-ARCHITECTURE.md)
 
 ---
 

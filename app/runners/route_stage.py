@@ -208,6 +208,9 @@ def process_route_pipeline(
 
     route_ctx.processing_state.current_events = current_events
 
+    # Preserve pre-protection transform output for checkpoint (mask delivery only).
+    checkpoint_events = [dict(ev) if isinstance(ev, dict) else ev for ev in current_events]
+
     protection_started = time.monotonic()
     stream_protection_rules = list(shared_batch.shared_runtime_data.get("stream_protection_rules") or [])
     route_overrides = list(shared_batch.shared_runtime_data.get("route_overrides") or [])
@@ -353,6 +356,7 @@ def process_route_pipeline(
     return RouteStageResult(
         route_id=route_ctx.route_id,
         events=output_events,
+        checkpoint_events=checkpoint_events,
         modified=modified,
         stage_timeline=timeline,
         protection_duration_ms=protection_duration_ms,
@@ -415,9 +419,20 @@ def process_routes(
     delivery_quarantine_count = 0
     delivery_duration_ms = 0
     checkpoint_reference: list[dict[str, Any]] = []
+    delivery_reference: list[dict[str, Any]] = []
 
     for route_ctx in route_contexts:
         if not route_ctx.enabled:
+            if log_fn is not None:
+                log_fn(
+                    {
+                        "stage": "route_skip",
+                        "stream_id": route_ctx.stream_id,
+                        "route_id": route_ctx.route_id,
+                        "skip_reason": "route_disabled",
+                        "message": "route_disabled",
+                    }
+                )
             continue
         stage_started = time.monotonic()
         stage_result = process_route_pipeline(
@@ -484,9 +499,16 @@ def process_routes(
                 and delivery_result.delivery_success is True
                 and stage_result.events
             ):
-                checkpoint_reference = list(stage_result.events)
+                # Checkpoint may need pre-protection fields; delivery must not.
+                checkpoint_reference = list(
+                    stage_result.checkpoint_events or stage_result.events
+                )
+                delivery_reference = list(stage_result.events)
         elif stage_result.events and stage_result.delivery_allowed:
-            checkpoint_reference = list(stage_result.events)
+            checkpoint_reference = list(
+                stage_result.checkpoint_events or stage_result.events
+            )
+            delivery_reference = list(stage_result.events)
 
     metrics = RouteProcessingMetrics(
         route_count=base_metrics.route_count if base_metrics else len(route_contexts),
@@ -519,4 +541,5 @@ def process_routes(
         stage_results=results,
         metrics=metrics,
         checkpoint_reference_events=checkpoint_reference,
+        delivery_reference_events=delivery_reference,
     )

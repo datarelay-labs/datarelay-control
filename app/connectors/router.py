@@ -20,6 +20,7 @@ from app.connectors.schemas import (
 )
 from app.connectors.operations_schemas import (
     ConnectorAuthCheckPersistedResponse,
+    ConnectorAuthCheckRequest,
     ConnectorOperationsSummaryResponse,
 )
 from app.connectors.operations_service import (
@@ -1131,6 +1132,7 @@ def list_connectors_operations_summary(
 @router.post("/{connector_id}/auth-check", response_model=ConnectorAuthCheckPersistedResponse)
 async def post_connector_auth_check(
     connector_id: int,
+    payload: ConnectorAuthCheckRequest | None = None,
 ) -> ConnectorAuthCheckPersistedResponse:
     """Run an immediate auth probe and persist last-check metadata."""
 
@@ -1142,8 +1144,14 @@ async def post_connector_auth_check(
     finally:
         db.close()
 
+    body = payload or ConnectorAuthCheckRequest()
     try:
-        result = await asyncio.to_thread(run_connector_auth_check_and_persist, connector_id)
+        result = await asyncio.to_thread(
+            run_connector_auth_check_and_persist,
+            connector_id,
+            method=str(body.method or "GET"),
+            test_path=str(body.test_path or "/"),
+        )
     except ValueError as exc:
         raise _bad_request(str(exc)) from exc
 

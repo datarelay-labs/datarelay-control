@@ -8,6 +8,7 @@ import threading
 import time
 
 from app.config import settings
+from app.connectors.models import Connector  # noqa: F401 — mapper resolve for Stream.connector
 from app.production_security import ensure_production_security_settings
 from app.db.orm_bootstrap import ensure_orm_models_registered
 from app.db.partition_maintenance_scheduler import (

@@ -258,6 +258,57 @@ export function ConnectorAuthTestPanel({ buildAuthTestPayload, onTestStart, mode
 
       {authDetail ? (
         <div className="w-full min-w-0 max-w-full space-y-2">
+          {(() => {
+            try {
+              const parsed = JSON.parse(authDetail) as ConnectorAuthTestResponse & {
+                success?: boolean
+                ok?: boolean
+                status_code?: number
+                http_status?: number
+                message?: string
+                error?: string
+                error_type?: string
+              }
+              if (typeof parsed !== 'object' || parsed === null) return null
+              const statusCode = parsed.status_code ?? parsed.http_status ?? null
+              const success =
+                parsed.success === true ||
+                parsed.ok === true ||
+                (typeof statusCode === 'number' && statusCode >= 200 && statusCode < 400 && parsed.success !== false)
+              const reason =
+                parsed.message ||
+                parsed.error ||
+                parsed.error_type ||
+                (typeof statusCode === 'number' ? `HTTP ${statusCode}` : null)
+              return (
+                <div
+                  data-testid="auth-test-result-banner"
+                  className={
+                    success
+                      ? 'rounded border border-emerald-300 bg-emerald-50 px-3 py-2 text-[12px] font-semibold text-emerald-900 dark:border-emerald-500/40 dark:bg-emerald-950/40 dark:text-emerald-100'
+                      : 'rounded border border-red-300 bg-red-50 px-3 py-2 text-[12px] font-semibold text-red-900 dark:border-red-500/40 dark:bg-red-950/40 dark:text-red-100'
+                  }
+                >
+                  {success ? 'Authentication success' : 'Authentication failure'}
+                  {reason ? <span className="mt-0.5 block font-normal opacity-90">{reason}</span> : null}
+                </div>
+              )
+            } catch {
+              const looksFail = /fail|error|401|403|unauthor|denied|invalid/i.test(authDetail)
+              return (
+                <div
+                  data-testid="auth-test-result-banner"
+                  className={
+                    looksFail
+                      ? 'rounded border border-red-300 bg-red-50 px-3 py-2 text-[12px] font-semibold text-red-900 dark:border-red-500/40 dark:bg-red-950/40 dark:text-red-100'
+                      : 'rounded border border-slate-300 bg-slate-50 px-3 py-2 text-[12px] font-semibold text-slate-800 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100'
+                  }
+                >
+                  {looksFail ? 'Authentication failure' : 'Authentication result'}
+                </div>
+              )
+            }
+          })()}
           {mode === 'remote_file'
             ? (() => {
                 try {
@@ -284,7 +335,10 @@ export function ConnectorAuthTestPanel({ buildAuthTestPayload, onTestStart, mode
                 return null
               })()
             : null}
-          <pre className="w-full min-w-0 max-w-full overflow-x-auto whitespace-pre-wrap break-all rounded border border-slate-200 bg-slate-50 p-3 text-[11px] text-slate-800 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100">
+          <pre
+            data-testid="auth-test-result-detail"
+            className="w-full min-w-0 max-w-full overflow-x-auto whitespace-pre-wrap break-all rounded border border-slate-200 bg-slate-50 p-3 text-[11px] text-slate-800 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
+          >
             {authDetail}
           </pre>
         </div>

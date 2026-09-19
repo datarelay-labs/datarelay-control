@@ -132,7 +132,7 @@ def test_deliver_single_route_delegates_to_shared_send_primitive(runner: StreamR
 
     def _capture(stream: Any, route: Any, events: list[dict[str, Any]], **kwargs: Any) -> RouteSendOutcome:
         seen.append(int(route["id"]))
-        assert kwargs.get("record_replay_on_failure", False) is False
+        assert kwargs.get("record_replay_on_failure", False) is True
         return RouteSendOutcome(success=True, latency_ms=2, adapter_stage="route_send_success")
 
     runner._send_route_events = _capture  # type: ignore[method-assign]

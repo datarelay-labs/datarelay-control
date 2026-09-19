@@ -98,6 +98,8 @@ def route_delivery_stage(
     adapter_stage: str | None = None
     send_outcome: RouteSendOutcome | None = None
     failure_absorbed = False
+    failover_attempted = False
+    failover_succeeded = False
     event_count = len(events)
 
     if not route_ctx.enabled:
@@ -135,6 +137,8 @@ def route_delivery_stage(
             latency_ms = send_outcome.latency_ms
             adapter_stage = send_outcome.adapter_stage
             failure_absorbed = bool(send_outcome.failure_absorbed)
+            failover_attempted = bool(send_outcome.failover_attempted)
+            failover_succeeded = bool(send_outcome.failover_succeeded)
 
     health_level = classify_route_delivery_health(
         delivery_disposition=disposition,
@@ -167,6 +171,8 @@ def route_delivery_stage(
         delivery_log_id=None,
         health_level=health_level,
         failure_absorbed=failure_absorbed,
+        failover_attempted=failover_attempted,
+        failover_succeeded=failover_succeeded,
     )
 
     _emit_disposition_log(
@@ -177,5 +183,18 @@ def route_delivery_stage(
         policy_result=policy_result,
         delivery_result=result,
     )
+    if log_fn is not None and skip_reason in {"destination_disabled", "route_disabled"}:
+        log_fn(
+            {
+                "stage": "route_skip",
+                "stream_id": route_ctx.stream_id,
+                "route_id": route_ctx.route_id,
+                "destination_id": route_ctx.destination_id,
+                "skip_reason": skip_reason,
+                "message": skip_reason,
+                "run_id": run_id,
+                "batch_id": shared_batch.batch_id,
+            }
+        )
 
     return result

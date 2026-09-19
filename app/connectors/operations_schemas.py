@@ -55,6 +55,13 @@ class ConnectorOperationsSummaryResponse(BaseModel):
     connectors: list[ConnectorOperationsRow] = Field(default_factory=list)
 
 
+class ConnectorAuthCheckRequest(BaseModel):
+    """Optional body for POST /connectors/{id}/auth-check."""
+
+    method: str = "GET"
+    test_path: str = "/"
+
+
 class ConnectorAuthCheckPersistedResponse(BaseModel):
     success: bool
     status_code: int | None = None

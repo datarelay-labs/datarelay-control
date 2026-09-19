@@ -9,6 +9,7 @@ import {
   wizardCheckpointConfirmed,
   wizardDestinationGateReady,
   wizardRecordPathConfirmed,
+  wizardSourceRequiresHttpRecordSelection,
 } from './wizard-step-gates'
 import {
   computeLegacySubstepCompletion,
@@ -347,12 +348,15 @@ export function computeDeployReadiness(
   const reviewReady = completion.review === 'in_progress'
 
   const previewErr = state.apiTest.analysis?.previewError
-  const eventPathOk = wizardRecordPathConfirmed(state) && !previewErr
-  const syncPositionOk = wizardCheckpointConfirmed(state)
+  const httpRecordSelection = wizardSourceRequiresHttpRecordSelection(state)
+  const eventPathOk = !httpRecordSelection || (wizardRecordPathConfirmed(state) && !previewErr)
+  const syncPositionOk = !httpRecordSelection || wizardCheckpointConfirmed(state)
 
   const mappedCount = state.mapping.filter((m) => m.outputField.trim() && m.sourceJsonPath.trim()).length
   const mappingReady =
-    wizardMappingContentReady(state) || state.transformRules.some((r) => r.outputField.trim())
+    wizardMappingContentReady(state) ||
+    state.transformRules.some((r) => r.outputField.trim()) ||
+    (!httpRecordSelection && state.unmappedFieldsPolicy === 'pass_through')
   const enrichmentDupes = countDuplicateEnrichmentKeys(state.enrichment)
   const enrichmentValid =
     state.enrichment.length === 0 || state.enrichment.every((e) => e.fieldName.trim().length > 0)

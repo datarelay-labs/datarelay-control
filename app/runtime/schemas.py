@@ -8,6 +8,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, StrictBool, field_validator, model_validator
 
 from app.runtime.analytics_schemas import MetricMetaMap
+from app.runtime.incremental_fetch import IncrementalStrategy as IncrementalFetchStrategy
 from app.validation.schemas import ValidationOperationalSummaryResponse
 
 VisualizationMetaMap = dict[str, dict[str, Any]]
@@ -2432,6 +2433,15 @@ class StreamIncrementalTestResponse(BaseModel):
     stability_lag_seconds: int | None = None
     fetch_window: dict[str, Any] | None = None
     query_preview: dict[str, Any] | None = None
+
+StreamReplayMode = Literal[
+    "delivery_log",
+    "time_range",
+    "last_n_minutes",
+    "checkpoint_preview",
+    "failed_events",
+]
+
 
 class StreamReplayRequest(BaseModel):
     mode: StreamReplayMode

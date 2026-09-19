@@ -155,7 +155,12 @@ def apply_schema_drift_policy_to_batch(
         field_mappings=field_mappings,
         enrichment_json=enrichment_json,
     )
-    sensitive_by_path = _sensitive_paths_from_context(detection_context)
+    sensitive_by_path = dict(_sensitive_paths_from_context(detection_context))
+    # Detection may have run on extracted events; also index findings by mapped output paths.
+    for source_path, sensitivity_class in list(sensitive_by_path.items()):
+        aliased = alias_map.get(source_path)
+        if aliased and aliased not in sensitive_by_path:
+            sensitive_by_path[aliased] = sensitivity_class
 
     unknown_fields: list[UnknownFieldMatch] = []
     unresolved_paths: list[str] = []

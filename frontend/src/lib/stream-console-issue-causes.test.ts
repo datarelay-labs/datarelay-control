@@ -262,3 +262,57 @@ describe('stream-console-issue-causes', () => {
     )
   })
 })
+
+describe('streamConsoleLifecycleLabel', () => {
+  const base = {
+    id: '1',
+    name: 's',
+    connectorId: null,
+    connectorName: '—',
+    sourceTypeLabel: '—',
+    runtimeStatsAttempted: true,
+    hasRuntimeApiSnapshot: true,
+    events1h: 0,
+    events24h: 0,
+    ingestEps: 0,
+    eps1m: 0,
+    eps5m: 0,
+    successRate5m: null,
+    runtimeIssue: null,
+    eventsTrend: [0, 0, 0, 0, 0, 0, 0] as const,
+    lastCheckpointDisplay: '—',
+    lastCheckpointRelative: '—',
+    routesTotal: 0,
+    routesOk: 0,
+    routesDegraded: 0,
+    routesError: 0,
+    deliveryPct: 0,
+    deliveryPctKnown: false,
+    latencyP95Ms: 0,
+    latencyTrend: [0, 0, 0, 0, 0, 0, 0] as const,
+    lastActivityRelative: '—',
+    streamType: 'HTTP',
+    streamTypeKey: 'HTTP_API_POLLING',
+    pollingIntervalSec: 60,
+    createdAt: '—',
+    createdBy: '—',
+    sourceMethod: 'GET' as const,
+    sourceUrl: '—',
+    authType: '—',
+    timeoutSec: 30,
+    rateLimitLabel: '—',
+    checkpointValue: '—',
+    checkpointUpdatedAt: '—',
+    checkpointLagLabel: '—',
+    recentErrors: [],
+  }
+
+  it('maps status matrix for Stopped / Disabled / No Data / Healthy', async () => {
+    const { streamConsoleLifecycleLabel } = await import('./stream-console-issue-causes')
+    expect(streamConsoleLifecycleLabel({ ...base, status: 'RUNNING', enabled: true })).toBe('Healthy')
+    expect(streamConsoleLifecycleLabel({ ...base, status: 'IDLE', enabled: true })).toBe('No Data')
+    expect(streamConsoleLifecycleLabel({ ...base, status: 'STOPPED', enabled: false })).toBe('Stopped')
+    expect(streamConsoleLifecycleLabel({ ...base, status: 'RUNNING', enabled: false })).toBe('Disabled')
+    expect(streamConsoleLifecycleLabel({ ...base, status: 'ERROR', enabled: true })).toBe('Critical')
+  })
+})

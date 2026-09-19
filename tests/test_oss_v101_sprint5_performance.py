@@ -93,7 +93,9 @@ def test_successful_run_persists_fewer_low_value_delivery_log_rows(db_session: S
     assert "route" not in stages
     assert stages.count("mapping") == 0
     assert stages.count("enrichment") == 0
-    assert len(rows) <= 10
+    # Route Processing emits protection/classification/policy complete + route_send +
+    # route_processing_loop + checkpoint + run lifecycle (≤11 rows on the happy path).
+    assert len(rows) <= 11
 
 
 def test_run_complete_checkpoint_payload_is_slim(db_session: Session) -> None:
