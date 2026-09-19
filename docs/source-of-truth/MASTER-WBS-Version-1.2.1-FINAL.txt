@@ -626,17 +626,20 @@ Next Priority
 ==================================================
 
 1. OSS v1 Stabilization
+   (confirmed bugs and incomplete current-charter UX)
 
 2. Runtime Optimization
 
 3. UX Simplification
-   (DATA-RELAY-UX-CHARTER v1.1)
+   (DATA-RELAY-UX-CHARTER)
 
 4. Operational Dashboard Improvements
 
-5. Route Architecture Enablement
-
-6. Destination First Wizard UX
+Note:
+Route Processing is the only supported product runtime.
+Destination First wizard UX is implemented and historical
+gap audits are superseded. Those items are no longer
+future priorities.
 
 --------------------------------------------------
 
