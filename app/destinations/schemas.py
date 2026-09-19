@@ -3,10 +3,18 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 DestinationTypeLiteral = Literal["SYSLOG_UDP", "SYSLOG_TCP", "SYSLOG_TLS", "WEBHOOK_POST", "AI_PROVIDER_POST"]
+
+
+def _require_non_blank_name(value: str | None) -> str | None:
+    if value is None:
+        return value
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("Destination name must be a non-empty string")
+    return value
 
 
 class DestinationBase(BaseModel):
@@ -15,6 +23,11 @@ class DestinationBase(BaseModel):
     config_json: dict | None = None
     rate_limit_json: dict | None = None
     enabled: bool | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _name_not_blank(cls, value: str | None) -> str | None:
+        return _require_non_blank_name(value)
 
 
 class DestinationCreate(DestinationBase):

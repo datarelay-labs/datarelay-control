@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import urlparse
 
 from app.ai_providers.destination_config import validate_ai_provider_destination_config
 from app.delivery.webhook_payload_mode import normalize_webhook_payload_mode
@@ -19,6 +20,28 @@ TLS_KEYS = (
     "connect_timeout",
     "write_timeout",
 )
+
+WEBHOOK_URL_SCHEMES = ("http", "https")
+
+
+def _validate_webhook_post(cfg: dict[str, Any]) -> None:
+    """Require a non-empty http(s) URL for WEBHOOK_POST destinations."""
+
+    raw_url = cfg.get("url")
+    if raw_url is None or (isinstance(raw_url, str) and not raw_url.strip()):
+        raise ValueError("WEBHOOK_POST destination requires url")
+    if not isinstance(raw_url, str):
+        raise ValueError("WEBHOOK_POST destination url must be a string")
+
+    url = raw_url.strip()
+    parsed = urlparse(url)
+    scheme = (parsed.scheme or "").lower()
+    if scheme not in WEBHOOK_URL_SCHEMES:
+        raise ValueError(
+            "WEBHOOK_POST destination url must use http:// or https:// scheme"
+        )
+    if not parsed.netloc:
+        raise ValueError("WEBHOOK_POST destination url must include a host")
 
 
 def _validate_syslog_tls(cfg: dict[str, Any]) -> None:
@@ -72,8 +95,10 @@ def validate_destination_config(destination_type: str, config_json: dict[str, An
     if "payload_mode" in cfg and dtype not in {"WEBHOOK_POST"}:
         raise ValueError("payload_mode is only supported for WEBHOOK_POST destinations")
 
-    if dtype == "WEBHOOK_POST" and "payload_mode" in cfg:
-        normalize_webhook_payload_mode(cfg.get("payload_mode"))
+    if dtype == "WEBHOOK_POST":
+        _validate_webhook_post(cfg)
+        if "payload_mode" in cfg:
+            normalize_webhook_payload_mode(cfg.get("payload_mode"))
 
     tls_keys_present = [k for k in TLS_KEYS if k in cfg]
     if dtype != "SYSLOG_TLS" and tls_keys_present:

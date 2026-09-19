@@ -81,4 +81,27 @@ describe('DestinationsManagementPage', () => {
     expect(screen.getAllByText(/Healthy/).length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('99%').length).toBeGreaterThanOrEqual(1)
   })
+
+  it('shows an actionable error when webhook URL is not http(s)', async () => {
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <DestinationsManagementPage />
+      </MemoryRouter>,
+    )
+    await user.click(screen.getByTestId('destinations-new'))
+    const dialog = await screen.findByRole('dialog')
+    const typeSelect = dialog.querySelector('form#dest-form select') as HTMLSelectElement
+    expect(typeSelect).toBeTruthy()
+    await user.selectOptions(typeSelect, 'WEBHOOK_POST')
+    await user.type(within(dialog).getByLabelText(/^Name/i), 'bad-url-dest')
+    const url = await within(dialog).findByLabelText(/^URL/i)
+    await user.clear(url)
+    await user.type(url, 'not-a-url')
+    await user.click(within(dialog).getByRole('button', { name: /Save Destination/i }))
+    const alert = await screen.findByTestId('destination-form-error')
+    expect(alert).toHaveAttribute('role', 'alert')
+    expect(alert).toHaveTextContent(/http:\/\/ or https:\/\//i)
+    expect(alert).toHaveTextContent(/Fix the highlighted fields/i)
+  })
 })
