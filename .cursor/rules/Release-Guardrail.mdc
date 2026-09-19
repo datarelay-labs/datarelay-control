@@ -10,4 +10,4 @@ The following must never regress unless explicitly requested.
 - Streams UI
 - Checkpoint behavior
 - Delivery behavior
-- Existing E2E tests
+- Existing E2E tests that encode current Source of Truth
