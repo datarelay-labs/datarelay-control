@@ -92,7 +92,8 @@ export function mapBackendStreamStatus(s: string | null | undefined): StreamRunt
   if (u === 'RUNNING') return 'RUNNING'
   if (u === 'ERROR') return 'ERROR'
   if (u === 'RATE_LIMITED_SOURCE' || u === 'RATE_LIMITED_DESTINATION') return 'DEGRADED'
-  if (u === 'PAUSED' || u === 'STOPPED' || u === 'IDLE') return 'STOPPED'
+  if (u === 'PAUSED' || u === 'STOPPED' || u === 'STOPPING' || u === 'STOP_FAILED') return 'STOPPED'
+  if (u === 'IDLE') return 'IDLE'
   if (u === 'UNKNOWN') return 'UNKNOWN'
   return 'UNKNOWN'
 }
@@ -258,6 +259,7 @@ function baseRowFromStreamRead(s: StreamRead): StreamConsoleRow {
     connectorName: s.connector_id != null ? `Connector #${s.connector_id}` : '—',
     sourceTypeLabel: s.source_id != null ? `Source #${s.source_id}` : '—',
     status: mapBackendStreamStatus(s.status),
+    enabled: s.enabled == null ? undefined : Boolean(s.enabled),
     runtimeStatsAttempted: false,
     hasRuntimeApiSnapshot: false,
     events1h: 0,
@@ -348,6 +350,7 @@ export function enrichStreamRowFromOperationalSnapshot(
     ...base,
     name: (snapshot.stream_name ?? '').trim() || base.name,
     status: kpi.runtimeStatus,
+    enabled: kpi.enabled,
     runtimeStatsAttempted: true,
     hasRuntimeApiSnapshot: true,
     eps1m: eps1m > 0 ? eps1m : base.eps1m,

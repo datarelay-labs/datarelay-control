@@ -93,9 +93,11 @@ function streamStatusLabel(row: StreamConsoleRow): string {
     case 'ERROR':
       return 'Critical'
     case 'STOPPED':
-      return 'No Data'
+      return 'Stopped'
+    case 'IDLE':
+      return row.enabled === false ? 'Disabled' : 'No Data'
     default:
-      return 'Unknown'
+      return row.enabled === false ? 'Disabled' : 'Unknown'
   }
 }
 

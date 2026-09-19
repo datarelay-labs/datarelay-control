@@ -91,7 +91,7 @@ import {
 } from '../../lib/streams-console-operations'
 import {
   formatStreamIssuesCell,
-  streamOperationalHealthLabel,
+  streamConsoleLifecycleLabel,
   streamSeverityFromCauses,
 } from '../../lib/stream-console-issue-causes'
 import type { StreamsMetricsWindow } from '../../constants/streamConsoleFilters'
@@ -576,16 +576,16 @@ function OverallHealthBeacon({ kpi, loading }: { kpi: StreamsPageKpi; loading?: 
 function computeHealthSummaryItems(rows: readonly StreamConsoleRow[]) {
   let noData = 0, lowVolume = 0, checkpointLag = 0, destFailure = 0, deliveryRetry = 0, disabled = 0
   for (const row of rows) {
+    // Explicit Stop must win over enabled=false (backend Stop sets both).
+    if (row.status === 'STOPPED') {
+      continue
+    }
     if (row.enabled === false) {
       disabled++
       continue
     }
     if (row.status === 'IDLE' || !row.hasRuntimeApiSnapshot) {
       noData++
-      continue
-    }
-    if (row.status === 'STOPPED') {
-      // Explicit runtime stop — distinct from Disabled / No Data.
       continue
     }
     if (row.ingestEps <= 0 && (row.eps1m ?? 0) <= 0 && (row.eps5m ?? 0) <= 0) lowVolume++
@@ -676,13 +676,13 @@ function StreamOperationalStatusBadge({
   metricsWindow: StreamsMetricsWindow
 }) {
   const severity = streamSeverityFromCauses(row, metricsWindow)
-  const label = streamOperationalHealthLabel(severity)
+  const label = streamConsoleLifecycleLabel(row)
   const toneClass =
-    severity === 'critical'
+    severity === 'critical' || label === 'Critical'
       ? 'border-red-600/50 bg-red-950/80 text-red-400'
-      : severity === 'warning'
+      : severity === 'warning' || label === 'Warning'
         ? 'border-amber-600/50 bg-amber-950/80 text-amber-400'
-        : severity === 'stopped'
+        : label === 'Stopped' || label === 'Disabled' || label === 'No Data'
           ? 'border-slate-600/50 bg-slate-900/80 text-slate-400'
           : 'border-emerald-600/50 bg-emerald-950/80 text-emerald-400'
   return (

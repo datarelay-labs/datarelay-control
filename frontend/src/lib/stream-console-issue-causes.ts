@@ -131,7 +131,9 @@ export function deriveStreamIssueCauses(
       causes.push('Destination Error')
     }
 
-    if (row.status === 'STOPPED' && row.eps1m != null && row.eps1m <= 0) {
+    if (row.status === 'STOPPED') {
+      // Explicit runtime/scheduler stop — do not mislabel as No Data.
+    } else if (row.status === 'IDLE' && row.enabled !== false) {
       causes.push(`No Data (${windowChip})`)
     } else if (row.events1h > 0 && row.events1h < LOW_VOLUME_EVENT_THRESHOLD) {
       causes.push('Low Volume')
@@ -180,6 +182,17 @@ export function streamOperationalHealthLabel(severity: StreamOperationalSeverity
   }
 }
 
+/** Streams Console status chip — Stopped vs Disabled vs No Data must not collapse. */
+export function streamConsoleLifecycleLabel(row: StreamConsoleRow): 'Healthy' | 'Warning' | 'Critical' | 'Stopped' | 'Disabled' | 'No Data' {
+  if (row.status === 'ERROR') return 'Critical'
+  if (row.status === 'DEGRADED') return 'Warning'
+  if (row.status === 'STOPPED') return 'Stopped'
+  if (row.enabled === false) return 'Disabled'
+  if (row.status === 'IDLE' || !row.hasRuntimeApiSnapshot) return 'No Data'
+  if (row.status === 'RUNNING' || row.status === 'UNKNOWN') return 'Healthy'
+  return 'Healthy'
+}
+
 export function aggregateGroupIssueCauses(
   rows: readonly StreamConsoleRow[],
   metricsWindow: StreamsMetricsWindow,
@@ -209,6 +222,9 @@ export function streamSeverityFromCauses(
   row: StreamConsoleRow,
   metricsWindow: StreamsMetricsWindow,
 ): StreamOperationalSeverity {
+  if (row.status === 'STOPPED') return 'stopped'
+  if (row.enabled === false) return 'stopped'
+  if (row.status === 'IDLE') return 'stopped'
   const causes = deriveStreamIssueCauses(row, metricsWindow)
   if (causes.some((c) => c === 'Protection Block' || c === 'Destination Error' || c === 'Checkpoint Error')) {
     if (row.status === 'ERROR' || row.routesError > 0) return 'critical'

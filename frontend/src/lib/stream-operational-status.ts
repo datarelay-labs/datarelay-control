@@ -32,6 +32,7 @@ export function normalizeSeverityInput(row: PartialStreamSeverityInput): StreamS
 export function effectiveStreamSeverity(row: StreamSeverityInput): StreamOperationalSeverity {
   if (row.status === 'ERROR') return 'critical'
   if (row.status === 'STOPPED') return 'stopped'
+  if (row.status === 'IDLE') return 'stopped'
   if ((row.routesError ?? 0) > 0) return 'warning'
   if (row.status === 'DEGRADED' && row.deliveryPctKnown && row.deliveryPct < 95) return 'warning'
   if (row.status === 'DEGRADED' && !row.deliveryPctKnown) return 'warning'
