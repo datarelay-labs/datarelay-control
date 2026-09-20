@@ -464,7 +464,7 @@ test('08 Deploy create blocked after latest API Test failure', async ({ page }) 
   await shot(page, '08-deploy-blocked-after-api-failure')
 })
 
-test('09 successful full wizard path creates stream', async ({ page, request }) => {
+test('09 successful full wizard path creates stream', async ({ page }) => {
   await clearDraft(page)
   await openWizard(page)
   await selectSavedConnector(page)
@@ -502,7 +502,7 @@ test('09 successful full wizard path creates stream', async ({ page, request }) 
   await shot(page, '09-stream-created')
 })
 
-test('10 Data Protection intent persists policy/classification rules', async ({ page, request }) => {
+test('10 Data Protection intent persists policy/classification rules', async ({ page }) => {
   await clearDraft(page)
   await openWizard(page)
   await selectSavedConnector(page)

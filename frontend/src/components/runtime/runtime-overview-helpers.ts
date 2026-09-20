@@ -192,7 +192,7 @@ export function resolveUrlFiltersFromSnapshot(
   const highlightRouteId = params.routeId ?? null
   const highlightDestinationId = params.destinationId ?? null
   let effectiveStreamId: number | null = params.streamId ?? null
-  let error: 'route_not_found' | 'stream_mismatch' | 'no_route_for_destination' | null = null
+  const error: 'route_not_found' | 'stream_mismatch' | 'no_route_for_destination' | null = null
 
   if (params.routeId != null) {
     const route = snapshot.routes.find((r) => r.route_id === params.routeId)

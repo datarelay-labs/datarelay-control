@@ -35,7 +35,7 @@ export function parseJsonPathSegments(path: string): Array<string | number> {
       i = end + 1
       continue
     }
-    const match = /^[^.\[]+/.exec(remainder.slice(i))
+    const match = /^[^.[]+/.exec(remainder.slice(i))
     if (!match) break
     segments.push(match[0])
     i += match[0].length

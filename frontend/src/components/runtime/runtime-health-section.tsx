@@ -178,10 +178,6 @@ export function RuntimeHealthSection({ query, enabled = true }: { query: HealthQ
     }
   }, [query, enabled])
 
-  if (!enabled) {
-    return null
-  }
-
   const topUnhealthyRoutes = useMemo(
     () => routes.filter((r) => r.level === 'UNHEALTHY' || r.level === 'CRITICAL').slice(0, 8),
     [routes],
@@ -197,6 +193,10 @@ export function RuntimeHealthSection({ query, enabled = true }: { query: HealthQ
     () => destinations.slice(0, 12),
     [destinations],
   )
+
+  if (!enabled) {
+    return null
+  }
 
   if (loading && overview == null) {
     return (

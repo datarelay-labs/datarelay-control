@@ -28,7 +28,6 @@ describe('DangerousActionDialog', () => {
   })
 
   it('requires typed name before enabling confirm', async () => {
-    const user = userEvent.setup()
     const onConfirm = vi.fn()
     render(
       <DangerousActionDialog

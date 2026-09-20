@@ -22,7 +22,7 @@ export type StellarMergeAnalysis = {
 
 /** Last path segment normalized for use as a default output field name. */
 export function suggestOutputFieldFromKey(keyOrPath: string): string {
-  const segments = keyOrPath.split(/[\.\[\]]/).filter(Boolean)
+  const segments = keyOrPath.split(/[.[\]]/).filter(Boolean)
   const last = segments[segments.length - 1] ?? 'field'
   return last.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase() || 'field'
 }

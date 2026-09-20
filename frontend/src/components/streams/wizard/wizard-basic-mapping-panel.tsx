@@ -50,7 +50,7 @@ const SUGGESTED_FIELD_GROUPS: ReadonlyArray<{ title: string; names: readonly str
 ]
 
 function suggestOutputField(jsonPath: string): string {
-  const segments = jsonPath.split(/[\.\[\]]/).filter(Boolean)
+  const segments = jsonPath.split(/[.[\]]/).filter(Boolean)
   const last = segments[segments.length - 1] ?? 'field'
   return last.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase() || 'field'
 }
@@ -105,7 +105,7 @@ function findSuggestionPath(suggestionName: string, flatPaths: string[]): string
   const want = suggestionName.replace(/^@/, '').toLowerCase()
   const snLower = suggestionName.toLowerCase()
   const exact = flatPaths.find((p) => {
-    const seg = p.split(/[\.\[\]]/).filter(Boolean).pop()
+    const seg = p.split(/[.[\]]/).filter(Boolean).pop()
     if (!seg) return false
     const sl = seg.toLowerCase().replace(/^@/, '')
     return sl === want || seg.toLowerCase() === snLower
