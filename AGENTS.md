@@ -3,7 +3,7 @@
 This repository follows the canonical Data Relay Labs Engineering System:
 https://github.com/datarelay-labs/engineering-system
 
-Adoption baseline: version 1.3.1 at commit `165cc976cae1b6ef30c7bf90800eed289df3c6fa`.
+Adoption baseline: Engineering System version 1.3.1. Canonical rules were re-reviewed against `datarelay-labs/engineering-system` main at commit `630452fffb0a0f8bd72afc6d56c38efcae579bd2`.
 
 ## Minimum context first
 
@@ -20,18 +20,21 @@ Do not preload all standards, archived specifications, historical audits, or Wik
 
 ## Repository authority
 
-Distinguish normative product requirements from observed implementation state.
+Use `docs/architecture/source-of-truth-index.md` as the canonical authority map. Do not infer authority from a filename, directory name, document age, or implementation convenience.
 
-For product intent and required behavior, use:
-1. `docs/source-of-truth/PRODUCT-CHARTER-Version-1.2.1-FINAL.txt`
-2. `docs/architecture/source-of-truth-index.md` and the current documents it designates
-3. Current implementation specs / ADRs / runbooks for the affected contract
-4. Current implementation and tests as evidence of what exists now
-5. Historical, archived, superseded, or compatibility-only material
+For intended product behavior:
+1. `docs/source-of-truth/PRODUCT-CHARTER-Version-1.2.1-FINAL.txt` — top-level product authority.
+2. Current subordinate product/UX documents explicitly designated by `docs/architecture/source-of-truth-index.md`.
+3. The current task-relevant implementation spec under `specs/`.
+4. ADRs/runbooks only for the bounded architecture decision or operational procedure they own.
 
-Actual code, schema, configuration, runtime state, and test results are authoritative evidence of the current system state, but they do not override an explicit current product requirement merely because the implementation has drifted.
+Actual code, schema, configuration, migrations, runtime state, and deterministic tests are authoritative evidence of what exists now, but they do not override an explicit current product requirement merely because implementation has drifted.
 
-Historical or explicitly retired behavior is not protected by no-regression policy. If an old test conflicts with current Source of Truth, verify whether the test is stale before changing the implementation.
+`.engineering/*` defines engineering process, validation selection, and release evidence; it is not a product-feature specification. README/architecture overview/release notes/audits/Wiki are derived or historical unless the authority map explicitly gives them a stronger role.
+
+If two current normative artifacts conflict, fail closed and surface the conflict. Do not resolve it from version-looking filenames, commit dates, or AI inference. Known filename/internal-version mismatches are recorded in `docs/source-of-truth/README.md`; do not silently rewrite those source documents.
+
+Historical or explicitly retired behavior is not protected by no-regression policy. If an old test conflicts with current authority, verify whether the test is stale before changing implementation.
 
 ## Data Relay Control invariants
 

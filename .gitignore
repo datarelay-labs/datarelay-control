@@ -127,3 +127,6 @@ support-bundle*.zip
 # Release soak artifacts (tracked CSV exports under docs/release/artifacts/)
 docs/release/artifacts/*
 !docs/release/artifacts/*.csv
+
+# Source-of-Truth upload staging is local/transient only.
+docs/source-of-truth/_incoming/

@@ -13,6 +13,18 @@ paths:
     domains: [e2e]
   ".github/workflows/**":
     domains: [release]
+  "docs/**":
+    domains: [documentation]
+  "specs/**":
+    domains: [documentation]
+  ".specify/**":
+    domains: [documentation]
+  "AGENTS.md":
+    domains: [documentation]
+  "README.md":
+    domains: [documentation]
+  "scripts/docs/**":
+    domains: [documentation]
 
 scenarios:
   - id: FRONTEND-BUILD-AFFECTED
@@ -100,4 +112,19 @@ scenarios:
       - "Every configured validation/E2E stream remains within the 5-20 EPS target range."
       - "Validation changes do not silently reduce or inflate configured throughput outside the guardrail."
     origin: "Data Relay Control project invariant"
+    release_gate: true
+
+  - id: DOC-SOT-INTEGRITY
+    name: Documentation Source-of-Truth integrity
+    level: static
+    domains: [documentation]
+    triggers: [affected]
+    platforms: [linux]
+    command: "python3 scripts/docs/validate-source-of-truth.py"
+    invariants:
+      - "The authority map references every designated current Source-of-Truth document."
+      - "Transient _incoming staging is not tracked."
+      - "The specification index exactly matches tracked specs."
+      - "Superseded master-design content cannot regain current authority silently."
+    origin: "docs/architecture/source-of-truth-index.md"
     release_gate: true

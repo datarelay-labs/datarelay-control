@@ -1,80 +1,88 @@
-# Current Source Of Truth
+# Data Relay Control Authority Map
 
-Authoritative product, UX, governance, and guardrail documents for Data Relay. Implementation specs under `specs/` remain the engineering authority for code; these documents are the product and UX authority.
+**Role:** Canonical registry of repository authority; this file is not itself a replacement Product Charter.
+**Last reviewed:** 2026-09-20
+**Canonical product-document directory:** `docs/source-of-truth/`
 
-**Canonical directory:** `docs/source-of-truth/`
+## Authority model
 
-**Last updated:** 2026-06-14
+Data Relay Control separates **intended behavior** from **observed implementation state**.
 
----
+### Intended product behavior
 
-## Index
+1. **Product Charter** — top-level product identity, scope, non-goals, architecture principles.
+2. **Current subordinate Source-of-Truth documents** listed below — WBS, UX, governance, and domain product contracts.
+3. **Current task-relevant implementation specification** under `specs/` — bounded engineering contract translating product intent into implementation requirements.
+4. **ADR / runbook** — authority only for the durable architecture decision or operational procedure it explicitly owns.
 
-| # | Document | Path | Version (filename) |
-|---|----------|------|-------------------|
-| 1 | Product Charter | [`docs/source-of-truth/PRODUCT-CHARTER-Version-1.2.1-FINAL.txt`](../source-of-truth/PRODUCT-CHARTER-Version-1.2.1-FINAL.txt) | 1.2.1 |
-| 2 | Master WBS | [`docs/source-of-truth/MASTER-WBS-Version-1.2.1-FINAL.txt`](../source-of-truth/MASTER-WBS-Version-1.2.1-FINAL.txt) | 1.2.1 |
-| 3 | UX Charter | [`docs/source-of-truth/DATA-RELAY-UX-CHARTER-v1.2.1-FINAL.txt`](../source-of-truth/DATA-RELAY-UX-CHARTER-v1.2.1-FINAL.txt) | 1.2.1 |
-| 4 | Stream Wizard UX Charter | [`docs/source-of-truth/DATA-RELAY-STREAM-WIZARD-UX-CHARTER-v5.2-FINAL.txt`](../source-of-truth/DATA-RELAY-STREAM-WIZARD-UX-CHARTER-v5.2-FINAL.txt) | 5.2 |
-| 5 | Governance UX Charter | [`docs/source-of-truth/GOVERNANCE-UX-CHARTER-v1.1-FINAL.txt`](../source-of-truth/GOVERNANCE-UX-CHARTER-v1.1-FINAL.txt) | 1.1 |
-| 6 | Governance Workspace UX Charter | [`docs/source-of-truth/DATA-RELAY-GOVERNANCE-WORKSPACE-UX-CHARTER-v1.1-FINAL.txt`](../source-of-truth/DATA-RELAY-GOVERNANCE-WORKSPACE-UX-CHARTER-v1.1-FINAL.txt) | 1.1 |
-| 7 | Governance Workspace Spec | [`docs/source-of-truth/DATA-RELAY-GOVERNANCE-WORKSPACE-v1.1-FINAL.txt`](../source-of-truth/DATA-RELAY-GOVERNANCE-WORKSPACE-v1.1-FINAL.txt) | 1.1 |
-| 8 | Governance & Transform Policy | [`docs/source-of-truth/DATA-RELAY-GOVERNANCE-AND-TRANSFORM-POLICY-DRAFT-v1.1-FINAL.txt`](../source-of-truth/DATA-RELAY-GOVERNANCE-AND-TRANSFORM-POLICY-DRAFT-v1.1-FINAL.txt) | 1.1 (Draft) |
-| 9 | Union Schema UX Spec | [`docs/source-of-truth/DATA-RELAY-UNION-SCHEMA-UX-SPEC-v1.1-FINAL.txt`](../source-of-truth/DATA-RELAY-UNION-SCHEMA-UX-SPEC-v1.1-FINAL.txt) | 1.1 |
+### Observed system state
 
----
+Actual code, schemas, configuration, runtime state, migrations, and deterministic tests are authoritative evidence of what the system does now. They do not override an explicit current product requirement merely because implementation has drifted.
 
-## Hierarchy
+### Engineering process
 
-```text
-PRODUCT-CHARTER (1.2.1)          ← top-level product authority
-  └─ MASTER-WBS (1.2.1)          ← must not conflict with Product Charter
-       ├─ DATA-RELAY-UX-CHARTER (1.2.1)
-       ├─ STREAM-WIZARD-UX-CHARTER (5.2)
-       ├─ GOVERNANCE-UX-CHARTER (1.1)
-       ├─ GOVERNANCE-WORKSPACE-UX-CHARTER (1.1)
-       ├─ GOVERNANCE-WORKSPACE (1.1)
-       ├─ GOVERNANCE-AND-TRANSFORM-POLICY (1.1 Draft)
-       └─ UNION-SCHEMA-UX-SPEC (1.1)
-```
+`AGENTS.md` and `.engineering/*` define engineering workflow, validation selection, and release evidence. They are not product-feature specifications.
 
----
+### Derived / historical knowledge
 
-## Archive
+`README.md`, architecture overviews, release notes, audit reports, Wiki/Athena, and archived documents explain or record state. They must not create a competing product contract.
 
-Superseded documents: [`docs/archive/legacy-design/`](../archive/legacy-design/)
+## Current product / UX documents
 
----
+| Priority | Role | Current designated document | Notes |
+|---:|---|---|---|
+| 1 | Product Charter | [`PRODUCT-CHARTER-Version-1.2.1-FINAL.txt`](../source-of-truth/PRODUCT-CHARTER-Version-1.2.1-FINAL.txt) | Top-level product authority |
+| 2 | Master WBS | [`MASTER-WBS-Version-1.2.1-FINAL.txt`](../source-of-truth/MASTER-WBS-Version-1.2.1-FINAL.txt) | Planning/milestone authority; subordinate to Product Charter |
+| 3 | UX Charter | [`DATA-RELAY-UX-CHARTER-v1.2.1-FINAL.txt`](../source-of-truth/DATA-RELAY-UX-CHARTER-v1.2.1-FINAL.txt) | Product UX authority |
+| 3 | Stream Wizard UX Charter | [`DATA-RELAY-STREAM-WIZARD-UX-CHARTER-v5.2-FINAL.txt`](../source-of-truth/DATA-RELAY-STREAM-WIZARD-UX-CHARTER-v5.2-FINAL.txt) | Stream Wizard authority |
+| 3 | Governance UX Charter | [`GOVERNANCE-UX-CHARTER-v1.1-FINAL.txt`](../source-of-truth/GOVERNANCE-UX-CHARTER-v1.1-FINAL.txt) | Governance surface UX |
+| 3 | Governance Workspace UX Charter | [`DATA-RELAY-GOVERNANCE-WORKSPACE-UX-CHARTER-v1.1-FINAL.txt`](../source-of-truth/DATA-RELAY-GOVERNANCE-WORKSPACE-UX-CHARTER-v1.1-FINAL.txt) | Governance workspace UX |
+| 3 | Governance Workspace Spec | [`DATA-RELAY-GOVERNANCE-WORKSPACE-v1.1-FINAL.txt`](../source-of-truth/DATA-RELAY-GOVERNANCE-WORKSPACE-v1.1-FINAL.txt) | Governance workspace product contract |
+| 3 | Governance & Transform Policy | [`DATA-RELAY-GOVERNANCE-AND-TRANSFORM-POLICY-DRAFT-v1.1-FINAL.txt`](../source-of-truth/DATA-RELAY-GOVERNANCE-AND-TRANSFORM-POLICY-DRAFT-v1.1-FINAL.txt) | Designated current file; internal header still says Draft |
+| 3 | Union Schema UX Spec | [`DATA-RELAY-UNION-SCHEMA-UX-SPEC-v1.1-FINAL.txt`](../source-of-truth/DATA-RELAY-UNION-SCHEMA-UX-SPEC-v1.1-FINAL.txt) | Union Schema UX/product contract |
 
-## Staging
+Version/header inconsistencies are documented in [`docs/source-of-truth/README.md`](../source-of-truth/README.md). Do not infer or silently normalize those source-document versions.
 
-Upload staging area (optional): `docs/source-of-truth/_incoming/`
+## Implementation specification system
 
----
+- Current implementation specifications live under [`specs/`](../../specs/).
+- [`.specify/specs-index.md`](../../.specify/specs-index.md) is a complete navigation index generated from the tracked spec set.
+- [`.specify/memory/constitution.md`](../../.specify/memory/constitution.md) is a small implementation-governance bridge and must remain subordinate to this authority model.
+- A specific current spec owns its bounded implementation contract only when it does not conflict with higher product/UX authority.
+- If a current spec conflicts with a higher current product document, stop and resolve the conflict explicitly rather than choosing whichever is newer or easier to implement.
 
-## Runtime (current)
+## Current architecture entry points
 
-Route Processing (`GDC_ROUTE_PROCESSING_ENABLED=true`) is the only supported product runtime. Explicit `false` is rejected at settings load. Rollback uses a previous release image, not an in-process dual runtime.
+| Purpose | Document | Authority role |
+|---|---|---|
+| Current architecture overview | [`OSS-v1-ARCHITECTURE.md`](OSS-v1-ARCHITECTURE.md) | Derived current architecture explanation; links to normative sources/specs |
+| Core architecture contract | [`specs/001-core-architecture/spec.md`](../../specs/001-core-architecture/spec.md) | Implementation contract |
+| Runtime pipeline contract | [`specs/002-runtime-pipeline/spec.md`](../../specs/002-runtime-pipeline/spec.md) | Implementation contract |
+| Delivery / routing contract | [`specs/004-delivery-routing/spec.md`](../../specs/004-delivery-routing/spec.md) | Implementation contract |
+| Route Processing architecture | [`specs/091-route-processing-architecture/spec.md`](../../specs/091-route-processing-architecture/spec.md) | Current Route Processing contract |
+| Route Processing UX | [`specs/097-route-processing-ux/spec.md`](../../specs/097-route-processing-ux/spec.md) | Current Route Processing UX contract |
 
----
+Route Processing is the only supported product runtime. An explicit `GDC_ROUTE_PROCESSING_ENABLED=false` is rejected; rollback uses a previous release image rather than a parallel in-process runtime.
 
-## SUPERSEDED (historical; do not implement from these)
+## Conflict-resolution rule
 
-These were valid at a snapshot date. A later charter, spec, or the implemented wizard replaced them.
+1. Confirm that both artifacts are current, not archived/superseded.
+2. Apply the authority layers above; a lower layer cannot expand or contradict a higher layer.
+3. Treat code/runtime divergence as implementation drift, not an automatic requirement rewrite.
+4. If two artifacts at the same authority layer conflict, fail closed and create an explicit product/specification decision.
+5. Do not resolve conflicts from filename version, commit date, or AI inference alone.
 
-| Document | Why superseded | Superseded by |
-|----------|----------------|---------------|
-| [`docs/master-design.md`](../master-design.md) | Pre-charter “Generic Data Connector” master design; Mapping-first product framing | PRODUCT-CHARTER + this index + OSS-v1-ARCHITECTURE |
-| [`docs/v1-readiness-checklist.md`](../v1-readiness-checklist.md) | Pre-GA GDC checklist; Mapping/Enrichment/Routes as primary nav | docs/release/OSS-v1.0-GA-CHECKLIST.md + UX Charter nav |
-| [`docs/archive/historical-audits/route-architecture-gap-analysis.md`](../archive/historical-audits/route-architecture-gap-analysis.md) | Snapshot: Transform → Destinations wizard as “current” | STREAM-WIZARD-UX-CHARTER v5.2 + wizard-state.ts |
-| [`docs/archive/historical-audits/m13-destination-first-full-audit.md`](../archive/historical-audits/m13-destination-first-full-audit.md) | Snapshot: Destination First FAIL | Implemented 5-step Destination First wizard |
-| [`docs/archive/historical-audits/m13-route-processing-ui-deferral.md`](../archive/historical-audits/m13-route-processing-ui-deferral.md) | Snapshot: Destination First not implemented | STREAM-WIZARD-UX-CHARTER + specs/097 |
-| [`docs/archive/historical-audits/m13-route-architecture-completion-audit.md`](../archive/historical-audits/m13-route-architecture-completion-audit.md) | Snapshot: Transform-first wizard | Current wizard-state.ts |
-| [`docs/archive/historical-audits/route-processing-foundation-implementation-spec.md`](../archive/historical-audits/route-processing-foundation-implementation-spec.md) | Pre–Destination First implementation plan | specs/091–097 |
-| [`docs/release/OSS-v1.0-GA-RELEASE-NOTES.md`](../release/OSS-v1.0-GA-RELEASE-NOTES.md) | Historical GA snapshot (2026-06-20); flag OFF / unwired drift KPI | KNOWN-LIMITATIONS + OSS-v1-ARCHITECTURE |
-| [`docs/release/OSS-v1-RC-RELEASE-NOTES.md`](../release/OSS-v1-RC-RELEASE-NOTES.md) | Historical RC snapshot; flag historically defaulted off | KNOWN-LIMITATIONS |
-| [`docs/release/OSS-v1.0-GA-CHECKLIST.md`](../release/OSS-v1.0-GA-CHECKLIST.md) | Historical GA checklist (item 37 flag false) | KNOWN-LIMITATIONS + this index |
-| [`docs/source-of-truth/CHATGPT-DATA-RELAY-GUARDRAIL.txt`](../source-of-truth/CHATGPT-DATA-RELAY-GUARDRAIL.txt) | Pre-GA AI workflow guardrail with transient M20.4.1/RC/GA state assumptions | `AGENTS.md` + Engineering System + current Product Charter/source-of-truth index |
-| Other `docs/architecture/m13-*` design reviews / flag reports | Point-in-time M13 engineering records | specs/091–097 + Runtime code |
+## Historical / superseded material
 
-Stub files remain under `docs/architecture/` so old links resolve to a SUPERSEDED notice.
+The following are retained only for history or old-link resolution and must not drive new implementation:
+
+- [`docs/master-design.md`](../master-design.md) — pre-charter Generic Data Connector master design; retained with a SUPERSEDED banner so old section links still resolve.
+- [`docs/v1-readiness-checklist.md`](../v1-readiness-checklist.md) — pre-GA readiness snapshot.
+- `docs/architecture/m13-*` and `docs/archive/historical-audits/` — point-in-time M13 audits/reviews.
+- historical GA/RC release notes and checklists — release snapshots, not current product authority.
+- [`docs/archive/legacy-design/`](../archive/legacy-design/) — superseded constitutions, indexes, guardrails, and design material.
+- [`archive/retired-doc-mutators/`](../../archive/retired-doc-mutators/) — retired one-shot scripts that previously appended policy into multiple documents.
+
+## Staging policy
+
+`docs/source-of-truth/_incoming/` is local/transient staging and must not be tracked. Promote a source document only after an explicit comparison/decision, then remove or archive the incoming copy.

@@ -27,7 +27,7 @@ Out of scope (do not implement):
 - Syslog over QUIC.
 - Changes to the browser-facing nginx reverse proxy in spec 021.
 
-## Destination Types (master design + spec 004 §Destination Types)
+## Destination Types (spec 004 §Destination Types)
 
 Supported `destination_type` values for syslog delivery:
 

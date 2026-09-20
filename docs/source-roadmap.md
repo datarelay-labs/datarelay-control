@@ -35,4 +35,4 @@ The following are **out of scope** for specs **028–030** and this expansion wa
 - Kafka and general message queues
 - Cloud object storage beyond existing **S3_OBJECT_POLLING** (no new GCS/Azure Blob/etc. in this roadmap)
 
-Webhook receiver and other future sources remain governed by `specs/001-core-architecture/spec.md` and the master design; they are not superseded by this page.
+Webhook receiver and other future sources remain governed by `specs/001-core-architecture/spec.md` and the current authority map (`docs/architecture/source-of-truth-index.md`); they are not superseded by this page.

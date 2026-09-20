@@ -4,7 +4,9 @@
 
 Data Relay is a source-available **Enterprise Data Control Gateway**. It collects data from external systems (HTTP API polling, webhook receiver), applies Mapping and Enrichment, runs schema drift detection, sensitive-data detection, protection, classification, and policy enforcement, then delivers events to multiple Destinations with governance, RBAC, and audit controls.
 
-Single source of truth for architecture: [`docs/master-design.md`](docs/master-design.md)
+Authority map: [`docs/architecture/source-of-truth-index.md`](docs/architecture/source-of-truth-index.md)
+Current architecture overview: [`docs/architecture/OSS-v1-ARCHITECTURE.md`](docs/architecture/OSS-v1-ARCHITECTURE.md)
+Implementation contracts: [`specs/`](specs/)
 
 Release documentation: [`docs/release/`](docs/release/) · Documentation hub: [`docs/README.md`](docs/README.md)
 
@@ -104,8 +106,8 @@ Destination
 ### Install and run
 
 ```bash
-git clone https://github.com/RickLee-kr/gdc-platform.git data-relay
-cd data-relay
+git clone https://github.com/datarelay-labs/gdc-platform.git datarelay-control
+cd datarelay-control
 cp .env.example .env
 # Set JWT_SECRET_KEY, SECRET_KEY, ENCRYPTION_KEY, POSTGRES_PASSWORD before production use
 
@@ -253,7 +255,9 @@ cd frontend && npm run validate
 | [`docs/release/OSS-v1.0-GA-RELEASE-NOTES.md`](docs/release/OSS-v1.0-GA-RELEASE-NOTES.md) | GA release notes |
 | [`docs/release/KNOWN-LIMITATIONS.md`](docs/release/KNOWN-LIMITATIONS.md) | Known gaps reference |
 | [`docs/release/OSS-v1.0-GA-CHECKLIST.md`](docs/release/OSS-v1.0-GA-CHECKLIST.md) | GA verification checklist |
-| [`docs/master-design.md`](docs/master-design.md) | Architecture reference |
+| [`docs/architecture/source-of-truth-index.md`](docs/architecture/source-of-truth-index.md) | Product/specification authority map |
+| [`docs/architecture/OSS-v1-ARCHITECTURE.md`](docs/architecture/OSS-v1-ARCHITECTURE.md) | Current architecture overview |
+| [`docs/master-design.md`](docs/master-design.md) | **SUPERSEDED** historical pre-charter design |
 | [`docs/deployment/install-guide.md`](docs/deployment/install-guide.md) | Detailed install |
 | [`docs/release/installation-validation.md`](docs/release/installation-validation.md) | Install verification steps |
 | [`docs/release/production-checklist.md`](docs/release/production-checklist.md) | Production go-live checklist |
