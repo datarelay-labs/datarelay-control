@@ -38,7 +38,7 @@ alembic heads
 # (prints repository heads via --print-alembic-heads)
 ```
 
-Verified on this documentation update against `main-v2` HEAD `3e4daa31691589c66c89fbb9400ea4711c54d8b5`, the single Alembic head is:
+Verified on this documentation update against `main-v2` HEAD `5fab5ab18b265727a422c838b774359c7e086b75`, the single Alembic head is:
 
 `20260804_0062`
 
@@ -49,6 +49,12 @@ There is **no** `20260513_0021_dl_parts` file in this repository.
 ### Historical note (2026-05-16 audit)
 
 An earlier audit recorded `20260513_0019_must_change_pw` as the then-current single head. That revision remains in the graph as an ancestor; it is **not** the current repository head. Never stamp a current-schema database to that obsolete revision.
+
+### Schema shape that is *not* current
+
+Current head schema includes monthly **partitioned** `delivery_logs` (plus many later tables). Partitioning is introduced by committed revision `20260517_0021_obs_scale` (`alembic/versions/20260517_0021_observability_scale_foundation.py`), which revises `20260516_0020_rt_metrics_30d`.
+
+A single unpartitioned `delivery_logs` heap table is therefore a **historical / pre-partition** shape. It must **never** be treated as “matches current repo,” and must **never** be stamped directly to `head`.
 
 ## Orphan revision: `20260513_0021_dl_parts` (historical incident)
 
@@ -73,30 +79,68 @@ An earlier audit recorded `20260513_0019_must_change_pw` as the then-current sin
    ```sql
    SELECT version_num FROM alembic_version;
    \dt delivery_logs*
-   SELECT child, parent FROM pg_inherits i
+   SELECT c.relname AS child, p.relname AS parent
+     FROM pg_inherits i
      JOIN pg_class c ON c.oid = i.inhrelid
      JOIN pg_class p ON p.oid = i.inhparent
      WHERE p.relname = 'delivery_logs' OR c.relname LIKE 'delivery_logs%';
+   SELECT EXISTS (
+     SELECT 1
+     FROM pg_partitioned_table pt
+     JOIN pg_class c ON c.oid = pt.partrelid
+     WHERE c.relname = 'delivery_logs'
+   ) AS delivery_logs_is_partitioned;
    ```
 
-3. **If schema matches current repo (single `delivery_logs` table, no missing columns)**
+3. **Classify recovery evidence (fail closed)**
 
-   - Restore the missing migration file from backup **or**
-   - After operator sign-off, align the stamp to the **current** repository head (only when schema already matches). Re-run `alembic heads` on the deployed checkout first:
+   Use the inspection results to choose **one** path. Do not invent revision IDs and do not stamp from incomplete evidence.
+
+   **A. Pre-partition / historical shape**
+
+   Evidence examples: one heap `delivery_logs` table; `delivery_logs_is_partitioned = false`; no `delivery_logs_YYYY_MM` / `delivery_logs_default` partition children.
+
+   - This is **not** current head schema.
+   - **Never** run `alembic stamp head` on this shape.
+   - Preferred recovery: restore the missing migration/history from backup, or otherwise recover with evidence that reintroduces the real applied chain.
+   - If — and only if — an independent inventory proves the database is equivalent to a **specific committed ancestor** for both **schema and data effects** of that revision, you may stamp **that ancestor only**, then upgrade. Because `alembic_version` still holds the unresolvable orphan ID, a normal `alembic stamp <rev>` will fail resolving the current revision — use `--purge` after backup + equivalence proof:
 
      ```bash
-     # Example — verify with validate-migrations and alembic heads first
+     # After proving schema + data effects ≡ a specific committed revision ID (not "looks close")
      docker compose -f docker-compose.platform.yml run --rm --no-deps api \
-       alembic stamp head
+       alembic stamp --purge <proven_ancestor_revision>
+     docker compose -f docker-compose.platform.yml run --rm --no-deps api \
+       alembic upgrade head
      ```
 
-   Mis-stamping corrupts history; use `validate_migrations` and a schema diff before stamping. Do not stamp to a historical ancestor such as `20260513_0019_must_change_pw` when the schema already matches today's head.
+     Graph facts (not a stamp recipe by themselves):
+     - The last committed revision that still keeps unpartitioned `delivery_logs` is `20260516_0020_rt_metrics_30d`.
+     - The next revision (`20260517_0021_obs_scale`) converts `delivery_logs` to monthly partitions and creates `runtime_aggregate_snapshots`.
+     - `20260516_0020_rt_metrics_30d` also performs a **data** update (`platform_retention_policy.runtime_metrics_retention_days` 90→30) that DDL inspection alone cannot prove. If catalog shape matches 0020 but that data effect is unproven, do **not** stamp 0020 — stamp an earlier proven revision (for example `20260513_0019_must_change_pw` when that ancestor is fully proven) so `upgrade head` still executes 0020, or fail closed.
+     - Having a single `delivery_logs` table alone does **not** prove equivalence to `20260516_0020_rt_metrics_30d` or to `20260513_0019_must_change_pw`.
+   - If equivalence cannot be proven, **stop**: restore from backup or perform evidence-led recovery. Do not guess a stamp target.
 
-4. **If schema was partially migrated for partitioning**
+   **B. Current-schema equivalence independently proven**
 
-   - Do not stamp blindly. Restore from backup or re-introduce the exact migration chain that created the current DDL.
+   Evidence must cover the complete current state for the deployed checkout, including at least: partitioned `delivery_logs` (`delivery_logs_is_partitioned = true` with expected partition children), intervening tables/objects created after partitioning, no material missing columns/indexes versus head, **and** proof that head-era **data effects** have already been applied (DDL alone is insufficient). Fresh examples of data transformations that a head stamp would skip: `20260606_0042_gov_lifecycle` (`DISABLED` → `RETIRED` for governance policies) and `20260609_0053_product_group` (connector product-group backfill). A single-table `delivery_logs` check is insufficient.
 
-5. **Verify**
+   - Only after that full schema **and** data-effect verification **and** operator sign-off may you align Alembic to the current repository head. Re-run `alembic heads` on the deployed checkout first. When recovering from an orphan row in `alembic_version`, use `--purge` so Alembic does not try to resolve the missing revision first:
+
+     ```bash
+     # Only when complete current-schema + data-effect equivalence is already proven
+     docker compose -f docker-compose.platform.yml run --rm --no-deps api \
+       alembic stamp --purge head
+     ```
+
+   - If DDL already matches head but data effects remain unproven, do **not** stamp head and do **not** stamp an earlier ancestor to “replay” those migrations. Intervening revisions also perform non-idempotent DDL (for example `add_column` in `20260606_0042_gov_lifecycle` / `20260609_0053_product_group`), so rewinding the version table and running `upgrade head` fails on already-present objects without repairing the data. **Fail closed**: restore from backup, re-introduce the real applied history, or use a separately verified data-repair procedure with operator sign-off.
+
+   Mis-stamping corrupts history; use `validate_migrations` and a schema/data inventory before any stamp. Do not stamp a current-schema database down to a historical ancestor such as `20260513_0019_must_change_pw`.
+
+   **C. Partial / ambiguous partitioning or mixed DDL**
+
+   - Do not stamp. Restore from backup or re-introduce the exact migration chain that created the observed DDL.
+
+4. **Verify**
 
    ```bash
    ./scripts/ops/validate-migrations.sh --strict
