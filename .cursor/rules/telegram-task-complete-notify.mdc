@@ -1,17 +1,50 @@
 ---
-description: HARD GATE — run notify.sh COMPLETE before finishing any task.
+description: HARD GATE — send Telegram COMPLETE only when the full requested workstream is terminally complete.
 alwaysApply: true
 ---
 
-# Telegram COMPLETE (HARD GATE)
+# Telegram COMPLETE (TERMINAL HARD GATE)
 
-Before the final reply ending requested work, run:
+Telegram `COMPLETE` means the requested workstream is fully complete, not merely that the current agent turn or intermediate Next Action succeeded.
+
+For an active `[AI Work]` Work Packet, **do not run** `notify.sh COMPLETE` while any of the following is true:
+
+- Work Packet `STATUS=ACTIVE`, `WAITING`, `BLOCKED`, or otherwise non-terminal
+- an executable Next Action remains
+- required CI/checks are pending or failed
+- a required PR is still open/unmerged
+- required review/approval is still pending
+- required integration/merge is incomplete
+- a linked product issue that the Work Packet expects to close remains open
+
+A successful implementation, test run, commit, push, or PR creation is only an intermediate milestone when later gates remain.
+
+For Work Packet tasks, send Telegram COMPLETE only after all applicable terminal conditions are satisfied:
+
+- required implementation and validation PASS
+- required CI/review gates PASS
+- required integration/merge complete
+- required linked product issue closure complete
+- Work Packet updated to `STATUS=DONE` or `STATUS=COMPLETE`
+- `Next Action=NONE`
+- `Blockers=NONE`
+
+For work without a Work Packet, send COMPLETE only when the full user-requested task and all required validation are actually complete.
+
+Only then, immediately before the final completion reply, run:
 
 ```bash
 /usr/local/bin/notify.sh COMPLETE "Task: <name>
-Status: PASS|PARTIAL|BLOCKED
+Status: PASS
 Branch: $(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo n/a)
 HEAD: $(git rev-parse --short HEAD 2>/dev/null || echo n/a)"
 ```
 
-No done/PASS claim until that command runs. Stop-hook is backup only.
+If work is ACTIVE, WAITING, PARTIAL, or BLOCKED:
+
+- do **not** send Telegram COMPLETE
+- do **not** use `Done`, `Task Completed`, or equivalent completion wording
+- keep working when the next action is machine-executable
+- otherwise report the current non-terminal state in the CLI and leave durable state in the Work Packet
+
+Stop-hook is backup only.
