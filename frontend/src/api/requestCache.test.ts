@@ -98,18 +98,19 @@ describe('shared request cache', () => {
     await expect(cachedRequest('routes-runtime', 'fail-key', async () => Promise.reject(boom))).rejects.toBe(boom)
   })
 
-  it('does not swallow non-abort unhandled rejections when there is no awaiter', async () => {
-    const boom = new Error('loader failed unhandled')
+  it('does not emit a secondary unhandled rejection when a non-abort failure is awaited', async () => {
+    const boom = new Error('loader failed awaited')
     const rejections: unknown[] = []
     const onUnhandled = (reason: unknown) => {
       rejections.push(reason)
     }
     process.on('unhandledRejection', onUnhandled)
     try {
-      void cachedRequest('routes-runtime', 'fail-orphan', async () => Promise.reject(boom))
-      await vi.waitFor(() => {
-        expect(rejections).toContain(boom)
-      })
+      await expect(
+        cachedRequest('routes-runtime', 'fail-awaited', async () => Promise.reject(boom)),
+      ).rejects.toBe(boom)
+      await new Promise((r) => setTimeout(r, 50))
+      expect(rejections).toEqual([])
     } finally {
       process.off('unhandledRejection', onUnhandled)
     }

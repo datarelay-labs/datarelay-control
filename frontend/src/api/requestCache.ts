@@ -86,14 +86,17 @@ export type CachedRequestOptions = {
 }
 
 /**
- * Marks AbortError as handled without swallowing non-abort failures for unhandled tracking.
+ * Marks AbortError as handled without swallowing caller-visible rejections.
  * Use on any promise chain that re-wraps `cachedRequest` (e.g. `.then` / `.finally`) so
  * intentional abort/unmount does not surface as Vitest/Node unhandledRejection.
+ *
+ * Important: do not `return Promise.reject(err)` for non-abort failures. That manufactures
+ * a second, detached rejection that stays unhandled even when callers correctly await the
+ * original promise.
  */
 export function observeCachedRequestRejection<T>(promise: Promise<T>): Promise<T> {
   void promise.catch((err) => {
     if (isRequestAborted(err)) return
-    return Promise.reject(err)
   })
   return promise
 }
