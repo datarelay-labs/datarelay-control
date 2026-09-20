@@ -45,15 +45,12 @@ export function deriveGovernanceOperationalIssues(
         ? safeNonNeg(health.destinations.degraded)
         : 0
 
-  // Derive schema drift using the same source as the main dashboard:
-  // dashboard.validation_operational aggregates checkpoint drift + failing/degraded validation counts.
-  // If that field is absent (API failed or endpoint not yet available) return null, not 0.
-  const validation = dashboard?.validation_operational
-  const schemaDriftCount = validation != null
-    ? safeNonNeg(validation.open_checkpoint_drift_alerts) +
-      safeNonNeg(validation.failing_validations_count) +
-      safeNonNeg(validation.degraded_validations_count)
-    : null
+  // Explicit OPEN StreamSchemaFieldDrift aggregate from dashboard/summary.
+  // If that field is absent (API failed or unavailable) return null, not 0.
+  const schemaDriftCount =
+    dashboard?.open_schema_field_drift_count != null
+      ? safeNonNeg(dashboard.open_schema_field_drift_count)
+      : null
 
   return {
     noDataStreams,

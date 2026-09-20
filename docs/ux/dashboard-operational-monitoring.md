@@ -21,9 +21,9 @@ Operational dashboard at `/monitoring` is the operator's first screen. This docu
 
 ### Operational issues
 
-- **Source:** `deriveOperationalIssues(health, dashboard, streams)` — no new backend endpoints.
+- **Source:** `deriveOperationalIssues(health, dashboard, streams)` — uses existing `runtime/dashboard/summary`.
 - **UI:** `OperationalIssuesPanel` — four rows with counts and progress bars.
-- **Note:** `schemaDriftCount` is `null` until an aggregate API exists; the row shows `0`.
+- **Schema Drift:** `schemaDriftCount` comes from `open_schema_field_drift_count` (OPEN `StreamSchemaFieldDrift` findings only). When that field is unavailable, the count is `null` (UI may render as `0`).
 
 ### Alert deep link
 

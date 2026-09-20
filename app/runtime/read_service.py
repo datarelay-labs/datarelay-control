@@ -1179,6 +1179,7 @@ def get_degraded_stream_runtime_stats_and_health(db: Session, stream_id: int, li
 
 
 def _runtime_engine_status(snap: Any) -> Literal["RUNNING", "STOPPED", "DEGRADED"]:
+    """Map startup snapshot to a coarse runtime engine status for the dashboard."""
     if not snap.schema_ready or snap.connection_error:
         return "DEGRADED"
     started = scheduler_started_at()
@@ -1187,6 +1188,18 @@ def _runtime_engine_status(snap: Any) -> Literal["RUNNING", "STOPPED", "DEGRADED
     if not snap.scheduler_active:
         return "STOPPED"
     return "STOPPED"
+
+
+def _open_schema_field_drift_count(db: Session) -> int | None:
+    """Count OPEN StreamSchemaFieldDrift findings; None when the aggregate fails."""
+
+    try:
+        from app.schema_observation.operator_workflow import count_open_schema_field_drifts
+
+        return count_open_schema_field_drifts(db)
+    except Exception:
+        logger.exception("dashboard_open_schema_field_drift_count_degraded")
+        return None
 
 
 def get_runtime_dashboard_summary(
@@ -1372,6 +1385,7 @@ def get_runtime_dashboard_summary(
             window_end=until,
         ),
         validation_operational=validation_operational,
+        open_schema_field_drift_count=_open_schema_field_drift_count(db),
     )
 
 
@@ -1393,6 +1407,7 @@ def _degraded_runtime_dashboard_summary(*, window: str) -> DashboardSummaryRespo
         read_status="degraded",
         warnings=[f"dashboard summary unavailable for window={window}"],
         validation_operational=degraded_validation_operational_summary(),
+        open_schema_field_drift_count=None,
     )
 
 

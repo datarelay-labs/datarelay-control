@@ -94,6 +94,15 @@ def get_field_drifts_read_payload(
     return payload
 
 
+def count_open_schema_field_drifts(db: Session) -> int:
+    """Global OPEN ``StreamSchemaFieldDrift`` finding count (cross-stream aggregate)."""
+
+    raw = db.execute(
+        select(func.count()).where(StreamSchemaFieldDrift.status == DRIFT_STATUS_OPEN)
+    ).scalar_one()
+    return int(raw or 0)
+
+
 def build_drift_summary(db: Session, stream_id: int) -> dict[str, Any]:
     row = get_observed_schema_row(db, stream_id)
     counts = dict(

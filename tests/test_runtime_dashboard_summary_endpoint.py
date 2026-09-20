@@ -576,3 +576,66 @@ def test_no_extra_delivery_logs(dashboard_client: TestClient, db_session: Sessio
     before = db_session.query(DeliveryLog).count()
     dashboard_client.get("/api/v1/runtime/dashboard/summary")
     assert db_session.query(DeliveryLog).count() == before
+
+
+def test_dashboard_open_schema_field_drift_count_open_only(
+    dashboard_client: TestClient,
+    db_session: Session,
+) -> None:
+    """Schema Drift aggregate counts OPEN findings only; excludes ack/resolved."""
+
+    from app.schema_observation.models import (
+        DRIFT_CATEGORY_FIELD_ADDED,
+        DRIFT_STATUS_ACKNOWLEDGED,
+        DRIFT_STATUS_OPEN,
+        DRIFT_STATUS_RESOLVED,
+        StreamSchemaFieldDrift,
+    )
+
+    h1 = _mk_stream_hierarchy(db_session, stream_status="RUNNING")
+    h2 = _mk_stream_hierarchy(db_session, stream_status="RUNNING")
+    now = datetime.now(UTC)
+    db_session.add_all(
+        [
+            StreamSchemaFieldDrift(
+                stream_id=h1["stream_id"],
+                field_path="$.a",
+                category=DRIFT_CATEGORY_FIELD_ADDED,
+                status=DRIFT_STATUS_OPEN,
+                first_detected_at=now,
+                last_confirmed_at=now,
+            ),
+            StreamSchemaFieldDrift(
+                stream_id=h1["stream_id"],
+                field_path="$.b",
+                category=DRIFT_CATEGORY_FIELD_ADDED,
+                status=DRIFT_STATUS_OPEN,
+                first_detected_at=now,
+                last_confirmed_at=now,
+            ),
+            StreamSchemaFieldDrift(
+                stream_id=h2["stream_id"],
+                field_path="$.c",
+                category=DRIFT_CATEGORY_FIELD_ADDED,
+                status=DRIFT_STATUS_ACKNOWLEDGED,
+                first_detected_at=now,
+                last_confirmed_at=now,
+                acknowledged_at=now,
+                acknowledged_by="tester",
+            ),
+            StreamSchemaFieldDrift(
+                stream_id=h2["stream_id"],
+                field_path="$.d",
+                category=DRIFT_CATEGORY_FIELD_ADDED,
+                status=DRIFT_STATUS_RESOLVED,
+                first_detected_at=now,
+                last_confirmed_at=now,
+                resolved_at=now,
+                resolved_by="tester",
+            ),
+        ]
+    )
+    db_session.commit()
+
+    body = dashboard_client.get("/api/v1/runtime/dashboard/summary").json()
+    assert body["open_schema_field_drift_count"] == 2

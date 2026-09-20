@@ -250,12 +250,10 @@ export function deriveOperationalIssues(
         ? streamsList.filter((s) => mapBackendStreamStatus(s.status) === 'DEGRADED').length
         : null
 
-  const validation = dashboard?.validation_operational
-  const schemaDriftCount = validation
-    ? safeNonNeg(validation.open_checkpoint_drift_alerts) +
-      safeNonNeg(validation.failing_validations_count) +
-      safeNonNeg(validation.degraded_validations_count)
-    : null
+  const schemaDriftCount =
+    dashboard?.open_schema_field_drift_count != null
+      ? safeNonNeg(dashboard.open_schema_field_drift_count)
+      : null
 
   const destinationCapacityWarnings =
     summary?.rate_limited_destination_streams != null
@@ -279,12 +277,10 @@ export function deriveOperationalIssuesFromSnapshot(
   const streams = snapshot?.streams ?? []
   const idleCount = streams.filter((s) => s.enabled && s.health_status === 'IDLE').length
   const degradedCount = streams.filter((s) => s.enabled && s.health_status === 'DEGRADED').length
-  const validation = dashboard?.validation_operational
-  const schemaDriftCount = validation
-    ? safeNonNeg(validation.open_checkpoint_drift_alerts) +
-      safeNonNeg(validation.failing_validations_count) +
-      safeNonNeg(validation.degraded_validations_count)
-    : null
+  const schemaDriftCount =
+    dashboard?.open_schema_field_drift_count != null
+      ? safeNonNeg(dashboard.open_schema_field_drift_count)
+      : null
   const destinationCapacityWarnings = (snapshot?.problems ?? []).filter(
     (p) => p.scope === 'destination' && p.severity === 'warning',
   ).length
@@ -1142,13 +1138,10 @@ export function deriveSystemHealthSummaryStrip(
   const noDataCount = streams.filter((s) => s.enabled && s.health_status === 'IDLE').length
   const lowVolumeCount = streams.filter((s) => s.enabled && s.health_status === 'DEGRADED').length
 
-  const validation = dashboard?.validation_operational
-  const schemaDriftCount = validation
-    ? safeNonNeg(validation.open_checkpoint_drift_alerts) + safeNonNeg(validation.failing_validations_count)
-    : problems.filter((p) => {
-        const t = p.title.toLowerCase()
-        return t.includes('drift') || t.includes('schema')
-      }).length
+  const schemaDriftCount =
+    dashboard?.open_schema_field_drift_count != null
+      ? safeNonNeg(dashboard.open_schema_field_drift_count)
+      : 0
 
   const capacityWarningCount = problems.filter(
     (p) => p.scope === 'destination' && p.severity === 'warning',

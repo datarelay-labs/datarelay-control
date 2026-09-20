@@ -295,6 +295,15 @@ def load_runtime_dashboard_summary(
         degraded_validation_operational_summary(scoring_mode="current_runtime")
     )
 
+    open_schema_field_drift_count: int | None
+    try:
+        from app.schema_observation.operator_workflow import count_open_schema_field_drifts
+
+        open_schema_field_drift_count = count_open_schema_field_drifts(db)
+    except Exception:
+        logger.exception("dashboard_open_schema_field_drift_count_degraded")
+        open_schema_field_drift_count = None
+
     return DashboardSummaryResponse(
         snapshot_id=resolved_snapshot_id,
         generated_at=generated_at,
@@ -338,6 +347,7 @@ def load_runtime_dashboard_summary(
             window_end=until,
         ),
         validation_operational=validation_operational,
+        open_schema_field_drift_count=open_schema_field_drift_count,
     )
 
 

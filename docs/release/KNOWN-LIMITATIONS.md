@@ -161,7 +161,6 @@ GDC_ROUTE_PROCESSING_ENABLED: bool = True  # app/config.py
 |------------|--------|
 | **Governance Workspace** | Read-only MVP — no inline edit or approval from Workspace |
 | **Regex replace** | Not in Advanced Transform MVP — `regex_extract` only in Expert mode |
-| **Dashboard schema drift count** | Operational Issues row always shows 0 — count not wired to API |
 | **SMTP email notifications** | `SMTP_ENABLED=false` until real SMTP backend configured |
 | **AI Gateway** | Out of OSS v1 scope — routes guarded in OSS build |
 | **Wizard onboarding** | Connector created outside wizard; Destinations before Transform in step order |
