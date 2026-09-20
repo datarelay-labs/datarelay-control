@@ -51,3 +51,10 @@ export const FULL_EVENT_REGEX_GUIDANCE = [
   'Use a JSON object with preserve_source and rules (output_field, source_path, pattern, group, default).',
   'Preview applies all rules at once; save is enabled only after a successful preview.',
 ] as const
+
+/** Re-export Timestamp → UTC Transform UX constants for callers that already import this module. */
+export {
+  TIMESTAMP_UTC_AFFORDANCE_LABEL,
+  TIMESTAMP_UTC_JSONATA_GUIDANCE,
+  TIMESTAMP_UTC_REGEX_LIMITATION_GUIDANCE,
+} from '../utils/timestampUtcTransformTemplate'

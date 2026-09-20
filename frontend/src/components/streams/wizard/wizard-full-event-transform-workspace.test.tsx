@@ -271,4 +271,39 @@ describe('WizardFullEventTransformWorkspace', () => {
       expect(output).toContain('mec.ph')
     })
   })
+
+  it('exposes Timestamp → UTC template insert in JSONata mode and Regex limitation guidance', () => {
+    const onJsonataExpressionChange = vi.fn()
+
+    const { rerender } = render(
+      <WizardFullEventTransformWorkspace
+        sampleEvent={SAMPLE_EVENT}
+        jsonataExpression=""
+        onJsonataExpressionChange={onJsonataExpressionChange}
+        fullEventRegexConfigJson=""
+        onFullEventRegexConfigJsonChange={() => {}}
+        filterUiMode="advanced"
+      />,
+    )
+
+    expect(screen.getByTestId('timestamp-utc-transform-guide')).toHaveAttribute('data-mode', 'jsonata')
+    fireEvent.click(screen.getByTestId('timestamp-utc-insert-template'))
+    expect(onJsonataExpressionChange).toHaveBeenCalled()
+    expect(onJsonataExpressionChange.mock.calls[0][0]).toContain('$fromMillis')
+    expect(onJsonataExpressionChange.mock.calls[0][0]).toContain('creationTime')
+
+    rerender(
+      <WizardFullEventTransformWorkspace
+        sampleEvent={SAMPLE_EVENT}
+        jsonataExpression=""
+        onJsonataExpressionChange={onJsonataExpressionChange}
+        fullEventRegexConfigJson=""
+        onFullEventRegexConfigJsonChange={() => {}}
+        filterUiMode="expert"
+      />,
+    )
+
+    expect(screen.getByTestId('timestamp-utc-transform-guide')).toHaveAttribute('data-mode', 'regex')
+    expect(screen.getByText(/Regex cannot reliably compute or normalize timestamps/i)).toBeInTheDocument()
+  })
 })

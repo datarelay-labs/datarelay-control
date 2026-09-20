@@ -4,6 +4,7 @@ import { runTransformPreview, type TransformPreviewResponse } from '../../api/gd
 import { cn } from '../../lib/utils'
 import {
   defaultAdvancedRule,
+  newAdvancedTransformRuleId,
   type AdvancedTransformRuleDraft,
   type AdvancedTransformUiMode,
   type TransformPreviewStage,
@@ -17,6 +18,7 @@ import {
   rulesToTransformRulesApi,
 } from '../../utils/advancedTransformConfig'
 import { PanelChrome } from '../streams/mapping-json-tree'
+import { TimestampUtcTransformGuide } from './timestamp-utc-transform-guide'
 
 const GUIDANCE_LINES = [
   '외부 도구에서 작성한 JSONata/Regex를 붙여넣고 Preview로 검증할 수 있습니다.',
@@ -86,6 +88,23 @@ export function AdvancedTransformWorkspace({
     [rules, onRulesChange],
   )
 
+  const insertTimestampUtcJsonataRule = useCallback(
+    (expression: string) => {
+      const rule = defaultAdvancedRule('advanced')
+      onRulesChange([
+        ...rules,
+        {
+          ...rule,
+          id: newAdvancedTransformRuleId(),
+          outputField: 'timestamp',
+          expression,
+          ruleId: 'timestamp-utc',
+        },
+      ])
+    },
+    [rules, onRulesChange],
+  )
+
   const runPreview = useCallback(async () => {
     if (!sampleEvent) {
       setPreviewError('샘플 이벤트가 없습니다. 소스 샘플을 먼저 불러오세요.')
@@ -131,6 +150,8 @@ export function AdvancedTransformWorkspace({
     [preview],
   )
 
+  const timestampUtcMode: 'jsonata' | 'regex' = filterUiMode === 'expert' ? 'regex' : 'jsonata'
+
   return (
     <div className="space-y-3">
       <div className="rounded-lg border border-slate-200/80 bg-slate-50/90 px-3 py-2.5 dark:border-gdc-border dark:bg-gdc-section">
@@ -143,6 +164,13 @@ export function AdvancedTransformWorkspace({
           </div>
         </div>
       </div>
+
+      <TimestampUtcTransformGuide
+        mode={timestampUtcMode}
+        variant="field_rule"
+        sampleEvent={sampleEvent}
+        onInsertExpression={timestampUtcMode === 'regex' ? undefined : insertTimestampUtcJsonataRule}
+      />
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-[12px] text-slate-600 dark:text-gdc-muted">
