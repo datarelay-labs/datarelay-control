@@ -132,7 +132,7 @@ A single unpartitioned `delivery_logs` heap table is therefore a **historical / 
        alembic stamp --purge head
      ```
 
-   - If only DDL matches head but data effects remain unproven, do **not** stamp head — stamp a fully proven earlier revision so `upgrade head` executes the missing migrations, or fail closed.
+   - If DDL already matches head but data effects remain unproven, do **not** stamp head and do **not** stamp an earlier ancestor to “replay” those migrations. Intervening revisions also perform non-idempotent DDL (for example `add_column` in `20260606_0042_gov_lifecycle` / `20260609_0053_product_group`), so rewinding the version table and running `upgrade head` fails on already-present objects without repairing the data. **Fail closed**: restore from backup, re-introduce the real applied history, or use a separately verified data-repair procedure with operator sign-off.
 
    Mis-stamping corrupts history; use `validate_migrations` and a schema/data inventory before any stamp. Do not stamp a current-schema database down to a historical ancestor such as `20260513_0019_must_change_pw`.
 
