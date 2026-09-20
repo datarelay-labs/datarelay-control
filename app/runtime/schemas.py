@@ -469,6 +469,8 @@ class DashboardSummaryResponse(BaseModel):
     metric_meta: MetricMetaMap = Field(default_factory=dict)
     visualization_meta: VisualizationMetaMap = Field(default_factory=dict)
     validation_operational: ValidationOperationalSummaryResponse | None = None
+    # Global OPEN StreamSchemaFieldDrift findings; null when the aggregate is unavailable.
+    open_schema_field_drift_count: int | None = None
     read_status: Literal["ok", "degraded", "partial", "stale"] = "ok"
     warnings: list[str] = Field(default_factory=list)
 

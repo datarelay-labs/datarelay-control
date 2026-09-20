@@ -264,6 +264,8 @@ export type DashboardSummaryResponse = {
   metric_meta?: MetricMetaMap
   visualization_meta?: VisualizationMetaMap
   validation_operational?: ValidationOperationalSummaryResponse | null
+  /** Global OPEN StreamSchemaFieldDrift findings; null when unavailable. */
+  open_schema_field_drift_count?: number | null
 }
 
 /** GET /runtime/dashboard/outcome-timeseries */

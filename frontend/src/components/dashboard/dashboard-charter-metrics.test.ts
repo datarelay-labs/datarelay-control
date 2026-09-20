@@ -148,7 +148,7 @@ describe('dashboard-charter-metrics', () => {
     expect(a).toEqual(b)
   })
 
-  it('derives operational issues from snapshot idle/degraded and dashboard validation', () => {
+  it('derives schema drift only from open_schema_field_drift_count, not validation signals', () => {
     const dashboard: DashboardSummaryResponse = {
       summary: {
         total_streams: 10,
@@ -174,10 +174,11 @@ describe('dashboard-charter-metrics', () => {
       recent_problem_routes: [],
       recent_rate_limited_routes: [],
       recent_unhealthy_streams: [],
+      open_schema_field_drift_count: 3,
       validation_operational: {
-        failing_validations_count: 1,
-        degraded_validations_count: 0,
-        open_checkpoint_drift_alerts: 0,
+        failing_validations_count: 9,
+        degraded_validations_count: 4,
+        open_checkpoint_drift_alerts: 7,
         open_alerts_critical: 0,
         open_alerts_warning: 0,
         open_alerts_info: 0,
@@ -191,9 +192,52 @@ describe('dashboard-charter-metrics', () => {
     expect(deriveOperationalIssuesFromSnapshot(snapshot(), dashboard)).toEqual({
       noDataStreams: 1,
       lowVolumeStreams: 1,
-      schemaDriftCount: 1,
+      schemaDriftCount: 3,
       destinationCapacityWarnings: null,
     })
+  })
+
+  it('returns null schema drift when open_schema_field_drift_count is unavailable', () => {
+    const dashboard: DashboardSummaryResponse = {
+      summary: {
+        total_streams: 1,
+        running_streams: 1,
+        paused_streams: 0,
+        error_streams: 0,
+        stopped_streams: 0,
+        rate_limited_source_streams: 0,
+        rate_limited_destination_streams: 0,
+        total_routes: 1,
+        enabled_routes: 1,
+        disabled_routes: 0,
+        total_destinations: 1,
+        enabled_destinations: 1,
+        disabled_destinations: 0,
+        recent_logs: 0,
+        recent_successes: 0,
+        recent_failures: 0,
+        recent_rate_limited: 0,
+        processed_events: 0,
+        delivery_outcome_events: 0,
+      },
+      recent_problem_routes: [],
+      recent_rate_limited_routes: [],
+      recent_unhealthy_streams: [],
+      validation_operational: {
+        failing_validations_count: 5,
+        degraded_validations_count: 2,
+        open_checkpoint_drift_alerts: 3,
+        open_alerts_critical: 0,
+        open_alerts_warning: 0,
+        open_alerts_info: 0,
+        open_auth_failure_alerts: 0,
+        open_delivery_failure_alerts: 0,
+        latest_open_alerts: [],
+        latest_recoveries: [],
+        outcome_trend_24h: [],
+      },
+    }
+    expect(deriveOperationalIssuesFromSnapshot(snapshot(), dashboard).schemaDriftCount).toBeNull()
   })
 
   it('summarizes alert presence without detail', () => {
