@@ -29,17 +29,32 @@ The **api** service `DATABASE_URL` is set by Compose. Host `.env` must match whe
 
 ## Repository head (current)
 
-After audit (2026-05-16), the single Alembic head is:
+Always resolve the head from the exact checkout you are recovering. Do not reuse a memorized revision ID from older docs or audits:
 
-`20260513_0019_must_change_pw`
+```bash
+alembic heads
+# or
+./scripts/ops/validate-migrations.sh --host-only
+# (prints repository heads via --print-alembic-heads)
+```
+
+Verified on this documentation update against `main-v2` HEAD `3e4daa31691589c66c89fbb9400ea4711c54d8b5`, the single Alembic head is:
+
+`20260804_0062`
+
+(`alembic/versions/20260804_0062_restore_delivery_logs_connector_id_index.py`)
 
 There is **no** `20260513_0021_dl_parts` file in this repository.
 
-## Orphan revision: `20260513_0021_dl_parts`
+### Historical note (2026-05-16 audit)
+
+An earlier audit recorded `20260513_0019_must_change_pw` as the then-current single head. That revision remains in the graph as an ancestor; it is **not** the current repository head. Never stamp a current-schema database to that obsolete revision.
+
+## Orphan revision: `20260513_0021_dl_parts` (historical incident)
 
 **Symptom:** `Can't locate revision identified by '20260513_0021_dl_parts'` during `alembic upgrade`, `alembic current`, or startup validation.
 
-**Meaning:** `alembic_version.version_num` references a migration that is not in `alembic/versions/` (never committed, removed, or applied from another branch).
+**Meaning:** `alembic_version.version_num` references a migration that is not in `alembic/versions/` (never committed, removed, or applied from another branch). This orphan is still a known recovery case; it is unrelated to the current repository head above.
 
 **Do not:** `docker compose down -v`, truncate `delivery_logs`, delete migration files, or `git reset`.
 
@@ -67,15 +82,15 @@ There is **no** `20260513_0021_dl_parts` file in this repository.
 3. **If schema matches current repo (single `delivery_logs` table, no missing columns)**
 
    - Restore the missing migration file from backup **or**
-   - After operator sign-off, align the stamp to the real head (only when schema already matches):
+   - After operator sign-off, align the stamp to the **current** repository head (only when schema already matches). Re-run `alembic heads` on the deployed checkout first:
 
      ```bash
-     # Example — verify with validate-migrations first
+     # Example — verify with validate-migrations and alembic heads first
      docker compose -f docker-compose.platform.yml run --rm --no-deps api \
-       alembic stamp 20260513_0019_must_change_pw
+       alembic stamp head
      ```
 
-   Mis-stamping corrupts history; use `validate_migrations` and a schema diff before stamping.
+   Mis-stamping corrupts history; use `validate_migrations` and a schema diff before stamping. Do not stamp to a historical ancestor such as `20260513_0019_must_change_pw` when the schema already matches today's head.
 
 4. **If schema was partially migrated for partitioning**
 
