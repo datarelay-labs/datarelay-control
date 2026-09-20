@@ -74,6 +74,7 @@ import {
   successRateTone,
   type GroupHealthLabel,
 } from '../../lib/stream-console-metrics'
+import { formatOperationalPercent, formatThroughputEps } from '../../lib/observability-format'
 import { operationalSeverityIcon } from '../../lib/stream-operational-status'
 import { StreamsGroupKpiStrip } from './streams-group-kpi-strip'
 import { StreamsOperationsSummaryStrip } from './streams-operations-summary-strip'
@@ -331,9 +332,7 @@ function MiniSparkline({ values }: { values: readonly number[] }) {
 /** Format EPS as compact decimal without unit suffix (for table cell). */
 function epsCompact(eps: number): string {
   if (!Number.isFinite(eps) || eps <= 0) return '—'
-  if (eps >= 100) return eps.toFixed(1)
-  if (eps >= 10) return eps.toFixed(2)
-  return eps.toFixed(3)
+  return formatThroughputEps(eps)
 }
 
 /** Arrow + % delta between eps1m and eps5m. */
@@ -390,7 +389,7 @@ function StreamSuccessCell({ row }: { row: StreamConsoleRow }) {
   return (
     <div className="flex min-w-0 flex-col gap-0.5">
       <span className={cn('text-[12px] font-semibold tabular-nums', textColor)}>
-        {pct.toFixed(pct >= 100 ? 0 : 1)}%
+        {formatOperationalPercent(pct)}
       </span>
       {/* Bullet chart: current bar + target line at 99% */}
       <div className="relative h-2 w-full max-w-[80px] overflow-visible rounded-sm bg-slate-200/90 dark:bg-gdc-elevated">
