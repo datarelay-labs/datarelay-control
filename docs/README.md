@@ -1,6 +1,6 @@
 # Data Relay Documentation
 
-**Product:** Data Relay — Enterprise Data Control Gateway (OSS v1.0 GA)  
+**Product:** Data Relay — Enterprise Data Control Gateway (OSS v1.0 GA)
 **Hub role:** Central index for operator, architect, and release documentation.
 
 ---
@@ -9,8 +9,10 @@
 
 | Document | Audience | Description |
 |----------|----------|-------------|
+| [Source-of-Truth Authority Map](./architecture/source-of-truth-index.md) | Contributors / AI agents | **Read first for product/spec authority and conflict resolution** |
+| [Source-of-Truth Directory Manifest](./source-of-truth/README.md) | Contributors / product | Current designated product/UX documents and known metadata mismatches |
 | [Getting Started](./getting-started/GETTING-STARTED.md) | New operators | First connector → stream → deploy → monitoring walkthrough |
-| [Architecture Overview (OSS v1)](./architecture/OSS-v1-ARCHITECTURE.md) | Integrators, architects | Mental model, runtime, checkpoint, replay, quarantine, failover |
+| [Architecture Overview (OSS v1)](./architecture/OSS-v1-ARCHITECTURE.md) | Integrators, architects | Current mental model and runtime overview; derived from normative sources/specs |
 | [Root README](../README.md) | Everyone | Install, quick start, project overview |
 
 ---
@@ -34,10 +36,8 @@
 
 | Document | Description |
 |----------|-------------|
-| [Master Design](./master-design.md) | Authoritative architecture reference |
 | [Route Processing Persist Roadmap](./architecture/route-processing-persist-roadmap.md) | v1.x route bundle persist backlog |
 | [Route Processing UX Spec](./ux/DATA-RELAY-ROUTE-PROCESSING-UX-SPEC.md) | Inherit/override UX contract |
-| [M13 Route Processing Deferral](./architecture/m13-route-processing-ui-deferral.md) | OSS v1 deferral baseline |
 | [Runtime Capability Matrix](./runtime/runtime-capability-matrix.md) | Feature availability matrix |
 | [Schema Drift Runtime Spec](./ux/DATA-RELAY-SCHEMA-DRIFT-POLICY-RUNTIME-SPEC.md) | Schema drift policy behavior |
 
@@ -72,7 +72,6 @@
 |----------|-------------|
 | [Route Processing UX Spec](./ux/DATA-RELAY-ROUTE-PROCESSING-UX-SPEC.md) | Full UX spec (wizard, route edit, effective status) |
 | [Route Persist Roadmap](./architecture/route-processing-persist-roadmap.md) | Known persist gaps and v1.x MVP scope |
-| [Route Architecture Gap Analysis](./architecture/route-architecture-gap-analysis.md) | Historical gap analysis |
 | Specs 091–097 | `../specs/091-route-processing-architecture/` through `097-route-processing-ux/` |
 
 ---
@@ -124,7 +123,19 @@ Numbered specs live under [`../specs/`](../specs/). Key entries:
 | 091–096 | Route processing architecture |
 | 097 | Route processing UX |
 
-Constitution: [`.specify/memory/constitution.md`](../.specify/memory/constitution.md)
+Authority map: [`architecture/source-of-truth-index.md`](./architecture/source-of-truth-index.md)
+Specification constitution: [`.specify/memory/constitution.md`](../.specify/memory/constitution.md)
+Complete spec navigation: [`.specify/specs-index.md`](../.specify/specs-index.md)
+
+---
+
+## Historical / superseded documentation
+
+Historical audits, pre-charter design documents, old release snapshots, and retired workflow material remain available for traceability but do not define current behavior. Start at [`architecture/source-of-truth-index.md`](./architecture/source-of-truth-index.md) before using any historical document as implementation context.
+
+- [`archive/`](./archive/) — archived design/audit material
+- [`master-design.md`](./master-design.md) — SUPERSEDED pre-charter master design retained for old section links
+
 
 ---
 
@@ -134,4 +145,4 @@ Example JSON configurations: [`../samples/`](../samples/)
 
 ---
 
-*Data Relay OSS v1.0 GA — Documentation index. Last updated: 2026-06-20.*
+*Data Relay documentation index. Authority structure reviewed: 2026-09-20.*

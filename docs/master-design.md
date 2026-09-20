@@ -1,3 +1,12 @@
+> [!WARNING]
+> **SUPERSEDED — historical reference only.**
+> This pre-charter Generic Data Connector master design is not a current product or implementation authority.
+> Use `docs/architecture/source-of-truth-index.md` for the authority map,
+> `docs/source-of-truth/PRODUCT-CHARTER-Version-1.2.1-FINAL.txt` for top-level product intent,
+> `docs/architecture/OSS-v1-ARCHITECTURE.md` for the current architecture overview, and
+> the task-relevant file under `specs/` for implementation contracts.
+> The historical body is retained below only so old section references remain resolvable.
+
 # Generic Data Connector Platform Master Design
 
 ## 0. 문서 목적
