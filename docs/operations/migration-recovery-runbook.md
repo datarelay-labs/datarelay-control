@@ -122,17 +122,19 @@ A single unpartitioned `delivery_logs` heap table is therefore a **historical / 
 
    **B. Current-schema equivalence independently proven**
 
-   Evidence must cover the complete current schema for the deployed checkout, including at least: partitioned `delivery_logs` (`delivery_logs_is_partitioned = true` with expected partition children), intervening tables/objects created after partitioning, and no material missing columns/indexes versus head. A single-table `delivery_logs` check is insufficient.
+   Evidence must cover the complete current state for the deployed checkout, including at least: partitioned `delivery_logs` (`delivery_logs_is_partitioned = true` with expected partition children), intervening tables/objects created after partitioning, no material missing columns/indexes versus head, **and** proof that head-era **data effects** have already been applied (DDL alone is insufficient). Fresh examples of data transformations that a head stamp would skip: `20260606_0042_gov_lifecycle` (`DISABLED` → `RETIRED` for governance policies) and `20260609_0053_product_group` (connector product-group backfill). A single-table `delivery_logs` check is insufficient.
 
-   - Only after that full-schema verification **and** operator sign-off may you align Alembic to the current repository head. Re-run `alembic heads` on the deployed checkout first. When recovering from an orphan row in `alembic_version`, use `--purge` so Alembic does not try to resolve the missing revision first:
+   - Only after that full schema **and** data-effect verification **and** operator sign-off may you align Alembic to the current repository head. Re-run `alembic heads` on the deployed checkout first. When recovering from an orphan row in `alembic_version`, use `--purge` so Alembic does not try to resolve the missing revision first:
 
      ```bash
-     # Only when complete current-schema equivalence is already proven
+     # Only when complete current-schema + data-effect equivalence is already proven
      docker compose -f docker-compose.platform.yml run --rm --no-deps api \
        alembic stamp --purge head
      ```
 
-   Mis-stamping corrupts history; use `validate_migrations` and a schema diff before any stamp. Do not stamp a current-schema database down to a historical ancestor such as `20260513_0019_must_change_pw`.
+   - If only DDL matches head but data effects remain unproven, do **not** stamp head — stamp a fully proven earlier revision so `upgrade head` executes the missing migrations, or fail closed.
+
+   Mis-stamping corrupts history; use `validate_migrations` and a schema/data inventory before any stamp. Do not stamp a current-schema database down to a historical ancestor such as `20260513_0019_must_change_pw`.
 
    **C. Partial / ambiguous partitioning or mixed DDL**
 
