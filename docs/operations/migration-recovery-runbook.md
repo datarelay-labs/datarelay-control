@@ -103,12 +103,12 @@ A single unpartitioned `delivery_logs` heap table is therefore a **historical / 
    - This is **not** current head schema.
    - **Never** run `alembic stamp head` on this shape.
    - Preferred recovery: restore the missing migration/history from backup, or otherwise recover with evidence that reintroduces the real applied chain.
-   - If — and only if — an independent schema inventory proves the database is equivalent to a **specific committed ancestor**, you may stamp **that ancestor only**, then upgrade:
+   - If — and only if — an independent schema inventory proves the database is equivalent to a **specific committed ancestor**, you may stamp **that ancestor only**, then upgrade. Because `alembic_version` still holds the unresolvable orphan ID, a normal `alembic stamp <rev>` will fail resolving the current revision — use `--purge` after backup + equivalence proof:
 
      ```bash
      # After proving schema ≡ a specific committed revision ID (not "looks close")
      docker compose -f docker-compose.platform.yml run --rm --no-deps api \
-       alembic stamp <proven_ancestor_revision>
+       alembic stamp --purge <proven_ancestor_revision>
      docker compose -f docker-compose.platform.yml run --rm --no-deps api \
        alembic upgrade head
      ```
@@ -120,12 +120,12 @@ A single unpartitioned `delivery_logs` heap table is therefore a **historical / 
 
    Evidence must cover the complete current schema for the deployed checkout, including at least: partitioned `delivery_logs` (`delivery_logs_is_partitioned = true` with expected partition children), intervening tables/objects created after partitioning, and no material missing columns/indexes versus head. A single-table `delivery_logs` check is insufficient.
 
-   - Only after that full-schema verification **and** operator sign-off may you align Alembic to the current repository head. Re-run `alembic heads` on the deployed checkout first:
+   - Only after that full-schema verification **and** operator sign-off may you align Alembic to the current repository head. Re-run `alembic heads` on the deployed checkout first. When recovering from an orphan row in `alembic_version`, use `--purge` so Alembic does not try to resolve the missing revision first:
 
      ```bash
      # Only when complete current-schema equivalence is already proven
      docker compose -f docker-compose.platform.yml run --rm --no-deps api \
-       alembic stamp head
+       alembic stamp --purge head
      ```
 
    Mis-stamping corrupts history; use `validate_migrations` and a schema diff before any stamp. Do not stamp a current-schema database down to a historical ancestor such as `20260513_0019_must_change_pw`.
