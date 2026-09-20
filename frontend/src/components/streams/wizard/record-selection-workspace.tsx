@@ -18,9 +18,15 @@ import { FieldImportanceBadge } from './field-importance-badge'
 import {
   deriveRecordSelectionPaths,
   eventArrayPathFromClick,
+  normalizeCheckpointRelativePath,
   recordSelectionSummary,
   type RecordSelectionPaths,
 } from '../../../utils/recordSelectionPaths'
+import { CheckpointExtractionSuggestionsPanel } from '../checkpoint-extraction-suggestions-panel'
+import {
+  mergeSortIntoRequestBody,
+  type CheckpointFieldType,
+} from '../checkpoint-extraction-suggestions'
 import { MappingJsonTree, PanelChrome } from '../mapping-json-tree'
 import {
   IncrementalRequestTestButton,
@@ -280,6 +286,67 @@ export function RecordSelectionWorkspace({
     ],
   )
 
+  const handleApplySuggestedEventArrayPath = useCallback(
+    (path: string) => {
+      const normalized = eventArrayPathFromClick(path, rawPayload)
+      const nextPaths: RecordSelectionPaths = { ...paths, eventArrayPath: normalized }
+      setPaths(nextPaths)
+      setPreviewIndex(0)
+      onSetEventArrayPath(normalized)
+      if (selectionMode === 'advanced') clearCustomValidation()
+      setEventRootInteracted(false)
+      notifyCopy(`Event source → ${normalized || '$'}`)
+      scrollSelectionFeedbackIntoView()
+    },
+    [clearCustomValidation, notifyCopy, onSetEventArrayPath, paths, rawPayload, scrollSelectionFeedbackIntoView, selectionMode],
+  )
+
+  const handleApplySuggestedCheckpointExtraction = useCallback(
+    (patch: {
+      checkpointType: CheckpointFieldType
+      extractionPathRelative: string
+      extractionPathAbsolute: string
+    }) => {
+      const rel = normalizeCheckpointRelativePath(patch.extractionPathRelative)
+      const nextPaths: RecordSelectionPaths = { ...paths, checkpointSourcePath: rel }
+      setPaths(nextPaths)
+      onSetCheckpoint({
+        checkpointSourcePath: rel,
+        checkpointFieldType: patch.checkpointType,
+      })
+      if (selectionMode === 'advanced') clearCustomValidation()
+      notifyCopy(`Sync position → ${rel || '(cleared)'}`)
+      scrollSelectionFeedbackIntoView()
+    },
+    [clearCustomValidation, notifyCopy, onSetCheckpoint, paths, scrollSelectionFeedbackIntoView, selectionMode],
+  )
+
+  const handleApplySuggestedSortRecommendation = useCallback(
+    (patch: {
+      sortLabel: string
+      tieBreakerLabel: string | null
+      primaryFieldName: string
+      tieBreakerFieldName: string | null
+    }) => {
+      let nextBody = mergeSortIntoRequestBody(state.stream.requestBody, patch.primaryFieldName)
+      if (patch.tieBreakerFieldName) {
+        nextBody = mergeSortIntoRequestBody(nextBody, patch.tieBreakerFieldName)
+      }
+      const streamPatch: Partial<WizardConfigState> = { requestBody: nextBody }
+      if (patch.tieBreakerFieldName) {
+        streamPatch.checkpointSecondaryPath = normalizeCheckpointRelativePath(patch.tieBreakerFieldName)
+      }
+      onStreamPatch?.(streamPatch)
+      notifyCopy(
+        patch.tieBreakerFieldName
+          ? `Sort → ${patch.primaryFieldName} ASC, tie-breaker → ${patch.tieBreakerFieldName}`
+          : `Sort → ${patch.primaryFieldName} ASC`,
+      )
+      scrollSelectionFeedbackIntoView()
+    },
+    [notifyCopy, onStreamPatch, scrollSelectionFeedbackIntoView, state.stream.requestBody],
+  )
+
   const handleCustomExtractionValidate = useCallback(async () => {
     if (rawPayload == null) return
     setValidationBusy(true)
@@ -453,6 +520,18 @@ export function RecordSelectionWorkspace({
         </div>
 
         <UnionSchemaStatusCard state={state} extractedEventCount={extractedEvents.length} className="mt-2" />
+
+        {t.status === 'success' && t.ok && t.parsedJson != null ? (
+          <CheckpointExtractionSuggestionsPanel
+            className="mt-2"
+            parsedJson={t.parsedJson}
+            applyHandlers={{
+              onApplyEventArrayPath: handleApplySuggestedEventArrayPath,
+              onApplyCheckpointExtraction: handleApplySuggestedCheckpointExtraction,
+              onApplySortRecommendation: handleApplySuggestedSortRecommendation,
+            }}
+          />
+        ) : null}
 
         {selectionMode === 'advanced' ? (
           <div className="mt-2 rounded-md border border-violet-200/70 bg-violet-50/70 p-2 dark:border-violet-500/30 dark:bg-violet-500/10">
