@@ -274,7 +274,7 @@ export function WizardRouteProcessingDetailPanel({
                   <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" aria-hidden />
                 </div>
                 <span className="text-[10px] text-slate-500 dark:text-gdc-muted">
-                  Block stops the entire event from delivery. Drop (in protection) removes fields only.
+                  Block stops the entire event from delivery. Remove (in protection) deletes fields only.
                 </span>
               </label>
             </section>

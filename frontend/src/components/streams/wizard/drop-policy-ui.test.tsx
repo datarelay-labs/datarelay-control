@@ -36,7 +36,7 @@ describe('Drop policy UI', () => {
     expect(screen.getAllByRole('radio', { name: 'Drop' })).toHaveLength(2)
   })
 
-  it('exposes protection drop action distinct from block delivery', () => {
+  it('exposes SoT Remove protection action (drop_field) distinct from block delivery', () => {
     const state = buildInitialState()
     state.apiTest.extractedEvents = [{ email: 'a@a.com' }]
     state.dataProtection.intents = [
@@ -50,7 +50,12 @@ describe('Drop policy UI', () => {
 
     render(<StepDataProtection state={state} onChange={() => {}} />)
 
-    expect(screen.getByRole('option', { name: 'Drop' })).toBeInTheDocument()
+    const removeOption = screen.getByRole('option', { name: 'Remove' })
+    expect(removeOption).toBeInTheDocument()
+    expect(removeOption).toHaveValue('drop_field')
+    expect(screen.queryByRole('option', { name: 'Drop' })).not.toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'Block delivery' })).toBeInTheDocument()
+    // Schema-drift Drop radios remain separate from Protection Action Remove.
+    expect(screen.getAllByRole('radio', { name: 'Drop' })).toHaveLength(2)
   })
 })

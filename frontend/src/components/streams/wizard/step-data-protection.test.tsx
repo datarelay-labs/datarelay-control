@@ -45,7 +45,7 @@ describe('StepDataProtection', () => {
     )
   })
 
-  it('lists protection actions without Remove from delivery', () => {
+  it('lists SoT Remove protection action without Remove from delivery wording', () => {
     const state = buildInitialState()
     state.dataProtection.intents = [
       { key: 'row-1', detectedField: '$.email', protectionAction: 'mask_partial', deliveryBehavior: 'continue' },
@@ -54,8 +54,9 @@ describe('StepDataProtection', () => {
 
     const select = screen.getByDisplayValue('Mask (partial)')
     const options = Array.from(select.querySelectorAll('option')).map((o) => o.textContent)
-    expect(options).toEqual(['Audit only', 'Mask (partial)', 'Mask (full)', 'Tokenize', 'Hash', 'Drop'])
+    expect(options).toEqual(['Audit only', 'Mask (partial)', 'Mask (full)', 'Tokenize', 'Hash', 'Remove'])
     expect(options).not.toContain('Remove from delivery')
+    expect(options).not.toContain('Drop')
   })
 
   it('shows likely sensitive field suggestions', () => {

@@ -147,7 +147,7 @@ describe('wizard-draft-migration', () => {
     expect(parsed?.stepKey).toBe('route_processing')
   })
 
-  it('normalizes legacy remove protection action to mask_partial when hydrating draft', () => {
+  it('normalizes legacy remove protection action to drop_field when hydrating draft', () => {
     const state = buildInitialState()
     state.dataProtection.intents = [
       {
@@ -164,11 +164,11 @@ describe('wizard-draft-migration', () => {
       state,
     })
     const parsed = parseWizardDraftV2(v2)
-    expect(parsed?.state.dataProtection.intents[0]?.protectionAction).toBe('mask_partial')
+    expect(parsed?.state.dataProtection.intents[0]?.protectionAction).toBe('drop_field')
   })
 
-  it('normalizeWizardProtectionAction maps remove to mask_partial', () => {
-    expect(normalizeWizardProtectionAction('remove')).toBe('mask_partial')
+  it('normalizeWizardProtectionAction maps remove to drop_field', () => {
+    expect(normalizeWizardProtectionAction('remove')).toBe('drop_field')
   })
 
   it('does not persist outcome.streamId into reusable draft', () => {

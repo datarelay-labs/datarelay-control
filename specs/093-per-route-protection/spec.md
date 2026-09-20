@@ -88,9 +88,9 @@ Destinations
 
 **Evidence:** `app/protection/models.py` — no `route_id` on protection tables.
 
-**Protection modes implemented today:** `full_mask`, `partial_mask`, `hash`, `tokenization` (`PROTECTION_MODES` in `app/protection/models.py`).
+**Protection modes implemented today:** `full_mask`, `partial_mask`, `hash`, `tokenization`, `drop_field` (`PROTECTION_MODES` in `app/protection/models.py`).
 
-**Not implemented in engine:** `remove` (listed in Governance Workspace SoT dropdown but absent from `PROTECTION_MODES` and `apply_protection_mode()`).
+**SoT Remove mapping:** Operator-facing Protection Action **Remove** uses internal engine mode `drop_field` (field deletion). There is no separate engine mode named `remove`.
 
 ### 3.2 Governance configuration model (SoT, not fully runtime-wired)
 
@@ -759,21 +759,13 @@ Route override may replace ephemeral rule mode for that `field_path` on that rou
 | Aspect | Finding |
 |--------|---------|
 | **SoT status** | Governance Workspace v1.1 and Governance Policy §14 list **Remove** as MVP Protection Action |
-| **Engine status** | **Not implemented** — `apply_protection_mode()` has no remove branch; `PROTECTION_MODES` excludes remove |
-| **UI status** | Wizard `WizardProtectionAction` excludes `remove`; draft migration maps legacy `remove` → `mask_partial` |
-| **Rule 1 / Rule 3 constraint** | M13.3 **cannot** add Remove without extending the Protection Engine — out of scope for "reuse only" milestone |
+| **Engine status** | **Implemented** as internal mode `drop_field` (`PROTECTION_MODE_DROP_FIELD`) — `apply_protection_mode()` deletes the selected field from the outbound event |
+| **UI status** | Wizard exposes SoT label **Remove** with internal value `drop_field`; legacy draft `protectionAction: "remove"` normalizes to `drop_field` (not `mask_partial`) |
+| **Naming constraint** | Do **not** introduce a second engine mode named `remove`; keep storage/API/runtime as `drop_field` |
 
-**M13.3 decision:**
+**Historical M13.3 note:** Early M13.3 planning deferred a separate `PROTECTION_MODE_REMOVE` token. That deferral is **superseded** by the existing `drop_field` implementation, which satisfies SoT Remove semantics without a second mode name.
 
-| Option | Decision |
-|--------|----------|
-| Implement Remove in M13.3 | **Rejected** — requires new engine mode (violates Rule 3) |
-| Document Remove in route UI as selectable | **Deferred** — show only engine-supported actions until engine extension approved |
-| Route Remove override | **Deferred** to post-M13.3 engine milestone or product exception process |
-
-**Operator workaround (interim):** Use Mask Full or route Transform to drop fields — Transform is M13.2 scope, not Protection.
-
-**Future path (not M13.3):** Add `PROTECTION_MODE_REMOVE` to engine with field deletion semantics; then enable Remove in Governance Workspace dropdown and `route_overrides[]`.
+**Operator mapping:** Protection Action **Remove** → `drop_field` (field deletion). Schema-drift policy **Drop** remains a separate control surface and is not renamed by this mapping.
 
 ### 9.5 Delivery Behavior (config only in M13.3)
 
@@ -975,7 +967,7 @@ Conceptual only — no UI implementation authorized.
 |---------|--------|
 | Step 4 Route Processing | **Protection tab** per route (alongside Transform, future Classification/Policy) |
 | Default inheritance | Show stream protection defaults; indicate overrides |
-| Route override editor | Per detected field: protection action dropdown (Audit, Mask Partial, Mask Full, Tokenize, Hash — **not Remove until engine supports**) |
+| Route override editor | Per detected field: protection action dropdown (Audit, Mask Partial, Mask Full, Tokenize, Hash, **Remove** → internal `drop_field`) |
 | Deploy Summary | Per-route protection summary: base source, override count, action breakdown |
 
 Move stream-global governance drawer protection intents from Transform step to **Route Processing** scope (Wizard Charter order).
@@ -1093,7 +1085,7 @@ M13.3 is **complete** when all criteria pass.
 
 - [ ] **AC-16** `protect_batch()` / `apply_protection_mode()` used unchanged for Mask / Tokenize / Hash.
 - [ ] **AC-17** Tokenization vault remains stream-scoped — tokens consistent across routes on same stream.
-- [ ] **AC-18** Remove **not** exposed in route runtime until engine supports it (documented deferral §9.4).
+- [ ] **AC-18** Remove is exposed as SoT label with internal `drop_field` semantics; outbound field deletion proven by engine tests.
 
 ### 15.6 Unknown field / Auto Protect
 
@@ -1133,7 +1125,7 @@ M13.3 is **complete** when all criteria pass.
 | Shared batch builder | `schema_drift_policy_result`, `ephemeral_auto_protect_rules` |
 | Fan-out wiring | Protected payloads only; reject unprotected transform output |
 | Action mapping | UX action → `protection_mode`; Audit → no rule |
-| Remove deferral | Remove action rejected or unmapped in M13.3 API validation |
+| Remove semantics | Legacy draft `remove` → `drop_field`; persist emits `protection_mode: drop_field` |
 
 ### 16.2 Integration tests
 
@@ -1186,7 +1178,7 @@ Benchmark alongside M13.2 route count matrix (post-M13.6 formal gate).
 | Protection preview `route_id` | Same engine as runtime |
 | Route protection UI (Wizard tab, Governance overrides) | Conceptual §13 — implementation may trail runtime |
 | Tests | §16 |
-| Remove evaluation documentation | §9.4 — defer implementation |
+| Remove evaluation documentation | §9.4 — `drop_field` implements SoT Remove |
 
 ### 17.2 OUT of scope (M13.4+)
 
@@ -1195,7 +1187,7 @@ Benchmark alongside M13.2 route count matrix (post-M13.6 formal gate).
 | **M13.4** | Classification engine invocation; stage order finalization |
 | **M13.5** | Policy evaluation; delivery_behavior enforcement; unknown field Require Review / Quarantine workflows |
 | **M13.6** | Route metrics, route health, delivery observability extensions |
-| **Engine** | `PROTECTION_MODE_REMOVE` / field deletion semantics |
+| **Engine** | Separate mode token `PROTECTION_MODE_REMOVE` (SoT Remove already maps to existing `drop_field`) |
 | **Any** | New Protection Engine; parallel runtime; Sensitive Detection re-run per route |
 | **Wizard P7** | Full Destination First reorder (may parallel M13.3) |
 | **Governance P9** | Full route-aware dashboard (partial overlap with Route Preview) |
