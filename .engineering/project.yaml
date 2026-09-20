@@ -1,7 +1,7 @@
 engineering_system:
-  version: "1.5.0"
+  version: "1.5.1"
   mode: adopted
-  baseline: "b2b6f64febb52f2c033eedc7af7570c220fca887"
+  baseline: "02eebeea507ef635355c4686f632775e1041d223"
   ci_mode: native
   native_ci_workflows:
     - ".github/workflows/backend-tests.yml"
