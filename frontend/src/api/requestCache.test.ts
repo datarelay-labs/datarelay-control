@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { createAbortError } from '../lib/request-abort'
+import { createAbortError, isRequestAborted } from '../lib/request-abort'
 import { cachedRequest, clearSharedRequestCache } from './requestCache'
 
 describe('shared request cache', () => {
@@ -62,5 +62,56 @@ describe('shared request cache', () => {
       cachedRequest('routes-runtime', 'pre-aborted', loader, { signal: controller.signal }),
     ).rejects.toEqual(createAbortError())
     expect(loader).not.toHaveBeenCalled()
+  })
+
+  it('does not emit unhandled rejection when intentional abort has no awaiter', async () => {
+    const rejections: unknown[] = []
+    const onUnhandled = (reason: unknown) => {
+      rejections.push(reason)
+    }
+    process.on('unhandledRejection', onUnhandled)
+    try {
+      const controller = new AbortController()
+      const loader = vi.fn(
+        (signal?: AbortSignal) =>
+          new Promise<string>((_resolve, reject) => {
+            signal?.addEventListener('abort', () => reject(createAbortError()), { once: true })
+          }),
+      )
+
+      void cachedRequest('routes-runtime', 'orphan-abort', loader, { signal: controller.signal })
+      controller.abort()
+
+      await vi.waitFor(() => {
+        expect(loader).toHaveBeenCalled()
+      })
+      await new Promise((r) => setTimeout(r, 50))
+
+      expect(rejections.filter((reason) => isRequestAborted(reason))).toEqual([])
+    } finally {
+      process.off('unhandledRejection', onUnhandled)
+    }
+  })
+
+  it('still rejects awaiters with non-abort failures', async () => {
+    const boom = new Error('loader failed')
+    await expect(cachedRequest('routes-runtime', 'fail-key', async () => Promise.reject(boom))).rejects.toBe(boom)
+  })
+
+  it('does not swallow non-abort unhandled rejections when there is no awaiter', async () => {
+    const boom = new Error('loader failed unhandled')
+    const rejections: unknown[] = []
+    const onUnhandled = (reason: unknown) => {
+      rejections.push(reason)
+    }
+    process.on('unhandledRejection', onUnhandled)
+    try {
+      void cachedRequest('routes-runtime', 'fail-orphan', async () => Promise.reject(boom))
+      await vi.waitFor(() => {
+        expect(rejections).toContain(boom)
+      })
+    } finally {
+      process.off('unhandledRejection', onUnhandled)
+    }
   })
 })

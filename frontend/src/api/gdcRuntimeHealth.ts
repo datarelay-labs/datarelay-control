@@ -66,7 +66,7 @@ export async function fetchStreamHealthList(
   return safeRequestJson<StreamHealthListResponse>(`${BASE}/streams?${q.toString()}`, readJsonOpts)
 }
 
-export async function fetchRouteHealthList(
+export function fetchRouteHealthList(
   params: HealthQueryParams,
 ): Promise<RouteHealthListResponse | null> {
   const q = buildSearchParams(params)
@@ -84,7 +84,7 @@ export function clearDestinationHealthCache(): void {
   clearSharedRequestCacheByKeyPrefix('runtime-health', 'destinations:')
 }
 
-export async function fetchDestinationHealthList(
+export function fetchDestinationHealthList(
   params: HealthQueryParams,
 ): Promise<DestinationHealthListResponse | null> {
   const q = buildSearchParams(params)
@@ -105,7 +105,7 @@ export async function fetchStreamHealthDetail(
   return safeRequestJson<StreamHealthDetailResponse>(`${BASE}/streams/${streamId}?${q.toString()}`, readJsonOpts)
 }
 
-export async function fetchRouteHealthDetail(
+export function fetchRouteHealthDetail(
   routeId: number,
   params: Omit<HealthQueryParams, 'route_id'>,
 ): Promise<RouteHealthDetailResponse | null> {

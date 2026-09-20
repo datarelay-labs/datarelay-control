@@ -111,7 +111,7 @@ async function fetchDestinationsListResultUncached(signal?: AbortSignal): Promis
   return { ok: true, data: out, status: result.status }
 }
 
-export async function fetchDestinationsListResult(
+export function fetchDestinationsListResult(
   options?: GdcSignalOptions,
 ): Promise<GdcJsonResult<DestinationListItem[]>> {
   return cachedRequest(
@@ -141,7 +141,7 @@ async function fetchDestinationByIdUncached(
   return raw as DestinationRead
 }
 
-export async function fetchDestinationById(
+export function fetchDestinationById(
   destinationId: number,
   options?: GdcSignalOptions,
 ): Promise<DestinationRead | null> {

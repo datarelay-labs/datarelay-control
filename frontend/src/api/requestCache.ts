@@ -85,54 +85,73 @@ export type CachedRequestOptions = {
   signal?: AbortSignal
 }
 
-export async function cachedRequest<T>(
+/**
+ * Marks AbortError as handled without swallowing non-abort failures for unhandled tracking.
+ * Use on any promise chain that re-wraps `cachedRequest` (e.g. `.then` / `.finally`) so
+ * intentional abort/unmount does not surface as Vitest/Node unhandledRejection.
+ */
+export function observeCachedRequestRejection<T>(promise: Promise<T>): Promise<T> {
+  void promise.catch((err) => {
+    if (isRequestAborted(err)) return
+    return Promise.reject(err)
+  })
+  return promise
+}
+
+function rejectAborted(): Promise<never> {
+  return observeCachedRequestRejection(Promise.reject(createAbortError()))
+}
+
+export function cachedRequest<T>(
   namespace: string,
   key: string,
   loader: (signal?: AbortSignal) => Promise<T>,
   options: CachedRequestOptions = {},
 ): Promise<T> {
   const { signal, ttlMs = 15_000 } = options
-  throwIfAborted(signal)
+  if (signal?.aborted) return rejectAborted()
 
   const cache = namespaceCache(namespace)
   const cached = cache.get(key) as RequestCacheEntry<T> | undefined
 
   if (cached?.promise != null) {
     linkConsumer(cache, key, cached, signal)
-    throwIfAborted(signal)
+    if (signal?.aborted) return rejectAborted()
     if (cache.has(key) && cached.promise != null) return cached.promise
   }
 
   const cachedAge = cached?.updatedAt == null ? Number.POSITIVE_INFINITY : nowMs() - cached.updatedAt
   if (cached != null && cached.promise == null && cachedAge < ttlMs && cached.value !== undefined) {
-    return cached.value as T
+    return Promise.resolve(cached.value as T)
   }
 
   const entry: RequestCacheEntry<T> = {}
   const abortController = new AbortController()
   entry.abortController = abortController
   linkConsumer(cache, key, entry, signal)
-  throwIfAborted(signal)
+  if (signal?.aborted) return rejectAborted()
 
-  const promise = loader(abortController.signal)
-    .then((value) => {
-      throwIfAborted(abortController.signal)
-      cache.set(key, { value, updatedAt: nowMs() })
-      return value
-    })
-    .catch((err) => {
-      cache.delete(key)
-      if (isRequestAborted(err)) throw createAbortError()
-      throw err
-    })
-    .finally(() => {
-      const current = cache.get(key) as RequestCacheEntry<T> | undefined
-      if (current?.promise === promise) {
-        if (current.value !== undefined) {
-          cache.set(key, { value: current.value, updatedAt: current.updatedAt ?? nowMs() })
+  const promise = observeCachedRequestRejection(
+    loader(abortController.signal)
+      .then((value) => {
+        throwIfAborted(abortController.signal)
+        cache.set(key, { value, updatedAt: nowMs() })
+        return value
+      })
+      .catch((err) => {
+        cache.delete(key)
+        if (isRequestAborted(err)) throw createAbortError()
+        throw err
+      })
+      .finally(() => {
+        const current = cache.get(key) as RequestCacheEntry<T> | undefined
+        if (current?.promise === promise) {
+          if (current.value !== undefined) {
+            cache.set(key, { value: current.value, updatedAt: current.updatedAt ?? nowMs() })
+          }
         }
-      }
-    })
+      }),
+  )
 
   entry.promise = promise
   cache.set(key, entry)

@@ -72,7 +72,7 @@ async function fetchRouteByIdUncached(routeId: number, signal?: AbortSignal): Pr
   return raw as RouteRead
 }
 
-export async function fetchRouteById(routeId: number, options?: GdcSignalOptions): Promise<RouteRead | null> {
+export function fetchRouteById(routeId: number, options?: GdcSignalOptions): Promise<RouteRead | null> {
   return cachedRequest(
     ROUTE_BY_ID_CACHE_NS,
     String(routeId),
@@ -115,7 +115,7 @@ async function fetchRoutesListUncached(signal?: AbortSignal): Promise<RouteRead[
   return out.length ? out : null
 }
 
-export async function fetchRoutesList(options?: GdcSignalOptions): Promise<RouteRead[] | null> {
+export function fetchRoutesList(options?: GdcSignalOptions): Promise<RouteRead[] | null> {
   return cachedRequest(
     ROUTES_LIST_CACHE_NS,
     CATALOG_ROUTES_LIST_KEY,

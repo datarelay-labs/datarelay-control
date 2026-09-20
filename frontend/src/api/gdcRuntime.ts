@@ -78,7 +78,7 @@ function snapshotKey(snapshotId: string | undefined): string {
   return trimmed && trimmed !== '' ? trimmed : 'latest'
 }
 
-export async function fetchRuntimeDashboardSummary(
+export function fetchRuntimeDashboardSummary(
   limit = 100,
   window: ExtendedMetricsWindow = '1h',
   params: RuntimeSnapshotParams = {},
@@ -107,7 +107,7 @@ export async function fetchRuntimeValidationOperationalSummary(): Promise<Valida
   return safeRequestJson<ValidationOperationalSummaryResponse>(`${RT}/validation/operational-summary`, readJsonOpts)
 }
 
-export async function fetchRuntimeDashboardOutcomeTimeseries(
+export function fetchRuntimeDashboardOutcomeTimeseries(
   window: ExtendedMetricsWindow = '1h',
   params: RuntimeSnapshotParams = {},
   options?: GdcSignalOptions,
@@ -134,7 +134,7 @@ export async function fetchRuntimeSystemResources(options?: GdcSignalOptions): P
   )
 }
 
-export async function fetchRuntimeAlertSummary(
+export function fetchRuntimeAlertSummary(
   window: ExtendedMetricsWindow = '1h',
   limit = 100,
   options?: GdcSignalOptions,
@@ -177,7 +177,7 @@ export async function fetchStreamRuntimeHealth(
 }
 
 /** One round-trip for stats + health (single delivery_logs scan server-side). */
-export async function fetchStreamRuntimeStatsHealth(
+export function fetchStreamRuntimeStatsHealth(
   streamId: number,
   limit = 100,
   window?: ExtendedMetricsWindow,
@@ -201,7 +201,7 @@ export async function fetchStreamRuntimeStatsHealth(
 }
 
 /** Bulk stats + health for Streams Console (replaces per-stream N+1 stats-health calls). */
-export async function fetchBulkStreamStatsHealth(
+export function fetchBulkStreamStatsHealth(
   streamIds: readonly number[],
   limit = 100,
   window: ExtendedMetricsWindow = '1h',
@@ -209,7 +209,7 @@ export async function fetchBulkStreamStatsHealth(
   options?: GdcSignalOptions,
 ): Promise<BulkStreamStatsHealthResponse | null> {
   const unique = [...new Set(streamIds.filter((id) => Number.isFinite(id) && id > 0))].sort((a, b) => a - b)
-  if (!unique.length) return { window, snapshot_id: params.snapshot_id ?? null, streams: {} }
+  if (!unique.length) return Promise.resolve({ window, snapshot_id: params.snapshot_id ?? null, streams: {} })
   const q = new URLSearchParams({
     ids: unique.join(','),
     limit: String(limit),
@@ -229,7 +229,7 @@ export async function fetchBulkStreamStatsHealth(
   )
 }
 
-export async function fetchStreamRuntimeMetrics(
+export function fetchStreamRuntimeMetrics(
   streamId: number,
   window: MetricsWindow = '1h',
   params: RuntimeSnapshotParams = {},
@@ -250,7 +250,7 @@ export async function fetchStreamRuntimeMetrics(
   )
 }
 
-export async function fetchStreamWebhookIngestObservability(
+export function fetchStreamWebhookIngestObservability(
   streamId: number,
   window: MetricsWindow = '1h',
   params: RuntimeSnapshotParams = {},
@@ -271,7 +271,7 @@ export async function fetchStreamWebhookIngestObservability(
   )
 }
 
-export async function fetchStreamMappingUiConfig(
+export function fetchStreamMappingUiConfig(
   streamId: number,
   options?: GdcSignalOptions & { fresh?: boolean },
 ): Promise<MappingUIConfigResponse | null> {
@@ -317,7 +317,7 @@ export type RuntimeLogSearchParams = {
   snapshot_id?: string
 }
 
-export async function searchRuntimeDeliveryLogs(params: RuntimeLogSearchParams): Promise<RuntimeLogSearchResponse | null> {
+export function searchRuntimeDeliveryLogs(params: RuntimeLogSearchParams): Promise<RuntimeLogSearchResponse | null> {
   const q = new URLSearchParams()
   if (params.stream_id != null) q.set('stream_id', String(params.stream_id))
   if (params.route_id != null) q.set('route_id', String(params.route_id))

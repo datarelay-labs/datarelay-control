@@ -6,7 +6,7 @@ import {
   loadOperationalSnapshotFixture,
 } from '../lib/runtime-operational-fixture-mode'
 import { GDC_API_PREFIX } from './gdcApiPrefix'
-import { cachedRequest, clearSharedRequestCache } from './requestCache'
+import { cachedRequest, clearSharedRequestCache, observeCachedRequestRejection } from './requestCache'
 
 const RT = `${GDC_API_PREFIX}/runtime`
 const readJsonOpts = { timeoutMs: GDC_CRITICAL_READ_JSON_TIMEOUT_MS }
@@ -141,11 +141,14 @@ async function fetchOperationalSnapshotResolved(): Promise<OperationalSnapshotRe
   return fetchOperationalSnapshotUncached()
 }
 
-export async function getOperationalSnapshot(): Promise<OperationalSnapshotResponse | null> {
-  const fixtureActive = await canUseOperationalFixture()
-  const key = fixtureActive ? `fixture:${getRuntimeFixtureFileName()}` : operationalSnapshotRequestKey()
+export function getOperationalSnapshot(): Promise<OperationalSnapshotResponse | null> {
   const startedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now()
-  return cachedRequest(SNAPSHOT_CACHE_NAMESPACE, key, fetchOperationalSnapshotResolved, {
-    ttlMs: SNAPSHOT_CACHE_TTL_MS,
-  }).finally(() => logDevTiming(startedAt))
+  return observeCachedRequestRejection(
+    canUseOperationalFixture().then((fixtureActive) => {
+      const key = fixtureActive ? `fixture:${getRuntimeFixtureFileName()}` : operationalSnapshotRequestKey()
+      return cachedRequest(SNAPSHOT_CACHE_NAMESPACE, key, fetchOperationalSnapshotResolved, {
+        ttlMs: SNAPSHOT_CACHE_TTL_MS,
+      })
+    }).finally(() => logDevTiming(startedAt)),
+  )
 }

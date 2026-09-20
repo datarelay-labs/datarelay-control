@@ -71,7 +71,7 @@ async function fetchStreamsListResultUncached(signal?: AbortSignal): Promise<Gdc
   return { ok: true, data: parsed, status: result.status }
 }
 
-export async function fetchStreamsListResult(options?: GdcSignalOptions): Promise<GdcJsonResult<StreamRead[]>> {
+export function fetchStreamsListResult(options?: GdcSignalOptions): Promise<GdcJsonResult<StreamRead[]>> {
   return cachedRequest(
     STREAMS_LIST_CACHE_NS,
     CATALOG_STREAMS_LIST_KEY,
@@ -119,7 +119,7 @@ async function fetchStreamByIdUncached(streamId: number, signal?: AbortSignal): 
   return raw as StreamRead
 }
 
-export async function fetchStreamById(streamId: number, options?: GdcSignalOptions): Promise<StreamRead | null> {
+export function fetchStreamById(streamId: number, options?: GdcSignalOptions): Promise<StreamRead | null> {
   return cachedRequest(
     STREAM_BY_ID_CACHE_NS,
     String(streamId),
