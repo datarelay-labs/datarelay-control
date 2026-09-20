@@ -1,6 +1,8 @@
 /**
  * Practical IANA timezone options for display settings.
  * Prefer the runtime Intl catalog; fall back to a curated operable set.
+ * Normalize ICU legacy aliases so every selectable value is accepted by
+ * backend `validate_iana_timezone` (Python zoneinfo).
  */
 
 const FALLBACK_IANA_TIMEZONES = [
@@ -29,8 +31,42 @@ const FALLBACK_IANA_TIMEZONES = [
   'Pacific/Auckland',
 ] as const
 
+/**
+ * ICU / Intl may expose legacy Link names that Python zoneinfo rejects.
+ * Map those to the canonical identifiers ZoneInfo accepts.
+ */
+const LEGACY_IANA_ALIAS_TO_CANONICAL: Readonly<Record<string, string>> = {
+  'Africa/Asmera': 'Africa/Asmara',
+  'America/Buenos_Aires': 'America/Argentina/Buenos_Aires',
+  'America/Catamarca': 'America/Argentina/Catamarca',
+  'America/Cordoba': 'America/Argentina/Cordoba',
+  'America/Godthab': 'America/Nuuk',
+  'America/Indianapolis': 'America/Indiana/Indianapolis',
+  'America/Jujuy': 'America/Argentina/Jujuy',
+  'America/Louisville': 'America/Kentucky/Louisville',
+  'America/Mendoza': 'America/Argentina/Mendoza',
+  'Asia/Calcutta': 'Asia/Kolkata',
+  'Asia/Katmandu': 'Asia/Kathmandu',
+  'Asia/Rangoon': 'Asia/Yangon',
+  'Asia/Saigon': 'Asia/Ho_Chi_Minh',
+  'Atlantic/Faeroe': 'Atlantic/Faroe',
+  'Europe/Kiev': 'Europe/Kyiv',
+  'Pacific/Enderbury': 'Pacific/Kanton',
+  'Pacific/Ponape': 'Pacific/Pohnpei',
+  'Pacific/Truk': 'Pacific/Chuuk',
+}
+
+/** Map ICU legacy aliases to ZoneInfo-compatible IANA identifiers. */
+export function canonicalizeIanaTimezone(timezone: string): string {
+  return LEGACY_IANA_ALIAS_TO_CANONICAL[timezone] ?? timezone
+}
+
 function sortTimezones(values: Iterable<string>): string[] {
   return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b))
+}
+
+function toBackendCompatibleTimezones(values: Iterable<string>): string[] {
+  return sortTimezones(Array.from(values, canonicalizeIanaTimezone))
 }
 
 /** Full practical IANA list for display-timezone selects. */
@@ -38,12 +74,12 @@ export function listIanaTimezones(): string[] {
   try {
     const supported = Intl.supportedValuesOf?.('timeZone')
     if (Array.isArray(supported) && supported.length > 0) {
-      return sortTimezones(['UTC', ...supported])
+      return toBackendCompatibleTimezones(['UTC', ...supported])
     }
   } catch {
     /* use fallback */
   }
-  return sortTimezones(FALLBACK_IANA_TIMEZONES)
+  return toBackendCompatibleTimezones(FALLBACK_IANA_TIMEZONES)
 }
 
 /** Case-insensitive substring filter; empty query returns the full list. */
