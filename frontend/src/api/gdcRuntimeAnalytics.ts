@@ -54,7 +54,7 @@ export async function fetchRouteFailuresForRoute(
   return safeRequestJson<RouteFailuresScopedResponse>(`${BASE}/routes/${routeId}/failures?${q.toString()}`, readJsonOpts)
 }
 
-export async function fetchDeliveryOutcomesByDestination(
+export function fetchDeliveryOutcomesByDestination(
   params: Pick<AnalyticsQueryParams, 'window' | 'since' | 'snapshot_id'>,
 ): Promise<DestinationDeliveryOutcomesResponse | null> {
   const q = buildSearchParams(params)

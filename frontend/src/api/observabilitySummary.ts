@@ -1,7 +1,7 @@
 import { GDC_DEFAULT_READ_JSON_TIMEOUT_MS, safeRequestJson } from '../api'
 import { GDC_API_PREFIX } from './gdcApiPrefix'
 import { readJsonWithSignal, type GdcSignalOptions } from './gdcSignalOptions'
-import { cachedRequest, clearSharedRequestCache } from './requestCache'
+import { cachedRequest, clearSharedRequestCache, observeCachedRequestRejection } from './requestCache'
 import type { MetricsWindow } from './gdcRuntime'
 import type { ObservabilitySummaryResponse } from './types/gdcApi'
 
@@ -46,7 +46,7 @@ export function clearObservabilitySummaryCache(key?: string): void {
   clearSharedRequestCache(SUMMARY_CACHE_NAMESPACE, key)
 }
 
-export async function fetchObservabilitySummary(
+export function fetchObservabilitySummary(
   window: MetricsWindow = '24h',
   params: { snapshot_id?: string } = {},
   options?: GdcSignalOptions,
@@ -54,11 +54,13 @@ export async function fetchObservabilitySummary(
   const snapshotId = normalizeSnapshotId(params.snapshot_id)
   const key = observabilitySummaryRequestKey(window, snapshotId)
   const startedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now()
-  return cachedRequest(
-    SUMMARY_CACHE_NAMESPACE,
-    key,
-    (signal) => fetchObservabilitySummaryUncached(window, snapshotId === 'latest' ? {} : { snapshot_id: snapshotId }, signal),
-    { ttlMs: SUMMARY_CACHE_TTL_MS, signal: options?.signal },
-  ).finally(() => logDevTiming(key, startedAt))
+  return observeCachedRequestRejection(
+    cachedRequest(
+      SUMMARY_CACHE_NAMESPACE,
+      key,
+      (signal) => fetchObservabilitySummaryUncached(window, snapshotId === 'latest' ? {} : { snapshot_id: snapshotId }, signal),
+      { ttlMs: SUMMARY_CACHE_TTL_MS, signal: options?.signal },
+    ).finally(() => logDevTiming(key, startedAt)),
+  )
 }
 

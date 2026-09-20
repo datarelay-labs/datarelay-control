@@ -83,7 +83,7 @@ async function fetchConnectorOperationsSummaryUncached(
   )
 }
 
-export async function fetchConnectorOperationsSummary(
+export function fetchConnectorOperationsSummary(
   window = '1h',
   options?: GdcSignalOptions,
 ): Promise<ConnectorOperationsSummaryResponse | null> {

@@ -249,7 +249,7 @@ async function fetchConnectorsListResultUncached(signal?: AbortSignal): Promise<
   return { ok: true, data: result.data as ConnectorRead[], status: result.status }
 }
 
-export async function fetchConnectorsListResult(options?: GdcSignalOptions): Promise<GdcJsonResult<ConnectorRead[]>> {
+export function fetchConnectorsListResult(options?: GdcSignalOptions): Promise<GdcJsonResult<ConnectorRead[]>> {
   return cachedRequest(
     CONNECTORS_LIST_CACHE_NS,
     CATALOG_CONNECTORS_LIST_KEY,
@@ -273,7 +273,7 @@ export async function createConnector(payload: ConnectorWritePayload): Promise<C
   return created
 }
 
-export async function fetchConnectorById(connectorId: number, options?: GdcSignalOptions): Promise<ConnectorRead | null> {
+export function fetchConnectorById(connectorId: number, options?: GdcSignalOptions): Promise<ConnectorRead | null> {
   return cachedRequest(
     CONNECTOR_BY_ID_CACHE_NS,
     String(connectorId),
