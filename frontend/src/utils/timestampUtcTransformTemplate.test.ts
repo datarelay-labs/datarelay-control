@@ -35,6 +35,8 @@ describe('timestampUtcTransformTemplate', () => {
     expect(jsonataPathFromJsonPath('$.meta.null')).toBe('meta.`null`')
     // Ordinary identifiers and array indexes stay unchanged.
     expect(jsonataPathFromJsonPath('$.metadata.inside')).toBe('metadata.inside')
+    // `function` is a lambda keyword, but bare property paths evaluate successfully in JSONata.
+    expect(jsonataPathFromJsonPath('$.metadata.function')).toBe('metadata.function')
     expect(jsonataPathFromJsonPath('$.metadata.in[0]')).toBe('metadata.`in`[0]')
     expect(buildTimestampUtcFieldJsonataExpression('$.metadata.in')).toContain('metadata.`in`')
   })
