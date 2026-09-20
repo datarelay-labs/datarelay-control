@@ -21,11 +21,20 @@ export const TIMESTAMP_UTC_REGEX_LIMITATION_GUIDANCE = [
 /** Ordinary JSONata identifiers can be unquoted; special/reserved key segments need backticks. */
 const JSONATA_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/
 
+/**
+ * Identifier-shaped tokens that are unsafe as bare property-path steps.
+ * Sourced from JSONata parser operators (`and`/`or`/`in`) and literals that reject
+ * path steps (`true`/`false`/`null`); not from JavaScript reserved words.
+ */
+const JSONATA_RESERVED_PATH_TOKENS = new Set(['and', 'or', 'in', 'true', 'false', 'null'])
+
 function quoteJsonataPropertySegment(segment: string): string {
   const match = segment.match(/^([^[\]]+)((?:\[\d+\])*)$/)
   if (!match) return segment
   const [, name, indexes] = match
-  if (JSONATA_IDENTIFIER.test(name)) return `${name}${indexes}`
+  if (JSONATA_IDENTIFIER.test(name) && !JSONATA_RESERVED_PATH_TOKENS.has(name)) {
+    return `${name}${indexes}`
+  }
   return `\`${name.replace(/`/g, '\\`')}\`${indexes}`
 }
 
