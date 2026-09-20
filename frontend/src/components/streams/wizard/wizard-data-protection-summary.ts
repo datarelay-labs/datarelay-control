@@ -25,7 +25,7 @@ const PROTECTION_ACTION_LABEL = {
   mask_full: 'Mask (full)',
   tokenize: 'Tokenize',
   hash: 'Hash',
-  drop_field: 'Drop',
+  drop_field: 'Remove',
 } as const
 
 export function protectionActionLabel(action: WizardDataProtectionIntent['protectionAction']): string {

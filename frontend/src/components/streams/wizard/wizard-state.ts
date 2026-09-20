@@ -177,7 +177,7 @@ export type WizardProtectionAction =
   | 'hash'
   | 'drop_field'
 
-/** Legacy draft values map to partial mask unless explicitly drop_field. */
+/** Legacy draft `remove` preserves field-removal intent via supported `drop_field`. */
 export function normalizeWizardProtectionAction(action: unknown): WizardProtectionAction {
   if (
     action === 'audit' ||
@@ -189,7 +189,7 @@ export function normalizeWizardProtectionAction(action: unknown): WizardProtecti
   ) {
     return action
   }
-  if (action === 'remove') return 'mask_partial'
+  if (action === 'remove') return 'drop_field'
   return 'audit'
 }
 

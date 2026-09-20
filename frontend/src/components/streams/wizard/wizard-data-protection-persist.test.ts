@@ -28,6 +28,7 @@ vi.mock('../../../api/gdcProtection', () => ({
     if (action === 'mask_full') return 'full_mask'
     if (action === 'tokenize') return 'tokenization'
     if (action === 'hash') return 'hash'
+    if (action === 'drop_field') return 'drop_field'
     return 'partial_mask'
   },
 }))
@@ -218,8 +219,38 @@ describe('wizard-data-protection-persist', () => {
     )
   })
 
+  it('persists drop_field protection mode without silently masking', async () => {
+    const state = buildInitialState()
+    state.mapping = [{ id: 'm1', outputField: 'ssn', sourceJsonPath: '$.ssn' }]
+    state.apiTest.extractedEvents = [{ ssn: '123-45-6789' }]
+    state.dataProtection.intents = [
+      {
+        key: 'legacy-remove',
+        detectedField: '$.ssn',
+        protectionAction: 'drop_field',
+        deliveryBehavior: 'continue',
+      },
+    ]
+
+    const result = await persistWizardDataProtectionIntents(42, state)
+    expect(result.saved).toBe(true)
+    expect(createProtectionRulesDirect).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({
+        origin: 'wizard',
+        rules: expect.arrayContaining([
+          expect.objectContaining({ field_path: '$.ssn', protection_mode: 'drop_field' }),
+        ]),
+      }),
+    )
+    const call = vi.mocked(createProtectionRulesDirect).mock.calls[0]
+    const payload = call?.[1] as { rules: Array<{ protection_mode: string }> }
+    expect(payload.rules.every((rule) => rule.protection_mode !== 'partial_mask')).toBe(true)
+  })
+
   it('identifies field-level protection actions', () => {
     expect(protectionActionNeedsFieldRule('audit')).toBe(false)
     expect(protectionActionNeedsFieldRule('mask_partial')).toBe(true)
+    expect(protectionActionNeedsFieldRule('drop_field')).toBe(true)
   })
 })

@@ -37,7 +37,7 @@ const PROTECTION_ACTIONS: ReadonlyArray<{ value: WizardProtectionAction; label: 
   { value: 'mask_full', label: 'Mask (full)' },
   { value: 'tokenize', label: 'Tokenize' },
   { value: 'hash', label: 'Hash' },
-  { value: 'drop_field', label: 'Drop' },
+  { value: 'drop_field', label: 'Remove' },
 ]
 
 const DELIVERY_BEHAVIORS: ReadonlyArray<{ value: WizardDeliveryBehavior; label: string }> = [
