@@ -8,6 +8,7 @@ import {
   getUnionSchemaSampleStatus,
   resolveUnionSchemaSampleCount,
 } from '../../../utils/unionSchemaSamplePolicy'
+import { TimestampUtcTransformGuide } from '../../transform/timestamp-utc-transform-guide'
 import { ResizableSplit } from '../../ui/resizable-split'
 import { MappingJsonTree, PanelChrome, type MappingJsonTreeExpandStrategy } from '../mapping-json-tree'
 import { UnionSchemaTreeDetailLayout } from '../union-schema-tree-detail-layout'
@@ -608,6 +609,13 @@ export function WizardFullEventTransformWorkspace({
           </div>
         </div>
       </div>
+
+      <TimestampUtcTransformGuide
+        mode={isExpertMode ? 'regex' : 'jsonata'}
+        variant="full_event"
+        sampleEvent={sampleEvent}
+        onInsertExpression={isExpertMode ? undefined : onJsonataExpressionChange}
+      />
 
       <div className={WORKSPACE_SHELL_CLASS}>
         <ResizableSplit

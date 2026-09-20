@@ -109,4 +109,40 @@ describe('AdvancedTransformWorkspace', () => {
     })
     expect(screen.queryByText(/Save blocked/i)).not.toBeInTheDocument()
   })
+
+  it('exposes Timestamp → UTC insert for JSONata and limitation guidance for Regex', () => {
+    const onRulesChange = vi.fn()
+
+    const { rerender } = render(
+      <AdvancedTransformWorkspace
+        stage="mapping"
+        sampleEvent={{ creationTime: 1673933930200 }}
+        rules={[]}
+        onRulesChange={onRulesChange}
+        filterUiMode="advanced"
+      />,
+    )
+
+    expect(screen.getByTestId('timestamp-utc-transform-guide')).toHaveAttribute('data-mode', 'jsonata')
+    fireEvent.click(screen.getByTestId('timestamp-utc-insert-template'))
+    expect(onRulesChange).toHaveBeenCalled()
+    const nextRules = onRulesChange.mock.calls[0][0]
+    expect(nextRules).toHaveLength(1)
+    expect(nextRules[0].outputField).toBe('timestamp')
+    expect(nextRules[0].expression).toContain('$fromMillis')
+
+    rerender(
+      <AdvancedTransformWorkspace
+        stage="mapping"
+        sampleEvent={{ creationTime: 1673933930200 }}
+        rules={[]}
+        onRulesChange={onRulesChange}
+        filterUiMode="expert"
+      />,
+    )
+
+    expect(screen.getByTestId('timestamp-utc-transform-guide')).toHaveAttribute('data-mode', 'regex')
+    expect(screen.getByText(/Regex cannot reliably compute or normalize timestamps/i)).toBeInTheDocument()
+    expect(screen.queryByTestId('timestamp-utc-insert-template')).not.toBeInTheDocument()
+  })
 })
