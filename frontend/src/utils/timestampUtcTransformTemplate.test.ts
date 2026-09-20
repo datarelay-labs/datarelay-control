@@ -26,6 +26,21 @@ describe('timestampUtcTransformTemplate', () => {
     )
   })
 
+  it('backtick-quotes identifier-shaped JSONata reserved path tokens', () => {
+    expect(jsonataPathFromJsonPath('$.metadata.in')).toBe('metadata.`in`')
+    expect(jsonataPathFromJsonPath('$.metadata.and')).toBe('metadata.`and`')
+    expect(jsonataPathFromJsonPath('$.metadata.or')).toBe('metadata.`or`')
+    expect(jsonataPathFromJsonPath('$.true')).toBe('`true`')
+    expect(jsonataPathFromJsonPath('$.payload.false')).toBe('payload.`false`')
+    expect(jsonataPathFromJsonPath('$.meta.null')).toBe('meta.`null`')
+    // Ordinary identifiers and array indexes stay unchanged.
+    expect(jsonataPathFromJsonPath('$.metadata.inside')).toBe('metadata.inside')
+    // `function` is a lambda keyword, but bare property paths evaluate successfully in JSONata.
+    expect(jsonataPathFromJsonPath('$.metadata.function')).toBe('metadata.function')
+    expect(jsonataPathFromJsonPath('$.metadata.in[0]')).toBe('metadata.`in`[0]')
+    expect(buildTimestampUtcFieldJsonataExpression('$.metadata.in')).toContain('metadata.`in`')
+  })
+
   it('builds a per-field Timestamp → UTC expression for the selected source', () => {
     const expression = buildTimestampUtcFieldJsonataExpression('$.creationTime')
     expect(expression).toContain('creationTime')
