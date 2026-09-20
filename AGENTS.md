@@ -3,7 +3,7 @@
 This repository follows the canonical Data Relay Labs Engineering System:
 https://github.com/datarelay-labs/engineering-system
 
-Adoption baseline: Engineering System version 1.3.1. Canonical rules were re-reviewed against `datarelay-labs/engineering-system` main at commit `630452fffb0a0f8bd72afc6d56c38efcae579bd2`.
+Adoption baseline: Engineering System version 1.5.0 at immutable commit `b2b6f64febb52f2c033eedc7af7570c220fca887`.
 
 ## Minimum context first
 
@@ -56,11 +56,15 @@ Historical or explicitly retired behavior is not protected by no-regression poli
 
 ## Execution rules
 
+- Classify the change and identify affected domains/contracts/security/operations.
+- For material design-bearing changes, apply the canonical `standards/DESIGN.md` minimal design gate before implementation.
 - Preserve unrelated user work and dirty worktrees.
 - Make the smallest correct change and do not silently expand scope.
 - Bug fixes should add durable regression coverage whenever practical.
 - Never report skipped, blocked, historical, or different-HEAD evidence as current PASS.
 - Runtime behavior may change only when required by the requested task or current Source of Truth; when it changes, run the affected runtime validation defined in `.engineering/tests.yaml`.
+- If the user reports an outage, degraded service, failed upgrade, data-loss risk, or other production-impacting symptom, switch to the canonical `standards/OPERATIONS.md` incident lifecycle. Preserve evidence before mutation and do not perform destructive/irreversible recovery without explicit approval unless an approved runbook authorizes it.
+- When the user explicitly asks to apply/adopt/bootstrap the Engineering System to this repository, use the canonical `standards/ADOPTION.md` workflow.
 
 ## Session continuity
 

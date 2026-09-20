@@ -1,0 +1,11 @@
+name: Engineering System
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  adoption-compliance:
+    uses: datarelay-labs/engineering-system/.github/workflows/adoption-compliance.yml@b2b6f64febb52f2c033eedc7af7570c220fca887

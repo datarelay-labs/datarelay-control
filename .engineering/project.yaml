@@ -1,5 +1,15 @@
 engineering_system:
-  version: "1.3.1"
+  version: "1.5.0"
+  mode: adopted
+  baseline: "b2b6f64febb52f2c033eedc7af7570c220fca887"
+  ci_mode: native
+  native_ci_workflows:
+    - ".github/workflows/backend-tests.yml"
+    - ".github/workflows/frontend-tests.yml"
+    - ".github/workflows/backend-focused.yml"
+    - ".github/workflows/frontend-focused.yml"
+    - ".github/workflows/e2e-smoke.yml"
+  merge_gate_status: verified
 
 project:
   name: "data-relay-control"
@@ -23,3 +33,4 @@ platforms:
 operations:
   production_oriented: true
   runbook_required: true
+  incident_response_required: true
