@@ -18,6 +18,8 @@ Read only when relevant:
 
 Then:
 - classify the change and affected domains/contracts/security/operations
+- apply the minimal `standards/DESIGN.md` gate before material design-bearing changes
+- for outages/degraded service/failed upgrades/data-loss risk, enter the `standards/OPERATIONS.md` incident lifecycle and preserve evidence before mutation
 - inspect relevant implementation/tests
 - make the smallest correct change
 - run cheapest affected deterministic tests first
@@ -30,5 +32,7 @@ Then:
 - never reuse release qualification evidence from another source HEAD
 
 When explicitly resuming an existing workstream, use the repository-scoped active AI Work Packet and verify current Git state before acting. Do not load packets from unrelated repositories. Fail closed on missing or ambiguous packet selection.
+
+When the user asks to apply/adopt/bootstrap the Engineering System, follow the canonical `standards/ADOPTION.md` procedure. Inventory and classify before cleanup; use deterministic bootstrap for missing common surfaces; preserve project-specific/stricter rules; fail closed on ambiguous tests, release commands, or destructive overwrite.
 
 Tool-specific rules may adapt syntax but must not weaken the Engineering System core.
