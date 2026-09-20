@@ -1,13 +1,13 @@
 import { Clock } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getAdminDisplaySettings } from '../../api/gdcAdmin'
 import { useDisplayTimezone } from '../../contexts/display-timezone-context'
+import { listIanaTimezones, timezoneSelectOptions } from '../../lib/iana-timezones'
 import { cn } from '../../lib/utils'
 import { gdcUi } from '../../lib/gdc-ui-tokens'
 
-const COMMON_TIMEZONES = ['UTC', 'Asia/Seoul', 'America/New_York', 'Europe/London'] as const
-
 const cardShell = gdcUi.cardShell
+const IANA_TIMEZONES = listIanaTimezones()
 
 type Props = {
   backendRole: string | null
@@ -36,6 +36,8 @@ export function AdminDisplayTimezoneSettings({
   } = useDisplayTimezone()
   const [platformDraft, setPlatformDraft] = useState(platformDefaultTimezone)
   const [userDraft, setUserDraft] = useState(userTimezone ?? '')
+  const [userFilter, setUserFilter] = useState('')
+  const [platformFilter, setPlatformFilter] = useState('')
   const isAdmin = backendRole === 'ADMINISTRATOR'
 
   useEffect(() => {
@@ -57,6 +59,15 @@ export function AdminDisplayTimezoneSettings({
       }
     })()
   }, [isAdmin])
+
+  const userOptions = useMemo(
+    () => timezoneSelectOptions(userDraft, userFilter, IANA_TIMEZONES),
+    [userDraft, userFilter],
+  )
+  const platformOptions = useMemo(
+    () => timezoneSelectOptions(platformDraft, platformFilter, IANA_TIMEZONES),
+    [platformDraft, platformFilter],
+  )
 
   const onSavePlatform = useCallback(async () => {
     if (!isAdmin || readOnly) return
@@ -88,6 +99,10 @@ export function AdminDisplayTimezoneSettings({
   }, [readOnly, setBusy, setPageErr, setPageMsg, setUserTimezone, userDraft])
 
   const sampleUtc = '2026-06-29T07:10:00Z'
+  const selectClassName =
+    'mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[13px] dark:border-gdc-border dark:bg-gdc-section'
+  const filterClassName =
+    'mt-3 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[12px] dark:border-gdc-border dark:bg-gdc-section'
 
   return (
     <section className={cn(cardShell, 'p-4 md:p-6')} aria-labelledby="admin-display-timezone-heading">
@@ -115,16 +130,29 @@ export function AdminDisplayTimezoneSettings({
         <div className="rounded-lg border border-slate-200/80 p-4 dark:border-gdc-border">
           <h4 className="text-[13px] font-semibold text-slate-900 dark:text-slate-100">Your timezone</h4>
           <p className="mt-1 text-[11px] text-slate-600 dark:text-gdc-muted">Optional override for your account.</p>
+          <label className="block text-[11px] font-medium text-slate-700 dark:text-gdc-mutedStrong">
+            Filter timezones
+            <input
+              type="search"
+              className={filterClassName}
+              value={userFilter}
+              disabled={readOnly || busy}
+              placeholder="e.g. Los_Angeles or Berlin"
+              aria-controls="user-display-timezone"
+              onChange={(e) => setUserFilter(e.target.value)}
+            />
+          </label>
           <label className="mt-3 block text-[11px] font-medium text-slate-700 dark:text-gdc-mutedStrong">
             IANA timezone
             <select
-              className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[13px] dark:border-gdc-border dark:bg-gdc-section"
+              id="user-display-timezone"
+              className={selectClassName}
               value={userDraft || ''}
               disabled={readOnly || busy}
               onChange={(e) => setUserDraft(e.target.value)}
             >
               <option value="">(use platform / browser)</option>
-              {COMMON_TIMEZONES.map((tz) => (
+              {userOptions.map((tz) => (
                 <option key={tz} value={tz}>
                   {tz}
                 </option>
@@ -146,15 +174,28 @@ export function AdminDisplayTimezoneSettings({
           <p className="mt-1 text-[11px] text-slate-600 dark:text-gdc-muted">
             Used when a user has no personal timezone. Administrator only.
           </p>
+          <label className="block text-[11px] font-medium text-slate-700 dark:text-gdc-mutedStrong">
+            Filter timezones
+            <input
+              type="search"
+              className={filterClassName}
+              value={platformFilter}
+              disabled={!isAdmin || readOnly || busy}
+              placeholder="e.g. Los_Angeles or Berlin"
+              aria-controls="platform-display-timezone"
+              onChange={(e) => setPlatformFilter(e.target.value)}
+            />
+          </label>
           <label className="mt-3 block text-[11px] font-medium text-slate-700 dark:text-gdc-mutedStrong">
             IANA timezone
             <select
-              className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[13px] dark:border-gdc-border dark:bg-gdc-section"
+              id="platform-display-timezone"
+              className={selectClassName}
               value={platformDraft}
               disabled={!isAdmin || readOnly || busy}
               onChange={(e) => setPlatformDraft(e.target.value)}
             >
-              {COMMON_TIMEZONES.map((tz) => (
+              {platformOptions.map((tz) => (
                 <option key={tz} value={tz}>
                   {tz}
                 </option>
