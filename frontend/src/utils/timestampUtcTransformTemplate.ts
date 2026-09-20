@@ -5,9 +5,12 @@
 
 export const TIMESTAMP_UTC_AFFORDANCE_LABEL = 'Timestamp → UTC'
 
+/** Numeric values strictly below this threshold are treated as epoch seconds; otherwise milliseconds. */
+export const TIMESTAMP_UTC_EPOCH_SECONDS_MAX = 100_000_000_000
+
 export const TIMESTAMP_UTC_JSONATA_GUIDANCE = [
   'Choose a source timestamp field, then insert or copy the JSONata template.',
-  'The template writes a UTC ISO-8601 value (Z). Epoch seconds and milliseconds are both handled; string values must be ISO-8601 parseable.',
+  `The template writes a UTC ISO-8601 value (Z). Numeric values below ${TIMESTAMP_UTC_EPOCH_SECONDS_MAX} are treated as epoch seconds (modern-era heuristic); otherwise as milliseconds — this does not universally disambiguate all units. String values must be ISO-8601 parseable.`,
 ] as const
 
 export const TIMESTAMP_UTC_REGEX_LIMITATION_GUIDANCE = [
@@ -15,13 +18,26 @@ export const TIMESTAMP_UTC_REGEX_LIMITATION_GUIDANCE = [
   'Use JSONata Timestamp → UTC instead of Regex for timestamp conversion.',
 ] as const
 
+/** Ordinary JSONata identifiers can be unquoted; special/reserved key segments need backticks. */
+const JSONATA_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/
+
+function quoteJsonataPropertySegment(segment: string): string {
+  const match = segment.match(/^([^[\]]+)((?:\[\d+\])*)$/)
+  if (!match) return segment
+  const [, name, indexes] = match
+  if (JSONATA_IDENTIFIER.test(name)) return `${name}${indexes}`
+  return `\`${name.replace(/`/g, '\\`')}\`${indexes}`
+}
+
 /** Convert a JSONPath-like selection (e.g. `$.creationTime`) to a JSONata path. */
 export function jsonataPathFromJsonPath(jsonPath: string): string {
   const trimmed = jsonPath.trim()
   if (!trimmed || trimmed === '$') return 'timestamp'
-  if (trimmed.startsWith('$.')) return trimmed.slice(2) || 'timestamp'
-  if (trimmed.startsWith('$')) return trimmed.slice(1).replace(/^\./, '') || 'timestamp'
-  return trimmed
+  let path = trimmed
+  if (path.startsWith('$.')) path = path.slice(2)
+  else if (path.startsWith('$')) path = path.slice(1).replace(/^\./, '')
+  if (!path) return 'timestamp'
+  return path.split('.').map(quoteJsonataPropertySegment).join('.')
 }
 
 function sanitizeOutputField(outputField: string): string {
@@ -38,7 +54,7 @@ export function buildTimestampUtcFieldJsonataExpression(sourceJsonPath: string):
   return [
     `$fromMillis(`,
     `  $type(${path}) = "number"`,
-    `    ? (${path} < 100000000000 ? ${path} * 1000 : ${path})`,
+    `    ? (${path} < ${TIMESTAMP_UTC_EPOCH_SECONDS_MAX} ? ${path} * 1000 : ${path})`,
     `    : $toMillis($string(${path}))`,
     `)`,
   ].join('\n')
@@ -55,7 +71,7 @@ export function buildTimestampUtcFullEventJsonataTemplate(
     `$merge([$, {`,
     `  "${out}": $fromMillis(`,
     `    $type(${path}) = "number"`,
-    `      ? (${path} < 100000000000 ? ${path} * 1000 : ${path})`,
+    `      ? (${path} < ${TIMESTAMP_UTC_EPOCH_SECONDS_MAX} ? ${path} * 1000 : ${path})`,
     `      : $toMillis($string(${path}))`,
     `  )`,
     `}])`,
