@@ -92,7 +92,7 @@ A single unpartitioned `delivery_logs` heap table is therefore a **historical / 
    ) AS delivery_logs_is_partitioned;
    ```
 
-3. **Classify schema evidence (fail closed)**
+3. **Classify recovery evidence (fail closed)**
 
    Use the inspection results to choose **one** path. Do not invent revision IDs and do not stamp from incomplete evidence.
 
@@ -103,17 +103,21 @@ A single unpartitioned `delivery_logs` heap table is therefore a **historical / 
    - This is **not** current head schema.
    - **Never** run `alembic stamp head` on this shape.
    - Preferred recovery: restore the missing migration/history from backup, or otherwise recover with evidence that reintroduces the real applied chain.
-   - If — and only if — an independent schema inventory proves the database is equivalent to a **specific committed ancestor**, you may stamp **that ancestor only**, then upgrade. Because `alembic_version` still holds the unresolvable orphan ID, a normal `alembic stamp <rev>` will fail resolving the current revision — use `--purge` after backup + equivalence proof:
+   - If — and only if — an independent inventory proves the database is equivalent to a **specific committed ancestor** for both **schema and data effects** of that revision, you may stamp **that ancestor only**, then upgrade. Because `alembic_version` still holds the unresolvable orphan ID, a normal `alembic stamp <rev>` will fail resolving the current revision — use `--purge` after backup + equivalence proof:
 
      ```bash
-     # After proving schema ≡ a specific committed revision ID (not "looks close")
+     # After proving schema + data effects ≡ a specific committed revision ID (not "looks close")
      docker compose -f docker-compose.platform.yml run --rm --no-deps api \
        alembic stamp --purge <proven_ancestor_revision>
      docker compose -f docker-compose.platform.yml run --rm --no-deps api \
        alembic upgrade head
      ```
 
-     Graph fact (not a stamp recipe by itself): the last committed revision that still keeps unpartitioned `delivery_logs` is `20260516_0020_rt_metrics_30d`; the next revision (`20260517_0021_obs_scale`) converts `delivery_logs` to monthly partitions and creates `runtime_aggregate_snapshots`. Having a single `delivery_logs` table alone does **not** prove equivalence to `20260516_0020_rt_metrics_30d` or to `20260513_0019_must_change_pw` — prove the full ancestor schema before any stamp.
+     Graph facts (not a stamp recipe by themselves):
+     - The last committed revision that still keeps unpartitioned `delivery_logs` is `20260516_0020_rt_metrics_30d`.
+     - The next revision (`20260517_0021_obs_scale`) converts `delivery_logs` to monthly partitions and creates `runtime_aggregate_snapshots`.
+     - `20260516_0020_rt_metrics_30d` also performs a **data** update (`platform_retention_policy.runtime_metrics_retention_days` 90→30) that DDL inspection alone cannot prove. If catalog shape matches 0020 but that data effect is unproven, do **not** stamp 0020 — stamp an earlier proven revision (for example `20260513_0019_must_change_pw` when that ancestor is fully proven) so `upgrade head` still executes 0020, or fail closed.
+     - Having a single `delivery_logs` table alone does **not** prove equivalence to `20260516_0020_rt_metrics_30d` or to `20260513_0019_must_change_pw`.
    - If equivalence cannot be proven, **stop**: restore from backup or perform evidence-led recovery. Do not guess a stamp target.
 
    **B. Current-schema equivalence independently proven**
