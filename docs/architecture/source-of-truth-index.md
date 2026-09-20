@@ -1,8 +1,19 @@
 # Data Relay Control Authority Map
 
 **Role:** Canonical registry of repository authority; this file is not itself a replacement Product Charter.
-**Last reviewed:** 2026-09-20
+**Last reviewed:** 2026-09-21
 **Canonical product-document directory:** `docs/source-of-truth/`
+
+## Current Data Relay Control product scope
+
+Data Relay Control current product scope is **Phase A–D only**:
+
+- Phase A — Foundation
+- Phase B — Data Control Runtime
+- Phase C — Governance
+- Phase D — OSS Release / closure
+
+**Outside Data Relay Control:** Phase E (AI Gateway) and Phase F (Enterprise Edition). They must not contribute to Control completion percentage, release readiness, final E2E requirements, or Control delivery backlog. Existing AI/Enterprise code may remain in-repo as separate-domain or historical material; it is not current Control scope.
 
 ## Authority model
 

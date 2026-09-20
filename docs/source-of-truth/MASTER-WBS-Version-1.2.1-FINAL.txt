@@ -33,7 +33,28 @@ WBS에 포함될 수 없다.
 
 해당 기능은
 
-Enterprise Edition Backlog로 관리한다.
+Data Relay Control 범위 밖이며
+
+별도 제품 영역으로 관리한다.
+
+--------------------------------------------------
+
+Data Relay Control의 현재 제품 범위는
+
+Phase A Foundation
+Phase B Data Control Runtime
+Phase C Governance
+Phase D OSS Release / closure
+
+뿐이다.
+
+Phase E AI Gateway 와
+Phase F Enterprise Edition 은
+
+Data Relay Control 현재 제품 범위가 아니며
+
+Control 완료도 / 릴리스 readiness /
+Control delivery backlog 에 포함되지 않는다.
 
 --------------------------------------------------
 
@@ -358,15 +379,18 @@ Phase E
 AI Gateway
 ==================================================
 
-완료
+Outside Data Relay Control
 
-M21
+Separate product-domain / historical reference only
 
-AI Gateway Foundation
+Not counted toward Data Relay Control completion,
+release readiness, or Control delivery backlog
 
 --------------------------------------------------
 
-구현 범위
+Historical reference — M21
+
+AI Gateway Foundation
 
 - AI Providers
 - AI Streams
@@ -378,7 +402,7 @@ AI Gateway Foundation
 
 --------------------------------------------------
 
-지원 Provider
+지원 Provider (historical reference)
 
 - OpenAI
 - Claude
@@ -389,7 +413,7 @@ AI Gateway Foundation
 
 --------------------------------------------------
 
-M22
+Historical reference — M22
 
 AI Policy Enforcement
 
@@ -402,7 +426,7 @@ AI Policy Enforcement
 
 --------------------------------------------------
 
-M23
+Historical reference — M23
 
 AI Audit & Inspection Hardening
 
@@ -414,7 +438,7 @@ AI Audit & Inspection Hardening
 
 --------------------------------------------------
 
-M24
+Historical reference — M24
 
 AI Governance
 
@@ -426,6 +450,10 @@ AI Governance
 ==================================================
 Current Product Scope
 ==================================================
+
+Data Relay Control current product scope is Phase A-D only.
+
+--------------------------------------------------
 
 완료
 
@@ -459,26 +487,31 @@ OSS Release
 
 --------------------------------------------------
 
-완료
+Outside Data Relay Control (not current product scope)
 
-Phase E
+Phase E — AI Gateway
 
-AI Gateway
+Phase F — Enterprise Edition
 
 ==================================================
 Phase F
-Enterprise Edition Backlog
+Enterprise Edition
 ==================================================
 
-참고용 백로그
+Outside Data Relay Control
 
-현재 제품 범위 아님
+Separate product-domain / historical reference only
+
+Not a Data Relay Control delivery backlog
+
+Not counted toward Data Relay Control completion
+or release readiness
 
 PRODUCT-CHARTER Out Of Scope
 
 --------------------------------------------------
 
-M25
+Historical reference — M25
 
 Enterprise Authentication
 
@@ -488,19 +521,19 @@ Enterprise Authentication
 
 --------------------------------------------------
 
-M26
+Historical reference — M26
 
 Enterprise Reporting
 
 --------------------------------------------------
 
-M27
+Historical reference — M27
 
 Advanced Audit
 
 --------------------------------------------------
 
-M28
+Historical reference — M28
 
 Multi Node Deployment
 
@@ -508,15 +541,13 @@ Multi Node Deployment
 
 상태
 
-BACKLOG
+OUTSIDE DATA RELAY CONTROL
 
 --------------------------------------------------
 
 구현 금지
 
-PRODUCT-CHARTER 범위 재승인 전까지
-
-개발 시작 금지
+Data Relay Control 제품으로 개발 시작 금지
 
 ==================================================
 Current Architecture Direction
@@ -593,12 +624,6 @@ Governance
 --------------------------------------------------
 
 OSS Release
-
-100%
-
---------------------------------------------------
-
-AI Gateway
 
 100%
 

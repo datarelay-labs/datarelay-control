@@ -229,19 +229,6 @@ Governance
 - Audit
 - Notifications
 
---------------------------------------------------
-
-AI Gateway
-
-- AI Provider Connectivity
-- AI Request Routing
-- AI Response Routing
-- AI Stream
-- AI Traffic Monitoring
-- AI Policy Enforcement
-- AI Audit
-- AI Governance
-
 ==================================================
 Out Of Scope
 ==================================================
@@ -268,6 +255,26 @@ Data Platforms
 - Data Warehouse
 - ETL Platform
 - BI Platform
+
+--------------------------------------------------
+
+AI Gateway
+
+Outside Data Relay Control.
+
+Separate product-domain material. Not part of
+Data Relay Control current product scope.
+
+Historical / reference capability list only:
+
+- AI Provider Connectivity
+- AI Request Routing
+- AI Response Routing
+- AI Stream
+- AI Traffic Monitoring
+- AI Policy Enforcement
+- AI Audit
+- AI Governance
 
 --------------------------------------------------
 
@@ -312,6 +319,7 @@ Data Relay는
 - Case Management System
 - Enterprise IAM
 - Identity Platform
+- AI Gateway
 - AI Agent Platform
 - LLM Hosting Platform
 - Data Lake
@@ -545,6 +553,23 @@ Data Relay 제품의 최상위 제품 헌장이다.
 
 해당 기능은
 
-Enterprise Edition Backlog 또는
+Data Relay Control 범위 밖이며
 
 별도 제품 영역으로 관리한다.
+
+Data Relay Control의 현재 제품 범위는
+
+Phase A Foundation
+Phase B Data Control Runtime
+Phase C Governance
+Phase D OSS Release / closure
+
+뿐이다.
+
+Phase E AI Gateway 와
+Phase F Enterprise Edition 은
+
+Data Relay Control 현재 제품 범위가 아니며
+
+Control 완료도 / 릴리스 readiness /
+Control delivery backlog 에 포함되지 않는다.
