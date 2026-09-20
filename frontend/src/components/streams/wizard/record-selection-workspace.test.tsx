@@ -252,4 +252,66 @@ describe('RecordSelectionWorkspace', () => {
       }),
     )
   })
+
+  it('shows checkpoint extraction suggestions after a successful sample and Apply patches wizard state', async () => {
+    const user = userEvent.setup()
+    const payload = {
+      data: {
+        events: [
+          { id: 'evt-1', timestamp: '2026-01-01T00:00:00Z', _id: 'a1' },
+          { id: 'evt-2', timestamp: '2026-01-02T00:00:00Z', _id: 'a2' },
+        ],
+      },
+    }
+    const { onSetEventArrayPath, onSetCheckpoint, onStreamPatch } = renderWorkspace({ payload })
+
+    expect(screen.getByTestId('checkpoint-extraction-suggestions-panel')).toBeInTheDocument()
+    expect(screen.queryByTestId('apply-event-array-path')).toBeInTheDocument()
+
+    await user.click(screen.getByTestId('apply-event-array-path'))
+    expect(onSetEventArrayPath).toHaveBeenCalledWith('$.data.events')
+
+    await user.click(screen.getByTestId('apply-checkpoint-extraction'))
+    expect(onSetCheckpoint).toHaveBeenCalledWith(
+      expect.objectContaining({
+        checkpointFieldType: 'TIMESTAMP',
+        checkpointSourcePath: expect.stringContaining('timestamp'),
+      }),
+    )
+
+    await user.click(screen.getByTestId('apply-sort-recommendation'))
+    expect(onStreamPatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestBody: expect.stringContaining('"fieldName": "timestamp"'),
+        checkpointSecondaryPath: '$._id',
+      }),
+    )
+  })
+
+  it('does not auto-apply suggestions or show the panel without a successful sample', () => {
+    const state = buildInitialState()
+    state.apiTest.status = 'idle'
+    state.apiTest.ok = false
+    state.apiTest.parsedJson = null
+
+    const onSetEventArrayPath = vi.fn()
+    const onSetEventRootPath = vi.fn()
+    const onSetCheckpoint = vi.fn()
+    const onStreamPatch = vi.fn()
+
+    render(
+      <RecordSelectionWorkspace
+        state={state}
+        onSetEventArrayPath={onSetEventArrayPath}
+        onSetEventRootPath={onSetEventRootPath}
+        onSetCheckpoint={onSetCheckpoint}
+        onStreamPatch={onStreamPatch}
+      />,
+    )
+
+    expect(screen.queryByTestId('checkpoint-extraction-suggestions-panel')).not.toBeInTheDocument()
+    expect(onSetEventArrayPath).not.toHaveBeenCalled()
+    expect(onSetCheckpoint).not.toHaveBeenCalled()
+    expect(onStreamPatch).not.toHaveBeenCalled()
+  })
 })
