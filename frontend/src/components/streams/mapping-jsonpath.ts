@@ -11,7 +11,7 @@ export function resolveJsonPath(root: unknown, path: string): unknown {
   while (i < s.length) {
     if (s[i] === '.') {
       i++
-      const m = /^([^\.\[]+)/.exec(s.slice(i))
+      const m = /^([^.[]+)/.exec(s.slice(i))
       if (!m) return undefined
       const key = m[1]
       i += key.length

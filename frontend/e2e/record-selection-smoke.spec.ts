@@ -134,26 +134,6 @@ async function loadCloudTrailOnApiTestStep(page: import('@playwright/test').Page
   expect(response.ok()).toBeTruthy()
 }
 
-/** Event Root is set from the JSON tree (no $.event candidate pill in current UI). */
-async function selectEventRootFromTree(page: import('@playwright/test').Page) {
-  const panel = page.locator('#wizard-json-preview-panel')
-  for (let i = 0; i < 8; i += 1) {
-    if ((await panel.getByRole('button', { name: /event \[\d+\]object/ }).count()) > 0) break
-    const expand = panel.getByRole('button', { name: 'Expand' }).first()
-    if ((await expand.count()) === 0) break
-    await expand.click()
-  }
-  await panel.getByRole('button', { name: /event \[\d+\]object/ }).first().click()
-  const roots = panel.getByRole('button', { name: /^Event root$/ })
-  const count = await roots.count()
-  for (let i = 0; i < count; i += 1) {
-    await roots.nth(i).click()
-    const runtime = await page.getByTestId('summary-runtime').textContent()
-    if (runtime?.includes('$.Records[*].event')) return
-  }
-  throw new Error('Could not set Event root to $.Records[*].event from tree')
-}
-
 /**
  * MappingWorkspace omits event paths when calling validateMappingRowsLocal (product gap).
  * Assert envelope-relative rejection via the same path rules used in mappingValidation.ts.
