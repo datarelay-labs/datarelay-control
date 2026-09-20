@@ -1,107 +1,84 @@
-# Data Relay — Enterprise Data Control Gateway
+<h1 align="center">Data Relay Control</h1>
 
-**Version:** GA v1.0.2 (Source Available)
+<p align="center">
+  <strong>The Control Plane for Enterprise Data.</strong>
+</p>
 
-Data Relay is a source-available **Enterprise Data Control Gateway**. It collects data from external systems (HTTP API polling, webhook receiver), applies Mapping and Enrichment, runs schema drift detection, sensitive-data detection, protection, classification, and policy enforcement, then delivers events to multiple Destinations with governance, RBAC, and audit controls.
+<p align="center">
+  Collect, transform, protect, govern, and deliver enterprise data through one Stream → many Routes → many Destinations.
+</p>
 
-Authority map: [`docs/architecture/source-of-truth-index.md`](docs/architecture/source-of-truth-index.md)
-Current architecture overview: [`docs/architecture/OSS-v1-ARCHITECTURE.md`](docs/architecture/OSS-v1-ARCHITECTURE.md)
-Implementation contracts: [`specs/`](specs/)
+<p align="center">
+  <strong>English</strong> · <a href="README.ko.md">한국어</a> · <a href="https://control.datarelay.run/">Product Website</a>
+</p>
 
-Release documentation: [`docs/release/`](docs/release/) · Documentation hub: [`docs/README.md`](docs/README.md)
+<p align="center">
+  <img src="https://img.shields.io/badge/release-GA%20v1.0.2-16A34A?style=flat-square" alt="GA v1.0.2">
+  <img src="https://img.shields.io/badge/license-Source%20Available-111827?style=flat-square" alt="Source Available">
+  <img src="https://img.shields.io/badge/deployment-Docker-2563EB?style=flat-square&logo=docker&logoColor=white" alt="Docker">
+  <img src="https://img.shields.io/badge/model-One%20Stream%20%E2%86%92%20Many%20Routes-7C3AED?style=flat-square" alt="One Stream to Many Routes">
+</p>
 
-> **License — Source Available, not Open Source:** Free for personal use, education/research, evaluation, internal commercial use, internal modification, and customer-owned deployment. Resale, OEM/embedding, white-labeling, commercial redistribution, derivative commercial products, SaaS/MSP offerings of Data Relay functionality, and competing products/services require a separate written commercial license. See [`LICENSE`](LICENSE).
-
----
-
-## Why Data Relay?
-
-Enterprises need a **control point** between internal systems and external destinations — not another SIEM, data lake, or IAM product.
-
-Data Relay fills the gap between **"we have data"** and **"we deliver data safely"**:
-
-- **One stream, many destinations** — avoid duplicating pipelines for each target
-- **Route-level processing** — destination-specific transform and protection without stream copies
-- **Operational visibility first** — Dashboard and Streams console designed for daily checks, not just incidents
-- **Optional governance** — protection, classification, policy, quarantine, and replay when you need them
-- **Runtime is truth** — checkpoints, delivery logs, and metrics reflect what actually happened
-
-See the [Product Charter](docs/source-of-truth/PRODUCT-CHARTER-Version-1.2.1-FINAL.txt) for scope and non-goals.
+<p align="center">
+  <strong>Product website:</strong> <a href="https://control.datarelay.run/">control.datarelay.run</a>
+</p>
 
 ---
 
-## Core Capabilities
+## Control what data moves
 
-| Capability | v1.0 GA |
-|------------|---------|
-| HTTP API polling & Webhook sources | ✅ |
-| Database Query source (PostgreSQL runtime) | ✅ (PG only) |
-| Mapping & Enrichment (JSONPath, JSONata, regex_extract) | ✅ |
-| Multi-route delivery & dynamic routing | ✅ |
-| Failover (active/standby) | ✅ (default runtime path) |
-| Protection, Classification, Policy | ✅ |
-| Schema Drift & Sensitive Detection | ✅ |
-| Quarantine & Replay | ✅ |
-| Dashboard & Operations UX | ✅ |
-| Governance centers (RBAC-gated) | ✅ |
-| Per-route processing pipeline | ✅ Default ON (`GDC_ROUTE_PROCESSING_ENABLED`) |
+Data Relay Control is a source-available **Enterprise Data Control Gateway**.
 
-Known gaps: [docs/release/KNOWN-LIMITATIONS.md](docs/release/KNOWN-LIMITATIONS.md)
+It sits between data sources and external destinations so enterprises can collect data, transform it, apply route-specific protection and policy, observe what actually happened, and deliver the same Stream to multiple Destinations without duplicating pipelines.
 
----
+> **One Stream → Many Routes → Many Destinations**
 
-## What is Data Relay
+The product is designed for **data delivery and data control**. It is not a SIEM, SOAR, data lake, IAM platform, ticketing system, or AI-agent platform.
 
-Data Relay is a lightweight connector platform that:
+## What it does
 
-- Separates **Connectors**, **Streams**, **Sources**, and **Destinations**
-- Executes pipelines at the **Stream** level
-- Connects streams to destinations via **Routes** (multi-destination)
-- Applies **Mapping** before **Enrichment**
-- Updates **Checkpoints** only after successful destination delivery
-- Provides **Governance** (violations, quarantine, replay, approvals, audit, notifications)
-- Enforces **RBAC** for operator and governance personas
+| Capability | What Data Relay Control provides |
+|---|---|
+| **Collect** | HTTP API polling, webhook receiver, and PostgreSQL database-query source |
+| **Transform** | Mapping, enrichment, JSONPath/JSONata/regex-based processing |
+| **Route** | Multi-route delivery, destination-specific processing, dynamic routing and failover |
+| **Protect** | Schema drift, sensitive-data detection, protection, classification and policy |
+| **Govern** | Violations, quarantine, replay, approvals, audit and notifications |
+| **Operate** | Dashboard, Streams console, runtime health, delivery status and checkpoints |
+| **Control access** | RBAC-gated operator and governance surfaces |
 
----
+Known limitations are maintained in [`docs/release/KNOWN-LIMITATIONS.md`](docs/release/KNOWN-LIMITATIONS.md).
 
 ## Architecture
 
-```
-Source
-  ↓
-Mapping
-  ↓
-Enrichment
-  ↓
-Schema Drift
-  ↓
-Sensitive Detection
-  ↓
-Protection
-  ↓
-Classification
-  ↓
-Policy
-  ↓
-Quarantine
-  ↓
-Replay
-  ↓
-Dynamic Routing
-  ↓
-Failover
-  ↓
-Destination
+```mermaid
+flowchart LR
+    S["Sources"] --> M["Mapping"]
+    M --> E["Enrichment"]
+    E --> C["Schema / Sensitive Detection"]
+    C --> R["Routes"]
+
+    R --> P1["Route A<br/>Protection / Classification / Policy"]
+    R --> P2["Route B<br/>Protection / Classification / Policy"]
+    R --> P3["Route C<br/>Protection / Classification / Policy"]
+
+    P1 --> D1["Destination A"]
+    P2 --> D2["Destination B"]
+    P3 --> D3["Destination C"]
+
+    R --> G["Governance<br/>Violations / Quarantine / Replay / Audit"]
 ```
 
----
+The supported runtime model is route-based processing. Destination-specific differences belong on Routes rather than duplicated Streams.
 
-## Quick Start
+## Quick start
 
 ### Requirements
 
-- Docker Engine 24+ with Compose v2
-- Ports **18080** (HTTP) and **18443** (HTTPS)
+- Docker Engine 24+
+- Docker Compose v2
+- TCP **18080** for HTTP
+- TCP **18443** for HTTPS
 
 ### Install and run
 
@@ -109,7 +86,9 @@ Destination
 git clone https://github.com/datarelay-labs/gdc-platform.git datarelay-control
 cd datarelay-control
 cp .env.example .env
-# Set JWT_SECRET_KEY, SECRET_KEY, ENCRYPTION_KEY, POSTGRES_PASSWORD before production use
+
+# Set JWT_SECRET_KEY, SECRET_KEY, ENCRYPTION_KEY,
+# and POSTGRES_PASSWORD before production use.
 
 docker compose -f docker-compose.platform.yml up -d
 ```
@@ -120,99 +99,75 @@ Or use the release installer:
 ./scripts/release/install.sh
 ```
 
-Open **https://localhost:18443/** (accept self-signed cert) or **http://localhost:18080/**.
+Open:
 
-**Default login:** `admin` / `admin` — password change required on first login.
+```text
+https://localhost:18443/
+http://localhost:18080/
+```
 
-Override bootstrap password with `GDC_SEED_ADMIN_PASSWORD` in `.env`.
+Default bootstrap login is `admin / admin`; a password change is required on first login. Override the bootstrap password with `GDC_SEED_ADMIN_PASSWORD` in `.env`.
 
----
+For a full first-pipeline walkthrough, see [Getting Started](docs/getting-started/GETTING-STARTED.md).
 
 ## First Stream
 
-> **New to Data Relay?** Follow the full walkthrough: [Getting Started](docs/getting-started/GETTING-STARTED.md)
-
-Use the stream wizard (**Streams → Create First Stream**):
+The Stream wizard follows the product model directly:
 
 | Step | Action |
-|------|--------|
-| **Connect** | Select connector + configure HTTP source (create connector first under **Connectors**) |
-| **Sample** | Run API test, select record path, confirm checkpoint |
-| **Destinations** | Choose delivery targets and route drafts |
-| **Route Processing** | Shared mapping/enrichment + optional per-route overrides |
-| **Deploy** | Review decision center, create stream, start delivery |
+|---|---|
+| **Connect** | Select a connector and configure the source |
+| **Sample** | Test the source, select the record path, confirm the checkpoint |
+| **Destinations** | Select one or more delivery targets |
+| **Route Processing** | Configure shared processing and destination-specific overrides |
+| **Deploy** | Review the decision center, create the Stream, start delivery |
 
-Sample JSON files are in the [`samples/`](samples/) directory.
+After deployment, use **Dashboard** and **Streams** to monitor runtime state and delivery health.
 
-After deploy, monitor on **Dashboard** (`/monitoring`) and **Streams** console. See [Architecture Overview](docs/architecture/OSS-v1-ARCHITECTURE.md) for the mental model.
+## Core principles
 
----
+```text
+Data Control First
+Runtime Is Truth
+Every Data Is Untrusted
+Policy First
+Governance Before Automation
+```
 
-## Known Limitations (v1.0 GA)
+The runtime path, checkpoints, delivery logs, and metrics are evidence of what actually happened.
 
-GA ships with documented gaps — not release blockers for the default deployment path:
+## Product boundaries
 
-- **Route Bundle Persist** — wizard route overrides may deploy as *Intent only*; persist via Route Edit post-deploy
-- **Governance Workspace scale** — 4 API calls per route on load (slow at 50+ routes)
-- **Streams scale** — per-stream runtime stats at 50–100 streams (see performance docs)
-- **Database Query** — PostgreSQL runtime only
-- **`GDC_ROUTE_PROCESSING_ENABLED`** — canonical ON (Route Processing only). Explicit `false` is rejected at startup; rollback uses a previous release image
+Data Relay Control deliberately does **not** expand into:
 
-Full reference: [`docs/release/KNOWN-LIMITATIONS.md`](docs/release/KNOWN-LIMITATIONS.md)
+- SIEM / XDR / SOAR
+- Case management or ticketing
+- Data lake / data warehouse / BI platform
+- Enterprise IAM / SSO / Identity Provider
+- AI-agent platform or LLM hosting platform
+- Multi-node cluster or distributed scheduler platform
 
----
+The product boundary is defined by the current Product Charter, not by README wording.
 
-## Governance
+## Source of truth
 
-After streams are running, use **Governance** in the sidebar:
+The repository authority map is:
 
-| Surface | Purpose |
-|---------|---------|
-| **Dashboard** | Executive KPIs, risk overview, compliance snapshot |
-| **Operations** | Day-to-day governance actions |
-| **Violations** | Policy violation triage |
-| **Quarantine** | Held events review and release |
-| **Replay** | Re-process quarantined or failed events |
-| **Approvals** | Policy approval workflow |
-| **Audit** | Immutable governance audit trail |
-| **Notifications** | Email and webhook alert configuration |
+[`docs/architecture/source-of-truth-index.md`](docs/architecture/source-of-truth-index.md)
 
-RBAC controls who can view governance surfaces. Users without `governance_read` do not see the Governance menu.
+Top-level product authority:
 
----
+[`docs/source-of-truth/PRODUCT-CHARTER-Version-1.2.1-FINAL.txt`](docs/source-of-truth/PRODUCT-CHARTER-Version-1.2.1-FINAL.txt)
 
-## Administration
+Current implementation contracts live under:
 
-| Area | Path | Purpose |
-|------|------|---------|
-| **Users & Roles** | Settings | Platform users, roles, credentials |
-| **Destinations** | Destinations | Reusable delivery endpoints |
-| **Connectors** | Connectors | Source connectors |
-| **Routes** | Routes | Stream-to-destination links |
-| **Backup** | Backup & Import | Configuration export/import |
+[`specs/`](specs/)
 
----
-
-## Configuration
-
-Key environment variables (see [`.env.example`](.env.example)):
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `DATABASE_URL` | Yes | PostgreSQL connection string |
-| `JWT_SECRET_KEY` | Yes | JWT signing secret (`JWT_SECRET` in operator docs) |
-| `SMTP_ENABLED` | Yes | Enable SMTP for governance email (`false` until configured) |
-| `WEBHOOK_TIMEOUT` | Yes | Governance webhook timeout in seconds (default `10`) |
-| `REQUIRE_AUTH` | Yes | Require login for API/UI |
-| `ENABLE_DEV_VALIDATION_LAB` | No | Must be `false` in production |
-
-Production checklist: [`docs/release/production-checklist.md`](docs/release/production-checklist.md)
-
----
+The README, architecture overviews, release notes, and external documentation are derived explanations. If they conflict with current canonical product authority, the canonical source wins.
 
 ## Development
 
-### Backend (local)
+Backend:
 
 ```bash
 python -m venv .venv
@@ -222,7 +177,7 @@ cp .env.example .env
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### Frontend (local)
+Frontend:
 
 ```bash
 cd frontend
@@ -230,50 +185,48 @@ npm install
 npm run dev
 ```
 
-Set `VITE_OSS_RELEASE_MODE=false` to expose internal validation lab UI during development.
-
-### Tests
+Validation:
 
 ```bash
-# Backend (isolated gdc_pytest catalog)
 ./scripts/test/run-backend-full.sh
-
-# Frontend
 cd frontend && npm run validate
 ```
 
----
+Use the repository's Engineering System metadata and native CI mapping for affected validation.
 
-## Documentation index
+## Documentation
 
-**Documentation hub:** [`docs/README.md`](docs/README.md)
-
-| Document | Description |
-|----------|-------------|
-| [`docs/getting-started/GETTING-STARTED.md`](docs/getting-started/GETTING-STARTED.md) | First pipeline walkthrough (GA) |
-| [`docs/architecture/OSS-v1-ARCHITECTURE.md`](docs/architecture/OSS-v1-ARCHITECTURE.md) | v1 mental model and runtime |
-| [`docs/release/OSS-v1.0-GA-RELEASE-NOTES.md`](docs/release/OSS-v1.0-GA-RELEASE-NOTES.md) | GA release notes |
-| [`docs/release/KNOWN-LIMITATIONS.md`](docs/release/KNOWN-LIMITATIONS.md) | Known gaps reference |
-| [`docs/release/OSS-v1.0-GA-CHECKLIST.md`](docs/release/OSS-v1.0-GA-CHECKLIST.md) | GA verification checklist |
-| [`docs/architecture/source-of-truth-index.md`](docs/architecture/source-of-truth-index.md) | Product/specification authority map |
-| [`docs/architecture/OSS-v1-ARCHITECTURE.md`](docs/architecture/OSS-v1-ARCHITECTURE.md) | Current architecture overview |
-| [`docs/master-design.md`](docs/master-design.md) | **SUPERSEDED** historical pre-charter design |
-| [`docs/deployment/install-guide.md`](docs/deployment/install-guide.md) | Detailed install |
-| [`docs/release/installation-validation.md`](docs/release/installation-validation.md) | Install verification steps |
-| [`docs/release/production-checklist.md`](docs/release/production-checklist.md) | Production go-live checklist |
-| [`docs/release/release-readiness-audit.md`](docs/release/release-readiness-audit.md) | M20.4 release audit |
-| [`docs/operator-runbook.md`](docs/operator-runbook.md) | Operator procedures |
-| [`CHANGELOG.md`](CHANGELOG.md) | Release history (v1.0.0 – v1.0.2) |
-| [`LICENSE`](LICENSE) | Data Relay Source Available License 1.0 |
-
----
+| Topic | Link |
+|---|---|
+| Product website | **https://control.datarelay.run/** |
+| Documentation hub | [`docs/README.md`](docs/README.md) |
+| Getting Started | [`docs/getting-started/GETTING-STARTED.md`](docs/getting-started/GETTING-STARTED.md) |
+| Current architecture | [`docs/architecture/OSS-v1-ARCHITECTURE.md`](docs/architecture/OSS-v1-ARCHITECTURE.md) |
+| Authority map | [`docs/architecture/source-of-truth-index.md`](docs/architecture/source-of-truth-index.md) |
+| Known limitations | [`docs/release/KNOWN-LIMITATIONS.md`](docs/release/KNOWN-LIMITATIONS.md) |
+| Production checklist | [`docs/release/production-checklist.md`](docs/release/production-checklist.md) |
+| Operator runbook | [`docs/operator-runbook.md`](docs/operator-runbook.md) |
+| Release notes | [`docs/release/OSS-v1.0-GA-RELEASE-NOTES.md`](docs/release/OSS-v1.0-GA-RELEASE-NOTES.md) |
+| Release history | [`CHANGELOG.md`](CHANGELOG.md) |
 
 ## License
 
-**Data Relay is source-available, not open source.** It is licensed under the **Data Relay Source Available License 1.0**.
+**Data Relay Control is source-available, not open source.**
 
-Free use includes personal use, education/research, evaluation, internal commercial use, internal modification, and customer-owned deployments. Paid installation, integration, migration, support, or training for a customer-owned deployment is allowed when the customer directly controls and uses the deployment.
+The **Data Relay Source Available License 1.0** permits personal use, education/research, evaluation, internal commercial use, internal modification, and customer-owned deployment under its terms.
 
-Without a separate written commercial license, you may not resell or commercially redistribute Data Relay; OEM/embed or white-label it; use it to create a derivative commercial or competing product/service; or provide Data Relay functionality as SaaS, MSP, hosted, shared, or multi-tenant service.
+Resale, OEM/embedding, white-labeling, commercial redistribution, derivative or competing commercial products, and SaaS/MSP offerings of the software's functionality require a separate written commercial license.
 
 See [`LICENSE`](LICENSE) for the complete terms.
+
+---
+
+<p align="center">
+  <strong>Collect data. Control how it moves. Know what happened.</strong>
+</p>
+
+<p align="center">
+  <a href="https://control.datarelay.run/">Product Website</a> ·
+  <a href="docs/getting-started/GETTING-STARTED.md">Getting Started</a> ·
+  <a href="docs/architecture/source-of-truth-index.md">Source of Truth</a>
+</p>
