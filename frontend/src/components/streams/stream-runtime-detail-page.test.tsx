@@ -826,6 +826,120 @@ describe('StreamRuntimeDetailPage lifecycle cleanup', () => {
   })
 })
 
+describe('StreamRuntimeDetailPage diagnosis overview', () => {
+  afterEach(() => {
+    localStorage.removeItem('gdc_platform_session_v1')
+    mockFetchStreamById.mockImplementation(async (id: number) => ({
+      id,
+      name: `Stream ${id}`,
+      stream_type: 'HTTP_API_POLLING',
+      connector_id: 1,
+    }))
+    vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mockImplementation(
+      async (_id: number, _window: string, params?: { snapshot_id?: string }) => streamRuntimeMetricsFixture(params),
+    )
+  })
+
+  it('puts diagnosis ahead of runtime evidence and does not repeat the shell title', async () => {
+    renderRuntimePage('42')
+    const diagnosis = await screen.findByTestId('stream-diagnosis-overview')
+    const evidence = screen.getByTestId('stream-runtime-evidence')
+    expect(diagnosis.compareDocumentPosition(evidence) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: 'Stream monitoring' })).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: 'Stream 42' })).toBeInTheDocument()
+    expect(screen.getByTestId('stream-runtime-primary-actions')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Run Now' })).toBeInTheDocument()
+    expect(screen.getByTestId('stream-runtime-secondary-actions')).toHaveTextContent('Export JSON')
+  })
+
+  it('shows warning and critical causes with supported next steps', async () => {
+    vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mockResolvedValue({
+      ...streamRuntimeMetricsFixture(),
+      stream: {
+        id: 42,
+        name: 'Stream 42',
+        status: 'ERROR',
+        last_run_at: null,
+        last_success_at: null,
+        last_error_at: '2026-01-02T00:00:00Z',
+        last_checkpoint: { type: 'time', value: '2026-01-01T00:00:00Z' },
+      },
+      recent_route_errors: [{ message: 'HTTP 429 from destination' }],
+    } as Awaited<ReturnType<typeof gdcRuntime.fetchStreamRuntimeMetrics>>)
+    vi.spyOn(streamGovernanceSnapshot, 'fetchStreamGovernanceSnapshot').mockResolvedValue({
+      schemaDrift: {
+        stream_id: 42,
+        open_count: 1,
+        acknowledged_count: 0,
+        resolved_count: 0,
+        by_category: { field_added: 1, field_removed: 0, field_type_changed: 0 },
+        baseline_version: 1,
+        baseline_established_at: null,
+        baseline_reset_at: null,
+        drift_detection_enabled: true,
+      },
+      sensitive: null,
+      protection: null,
+      policy: null,
+      dynamicRouting: null,
+      failover: null,
+      replay: null,
+      quarantine: {
+        stream_id: 42,
+        quarantined_count: 3,
+      },
+    } as streamGovernanceSnapshot.StreamGovernanceSnapshot)
+
+    renderRuntimePage('42')
+    await waitFor(() => {
+      expect(screen.getByTestId('stream-diagnosis-cause-destination')).toHaveAttribute('data-tone', 'critical')
+    })
+    expect(screen.getByTestId('stream-diagnosis-cause-schema-drift')).toHaveAttribute('data-tone', 'attention')
+    expect(screen.getByTestId('stream-diagnosis-cause-protection')).toHaveAttribute('data-tone', 'critical')
+    expect(screen.getByTestId('stream-diagnosis-summary')).toHaveTextContent('HTTP 429 from destination')
+    expect(screen.getByTestId('stream-diagnosis-summary')).toHaveTextContent('3 events in quarantine')
+    expect(screen.getByRole('link', { name: 'Review schema drift' })).toHaveAttribute('href', '/streams/42/runtime?tab=schema')
+    expect(screen.getByRole('link', { name: 'Review protection findings' })).toHaveAttribute(
+      'href',
+      '/streams/42/runtime?tab=violations',
+    )
+  })
+
+  it('shows checkpoint as not applicable for push ingest and keeps other tabs', async () => {
+    const user = userEvent.setup()
+    mockFetchStreamById.mockResolvedValue({
+      id: 42,
+      name: 'Webhook Stream',
+      stream_type: 'WEBHOOK_RECEIVER',
+      connector_id: 1,
+    })
+    renderRuntimePage('42')
+    const checkpoint = await screen.findByTestId('stream-diagnosis-cause-checkpoint')
+    expect(checkpoint).toHaveAttribute('data-tone', 'not_applicable')
+    expect(checkpoint).toHaveTextContent('Push ingest does not use a checkpoint.')
+    await user.click(screen.getByTestId('stream-detail-tab-metrics'))
+    expect(screen.getByTestId('stream-monitoring-observability')).toBeInTheDocument()
+    expect(screen.queryByTestId('stream-diagnosis-overview')).not.toBeInTheDocument()
+    await user.click(screen.getByTestId('stream-detail-tab-events'))
+    expect(screen.queryByTestId('stream-diagnosis-overview')).not.toBeInTheDocument()
+  })
+
+  it('hides runtime mutation controls for a read-only viewer', async () => {
+    const { persistSession } = await import('../../auth/session')
+    persistSession({
+      access_token: 'test-token',
+      refresh_token: 'test-refresh',
+      expires_at: new Date(Date.now() + 3600_000).toISOString(),
+      user: { username: 'viewer', role: 'VIEWER', status: 'ACTIVE' },
+    })
+    renderRuntimePage('42')
+    expect(await screen.findByText(/Read-only monitoring session/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Run Now' })).not.toBeInTheDocument()
+    expect(screen.queryByTestId('stream-run-backfill-open')).not.toBeInTheDocument()
+    expect(screen.getByText('Edit').closest('span')).toHaveAttribute('title', 'Viewer role cannot edit stream configuration.')
+  })
+})
+
 describe('stream-governance-events', () => {
   it('dispatches stream-scoped governance changed events', () => {
     const handler = vi.fn()
