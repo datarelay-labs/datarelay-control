@@ -761,11 +761,12 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 1, name: 'Stream Creation Wizard' })).toBeInTheDocument()
     const stepper = await screen.findByTestId('wizard-stepper', {}, { timeout: 15000 })
-    expect(
-      await screen.findByRole('heading', { level: 2, name: 'Stream Onboarding Wizard' }, { timeout: 15000 }),
-    ).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { level: 2, name: 'Stream Onboarding Wizard' })).not.toBeInTheDocument()
+    expect(await screen.findByTestId('wizard-stage-purpose', {}, { timeout: 15000 })).toHaveTextContent(
+      'Can I connect to the source?',
+    )
     expect(stepper.textContent).toContain('Connect')
-    expect(stepper.textContent).toContain('Transform')
+    expect(stepper.textContent).toContain('Route Processing')
     expect(stepper.textContent).toContain('Destinations')
     // Catalog fetch can resolve before paint under CI parallelism; accept loading or settled UI.
     expect(

@@ -100,6 +100,10 @@ function multiRouteReadyState() {
   return state
 }
 
+function expandRouteDetails() {
+  fireEvent.click(screen.getByTestId('deploy-route-details-toggle'))
+}
+
 describe('StepDeploy', () => {
   beforeEach(() => {
     vi.mocked(fetchDestinationsList).mockReset()
@@ -138,7 +142,7 @@ describe('StepDeploy', () => {
 
     expect(await screen.findByText(/Failed to load destinations/i)).toBeInTheDocument()
     expect(screen.queryByText(/Destination not found/i)).not.toBeInTheDocument()
-    expect(screen.getByText(/route readiness cannot be evaluated/i)).toBeInTheDocument()
+    expect(await screen.findByText(/route readiness cannot be evaluated/i)).toBeInTheDocument()
   })
 
   it('renders Deployment Decision Center with seven checklist categories', () => {
@@ -210,12 +214,16 @@ describe('StepDeploy', () => {
     expect(screen.getByTestId('deploy-template-row-incidents')).toBeInTheDocument()
   })
 
-  it('shows route processing summary in deploy aside', async () => {
+  it('shows route processing summary after expanding route delivery details', async () => {
     render(
       <MemoryRouter>
         <StepDeploy state={readyState()} onStart={vi.fn()} onNavigateToLegacySubstep={vi.fn()} />
       </MemoryRouter>,
     )
+
+    expect(screen.getByTestId('deploy-route-details')).toBeInTheDocument()
+    expect(screen.queryByTestId('deploy-route-processing-summary')).not.toBeInTheDocument()
+    expandRouteDetails()
 
     const summary = await screen.findByTestId('deploy-route-processing-summary')
     expect(summary).toHaveTextContent('Route Processing')
@@ -230,6 +238,8 @@ describe('StepDeploy', () => {
         <StepDeploy state={multiRouteReadyState()} onStart={vi.fn()} onNavigateToLegacySubstep={vi.fn()} />
       </MemoryRouter>,
     )
+
+    expandRouteDetails()
 
     expect(await screen.findByTestId('deploy-route-readiness-summary')).toBeInTheDocument()
     await waitFor(() => {
@@ -252,6 +262,8 @@ describe('StepDeploy', () => {
       </MemoryRouter>,
     )
 
+    expandRouteDetails()
+
     expect(await screen.findByTestId('deploy-route-processing-intent-notice')).toBeInTheDocument()
     expect(screen.getByText(/Route Processing Intent/i)).toBeInTheDocument()
     expect(await screen.findByTestId('deploy-route-override-list')).toBeInTheDocument()
@@ -268,6 +280,8 @@ describe('StepDeploy', () => {
         <StepDeploy state={multiRouteReadyState()} onStart={vi.fn()} onNavigateToLegacySubstep={vi.fn()} />
       </MemoryRouter>,
     )
+
+    expandRouteDetails()
 
     const card = await screen.findByTestId('deploy-route-health-card-r2')
     expect(card).toHaveTextContent('Override')
@@ -301,6 +315,8 @@ describe('StepDeploy', () => {
         <StepDeploy state={state} onStart={vi.fn()} onNavigateToLegacySubstep={vi.fn()} />
       </MemoryRouter>,
     )
+
+    expandRouteDetails()
 
     expect(await screen.findByTestId('deploy-projected-count-transform')).toHaveTextContent('Override: 1')
     expect(screen.getByTestId('deploy-projected-count-protection')).toHaveTextContent('Mixed: 1')

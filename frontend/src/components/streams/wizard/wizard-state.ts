@@ -71,11 +71,11 @@ export type WizardStepDef = {
 }
 
 export const WIZARD_STEPS: ReadonlyArray<WizardStepDef> = [
-  { key: 'connect', title: 'Connect', subtitle: 'Connector · auth · request · advanced' },
-  { key: 'sample', title: 'Sample & Record Selection', subtitle: 'Test · response · records' },
-  { key: 'destinations', title: 'Destinations', subtitle: 'Route to destinations' },
-  { key: 'route_processing', title: 'Route Processing', subtitle: 'Transform · protection · routes' },
-  { key: 'deploy', title: 'Deploy', subtitle: 'Decision center · create · start' },
+  { key: 'connect', title: 'Connect', subtitle: 'Source · auth · request' },
+  { key: 'sample', title: 'Sample & Record Selection', subtitle: 'Test · confirm records' },
+  { key: 'destinations', title: 'Destinations', subtitle: 'Choose delivery targets' },
+  { key: 'route_processing', title: 'Route Processing', subtitle: 'Per-destination processing' },
+  { key: 'deploy', title: 'Deploy', subtitle: 'Readiness · create · start' },
 ]
 
 /** Map a legacy sub-step key to its v3 wizard step (for edit shortcuts and draft migration). */

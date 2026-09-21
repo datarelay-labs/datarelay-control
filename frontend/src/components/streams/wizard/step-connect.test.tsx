@@ -84,14 +84,14 @@ describe('StepConnect UX simplification', () => {
     const connectorTab = screen.getByTestId('wizard-connect-tab-connector')
     const requestTab = screen.getByTestId('wizard-connect-tab-request')
 
-    expect(connectorTab.className).toMatch(/text-violet-700|dark:text-violet-300/)
+    expect(connectorTab.className).toMatch(/text-slate-900|dark:text-slate-50/)
     expect(within(connectorTab).getByText('Required')).toBeInTheDocument()
 
     fireEvent.click(requestTab)
 
     expect(requestTab).toHaveAttribute('aria-selected', 'true')
     expect(connectorTab).toHaveAttribute('aria-selected', 'false')
-    expect(requestTab.className).toMatch(/text-violet-700|dark:text-violet-300/)
+    expect(requestTab.className).toMatch(/text-slate-900|dark:text-slate-50/)
     expect(within(requestTab).getByText('Required')).toBeInTheDocument()
   })
 

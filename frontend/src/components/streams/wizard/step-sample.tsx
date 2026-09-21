@@ -62,14 +62,14 @@ export function StepSample({
   )
 
   return (
-    <div className="space-y-4" data-testid="wizard-step-sample">
+    <div className="space-y-5" data-testid="wizard-step-sample">
       <header className="space-y-1">
-        <h3 className="text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50">
+        <h3 className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-50">
           Sample &amp; Record Selection
         </h3>
-        <p className="max-w-3xl text-[13px] leading-relaxed text-slate-600 dark:text-gdc-muted">
-          Run a sample fetch on <span className="font-semibold">Run Test</span>, then inspect the response and confirm
-          record path, event root, and sync position on <span className="font-semibold">Record Selection</span>.
+        <p className="max-w-3xl text-sm leading-relaxed text-slate-600 dark:text-gdc-muted">
+          Fetch a sample first, then confirm the record path, event root, and sync position before choosing
+          destinations.
         </p>
       </header>
 
@@ -89,9 +89,9 @@ export function StepSample({
               data-testid={`wizard-sample-tab-${tab.key}`}
               onClick={() => handleTabChange(tab.key)}
               className={cn(
-                'rounded-md px-3 py-1.5 text-[12px] font-semibold transition-colors',
+                'rounded-md px-3 py-2 text-sm font-semibold transition-colors',
                 active
-                  ? 'bg-white text-violet-700 shadow-sm dark:bg-gdc-section dark:text-violet-300'
+                  ? 'bg-white text-slate-900 shadow-sm dark:bg-gdc-section dark:text-slate-50'
                   : 'text-slate-600 hover:bg-white/70 hover:text-slate-900 dark:text-gdc-mutedStrong dark:hover:bg-gdc-rowHover dark:hover:text-slate-100',
               )}
             >

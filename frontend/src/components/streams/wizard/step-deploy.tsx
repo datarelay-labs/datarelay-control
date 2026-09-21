@@ -6,7 +6,6 @@ import {
   ClipboardCopy,
   Loader2,
   Play,
-  Rocket,
   XCircle,
   Zap,
 } from 'lucide-react'
@@ -319,11 +318,11 @@ function DeployRouteHealthCards({ snapshot }: { snapshot: RouteDeployReadinessSn
   if (snapshot.routes.length === 0) return null
   return (
     <section
-      className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-gdc-border dark:bg-gdc-card"
+      className="rounded-xl border border-slate-200/80 bg-slate-50/50 p-4 dark:border-gdc-border dark:bg-gdc-elevated"
       data-testid="deploy-route-health-cards"
     >
-      <h4 className="text-[12px] font-semibold text-slate-900 dark:text-slate-100">Route Health</h4>
-      <p className="mt-1 text-[10px] text-slate-500 dark:text-gdc-muted">Deploy intent — projected status per route.</p>
+      <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Route Health</h4>
+      <p className="mt-1 text-xs text-slate-500 dark:text-gdc-muted">Deploy intent — projected status per route.</p>
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         {snapshot.routes.map((route) => (
           <DeployRouteHealthCard key={route.routeKey} route={route} />
@@ -346,7 +345,7 @@ const EditLink = memo(function EditLink({
     <button
       type="button"
       onClick={() => onNavigateToLegacySubstep(stepKey)}
-      className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-violet-700 hover:underline dark:text-violet-300"
+      className="inline-flex items-center gap-0.5 text-xs font-semibold text-slate-700 hover:underline dark:text-slate-200"
     >
       {label ?? 'Edit'}
       <ChevronRight className="h-3 w-3" aria-hidden />
@@ -369,10 +368,12 @@ function DeployStatusBanner({ readiness }: { readiness: DeployReadinessSnapshot 
         ? 'Minimum requirements are met, but some checklist items need attention. You may still deploy.'
         : 'Complete required wizard steps before creating this stream.'
 
+  const Icon = tone === 'ok' ? CheckCircle2 : AlertTriangle
+
   return (
     <section
       className={cn(
-        'rounded-xl border p-4 shadow-sm',
+        'rounded-xl border px-5 py-4 shadow-sm',
         tone === 'ok'
           ? 'border-emerald-200/80 bg-emerald-500/[0.07] dark:border-emerald-500/30 dark:bg-emerald-500/10'
           : tone === 'warn'
@@ -381,35 +382,38 @@ function DeployStatusBanner({ readiness }: { readiness: DeployReadinessSnapshot 
       )}
       data-testid="deploy-status-banner"
     >
-      <div className="flex flex-wrap items-start gap-3">
-        <span
-          className={cn(
-            'inline-flex rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-wide',
-            tone === 'ok'
-              ? 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-200'
-              : tone === 'warn'
-                ? 'bg-amber-500/15 text-amber-900 dark:text-amber-100'
-                : 'bg-red-500/15 text-red-800 dark:text-red-200',
-          )}
-          data-testid="deploy-status-label"
-        >
-          {readiness.statusLabel}
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-semibold text-slate-900 dark:text-slate-50">Deployment readiness</p>
-          <p className="mt-1 text-[12px] leading-relaxed text-slate-700 dark:text-gdc-mutedStrong">{description}</p>
-        </div>
-        {tone === 'ok' ? (
-          <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
-        ) : (
-          <AlertTriangle
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <Icon
             className={cn(
-              'h-5 w-5 shrink-0',
-              tone === 'warn' ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400',
+              'mt-0.5 h-6 w-6 shrink-0',
+              tone === 'ok' && 'text-emerald-600 dark:text-emerald-400',
+              tone === 'warn' && 'text-amber-600 dark:text-amber-400',
+              tone === 'err' && 'text-red-600 dark:text-red-400',
             )}
             aria-hidden
           />
-        )}
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-slate-600 dark:text-slate-400">Am I ready to deploy?</p>
+            <p
+              className={cn(
+                'text-2xl font-semibold tracking-tight',
+                tone === 'ok' && 'text-emerald-700 dark:text-emerald-300',
+                tone === 'warn' && 'text-amber-700 dark:text-amber-300',
+                tone === 'err' && 'text-red-700 dark:text-red-300',
+              )}
+              data-testid="deploy-status-label"
+            >
+              {readiness.statusLabel}
+            </p>
+            <p className="mt-1 text-sm leading-relaxed text-slate-700 dark:text-gdc-mutedStrong">{description}</p>
+          </div>
+        </div>
+        {!readiness.canCreate ? (
+          <p className="shrink-0 rounded-lg border border-red-200/70 bg-white/70 px-3 py-2 text-sm font-medium text-red-700 dark:border-red-500/30 dark:bg-red-950/30 dark:text-red-200">
+            Resolve red checklist items before creating.
+          </p>
+        ) : null}
       </div>
     </section>
   )
@@ -427,12 +431,12 @@ function DeployChecklist({
       className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-gdc-border dark:bg-gdc-card"
       data-testid="deploy-checklist"
     >
-      <h4 className="text-[12px] font-semibold text-slate-900 dark:text-slate-100">Deployment checklist</h4>
+      <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Deployment checklist</h4>
       <ul className="mt-3 space-y-2">
         {categories.map((category) => (
           <li
             key={category.key}
-            className="flex items-start justify-between gap-3 rounded-lg border border-slate-100/90 px-3 py-2.5 text-[12px] dark:border-gdc-border"
+            className="flex items-start justify-between gap-3 rounded-lg border border-slate-100/90 px-3 py-2.5 text-sm dark:border-gdc-border"
             data-testid={`deploy-checklist-${category.key}`}
           >
             <div className="min-w-0">
@@ -446,15 +450,63 @@ function DeployChecklist({
                 )}
                 <span>{category.label}</span>
               </div>
-              <p className="mt-0.5 pl-6 text-[11px] text-slate-600 dark:text-gdc-muted">{category.summary}</p>
+              <p className="mt-0.5 pl-6 text-xs text-slate-600 dark:text-gdc-muted">{category.summary}</p>
               {category.detail ? (
-                <p className="mt-0.5 pl-6 text-[10px] text-slate-500 dark:text-gdc-muted">{category.detail}</p>
+                <p className="mt-0.5 pl-6 text-xs text-slate-500 dark:text-gdc-muted">{category.detail}</p>
               ) : null}
             </div>
             <EditLink stepKey={category.stepKey} onNavigateToLegacySubstep={onNavigateToLegacySubstep} />
           </li>
         ))}
       </ul>
+    </section>
+  )
+}
+
+function DeployRouteDetailsDisclosure({
+  routeProcessingSummary,
+  routeDeployReadiness,
+  defaultExpanded = false,
+  children,
+}: {
+  routeProcessingSummary: RouteProcessingSummary
+  routeDeployReadiness: RouteDeployReadinessSnapshot | null
+  defaultExpanded?: boolean
+  children: ReactNode
+}) {
+  const [expanded, setExpanded] = useState(defaultExpanded)
+  const readyCount = routeDeployReadiness?.readyCount ?? 0
+  const totalRoutes = routeProcessingSummary.totalRoutes
+
+  useEffect(() => {
+    if (defaultExpanded) setExpanded(true)
+  }, [defaultExpanded])
+
+  return (
+    <section
+      className="rounded-xl border border-slate-200/80 bg-white shadow-sm dark:border-gdc-border dark:bg-gdc-card"
+      data-testid="deploy-route-details"
+    >
+      <button
+        type="button"
+        onClick={() => setExpanded((open) => !open)}
+        className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left"
+        aria-expanded={expanded}
+        data-testid="deploy-route-details-toggle"
+      >
+        <div className="min-w-0">
+          <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">Route delivery details</span>
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-gdc-muted">
+            {totalRoutes} route{totalRoutes === 1 ? '' : 's'} configured
+            {routeDeployReadiness ? ` · ${readyCount}/${totalRoutes} ready` : ' · readiness unavailable'}
+          </p>
+        </div>
+        <ChevronDown
+          className={cn('h-4 w-4 shrink-0 text-slate-500 transition-transform', expanded && 'rotate-180')}
+          aria-hidden
+        />
+      </button>
+      {expanded ? <div className="space-y-4 border-t border-slate-100 px-4 py-4 dark:border-gdc-border">{children}</div> : null}
     </section>
   )
 }
@@ -896,27 +948,22 @@ export function StepDeploy({
   )
 
   return (
-    <div className="space-y-4" data-testid="wizard-step-deploy">
-      <header className="flex items-start gap-3">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-violet-500/15 text-violet-700 dark:text-violet-300">
-          <Rocket className="h-5 w-5" aria-hidden />
-        </span>
-        <div className="min-w-0 space-y-1">
-          <h3 className="text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50">Deploy</h3>
-          <p className="max-w-3xl text-[13px] leading-relaxed text-slate-600 dark:text-gdc-muted">
-            Deployment Decision Center — review readiness, create the stream, and start delivery from one place.
-          </p>
-        </div>
+    <div className="space-y-5" data-testid="wizard-step-deploy">
+      <header className="space-y-1">
+        <h3 className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-50">Deploy</h3>
+        <p className="max-w-3xl text-sm leading-relaxed text-slate-600 dark:text-gdc-muted">
+          Deployment Decision Center — confirm readiness, then create and start delivery from the action bar.
+        </p>
       </header>
 
       {catalogLoadFailed ? (
-        <p className="rounded-md border border-red-200/80 bg-red-50 px-3 py-2 text-[12px] font-medium text-red-800 dark:border-red-500/40 dark:bg-red-950/40 dark:text-red-200">
+        <p className="rounded-md border border-red-200/80 bg-red-50 px-3 py-2 text-sm font-medium text-red-800 dark:border-red-500/40 dark:bg-red-950/40 dark:text-red-200">
           Failed to load destinations. Check authentication and API connectivity.
         </p>
       ) : null}
 
       {busy ? (
-        <p className="flex items-center gap-2 rounded-md border border-violet-200/80 bg-violet-500/[0.06] px-3 py-2 text-[12px] text-violet-900 dark:border-violet-500/35 dark:text-violet-100">
+        <p className="flex items-center gap-2 rounded-md border border-slate-200/80 bg-slate-50 px-3 py-2 text-sm text-slate-800 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-100">
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
           Creating stream{isStarting ? ' and starting delivery' : ''}…
         </p>
@@ -924,7 +971,7 @@ export function StepDeploy({
 
       {!created ? <DeployStatusBanner readiness={readiness} /> : null}
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,0.9fr)]">
         <div className="space-y-4">
           {!created ? (
             <DeployChecklist categories={readiness.categories} onNavigateToLegacySubstep={onNavigateToLegacySubstep} />
@@ -936,7 +983,50 @@ export function StepDeploy({
               onNavigateToLegacySubstep={onNavigateToLegacySubstep}
             />
           )}
-          {!created && routeDeployReadiness ? <DeployRouteHealthCards snapshot={routeDeployReadiness} /> : null}
+
+          {!created ? (
+            <DeployRouteDetailsDisclosure
+              routeProcessingSummary={routeProcessingSummary}
+              routeDeployReadiness={routeDeployReadiness}
+              defaultExpanded={catalogLoadFailed}
+            >
+              <section
+                className="rounded-xl border border-slate-200/80 bg-white p-4 dark:border-gdc-border dark:bg-gdc-card"
+                data-testid="deploy-route-processing-summary"
+              >
+                <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Route Processing</h4>
+                <div className="mt-3 space-y-3">
+                  <DeployRouteIntentNotice />
+                </div>
+                <ul className="mt-3 space-y-3 text-sm text-slate-700 dark:text-gdc-mutedStrong">
+                  <SummaryLine label="Routes" value={`${routeProcessingSummary.totalRoutes} Configured`} />
+                  {routeDeployReadiness ? (
+                    <>
+                      <li>
+                        <DeployRouteReadinessSummary snapshot={routeDeployReadiness} />
+                      </li>
+                      <li className="pt-1">
+                        <DeployRouteOverrideList summary={routeProcessingSummary} routeReadiness={routeDeployReadiness} />
+                      </li>
+                      <li className="border-t border-slate-100 pt-3 dark:border-gdc-border">
+                        <DeploySharedProcessingSummary snapshot={routeDeployReadiness} />
+                      </li>
+                    </>
+                  ) : (
+                    <li className="text-amber-800 dark:text-amber-200">
+                      Destination catalog unavailable — route readiness cannot be evaluated until destinations load.
+                    </li>
+                  )}
+                  <SummaryLine
+                    label="Enabled routes"
+                    value={`${routeProcessingSummary.enabledRoutes} / ${routeProcessingSummary.totalRoutes}`}
+                  />
+                </ul>
+              </section>
+              {routeDeployReadiness ? <DeployRouteHealthCards snapshot={routeDeployReadiness} /> : null}
+            </DeployRouteDetailsDisclosure>
+          ) : null}
+
           <DeployConfigurationSummary
             state={state}
             destinations={destinations}
@@ -945,46 +1035,9 @@ export function StepDeploy({
         </div>
 
         <aside className="space-y-4">
-          <section
-            className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-gdc-border dark:bg-gdc-card"
-            data-testid="deploy-route-processing-summary"
-          >
-            <h4 className="text-[12px] font-semibold text-slate-900 dark:text-slate-100">Route Processing</h4>
-            <div className="mt-3 space-y-3">
-              <DeployRouteIntentNotice />
-            </div>
-            <ul className="mt-3 space-y-3 text-[11px] text-slate-700 dark:text-gdc-mutedStrong">
-              <SummaryLine
-                label="Routes"
-                value={`${routeProcessingSummary.totalRoutes} Configured`}
-              />
-              {routeDeployReadiness ? (
-                <>
-                  <li>
-                    <DeployRouteReadinessSummary snapshot={routeDeployReadiness} />
-                  </li>
-                  <li className="pt-1">
-                    <DeployRouteOverrideList summary={routeProcessingSummary} routeReadiness={routeDeployReadiness} />
-                  </li>
-                  <li className="border-t border-slate-100 pt-3 dark:border-gdc-border">
-                    <DeploySharedProcessingSummary snapshot={routeDeployReadiness} />
-                  </li>
-                </>
-              ) : (
-                <li className="text-amber-800 dark:text-amber-200">
-                  Destination catalog unavailable — route readiness cannot be evaluated until destinations load.
-                </li>
-              )}
-              <SummaryLine
-                label="Enabled routes"
-                value={`${routeProcessingSummary.enabledRoutes} / ${routeProcessingSummary.totalRoutes}`}
-              />
-            </ul>
-          </section>
-
           <section className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-gdc-border dark:bg-gdc-card">
-            <h4 className="text-[12px] font-semibold text-slate-900 dark:text-slate-100">Quick summary</h4>
-            <ul className="mt-3 space-y-2 text-[11px] text-slate-700 dark:text-gdc-mutedStrong">
+            <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Quick summary</h4>
+            <ul className="mt-3 space-y-2 text-sm text-slate-700 dark:text-gdc-mutedStrong">
               <SummaryLine label="Stream name" value={state.stream.name.trim() || '—'} />
               <SummaryLine label={WIZARD_LABEL.deliveryPaths} value={String(state.destinations.routeDrafts.length)} />
               <SummaryLine
@@ -995,24 +1048,9 @@ export function StepDeploy({
             </ul>
           </section>
 
-          {!created ? (
-            <section className="rounded-xl border border-slate-200/80 bg-slate-50/80 p-4 dark:border-gdc-border dark:bg-gdc-section">
-              <p className="text-[12px] font-semibold text-slate-900 dark:text-slate-100">Primary action</p>
-              <p className="mt-1 text-[11px] leading-relaxed text-slate-600 dark:text-gdc-muted">
-                Use <span className="font-semibold text-slate-800 dark:text-slate-200">Create &amp; Start Stream</span>{' '}
-                below to persist configuration and begin scheduled collection.
-              </p>
-              {!readiness.canCreate ? (
-                <p className="mt-2 text-[11px] font-medium text-red-700 dark:text-red-300">
-                  Resolve checklist items marked in red before deploying.
-                </p>
-              ) : null}
-            </section>
-          ) : null}
-
-          <p className="text-[10px] text-slate-500 dark:text-gdc-muted">
+          <p className="text-xs text-slate-500 dark:text-gdc-muted">
             Manage destinations under{' '}
-            <Link to={NAV_PATH.destinations} className="font-semibold text-violet-700 hover:underline dark:text-violet-300">
+            <Link to={NAV_PATH.destinations} className="font-semibold text-slate-800 hover:underline dark:text-slate-200">
               Destinations
             </Link>
             .

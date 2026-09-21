@@ -1,4 +1,3 @@
-import { Route } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { fetchDestinationsList, type DestinationListItem } from '../../../api/gdcDestinations'
 import {
@@ -150,17 +149,12 @@ export function StepRouteProcessing({
 
   return (
     <div className="space-y-5" data-testid="wizard-step-route-processing">
-      <header className="flex items-start gap-3">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-violet-500/15 text-violet-700 dark:text-violet-300">
-          <Route className="h-5 w-5" aria-hidden />
-        </span>
-        <div className="min-w-0 space-y-1">
-          <h3 className="text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50">Route Processing</h3>
-          <p className="max-w-3xl text-[13px] leading-relaxed text-slate-600 dark:text-gdc-muted">
-            Configure shared defaults first, then choose per route whether to inherit or override Transform, Protection,
-            Classification, and Policy.
-          </p>
-        </div>
+      <header className="space-y-1">
+        <h3 className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-50">Route Processing</h3>
+        <p className="max-w-3xl text-sm leading-relaxed text-slate-600 dark:text-gdc-muted">
+          Set shared defaults first, then override Transform, Protection, Classification, or Policy only where a
+          destination needs different processing.
+        </p>
       </header>
 
       <WizardSharedProcessingSection
