@@ -428,9 +428,9 @@ describe('DashboardOverview', () => {
     expect(within(issues).getByText('Schema Drift Count')).toBeInTheDocument()
     expect(within(issues).getByText('Destination Capacity Warning Count')).toBeInTheDocument()
     // Snapshot has 2 IDLE streams and 1 destination capacity warning
-    expect(within(issues).getByTestId('dashboard-issue-no-data')).toHaveTextContent('2')
-    expect(within(issues).getByTestId('dashboard-issue-destination-capacity')).toHaveTextContent('1')
     await waitFor(() => {
+      expect(within(issues).getByTestId('dashboard-issue-no-data')).toHaveTextContent('2')
+      expect(within(issues).getByTestId('dashboard-issue-destination-capacity')).toHaveTextContent('1')
       expect(within(issues).getByTestId('dashboard-issue-schema-drift')).toHaveTextContent('3')
     })
   })

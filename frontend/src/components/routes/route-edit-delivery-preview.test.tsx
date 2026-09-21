@@ -183,8 +183,10 @@ describe('RouteEditPage delivery preview', () => {
     fireEvent.click(await screen.findByTestId('route-edit-preview-delivery'))
 
     const status = await screen.findByTestId('route-edit-delivery-preview-status')
-    expect(status).toHaveTextContent(/Delivery preview failed/)
-    expect(status).toHaveTextContent(/ROUTE_DISABLED/)
+    await waitFor(() => {
+      expect(status).toHaveTextContent(/Delivery preview failed/)
+      expect(status).toHaveTextContent(/ROUTE_DISABLED/)
+    })
     expect(runRouteDeliveryPreview).toHaveBeenCalledTimes(1)
   })
 
