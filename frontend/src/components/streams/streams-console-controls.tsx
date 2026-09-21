@@ -26,12 +26,12 @@ export function StreamsConsoleControls({
       data-testid="streams-console-controls"
       aria-label="Streams refresh and time range"
     >
-      <label className="flex items-center gap-1.5 text-[11px] font-medium text-slate-600 dark:text-gdc-muted">
+      <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-gdc-muted">
         <span className="shrink-0">Time range</span>
         <select
           value={timeRange}
           onChange={(e) => onTimeRangeChange(e.target.value as StreamsMetricsWindow)}
-          className="rounded-md border border-slate-200/90 bg-white px-2 py-1 text-[12px] font-semibold text-slate-800 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
+          className="rounded-lg border border-slate-200/90 bg-white px-2.5 py-1.5 text-sm font-medium text-slate-800 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
           aria-label="Metrics time range"
           data-testid="streams-time-range"
         >
@@ -43,12 +43,12 @@ export function StreamsConsoleControls({
         </select>
       </label>
 
-      <label className="flex items-center gap-1.5 text-[11px] font-medium text-slate-600 dark:text-gdc-muted">
+      <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-gdc-muted">
         <span className="shrink-0">Auto refresh</span>
         <select
           value={autoRefresh}
           onChange={(e) => onAutoRefreshChange(e.target.value as StreamsAutoRefreshOption)}
-          className="rounded-md border border-slate-200/90 bg-white px-2 py-1 text-[12px] font-semibold text-slate-800 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
+          className="rounded-lg border border-slate-200/90 bg-white px-2.5 py-1.5 text-sm font-medium text-slate-800 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
           aria-label="Auto refresh interval"
           data-testid="streams-auto-refresh"
         >
@@ -65,7 +65,7 @@ export function StreamsConsoleControls({
         onClick={onManualRefresh}
         disabled={refreshing}
         className={cn(
-          'inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-200/90 px-2.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 dark:border-gdc-border dark:text-slate-200 dark:hover:bg-gdc-elevated',
+          'inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200/90 px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 dark:border-gdc-border dark:text-slate-200 dark:hover:bg-gdc-elevated',
         )}
         aria-label="Refresh streams now"
         data-testid="streams-manual-refresh"

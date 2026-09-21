@@ -33,16 +33,16 @@ export function StreamsOperationsToolbar({
     <section
       aria-label="Streams operations filters"
       data-testid="streams-operations-toolbar"
-      className="space-y-3 rounded-xl border border-slate-200/80 bg-white p-3 shadow-sm dark:border-gdc-border dark:bg-gdc-card"
+      className="space-y-3 rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-gdc-border dark:bg-gdc-card"
     >
       <div className="relative">
-        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" aria-hidden />
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden />
         <input
           type="search"
           value={searchQuery}
           onChange={(e) => onSearchQueryChange(e.target.value)}
           placeholder="Search streams, source products, destinations…"
-          className="h-9 w-full rounded-lg border border-slate-200/90 bg-slate-50/80 py-1.5 pl-8 pr-3 text-[13px] text-slate-900 placeholder:text-slate-400 focus:border-violet-400 focus:outline-none focus:ring-2 focus:ring-violet-400/30 dark:border-gdc-inputBorder dark:bg-gdc-input dark:text-gdc-foreground dark:placeholder:text-gdc-placeholder"
+          className="h-10 w-full rounded-lg border border-slate-200/90 bg-slate-50/80 py-2 pl-10 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400/30 dark:border-gdc-inputBorder dark:bg-gdc-input dark:text-gdc-foreground dark:placeholder:text-gdc-placeholder"
           aria-label="Search streams"
           data-testid="streams-search-input"
         />
@@ -58,9 +58,9 @@ export function StreamsOperationsToolbar({
               aria-pressed={quickFilter === f.id}
               onClick={() => onQuickFilterChange(f.id)}
               className={cn(
-                'rounded-md border px-2.5 py-1 text-[11px] font-semibold transition-colors',
+                'rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors',
                 quickFilter === f.id
-                  ? 'border-violet-400/50 bg-violet-500/15 text-violet-200'
+                  ? 'border-slate-700 bg-slate-900 text-white dark:border-slate-200 dark:bg-slate-100 dark:text-slate-900'
                   : 'border-slate-200/80 text-slate-600 hover:bg-slate-50 dark:border-gdc-border dark:text-gdc-muted dark:hover:bg-gdc-elevated',
               )}
             >
@@ -69,12 +69,12 @@ export function StreamsOperationsToolbar({
           ))}
         </div>
 
-        <label className="flex min-w-0 items-center gap-2 text-[11px] font-medium text-slate-600 dark:text-gdc-muted">
+        <label className="flex min-w-0 items-center gap-2 text-xs font-medium text-slate-600 dark:text-gdc-muted">
           <span className="shrink-0">Group</span>
           <select
             value={groupFilter}
             onChange={(e) => onGroupFilterChange(e.target.value)}
-            className="min-w-[10rem] rounded-md border border-slate-200/90 bg-white px-2 py-1.5 text-[12px] font-semibold text-slate-800 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
+            className="min-w-[10rem] rounded-lg border border-slate-200/90 bg-white px-2.5 py-1.5 text-sm font-medium text-slate-800 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
             aria-label="Filter by source product group"
             data-testid="streams-group-filter"
           >
