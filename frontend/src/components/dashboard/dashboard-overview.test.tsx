@@ -42,6 +42,7 @@ const sampleDashboard = (): DashboardSummaryResponse => ({
   active_worker_count: 2,
   metrics_window_seconds: 3600,
   metric_meta: {},
+  open_schema_field_drift_count: 3,
 })
 
 const snapshotParam = (params?: { snapshot_id?: string }) => params?.snapshot_id ?? FIXED_SNAPSHOT
@@ -105,35 +106,35 @@ vi.mock('../../api/gdcRuntime', async (importOriginal) => {
   return {
     ...actual,
     fetchRuntimeDashboardSummary: vi.fn(async (_limit: number, _window: string, params?: { snapshot_id?: string }) => ({
-    ...sampleDashboard(),
-    snapshot_id: snapshotParam(params),
-    generated_at: snapshotParam(params),
-    window_start: '2026-01-01T00:00:00Z',
-    window_end: '2026-01-01T01:00:00Z',
-  })),
-  fetchRuntimeDashboardOutcomeTimeseries: vi.fn(async (params?: { snapshot_id?: string }) => ({
-    snapshot_id: snapshotParam(params),
-    generated_at: snapshotParam(params),
-    metrics_window_seconds: 3600,
-    buckets: [
-      { bucket_start: '2026-01-01T00:15:00Z', success: 40, failed: 5, rate_limited: 2 },
-      { bucket_start: '2026-01-01T00:30:00Z', success: 55, failed: 3, rate_limited: 1 },
-      { bucket_start: '2026-01-01T00:45:00Z', success: 48, failed: 7, rate_limited: 0 },
-    ],
-  })),
-  fetchRuntimeAlertSummary: vi.fn(async (): Promise<RuntimeAlertSummaryResponse> => ({
-    items: [
-      {
-        stream_id: 1,
-        stream_name: 'Payment API Stream',
-        connector_name: 'Payment API',
-        severity: 'ERROR',
-        count: 4,
-        latest_occurrence: '2026-01-01T00:30:00Z',
-      },
-    ],
-  })),
-  invalidateDashboardAnalyticsCache: vi.fn(),
+      ...sampleDashboard(),
+      snapshot_id: snapshotParam(params),
+      generated_at: snapshotParam(params),
+      window_start: '2026-01-01T00:00:00Z',
+      window_end: '2026-01-01T01:00:00Z',
+    })),
+    fetchRuntimeDashboardOutcomeTimeseries: vi.fn(async (params?: { snapshot_id?: string }) => ({
+      snapshot_id: snapshotParam(params),
+      generated_at: snapshotParam(params),
+      metrics_window_seconds: 3600,
+      buckets: [
+        { bucket_start: '2026-01-01T00:15:00Z', success: 40, failed: 5, rate_limited: 2 },
+        { bucket_start: '2026-01-01T00:30:00Z', success: 55, failed: 3, rate_limited: 1 },
+        { bucket_start: '2026-01-01T00:45:00Z', success: 48, failed: 7, rate_limited: 0 },
+      ],
+    })),
+    fetchRuntimeAlertSummary: vi.fn(async (): Promise<RuntimeAlertSummaryResponse> => ({
+      items: [
+        {
+          stream_id: 1,
+          stream_name: 'Payment API Stream',
+          connector_name: 'Payment API',
+          severity: 'ERROR',
+          count: 4,
+          latest_occurrence: '2026-01-01T00:30:00Z',
+        },
+      ],
+    })),
+    invalidateDashboardAnalyticsCache: vi.fn(),
   }
 })
 
@@ -333,11 +334,11 @@ describe('DashboardOverview', () => {
         <DashboardOverview />
       </MemoryRouter>,
     )
-    expect(screen.getByText(/Loading dashboard data/i)).toBeInTheDocument()
-    await waitFor(() => expect(screen.queryByText(/Loading dashboard data/i)).not.toBeInTheDocument())
+    expect(screen.getByTestId('dashboard-loading')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByTestId('dashboard-loading')).not.toBeInTheDocument())
   })
 
-  it('renders Dashboard heading instead of Operations Center', async () => {
+  it('does not render a duplicate Dashboard page heading under App Shell', async () => {
     render(
       <MemoryRouter>
         <main>
@@ -345,11 +346,13 @@ describe('DashboardOverview', () => {
         </main>
       </MemoryRouter>,
     )
-    expect(await screen.findByRole('heading', { level: 1, name: 'Dashboard' })).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { level: 1, name: 'Operations Center' })).not.toBeInTheDocument()
+    await within(mainRegion()).findByTestId('dashboard-first-level')
+    expect(screen.queryByRole('heading', { level: 1, name: 'Dashboard' })).not.toBeInTheDocument()
+    expect(screen.queryByText('© 2025 Data Relay Platform')).not.toBeInTheDocument()
+    expect(screen.queryByText(/All times shown in UTC/i)).not.toBeInTheDocument()
   })
 
-  it('renders charter dashboard sections', async () => {
+  it('renders exact first-level charter sections only', async () => {
     render(
       <MemoryRouter>
         <main>
@@ -357,19 +360,24 @@ describe('DashboardOverview', () => {
         </main>
       </MemoryRouter>,
     )
-    expect(await within(mainRegion()).findByTestId('dashboard-running-badge')).toBeInTheDocument()
-    expect(within(mainRegion()).getByTestId('dashboard-overall-health-beacon')).toBeInTheDocument()
-    expect(within(mainRegion()).getByTestId('dashboard-system-health-summary')).toBeInTheDocument()
-    expect(within(mainRegion()).getByTestId('dashboard-kpi-strip')).toBeInTheDocument()
-    expect(within(mainRegion()).getByTestId('dashboard-operational-issues')).toBeInTheDocument()
-    expect(within(mainRegion()).getByTestId('dashboard-stream-health-matrix')).toBeInTheDocument()
-    expect(within(mainRegion()).getByTestId('dashboard-events-over-time')).toBeInTheDocument()
-    expect(within(mainRegion()).getByTestId('dashboard-top-sources')).toBeInTheDocument()
-    expect(within(mainRegion()).getByTestId('dashboard-recent-alerts')).toBeInTheDocument()
-    expect(within(mainRegion()).getByTestId('dashboard-system-health')).toBeInTheDocument()
+    const firstLevel = await within(mainRegion()).findByTestId('dashboard-first-level')
+    expect(within(firstLevel).getByTestId('dashboard-overall-health-hero')).toBeInTheDocument()
+    expect(within(firstLevel).getByTestId('dashboard-traffic-overview')).toBeInTheDocument()
+    expect(within(firstLevel).getByTestId('dashboard-operational-issues')).toBeInTheDocument()
+    expect(within(firstLevel).getByTestId('dashboard-drilldown')).toBeInTheDocument()
+
+    expect(screen.queryByTestId('dashboard-overall-health-beacon')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('dashboard-system-health-summary')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('dashboard-kpi-strip')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('dashboard-stream-health-matrix')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('dashboard-events-over-time')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('dashboard-top-sources')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('dashboard-recent-alerts')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('dashboard-system-health')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('dashboard-operational-problems')).not.toBeInTheDocument()
   })
 
-  it('renders overall health beacon with correct posture label', async () => {
+  it('shows Healthy / Warning / Critical overall health counts', async () => {
     render(
       <MemoryRouter>
         <main>
@@ -377,12 +385,14 @@ describe('DashboardOverview', () => {
         </main>
       </MemoryRouter>,
     )
-    const beacon = await within(mainRegion()).findByTestId('dashboard-overall-health-beacon')
-    // Snapshot has DEGRADED health_status and a warning problem
-    expect(within(beacon).getByTestId('dashboard-beacon-label')).toBeInTheDocument()
+    const hero = await within(mainRegion()).findByTestId('dashboard-overall-health-hero')
+    expect(within(hero).getByTestId('dashboard-overall-posture-label')).toHaveTextContent(/Critical|Warning|Healthy/)
+    expect(within(hero).getByTestId('dashboard-health-healthy')).toBeInTheDocument()
+    expect(within(hero).getByTestId('dashboard-health-warning')).toBeInTheDocument()
+    expect(within(hero).getByTestId('dashboard-health-critical')).toBeInTheDocument()
   })
 
-  it('renders system health summary strip with 6 items', async () => {
+  it('shows Traffic Overview charter metrics', async () => {
     render(
       <MemoryRouter>
         <main>
@@ -390,13 +400,15 @@ describe('DashboardOverview', () => {
         </main>
       </MemoryRouter>,
     )
-    const strip = await within(mainRegion()).findByTestId('dashboard-system-health-summary')
-    expect(within(strip).getByTestId('dashboard-summary-no-data')).toBeInTheDocument()
-    expect(within(strip).getByTestId('dashboard-summary-low-volume')).toBeInTheDocument()
-    expect(within(strip).getByTestId('dashboard-summary-capacity-warning')).toBeInTheDocument()
+    const traffic = await within(mainRegion()).findByTestId('dashboard-traffic-overview')
+    expect(within(traffic).getByText('Incoming Events')).toBeInTheDocument()
+    expect(within(traffic).getByText('Outgoing Events')).toBeInTheDocument()
+    expect(within(traffic).getByText('Delivery Success Rate')).toBeInTheDocument()
+    expect(within(traffic).getByTestId('dashboard-traffic-incoming')).toHaveAttribute('href', '/streams')
+    expect(within(traffic).getByTestId('dashboard-traffic-outgoing')).toHaveAttribute('href', '/destinations')
   })
 
-  it('renders operational issues panel showing problems from snapshot', async () => {
+  it('shows Operational Issues charter categories with warning state drill-downs', async () => {
     render(
       <MemoryRouter>
         <main>
@@ -404,14 +416,26 @@ describe('DashboardOverview', () => {
         </main>
       </MemoryRouter>,
     )
-    const panel = await within(mainRegion()).findByTestId('dashboard-operational-issues')
-    // Snapshot has a 'Capacity' problem
+    const issues = await within(mainRegion()).findByTestId('dashboard-operational-issues')
+    expect(within(issues).getByTestId('dashboard-issue-no-data')).toHaveAttribute('href', '/streams?filter=no-data')
+    expect(within(issues).getByTestId('dashboard-issue-low-volume')).toHaveAttribute('href', '/streams?filter=low-volume')
+    expect(within(issues).getByTestId('dashboard-issue-schema-drift')).toHaveAttribute('href', '/governance')
+    expect(within(issues).getByTestId('dashboard-issue-destination-capacity')).toHaveAttribute(
+      'href',
+      '/destinations?filter=warning',
+    )
+    expect(within(issues).getByText('No Data Streams')).toBeInTheDocument()
+    expect(within(issues).getByText('Schema Drift Count')).toBeInTheDocument()
+    expect(within(issues).getByText('Destination Capacity Warning Count')).toBeInTheDocument()
+    // Snapshot has 2 IDLE streams and 1 destination capacity warning
+    expect(within(issues).getByTestId('dashboard-issue-no-data')).toHaveTextContent('2')
+    expect(within(issues).getByTestId('dashboard-issue-destination-capacity')).toHaveTextContent('1')
     await waitFor(() => {
-      expect(within(panel).getByText(/Capacity/i)).toBeInTheDocument()
+      expect(within(issues).getByTestId('dashboard-issue-schema-drift')).toHaveTextContent('3')
     })
   })
 
-  it('links recent alerts with stream_id to stream runtime', async () => {
+  it('exposes drill-down links to existing operational surfaces', async () => {
     render(
       <MemoryRouter>
         <main>
@@ -419,45 +443,82 @@ describe('DashboardOverview', () => {
         </main>
       </MemoryRouter>,
     )
-    const link = await within(mainRegion()).findByTestId('dashboard-recent-alert-link-1')
-    expect(link).toHaveAttribute('href', '/streams/1/runtime')
+    expect(await within(mainRegion()).findByTestId('dashboard-drilldown-streams')).toHaveAttribute('href', '/streams')
+    expect(within(mainRegion()).getByTestId('dashboard-drilldown-destinations')).toHaveAttribute('href', '/destinations')
+    expect(within(mainRegion()).getByTestId('dashboard-drilldown-logs')).toHaveAttribute('href', '/logs')
+    expect(within(mainRegion()).getByTestId('dashboard-drilldown-governance')).toHaveAttribute('href', '/governance')
   })
 
-  it('links recent alerts without a valid stream_id to streams list', async () => {
+  it('shows fresh-install empty state with create-first-stream action', async () => {
+    const snap = await import('../../api/operationalSnapshot')
+    vi.mocked(snap.getOperationalSnapshot).mockResolvedValueOnce({
+      global: {
+        health_status: 'HEALTHY',
+        total_streams: 0,
+        enabled_streams: 0,
+        running_streams: 0,
+        error_streams: 0,
+        total_routes: 0,
+        enabled_routes: 0,
+        total_destinations: 0,
+        enabled_destinations: 0,
+        total_eps_1m: 0,
+        total_eps_5m: 0,
+        avg_latency_ms: null,
+        last_activity_at: null,
+      },
+      streams: [],
+      routes: [],
+      destinations: [],
+      problems: [],
+      updated_at: '2026-01-01T00:00:00Z',
+    } as Awaited<ReturnType<typeof snap.getOperationalSnapshot>>)
+    const streams = await import('../../api/gdcStreams')
+    vi.mocked(streams.fetchStreamsList).mockResolvedValueOnce([])
+
+    render(
+      <MemoryRouter>
+        <main>
+          <DashboardOverview />
+        </main>
+      </MemoryRouter>,
+    )
+    const empty = await within(mainRegion()).findByTestId('dashboard-empty-state')
+    expect(within(empty).getByText(/Welcome to Data Relay/i)).toBeInTheDocument()
+    expect(within(empty).getByRole('link', { name: /Create First Stream/i })).toHaveAttribute('href', '/streams/new')
+    expect(screen.queryByTestId('dashboard-first-level')).not.toBeInTheDocument()
+  })
+
+  it('shows load error when operational snapshot is unavailable', async () => {
+    const snap = await import('../../api/operationalSnapshot')
+    vi.mocked(snap.getOperationalSnapshot).mockResolvedValueOnce(null)
+
+    render(
+      <MemoryRouter>
+        <main>
+          <DashboardOverview />
+        </main>
+      </MemoryRouter>,
+    )
+    expect(await within(mainRegion()).findByTestId('dashboard-load-error')).toHaveTextContent(/operational snapshot/i)
+  })
+
+  it('allows manual refresh from the toolbar', async () => {
+    const user = userEvent.setup()
     const rt = await import('../../api/gdcRuntime')
-    vi.mocked(rt.fetchRuntimeAlertSummary).mockResolvedValueOnce({
-      items: [
-        {
-          stream_id: 0,
-          stream_name: 'Orphan alert',
-          connector_name: 'Unknown',
-          severity: 'WARN',
-          count: 1,
-          latest_occurrence: '2026-01-01T00:05:00Z',
-        },
-      ],
+    render(
+      <MemoryRouter>
+        <main>
+          <DashboardOverview />
+        </main>
+      </MemoryRouter>,
+    )
+    await within(mainRegion()).findByTestId('dashboard-first-level')
+    const before = vi.mocked(rt.fetchRuntimeDashboardSummary).mock.calls.length
+    await user.click(screen.getByRole('button', { name: /Refresh dashboard data now/i }))
+    await waitFor(() => {
+      expect(vi.mocked(rt.fetchRuntimeDashboardSummary).mock.calls.length).toBeGreaterThan(before)
     })
-    render(
-      <MemoryRouter>
-        <main>
-          <DashboardOverview />
-        </main>
-      </MemoryRouter>,
-    )
-    const link = await within(mainRegion()).findByTestId('dashboard-recent-alert-link-0')
-    expect(link).toHaveAttribute('href', '/streams')
-  })
-
-  it('renders stream health matrix panel', async () => {
-    render(
-      <MemoryRouter>
-        <main>
-          <DashboardOverview />
-        </main>
-      </MemoryRouter>,
-    )
-    const matrix = await within(mainRegion()).findByTestId('dashboard-stream-health-matrix')
-    expect(matrix).toBeInTheDocument()
   })
 
   it('does not render removed operations center widgets', async () => {
@@ -468,74 +529,10 @@ describe('DashboardOverview', () => {
         </main>
       </MemoryRouter>,
     )
-    await within(mainRegion()).findByRole('heading', { level: 1, name: 'Dashboard' })
+    await within(mainRegion()).findByTestId('dashboard-first-level')
     expect(screen.queryByTestId('ops-incident-summary')).not.toBeInTheDocument()
     expect(screen.queryByTestId('ops-why-panel')).not.toBeInTheDocument()
     expect(screen.queryByTestId('ops-action-panel')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('ops-disclosure-trends')).not.toBeInTheDocument()
     expect(screen.queryByText('Operations Center')).not.toBeInTheDocument()
-  })
-
-  it('shows recent alerts with severity emphasis', async () => {
-    render(
-      <MemoryRouter>
-        <main>
-          <DashboardOverview />
-        </main>
-      </MemoryRouter>,
-    )
-    const alerts = await within(mainRegion()).findByTestId('dashboard-recent-alerts')
-    expect(await within(alerts).findByText(/Critical/i)).toBeInTheDocument()
-    expect(await within(alerts).findByText('Payment API Stream')).toBeInTheDocument()
-  })
-
-  it('shows top sources by ingest rate', async () => {
-    render(
-      <MemoryRouter>
-        <main>
-          <DashboardOverview />
-        </main>
-      </MemoryRouter>,
-    )
-    const panel = await within(mainRegion()).findByTestId('dashboard-top-sources')
-    expect(await within(panel).findByText('MySQL Orders DB')).toBeInTheDocument()
-    expect(await within(panel).findByText('Payment API')).toBeInTheDocument()
-  })
-
-  it('changes analytics window when the window select changes', async () => {
-    const user = userEvent.setup()
-    render(
-      <MemoryRouter>
-        <main>
-          <DashboardOverview />
-        </main>
-      </MemoryRouter>,
-    )
-    await within(mainRegion()).findByRole('heading', { level: 1, name: 'Dashboard' })
-    await user.selectOptions(screen.getByLabelText(/Analytics window/i), '15m')
-    expect(within(mainRegion()).getAllByText(/Last 15 min/i).length).toBeGreaterThanOrEqual(1)
-  })
-
-  it('shows snapshot basis on rate KPIs and keeps ingest rate stable across window changes', async () => {
-    const user = userEvent.setup()
-    render(
-      <MemoryRouter>
-        <main>
-          <DashboardOverview />
-        </main>
-      </MemoryRouter>,
-    )
-    const strip = await within(mainRegion()).findByTestId('dashboard-kpi-strip')
-    const ingestKpi = await within(strip).findByTestId('dashboard-kpi-ingest-rate')
-    await waitFor(() => {
-      expect(within(ingestKpi).getByText('5m snapshot')).toBeInTheDocument()
-    })
-    const valueEl = ingestKpi.querySelector('.text-\\[1\\.75rem\\]')
-    const ingestBefore = valueEl?.textContent ?? ''
-    await user.selectOptions(screen.getByLabelText(/Analytics window/i), '24h')
-    await waitFor(() => {
-      expect(within(ingestKpi).getByText('5m snapshot')).toBeInTheDocument()
-      expect(valueEl?.textContent).toBe(ingestBefore)
-    })
   })
 })

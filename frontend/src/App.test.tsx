@@ -601,22 +601,25 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
 
   it('redirects / to Dashboard at /monitoring', async () => {
     renderApp('/')
-    expect(await screen.findByTestId('dashboard-overall-health-beacon', {}, { timeout: 15000 })).toBeInTheDocument()
+    expect(await screen.findByTestId('dashboard-overall-health-hero', {}, { timeout: 15000 })).toBeInTheDocument()
     expect(screen.getAllByRole('heading', { level: 1, name: 'Dashboard' }).length).toBeGreaterThanOrEqual(1)
   })
 
   it('shows operator dashboard hierarchy driven by runtime APIs', async () => {
     renderApp('/monitoring')
-    expect(await screen.findByTestId('dashboard-overall-health-beacon', {}, { timeout: 15000 })).toBeInTheDocument()
-    expect(await screen.findByTestId('dashboard-kpi-strip')).toBeInTheDocument()
-    expect(screen.getByTestId('dashboard-stream-health-matrix')).toBeInTheDocument()
-    expect(screen.getByTestId('dashboard-events-over-time')).toBeInTheDocument()
-    expect(await screen.findByTestId('dashboard-recent-alerts')).toBeInTheDocument()
+    expect(await screen.findByTestId('dashboard-overall-health-hero', {}, { timeout: 15000 })).toBeInTheDocument()
+    expect(await screen.findByTestId('dashboard-traffic-overview')).toBeInTheDocument()
+    expect(screen.getByTestId('dashboard-operational-issues')).toBeInTheDocument()
+    expect(screen.getByTestId('dashboard-drilldown')).toBeInTheDocument()
+    expect(screen.queryByTestId('dashboard-kpi-strip')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('dashboard-stream-health-matrix')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('dashboard-events-over-time')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('dashboard-recent-alerts')).not.toBeInTheDocument()
   })
 
   it('renders dashboard top grid without a fake header search control', async () => {
     renderApp('/monitoring')
-    await screen.findByTestId('dashboard-overall-health-beacon', {}, { timeout: 15000 })
+    await screen.findByTestId('dashboard-overall-health-hero', {}, { timeout: 15000 })
     expect(screen.queryByRole('searchbox')).not.toBeInTheDocument()
     expect(screen.getByLabelText('Runtime status')).toBeInTheDocument()
     expect(screen.getByTestId('shell-health-alerts')).toBeInTheDocument()
@@ -691,9 +694,9 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     const nav = screen.getByRole('complementary', { name: 'Primary navigation' })
     const [monitoringDashboard] = within(nav).getAllByRole('button', { name: 'Dashboard' })
     await user.click(monitoringDashboard)
-    expect(await screen.findByTestId('dashboard-overall-health-beacon', {}, { timeout: 15000 })).toBeInTheDocument()
-    expect(await screen.findByTestId('dashboard-kpi-strip')).toBeInTheDocument()
-    expect(await screen.findByTestId('dashboard-recent-alerts')).toBeInTheDocument()
+    expect(await screen.findByTestId('dashboard-overall-health-hero', {}, { timeout: 15000 })).toBeInTheDocument()
+    expect(await screen.findByTestId('dashboard-traffic-overview')).toBeInTheDocument()
+    expect(await screen.findByTestId('dashboard-operational-issues')).toBeInTheDocument()
   })
 
   it('renders Backup & Import workspace at /operations/backup', async () => {
@@ -717,7 +720,7 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
 
   it('redirects /runtime to /monitoring Dashboard', async () => {
     renderApp('/runtime')
-    expect(await screen.findByTestId('dashboard-overall-health-beacon', {}, { timeout: 15000 })).toBeInTheDocument()
+    expect(await screen.findByTestId('dashboard-overall-health-hero', {}, { timeout: 15000 })).toBeInTheDocument()
   })
 
   it('redirects /runtime/ai-gateway to /streams', async () => {

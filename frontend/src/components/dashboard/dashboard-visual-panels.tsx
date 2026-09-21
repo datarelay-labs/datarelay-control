@@ -31,8 +31,6 @@ import {
   Area,
   AreaChart,
   Cell,
-  Line,
-  LineChart,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -68,12 +66,12 @@ import {
 
 function postureHeroClass(posture: OverallHealthCounts['posture']): string {
   if (posture === 'critical') {
-    return 'border-red-500/40 bg-gradient-to-r from-red-950/50 via-red-900/20 to-transparent shadow-[0_0_16px_-6px_rgba(239,68,68,0.35)]'
+    return 'border-red-300/80 bg-red-50 dark:border-red-500/40 dark:bg-red-950/30'
   }
   if (posture === 'warning') {
-    return 'border-amber-500/35 bg-gradient-to-r from-amber-950/45 via-amber-900/15 to-transparent shadow-[0_0_14px_-6px_rgba(245,158,11,0.3)]'
+    return 'border-amber-300/80 bg-amber-50 dark:border-amber-500/35 dark:bg-amber-950/25'
   }
-  return 'border-emerald-500/35 bg-gradient-to-r from-emerald-950/40 via-emerald-900/12 to-transparent shadow-[0_0_14px_-6px_rgba(34,197,94,0.28)]'
+  return 'border-emerald-300/80 bg-emerald-50 dark:border-emerald-500/35 dark:bg-emerald-950/25'
 }
 
 function postureLabel(posture: OverallHealthCounts['posture']): string {
@@ -191,39 +189,45 @@ export function OverallHealthHero({
 }) {
   return (
     <section
-      aria-label="Overall health hero"
+      aria-label="Overall health"
       data-testid="dashboard-overall-health-hero"
-      className={cn(
-        'relative overflow-hidden rounded-xl border px-4 py-2.5',
-        postureHeroClass(health.posture),
-      )}
+      className={cn('relative overflow-hidden rounded-xl border px-5 py-5 shadow-sm', postureHeroClass(health.posture))}
     >
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 items-center gap-2.5">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
           {health.posture === 'healthy' ? (
-            <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" aria-hidden />
+            <CheckCircle2 className="h-6 w-6 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
           ) : (
             <AlertTriangle
-              className={cn('h-4 w-4 shrink-0', health.posture === 'critical' ? 'text-red-400' : 'text-amber-400')}
+              className={cn(
+                'h-6 w-6 shrink-0',
+                health.posture === 'critical'
+                  ? 'text-red-600 dark:text-red-400'
+                  : 'text-amber-600 dark:text-amber-400',
+              )}
               aria-hidden
             />
           )}
           <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Overall health</p>
+            <p className="text-sm font-medium text-slate-600 dark:text-slate-400">Overall Health</p>
             <p
               className={cn(
-                'text-lg font-bold leading-tight tracking-tight',
-                health.posture === 'critical' ? 'text-red-300' : health.posture === 'warning' ? 'text-amber-300' : 'text-emerald-300',
+                'text-2xl font-semibold leading-tight tracking-tight',
+                health.posture === 'critical'
+                  ? 'text-red-700 dark:text-red-300'
+                  : health.posture === 'warning'
+                    ? 'text-amber-700 dark:text-amber-300'
+                    : 'text-emerald-700 dark:text-emerald-300',
               )}
               data-testid="dashboard-overall-posture-label"
             >
               {postureLabel(health.posture)}
             </p>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{basisLabel}</p>
           </div>
-          <span className="hidden text-[10px] text-slate-500 sm:inline">· {basisLabel}</span>
         </div>
 
-        <div className="flex gap-2 sm:gap-3" data-testid="dashboard-overall-health">
+        <div className="flex flex-wrap gap-2 sm:gap-3" data-testid="dashboard-overall-health">
           {(
             [
               ['Healthy', health.healthy, 'healthy', 'dashboard-health-healthy'],
@@ -236,19 +240,19 @@ export function OverallHealthHero({
               to={NAV_PATH.streams}
               data-testid={testId}
               className={cn(
-                'min-w-[4.5rem] rounded-lg border px-2.5 py-1 text-center transition hover:brightness-110',
-                tone === 'healthy' && 'border-emerald-500/30 bg-emerald-500/10',
-                tone === 'warning' && 'border-amber-500/30 bg-amber-500/10',
-                tone === 'critical' && 'border-red-500/35 bg-red-500/10',
+                'min-w-[5.5rem] rounded-lg border bg-white/70 px-3 py-2 text-center transition hover:bg-white dark:bg-black/20 dark:hover:bg-black/30',
+                tone === 'healthy' && 'border-emerald-200 dark:border-emerald-500/30',
+                tone === 'warning' && 'border-amber-200 dark:border-amber-500/30',
+                tone === 'critical' && 'border-red-200 dark:border-red-500/35',
               )}
             >
-              <p className="text-[8px] font-bold uppercase tracking-wide text-slate-500">{label}</p>
+              <p className="text-xs font-medium text-slate-600 dark:text-slate-400">{label}</p>
               <p
                 className={cn(
-                  'mt-0.5 text-lg font-bold tabular-nums leading-none',
-                  tone === 'healthy' && 'text-emerald-300',
-                  tone === 'warning' && 'text-amber-300',
-                  tone === 'critical' && 'text-red-300',
+                  'mt-1 text-xl font-semibold tabular-nums leading-none',
+                  tone === 'healthy' && 'text-emerald-700 dark:text-emerald-300',
+                  tone === 'warning' && 'text-amber-700 dark:text-amber-300',
+                  tone === 'critical' && 'text-red-700 dark:text-red-300',
                 )}
               >
                 {formatMetricCount(count)}
@@ -1557,6 +1561,7 @@ function IssueTimelineBar({ lastSeenAt }: { lastSeenAt: string | null }) {
   )
 }
 
+/** Detail problem list — retained for drill-down surfaces; not first-level Dashboard. */
 export function OperationalProblemsList({
   problems,
   className,
@@ -1567,17 +1572,17 @@ export function OperationalProblemsList({
   if (problems.length === 0) {
     return (
       <section
-        aria-label="Operational issues"
-        data-testid="dashboard-operational-issues"
+        aria-label="Operational problems"
+        data-testid="dashboard-operational-problems"
         className={cn(dashboardCardClass, className)}
       >
         <div className="flex items-baseline justify-between gap-2">
-          <h2 className="text-[14px] font-semibold text-slate-900 dark:text-slate-100">Operational Issues</h2>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">Operational Problems</h2>
         </div>
         <div className="mt-4 flex flex-col items-center justify-center gap-1.5 py-4 text-center">
           <CheckCircle2 className="h-5 w-5 text-emerald-500" aria-hidden />
-          <p className="text-[12px] font-semibold text-emerald-400">No operational issues</p>
-          <p className="text-[10px] text-slate-500">All systems running normally.</p>
+          <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">No operational issues</p>
+          <p className="text-sm text-slate-500">All systems running normally.</p>
         </div>
       </section>
     )
@@ -1585,8 +1590,8 @@ export function OperationalProblemsList({
 
   return (
     <section
-      aria-label="Operational issues"
-      data-testid="dashboard-operational-issues"
+      aria-label="Operational problems"
+      data-testid="dashboard-operational-problems"
       className={cn(dashboardCardClass, className)}
     >
       <div className="flex items-baseline justify-between gap-2">
@@ -1660,50 +1665,60 @@ export function StreamGroupHealthPanel({
   )
 }
 
-/** @deprecated Removed from main dashboard layout. */
+/** Charter Traffic Overview — Incoming / Outgoing / Delivery Success Rate only. */
 export function TrafficOverviewPanel({
   traffic,
-  series,
-  loading,
 }: {
   traffic: import('./dashboard-charter-metrics').TrafficOverviewMetrics
-  series: TrafficChartPoint[]
-  loading: boolean
 }) {
-  const rate = traffic.deliverySuccessRatePct ?? 0
-  const empty = series.length === 0
+  const rate = traffic.deliverySuccessRatePct
+  const rateTone =
+    rate == null ? 'text-slate-700 dark:text-slate-200' : rate >= 99 ? 'text-teal-700 dark:text-teal-300' : 'text-amber-700 dark:text-amber-300'
 
   return (
-    <section aria-label="Traffic overview" data-testid="dashboard-traffic-overview" className={cn(dashboardCardClass, loading && 'opacity-80')}>
-      <h2 className="text-[14px] font-semibold text-slate-900 dark:text-slate-100">Traffic overview</h2>
-      <p className="mt-0.5 text-[11px] text-slate-500 dark:text-gdc-muted">Window {traffic.windowLabel}</p>
-      <div className="mt-4 grid grid-cols-3 gap-2">
-        {(
-          [
-            ['Incoming', formatMetricCount(traffic.incomingEvents), 'text-sky-400'],
-            ['Outgoing', formatMetricCount(traffic.outgoingEvents), 'text-emerald-400'],
-            ['Success', formatSuccessRate(traffic.deliverySuccessRatePct), rate >= 99 ? 'text-teal-400' : 'text-amber-300'],
-          ] as const
-        ).map(([label, value, color]) => (
-          <div key={label} className="rounded-lg border border-slate-200/60 bg-slate-50/50 px-2 py-2 dark:border-gdc-border dark:bg-gdc-section/60">
-            <p className="text-[10px] font-semibold uppercase text-slate-500 dark:text-gdc-muted">{label}</p>
-            <p className={cn('mt-0.5 text-lg font-bold tabular-nums', color)}>{value}</p>
-          </div>
-        ))}
+    <section aria-label="Traffic overview" data-testid="dashboard-traffic-overview" className={dashboardCardClass}>
+      <div className="flex items-baseline justify-between gap-2">
+        <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">Traffic Overview</h2>
+        <Link
+          to={NAV_PATH.streams}
+          className="text-sm font-medium text-slate-600 underline-offset-2 hover:underline dark:text-slate-300"
+          data-testid="dashboard-traffic-drilldown"
+        >
+          View streams
+        </Link>
       </div>
-      <div className="mt-4 h-[160px] w-full">
-        {empty && !loading ? (
-          <div className="flex h-full items-center justify-center text-[12px] text-slate-500 dark:text-gdc-muted">No traffic trend data.</div>
-        ) : (
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={series} margin={{ top: 4, right: 4, left: -12, bottom: 0 }}>
-              <XAxis dataKey="label" tick={{ fill: '#94a3b8', fontSize: 9 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: '#94a3b8', fontSize: 9 }} axisLine={false} tickLine={false} width={32} />
-              <Line type="monotone" dataKey="ingested" stroke="#38bdf8" strokeWidth={2} dot={false} isAnimationActive={false} />
-              <Line type="monotone" dataKey="delivered" stroke="#34d399" strokeWidth={2} dot={false} isAnimationActive={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        )}
+      <p className="mt-1 text-sm text-slate-500 dark:text-gdc-muted">Snapshot window {traffic.windowLabel}</p>
+      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <Link
+          to={NAV_PATH.streams}
+          data-testid="dashboard-traffic-incoming"
+          className="rounded-lg border border-slate-200/80 bg-slate-50/80 px-3 py-3 transition hover:border-slate-300 dark:border-gdc-border dark:bg-gdc-section/60 dark:hover:border-slate-600"
+        >
+          <p className="text-sm font-medium text-slate-600 dark:text-gdc-muted">Incoming Events</p>
+          <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900 dark:text-sky-300">
+            {formatMetricCount(traffic.incomingEvents)}
+          </p>
+        </Link>
+        <Link
+          to={NAV_PATH.destinations}
+          data-testid="dashboard-traffic-outgoing"
+          className="rounded-lg border border-slate-200/80 bg-slate-50/80 px-3 py-3 transition hover:border-slate-300 dark:border-gdc-border dark:bg-gdc-section/60 dark:hover:border-slate-600"
+        >
+          <p className="text-sm font-medium text-slate-600 dark:text-gdc-muted">Outgoing Events</p>
+          <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900 dark:text-emerald-300">
+            {formatMetricCount(traffic.outgoingEvents)}
+          </p>
+        </Link>
+        <Link
+          to={NAV_PATH.destinations}
+          data-testid="dashboard-traffic-success"
+          className="rounded-lg border border-slate-200/80 bg-slate-50/80 px-3 py-3 transition hover:border-slate-300 dark:border-gdc-border dark:bg-gdc-section/60 dark:hover:border-slate-600"
+        >
+          <p className="text-sm font-medium text-slate-600 dark:text-gdc-muted">Delivery Success Rate</p>
+          <p className={cn('mt-1 text-xl font-semibold tabular-nums', rateTone)}>
+            {formatSuccessRate(traffic.deliverySuccessRatePct)}
+          </p>
+        </Link>
       </div>
     </section>
   )
@@ -1785,7 +1800,14 @@ export function OperationalStatusChips({
   )
 }
 
-/** Operational issue counts surfaced on the main dashboard (existing APIs only). */
+const ISSUE_DRILLDOWN_HREF: Record<IssueKey, string> = {
+  'no-data': `${NAV_PATH.streams}?filter=no-data`,
+  'low-volume': `${NAV_PATH.streams}?filter=low-volume`,
+  'schema-drift': NAV_PATH.governance,
+  'dest-capacity': `${NAV_PATH.destinations}?filter=warning`,
+}
+
+/** Charter Operational Issues — four issue categories only. */
 export function OperationalIssuesPanel({
   issues,
   className,
@@ -1794,12 +1816,16 @@ export function OperationalIssuesPanel({
   className?: string
 }) {
   const rows: Array<{ key: IssueKey; label: string; count: number | null; testId: string }> = [
-    { key: 'no-data', label: 'No data streams', count: issues.noDataStreams, testId: 'dashboard-issue-no-data' },
-    { key: 'low-volume', label: 'Low volume streams', count: issues.lowVolumeStreams, testId: 'dashboard-issue-low-volume' },
-    { key: 'schema-drift', label: 'Schema drift', count: issues.schemaDriftCount, testId: 'dashboard-issue-schema-drift' },
-    { key: 'dest-capacity', label: 'Destination capacity', count: issues.destinationCapacityWarnings, testId: 'dashboard-issue-destination-capacity' },
+    { key: 'no-data', label: 'No Data Streams', count: issues.noDataStreams, testId: 'dashboard-issue-no-data' },
+    { key: 'low-volume', label: 'Low Volume Streams', count: issues.lowVolumeStreams, testId: 'dashboard-issue-low-volume' },
+    { key: 'schema-drift', label: 'Schema Drift Count', count: issues.schemaDriftCount, testId: 'dashboard-issue-schema-drift' },
+    {
+      key: 'dest-capacity',
+      label: 'Destination Capacity Warning Count',
+      count: issues.destinationCapacityWarnings,
+      testId: 'dashboard-issue-destination-capacity',
+    },
   ]
-  const max = Math.max(1, ...rows.map((r) => r.count ?? 0))
 
   return (
     <section
@@ -1808,30 +1834,37 @@ export function OperationalIssuesPanel({
       className={cn(dashboardCardClass, className)}
     >
       <div className="flex items-baseline justify-between gap-2">
-        <h2 className="text-[14px] font-semibold text-slate-900 dark:text-slate-100">Operational Issues</h2>
-        <Link to={NAV_PATH.streams} className="text-[11px] font-semibold text-violet-600 hover:underline dark:text-violet-300">
-          View all issues
+        <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">Operational Issues</h2>
+        <Link
+          to={NAV_PATH.streams}
+          className="text-sm font-medium text-slate-600 underline-offset-2 hover:underline dark:text-slate-300"
+        >
+          View streams
         </Link>
       </div>
-      <ul className="mt-4 space-y-3">
+      <ul className="mt-4 space-y-2">
         {rows.map((row) => {
           const n = row.count ?? 0
-          const pct = (100 * n) / max
           const hot = n > 0
           const style = ISSUE_ROW_STYLES[row.key]
           return (
             <li key={row.testId}>
-              <Link to={NAV_PATH.streams} data-testid={row.testId} className="block rounded-lg border border-transparent p-1 transition hover:border-violet-500/30">
-                <div className="flex items-center justify-between gap-2 text-[12px]">
-                  <span className={cn('font-medium', hot ? 'text-slate-900 dark:text-slate-100' : 'text-slate-600 dark:text-gdc-muted')}>{row.label}</span>
-                  <span className={cn('text-lg font-bold tabular-nums', hot ? style.count : 'text-slate-500')}>{formatMetricCount(n)}</span>
-                </div>
-                <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-200/80 dark:bg-slate-800">
-                  <div
-                    className={cn('h-full rounded-full transition-all', hot ? style.bar : 'bg-slate-500/40')}
-                    style={{ width: `${Math.max(hot ? 8 : 0, pct)}%` }}
-                  />
-                </div>
+              <Link
+                to={ISSUE_DRILLDOWN_HREF[row.key]}
+                data-testid={row.testId}
+                className="flex items-center justify-between gap-3 rounded-lg border border-slate-200/70 px-3 py-2.5 transition hover:border-slate-300 hover:bg-slate-50 dark:border-gdc-border dark:hover:border-slate-600 dark:hover:bg-gdc-section/50"
+              >
+                <span className={cn('text-sm font-medium', hot ? 'text-slate-900 dark:text-slate-100' : 'text-slate-600 dark:text-gdc-muted')}>
+                  {row.label}
+                </span>
+                <span
+                  className={cn(
+                    'text-lg font-semibold tabular-nums',
+                    hot ? `${style.count} dark:brightness-110` : 'text-slate-500',
+                  )}
+                >
+                  {formatMetricCount(n)}
+                </span>
               </Link>
             </li>
           )
