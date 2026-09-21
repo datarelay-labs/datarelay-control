@@ -644,10 +644,11 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     renderApp()
     await user.click(screen.getByRole('button', { name: 'Streams' }))
     expect(
-      await screen.findByText(/Monitor incoming data streams and their delivery status/i, {}, { timeout: 15000 }),
+      await screen.findByText(/Which stream group needs attention/i, {}, { timeout: 15000 }),
     ).toBeInTheDocument()
     expect(screen.getAllByRole('heading', { name: /^Streams$/ }).length).toBeGreaterThanOrEqual(1)
-    expect(await screen.findByRole('region', { name: 'Streams KPI summary' })).toBeInTheDocument()
+    expect(await screen.findByRole('region', { name: 'Streams health overview' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { level: 2, name: /^Streams$/ })).not.toBeInTheDocument()
   })
 
 

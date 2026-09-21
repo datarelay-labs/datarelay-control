@@ -97,7 +97,7 @@ async function main() {
   await seedSession(page)
 
   await page.goto(`${baseUrl}/streams`, { waitUntil: 'networkidle', timeout: 60000 })
-  await page.waitForSelector('[data-testid="streams-group-kpi-strip"]', { timeout: 60000 })
+  await page.waitForSelector('[data-testid="streams-health-overview"]', { timeout: 60000 })
   const groupRow = page.locator('[data-testid^="stream-group-row-"]').first()
   if (await groupRow.count()) {
     await groupRow.click()

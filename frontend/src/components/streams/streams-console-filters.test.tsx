@@ -288,7 +288,7 @@ describe('StreamsConsole operations UX', () => {
       </MemoryRouter>,
     )
     const groupRow = await screen.findByTestId('stream-group-row-Office365')
-    expect(groupRow.className).toMatch(/ring-violet-500/)
+    expect(groupRow.className).toMatch(/ring-slate-400/)
     expect(await screen.findByTestId('stream-group-child-row-1')).toBeInTheDocument()
   })
 
