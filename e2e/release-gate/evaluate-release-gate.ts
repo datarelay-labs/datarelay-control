@@ -332,7 +332,11 @@ function main(): void {
 
     if (config.route_processing.require_off && counts.route_off_executed <= 0) {
       status = worstStatus(status, 'INCOMPLETE')
-      // ROUTE_OFF retired — canonical product matrix is ROUTE_ON only
+      issues.push({
+        code: 'ROUTE_OFF_MISSING',
+        severity: 'error',
+        detail: 'route-off results missing (require_off is enabled)',
+      })
     }
     if (config.route_processing.require_on && counts.route_on_executed <= 0) {
       status = worstStatus(status, 'INCOMPLETE')

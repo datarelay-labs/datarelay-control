@@ -3,9 +3,9 @@
  * Validate that Full Matrix execution results are complete and justified.
  *
  * Checks:
- * 1. All 332 generated scenarios have a result
+ * 1. All generated scenarios have a result
  * 2. All browser scenarios have a browser execution result
- * 3. route-off / route-on / both completeness
+ * 3. Route-ON completeness (Route-OFF is not a supported product path)
  * 4. SUPPORTED capabilities have ≥1 executed scenario
  * 5. BLOCKED / KNOWN_PRODUCT_GAP / NOT_IMPLEMENTED have required evidence
  * 6. Missing results fail the validation
@@ -142,39 +142,26 @@ function main(): void {
     })
   }
 
-  // 3–5. route-off / route-on / both
-  let missingRouteOff = 0
-  let missingRouteOn = 0
-  for (const s of bundle.scenarios) {
-    const r = byId.get(s.id)
-    if (!r) continue
-    if (s.routeProcessing === 'off' || s.id.includes('__route-off')) {
-      if (!(r.route_processing === 'off' || s.id.includes('__route-off'))) missingRouteOff++
-    }
-    if (s.routeProcessing === 'on' || s.id.includes('__route-on')) {
-      if (!(r.route_processing === 'on' || s.id.includes('__route-on'))) missingRouteOn++
-    }
-  }
-  // Also: every generated route-off/on scenario must be present (covered by missingScenarios),
-  // but additionally count route coverage gaps when results exist under wrong mode.
-  const routeOffNeeded = bundle.scenarios.filter((s) => s.routeProcessing === 'off' || s.id.includes('__route-off'))
+  // 3–5. route-on completeness (Route-OFF retired)
   const routeOnNeeded = bundle.scenarios.filter((s) => s.routeProcessing === 'on' || s.id.includes('__route-on'))
-  const routeOffMissing = routeOffNeeded.filter((s) => !byId.has(s.id)).map((s) => s.id)
   const routeOnMissing = routeOnNeeded.filter((s) => !byId.has(s.id)).map((s) => s.id)
-  if (routeOffMissing.length) {
-    issues.push({
-      code: 'MISSING_ROUTE_OFF',
-      detail: `${routeOffMissing.length} route-off scenarios missing results`,
-    })
-  }
   if (routeOnMissing.length) {
     issues.push({
       code: 'MISSING_ROUTE_ON',
       detail: `${routeOnMissing.length} route-on scenarios missing results`,
     })
   }
-  void missingRouteOff
-  void missingRouteOn
+
+  // Reject accidental revival of Route-OFF executable results in current product evidence.
+  const routeOffPresent = results.filter(
+    (r) => r.route_processing === 'off' || r.scenario_id?.includes('__route-off'),
+  )
+  if (routeOffPresent.length) {
+    issues.push({
+      code: 'ROUTE_OFF_NOT_SUPPORTED',
+      detail: `${routeOffPresent.length} route-off results present; Route Processing ON is the only supported path`,
+    })
+  }
 
   // 6. SUPPORTED capabilities executed ≥1
   const manifest = loadManifest()

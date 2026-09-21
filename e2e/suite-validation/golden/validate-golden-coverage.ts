@@ -54,7 +54,6 @@ const REQUIRED_PURPOSES = [
   'Destination A/B',
   'Route A Continue',
   'Protection 차등',
-  'route-off',
   'route-on',
   'Checkpoint',
   'Incremental',

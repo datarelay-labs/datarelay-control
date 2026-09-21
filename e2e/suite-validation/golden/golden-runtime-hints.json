@@ -418,14 +418,6 @@
     },
     "corr": "corr-G-ROUTE-PROT-DIFF"
   },
-  "G-ROUTE-OFF": {
-    "auth": {
-      "auth_type": "no_auth",
-      "headers": {},
-      "query": {}
-    },
-    "corr": "corr-G-ROUTE-OFF"
-  },
   "G-ROUTE-ON": {
     "auth": {
       "auth_type": "no_auth",

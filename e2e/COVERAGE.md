@@ -265,13 +265,13 @@ Outcomes used (no silent skips): `PASS` | `FAIL` | `BLOCKED` | `NOT_APPLICABLE` 
 
 Release Gate binds Full Matrix evidence to commits and blocks stale/incomplete/regressed releases.
 
-Developers do **not** need to run Full Matrix (332) or Cross-Product (32k) for routine PR work. Those suites are **manual** (`./e2e/run-full-e2e-lab.sh`, `e2e/` npm scripts). Normal PR CI stays path-filtered and cheap.
+Developers do **not** need to run Full Matrix (186) or Cross-Product (32k) for routine PR work. Those suites are **manual** (`./e2e/run-full-e2e-lab.sh`, `e2e/` npm scripts). Normal PR CI stays path-filtered and cheap.
 
 | Gate | Mechanism | Scope |
 | ---- | --------- | ----- |
 | PR (required) | `backend-tests.yml` / `frontend-tests.yml` / `oss-v1-release-validation.yml` | Path-filtered backend/frontend + always-on `release-gate-unit` |
 | PR (path-filtered E2E) | `e2e-smoke.yml`, optional `source-adapter-e2e.yml` / `external-runtime-e2e.yml` | WireMock smoke / adapter / runtime when paths match |
-| Nightly (pytest) | `e2e-regression.yml` | WireMock/syslog pytest regression — **not** Full Matrix 332 |
+| Nightly (pytest) | `e2e-regression.yml` | WireMock/syslog pytest regression — **not** Full Matrix 186 |
 | Full Matrix / XP / RC / Release evidence | Manual CLI | `release-gate evaluate` / `rc` / `validate-evidence` against local run evidence |
 | Continuous Lab / Keycloak | Manual / ON_DEMAND | `e2e/continuous/`, `e2e/real-apps/` — not normal PR CI |
 

@@ -35,3 +35,7 @@ jobs:
         run: npm run test:validate-oss-v1-gate
       - name: Route processing compare unit tests
         run: npm run test:compare-route
+      - name: Route-ON-only release/E2E model
+        run: npm run test:route-on-only
+      - name: Scenario coverage validation
+        run: npm run scenarios:validate

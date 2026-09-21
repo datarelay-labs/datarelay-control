@@ -27,6 +27,7 @@
     "test:compare-route": "tsx framework/compare-route-processing-results.test.ts",
     "results:validate-oss-v1-gate": "tsx framework/validate-oss-v1-release-gate.ts",
     "test:validate-oss-v1-gate": "tsx framework/validate-oss-v1-release-gate.test.ts",
+    "test:route-on-only": "tsx release-gate/route-on-only.test.ts",
     "release-gate": "tsx release-gate/cli.ts",
     "release-gate:evaluate": "tsx release-gate/evaluate-release-gate.ts",
     "release-gate:validate-evidence": "tsx release-gate/validate-release-evidence.ts",

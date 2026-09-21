@@ -1,39 +1,7 @@
 {
-  "generated_at": "2026-09-11T14:47:27.454Z",
+  "generated_at": "2026-09-21T13:17:44.460Z",
   "manifest_commit": "42c4092270af0c789327d218cd805766f7317bdd",
   "scenarios": [
-    {
-      "idStem": "source__source-http-api-polling__lifecycle__browser",
-      "suite": "source",
-      "executionMode": "browser",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "source.http_api_polling",
-        "destination.webhook_post",
-        "wizard.step.connect",
-        "wizard.step.sample",
-        "wizard.step.deploy",
-        "wizard.feature.connection_auth_test"
-      ],
-      "fixture": "source/http_api_polling/lifecycle",
-      "expectedStatus": "PASS",
-      "tags": [
-        "source",
-        "lifecycle",
-        "shard:http",
-        "browser",
-        "route-off"
-      ],
-      "shard": "http",
-      "id": "source__source-http-api-polling__lifecycle__browser__route-off"
-    },
     {
       "idStem": "source__source-http-api-polling__lifecycle__browser",
       "suite": "source",
@@ -65,38 +33,6 @@
       ],
       "shard": "http",
       "id": "source__source-http-api-polling__lifecycle__browser__route-on"
-    },
-    {
-      "idStem": "source__source-http-api-polling__lifecycle__api_seeded",
-      "suite": "source",
-      "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "source.http_api_polling",
-        "destination.webhook_post",
-        "wizard.step.connect",
-        "wizard.step.sample",
-        "wizard.step.deploy",
-        "wizard.feature.connection_auth_test"
-      ],
-      "fixture": "source/http_api_polling/lifecycle",
-      "expectedStatus": "PASS",
-      "tags": [
-        "source",
-        "lifecycle",
-        "shard:http",
-        "api_seeded",
-        "route-off"
-      ],
-      "shard": "http",
-      "id": "source__source-http-api-polling__lifecycle__api_seeded__route-off"
     },
     {
       "idStem": "source__source-http-api-polling__lifecycle__api_seeded",
@@ -134,33 +70,6 @@
       "idStem": "srcdest__source-http-api-polling__destination-syslog-udp__api",
       "suite": "destination",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "SYSLOG_UDP"
-      },
-      "capabilities": [
-        "source.http_api_polling",
-        "destination.syslog_udp",
-        "runtime.health_metrics_audit_logs"
-      ],
-      "fixture": "srcdest/http_api_polling/syslog_udp",
-      "expectedStatus": "PASS",
-      "tags": [
-        "source-destination",
-        "shard:destination",
-        "route-off"
-      ],
-      "shard": "destination",
-      "id": "srcdest__source-http-api-polling__destination-syslog-udp__api__route-off"
-    },
-    {
-      "idStem": "srcdest__source-http-api-polling__destination-syslog-udp__api",
-      "suite": "destination",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
@@ -183,33 +92,6 @@
       ],
       "shard": "destination",
       "id": "srcdest__source-http-api-polling__destination-syslog-udp__api__route-on"
-    },
-    {
-      "idStem": "srcdest__source-http-api-polling__destination-syslog-tcp__api",
-      "suite": "destination",
-      "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "SYSLOG_TCP"
-      },
-      "capabilities": [
-        "source.http_api_polling",
-        "destination.syslog_tcp",
-        "runtime.health_metrics_audit_logs"
-      ],
-      "fixture": "srcdest/http_api_polling/syslog_tcp",
-      "expectedStatus": "PASS",
-      "tags": [
-        "source-destination",
-        "shard:destination",
-        "route-off"
-      ],
-      "shard": "destination",
-      "id": "srcdest__source-http-api-polling__destination-syslog-tcp__api__route-off"
     },
     {
       "idStem": "srcdest__source-http-api-polling__destination-syslog-tcp__api",
@@ -242,33 +124,6 @@
       "idStem": "srcdest__source-http-api-polling__destination-syslog-tls__api",
       "suite": "destination",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "SYSLOG_TLS"
-      },
-      "capabilities": [
-        "source.http_api_polling",
-        "destination.syslog_tls",
-        "runtime.health_metrics_audit_logs"
-      ],
-      "fixture": "srcdest/http_api_polling/syslog_tls",
-      "expectedStatus": "PASS",
-      "tags": [
-        "source-destination",
-        "shard:destination",
-        "route-off"
-      ],
-      "shard": "destination",
-      "id": "srcdest__source-http-api-polling__destination-syslog-tls__api__route-off"
-    },
-    {
-      "idStem": "srcdest__source-http-api-polling__destination-syslog-tls__api",
-      "suite": "destination",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
@@ -296,33 +151,6 @@
       "idStem": "srcdest__source-http-api-polling__destination-webhook-post__api",
       "suite": "destination",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "source.http_api_polling",
-        "destination.webhook_post",
-        "runtime.health_metrics_audit_logs"
-      ],
-      "fixture": "srcdest/http_api_polling/webhook_post",
-      "expectedStatus": "PASS",
-      "tags": [
-        "source-destination",
-        "shard:destination",
-        "route-off"
-      ],
-      "shard": "destination",
-      "id": "srcdest__source-http-api-polling__destination-webhook-post__api__route-off"
-    },
-    {
-      "idStem": "srcdest__source-http-api-polling__destination-webhook-post__api",
-      "suite": "destination",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
@@ -345,38 +173,6 @@
       ],
       "shard": "destination",
       "id": "srcdest__source-http-api-polling__destination-webhook-post__api__route-on"
-    },
-    {
-      "idStem": "source__source-s3-object-polling__lifecycle__browser",
-      "suite": "source",
-      "executionMode": "browser",
-      "routeProcessing": "off",
-      "source": {
-        "type": "S3_OBJECT_POLLING",
-        "authentication": "s3_keys"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "source.s3_object_polling",
-        "destination.webhook_post",
-        "wizard.step.connect",
-        "wizard.step.sample",
-        "wizard.step.deploy",
-        "wizard.feature.connection_auth_test"
-      ],
-      "fixture": "source/s3_object_polling/lifecycle",
-      "expectedStatus": "PASS",
-      "tags": [
-        "source",
-        "lifecycle",
-        "shard:object-file",
-        "browser",
-        "route-off"
-      ],
-      "shard": "object-file",
-      "id": "source__source-s3-object-polling__lifecycle__browser__route-off"
     },
     {
       "idStem": "source__source-s3-object-polling__lifecycle__browser",
@@ -414,38 +210,6 @@
       "idStem": "source__source-s3-object-polling__lifecycle__api_seeded",
       "suite": "source",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "S3_OBJECT_POLLING",
-        "authentication": "s3_keys"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "source.s3_object_polling",
-        "destination.webhook_post",
-        "wizard.step.connect",
-        "wizard.step.sample",
-        "wizard.step.deploy",
-        "wizard.feature.connection_auth_test"
-      ],
-      "fixture": "source/s3_object_polling/lifecycle",
-      "expectedStatus": "PASS",
-      "tags": [
-        "source",
-        "lifecycle",
-        "shard:object-file",
-        "api_seeded",
-        "route-off"
-      ],
-      "shard": "object-file",
-      "id": "source__source-s3-object-polling__lifecycle__api_seeded__route-off"
-    },
-    {
-      "idStem": "source__source-s3-object-polling__lifecycle__api_seeded",
-      "suite": "source",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "S3_OBJECT_POLLING",
@@ -478,33 +242,6 @@
       "idStem": "srcdest__source-s3-object-polling__destination-syslog-udp__api",
       "suite": "destination",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "S3_OBJECT_POLLING",
-        "authentication": "s3_keys"
-      },
-      "destination": {
-        "type": "SYSLOG_UDP"
-      },
-      "capabilities": [
-        "source.s3_object_polling",
-        "destination.syslog_udp",
-        "runtime.health_metrics_audit_logs"
-      ],
-      "fixture": "srcdest/s3_object_polling/syslog_udp",
-      "expectedStatus": "PASS",
-      "tags": [
-        "source-destination",
-        "shard:destination",
-        "route-off"
-      ],
-      "shard": "destination",
-      "id": "srcdest__source-s3-object-polling__destination-syslog-udp__api__route-off"
-    },
-    {
-      "idStem": "srcdest__source-s3-object-polling__destination-syslog-udp__api",
-      "suite": "destination",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "S3_OBJECT_POLLING",
@@ -527,33 +264,6 @@
       ],
       "shard": "destination",
       "id": "srcdest__source-s3-object-polling__destination-syslog-udp__api__route-on"
-    },
-    {
-      "idStem": "srcdest__source-s3-object-polling__destination-syslog-tcp__api",
-      "suite": "destination",
-      "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "S3_OBJECT_POLLING",
-        "authentication": "s3_keys"
-      },
-      "destination": {
-        "type": "SYSLOG_TCP"
-      },
-      "capabilities": [
-        "source.s3_object_polling",
-        "destination.syslog_tcp",
-        "runtime.health_metrics_audit_logs"
-      ],
-      "fixture": "srcdest/s3_object_polling/syslog_tcp",
-      "expectedStatus": "PASS",
-      "tags": [
-        "source-destination",
-        "shard:destination",
-        "route-off"
-      ],
-      "shard": "destination",
-      "id": "srcdest__source-s3-object-polling__destination-syslog-tcp__api__route-off"
     },
     {
       "idStem": "srcdest__source-s3-object-polling__destination-syslog-tcp__api",
@@ -586,33 +296,6 @@
       "idStem": "srcdest__source-s3-object-polling__destination-syslog-tls__api",
       "suite": "destination",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "S3_OBJECT_POLLING",
-        "authentication": "s3_keys"
-      },
-      "destination": {
-        "type": "SYSLOG_TLS"
-      },
-      "capabilities": [
-        "source.s3_object_polling",
-        "destination.syslog_tls",
-        "runtime.health_metrics_audit_logs"
-      ],
-      "fixture": "srcdest/s3_object_polling/syslog_tls",
-      "expectedStatus": "PASS",
-      "tags": [
-        "source-destination",
-        "shard:destination",
-        "route-off"
-      ],
-      "shard": "destination",
-      "id": "srcdest__source-s3-object-polling__destination-syslog-tls__api__route-off"
-    },
-    {
-      "idStem": "srcdest__source-s3-object-polling__destination-syslog-tls__api",
-      "suite": "destination",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "S3_OBJECT_POLLING",
@@ -640,33 +323,6 @@
       "idStem": "srcdest__source-s3-object-polling__destination-webhook-post__api",
       "suite": "destination",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "S3_OBJECT_POLLING",
-        "authentication": "s3_keys"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "source.s3_object_polling",
-        "destination.webhook_post",
-        "runtime.health_metrics_audit_logs"
-      ],
-      "fixture": "srcdest/s3_object_polling/webhook_post",
-      "expectedStatus": "PASS",
-      "tags": [
-        "source-destination",
-        "shard:destination",
-        "route-off"
-      ],
-      "shard": "destination",
-      "id": "srcdest__source-s3-object-polling__destination-webhook-post__api__route-off"
-    },
-    {
-      "idStem": "srcdest__source-s3-object-polling__destination-webhook-post__api",
-      "suite": "destination",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "S3_OBJECT_POLLING",
@@ -689,38 +345,6 @@
       ],
       "shard": "destination",
       "id": "srcdest__source-s3-object-polling__destination-webhook-post__api__route-on"
-    },
-    {
-      "idStem": "source__source-database-query-postgresql__lifecycle__browser",
-      "suite": "source",
-      "executionMode": "browser",
-      "routeProcessing": "off",
-      "source": {
-        "type": "DATABASE_QUERY",
-        "authentication": "db_password"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "source.database_query_postgresql",
-        "destination.webhook_post",
-        "wizard.step.connect",
-        "wizard.step.sample",
-        "wizard.step.deploy",
-        "wizard.feature.connection_auth_test"
-      ],
-      "fixture": "source/database_query/lifecycle",
-      "expectedStatus": "PASS",
-      "tags": [
-        "source",
-        "lifecycle",
-        "shard:database",
-        "browser",
-        "route-off"
-      ],
-      "shard": "database",
-      "id": "source__source-database-query-postgresql__lifecycle__browser__route-off"
     },
     {
       "idStem": "source__source-database-query-postgresql__lifecycle__browser",
@@ -758,38 +382,6 @@
       "idStem": "source__source-database-query-postgresql__lifecycle__api_seeded",
       "suite": "source",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "DATABASE_QUERY",
-        "authentication": "db_password"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "source.database_query_postgresql",
-        "destination.webhook_post",
-        "wizard.step.connect",
-        "wizard.step.sample",
-        "wizard.step.deploy",
-        "wizard.feature.connection_auth_test"
-      ],
-      "fixture": "source/database_query/lifecycle",
-      "expectedStatus": "PASS",
-      "tags": [
-        "source",
-        "lifecycle",
-        "shard:database",
-        "api_seeded",
-        "route-off"
-      ],
-      "shard": "database",
-      "id": "source__source-database-query-postgresql__lifecycle__api_seeded__route-off"
-    },
-    {
-      "idStem": "source__source-database-query-postgresql__lifecycle__api_seeded",
-      "suite": "source",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "DATABASE_QUERY",
@@ -822,33 +414,6 @@
       "idStem": "srcdest__source-database-query-postgresql__destination-syslog-udp__api",
       "suite": "destination",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "DATABASE_QUERY",
-        "authentication": "db_password"
-      },
-      "destination": {
-        "type": "SYSLOG_UDP"
-      },
-      "capabilities": [
-        "source.database_query_postgresql",
-        "destination.syslog_udp",
-        "runtime.health_metrics_audit_logs"
-      ],
-      "fixture": "srcdest/database_query/syslog_udp",
-      "expectedStatus": "PASS",
-      "tags": [
-        "source-destination",
-        "shard:destination",
-        "route-off"
-      ],
-      "shard": "destination",
-      "id": "srcdest__source-database-query-postgresql__destination-syslog-udp__api__route-off"
-    },
-    {
-      "idStem": "srcdest__source-database-query-postgresql__destination-syslog-udp__api",
-      "suite": "destination",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "DATABASE_QUERY",
@@ -871,33 +436,6 @@
       ],
       "shard": "destination",
       "id": "srcdest__source-database-query-postgresql__destination-syslog-udp__api__route-on"
-    },
-    {
-      "idStem": "srcdest__source-database-query-postgresql__destination-syslog-tcp__api",
-      "suite": "destination",
-      "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "DATABASE_QUERY",
-        "authentication": "db_password"
-      },
-      "destination": {
-        "type": "SYSLOG_TCP"
-      },
-      "capabilities": [
-        "source.database_query_postgresql",
-        "destination.syslog_tcp",
-        "runtime.health_metrics_audit_logs"
-      ],
-      "fixture": "srcdest/database_query/syslog_tcp",
-      "expectedStatus": "PASS",
-      "tags": [
-        "source-destination",
-        "shard:destination",
-        "route-off"
-      ],
-      "shard": "destination",
-      "id": "srcdest__source-database-query-postgresql__destination-syslog-tcp__api__route-off"
     },
     {
       "idStem": "srcdest__source-database-query-postgresql__destination-syslog-tcp__api",
@@ -930,33 +468,6 @@
       "idStem": "srcdest__source-database-query-postgresql__destination-syslog-tls__api",
       "suite": "destination",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "DATABASE_QUERY",
-        "authentication": "db_password"
-      },
-      "destination": {
-        "type": "SYSLOG_TLS"
-      },
-      "capabilities": [
-        "source.database_query_postgresql",
-        "destination.syslog_tls",
-        "runtime.health_metrics_audit_logs"
-      ],
-      "fixture": "srcdest/database_query/syslog_tls",
-      "expectedStatus": "PASS",
-      "tags": [
-        "source-destination",
-        "shard:destination",
-        "route-off"
-      ],
-      "shard": "destination",
-      "id": "srcdest__source-database-query-postgresql__destination-syslog-tls__api__route-off"
-    },
-    {
-      "idStem": "srcdest__source-database-query-postgresql__destination-syslog-tls__api",
-      "suite": "destination",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "DATABASE_QUERY",
@@ -984,33 +495,6 @@
       "idStem": "srcdest__source-database-query-postgresql__destination-webhook-post__api",
       "suite": "destination",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "DATABASE_QUERY",
-        "authentication": "db_password"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "source.database_query_postgresql",
-        "destination.webhook_post",
-        "runtime.health_metrics_audit_logs"
-      ],
-      "fixture": "srcdest/database_query/webhook_post",
-      "expectedStatus": "PASS",
-      "tags": [
-        "source-destination",
-        "shard:destination",
-        "route-off"
-      ],
-      "shard": "destination",
-      "id": "srcdest__source-database-query-postgresql__destination-webhook-post__api__route-off"
-    },
-    {
-      "idStem": "srcdest__source-database-query-postgresql__destination-webhook-post__api",
-      "suite": "destination",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "DATABASE_QUERY",
@@ -1033,38 +517,6 @@
       ],
       "shard": "destination",
       "id": "srcdest__source-database-query-postgresql__destination-webhook-post__api__route-on"
-    },
-    {
-      "idStem": "source__source-remote-file-polling__lifecycle__browser",
-      "suite": "source",
-      "executionMode": "browser",
-      "routeProcessing": "off",
-      "source": {
-        "type": "REMOTE_FILE_POLLING",
-        "authentication": "ssh"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "source.remote_file_polling",
-        "destination.webhook_post",
-        "wizard.step.connect",
-        "wizard.step.sample",
-        "wizard.step.deploy",
-        "wizard.feature.connection_auth_test"
-      ],
-      "fixture": "source/remote_file_polling/lifecycle",
-      "expectedStatus": "PASS",
-      "tags": [
-        "source",
-        "lifecycle",
-        "shard:object-file",
-        "browser",
-        "route-off"
-      ],
-      "shard": "object-file",
-      "id": "source__source-remote-file-polling__lifecycle__browser__route-off"
     },
     {
       "idStem": "source__source-remote-file-polling__lifecycle__browser",
@@ -1102,38 +554,6 @@
       "idStem": "source__source-remote-file-polling__lifecycle__api_seeded",
       "suite": "source",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "REMOTE_FILE_POLLING",
-        "authentication": "ssh"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "source.remote_file_polling",
-        "destination.webhook_post",
-        "wizard.step.connect",
-        "wizard.step.sample",
-        "wizard.step.deploy",
-        "wizard.feature.connection_auth_test"
-      ],
-      "fixture": "source/remote_file_polling/lifecycle",
-      "expectedStatus": "PASS",
-      "tags": [
-        "source",
-        "lifecycle",
-        "shard:object-file",
-        "api_seeded",
-        "route-off"
-      ],
-      "shard": "object-file",
-      "id": "source__source-remote-file-polling__lifecycle__api_seeded__route-off"
-    },
-    {
-      "idStem": "source__source-remote-file-polling__lifecycle__api_seeded",
-      "suite": "source",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "REMOTE_FILE_POLLING",
@@ -1166,33 +586,6 @@
       "idStem": "srcdest__source-remote-file-polling__destination-syslog-udp__api",
       "suite": "destination",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "REMOTE_FILE_POLLING",
-        "authentication": "ssh"
-      },
-      "destination": {
-        "type": "SYSLOG_UDP"
-      },
-      "capabilities": [
-        "source.remote_file_polling",
-        "destination.syslog_udp",
-        "runtime.health_metrics_audit_logs"
-      ],
-      "fixture": "srcdest/remote_file_polling/syslog_udp",
-      "expectedStatus": "PASS",
-      "tags": [
-        "source-destination",
-        "shard:destination",
-        "route-off"
-      ],
-      "shard": "destination",
-      "id": "srcdest__source-remote-file-polling__destination-syslog-udp__api__route-off"
-    },
-    {
-      "idStem": "srcdest__source-remote-file-polling__destination-syslog-udp__api",
-      "suite": "destination",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "REMOTE_FILE_POLLING",
@@ -1215,33 +608,6 @@
       ],
       "shard": "destination",
       "id": "srcdest__source-remote-file-polling__destination-syslog-udp__api__route-on"
-    },
-    {
-      "idStem": "srcdest__source-remote-file-polling__destination-syslog-tcp__api",
-      "suite": "destination",
-      "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "REMOTE_FILE_POLLING",
-        "authentication": "ssh"
-      },
-      "destination": {
-        "type": "SYSLOG_TCP"
-      },
-      "capabilities": [
-        "source.remote_file_polling",
-        "destination.syslog_tcp",
-        "runtime.health_metrics_audit_logs"
-      ],
-      "fixture": "srcdest/remote_file_polling/syslog_tcp",
-      "expectedStatus": "PASS",
-      "tags": [
-        "source-destination",
-        "shard:destination",
-        "route-off"
-      ],
-      "shard": "destination",
-      "id": "srcdest__source-remote-file-polling__destination-syslog-tcp__api__route-off"
     },
     {
       "idStem": "srcdest__source-remote-file-polling__destination-syslog-tcp__api",
@@ -1274,33 +640,6 @@
       "idStem": "srcdest__source-remote-file-polling__destination-syslog-tls__api",
       "suite": "destination",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "REMOTE_FILE_POLLING",
-        "authentication": "ssh"
-      },
-      "destination": {
-        "type": "SYSLOG_TLS"
-      },
-      "capabilities": [
-        "source.remote_file_polling",
-        "destination.syslog_tls",
-        "runtime.health_metrics_audit_logs"
-      ],
-      "fixture": "srcdest/remote_file_polling/syslog_tls",
-      "expectedStatus": "PASS",
-      "tags": [
-        "source-destination",
-        "shard:destination",
-        "route-off"
-      ],
-      "shard": "destination",
-      "id": "srcdest__source-remote-file-polling__destination-syslog-tls__api__route-off"
-    },
-    {
-      "idStem": "srcdest__source-remote-file-polling__destination-syslog-tls__api",
-      "suite": "destination",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "REMOTE_FILE_POLLING",
@@ -1328,33 +667,6 @@
       "idStem": "srcdest__source-remote-file-polling__destination-webhook-post__api",
       "suite": "destination",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "REMOTE_FILE_POLLING",
-        "authentication": "ssh"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "source.remote_file_polling",
-        "destination.webhook_post",
-        "runtime.health_metrics_audit_logs"
-      ],
-      "fixture": "srcdest/remote_file_polling/webhook_post",
-      "expectedStatus": "PASS",
-      "tags": [
-        "source-destination",
-        "shard:destination",
-        "route-off"
-      ],
-      "shard": "destination",
-      "id": "srcdest__source-remote-file-polling__destination-webhook-post__api__route-off"
-    },
-    {
-      "idStem": "srcdest__source-remote-file-polling__destination-webhook-post__api",
-      "suite": "destination",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "REMOTE_FILE_POLLING",
@@ -1377,38 +689,6 @@
       ],
       "shard": "destination",
       "id": "srcdest__source-remote-file-polling__destination-webhook-post__api__route-on"
-    },
-    {
-      "idStem": "source__source-webhook-receiver__lifecycle__browser",
-      "suite": "source",
-      "executionMode": "browser",
-      "routeProcessing": "off",
-      "source": {
-        "type": "WEBHOOK_RECEIVER",
-        "authentication": "inbound"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "source.webhook_receiver",
-        "destination.webhook_post",
-        "wizard.step.connect",
-        "wizard.step.sample",
-        "wizard.step.deploy",
-        "wizard.feature.connection_auth_test"
-      ],
-      "fixture": "source/webhook_receiver/lifecycle",
-      "expectedStatus": "PASS",
-      "tags": [
-        "source",
-        "lifecycle",
-        "shard:http",
-        "browser",
-        "route-off"
-      ],
-      "shard": "http",
-      "id": "source__source-webhook-receiver__lifecycle__browser__route-off"
     },
     {
       "idStem": "source__source-webhook-receiver__lifecycle__browser",
@@ -1446,38 +726,6 @@
       "idStem": "source__source-webhook-receiver__lifecycle__api_seeded",
       "suite": "source",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "WEBHOOK_RECEIVER",
-        "authentication": "inbound"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "source.webhook_receiver",
-        "destination.webhook_post",
-        "wizard.step.connect",
-        "wizard.step.sample",
-        "wizard.step.deploy",
-        "wizard.feature.connection_auth_test"
-      ],
-      "fixture": "source/webhook_receiver/lifecycle",
-      "expectedStatus": "PASS",
-      "tags": [
-        "source",
-        "lifecycle",
-        "shard:http",
-        "api_seeded",
-        "route-off"
-      ],
-      "shard": "http",
-      "id": "source__source-webhook-receiver__lifecycle__api_seeded__route-off"
-    },
-    {
-      "idStem": "source__source-webhook-receiver__lifecycle__api_seeded",
-      "suite": "source",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "WEBHOOK_RECEIVER",
@@ -1510,33 +758,6 @@
       "idStem": "srcdest__source-webhook-receiver__destination-syslog-udp__api",
       "suite": "destination",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "WEBHOOK_RECEIVER",
-        "authentication": "inbound"
-      },
-      "destination": {
-        "type": "SYSLOG_UDP"
-      },
-      "capabilities": [
-        "source.webhook_receiver",
-        "destination.syslog_udp",
-        "runtime.health_metrics_audit_logs"
-      ],
-      "fixture": "srcdest/webhook_receiver/syslog_udp",
-      "expectedStatus": "PASS",
-      "tags": [
-        "source-destination",
-        "shard:destination",
-        "route-off"
-      ],
-      "shard": "destination",
-      "id": "srcdest__source-webhook-receiver__destination-syslog-udp__api__route-off"
-    },
-    {
-      "idStem": "srcdest__source-webhook-receiver__destination-syslog-udp__api",
-      "suite": "destination",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "WEBHOOK_RECEIVER",
@@ -1559,33 +780,6 @@
       ],
       "shard": "destination",
       "id": "srcdest__source-webhook-receiver__destination-syslog-udp__api__route-on"
-    },
-    {
-      "idStem": "srcdest__source-webhook-receiver__destination-syslog-tcp__api",
-      "suite": "destination",
-      "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "WEBHOOK_RECEIVER",
-        "authentication": "inbound"
-      },
-      "destination": {
-        "type": "SYSLOG_TCP"
-      },
-      "capabilities": [
-        "source.webhook_receiver",
-        "destination.syslog_tcp",
-        "runtime.health_metrics_audit_logs"
-      ],
-      "fixture": "srcdest/webhook_receiver/syslog_tcp",
-      "expectedStatus": "PASS",
-      "tags": [
-        "source-destination",
-        "shard:destination",
-        "route-off"
-      ],
-      "shard": "destination",
-      "id": "srcdest__source-webhook-receiver__destination-syslog-tcp__api__route-off"
     },
     {
       "idStem": "srcdest__source-webhook-receiver__destination-syslog-tcp__api",
@@ -1618,33 +812,6 @@
       "idStem": "srcdest__source-webhook-receiver__destination-syslog-tls__api",
       "suite": "destination",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "WEBHOOK_RECEIVER",
-        "authentication": "inbound"
-      },
-      "destination": {
-        "type": "SYSLOG_TLS"
-      },
-      "capabilities": [
-        "source.webhook_receiver",
-        "destination.syslog_tls",
-        "runtime.health_metrics_audit_logs"
-      ],
-      "fixture": "srcdest/webhook_receiver/syslog_tls",
-      "expectedStatus": "PASS",
-      "tags": [
-        "source-destination",
-        "shard:destination",
-        "route-off"
-      ],
-      "shard": "destination",
-      "id": "srcdest__source-webhook-receiver__destination-syslog-tls__api__route-off"
-    },
-    {
-      "idStem": "srcdest__source-webhook-receiver__destination-syslog-tls__api",
-      "suite": "destination",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "WEBHOOK_RECEIVER",
@@ -1667,33 +834,6 @@
       ],
       "shard": "destination",
       "id": "srcdest__source-webhook-receiver__destination-syslog-tls__api__route-on"
-    },
-    {
-      "idStem": "srcdest__source-webhook-receiver__destination-webhook-post__api",
-      "suite": "destination",
-      "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "WEBHOOK_RECEIVER",
-        "authentication": "inbound"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "source.webhook_receiver",
-        "destination.webhook_post",
-        "runtime.health_metrics_audit_logs"
-      ],
-      "fixture": "srcdest/webhook_receiver/webhook_post",
-      "expectedStatus": "PASS",
-      "tags": [
-        "source-destination",
-        "shard:destination",
-        "route-off"
-      ],
-      "shard": "destination",
-      "id": "srcdest__source-webhook-receiver__destination-webhook-post__api__route-off"
     },
     {
       "idStem": "srcdest__source-webhook-receiver__destination-webhook-post__api",
@@ -1726,7 +866,7 @@
       "id": "source__source-ai-proxy-receiver__runtime_only",
       "suite": "source",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
+      "routeProcessing": "on",
       "capabilities": [
         "source.ai_proxy_receiver"
       ],
@@ -1741,10 +881,10 @@
       "shard": "http"
     },
     {
-      "id": "dest__destination-syslog-udp__lifecycle__browser__route-off",
+      "id": "dest__destination-syslog-udp__lifecycle__browser__route-on",
       "suite": "destination",
       "executionMode": "browser",
-      "routeProcessing": "off",
+      "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
         "authentication": "no_auth"
@@ -1768,10 +908,10 @@
       "shard": "destination"
     },
     {
-      "id": "dest__destination-syslog-udp__lifecycle__api_seeded__route-off",
+      "id": "dest__destination-syslog-udp__lifecycle__api_seeded__route-on",
       "suite": "destination",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
+      "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
         "authentication": "no_auth"
@@ -1795,10 +935,10 @@
       "shard": "destination"
     },
     {
-      "id": "dest__destination-syslog-tcp__lifecycle__browser__route-off",
+      "id": "dest__destination-syslog-tcp__lifecycle__browser__route-on",
       "suite": "destination",
       "executionMode": "browser",
-      "routeProcessing": "off",
+      "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
         "authentication": "no_auth"
@@ -1822,10 +962,10 @@
       "shard": "destination"
     },
     {
-      "id": "dest__destination-syslog-tcp__lifecycle__api_seeded__route-off",
+      "id": "dest__destination-syslog-tcp__lifecycle__api_seeded__route-on",
       "suite": "destination",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
+      "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
         "authentication": "no_auth"
@@ -1849,10 +989,10 @@
       "shard": "destination"
     },
     {
-      "id": "dest__destination-syslog-tls__lifecycle__browser__route-off",
+      "id": "dest__destination-syslog-tls__lifecycle__browser__route-on",
       "suite": "destination",
       "executionMode": "browser",
-      "routeProcessing": "off",
+      "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
         "authentication": "no_auth"
@@ -1876,10 +1016,10 @@
       "shard": "destination"
     },
     {
-      "id": "dest__destination-syslog-tls__lifecycle__api_seeded__route-off",
+      "id": "dest__destination-syslog-tls__lifecycle__api_seeded__route-on",
       "suite": "destination",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
+      "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
         "authentication": "no_auth"
@@ -1903,10 +1043,10 @@
       "shard": "destination"
     },
     {
-      "id": "dest__destination-webhook-post__lifecycle__browser__route-off",
+      "id": "dest__destination-webhook-post__lifecycle__browser__route-on",
       "suite": "destination",
       "executionMode": "browser",
-      "routeProcessing": "off",
+      "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
         "authentication": "no_auth"
@@ -1930,10 +1070,10 @@
       "shard": "destination"
     },
     {
-      "id": "dest__destination-webhook-post__lifecycle__api_seeded__route-off",
+      "id": "dest__destination-webhook-post__lifecycle__api_seeded__route-on",
       "suite": "destination",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
+      "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
         "authentication": "no_auth"
@@ -1960,7 +1100,7 @@
       "id": "dest__destination-ai-provider-post__partial",
       "suite": "destination",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
+      "routeProcessing": "on",
       "capabilities": [
         "destination.ai_provider_post"
       ],
@@ -1993,18 +1133,18 @@
     }
   ],
   "counts": {
-    "total": 70,
-    "browser": 14,
-    "api_seeded": 56,
-    "route_off": 40,
-    "route_on": 30,
+    "total": 40,
+    "browser": 9,
+    "api_seeded": 31,
+    "route_off": 0,
+    "route_on": 40,
     "route_both": 0,
     "by_suite": {
-      "source": 21,
-      "destination": 49
+      "source": 11,
+      "destination": 29
     },
     "by_expected_status": {
-      "PASS": 68,
+      "PASS": 38,
       "NOT_IMPLEMENTED": 2
     }
   }

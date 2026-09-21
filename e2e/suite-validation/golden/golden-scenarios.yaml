@@ -976,29 +976,6 @@ scenarios:
     route_transform_json: "{}"
     governance_policy_json: "{\"schema_fields\": [\"event_id\", \"host\", \"message\", \"event_time\", \"email\", \"e2e_correlation_id\"], \"schema_drift\": \"allow\", \"unknown_field\": \"pass_through\", \"confidential_detection\": true, \"protection\": \"none\", \"sensitive_fields\": [\"email\"]}"
     routes_json: "[{\"route_key\": \"route_a\", \"destination_type\": \"WEBHOOK_POST\", \"policy\": \"continue\", \"protection_override\": \"mask_partial\"}, {\"route_key\": \"route_b\", \"destination_type\": \"SYSLOG_UDP\", \"policy\": \"continue\", \"protection_override\": \"hash\"}]"
-  - golden_id: G-ROUTE-OFF
-    purpose: "route-off"
-    category: "route"
-    source_type: "HTTP_API_POLLING"
-    source_auth: "no_auth"
-    input_fixture: "golden-fixtures/G-ROUTE-OFF.json"
-    destination_type: "WEBHOOK_POST"
-    route_mode: "route-off"
-    expected_runtime_config: "golden-expected/G-ROUTE-OFF.runtime.json"
-    expected_delivery_log: "golden-expected/G-ROUTE-OFF.delivery.json"
-    expected_collector_payload: "golden-expected/G-ROUTE-OFF.collector.json"
-    expected_no_delivery: false
-    rationale: "route-off"
-    manual_review_status: "reviewed"
-    verification_fields:
-      - "route_key"
-    capability_ids:
-      - "CAP-ROUTE-MODE"
-    stream_config_json: "{\"auth\": {\"auth_type\": \"no_auth\", \"headers\": {}, \"query\": {}}}"
-    global_transform_json: "{}"
-    route_transform_json: "{}"
-    governance_policy_json: "{\"schema_fields\": [\"event_id\", \"host\", \"message\", \"event_time\", \"email\", \"ssn\", \"map_src_host\", \"items\", \"status_code\", \"host_mapped\", \"jsonata_out\", \"event_time_normalized\", \"e2e_correlation_id\", \"nested_out\"], \"schema_drift\": \"allow\", \"unknown_field\": \"pass_through\", \"confidential_detection\": false, \"protection\": \"none\"}"
-    routes_json: "[{\"route_key\": \"route_a\", \"destination_type\": \"WEBHOOK_POST\", \"policy\": \"continue\"}]"
   - golden_id: G-ROUTE-ON
     purpose: "route-on"
     category: "route"

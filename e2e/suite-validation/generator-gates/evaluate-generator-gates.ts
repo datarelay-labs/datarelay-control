@@ -162,7 +162,7 @@ export function baselineGeneratorFixture(): {
       combination_id: 'xp_c',
       axes: {
         execution_surface: 'API_SEEDED',
-        route_runtime: 'ROUTE_OFF',
+        route_runtime: 'ROUTE_ON',
         destination_type: 'WEBHOOK_POST',
         route_transform_override: 'OFF',
         fault_type: 'NONE',

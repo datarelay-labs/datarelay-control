@@ -155,16 +155,11 @@ function anyTransformOn(a: CrossProductAxes): boolean {
 export const NOT_IMPLEMENTED_SCENARIO_IDS: readonly string[] = [
   'auth__auth-destination-webhook-headers__status-partial',
   'dest__destination-ai-provider-post__partial',
-  'governance__audit__review__api__route-off',
   'governance__audit__review__api__route-on',
   'governance__governance-delivery-require-review__partial',
-  'governance__hash__review__api__route-off',
   'governance__hash__review__api__route-on',
-  'governance__mask__review__api__route-off',
   'governance__mask__review__api__route-on',
-  'governance__remove__review__api__route-off',
   'governance__remove__review__api__route-on',
-  'governance__tokenize__review__api__route-off',
   'governance__tokenize__review__api__route-on',
   'processing__processing-enrichment-lookup__partial',
   'route__routes-per-route-protection-classification-policy__partial',
@@ -314,45 +309,21 @@ export const APPLICABILITY_RULES: ApplicabilityRule[] = [
     evaluate: () => null,
   },
   {
-    rule_id: 'R006_ROUTE_OFF_NO_OVERRIDE',
-    description: 'route-off: multi-route and route overrides are NOT_APPLICABLE',
+    rule_id: 'R006_ROUTE_OFF_RETIRED',
+    description: 'ROUTE_OFF is retired; only ROUTE_ON is a supported product runtime path',
     capability_ids: ['flag.gdc_route_processing_enabled'],
-    evidence: ['app/config.py GDC_ROUTE_PROCESSING_ENABLED', 'app/runners/stream_runner.py'],
+    evidence: [
+      'app/config.py GDC_ROUTE_PROCESSING_ENABLED default true; false rejected',
+      'e2e/cross-product/cross-product-axes.yaml route_runtime=[ROUTE_ON]',
+    ],
     evaluate: ({ axes }) => {
       if (axes.route_runtime !== 'ROUTE_OFF') return null
-      if (MULTI_ROUTE_TOPOLOGIES.has(axes.route_topology)) {
-        return reject(
-          'R006_ROUTE_OFF_NO_OVERRIDE',
-          `route_topology=${axes.route_topology} requires ROUTE_ON`,
-          ['flag.gdc_route_processing_enabled'],
-          'GDC_ROUTE_PROCESSING_ENABLED=false uses legacy shared transform',
-        )
-      }
-      if (
-        axes.route_transform_override === 'ON' ||
-        axes.route_protection_override === 'ON' ||
-        axes.route_classification_override === 'ON' ||
-        axes.route_policy_override === 'ON'
-      ) {
-        return reject(
-          'R006_ROUTE_OFF_NO_OVERRIDE',
-          'Route overrides require ROUTE_ON',
-          ['flag.gdc_route_processing_enabled'],
-          'app/runners/route_context.py',
-        )
-      }
-      if (axes.route_inheritance !== 'NOT_APPLICABLE' && axes.route_topology === 'SINGLE_ROUTE') {
-        // inheritance axis must be NA under route-off
-        if (axes.route_inheritance !== 'NOT_APPLICABLE') {
-          return reject(
-            'R006_ROUTE_OFF_NO_OVERRIDE',
-            'route_inheritance must be NOT_APPLICABLE when ROUTE_OFF',
-            ['flag.gdc_route_processing_enabled'],
-            'legacy fan-out has no per-route inheritance',
-          )
-        }
-      }
-      return null
+      return reject(
+        'R006_ROUTE_OFF_RETIRED',
+        'ROUTE_OFF / GDC_ROUTE_PROCESSING_ENABLED=false is no longer supported',
+        ['flag.gdc_route_processing_enabled'],
+        'Route Processing is the only supported product runtime path',
+      )
     },
   },
   {

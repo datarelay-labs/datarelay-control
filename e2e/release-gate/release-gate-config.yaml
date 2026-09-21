@@ -5,22 +5,22 @@ required:
   execution_validation: true
 
 full_matrix:
-  expected_scenarios: 332
+  expected_scenarios: 186
   fail_allowed: 0
   blocked_allowed: 0
   gap_allowed: 0
   missing_allowed: 0
 
 browser:
-  expected_scenarios: 116
+  expected_scenarios: 63
   missing_allowed: 0
 
 route_processing:
-  require_off: true
+  require_off: false  # Route-OFF retired — Route Processing ON only
   require_on: true
 
 not_implemented:
-  expected: 20
+  expected: 15
   require_manifest_evidence: true
   fail_on_increase: true
 

@@ -1,38 +1,7 @@
 {
-  "generated_at": "2026-09-11T14:47:27.451Z",
+  "generated_at": "2026-09-21T13:17:44.457Z",
   "manifest_commit": "42c4092270af0c789327d218cd805766f7317bdd",
   "scenarios": [
-    {
-      "idStem": "auth__auth-http-no-auth__success__browser",
-      "suite": "authentication",
-      "executionMode": "browser",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "auth.http.no_auth",
-        "source.http_api_polling",
-        "wizard.feature.connection_auth_test",
-        "destination.webhook_post"
-      ],
-      "fixture": "auth/no_auth/success",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "success",
-        "shard:authentication",
-        "browser",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "success",
-      "id": "auth__auth-http-no-auth__success__browser__route-off"
-    },
     {
       "idStem": "auth__auth-http-no-auth__success__browser",
       "suite": "authentication",
@@ -63,37 +32,6 @@
       "shard": "authentication",
       "authOutcome": "success",
       "id": "auth__auth-http-no-auth__success__browser__route-on"
-    },
-    {
-      "idStem": "auth__auth-http-no-auth__success__api_seeded",
-      "suite": "authentication",
-      "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "auth.http.no_auth",
-        "source.http_api_polling",
-        "wizard.feature.connection_auth_test",
-        "destination.webhook_post"
-      ],
-      "fixture": "auth/no_auth/success",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "success",
-        "shard:authentication",
-        "api_seeded",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "success",
-      "id": "auth__auth-http-no-auth__success__api_seeded__route-off"
     },
     {
       "idStem": "auth__auth-http-no-auth__success__api_seeded",
@@ -130,37 +68,6 @@
       "idStem": "auth__auth-http-basic__success__browser",
       "suite": "authentication",
       "executionMode": "browser",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "basic"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "auth.http.basic",
-        "source.http_api_polling",
-        "wizard.feature.connection_auth_test",
-        "destination.webhook_post"
-      ],
-      "fixture": "auth/basic/success",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "success",
-        "shard:authentication",
-        "browser",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "success",
-      "id": "auth__auth-http-basic__success__browser__route-off"
-    },
-    {
-      "idStem": "auth__auth-http-basic__success__browser",
-      "suite": "authentication",
-      "executionMode": "browser",
       "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
@@ -187,37 +94,6 @@
       "shard": "authentication",
       "authOutcome": "success",
       "id": "auth__auth-http-basic__success__browser__route-on"
-    },
-    {
-      "idStem": "auth__auth-http-basic__success__api_seeded",
-      "suite": "authentication",
-      "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "basic"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "auth.http.basic",
-        "source.http_api_polling",
-        "wizard.feature.connection_auth_test",
-        "destination.webhook_post"
-      ],
-      "fixture": "auth/basic/success",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "success",
-        "shard:authentication",
-        "api_seeded",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "success",
-      "id": "auth__auth-http-basic__success__api_seeded__route-off"
     },
     {
       "idStem": "auth__auth-http-basic__success__api_seeded",
@@ -254,36 +130,6 @@
       "idStem": "auth__auth-http-basic__failure__browser",
       "suite": "authentication",
       "executionMode": "browser",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "basic",
-        "variant": "bad_credentials"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "auth.http.basic",
-        "source.http_api_polling",
-        "wizard.feature.connection_auth_test"
-      ],
-      "fixture": "auth/basic/failure",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "failure",
-        "shard:authentication",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "failure",
-      "id": "auth__auth-http-basic__failure__browser__route-off"
-    },
-    {
-      "idStem": "auth__auth-http-basic__failure__browser",
-      "suite": "authentication",
-      "executionMode": "browser",
       "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
@@ -309,37 +155,6 @@
       "shard": "authentication",
       "authOutcome": "failure",
       "id": "auth__auth-http-basic__failure__browser__route-on"
-    },
-    {
-      "idStem": "auth__auth-http-bearer__success__browser",
-      "suite": "authentication",
-      "executionMode": "browser",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "bearer"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "auth.http.bearer",
-        "source.http_api_polling",
-        "wizard.feature.connection_auth_test",
-        "destination.webhook_post"
-      ],
-      "fixture": "auth/bearer/success",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "success",
-        "shard:authentication",
-        "browser",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "success",
-      "id": "auth__auth-http-bearer__success__browser__route-off"
     },
     {
       "idStem": "auth__auth-http-bearer__success__browser",
@@ -376,37 +191,6 @@
       "idStem": "auth__auth-http-bearer__success__api_seeded",
       "suite": "authentication",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "bearer"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "auth.http.bearer",
-        "source.http_api_polling",
-        "wizard.feature.connection_auth_test",
-        "destination.webhook_post"
-      ],
-      "fixture": "auth/bearer/success",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "success",
-        "shard:authentication",
-        "api_seeded",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "success",
-      "id": "auth__auth-http-bearer__success__api_seeded__route-off"
-    },
-    {
-      "idStem": "auth__auth-http-bearer__success__api_seeded",
-      "suite": "authentication",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
@@ -438,36 +222,6 @@
       "idStem": "auth__auth-http-bearer__failure__browser",
       "suite": "authentication",
       "executionMode": "browser",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "bearer",
-        "variant": "bad_credentials"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "auth.http.bearer",
-        "source.http_api_polling",
-        "wizard.feature.connection_auth_test"
-      ],
-      "fixture": "auth/bearer/failure",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "failure",
-        "shard:authentication",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "failure",
-      "id": "auth__auth-http-bearer__failure__browser__route-off"
-    },
-    {
-      "idStem": "auth__auth-http-bearer__failure__browser",
-      "suite": "authentication",
-      "executionMode": "browser",
       "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
@@ -493,37 +247,6 @@
       "shard": "authentication",
       "authOutcome": "failure",
       "id": "auth__auth-http-bearer__failure__browser__route-on"
-    },
-    {
-      "idStem": "auth__auth-http-api-key__success__browser",
-      "suite": "authentication",
-      "executionMode": "browser",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "api_key"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "auth.http.api_key",
-        "source.http_api_polling",
-        "wizard.feature.connection_auth_test",
-        "destination.webhook_post"
-      ],
-      "fixture": "auth/api_key/success",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "success",
-        "shard:authentication",
-        "browser",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "success",
-      "id": "auth__auth-http-api-key__success__browser__route-off"
     },
     {
       "idStem": "auth__auth-http-api-key__success__browser",
@@ -560,37 +283,6 @@
       "idStem": "auth__auth-http-api-key__success__api_seeded",
       "suite": "authentication",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "api_key"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "auth.http.api_key",
-        "source.http_api_polling",
-        "wizard.feature.connection_auth_test",
-        "destination.webhook_post"
-      ],
-      "fixture": "auth/api_key/success",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "success",
-        "shard:authentication",
-        "api_seeded",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "success",
-      "id": "auth__auth-http-api-key__success__api_seeded__route-off"
-    },
-    {
-      "idStem": "auth__auth-http-api-key__success__api_seeded",
-      "suite": "authentication",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
@@ -622,36 +314,6 @@
       "idStem": "auth__auth-http-api-key__failure__browser",
       "suite": "authentication",
       "executionMode": "browser",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "api_key",
-        "variant": "bad_credentials"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "auth.http.api_key",
-        "source.http_api_polling",
-        "wizard.feature.connection_auth_test"
-      ],
-      "fixture": "auth/api_key/failure",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "failure",
-        "shard:authentication",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "failure",
-      "id": "auth__auth-http-api-key__failure__browser__route-off"
-    },
-    {
-      "idStem": "auth__auth-http-api-key__failure__browser",
-      "suite": "authentication",
-      "executionMode": "browser",
       "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
@@ -677,37 +339,6 @@
       "shard": "authentication",
       "authOutcome": "failure",
       "id": "auth__auth-http-api-key__failure__browser__route-on"
-    },
-    {
-      "idStem": "auth__auth-http-oauth2-client-credentials__success__browser",
-      "suite": "authentication",
-      "executionMode": "browser",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "oauth2_client_credentials"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "auth.http.oauth2_client_credentials",
-        "source.http_api_polling",
-        "wizard.feature.connection_auth_test",
-        "destination.webhook_post"
-      ],
-      "fixture": "auth/oauth2_client_credentials/success",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "success",
-        "shard:authentication",
-        "browser",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "success",
-      "id": "auth__auth-http-oauth2-client-credentials__success__browser__route-off"
     },
     {
       "idStem": "auth__auth-http-oauth2-client-credentials__success__browser",
@@ -744,37 +375,6 @@
       "idStem": "auth__auth-http-oauth2-client-credentials__success__api_seeded",
       "suite": "authentication",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "oauth2_client_credentials"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "auth.http.oauth2_client_credentials",
-        "source.http_api_polling",
-        "wizard.feature.connection_auth_test",
-        "destination.webhook_post"
-      ],
-      "fixture": "auth/oauth2_client_credentials/success",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "success",
-        "shard:authentication",
-        "api_seeded",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "success",
-      "id": "auth__auth-http-oauth2-client-credentials__success__api_seeded__route-off"
-    },
-    {
-      "idStem": "auth__auth-http-oauth2-client-credentials__success__api_seeded",
-      "suite": "authentication",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
@@ -806,36 +406,6 @@
       "idStem": "auth__auth-http-oauth2-client-credentials__failure__browser",
       "suite": "authentication",
       "executionMode": "browser",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "oauth2_client_credentials",
-        "variant": "bad_credentials"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "auth.http.oauth2_client_credentials",
-        "source.http_api_polling",
-        "wizard.feature.connection_auth_test"
-      ],
-      "fixture": "auth/oauth2_client_credentials/failure",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "failure",
-        "shard:authentication",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "failure",
-      "id": "auth__auth-http-oauth2-client-credentials__failure__browser__route-off"
-    },
-    {
-      "idStem": "auth__auth-http-oauth2-client-credentials__failure__browser",
-      "suite": "authentication",
-      "executionMode": "browser",
       "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
@@ -861,37 +431,6 @@
       "shard": "authentication",
       "authOutcome": "failure",
       "id": "auth__auth-http-oauth2-client-credentials__failure__browser__route-on"
-    },
-    {
-      "idStem": "auth__auth-http-session-login__success__browser",
-      "suite": "authentication",
-      "executionMode": "browser",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "session_login"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "auth.http.session_login",
-        "source.http_api_polling",
-        "wizard.feature.connection_auth_test",
-        "destination.webhook_post"
-      ],
-      "fixture": "auth/session_login/success",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "success",
-        "shard:authentication",
-        "browser",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "success",
-      "id": "auth__auth-http-session-login__success__browser__route-off"
     },
     {
       "idStem": "auth__auth-http-session-login__success__browser",
@@ -928,37 +467,6 @@
       "idStem": "auth__auth-http-session-login__success__api_seeded",
       "suite": "authentication",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "session_login"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "auth.http.session_login",
-        "source.http_api_polling",
-        "wizard.feature.connection_auth_test",
-        "destination.webhook_post"
-      ],
-      "fixture": "auth/session_login/success",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "success",
-        "shard:authentication",
-        "api_seeded",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "success",
-      "id": "auth__auth-http-session-login__success__api_seeded__route-off"
-    },
-    {
-      "idStem": "auth__auth-http-session-login__success__api_seeded",
-      "suite": "authentication",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
@@ -990,36 +498,6 @@
       "idStem": "auth__auth-http-session-login__failure__browser",
       "suite": "authentication",
       "executionMode": "browser",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "session_login",
-        "variant": "bad_credentials"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "auth.http.session_login",
-        "source.http_api_polling",
-        "wizard.feature.connection_auth_test"
-      ],
-      "fixture": "auth/session_login/failure",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "failure",
-        "shard:authentication",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "failure",
-      "id": "auth__auth-http-session-login__failure__browser__route-off"
-    },
-    {
-      "idStem": "auth__auth-http-session-login__failure__browser",
-      "suite": "authentication",
-      "executionMode": "browser",
       "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
@@ -1045,37 +523,6 @@
       "shard": "authentication",
       "authOutcome": "failure",
       "id": "auth__auth-http-session-login__failure__browser__route-on"
-    },
-    {
-      "idStem": "auth__auth-http-jwt-refresh-token__success__browser",
-      "suite": "authentication",
-      "executionMode": "browser",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "jwt_refresh_token"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "auth.http.jwt_refresh_token",
-        "source.http_api_polling",
-        "wizard.feature.connection_auth_test",
-        "destination.webhook_post"
-      ],
-      "fixture": "auth/jwt_refresh_token/success",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "success",
-        "shard:authentication",
-        "browser",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "success",
-      "id": "auth__auth-http-jwt-refresh-token__success__browser__route-off"
     },
     {
       "idStem": "auth__auth-http-jwt-refresh-token__success__browser",
@@ -1112,37 +559,6 @@
       "idStem": "auth__auth-http-jwt-refresh-token__success__api_seeded",
       "suite": "authentication",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "jwt_refresh_token"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "auth.http.jwt_refresh_token",
-        "source.http_api_polling",
-        "wizard.feature.connection_auth_test",
-        "destination.webhook_post"
-      ],
-      "fixture": "auth/jwt_refresh_token/success",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "success",
-        "shard:authentication",
-        "api_seeded",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "success",
-      "id": "auth__auth-http-jwt-refresh-token__success__api_seeded__route-off"
-    },
-    {
-      "idStem": "auth__auth-http-jwt-refresh-token__success__api_seeded",
-      "suite": "authentication",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
@@ -1174,36 +590,6 @@
       "idStem": "auth__auth-http-jwt-refresh-token__failure__browser",
       "suite": "authentication",
       "executionMode": "browser",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "jwt_refresh_token",
-        "variant": "bad_credentials"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "auth.http.jwt_refresh_token",
-        "source.http_api_polling",
-        "wizard.feature.connection_auth_test"
-      ],
-      "fixture": "auth/jwt_refresh_token/failure",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "failure",
-        "shard:authentication",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "failure",
-      "id": "auth__auth-http-jwt-refresh-token__failure__browser__route-off"
-    },
-    {
-      "idStem": "auth__auth-http-jwt-refresh-token__failure__browser",
-      "suite": "authentication",
-      "executionMode": "browser",
       "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
@@ -1229,37 +615,6 @@
       "shard": "authentication",
       "authOutcome": "failure",
       "id": "auth__auth-http-jwt-refresh-token__failure__browser__route-on"
-    },
-    {
-      "idStem": "auth__auth-http-vendor-jwt-exchange__success__browser",
-      "suite": "authentication",
-      "executionMode": "browser",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "vendor_jwt_exchange"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "auth.http.vendor_jwt_exchange",
-        "source.http_api_polling",
-        "wizard.feature.connection_auth_test",
-        "destination.webhook_post"
-      ],
-      "fixture": "auth/vendor_jwt_exchange/success",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "success",
-        "shard:authentication",
-        "browser",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "success",
-      "id": "auth__auth-http-vendor-jwt-exchange__success__browser__route-off"
     },
     {
       "idStem": "auth__auth-http-vendor-jwt-exchange__success__browser",
@@ -1296,37 +651,6 @@
       "idStem": "auth__auth-http-vendor-jwt-exchange__success__api_seeded",
       "suite": "authentication",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "vendor_jwt_exchange"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "auth.http.vendor_jwt_exchange",
-        "source.http_api_polling",
-        "wizard.feature.connection_auth_test",
-        "destination.webhook_post"
-      ],
-      "fixture": "auth/vendor_jwt_exchange/success",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "success",
-        "shard:authentication",
-        "api_seeded",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "success",
-      "id": "auth__auth-http-vendor-jwt-exchange__success__api_seeded__route-off"
-    },
-    {
-      "idStem": "auth__auth-http-vendor-jwt-exchange__success__api_seeded",
-      "suite": "authentication",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
@@ -1358,36 +682,6 @@
       "idStem": "auth__auth-http-vendor-jwt-exchange__failure__browser",
       "suite": "authentication",
       "executionMode": "browser",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "vendor_jwt_exchange",
-        "variant": "bad_credentials"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "auth.http.vendor_jwt_exchange",
-        "source.http_api_polling",
-        "wizard.feature.connection_auth_test"
-      ],
-      "fixture": "auth/vendor_jwt_exchange/failure",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "failure",
-        "shard:authentication",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "failure",
-      "id": "auth__auth-http-vendor-jwt-exchange__failure__browser__route-off"
-    },
-    {
-      "idStem": "auth__auth-http-vendor-jwt-exchange__failure__browser",
-      "suite": "authentication",
-      "executionMode": "browser",
       "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
@@ -1413,37 +707,6 @@
       "shard": "authentication",
       "authOutcome": "failure",
       "id": "auth__auth-http-vendor-jwt-exchange__failure__browser__route-on"
-    },
-    {
-      "idStem": "auth__auth-s3-access-key-secret__success__browser",
-      "suite": "authentication",
-      "executionMode": "browser",
-      "routeProcessing": "off",
-      "source": {
-        "type": "S3_OBJECT_POLLING",
-        "authentication": "s3_keys"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "auth.s3.access_key_secret",
-        "source.s3_object_polling",
-        "wizard.feature.connection_auth_test",
-        "destination.webhook_post"
-      ],
-      "fixture": "auth/s3_keys/success",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "success",
-        "shard:authentication",
-        "browser",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "success",
-      "id": "auth__auth-s3-access-key-secret__success__browser__route-off"
     },
     {
       "idStem": "auth__auth-s3-access-key-secret__success__browser",
@@ -1480,37 +743,6 @@
       "idStem": "auth__auth-s3-access-key-secret__success__api_seeded",
       "suite": "authentication",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "S3_OBJECT_POLLING",
-        "authentication": "s3_keys"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "auth.s3.access_key_secret",
-        "source.s3_object_polling",
-        "wizard.feature.connection_auth_test",
-        "destination.webhook_post"
-      ],
-      "fixture": "auth/s3_keys/success",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "success",
-        "shard:authentication",
-        "api_seeded",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "success",
-      "id": "auth__auth-s3-access-key-secret__success__api_seeded__route-off"
-    },
-    {
-      "idStem": "auth__auth-s3-access-key-secret__success__api_seeded",
-      "suite": "authentication",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "S3_OBJECT_POLLING",
@@ -1542,36 +774,6 @@
       "idStem": "auth__auth-s3-access-key-secret__failure__browser",
       "suite": "authentication",
       "executionMode": "browser",
-      "routeProcessing": "off",
-      "source": {
-        "type": "S3_OBJECT_POLLING",
-        "authentication": "s3_keys",
-        "variant": "bad_credentials"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "auth.s3.access_key_secret",
-        "source.s3_object_polling",
-        "wizard.feature.connection_auth_test"
-      ],
-      "fixture": "auth/s3_keys/failure",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "failure",
-        "shard:authentication",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "failure",
-      "id": "auth__auth-s3-access-key-secret__failure__browser__route-off"
-    },
-    {
-      "idStem": "auth__auth-s3-access-key-secret__failure__browser",
-      "suite": "authentication",
-      "executionMode": "browser",
       "routeProcessing": "on",
       "source": {
         "type": "S3_OBJECT_POLLING",
@@ -1597,37 +799,6 @@
       "shard": "authentication",
       "authOutcome": "failure",
       "id": "auth__auth-s3-access-key-secret__failure__browser__route-on"
-    },
-    {
-      "idStem": "auth__auth-database-username-password__success__browser",
-      "suite": "authentication",
-      "executionMode": "browser",
-      "routeProcessing": "off",
-      "source": {
-        "type": "DATABASE_QUERY",
-        "authentication": "db_password"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "auth.database.username_password",
-        "source.database_query_postgresql",
-        "wizard.feature.connection_auth_test",
-        "destination.webhook_post"
-      ],
-      "fixture": "auth/db_password/success",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "success",
-        "shard:authentication",
-        "browser",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "success",
-      "id": "auth__auth-database-username-password__success__browser__route-off"
     },
     {
       "idStem": "auth__auth-database-username-password__success__browser",
@@ -1664,37 +835,6 @@
       "idStem": "auth__auth-database-username-password__success__api_seeded",
       "suite": "authentication",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "DATABASE_QUERY",
-        "authentication": "db_password"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "auth.database.username_password",
-        "source.database_query_postgresql",
-        "wizard.feature.connection_auth_test",
-        "destination.webhook_post"
-      ],
-      "fixture": "auth/db_password/success",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "success",
-        "shard:authentication",
-        "api_seeded",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "success",
-      "id": "auth__auth-database-username-password__success__api_seeded__route-off"
-    },
-    {
-      "idStem": "auth__auth-database-username-password__success__api_seeded",
-      "suite": "authentication",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "DATABASE_QUERY",
@@ -1726,36 +866,6 @@
       "idStem": "auth__auth-database-username-password__failure__browser",
       "suite": "authentication",
       "executionMode": "browser",
-      "routeProcessing": "off",
-      "source": {
-        "type": "DATABASE_QUERY",
-        "authentication": "db_password",
-        "variant": "bad_credentials"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "auth.database.username_password",
-        "source.database_query_postgresql",
-        "wizard.feature.connection_auth_test"
-      ],
-      "fixture": "auth/db_password/failure",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "failure",
-        "shard:authentication",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "failure",
-      "id": "auth__auth-database-username-password__failure__browser__route-off"
-    },
-    {
-      "idStem": "auth__auth-database-username-password__failure__browser",
-      "suite": "authentication",
-      "executionMode": "browser",
       "routeProcessing": "on",
       "source": {
         "type": "DATABASE_QUERY",
@@ -1781,37 +891,6 @@
       "shard": "authentication",
       "authOutcome": "failure",
       "id": "auth__auth-database-username-password__failure__browser__route-on"
-    },
-    {
-      "idStem": "auth__auth-remote-file-ssh-password-or-key__success__browser",
-      "suite": "authentication",
-      "executionMode": "browser",
-      "routeProcessing": "off",
-      "source": {
-        "type": "REMOTE_FILE_POLLING",
-        "authentication": "ssh"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "auth.remote_file.ssh_password_or_key",
-        "source.remote_file_polling",
-        "wizard.feature.connection_auth_test",
-        "destination.webhook_post"
-      ],
-      "fixture": "auth/ssh/success",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "success",
-        "shard:authentication",
-        "browser",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "success",
-      "id": "auth__auth-remote-file-ssh-password-or-key__success__browser__route-off"
     },
     {
       "idStem": "auth__auth-remote-file-ssh-password-or-key__success__browser",
@@ -1848,37 +927,6 @@
       "idStem": "auth__auth-remote-file-ssh-password-or-key__success__api_seeded",
       "suite": "authentication",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "REMOTE_FILE_POLLING",
-        "authentication": "ssh"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "auth.remote_file.ssh_password_or_key",
-        "source.remote_file_polling",
-        "wizard.feature.connection_auth_test",
-        "destination.webhook_post"
-      ],
-      "fixture": "auth/ssh/success",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "success",
-        "shard:authentication",
-        "api_seeded",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "success",
-      "id": "auth__auth-remote-file-ssh-password-or-key__success__api_seeded__route-off"
-    },
-    {
-      "idStem": "auth__auth-remote-file-ssh-password-or-key__success__api_seeded",
-      "suite": "authentication",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "REMOTE_FILE_POLLING",
@@ -1910,36 +958,6 @@
       "idStem": "auth__auth-remote-file-ssh-password-or-key__failure__browser",
       "suite": "authentication",
       "executionMode": "browser",
-      "routeProcessing": "off",
-      "source": {
-        "type": "REMOTE_FILE_POLLING",
-        "authentication": "ssh",
-        "variant": "bad_credentials"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "auth.remote_file.ssh_password_or_key",
-        "source.remote_file_polling",
-        "wizard.feature.connection_auth_test"
-      ],
-      "fixture": "auth/ssh/failure",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "failure",
-        "shard:authentication",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "failure",
-      "id": "auth__auth-remote-file-ssh-password-or-key__failure__browser__route-off"
-    },
-    {
-      "idStem": "auth__auth-remote-file-ssh-password-or-key__failure__browser",
-      "suite": "authentication",
-      "executionMode": "browser",
       "routeProcessing": "on",
       "source": {
         "type": "REMOTE_FILE_POLLING",
@@ -1965,37 +983,6 @@
       "shard": "authentication",
       "authOutcome": "failure",
       "id": "auth__auth-remote-file-ssh-password-or-key__failure__browser__route-on"
-    },
-    {
-      "idStem": "auth__auth-webhook-receiver-inbound__success__browser",
-      "suite": "authentication",
-      "executionMode": "browser",
-      "routeProcessing": "off",
-      "source": {
-        "type": "WEBHOOK_RECEIVER",
-        "authentication": "inbound"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "auth.webhook_receiver.inbound",
-        "source.webhook_receiver",
-        "wizard.feature.connection_auth_test",
-        "destination.webhook_post"
-      ],
-      "fixture": "auth/inbound/success",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "success",
-        "shard:authentication",
-        "browser",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "success",
-      "id": "auth__auth-webhook-receiver-inbound__success__browser__route-off"
     },
     {
       "idStem": "auth__auth-webhook-receiver-inbound__success__browser",
@@ -2032,37 +1019,6 @@
       "idStem": "auth__auth-webhook-receiver-inbound__success__api_seeded",
       "suite": "authentication",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "WEBHOOK_RECEIVER",
-        "authentication": "inbound"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "auth.webhook_receiver.inbound",
-        "source.webhook_receiver",
-        "wizard.feature.connection_auth_test",
-        "destination.webhook_post"
-      ],
-      "fixture": "auth/inbound/success",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "success",
-        "shard:authentication",
-        "api_seeded",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "success",
-      "id": "auth__auth-webhook-receiver-inbound__success__api_seeded__route-off"
-    },
-    {
-      "idStem": "auth__auth-webhook-receiver-inbound__success__api_seeded",
-      "suite": "authentication",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "WEBHOOK_RECEIVER",
@@ -2089,38 +1045,6 @@
       "shard": "authentication",
       "authOutcome": "success",
       "id": "auth__auth-webhook-receiver-inbound__success__api_seeded__route-on"
-    },
-    {
-      "idStem": "auth__auth-destination-syslog-tls-client-cert__success__browser",
-      "suite": "authentication",
-      "executionMode": "browser",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "SYSLOG_TLS",
-        "authentication": "mtls"
-      },
-      "capabilities": [
-        "auth.destination.syslog_tls_client_cert",
-        "destination.syslog_tls",
-        "wizard.feature.connection_auth_test",
-        "destination.webhook_post"
-      ],
-      "fixture": "auth/mtls/success",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "success",
-        "shard:authentication",
-        "browser",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "success",
-      "id": "auth__auth-destination-syslog-tls-client-cert__success__browser__route-off"
     },
     {
       "idStem": "auth__auth-destination-syslog-tls-client-cert__success__browser",
@@ -2158,38 +1082,6 @@
       "idStem": "auth__auth-destination-syslog-tls-client-cert__success__api_seeded",
       "suite": "authentication",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "SYSLOG_TLS",
-        "authentication": "mtls"
-      },
-      "capabilities": [
-        "auth.destination.syslog_tls_client_cert",
-        "destination.syslog_tls",
-        "wizard.feature.connection_auth_test",
-        "destination.webhook_post"
-      ],
-      "fixture": "auth/mtls/success",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "success",
-        "shard:authentication",
-        "api_seeded",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "success",
-      "id": "auth__auth-destination-syslog-tls-client-cert__success__api_seeded__route-off"
-    },
-    {
-      "idStem": "auth__auth-destination-syslog-tls-client-cert__success__api_seeded",
-      "suite": "authentication",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
@@ -2222,33 +1114,6 @@
       "idStem": "auth__auth-destination-syslog-tls-client-cert__failure__browser",
       "suite": "authentication",
       "executionMode": "browser",
-      "routeProcessing": "off",
-      "destination": {
-        "type": "SYSLOG_TLS",
-        "authentication": "mtls",
-        "variant": "bad_credentials"
-      },
-      "capabilities": [
-        "auth.destination.syslog_tls_client_cert",
-        "destination.syslog_tls",
-        "wizard.feature.connection_auth_test"
-      ],
-      "fixture": "auth/mtls/failure",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "failure",
-        "shard:authentication",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "failure",
-      "id": "auth__auth-destination-syslog-tls-client-cert__failure__browser__route-off"
-    },
-    {
-      "idStem": "auth__auth-destination-syslog-tls-client-cert__failure__browser",
-      "suite": "authentication",
-      "executionMode": "browser",
       "routeProcessing": "on",
       "destination": {
         "type": "SYSLOG_TLS",
@@ -2276,7 +1141,7 @@
       "id": "auth__auth-destination-webhook-headers__status-partial",
       "suite": "authentication",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
+      "routeProcessing": "on",
       "destination": {
         "type": "WEBHOOK_POST",
         "authentication": "auth-destination-webhook-headers"
@@ -2294,37 +1159,6 @@
       ],
       "shard": "authentication",
       "authOutcome": "success"
-    },
-    {
-      "idStem": "auth__auth-ai-provider-api-key-or-bearer__success__browser",
-      "suite": "authentication",
-      "executionMode": "browser",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "AI_PROVIDER_POST",
-        "authentication": "ai_provider"
-      },
-      "capabilities": [
-        "auth.ai_provider.api_key_or_bearer",
-        "wizard.feature.connection_auth_test",
-        "destination.webhook_post"
-      ],
-      "fixture": "auth/ai_provider/success",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "success",
-        "shard:authentication",
-        "browser",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "success",
-      "id": "auth__auth-ai-provider-api-key-or-bearer__success__browser__route-off"
     },
     {
       "idStem": "auth__auth-ai-provider-api-key-or-bearer__success__browser",
@@ -2361,37 +1195,6 @@
       "idStem": "auth__auth-ai-provider-api-key-or-bearer__success__api_seeded",
       "suite": "authentication",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "AI_PROVIDER_POST",
-        "authentication": "ai_provider"
-      },
-      "capabilities": [
-        "auth.ai_provider.api_key_or_bearer",
-        "wizard.feature.connection_auth_test",
-        "destination.webhook_post"
-      ],
-      "fixture": "auth/ai_provider/success",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "success",
-        "shard:authentication",
-        "api_seeded",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "success",
-      "id": "auth__auth-ai-provider-api-key-or-bearer__success__api_seeded__route-off"
-    },
-    {
-      "idStem": "auth__auth-ai-provider-api-key-or-bearer__success__api_seeded",
-      "suite": "authentication",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
@@ -2418,32 +1221,6 @@
       "shard": "authentication",
       "authOutcome": "success",
       "id": "auth__auth-ai-provider-api-key-or-bearer__success__api_seeded__route-on"
-    },
-    {
-      "idStem": "auth__auth-ai-provider-api-key-or-bearer__failure__browser",
-      "suite": "authentication",
-      "executionMode": "browser",
-      "routeProcessing": "off",
-      "destination": {
-        "type": "AI_PROVIDER_POST",
-        "authentication": "ai_provider",
-        "variant": "bad_credentials"
-      },
-      "capabilities": [
-        "auth.ai_provider.api_key_or_bearer",
-        "wizard.feature.connection_auth_test"
-      ],
-      "fixture": "auth/ai_provider/failure",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "failure",
-        "shard:authentication",
-        "route-off"
-      ],
-      "shard": "authentication",
-      "authOutcome": "failure",
-      "id": "auth__auth-ai-provider-api-key-or-bearer__failure__browser__route-off"
     },
     {
       "idStem": "auth__auth-ai-provider-api-key-or-bearer__failure__browser",
@@ -2482,17 +1259,17 @@
     }
   ],
   "counts": {
-    "total": 81,
-    "browser": 52,
-    "api_seeded": 29,
-    "route_off": 41,
-    "route_on": 40,
+    "total": 41,
+    "browser": 26,
+    "api_seeded": 15,
+    "route_off": 0,
+    "route_on": 41,
     "route_both": 0,
     "by_suite": {
-      "authentication": 81
+      "authentication": 41
     },
     "by_expected_status": {
-      "PASS": 80,
+      "PASS": 40,
       "NOT_IMPLEMENTED": 1
     }
   }
