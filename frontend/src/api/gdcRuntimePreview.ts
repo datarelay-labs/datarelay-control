@@ -446,3 +446,39 @@ export async function runDeliveryPrefixFormatPreview(
     body: JSON.stringify(payload),
   })
 }
+
+/** Sample event used by Route Edit delivery preview (no live send). */
+export const ROUTE_DELIVERY_PREVIEW_SAMPLE_EVENT: Record<string, unknown> = {
+  event_id: 'route-edit-preview',
+  message: 'Route delivery preview sample (not sent)',
+}
+
+export type RouteDeliveryPreviewRequest = {
+  route_id: number
+  events: Array<Record<string, unknown>>
+}
+
+export type RouteDeliveryPreviewResponse = {
+  route_id: number
+  destination_id: number
+  destination_type: string
+  route_enabled: boolean
+  destination_enabled: boolean
+  message_count: number
+  resolved_formatter_config: Record<string, unknown>
+  preview_messages: unknown[]
+}
+
+/**
+ * DB-backed route delivery preview: formats sender-ready payloads from the
+ * persisted route/destination. Does not send, write delivery logs, or mutate
+ * runtime state.
+ */
+export async function runRouteDeliveryPreview(
+  payload: RouteDeliveryPreviewRequest,
+): Promise<RouteDeliveryPreviewResponse> {
+  return requestJson<RouteDeliveryPreviewResponse>(`${RT}/preview/route-delivery`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
