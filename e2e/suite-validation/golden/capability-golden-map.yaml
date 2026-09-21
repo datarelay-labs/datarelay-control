@@ -869,13 +869,11 @@ mappings:
     - G-ROUTE-OVERRIDE
     - G-ROUTE-PROT-DIFF
     optional_golden_ids:
-    - G-ROUTE-OFF
     - G-ROUTE-ON
     coverage_type:
     - positive
     - mutation
     route_modes:
-    - ROUTE_OFF
     - ROUTE_ON
     evidence_required: true
     rationale: PARTIAL capability with explicit golden coverage

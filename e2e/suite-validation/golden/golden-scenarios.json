@@ -51,7 +51,7 @@
         "CAP-SRC-HTTP",
         "CAP-AUTH-NONE"
       ],
-      "rationale": "\uace0\uc815 credential\uc73c\ub85c \uc778\uc99d \uc131\uacf5 \uacbd\ub85c \uac80\uc99d",
+      "rationale": "고정 credential으로 인증 성공 경로 검증",
       "manual_review_status": "reviewed",
       "routes": [
         {
@@ -116,7 +116,7 @@
         "CAP-SRC-HTTP",
         "CAP-AUTH-BASIC"
       ],
-      "rationale": "\uace0\uc815 credential\uc73c\ub85c \uc778\uc99d \uc131\uacf5 \uacbd\ub85c \uac80\uc99d",
+      "rationale": "고정 credential으로 인증 성공 경로 검증",
       "manual_review_status": "reviewed",
       "routes": [
         {
@@ -181,7 +181,7 @@
         "CAP-SRC-HTTP",
         "CAP-AUTH-BEARER"
       ],
-      "rationale": "\uace0\uc815 credential\uc73c\ub85c \uc778\uc99d \uc131\uacf5 \uacbd\ub85c \uac80\uc99d",
+      "rationale": "고정 credential으로 인증 성공 경로 검증",
       "manual_review_status": "reviewed",
       "routes": [
         {
@@ -246,7 +246,7 @@
         "CAP-SRC-HTTP",
         "CAP-AUTH-APIKEY"
       ],
-      "rationale": "\uace0\uc815 credential\uc73c\ub85c \uc778\uc99d \uc131\uacf5 \uacbd\ub85c \uac80\uc99d",
+      "rationale": "고정 credential으로 인증 성공 경로 검증",
       "manual_review_status": "reviewed",
       "routes": [
         {
@@ -311,7 +311,7 @@
         "CAP-SRC-HTTP",
         "CAP-AUTH-APIKEY"
       ],
-      "rationale": "\uace0\uc815 credential\uc73c\ub85c \uc778\uc99d \uc131\uacf5 \uacbd\ub85c \uac80\uc99d",
+      "rationale": "고정 credential으로 인증 성공 경로 검증",
       "manual_review_status": "reviewed",
       "routes": [
         {
@@ -378,7 +378,7 @@
         "CAP-SRC-PG",
         "CAP-AUTH-DB"
       ],
-      "rationale": "\uace0\uc815 credential\uc73c\ub85c \uc778\uc99d \uc131\uacf5 \uacbd\ub85c \uac80\uc99d",
+      "rationale": "고정 credential으로 인증 성공 경로 검증",
       "manual_review_status": "reviewed",
       "routes": [
         {
@@ -445,7 +445,7 @@
         "CAP-SRC-S3",
         "CAP-AUTH-S3"
       ],
-      "rationale": "\uace0\uc815 credential\uc73c\ub85c \uc778\uc99d \uc131\uacf5 \uacbd\ub85c \uac80\uc99d",
+      "rationale": "고정 credential으로 인증 성공 경로 검증",
       "manual_review_status": "reviewed",
       "routes": [
         {
@@ -512,7 +512,7 @@
         "CAP-SRC-SFTP",
         "CAP-AUTH-SSH"
       ],
-      "rationale": "\uace0\uc815 credential\uc73c\ub85c \uc778\uc99d \uc131\uacf5 \uacbd\ub85c \uac80\uc99d",
+      "rationale": "고정 credential으로 인증 성공 경로 검증",
       "manual_review_status": "reviewed",
       "routes": [
         {
@@ -528,7 +528,7 @@
     },
     {
       "golden_id": "G-AUTH-WEBHOOK",
-      "purpose": "Webhook Receiver \uc778\uc99d",
+      "purpose": "Webhook Receiver 인증",
       "category": "source_auth",
       "source_type": "WEBHOOK_RECEIVER",
       "source_auth": "webhook_receiver",
@@ -577,7 +577,7 @@
         "CAP-SRC-WEBHOOK",
         "CAP-AUTH-INBOUND"
       ],
-      "rationale": "\uace0\uc815 credential\uc73c\ub85c \uc778\uc99d \uc131\uacf5 \uacbd\ub85c \uac80\uc99d",
+      "rationale": "고정 credential으로 인증 성공 경로 검증",
       "manual_review_status": "reviewed",
       "routes": [
         {
@@ -638,7 +638,7 @@
       "capability_ids": [
         "CAP-DST-WEBHOOK_POST"
       ],
-      "rationale": "destination \ud0c0\uc785\ubcc4 \uc804\ub2ec \uacc4\uc57d",
+      "rationale": "destination 타입별 전달 계약",
       "manual_review_status": "reviewed",
       "routes": [
         {
@@ -699,7 +699,7 @@
       "capability_ids": [
         "CAP-DST-SYSLOG_UDP"
       ],
-      "rationale": "destination \ud0c0\uc785\ubcc4 \uc804\ub2ec \uacc4\uc57d",
+      "rationale": "destination 타입별 전달 계약",
       "manual_review_status": "reviewed",
       "routes": [
         {
@@ -760,7 +760,7 @@
       "capability_ids": [
         "CAP-DST-SYSLOG_TCP"
       ],
-      "rationale": "destination \ud0c0\uc785\ubcc4 \uc804\ub2ec \uacc4\uc57d",
+      "rationale": "destination 타입별 전달 계약",
       "manual_review_status": "reviewed",
       "routes": [
         {
@@ -821,7 +821,7 @@
       "capability_ids": [
         "CAP-DST-SYSLOG_TLS"
       ],
-      "rationale": "destination \ud0c0\uc785\ubcc4 \uc804\ub2ec \uacc4\uc57d",
+      "rationale": "destination 타입별 전달 계약",
       "manual_review_status": "reviewed",
       "routes": [
         {
@@ -886,7 +886,7 @@
       "capability_ids": [
         "CAP-TF-MAP"
       ],
-      "rationale": "\ud544\ub4dc \ub9e4\ud551",
+      "rationale": "필드 매핑",
       "manual_review_status": "reviewed",
       "routes": [
         {
@@ -902,7 +902,7 @@
     },
     {
       "golden_id": "G-TF-JSONATA-SINGLE",
-      "purpose": "JSONata \ub2e8\uc77c \ud544\ub4dc",
+      "purpose": "JSONata 단일 필드",
       "category": "transform",
       "source_type": "HTTP_API_POLLING",
       "source_auth": "no_auth",
@@ -967,7 +967,7 @@
     },
     {
       "golden_id": "G-TF-JSONATA-NESTED",
-      "purpose": "JSONata \uc911\ucca9 \uac1d\uccb4",
+      "purpose": "JSONata 중첩 객체",
       "category": "transform",
       "source_type": "HTTP_API_POLLING",
       "source_auth": "no_auth",
@@ -1032,7 +1032,7 @@
     },
     {
       "golden_id": "G-TF-JSONATA-ARRAY",
-      "purpose": "JSONata \ubc30\uc5f4 \ucc98\ub9ac",
+      "purpose": "JSONata 배열 처리",
       "category": "transform",
       "source_type": "HTTP_API_POLLING",
       "source_auth": "no_auth",
@@ -1229,7 +1229,7 @@
     },
     {
       "golden_id": "G-TF-TS-UTC",
-      "purpose": "Timestamp UTC \uc785\ub825",
+      "purpose": "Timestamp UTC 입력",
       "category": "transform",
       "source_type": "HTTP_API_POLLING",
       "source_auth": "no_auth",
@@ -1294,7 +1294,7 @@
     },
     {
       "golden_id": "G-TF-TS-OFFSET",
-      "purpose": "Timestamp offset \uc785\ub825",
+      "purpose": "Timestamp offset 입력",
       "category": "transform",
       "source_type": "HTTP_API_POLLING",
       "source_auth": "no_auth",
@@ -1359,7 +1359,7 @@
     },
     {
       "golden_id": "G-TF-TS-INVALID",
-      "purpose": "Timestamp invalid \uc785\ub825",
+      "purpose": "Timestamp invalid 입력",
       "category": "transform",
       "source_type": "HTTP_API_POLLING",
       "source_auth": "no_auth",
@@ -2156,7 +2156,7 @@
     },
     {
       "golden_id": "G-ROUTE-INHERIT",
-      "purpose": "Global Mapping \uc0c1\uc18d",
+      "purpose": "Global Mapping 상속",
       "category": "route",
       "source_type": "HTTP_API_POLLING",
       "source_auth": "no_auth",
@@ -2297,7 +2297,7 @@
     },
     {
       "golden_id": "G-ROUTE-AB-DIFF",
-      "purpose": "Destination A/B \uc11c\ub85c \ub2e4\ub978 \uacb0\uacfc",
+      "purpose": "Destination A/B 서로 다른 결과",
       "category": "route",
       "source_type": "HTTP_API_POLLING",
       "source_auth": "no_auth",
@@ -2440,7 +2440,7 @@
     },
     {
       "golden_id": "G-ROUTE-PROT-DIFF",
-      "purpose": "Route\ubcc4 Protection \ucc28\ub4f1 \uc801\uc6a9",
+      "purpose": "Route별 Protection 차등 적용",
       "category": "route",
       "source_type": "HTTP_API_POLLING",
       "source_auth": "no_auth",
@@ -2499,66 +2499,6 @@
       "expected_runtime_config": "golden-expected/G-ROUTE-PROT-DIFF.runtime.json",
       "expected_delivery_log": "golden-expected/G-ROUTE-PROT-DIFF.delivery.json",
       "expected_collector_payload": "golden-expected/G-ROUTE-PROT-DIFF.collector.json"
-    },
-    {
-      "golden_id": "G-ROUTE-OFF",
-      "purpose": "route-off",
-      "category": "route",
-      "source_type": "HTTP_API_POLLING",
-      "source_auth": "no_auth",
-      "stream_config": {
-        "auth": {
-          "auth_type": "no_auth",
-          "headers": {},
-          "query": {}
-        }
-      },
-      "global_transform": {},
-      "route_transform": {},
-      "governance_policy": {
-        "schema_fields": [
-          "event_id",
-          "host",
-          "message",
-          "event_time",
-          "email",
-          "ssn",
-          "map_src_host",
-          "items",
-          "status_code",
-          "host_mapped",
-          "jsonata_out",
-          "event_time_normalized",
-          "e2e_correlation_id",
-          "nested_out"
-        ],
-        "schema_drift": "allow",
-        "unknown_field": "pass_through",
-        "confidential_detection": false,
-        "protection": "none"
-      },
-      "destination_type": "WEBHOOK_POST",
-      "route_mode": "route-off",
-      "expected_no_delivery": false,
-      "verification_fields": [
-        "route_key"
-      ],
-      "capability_ids": [
-        "CAP-ROUTE-MODE"
-      ],
-      "rationale": "route-off",
-      "manual_review_status": "reviewed",
-      "routes": [
-        {
-          "route_key": "route_a",
-          "destination_type": "WEBHOOK_POST",
-          "policy": "continue"
-        }
-      ],
-      "input_fixture": "golden-fixtures/G-ROUTE-OFF.json",
-      "expected_runtime_config": "golden-expected/G-ROUTE-OFF.runtime.json",
-      "expected_delivery_log": "golden-expected/G-ROUTE-OFF.delivery.json",
-      "expected_collector_payload": "golden-expected/G-ROUTE-OFF.collector.json"
     },
     {
       "golden_id": "G-ROUTE-ON",
@@ -2622,7 +2562,7 @@
     },
     {
       "golden_id": "G-RT-CHECKPOINT",
-      "purpose": "Checkpoint \uc804\uc9c4",
+      "purpose": "Checkpoint 전진",
       "category": "runtime",
       "source_type": "HTTP_API_POLLING",
       "source_auth": "no_auth",
@@ -2866,7 +2806,7 @@
     },
     {
       "golden_id": "G-RT-COLLECTOR-FAIL",
-      "purpose": "Collector \uc2e4\ud328",
+      "purpose": "Collector 실패",
       "category": "runtime",
       "source_type": "HTTP_API_POLLING",
       "source_auth": "no_auth",

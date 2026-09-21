@@ -119,8 +119,9 @@ function pushScenario(list: E2EScenario[], s: E2EScenario): void {
 }
 
 function expandRoute(mode: RouteProcessing): RouteProcessing[] {
-  if (mode === 'both') return ['off', 'on']
-  return [mode]
+  // Route-OFF retired — canonical Full Matrix is Route Processing ON only.
+  void mode
+  return ['on']
 }
 
 function withRouteVariants(base: Omit<E2EScenario, 'id'> & { idStem: string }): E2EScenario[] {
@@ -149,7 +150,7 @@ function buildAuthentication(
         id: `auth__${slug(auth.id)}__status-${auth.status.toLowerCase()}`,
         suite: 'authentication',
         executionMode: isTrue(auth.ui_supported) ? 'browser' : 'api_seeded',
-        routeProcessing: 'off',
+        routeProcessing: 'on',
         source: sourceType ? { type: sourceType, authentication: variant } : undefined,
         destination: destType ? { type: destType, authentication: variant } : undefined,
         capabilities: [auth.id],
@@ -189,7 +190,7 @@ function buildAuthentication(
           idStem: `auth__${slug(auth.id)}__success__${mode}`,
           suite: 'authentication',
           executionMode: mode,
-          routeProcessing: 'both',
+          routeProcessing: 'on',
           source: sourceType
             ? { type: sourceType, authentication: variant }
             : { type: DEFAULT_SOURCE, authentication: DEFAULT_HTTP_AUTH },
@@ -217,7 +218,7 @@ function buildAuthentication(
           idStem: `auth__${slug(auth.id)}__failure__${ui ? 'browser' : 'api_seeded'}`,
           suite: 'authentication',
           executionMode: ui ? 'browser' : 'api_seeded',
-          routeProcessing: 'both',
+          routeProcessing: 'on',
           source: sourceType
             ? { type: sourceType, authentication: variant, variant: 'bad_credentials' }
             : undefined,
@@ -256,7 +257,7 @@ function buildSourceDestination(
         id: `source__${slug(src.id)}__${src.status.toLowerCase()}`,
         suite: 'source',
         executionMode: 'api_seeded',
-        routeProcessing: 'off',
+        routeProcessing: 'on',
         capabilities: [src.id],
         fixture: `source/${slug(src.id)}`,
         expectedStatus: src.status === 'RUNTIME_ONLY' ? 'NOT_IMPLEMENTED' : 'NOT_IMPLEMENTED',
@@ -288,7 +289,7 @@ function buildSourceDestination(
         idStem: `source__${slug(src.id)}__lifecycle__${mode}`,
         suite: 'source',
         executionMode: mode,
-        routeProcessing: 'both',
+        routeProcessing: 'on',
         source: { type: srcType, authentication: defaultAuthForSource(srcType) },
         destination: { type: DEFAULT_DEST },
         capabilities: [
@@ -320,7 +321,7 @@ function buildSourceDestination(
         idStem: `srcdest__${slug(src.id)}__${slug(dest.id)}__api`,
         suite: 'destination',
         executionMode: 'api_seeded',
-        routeProcessing: 'both',
+        routeProcessing: 'on',
         source: { type: srcType, authentication: defaultAuthForSource(srcType) },
         destination: { type: destType },
         capabilities: [src.id, dest.id, 'runtime.health_metrics_audit_logs'],
@@ -345,7 +346,7 @@ function buildSourceDestination(
           idStem: `runtime__incremental__${slug(src.id)}`,
           suite: 'runtime',
           executionMode: 'api_seeded',
-          routeProcessing: 'both',
+          routeProcessing: 'on',
           source: { type: srcType, authentication: defaultAuthForSource(srcType) },
           destination: { type: DEFAULT_DEST },
           capabilities: [
@@ -368,7 +369,7 @@ function buildSourceDestination(
         idStem: `runtime__dedup__${slug(src.id)}`,
         suite: 'runtime',
         executionMode: isTrue(src.ui_supported) ? 'browser' : 'api_seeded',
-        routeProcessing: 'both',
+        routeProcessing: 'on',
         source: { type: srcType, authentication: defaultAuthForSource(srcType) },
         destination: { type: DEFAULT_DEST },
         capabilities: [src.id, 'wizard.feature.dedup', 'runtime.dedup', 'destination.webhook_post'],
@@ -381,10 +382,10 @@ function buildSourceDestination(
 
     // Scheduler representative (one per source family)
     pushScenario(scenarios, {
-      id: `runtime__scheduler__${slug(src.id)}__route-off`,
+      id: `runtime__scheduler__${slug(src.id)}__route-on`,
       suite: 'runtime',
       executionMode: 'api_seeded',
-      routeProcessing: 'off',
+      routeProcessing: 'on',
       source: { type: srcType, authentication: defaultAuthForSource(srcType) },
       destination: { type: DEFAULT_DEST },
       capabilities: [src.id, 'destination.webhook_post', 'runtime.health_metrics_audit_logs'],
@@ -401,10 +402,10 @@ function buildSourceDestination(
       if (!destType) continue
       for (const mode of isTrue(dest.ui_supported) ? (['browser', 'api_seeded'] as const) : (['api_seeded'] as const)) {
         pushScenario(scenarios, {
-          id: `dest__${slug(dest.id)}__lifecycle__${mode}__route-off`,
+          id: `dest__${slug(dest.id)}__lifecycle__${mode}__route-on`,
           suite: 'destination',
           executionMode: mode,
-          routeProcessing: 'off',
+          routeProcessing: 'on',
           source: { type: DEFAULT_SOURCE, authentication: DEFAULT_HTTP_AUTH },
           destination: { type: destType },
           capabilities: [dest.id, 'source.http_api_polling', 'wizard.step.destinations'],
@@ -419,7 +420,7 @@ function buildSourceDestination(
         id: `dest__${slug(dest.id)}__${dest.status.toLowerCase()}`,
         suite: 'destination',
         executionMode: 'api_seeded',
-        routeProcessing: 'off',
+        routeProcessing: 'on',
         capabilities: [dest.id],
         fixture: `destination/${slug(dest.id)}`,
         expectedStatus: 'NOT_IMPLEMENTED',
@@ -455,7 +456,7 @@ function buildProcessing(manifest: Manifest, scenarios: E2EScenario[], na: NotAp
         id: `processing__${slug(proc.id)}__${proc.status.toLowerCase()}`,
         suite: 'processing',
         executionMode: 'api_seeded',
-        routeProcessing: 'off',
+        routeProcessing: 'on',
         capabilities: [proc.id],
         fixture: `processing/${slug(proc.id)}`,
         expectedStatus: 'NOT_IMPLEMENTED',
@@ -474,7 +475,7 @@ function buildProcessing(manifest: Manifest, scenarios: E2EScenario[], na: NotAp
           idStem: `processing__${slug(proc.id)}__${mode}`,
           suite: 'processing',
           executionMode: mode,
-          routeProcessing: 'both',
+          routeProcessing: 'on',
           source: { type: DEFAULT_SOURCE, authentication: DEFAULT_HTTP_AUTH },
           destination: { type: DEFAULT_DEST },
           capabilities: [
@@ -499,7 +500,7 @@ function buildProcessing(manifest: Manifest, scenarios: E2EScenario[], na: NotAp
       idStem: 'wizard__union_schema__browser',
       suite: 'wizard',
       executionMode: 'browser',
-      routeProcessing: 'both',
+      routeProcessing: 'on',
       source: { type: DEFAULT_SOURCE, authentication: DEFAULT_HTTP_AUTH, variant: 'union_schema' },
       destination: { type: DEFAULT_DEST },
       capabilities: [
@@ -534,10 +535,10 @@ function buildWizard(manifest: Manifest, scenarios: E2EScenario[]): void {
   for (const wiz of manifest.wizard) {
     if (wiz.status === 'UI_ONLY') {
       pushScenario(scenarios, {
-        id: `wizard__${slug(wiz.id)}__ui_only__browser__route-off`,
+        id: `wizard__${slug(wiz.id)}__ui_only__browser__route-on`,
         suite: 'wizard',
         executionMode: 'browser',
-        routeProcessing: 'off',
+        routeProcessing: 'on',
         source: { type: DEFAULT_SOURCE, authentication: DEFAULT_HTTP_AUTH },
         destination: { type: DEFAULT_DEST },
         capabilities: [wiz.id, 'wizard.step.sample', 'source.http_api_polling'],
@@ -554,7 +555,7 @@ function buildWizard(manifest: Manifest, scenarios: E2EScenario[]): void {
         id: `wizard__${slug(wiz.id)}__${wiz.status.toLowerCase()}`,
         suite: 'wizard',
         executionMode: isTrue(wiz.ui_supported) ? 'browser' : 'api_seeded',
-        routeProcessing: 'off',
+        routeProcessing: 'on',
         capabilities: [wiz.id],
         fixture: `wizard/${slug(wiz.id)}`,
         expectedStatus: 'NOT_IMPLEMENTED',
@@ -573,10 +574,10 @@ function buildWizard(manifest: Manifest, scenarios: E2EScenario[]): void {
     }
 
     pushScenario(scenarios, {
-      id: `wizard__${slug(wiz.id)}__browser__route-off`,
+      id: `wizard__${slug(wiz.id)}__browser__route-on`,
       suite: 'wizard',
       executionMode: 'browser',
-      routeProcessing: 'off',
+      routeProcessing: 'on',
       source: { type: DEFAULT_SOURCE, authentication: DEFAULT_HTTP_AUTH },
       destination: { type: DEFAULT_DEST },
       capabilities: [wiz.id, 'source.http_api_polling', 'destination.webhook_post'],
@@ -595,7 +596,7 @@ function buildRoutes(manifest: Manifest, scenarios: E2EScenario[]): void {
         id: `route__${slug(route.id)}__${route.status.toLowerCase()}`,
         suite: 'route',
         executionMode: 'api_seeded',
-        routeProcessing: route.feature_flag === 'GDC_ROUTE_PROCESSING_ENABLED' ? 'on' : 'off',
+        routeProcessing: 'on',
         source: { type: DEFAULT_SOURCE, authentication: DEFAULT_HTTP_AUTH },
         destination: { type: DEFAULT_DEST },
         capabilities: [route.id],
@@ -613,7 +614,7 @@ function buildRoutes(manifest: Manifest, scenarios: E2EScenario[]): void {
         idStem: `route__${slug(route.id)}__api`,
         suite: 'route',
         executionMode: 'api_seeded',
-        routeProcessing: 'both',
+        routeProcessing: 'on',
         source: { type: DEFAULT_SOURCE, authentication: DEFAULT_HTTP_AUTH },
         destination: { type: 'WEBHOOK_POST', variant: 'multi_route' },
         capabilities: [
@@ -639,7 +640,7 @@ function buildRoutes(manifest: Manifest, scenarios: E2EScenario[]): void {
         idStem: `route__multi__${kind}__browser`,
         suite: 'route',
         executionMode: 'browser',
-        routeProcessing: 'both',
+        routeProcessing: 'on',
         source: { type: DEFAULT_SOURCE, authentication: DEFAULT_HTTP_AUTH },
         destination: { type: 'WEBHOOK_POST', variant: 'multi_route' },
         capabilities: [
@@ -670,7 +671,7 @@ function buildGovernance(manifest: Manifest, scenarios: E2EScenario[]): void {
         id: `governance__${slug(gov.id)}__${gov.status.toLowerCase()}`,
         suite: 'governance',
         executionMode: 'api_seeded',
-        routeProcessing: 'off',
+        routeProcessing: 'on',
         capabilities: [gov.id],
         fixture: `governance/${slug(gov.id)}`,
         expectedStatus: 'NOT_IMPLEMENTED',
@@ -706,7 +707,7 @@ function buildGovernance(manifest: Manifest, scenarios: E2EScenario[]): void {
           id: `governance__${action}__${behavior}__na`,
           suite: 'governance',
           executionMode: 'api_seeded',
-          routeProcessing: 'off',
+          routeProcessing: 'on',
           capabilities: [actionCap, behaviorCap].filter(Boolean),
           fixture: `governance/${action}/${behavior}`,
           expectedStatus: 'NOT_IMPLEMENTED',
@@ -727,7 +728,7 @@ function buildGovernance(manifest: Manifest, scenarios: E2EScenario[]): void {
           idStem: `governance__${action}__${behavior}__api`,
           suite: 'governance',
           executionMode: 'api_seeded',
-          routeProcessing: 'both',
+          routeProcessing: 'on',
           source: { type: DEFAULT_SOURCE, authentication: DEFAULT_HTTP_AUTH },
           destination: { type: DEFAULT_DEST },
           capabilities: [
@@ -762,7 +763,7 @@ function buildGovernance(manifest: Manifest, scenarios: E2EScenario[]): void {
         idStem: `${slug(id)}__browser`,
         suite: 'governance',
         executionMode: 'browser',
-        routeProcessing: 'both',
+        routeProcessing: 'on',
         source: { type: DEFAULT_SOURCE, authentication: DEFAULT_HTTP_AUTH },
         destination: { type: DEFAULT_DEST },
         capabilities: [
@@ -784,10 +785,10 @@ function buildGovernance(manifest: Manifest, scenarios: E2EScenario[]): void {
   for (const gov of manifest.governance.filter(isSupported)) {
     if (scenarios.some((s) => s.capabilities.includes(gov.id))) continue
     pushScenario(scenarios, {
-      id: `governance__${slug(gov.id)}__api__route-off`,
+      id: `governance__${slug(gov.id)}__api__route-on`,
       suite: 'governance',
       executionMode: 'api_seeded',
-      routeProcessing: 'off',
+      routeProcessing: 'on',
       source: { type: DEFAULT_SOURCE, authentication: DEFAULT_HTTP_AUTH },
       destination: { type: DEFAULT_DEST },
       capabilities: [gov.id, 'source.http_api_polling', 'destination.webhook_post'],
@@ -806,7 +807,7 @@ function buildRuntimeFault(manifest: Manifest, scenarios: E2EScenario[], na: Not
         id: `runtime__${slug(rt.id)}__${rt.status.toLowerCase()}`,
         suite: 'runtime',
         executionMode: 'api_seeded',
-        routeProcessing: 'off',
+        routeProcessing: 'on',
         capabilities: [rt.id],
         fixture: `runtime/${slug(rt.id)}`,
         expectedStatus: 'NOT_IMPLEMENTED',
@@ -818,10 +819,10 @@ function buildRuntimeFault(manifest: Manifest, scenarios: E2EScenario[], na: Not
     }
     if (scenarios.some((s) => s.capabilities.includes(rt.id))) continue
     pushScenario(scenarios, {
-      id: `runtime__${slug(rt.id)}__api__route-off`,
+      id: `runtime__${slug(rt.id)}__api__route-on`,
       suite: 'runtime',
       executionMode: 'api_seeded',
-      routeProcessing: 'off',
+      routeProcessing: 'on',
       source: { type: DEFAULT_SOURCE, authentication: DEFAULT_HTTP_AUTH },
       destination: { type: DEFAULT_DEST },
       capabilities: [rt.id, 'source.http_api_polling', 'destination.webhook_post'],
@@ -860,7 +861,7 @@ function buildRuntimeFault(manifest: Manifest, scenarios: E2EScenario[], na: Not
         idStem: `fault__${fault}__api`,
         suite: 'fault',
         executionMode: 'api_seeded',
-        routeProcessing: 'both',
+        routeProcessing: 'on',
         source: { type: applicableSource, authentication: defaultAuthForSource(applicableSource) },
         destination: { type: applicableDest },
         capabilities: [
@@ -906,7 +907,7 @@ function buildFlagsAndInfra(manifest: Manifest, scenarios: E2EScenario[]): void 
         id: `flag__${slug(flag.id)}__${flag.status.toLowerCase()}`,
         suite: 'runtime',
         executionMode: 'api_seeded',
-        routeProcessing: 'off',
+        routeProcessing: 'on',
         capabilities: [flag.id],
         fixture: `flag/${slug(flag.id)}`,
         expectedStatus: 'NOT_IMPLEMENTED',
@@ -918,10 +919,10 @@ function buildFlagsAndInfra(manifest: Manifest, scenarios: E2EScenario[]): void 
     }
     if (scenarios.some((s) => s.capabilities.includes(flag.id))) continue
     pushScenario(scenarios, {
-      id: `flag__${slug(flag.id)}__api__route-off`,
+      id: `flag__${slug(flag.id)}__api__route-on`,
       suite: 'runtime',
       executionMode: 'api_seeded',
-      routeProcessing: flag.id.includes('route_processing') ? 'both' : 'off',
+      routeProcessing: 'on',
       capabilities: [flag.id],
       fixture: `flag/${slug(flag.id)}`,
       expectedStatus: 'PASS',
@@ -930,21 +931,13 @@ function buildFlagsAndInfra(manifest: Manifest, scenarios: E2EScenario[]): void 
     })
   }
 
-  // Expand route-processing flag both
-  const routeFlag = scenarios.find((s) => s.id.startsWith('flag__flag-gdc-route-processing'))
-  if (routeFlag && routeFlag.routeProcessing === 'both') {
-    // replace with expanded
-    const idx = scenarios.indexOf(routeFlag)
-    scenarios.splice(idx, 1, ...withRouteVariants({ ...routeFlag, idStem: 'flag__flag-gdc-route-processing-enabled__api' }))
-  }
-
   for (const ti of manifest.test_infrastructure) {
     if (!isSupported(ti)) {
       pushScenario(scenarios, {
         id: `testinfra__${slug(ti.id)}__${ti.status.toLowerCase()}`,
         suite: 'runtime',
         executionMode: ti.id.includes('playwright') ? 'browser' : 'api_seeded',
-        routeProcessing: 'off',
+        routeProcessing: 'on',
         capabilities: [ti.id],
         fixture: `testinfra/${slug(ti.id)}`,
         expectedStatus: ti.status === 'PARTIAL' ? 'PASS' : 'NOT_IMPLEMENTED',
@@ -956,10 +949,10 @@ function buildFlagsAndInfra(manifest: Manifest, scenarios: E2EScenario[]): void 
     }
     if (scenarios.some((s) => s.capabilities.includes(ti.id))) continue
     pushScenario(scenarios, {
-      id: `testinfra__${slug(ti.id)}__api__route-off`,
+      id: `testinfra__${slug(ti.id)}__api__route-on`,
       suite: 'runtime',
       executionMode: 'api_seeded',
-      routeProcessing: 'off',
+      routeProcessing: 'on',
       capabilities: [ti.id],
       fixture: `testinfra/${slug(ti.id)}`,
       expectedStatus: 'PASS',
@@ -985,10 +978,10 @@ function ensureSupportedCoverage(manifest: Manifest, scenarios: E2EScenario[]): 
   for (const cap of all.filter(isSupported)) {
     if (scenarios.some((s) => s.capabilities.includes(cap.id))) continue
     pushScenario(scenarios, {
-      id: `coverage__${slug(cap.id)}__api__route-off`,
+      id: `coverage__${slug(cap.id)}__api__route-on`,
       suite: 'runtime',
       executionMode: isTrue(cap.ui_supported) ? 'browser' : 'api_seeded',
-      routeProcessing: 'off',
+      routeProcessing: 'on',
       source: { type: DEFAULT_SOURCE, authentication: DEFAULT_HTTP_AUTH },
       destination: { type: DEFAULT_DEST },
       capabilities: [cap.id],

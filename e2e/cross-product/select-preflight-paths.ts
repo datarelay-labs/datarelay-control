@@ -18,10 +18,6 @@ type PathDef = {
 
 const PATHS: PathDef[] = [
   {
-    id: 'browser-route-off',
-    match: (a) => a.execution_surface === 'BROWSER' && a.route_runtime === 'ROUTE_OFF',
-  },
-  {
     id: 'browser-route-on',
     match: (a) => a.execution_surface === 'BROWSER' && a.route_runtime === 'ROUTE_ON',
   },

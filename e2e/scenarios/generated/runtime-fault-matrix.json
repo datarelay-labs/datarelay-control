@@ -1,37 +1,7 @@
 {
-  "generated_at": "2026-09-11T14:47:27.490Z",
+  "generated_at": "2026-09-21T13:17:44.464Z",
   "manifest_commit": "42c4092270af0c789327d218cd805766f7317bdd",
   "scenarios": [
-    {
-      "idStem": "runtime__incremental__source-http-api-polling",
-      "suite": "runtime",
-      "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "source.http_api_polling",
-        "wizard.feature.incremental_fetch",
-        "wizard.feature.checkpoint",
-        "runtime.checkpoint_after_delivery",
-        "destination.webhook_post"
-      ],
-      "fixture": "runtime/incremental/http_api_polling",
-      "expectedStatus": "PASS",
-      "tags": [
-        "incremental",
-        "checkpoint",
-        "shard:http",
-        "route-off"
-      ],
-      "shard": "http",
-      "id": "runtime__incremental__source-http-api-polling__route-off"
-    },
     {
       "idStem": "runtime__incremental__source-http-api-polling",
       "suite": "runtime",
@@ -66,34 +36,6 @@
       "idStem": "runtime__dedup__source-http-api-polling",
       "suite": "runtime",
       "executionMode": "browser",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "source.http_api_polling",
-        "wizard.feature.dedup",
-        "runtime.dedup",
-        "destination.webhook_post"
-      ],
-      "fixture": "runtime/dedup/http_api_polling",
-      "expectedStatus": "PASS",
-      "tags": [
-        "dedup",
-        "shard:http",
-        "route-off"
-      ],
-      "shard": "http",
-      "id": "runtime__dedup__source-http-api-polling__route-off"
-    },
-    {
-      "idStem": "runtime__dedup__source-http-api-polling",
-      "suite": "runtime",
-      "executionMode": "browser",
       "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
@@ -119,10 +61,10 @@
       "id": "runtime__dedup__source-http-api-polling__route-on"
     },
     {
-      "id": "runtime__scheduler__source-http-api-polling__route-off",
+      "id": "runtime__scheduler__source-http-api-polling__route-on",
       "suite": "runtime",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
+      "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
         "authentication": "no_auth"
@@ -142,36 +84,6 @@
         "shard:http"
       ],
       "shard": "http"
-    },
-    {
-      "idStem": "runtime__incremental__source-s3-object-polling",
-      "suite": "runtime",
-      "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "S3_OBJECT_POLLING",
-        "authentication": "s3_keys"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "source.s3_object_polling",
-        "wizard.feature.incremental_fetch",
-        "wizard.feature.checkpoint",
-        "runtime.checkpoint_after_delivery",
-        "destination.webhook_post"
-      ],
-      "fixture": "runtime/incremental/s3_object_polling",
-      "expectedStatus": "PASS",
-      "tags": [
-        "incremental",
-        "checkpoint",
-        "shard:object-file",
-        "route-off"
-      ],
-      "shard": "object-file",
-      "id": "runtime__incremental__source-s3-object-polling__route-off"
     },
     {
       "idStem": "runtime__incremental__source-s3-object-polling",
@@ -207,34 +119,6 @@
       "idStem": "runtime__dedup__source-s3-object-polling",
       "suite": "runtime",
       "executionMode": "browser",
-      "routeProcessing": "off",
-      "source": {
-        "type": "S3_OBJECT_POLLING",
-        "authentication": "s3_keys"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "source.s3_object_polling",
-        "wizard.feature.dedup",
-        "runtime.dedup",
-        "destination.webhook_post"
-      ],
-      "fixture": "runtime/dedup/s3_object_polling",
-      "expectedStatus": "PASS",
-      "tags": [
-        "dedup",
-        "shard:object-file",
-        "route-off"
-      ],
-      "shard": "object-file",
-      "id": "runtime__dedup__source-s3-object-polling__route-off"
-    },
-    {
-      "idStem": "runtime__dedup__source-s3-object-polling",
-      "suite": "runtime",
-      "executionMode": "browser",
       "routeProcessing": "on",
       "source": {
         "type": "S3_OBJECT_POLLING",
@@ -260,10 +144,10 @@
       "id": "runtime__dedup__source-s3-object-polling__route-on"
     },
     {
-      "id": "runtime__scheduler__source-s3-object-polling__route-off",
+      "id": "runtime__scheduler__source-s3-object-polling__route-on",
       "suite": "runtime",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
+      "routeProcessing": "on",
       "source": {
         "type": "S3_OBJECT_POLLING",
         "authentication": "s3_keys"
@@ -283,36 +167,6 @@
         "shard:object-file"
       ],
       "shard": "object-file"
-    },
-    {
-      "idStem": "runtime__incremental__source-database-query-postgresql",
-      "suite": "runtime",
-      "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "DATABASE_QUERY",
-        "authentication": "db_password"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "source.database_query_postgresql",
-        "wizard.feature.incremental_fetch",
-        "wizard.feature.checkpoint",
-        "runtime.checkpoint_after_delivery",
-        "destination.webhook_post"
-      ],
-      "fixture": "runtime/incremental/database_query",
-      "expectedStatus": "PASS",
-      "tags": [
-        "incremental",
-        "checkpoint",
-        "shard:database",
-        "route-off"
-      ],
-      "shard": "database",
-      "id": "runtime__incremental__source-database-query-postgresql__route-off"
     },
     {
       "idStem": "runtime__incremental__source-database-query-postgresql",
@@ -348,34 +202,6 @@
       "idStem": "runtime__dedup__source-database-query-postgresql",
       "suite": "runtime",
       "executionMode": "browser",
-      "routeProcessing": "off",
-      "source": {
-        "type": "DATABASE_QUERY",
-        "authentication": "db_password"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "source.database_query_postgresql",
-        "wizard.feature.dedup",
-        "runtime.dedup",
-        "destination.webhook_post"
-      ],
-      "fixture": "runtime/dedup/database_query",
-      "expectedStatus": "PASS",
-      "tags": [
-        "dedup",
-        "shard:database",
-        "route-off"
-      ],
-      "shard": "database",
-      "id": "runtime__dedup__source-database-query-postgresql__route-off"
-    },
-    {
-      "idStem": "runtime__dedup__source-database-query-postgresql",
-      "suite": "runtime",
-      "executionMode": "browser",
       "routeProcessing": "on",
       "source": {
         "type": "DATABASE_QUERY",
@@ -401,10 +227,10 @@
       "id": "runtime__dedup__source-database-query-postgresql__route-on"
     },
     {
-      "id": "runtime__scheduler__source-database-query-postgresql__route-off",
+      "id": "runtime__scheduler__source-database-query-postgresql__route-on",
       "suite": "runtime",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
+      "routeProcessing": "on",
       "source": {
         "type": "DATABASE_QUERY",
         "authentication": "db_password"
@@ -424,36 +250,6 @@
         "shard:database"
       ],
       "shard": "database"
-    },
-    {
-      "idStem": "runtime__incremental__source-remote-file-polling",
-      "suite": "runtime",
-      "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "REMOTE_FILE_POLLING",
-        "authentication": "ssh"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "source.remote_file_polling",
-        "wizard.feature.incremental_fetch",
-        "wizard.feature.checkpoint",
-        "runtime.checkpoint_after_delivery",
-        "destination.webhook_post"
-      ],
-      "fixture": "runtime/incremental/remote_file_polling",
-      "expectedStatus": "PASS",
-      "tags": [
-        "incremental",
-        "checkpoint",
-        "shard:object-file",
-        "route-off"
-      ],
-      "shard": "object-file",
-      "id": "runtime__incremental__source-remote-file-polling__route-off"
     },
     {
       "idStem": "runtime__incremental__source-remote-file-polling",
@@ -489,34 +285,6 @@
       "idStem": "runtime__dedup__source-remote-file-polling",
       "suite": "runtime",
       "executionMode": "browser",
-      "routeProcessing": "off",
-      "source": {
-        "type": "REMOTE_FILE_POLLING",
-        "authentication": "ssh"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "source.remote_file_polling",
-        "wizard.feature.dedup",
-        "runtime.dedup",
-        "destination.webhook_post"
-      ],
-      "fixture": "runtime/dedup/remote_file_polling",
-      "expectedStatus": "PASS",
-      "tags": [
-        "dedup",
-        "shard:object-file",
-        "route-off"
-      ],
-      "shard": "object-file",
-      "id": "runtime__dedup__source-remote-file-polling__route-off"
-    },
-    {
-      "idStem": "runtime__dedup__source-remote-file-polling",
-      "suite": "runtime",
-      "executionMode": "browser",
       "routeProcessing": "on",
       "source": {
         "type": "REMOTE_FILE_POLLING",
@@ -542,10 +310,10 @@
       "id": "runtime__dedup__source-remote-file-polling__route-on"
     },
     {
-      "id": "runtime__scheduler__source-remote-file-polling__route-off",
+      "id": "runtime__scheduler__source-remote-file-polling__route-on",
       "suite": "runtime",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
+      "routeProcessing": "on",
       "source": {
         "type": "REMOTE_FILE_POLLING",
         "authentication": "ssh"
@@ -565,34 +333,6 @@
         "shard:object-file"
       ],
       "shard": "object-file"
-    },
-    {
-      "idStem": "runtime__dedup__source-webhook-receiver",
-      "suite": "runtime",
-      "executionMode": "browser",
-      "routeProcessing": "off",
-      "source": {
-        "type": "WEBHOOK_RECEIVER",
-        "authentication": "inbound"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "source.webhook_receiver",
-        "wizard.feature.dedup",
-        "runtime.dedup",
-        "destination.webhook_post"
-      ],
-      "fixture": "runtime/dedup/webhook_receiver",
-      "expectedStatus": "PASS",
-      "tags": [
-        "dedup",
-        "shard:http",
-        "route-off"
-      ],
-      "shard": "http",
-      "id": "runtime__dedup__source-webhook-receiver__route-off"
     },
     {
       "idStem": "runtime__dedup__source-webhook-receiver",
@@ -623,10 +363,10 @@
       "id": "runtime__dedup__source-webhook-receiver__route-on"
     },
     {
-      "id": "runtime__scheduler__source-webhook-receiver__route-off",
+      "id": "runtime__scheduler__source-webhook-receiver__route-on",
       "suite": "runtime",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
+      "routeProcessing": "on",
       "source": {
         "type": "WEBHOOK_RECEIVER",
         "authentication": "inbound"
@@ -648,10 +388,10 @@
       "shard": "http"
     },
     {
-      "id": "runtime__runtime-retry-backoff__api__route-off",
+      "id": "runtime__runtime-retry-backoff__api__route-on",
       "suite": "runtime",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
+      "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
         "authentication": "no_auth"
@@ -673,10 +413,10 @@
       "shard": "runtime"
     },
     {
-      "id": "runtime__runtime-timeout__api__route-off",
+      "id": "runtime__runtime-timeout__api__route-on",
       "suite": "runtime",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
+      "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
         "authentication": "no_auth"
@@ -701,7 +441,7 @@
       "id": "runtime__runtime-rate-limit__partial",
       "suite": "runtime",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
+      "routeProcessing": "on",
       "capabilities": [
         "runtime.rate_limit"
       ],
@@ -716,10 +456,10 @@
       "shard": "runtime"
     },
     {
-      "id": "runtime__runtime-failover__api__route-off",
+      "id": "runtime__runtime-failover__api__route-on",
       "suite": "runtime",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
+      "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
         "authentication": "no_auth"
@@ -741,10 +481,10 @@
       "shard": "runtime"
     },
     {
-      "id": "runtime__runtime-process-restart-recovery__api__route-off",
+      "id": "runtime__runtime-process-restart-recovery__api__route-on",
       "suite": "runtime",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
+      "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
         "authentication": "no_auth"
@@ -769,7 +509,7 @@
       "id": "runtime__runtime-fault-injection-fixtures__partial",
       "suite": "runtime",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
+      "routeProcessing": "on",
       "capabilities": [
         "runtime.fault_injection.fixtures"
       ],
@@ -782,39 +522,6 @@
         "shard:runtime"
       ],
       "shard": "runtime"
-    },
-    {
-      "idStem": "fault__http_401__api",
-      "suite": "fault",
-      "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "runtime.retry_backoff",
-        "runtime.timeout",
-        "runtime.checkpoint_after_delivery",
-        "runtime.health_metrics_audit_logs",
-        "runtime.process_restart_recovery",
-        "source.http_api_polling",
-        "destination.webhook_post"
-      ],
-      "fixture": "fault/http_401",
-      "expectedStatus": "PASS",
-      "tags": [
-        "fault",
-        "http_401",
-        "shard:fault",
-        "route-off"
-      ],
-      "shard": "fault",
-      "faultType": "http_401",
-      "id": "fault__http_401__api__route-off"
     },
     {
       "idStem": "fault__http_401__api",
@@ -853,39 +560,6 @@
       "idStem": "fault__http_403__api",
       "suite": "fault",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "runtime.retry_backoff",
-        "runtime.timeout",
-        "runtime.checkpoint_after_delivery",
-        "runtime.health_metrics_audit_logs",
-        "runtime.process_restart_recovery",
-        "source.http_api_polling",
-        "destination.webhook_post"
-      ],
-      "fixture": "fault/http_403",
-      "expectedStatus": "PASS",
-      "tags": [
-        "fault",
-        "http_403",
-        "shard:fault",
-        "route-off"
-      ],
-      "shard": "fault",
-      "faultType": "http_403",
-      "id": "fault__http_403__api__route-off"
-    },
-    {
-      "idStem": "fault__http_403__api",
-      "suite": "fault",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
@@ -914,39 +588,6 @@
       "shard": "fault",
       "faultType": "http_403",
       "id": "fault__http_403__api__route-on"
-    },
-    {
-      "idStem": "fault__http_429__api",
-      "suite": "fault",
-      "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "runtime.retry_backoff",
-        "runtime.timeout",
-        "runtime.checkpoint_after_delivery",
-        "runtime.health_metrics_audit_logs",
-        "runtime.process_restart_recovery",
-        "source.http_api_polling",
-        "destination.webhook_post"
-      ],
-      "fixture": "fault/http_429",
-      "expectedStatus": "PASS",
-      "tags": [
-        "fault",
-        "http_429",
-        "shard:fault",
-        "route-off"
-      ],
-      "shard": "fault",
-      "faultType": "http_429",
-      "id": "fault__http_429__api__route-off"
     },
     {
       "idStem": "fault__http_429__api",
@@ -985,39 +626,6 @@
       "idStem": "fault__http_500__api",
       "suite": "fault",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "runtime.retry_backoff",
-        "runtime.timeout",
-        "runtime.checkpoint_after_delivery",
-        "runtime.health_metrics_audit_logs",
-        "runtime.process_restart_recovery",
-        "source.http_api_polling",
-        "destination.webhook_post"
-      ],
-      "fixture": "fault/http_500",
-      "expectedStatus": "PASS",
-      "tags": [
-        "fault",
-        "http_500",
-        "shard:fault",
-        "route-off"
-      ],
-      "shard": "fault",
-      "faultType": "http_500",
-      "id": "fault__http_500__api__route-off"
-    },
-    {
-      "idStem": "fault__http_500__api",
-      "suite": "fault",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
@@ -1046,39 +654,6 @@
       "shard": "fault",
       "faultType": "http_500",
       "id": "fault__http_500__api__route-on"
-    },
-    {
-      "idStem": "fault__http_timeout__api",
-      "suite": "fault",
-      "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "runtime.retry_backoff",
-        "runtime.timeout",
-        "runtime.checkpoint_after_delivery",
-        "runtime.health_metrics_audit_logs",
-        "runtime.process_restart_recovery",
-        "source.http_api_polling",
-        "destination.webhook_post"
-      ],
-      "fixture": "fault/http_timeout",
-      "expectedStatus": "PASS",
-      "tags": [
-        "fault",
-        "http_timeout",
-        "shard:fault",
-        "route-off"
-      ],
-      "shard": "fault",
-      "faultType": "http_timeout",
-      "id": "fault__http_timeout__api__route-off"
     },
     {
       "idStem": "fault__http_timeout__api",
@@ -1117,39 +692,6 @@
       "idStem": "fault__malformed_response__api",
       "suite": "fault",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "runtime.retry_backoff",
-        "runtime.timeout",
-        "runtime.checkpoint_after_delivery",
-        "runtime.health_metrics_audit_logs",
-        "runtime.process_restart_recovery",
-        "source.http_api_polling",
-        "destination.webhook_post"
-      ],
-      "fixture": "fault/malformed_response",
-      "expectedStatus": "PASS",
-      "tags": [
-        "fault",
-        "malformed_response",
-        "shard:fault",
-        "route-off"
-      ],
-      "shard": "fault",
-      "faultType": "malformed_response",
-      "id": "fault__malformed_response__api__route-off"
-    },
-    {
-      "idStem": "fault__malformed_response__api",
-      "suite": "fault",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
@@ -1178,39 +720,6 @@
       "shard": "fault",
       "faultType": "malformed_response",
       "id": "fault__malformed_response__api__route-on"
-    },
-    {
-      "idStem": "fault__db_disconnect__api",
-      "suite": "fault",
-      "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "DATABASE_QUERY",
-        "authentication": "db_password"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "runtime.retry_backoff",
-        "runtime.timeout",
-        "runtime.checkpoint_after_delivery",
-        "runtime.health_metrics_audit_logs",
-        "runtime.process_restart_recovery",
-        "source.database_query_postgresql",
-        "destination.webhook_post"
-      ],
-      "fixture": "fault/db_disconnect",
-      "expectedStatus": "PASS",
-      "tags": [
-        "fault",
-        "db_disconnect",
-        "shard:fault",
-        "route-off"
-      ],
-      "shard": "fault",
-      "faultType": "db_disconnect",
-      "id": "fault__db_disconnect__api__route-off"
     },
     {
       "idStem": "fault__db_disconnect__api",
@@ -1249,39 +758,6 @@
       "idStem": "fault__s3_unavailable__api",
       "suite": "fault",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "S3_OBJECT_POLLING",
-        "authentication": "s3_keys"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "runtime.retry_backoff",
-        "runtime.timeout",
-        "runtime.checkpoint_after_delivery",
-        "runtime.health_metrics_audit_logs",
-        "runtime.process_restart_recovery",
-        "source.s3_object_polling",
-        "destination.webhook_post"
-      ],
-      "fixture": "fault/s3_unavailable",
-      "expectedStatus": "PASS",
-      "tags": [
-        "fault",
-        "s3_unavailable",
-        "shard:fault",
-        "route-off"
-      ],
-      "shard": "fault",
-      "faultType": "s3_unavailable",
-      "id": "fault__s3_unavailable__api__route-off"
-    },
-    {
-      "idStem": "fault__s3_unavailable__api",
-      "suite": "fault",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "S3_OBJECT_POLLING",
@@ -1310,39 +786,6 @@
       "shard": "fault",
       "faultType": "s3_unavailable",
       "id": "fault__s3_unavailable__api__route-on"
-    },
-    {
-      "idStem": "fault__sftp_unavailable__api",
-      "suite": "fault",
-      "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "REMOTE_FILE_POLLING",
-        "authentication": "ssh"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "runtime.retry_backoff",
-        "runtime.timeout",
-        "runtime.checkpoint_after_delivery",
-        "runtime.health_metrics_audit_logs",
-        "runtime.process_restart_recovery",
-        "source.remote_file_polling",
-        "destination.webhook_post"
-      ],
-      "fixture": "fault/sftp_unavailable",
-      "expectedStatus": "PASS",
-      "tags": [
-        "fault",
-        "sftp_unavailable",
-        "shard:fault",
-        "route-off"
-      ],
-      "shard": "fault",
-      "faultType": "sftp_unavailable",
-      "id": "fault__sftp_unavailable__api__route-off"
     },
     {
       "idStem": "fault__sftp_unavailable__api",
@@ -1381,39 +824,6 @@
       "idStem": "fault__webhook_destination_down__api",
       "suite": "fault",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "runtime.retry_backoff",
-        "runtime.timeout",
-        "runtime.checkpoint_after_delivery",
-        "runtime.health_metrics_audit_logs",
-        "runtime.process_restart_recovery",
-        "source.http_api_polling",
-        "destination.webhook_post"
-      ],
-      "fixture": "fault/webhook_destination_down",
-      "expectedStatus": "PASS",
-      "tags": [
-        "fault",
-        "webhook_destination_down",
-        "shard:fault",
-        "route-off"
-      ],
-      "shard": "fault",
-      "faultType": "webhook_destination_down",
-      "id": "fault__webhook_destination_down__api__route-off"
-    },
-    {
-      "idStem": "fault__webhook_destination_down__api",
-      "suite": "fault",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
@@ -1442,39 +852,6 @@
       "shard": "fault",
       "faultType": "webhook_destination_down",
       "id": "fault__webhook_destination_down__api__route-on"
-    },
-    {
-      "idStem": "fault__syslog_destination_down__api",
-      "suite": "fault",
-      "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "SYSLOG_TLS"
-      },
-      "capabilities": [
-        "runtime.retry_backoff",
-        "runtime.timeout",
-        "runtime.checkpoint_after_delivery",
-        "runtime.health_metrics_audit_logs",
-        "runtime.process_restart_recovery",
-        "source.http_api_polling",
-        "destination.syslog_tls"
-      ],
-      "fixture": "fault/syslog_destination_down",
-      "expectedStatus": "PASS",
-      "tags": [
-        "fault",
-        "syslog_destination_down",
-        "shard:fault",
-        "route-off"
-      ],
-      "shard": "fault",
-      "faultType": "syslog_destination_down",
-      "id": "fault__syslog_destination_down__api__route-off"
     },
     {
       "idStem": "fault__syslog_destination_down__api",
@@ -1513,39 +890,6 @@
       "idStem": "fault__tls_certificate_error__api",
       "suite": "fault",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "SYSLOG_TLS"
-      },
-      "capabilities": [
-        "runtime.retry_backoff",
-        "runtime.timeout",
-        "runtime.checkpoint_after_delivery",
-        "runtime.health_metrics_audit_logs",
-        "runtime.process_restart_recovery",
-        "source.http_api_polling",
-        "destination.syslog_tls"
-      ],
-      "fixture": "fault/tls_certificate_error",
-      "expectedStatus": "PASS",
-      "tags": [
-        "fault",
-        "tls_certificate_error",
-        "shard:fault",
-        "route-off"
-      ],
-      "shard": "fault",
-      "faultType": "tls_certificate_error",
-      "id": "fault__tls_certificate_error__api__route-off"
-    },
-    {
-      "idStem": "fault__tls_certificate_error__api",
-      "suite": "fault",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
@@ -1574,39 +918,6 @@
       "shard": "fault",
       "faultType": "tls_certificate_error",
       "id": "fault__tls_certificate_error__api__route-on"
-    },
-    {
-      "idStem": "fault__partial_route_failure__api",
-      "suite": "fault",
-      "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "runtime.retry_backoff",
-        "runtime.timeout",
-        "runtime.checkpoint_after_delivery",
-        "runtime.health_metrics_audit_logs",
-        "runtime.process_restart_recovery",
-        "source.http_api_polling",
-        "destination.webhook_post"
-      ],
-      "fixture": "fault/partial_route_failure",
-      "expectedStatus": "PASS",
-      "tags": [
-        "fault",
-        "partial_route_failure",
-        "shard:fault",
-        "route-off"
-      ],
-      "shard": "fault",
-      "faultType": "partial_route_failure",
-      "id": "fault__partial_route_failure__api__route-off"
     },
     {
       "idStem": "fault__partial_route_failure__api",
@@ -1645,39 +956,6 @@
       "idStem": "fault__api_restart__api",
       "suite": "fault",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "runtime.retry_backoff",
-        "runtime.timeout",
-        "runtime.checkpoint_after_delivery",
-        "runtime.health_metrics_audit_logs",
-        "runtime.process_restart_recovery",
-        "source.http_api_polling",
-        "destination.webhook_post"
-      ],
-      "fixture": "fault/api_restart",
-      "expectedStatus": "PASS",
-      "tags": [
-        "fault",
-        "api_restart",
-        "shard:fault",
-        "route-off"
-      ],
-      "shard": "fault",
-      "faultType": "api_restart",
-      "id": "fault__api_restart__api__route-off"
-    },
-    {
-      "idStem": "fault__api_restart__api",
-      "suite": "fault",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
@@ -1706,39 +984,6 @@
       "shard": "fault",
       "faultType": "api_restart",
       "id": "fault__api_restart__api__route-on"
-    },
-    {
-      "idStem": "fault__runtime_restart__api",
-      "suite": "fault",
-      "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "runtime.retry_backoff",
-        "runtime.timeout",
-        "runtime.checkpoint_after_delivery",
-        "runtime.health_metrics_audit_logs",
-        "runtime.process_restart_recovery",
-        "source.http_api_polling",
-        "destination.webhook_post"
-      ],
-      "fixture": "fault/runtime_restart",
-      "expectedStatus": "PASS",
-      "tags": [
-        "fault",
-        "runtime_restart",
-        "shard:fault",
-        "route-off"
-      ],
-      "shard": "fault",
-      "faultType": "runtime_restart",
-      "id": "fault__runtime_restart__api__route-off"
     },
     {
       "idStem": "fault__runtime_restart__api",
@@ -1774,10 +1019,10 @@
       "id": "fault__runtime_restart__api__route-on"
     },
     {
-      "id": "flag__flag-gdc-classification-enabled__api__route-off",
+      "id": "flag__flag-gdc-classification-enabled__api__route-on",
       "suite": "runtime",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
+      "routeProcessing": "on",
       "capabilities": [
         "flag.gdc_classification_enabled"
       ],
@@ -1793,7 +1038,7 @@
       "id": "testinfra__test-playwright-browser-e2e__partial",
       "suite": "runtime",
       "executionMode": "browser",
-      "routeProcessing": "off",
+      "routeProcessing": "on",
       "capabilities": [
         "test.playwright.browser_e2e"
       ],
@@ -1807,10 +1052,10 @@
       "shard": "runtime"
     },
     {
-      "id": "testinfra__test-pytest-wiremock-e2e__api__route-off",
+      "id": "testinfra__test-pytest-wiremock-e2e__api__route-on",
       "suite": "runtime",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
+      "routeProcessing": "on",
       "capabilities": [
         "test.pytest.wiremock_e2e"
       ],
@@ -1823,10 +1068,10 @@
       "shard": "runtime"
     },
     {
-      "id": "testinfra__test-source-adapter-e2e__api__route-off",
+      "id": "testinfra__test-source-adapter-e2e__api__route-on",
       "suite": "runtime",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
+      "routeProcessing": "on",
       "capabilities": [
         "test.source_adapter_e2e"
       ],
@@ -1839,10 +1084,10 @@
       "shard": "runtime"
     },
     {
-      "id": "testinfra__test-dev-validation-lab__api__route-off",
+      "id": "testinfra__test-dev-validation-lab__api__route-on",
       "suite": "runtime",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
+      "routeProcessing": "on",
       "capabilities": [
         "test.dev_validation_lab"
       ],
@@ -1855,10 +1100,10 @@
       "shard": "runtime"
     },
     {
-      "id": "testinfra__test-wiremock-auth-fixtures__api__route-off",
+      "id": "testinfra__test-wiremock-auth-fixtures__api__route-on",
       "suite": "runtime",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
+      "routeProcessing": "on",
       "capabilities": [
         "test.wiremock_auth_fixtures"
       ],
@@ -1910,18 +1155,18 @@
     }
   ],
   "counts": {
-    "total": 65,
-    "browser": 11,
-    "api_seeded": 54,
-    "route_off": 41,
-    "route_on": 24,
+    "total": 41,
+    "browser": 6,
+    "api_seeded": 35,
+    "route_off": 0,
+    "route_on": 41,
     "route_both": 0,
     "by_suite": {
-      "runtime": 35,
-      "fault": 30
+      "runtime": 26,
+      "fault": 15
     },
     "by_expected_status": {
-      "PASS": 63,
+      "PASS": 39,
       "NOT_IMPLEMENTED": 2
     }
   }

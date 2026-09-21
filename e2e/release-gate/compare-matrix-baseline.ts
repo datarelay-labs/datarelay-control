@@ -89,11 +89,12 @@ function main(): void {
       detail: `Browser scenarios ${curBrowser} < baseline ${baselines.scenario.browser_count}`,
     })
   }
-  if (curRouteOff < baselines.scenario.route_off_count) {
-    issues.push({
-      code: 'ROUTE_OFF_DECREASED',
-      severity: 'error',
-      detail: `route-off ${curRouteOff} < baseline ${baselines.scenario.route_off_count}`,
+  // Route-OFF is retired; a decrease (including to zero) is expected and not a regression.
+  if (curRouteOff > baselines.scenario.route_off_count) {
+    warnings.push({
+      code: 'ROUTE_OFF_INCREASED',
+      severity: 'warning',
+      detail: `route-off ${curRouteOff} > baseline ${baselines.scenario.route_off_count} (retired path should not grow)`,
     })
   }
   if (curRouteOn < baselines.scenario.route_on_count) {

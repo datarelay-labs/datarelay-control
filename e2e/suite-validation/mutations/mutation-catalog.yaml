@@ -348,7 +348,7 @@ mutations:
   - mutation_id: G05
     target_file: e2e/suite-validation/generator-gates/evaluate-generator-gates.ts
     target_symbol: evaluateGeneratorGates
-    mutation_description: "route-on 조합을 route-off로만 생성"
+    mutation_description: "force all combinations to retired ROUTE_OFF"
     expected_killing_scenarios:
       - GATE-G05
     criticality: critical

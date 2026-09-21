@@ -497,7 +497,7 @@
       "mutation_id": "G05",
       "target_file": "e2e/suite-validation/generator-gates/evaluate-generator-gates.ts",
       "target_symbol": "evaluateGeneratorGates",
-      "mutation_description": "route-on \uc870\ud569\uc744 route-off\ub85c\ub9cc \uc0dd\uc131",
+      "mutation_description": "force all combinations to retired ROUTE_OFF",
       "expected_killing_scenarios": [
         "GATE-G05"
       ],

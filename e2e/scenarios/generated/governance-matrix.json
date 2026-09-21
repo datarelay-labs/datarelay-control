@@ -1,12 +1,12 @@
 {
-  "generated_at": "2026-09-11T14:47:27.489Z",
+  "generated_at": "2026-09-21T13:17:44.463Z",
   "manifest_commit": "42c4092270af0c789327d218cd805766f7317bdd",
   "scenarios": [
     {
       "id": "governance__governance-delivery-require-review__partial",
       "suite": "governance",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
+      "routeProcessing": "on",
       "capabilities": [
         "governance.delivery.require_review"
       ],
@@ -19,42 +19,6 @@
         "shard:governance"
       ],
       "shard": "governance"
-    },
-    {
-      "idStem": "governance__audit__continue__api",
-      "suite": "governance",
-      "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "governance.protection.audit",
-        "governance.delivery.continue",
-        "governance.sensitive_detection",
-        "governance.audit_violations_notifications",
-        "flag.gdc_protection_enabled",
-        "flag.gdc_sensitive_detection_enabled",
-        "source.http_api_polling",
-        "destination.webhook_post"
-      ],
-      "fixture": "governance/audit/continue",
-      "expectedStatus": "PASS",
-      "tags": [
-        "governance",
-        "audit",
-        "continue",
-        "shard:governance",
-        "route-off"
-      ],
-      "shard": "governance",
-      "protectionAction": "audit",
-      "deliveryBehavior": "continue",
-      "id": "governance__audit__continue__api__route-off"
     },
     {
       "idStem": "governance__audit__continue__api",
@@ -91,43 +55,6 @@
       "protectionAction": "audit",
       "deliveryBehavior": "continue",
       "id": "governance__audit__continue__api__route-on"
-    },
-    {
-      "idStem": "governance__audit__review__api",
-      "suite": "governance",
-      "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "governance.protection.audit",
-        "governance.delivery.require_review",
-        "governance.sensitive_detection",
-        "governance.audit_violations_notifications",
-        "flag.gdc_protection_enabled",
-        "flag.gdc_sensitive_detection_enabled",
-        "source.http_api_polling",
-        "destination.webhook_post"
-      ],
-      "fixture": "governance/audit/review",
-      "expectedStatus": "NOT_IMPLEMENTED",
-      "reason": "Delivery behavior governance.delivery.require_review status=PARTIAL",
-      "tags": [
-        "governance",
-        "audit",
-        "review",
-        "shard:governance",
-        "route-off"
-      ],
-      "shard": "governance",
-      "protectionAction": "audit",
-      "deliveryBehavior": "review",
-      "id": "governance__audit__review__api__route-off"
     },
     {
       "idStem": "governance__audit__review__api",
@@ -170,42 +97,6 @@
       "idStem": "governance__audit__quarantine__api",
       "suite": "governance",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "governance.protection.audit",
-        "governance.delivery.quarantine",
-        "governance.sensitive_detection",
-        "governance.audit_violations_notifications",
-        "flag.gdc_protection_enabled",
-        "flag.gdc_sensitive_detection_enabled",
-        "source.http_api_polling",
-        "destination.webhook_post"
-      ],
-      "fixture": "governance/audit/quarantine",
-      "expectedStatus": "PASS",
-      "tags": [
-        "governance",
-        "audit",
-        "quarantine",
-        "shard:governance",
-        "route-off"
-      ],
-      "shard": "governance",
-      "protectionAction": "audit",
-      "deliveryBehavior": "quarantine",
-      "id": "governance__audit__quarantine__api__route-off"
-    },
-    {
-      "idStem": "governance__audit__quarantine__api",
-      "suite": "governance",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
@@ -237,42 +128,6 @@
       "protectionAction": "audit",
       "deliveryBehavior": "quarantine",
       "id": "governance__audit__quarantine__api__route-on"
-    },
-    {
-      "idStem": "governance__audit__block__api",
-      "suite": "governance",
-      "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "governance.protection.audit",
-        "governance.delivery.block",
-        "governance.sensitive_detection",
-        "governance.audit_violations_notifications",
-        "flag.gdc_protection_enabled",
-        "flag.gdc_sensitive_detection_enabled",
-        "source.http_api_polling",
-        "destination.webhook_post"
-      ],
-      "fixture": "governance/audit/block",
-      "expectedStatus": "PASS",
-      "tags": [
-        "governance",
-        "audit",
-        "block",
-        "shard:governance",
-        "route-off"
-      ],
-      "shard": "governance",
-      "protectionAction": "audit",
-      "deliveryBehavior": "block",
-      "id": "governance__audit__block__api__route-off"
     },
     {
       "idStem": "governance__audit__block__api",
@@ -314,42 +169,6 @@
       "idStem": "governance__mask__continue__api",
       "suite": "governance",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "governance.protection.mask",
-        "governance.delivery.continue",
-        "governance.sensitive_detection",
-        "governance.audit_violations_notifications",
-        "flag.gdc_protection_enabled",
-        "flag.gdc_sensitive_detection_enabled",
-        "source.http_api_polling",
-        "destination.webhook_post"
-      ],
-      "fixture": "governance/mask/continue",
-      "expectedStatus": "PASS",
-      "tags": [
-        "governance",
-        "mask",
-        "continue",
-        "shard:governance",
-        "route-off"
-      ],
-      "shard": "governance",
-      "protectionAction": "mask",
-      "deliveryBehavior": "continue",
-      "id": "governance__mask__continue__api__route-off"
-    },
-    {
-      "idStem": "governance__mask__continue__api",
-      "suite": "governance",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
@@ -381,43 +200,6 @@
       "protectionAction": "mask",
       "deliveryBehavior": "continue",
       "id": "governance__mask__continue__api__route-on"
-    },
-    {
-      "idStem": "governance__mask__review__api",
-      "suite": "governance",
-      "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "governance.protection.mask",
-        "governance.delivery.require_review",
-        "governance.sensitive_detection",
-        "governance.audit_violations_notifications",
-        "flag.gdc_protection_enabled",
-        "flag.gdc_sensitive_detection_enabled",
-        "source.http_api_polling",
-        "destination.webhook_post"
-      ],
-      "fixture": "governance/mask/review",
-      "expectedStatus": "NOT_IMPLEMENTED",
-      "reason": "Delivery behavior governance.delivery.require_review status=PARTIAL",
-      "tags": [
-        "governance",
-        "mask",
-        "review",
-        "shard:governance",
-        "route-off"
-      ],
-      "shard": "governance",
-      "protectionAction": "mask",
-      "deliveryBehavior": "review",
-      "id": "governance__mask__review__api__route-off"
     },
     {
       "idStem": "governance__mask__review__api",
@@ -460,42 +242,6 @@
       "idStem": "governance__mask__quarantine__api",
       "suite": "governance",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "governance.protection.mask",
-        "governance.delivery.quarantine",
-        "governance.sensitive_detection",
-        "governance.audit_violations_notifications",
-        "flag.gdc_protection_enabled",
-        "flag.gdc_sensitive_detection_enabled",
-        "source.http_api_polling",
-        "destination.webhook_post"
-      ],
-      "fixture": "governance/mask/quarantine",
-      "expectedStatus": "PASS",
-      "tags": [
-        "governance",
-        "mask",
-        "quarantine",
-        "shard:governance",
-        "route-off"
-      ],
-      "shard": "governance",
-      "protectionAction": "mask",
-      "deliveryBehavior": "quarantine",
-      "id": "governance__mask__quarantine__api__route-off"
-    },
-    {
-      "idStem": "governance__mask__quarantine__api",
-      "suite": "governance",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
@@ -527,42 +273,6 @@
       "protectionAction": "mask",
       "deliveryBehavior": "quarantine",
       "id": "governance__mask__quarantine__api__route-on"
-    },
-    {
-      "idStem": "governance__mask__block__api",
-      "suite": "governance",
-      "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "governance.protection.mask",
-        "governance.delivery.block",
-        "governance.sensitive_detection",
-        "governance.audit_violations_notifications",
-        "flag.gdc_protection_enabled",
-        "flag.gdc_sensitive_detection_enabled",
-        "source.http_api_polling",
-        "destination.webhook_post"
-      ],
-      "fixture": "governance/mask/block",
-      "expectedStatus": "PASS",
-      "tags": [
-        "governance",
-        "mask",
-        "block",
-        "shard:governance",
-        "route-off"
-      ],
-      "shard": "governance",
-      "protectionAction": "mask",
-      "deliveryBehavior": "block",
-      "id": "governance__mask__block__api__route-off"
     },
     {
       "idStem": "governance__mask__block__api",
@@ -604,42 +314,6 @@
       "idStem": "governance__tokenize__continue__api",
       "suite": "governance",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "governance.protection.tokenize",
-        "governance.delivery.continue",
-        "governance.sensitive_detection",
-        "governance.audit_violations_notifications",
-        "flag.gdc_protection_enabled",
-        "flag.gdc_sensitive_detection_enabled",
-        "source.http_api_polling",
-        "destination.webhook_post"
-      ],
-      "fixture": "governance/tokenize/continue",
-      "expectedStatus": "PASS",
-      "tags": [
-        "governance",
-        "tokenize",
-        "continue",
-        "shard:governance",
-        "route-off"
-      ],
-      "shard": "governance",
-      "protectionAction": "tokenize",
-      "deliveryBehavior": "continue",
-      "id": "governance__tokenize__continue__api__route-off"
-    },
-    {
-      "idStem": "governance__tokenize__continue__api",
-      "suite": "governance",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
@@ -671,43 +345,6 @@
       "protectionAction": "tokenize",
       "deliveryBehavior": "continue",
       "id": "governance__tokenize__continue__api__route-on"
-    },
-    {
-      "idStem": "governance__tokenize__review__api",
-      "suite": "governance",
-      "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "governance.protection.tokenize",
-        "governance.delivery.require_review",
-        "governance.sensitive_detection",
-        "governance.audit_violations_notifications",
-        "flag.gdc_protection_enabled",
-        "flag.gdc_sensitive_detection_enabled",
-        "source.http_api_polling",
-        "destination.webhook_post"
-      ],
-      "fixture": "governance/tokenize/review",
-      "expectedStatus": "NOT_IMPLEMENTED",
-      "reason": "Delivery behavior governance.delivery.require_review status=PARTIAL",
-      "tags": [
-        "governance",
-        "tokenize",
-        "review",
-        "shard:governance",
-        "route-off"
-      ],
-      "shard": "governance",
-      "protectionAction": "tokenize",
-      "deliveryBehavior": "review",
-      "id": "governance__tokenize__review__api__route-off"
     },
     {
       "idStem": "governance__tokenize__review__api",
@@ -750,42 +387,6 @@
       "idStem": "governance__tokenize__quarantine__api",
       "suite": "governance",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "governance.protection.tokenize",
-        "governance.delivery.quarantine",
-        "governance.sensitive_detection",
-        "governance.audit_violations_notifications",
-        "flag.gdc_protection_enabled",
-        "flag.gdc_sensitive_detection_enabled",
-        "source.http_api_polling",
-        "destination.webhook_post"
-      ],
-      "fixture": "governance/tokenize/quarantine",
-      "expectedStatus": "PASS",
-      "tags": [
-        "governance",
-        "tokenize",
-        "quarantine",
-        "shard:governance",
-        "route-off"
-      ],
-      "shard": "governance",
-      "protectionAction": "tokenize",
-      "deliveryBehavior": "quarantine",
-      "id": "governance__tokenize__quarantine__api__route-off"
-    },
-    {
-      "idStem": "governance__tokenize__quarantine__api",
-      "suite": "governance",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
@@ -817,42 +418,6 @@
       "protectionAction": "tokenize",
       "deliveryBehavior": "quarantine",
       "id": "governance__tokenize__quarantine__api__route-on"
-    },
-    {
-      "idStem": "governance__tokenize__block__api",
-      "suite": "governance",
-      "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "governance.protection.tokenize",
-        "governance.delivery.block",
-        "governance.sensitive_detection",
-        "governance.audit_violations_notifications",
-        "flag.gdc_protection_enabled",
-        "flag.gdc_sensitive_detection_enabled",
-        "source.http_api_polling",
-        "destination.webhook_post"
-      ],
-      "fixture": "governance/tokenize/block",
-      "expectedStatus": "PASS",
-      "tags": [
-        "governance",
-        "tokenize",
-        "block",
-        "shard:governance",
-        "route-off"
-      ],
-      "shard": "governance",
-      "protectionAction": "tokenize",
-      "deliveryBehavior": "block",
-      "id": "governance__tokenize__block__api__route-off"
     },
     {
       "idStem": "governance__tokenize__block__api",
@@ -894,42 +459,6 @@
       "idStem": "governance__hash__continue__api",
       "suite": "governance",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "governance.protection.hash",
-        "governance.delivery.continue",
-        "governance.sensitive_detection",
-        "governance.audit_violations_notifications",
-        "flag.gdc_protection_enabled",
-        "flag.gdc_sensitive_detection_enabled",
-        "source.http_api_polling",
-        "destination.webhook_post"
-      ],
-      "fixture": "governance/hash/continue",
-      "expectedStatus": "PASS",
-      "tags": [
-        "governance",
-        "hash",
-        "continue",
-        "shard:governance",
-        "route-off"
-      ],
-      "shard": "governance",
-      "protectionAction": "hash",
-      "deliveryBehavior": "continue",
-      "id": "governance__hash__continue__api__route-off"
-    },
-    {
-      "idStem": "governance__hash__continue__api",
-      "suite": "governance",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
@@ -961,43 +490,6 @@
       "protectionAction": "hash",
       "deliveryBehavior": "continue",
       "id": "governance__hash__continue__api__route-on"
-    },
-    {
-      "idStem": "governance__hash__review__api",
-      "suite": "governance",
-      "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "governance.protection.hash",
-        "governance.delivery.require_review",
-        "governance.sensitive_detection",
-        "governance.audit_violations_notifications",
-        "flag.gdc_protection_enabled",
-        "flag.gdc_sensitive_detection_enabled",
-        "source.http_api_polling",
-        "destination.webhook_post"
-      ],
-      "fixture": "governance/hash/review",
-      "expectedStatus": "NOT_IMPLEMENTED",
-      "reason": "Delivery behavior governance.delivery.require_review status=PARTIAL",
-      "tags": [
-        "governance",
-        "hash",
-        "review",
-        "shard:governance",
-        "route-off"
-      ],
-      "shard": "governance",
-      "protectionAction": "hash",
-      "deliveryBehavior": "review",
-      "id": "governance__hash__review__api__route-off"
     },
     {
       "idStem": "governance__hash__review__api",
@@ -1040,42 +532,6 @@
       "idStem": "governance__hash__quarantine__api",
       "suite": "governance",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "governance.protection.hash",
-        "governance.delivery.quarantine",
-        "governance.sensitive_detection",
-        "governance.audit_violations_notifications",
-        "flag.gdc_protection_enabled",
-        "flag.gdc_sensitive_detection_enabled",
-        "source.http_api_polling",
-        "destination.webhook_post"
-      ],
-      "fixture": "governance/hash/quarantine",
-      "expectedStatus": "PASS",
-      "tags": [
-        "governance",
-        "hash",
-        "quarantine",
-        "shard:governance",
-        "route-off"
-      ],
-      "shard": "governance",
-      "protectionAction": "hash",
-      "deliveryBehavior": "quarantine",
-      "id": "governance__hash__quarantine__api__route-off"
-    },
-    {
-      "idStem": "governance__hash__quarantine__api",
-      "suite": "governance",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
@@ -1107,42 +563,6 @@
       "protectionAction": "hash",
       "deliveryBehavior": "quarantine",
       "id": "governance__hash__quarantine__api__route-on"
-    },
-    {
-      "idStem": "governance__hash__block__api",
-      "suite": "governance",
-      "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "governance.protection.hash",
-        "governance.delivery.block",
-        "governance.sensitive_detection",
-        "governance.audit_violations_notifications",
-        "flag.gdc_protection_enabled",
-        "flag.gdc_sensitive_detection_enabled",
-        "source.http_api_polling",
-        "destination.webhook_post"
-      ],
-      "fixture": "governance/hash/block",
-      "expectedStatus": "PASS",
-      "tags": [
-        "governance",
-        "hash",
-        "block",
-        "shard:governance",
-        "route-off"
-      ],
-      "shard": "governance",
-      "protectionAction": "hash",
-      "deliveryBehavior": "block",
-      "id": "governance__hash__block__api__route-off"
     },
     {
       "idStem": "governance__hash__block__api",
@@ -1184,42 +604,6 @@
       "idStem": "governance__remove__continue__api",
       "suite": "governance",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "governance.protection.drop_field",
-        "governance.delivery.continue",
-        "governance.sensitive_detection",
-        "governance.audit_violations_notifications",
-        "flag.gdc_protection_enabled",
-        "flag.gdc_sensitive_detection_enabled",
-        "source.http_api_polling",
-        "destination.webhook_post"
-      ],
-      "fixture": "governance/remove/continue",
-      "expectedStatus": "PASS",
-      "tags": [
-        "governance",
-        "remove",
-        "continue",
-        "shard:governance",
-        "route-off"
-      ],
-      "shard": "governance",
-      "protectionAction": "remove",
-      "deliveryBehavior": "continue",
-      "id": "governance__remove__continue__api__route-off"
-    },
-    {
-      "idStem": "governance__remove__continue__api",
-      "suite": "governance",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
@@ -1251,43 +635,6 @@
       "protectionAction": "remove",
       "deliveryBehavior": "continue",
       "id": "governance__remove__continue__api__route-on"
-    },
-    {
-      "idStem": "governance__remove__review__api",
-      "suite": "governance",
-      "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "governance.protection.drop_field",
-        "governance.delivery.require_review",
-        "governance.sensitive_detection",
-        "governance.audit_violations_notifications",
-        "flag.gdc_protection_enabled",
-        "flag.gdc_sensitive_detection_enabled",
-        "source.http_api_polling",
-        "destination.webhook_post"
-      ],
-      "fixture": "governance/remove/review",
-      "expectedStatus": "NOT_IMPLEMENTED",
-      "reason": "Delivery behavior governance.delivery.require_review status=PARTIAL",
-      "tags": [
-        "governance",
-        "remove",
-        "review",
-        "shard:governance",
-        "route-off"
-      ],
-      "shard": "governance",
-      "protectionAction": "remove",
-      "deliveryBehavior": "review",
-      "id": "governance__remove__review__api__route-off"
     },
     {
       "idStem": "governance__remove__review__api",
@@ -1330,42 +677,6 @@
       "idStem": "governance__remove__quarantine__api",
       "suite": "governance",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "governance.protection.drop_field",
-        "governance.delivery.quarantine",
-        "governance.sensitive_detection",
-        "governance.audit_violations_notifications",
-        "flag.gdc_protection_enabled",
-        "flag.gdc_sensitive_detection_enabled",
-        "source.http_api_polling",
-        "destination.webhook_post"
-      ],
-      "fixture": "governance/remove/quarantine",
-      "expectedStatus": "PASS",
-      "tags": [
-        "governance",
-        "remove",
-        "quarantine",
-        "shard:governance",
-        "route-off"
-      ],
-      "shard": "governance",
-      "protectionAction": "remove",
-      "deliveryBehavior": "quarantine",
-      "id": "governance__remove__quarantine__api__route-off"
-    },
-    {
-      "idStem": "governance__remove__quarantine__api",
-      "suite": "governance",
-      "executionMode": "api_seeded",
       "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
@@ -1397,42 +708,6 @@
       "protectionAction": "remove",
       "deliveryBehavior": "quarantine",
       "id": "governance__remove__quarantine__api__route-on"
-    },
-    {
-      "idStem": "governance__remove__block__api",
-      "suite": "governance",
-      "executionMode": "api_seeded",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "governance.protection.drop_field",
-        "governance.delivery.block",
-        "governance.sensitive_detection",
-        "governance.audit_violations_notifications",
-        "flag.gdc_protection_enabled",
-        "flag.gdc_sensitive_detection_enabled",
-        "source.http_api_polling",
-        "destination.webhook_post"
-      ],
-      "fixture": "governance/remove/block",
-      "expectedStatus": "PASS",
-      "tags": [
-        "governance",
-        "remove",
-        "block",
-        "shard:governance",
-        "route-off"
-      ],
-      "shard": "governance",
-      "protectionAction": "remove",
-      "deliveryBehavior": "block",
-      "id": "governance__remove__block__api__route-off"
     },
     {
       "idStem": "governance__remove__block__api",
@@ -1474,36 +749,6 @@
       "idStem": "governance-quarantine-ops__browser",
       "suite": "governance",
       "executionMode": "browser",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "governance.quarantine_ops",
-        "governance.delivery.quarantine",
-        "governance.protection.mask",
-        "source.http_api_polling",
-        "destination.webhook_post"
-      ],
-      "fixture": "governance/governance-quarantine-ops",
-      "expectedStatus": "PASS",
-      "tags": [
-        "governance",
-        "browser",
-        "shard:governance",
-        "route-off"
-      ],
-      "shard": "governance",
-      "id": "governance-quarantine-ops__browser__route-off"
-    },
-    {
-      "idStem": "governance-quarantine-ops__browser",
-      "suite": "governance",
-      "executionMode": "browser",
       "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
@@ -1529,36 +774,6 @@
       ],
       "shard": "governance",
       "id": "governance-quarantine-ops__browser__route-on"
-    },
-    {
-      "idStem": "governance-replay__browser",
-      "suite": "governance",
-      "executionMode": "browser",
-      "routeProcessing": "off",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "governance.replay",
-        "governance.delivery.quarantine",
-        "governance.protection.mask",
-        "source.http_api_polling",
-        "destination.webhook_post"
-      ],
-      "fixture": "governance/governance-replay",
-      "expectedStatus": "PASS",
-      "tags": [
-        "governance",
-        "browser",
-        "shard:governance",
-        "route-off"
-      ],
-      "shard": "governance",
-      "id": "governance-replay__browser__route-off"
     },
     {
       "idStem": "governance-replay__browser",
@@ -1591,10 +806,10 @@
       "id": "governance-replay__browser__route-on"
     },
     {
-      "id": "governance__governance-schema-drift__api__route-off",
+      "id": "governance__governance-schema-drift__api__route-on",
       "suite": "governance",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
+      "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
         "authentication": "no_auth"
@@ -1616,10 +831,10 @@
       "shard": "governance"
     },
     {
-      "id": "governance__governance-classification__api__route-off",
+      "id": "governance__governance-classification__api__route-on",
       "suite": "governance",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
+      "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
         "authentication": "no_auth"
@@ -1641,10 +856,10 @@
       "shard": "governance"
     },
     {
-      "id": "governance__governance-policy__api__route-off",
+      "id": "governance__governance-policy__api__route-on",
       "suite": "governance",
       "executionMode": "api_seeded",
-      "routeProcessing": "off",
+      "routeProcessing": "on",
       "source": {
         "type": "HTTP_API_POLLING",
         "authentication": "no_auth"
@@ -1668,18 +883,18 @@
   ],
   "not_applicable": [],
   "counts": {
-    "total": 48,
-    "browser": 4,
-    "api_seeded": 44,
-    "route_off": 26,
-    "route_on": 22,
+    "total": 26,
+    "browser": 2,
+    "api_seeded": 24,
+    "route_off": 0,
+    "route_on": 26,
     "route_both": 0,
     "by_suite": {
-      "governance": 48
+      "governance": 26
     },
     "by_expected_status": {
-      "NOT_IMPLEMENTED": 11,
-      "PASS": 37
+      "NOT_IMPLEMENTED": 6,
+      "PASS": 20
     }
   }
 }
