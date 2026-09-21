@@ -18,7 +18,7 @@
 ## Step 1 — Clone and configure
 
 ```bash
-git clone https://github.com/RickLee-kr/gdc-platform.git data-relay
+git clone https://github.com/datarelay-labs/datarelay-control.git data-relay
 cd data-relay
 cp .env.example .env
 # Edit .env: set JWT_SECRET_KEY, SECRET_KEY, ENCRYPTION_KEY, POSTGRES_PASSWORD

@@ -83,7 +83,7 @@ flowchart LR
 ### 설치 및 실행
 
 ```bash
-git clone https://github.com/datarelay-labs/gdc-platform.git datarelay-control
+git clone https://github.com/datarelay-labs/datarelay-control.git datarelay-control
 cd datarelay-control
 cp .env.example .env
 
