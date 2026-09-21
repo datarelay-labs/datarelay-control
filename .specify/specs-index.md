@@ -2,7 +2,7 @@
 
 **Role:** Navigation index only — not a competing source of truth.
 **Generated from:** tracked `specs/*/spec.md` files
-**Last regenerated:** 2026-09-20
+**Last regenerated:** 2026-09-21
 
 For authority and conflict resolution, read `docs/architecture/source-of-truth-index.md` first. Individual specifications govern their bounded implementation contract only when consistent with higher product/UX authority.
 
@@ -71,7 +71,7 @@ For authority and conflict resolution, read `docs/architecture/source-of-truth-i
 | `067-failover-routing` | 067 — Failover Routing MVP (M10) | — | [`specs/067-failover-routing/spec.md`](../specs/067-failover-routing/spec.md) |
 | `068-replay-engine` | 068 — Replay Engine MVP (M11) | — | [`specs/068-replay-engine/spec.md`](../specs/068-replay-engine/spec.md) |
 | `069-quarantine-mvp` | M12 Quarantine MVP | — | [`specs/069-quarantine-mvp/spec.md`](../specs/069-quarantine-mvp/spec.md) |
-| `070-ai-gateway-mvp` | M14 AI Gateway MVP | — | [`specs/070-ai-gateway-mvp/spec.md`](../specs/070-ai-gateway-mvp/spec.md) |
+| `070-ai-gateway-mvp` | M14 AI Gateway MVP | Outside Data Relay Control (Phase E) — separate-domain / historical reference only; not current Control implementation authority | [`specs/070-ai-gateway-mvp/spec.md`](../specs/070-ai-gateway-mvp/spec.md) |
 | `071-governance-control-plane-mvp` | 071 — Governance Control Plane MVP (M15) | — | [`specs/071-governance-control-plane-mvp/spec.md`](../specs/071-governance-control-plane-mvp/spec.md) |
 | `072-governance-hardening` | 072 — Governance Hardening & Operational Readiness (M15.1) | — | [`specs/072-governance-hardening/spec.md`](../specs/072-governance-hardening/spec.md) |
 | `073-operational-ux-cleanup` | 073 — Operational UX & Observability Cleanup (M16.3) | — | [`specs/073-operational-ux-cleanup/spec.md`](../specs/073-operational-ux-cleanup/spec.md) |
@@ -82,8 +82,8 @@ For authority and conflict resolution, read `docs/architecture/source-of-truth-i
 | `078-governance-dashboard` | 078 — Governance Dashboard (M18.5) | — | [`specs/078-governance-dashboard/spec.md`](../specs/078-governance-dashboard/spec.md) |
 | `079-governance-violation-center` | 079 — Governance Violation Center (M19.1) | — | [`specs/079-governance-violation-center/spec.md`](../specs/079-governance-violation-center/spec.md) |
 | `080-governance-rbac` | Spec 080 — Governance RBAC (M20) | — | [`specs/080-governance-rbac/spec.md`](../specs/080-governance-rbac/spec.md) |
-| `081-ai-policy-enforcement` | 081 — AI Policy Enforcement (M22) | — | [`specs/081-ai-policy-enforcement/spec.md`](../specs/081-ai-policy-enforcement/spec.md) |
-| `082-ai-audit-inspection` | Spec 082 — AI Audit & Inspection Hardening (M23) | — | [`specs/082-ai-audit-inspection/spec.md`](../specs/082-ai-audit-inspection/spec.md) |
+| `081-ai-policy-enforcement` | 081 — AI Policy Enforcement (M22) | Outside Data Relay Control (Phase E) — separate-domain / historical reference only; not current Control implementation authority | [`specs/081-ai-policy-enforcement/spec.md`](../specs/081-ai-policy-enforcement/spec.md) |
+| `082-ai-audit-inspection` | Spec 082 — AI Audit & Inspection Hardening (M23) | Outside Data Relay Control (Phase E) — separate-domain / historical reference only; not current Control implementation authority | [`specs/082-ai-audit-inspection/spec.md`](../specs/082-ai-audit-inspection/spec.md) |
 | `083-oss-v101-sprint5-performance` | OSS v1.0.1 Sprint 5 — Runtime Copy & delivery_logs Optimization | — | [`specs/083-oss-v101-sprint5-performance/spec.md`](../specs/083-oss-v101-sprint5-performance/spec.md) |
 | `084-oss-v101-sprint6-observability` | OSS v1.0.1 Sprint 6 — Runtime Overhead Reduction & Observability Foundation | — | [`specs/084-oss-v101-sprint6-observability/spec.md`](../specs/084-oss-v101-sprint6-observability/spec.md) |
 | `085-oss-v101-sprint7-sensitive-detection-batch` | OSS v1.0.1 Sprint 7 — Sensitive Detection Batch Upsert | — | [`specs/085-oss-v101-sprint7-sensitive-detection-batch/spec.md`](../specs/085-oss-v101-sprint7-sensitive-detection-batch/spec.md) |
@@ -91,7 +91,7 @@ For authority and conflict resolution, read `docs/architecture/source-of-truth-i
 | `087-oss-v101-sprint9-operational-hardening` | OSS v1.0.1 Sprint 9 — Operational Hardening | — | [`specs/087-oss-v101-sprint9-operational-hardening/spec.md`](../specs/087-oss-v101-sprint9-operational-hardening/spec.md) |
 | `088-m30-1-operations-streams-ux` | M30.1 — Operations & Streams UX Redesign (Design Spec) | Design only — no code changes in M30.1 | [`specs/088-m30-1-operations-streams-ux/spec.md`](../specs/088-m30-1-operations-streams-ux/spec.md) |
 | `089-m31-1-product-group-metadata` | M31.1 Product Group Metadata Foundation | — | [`specs/089-m31-1-product-group-metadata/spec.md`](../specs/089-m31-1-product-group-metadata/spec.md) |
-| `090-m31-2-ai-stream-ux` | M31.2 — AI Stream UX Completion | — | [`specs/090-m31-2-ai-stream-ux/spec.md`](../specs/090-m31-2-ai-stream-ux/spec.md) |
+| `090-m31-2-ai-stream-ux` | M31.2 — AI Stream UX Completion | Outside Data Relay Control (Phase E) — separate-domain / historical reference only; not current Control implementation authority | [`specs/090-m31-2-ai-stream-ux/spec.md`](../specs/090-m31-2-ai-stream-ux/spec.md) |
 | `091-route-processing-architecture` | M13.1 Route Processing Architecture — Foundation | Spec only — no implementation authorized by this document | [`specs/091-route-processing-architecture/spec.md`](../specs/091-route-processing-architecture/spec.md) |
 | `092-per-route-transform` | M13.2 Per Route Transform | Spec only — no implementation authorized by this document | [`specs/092-per-route-transform/spec.md`](../specs/092-per-route-transform/spec.md) |
 | `093-per-route-protection` | M13.3 Per Route Protection | Spec only — no implementation authorized by this document | [`specs/093-per-route-protection/spec.md`](../specs/093-per-route-protection/spec.md) |

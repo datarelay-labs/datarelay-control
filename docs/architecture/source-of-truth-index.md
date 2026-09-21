@@ -61,6 +61,7 @@ Version/header inconsistencies are documented in [`docs/source-of-truth/README.m
 - [`.specify/memory/constitution.md`](../../.specify/memory/constitution.md) is a small implementation-governance bridge and must remain subordinate to this authority model.
 - A specific current spec owns its bounded implementation contract only when it does not conflict with higher product/UX authority.
 - If a current spec conflicts with a higher current product document, stop and resolve the conflict explicitly rather than choosing whichever is newer or easier to implement.
+- Phase E AI Gateway specs (`070-ai-gateway-mvp`, `081-ai-policy-enforcement`, `082-ai-audit-inspection`, `090-m31-2-ai-stream-ux`) remain tracked for navigation but are **Outside Data Relay Control** — separate-domain / historical reference only. They are not current Control implementation authority and must not drive Control delivery, completion accounting, release readiness, or final E2E requirements.
 
 ## Current architecture entry points
 

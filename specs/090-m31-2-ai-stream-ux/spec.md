@@ -1,5 +1,7 @@
 # M31.2 — AI Stream UX Completion
 
+**Status:** Outside Data Relay Control (Phase E) — separate-domain / historical reference only; not current Control implementation authority
+
 ## Goal
 
 Complete AI Gateway operator UX to M30 parity: dedicated AI Stream wizard, detail page with W/W/W hero and issue rail, operator vocabulary.
