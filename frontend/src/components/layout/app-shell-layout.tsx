@@ -4,6 +4,7 @@ import { AppShell } from '../shell/app-shell'
 import { Sidebar } from './sidebar'
 import { TopHeader } from './top-header'
 import { PAGE_TITLE, sidebarStructureForRole } from '../../config/app-navigation'
+import { useIsMdUp } from '../../hooks/use-media-query'
 import { usePersonaMode } from '../../hooks/use-persona-mode'
 import { useGovernanceCapabilities } from '../../lib/governance-rbac'
 import { NAV_PATH, appNavKeyFromPathname } from '../../config/nav-paths'
@@ -57,7 +58,9 @@ function NotFoundPage() {
 export function AppShellLayout() {
   const navigate = useNavigate()
   const location = useLocation()
+  const isMdUp = useIsMdUp()
   const [collapsed, setCollapsed] = useState(false)
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [isDark, setIsDark] = useState(() => loadColorScheme() === 'dark')
 
   useEffect(() => {
@@ -68,6 +71,23 @@ export function AppShellLayout() {
     window.addEventListener('storage', onStorage)
     return () => window.removeEventListener('storage', onStorage)
   }, [])
+
+  useEffect(() => {
+    if (isMdUp) setMobileNavOpen(false)
+  }, [isMdUp])
+
+  useEffect(() => {
+    setMobileNavOpen(false)
+  }, [location.pathname])
+
+  useEffect(() => {
+    if (!mobileNavOpen) return
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') setMobileNavOpen(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [mobileNavOpen])
 
   const toggleTheme = useCallback(() => {
     setIsDark((prev) => {
@@ -583,15 +603,19 @@ export function AppShellLayout() {
   return (
     <main className={rootClassName}>
       <AppShell
+        mobileNavOpen={mobileNavOpen}
+        onMobileNavClose={() => setMobileNavOpen(false)}
         sidebar={
           <Sidebar
             structure={sidebarStructure}
-            collapsed={collapsed}
+            collapsed={isMdUp ? collapsed : false}
+            mobileOpen={mobileNavOpen}
             pathname={location.pathname}
             persona={persona}
             onPersonaChange={setPersona}
             onToggleCollapsed={() => setCollapsed((prev) => !prev)}
             onNavigate={(path) => navigate(path)}
+            onMobileClose={() => setMobileNavOpen(false)}
           />
         }
         header={
@@ -602,6 +626,8 @@ export function AppShellLayout() {
             runtimeHealthy={runtimeHealthy}
             isDark={isDark}
             onToggleTheme={toggleTheme}
+            mobileNavOpen={mobileNavOpen}
+            onMobileNavToggle={() => setMobileNavOpen((prev) => !prev)}
           />
         }
       >

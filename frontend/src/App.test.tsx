@@ -614,11 +614,13 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     expect(await screen.findByTestId('dashboard-recent-alerts')).toBeInTheDocument()
   })
 
-  it('renders dashboard top grid and header search', async () => {
+  it('renders dashboard top grid without a fake header search control', async () => {
     renderApp('/monitoring')
     await screen.findByTestId('dashboard-overall-health-beacon', {}, { timeout: 15000 })
-    expect(screen.getByRole('searchbox', { name: /Search streams/i })).toBeInTheDocument()
+    expect(screen.queryByRole('searchbox')).not.toBeInTheDocument()
     expect(screen.getByLabelText('Runtime status')).toBeInTheDocument()
+    expect(screen.getByTestId('shell-health-alerts')).toBeInTheDocument()
+    expect(screen.getByTestId('shell-environment-status')).toBeInTheDocument()
   })
 
   it('renders Connectors via Data Sources sidebar entry', async () => {
