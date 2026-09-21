@@ -92,6 +92,8 @@ import { StreamDetailTabNav, useStreamDetailTab } from './stream-detail-tab-nav'
 import { StreamRecentIssuesPanel } from './stream-recent-issues-panel'
 import { StreamWhyPanel } from './stream-why-panel'
 import { StreamInformationPanel } from './stream-information-panel'
+import { buildStreamDiagnosis } from './stream-runtime-diagnosis'
+import { StreamRuntimeDiagnosisOverview } from './stream-runtime-diagnosis-overview'
 import { formatRelativeShort } from '../../lib/stream-console-metrics'
 import { StreamDetailDeliveryPanel } from './stream-detail-delivery-panel'
 import { StreamDetailSettingsPanel } from './stream-detail-settings-panel'
@@ -860,6 +862,41 @@ export function StreamRuntimeDetailPage() {
     return preview !== '—' ? preview : cp.type || null
   }, [runtimeMetrics?.stream.last_checkpoint])
 
+  const diagnosis = useMemo(
+    () =>
+      buildStreamDiagnosis({
+        streamId,
+        displayStatus,
+        hasRuntimeEvidence: hasRuntimeObsApi,
+        governance: governanceSnapshot,
+        issues: operationalIssues,
+        showCheckpointObservability,
+        checkpointLabel: checkpointDisplay ? String(checkpointDisplay) : null,
+        deliveryPctKnown: deliveryPct != null,
+        deliveryPct: deliveryPct ?? 0,
+        recentErrorMessage: issueCtx.recentErrors[0]?.message ?? null,
+        canMutateWorkspace,
+        canRuntimeControl,
+        canBackfill,
+        logsHref: logsExplorerDrilldown,
+      }),
+    [
+      streamId,
+      displayStatus,
+      hasRuntimeObsApi,
+      governanceSnapshot,
+      operationalIssues,
+      showCheckpointObservability,
+      checkpointDisplay,
+      deliveryPct,
+      issueCtx.recentErrors,
+      canMutateWorkspace,
+      canRuntimeControl,
+      canBackfill,
+      logsExplorerDrilldown,
+    ],
+  )
+
   if (backendStreamId != null && !streamMetaReady) {
     return (
       <div
@@ -904,13 +941,13 @@ export function StreamRuntimeDetailPage() {
       {!canRuntimeControl ? (
         <p
           role="status"
-          className="rounded-lg border border-amber-200/80 bg-amber-500/[0.06] px-3 py-2 text-[12px] text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100/95"
+          className="rounded-lg border border-amber-200/80 bg-amber-500/[0.06] px-3 py-2 text-sm text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100/95"
         >
           Read-only monitoring session: stream start/stop, Run Now, route toggles, and backfill controls are hidden. Metrics, charts, and log
           links remain available.
         </p>
       ) : null}
-      <nav aria-label="Breadcrumb" className="text-[12px] text-slate-500 dark:text-gdc-muted">
+      <nav aria-label="Breadcrumb" className="text-sm text-slate-500 dark:text-gdc-muted">
         <ol className="flex flex-wrap items-center gap-1">
           <li>
             <Link to={NAV_PATH.streams} className="hover:text-violet-600 dark:hover:text-violet-400">
@@ -924,40 +961,38 @@ export function StreamRuntimeDetailPage() {
         </ol>
       </nav>
 
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <h2 className="text-xl font-semibold tracking-tight text-slate-900 dark:text-slate-50">Stream monitoring</h2>
-          <p className="mt-0.5 text-[13px] font-medium text-slate-600 dark:text-gdc-mutedStrong">{streamDisplayName}</p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="truncate text-xl font-semibold tracking-tight text-slate-900 dark:text-slate-50">{streamDisplayName}</h2>
+          <p className="mt-1 text-sm text-slate-600 dark:text-gdc-mutedStrong">
+            {connectorProductGroup ?? connectorDisplayName ?? 'Source'}
+          </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <StatusBadge tone={statusTone(displayStatus)} className="font-bold uppercase tracking-wide">
-            {displayStatus}
-          </StatusBadge>
-        </div>
+        <StatusBadge tone={statusTone(displayStatus)} className="w-fit px-2.5 py-1 text-sm font-semibold uppercase tracking-wide">
+          {displayStatus}
+        </StatusBadge>
       </div>
 
       <StreamDetailTabNav streamId={streamId} active={activeTab} />
 
       {(activeTab === 'overview' || activeTab === 'audit') ? (
-        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-200/80 pb-3 dark:border-gdc-border">
+        <div className="flex shrink-0 flex-col gap-2 border-b border-slate-200/80 pb-3 dark:border-gdc-border">
+          <div className="flex flex-wrap items-center gap-2" data-testid="stream-runtime-primary-actions">
           {canMutateWorkspace ? (
             <Link
               to={streamEditPath(streamId)}
-              className="inline-flex h-8 items-center rounded-md border border-slate-200/90 bg-white px-2.5 text-[12px] font-semibold text-slate-800 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100 dark:hover:bg-gdc-rowHover"
+              className="inline-flex h-9 items-center rounded-md border border-slate-200/90 bg-white px-3 text-sm font-semibold text-slate-800 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100 dark:hover:bg-gdc-rowHover"
             >
               Edit
             </Link>
           ) : (
             <span
-              className="inline-flex h-8 cursor-not-allowed items-center rounded-md border border-slate-200/60 bg-slate-50 px-2.5 text-[12px] font-semibold text-slate-400 dark:border-gdc-border/60 dark:bg-gdc-section dark:text-slate-500"
+              className="inline-flex h-9 cursor-not-allowed items-center rounded-md border border-slate-200/60 bg-slate-50 px-3 text-sm font-semibold text-slate-400 dark:border-gdc-border/60 dark:bg-gdc-section dark:text-slate-500"
               title="Viewer role cannot edit stream configuration."
             >
               Edit
             </span>
           )}
-          <span className="inline-flex h-8 items-center rounded-md border border-violet-300/80 bg-violet-500/[0.12] px-2.5 text-[12px] font-semibold text-violet-900 dark:border-violet-500/40 dark:bg-violet-500/15 dark:text-violet-100">
-            Stream monitoring
-          </span>
           {backendStreamId != null && canRuntimeControl ? (
             <StreamRunControlSwitch
               status={displayStatus}
@@ -978,19 +1013,21 @@ export function StreamRuntimeDetailPage() {
                   : 'Run the full extract → map → enrich → deliver pipeline once.'
               }
               onClick={() => void executeRunOnce()}
-              className="inline-flex h-8 items-center gap-1.5 rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white shadow-sm hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex h-9 items-center gap-1.5 rounded-md bg-violet-600 px-3 text-sm font-semibold text-white shadow-sm hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {runOnceBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Play className="h-3.5 w-3.5" aria-hidden />}
               {runOnceBusy ? 'Running…' : 'Run Now'}
             </button>
           ) : null}
+          </div>
+          <div className="flex flex-wrap items-center gap-2" aria-label="Secondary actions" data-testid="stream-runtime-secondary-actions">
           {canBackfill ? (
             <button
               type="button"
               data-testid="stream-run-backfill-open"
               disabled={backendStreamId == null || bfBusy || runOnceBusy || controlBusy}
               onClick={() => setBackfillOpen(true)}
-              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-amber-200/90 bg-amber-500/[0.08] px-2.5 text-[12px] font-semibold text-amber-900 hover:bg-amber-500/[0.14] disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100 dark:hover:bg-amber-500/20"
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-200/80 bg-transparent px-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gdc-border dark:text-slate-300 dark:hover:bg-gdc-rowHover"
             >
               <History className="h-3.5 w-3.5" aria-hidden />
               Run Backfill
@@ -1002,7 +1039,7 @@ export function StreamRuntimeDetailPage() {
                 type="button"
                 disabled={backupBusy || runOnceBusy || controlBusy}
                 onClick={() => void onExportStreamBackup()}
-                className="inline-flex h-8 items-center rounded-md border border-slate-200/90 bg-white px-2.5 text-[12px] font-semibold text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100 dark:hover:bg-gdc-rowHover"
+                className="inline-flex h-8 items-center rounded-md border border-slate-200/80 bg-transparent px-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gdc-border dark:text-slate-300 dark:hover:bg-gdc-rowHover"
               >
                 {backupBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
                 Export JSON
@@ -1011,12 +1048,13 @@ export function StreamRuntimeDetailPage() {
                 type="button"
                 disabled={backupBusy || runOnceBusy || controlBusy || !canClone}
                 onClick={() => void onCloneStreamBackup()}
-                className="inline-flex h-8 items-center rounded-md border border-violet-200/90 bg-violet-500/[0.08] px-2.5 text-[12px] font-semibold text-violet-900 hover:bg-violet-500/[0.14] disabled:cursor-not-allowed disabled:opacity-60 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-100 dark:hover:bg-violet-500/20"
+                className="inline-flex h-8 items-center rounded-md border border-slate-200/80 bg-transparent px-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gdc-border dark:text-slate-300 dark:hover:bg-gdc-rowHover"
               >
                 Clone stream
               </button>
             </>
           ) : null}
+          </div>
         </div>
       ) : null}
       {showMetricsControls ? (
@@ -1127,6 +1165,12 @@ export function StreamRuntimeDetailPage() {
       ) : null}
 
       {activeTab === 'overview' ? (
+      <StreamRuntimeDiagnosisOverview
+        diagnosis={diagnosis}
+        onStart={() => void runStreamControl('start')}
+        onRunOnce={() => void executeRunOnce()}
+        onBackfill={() => setBackfillOpen(true)}
+        evidence={
       <>
       <StreamMonitoringStatusStrip
         displayStatus={displayStatus}
@@ -1186,6 +1230,8 @@ export function StreamRuntimeDetailPage() {
         </div>
       </div>
       </>
+        }
+      />
       ) : null}
 
       {activeTab === 'metrics' ? (

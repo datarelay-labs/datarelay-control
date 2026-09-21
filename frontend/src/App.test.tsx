@@ -821,9 +821,8 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Stream monitoring' }, { timeout: 8000 }),
     ).toBeInTheDocument()
-    expect(
-      await screen.findByRole('heading', { level: 2, name: 'Stream monitoring' }, { timeout: 8000 }),
-    ).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { level: 2, name: 'Stream monitoring' })).not.toBeInTheDocument()
+    expect(await screen.findByTestId('stream-diagnosis-overview', {}, { timeout: 15000 })).toBeInTheDocument()
     expect(await screen.findByTestId('stream-detail-tabs', {}, { timeout: 15000 })).toBeInTheDocument()
     expect(
       await screen.findByRole('region', { name: 'Stream monitoring status' }, { timeout: 8000 }),
