@@ -1,41 +1,24 @@
 import { ChevronDown, Plus, RefreshCw } from 'lucide-react'
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useLayoutEffect, useMemo, useState } from 'react'
 import { loadDashboardRefreshMs, persistDashboardRefreshMs } from '../../localPreferences'
 import { Link } from 'react-router-dom'
-import type { ExtendedMetricsWindow } from '../../api/gdcRuntime'
-import { newStreamPath } from '../../config/nav-paths'
+import { NAV_PATH, newStreamPath } from '../../config/nav-paths'
 import { cn } from '../../lib/utils'
 import {
-  deriveDashboardKpisFromSnapshot,
-  deriveOperationalProblems,
-  deriveOverallHealthBeacon,
+  deriveOperationalIssuesFromSnapshot,
   deriveOverallHealthFromSnapshot,
-  deriveRecentAlertsSummary,
-  deriveStreamGroupHealthFromSnapshot,
-  deriveStreamHealthMatrix,
-  deriveSystemHealthFromSnapshot,
-  deriveSystemHealthSummaryStrip,
-  deriveTopSourcesByIngestRate,
-  deriveTrafficChartSeries,
+  deriveTrafficOverviewFromSnapshot,
   SNAPSHOT_KPI_BASIS_LABEL,
 } from './dashboard-charter-metrics'
 import {
-  DashboardKpiStrip,
   DashboardRunningBadge,
   DataModeBadge,
-  EventsOverTimeChart,
-  OperationalProblemsList,
-  OverallHealthBeaconCard,
-  RecentAlertsPanel,
-  StreamHealthMatrix,
-  SystemHealthBar,
-  SystemHealthSummaryStrip,
-  TopSourcesByIngestRatePanel,
+  OperationalIssuesPanel,
+  OverallHealthHero,
+  TrafficOverviewPanel,
 } from './dashboard-visual-panels'
 import { useDashboardOverviewData } from './use-dashboard-overview-data'
 import { RuntimeFixtureModeBanner } from '../runtime/runtime-fixture-mode-banner'
-
-const WINDOW_OPTIONS: ExtendedMetricsWindow[] = ['15m', '1h', '6h', '24h', '7d', '30d']
 
 const REFRESH_OPTIONS: { label: string; ms: number | null }[] = [
   { label: 'Off', ms: null },
@@ -44,26 +27,6 @@ const REFRESH_OPTIONS: { label: string; ms: number | null }[] = [
   { label: '1m', ms: 60_000 },
   { label: '5m', ms: 300_000 },
 ]
-
-function windowButtonLabel(w: ExtendedMetricsWindow): string {
-  if (w === '15m') return 'Last 15 min'
-  if (w === '1h') return 'Last 1 hour'
-  if (w === '6h') return 'Last 6 hours'
-  if (w === '24h') return 'Last 24 hours'
-  if (w === '7d') return 'Last 7 days'
-  if (w === '30d') return 'Last 30 days'
-  return w
-}
-
-function windowChipLabel(w: ExtendedMetricsWindow): string {
-  if (w === '15m') return '15m'
-  if (w === '1h') return '1h'
-  if (w === '6h') return '6h'
-  if (w === '24h') return '24h'
-  if (w === '7d') return '7d'
-  if (w === '30d') return '30d'
-  return w
-}
 
 function refreshLabel(ms: number | null): string {
   if (ms == null) return 'Refresh: Off'
@@ -75,101 +38,48 @@ function refreshLabel(ms: number | null): string {
 }
 
 const selectClass = cn(
-  'appearance-none rounded-lg border border-slate-200/80 bg-white py-1.5 pl-3 pr-8 text-[12px] font-medium text-slate-700',
+  'appearance-none rounded-lg border border-slate-200/80 bg-white py-2 pl-3 pr-8 text-sm font-medium text-slate-700',
   'dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200',
 )
 
 export function DashboardOverview() {
-  const [metricsWindow, setMetricsWindow] = useState<ExtendedMetricsWindow>('24h')
   const [refreshMs, setRefreshMs] = useState<number | null>(null)
-  const recentAlertsRef = useRef<HTMLElement | null>(null)
 
   useLayoutEffect(() => {
     setRefreshMs(loadDashboardRefreshMs())
   }, [])
 
-  const { bundle, loading, loadError, reload } = useDashboardOverviewData(metricsWindow, refreshMs)
+  // Snapshot-backed charter metrics do not change with analytics window; keep a stable default for the data hook.
+  const { bundle, loading, loadError, reload } = useDashboardOverviewData('24h', refreshMs)
   const initialLoading = loading && bundle == null
-  const windowLabel = windowChipLabel(metricsWindow)
-  const windowLongLabel = windowButtonLabel(metricsWindow)
 
   const overallHealth = useMemo(
     () => deriveOverallHealthFromSnapshot(bundle?.operationalSnapshot ?? null),
     [bundle?.operationalSnapshot],
   )
-  const groupHealth = useMemo(
-    () => deriveStreamGroupHealthFromSnapshot(bundle?.operationalSnapshot ?? null, bundle?.connectors ?? []),
-    [bundle?.operationalSnapshot, bundle?.connectors],
-  )
-  const operationalProblems = useMemo(
-    () => deriveOperationalProblems(bundle?.operationalSnapshot ?? null),
+  const traffic = useMemo(
+    () => deriveTrafficOverviewFromSnapshot(bundle?.operationalSnapshot ?? null),
     [bundle?.operationalSnapshot],
   )
-  const trafficSeries = useMemo(() => deriveTrafficChartSeries(bundle?.outcomeTs ?? null), [bundle?.outcomeTs])
-  const alertsSummary = useMemo(
-    () => deriveRecentAlertsSummary(bundle?.alerts?.items ?? []),
-    [bundle?.alerts?.items],
-  )
-  const kpiItems = useMemo(
-    () =>
-      deriveDashboardKpisFromSnapshot({
-        snapshot: bundle?.operationalSnapshot ?? null,
-        alertsSummary,
-        alertsFailed: bundle?.alertsFailed,
-        outcomeTs: bundle?.outcomeTs ?? null,
-        chartWindowLabel: windowLabel,
-        alertsItems: bundle?.alerts?.items ?? [],
-      }),
-    [bundle?.operationalSnapshot, alertsSummary, bundle?.alertsFailed, bundle?.outcomeTs, windowLabel, bundle?.alerts?.items],
-  )
-  const topSources = useMemo(
-    () =>
-      deriveTopSourcesByIngestRate(
-        bundle?.connectors ?? [],
-        bundle?.operationalSnapshot ?? null,
-        null,
-        6,
-      ),
-    [bundle?.connectors, bundle?.operationalSnapshot],
-  )
-  const systemHealth = useMemo(
-    () => deriveSystemHealthFromSnapshot(bundle?.operationalSnapshot ?? null, bundle?.dashboard ?? null, groupHealth),
-    [bundle?.operationalSnapshot, bundle?.dashboard, groupHealth],
-  )
-  const overallHealthBeacon = useMemo(
-    () => deriveOverallHealthBeacon(bundle?.operationalSnapshot ?? null, alertsSummary),
-    [bundle?.operationalSnapshot, alertsSummary],
-  )
-  const systemHealthSummary = useMemo(
-    () => deriveSystemHealthSummaryStrip(bundle?.operationalSnapshot ?? null, bundle?.dashboard ?? null),
+  const operationalIssues = useMemo(
+    () => deriveOperationalIssuesFromSnapshot(bundle?.operationalSnapshot ?? null, bundle?.dashboard ?? null),
     [bundle?.operationalSnapshot, bundle?.dashboard],
-  )
-  const streamHealthMatrix = useMemo(
-    () => deriveStreamHealthMatrix(bundle?.operationalSnapshot ?? null, bundle?.connectors ?? []),
-    [bundle?.operationalSnapshot, bundle?.connectors],
   )
 
   const totalStreams = bundle?.operationalSnapshot?.global.total_streams ?? bundle?.streams.length ?? 0
   const isFreshInstall = !initialLoading && totalStreams === 0
 
-  const scrollToAlerts = () => {
-    recentAlertsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
-
   return (
-    <div className="w-full min-w-0 space-y-3">
-      {/* ── Header ── */}
-      <div className="flex flex-col gap-2 border-b border-slate-200/80 pb-3 dark:border-gdc-divider lg:flex-row lg:items-center lg:justify-between">
-        <div className="min-w-0">
-          <h1 className="text-xl font-semibold tracking-tight text-slate-900 dark:text-slate-50">Dashboard</h1>
-          <p className="mt-0.5 text-[12px] text-slate-600 dark:text-gdc-muted">Operational overview of your data delivery platform</p>
-        </div>
+    <div className="w-full min-w-0 space-y-5" data-testid="dashboard-overview">
+      {/* Toolbar only — App Shell owns the page title */}
+      <div className="flex flex-col gap-3 border-b border-slate-200/80 pb-4 dark:border-gdc-divider sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-slate-600 dark:text-gdc-muted">
+          What happened? A fast read of overall health, traffic, and open operational issues.
+        </p>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* Fixture mode badge — only shown when active */}
           <DataModeBadge isFixtureMode={bundle?.isFixtureMode ?? false} />
 
-          {/* Engine status badge */}
           {!isFreshInstall ? (
             <DashboardRunningBadge
               engineStatus={bundle?.dashboard?.runtime_engine_status}
@@ -178,29 +88,6 @@ export function DashboardOverview() {
             />
           ) : null}
 
-          {/* Time Range selector */}
-          <div className="relative">
-            <label htmlFor="dashboard-window-select" className="sr-only">
-              Analytics window
-            </label>
-            <select
-              id="dashboard-window-select"
-              value={metricsWindow}
-              onChange={(e) => setMetricsWindow(e.target.value as ExtendedMetricsWindow)}
-              title="Affects events chart, alerts, and analytics — snapshot KPIs use a fixed 5m window"
-              aria-describedby="dashboard-window-hint"
-              className={selectClass}
-            >
-              {WINDOW_OPTIONS.map((w) => (
-                <option key={w} value={w}>
-                  {windowButtonLabel(w)}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" aria-hidden />
-          </div>
-
-          {/* Auto Refresh selector */}
           <div className="relative">
             <label htmlFor="dashboard-refresh-select" className="sr-only">
               Auto refresh interval
@@ -222,16 +109,15 @@ export function DashboardOverview() {
                 </option>
               ))}
             </select>
-            <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" aria-hidden />
+            <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden />
           </div>
 
-          {/* Manual refresh */}
           <button
             type="button"
             onClick={() => void reload()}
             disabled={initialLoading}
             className={cn(
-              'inline-flex items-center justify-center rounded-lg border p-2 transition-colors',
+              'inline-flex items-center justify-center rounded-lg border p-2.5 transition-colors',
               'border-slate-200/80 text-slate-600 hover:border-slate-300 hover:bg-slate-50',
               'disabled:cursor-not-allowed disabled:opacity-50 dark:border-gdc-border dark:text-gdc-muted dark:hover:bg-gdc-section/60',
             )}
@@ -243,95 +129,86 @@ export function DashboardOverview() {
         </div>
       </div>
 
-      {/* Fixture mode admin banner */}
       <RuntimeFixtureModeBanner surface="dashboard" />
 
-      {/* Window hint */}
-      {!isFreshInstall ? (
-        <p id="dashboard-window-hint" className="text-[10px] text-slate-500 dark:text-gdc-muted">
-          Snapshot KPIs ({SNAPSHOT_KPI_BASIS_LABEL}) reflect live operational state. The time range selector affects
-          events over time, alerts, and analytics only.
-        </p>
-      ) : null}
-
-      {/* Load error */}
       {loadError ? (
         <div
-          className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-950 dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-100"
+          className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-100"
           role="alert"
+          data-testid="dashboard-load-error"
         >
           {loadError}
         </div>
       ) : null}
 
       {initialLoading ? (
-        <p className="text-[12px] text-slate-500 dark:text-gdc-muted" role="status">
+        <p className="text-sm text-slate-500 dark:text-gdc-muted" role="status" data-testid="dashboard-loading">
           Loading dashboard data…
         </p>
       ) : null}
 
-      {/* ── Content ── */}
       {isFreshInstall ? (
         <section
-          className="rounded-xl border border-violet-200/80 bg-violet-50/50 px-4 py-4 dark:border-violet-500/30 dark:bg-violet-500/10"
+          className="rounded-xl border border-slate-200 bg-white px-5 py-6 shadow-sm dark:border-gdc-border dark:bg-gdc-card"
           data-testid="dashboard-empty-state"
         >
-          <h3 className="text-[14px] font-semibold text-slate-900 dark:text-slate-100">Welcome to Data Relay</h3>
-          <p className="mt-1 max-w-2xl text-[13px] text-slate-600 dark:text-gdc-mutedStrong">
+          <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">Welcome to Data Relay</h2>
+          <p className="mt-2 max-w-2xl text-sm text-slate-600 dark:text-gdc-mutedStrong">
             No streams are configured yet. Create your first stream to start collecting, transforming, and delivering data.
           </p>
           <Link
             to={newStreamPath()}
-            className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-violet-600 px-3 py-1.5 text-[12px] font-semibold text-white shadow-sm hover:bg-violet-700 dark:bg-violet-500 dark:hover:bg-violet-600"
+            className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
           >
-            <Plus className="h-3.5 w-3.5" aria-hidden />
+            <Plus className="h-4 w-4" aria-hidden />
             Create First Stream
           </Link>
         </section>
       ) : (
-        <div className={cn('space-y-3', initialLoading && 'opacity-80')}>
+        <div className={cn('space-y-5', initialLoading && 'opacity-80')} data-testid="dashboard-first-level">
+          <OverallHealthHero health={overallHealth} basisLabel={SNAPSHOT_KPI_BASIS_LABEL} />
 
-          {/* ── Row 1: Overall Health Beacon + System Health Summary ── */}
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-stretch">
-            <div className="lg:w-[220px] lg:shrink-0">
-              <OverallHealthBeaconCard beacon={overallHealthBeacon} onFocusAlerts={scrollToAlerts} />
-            </div>
-            <div className="flex-1">
-              <SystemHealthSummaryStrip items={systemHealthSummary} />
-            </div>
+          <div className="grid gap-5 lg:grid-cols-2">
+            <TrafficOverviewPanel traffic={traffic} />
+            <OperationalIssuesPanel issues={operationalIssues} />
           </div>
 
-          {/* ── Row 2: 6 KPI Cards ── */}
-          <DashboardKpiStrip items={kpiItems} onFocusAlerts={scrollToAlerts} />
-
-          {/* ── Row 3: Operational Issues | Stream Health Matrix | Top Sources ── */}
-          <div className="grid gap-3 lg:grid-cols-12">
-            <OperationalProblemsList problems={operationalProblems} className="lg:col-span-3" />
-            <StreamHealthMatrix matrix={streamHealthMatrix} className="lg:col-span-5" />
-            <TopSourcesByIngestRatePanel sources={topSources} className="lg:col-span-4" />
-          </div>
-
-          {/* ── Row 4: Events Over Time | Recent Alerts ── */}
-          <div className="grid gap-3 lg:grid-cols-12">
-            <EventsOverTimeChart series={trafficSeries} windowLabel={windowLongLabel} loading={initialLoading} className="lg:col-span-7" />
-            <div className="lg:col-span-5" ref={(el) => { recentAlertsRef.current = el }}>
-              <RecentAlertsPanel
-                summary={alertsSummary}
-                items={bundle?.alerts?.items ?? []}
-                alertsFailed={bundle?.alertsFailed}
-              />
-            </div>
-          </div>
-
-          {/* ── Bottom: System Health Pill Row ── */}
-          <SystemHealthBar items={systemHealth} />
+          <nav
+            aria-label="Dashboard drill-down"
+            data-testid="dashboard-drilldown"
+            className="flex flex-wrap gap-x-4 gap-y-2 border-t border-slate-200/80 pt-4 text-sm dark:border-gdc-divider"
+          >
+            <Link
+              to={NAV_PATH.streams}
+              className="font-medium text-slate-700 underline-offset-2 hover:underline dark:text-slate-200"
+              data-testid="dashboard-drilldown-streams"
+            >
+              Streams
+            </Link>
+            <Link
+              to={NAV_PATH.destinations}
+              className="font-medium text-slate-700 underline-offset-2 hover:underline dark:text-slate-200"
+              data-testid="dashboard-drilldown-destinations"
+            >
+              Destinations
+            </Link>
+            <Link
+              to={NAV_PATH.logs}
+              className="font-medium text-slate-700 underline-offset-2 hover:underline dark:text-slate-200"
+              data-testid="dashboard-drilldown-logs"
+            >
+              Logs
+            </Link>
+            <Link
+              to={NAV_PATH.governance}
+              className="font-medium text-slate-700 underline-offset-2 hover:underline dark:text-slate-200"
+              data-testid="dashboard-drilldown-governance"
+            >
+              Governance
+            </Link>
+          </nav>
         </div>
       )}
-
-      <div className="flex flex-col gap-0.5 border-t border-slate-200/70 pt-2 text-[10px] leading-relaxed text-slate-500 dark:border-gdc-border dark:text-gdc-muted sm:flex-row sm:items-center sm:justify-between">
-        <p>© 2025 Data Relay Platform</p>
-        <p>All times shown in UTC</p>
-      </div>
     </div>
   )
 }

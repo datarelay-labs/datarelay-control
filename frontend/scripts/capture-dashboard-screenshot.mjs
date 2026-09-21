@@ -26,7 +26,7 @@ try {
     }
   }
 
-  await page.locator('main h1:text-is("Dashboard")').first().waitFor({ state: 'visible', timeout: 30000 })
+  await page.locator('h1:text-is("Dashboard")').first().waitFor({ state: 'visible', timeout: 30000 })
 
   const loading = page.getByText(/Loading dashboard data/i)
   if (await loading.isVisible({ timeout: 2000 }).catch(() => false)) {
@@ -34,7 +34,8 @@ try {
   }
 
   await page.waitForSelector('[data-testid="dashboard-overall-health-hero"]', { state: 'visible', timeout: 60000 })
-  await page.waitForSelector('[data-testid="dashboard-kpi-strip"]', { state: 'visible', timeout: 30000 })
+  await page.waitForSelector('[data-testid="dashboard-traffic-overview"]', { state: 'visible', timeout: 30000 })
+  await page.waitForSelector('[data-testid="dashboard-operational-issues"]', { state: 'visible', timeout: 30000 })
   await page.waitForTimeout(2000)
 
   await page.screenshot({ path: outPath, fullPage: true })
