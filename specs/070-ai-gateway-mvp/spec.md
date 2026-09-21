@@ -1,5 +1,7 @@
 # M14 AI Gateway MVP
 
+**Status:** Outside Data Relay Control (Phase E) — separate-domain / historical reference only; not current Control implementation authority
+
 Prompt inspection and policy enforcement before AI provider calls. No agents, RAG, streaming, or multi-provider orchestration.
 
 ## Pipeline (normative)

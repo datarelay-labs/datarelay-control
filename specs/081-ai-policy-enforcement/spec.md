@@ -1,5 +1,7 @@
 # 081 — AI Policy Enforcement (M22)
 
+**Status:** Outside Data Relay Control (Phase E) — separate-domain / historical reference only; not current Control implementation authority
+
 ## Scope
 
 Enforcement layer for AI prompt/response traffic on existing Stream pipeline + `AI_PROVIDER_POST` destination. No new runtime, no AI governance (M24), no audit export system.

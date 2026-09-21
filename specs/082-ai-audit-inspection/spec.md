@@ -1,5 +1,7 @@
 # Spec 082 — AI Audit & Inspection Hardening (M23)
 
+**Status:** Outside Data Relay Control (Phase E) — separate-domain / historical reference only; not current Control implementation authority
+
 ## Scope
 
 Strengthen audit and operational visibility for AI request/response inspection without
