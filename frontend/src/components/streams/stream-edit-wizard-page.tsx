@@ -28,6 +28,7 @@ import { StreamEditDeliveryPanel } from './stream-edit-delivery-panel'
 import { StepRouteProcessing } from './wizard/step-route-processing'
 import { StepDeploy } from './wizard/step-deploy'
 import { WizardStepper } from './wizard/wizard-stepper'
+import { wizardStagePurpose } from './wizard/wizard-stage-guidance'
 import { hydrateWizardStateFromStream, refreshWizardDestinationsFromStream } from './wizard/wizard-stream-hydrate'
 import { persistWizardStreamEdits } from './wizard/wizard-stream-persist'
 import {
@@ -63,7 +64,7 @@ const EDIT_NEXT_STEP_LABEL: Partial<Record<WizardStepKey, string>> = {
   connect: 'Sample & Record Selection',
   sample: 'Destinations',
   destinations: 'Route Processing',
-  route_processing: 'Review',
+  route_processing: 'Deploy',
 }
 
 function wizardStepIndexForKey(steps: ReadonlyArray<{ key: WizardStepKey }>, key: WizardStepKey): number {
@@ -628,46 +629,33 @@ export function StreamEditWizardPage() {
   }
 
   const nextLabel = EDIT_NEXT_STEP_LABEL[currentStepKey]
+  const stagePurpose = wizardStagePurpose(currentStepKey)
 
   return (
-    <div className="flex w-full min-w-0 flex-col gap-4 pb-8">
-      <nav className="flex flex-wrap items-center gap-1 text-[12px]" aria-label="Page breadcrumb">
-        <Link to={NAV_PATH.streams} className="font-medium text-violet-700 hover:underline dark:text-violet-300">
-          Streams
-        </Link>
-        <span className="text-slate-400 dark:text-gdc-muted" aria-hidden>
-          /
-        </span>
-        <Link to={streamRuntimePath(streamId)} className="font-medium text-violet-700 hover:underline dark:text-violet-300">
-          {state.stream.name}
-        </Link>
-        <span className="text-slate-400 dark:text-gdc-muted" aria-hidden>
-          /
-        </span>
-        <span className="font-semibold text-slate-700 dark:text-slate-200">Edit</span>
-      </nav>
-
-      <header className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-        <div className="space-y-1">
+    <div className="flex w-full min-w-0 flex-col gap-5 pb-8" data-testid="edit-stream-wizard">
+      {/* Toolbar only — App Shell owns the page title */}
+      <div className="flex flex-col gap-3 border-b border-slate-200/80 pb-4 dark:border-gdc-divider xl:flex-row xl:items-start xl:justify-between">
+        <div className="min-w-0 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-50">Edit Stream</h2>
             <StatusBadge tone={headerStatusTone} className="font-bold uppercase tracking-wide">
               {headerStatus}
             </StatusBadge>
             <StreamOperationalBadges badges={operationalBadges} />
+            <span
+              className="inline-flex h-7 items-center rounded-md border border-slate-200/90 bg-slate-50 px-2.5 text-xs font-semibold text-slate-700 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200"
+              aria-live="polite"
+            >
+              {saveStateLabel}
+            </span>
           </div>
-          <p className="max-w-2xl text-[13px] text-slate-600 dark:text-gdc-muted">
-            {wizardSteps.map((step) => step.title).join(' → ')}
+          <p className="max-w-2xl text-sm text-slate-600 dark:text-gdc-muted" data-testid="wizard-stage-purpose">
+            {stagePurpose}
           </p>
-          <p className="text-[11px] text-slate-500 dark:text-gdc-muted">API-backed stream · changes auto-save to the platform</p>
+          <p className="text-xs text-slate-500 dark:text-gdc-muted">
+            Editing {state.stream.name} · changes auto-save to the platform
+          </p>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <span
-            className="inline-flex h-8 items-center rounded-full border border-slate-200/90 bg-slate-50 px-2.5 text-[11px] font-semibold text-slate-700 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200"
-            aria-live="polite"
-          >
-            {saveStateLabel}
-          </span>
           <StreamRunControlSwitch
             status={runtimeStatus}
             busy={controlBusy}
@@ -679,14 +667,14 @@ export function StreamEditWizardPage() {
             type="button"
             disabled={controlBusy || runOnceBusy}
             onClick={() => void executeRunOnce()}
-            className="inline-flex h-9 items-center rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white shadow-sm hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex h-9 items-center rounded-lg bg-slate-900 px-3 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
           >
             {runOnceBusy ? 'Running…' : 'Run Now'}
           </button>
           <button
             type="button"
             onClick={() => navigate(streamRuntimePath(streamId))}
-            className="inline-flex h-9 items-center rounded-md border border-slate-200/90 bg-white px-3 text-[12px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-200"
+            className="inline-flex h-9 items-center rounded-lg border border-slate-200/90 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-200"
           >
             Back to monitoring
           </button>
@@ -699,7 +687,7 @@ export function StreamEditWizardPage() {
                 setStreamDeleteConfirm('')
                 setStreamDeleteError(null)
               }}
-              className="inline-flex h-9 items-center gap-1.5 rounded-md border border-red-300/90 bg-white px-3 text-[12px] font-semibold text-red-800 shadow-sm hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-500/40 dark:bg-gdc-section dark:text-red-200 dark:hover:bg-red-950/40"
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-red-300/90 bg-white px-3 text-sm font-semibold text-red-800 shadow-sm hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-500/40 dark:bg-gdc-section dark:text-red-200 dark:hover:bg-red-950/40"
               title={runtimeStatus === 'RUNNING' ? 'Stop the stream before deleting' : 'Delete this stream'}
             >
               <Trash2 className="h-3.5 w-3.5" aria-hidden />
@@ -707,7 +695,7 @@ export function StreamEditWizardPage() {
             </button>
           ) : null}
         </div>
-      </header>
+      </div>
 
       {saveError ? (
         <p className="rounded-md border border-red-200/80 bg-red-500/[0.06] p-3 text-[12px] font-medium text-red-700 dark:border-red-500/40 dark:text-red-300">
@@ -796,12 +784,13 @@ export function StreamEditWizardPage() {
       <nav
         className="sticky bottom-0 z-20 mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200/80 bg-white/95 py-3 backdrop-blur-sm dark:border-gdc-border dark:bg-gdc-section"
         aria-label="Edit stream navigation"
+        data-testid="wizard-action-bar"
       >
         <button
           type="button"
           onClick={() => setStepIndex((idx) => Math.max(0, idx - 1))}
           disabled={stepIndex === 0}
-          className="inline-flex h-9 items-center gap-1 rounded-md border border-slate-200/90 bg-white px-3 text-[12px] font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200"
+          className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-200/90 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200"
         >
           <ChevronLeft className="h-3.5 w-3.5" aria-hidden />
           Back
@@ -811,7 +800,8 @@ export function StreamEditWizardPage() {
             type="button"
             onClick={() => void handleSave({ manual: true })}
             disabled={isSaving}
-            className="inline-flex h-9 items-center rounded-md border border-slate-200/90 bg-white px-3 text-[12px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200"
+            className="inline-flex h-9 items-center rounded-lg border border-slate-200/90 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200"
+            data-testid="wizard-save-now"
           >
             {isSaving ? 'Saving…' : 'Save now'}
           </button>
@@ -819,7 +809,8 @@ export function StreamEditWizardPage() {
             <button
               type="button"
               onClick={() => setStepIndex((idx) => Math.min(wizardSteps.length - 1, idx + 1))}
-              className="inline-flex h-9 items-center gap-1 rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white shadow-sm hover:bg-violet-700"
+              className="inline-flex h-9 items-center gap-1 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+              data-testid="wizard-next"
             >
               {nextLabel ?? 'Next'}
               <ChevronRight className="h-3.5 w-3.5" aria-hidden />
@@ -827,7 +818,8 @@ export function StreamEditWizardPage() {
           ) : (
             <Link
               to={streamRuntimePath(streamId)}
-              className="inline-flex h-9 items-center gap-1 rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white shadow-sm hover:bg-violet-700"
+              className="inline-flex h-9 items-center gap-1 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+              data-testid="wizard-open-monitoring"
             >
               Open monitoring
               <ChevronRight className="h-3.5 w-3.5" aria-hidden />
