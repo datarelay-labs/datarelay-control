@@ -83,7 +83,7 @@ The supported runtime model is route-based processing. Destination-specific diff
 ### Install and run
 
 ```bash
-git clone https://github.com/datarelay-labs/gdc-platform.git datarelay-control
+git clone https://github.com/datarelay-labs/datarelay-control.git datarelay-control
 cd datarelay-control
 cp .env.example .env
 

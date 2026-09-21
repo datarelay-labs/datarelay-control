@@ -7,8 +7,8 @@ This guide covers installing the platform on a **clean Ubuntu 24.04** server usi
 On a fresh server with Git only:
 
 ```bash
-git clone https://github.com/RickLee-kr/gdc-platform.git gdc-platform
-cd gdc-platform
+git clone https://github.com/datarelay-labs/datarelay-control.git datarelay-control
+cd datarelay-control
 git checkout v1.0.2
 chmod +x scripts/release/*.sh
 ./scripts/release/install.sh

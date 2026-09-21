@@ -146,12 +146,12 @@ See also `docs/v1-readiness-checklist.md` section 8.
 
 ## Release Notes
 
-- **Install:** `git clone https://github.com/RickLee-kr/gdc-platform.git` → `cp .env.example .env` → `docker compose -f docker-compose.platform.yml up -d` or `./scripts/release/install.sh`.
+- **Install:** `git clone https://github.com/datarelay-labs/datarelay-control.git` → `cp .env.example .env` → `docker compose -f docker-compose.platform.yml up -d` or `./scripts/release/install.sh`.
 - **Default login:** `admin` / `admin` with mandatory password change on first login.
 - **Production checklist:** `docs/release/production-checklist.md`.
 - **Install verification:** `docs/release/installation-validation.md`.
 - **License:** Apache License 2.0 — see [LICENSE](LICENSE).
 
-[1.0.2]: https://github.com/RickLee-kr/gdc-platform/releases/tag/v1.0.2
-[1.0.1]: https://github.com/RickLee-kr/gdc-platform/releases/tag/v1.0.1
-[1.0.0]: https://github.com/RickLee-kr/gdc-platform/releases/tag/v1.0.0
+[1.0.2]: https://github.com/datarelay-labs/datarelay-control/releases/tag/v1.0.2
+[1.0.1]: https://github.com/datarelay-labs/datarelay-control/releases/tag/v1.0.1
+[1.0.0]: https://github.com/datarelay-labs/datarelay-control/releases/tag/v1.0.0
