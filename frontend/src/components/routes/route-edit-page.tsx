@@ -1,4 +1,4 @@
-import { ArrowRight, HelpCircle, Play, Save, ShieldCheck } from 'lucide-react'
+import { ArrowRight, HelpCircle, Loader2, Play, Save, ShieldCheck } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -12,6 +12,10 @@ import { fetchRouteTransformEffective, type RouteTransformEffective } from '../.
 import { fetchRouteProtectionEffective, type RouteProtectionEffective } from '../../api/gdcRouteProtection'
 import { fetchRouteClassificationEffective, type RouteClassificationEffective } from '../../api/gdcRouteClassification'
 import { fetchRoutePolicyEffective, type RoutePolicyEffective } from '../../api/gdcRoutePolicy'
+import {
+  ROUTE_DELIVERY_PREVIEW_SAMPLE_EVENT,
+  runRouteDeliveryPreview,
+} from '../../api/gdcRuntimePreview'
 import { ROUTE_EDIT_DEFAULTS, type RouteDeliveryMode, type RouteFailurePolicy, type RouteRetryBackoff } from './route-edit-defaults'
 import {
   defaultsRouteDeliveryFormState,
@@ -28,6 +32,8 @@ import { fetchDestinationsList } from '../../api/gdcDestinations'
 import { HelpTooltip } from '../ui/help-tooltip'
 import { HELP_COPY } from '../ui/help-tooltip-copy'
 import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
+
+type DeliveryPreviewStatus = 'idle' | 'pending' | 'success' | 'failure'
 
 type RouteEditTab = 'delivery' | 'transform' | 'protection' | 'classification' | 'policy'
 
@@ -162,6 +168,8 @@ export function RouteEditPage() {
   const [transformDirty, setTransformDirty] = useState(false)
   const [connectorLabel, setConnectorLabel] = useState('—')
   const [streamLabel, setStreamLabel] = useState('—')
+  const [deliveryPreviewStatus, setDeliveryPreviewStatus] = useState<DeliveryPreviewStatus>('idle')
+  const [deliveryPreviewMessage, setDeliveryPreviewMessage] = useState<string | null>(null)
   const destinationLabel = useMemo(() => {
     const found = destinationOptions.find((o) => o.id === backendDestinationId)
     return found?.label ?? '—'
@@ -206,6 +214,16 @@ export function RouteEditPage() {
 
   const deliveryDirty = isRouteDeliveryDirty(deliveryBaseline, currentDeliveryForm)
   const hasUnsavedChanges = deliveryDirty || transformDirty
+  const deliveryPreviewBlockedReason = useMemo(() => {
+    if (isCreateMode || backendRouteId == null) {
+      return 'Create and save the route before running a delivery preview.'
+    }
+    if (hasUnsavedChanges) {
+      return 'Save or discard unsaved edits before preview. Preview uses the last persisted route configuration only.'
+    }
+    return null
+  }, [backendRouteId, hasUnsavedChanges, isCreateMode])
+  const deliveryPreviewBusy = deliveryPreviewStatus === 'pending'
 
   const applyDeliveryForm = useCallback((form: RouteDeliveryFormState) => {
     setRouteName(form.routeName)
@@ -412,6 +430,32 @@ export function RouteEditPage() {
     }
   }, [isCreateMode])
 
+  async function handlePreviewDelivery() {
+    if (deliveryPreviewBusy) return
+    if (deliveryPreviewBlockedReason) {
+      setDeliveryPreviewStatus('failure')
+      setDeliveryPreviewMessage(deliveryPreviewBlockedReason)
+      return
+    }
+    if (backendRouteId == null) return
+    setDeliveryPreviewStatus('pending')
+    setDeliveryPreviewMessage('Running delivery preview (no send)…')
+    try {
+      const result = await runRouteDeliveryPreview({
+        route_id: backendRouteId,
+        events: [ROUTE_DELIVERY_PREVIEW_SAMPLE_EVENT],
+      })
+      setDeliveryPreviewStatus('success')
+      setDeliveryPreviewMessage(
+        `Delivery preview ready — no events were sent. Formatted ${result.message_count} message(s) for ${result.destination_type} (destination #${result.destination_id}).`,
+      )
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Delivery preview failed.'
+      setDeliveryPreviewStatus('failure')
+      setDeliveryPreviewMessage(`Delivery preview failed: ${message}`)
+    }
+  }
+
   async function handleSaveRoute() {
     if (isSaving || (!isCreateMode && !deliveryDirty)) return
     setIsSaving(true)
@@ -581,10 +625,22 @@ export function RouteEditPage() {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-200 bg-white px-3 text-[12px] font-medium hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card"
+            onClick={() => void handlePreviewDelivery()}
+            disabled={deliveryPreviewBusy || deliveryPreviewBlockedReason != null}
+            title={
+              deliveryPreviewBlockedReason ??
+              'Preview sender-ready payloads from the last saved route. Does not send to the destination.'
+            }
+            data-testid="route-edit-preview-delivery"
+            aria-busy={deliveryPreviewBusy}
+            className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-200 bg-white px-3 text-[12px] font-medium hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gdc-border dark:bg-gdc-card"
           >
-            <Play className="h-3.5 w-3.5" />
-            Test Delivery
+            {deliveryPreviewBusy ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+            ) : (
+              <Play className="h-3.5 w-3.5" aria-hidden />
+            )}
+            {deliveryPreviewBusy ? 'Previewing…' : 'Preview Delivery'}
           </button>
           <button
             type="button"
@@ -609,6 +665,24 @@ export function RouteEditPage() {
       {hasUnsavedChanges ? (
         <p className="text-[11px] text-amber-800 dark:text-amber-200" data-testid="route-edit-unsaved-hint">
           Unsaved edits are local only. Runtime continues using the last persisted route configuration until Save succeeds.
+          Delivery preview is blocked until you save or discard these edits.
+        </p>
+      ) : null}
+      {deliveryPreviewMessage ? (
+        <p
+          className={cn(
+            'text-[12px] font-medium',
+            deliveryPreviewStatus === 'failure'
+              ? 'text-red-700 dark:text-red-300'
+              : deliveryPreviewStatus === 'success'
+                ? 'text-emerald-700 dark:text-emerald-300'
+                : 'text-slate-700 dark:text-slate-200',
+          )}
+          data-testid="route-edit-delivery-preview-status"
+          role={deliveryPreviewStatus === 'failure' ? 'alert' : 'status'}
+          aria-live="polite"
+        >
+          {deliveryPreviewMessage}
         </p>
       ) : null}
       {staleConflict ? (
