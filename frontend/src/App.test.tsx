@@ -594,7 +594,11 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     renderApp()
     await user.click(screen.getByRole('button', { name: 'Destinations' }))
     expect(
-      await screen.findByText(/Monitor delivery capacity and health of all destinations/i, {}, { timeout: 15000 }),
+      await screen.findByText(
+        /Which destination needs attention\? Scan delivery posture, open a destination for capacity and route impact/i,
+        {},
+        { timeout: 15000 },
+      ),
     ).toBeInTheDocument()
     expect(screen.getAllByRole('heading', { name: /Destinations/ }).length).toBeGreaterThanOrEqual(1)
   })
