@@ -197,6 +197,7 @@ export const SETTINGS_SECTION_PATH = {
   https: '/settings#admin-https-heading',
   userManagement: '/settings#admin-users-heading',
   passwordManagement: '/settings#admin-password-heading',
+  displayTimezone: '/settings#admin-display-timezone-heading',
   network: '/settings#admin-network-heading',
   retention: '/settings#admin-retention-heading',
   audit: '/settings/audit-logs',

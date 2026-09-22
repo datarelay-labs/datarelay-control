@@ -55,7 +55,11 @@ vi.mock('./admin-maintenance-center', () => ({
 }))
 
 vi.mock('./admin-display-timezone-settings', () => ({
-  AdminDisplayTimezoneSettings: () => <div>Display timezone</div>,
+  AdminDisplayTimezoneSettings: () => (
+    <section aria-labelledby="admin-display-timezone-heading">
+      <h3 id="admin-display-timezone-heading">Display timezone</h3>
+    </section>
+  ),
 }))
 
 vi.mock('./admin-dev-validation-panel', () => ({
@@ -90,9 +94,19 @@ describe('AdminSettingsPage IA modernization', () => {
     expect(screen.getByRole('heading', { name: 'HTTPS / Security' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Password Management' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'User Management' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Display timezone' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Network / Reverse Proxy Settings' })).toBeInTheDocument()
     expect(screen.getByTestId('admin-https-current-state')).toBeInTheDocument()
     expect(screen.getByTestId('admin-https-configuration')).toBeInTheDocument()
     expect(screen.queryByText(/localStorage/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Platform & network: Timezone' })).toHaveAttribute(
+      'href',
+      '#admin-display-timezone-heading',
+    )
+    expect(screen.getByRole('link', { name: 'Platform & network: Network' })).toHaveAttribute(
+      'href',
+      '#admin-network-heading',
+    )
   })
 
   it('preserves Viewer read-only framing', async () => {

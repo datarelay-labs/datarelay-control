@@ -45,6 +45,11 @@ describe('AdministrationHubPage modernization', () => {
         path: SETTINGS_SECTION_PATH.passwordManagement,
         name: 'Open Password Management',
       },
+      {
+        testId: 'admin-hub-display-timezone',
+        path: SETTINGS_SECTION_PATH.displayTimezone,
+        name: 'Open Display timezone',
+      },
       { testId: 'admin-hub-network', path: SETTINGS_SECTION_PATH.network, name: 'Open Network' },
       { testId: 'admin-hub-retention', path: SETTINGS_SECTION_PATH.retention, name: 'Open Retention' },
       { testId: 'admin-hub-audit', path: SETTINGS_SECTION_PATH.audit, name: 'Open Audit' },

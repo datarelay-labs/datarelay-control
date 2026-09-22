@@ -62,7 +62,11 @@ vi.mock('./admin-maintenance-center', () => ({
 }))
 
 vi.mock('./admin-display-timezone-settings', () => ({
-  AdminDisplayTimezoneSettings: () => <div>Display timezone</div>,
+  AdminDisplayTimezoneSettings: () => (
+    <section aria-labelledby="admin-display-timezone-heading">
+      <h3 id="admin-display-timezone-heading">Display timezone</h3>
+    </section>
+  ),
 }))
 
 vi.mock('./admin-dev-validation-panel', () => ({

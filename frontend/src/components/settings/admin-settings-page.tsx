@@ -55,6 +55,7 @@ const SETTINGS_SECTION_JUMPS = [
   { href: '#admin-https-heading', label: 'HTTPS', group: 'Access & security' },
   { href: '#admin-password-heading', label: 'Password', group: 'Access & security' },
   { href: '#admin-users-heading', label: 'Users', group: 'Access & security' },
+  { href: '#admin-display-timezone-heading', label: 'Timezone', group: 'Platform & network' },
   { href: '#admin-network-heading', label: 'Network', group: 'Platform & network' },
   { href: '#admin-retention-heading', label: 'Retention', group: 'Lifecycle & recovery' },
   { href: '#admin-health-heading', label: 'System Health', group: 'Operations & audit' },
