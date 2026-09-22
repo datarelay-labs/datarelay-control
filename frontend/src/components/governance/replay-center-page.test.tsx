@@ -1,10 +1,11 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useSearchParams } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as gdcGovernancePolicies from '../../api/gdcGovernancePolicies'
 import * as gdcGovernanceReplay from '../../api/gdcGovernanceReplay'
 import * as gdcStreams from '../../api/gdcStreams'
+import { NAV_PATH } from '../../config/nav-paths'
 import { PERSONA_STORAGE_KEY } from '../../utils/persona-mode'
 import { persistTestSession } from '../../lib/governance-rbac'
 import { ReplayCenterPage } from './replay-center-page'
@@ -59,10 +60,25 @@ const sampleDetail: gdcGovernanceReplay.GovernanceReplayDetailResponse = {
   can_execute: true,
 }
 
+function SearchParamsProbe() {
+  const [params] = useSearchParams()
+  return <div data-testid="search-params">{params.toString()}</div>
+}
+
 function renderPage(initialEntries = ['/governance/replay']) {
   return render(
     <MemoryRouter initialEntries={initialEntries}>
-      <ReplayCenterPage />
+      <Routes>
+        <Route
+          path="/governance/replay"
+          element={
+            <>
+              <SearchParamsProbe />
+              <ReplayCenterPage />
+            </>
+          }
+        />
+      </Routes>
     </MemoryRouter>,
   )
 }
@@ -78,7 +94,7 @@ describe('ReplayCenterPage', () => {
     vi.spyOn(gdcStreams, 'fetchStreamsList').mockResolvedValue([{ id: 10, name: 'Malop API' } as gdcStreams.StreamRead])
   })
 
-  it('renders replay table', async () => {
+  it('renders investigation-first hierarchy and replay table', async () => {
     vi.spyOn(gdcGovernanceReplay, 'fetchGovernanceReplayEvents').mockResolvedValue({
       window: '24h',
       total: 1,
@@ -91,10 +107,14 @@ describe('ReplayCenterPage', () => {
     renderPage()
 
     expect(await screen.findByTestId('replay-center-page')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /Replay Center/i })).toBeInTheDocument()
+    expect(screen.getByTestId('replay-scan-summary')).toBeInTheDocument()
+    expect(screen.getByTestId('replay-count-queue')).toHaveTextContent('1')
+    expect(screen.getByTestId('replay-filters-panel')).toBeInTheDocument()
     expect(await screen.findByTestId('replay-table')).toBeInTheDocument()
     expect(await screen.findByTestId('replay-row-7')).toBeInTheDocument()
     expect(screen.getByTestId('replay-row-7')).toHaveTextContent('Malop API')
-    expect(screen.getByTestId('replay-row-7')).toHaveTextContent('PENDING')
+    expect(screen.getByTestId('replay-row-7')).toHaveTextContent('Pending')
   })
 
   it('shows empty state when no events', async () => {
@@ -113,7 +133,23 @@ describe('ReplayCenterPage', () => {
     expect(screen.getByText(/No replay events found/i)).toBeInTheDocument()
   })
 
-  it('opens detail drawer', async () => {
+  it('shows no-match state when filters exclude all events', async () => {
+    vi.spyOn(gdcGovernanceReplay, 'fetchGovernanceReplayEvents').mockResolvedValue({
+      window: '24h',
+      total: 0,
+      replay_events: [],
+      queue_count: 0,
+      failed_count: 0,
+      recent_count: 0,
+    })
+
+    renderPage(['/governance/replay?status=FAILED'])
+
+    expect(await screen.findByTestId('replay-no-match-state')).toBeInTheDocument()
+    expect(screen.getByTestId('replay-no-match-clear')).toBeInTheDocument()
+  })
+
+  it('opens detail drawer with source, timeline, and exact-id navigation', async () => {
     vi.spyOn(gdcGovernanceReplay, 'fetchGovernanceReplayEvents').mockResolvedValue({
       window: '24h',
       total: 1,
@@ -133,8 +169,103 @@ describe('ReplayCenterPage', () => {
       expect(screen.getByTestId('replay-detail-drawer')).toBeInTheDocument()
     })
     expect(screen.getByTestId('replay-section-what-happened')).toBeInTheDocument()
+    expect(screen.getByTestId('replay-related-evidence')).toBeInTheDocument()
     expect(screen.getByTestId('replay-audit-link')).toHaveTextContent('q-42')
     expect(screen.getByTestId('replay-action-execute')).toBeInTheDocument()
+    expect(screen.getByTestId('replay-open-violation')).toHaveAttribute(
+      'href',
+      `${NAV_PATH.governanceViolations}?id=q-42`,
+    )
+    expect(screen.getByTestId('replay-open-quarantine')).toHaveAttribute(
+      'href',
+      `${NAV_PATH.governanceQuarantine}?id=42`,
+    )
+    expect(screen.getByTestId('replay-related-violation-link')).toHaveAttribute(
+      'href',
+      `${NAV_PATH.governanceViolations}?id=q-42`,
+    )
+    expect(screen.getByTestId('search-params')).toHaveTextContent('id=7')
+  })
+
+  it('opens investigation from ?id deep link without requiring a table row click', async () => {
+    const detailSpy = vi
+      .spyOn(gdcGovernanceReplay, 'fetchGovernanceReplayDetail')
+      .mockResolvedValue(sampleDetail)
+    vi.spyOn(gdcGovernanceReplay, 'fetchGovernanceReplayEvents').mockResolvedValue({
+      window: '24h',
+      total: 0,
+      replay_events: [],
+      queue_count: 0,
+      failed_count: 0,
+      recent_count: 0,
+    })
+
+    renderPage(['/governance/replay?id=7'])
+
+    await waitFor(() => {
+      expect(screen.getByTestId('replay-detail-drawer')).toBeInTheDocument()
+    })
+    expect(detailSpy).toHaveBeenCalledWith(7, '30d')
+    expect(screen.getByTestId('replay-action-execute')).toBeInTheDocument()
+  })
+
+  it('synchronizes open/close URL with ?id while preserving ?status', async () => {
+    vi.spyOn(gdcGovernanceReplay, 'fetchGovernanceReplayEvents').mockResolvedValue({
+      window: '24h',
+      total: 1,
+      replay_events: [failedEntry],
+      queue_count: 0,
+      failed_count: 1,
+      recent_count: 0,
+    })
+    vi.spyOn(gdcGovernanceReplay, 'fetchGovernanceReplayDetail').mockResolvedValue({
+      ...sampleDetail,
+      entry: failedEntry,
+      can_execute: true,
+    })
+
+    renderPage(['/governance/replay?status=FAILED'])
+    const user = userEvent.setup()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('search-params')).toHaveTextContent('status=FAILED')
+    })
+
+    await user.click(await screen.findByTestId('replay-row-8'))
+    await waitFor(() => {
+      expect(screen.getByTestId('replay-detail-drawer')).toBeInTheDocument()
+    })
+    expect(screen.getByTestId('search-params').textContent).toMatch(/id=8/)
+    expect(screen.getByTestId('search-params').textContent).toMatch(/status=FAILED/)
+
+    await user.click(screen.getByTestId('replay-detail-close'))
+    await waitFor(() => {
+      expect(screen.queryByTestId('replay-detail-drawer')).not.toBeInTheDocument()
+    })
+    expect(screen.getByTestId('search-params').textContent).not.toMatch(/id=/)
+    expect(screen.getByTestId('search-params').textContent).toMatch(/status=FAILED/)
+  })
+
+  it('supports keyboard activation of a replay row', async () => {
+    vi.spyOn(gdcGovernanceReplay, 'fetchGovernanceReplayEvents').mockResolvedValue({
+      window: '24h',
+      total: 1,
+      replay_events: [sampleEntry],
+      queue_count: 1,
+      failed_count: 0,
+      recent_count: 0,
+    })
+    vi.spyOn(gdcGovernanceReplay, 'fetchGovernanceReplayDetail').mockResolvedValue(sampleDetail)
+
+    renderPage()
+    const user = userEvent.setup()
+    const row = await screen.findByTestId('replay-row-7')
+    row.focus()
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => {
+      expect(screen.getByTestId('replay-detail-drawer')).toBeInTheDocument()
+    })
   })
 
   it('bulk execute selected replays', async () => {
@@ -191,7 +322,27 @@ describe('ReplayCenterPage', () => {
     expect(screen.queryByTestId('replay-select-all')).not.toBeInTheDocument()
   })
 
-  it('applies status filter from query param', async () => {
+  it('hides execute action for viewer sessions on deep link', async () => {
+    persistTestSession('VIEWER', 'viewer')
+    vi.spyOn(gdcGovernanceReplay, 'fetchGovernanceReplayEvents').mockResolvedValue({
+      window: '24h',
+      total: 1,
+      replay_events: [sampleEntry],
+      queue_count: 1,
+      failed_count: 0,
+      recent_count: 0,
+    })
+    vi.spyOn(gdcGovernanceReplay, 'fetchGovernanceReplayDetail').mockResolvedValue(sampleDetail)
+
+    renderPage(['/governance/replay?id=7'])
+
+    expect(await screen.findByTestId('replay-read-only-banner')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByTestId('replay-detail-drawer')).toBeInTheDocument())
+    expect(screen.queryByTestId('replay-action-execute')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('replay-bulk-execute')).not.toBeInTheDocument()
+  })
+
+  it('applies status filter from query param and coexists with ?id', async () => {
     const fetchSpy = vi.spyOn(gdcGovernanceReplay, 'fetchGovernanceReplayEvents').mockResolvedValue({
       window: '24h',
       total: 0,
@@ -200,12 +351,37 @@ describe('ReplayCenterPage', () => {
       failed_count: 0,
       recent_count: 0,
     })
+    vi.spyOn(gdcGovernanceReplay, 'fetchGovernanceReplayDetail').mockResolvedValue(sampleDetail)
 
-    renderPage(['/governance/replay?status=FAILED'])
+    renderPage(['/governance/replay?status=FAILED&id=7'])
 
     await waitFor(() => {
       expect(fetchSpy).toHaveBeenCalledWith(expect.objectContaining({ status: 'FAILED' }))
     })
     expect(await screen.findByTestId('replay-filter-status')).toHaveValue('FAILED')
+    await waitFor(() => {
+      expect(screen.getByTestId('replay-detail-drawer')).toBeInTheDocument()
+    })
+    expect(screen.getByTestId('search-params').textContent).toMatch(/status=FAILED/)
+    expect(screen.getByTestId('search-params').textContent).toMatch(/id=7/)
+  })
+
+  it('renders filters with accessible labels', async () => {
+    vi.spyOn(gdcGovernanceReplay, 'fetchGovernanceReplayEvents').mockResolvedValue({
+      window: '24h',
+      total: 0,
+      replay_events: [],
+      queue_count: 0,
+      failed_count: 0,
+      recent_count: 0,
+    })
+
+    renderPage()
+
+    expect(await screen.findByTestId('replay-filters')).toBeInTheDocument()
+    expect(screen.getByLabelText('Time range')).toBeInTheDocument()
+    expect(screen.getByLabelText('Policy')).toBeInTheDocument()
+    expect(screen.getByLabelText('Stream')).toBeInTheDocument()
+    expect(screen.getByLabelText('Status')).toBeInTheDocument()
   })
 })

@@ -170,7 +170,7 @@ describe('ViolationCenterPage', () => {
     )
     expect(screen.getByTestId('violation-related-replay-link')).toHaveAttribute(
       'href',
-      NAV_PATH.governanceReplay,
+      `${NAV_PATH.governanceReplay}?id=7`,
     )
     expect(screen.getByTestId('violation-open-quarantine')).toBeInTheDocument()
     expect(screen.getByTestId('violation-open-replay')).toBeInTheDocument()

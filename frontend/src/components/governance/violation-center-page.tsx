@@ -234,7 +234,7 @@ function ViolationDetailDrawer({
                   ))}
                 </ul>
                 <Link
-                  to={NAV_PATH.governanceReplay}
+                  to={`${NAV_PATH.governanceReplay}?id=${encodeURIComponent(String(detail.related_replays[0].replay_event_id))}`}
                   className="mt-2 inline-flex text-xs font-semibold text-violet-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/40 dark:text-violet-300"
                   data-testid="violation-related-replay-link"
                 >
@@ -264,7 +264,7 @@ function ViolationDetailDrawer({
             ) : null}
             {detail.related_replays.length > 0 ? (
               <Link
-                to={NAV_PATH.governanceReplay}
+                to={`${NAV_PATH.governanceReplay}?id=${encodeURIComponent(String(detail.related_replays[0].replay_event_id))}`}
                 className={actionLinkClass(true)}
                 data-testid="violation-open-replay"
               >

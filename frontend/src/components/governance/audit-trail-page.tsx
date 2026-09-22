@@ -230,7 +230,7 @@ function AuditTimelineDrawer({
             ) : null}
             {detail.related_replay ? (
               <Link
-                to={NAV_PATH.governanceReplay}
+                to={`${NAV_PATH.governanceReplay}?id=${encodeURIComponent(String(detail.related_replay.replay_event_id))}`}
                 className="rounded-md border border-violet-300 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-900 hover:bg-violet-100 dark:border-violet-500/40 dark:bg-violet-500/10 dark:text-violet-100"
                 data-testid="audit-open-replay"
               >
