@@ -213,7 +213,7 @@ function ViolationDetailDrawer({
                   {humanizeQuarantineReason(detail.related_quarantine.quarantine_reason)}
                 </p>
                 <Link
-                  to={NAV_PATH.governanceQuarantine}
+                  to={`${NAV_PATH.governanceQuarantine}?id=${encodeURIComponent(String(detail.related_quarantine.quarantine_event_id))}`}
                   className="mt-2 inline-flex text-xs font-semibold text-violet-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/40 dark:text-violet-300"
                   data-testid="violation-related-quarantine-link"
                 >
@@ -255,7 +255,7 @@ function ViolationDetailDrawer({
           <div className="flex flex-wrap gap-2">
             {detail.related_quarantine ? (
               <Link
-                to={NAV_PATH.governanceQuarantine}
+                to={`${NAV_PATH.governanceQuarantine}?id=${encodeURIComponent(String(detail.related_quarantine.quarantine_event_id))}`}
                 className={actionLinkClass(true)}
                 data-testid="violation-open-quarantine"
               >

@@ -166,7 +166,7 @@ describe('ViolationCenterPage', () => {
     expect(screen.getByTestId('violation-related-evidence')).toBeInTheDocument()
     expect(screen.getByTestId('violation-related-quarantine-link')).toHaveAttribute(
       'href',
-      NAV_PATH.governanceQuarantine,
+      `${NAV_PATH.governanceQuarantine}?id=42`,
     )
     expect(screen.getByTestId('violation-related-replay-link')).toHaveAttribute(
       'href',
