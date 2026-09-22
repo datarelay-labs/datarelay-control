@@ -94,6 +94,7 @@ describe('OperationsCenterPage', () => {
     renderPage()
 
     expect(await screen.findByTestId('operations-center-page')).toBeInTheDocument()
+    expect(screen.getByTestId('ops-posture-overview')).toBeInTheDocument()
     expect(screen.getByTestId('ops-action-queue')).toBeInTheDocument()
     expect(screen.getByTestId('gov-action-queue-panel')).toBeInTheDocument()
     expect(screen.getByTestId('ops-queue-approvals-value')).toHaveTextContent('3')

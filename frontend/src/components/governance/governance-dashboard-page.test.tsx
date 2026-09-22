@@ -84,6 +84,7 @@ describe('GovernanceDashboardPage', () => {
 
     expect(await screen.findByTestId('governance-dashboard-page')).toBeInTheDocument()
     expect(screen.getByText('Governance Overview')).toBeInTheDocument()
+    expect(screen.getByTestId('governance-posture-overview')).toBeInTheDocument()
     expect(screen.getByTestId('dashboard-kpi-strip')).toBeInTheDocument()
     expect(screen.getByTestId('governance-what-happened')).toBeInTheDocument()
     expect(screen.getByTestId('dashboard-recent-activity')).toBeInTheDocument()

@@ -14,13 +14,13 @@ function ActionQueueCard({
 }) {
   return (
     <div
-      className="rounded-lg border border-slate-100 bg-white p-3 dark:border-gdc-border dark:bg-gdc-card"
+      className="rounded-lg border border-slate-200/80 bg-white p-3 dark:border-gdc-border dark:bg-gdc-card"
       data-testid={`gov-action-queue-item-${item.id}`}
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-medium text-slate-900 dark:text-slate-100">{item.title}</p>
-          <p className="mt-0.5 text-[11px] text-slate-500 dark:text-gdc-muted">{item.subtitle}</p>
+          <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{item.title}</p>
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-gdc-muted">{item.subtitle}</p>
         </div>
         <span
           className={cn(
@@ -38,7 +38,7 @@ function ActionQueueCard({
             <span
               key={`${item.id}-${cta.label}`}
               data-testid={cta.testId}
-              className="inline-flex rounded-md border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-400 dark:border-gdc-border"
+              className="inline-flex rounded-md border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-400 dark:border-gdc-border"
             >
               {cta.label}
             </span>
@@ -47,7 +47,7 @@ function ActionQueueCard({
               key={`${item.id}-${cta.label}`}
               to={cta.to}
               data-testid={cta.testId}
-              className="inline-flex rounded-md border border-violet-300 bg-violet-50 px-2.5 py-1 text-[11px] font-medium text-violet-800 hover:bg-violet-100 dark:border-violet-500/40 dark:bg-violet-500/10 dark:text-violet-200"
+              className="inline-flex rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-800 shadow-sm hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 dark:border-gdc-border dark:bg-gdc-elevated dark:text-slate-100 dark:hover:bg-gdc-card"
             >
               {cta.label}
             </Link>
