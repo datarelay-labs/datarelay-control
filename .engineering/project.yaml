@@ -1,36 +1,41 @@
 engineering_system:
-  version: "1.5.1"
+  version: 1.6.1
   mode: adopted
-  baseline: "02eebeea507ef635355c4686f632775e1041d223"
+  baseline: fe0c05d0508564512b3eaae96e35a84699d4c728
   ci_mode: native
   native_ci_workflows:
-    - ".github/workflows/backend-tests.yml"
-    - ".github/workflows/frontend-tests.yml"
-    - ".github/workflows/backend-focused.yml"
-    - ".github/workflows/frontend-focused.yml"
-    - ".github/workflows/e2e-smoke.yml"
+  - .github/workflows/backend-tests.yml
+  - .github/workflows/frontend-tests.yml
+  - .github/workflows/backend-focused.yml
+  - .github/workflows/frontend-focused.yml
+  - .github/workflows/e2e-smoke.yml
   merge_gate_status: verified
-
 project:
-  name: "data-relay-control"
-  type: "enterprise-data-control-gateway"
-  maturity: "production"
-
+  name: data-relay-control
+  type: enterprise-data-control-gateway
+  maturity: production
 domains:
-  - backend
-  - frontend
-  - runtime
-  - persistence
-  - e2e
-  - release
-  - documentation
-
+- backend
+- frontend
+- runtime
+- persistence
+- e2e
+- release
+- documentation
 platforms:
-  - linux
-  - docker
-  - github-actions
-
+- linux
+- docker
+- github-actions
 operations:
   production_oriented: true
   runbook_required: true
   incident_response_required: true
+  persistent_state: true
+  runbook_paths:
+  - docs/operator-runbook.md
+  - docs/deployment/backup-restore.md
+  health_command: curl -fsS http://127.0.0.1:8000/health/ready >/dev/null
+  backup_command: bash scripts/ops/backup-postgres.sh
+  restore_test_command: bash scripts/ops/validate-backup-restore-ops.sh
+  upgrade_command: bash scripts/release/upgrade.sh
+  rollback_command: bash scripts/release/restore.sh

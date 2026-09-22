@@ -1,18 +1,22 @@
 version: 1
-
 exact_head_required: true
 artifact_hash_required: true
 provenance_required: true
 sbom_required: false
-
 preflight_required: false
-preflight_command: ""
-
+preflight_command: ''
 operational_e2e_required: true
 full_e2e_passes: 2
 public_smoke_required: true
-
 blockers:
   p0: true
   p1: true
   user_blocking_p2: true
+setup_command: ''
+qualification_command: ./scripts/test/run-backend-full.sh && (cd frontend && npm run
+  validate)
+artifact_hash_command: git archive --format=tar HEAD | sha256sum
+provenance_command: git rev-parse HEAD && git status --porcelain=v1
+sbom_command: ''
+operational_e2e_command: ./scripts/testing/run-full-regression.sh
+public_smoke_command: bash scripts/release/validate-clean-install.sh
