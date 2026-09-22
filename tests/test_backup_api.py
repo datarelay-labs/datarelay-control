@@ -343,26 +343,15 @@ def test_clone_connector_streams_have_no_checkpoints(client: TestClient, db_sess
         assert db_session.query(Checkpoint).filter(Checkpoint.stream_id == st.id).count() == 0
 
 
-def test_full_restore_replaces_operational_state(client: TestClient, db_session: Session) -> None:
+def test_full_restore_mode_rejected_on_preview_and_apply(client: TestClient, db_session: Session) -> None:
+    """Retired destructive JSON full_restore must fail closed (never reinterpret as additive)."""
     ids = _seed_connector_graph(db_session)
     bundle = client.get("/api/v1/backup/workspace/export?include_destinations=true").json()
-
-    extra = Connector(name="extra-before-restore", description=None, status="STOPPED")
-    db_session.add(extra)
-    # Stop running streams before full restore (authoritative backend guard).
-    for st in db_session.query(Stream).filter(Stream.status == "RUNNING").all():
-        st.enabled = False
-        st.status = "STOPPED"
-    db_session.commit()
-    assert db_session.query(Connector).count() == 2
+    connector_count_before = db_session.query(Connector).count()
 
     prev = client.post("/api/v1/backup/import/preview", json={"bundle": bundle, "mode": "full_restore"})
-    assert prev.status_code == 200
-    body = prev.json()
-    assert body.get("ok") is True
-    assert body.get("full_restore_purge", {}).get("connectors") == 2
-    token = body["preview_token"]
-    assert any(w.get("code") == "FULL_RESTORE_DESTRUCTIVE" for w in body.get("warnings") or [])
+    assert prev.status_code == 400
+    assert prev.json()["detail"]["error_code"] == "FULL_RESTORE_RETIRED"
 
     apply_res = client.post(
         "/api/v1/backup/import/apply",
@@ -371,167 +360,21 @@ def test_full_restore_replaces_operational_state(client: TestClient, db_session:
             "mode": "full_restore",
             "confirm": True,
             "confirm_destructive": True,
-            "preview_token": token,
+            "preview_token": "unused",
         },
     )
-    assert apply_res.status_code == 200
-    data = apply_res.json()
-    assert data.get("replaced", {}).get("connectors") == 2
-
-    connectors = db_session.query(Connector).all()
-    assert len(connectors) == 1
-    assert connectors[0].name == "backup-seed-connector"
-    assert db_session.get(Connector, ids["connector_id"]) is None
-    assert db_session.query(Stream).count() == 1
-    assert db_session.query(Route).count() == 1
-    assert db_session.query(Destination).count() == 1
-    restored_stream = db_session.query(Stream).one()
-    assert restored_stream.name == "backup-seed-stream"
-    assert restored_stream.enabled is True
-    assert restored_stream.status == "RUNNING"
+    assert apply_res.status_code == 400
+    assert apply_res.json()["detail"]["error_code"] == "FULL_RESTORE_RETIRED"
+    assert db_session.query(Connector).count() == connector_count_before
+    assert db_session.get(Connector, ids["connector_id"]) is not None
 
 
-def test_full_restore_blocked_while_stream_running(client: TestClient, db_session: Session) -> None:
-    _seed_connector_graph(db_session)
-    bundle = client.get("/api/v1/backup/workspace/export?include_destinations=true").json()
-    prev = client.post("/api/v1/backup/import/preview", json={"bundle": bundle, "mode": "full_restore"})
-    assert prev.status_code == 200
-    token = prev.json()["preview_token"]
-
-    apply_res = client.post(
-        "/api/v1/backup/import/apply",
-        json={
-            "bundle": bundle,
-            "mode": "full_restore",
-            "confirm": True,
-            "confirm_destructive": True,
-            "preview_token": token,
-        },
-    )
-    assert apply_res.status_code == 409
-    detail = apply_res.json().get("detail") or {}
-    assert detail.get("error_code") == "FULL_RESTORE_BLOCKED_STREAM_ACTIVE"
-    assert db_session.query(Stream).filter(Stream.status == "RUNNING").count() == 1
-
-
-def test_full_restore_blocked_for_enabled_stopped_inconsistent(client: TestClient, db_session: Session) -> None:
-    _seed_connector_graph(db_session)
-    for st in db_session.query(Stream).all():
-        st.enabled = True
-        st.status = "STOPPED"
-    db_session.commit()
-    bundle = client.get("/api/v1/backup/workspace/export?include_destinations=true").json()
-    token = client.post("/api/v1/backup/import/preview", json={"bundle": bundle, "mode": "full_restore"}).json()[
-        "preview_token"
-    ]
-    apply_res = client.post(
-        "/api/v1/backup/import/apply",
-        json={
-            "bundle": bundle,
-            "mode": "full_restore",
-            "confirm": True,
-            "confirm_destructive": True,
-            "preview_token": token,
-        },
-    )
-    assert apply_res.status_code == 409
-    assert apply_res.json()["detail"]["error_code"] == "FULL_RESTORE_BLOCKED_STREAM_ACTIVE"
-
-
-def test_full_restore_allowed_when_disabled_stopped_no_owner(client: TestClient, db_session: Session) -> None:
-    _seed_connector_graph(db_session)
-    for st in db_session.query(Stream).all():
-        st.enabled = False
-        st.status = "STOPPED"
-    db_session.commit()
-    bundle = client.get("/api/v1/backup/workspace/export?include_destinations=true").json()
-    token = client.post("/api/v1/backup/import/preview", json={"bundle": bundle, "mode": "full_restore"}).json()[
-        "preview_token"
-    ]
-    apply_res = client.post(
-        "/api/v1/backup/import/apply",
-        json={
-            "bundle": bundle,
-            "mode": "full_restore",
-            "confirm": True,
-            "confirm_destructive": True,
-            "preview_token": token,
-        },
-    )
-    assert apply_res.status_code == 200, apply_res.text
-
-
-def test_full_restore_blocked_while_stopping_with_worker_alive(
-    client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _seed_connector_graph(db_session)
-    for st in db_session.query(Stream).all():
-        st.enabled = False
-        st.status = "STOPPING"
-    db_session.commit()
-    monkeypatch.setattr(
-        "app.streams.runtime_eligibility.stream_has_local_runtime_owner",
-        lambda _sid: True,
-    )
-    bundle = client.get("/api/v1/backup/workspace/export?include_destinations=true").json()
-    token = client.post("/api/v1/backup/import/preview", json={"bundle": bundle, "mode": "full_restore"}).json()[
-        "preview_token"
-    ]
-    apply_res = client.post(
-        "/api/v1/backup/import/apply",
-        json={
-            "bundle": bundle,
-            "mode": "full_restore",
-            "confirm": True,
-            "confirm_destructive": True,
-            "preview_token": token,
-        },
-    )
-    assert apply_res.status_code == 409
-    assert apply_res.json()["detail"]["error_code"] == "FULL_RESTORE_BLOCKED_STREAM_ACTIVE"
-
-
-def test_full_restore_reconciles_stale_stopping_without_owner(client: TestClient, db_session: Session) -> None:
-    _seed_connector_graph(db_session)
-    for st in db_session.query(Stream).all():
-        st.enabled = False
-        st.status = "STOPPING"
-    db_session.commit()
-    bundle = client.get("/api/v1/backup/workspace/export?include_destinations=true").json()
-    token = client.post("/api/v1/backup/import/preview", json={"bundle": bundle, "mode": "full_restore"}).json()[
-        "preview_token"
-    ]
-    apply_res = client.post(
-        "/api/v1/backup/import/apply",
-        json={
-            "bundle": bundle,
-            "mode": "full_restore",
-            "confirm": True,
-            "confirm_destructive": True,
-            "preview_token": token,
-        },
-    )
-    assert apply_res.status_code == 200, apply_res.text
-
-
-def test_full_restore_requires_destructive_confirm(client: TestClient, db_session: Session) -> None:
+def test_unsupported_import_mode_rejected(client: TestClient, db_session: Session) -> None:
     ids = _seed_connector_graph(db_session)
     bundle = client.get(f"/api/v1/backup/connectors/{ids['connector_id']}/export").json()
-    token = client.post("/api/v1/backup/import/preview", json={"bundle": bundle, "mode": "full_restore"}).json()[
-        "preview_token"
-    ]
-    bad = client.post(
-        "/api/v1/backup/import/apply",
-        json={
-            "bundle": bundle,
-            "mode": "full_restore",
-            "confirm": True,
-            "confirm_destructive": False,
-            "preview_token": token,
-        },
-    )
-    assert bad.status_code == 400
-    assert bad.json()["detail"]["error_code"] == "IMPORT_DESTRUCTIVE_CONFIRM_REQUIRED"
+    prev = client.post("/api/v1/backup/import/preview", json={"bundle": bundle, "mode": "replace"})
+    assert prev.status_code == 400
+    assert prev.json()["detail"]["error_code"] == "IMPORT_MODE_UNSUPPORTED"
 
 
 def test_additive_import_still_duplicates_when_entities_exist(client: TestClient, db_session: Session) -> None:
@@ -757,7 +600,6 @@ def test_import_apply_never_binds_foreign_destination_ids(
         findings: list = []
         classification_summary = None
         dry_run = None
-        full_restore_purge = None
 
     monkeypatch.setattr(import_validator, "validate_import_bundle", lambda *a, **k: _Ok())
     monkeypatch.setattr(backup_service, "validate_import_bundle", lambda *a, **k: _Ok())

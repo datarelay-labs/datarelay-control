@@ -12,7 +12,6 @@ from sqlalchemy.orm import Session
 
 from app.backup.export_builder import canonical_bundle_json
 from app.backup.export_validation import assert_bundle_json_roundtrip
-from app.backup.operational_purge import count_operational_entities
 from app.connectors.models import Connector
 from app.destinations.models import Destination
 from app.destinations.adapters.registry import DestinationAdapterRegistry
@@ -68,15 +67,37 @@ class ValidationOutcome:
     unsupported: list[str] = field(default_factory=list)
     findings: list[dict[str, Any]] = field(default_factory=list)
     classification_summary: dict[str, int] = field(default_factory=dict)
-    full_restore_purge: dict[str, int] | None = None
 
 
 def validate_import_bundle(db: Session, bundle: dict[str, Any], *, mode: str) -> ValidationOutcome:
-    is_full_restore = mode == "full_restore"
     conflicts: list[dict[str, Any]] = []
     warnings: list[dict[str, Any]] = []
     unsupported: list[str] = []
     findings: list[dict[str, Any]] = []
+
+    if mode == "full_restore":
+        return ValidationOutcome(
+            ok=False,
+            conflicts=[
+                {
+                    "code": "FULL_RESTORE_RETIRED",
+                    "message": (
+                        "mode=full_restore is retired. JSON import supports additive and clone only; "
+                        "use PostgreSQL backup/restore for disaster recovery."
+                    ),
+                }
+            ],
+        )
+    if mode not in ("additive", "clone"):
+        return ValidationOutcome(
+            ok=False,
+            conflicts=[
+                {
+                    "code": "IMPORT_MODE_UNSUPPORTED",
+                    "message": f"Unsupported import mode {mode!r}. Allowed: additive, clone.",
+                }
+            ],
+        )
 
     if not isinstance(bundle, dict):
         return ValidationOutcome(ok=False, conflicts=[{"code": "INVALID_BUNDLE", "message": "Bundle must be a JSON object."}])
@@ -94,16 +115,6 @@ def validate_import_bundle(db: Session, bundle: dict[str, Any], *, mode: str) ->
     export_kind = bundle.get("export_kind")
     if export_kind is not None and export_kind not in ("workspace", "connector", "stream"):
         warnings.append({"code": "UNKNOWN_EXPORT_KIND", "message": f"Unknown export_kind {export_kind!r}; proceeding as workspace-style import."})
-    if is_full_restore and export_kind not in (None, "workspace"):
-        warnings.append(
-            {
-                "code": "FULL_RESTORE_PARTIAL_SNAPSHOT",
-                "message": (
-                    f"export_kind={export_kind!r} is not a full workspace snapshot; full restore will still "
-                    "remove all existing operational entities and import only what is in this bundle."
-                ),
-            }
-        )
 
     connectors = bundle.get("connectors") or []
     sources = bundle.get("sources") or []
@@ -361,41 +372,40 @@ def validate_import_bundle(db: Session, bundle: dict[str, Any], *, mode: str) ->
                     }
                 )
 
-    # Connector / destination name collisions with existing DB rows (merge import creates duplicate PKs).
-    if not is_full_restore:
-        existing_connector_names = {str(c.name) for c in db.query(Connector).all()}
-        for c in connectors:
-            if not isinstance(c, dict):
-                continue
-            name = str(c.get("name") or "").strip()
-            if name and name in existing_connector_names:
-                msg = f"A connector named {name!r} already exists; import will create another connector with the same display name."
-                findings.append(
-                    {
-                        "classification": "overwrite_candidate",
-                        "entity_type": "connector",
-                        "code": "CONNECTOR_NAME_EXISTS",
-                        "message": msg,
-                        "details": {"name": name, "export_connector_id": c.get("id")},
-                    }
-                )
+    # Connector / destination name collisions with existing DB rows (additive/clone create new PKs).
+    existing_connector_names = {str(c.name) for c in db.query(Connector).all()}
+    for c in connectors:
+        if not isinstance(c, dict):
+            continue
+        name = str(c.get("name") or "").strip()
+        if name and name in existing_connector_names:
+            msg = f"A connector named {name!r} already exists; import will create another connector with the same display name."
+            findings.append(
+                {
+                    "classification": "overwrite_candidate",
+                    "entity_type": "connector",
+                    "code": "CONNECTOR_NAME_EXISTS",
+                    "message": msg,
+                    "details": {"name": name, "export_connector_id": c.get("id")},
+                }
+            )
 
-        existing_dest_names = {str(d.name) for d in db.query(Destination).all()}
-        for d in destinations:
-            if not isinstance(d, dict):
-                continue
-            dn = str(d.get("name") or "").strip()
-            if dn and dn in existing_dest_names:
-                msg = f"A destination named {dn!r} already exists; import may create a second destination with the same name."
-                findings.append(
-                    {
-                        "classification": "overwrite_candidate",
-                        "entity_type": "destination",
-                        "code": "DESTINATION_NAME_EXISTS",
-                        "message": msg,
-                        "details": {"name": dn, "export_destination_id": d.get("id")},
-                    }
-                )
+    existing_dest_names = {str(d.name) for d in db.query(Destination).all()}
+    for d in destinations:
+        if not isinstance(d, dict):
+            continue
+        dn = str(d.get("name") or "").strip()
+        if dn and dn in existing_dest_names:
+            msg = f"A destination named {dn!r} already exists; import may create a second destination with the same name."
+            findings.append(
+                {
+                    "classification": "overwrite_candidate",
+                    "entity_type": "destination",
+                    "code": "DESTINATION_NAME_EXISTS",
+                    "message": msg,
+                    "details": {"name": dn, "export_destination_id": d.get("id")},
+                }
+            )
 
     auth_masked = any(
         isinstance(s, dict) and json.dumps(s.get("auth_json") or {}).find("********") >= 0 for s in sources if isinstance(s, dict)
@@ -439,29 +449,6 @@ def validate_import_bundle(db: Session, bundle: dict[str, Any], *, mode: str) ->
         "checkpoints": len(checkpoints),
     }
 
-    full_restore_purge: dict[str, int] | None = None
-    if is_full_restore:
-        purge = count_operational_entities(db)
-        full_restore_purge = purge.as_dict()
-        total_existing = (
-            purge.connectors
-            + purge.sources
-            + purge.streams
-            + purge.destinations
-            + purge.routes
-        )
-        warnings.append(
-            {
-                "code": "FULL_RESTORE_DESTRUCTIVE",
-                "message": (
-                    "Full restore replaces all operational configuration with this snapshot. "
-                    f"Existing rows to remove: {purge.connectors} connectors, {purge.streams} streams, "
-                    f"{purge.destinations} destinations, {purge.routes} routes "
-                    f"({total_existing} primary entities). Platform users and delivery_logs are preserved."
-                ),
-            }
-        )
-
     ok = not conflicts
     overwrite_n = len([f for f in findings if f.get("classification") == "overwrite_candidate"])
     classification_summary = {
@@ -478,5 +465,4 @@ def validate_import_bundle(db: Session, bundle: dict[str, Any], *, mode: str) ->
         unsupported=unsupported,
         findings=findings,
         classification_summary=classification_summary,
-        full_restore_purge=full_restore_purge,
     )
