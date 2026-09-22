@@ -753,7 +753,7 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     expect(
       await screen.findByText(/Read-only readiness checks for production operations/i, {}, { timeout: 8000 }),
     ).toBeInTheDocument()
-    expect(await screen.findByRole('heading', { name: 'User management' }, { timeout: 8000 })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'User Management' }, { timeout: 8000 })).toBeInTheDocument()
     expect(await screen.findByRole('heading', { name: 'System & backup' }, { timeout: 8000 })).toBeInTheDocument()
     expect(
       await screen.findByRole('heading', { name: 'Network / Reverse Proxy Settings' }, { timeout: 8000 }),
