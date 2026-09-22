@@ -276,6 +276,6 @@ describe('AdminSettingsPage Access & security modernization', () => {
     expect(screen.getByTestId('admin-https-save')).toBeDisabled()
     expect(screen.getByTestId('admin-password-submit')).toBeDisabled()
     expect(screen.getByTestId('admin-users-create')).toBeDisabled()
-    expect(screen.getByLabelText('Enable HTTPS')).toBeDisabled()
+    expect(await screen.findByLabelText('Enable HTTPS')).toBeDisabled()
   })
 })
