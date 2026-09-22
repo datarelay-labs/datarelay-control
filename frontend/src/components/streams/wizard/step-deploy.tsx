@@ -144,8 +144,8 @@ function DeployRouteIntentNotice() {
         Route Processing Intent
       </p>
       <p className="mt-1 text-[11px] leading-relaxed text-slate-700 dark:text-gdc-mutedStrong">
-        Shows the route processing configuration selected for deployment. Projected status may differ from post-deploy
-        effective config until all overrides are saved and applied.
+        Shows the route processing configuration selected for deployment. Complete Transform overrides persist as route
+        Transform; Intent-only concerns may still differ from post-deploy effective config.
       </p>
     </div>
   )

@@ -10,6 +10,7 @@ const deleteRoute = vi.fn()
 const updateRouteWithFreshToken = vi.fn()
 const saveRouteMappingUiConfig = vi.fn()
 const saveRouteEnrichmentUiConfig = vi.fn()
+const fetchRouteTransformEffective = vi.fn()
 const saveStreamMappingUiConfigStrict = vi.fn()
 const fetchStreamById = vi.fn()
 const updateStream = vi.fn()
@@ -23,6 +24,7 @@ vi.mock('../../../api/gdcRoutes', () => ({
 vi.mock('../../../api/gdcRouteTransform', () => ({
   saveRouteMappingUiConfig: (...args: unknown[]) => saveRouteMappingUiConfig(...args),
   saveRouteEnrichmentUiConfig: (...args: unknown[]) => saveRouteEnrichmentUiConfig(...args),
+  fetchRouteTransformEffective: (...args: unknown[]) => fetchRouteTransformEffective(...args),
 }))
 
 vi.mock('../../../api/gdcRuntimeUi', () => ({
@@ -46,7 +48,12 @@ vi.mock('./wizard-governance-persist', () => ({
   persistWizardStreamGovernance: vi.fn(async () => ({ saved: true, errors: [] })),
 }))
 
-import { persistWizardRouteTransformOverrides, persistWizardStreamEdits, syncRoutes } from './wizard-stream-persist'
+import {
+  persistWizardRouteTransformOverrides,
+  persistWizardStreamEdits,
+  syncRoutes,
+  verifyWizardRouteTransformEffective,
+} from './wizard-stream-persist'
 
 function editState(mutate: (state: WizardState) => void): WizardState {
   const state = buildInitialState()
@@ -74,6 +81,24 @@ function editState(mutate: (state: WizardState) => void): WizardState {
   return state
 }
 
+function enrichmentRow(fieldName: string, staticValue: string) {
+  return {
+    id: `e-${fieldName}`,
+    label: fieldName,
+    fieldName,
+    type: 'static' as const,
+    enabled: true,
+    staticValue,
+    expression: '',
+    lookupTable: 'aws-regions',
+    lookupKeyField: '',
+    conditions: [] as [],
+    conditionalDefault: '',
+    normalizeSourceField: '',
+    normalizeFormat: 'iso8601' as const,
+  }
+}
+
 describe('wizard-stream-persist route sync + transform', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -84,6 +109,34 @@ describe('wizard-stream-persist route sync + transform', () => {
     saveRouteEnrichmentUiConfig.mockResolvedValue({})
     updateRouteWithFreshToken.mockResolvedValue({})
     deleteRoute.mockResolvedValue({})
+    fetchRouteTransformEffective.mockImplementation(async (routeId: number) => {
+      if (routeId === 22) {
+        return {
+          route_id: 22,
+          stream_id: 100,
+          persisted_source: 'mixed',
+          mapping_source: 'route',
+          enrichment_source: 'stream',
+          fallback_used: true,
+          mapping_count: 1,
+          enrichment_count: 0,
+          processing_status: 'Mixed',
+          message: 'ok',
+        }
+      }
+      return {
+        route_id: routeId,
+        stream_id: 100,
+        persisted_source: 'stream',
+        mapping_source: 'stream',
+        enrichment_source: 'stream',
+        fallback_used: false,
+        mapping_count: 1,
+        enrichment_count: 0,
+        processing_status: 'Inherited',
+        message: 'ok',
+      }
+    })
   })
 
   it('captures newly created route ids and applies transform to the new route only', async () => {
@@ -131,6 +184,8 @@ describe('wizard-stream-persist route sync + transform', () => {
       }),
     )
     expect(saveRouteMappingUiConfig).not.toHaveBeenCalledWith(11, expect.anything())
+    expect(fetchRouteTransformEffective).toHaveBeenCalledWith(11)
+    expect(fetchRouteTransformEffective).toHaveBeenCalledWith(22)
   })
 
   it('persists enrichment-only route override via enrichment API', async () => {
@@ -150,23 +205,7 @@ describe('wizard-stream-persist route sync + transform', () => {
               fullEventJsonataExpression: '',
               fullEventRegexConfigJson: '',
               transformRules: [],
-              enrichment: [
-                {
-                  id: 'e1',
-                  label: 'Tenant',
-                  fieldName: 'tenant',
-                  type: 'static',
-                  enabled: true,
-                  staticValue: 'acme',
-                  expression: '',
-                  lookupTable: 'aws-regions',
-                  lookupKeyField: '',
-                  conditions: [],
-                  conditionalDefault: '',
-                  normalizeSourceField: '',
-                  normalizeFormat: 'iso8601',
-                },
-              ],
+              enrichment: [enrichmentRow('tenant', 'acme')],
               unmappedFieldsPolicy: 'pass_through',
             },
           },
@@ -184,6 +223,154 @@ describe('wizard-stream-persist route sync + transform', () => {
         }),
       }),
     )
+  })
+
+  it('verifies mixed effective status for mapping-only override', async () => {
+    const errors = await verifyWizardRouteTransformEffective(
+      [
+        {
+          key: 'route-20',
+          destinationId: 20,
+          enabled: true,
+          failurePolicy: 'LOG_AND_CONTINUE',
+          rateLimitJson: {},
+          inherit: { transform: false, protection: true, classification: true, policy: true },
+          overrides: {
+            transform: {
+              mapping: [{ id: 'm1', outputField: 'msg', sourceJsonPath: '$.message' }],
+              mappingMode: 'basic_jsonpath',
+              fullEventJsonataExpression: '',
+              fullEventRegexConfigJson: '',
+              transformRules: [],
+              enrichment: [],
+              unmappedFieldsPolicy: 'pass_through',
+            },
+          },
+        },
+      ],
+      { 'route-20': 20 },
+    )
+    expect(fetchRouteTransformEffective).toHaveBeenCalledWith(20)
+    expect(errors).toEqual([
+      'route 20 transform: expected Mixed after save, Effective API returned Inherited',
+    ])
+  })
+
+  it('verifies overridden effective status for mapping+enrichment override', async () => {
+    fetchRouteTransformEffective.mockResolvedValue({
+      route_id: 20,
+      stream_id: 100,
+      persisted_source: 'route',
+      mapping_source: 'route',
+      enrichment_source: 'route',
+      fallback_used: false,
+      mapping_count: 1,
+      enrichment_count: 1,
+      processing_status: 'Overridden',
+      message: 'ok',
+    })
+    const errors = await verifyWizardRouteTransformEffective(
+      [
+        {
+          key: 'route-20',
+          destinationId: 20,
+          enabled: true,
+          failurePolicy: 'LOG_AND_CONTINUE',
+          rateLimitJson: {},
+          inherit: { transform: false, protection: true, classification: true, policy: true },
+          overrides: {
+            transform: {
+              mapping: [{ id: 'm1', outputField: 'msg', sourceJsonPath: '$.message' }],
+              mappingMode: 'basic_jsonpath',
+              fullEventJsonataExpression: '',
+              fullEventRegexConfigJson: '',
+              transformRules: [],
+              enrichment: [enrichmentRow('tenant', 'acme')],
+              unmappedFieldsPolicy: 'pass_through',
+            },
+          },
+        },
+      ],
+      { 'route-20': 20 },
+    )
+    expect(errors).toEqual([])
+  })
+
+  it('fails closed when transform effective read-back mismatches', async () => {
+    createRoute.mockResolvedValue({ id: 22, stream_id: 100, destination_id: 20 })
+    fetchRouteTransformEffective.mockImplementation(async (routeId: number) => ({
+      route_id: routeId,
+      stream_id: 100,
+      persisted_source: 'stream',
+      mapping_source: 'stream',
+      enrichment_source: 'stream',
+      fallback_used: false,
+      mapping_count: 1,
+      enrichment_count: 0,
+      processing_status: 'Inherited',
+      message: 'ok',
+    }))
+    const state = editState((s) => {
+      s.destinations.routeDrafts = [
+        {
+          key: 'wr-new-dest-b',
+          destinationId: 20,
+          enabled: true,
+          failurePolicy: 'LOG_AND_CONTINUE',
+          rateLimitJson: {},
+          inherit: { transform: false, protection: true, classification: true, policy: true },
+          overrides: {
+            transform: {
+              mapping: [{ id: 'm2', outputField: 'route_b_msg', sourceJsonPath: '$.message' }],
+              mappingMode: 'basic_jsonpath',
+              fullEventJsonataExpression: '',
+              fullEventRegexConfigJson: '',
+              transformRules: [],
+              enrichment: [],
+              unmappedFieldsPolicy: 'pass_through',
+            },
+          },
+        },
+      ]
+      s.outcome = {
+        streamId: 100,
+        routeId: null,
+        routeIds: [],
+        mappingSaved: false,
+        enrichmentSaved: false,
+        dataProtectionSaved: false,
+        governanceSaved: false,
+        schemaDriftPolicySaved: false,
+        schemaDriftPolicyWarnings: [],
+        dataProtectionEnforcementIncomplete: false,
+        dataProtectionWarnings: [],
+        errors: [],
+        apiBacked: true,
+        createdAt: null,
+      }
+    })
+
+    const result = await persistWizardStreamEdits(100, state)
+    expect(result.ok).toBe(false)
+    expect(result.errors.some((e) => e.includes('expected Mixed'))).toBe(true)
+  })
+
+  it('skips effective verify for incomplete intent-only transform override', async () => {
+    const errors = await verifyWizardRouteTransformEffective(
+      [
+        {
+          key: 'route-20',
+          destinationId: 20,
+          enabled: true,
+          failurePolicy: 'LOG_AND_CONTINUE',
+          rateLimitJson: {},
+          inherit: { transform: false, protection: true, classification: true, policy: true },
+        },
+      ],
+      { 'route-20': 20 },
+    )
+    expect(fetchRouteTransformEffective).not.toHaveBeenCalled()
+    expect(errors).toEqual([])
   })
 
   it('syncRoutes returns routeIdsByDraftKey for new drafts', async () => {

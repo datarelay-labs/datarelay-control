@@ -87,22 +87,23 @@ export const MULTI_ROUTE_TOPOLOGIES = new Set<RouteTopology>([
 /**
  * Browser-reachable route topologies (create-path UI + Routes management).
  * Override topologies that only persist via intent_only wizard projection stay API-only.
+ * Complete Transform overrides persist from the wizard (`route_transform`) and are browser-reachable.
  */
 export const BROWSER_SUPPORTED_TOPOLOGIES = new Set<RouteTopology>([
   'SINGLE_ROUTE',
   'MULTI_ROUTE_ALL_INHERIT',
   'MULTI_ROUTE_MIXED_DESTINATION_TYPE',
   'MULTI_ROUTE_SAME_DESTINATION_TYPE_DIFFERENT_INSTANCE',
+  // Wizard Transform persist + Effective read-back
+  'MULTI_ROUTE_MIXED_TRANSFORM_OVERRIDE',
   // Wizard governance persist + Routes Protection panel
   'MULTI_ROUTE_MIXED_PROTECTION_OVERRIDE',
   // Per-route deliveryBehavior via protection overrides
   'MULTI_ROUTE_MIXED_DELIVERY_OUTCOME',
 ])
 
-/** Topologies that require Routes-edit transform persist (wizard deploy is intent_only). */
-export const BROWSER_TRANSFORM_OVERRIDE_ONLY_TOPOLOGIES = new Set<RouteTopology>([
-  'MULTI_ROUTE_MIXED_TRANSFORM_OVERRIDE',
-])
+/** @deprecated Transform overrides persist from wizard; kept empty for callers that still import the set. */
+export const BROWSER_TRANSFORM_OVERRIDE_ONLY_TOPOLOGIES = new Set<RouteTopology>([])
 
 /** Topologies that require Routes Policy panel (wizard policy deploy is intent_only). */
 export const BROWSER_POLICY_OVERRIDE_ONLY_TOPOLOGIES = new Set<RouteTopology>([
@@ -638,7 +639,7 @@ export const APPLICABILITY_RULES: ApplicabilityRule[] = [
   {
     rule_id: 'R019d_BROWSER_TRANSFORM_UI',
     description:
-      'Browser Transform UI supports stream-level transforms; per-route transform override is API-only (wizard deploy intent_only)',
+      'Browser Transform UI supports stream-level transforms and complete per-route Transform overrides via wizard deploy (route_transform)',
     capability_ids: [
       'processing.mapping.field_jsonpath',
       'processing.enrichment.jsonata',
@@ -648,21 +649,11 @@ export const APPLICABILITY_RULES: ApplicabilityRule[] = [
     ],
     evidence: [
       'frontend/src/components/streams/wizard/step-mapping-combined.tsx',
-      'frontend/src/components/streams/wizard/wizard-deploy-projection.ts intent_only transform',
+      'frontend/src/components/streams/wizard/wizard-deploy-projection.ts route_transform',
+      'frontend/src/components/streams/wizard/wizard-stream-persist.ts',
       'frontend/src/components/routes/route-edit-transform-panel.tsx',
     ],
-    evaluate: ({ axes }) => {
-      if (axes.execution_surface !== 'BROWSER') return null
-      if (BROWSER_TRANSFORM_OVERRIDE_ONLY_TOPOLOGIES.has(axes.route_topology)) {
-        return reject(
-          'R019d_BROWSER_TRANSFORM_UI',
-          `Browser cannot reliably persist route_topology=${axes.route_topology} (wizard transform deploy is intent_only)`,
-          ['routes.per_route_transform', 'wizard.step.route_processing'],
-          'wizard-deploy-projection.ts transform → intent_only',
-        )
-      }
-      return null
-    },
+    evaluate: () => null,
   },
   {
     rule_id: 'R019e_BROWSER_GOVERNANCE_UI',

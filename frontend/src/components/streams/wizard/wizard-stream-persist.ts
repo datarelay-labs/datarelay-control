@@ -1,5 +1,9 @@
 import { createRoute, deleteRoute, updateRouteWithFreshToken } from '../../../api/gdcRoutes'
-import { saveRouteEnrichmentUiConfig, saveRouteMappingUiConfig } from '../../../api/gdcRouteTransform'
+import {
+  fetchRouteTransformEffective,
+  saveRouteEnrichmentUiConfig,
+  saveRouteMappingUiConfig,
+} from '../../../api/gdcRouteTransform'
 import { saveStreamMappingUiConfigStrict } from '../../../api/gdcRuntimeUi'
 import { fetchStreamById, updateStream } from '../../../api/gdcStreams'
 import {
@@ -12,6 +16,8 @@ import {
   buildStreamCreatePayload,
   buildWizardFieldMappingsPayload,
   enrichmentDictFromRows,
+  expectedRouteTransformProcessingStatus,
+  routeTransformOverridePersistPayload,
   wizardFieldMappingsReady,
   type WizardRouteDraft,
   type WizardState,
@@ -121,6 +127,60 @@ export async function persistWizardRouteTransformOverrides(
   return errors
 }
 
+/**
+ * Read back Transform Effective for routes with known ids and fail closed on mismatch.
+ * Inherited routes must stay Inherited. Complete overrides must match Overridden/Mixed.
+ * Incomplete (Intent only) overrides are not claimed as persisted — skipped here.
+ */
+export async function verifyWizardRouteTransformEffective(
+  drafts: WizardRouteDraft[],
+  routeIdsByDraftKey: Record<string, number>,
+): Promise<string[]> {
+  const errors: string[] = []
+
+  for (const draft of drafts) {
+    const routeId = routeIdsByDraftKey[draft.key] ?? routeKeyToId(draft.key)
+    if (routeId == null || routeId <= 0) continue
+
+    const inheritTransform = draft.inherit.transform !== false
+    const payload = inheritTransform
+      ? null
+      : routeTransformOverridePersistPayload(draft.overrides?.transform)
+
+    // Intent-only empty override: do not claim persisted/effective success.
+    if (!inheritTransform && payload == null) continue
+
+    const expectedStatus = inheritTransform
+      ? ('Inherited' as const)
+      : expectedRouteTransformProcessingStatus(payload!.fieldMappings, payload!.enrichment)
+
+    let effective
+    try {
+      effective = await fetchRouteTransformEffective(routeId)
+    } catch (err) {
+      errors.push(
+        `route ${routeId} transform effective: ${err instanceof Error ? err.message : String(err)}`,
+      )
+      continue
+    }
+
+    if (effective == null) {
+      errors.push(
+        `route ${routeId} transform: Effective API returned no result (expected ${expectedStatus})`,
+      )
+      continue
+    }
+
+    if (effective.processing_status !== expectedStatus) {
+      errors.push(
+        `route ${routeId} transform: expected ${expectedStatus} after save, Effective API returned ${effective.processing_status}`,
+      )
+    }
+  }
+
+  return errors
+}
+
 export async function persistWizardStreamEdits(streamId: number, state: WizardState): Promise<WizardStreamPersistResult> {
   const errors: string[] = []
   const payload = buildStreamCreatePayload(state)
@@ -199,6 +259,12 @@ export async function persistWizardStreamEdits(streamId: number, state: WizardSt
   )
   errors.push(
     ...(await persistWizardRouteTransformOverrides(state.destinations.routeDrafts, orderedRouteIds)),
+  )
+  errors.push(
+    ...(await verifyWizardRouteTransformEffective(
+      state.destinations.routeDrafts,
+      synced.routeIdsByDraftKey,
+    )),
   )
 
   if (state.dataProtection.intents.length > 0) {

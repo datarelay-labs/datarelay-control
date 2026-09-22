@@ -945,7 +945,19 @@ export function computeWizardRouteProcessingStatuses(
   const protectionFieldOverrides = routeHasProtectionFieldOverrides(dataProtection, draft.key)
   const classificationOverride = routeHasClassificationOverride(dataProtection, draft.key)
 
-  const transform: RouteProcessingStatus = inherit.transform ? 'Inherited' : 'Overridden'
+  let transform: RouteProcessingStatus
+  if (inherit.transform) {
+    transform = 'Inherited'
+  } else {
+    const payload = routeTransformOverridePersistPayload(draft.overrides?.transform)
+    if (!payload) {
+      transform = 'Overridden'
+    } else {
+      const hasMapping = Object.keys(payload.fieldMappings).length > 0
+      const hasEnrichment = Object.keys(payload.enrichment).length > 0
+      transform = hasMapping && hasEnrichment ? 'Overridden' : 'Mixed'
+    }
+  }
 
   let protection: RouteProcessingStatus
   if (!inherit.protection) {
@@ -1711,6 +1723,39 @@ export type RouteTransformPersistPlan = {
   enrichment: Record<string, unknown>
 }
 
+/** Mapping/enrichment payload for a route Transform override draft, or null when empty/incomplete. */
+export function routeTransformOverridePersistPayload(
+  override: WizardRouteTransformOverride | undefined,
+): { fieldMappings: Record<string, unknown>; enrichment: Record<string, unknown> } | null {
+  if (!override) return null
+  const fieldMappings = buildWizardFieldMappingsPayload(override)
+  const enrichment = enrichmentDictFromRows(override.enrichment)
+  if (Object.keys(fieldMappings).length === 0 && Object.keys(enrichment).length === 0) return null
+  return { fieldMappings, enrichment }
+}
+
+/** True when the draft will persist a complete route Transform override (not Intent only). */
+export function hasPersistableRouteTransformOverride(draft: WizardRouteDraft): boolean {
+  return (
+    draft.inherit.transform === false &&
+    routeTransformOverridePersistPayload(draft.overrides?.transform) != null
+  )
+}
+
+/**
+ * Expected Effective API processing_status after persisting the given mapping/enrichment payload.
+ * Mapping-only or enrichment-only → Mixed; both → Overridden.
+ */
+export function expectedRouteTransformProcessingStatus(
+  fieldMappings: Record<string, unknown>,
+  enrichment: Record<string, unknown>,
+): 'Overridden' | 'Mixed' {
+  const hasMapping = Object.keys(fieldMappings).length > 0
+  const hasEnrichment = Object.keys(enrichment).length > 0
+  if (hasMapping && hasEnrichment) return 'Overridden'
+  return 'Mixed'
+}
+
 /** Plans for existing route-mapping / route-enrichment APIs — wizard override drafts that must not stay client-only. */
 export function buildRouteTransformPersistPlans(
   drafts: WizardRouteDraft[],
@@ -1720,12 +1765,14 @@ export function buildRouteTransformPersistPlans(
   drafts.forEach((draft, index) => {
     const routeId = routeIdsInDraftOrder[index]
     if (!routeId || draft.inherit.transform !== false) return
-    const override = draft.overrides?.transform
-    if (!override) return
-    const fieldMappings = buildWizardFieldMappingsPayload(override)
-    const enrichment = enrichmentDictFromRows(override.enrichment)
-    if (Object.keys(fieldMappings).length === 0 && Object.keys(enrichment).length === 0) return
-    plans.push({ routeId, inherit: false, fieldMappings, enrichment })
+    const payload = routeTransformOverridePersistPayload(draft.overrides?.transform)
+    if (!payload) return
+    plans.push({
+      routeId,
+      inherit: false,
+      fieldMappings: payload.fieldMappings,
+      enrichment: payload.enrichment,
+    })
   })
   return plans
 }
