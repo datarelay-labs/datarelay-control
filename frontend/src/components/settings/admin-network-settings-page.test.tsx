@@ -240,7 +240,8 @@ describe('AdminNetworkSettingsPage', () => {
 
   it('shows save → apply → reconnect workflow and current-state hierarchy', async () => {
     render(<AdminNetworkSettingsPage />)
-    expect(await screen.findByTestId('admin-network-workflow')).toHaveTextContent('Save ports')
+    await expectLoadedPorts('18080', '18443')
+    expect(screen.getByTestId('admin-network-workflow')).toHaveTextContent('Save ports')
     expect(screen.getByTestId('admin-network-workflow')).toHaveTextContent('Apply reverse proxy')
     expect(screen.getByTestId('admin-network-workflow')).toHaveTextContent('Reconnect / result')
     expect(screen.getByTestId('admin-network-current-state')).toHaveTextContent('Saved HTTP port')
