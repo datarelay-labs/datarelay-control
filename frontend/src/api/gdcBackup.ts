@@ -1,7 +1,7 @@
 import { requestBlob, requestJson, resolveApiBaseUrl, safeRequestJsonResult } from '../api'
 import { GDC_API_PREFIX } from './gdcApiPrefix'
 
-export type ImportMode = 'additive' | 'clone' | 'full_restore'
+export type ImportMode = 'additive' | 'clone'
 
 export type ImportPreviewCounts = {
   connectors: number
@@ -25,19 +25,6 @@ export type ImportPreviewWarning = {
   message: string
 }
 
-export type FullRestorePurgePreview = {
-  connectors: number
-  sources: number
-  streams: number
-  mappings: number
-  enrichments: number
-  destinations: number
-  routes: number
-  checkpoints: number
-  backfill_jobs: number
-  continuous_validations: number
-}
-
 export type ImportPreviewResult = {
   ok: boolean
   export_kind: string | null
@@ -45,7 +32,6 @@ export type ImportPreviewResult = {
   conflicts: ImportPreviewConflict[]
   warnings: ImportPreviewWarning[]
   unsupported_items: string[]
-  full_restore_purge?: FullRestorePurgePreview | null
   preview_token: string
 }
 
@@ -57,7 +43,6 @@ export type ImportApplyResult = {
     stream_ids: number[]
     destination_ids: number[]
   }
-  replaced?: FullRestorePurgePreview | null
   redirect_path: string | null
   idempotency_key?: string | null
   idempotent_replay?: boolean
@@ -149,7 +134,6 @@ export async function postImportApply(
   previewToken: string,
   opts: {
     confirm?: boolean
-    confirm_destructive?: boolean
     clone_name_suffix?: string
     idempotency_key?: string
   } = {},
@@ -161,7 +145,6 @@ export async function postImportApply(
       mode,
       preview_token: previewToken,
       confirm: opts.confirm ?? true,
-      confirm_destructive: opts.confirm_destructive ?? false,
       clone_name_suffix: opts.clone_name_suffix ?? ' (copy)',
       ...(opts.idempotency_key ? { idempotency_key: opts.idempotency_key } : {}),
     }),

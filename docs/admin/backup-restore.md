@@ -2,6 +2,8 @@
 
 This runbook describes **read-only backups** and **controlled restores** for the GDC platform **PostgreSQL** database only. It does not replace your organisation’s wider backup policy (off-site copies, retention, encryption at rest, access control).
 
+**Distinct from JSON configuration export/import:** Admin **Backup & Import** (`/api/v1/backup/*`, `specs/015-backup-export-import/spec.md`) is portable configuration migration (additive/clone only). It is **not** database disaster recovery and does **not** replace this PostgreSQL procedure.
+
 ## Safety rules (non-negotiable)
 
 - **Backup** uses `pg_dump` only: it is **read-only** with respect to the database and does **not** modify application checkpoints.
