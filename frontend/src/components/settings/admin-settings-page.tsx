@@ -376,21 +376,33 @@ export function AdminSettingsPage() {
     }
   }
 
-  const httpsStatusBadge = https?.https_listener_active ? (
-    <span className="rounded border border-emerald-500/25 bg-emerald-500/[0.08] px-2 py-0.5 text-[11px] font-semibold text-emerald-900 dark:border-emerald-500/35 dark:bg-emerald-500/12 dark:text-emerald-100/90">
-      TLS active
-    </span>
-  ) : https?.enabled ? (
-    <span className="rounded border border-amber-500/25 bg-amber-500/[0.08] px-2 py-0.5 text-[11px] font-semibold text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100/85">
-      TLS pending
-    </span>
-  ) : (
-    <span className="rounded border border-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-600 dark:border-gdc-border dark:text-gdc-muted">
-      HTTP only
+  const httpsStatusLabel = https?.https_listener_active
+    ? 'TLS active'
+    : https?.enabled
+      ? 'TLS pending'
+      : 'HTTP only'
+  const httpsStatusBadge = (
+    <span
+      data-testid="admin-https-status-badge"
+      className={cn(
+        'inline-flex items-center rounded-md px-2.5 py-1 text-xs font-semibold ring-1',
+        https?.https_listener_active
+          ? 'bg-emerald-500/15 text-emerald-900 ring-emerald-500/30 dark:text-emerald-100/90'
+          : https?.enabled
+            ? 'bg-amber-500/15 text-amber-950 ring-amber-500/30 dark:text-amber-100/85'
+            : 'bg-slate-100 text-slate-700 ring-slate-300/80 dark:bg-gdc-elevated dark:text-gdc-muted dark:ring-gdc-border',
+      )}
+    >
+      {httpsStatusLabel}
     </span>
   )
 
   const cardShell = gdcUi.cardShell
+  const focusRing =
+    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 dark:focus-visible:ring-gdc-primary/45'
+  const fieldLabel = 'text-sm font-medium text-slate-700 dark:text-slate-200'
+  const fieldHint = 'mt-1 text-xs leading-relaxed text-slate-500 dark:text-gdc-muted'
+  const sectionStepLabel = 'text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted'
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-6" data-testid="admin-settings-page">
@@ -480,157 +492,195 @@ export function AdminSettingsPage() {
         </h2>
 
       {/* HTTPS / Security */}
-      <section className={cn(cardShell, 'overflow-hidden')} aria-labelledby="admin-https-heading">
-        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 px-4 py-4 dark:border-gdc-border md:px-6">
+      <section
+        className={cn(cardShell, 'overflow-hidden')}
+        aria-labelledby="admin-https-heading"
+        data-testid="admin-https-panel"
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 px-4 py-5 dark:border-gdc-border md:px-6">
           <div className="flex min-w-0 gap-3">
             <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-violet-500/20 bg-violet-500/[0.07] text-violet-700 dark:border-gdc-primary/35 dark:bg-gdc-primary/15 dark:text-violet-100">
               <Lock className="h-5 w-5" aria-hidden />
             </span>
-            <div>
-              <h3 id="admin-https-heading" className="text-[15px] font-semibold text-slate-900 dark:text-slate-50">
+            <div className="min-w-0">
+              <h3 id="admin-https-heading" className="text-base font-semibold text-slate-900 dark:text-slate-50">
                 HTTPS / Security
               </h3>
-              <p className="mt-0.5 text-[12px] text-slate-600 dark:text-gdc-muted">
-                Self-signed TLS via nginx reverse proxy. HTTP stays available if TLS reload fails.
+              <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-gdc-muted">
+                Review current TLS and proxy state, then change certificate settings and save. Self-signed TLS is served via
+                nginx; HTTP stays available if TLS reload fails.
               </p>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {httpsStatusBadge}
-            <span className="rounded border border-slate-200 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:border-gdc-border dark:text-gdc-muted">
-              {https?.https_listener_active ? 'HTTPS' : https?.enabled ? 'CONFIGURED' : 'HTTP'}
-            </span>
-          </div>
+          {httpsStatusBadge}
         </div>
 
-        <div className="grid gap-6 px-4 py-5 md:grid-cols-12 md:px-6 md:py-6">
-          <div className="space-y-4 md:col-span-3">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted">HTTPS status</p>
-              <div className="mt-1">{httpsStatusBadge}</div>
-            </div>
-            <div>
-              <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted" htmlFor="current-access">
-                Current access
-              </label>
-              <input
-                id="current-access"
-                readOnly
-                value={https?.current_access_url ?? '—'}
-                className={cn('mt-1 w-full', gdcUi.input, 'opacity-90')}
-              />
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted">Runtime</p>
-              <ul className="mt-1 space-y-0.5 text-[12px] text-slate-700 dark:text-slate-200">
-                <li>HTTP listener: {https?.http_listener_active ? 'active' : 'inactive'}</li>
-                <li>HTTPS listener: {https?.https_listener_active ? 'active' : 'inactive'}</li>
-                <li>Redirect effective: {https?.redirect_http_to_https_effective ? 'yes' : 'no'}</li>
-                <li>Proxy: {https?.proxy_status ?? '—'}</li>
-                <li>Proxy health: {https?.proxy_health_ok == null ? 'n/a' : https.proxy_health_ok ? 'ok' : 'failed'}</li>
-                <li>Last reload: {formatTs(https?.proxy_last_reload_at ?? null)}</li>
-                {https?.proxy_last_reload_detail ? (
-                  <li className="break-words text-slate-600 dark:text-gdc-muted">{https.proxy_last_reload_detail}</li>
-                ) : null}
-                {https?.proxy_fallback_to_http_last ? (
-                  <li className="text-amber-800 dark:text-amber-100/90">Recent proxy reload used HTTP fallback.</li>
-                ) : null}
-              </ul>
-            </div>
-            <div>
-              <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted" htmlFor="browser-http">
-                Browser HTTP URL
-              </label>
-              <input
-                id="browser-http"
-                readOnly
-                value={https?.browser_http_url || '—'}
-                className={cn('mt-1 w-full', gdcUi.input, 'opacity-90')}
-              />
-            </div>
-            {https?.browser_https_url ? (
+        <div className="space-y-6 px-4 py-5 md:px-6 md:py-6">
+          <div data-testid="admin-https-current-state" className="space-y-3">
+            <p className={sectionStepLabel}>Current state</p>
+            <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {[
+                { term: 'Listener mode', detail: https?.https_listener_active ? 'HTTPS' : https?.enabled ? 'Configured' : 'HTTP' },
+                { term: 'HTTP listener', detail: https?.http_listener_active ? 'Active' : 'Inactive' },
+                { term: 'HTTPS listener', detail: https?.https_listener_active ? 'Active' : 'Inactive' },
+                {
+                  term: 'Redirect effective',
+                  detail: https?.redirect_http_to_https_effective ? 'Yes' : 'No',
+                },
+                { term: 'Proxy status', detail: https?.proxy_status ?? '—' },
+                {
+                  term: 'Proxy health',
+                  detail: https?.proxy_health_ok == null ? 'n/a' : https.proxy_health_ok ? 'Ok' : 'Failed',
+                },
+                { term: 'Last reload', detail: formatTs(https?.proxy_last_reload_at ?? null) },
+                {
+                  term: 'Certificate valid to',
+                  detail: https?.certificate_not_after ? formatTs(https.certificate_not_after) : '—',
+                },
+              ].map((item) => (
+                <div key={item.term} className={cn('rounded-xl px-3 py-3', gdcUi.innerWell)}>
+                  <dt className="text-xs font-medium text-slate-500 dark:text-gdc-muted">{item.term}</dt>
+                  <dd className="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-50">{item.detail}</dd>
+                </div>
+              ))}
+            </dl>
+            {https?.proxy_last_reload_detail ? (
+              <p className="break-words text-sm text-slate-600 dark:text-gdc-muted">{https.proxy_last_reload_detail}</p>
+            ) : null}
+            {https?.proxy_fallback_to_http_last ? (
+              <p className="text-sm font-medium text-amber-800 dark:text-amber-100/90">
+                Recent proxy reload used HTTP fallback.
+              </p>
+            ) : null}
+            <div className="grid gap-3 md:grid-cols-3">
               <div>
-                <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted" htmlFor="browser-https">
-                  Browser HTTPS URL
+                <label className={fieldLabel} htmlFor="current-access">
+                  Current access URL
                 </label>
                 <input
-                  id="browser-https"
+                  id="current-access"
                   readOnly
-                  value={https.browser_https_url}
-                  className={cn('mt-1 w-full', gdcUi.input, 'opacity-90')}
+                  value={https?.current_access_url ?? '—'}
+                  className={cn('mt-1.5 w-full', gdcUi.input, 'opacity-90')}
                 />
               </div>
-            ) : null}
-            {https?.certificate_not_after ? (
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted">Certificate valid to</p>
-                <p className="mt-1 text-[13px] font-medium text-slate-800 dark:text-slate-100">{formatTs(https.certificate_not_after)}</p>
+                <label className={fieldLabel} htmlFor="browser-http">
+                  Browser HTTP URL
+                </label>
+                <input
+                  id="browser-http"
+                  readOnly
+                  value={https?.browser_http_url || '—'}
+                  className={cn('mt-1.5 w-full', gdcUi.input, 'opacity-90')}
+                />
               </div>
-            ) : null}
+              {https?.browser_https_url ? (
+                <div>
+                  <label className={fieldLabel} htmlFor="browser-https">
+                    Browser HTTPS URL
+                  </label>
+                  <input
+                    id="browser-https"
+                    readOnly
+                    value={https.browser_https_url}
+                    className={cn('mt-1.5 w-full', gdcUi.input, 'opacity-90')}
+                  />
+                </div>
+              ) : null}
+            </div>
           </div>
 
-          <div className="space-y-4 md:col-span-5">
+          <div data-testid="admin-https-configuration" className="space-y-4 border-t border-slate-100 pt-6 dark:border-gdc-border">
+            <div className="flex flex-wrap items-end justify-between gap-2">
+              <div>
+                <p className={sectionStepLabel}>Configuration</p>
+                <p className="mt-1 text-sm text-slate-600 dark:text-gdc-muted">
+                  Edit TLS settings, then save. At least one IP or DNS SAN is required when HTTPS is enabled.
+                </p>
+              </div>
+            </div>
             {httpsDraft ? (
-              <>
-                <label className="flex items-center justify-between gap-3 rounded-lg border border-slate-100 px-3 py-2.5 dark:border-gdc-border/80">
-                  <span className="text-[13px] font-medium text-slate-800 dark:text-slate-100">Enable HTTPS</span>
+              <div className="grid gap-4 lg:grid-cols-2">
+                <label
+                  htmlFor="https-enabled"
+                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-200/90 px-4 py-3 dark:border-gdc-border"
+                >
+                  <span className="text-sm font-medium text-slate-800 dark:text-slate-100">Enable HTTPS</span>
                   <input
+                    id="https-enabled"
                     type="checkbox"
-                    className="h-4 w-4 accent-violet-600"
+                    className={cn('h-4 w-4 accent-violet-600', focusRing)}
                     checked={httpsDraft.enabled}
+                    disabled={readOnly}
                     onChange={(e) => setHttpsDraft((d) => (d ? { ...d, enabled: e.target.checked } : d))}
                   />
                 </label>
-                <div>
-                  <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted" htmlFor="san-ip">
+                <label
+                  htmlFor="https-redirect"
+                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-200/90 px-4 py-3 dark:border-gdc-border"
+                >
+                  <span className="text-sm font-medium text-slate-800 dark:text-slate-100">Redirect HTTP to HTTPS</span>
+                  <input
+                    id="https-redirect"
+                    type="checkbox"
+                    className={cn('h-4 w-4 accent-violet-600', focusRing)}
+                    checked={httpsDraft.redirect_http_to_https}
+                    disabled={readOnly}
+                    onChange={(e) => setHttpsDraft((d) => (d ? { ...d, redirect_http_to_https: e.target.checked } : d))}
+                  />
+                </label>
+                <div className="lg:col-span-2">
+                  <label className={fieldLabel} htmlFor="san-ip">
                     Certificate IP addresses (SAN)
                   </label>
                   <input
                     id="san-ip"
-                    className={cn('mt-1 w-full', gdcUi.input)}
+                    className={cn('mt-1.5 w-full', gdcUi.input)}
                     placeholder="e.g. 192.168.1.10, 10.0.0.5"
                     value={httpsDraft.certificate_ip_addresses}
+                    disabled={readOnly}
                     onChange={(e) => setHttpsDraft((d) => (d ? { ...d, certificate_ip_addresses: e.target.value } : d))}
                   />
                 </div>
-                <div>
-                  <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted" htmlFor="san-dns">
+                <div className="lg:col-span-2">
+                  <label className={fieldLabel} htmlFor="san-dns">
                     Certificate DNS names (SAN) (optional)
                   </label>
                   <input
                     id="san-dns"
-                    className={cn('mt-1 w-full', gdcUi.input)}
+                    className={cn('mt-1.5 w-full', gdcUi.input)}
                     placeholder="e.g. gdc.example.com, gdc.local"
                     value={httpsDraft.certificate_dns_names}
+                    disabled={readOnly}
                     onChange={(e) => setHttpsDraft((d) => (d ? { ...d, certificate_dns_names: e.target.value } : d))}
                   />
                 </div>
-                <label className="flex items-center justify-between gap-3 rounded-lg border border-slate-100 px-3 py-2.5 dark:border-gdc-border/80">
-                  <span className="text-[13px] font-medium text-slate-800 dark:text-slate-100">Redirect HTTP to HTTPS</span>
+                <label
+                  htmlFor="https-regenerate"
+                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-200/90 px-4 py-3 dark:border-gdc-border lg:col-span-2"
+                >
+                  <span className="text-sm font-medium text-slate-800 dark:text-slate-100">
+                    Regenerate self-signed certificate on save
+                  </span>
                   <input
+                    id="https-regenerate"
                     type="checkbox"
-                    className="h-4 w-4 accent-violet-600"
-                    checked={httpsDraft.redirect_http_to_https}
-                    onChange={(e) => setHttpsDraft((d) => (d ? { ...d, redirect_http_to_https: e.target.checked } : d))}
-                  />
-                </label>
-                <label className="flex items-center justify-between gap-3 rounded-lg border border-slate-100 px-3 py-2.5 dark:border-gdc-border/80">
-                  <span className="text-[13px] font-medium text-slate-800 dark:text-slate-100">Regenerate self-signed certificate on save</span>
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 accent-violet-600"
+                    className={cn('h-4 w-4 accent-violet-600', focusRing)}
                     checked={httpsDraft.regenerate_certificate}
+                    disabled={readOnly}
                     onChange={(e) => setHttpsDraft((d) => (d ? { ...d, regenerate_certificate: e.target.checked } : d))}
                   />
                 </label>
                 <div>
-                  <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted" htmlFor="valid-days">
+                  <label className={fieldLabel} htmlFor="valid-days">
                     Certificate valid days
                   </label>
                   <select
                     id="valid-days"
-                    className={cn('mt-1 w-full', gdcUi.select)}
+                    className={cn('mt-1.5 w-full', gdcUi.select)}
                     value={httpsDraft.certificate_valid_days}
+                    disabled={readOnly}
                     onChange={(e) =>
                       setHttpsDraft((d) => (d ? { ...d, certificate_valid_days: Number(e.target.value) } : d))
                     }
@@ -642,32 +692,24 @@ export function AdminSettingsPage() {
                     ))}
                   </select>
                 </div>
-              </>
+              </div>
             ) : (
-              <p className="text-[13px] text-slate-500">Loading…</p>
-            )}
-          </div>
-
-          <div className="md:col-span-4">
-            <div className="rounded-xl border border-sky-500/20 bg-sky-500/[0.06] p-4 text-[12px] leading-relaxed text-sky-950 dark:border-sky-500/25 dark:bg-sky-500/10 dark:text-sky-100/90">
-              <p className="flex items-center gap-2 font-semibold text-sky-900 dark:text-sky-100">
-                <Info className="h-4 w-4 shrink-0" aria-hidden />
-                About HTTPS
+              <p className="text-sm text-slate-500" role="status">
+                Loading HTTPS settings…
               </p>
-              <ul className="mt-2 list-disc space-y-1 pl-4">
-                <li>Certificates are self-signed for internal or lab use.</li>
-                <li>At least one IP or DNS SAN is required when HTTPS is enabled.</li>
-                <li>PEM files are written to configured paths on save; previous files are copied under a backups folder.</li>
-                <li>The reverse proxy reloads when GDC_PROXY_RELOAD_URL is configured; otherwise reload nginx manually.</li>
-              </ul>
-            </div>
-            <div className="mt-4 flex justify-end">
+            )}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs text-slate-500 dark:text-gdc-muted">
+                {httpsDirty ? 'Unsaved HTTPS configuration changes.' : 'No unsaved HTTPS changes.'}
+              </p>
               <button
                 type="button"
+                data-testid="admin-https-save"
                 disabled={readOnly || !httpsDirty || busy || !httpsDraft}
                 onClick={() => void onSaveHttps()}
                 className={cn(
-                  'rounded-lg px-4 py-2 text-[13px] font-semibold transition-colors',
+                  'rounded-lg px-4 py-2 text-sm font-semibold transition-colors',
+                  focusRing,
                   !readOnly && httpsDirty && !busy
                     ? 'bg-gdc-primary text-white hover:opacity-95'
                     : 'cursor-not-allowed bg-slate-200 text-slate-500 dark:bg-gdc-border dark:text-gdc-muted',
@@ -677,230 +719,317 @@ export function AdminSettingsPage() {
               </button>
             </div>
           </div>
+
+          <aside
+            data-testid="admin-https-safeguards"
+            className="rounded-xl border border-sky-500/20 bg-sky-500/[0.06] p-4 text-sm leading-relaxed text-sky-950 dark:border-sky-500/25 dark:bg-sky-500/10 dark:text-sky-100/90"
+          >
+            <p className="flex items-center gap-2 font-semibold text-sky-900 dark:text-sky-100">
+              <Info className="h-4 w-4 shrink-0" aria-hidden />
+              Safeguards and evidence
+            </p>
+            <ul className="mt-2 list-disc space-y-1.5 pl-5">
+              <li>Certificates are self-signed for internal or lab use.</li>
+              <li>At least one IP or DNS SAN is required when HTTPS is enabled.</li>
+              <li>PEM files are written to configured paths on save; previous files are copied under a backups folder.</li>
+              <li>The reverse proxy reloads when GDC_PROXY_RELOAD_URL is configured; otherwise reload nginx manually.</li>
+            </ul>
+          </aside>
         </div>
       </section>
 
-      {/* Admin password */}
-      <section className={cn(cardShell, 'p-4 md:p-6')} aria-labelledby="admin-password-heading">
-        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+      {/* Password Management */}
+      <section
+        className={cn(cardShell, 'overflow-hidden')}
+        aria-labelledby="admin-password-heading"
+        data-testid="admin-password-panel"
+      >
+        <div className="border-b border-slate-100 px-4 py-5 dark:border-gdc-border md:px-6">
           <div className="flex gap-3">
             <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-violet-500/20 bg-violet-500/[0.07] text-violet-700 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-200">
               <UserRound className="h-5 w-5" aria-hidden />
             </span>
             <div>
-              <h3 id="admin-password-heading" className="text-[15px] font-semibold text-slate-900 dark:text-slate-50">
-                Admin password
+              <h3 id="admin-password-heading" className="text-base font-semibold text-slate-900 dark:text-slate-50">
+                Password Management
               </h3>
-              <p className="mt-0.5 text-[12px] text-slate-600 dark:text-gdc-muted">Change password for a local platform account.</p>
+              <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-gdc-muted">
+                Choose the target local account, confirm the current credential, then set and confirm the new password.
+              </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => void onChangePassword()}
-            disabled={readOnly || busy}
-            className="rounded-lg border border-gdc-primary/40 bg-gdc-primary px-3 py-1.5 text-[12px] font-semibold text-white hover:opacity-95 disabled:opacity-50"
-          >
-            Change password
-          </button>
         </div>
-        <div className="grid gap-3 md:grid-cols-12">
-          <div className="md:col-span-3">
-            <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted" htmlFor="pw-user">
-              Username
-            </label>
-            <input
-              id="pw-user"
-              className={cn('mt-1 w-full', gdcUi.input)}
-              value={pwUser}
-              onChange={(e) => setPwUser(e.target.value)}
-              autoComplete="username"
-            />
-          </div>
-          <div className="md:col-span-3">
-            <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted" htmlFor="pw-cur">
-              Current password
-            </label>
-            <div className="relative mt-1">
+        <form
+          className="space-y-5 px-4 py-5 md:px-6 md:py-6"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void onChangePassword()
+          }}
+        >
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="md:col-span-2 md:max-w-sm">
+              <label className={fieldLabel} htmlFor="pw-user">
+                Target account username
+              </label>
               <input
-                id="pw-cur"
-                type={showPw ? 'text' : 'password'}
-                className={cn('w-full py-2 pl-3 pr-9', gdcUi.input)}
-                value={pwCurrent}
-                onChange={(e) => setPwCurrent(e.target.value)}
-                autoComplete="current-password"
+                id="pw-user"
+                className={cn('mt-1.5 w-full', gdcUi.input)}
+                value={pwUser}
+                disabled={readOnly}
+                onChange={(e) => setPwUser(e.target.value)}
+                autoComplete="username"
               />
-              <button
-                type="button"
-                className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-gdc-rowHover"
-                aria-label={showPw ? 'Hide password' : 'Show password'}
-                onClick={() => setShowPw((s) => !s)}
-              >
-                {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
             </div>
-          </div>
-          <div className="md:col-span-3">
-            <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted" htmlFor="pw-new">
-              New password
-            </label>
-            <div className="relative mt-1">
+            <div>
+              <label className={fieldLabel} htmlFor="pw-cur">
+                Current password
+              </label>
+              <div className="relative mt-1.5">
+                <input
+                  id="pw-cur"
+                  type={showPw ? 'text' : 'password'}
+                  className={cn('w-full py-2 pl-3 pr-10', gdcUi.input)}
+                  value={pwCurrent}
+                  disabled={readOnly}
+                  onChange={(e) => setPwCurrent(e.target.value)}
+                  autoComplete="current-password"
+                />
+                <button
+                  type="button"
+                  className={cn(
+                    'absolute right-1 top-1/2 -translate-y-1/2 rounded p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-gdc-rowHover',
+                    focusRing,
+                  )}
+                  aria-label={showPw ? 'Hide passwords' : 'Show passwords'}
+                  aria-pressed={showPw}
+                  onClick={() => setShowPw((s) => !s)}
+                >
+                  {showPw ? <EyeOff className="h-4 w-4" aria-hidden /> : <Eye className="h-4 w-4" aria-hidden />}
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className={fieldLabel} htmlFor="pw-new">
+                New password
+              </label>
               <input
                 id="pw-new"
                 type={showPw ? 'text' : 'password'}
-                className={cn('w-full py-2 pl-3 pr-9', gdcUi.input)}
+                className={cn('mt-1.5 w-full', gdcUi.input)}
                 value={pwNew}
+                disabled={readOnly}
                 onChange={(e) => setPwNew(e.target.value)}
                 autoComplete="new-password"
+                aria-describedby="pw-new-hint"
               />
-              <button
-                type="button"
-                className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-gdc-rowHover"
-                aria-label={showPw ? 'Hide password' : 'Show password'}
-                onClick={() => setShowPw((s) => !s)}
-              >
-                {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
+              <p id="pw-new-hint" className={fieldHint}>
+                Minimum 8 characters.
+              </p>
             </div>
-            <p className="mt-1 text-[11px] text-slate-500">Minimum 8 characters</p>
-          </div>
-          <div className="md:col-span-3">
-            <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted" htmlFor="pw-conf">
-              Confirm new password
-            </label>
-            <div className="relative mt-1">
+            <div className="md:col-span-2 md:max-w-md">
+              <label className={fieldLabel} htmlFor="pw-conf">
+                Confirm new password
+              </label>
               <input
                 id="pw-conf"
                 type={showPw ? 'text' : 'password'}
-                className={cn('w-full py-2 pl-3 pr-9', gdcUi.input)}
+                className={cn('mt-1.5 w-full', gdcUi.input)}
                 value={pwConfirm}
+                disabled={readOnly}
                 onChange={(e) => setPwConfirm(e.target.value)}
                 autoComplete="new-password"
               />
-              <button
-                type="button"
-                className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-gdc-rowHover"
-                aria-label={showPw ? 'Hide password' : 'Show password'}
-                onClick={() => setShowPw((s) => !s)}
-              >
-                {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
             </div>
           </div>
-        </div>
+          <div className="flex justify-end border-t border-slate-100 pt-4 dark:border-gdc-border">
+            <button
+              type="submit"
+              data-testid="admin-password-submit"
+              disabled={readOnly || busy}
+              className={cn(
+                'rounded-lg border border-gdc-primary/40 bg-gdc-primary px-4 py-2 text-sm font-semibold text-white hover:opacity-95 disabled:opacity-50',
+                focusRing,
+              )}
+            >
+              Change password
+            </button>
+          </div>
+        </form>
       </section>
 
-      {/* Users */}
-      <section className={cn(cardShell, 'overflow-hidden')} aria-labelledby="admin-users-heading">
-        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 px-4 py-4 dark:border-gdc-border md:px-6">
-          <div className="flex gap-3">
+      {/* User Management */}
+      <section
+        className={cn(cardShell, 'overflow-hidden')}
+        aria-labelledby="admin-users-heading"
+        data-testid="admin-users-panel"
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 px-4 py-5 dark:border-gdc-border md:px-6">
+          <div className="flex min-w-0 gap-3">
             <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-violet-500/20 bg-violet-500/[0.07] text-violet-700 dark:border-gdc-primary/35 dark:bg-gdc-primary/15 dark:text-violet-100">
               <Users className="h-5 w-5" aria-hidden />
             </span>
-            <div>
-              <h3 id="admin-users-heading" className="text-[15px] font-semibold text-slate-900 dark:text-slate-50">
-                User management
+            <div className="min-w-0">
+              <h3 id="admin-users-heading" className="text-base font-semibold text-slate-900 dark:text-slate-50">
+                User Management
               </h3>
-              <p className="mt-0.5 text-[12px] text-slate-600 dark:text-gdc-muted">Local accounts with lightweight roles (not a full RBAC engine).</p>
-              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
-                {[
-                  { label: 'Total users', value: userStats.total },
-                  { label: 'Active', value: userStats.active },
-                  { label: 'Administrators', value: userStats.admins },
-                  { label: 'Operators', value: userStats.operators },
-                  { label: 'Viewers', value: userStats.viewers },
-                ].map((s) => (
-                  <div key={s.label} className={cn('rounded-lg border px-2 py-2', gdcUi.innerWell)}>
-                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted">{s.label}</p>
-                    <p className="mt-0.5 text-lg font-semibold tabular-nums text-slate-900 dark:text-slate-50">{s.value}</p>
-                  </div>
-                ))}
-              </div>
-              <p className="mt-3 rounded-lg border border-slate-200/80 bg-slate-50/80 px-3 py-2 text-[11px] leading-snug text-slate-600 dark:border-gdc-border dark:bg-gdc-panel dark:text-gdc-muted">
-                Roles are stored for account management. Permission enforcement may be limited until RBAC is fully implemented. Viewer is intended as
-                read-only for future operational use (to test locally, set <code className="font-mono text-[10px]">localStorage.gdc_platform_ui_role</code>{' '}
-                to <code className="font-mono text-[10px]">VIEWER</code>).
+              <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-gdc-muted">
+                Local platform accounts with lightweight roles. This is not a full enterprise RBAC engine.
               </p>
             </div>
           </div>
           <button
             type="button"
+            data-testid="admin-users-create"
             onClick={openCreateUser}
             disabled={readOnly}
-            className="rounded-lg border border-gdc-primary/50 px-3 py-1.5 text-[12px] font-semibold text-gdc-primary hover:bg-gdc-primary/10 disabled:cursor-not-allowed disabled:opacity-50 dark:text-violet-200"
+            className={cn(
+              'rounded-lg border border-gdc-primary/50 px-3.5 py-2 text-sm font-semibold text-gdc-primary hover:bg-gdc-primary/10 disabled:cursor-not-allowed disabled:opacity-50 dark:text-violet-200',
+              focusRing,
+            )}
           >
-            + New user
+            New user
           </button>
         </div>
 
-        <div className="overflow-x-auto px-2 py-2 md:px-4">
-          <table className="w-full min-w-[720px] border-collapse text-left text-[13px]">
-            <thead>
-              <tr className="border-b border-slate-100 text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:border-gdc-border dark:text-gdc-muted">
-                <th className="px-2 py-2">Username</th>
-                <th className="px-2 py-2">Role</th>
-                <th className="px-2 py-2">Status</th>
-                <th className="px-2 py-2">Created at</th>
-                <th className="px-2 py-2">Last login</th>
-                <th className="px-2 py-2 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((u) => {
-                const lastOnlyAdmin = u.role === 'ADMINISTRATOR' && u.status === 'ACTIVE' && activeAdminCount <= 1
-                const hideActions = u.username.toLowerCase() === 'admin' || lastOnlyAdmin
-                return (
-                  <tr key={u.id} className="border-b border-slate-50 dark:border-gdc-border/60">
-                    <td className="px-2 py-2.5 font-medium text-slate-900 dark:text-slate-50">{u.username}</td>
-                    <td className="px-2 py-2.5">
-                      <span className={cn('inline-flex rounded border px-2 py-0.5 text-[11px] font-semibold', roleBadgeClass(u.role))}>
-                        {roleLabel(u.role)}
-                      </span>
-                    </td>
-                    <td className="px-2 py-2.5">
-                      <span
-                        className={
-                          u.status === 'ACTIVE'
-                            ? 'text-emerald-700 dark:text-emerald-300'
-                            : 'text-slate-500 dark:text-gdc-muted'
-                        }
-                      >
-                        {u.status === 'ACTIVE' ? 'Active' : u.status === 'DISABLED' ? 'Disabled' : u.status}
-                      </span>
-                    </td>
-                    <td className="px-2 py-2.5 tabular-nums text-slate-600 dark:text-gdc-mutedStrong">{formatTs(u.created_at)}</td>
-                    <td className="px-2 py-2.5 tabular-nums text-slate-600 dark:text-gdc-mutedStrong">{formatTs(u.last_login_at)}</td>
-                    <td className="px-2 py-2.5 text-right">
-                      {hideActions || readOnly ? (
-                        <span className="text-[11px] text-slate-400">{readOnly ? 'Read-only' : '—'}</span>
-                      ) : (
-                        <span className="inline-flex justify-end gap-1">
-                          <button
-                            type="button"
-                            className="rounded p-1 text-slate-600 hover:bg-slate-100 dark:text-gdc-mutedStrong dark:hover:bg-gdc-rowHover"
-                            aria-label={`Edit ${u.username}`}
-                            onClick={() => openEditUser(u)}
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </button>
-                          <button
-                            type="button"
-                            className="rounded p-1 text-red-600 hover:bg-red-500/10"
-                            aria-label={`Delete ${u.username}`}
-                            onClick={() => void onDeleteUser(u)}
-                          >
-                            <Trash2 className="h-4 w-4" aria-hidden />
-                          </button>
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-        <div className="border-t border-slate-100 px-4 py-2 text-[12px] text-slate-500 dark:border-gdc-border dark:text-gdc-muted md:px-6">
-          Showing {users.length === 0 ? '0' : `1 to ${users.length}`} of {users.length} users
+        <div className="space-y-4 px-4 py-5 md:px-6">
+          <div data-testid="admin-users-summary" className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+            {[
+              { label: 'Total users', value: userStats.total },
+              { label: 'Active', value: userStats.active },
+              { label: 'Administrators', value: userStats.admins },
+              { label: 'Operators', value: userStats.operators },
+              { label: 'Viewers', value: userStats.viewers },
+            ].map((s) => (
+              <div key={s.label} className={cn('rounded-xl px-3 py-3', gdcUi.innerWell)}>
+                <p className="text-xs font-medium text-slate-500 dark:text-gdc-muted">{s.label}</p>
+                <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900 dark:text-slate-50">{s.value}</p>
+              </div>
+            ))}
+          </div>
+          <p
+            data-testid="admin-users-role-note"
+            className="rounded-xl border border-slate-200/80 bg-slate-50/80 px-3.5 py-3 text-sm leading-relaxed text-slate-600 dark:border-gdc-border dark:bg-gdc-panel dark:text-gdc-muted"
+          >
+            Roles are stored for account management. Viewer sessions remain read-only in the UI and are rejected by the
+            backend role guard. Operator sessions cannot change HTTPS, accounts, retention policy, or alert settings.
+            Permission enforcement beyond these local-account guards is limited until a fuller RBAC model is implemented.
+          </p>
+
+          {users.length === 0 ? (
+            <div className={gdcUi.emptyPanel} data-testid="admin-users-empty" role="status">
+              <p className="text-sm font-medium text-slate-800 dark:text-slate-100">No platform users loaded</p>
+              <p className="mt-1 text-sm text-slate-600 dark:text-gdc-muted">
+                Create a local account or refresh admin settings after the API is available.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="overflow-x-auto rounded-xl border border-slate-200/80 dark:border-gdc-border">
+                <table className="w-full min-w-[720px] border-collapse text-left text-sm" data-testid="admin-users-table">
+                  <caption className="sr-only">Platform user accounts</caption>
+                  <thead>
+                    <tr className="border-b border-slate-100 bg-slate-50/80 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-gdc-border dark:bg-gdc-section dark:text-gdc-muted">
+                      <th scope="col" className="px-3 py-3">
+                        Username
+                      </th>
+                      <th scope="col" className="px-3 py-3">
+                        Role
+                      </th>
+                      <th scope="col" className="px-3 py-3">
+                        Status
+                      </th>
+                      <th scope="col" className="px-3 py-3">
+                        Created at
+                      </th>
+                      <th scope="col" className="px-3 py-3">
+                        Last login
+                      </th>
+                      <th scope="col" className="px-3 py-3 text-right">
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {users.map((u) => {
+                      const lastOnlyAdmin =
+                        u.role === 'ADMINISTRATOR' && u.status === 'ACTIVE' && activeAdminCount <= 1
+                      const hideActions = u.username.toLowerCase() === 'admin' || lastOnlyAdmin
+                      return (
+                        <tr
+                          key={u.id}
+                          className="border-b border-slate-50 last:border-0 dark:border-gdc-border/60"
+                          data-testid={`admin-user-row-${u.username}`}
+                        >
+                          <th scope="row" className="px-3 py-3 font-medium text-slate-900 dark:text-slate-50">
+                            {u.username}
+                          </th>
+                          <td className="px-3 py-3">
+                            <span
+                              className={cn(
+                                'inline-flex rounded-md px-2 py-0.5 text-xs font-semibold ring-1 ring-inset',
+                                roleBadgeClass(u.role),
+                              )}
+                            >
+                              {roleLabel(u.role)}
+                            </span>
+                          </td>
+                          <td className="px-3 py-3">
+                            <span
+                              className={
+                                u.status === 'ACTIVE'
+                                  ? 'text-sm font-medium text-emerald-700 dark:text-emerald-300'
+                                  : 'text-sm text-slate-500 dark:text-gdc-muted'
+                              }
+                            >
+                              {u.status === 'ACTIVE' ? 'Active' : u.status === 'DISABLED' ? 'Disabled' : u.status}
+                            </span>
+                          </td>
+                          <td className="px-3 py-3 tabular-nums text-slate-600 dark:text-gdc-mutedStrong">
+                            {formatTs(u.created_at)}
+                          </td>
+                          <td className="px-3 py-3 tabular-nums text-slate-600 dark:text-gdc-mutedStrong">
+                            {formatTs(u.last_login_at)}
+                          </td>
+                          <td className="px-3 py-3 text-right">
+                            {hideActions || readOnly ? (
+                              <span className="text-xs text-slate-400">
+                                {readOnly ? 'Read-only' : lastOnlyAdmin ? 'Protected' : '—'}
+                              </span>
+                            ) : (
+                              <span className="inline-flex justify-end gap-1">
+                                <button
+                                  type="button"
+                                  className={cn(
+                                    'rounded-md p-1.5 text-slate-600 hover:bg-slate-100 dark:text-gdc-mutedStrong dark:hover:bg-gdc-rowHover',
+                                    focusRing,
+                                  )}
+                                  aria-label={`Edit user ${u.username}`}
+                                  onClick={() => openEditUser(u)}
+                                >
+                                  <Pencil className="h-4 w-4" aria-hidden />
+                                </button>
+                                <button
+                                  type="button"
+                                  className={cn('rounded-md p-1.5 text-red-600 hover:bg-red-500/10', focusRing)}
+                                  aria-label={`Delete user ${u.username}`}
+                                  onClick={() => void onDeleteUser(u)}
+                                >
+                                  <Trash2 className="h-4 w-4" aria-hidden />
+                                </button>
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-sm text-slate-500 dark:text-gdc-muted">
+                Showing {users.length === 0 ? '0' : `1 to ${users.length}`} of {users.length} users
+              </p>
+            </>
+          )}
         </div>
       </section>
       </section>
@@ -1096,34 +1225,43 @@ export function AdminSettingsPage() {
       </section>
 
       {userModal ? (
-        <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4 dark:bg-black/60" role="dialog" aria-modal="true">
+        <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4 dark:bg-black/60" role="dialog" aria-modal="true" aria-labelledby="admin-user-modal-title">
           <div className={cn(gdcUi.modalPanel, 'max-w-md')}>
-            <h4 className="text-[15px] font-semibold text-slate-900 dark:text-slate-50">{userModal === 'create' ? 'New user' : 'Edit user'}</h4>
+            <h4 id="admin-user-modal-title" className="text-base font-semibold text-slate-900 dark:text-slate-50">
+              {userModal === 'create' ? 'New user' : 'Edit user'}
+            </h4>
             <div className="mt-4 space-y-3">
               <div>
-                <label className="text-[11px] font-semibold uppercase text-slate-500">Username</label>
+                <label className={fieldLabel} htmlFor="user-form-username">
+                  Username
+                </label>
                 <input
+                  id="user-form-username"
                   disabled={userModal === 'edit'}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] disabled:bg-slate-100 dark:border-gdc-border dark:disabled:bg-gdc-elevated"
+                  className={cn('mt-1.5 w-full', gdcUi.input, 'disabled:bg-slate-100 dark:disabled:bg-gdc-elevated')}
                   value={userForm.username}
                   onChange={(e) => setUserForm((f) => ({ ...f, username: e.target.value }))}
                 />
               </div>
               <div>
-                <label className="text-[11px] font-semibold uppercase text-slate-500">
+                <label className={fieldLabel} htmlFor="user-form-password">
                   {userModal === 'create' ? 'Password' : 'New password (optional)'}
                 </label>
                 <input
+                  id="user-form-password"
                   type="password"
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] dark:border-gdc-border"
+                  className={cn('mt-1.5 w-full', gdcUi.input)}
                   value={userForm.password}
                   onChange={(e) => setUserForm((f) => ({ ...f, password: e.target.value }))}
                 />
               </div>
               <div>
-                <label className="text-[11px] font-semibold uppercase text-slate-500">Role</label>
+                <label className={fieldLabel} htmlFor="user-form-role">
+                  Role
+                </label>
                 <select
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-slate-900 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-100 dark:[color-scheme:dark]"
+                  id="user-form-role"
+                  className={cn('mt-1.5 w-full', gdcUi.select, 'dark:[color-scheme:dark]')}
                   value={userForm.role}
                   onChange={(e) => setUserForm((f) => ({ ...f, role: e.target.value }))}
                 >
@@ -1139,9 +1277,12 @@ export function AdminSettingsPage() {
               </div>
               {userModal === 'edit' ? (
                 <div>
-                  <label className="text-[11px] font-semibold uppercase text-slate-500">Status</label>
+                  <label className={fieldLabel} htmlFor="user-form-status">
+                    Status
+                  </label>
                   <select
-                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-slate-900 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-100 dark:[color-scheme:dark]"
+                    id="user-form-status"
+                    className={cn('mt-1.5 w-full', gdcUi.select, 'dark:[color-scheme:dark]')}
                     value={userForm.status}
                     onChange={(e) => setUserForm((f) => ({ ...f, status: e.target.value }))}
                   >
@@ -1152,13 +1293,17 @@ export function AdminSettingsPage() {
               ) : null}
             </div>
             <div className="mt-5 flex justify-end gap-2">
-              <button type="button" className="rounded-lg px-3 py-1.5 text-[13px] text-slate-600 hover:bg-slate-100 dark:hover:bg-gdc-rowHover" onClick={() => setUserModal(null)}>
+              <button
+                type="button"
+                className={cn('rounded-lg px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 dark:hover:bg-gdc-rowHover', focusRing)}
+                onClick={() => setUserModal(null)}
+              >
                 Cancel
               </button>
               <button
                 type="button"
                 disabled={readOnly || busy}
-                className="rounded-lg bg-gdc-primary px-3 py-1.5 text-[13px] font-semibold text-white hover:opacity-95 disabled:opacity-50"
+                className={cn('rounded-lg bg-gdc-primary px-3 py-1.5 text-sm font-semibold text-white hover:opacity-95 disabled:opacity-50', focusRing)}
                 onClick={() => void onSaveUser()}
               >
                 Save

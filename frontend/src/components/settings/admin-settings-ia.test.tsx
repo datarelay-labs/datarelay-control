@@ -88,7 +88,11 @@ describe('AdminSettingsPage IA modernization', () => {
     expect(screen.getByTestId('admin-settings-group-lifecycle')).toBeInTheDocument()
     expect(screen.getByTestId('admin-settings-group-operations')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'HTTPS / Security' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'User management' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Password Management' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'User Management' })).toBeInTheDocument()
+    expect(screen.getByTestId('admin-https-current-state')).toBeInTheDocument()
+    expect(screen.getByTestId('admin-https-configuration')).toBeInTheDocument()
+    expect(screen.queryByText(/localStorage/i)).not.toBeInTheDocument()
   })
 
   it('preserves Viewer read-only framing', async () => {
