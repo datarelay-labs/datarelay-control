@@ -18,6 +18,7 @@ import { DestinationOperationalHealthPanel } from './destination-operational-hea
 import { relativeShort } from '../routes/routes-overview-helpers'
 import { useDestinationDetailData } from './use-destination-detail-data'
 import type { DestinationUiHealth } from './destination-runtime-metrics'
+import { extractCapacityConfig } from './destination-mini-charts'
 
 type MainTab = 'overview' | 'routes' | 'delivery' | 'health' | 'failures'
 
@@ -99,6 +100,14 @@ export function DestinationDetailPage() {
   const cfg = runtime.destination?.config_json ?? {}
   const host = typeof cfg.host === 'string' ? cfg.host : typeof cfg.url === 'string' ? String(cfg.url) : '—'
   const port = cfg.port != null ? String(cfg.port) : '—'
+  const capacitySource = runtime.destination ?? runtime.listRow
+  const { limitEps: capacityLimitEps, thresholds: capacityThresholds } = extractCapacityConfig(
+    capacitySource ?? {},
+  )
+  const capacityUsagePct =
+    capacityLimitEps != null && capacityLimitEps > 0 && runtime.currentEps != null
+      ? Math.round((runtime.currentEps / capacityLimitEps) * 100)
+      : null
 
   async function onTestConnection() {
     const result = await runtime.runConnectivityTest()
@@ -216,7 +225,7 @@ export function DestinationDetailPage() {
             className={cn(
               '-mb-px border-b-2 px-3 py-2 text-[12px] font-semibold transition-colors',
               mainTab === t.key
-                ? 'border-violet-600 text-violet-700 dark:border-violet-400 dark:text-violet-300'
+                ? 'border-slate-900 text-slate-900 dark:border-slate-100 dark:text-slate-50'
                 : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-gdc-muted',
             )}
           >
@@ -238,7 +247,7 @@ export function DestinationDetailPage() {
       {mainTab === 'overview' ? (
         <div className="grid gap-4 xl:grid-cols-[1fr_320px]">
           <div className="flex min-w-0 flex-col gap-4">
-            <section className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-5" aria-label="Destination KPI summary">
+            <section className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6" aria-label="Destination KPI summary">
               <KpiCard
                 label="Success rate (24h)"
                 value={runtime.successRatePct != null ? `${runtime.successRatePct}%` : '—'}
@@ -248,11 +257,25 @@ export function DestinationDetailPage() {
                 value={runtime.currentEps != null ? `${formatThroughputEps(runtime.currentEps)} EPS` : '—'}
                 hint="From operational snapshot (1m window)"
               />
-              <KpiCard label="Failed events (24h)" value={runtime.failed24h.toLocaleString()} />
               <KpiCard
-                label="Avg latency (24h)"
-                value={runtime.avgLatencyMs != null ? `${Math.round(runtime.avgLatencyMs)} ms` : '—'}
+                label="Maximum EPS"
+                value={capacityLimitEps != null ? capacityLimitEps.toLocaleString() : 'No limit'}
+                hint={
+                  capacityLimitEps != null
+                    ? `Warn ${capacityThresholds.warningPct}% · Critical ${capacityThresholds.criticalPct}%`
+                    : 'Configured capacity not set'
+                }
               />
+              <KpiCard
+                label="Capacity usage"
+                value={capacityUsagePct != null ? `${capacityUsagePct}%` : '—'}
+                hint={
+                  capacityLimitEps != null && runtime.currentEps != null
+                    ? `${formatThroughputEps(runtime.currentEps)} / ${capacityLimitEps.toLocaleString()} EPS`
+                    : undefined
+                }
+              />
+              <KpiCard label="Failed events (24h)" value={runtime.failed24h.toLocaleString()} />
               <KpiCard
                 label="Last delivery"
                 value={runtime.lastDeliveryAt ? relativeShort(runtime.lastDeliveryAt) : '—'}
@@ -290,6 +313,8 @@ export function DestinationDetailPage() {
               host={host}
               port={port}
               enabled={runtime.destination?.enabled ?? false}
+              capacityLimitEps={capacityLimitEps}
+              capacityUsagePct={capacityUsagePct}
               createdAt={runtime.destination?.created_at?.slice(0, 19).replace('T', ' ') ?? '—'}
               lastUpdated={runtime.destination?.updated_at?.slice(0, 19).replace('T', ' ') ?? '—'}
             />
@@ -490,6 +515,8 @@ function DestinationInfoPanel({
   host,
   port,
   enabled,
+  capacityLimitEps,
+  capacityUsagePct,
   createdAt,
   lastUpdated,
 }: {
@@ -498,11 +525,13 @@ function DestinationInfoPanel({
   host: string
   port: string
   enabled: boolean
+  capacityLimitEps: number | null
+  capacityUsagePct: number | null
   createdAt: string
   lastUpdated: string
 }) {
   return (
-    <section className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-gdc-border dark:bg-gdc-card">
+    <section className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-gdc-border dark:bg-gdc-card" data-testid="destination-info-panel">
       <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Destination info</h3>
       <dl className="mt-3 space-y-2 text-[12px]">
         <div className="flex justify-between gap-2">
@@ -524,6 +553,16 @@ function DestinationInfoPanel({
         <div className="flex justify-between gap-2">
           <dt className="text-slate-500">Enabled</dt>
           <dd>{enabled ? 'Yes' : 'No'}</dd>
+        </div>
+        <div className="flex justify-between gap-2" data-testid="destination-capacity-maximum">
+          <dt className="text-slate-500">Maximum EPS</dt>
+          <dd className="font-medium tabular-nums">
+            {capacityLimitEps != null ? capacityLimitEps.toLocaleString() : 'No limit'}
+          </dd>
+        </div>
+        <div className="flex justify-between gap-2" data-testid="destination-capacity-usage">
+          <dt className="text-slate-500">Capacity usage</dt>
+          <dd className="font-medium tabular-nums">{capacityUsagePct != null ? `${capacityUsagePct}%` : '—'}</dd>
         </div>
         <div className="flex justify-between gap-2">
           <dt className="text-slate-500">Created</dt>
