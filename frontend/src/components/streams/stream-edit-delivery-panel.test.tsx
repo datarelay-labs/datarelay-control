@@ -185,6 +185,11 @@ describe('StreamEditDeliveryPanel route removal', () => {
 
     render(<StreamEditDeliveryPanel streamId={10} />)
     await waitFor(() => expect(screen.getByTestId('save-prefix-22')).toBeDisabled())
+    // SYSLOG default is prefix On; fixture persists enabled=false — wait for hydrate before editing.
+    await waitFor(() => {
+      const prefixToggle = screen.getByText('On').closest('label')?.querySelector('input[type="checkbox"]')
+      expect(prefixToggle).not.toBeChecked()
+    })
 
     const textarea = screen.getByDisplayValue('<134> gdc generic-connector event:')
     fireEvent.change(textarea, { target: { value: 'CUSTOM-PREFIX' } })

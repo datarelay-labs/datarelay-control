@@ -85,11 +85,11 @@ function MetricCard({ label, value, sub, note, sparkline }: {
   label: string; value: string; sub?: string; note?: string; sparkline?: React.ReactNode
 }) {
   return (
-    <div className="rounded-lg border border-[#1e2a3b] bg-[#0a1628] px-3 py-2.5">
-      <p className="text-[10px] uppercase tracking-widest text-slate-500">{label}</p>
-      <p className="mt-0.5 text-[15px] font-bold tabular-nums text-slate-100">{value}</p>
+    <div className="rounded-lg border border-slate-200/80 bg-slate-50/80 px-3 py-2.5 dark:border-gdc-border dark:bg-gdc-section">
+      <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="mt-0.5 text-[15px] font-semibold tabular-nums text-slate-900 dark:text-slate-50">{value}</p>
       {sub && <p className="text-[10px] text-slate-500">{sub}</p>}
-      {note && <p className="text-[9px] italic text-slate-600 mt-0.5">{note}</p>}
+      {note && <p className="mt-0.5 text-[9px] italic text-slate-500">{note}</p>}
       {sparkline && <div className="mt-1.5">{sparkline}</div>}
     </div>
   )
@@ -97,7 +97,7 @@ function MetricCard({ label, value, sub, note, sparkline }: {
 
 function Placeholder({ label }: { label: string }) {
   return (
-    <div className="flex items-center gap-1.5 rounded border border-dashed border-[#1e2a3b] px-2 py-1">
+    <div className="flex items-center gap-1.5 rounded border border-dashed border-slate-200/80 dark:border-gdc-border px-2 py-1">
       <span className="text-[10px] italic text-slate-600">{label}</span>
     </div>
   )
@@ -107,8 +107,8 @@ function SectionBox({ title, children, className = '' }: {
   title: string; children: React.ReactNode; className?: string
 }) {
   return (
-    <div className={cn('rounded-xl border border-[#1e2a3b] bg-[#0a1628] p-4', className)}>
-      <p className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-slate-500">{title}</p>
+    <div className={cn('rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-gdc-border dark:bg-gdc-card', className)}>
+      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</p>
       {children}
     </div>
   )
@@ -238,7 +238,7 @@ function OverviewTab({
               <>
                 <div className="flex items-center gap-2 text-[12px]">
                   <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-400" />
-                  <span className="text-slate-300">
+                  <span className="text-slate-700 dark:text-slate-300">
                     Success <span className="tabular-nums font-semibold">{rt.successRatePct.toFixed(1)}%</span>
                   </span>
                 </div>
@@ -375,11 +375,11 @@ function StreamsTab({ row }: { row: DestinationOverviewRow }) {
   return (
     <div className="space-y-2">
       <p className="text-[11px] text-slate-500">{streams.length} stream{streams.length !== 1 ? 's' : ''} connected</p>
-      <div className="overflow-hidden rounded-xl border border-[#1e2a3b]">
+      <div className="overflow-hidden rounded-xl border border-slate-200/80 dark:border-gdc-border">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[480px]">
             <thead>
-              <tr className="border-b border-[#1e2a3b] bg-[#070f1c]">
+              <tr className="border-b border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-bg">
                 <th className={TH}>Stream</th>
                 <th className={TH}>Route(s)</th>
                 <th className={TH}>EPS</th>
@@ -391,7 +391,7 @@ function StreamsTab({ row }: { row: DestinationOverviewRow }) {
             </thead>
             <tbody>
               {streams.map((s) => (
-                <tr key={s.streamId} className="border-b border-[#1e2a3b] last:border-0 hover:bg-[#0f1a2a]">
+                <tr key={s.streamId} className="border-b border-slate-200/80 dark:border-gdc-border last:border-0 hover:bg-white dark:bg-gdc-card">
                   <td className={TD}>
                     <Link
                       to={streamRuntimePath(String(s.streamId))}
@@ -464,11 +464,11 @@ function RoutesTab({ row }: { row: DestinationOverviewRow }) {
         {routes.length} route{routes.length !== 1 ? 's' : ''} · click any row to open Route Processing
       </p>
 
-      <div className="overflow-hidden rounded-xl border border-[#1e2a3b]">
+      <div className="overflow-hidden rounded-xl border border-slate-200/80 dark:border-gdc-border">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[900px]">
             <thead>
-              <tr className="border-b border-[#1e2a3b] bg-[#070f1c]">
+              <tr className="border-b border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-bg">
                 <th className={TH}>Route</th>
                 <th className={TH}>Stream</th>
                 <th className={TH}>Transform</th>
@@ -492,7 +492,7 @@ function RoutesTab({ row }: { row: DestinationOverviewRow }) {
                 return (
                   <tr
                     key={r.route_id}
-                    className="cursor-pointer border-b border-[#1e2a3b] last:border-0 hover:bg-[#0f1a2a] transition-colors"
+                    className="cursor-pointer border-b border-slate-200/80 dark:border-gdc-border last:border-0 hover:bg-white dark:bg-gdc-card transition-colors"
                     onClick={() => window.open(processingLink, '_self')}
                   >
                     {/* Route # */}
@@ -692,7 +692,7 @@ function AlertsTab({ row }: { row: DestinationOverviewRow }) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-16">
         <CheckCircle2 className="h-10 w-10 text-emerald-400" />
-        <p className="text-[13px] font-semibold text-slate-300">No active alerts</p>
+        <p className="text-[13px] font-semibold text-slate-700 dark:text-slate-300">No active alerts</p>
         <p className="text-[12px] text-slate-500">This destination is operating normally.</p>
       </div>
     )
@@ -721,7 +721,7 @@ function AlertsTab({ row }: { row: DestinationOverviewRow }) {
               <span className={cn('text-[10px] font-bold uppercase tracking-wide', SEV_TEXT[alert.severity])}>
                 {alert.severity}
               </span>
-              <span className="text-[11px] font-semibold text-slate-200">{alert.type}</span>
+              <span className="text-[11px] font-semibold text-slate-800 dark:text-slate-200">{alert.type}</span>
             </div>
             <span className={cn(
               'rounded border px-1.5 py-0.5 text-[9px] font-semibold',
@@ -734,13 +734,13 @@ function AlertsTab({ row }: { row: DestinationOverviewRow }) {
           </div>
 
           {/* Message */}
-          <p className="mt-1.5 text-[12px] text-slate-300">{alert.message}</p>
+          <p className="mt-1.5 text-[12px] text-slate-700 dark:text-slate-300">{alert.message}</p>
 
           {/* Metadata grid */}
           <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] text-slate-500">
             <span>First seen: <span className="text-slate-400">{alert.firstSeen}</span></span>
             <span>Last seen: <span className="text-slate-400">{alert.lastSeen}</span></span>
-            <span>Occurrences: <span className="tabular-nums font-semibold text-slate-300">{alert.occurrences}</span></span>
+            <span>Occurrences: <span className="tabular-nums font-semibold text-slate-700 dark:text-slate-300">{alert.occurrences}</span></span>
             <span>
               Route:{' '}
               {alert.affectedRouteId != null ? (
@@ -818,7 +818,7 @@ function NavLinks({
           <Link
             key={label}
             to={href}
-            className="inline-flex items-center gap-1 rounded-md border border-[#1e2a3b] bg-[#0a1628] px-2 py-1 text-[10px] font-semibold text-slate-400 hover:border-slate-500 hover:text-slate-200 transition-colors"
+            className="inline-flex items-center gap-1 rounded-md border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section px-2 py-1 text-[10px] font-semibold text-slate-400 hover:border-slate-500 hover:text-slate-800 dark:text-slate-200 transition-colors"
           >
             {icon}
             {label}
@@ -828,7 +828,7 @@ function NavLinks({
             key={label}
             type="button"
             onClick={onClick}
-            className="inline-flex items-center gap-1 rounded-md border border-[#1e2a3b] bg-[#0a1628] px-2 py-1 text-[10px] font-semibold text-slate-400 hover:border-slate-500 hover:text-slate-200 transition-colors"
+            className="inline-flex items-center gap-1 rounded-md border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section px-2 py-1 text-[10px] font-semibold text-slate-400 hover:border-slate-500 hover:text-slate-800 dark:text-slate-200 transition-colors"
           >
             {icon}
             {label}
@@ -865,12 +865,7 @@ export function DestinationDetailDrawer({
       ? Math.round(((rt.currentEps ?? 0) / limitEps) * 100)
       : null
 
-  const issueText =
-    rt.recentIssues.length > 0
-      ? rt.recentIssues[0]
-      : rt.health === 'Warning'
-      ? 'Capacity usage elevated'
-      : null
+  const issueText = rt.recentIssues.length > 0 ? rt.recentIssues[0] : null
 
   const alertCount = rt.recentIssues.length
 
@@ -885,16 +880,16 @@ export function DestinationDetailDrawer({
 
       {/* Drawer panel — wider to fit routes table */}
       <div
-        className="fixed right-0 top-0 z-50 flex h-full w-[520px] max-w-[96vw] flex-col border-l border-[#1e2a3b] bg-[#070f1c] shadow-2xl"
+        className="fixed right-0 top-0 z-50 flex h-full w-[520px] max-w-[96vw] flex-col border-l border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-bg shadow-2xl"
         role="dialog"
         aria-label={`Destination detail: ${row.name}`}
       >
         {/* ── Header ── */}
-        <div className="flex-shrink-0 border-b border-[#1e2a3b] px-4 pt-4 pb-3">
+        <div className="flex-shrink-0 border-b border-slate-200/80 dark:border-gdc-border px-4 pt-4 pb-3">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-[16px] font-bold text-slate-100 truncate">{row.name}</h2>
+                <h2 className="text-[16px] font-bold text-slate-900 dark:text-slate-50 truncate">{row.name}</h2>
                 <HealthBadge health={rt.health} />
               </div>
               <p className="mt-0.5 text-[11px] text-slate-500">{buildTargetSummary(row)}</p>
@@ -905,7 +900,7 @@ export function DestinationDetailDrawer({
             <button
               type="button"
               onClick={onClose}
-              className="shrink-0 rounded-md p-1.5 text-slate-400 hover:bg-[#1e2a3b] hover:text-slate-200"
+              className="shrink-0 rounded-md p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-gdc-elevated hover:text-slate-800 dark:text-slate-200"
               aria-label="Close drawer"
             >
               <X className="h-4 w-4" />
@@ -914,18 +909,18 @@ export function DestinationDetailDrawer({
 
           {/* Info pills */}
           <div className="mt-2 flex flex-wrap gap-1.5">
-            <span className="rounded-md border border-[#1e2a3b] bg-[#0a1628] px-2 py-0.5 text-[10px] text-slate-400">
+            <span className="rounded-md border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section px-2 py-0.5 text-[10px] text-slate-400">
               {typeLabel(row.destination_type)}
             </span>
             {capacityPct != null && (
-              <span className="rounded-md border border-[#1e2a3b] bg-[#0a1628] px-2 py-0.5 text-[10px] text-slate-400">
+              <span className="rounded-md border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section px-2 py-0.5 text-[10px] text-slate-400">
                 Capacity {capacityPct}%
               </span>
             )}
-            <span className="rounded-md border border-[#1e2a3b] bg-[#0a1628] px-2 py-0.5 text-[10px] text-slate-400">
+            <span className="rounded-md border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section px-2 py-0.5 text-[10px] text-slate-400">
               {rt.connectedStreams} stream{rt.connectedStreams !== 1 ? 's' : ''}
             </span>
-            <span className="rounded-md border border-[#1e2a3b] bg-[#0a1628] px-2 py-0.5 text-[10px] text-slate-400">
+            <span className="rounded-md border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section px-2 py-0.5 text-[10px] text-slate-400">
               {row.routes?.length ?? 0} route{(row.routes?.length ?? 0) !== 1 ? 's' : ''}
             </span>
           </div>
@@ -935,7 +930,7 @@ export function DestinationDetailDrawer({
         </div>
 
         {/* ── Tabs ── */}
-        <div className="flex-shrink-0 flex border-b border-[#1e2a3b] bg-[#070f1c]">
+        <div className="flex-shrink-0 flex border-b border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-bg">
           {TAB_LABELS.map((tab) => {
             const badge = tab.id === 'alerts' && alertCount > 0 ? alertCount : null
             return (
@@ -947,7 +942,7 @@ export function DestinationDetailDrawer({
                   'flex flex-1 items-center justify-center gap-1 py-2.5 text-[11px] font-semibold transition-colors',
                   activeTab === tab.id
                     ? 'border-b-2 border-violet-500 text-violet-300'
-                    : 'text-slate-500 hover:text-slate-300'
+                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-300'
                 )}
               >
                 {tab.label}

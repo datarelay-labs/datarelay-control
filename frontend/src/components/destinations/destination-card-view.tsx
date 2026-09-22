@@ -51,8 +51,8 @@ function DestinationCard({
   return (
     <div
       className={cn(
-        'group relative flex cursor-pointer flex-col rounded-xl border bg-[#0f1a2a] p-4 shadow-sm transition-all hover:border-violet-500/40 hover:shadow-violet-900/20',
-        row.enabled ? 'border-[#1e2a3b]' : 'border-[#1e2a3b] opacity-60',
+        'group relative flex cursor-pointer flex-col rounded-xl border bg-white dark:bg-gdc-card p-4 shadow-sm transition-all hover:border-slate-300 hover:shadow-md dark:hover:border-gdc-border',
+        row.enabled ? 'border-slate-200/80 dark:border-gdc-border' : 'border-slate-200/80 dark:border-gdc-border opacity-60',
       )}
       onClick={onSelect}
       role="button"
@@ -69,11 +69,11 @@ function DestinationCard({
 
       {/* Header */}
       <div className="flex items-start gap-2 pr-6">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#1e2a3b] bg-[#0a1628] text-[13px] font-bold text-slate-400">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section text-[13px] font-bold text-slate-400">
           {row.name.slice(0, 2).toUpperCase()}
         </div>
         <div className="min-w-0">
-          <p className="truncate text-[13px] font-bold text-slate-100">{row.name}</p>
+          <p className="truncate text-[13px] font-bold text-slate-900 dark:text-slate-50">{row.name}</p>
           <p className="text-[10px] text-slate-500">{typeLabel(row.destination_type)}</p>
         </div>
       </div>
@@ -97,13 +97,13 @@ function DestinationCard({
 
       {/* Stats grid */}
       <div className="mt-3 grid grid-cols-2 gap-1.5">
-        <div className="rounded-md border border-[#1e2a3b] bg-[#0a1628] px-2 py-1.5">
+        <div className="rounded-md border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section px-2 py-1.5">
           <p className="text-[9px] uppercase tracking-wider text-slate-500">EPS</p>
-          <p className="tabular-nums text-[12px] font-bold text-slate-200">{formatEps(rt.currentEps)}</p>
+          <p className="tabular-nums text-[12px] font-bold text-slate-800 dark:text-slate-200">{formatEps(rt.currentEps)}</p>
         </div>
-        <div className="rounded-md border border-[#1e2a3b] bg-[#0a1628] px-2 py-1.5">
+        <div className="rounded-md border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section px-2 py-1.5">
           <p className="text-[9px] uppercase tracking-wider text-slate-500">Streams</p>
-          <p className="tabular-nums text-[12px] font-bold text-slate-200">{rt.connectedStreams}</p>
+          <p className="tabular-nums text-[12px] font-bold text-slate-800 dark:text-slate-200">{rt.connectedStreams}</p>
         </div>
       </div>
 
@@ -134,14 +134,14 @@ function DestinationCardMenu({
     <div className="relative">
       <button
         type="button"
-        className="flex h-6 w-6 items-center justify-center rounded-md border border-[#1e2a3b] bg-[#0a1628] text-slate-400 hover:text-slate-200"
+        className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section text-slate-400 hover:text-slate-800 dark:text-slate-200"
         onClick={() => setOpen((v) => !v)}
       >
         <MoreHorizontal className="h-3.5 w-3.5" />
       </button>
       {open && (
         <div
-          className="absolute right-0 top-7 z-30 min-w-[130px] rounded-lg border border-[#1e2a3b] bg-[#0a1628] py-1 shadow-xl"
+          className="absolute right-0 top-7 z-30 min-w-[130px] rounded-lg border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section py-1 shadow-xl"
           onMouseLeave={() => setOpen(false)}
         >
           {[
@@ -154,8 +154,8 @@ function DestinationCardMenu({
               type="button"
               onClick={() => { setOpen(false); action() }}
               className={cn(
-                'block w-full px-3 py-1.5 text-left text-[12px] hover:bg-[#1e2a3b]',
-                danger ? 'text-red-400' : 'text-slate-300'
+                'block w-full px-3 py-1.5 text-left text-[12px] hover:bg-slate-100 dark:hover:bg-gdc-elevated',
+                danger ? 'text-red-400' : 'text-slate-700 dark:text-slate-300'
               )}
             >
               {label}

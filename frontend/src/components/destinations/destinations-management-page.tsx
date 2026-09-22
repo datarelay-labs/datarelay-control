@@ -47,7 +47,8 @@ import { cn } from '../../lib/utils'
 import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
 import { HelpTooltip } from '../ui/help-tooltip'
 import { HELP_COPY } from '../ui/help-tooltip-copy'
-import { DestinationsKpiStrip, computeDestinationsKpi } from './destination-kpi-strip'
+import { computeDestinationsKpi } from './destination-kpi-strip'
+import { DestinationsHealthOverview } from './destinations-health-overview'
 import { DestinationDetailDrawer, type LastTestResult } from './destination-detail-drawer'
 import { DestinationCardView } from './destination-card-view'
 import {
@@ -292,15 +293,15 @@ function extractTlsDetail(detail: Record<string, unknown> | null | undefined): T
 // ─── Type badge ───────────────────────────────────────────────────────────────
 
 const TYPE_BADGE: Record<string, string> = {
-  SYSLOG_UDP: 'border-violet-500/40 bg-violet-500/10 text-violet-300',
-  SYSLOG_TCP: 'border-sky-500/40 bg-sky-500/10 text-sky-300',
-  SYSLOG_TLS: 'border-amber-500/40 bg-amber-500/10 text-amber-300',
-  WEBHOOK_POST: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300',
+  SYSLOG_UDP: 'border-slate-300 bg-slate-100 text-slate-700 dark:border-slate-600 dark:bg-slate-800/60 dark:text-slate-300',
+  SYSLOG_TCP: 'border-sky-300 bg-sky-50 text-sky-800 dark:border-sky-500/40 dark:bg-sky-500/10 dark:text-sky-300',
+  SYSLOG_TLS: 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300',
+  WEBHOOK_POST: 'border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-300',
 }
 
 function TypeBadge({ type }: { type: string }) {
   return (
-    <span className={cn('inline-flex rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide', TYPE_BADGE[type] ?? 'border-slate-600 bg-slate-700/30 text-slate-400')}>
+    <span className={cn('inline-flex rounded-md border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide', TYPE_BADGE[type] ?? 'border-slate-300 bg-slate-100 text-slate-600 dark:border-slate-600 dark:bg-slate-700/30 dark:text-slate-400')}>
       {type.replace('_', ' ')}
     </span>
   )
@@ -352,12 +353,12 @@ function RowKebabMenu({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex h-7 w-7 items-center justify-center rounded-md border border-[#1e2a3b] text-slate-400 hover:border-slate-500 hover:text-slate-200"
+        className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200/80 dark:border-gdc-border text-slate-400 hover:border-slate-500 hover:text-slate-800 dark:text-slate-200"
       >
         <MoreHorizontal className="h-3.5 w-3.5" />
       </button>
       {open && (
-        <div className="absolute right-0 top-8 z-30 min-w-[150px] rounded-lg border border-[#1e2a3b] bg-[#0a1628] py-1 shadow-xl">
+        <div className="absolute right-0 top-8 z-30 min-w-[150px] rounded-lg border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section py-1 shadow-xl">
           {items.map(({ label, action, danger, disabled }) => (
             <button
               key={label}
@@ -365,8 +366,8 @@ function RowKebabMenu({
               disabled={disabled}
               onClick={() => { setOpen(false); action() }}
               className={cn(
-                'block w-full px-3 py-1.5 text-left text-[12px] hover:bg-[#1e2a3b] disabled:opacity-50 disabled:cursor-not-allowed',
-                danger ? 'text-red-400 hover:text-red-300' : 'text-slate-300 hover:text-slate-100'
+                'block w-full px-3 py-1.5 text-left text-[12px] hover:bg-slate-100 dark:hover:bg-gdc-elevated disabled:opacity-50 disabled:cursor-not-allowed',
+                danger ? 'text-red-400 hover:text-red-300' : 'text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:text-slate-50'
               )}
             >
               {label}
@@ -407,7 +408,7 @@ function Pagination({
         <select
           value={pageSize}
           onChange={(e) => { onPageSize(Number(e.target.value) as PageSize); onPage(1) }}
-          className="rounded border border-[#1e2a3b] bg-[#0a1628] px-1.5 py-0.5 text-[11px] text-slate-300"
+          className="rounded border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section px-1.5 py-0.5 text-[11px] text-slate-700 dark:text-slate-300"
         >
           {PAGE_SIZE_OPTIONS.map((s) => (
             <option key={s} value={s}>{s}</option>
@@ -416,17 +417,17 @@ function Pagination({
       </div>
       <div className="flex items-center gap-1">
         <span className="mr-2">{from}–{to} of {total}</span>
-        <button type="button" disabled={page <= 1} onClick={() => onPage(1)} className="rounded p-1 hover:bg-[#1e2a3b] disabled:opacity-30">
+        <button type="button" disabled={page <= 1} onClick={() => onPage(1)} className="rounded p-1 hover:bg-slate-100 dark:hover:bg-gdc-elevated disabled:opacity-30">
           <ChevronsLeft className="h-3.5 w-3.5" />
         </button>
-        <button type="button" disabled={page <= 1} onClick={() => onPage(page - 1)} className="rounded p-1 hover:bg-[#1e2a3b] disabled:opacity-30">
+        <button type="button" disabled={page <= 1} onClick={() => onPage(page - 1)} className="rounded p-1 hover:bg-slate-100 dark:hover:bg-gdc-elevated disabled:opacity-30">
           <ChevronLeft className="h-3.5 w-3.5" />
         </button>
         <span className="px-1 tabular-nums">{page} / {totalPages}</span>
-        <button type="button" disabled={page >= totalPages} onClick={() => onPage(page + 1)} className="rounded p-1 hover:bg-[#1e2a3b] disabled:opacity-30">
+        <button type="button" disabled={page >= totalPages} onClick={() => onPage(page + 1)} className="rounded p-1 hover:bg-slate-100 dark:hover:bg-gdc-elevated disabled:opacity-30">
           <ChevronRight className="h-3.5 w-3.5" />
         </button>
-        <button type="button" disabled={page >= totalPages} onClick={() => onPage(totalPages)} className="rounded p-1 hover:bg-[#1e2a3b] disabled:opacity-30">
+        <button type="button" disabled={page >= totalPages} onClick={() => onPage(totalPages)} className="rounded p-1 hover:bg-slate-100 dark:hover:bg-gdc-elevated disabled:opacity-30">
           <ChevronsRight className="h-3.5 w-3.5" />
         </button>
       </div>
@@ -501,7 +502,7 @@ function CapacityRecommendationCard({
   }
 
   return (
-    <div className="rounded-xl border border-[#1e2a3b] bg-[#0a1628] p-4">
+    <div className="rounded-xl border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section p-4">
       <p className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Capacity Recommendation</p>
 
       <div className="space-y-2 text-[12px]">
@@ -513,20 +514,20 @@ function CapacityRecommendationCard({
         ] as const).map(({ label, value }) => (
           <div key={label} className="flex items-center justify-between gap-2">
             <span className="text-slate-500">{label}</span>
-            <span className="tabular-nums font-semibold text-slate-300">{value}</span>
+            <span className="tabular-nums font-semibold text-slate-700 dark:text-slate-300">{value}</span>
           </div>
         ))}
 
-        <div className="border-t border-[#1e2a3b] pt-2 space-y-2">
+        <div className="border-t border-slate-200/80 dark:border-gdc-border pt-2 space-y-2">
           <div className="flex items-center justify-between gap-2">
             <span className="text-slate-500">Configured</span>
-            <span className="tabular-nums font-semibold text-slate-300">
+            <span className="tabular-nums font-semibold text-slate-700 dark:text-slate-300">
               {unlimited ? 'No limit' : configuredLimitEps != null ? `${configuredLimitEps.toLocaleString()} EPS` : '—'}
             </span>
           </div>
           <div className="flex items-center justify-between gap-2">
             <span className="text-slate-500">Recommended</span>
-            <span className={cn('tabular-nums font-semibold', recommendedEps != null ? 'text-violet-300' : 'text-slate-500 italic')}>
+            <span className={cn('tabular-nums font-semibold', recommendedEps != null ? 'text-slate-700 dark:text-slate-300' : 'text-slate-500 italic')}>
               {recommendedEps != null ? `${recommendedEps.toLocaleString()} EPS` : 'Unavailable'}
             </span>
           </div>
@@ -534,7 +535,7 @@ function CapacityRecommendationCard({
 
         {/* Expected Usage + Remaining (only when a limit is set) */}
         {!unlimited && configuredLimitEps != null && (
-          <div className="border-t border-[#1e2a3b] pt-2 space-y-2">
+          <div className="border-t border-slate-200/80 dark:border-gdc-border pt-2 space-y-2">
             <div className="flex items-center justify-between gap-2">
               <span className="text-slate-500">Expected Usage</span>
               <span className={cn('tabular-nums font-semibold', usageColor)}>
@@ -543,14 +544,14 @@ function CapacityRecommendationCard({
             </div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-slate-500">Remaining</span>
-              <span className="tabular-nums font-semibold text-slate-300">
+              <span className="tabular-nums font-semibold text-slate-700 dark:text-slate-300">
                 {remainingEps != null ? `${fmtEps(remainingEps)} EPS` : '—'}
               </span>
             </div>
             {headroomEps != null && (
               <div className="flex items-center justify-between gap-2">
                 <span className="text-slate-500">Headroom</span>
-                <span className={cn('tabular-nums font-semibold', headroomEps < 0 ? 'text-red-400' : 'text-slate-300')}>
+                <span className={cn('tabular-nums font-semibold', headroomEps < 0 ? 'text-red-400' : 'text-slate-700 dark:text-slate-300')}>
                   {fmtEps(headroomEps)} EPS
                 </span>
               </div>
@@ -572,7 +573,7 @@ function CapacityRecommendationCard({
         <button
           type="button"
           onClick={() => onApply(recommendedEps)}
-          className="mt-4 w-full rounded-md border border-violet-500/40 bg-violet-500/10 px-3 py-2 text-[12px] font-semibold text-violet-300 transition-colors hover:bg-violet-500/20"
+          className="mt-4 w-full rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-[12px] font-semibold text-slate-800 transition-colors hover:bg-slate-100 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-200 dark:hover:bg-gdc-elevated"
         >
           Apply Recommendation ({recommendedEps.toLocaleString()} EPS)
         </button>
@@ -606,7 +607,7 @@ function TestConnectionResultCard({ result }: { result: FormProbeResult }) {
         {result.success && result.latencyMs > 0 && (
           <div className="flex items-center justify-between gap-2">
             <span className="text-slate-500">Latency</span>
-            <span className="tabular-nums font-semibold text-slate-200">{result.latencyMs.toFixed(1)} ms</span>
+            <span className="tabular-nums font-semibold text-slate-800 dark:text-slate-200">{result.latencyMs.toFixed(1)} ms</span>
           </div>
         )}
         {!result.success && result.message && (
@@ -1035,70 +1036,68 @@ export function DestinationsManagementPage() {
   // ─── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex w-full min-w-0 flex-col gap-5 bg-[#070f1c] min-h-screen p-5">
+    <div className="flex w-full min-w-0 flex-col gap-5" data-testid="destinations-management-page">
 
-      {/* Header */}
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-100">Destinations</h1>
-          <p className="mt-0.5 text-[13px] text-slate-500">
-            Monitor delivery capacity and health of all destinations
-          </p>
-        </div>
-
-        {/* Right-side controls */}
-        <div className="flex flex-wrap items-center gap-2">
-          {/* New Destination button */}
+      {/* Toolbar — App Shell owns the page title */}
+      <div className="flex flex-col gap-3 border-b border-slate-200/80 pb-4 dark:border-gdc-divider sm:flex-row sm:items-start sm:justify-between">
+        <p className="max-w-2xl text-sm text-slate-600 dark:text-gdc-muted">
+          Which destination needs attention? Scan delivery posture, open a destination for capacity and route impact, then edit or test without leaving the workspace.
+        </p>
+        <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
           <button
             type="button"
             data-testid="destinations-new"
             onClick={openCreateSheet}
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-violet-600 px-3 text-[12px] font-semibold text-white shadow-sm hover:bg-violet-500 transition-colors"
+            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-500/40 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
           >
-            <Plus className="h-3.5 w-3.5" />
+            <Plus className="h-4 w-4" aria-hidden />
             New Destination
           </button>
-
-          {/* Time Range */}
-          <label className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500">
-            <span className="shrink-0">Time range</span>
-            <select
-              value={timeRange}
-              onChange={(e) => handleTimeRangeChange(e.target.value as StreamsMetricsWindow)}
-              className="rounded-lg border border-[#1e2a3b] bg-[#0a1628] px-2 py-1.5 text-[12px] font-semibold text-slate-200"
-              aria-label="Metrics time range"
-            >
-              {(['15m', '1h', '24h', '7d', '30d'] as const).map((w) => (
-                <option key={w} value={w}>{streamsTimeRangeLabel(w)}</option>
-              ))}
-            </select>
-          </label>
-
-          {/* Manual Refresh */}
-          <button
-            type="button"
-            onClick={() => { void refresh() }}
-            disabled={isRefreshing}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[#1e2a3b] bg-[#0a1628] text-slate-400 hover:border-slate-500 hover:text-slate-200 disabled:opacity-50 transition-colors"
-            aria-label="Refresh now"
+          <div
+            className="flex flex-wrap items-center justify-end gap-2"
+            data-testid="destinations-console-controls"
+            aria-label="Destinations refresh and time range"
           >
-            <RefreshCw className={cn('h-3.5 w-3.5', isRefreshing && 'animate-spin')} />
-          </button>
-
-          {/* Auto Refresh */}
-          <label className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500">
-            <span className="shrink-0">Auto refresh</span>
-            <select
-              value={autoRefresh}
-              onChange={(e) => handleAutoRefreshChange(e.target.value as StreamsAutoRefreshOption)}
-              className="rounded-lg border border-[#1e2a3b] bg-[#0a1628] px-2 py-1.5 text-[12px] font-semibold text-slate-200"
-              aria-label="Auto refresh interval"
+            <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-gdc-muted">
+              <span className="shrink-0">Time range</span>
+              <select
+                value={timeRange}
+                onChange={(e) => handleTimeRangeChange(e.target.value as StreamsMetricsWindow)}
+                className="rounded-lg border border-slate-200/90 bg-white px-2.5 py-1.5 text-sm font-medium text-slate-800 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
+                aria-label="Metrics time range"
+                data-testid="destinations-time-range"
+              >
+                {(['15m', '1h', '24h', '7d', '30d'] as const).map((w) => (
+                  <option key={w} value={w}>{streamsTimeRangeLabel(w)}</option>
+                ))}
+              </select>
+            </label>
+            <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-gdc-muted">
+              <span className="shrink-0">Auto refresh</span>
+              <select
+                value={autoRefresh}
+                onChange={(e) => handleAutoRefreshChange(e.target.value as StreamsAutoRefreshOption)}
+                className="rounded-lg border border-slate-200/90 bg-white px-2.5 py-1.5 text-sm font-medium text-slate-800 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
+                aria-label="Auto refresh interval"
+                data-testid="destinations-auto-refresh"
+              >
+                {(['Off', '15s', '30s', '1m', '5m'] as const).map((opt) => (
+                  <option key={opt} value={opt}>{opt === 'Off' ? 'Off' : opt}</option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={() => { void refresh() }}
+              disabled={isRefreshing}
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200/90 px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 dark:border-gdc-border dark:text-slate-200 dark:hover:bg-gdc-elevated"
+              aria-label="Refresh destinations now"
+              data-testid="destinations-manual-refresh"
             >
-              {(['Off', '15s', '30s', '1m', '5m'] as const).map((opt) => (
-                <option key={opt} value={opt}>{opt === 'Off' ? 'Off' : `${opt}`}</option>
-              ))}
-            </select>
-          </label>
+              <RefreshCw className={cn('h-3.5 w-3.5', isRefreshing && 'animate-spin')} aria-hidden />
+              Refresh
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1107,23 +1106,22 @@ export function DestinationsManagementPage() {
         <div
           role="alert"
           data-testid="destination-page-error"
-          className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-[13px] text-red-300"
+          className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-500/40 dark:bg-red-950/30 dark:text-red-200"
         >
           {error ?? localError}
         </div>
       )}
       {runtimeError && (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-[12px] text-amber-300">
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-950/25 dark:text-amber-200">
           Runtime metrics unavailable: {runtimeError}
         </div>
       )}
 
-      {/* KPI Strip */}
-      <DestinationsKpiStrip kpi={kpi} loading={isRefreshing && rows.length === 0} />
+      <DestinationsHealthOverview kpi={kpi} loading={isRefreshing && rows.length === 0} />
 
       {/* Table / Card toolbar */}
-      <div className="flex flex-wrap items-center gap-2">
-        <h2 className="text-[13px] font-semibold text-slate-300">
+      <div className="flex flex-wrap items-center gap-2" data-testid="destinations-list-toolbar">
+        <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-200">
           Destinations
           <span className="ml-1.5 tabular-nums text-slate-500">({filteredRows.length})</span>
         </h2>
@@ -1135,7 +1133,8 @@ export function DestinationsManagementPage() {
               placeholder="Search destinations…"
               value={searchQ}
               onChange={(e) => setSearchQ(e.target.value)}
-              className="h-9 w-full rounded-lg border border-[#1e2a3b] bg-[#0a1628] py-1 pl-8 pr-2 text-[12px] text-slate-200 placeholder:text-slate-600 focus:border-violet-500/60 focus:outline-none"
+              data-testid="destinations-search"
+              className="h-9 w-full rounded-lg border border-slate-200/90 bg-white py-1 pl-8 pr-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
             />
           </label>
         </div>
@@ -1144,7 +1143,9 @@ export function DestinationsManagementPage() {
         <select
           value={healthFilter}
           onChange={(e) => setHealthFilter(e.target.value as typeof healthFilter)}
-          className="h-9 rounded-lg border border-[#1e2a3b] bg-[#0a1628] px-2 text-[12px] text-slate-200"
+          data-testid="destinations-status-filter"
+          className="h-9 rounded-lg border border-slate-200/90 bg-white px-2.5 text-sm text-slate-800 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
+          aria-label="Filter by status"
         >
           <option value="ALL">All Status</option>
           <option value="Healthy">Healthy</option>
@@ -1154,26 +1155,30 @@ export function DestinationsManagementPage() {
         </select>
 
         {/* View toggle */}
-        <div className="flex rounded-lg border border-[#1e2a3b] bg-[#0a1628] p-0.5">
+        <div className="flex rounded-lg border border-slate-200/90 bg-white p-0.5 dark:border-gdc-border dark:bg-gdc-card" role="group" aria-label="View mode">
           <button
             type="button"
             onClick={() => setViewMode('table')}
+            data-testid="destinations-view-table"
             className={cn(
               'flex h-7 w-7 items-center justify-center rounded-md transition-colors',
-              viewMode === 'table' ? 'bg-violet-600 text-white' : 'text-slate-500 hover:text-slate-300'
+              viewMode === 'table' ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900' : 'text-slate-500 hover:text-slate-700 dark:text-slate-300'
             )}
             title="Table view"
+            aria-pressed={viewMode === 'table'}
           >
             <List className="h-3.5 w-3.5" />
           </button>
           <button
             type="button"
             onClick={() => setViewMode('card')}
+            data-testid="destinations-view-card"
             className={cn(
               'flex h-7 w-7 items-center justify-center rounded-md transition-colors',
-              viewMode === 'card' ? 'bg-violet-600 text-white' : 'text-slate-500 hover:text-slate-300'
+              viewMode === 'card' ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900' : 'text-slate-500 hover:text-slate-700 dark:text-slate-300'
             )}
             title="Card view"
+            aria-pressed={viewMode === 'card'}
           >
             <LayoutGrid className="h-3.5 w-3.5" />
           </button>
@@ -1182,35 +1187,38 @@ export function DestinationsManagementPage() {
 
       {/* ─── Table View ──────────────────────────────────────────────────────── */}
       {viewMode === 'table' ? (
-        <section className="overflow-hidden rounded-xl border border-[#1e2a3b] bg-[#0f1a2a]">
+        <section className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm dark:border-gdc-border dark:bg-gdc-card" data-testid="destinations-table-panel">
           {loading ? (
-            <div className="flex items-center gap-2 p-8 text-[12px] text-slate-500">
-              <Loader2 className="h-4 w-4 animate-spin" />
+            <div className="flex items-center justify-center gap-2 py-12 text-sm text-slate-500 dark:text-gdc-muted">
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
               Loading destinations…
             </div>
           ) : rows.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-3 px-6 py-16">
-              <p className="text-sm font-semibold text-slate-300">No destinations yet</p>
-              <p className="max-w-md text-center text-[12px] text-slate-500">
+            <div className="flex flex-col items-center justify-center gap-3 px-6 py-16" data-testid="destinations-empty-panel">
+              <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">No destinations yet</p>
+              <p className="max-w-md text-center text-sm text-slate-500 dark:text-gdc-muted">
                 Create a destination to send stream output to syslog or webhook endpoints.
               </p>
               <button
                 type="button"
                 onClick={openCreateSheet}
-                className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-violet-600 px-3 text-[12px] font-semibold text-white shadow-sm hover:bg-violet-500"
+                data-testid="destinations-create-first"
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
               >
-                <Plus className="h-3.5 w-3.5" />
-                New Destination
+                <Plus className="h-4 w-4" aria-hidden />
+                Create First Destination
               </button>
             </div>
           ) : filteredRows.length === 0 ? (
-            <div className="px-6 py-12 text-center text-[12px] text-slate-500">No destinations match filters.</div>
+            <div className="px-6 py-12 text-center text-sm text-slate-500 dark:text-gdc-muted" data-testid="destinations-no-match">
+              No destinations match your filters.
+            </div>
           ) : (
             <>
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
-                    <tr className="border-b border-[#1e2a3b] bg-[#0a1628]">
+                    <tr className="border-b border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section">
                       <th className={TH}>Destination</th>
                       <th className={cn(TH, 'text-center')}>Capacity Usage</th>
                       <th className={TH}>EPS (Current)</th>
@@ -1231,7 +1239,7 @@ export function DestinationsManagementPage() {
                           <tr
                             data-testid={`destination-row-${row.id}`}
                             className={cn(
-                              'border-b border-[#1e2a3b] last:border-0 transition-colors hover:bg-[#0f1a2a]/80 cursor-pointer',
+                              'border-b border-slate-200/80 dark:border-gdc-border last:border-0 transition-colors hover:bg-slate-50/80 dark:hover:bg-gdc-elevated/80 cursor-pointer',
                               dimmed && 'opacity-55'
                             )}
                             onClick={() => setDrawerRow(row)}
@@ -1239,11 +1247,11 @@ export function DestinationsManagementPage() {
                             {/* Destination */}
                             <td className={cn(TD, 'min-w-[180px]')}>
                               <div className="flex items-start gap-2">
-                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#1e2a3b] bg-[#0a1628] text-[11px] font-bold text-slate-400">
+                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section text-[11px] font-bold text-slate-400">
                                   {row.name.slice(0, 2).toUpperCase()}
                                 </div>
                                 <div className="min-w-0">
-                                  <div className="text-[12px] font-semibold text-slate-100 truncate max-w-[160px]">{row.name}</div>
+                                  <div className="text-[12px] font-semibold text-slate-900 dark:text-slate-50 truncate max-w-[160px]">{row.name}</div>
                                   <div className="mt-0.5 flex items-center gap-1.5">
                                     <TypeBadge type={row.destination_type} />
                                     <span className="text-[10px] text-slate-500">{rt.connectedStreams} route{rt.connectedStreams !== 1 ? 's' : ''}</span>
@@ -1260,7 +1268,7 @@ export function DestinationsManagementPage() {
                             {/* EPS (Current) */}
                             <td className={TD}>
                               <div className="tabular-nums">
-                                <div className="text-[13px] font-bold text-slate-100">{runtimeLoading ? '…' : formatEps(rt.currentEps)}</div>
+                                <div className="text-[13px] font-bold text-slate-900 dark:text-slate-50">{runtimeLoading ? '…' : formatEps(rt.currentEps)}</div>
                                 {limitEps != null ? (
                                   <div className="text-[10px] text-slate-500">/ {limitEps.toLocaleString()} EPS</div>
                                 ) : (
@@ -1308,7 +1316,7 @@ export function DestinationsManagementPage() {
               </div>
 
               {/* Pagination */}
-              <div className="border-t border-[#1e2a3b]">
+              <div className="border-t border-slate-200/80 dark:border-gdc-border">
                 <Pagination
                   total={filteredRows.length}
                   page={page}
@@ -1331,7 +1339,7 @@ export function DestinationsManagementPage() {
             onTestRow={(row) => void onTestRow(row)}
           />
           {filteredRows.length > 0 && (
-            <div className="rounded-xl border border-[#1e2a3b] bg-[#0f1a2a]">
+            <div className="rounded-xl border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-card">
               <Pagination
                 total={filteredRows.length}
                 page={page}
@@ -1361,19 +1369,19 @@ export function DestinationsManagementPage() {
           role="dialog"
           aria-modal="true"
         >
-          <div className="my-auto flex max-h-[min(94vh,920px)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-[#1e2a3b] bg-[#070f1c] shadow-2xl">
+          <div className="my-auto flex max-h-[min(94vh,920px)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-bg shadow-2xl">
 
             {/* ── Dialog header ── */}
-            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-[#1e2a3b] px-6 py-5">
+            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-200/80 dark:border-gdc-border px-6 py-5">
               <div>
-                <h3 className="text-base font-semibold tracking-tight text-slate-100">
+                <h3 className="text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50">
                   {sheetMode === 'create' ? 'Create Destination' : 'Edit Destination'}
                 </h3>
                 <p className="mt-1 text-[12px] text-slate-500">
                   Test connection with current fields, then save.
                 </p>
               </div>
-              <button type="button" onClick={closeSheet} className="rounded p-1 text-slate-500 hover:bg-[#1e2a3b] hover:text-slate-200" aria-label="Close">
+              <button type="button" onClick={closeSheet} className="rounded p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-gdc-elevated hover:text-slate-800 dark:text-slate-200" aria-label="Close">
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -1382,11 +1390,11 @@ export function DestinationsManagementPage() {
               <div
                 role="alert"
                 data-testid="destination-form-error"
-                className="mx-6 mt-3 rounded-lg border border-red-500/40 bg-red-950/35 px-4 py-3 text-[13px] leading-relaxed text-red-100"
+                className="mx-6 mt-3 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-[13px] leading-relaxed text-red-900 dark:border-red-500/40 dark:bg-red-950/35 dark:text-red-100"
               >
                 <p className="font-semibold">Cannot save destination</p>
                 <p className="mt-1">{localError}</p>
-                <p className="mt-1 text-[12px] text-red-200/90">Fix the highlighted fields, then save again.</p>
+                <p className="mt-1 text-[12px] text-red-700/90 dark:text-red-200/90">Fix the highlighted fields, then save again.</p>
               </div>
             ) : null}
             {probeBanner && (
@@ -1396,8 +1404,8 @@ export function DestinationsManagementPage() {
                 className={cn(
                   'mx-6 mt-3 rounded-lg border px-4 py-3 text-[13px] leading-relaxed',
                   probeBanner.tone === 'success'
-                    ? 'border-emerald-500/40 bg-emerald-950/30 text-emerald-100'
-                    : 'border-red-500/40 bg-red-950/35 text-red-100',
+                    ? 'border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-500/40 dark:bg-emerald-950/30 dark:text-emerald-100'
+                    : 'border-red-300 bg-red-50 text-red-900 dark:border-red-500/40 dark:bg-red-950/35 dark:text-red-100',
                 )}
               >
                 {probeBanner.text}
@@ -1413,31 +1421,31 @@ export function DestinationsManagementPage() {
                 {/* ── Section 1: Connection ── */}
                 <section>
                   <div className="mb-4 flex items-center gap-3">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-600 text-[11px] font-bold text-white">1</span>
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[11px] font-bold text-white dark:bg-slate-100 dark:text-slate-900">1</span>
                     <div>
-                      <p className="text-[13px] font-semibold text-slate-200">Connection</p>
+                      <p className="text-[13px] font-semibold text-slate-800 dark:text-slate-200">Connection</p>
                       <p className="text-[11px] text-slate-500">Configure how Data Relay connects to your destination.</p>
                     </div>
                   </div>
 
                   <div className="space-y-4">
                     <div className="grid gap-4 sm:grid-cols-2">
-                      <label className="text-[13px] font-medium text-slate-400">
+                      <label className="text-[13px] font-medium text-slate-700 dark:text-slate-300">
                         Name *
                         <input
                           required
-                          className="mt-1.5 h-10 w-full rounded-md border border-[#1e2a3b] bg-[#0a1628] px-3 text-[13px] text-slate-100 placeholder:text-slate-600 focus:border-violet-500/60 focus:outline-none"
+                          className="mt-1.5 h-10 w-full rounded-md border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section px-3 text-[13px] text-slate-900 dark:text-slate-50 placeholder:text-slate-600 focus:border-slate-400 dark:focus:border-slate-500 focus:outline-none"
                           value={form.name}
                           onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))}
                         />
                       </label>
-                      <label className="text-[13px] font-medium text-slate-400">
+                      <label className="text-[13px] font-medium text-slate-700 dark:text-slate-300">
                         <span className="inline-flex items-center gap-1">
                           Type *
                           <HelpTooltip content={HELP_COPY.destinationVsRoute.content} ariaLabel="Destination type help" />
                         </span>
                         <select
-                          className="mt-1.5 h-10 w-full rounded-md border border-[#1e2a3b] bg-[#0a1628] px-3 text-[13px] text-slate-100 focus:border-violet-500/60 focus:outline-none"
+                          className="mt-1.5 h-10 w-full rounded-md border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section px-3 text-[13px] text-slate-900 dark:text-slate-50 focus:border-slate-400 dark:focus:border-slate-500 focus:outline-none"
                           value={form.destination_type}
                           onChange={(e) => {
                             const next = e.target.value as FormState['destination_type']
@@ -1456,25 +1464,25 @@ export function DestinationsManagementPage() {
                     </div>
 
                     <p className="text-[12px] text-slate-500">
-                      Protocol: <span className="font-semibold text-slate-300">{protocolLabel(form)}</span>
+                      Protocol: <span className="font-semibold text-slate-700 dark:text-slate-300">{protocolLabel(form)}</span>
                     </p>
 
                     {form.destination_type === 'WEBHOOK_POST' ? (
                       <div className="space-y-4">
-                        <label className="text-[13px] font-medium text-slate-400">
+                        <label className="text-[13px] font-medium text-slate-700 dark:text-slate-300">
                           URL *
                           <input
                             required
-                            className="mt-1.5 h-10 w-full rounded-md border border-[#1e2a3b] bg-[#0a1628] px-3 text-[13px] text-slate-100 placeholder:text-slate-600"
+                            className="mt-1.5 h-10 w-full rounded-md border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section px-3 text-[13px] text-slate-900 dark:text-slate-50 placeholder:text-slate-600"
                             value={form.url}
                             onChange={(e) => setForm((s) => ({ ...s, url: e.target.value }))}
                             placeholder="https://example.com/webhook"
                           />
                         </label>
-                        <label className="text-[13px] font-medium text-slate-400">
+                        <label className="text-[13px] font-medium text-slate-700 dark:text-slate-300">
                           Webhook Payload Mode
                           <select
-                            className="mt-1.5 h-10 w-full rounded-md border border-[#1e2a3b] bg-[#0a1628] px-3 text-[13px] text-slate-100"
+                            className="mt-1.5 h-10 w-full rounded-md border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section px-3 text-[13px] text-slate-900 dark:text-slate-50"
                             value={form.webhookPayloadMode}
                             onChange={(e) => setForm((s) => ({ ...s, webhookPayloadMode: e.target.value as WebhookPayloadMode }))}
                           >
@@ -1486,23 +1494,23 @@ export function DestinationsManagementPage() {
                     ) : (
                       <div className="space-y-4">
                         <div className="grid gap-4 sm:grid-cols-2">
-                          <label className="text-[13px] font-medium text-slate-400">
+                          <label className="text-[13px] font-medium text-slate-700 dark:text-slate-300">
                             Host *
                             <input
                               required
-                              className="mt-1.5 h-10 w-full rounded-md border border-[#1e2a3b] bg-[#0a1628] px-3 text-[13px] text-slate-100"
+                              className="mt-1.5 h-10 w-full rounded-md border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section px-3 text-[13px] text-slate-900 dark:text-slate-50"
                               value={form.host}
                               onChange={(e) => setForm((s) => ({ ...s, host: e.target.value }))}
                             />
                           </label>
-                          <label className="text-[13px] font-medium text-slate-400">
+                          <label className="text-[13px] font-medium text-slate-700 dark:text-slate-300">
                             Port *
                             <input
                               required
                               type="number"
                               min={1}
                               max={65535}
-                              className="mt-1.5 h-10 w-full rounded-md border border-[#1e2a3b] bg-[#0a1628] px-3 text-[13px] text-slate-100"
+                              className="mt-1.5 h-10 w-full rounded-md border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section px-3 text-[13px] text-slate-900 dark:text-slate-50"
                               value={form.port}
                               onChange={(e) => setForm((s) => ({ ...s, port: e.target.value }))}
                             />
@@ -1519,7 +1527,7 @@ export function DestinationsManagementPage() {
                             <label className="block text-[13px] font-medium text-slate-400">
                               Verification Mode
                               <select
-                                className="mt-1.5 h-10 w-full rounded-md border border-[#1e2a3b] bg-[#0a1628] px-3 text-[13px] text-slate-100"
+                                className="mt-1.5 h-10 w-full rounded-md border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section px-3 text-[13px] text-slate-900 dark:text-slate-50"
                                 value={form.tlsVerifyMode}
                                 onChange={(e) => setForm((s) => ({ ...s, tlsVerifyMode: e.target.value as TlsVerifyMode }))}
                               >
@@ -1543,7 +1551,7 @@ export function DestinationsManagementPage() {
                                   {label}
                                   <input
                                     placeholder={placeholder}
-                                    className="mt-1.5 h-10 w-full rounded-md border border-[#1e2a3b] bg-[#0a1628] px-3 text-[13px] text-slate-100 placeholder:text-slate-600"
+                                    className="mt-1.5 h-10 w-full rounded-md border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section px-3 text-[13px] text-slate-900 dark:text-slate-50 placeholder:text-slate-600"
                                     value={form[key]}
                                     onChange={(e) => setForm((s) => ({ ...s, [key]: e.target.value }))}
                                   />
@@ -1559,7 +1567,7 @@ export function DestinationsManagementPage() {
                                     type="number"
                                     min={1}
                                     step="1"
-                                    className="mt-1.5 h-10 w-full rounded-md border border-[#1e2a3b] bg-[#0a1628] px-3 text-[13px] text-slate-100"
+                                    className="mt-1.5 h-10 w-full rounded-md border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section px-3 text-[13px] text-slate-900 dark:text-slate-50"
                                     value={form[key]}
                                     onChange={(e) => setForm((s) => ({ ...s, [key]: e.target.value }))}
                                   />
@@ -1576,7 +1584,7 @@ export function DestinationsManagementPage() {
                         type="checkbox"
                         checked={form.enabled}
                         onChange={(e) => setForm((s) => ({ ...s, enabled: e.target.checked }))}
-                        className="accent-violet-500"
+                        className="accent-slate-700"
                       />
                       <span className="inline-flex items-center gap-1">
                         Enable this destination
@@ -1586,14 +1594,14 @@ export function DestinationsManagementPage() {
                   </div>
                 </section>
 
-                <div className="border-t border-[#1e2a3b]" />
+                <div className="border-t border-slate-200/80 dark:border-gdc-border" />
 
                 {/* ── Section 2: Capacity & Monitoring ── */}
                 <section>
                   <div className="mb-4 flex items-center gap-3">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-600 text-[11px] font-bold text-white">2</span>
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[11px] font-bold text-white dark:bg-slate-100 dark:text-slate-900">2</span>
                     <div>
-                      <p className="text-[13px] font-semibold text-slate-200">Capacity &amp; Monitoring</p>
+                      <p className="text-[13px] font-semibold text-slate-800 dark:text-slate-200">Capacity &amp; Monitoring</p>
                       <p className="text-[11px] text-slate-500">Define expected capacity for monitoring and alerting.</p>
                     </div>
                   </div>
@@ -1613,13 +1621,13 @@ export function DestinationsManagementPage() {
                           step={1}
                           disabled={form.capacityUnlimited}
                           placeholder="5000"
-                          className="h-10 w-40 rounded-md border border-[#1e2a3b] bg-[#0a1628] px-3 text-[13px] text-slate-100 placeholder:text-slate-600 focus:border-violet-500/60 focus:outline-none disabled:opacity-40"
+                          className="h-10 w-40 rounded-md border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section px-3 text-[13px] text-slate-900 dark:text-slate-50 placeholder:text-slate-600 focus:border-slate-400 dark:focus:border-slate-500 focus:outline-none disabled:opacity-40"
                           value={form.capacityLimitEps}
                           onChange={(e) => setForm((s) => ({ ...s, capacityLimitEps: e.target.value }))}
                         />
                         <select
                           disabled={form.capacityUnlimited}
-                          className="h-10 rounded-md border border-[#1e2a3b] bg-[#0a1628] px-3 text-[13px] text-slate-100 focus:border-violet-500/60 focus:outline-none disabled:opacity-40"
+                          className="h-10 rounded-md border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section px-3 text-[13px] text-slate-900 dark:text-slate-50 focus:border-slate-400 dark:focus:border-slate-500 focus:outline-none disabled:opacity-40"
                           value="EPS"
                           onChange={() => {}}
                         >
@@ -1630,7 +1638,7 @@ export function DestinationsManagementPage() {
                             type="checkbox"
                             checked={form.capacityUnlimited}
                             onChange={(e) => setForm((s) => ({ ...s, capacityUnlimited: e.target.checked, capacityLimitEps: e.target.checked ? '' : s.capacityLimitEps }))}
-                            className="accent-violet-500"
+                            className="accent-slate-700"
                           />
                           Unlimited
                         </label>
@@ -1650,7 +1658,7 @@ export function DestinationsManagementPage() {
                     {/* Warning / Critical Thresholds */}
                     <div className="grid gap-4 sm:grid-cols-2">
                       <div>
-                        <label className="text-[13px] font-medium text-slate-400">
+                        <label className="text-[13px] font-medium text-slate-700 dark:text-slate-300">
                           Warning Threshold (%)
                           <input
                             type="number"
@@ -1658,13 +1666,13 @@ export function DestinationsManagementPage() {
                             max={99}
                             step={1}
                             className={cn(
-                              'mt-1.5 h-10 w-full rounded-md border bg-[#0a1628] px-3 text-[13px] text-slate-100 focus:outline-none',
+                              'mt-1.5 h-10 w-full rounded-md border bg-white dark:bg-gdc-section px-3 text-[13px] text-slate-900 dark:text-slate-50 focus:outline-none',
                               (() => {
                                 const w = parseInt(form.capacityWarningPct)
                                 const c = parseInt(form.capacityCriticalPct)
                                 return (isNaN(w) || w < 1 || w > 99 || (!isNaN(c) && w >= c))
                                   ? 'border-red-500/60 focus:border-red-500'
-                                  : 'border-[#1e2a3b] focus:border-violet-500/60'
+                                  : 'border-slate-200/80 dark:border-gdc-border focus:border-slate-400 dark:focus:border-slate-500'
                               })(),
                             )}
                             value={form.capacityWarningPct}
@@ -1674,7 +1682,7 @@ export function DestinationsManagementPage() {
                         <p className="mt-1 text-[11px] text-slate-600">When usage exceeds this, warning status is shown.</p>
                       </div>
                       <div>
-                        <label className="text-[13px] font-medium text-slate-400">
+                        <label className="text-[13px] font-medium text-slate-700 dark:text-slate-300">
                           Critical Threshold (%)
                           <input
                             type="number"
@@ -1682,13 +1690,13 @@ export function DestinationsManagementPage() {
                             max={100}
                             step={1}
                             className={cn(
-                              'mt-1.5 h-10 w-full rounded-md border bg-[#0a1628] px-3 text-[13px] text-slate-100 focus:outline-none',
+                              'mt-1.5 h-10 w-full rounded-md border bg-white dark:bg-gdc-section px-3 text-[13px] text-slate-900 dark:text-slate-50 focus:outline-none',
                               (() => {
                                 const w = parseInt(form.capacityWarningPct)
                                 const c = parseInt(form.capacityCriticalPct)
                                 return (isNaN(c) || c < 1 || c > 100 || (!isNaN(w) && w >= c))
                                   ? 'border-red-500/60 focus:border-red-500'
-                                  : 'border-[#1e2a3b] focus:border-violet-500/60'
+                                  : 'border-slate-200/80 dark:border-gdc-border focus:border-slate-400 dark:focus:border-slate-500'
                               })(),
                             )}
                             value={form.capacityCriticalPct}
@@ -1718,12 +1726,12 @@ export function DestinationsManagementPage() {
                   </div>
                 </section>
 
-                <div className="border-t border-[#1e2a3b]" />
+                <div className="border-t border-slate-200/80 dark:border-gdc-border" />
 
                 {/* ── Section 3: Advanced ── */}
                 <section>
                   <div className="mb-3 flex items-center gap-3">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[#1e2a3b] text-[11px] font-bold text-slate-500">3</span>
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-slate-200/80 dark:border-gdc-border text-[11px] font-bold text-slate-500">3</span>
                     <div>
                       <p className="text-[13px] font-semibold text-slate-500">Advanced <span className="text-[11px] font-normal text-slate-600">(Optional)</span></p>
                       <p className="text-[11px] text-slate-600">Additional connection settings.</p>
@@ -1734,7 +1742,7 @@ export function DestinationsManagementPage() {
                       <button
                         key={label}
                         type="button"
-                        className="inline-flex items-center gap-1.5 rounded-md border border-[#1e2a3b] bg-[#0a1628] px-3 py-1.5 text-[11px] text-slate-500 hover:border-slate-600 hover:text-slate-400"
+                        className="inline-flex items-center gap-1.5 rounded-md border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section px-3 py-1.5 text-[11px] text-slate-500 hover:border-slate-600 hover:text-slate-400"
                         disabled
                       >
                         <ChevronRight className="h-3 w-3" />
@@ -1752,7 +1760,7 @@ export function DestinationsManagementPage() {
               </div>
 
               {/* Right panel */}
-              <div className="hidden w-[296px] shrink-0 overflow-y-auto border-l border-[#1e2a3b] bg-[#070f1c] p-4 xl:block space-y-4">
+              <div className="hidden w-[296px] shrink-0 overflow-y-auto border-l border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-bg p-4 xl:block space-y-4">
                 {(() => {
                   const warnPct = parseInt(form.capacityWarningPct) || 70
                   const critPct = parseInt(form.capacityCriticalPct) || 85
@@ -1786,7 +1794,7 @@ export function DestinationsManagementPage() {
                   return (
                     <>
                       {/* ── Destination Summary ── */}
-                      <div className="rounded-xl border border-[#1e2a3b] bg-[#0a1628] p-4">
+                      <div className="rounded-xl border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section p-4">
                         <p className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Destination Summary</p>
                         <div className="space-y-2.5 text-[12px]">
                           {([
@@ -1814,7 +1822,7 @@ export function DestinationsManagementPage() {
                           ] as const).map(({ label, value, color }: { label: string; value: string; color?: string }) => (
                             <div key={label} className="flex items-start justify-between gap-2">
                               <span className="shrink-0 text-slate-500">{label}</span>
-                              <span className={cn('text-right font-semibold', color ?? 'text-slate-200')}>{value}</span>
+                              <span className={cn('text-right font-semibold', color ?? 'text-slate-800 dark:text-slate-200')}>{value}</span>
                             </div>
                           ))}
                           {/* Capacity Health Badge */}
@@ -1859,8 +1867,8 @@ export function DestinationsManagementPage() {
             </form>
 
             {/* ── Dialog footer ── */}
-            <div className="flex shrink-0 items-center justify-between gap-3 border-t border-[#1e2a3b] px-6 py-4">
-              <button type="button" onClick={closeSheet} className="inline-flex h-10 items-center px-3 text-[13px] font-semibold text-slate-500 hover:text-slate-300">
+            <div className="flex shrink-0 items-center justify-between gap-3 border-t border-slate-200/80 dark:border-gdc-border px-6 py-4">
+              <button type="button" onClick={closeSheet} className="inline-flex h-10 items-center px-3 text-[13px] font-semibold text-slate-500 hover:text-slate-700 dark:text-slate-300">
                 Cancel
               </button>
               <div className="flex items-center gap-3">
@@ -1868,7 +1876,7 @@ export function DestinationsManagementPage() {
                   type="button"
                   onClick={() => void onProbeForm()}
                   disabled={probeBusy}
-                  className="inline-flex h-10 min-w-[140px] items-center justify-center gap-1.5 rounded-md border border-[#1e2a3b] bg-[#0a1628] px-4 text-[13px] font-semibold text-slate-200 hover:border-slate-500 disabled:opacity-60"
+                  className="inline-flex h-10 min-w-[140px] items-center justify-center gap-1.5 rounded-md border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section px-4 text-[13px] font-semibold text-slate-800 dark:text-slate-200 hover:border-slate-500 disabled:opacity-60"
                 >
                   {probeBusy ? 'Testing…' : '⊸ Test Connection'}
                 </button>
@@ -1876,7 +1884,7 @@ export function DestinationsManagementPage() {
                   form="dest-form"
                   type="submit"
                   disabled={saving || validateCapacityForm(form) !== null}
-                  className="inline-flex h-10 min-w-[140px] items-center justify-center rounded-md bg-violet-600 px-4 text-[13px] font-semibold text-white hover:bg-violet-500 disabled:opacity-60"
+                  className="inline-flex h-10 min-w-[140px] items-center justify-center rounded-md bg-slate-900 px-4 text-[13px] font-semibold text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white disabled:opacity-60"
                 >
                   {saving ? 'Saving…' : sheetMode === 'create' ? 'Save Destination' : 'Save Changes'}
                 </button>
@@ -1925,10 +1933,10 @@ export function DestinationsManagementPage() {
               <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-400" aria-hidden />
             )}
             <div className="min-w-0 flex-1">
-              <p className="text-[13px] font-semibold text-slate-100">
+              <p className="text-[13px] font-semibold text-slate-900 dark:text-slate-50">
                 Connection test · {testBottomToast.destinationName}
               </p>
-              <p className="mt-1 line-clamp-3 text-[12px] leading-snug text-slate-300">
+              <p className="mt-1 line-clamp-3 text-[12px] leading-snug text-slate-700 dark:text-slate-300">
                 <span className={testBottomToast.success ? 'text-emerald-300' : 'text-red-300'}>
                   {testBottomToast.success ? 'Success' : 'Failed'}
                 </span>
@@ -1949,7 +1957,7 @@ export function DestinationsManagementPage() {
             <button
               type="button"
               onClick={dismissTestToast}
-              className="shrink-0 rounded p-1 text-slate-500 hover:bg-white/10 hover:text-slate-200"
+              className="shrink-0 rounded p-1 text-slate-500 hover:bg-white/10 hover:text-slate-800 dark:text-slate-200"
               aria-label="Dismiss test result"
             >
               <X className="h-4 w-4" />

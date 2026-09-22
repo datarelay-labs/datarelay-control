@@ -303,11 +303,11 @@ export function CapacityGaugePreviewCard({
       <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">Capacity Gauge Preview</p>
 
       {unlimited ? (
-        <div className="flex items-center justify-center rounded-xl border border-[#1e2a3b] bg-[#0a1628] py-10">
+        <div className="flex items-center justify-center rounded-xl border border-slate-200/80 bg-slate-50 py-10 dark:border-gdc-border dark:bg-gdc-section">
           <p className="text-[12px] italic text-slate-500">No capacity limit</p>
         </div>
       ) : (
-        <div className="flex justify-center rounded-xl border border-[#1e2a3b] bg-[#0a1628] py-3">
+        <div className="flex justify-center rounded-xl border border-slate-200/80 bg-slate-50 py-3 dark:border-gdc-border dark:bg-gdc-section">
           <svg
             width={size}
             height={size / 2 + 30}
@@ -337,7 +337,7 @@ export function CapacityGaugePreviewCard({
       )}
 
       {/* Legend */}
-      <div className="rounded-xl border border-[#1e2a3b] bg-[#0a1628] p-3 space-y-1.5">
+      <div className="space-y-1.5 rounded-xl border border-slate-200/80 bg-slate-50 p-3 dark:border-gdc-border dark:bg-gdc-section">
         {[
           { label: `0 – ${warnPct}%`, status: 'Healthy', color: '#10b981' },
           { label: `${warnPct} – ${critPct}%`, status: 'Warning', color: '#f59e0b' },
