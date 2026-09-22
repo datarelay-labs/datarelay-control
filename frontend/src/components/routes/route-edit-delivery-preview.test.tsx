@@ -194,7 +194,9 @@ describe('RouteEditPage delivery preview', () => {
     renderRouteEdit()
     await screen.findByTestId('route-edit-preview-delivery')
 
-    fireEvent.change(screen.getByDisplayValue('Route A'), { target: { value: 'Route A edited' } })
+    // Wait for async route hydrate before editing — preview button mounts before the name field.
+    const nameInput = await screen.findByDisplayValue('Route A')
+    fireEvent.change(nameInput, { target: { value: 'Route A edited' } })
     expect(await screen.findByTestId('route-edit-unsaved-hint')).toBeInTheDocument()
 
     const button = screen.getByTestId('route-edit-preview-delivery')
