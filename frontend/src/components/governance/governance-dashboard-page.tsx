@@ -1,7 +1,6 @@
 import {
   AlertTriangle,
   Bell,
-  CheckCircle2,
   ChevronRight,
   ClipboardCheck,
   Copy,
@@ -34,11 +33,15 @@ import { canEditPolicy } from '../../lib/governance-rbac'
 import { cn } from '../../lib/utils'
 import { deriveGovernanceOperationalIssues } from './governance-operational-issues'
 import { formatPlatformRelative, formatTimestampWithResolvedTimezone } from '../../lib/platform-timestamps'
-
-const governanceCardClass =
-  'rounded-xl border border-slate-200/80 bg-white px-4 py-3 shadow-sm dark:border-[rgba(120,150,220,0.2)] dark:bg-[#111827]/95 dark:shadow-[0_4px_24px_-8px_rgba(0,0,0,0.5)] dark:ring-1 dark:ring-[rgba(120,150,220,0.1)]'
+import { gdcUi } from '../../lib/gdc-ui-tokens'
 import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
 import { policyStatusBadgeClass, policyStatusLabel } from './policy-lifecycle'
+import {
+  deriveGovernancePosture,
+  GovernanceDashboardPostureOverview,
+} from './governance-dashboard-posture-overview'
+
+const governanceCardClass = gdcUi.cardShell + ' px-4 py-3'
 
 const WINDOW_OPTIONS: ViolationWindow[] = ['24h', '7d', '30d']
 
@@ -55,63 +58,15 @@ function formatUpdatedAt(iso: string): string {
   return formatTimestampWithResolvedTimezone(iso)
 }
 
-function deriveOverallRiskPosture(summary: GovernanceDashboardSummaryResponse | null): 'healthy' | 'warning' | 'critical' {
-  if (!summary) return 'healthy'
-  const { risk, policy_health: health } = summary
-  if (risk.critical > 0 || health.critical > 0) return 'critical'
-  if (risk.high > 0 || risk.medium > 0 || health.warning > 0) return 'warning'
-  return 'healthy'
-}
-
-function postureMeta(posture: 'healthy' | 'warning' | 'critical') {
-  if (posture === 'critical') {
-    return {
-      label: 'Critical',
-      description: 'Immediate attention required.',
-      icon: ShieldAlert,
-      iconBg: 'bg-red-500/15 text-red-400',
-      valueClass: 'text-red-400',
-    }
-  }
-  if (posture === 'warning') {
-    return {
-      label: 'Warning',
-      description: 'Monitor and address important issues.',
-      icon: AlertTriangle,
-      iconBg: 'bg-amber-500/15 text-amber-400',
-      valueClass: 'text-amber-300',
-    }
-  }
-  return {
-    label: 'Healthy',
-    description: 'Policy posture is within normal bounds.',
-    icon: CheckCircle2,
-    iconBg: 'bg-emerald-500/15 text-emerald-400',
-    valueClass: 'text-emerald-400',
-  }
-}
-
-function trendFootnote(delta: number, positiveIsBad = true): { text: string; className: string } {
-  if (delta === 0) {
-    return { text: 'No change vs last 24h', className: 'text-slate-500 dark:text-gdc-muted' }
-  }
-  const up = delta > 0
-  const bad = positiveIsBad ? up : !up
-  return {
-    text: `${up ? '↑' : '↓'} ${formatCount(Math.abs(delta))} vs last 24h`,
-    className: bad ? 'text-red-400' : 'text-emerald-400',
-  }
-}
-
 function severityBadgeClass(severity: string): string {
   const s = severity.toUpperCase()
   if (s === 'CRITICAL' || s === 'HIGH') {
-    return 'bg-red-500/15 text-red-300 ring-1 ring-red-500/30'
+    return 'bg-red-500/15 text-red-700 ring-1 ring-red-500/30 dark:text-red-300'
   }
   if (s === 'MEDIUM') {
-    return 'bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/30'
+    return 'bg-amber-500/15 text-amber-800 ring-1 ring-amber-500/30 dark:text-amber-300'
   }
-  return 'bg-sky-500/15 text-sky-300 ring-1 ring-sky-500/30'
+  return 'bg-sky-500/15 text-sky-800 ring-1 ring-sky-500/30 dark:text-sky-300'
 }
 
 function severityDisplayLabel(severity: string): string {
@@ -144,40 +99,7 @@ function violationTitle(v: GovernanceViolationEntry): string {
   return `${policy} in ${stream}`
 }
 
-type SummaryKpiCardProps = {
-  label: string
-  value: string
-  footnote: { text: string; className: string }
-  icon: typeof Shield
-  iconBg: string
-  testId: string
-  to?: string
-}
-
-function SummaryKpiCard({ label, value, footnote, icon: Icon, iconBg, testId, to }: SummaryKpiCardProps) {
-  const body = (
-    <div className={cn(governanceCardClass, 'flex min-h-[7.25rem] flex-col')} data-testid={testId}>
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-[12px] font-medium text-slate-400">{label}</p>
-        <span className={cn('inline-flex rounded-lg p-1.5', iconBg)} aria-hidden>
-          <Icon className="h-4 w-4" />
-        </span>
-      </div>
-      <p className="mt-2 text-[1.75rem] font-bold tabular-nums leading-none tracking-tight text-slate-50">{value}</p>
-      <p className={cn('mt-auto pt-2 text-[11px] font-medium', footnote.className)}>{footnote.text}</p>
-    </div>
-  )
-  if (to) {
-    return (
-      <Link to={to} className="block transition-opacity hover:opacity-90">
-        {body}
-      </Link>
-    )
-  }
-  return body
-}
-
-function WhatHappenedCard({
+function OperationalSignalCard({
   count,
   title,
   description,
@@ -191,18 +113,18 @@ function WhatHappenedCard({
   testId: string
 }) {
   const toneClass = {
-    sky: 'text-sky-400',
-    amber: 'text-amber-400',
-    violet: 'text-violet-400',
-    orange: 'text-orange-400',
+    sky: 'text-sky-600 dark:text-sky-400',
+    amber: 'text-amber-600 dark:text-amber-400',
+    violet: 'text-violet-600 dark:text-violet-400',
+    orange: 'text-orange-600 dark:text-orange-400',
   }[tone]
   return (
     <div className={cn(governanceCardClass, 'flex min-h-[5.5rem] flex-col')} data-testid={testId}>
-      <p className={cn('text-[1.5rem] font-bold tabular-nums leading-none', count == null ? 'text-slate-500' : toneClass)}>
+      <p className={cn('text-[1.5rem] font-bold tabular-nums leading-none', count == null ? 'text-slate-400' : toneClass)}>
         {count == null ? '—' : formatCount(count)}
       </p>
-      <p className="mt-2 text-[12px] font-semibold text-slate-100">{title}</p>
-      <p className="mt-0.5 text-[11px] leading-snug text-slate-500 dark:text-gdc-muted">
+      <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{title}</p>
+      <p className="mt-0.5 text-xs leading-snug text-slate-500 dark:text-gdc-muted">
         {count == null ? 'Data unavailable' : description}
       </p>
     </div>
@@ -286,100 +208,49 @@ export function GovernanceDashboardPage() {
     void loadOperationalIssues()
   }, [loadSummary, loadOperationalIssues])
 
-  const posture = deriveOverallRiskPosture(summary)
-  const postureInfo = postureMeta(posture)
-
-  const kpiCards = useMemo(() => {
-    const snap = summary?.compliance_snapshot
-    const openViolations = summary?.open_violations ?? 0
-    const criticalViolations = summary?.risk.critical ?? 0
-    const quarantined = summary?.quarantined_events ?? 0
-    const pendingApprovals = summary?.pending_approvals ?? 0
-
-    return [
-      {
-        id: 'overall-risk',
-        label: 'Overall Risk',
-        value: postureInfo.label,
-        footnote: { text: postureInfo.description, className: 'text-slate-500 dark:text-gdc-muted' },
-        icon: postureInfo.icon,
-        iconBg: postureInfo.iconBg,
-        testId: 'dashboard-kpi-overall-risk',
-      },
-      {
-        id: 'open-violations',
-        label: 'Open Violations',
-        value: formatCount(openViolations),
-        footnote: trendFootnote(snap?.violations_24h ?? 0, true),
-        icon: ShieldAlert,
-        iconBg: 'bg-violet-500/15 text-violet-400',
-        testId: 'dashboard-kpi-violations',
-        to: NAV_PATH.governanceViolations,
-      },
-      {
-        id: 'critical-violations',
-        label: 'Critical Violations',
-        value: formatCount(criticalViolations),
-        footnote: trendFootnote(Math.min(criticalViolations, snap?.violations_24h ?? 0), true),
-        icon: AlertTriangle,
-        iconBg: 'bg-red-500/15 text-red-400',
-        testId: 'dashboard-kpi-critical-violations',
-        to: NAV_PATH.governanceViolations,
-      },
-      {
-        id: 'quarantined-events',
-        label: 'Quarantined Events',
-        value: formatCount(quarantined),
-        footnote: trendFootnote(snap?.quarantines_24h ?? 0, false),
-        icon: Lock,
-        iconBg: 'bg-emerald-500/15 text-emerald-400',
-        testId: 'dashboard-kpi-quarantine',
-        to: NAV_PATH.governanceQuarantine,
-      },
-      {
-        id: 'pending-approvals',
-        label: 'Pending Approvals',
-        value: formatCount(pendingApprovals),
-        footnote: trendFootnote(summary?.policies_in_review ?? 0, true),
-        icon: ClipboardCheck,
-        iconBg: 'bg-sky-500/15 text-sky-400',
-        testId: 'dashboard-kpi-pending-approvals',
-        to: NAV_PATH.governanceApprovals,
-      },
-    ] as const
-  }, [summary, postureInfo])
-
   const recommendedActions = useMemo(() => {
     const critical = summary?.risk.critical ?? 0
     const pending = summary?.pending_approvals ?? 0
     const quarantined = summary?.quarantined_events ?? 0
     const schemaChanges = operationalIssues.schemaDriftCount
-    return [
+    const actions = [
       {
-        label: `${formatCount(critical)} Critical 위반을 검토하세요`,
+        label: `Review ${formatCount(critical)} critical violation${critical === 1 ? '' : 's'}`,
         to: NAV_PATH.governanceViolations,
         tone: 'red' as const,
         testId: 'gov-action-critical-violations',
+        priority: critical > 0 ? 0 : 40,
+        count: critical,
       },
       {
-        label: `${formatCount(pending)} Pending 승인을 처리하세요`,
+        label: `Process ${formatCount(pending)} pending approval${pending === 1 ? '' : 's'}`,
         to: NAV_PATH.governanceApprovals,
         tone: 'orange' as const,
         testId: 'gov-action-pending-approvals',
+        priority: pending > 0 ? 1 : 41,
+        count: pending,
       },
       {
-        label: `${formatCount(quarantined)} 격리 이벤트를 검토하세요`,
+        label: `Review ${formatCount(quarantined)} quarantined event${quarantined === 1 ? '' : 's'}`,
         to: NAV_PATH.governanceQuarantine,
         tone: 'blue' as const,
         testId: 'gov-action-quarantine',
+        priority: quarantined > 0 ? 2 : 42,
+        count: quarantined,
       },
       {
-        label: schemaChanges != null ? `${formatCount(schemaChanges)} 스키마 변경을 확인하세요` : '스키마 변경 데이터 조회 불가',
+        label:
+          schemaChanges != null
+            ? `Check ${formatCount(schemaChanges)} schema change${schemaChanges === 1 ? '' : 's'}`
+            : 'Schema change data unavailable',
         to: NAV_PATH.streams,
         tone: 'green' as const,
         testId: 'gov-action-schema-drift',
+        priority: schemaChanges != null && schemaChanges > 0 ? 3 : 43,
+        count: schemaChanges ?? 0,
       },
     ]
+    return actions.sort((a, b) => a.priority - b.priority)
   }, [summary, operationalIssues.schemaDriftCount])
 
   const quickActions = [
@@ -388,7 +259,6 @@ export function GovernanceDashboardPage() {
       description: 'Create and manage policies',
       to: policiesLink,
       icon: Shield,
-      iconBg: 'bg-violet-500/15 text-violet-400',
       testId: 'gov-quick-policy-builder',
     },
     {
@@ -396,7 +266,6 @@ export function GovernanceDashboardPage() {
       description: 'Review and triage violations',
       to: NAV_PATH.governanceViolations,
       icon: ShieldAlert,
-      iconBg: 'bg-red-500/15 text-red-400',
       testId: 'gov-quick-violations',
     },
     {
@@ -404,7 +273,6 @@ export function GovernanceDashboardPage() {
       description: 'Manage quarantined events',
       to: NAV_PATH.governanceQuarantine,
       icon: Lock,
-      iconBg: 'bg-emerald-500/15 text-emerald-400',
       testId: 'gov-quick-quarantine',
     },
     {
@@ -412,28 +280,29 @@ export function GovernanceDashboardPage() {
       description: 'Review pending approvals',
       to: NAV_PATH.governanceApprovals,
       icon: ClipboardCheck,
-      iconBg: 'bg-sky-500/15 text-sky-400',
       testId: 'gov-quick-approvals',
     },
   ] as const
 
   const notificationCount = summary?.notification_failures ?? 0
+  const posture = deriveGovernancePosture(summary)
 
   return (
-    <div className="space-y-4" data-testid="governance-dashboard-page">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-[1.35rem] font-semibold tracking-tight text-slate-900 dark:text-slate-50">
+    <div className="flex w-full min-w-0 flex-col gap-5 pb-4" data-testid="governance-dashboard-page">
+      <header className="flex flex-col gap-3 border-b border-slate-200/80 pb-4 dark:border-gdc-divider sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-2">
+          <h1 className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-50">
             Governance Overview
           </h1>
-          <p className="mt-0.5 text-[13px] text-slate-500 dark:text-gdc-muted">
-            Policy posture, violations, and compliance at a glance.
+          <p className="max-w-2xl text-sm text-slate-600 dark:text-gdc-muted">
+            What needs attention, and where do I investigate? Scan policy posture, prioritize the next issue, then open
+            Violations, Quarantine, or Approvals with context preserved.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Link
             to={NAV_PATH.governanceNotifications}
-            className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200/80 bg-white text-slate-600 transition hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-300 dark:hover:bg-gdc-rowHover"
+            className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200/90 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-300 dark:hover:bg-gdc-rowHover"
             aria-label="Governance notifications"
             data-testid="gov-dashboard-notifications"
           >
@@ -444,7 +313,7 @@ export function GovernanceDashboardPage() {
               </span>
             ) : null}
           </Link>
-          <label className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200/80 bg-white px-2.5 py-1.5 text-[12px] dark:border-gdc-border dark:bg-gdc-card">
+          <label className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200/90 bg-white px-2.5 text-sm shadow-sm dark:border-gdc-border dark:bg-gdc-card">
             <span className="sr-only">Time window</span>
             <select
               value={window}
@@ -464,7 +333,7 @@ export function GovernanceDashboardPage() {
             onClick={() => void refreshAll()}
             disabled={loading || summaryLoading}
             data-testid="dashboard-refresh"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200/80 bg-white text-slate-600 transition hover:bg-slate-50 disabled:opacity-60 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-300 dark:hover:bg-gdc-rowHover"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200/90 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 disabled:opacity-60 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-300 dark:hover:bg-gdc-rowHover"
             aria-label="Refresh governance dashboard"
           >
             {loading || summaryLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
@@ -474,8 +343,9 @@ export function GovernanceDashboardPage() {
 
       {error ? (
         <p
-          className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200"
+          className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200"
           data-testid="governance-dashboard-error"
+          role="alert"
         >
           {error}
         </p>
@@ -483,7 +353,7 @@ export function GovernanceDashboardPage() {
 
       {summaryError ? (
         <p
-          className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100"
+          className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100"
           data-testid="governance-dashboard-summary-error"
           role="alert"
         >
@@ -491,92 +361,105 @@ export function GovernanceDashboardPage() {
         </p>
       ) : null}
 
-      <section aria-label="Governance KPI summary" data-testid="dashboard-kpi-strip" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        {kpiCards.map((kpi) => (
-          <SummaryKpiCard
-            key={kpi.id}
-            label={kpi.label}
-            value={kpi.value}
-            footnote={kpi.footnote}
-            icon={kpi.icon}
-            iconBg={kpi.iconBg}
-            testId={kpi.testId}
-            to={'to' in kpi ? kpi.to : undefined}
-          />
-        ))}
-      </section>
+      <GovernanceDashboardPostureOverview summary={summary} loading={summaryLoading} />
 
-      <section aria-label="What happened summary" data-testid="governance-what-happened">
-        <div className="mb-2 flex items-baseline justify-between gap-2">
-          <h2 className="text-[14px] font-semibold text-slate-900 dark:text-slate-100">
-            What Happened? <span className="font-normal text-slate-500 dark:text-gdc-muted">(요약)</span>
-          </h2>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <WhatHappenedCard
-            count={operationalIssues.noDataStreams}
-            title="No Data Streams"
-            description="스트림에서 데이터가 감지되지 않았습니다."
-            tone="sky"
-            testId="gov-issue-no-data"
-          />
-          <WhatHappenedCard
-            count={operationalIssues.lowVolumeStreams}
-            title="Low Volume Streams"
-            description="평소 대비 데이터 전송량이 낮습니다."
-            tone="amber"
-            testId="gov-issue-low-volume"
-          />
-          <WhatHappenedCard
-            count={operationalIssues.schemaDriftCount}
-            title="Schema Drift Detected"
-            description="스키마 변경이 감지되었습니다."
-            tone="violet"
-            testId="gov-issue-schema-drift"
-          />
-          <WhatHappenedCard
-            count={operationalIssues.destinationCapacityWarnings}
-            title="Destination Warnings"
-            description="목적지 용량 또는 오류 경고가 있습니다."
-            tone="orange"
-            testId="gov-issue-destination-warnings"
-          />
-        </div>
-      </section>
+      <div className="grid gap-4 lg:grid-cols-12">
+        <section
+          className={cn(governanceCardClass, 'lg:col-span-5')}
+          data-testid="governance-recommended-actions"
+          aria-label="Prioritized next steps"
+        >
+          <div className="mb-1">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-gdc-muted">
+              Next steps
+            </p>
+            <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Prioritized investigation path</h2>
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-gdc-muted">
+              Posture is {posture}. Start with the highest-priority open count, then open the linked workspace.
+            </p>
+          </div>
+          <ul className="mt-3 space-y-2">
+            {recommendedActions.map((action) => {
+              const toneClass =
+                action.tone === 'red'
+                  ? 'bg-red-500/10 text-red-600 dark:text-red-400'
+                  : action.tone === 'orange'
+                    ? 'bg-orange-500/10 text-orange-600 dark:text-orange-400'
+                    : action.tone === 'blue'
+                      ? 'bg-sky-500/10 text-sky-600 dark:text-sky-400'
+                      : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+              return (
+                <li key={action.testId}>
+                  <Link
+                    to={action.to}
+                    data-testid={action.testId}
+                    className="group flex items-center gap-3 rounded-lg border border-slate-200/70 bg-slate-50/50 px-3 py-2.5 transition hover:border-slate-300 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 dark:border-gdc-border dark:bg-gdc-section/40 dark:hover:bg-gdc-card"
+                  >
+                    <span className={cn('inline-flex rounded-lg p-2', toneClass)} aria-hidden>
+                      {action.tone === 'red' ? (
+                        <AlertTriangle className="h-4 w-4" />
+                      ) : action.tone === 'orange' ? (
+                        <ClipboardCheck className="h-4 w-4" />
+                      ) : action.tone === 'blue' ? (
+                        <Lock className="h-4 w-4" />
+                      ) : (
+                        <FileSearch className="h-4 w-4" />
+                      )}
+                    </span>
+                    <span className="min-w-0 flex-1 text-sm font-medium text-slate-800 dark:text-slate-100">{action.label}</span>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-slate-400 transition group-hover:text-slate-600 dark:group-hover:text-slate-200" />
+                  </Link>
+                </li>
+              )
+            })}
+          </ul>
+        </section>
 
-      <div className="grid gap-3 lg:grid-cols-12">
         <section
           className={cn(governanceCardClass, 'lg:col-span-7')}
           data-testid="dashboard-recent-activity"
           aria-label="Recent violations"
         >
           <div className="mb-3 flex items-baseline justify-between gap-2">
-            <h2 className="text-[14px] font-semibold text-slate-900 dark:text-slate-100">
-              Recent Violations <span className="font-normal text-slate-500 dark:text-gdc-muted">(최근 위반 요약)</span>
-            </h2>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-gdc-muted">
+                Investigation targets
+              </p>
+              <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Recent open violations</h2>
+            </div>
             <Link
               to={NAV_PATH.governanceViolations}
-              className="text-[11px] font-semibold text-violet-600 hover:underline dark:text-violet-300"
+              className="text-xs font-semibold text-slate-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 dark:text-slate-200"
             >
-              View All
+              View all
             </Link>
           </div>
           <div className="overflow-x-auto">
             <table className={opTable} data-testid="gov-recent-violations-table">
               <thead>
                 <tr className={opThRow}>
-                  <th className={opTh}>Violation</th>
-                  <th className={opTh}>Policy</th>
-                  <th className={opTh}>Severity</th>
-                  <th className={opTh}>Time</th>
-                  <th className={opTh}>Action</th>
+                  <th className={opTh} scope="col">
+                    Violation
+                  </th>
+                  <th className={opTh} scope="col">
+                    Policy
+                  </th>
+                  <th className={opTh} scope="col">
+                    Severity
+                  </th>
+                  <th className={opTh} scope="col">
+                    Time
+                  </th>
+                  <th className={opTh} scope="col">
+                    Action
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {violations.length === 0 && !loading ? (
                   <tr className={opTr}>
                     <td className={opTd} colSpan={5}>
-                      No recent violations in this window.
+                      No recent open violations in this window.
                     </td>
                   </tr>
                 ) : (
@@ -595,7 +478,7 @@ export function GovernanceDashboardPage() {
                       <td className={opTd}>
                         <Link
                           to={`${NAV_PATH.governanceViolations}?id=${encodeURIComponent(v.id)}`}
-                          className="inline-flex rounded-md bg-violet-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-violet-700 dark:bg-violet-500 dark:hover:bg-violet-600"
+                          className="inline-flex rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-800 shadow-sm hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 dark:border-gdc-border dark:bg-gdc-elevated dark:text-slate-100 dark:hover:bg-gdc-card"
                           data-testid={`gov-investigate-${v.id}`}
                         >
                           Investigate
@@ -608,168 +491,193 @@ export function GovernanceDashboardPage() {
             </table>
           </div>
         </section>
-
-        <section className={cn(governanceCardClass, 'lg:col-span-5')} data-testid="governance-recommended-actions">
-          <h2 className="text-[14px] font-semibold text-slate-900 dark:text-slate-100">
-            What Should I Do? <span className="font-normal text-slate-500 dark:text-gdc-muted">(권장 조치)</span>
-          </h2>
-          <ul className="mt-3 space-y-2">
-            {recommendedActions.map((action) => {
-              const toneClass =
-                action.tone === 'red'
-                  ? 'bg-red-500/10 text-red-400'
-                  : action.tone === 'orange'
-                    ? 'bg-orange-500/10 text-orange-400'
-                    : action.tone === 'blue'
-                      ? 'bg-sky-500/10 text-sky-400'
-                      : 'bg-emerald-500/10 text-emerald-400'
-              return (
-                <li key={action.testId}>
-                  <Link
-                    to={action.to}
-                    data-testid={action.testId}
-                    className="group flex items-center gap-3 rounded-lg border border-slate-200/60 bg-slate-50/40 px-3 py-2.5 transition hover:border-violet-500/30 hover:bg-violet-500/[0.04] dark:border-gdc-border dark:bg-gdc-section/40 dark:hover:border-violet-500/30"
-                  >
-                    <span className={cn('inline-flex rounded-lg p-2', toneClass)} aria-hidden>
-                      {action.tone === 'red' ? (
-                        <AlertTriangle className="h-4 w-4" />
-                      ) : action.tone === 'orange' ? (
-                        <ClipboardCheck className="h-4 w-4" />
-                      ) : action.tone === 'blue' ? (
-                        <Lock className="h-4 w-4" />
-                      ) : (
-                        <FileSearch className="h-4 w-4" />
-                      )}
-                    </span>
-                    <span className="min-w-0 flex-1 text-[13px] font-medium text-slate-800 dark:text-slate-100">{action.label}</span>
-                    <ChevronRight className="h-4 w-4 shrink-0 text-slate-400 transition group-hover:text-violet-400" />
-                  </Link>
-                </li>
-              )
-            })}
-          </ul>
-        </section>
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-12">
-        <section className={cn(governanceCardClass, 'lg:col-span-8')} data-testid="dashboard-policy-health" aria-label="Policy list">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-[14px] font-semibold text-slate-900 dark:text-slate-100">
-              Policy List <span className="font-normal text-slate-500 dark:text-gdc-muted">(정책 목록)</span>
-            </h2>
-            {canEdit ? (
-              <Link
-                to={policiesLink}
-                className="inline-flex items-center gap-1 rounded-md bg-violet-600 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-violet-700 dark:bg-violet-500 dark:hover:bg-violet-600"
-                data-testid="gov-new-policy"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                New Policy
-              </Link>
-            ) : null}
+      <section aria-label="Secondary governance evidence" className="space-y-4 border-t border-slate-200/70 pt-4 dark:border-gdc-divider">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-gdc-muted">Evidence</p>
+          <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Operational signals, policies, and links</h2>
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-gdc-muted">
+            Supporting detail stays available after posture and investigation targets — not removed for cosmetic simplicity.
+          </p>
+        </div>
+
+        <section aria-label="What happened summary" data-testid="governance-what-happened">
+          <div className="mb-2">
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Operational signals</h3>
+            <p className="text-xs text-slate-500 dark:text-gdc-muted">
+              Runtime health enrichment for streams and destinations — separate from policy violation counts above.
+            </p>
           </div>
-          <div className="overflow-x-auto">
-            <table className={opTable} data-testid="gov-policy-list-table">
-              <thead>
-                <tr className={opThRow}>
-                  <th className={opTh}>Policy Name</th>
-                  <th className={opTh}>Type</th>
-                  <th className={opTh}>Applies To</th>
-                  <th className={opTh}>Status</th>
-                  <th className={opTh}>Last Updated</th>
-                  <th className={opTh}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {policies.length === 0 && !loading ? (
-                  <tr className={opTr}>
-                    <td className={opTd} colSpan={6}>
-                      No policies configured yet.
-                    </td>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <OperationalSignalCard
+              count={operationalIssues.noDataStreams}
+              title="No Data Streams"
+              description="Streams with no detected data in the enrichment window."
+              tone="sky"
+              testId="gov-issue-no-data"
+            />
+            <OperationalSignalCard
+              count={operationalIssues.lowVolumeStreams}
+              title="Low Volume Streams"
+              description="Streams below their usual transfer volume."
+              tone="amber"
+              testId="gov-issue-low-volume"
+            />
+            <OperationalSignalCard
+              count={operationalIssues.schemaDriftCount}
+              title="Schema Drift Detected"
+              description="Schema changes observed in runtime health enrichment."
+              tone="violet"
+              testId="gov-issue-schema-drift"
+            />
+            <OperationalSignalCard
+              count={operationalIssues.destinationCapacityWarnings}
+              title="Destination Warnings"
+              description="Destination capacity or error warnings from runtime health."
+              tone="orange"
+              testId="gov-issue-destination-warnings"
+            />
+          </div>
+        </section>
+
+        <div className="grid gap-4 lg:grid-cols-12">
+          <section className={cn(governanceCardClass, 'lg:col-span-8')} data-testid="dashboard-policy-health" aria-label="Policy list">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Policy list</h3>
+                <p className="text-xs text-slate-500 dark:text-gdc-muted">Recent policies for quick navigation into the catalog.</p>
+              </div>
+              {canEdit ? (
+                <Link
+                  to={policiesLink}
+                  className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-800 shadow-sm hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 dark:border-gdc-border dark:bg-gdc-elevated dark:text-slate-100"
+                  data-testid="gov-new-policy"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  New Policy
+                </Link>
+              ) : null}
+            </div>
+            <div className="overflow-x-auto">
+              <table className={opTable} data-testid="gov-policy-list-table">
+                <thead>
+                  <tr className={opThRow}>
+                    <th className={opTh} scope="col">
+                      Policy Name
+                    </th>
+                    <th className={opTh} scope="col">
+                      Type
+                    </th>
+                    <th className={opTh} scope="col">
+                      Applies To
+                    </th>
+                    <th className={opTh} scope="col">
+                      Status
+                    </th>
+                    <th className={opTh} scope="col">
+                      Last Updated
+                    </th>
+                    <th className={opTh} scope="col">
+                      Actions
+                    </th>
                   </tr>
-                ) : (
-                  policies.map((policy) => (
-                    <tr key={policy.id} className={opTr} data-testid={`gov-policy-row-${policy.id}`}>
-                      <td className={cn(opTd, 'font-semibold text-slate-900 dark:text-slate-100')}>{policy.name}</td>
-                      <td className={opTd}>{policyTypeLabel(policy.category)}</td>
-                      <td className={opTd}>
-                        {policy.assigned_stream_count} Stream{policy.assigned_stream_count === 1 ? '' : 's'}
-                      </td>
-                      <td className={opTd}>
-                        <span
-                          className={cn('rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase', policyStatusBadgeClass(policy.status))}
-                        >
-                          {policyStatusLabel(policy.status)}
-                        </span>
-                      </td>
-                      <td className={cn(opTd, 'whitespace-nowrap text-slate-500 dark:text-gdc-muted')}>
-                        {formatUpdatedAt(policy.updated_at)}
-                      </td>
-                      <td className={opTd}>
-                        <div className="flex items-center gap-1">
-                          <Link
-                            to={policiesLink}
-                            className="inline-flex rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-gdc-rowHover dark:hover:text-slate-200"
-                            aria-label={`Edit ${policy.name}`}
-                          >
-                            <Edit2 className="h-3.5 w-3.5" />
-                          </Link>
-                          <button
-                            type="button"
-                            className="inline-flex rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-gdc-rowHover dark:hover:text-slate-200"
-                            aria-label={`Copy ${policy.name}`}
-                          >
-                            <Copy className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            className="inline-flex rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-gdc-rowHover dark:hover:text-slate-200"
-                            aria-label={`More actions for ${policy.name}`}
-                          >
-                            <MoreHorizontal className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
+                </thead>
+                <tbody>
+                  {policies.length === 0 && !loading ? (
+                    <tr className={opTr}>
+                      <td className={opTd} colSpan={6}>
+                        No policies configured yet.
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-          <div className="mt-3 border-t border-slate-200/70 pt-2 dark:border-gdc-border">
-            <Link to={policiesLink} className="text-[11px] font-semibold text-violet-600 hover:underline dark:text-violet-300">
-              View all policies →
-            </Link>
-          </div>
-        </section>
+                  ) : (
+                    policies.map((policy) => (
+                      <tr key={policy.id} className={opTr} data-testid={`gov-policy-row-${policy.id}`}>
+                        <td className={cn(opTd, 'font-semibold text-slate-900 dark:text-slate-100')}>{policy.name}</td>
+                        <td className={opTd}>{policyTypeLabel(policy.category)}</td>
+                        <td className={opTd}>
+                          {policy.assigned_stream_count} Stream{policy.assigned_stream_count === 1 ? '' : 's'}
+                        </td>
+                        <td className={opTd}>
+                          <span
+                            className={cn('rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase', policyStatusBadgeClass(policy.status))}
+                          >
+                            {policyStatusLabel(policy.status)}
+                          </span>
+                        </td>
+                        <td className={cn(opTd, 'whitespace-nowrap text-slate-500 dark:text-gdc-muted')}>
+                          {formatUpdatedAt(policy.updated_at)}
+                        </td>
+                        <td className={opTd}>
+                          <div className="flex items-center gap-1">
+                            <Link
+                              to={policiesLink}
+                              className="inline-flex rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 dark:hover:bg-gdc-rowHover dark:hover:text-slate-200"
+                              aria-label={`Edit ${policy.name}`}
+                            >
+                              <Edit2 className="h-3.5 w-3.5" />
+                            </Link>
+                            <button
+                              type="button"
+                              className="inline-flex rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 dark:hover:bg-gdc-rowHover dark:hover:text-slate-200"
+                              aria-label={`Copy ${policy.name}`}
+                            >
+                              <Copy className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              className="inline-flex rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 dark:hover:bg-gdc-rowHover dark:hover:text-slate-200"
+                              aria-label={`More actions for ${policy.name}`}
+                            >
+                              <MoreHorizontal className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-3 border-t border-slate-200/70 pt-2 dark:border-gdc-border">
+              <Link
+                to={policiesLink}
+                className="text-xs font-semibold text-slate-700 underline-offset-2 hover:underline dark:text-slate-200"
+              >
+                View all policies →
+              </Link>
+            </div>
+          </section>
 
-        <section className={cn(governanceCardClass, 'lg:col-span-4')} data-testid="governance-quick-actions">
-          <h2 className="text-[14px] font-semibold text-slate-900 dark:text-slate-100">Quick Actions</h2>
-          <ul className="mt-3 space-y-2">
-            {quickActions.map((action) => {
-              const Icon = action.icon
-              return (
-                <li key={action.testId}>
-                  <Link
-                    to={action.to}
-                    data-testid={action.testId}
-                    className="group flex items-center gap-3 rounded-lg border border-slate-200/60 px-3 py-2.5 transition hover:border-violet-500/30 hover:bg-violet-500/[0.04] dark:border-gdc-border dark:hover:border-violet-500/30"
-                  >
-                    <span className={cn('inline-flex rounded-lg p-2', action.iconBg)} aria-hidden>
-                      <Icon className="h-4 w-4" />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-[13px] font-semibold text-slate-900 dark:text-slate-100">{action.title}</span>
-                      <span className="block text-[11px] text-slate-500 dark:text-gdc-muted">{action.description}</span>
-                    </span>
-                    <ChevronRight className="h-4 w-4 shrink-0 text-slate-400 transition group-hover:text-violet-400" />
-                  </Link>
-                </li>
-              )
-            })}
-          </ul>
-        </section>
-      </div>
+          <section className={cn(governanceCardClass, 'lg:col-span-4')} data-testid="governance-quick-actions">
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Quick links</h3>
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-gdc-muted">Jump to existing governance workspaces.</p>
+            <ul className="mt-3 space-y-2">
+              {quickActions.map((action) => {
+                const Icon = action.icon
+                return (
+                  <li key={action.testId}>
+                    <Link
+                      to={action.to}
+                      data-testid={action.testId}
+                      className="group flex items-center gap-3 rounded-lg border border-slate-200/70 px-3 py-2.5 transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 dark:border-gdc-border dark:hover:bg-gdc-rowHover"
+                    >
+                      <span className="inline-flex rounded-lg bg-slate-100 p-2 text-slate-600 dark:bg-gdc-section dark:text-slate-300" aria-hidden>
+                        <Icon className="h-4 w-4" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-semibold text-slate-900 dark:text-slate-100">{action.title}</span>
+                        <span className="block text-xs text-slate-500 dark:text-gdc-muted">{action.description}</span>
+                      </span>
+                      <ChevronRight className="h-4 w-4 shrink-0 text-slate-400 transition group-hover:text-slate-600" />
+                    </Link>
+                  </li>
+                )
+              })}
+            </ul>
+          </section>
+        </div>
+      </section>
 
       <div className="hidden" aria-hidden data-testid="dashboard-risk-overview">
         {summary ? `${summary.risk.critical}-${summary.risk.high}` : '0-0'}
