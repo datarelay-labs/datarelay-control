@@ -77,7 +77,7 @@ describe('PolicyCatalogPage', () => {
     expect(await screen.findByTestId('policy-catalog-table')).toBeInTheDocument()
     expect(screen.queryByTestId('policy-catalog-new')).not.toBeInTheDocument()
     expect(screen.queryByTestId('policy-catalog-delete-1')).not.toBeInTheDocument()
-    expect(screen.getByTestId('policy-catalog-view-1')).toHaveTextContent('View')
+    expect(await screen.findByTestId('policy-catalog-view-1')).toHaveTextContent('View')
     expect(screen.getByText(/Read-only — policy edits require Governance Operator role/i)).toBeInTheDocument()
   })
 
