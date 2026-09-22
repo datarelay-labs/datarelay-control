@@ -100,6 +100,9 @@ export const LazyGovernanceWorkspacePage = suspend(
 export const LazySettingsOverviewPage = suspend(
   lazyNamed(() => import('../components/settings/settings-overview-page'), 'SettingsOverviewPage'),
 )
+export const LazyAdministrationHubPage = suspend(
+  lazyNamed(() => import('../components/administration/administration-hub-page'), 'AdministrationHubPage'),
+)
 export const LazyConnectorCatalogPage = suspend(
   lazyNamed(() => import('../components/administration/connector-catalog-page'), 'ConnectorCatalogPage'),
 )

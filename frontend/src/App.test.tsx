@@ -732,12 +732,23 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Streams' })).toBeInTheDocument()
   })
 
-  it('renders Settings directly at /admin', async () => {
+  it('renders Administration hub at /admin with task groups', async () => {
     renderApp('/admin')
-    expect(screen.queryByTestId('administration-hub-page')).not.toBeInTheDocument()
+    expect(await screen.findByTestId('administration-hub-page', {}, { timeout: 8000 })).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 1, name: 'Administration' })).toBeInTheDocument()
+    expect(screen.getByTestId('admin-hub-purpose')).toHaveTextContent(/What needs configuring/i)
+    expect(screen.getByRole('heading', { name: 'Access & security' })).toBeInTheDocument()
+    expect(screen.getByTestId('admin-hub-https')).toHaveAttribute('href', '/settings#admin-https-heading')
+    expect(screen.getByTestId('admin-hub-backup')).toHaveAttribute('href', '/operations/backup')
+    expect(screen.queryByRole('heading', { name: 'Admin settings' })).not.toBeInTheDocument()
+  }, 20000)
+
+  it('renders Admin settings at /settings with preserved sections', async () => {
+    renderApp('/settings')
     expect(await screen.findByRole('heading', { name: 'Admin settings' }, { timeout: 8000 })).toBeInTheDocument()
-    expect(await screen.findByText(/Operational dashboard for HTTPS/i, {}, { timeout: 8000 })).toBeInTheDocument()
+    expect(await screen.findByTestId('admin-settings-purpose', {}, { timeout: 8000 })).toHaveTextContent(
+      /Review access and operational context/i,
+    )
     expect(await screen.findByRole('heading', { name: 'Maintenance Center' }, { timeout: 8000 })).toBeInTheDocument()
     expect(
       await screen.findByText(/Read-only readiness checks for production operations/i, {}, { timeout: 8000 }),

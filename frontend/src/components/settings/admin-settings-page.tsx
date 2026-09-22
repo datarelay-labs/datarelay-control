@@ -16,7 +16,7 @@ import {
   Users,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   createAdminUser,
   deleteAdminUser,
@@ -32,6 +32,7 @@ import {
   type PlatformUserDto,
   type SystemInfoDto,
 } from '../../api/gdcAdmin'
+import { NAV_PATH } from '../../config/nav-paths'
 import { formatTimestampWithResolvedTimezone } from '../../lib/platform-timestamps'
 import { isDevValidationLabUiEnabled } from '../../lib/feature-flags'
 import { gdcUi, isAdminUiReadOnly, readAdminUiRole } from '../../lib/gdc-ui-tokens'
@@ -49,6 +50,15 @@ import {
 } from './admin-settings-session-cache'
 
 const VALID_DAY_OPTIONS = [30, 90, 180, 365, 730] as const
+
+const SETTINGS_SECTION_JUMPS = [
+  { href: '#admin-https-heading', label: 'HTTPS', group: 'Access & security' },
+  { href: '#admin-password-heading', label: 'Password', group: 'Access & security' },
+  { href: '#admin-users-heading', label: 'Users', group: 'Access & security' },
+  { href: '#admin-network-heading', label: 'Network', group: 'Platform & network' },
+  { href: '#admin-retention-heading', label: 'Retention', group: 'Lifecycle & recovery' },
+  { href: '#admin-health-heading', label: 'System Health', group: 'Operations & audit' },
+] as const
 
 function validDaySelectOptions(current: number): number[] {
   const s = new Set<number>([...VALID_DAY_OPTIONS, current])
@@ -91,6 +101,7 @@ type UserFormState = { username: string; password: string; role: string; status:
 
 export function AdminSettingsPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const sessionSnapshot = readAdminSettingsSnapshot()
   const [loadError, setLoadError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -125,6 +136,15 @@ export function AdminSettingsPage() {
 
   const readOnly = isAdminUiReadOnly() || backendRole === 'VIEWER'
   const isOperator = (backendRole ?? readAdminUiRole()) === 'OPERATOR'
+
+  useEffect(() => {
+    const hash = location.hash.replace(/^#/, '').trim()
+    if (!hash) return
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById(hash)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [location.hash, https, users, systemFooter])
 
   const refreshAll = useCallback(async (options?: { background?: boolean }) => {
     setLoadError(null)
@@ -373,18 +393,51 @@ export function AdminSettingsPage() {
   const cardShell = gdcUi.cardShell
 
   return (
-    <div className="flex w-full min-w-0 flex-col gap-6">
-      <div className="space-y-1">
-        <h2 className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-50">Admin settings</h2>
-        <p className="max-w-2xl text-[13px] leading-relaxed text-slate-600 dark:text-gdc-muted">
-          Operational dashboard for HTTPS, accounts, retention, audit trail, health signals, and alerting configuration.
-        </p>
-      </div>
+    <div className="flex w-full min-w-0 flex-col gap-6" data-testid="admin-settings-page">
+      <header className="space-y-3 border-b border-slate-200/80 pb-5 dark:border-gdc-divider">
+        <div className="space-y-1">
+          <h2 className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-50">Admin settings</h2>
+          <p
+            className="max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-gdc-muted"
+            data-testid="admin-settings-purpose"
+          >
+            Review access and operational context, jump to a task section, then apply changes with the existing
+            confirmation workflows. High-risk controls stay grouped under Access & security, Platform & network,
+            Lifecycle & recovery, and Operations & audit.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            to={NAV_PATH.administration}
+            data-testid="admin-settings-back-to-hub"
+            className="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200/90 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100 dark:hover:bg-gdc-rowHover"
+          >
+            Back to Administration
+          </Link>
+        </div>
+        <nav
+          aria-label="Settings section groups"
+          data-testid="admin-settings-section-nav"
+          className="flex flex-wrap gap-2"
+        >
+          {SETTINGS_SECTION_JUMPS.map((item) => (
+            <a
+              key={item.href}
+              href={item.href}
+              className="inline-flex items-center rounded-lg border border-slate-200/90 bg-slate-50/80 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-200 dark:hover:bg-gdc-cardHover"
+            >
+              <span className="sr-only">{item.group}: </span>
+              {item.label}
+            </a>
+          ))}
+        </nav>
+      </header>
 
       {readOnly ? (
         <div
           role="status"
-          className="rounded-lg border border-sky-500/25 bg-sky-500/[0.07] px-3 py-2 text-[13px] text-sky-950 dark:border-sky-500/35 dark:bg-sky-500/10 dark:text-sky-100"
+          data-testid="admin-settings-readonly-banner"
+          className="rounded-lg border border-sky-500/25 bg-sky-500/[0.07] px-3 py-2 text-sm text-sky-950 dark:border-sky-500/35 dark:bg-sky-500/10 dark:text-sky-100"
         >
           <strong>Read-only Viewer session.</strong> Mutating actions are disabled in the UI <em>and</em> rejected by the backend
           role guard (HTTP 403). Sign in as <code className="rounded bg-black/5 px-1 dark:bg-white/10">OPERATOR</code> or{' '}
@@ -394,7 +447,8 @@ export function AdminSettingsPage() {
       {isOperator ? (
         <div
           role="status"
-          className="rounded-lg border border-amber-500/25 bg-amber-500/[0.07] px-3 py-2 text-[13px] text-amber-950 dark:border-amber-500/35 dark:bg-amber-500/10 dark:text-amber-100"
+          data-testid="admin-settings-operator-banner"
+          className="rounded-lg border border-amber-500/25 bg-amber-500/[0.07] px-3 py-2 text-sm text-amber-950 dark:border-amber-500/35 dark:bg-amber-500/10 dark:text-amber-100"
         >
           Operator session — admin/security settings (HTTPS, accounts, retention policy, alert settings) are restricted to
           Administrators.
@@ -404,21 +458,26 @@ export function AdminSettingsPage() {
       {loadError ? (
         <div
           role="alert"
-          className="rounded-lg border border-amber-500/30 bg-amber-500/[0.07] px-3 py-2 text-[13px] text-amber-950 dark:border-amber-500/35 dark:bg-amber-500/10 dark:text-amber-100"
+          className="rounded-lg border border-amber-500/30 bg-amber-500/[0.07] px-3 py-2 text-sm text-amber-950 dark:border-amber-500/35 dark:bg-amber-500/10 dark:text-amber-100"
         >
           Could not load admin settings: {loadError}
         </div>
       ) : null}
       {pageErr ? (
-        <div role="alert" className="rounded-lg border border-red-500/25 bg-red-500/[0.07] px-3 py-2 text-[13px] text-red-900 dark:text-red-100/90">
+        <div role="alert" className="rounded-lg border border-red-500/25 bg-red-500/[0.07] px-3 py-2 text-sm text-red-900 dark:text-red-100/90">
           {pageErr}
         </div>
       ) : null}
       {pageMsg ? (
-        <div className="rounded-lg border border-emerald-500/25 bg-emerald-500/[0.07] px-3 py-2 text-[13px] text-emerald-950 dark:text-emerald-100/90">
+        <div className="rounded-lg border border-emerald-500/25 bg-emerald-500/[0.07] px-3 py-2 text-sm text-emerald-950 dark:text-emerald-100/90">
           {pageMsg}
         </div>
       ) : null}
+
+      <section aria-labelledby="admin-settings-group-access" className="space-y-6" data-testid="admin-settings-group-access">
+        <h2 id="admin-settings-group-access" className="text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50">
+          Access & security
+        </h2>
 
       {/* HTTPS / Security */}
       <section className={cn(cardShell, 'overflow-hidden')} aria-labelledby="admin-https-heading">
@@ -844,6 +903,19 @@ export function AdminSettingsPage() {
           Showing {users.length === 0 ? '0' : `1 to ${users.length}`} of {users.length} users
         </div>
       </section>
+      </section>
+
+      <section
+        aria-labelledby="admin-settings-group-lifecycle"
+        className="space-y-6"
+        data-testid="admin-settings-group-lifecycle"
+      >
+        <h2
+          id="admin-settings-group-lifecycle"
+          className="text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50"
+        >
+          Lifecycle & recovery
+        </h2>
 
       {/* System & backup */}
       <section className={cn(cardShell, 'p-4 md:p-6')} aria-labelledby="admin-system-heading">
@@ -937,6 +1009,19 @@ export function AdminSettingsPage() {
           </p>
         ) : null}
       </section>
+      </section>
+
+      <section
+        aria-labelledby="admin-settings-group-platform"
+        className="space-y-6"
+        data-testid="admin-settings-group-platform"
+      >
+        <h2
+          id="admin-settings-group-platform"
+          className="text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50"
+        >
+          Platform & network
+        </h2>
 
       <AdminDisplayTimezoneSettings
         backendRole={backendRole}
@@ -948,8 +1033,21 @@ export function AdminSettingsPage() {
       />
 
       <AdminNetworkSettingsPage />
+      </section>
 
       {isDevValidationLabUiEnabled() ? <AdminDevValidationPanel backendRole={backendRole} /> : null}
+
+      <section
+        aria-labelledby="admin-settings-group-operations"
+        className="space-y-6"
+        data-testid="admin-settings-group-operations"
+      >
+        <h2
+          id="admin-settings-group-operations"
+          className="text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50"
+        >
+          Operations & audit
+        </h2>
 
       <AdminMaintenanceCenter backendRole={backendRole} busy={busy} setBusy={setBusy} />
 
@@ -961,6 +1059,7 @@ export function AdminSettingsPage() {
         setPageMsg={setPageMsg}
         setPageErr={setPageErr}
       />
+      </section>
 
       {/* System information footer */}
       <section className={cn(cardShell, 'flex flex-wrap items-center justify-between gap-3 px-4 py-3 md:px-6')} aria-label="System information summary">
