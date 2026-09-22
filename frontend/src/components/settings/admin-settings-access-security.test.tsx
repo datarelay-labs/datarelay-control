@@ -62,7 +62,11 @@ vi.mock('./admin-maintenance-center', () => ({
 }))
 
 vi.mock('./admin-display-timezone-settings', () => ({
-  AdminDisplayTimezoneSettings: () => <div>Display timezone</div>,
+  AdminDisplayTimezoneSettings: () => (
+    <section aria-labelledby="admin-display-timezone-heading">
+      <h3 id="admin-display-timezone-heading">Display timezone</h3>
+    </section>
+  ),
 }))
 
 vi.mock('./admin-dev-validation-panel', () => ({
@@ -272,6 +276,6 @@ describe('AdminSettingsPage Access & security modernization', () => {
     expect(screen.getByTestId('admin-https-save')).toBeDisabled()
     expect(screen.getByTestId('admin-password-submit')).toBeDisabled()
     expect(screen.getByTestId('admin-users-create')).toBeDisabled()
-    expect(screen.getByLabelText('Enable HTTPS')).toBeDisabled()
+    expect(await screen.findByLabelText('Enable HTTPS')).toBeDisabled()
   })
 })

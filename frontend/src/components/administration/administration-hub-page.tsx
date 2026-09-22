@@ -1,6 +1,7 @@
 import {
   Activity,
   ClipboardList,
+  Clock,
   HardDrive,
   Lock,
   Network,
@@ -61,9 +62,16 @@ const TASK_GROUPS: readonly HubTaskGroup[] = [
   {
     id: 'platform-network',
     title: 'Platform & network',
-    description: 'Published ports and reverse-proxy apply workflow.',
+    description: 'Display timezone, published ports, and reverse-proxy apply workflow.',
     testId: 'admin-hub-group-platform-network',
     destinations: [
+      {
+        title: 'Display timezone',
+        description: 'Effective display timezone, personal override, and platform default.',
+        path: SETTINGS_SECTION_PATH.displayTimezone,
+        icon: Clock,
+        testId: 'admin-hub-display-timezone',
+      },
       {
         title: 'Network',
         description: 'Published HTTP/HTTPS ports and reverse-proxy apply workflow.',

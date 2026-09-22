@@ -64,6 +64,8 @@ function applyResult(overrides: Partial<NetworkSettingsApplyDto> = {}): NetworkS
 describe('AdminNetworkSettingsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
+    localStorage.setItem('gdc_platform_ui_role', 'ADMINISTRATOR')
     networkSettingsResponse = initialSettings
     vi.mocked(getAdminNetworkSettings).mockReset()
     vi.mocked(getAdminNetworkSettings).mockImplementation(async () => networkSettingsResponse)
@@ -187,7 +189,7 @@ describe('AdminNetworkSettingsPage', () => {
 
     expect(putAdminNetworkSettings).toHaveBeenCalledWith({ http_port: 19080, https_port: 19443 })
     expect(await screen.findByText('Network settings saved')).toBeInTheDocument()
-    expect(screen.getByText('Restart required')).toBeInTheDocument()
+    expect(screen.getByTestId('admin-network-save-result')).toHaveTextContent('Restart required')
     expect(screen.getByRole('button', { name: 'Apply reverse-proxy change' })).toBeInTheDocument()
     expect(screen.getByText(/reconnect using HTTP 19080 or HTTPS 19443/i)).toBeInTheDocument()
   })
@@ -222,7 +224,7 @@ describe('AdminNetworkSettingsPage', () => {
     expect(screen.getByTestId('network-env-example')).toHaveTextContent('GDC_HTTPS_PORT=18080')
   })
 
-  it('applies reverse-proxy changes from the browser and renders command output', async () => {
+  it('applies reverse-proxy changes from the browser and keeps command output behind disclosure', async () => {
     const user = userEvent.setup()
     render(<AdminNetworkSettingsPage />)
 
@@ -232,8 +234,37 @@ describe('AdminNetworkSettingsPage', () => {
 
     expect(postAdminNetworkSettingsApply).toHaveBeenCalledWith()
     expect(await screen.findByText('Reverse proxy applied')).toBeInTheDocument()
-    expect(screen.getByText(`${restartCommand} exited with 0`)).toBeInTheDocument()
-    expect(screen.getByText('recreated')).toBeInTheDocument()
+    expect(screen.getByTestId('admin-network-apply-command')).toHaveTextContent(`${restartCommand} exited with 0`)
+    expect(screen.getByTestId('admin-network-apply-output')).toHaveTextContent('recreated')
+  })
+
+  it('shows save → apply → reconnect workflow and current-state hierarchy', async () => {
+    render(<AdminNetworkSettingsPage />)
+    await expectLoadedPorts('18080', '18443')
+    expect(screen.getByTestId('admin-network-workflow')).toHaveTextContent('Save ports')
+    expect(screen.getByTestId('admin-network-workflow')).toHaveTextContent('Apply reverse proxy')
+    expect(screen.getByTestId('admin-network-workflow')).toHaveTextContent('Reconnect / result')
+    expect(screen.getByTestId('admin-network-current-state')).toHaveTextContent('Saved HTTP port')
+    expect(screen.getByTestId('admin-network-configuration')).toBeInTheDocument()
+    expect(screen.getByTestId('admin-network-safeguards')).toHaveTextContent(/Apply required after saving/i)
+    expect(screen.getByTestId('network-env-example')).toHaveTextContent('GDC_HTTP_PORT=18080')
+  })
+
+  it('keeps environment values available for troubleshooting without elevating them', async () => {
+    render(<AdminNetworkSettingsPage />)
+    await screen.findByLabelText('HTTP Port')
+    expect(screen.getByText('Environment values (.env)')).toBeInTheDocument()
+    expect(screen.getByTestId('network-env-example')).toBeInTheDocument()
+  })
+
+  it('disables network mutations for non-Administrator sessions', async () => {
+    vi.mocked(getAuthWhoAmI).mockResolvedValue({ username: 'ops', role: 'OPERATOR', authenticated: true })
+    render(<AdminNetworkSettingsPage />)
+    const http = await screen.findByLabelText('HTTP Port')
+    await waitFor(() => expect(http).toBeDisabled())
+    expect(screen.getByTestId('admin-network-readonly')).toHaveTextContent(/Administrator role is required/i)
+    expect(screen.getByTestId('admin-network-save')).toBeDisabled()
+    expect(screen.getByTestId('admin-network-apply')).toBeDisabled()
   })
 
   it('shows reconnect guidance when reverse-proxy apply interrupts the request', async () => {

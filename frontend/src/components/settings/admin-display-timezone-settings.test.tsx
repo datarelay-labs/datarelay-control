@@ -54,10 +54,20 @@ describe('AdminDisplayTimezoneSettings', () => {
     return render(<AdminDisplayTimezoneSettings {...props} />)
   }
 
+  it('shows current-state before personal and platform controls', () => {
+    renderSettings()
+    expect(screen.getByTestId('admin-display-timezone-panel')).toBeInTheDocument()
+    expect(screen.getByTestId('admin-display-timezone-current-state')).toHaveTextContent('Effective display timezone')
+    expect(screen.getByTestId('admin-display-timezone-current-state')).toHaveTextContent('Platform default')
+    expect(screen.getByTestId('admin-display-timezone-personal')).toBeInTheDocument()
+    expect(screen.getByTestId('admin-display-timezone-platform')).toBeInTheDocument()
+    expect(screen.getByTestId('admin-display-timezone-example')).toHaveTextContent('2026-06-29 07:10 UTC')
+  })
+
   it('lets an operator select and save a previously unavailable user timezone', async () => {
     const user = userEvent.setup()
     const setPageMsg = vi.fn()
-    renderSettings({ setPageMsg })
+    renderSettings({ backendRole: 'OPERATOR', setPageMsg })
 
     const userSelect = screen.getByLabelText('IANA timezone', { selector: '#user-display-timezone' })
     expect(within(userSelect).getByRole('option', { name: '(use platform / browser)' })).toBeInTheDocument()
@@ -91,6 +101,23 @@ describe('AdminDisplayTimezoneSettings', () => {
       expect(setPlatformDefaultTimezone).toHaveBeenCalledWith('Europe/Berlin')
     })
     expect(setPageMsg).toHaveBeenCalledWith('Platform default timezone saved.')
+  })
+
+  it('locks platform default controls for Operator while keeping personal override available', () => {
+    renderSettings({ backendRole: 'OPERATOR' })
+    expect(screen.getByTestId('admin-display-timezone-platform-locked')).toHaveTextContent(/Administrator only/i)
+    expect(screen.getByLabelText('IANA timezone', { selector: '#platform-display-timezone' })).toBeDisabled()
+    expect(screen.getByTestId('admin-display-timezone-save-platform')).toBeDisabled()
+    expect(screen.getByLabelText('IANA timezone', { selector: '#user-display-timezone' })).toBeEnabled()
+    expect(screen.getByTestId('admin-display-timezone-save-user')).toBeEnabled()
+  })
+
+  it('disables timezone mutations for Viewer sessions', () => {
+    renderSettings({ backendRole: 'VIEWER', readOnly: true })
+    expect(screen.getByLabelText('IANA timezone', { selector: '#user-display-timezone' })).toBeDisabled()
+    expect(screen.getByTestId('admin-display-timezone-save-user')).toBeDisabled()
+    expect(screen.getByLabelText('IANA timezone', { selector: '#platform-display-timezone' })).toBeDisabled()
+    expect(screen.getByTestId('admin-display-timezone-save-platform')).toBeDisabled()
   })
 
   it('filters timezone options by search text', async () => {
