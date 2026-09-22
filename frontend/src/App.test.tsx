@@ -685,11 +685,10 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     renderApp('/logs')
     expect(await screen.findByRole('heading', { level: 1, name: 'Logs' })).toBeInTheDocument()
     expect(
-      await screen.findByText(/Search and analyze logs across the pipeline/i, {}, { timeout: 8000 }),
+      await screen.findByText(/What failed, and how do I recover\?/i, {}, { timeout: 8000 }),
     ).toBeInTheDocument()
-    expect(
-      await screen.findByRole('heading', { level: 2, name: 'Logs' }, { timeout: 8000 }),
-    ).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { level: 2, name: 'Logs' })).not.toBeInTheDocument()
+    expect(await screen.findByTestId('logs-diagnosis-overview', {}, { timeout: 8000 })).toBeInTheDocument()
     expect(await screen.findByRole('searchbox', { name: /Search logs/i })).toBeInTheDocument()
   }, 15000)
 
