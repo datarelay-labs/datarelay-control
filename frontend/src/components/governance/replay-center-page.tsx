@@ -173,8 +173,9 @@ function ReplayDetailDrawer({
             ) : null}
             {detail.source.quarantine ? (
               <Link
-                to={NAV_PATH.governanceQuarantine}
+                to={`${NAV_PATH.governanceQuarantine}?id=${encodeURIComponent(String(detail.source.quarantine.quarantine_event_id))}`}
                 className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-gdc-border dark:text-slate-200 dark:hover:bg-gdc-rowHover"
+                data-testid="replay-open-quarantine"
               >
                 View details
               </Link>

@@ -137,13 +137,14 @@ function ViolationCard({ item }: { item: GovernanceOperationsViolationQueueItem 
 }
 
 function QuarantineCard({ item, readOnly }: { item: GovernanceOperationsQuarantineQueueItem; readOnly: boolean }) {
+  const quarantineTo = `${NAV_PATH.governanceQuarantine}?id=${encodeURIComponent(String(item.quarantine_id))}`
   return (
     <div className={cn(gdcUi.innerWell, 'p-3')} data-testid={`ops-quarantine-${item.quarantine_id}`}>
       <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{item.stream_name ?? 'Stream'}</p>
       <p className="mt-0.5 text-xs text-slate-500 dark:text-gdc-muted">{item.quarantine_reason ?? item.status}</p>
       <div className="mt-2 flex flex-wrap gap-2">
-        <ActionButton label="Release" to={NAV_PATH.governanceQuarantine} testId={`ops-release-${item.quarantine_id}`} disabled={readOnly || !canReleaseQuarantine()} />
-        <ActionButton label="Discard" to={NAV_PATH.governanceQuarantine} testId={`ops-discard-${item.quarantine_id}`} disabled={readOnly || !canDiscardQuarantine()} />
+        <ActionButton label="Release" to={quarantineTo} testId={`ops-release-${item.quarantine_id}`} disabled={readOnly || !canReleaseQuarantine()} />
+        <ActionButton label="Discard" to={quarantineTo} testId={`ops-discard-${item.quarantine_id}`} disabled={readOnly || !canDiscardQuarantine()} />
         <ActionButton label="Replay" to={NAV_PATH.governanceReplay} testId={`ops-quarantine-replay-${item.quarantine_id}`} disabled={readOnly || !canExecuteReplay()} />
       </div>
     </div>

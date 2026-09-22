@@ -138,7 +138,7 @@ export function buildGovernanceActionQueue(
       ctas: [
         {
           label: 'Release',
-          to: NAV_PATH.governanceQuarantine,
+          to: `${NAV_PATH.governanceQuarantine}?id=${encodeURIComponent(String(row.quarantine_id))}`,
           testId: `gov-queue-release-${row.quarantine_id}`,
           disabled: readOnly || options?.canRelease === false,
         },
@@ -150,7 +150,7 @@ export function buildGovernanceActionQueue(
         },
         {
           label: 'View details',
-          to: NAV_PATH.governanceQuarantine,
+          to: `${NAV_PATH.governanceQuarantine}?id=${encodeURIComponent(String(row.quarantine_id))}`,
           testId: `gov-queue-quarantine-detail-${row.quarantine_id}`,
         },
       ],
