@@ -301,6 +301,21 @@ export function AppShellLayout() {
         </nav>
       )
     }
+    if (location.pathname === '/settings' || location.pathname.startsWith('/settings/')) {
+      return (
+        <nav className="flex flex-wrap items-center gap-1" aria-label="Breadcrumb">
+          <Link to={NAV_PATH.administration} className="font-medium text-violet-700 hover:underline dark:text-violet-300">
+            Administration
+          </Link>
+          <span className="text-slate-400 dark:text-gdc-muted" aria-hidden>
+            /
+          </span>
+          <span className="font-semibold text-slate-800 dark:text-slate-200">
+            {location.pathname.startsWith('/settings/audit-logs') ? 'Audit logs' : 'Settings'}
+          </span>
+        </nav>
+      )
+    }
     if (location.pathname.startsWith('/governance/data-protection')) {
       return (
         <nav className="flex flex-wrap items-center gap-1" aria-label="Breadcrumb">

@@ -6,6 +6,7 @@ import { NAV_PATH } from './config/nav-paths'
 import { PAGE_TITLE, type AppNavKey } from './config/app-navigation'
 import {
   LazyAdminSettingsPage,
+  LazyAdministrationHubPage,
   LazyApprovalWorkflowPage,
   LazyAuditLogsPage,
   LazyAuditTrailPage,
@@ -74,7 +75,7 @@ export default function App() {
         <Route path="runtime/topology" element={<PreserveSearchRedirect to={NAV_PATH.dashboard} />} />
         <Route path="runtime/analytics" element={<PreserveSearchRedirect to={NAV_PATH.dashboard} />} />
         <Route path="runtime/ai-gateway" element={<PreserveSearchRedirect to={NAV_PATH.streams} />} />
-        <Route path="admin" element={<LazyAdminSettingsPage />} />
+        <Route path="admin" element={<LazyAdministrationHubPage />} />
         <Route
           path="admin/connector-catalog"
           element={
