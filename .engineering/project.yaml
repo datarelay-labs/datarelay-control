@@ -1,7 +1,7 @@
 engineering_system:
-  version: 1.6.1
+  version: 1.6.2
   mode: adopted
-  baseline: fe0c05d0508564512b3eaae96e35a84699d4c728
+  baseline: d505e2813cfc0d2ac58d063ec3e4eb4828734885
   ci_mode: native
   native_ci_workflows:
   - .github/workflows/backend-tests.yml
@@ -36,18 +36,20 @@ operations:
   - docs/deployment/backup-restore.md
   health_command: curl -fsS "http://127.0.0.1:${GDC_HTTP_PORT:-18080}/health" >/dev/null
   backup_command: bash scripts/ops/backup-postgres.sh
-  restore_test_command: >-
-    set -euo pipefail;
-    ./scripts/testing/start-test-stack.sh;
+  restore_test_command: set -euo pipefail; ./scripts/testing/start-test-stack.sh;
     export DATABASE_URL="postgresql://gdc:gdc@127.0.0.1:${GDC_TEST_POSTGRES_HOST_PORT:-55441}/gdc_pytest";
-    export BACKUP_DIR="$(mktemp -d)";
-    trap 'rm -rf "$BACKUP_DIR"' EXIT;
-    python3 -c 'import os,psycopg2; c=psycopg2.connect(os.environ["DATABASE_URL"]); c.autocommit=True; q=c.cursor(); q.execute("CREATE TABLE IF NOT EXISTS engineering_restore_probe (v text NOT NULL)"); q.execute("TRUNCATE engineering_restore_probe"); q.execute("INSERT INTO engineering_restore_probe(v) VALUES (%s)",("expected",)); c.close()';
-    bash scripts/ops/backup-postgres.sh;
-    dump="$(find "$BACKUP_DIR" -maxdepth 1 -name "gdc-postgres-*.dump" -print -quit)";
-    test -n "$dump";
-    python3 -c 'import os,psycopg2; c=psycopg2.connect(os.environ["DATABASE_URL"]); c.autocommit=True; q=c.cursor(); q.execute("DROP SCHEMA public CASCADE"); q.execute("CREATE SCHEMA public"); c.close()';
-    CONFIRM_RESTORE=yes DATABASE_URL="$DATABASE_URL" bash scripts/ops/restore-postgres.sh "$dump";
-    python3 -c 'import os,psycopg2; c=psycopg2.connect(os.environ["DATABASE_URL"]); q=c.cursor(); q.execute("SELECT v FROM engineering_restore_probe"); row=q.fetchone(); assert row and row[0]=="expected", row; c.close()'
+    export BACKUP_DIR="$(mktemp -d)"; trap 'rm -rf "$BACKUP_DIR"' EXIT; python3 -c
+    'import os,psycopg2; c=psycopg2.connect(os.environ["DATABASE_URL"]); c.autocommit=True;
+    q=c.cursor(); q.execute("CREATE TABLE IF NOT EXISTS engineering_restore_probe
+    (v text NOT NULL)"); q.execute("TRUNCATE engineering_restore_probe"); q.execute("INSERT
+    INTO engineering_restore_probe(v) VALUES (%s)",("expected",)); c.close()'; bash
+    scripts/ops/backup-postgres.sh; dump="$(find "$BACKUP_DIR" -maxdepth 1 -name "gdc-postgres-*.dump"
+    -print -quit)"; test -n "$dump"; python3 -c 'import os,psycopg2; c=psycopg2.connect(os.environ["DATABASE_URL"]);
+    c.autocommit=True; q=c.cursor(); q.execute("DROP SCHEMA public CASCADE"); q.execute("CREATE
+    SCHEMA public"); c.close()'; CONFIRM_RESTORE=yes DATABASE_URL="$DATABASE_URL"
+    bash scripts/ops/restore-postgres.sh "$dump"; python3 -c 'import os,psycopg2;
+    c=psycopg2.connect(os.environ["DATABASE_URL"]); q=c.cursor(); q.execute("SELECT
+    v FROM engineering_restore_probe"); row=q.fetchone(); assert row and row[0]=="expected",
+    row; c.close()'
   upgrade_command: bash scripts/release/upgrade.sh
   rollback_command: bash scripts/release/restore.sh

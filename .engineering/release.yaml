@@ -12,17 +12,13 @@ blockers:
   p0: true
   p1: true
   user_blocking_p2: true
-setup_command: >-
-  sudo apt-get update -qq &&
-  sudo apt-get install -y postgresql-client &&
-  python -m pip install -r requirements.txt &&
-  (cd frontend && npm ci)
+setup_command: sudo apt-get update -qq && sudo apt-get install -y postgresql-client
+  && python -m pip install -r requirements.txt && (cd frontend && npm ci)
 qualification_command: ./scripts/test/run-backend-full.sh && (cd frontend && npm run
   validate)
 artifact_hash_command: git archive --format=tar HEAD | sha256sum
 provenance_command: git rev-parse HEAD && git status --porcelain=v1
 sbom_command: ''
 operational_e2e_command: ./scripts/testing/run-full-regression.sh
-public_smoke_command: >-
-  bash scripts/release/install.sh &&
-  curl -fsS "http://127.0.0.1:${GDC_HTTP_PORT:-18080}/health" >/dev/null
+public_smoke_command: bash scripts/release/install.sh && curl -fsS "http://127.0.0.1:${GDC_HTTP_PORT:-18080}/health"
+  >/dev/null
