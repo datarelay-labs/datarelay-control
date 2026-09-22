@@ -6,7 +6,6 @@ import {
   Clock,
   Download,
   Filter,
-  Info,
   Loader2,
   Radio,
   RefreshCw,
@@ -26,7 +25,6 @@ import { fetchRuntimeLogsPage, fetchRuntimeLogsTotals, searchRuntimeDeliveryLogs
 import { fetchObservabilitySummary } from '../../api/observabilitySummary'
 import { enrichLogExplorerRows, runtimeLogSearchItemToExplorerRow } from '../../api/logsAdapter'
 import { logsOverviewCounts } from '../../api/logsOverviewAdapter'
-import { metricDescription, metricSnapshotLabel } from '../../api/metricMeta'
 import { createRuntimeSnapshotId, snapshotMatches } from '../../api/runtimeSnapshotSync'
 import type { MetricMetaMap, ObservabilitySummaryResponse, RuntimeLogsTotalsResponse } from '../../api/types/gdcApi'
 import { connectorDetailPath, destinationDetailPath, logsPath, routeEditPath, streamEditPath } from '../../config/nav-paths'
@@ -41,12 +39,12 @@ import {
   destinationFromRouteLabel,
   formatLatencyMs,
   deliveryOutcomeCountsFromRows,
-  kpiPercent,
   metricsWindowFromTimeRangeLabel,
   safeCtxInt,
   stageChipText,
 } from './logs-console-helpers'
 import { LogDetailDrawer } from './log-detail-drawer'
+import { LogsDiagnosisOverview, type LogsDiagnosisSnapshot } from './logs-diagnosis-overview'
 import { LevelBadge } from './logs-level-badge'
 import { HelpTooltip } from '../ui/help-tooltip'
 import { HELP_COPY } from '../ui/help-tooltip-copy'
@@ -109,6 +107,19 @@ type TableTab = 'all' | 'errors' | 'warnings'
 
 const SAVED_SEARCHES_KEY = 'gdc.logs.savedSearches.v1'
 
+type SavedSearchSnapshot = {
+  id: string
+  label: string
+  search: string
+  timeRange: string
+  streamFilter: string
+  routeFilter: string
+  levelFilter: string
+  stageFilter: string
+  statusFilter: string
+  statusUrl: string | null
+}
+
 function SelectField({
   id,
   label,
@@ -134,7 +145,7 @@ function SelectField({
         id={id}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="h-8 w-full min-w-[5.5rem] appearance-none rounded-lg border border-slate-200/90 bg-slate-50 py-1 pl-2 pr-7 text-[11px] font-medium text-slate-800 shadow-sm focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/20 dark:border-gdc-inputBorder dark:bg-gdc-input dark:text-slate-100 dark:focus:border-gdc-primary/60 dark:focus:ring-gdc-primary/25"
+        className="h-9 w-full min-w-[6rem] appearance-none rounded-lg border border-slate-200/90 bg-white py-1 pl-2.5 pr-8 text-sm font-medium text-slate-800 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-500/20 dark:border-gdc-inputBorder dark:bg-gdc-input dark:text-slate-100 dark:focus:border-gdc-primary/60 dark:focus:ring-gdc-primary/25"
       >
         {options.map((o) => (
           <option key={o} value={o}>
@@ -143,7 +154,7 @@ function SelectField({
         ))}
       </select>
       <ChevronDown
-        className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-slate-400 dark:text-gdc-muted"
+        className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400 dark:text-gdc-muted"
         aria-hidden
       />
     </div>
@@ -175,18 +186,18 @@ function DropdownMenu({
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200/90 bg-white px-2.5 text-[11px] font-semibold text-slate-800 shadow-sm hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-elevated dark:text-slate-100 dark:hover:bg-gdc-card"
+        className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200/90 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-elevated dark:text-slate-100 dark:hover:bg-gdc-card"
         aria-expanded={open}
         aria-haspopup="menu"
       >
-        {Icon ? <Icon className="h-3.5 w-3.5 text-slate-500 dark:text-gdc-muted" aria-hidden /> : null}
+        {Icon ? <Icon className="h-4 w-4 text-slate-500 dark:text-gdc-muted" aria-hidden /> : null}
         {label}
         <ChevronDown className="h-3.5 w-3.5 text-slate-400 dark:text-gdc-muted" aria-hidden />
       </button>
       {open ? (
         <div
           role="menu"
-          className="absolute right-0 z-40 mt-1 min-w-[12rem] rounded-lg border border-slate-200/90 bg-white py-1 text-[12px] shadow-lg dark:border-gdc-border dark:bg-gdc-elevated"
+          className="absolute right-0 z-40 mt-1 min-w-[12rem] rounded-lg border border-slate-200/90 bg-white py-1 text-sm shadow-lg dark:border-gdc-border dark:bg-gdc-elevated"
         >
           {items.map((item) => (
             <button
@@ -350,16 +361,17 @@ export function LogsExplorerPage() {
   })
 
   const [savedSearchRev, setSavedSearchRev] = useState(0)
-  const savedSearchItems = useMemo(() => {
+  const savedSearchItems = useMemo((): SavedSearchSnapshot[] => {
     try {
       const raw = localStorage.getItem(SAVED_SEARCHES_KEY)
       if (!raw) return []
-      const parsed = JSON.parse(raw) as { id: string; label: string }[]
+      const parsed = JSON.parse(raw) as SavedSearchSnapshot[]
       return Array.isArray(parsed) && parsed.length ? parsed : []
     } catch {
       return []
     }
   }, [savedSearchRev])
+  const [presetsExpanded, setPresetsExpanded] = useState(false)
 
   useEffect(() => {
     const focus = searchParams.get('focus')
@@ -857,10 +869,23 @@ export function LogsExplorerPage() {
         observabilitySummary.totals.retry_failed_events
       : null
 
-  const kpiTotal = Math.max(kpi.total, 1)
   const errorCount = logsKpiFromApi?.errors ?? 0
   const warnCount = logsKpiFromApi?.warnings ?? 0
   const infoCount = logsKpiFromApi?.info ?? 0
+
+  const diagnosisSnapshot = useMemo((): LogsDiagnosisSnapshot => {
+    return {
+      loadedFailedDeliveries: deliveryOutcomes.deliveryFailed,
+      loadedSuccessfulDeliveries: deliveryOutcomes.deliverySuccess,
+      errorRows: errorCount,
+      warningRows: warnCount,
+      loadedRows: kpi.total,
+      globalFailed: observabilitySummary?.totals.delivery_failed_events ?? null,
+      globalSuccess: observabilitySummary?.totals.delivery_success_events ?? null,
+      lifecycleRows: observabilitySummary?.totals.lifecycle_rows ?? deliveryOutcomes.lifecycleInfo,
+      windowLabel: KPI_WINDOW_LABEL,
+    }
+  }, [deliveryOutcomes, errorCount, warnCount, kpi.total, observabilitySummary])
 
   function exportJson() {
     const blob = new Blob([JSON.stringify(filteredRowsBase, null, 2)], { type: 'application/json' })
@@ -873,16 +898,51 @@ export function LogsExplorerPage() {
   }
 
   function saveCurrentSearch() {
-    const label = `${streamFilter} · ${levelFilter} · ${search.slice(0, 40)}`
+    const statusUrl = statusUrlParamFromUiLabel(statusFilter)
+    const label = `${streamFilter} · ${levelFilter} · ${statusFilter}${search ? ` · ${search.slice(0, 32)}` : ''}`
+    const snapshot: SavedSearchSnapshot = {
+      id: `custom-${Date.now()}`,
+      label: label || 'Saved view',
+      search,
+      timeRange,
+      streamFilter,
+      routeFilter,
+      levelFilter,
+      stageFilter,
+      statusFilter,
+      statusUrl,
+    }
     try {
       const raw = localStorage.getItem(SAVED_SEARCHES_KEY)
-      const cur = raw ? (JSON.parse(raw) as { id: string; label: string }[]) : []
-      const next = [{ id: `custom-${Date.now()}`, label: label || 'Saved view' }, ...cur].slice(0, 12)
+      const cur = raw ? (JSON.parse(raw) as SavedSearchSnapshot[]) : []
+      const next = [snapshot, ...cur].slice(0, 12)
       localStorage.setItem(SAVED_SEARCHES_KEY, JSON.stringify(next))
       setSavedSearchRev((v) => v + 1)
     } catch {
       /* ignore */
     }
+  }
+
+  function applySavedSearch(id: string) {
+    const item = savedSearchItems.find((s) => s.id === id)
+    if (!item) return
+    setSearch(item.search ?? '')
+    if (item.timeRange) setTimeRange(item.timeRange)
+    if (item.streamFilter) setStreamFilter(item.streamFilter)
+    if (item.routeFilter) setRouteFilter(item.routeFilter)
+    if (item.levelFilter) setLevelFilter(item.levelFilter)
+    if (item.stageFilter) setStageFilter(item.stageFilter)
+    if (item.statusFilter) setStatusFilter(item.statusFilter)
+    const next = new URLSearchParams(searchParams)
+    if (item.statusUrl) next.set('status', item.statusUrl)
+    else next.delete('status')
+    if (item.levelFilter && item.levelFilter !== 'All Levels') next.set('level', item.levelFilter)
+    else {
+      next.delete('level')
+      next.delete('severity')
+    }
+    setSearchParams(next, { replace: true })
+    runManualRefresh()
   }
 
   function runManualRefresh() {
@@ -1001,34 +1061,32 @@ export function LogsExplorerPage() {
   )
 
   return (
-    <div className="relative flex w-full min-w-0 flex-col gap-0 pb-4">
-      <div className="flex flex-col gap-3 border-b border-slate-200/80 bg-white/95 px-1 pb-4 pt-1 dark:border-gdc-border dark:bg-gdc-panel/95 lg:flex-row lg:items-start lg:justify-between">
-        <div className="space-y-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-50">Logs</h2>
-            <span
-              className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 text-slate-400 dark:border-gdc-border dark:text-gdc-muted"
-              title="Structured runtime logs"
-            >
-              <Info className="h-3.5 w-3.5" aria-hidden />
-            </span>
-            {dashboardStreamsRunning != null ? (
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-900 dark:border-emerald-800/50 dark:bg-emerald-950/40 dark:text-emerald-100">
-                <span className="relative flex h-2 w-2">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-40" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-                </span>
-                RUN · {dashboardStreamsRunning} streams active
+    <div className="relative flex w-full min-w-0 flex-col gap-5 pb-4" data-testid="logs-explorer-page">
+      {/* Toolbar — App Shell owns the page title */}
+      <div className="flex flex-col gap-3 border-b border-slate-200/80 pb-4 dark:border-gdc-divider sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-2">
+          <p className="max-w-2xl text-sm text-slate-600 dark:text-gdc-muted">
+            What failed, and how do I recover? Scan delivery posture, open a log for diagnosis evidence, then replay or drill into Runtime without leaving the workspace.
+          </p>
+          {dashboardStreamsRunning != null ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-900 dark:border-emerald-800/50 dark:bg-emerald-950/40 dark:text-emerald-100">
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-40" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
               </span>
-            ) : null}
-          </div>
-          <p className="max-w-2xl text-[13px] text-slate-600 dark:text-gdc-muted">Search and analyze logs across the pipeline.</p>
+              {dashboardStreamsRunning} streams active
+            </span>
+          ) : null}
           {runtimeLogsError ? (
-            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-950 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-100">
-              <span>Runtime logs API unavailable — KPIs and the table stay empty until the API responds.</span>
+            <div
+              className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-100"
+              data-testid="logs-api-error"
+              role="alert"
+            >
+              <span>Runtime logs API unavailable — diagnosis evidence stays empty until the API responds.</span>
               <button
                 type="button"
-                className="font-semibold text-violet-700 underline dark:text-violet-300"
+                className="font-semibold text-slate-900 underline dark:text-slate-100"
                 onClick={runManualRefresh}
               >
                 Retry
@@ -1036,7 +1094,50 @@ export function LogsExplorerPage() {
             </div>
           ) : null}
         </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+          <DropdownMenu
+            label={savedSearchItems.length ? `Saved (${savedSearchItems.length})` : 'Saved searches'}
+            icon={Bookmark}
+            items={[
+              ...savedSearchItems.map((s) => ({ id: s.id, label: s.label })),
+              { id: '__save', label: '+ Save current view' },
+            ]}
+            onPick={(id) => {
+              if (id === '__save') saveCurrentSearch()
+              else applySavedSearch(id)
+            }}
+          />
+          <DropdownMenu
+            label="Export"
+            icon={Download}
+            items={[
+              { id: 'json', label: 'Download JSON (current filters)' },
+              { id: 'csv', label: 'Download CSV (placeholder)' },
+            ]}
+            onPick={(id) => {
+              if (id === 'json') exportJson()
+            }}
+          />
+          <button
+            type="button"
+            role="switch"
+            aria-checked={liveTail}
+            data-testid="logs-live-tail"
+            onClick={() => setLiveTail((v) => !v)}
+            className={cn(
+              'inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-sm font-semibold shadow-sm transition-colors',
+              liveTail
+                ? 'border-slate-900 bg-slate-900 text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900'
+                : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-elevated dark:text-slate-200 dark:hover:bg-gdc-card',
+            )}
+          >
+            <Zap className={cn('h-4 w-4', liveTail ? 'text-white dark:text-slate-900' : 'text-slate-400 dark:text-gdc-muted')} aria-hidden />
+            Live Tail
+          </button>
+        </div>
       </div>
+
+      <LogsDiagnosisOverview snapshot={diagnosisSnapshot} loading={logsFetchLoading && logRows.length === 0} />
 
       {(urlHasOperationalFilters || logsFetchLoading) && (
         <section
@@ -1195,20 +1296,20 @@ export function LogsExplorerPage() {
         </section>
       )}
 
-      <div className="sticky top-0 z-30 -mx-1 border-b border-slate-200/90 bg-white/95 px-1 py-2 backdrop-blur-md supports-[backdrop-filter]:bg-white/85 dark:border-gdc-border dark:bg-gdc-panel/90 dark:supports-[backdrop-filter]:bg-gdc-panel/85">
-        <div className="mb-1.5 flex flex-wrap items-center gap-2 px-0.5">
-          <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600 dark:bg-gdc-elevated dark:text-gdc-muted">
-            <Filter className="h-3 w-3" aria-hidden />
-            Primary filters
-          </span>
-          <span className="text-[10px] text-slate-500 dark:text-gdc-muted">
-            URL query params (stream, route, run, stage, status) sync with the backend; presets below apply common operational views.
+      <div
+        className="sticky top-0 z-30 -mx-1 rounded-xl border border-slate-200/80 bg-white/95 px-3 py-3 shadow-sm backdrop-blur-md supports-[backdrop-filter]:bg-white/85 dark:border-gdc-border dark:bg-gdc-panel/90 dark:supports-[backdrop-filter]:bg-gdc-panel/85"
+        data-testid="logs-filter-toolbar"
+      >
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">Find delivery evidence</span>
+          <span className="text-xs text-slate-500 dark:text-gdc-muted">
+            Filters sync with the URL; presets apply common operational views.
           </span>
         </div>
         <div className="flex flex-col gap-2 xl:flex-row xl:flex-wrap xl:items-center xl:justify-between">
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 md:gap-2">
-            <div className="flex min-w-[140px] flex-1 items-center gap-1 rounded-lg border border-slate-200/90 bg-slate-50 px-2 shadow-sm dark:border-gdc-inputBorder dark:bg-gdc-input">
-              <Clock className="h-3.5 w-3.5 shrink-0 text-slate-400 dark:text-gdc-muted" aria-hidden />
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            <div className="flex min-w-[140px] flex-1 items-center gap-1 rounded-lg border border-slate-200/90 bg-white px-2 shadow-sm dark:border-gdc-inputBorder dark:bg-gdc-input">
+              <Clock className="h-4 w-4 shrink-0 text-slate-400 dark:text-gdc-muted" aria-hidden />
               <SelectField id="logs-time-range" label="Time range" value={timeRange} options={TIME_RANGE_OPTIONS} onChange={setTimeRange} />
             </div>
             <SelectField id="logs-level" label="Level" value={levelFilter} options={LEVEL_FILTER_OPTIONS} onChange={setLevelFilter} />
@@ -1238,7 +1339,7 @@ export function LogsExplorerPage() {
             />
             <div className="relative min-w-0 flex-[2]">
               <Search
-                className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400 dark:text-gdc-muted"
+                className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-gdc-muted"
                 aria-hidden
               />
               <input
@@ -1246,9 +1347,10 @@ export function LogsExplorerPage() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search message, error, request id…"
+                data-testid="logs-search"
                 className={cn(
                   gdcUi.input,
-                  'h-8 w-full rounded-lg py-1 pl-9 pr-3 text-[12px] shadow-sm focus:ring-2 focus:ring-violet-500/20 dark:focus:ring-gdc-primary/25',
+                  'h-9 w-full rounded-lg py-1 pl-9 pr-3 text-sm shadow-sm focus:ring-2 focus:ring-slate-500/20 dark:focus:ring-gdc-primary/25',
                 )}
                 aria-label="Search logs"
               />
@@ -1256,134 +1358,100 @@ export function LogsExplorerPage() {
             <button
               type="button"
               onClick={runManualRefresh}
-              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg bg-violet-600 px-3 text-[12px] font-semibold text-white shadow-sm hover:bg-violet-700"
+              data-testid="logs-search-submit"
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
             >
-              <Search className="h-3.5 w-3.5" />
+              <Search className="h-4 w-4" />
               Search
-            </button>
-          </div>
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-            <DropdownMenu
-              label="Saved Searches"
-              icon={Bookmark}
-              items={[
-                ...savedSearchItems.map((s) => ({ id: s.id, label: s.label })),
-                { id: '__save', label: '+ Save current view' },
-              ]}
-              onPick={(id) => {
-                if (id === '__save') saveCurrentSearch()
-              }}
-            />
-            <DropdownMenu
-              label="Export"
-              icon={Download}
-              items={[
-                { id: 'json', label: 'Download JSON (current filters)' },
-                { id: 'csv', label: 'Download CSV (placeholder)' },
-              ]}
-              onPick={(id) => {
-                if (id === 'json') exportJson()
-              }}
-            />
-            <button
-              type="button"
-              role="switch"
-              aria-checked={liveTail}
-              onClick={() => setLiveTail((v) => !v)}
-              className={cn(
-                'inline-flex h-8 items-center gap-2 rounded-lg border px-2.5 text-[11px] font-semibold shadow-sm transition-colors',
-                liveTail
-                  ? 'border-violet-300 bg-violet-50 text-violet-900 dark:border-violet-700/50 dark:bg-violet-950/40 dark:text-violet-100'
-                  : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-elevated dark:text-slate-200 dark:hover:bg-gdc-card',
-              )}
-            >
-              <Zap
-                className={cn('h-3.5 w-3.5', liveTail ? 'text-violet-600 dark:text-violet-300' : 'text-slate-400 dark:text-gdc-muted')}
-                aria-hidden
-              />
-              Live Tail
-              {liveTail ? (
-                <span className="relative flex h-2 w-2">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-violet-400 opacity-50" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-violet-600" />
-                </span>
-              ) : null}
             </button>
           </div>
           <div
             className="flex min-w-full flex-basis-full flex-wrap items-center gap-1.5 border-t border-slate-100 pt-2 dark:border-gdc-border"
             aria-label="Quick log filters"
+            data-testid="logs-presets"
           >
-            <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-gdc-muted">
+            <span className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted">
               <Zap className="h-3 w-3 text-amber-500" aria-hidden />
               Presets
             </span>
             <button
               type="button"
-              className="rounded-full border border-red-200/80 bg-red-50 px-2 py-0.5 text-[10px] font-semibold text-red-900 hover:bg-red-100 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-100"
+              className="rounded-full border border-red-200/80 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-900 hover:bg-red-100 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-100"
               onClick={() => applyLogsQuickFilter('errors')}
             >
               Errors
             </button>
             <button
               type="button"
-              className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-800 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-elevated dark:text-slate-100"
+              className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-800 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-elevated dark:text-slate-100"
               onClick={() => applyLogsQuickFilter('delivery_fail')}
             >
               Route send failed
             </button>
             <button
               type="button"
-              className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-800 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-elevated dark:text-slate-100"
+              className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-800 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-elevated dark:text-slate-100"
               onClick={() => applyLogsQuickFilter('retry')}
             >
               Retry outcomes
             </button>
             <button
               type="button"
-              className="rounded-full border border-amber-200/80 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-900/45 dark:bg-amber-950/35 dark:text-amber-100"
+              className="rounded-full border border-amber-200/80 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-900/45 dark:bg-amber-950/35 dark:text-amber-100"
               onClick={() => applyLogsQuickFilter('rate_limit_dest')}
             >
               Dest. rate limit
             </button>
+            {presetsExpanded ? (
+              <>
+                <button
+                  type="button"
+                  className="rounded-full border border-amber-200/80 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-900/45 dark:bg-amber-950/35 dark:text-amber-100"
+                  onClick={() => applyLogsQuickFilter('rate_limit_src')}
+                >
+                  Source rate limit
+                </button>
+                <button
+                  type="button"
+                  className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-800 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-elevated dark:text-slate-100"
+                  onClick={() => applyLogsQuickFilter('schema_drift_policy')}
+                >
+                  Schema Drift Policy
+                </button>
+                <button
+                  type="button"
+                  className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-800 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-elevated dark:text-slate-100"
+                  onClick={() => applyLogsQuickFilter('auto_protect_applied')}
+                >
+                  Auto Protect Applied
+                </button>
+                <button
+                  type="button"
+                  className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-800 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-elevated dark:text-slate-100"
+                  onClick={() => applyLogsQuickFilter('schema_drift_review')}
+                >
+                  Schema Drift Review Required
+                </button>
+                <button
+                  type="button"
+                  className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-800 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-elevated dark:text-slate-100"
+                  onClick={() => applyLogsQuickFilter('path_resolution_failed')}
+                >
+                  Path Resolution Failed
+                </button>
+              </>
+            ) : null}
             <button
               type="button"
-              className="rounded-full border border-amber-200/80 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-900/45 dark:bg-amber-950/35 dark:text-amber-100"
-              onClick={() => applyLogsQuickFilter('rate_limit_src')}
+              className="rounded-full border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:border-gdc-border dark:text-gdc-muted dark:hover:bg-gdc-card"
+              data-testid="logs-presets-more"
+              onClick={() => setPresetsExpanded((v) => !v)}
             >
-              Source rate limit
+              {presetsExpanded ? 'Fewer presets' : 'More presets'}
             </button>
             <button
               type="button"
-              className="rounded-full border border-violet-200/80 bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-950 hover:bg-violet-100 dark:border-violet-900/45 dark:bg-violet-950/35 dark:text-violet-100"
-              onClick={() => applyLogsQuickFilter('schema_drift_policy')}
-            >
-              Schema Drift Policy
-            </button>
-            <button
-              type="button"
-              className="rounded-full border border-violet-200/80 bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-950 hover:bg-violet-100 dark:border-violet-900/45 dark:bg-violet-950/35 dark:text-violet-100"
-              onClick={() => applyLogsQuickFilter('auto_protect_applied')}
-            >
-              Auto Protect Applied
-            </button>
-            <button
-              type="button"
-              className="rounded-full border border-violet-200/80 bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-950 hover:bg-violet-100 dark:border-violet-900/45 dark:bg-violet-950/35 dark:text-violet-100"
-              onClick={() => applyLogsQuickFilter('schema_drift_review')}
-            >
-              Schema Drift Review Required
-            </button>
-            <button
-              type="button"
-              className="rounded-full border border-violet-200/80 bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-950 hover:bg-violet-100 dark:border-violet-900/45 dark:bg-violet-950/35 dark:text-violet-100"
-              onClick={() => applyLogsQuickFilter('path_resolution_failed')}
-            >
-              Path Resolution Failed
-            </button>
-            <button
-              type="button"
-              className="rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500 hover:bg-slate-100 dark:border-gdc-border dark:text-gdc-muted dark:hover:bg-gdc-card"
+              className="rounded-full border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-500 hover:bg-slate-100 dark:border-gdc-border dark:text-gdc-muted dark:hover:bg-gdc-card"
               onClick={() => applyLogsQuickFilter('clear')}
             >
               Clear URL filters
@@ -1393,125 +1461,56 @@ export function LogsExplorerPage() {
       </div>
 
       <section
-        aria-label={`Delivery outcomes (${KPI_WINDOW_LABEL})`}
-        className="mx-1 mt-3 grid grid-cols-2 gap-2 md:grid-cols-4 xl:gap-3"
+        aria-label={`Logs over time (${KPI_WINDOW_LABEL})`}
+        className="rounded-xl border border-slate-200/70 bg-white px-4 py-3 shadow-sm dark:border-gdc-border dark:bg-gdc-card"
+        data-testid="logs-histogram-panel"
       >
-        <div className="rounded-xl border border-rose-200/70 bg-rose-50/40 px-3 py-2.5 shadow-sm dark:border-rose-900/35 dark:bg-rose-950/25 dark:shadow-gdc-card">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-rose-800 dark:text-rose-200">Loaded failed deliveries</p>
-          <p className="mt-0.5 text-xl font-semibold tabular-nums text-rose-950 dark:text-rose-50">
-            {deliveryOutcomes.deliveryFailed.toLocaleString()}
-          </p>
-          <p className="mt-1 text-[11px] text-rose-900/90 dark:text-rose-100/80">
-            Current table/page sample only, not the full-window total
-          </p>
-        </div>
-        <div className="rounded-xl border border-emerald-200/70 bg-emerald-50/35 px-3 py-2.5 shadow-sm dark:border-emerald-900/35 dark:bg-emerald-950/20 dark:shadow-gdc-card">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-800 dark:text-emerald-200">Loaded successful deliveries</p>
-          <p className="mt-0.5 text-xl font-semibold tabular-nums text-emerald-950 dark:text-emerald-50">
-            {deliveryOutcomes.deliverySuccess.toLocaleString()}
-          </p>
-          <p className="mt-1 text-[11px] text-emerald-900/90 dark:text-emerald-100/80">
-            Current table/page sample only, not the full-window total
-          </p>
-        </div>
-        <div className="rounded-xl border border-amber-200/70 bg-amber-50/35 px-3 py-2.5 shadow-sm dark:border-amber-900/30 dark:bg-amber-950/20 dark:shadow-gdc-card">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:text-amber-100">Global delivery outcomes</p>
-          <p className="mt-0.5 text-xl font-semibold tabular-nums text-amber-950 dark:text-amber-50">
-            {(globalDeliveryOutcomes ?? 0).toLocaleString()}
-          </p>
-          <p className="mt-1 text-[11px] text-amber-950/90 dark:text-amber-100/80">
-            Full window: ok {observabilitySummary?.totals.delivery_success_events ?? 0} · failed{' '}
-            {observabilitySummary?.totals.delivery_failed_events ?? 0} · retries{' '}
-            {observabilitySummary != null
-              ? observabilitySummary.totals.retry_success_events + observabilitySummary.totals.retry_failed_events
-              : 0}
-          </p>
-        </div>
-        <div className="rounded-xl border border-slate-200/70 bg-white px-3 py-2.5 shadow-sm dark:border-gdc-border dark:bg-gdc-card dark:shadow-gdc-card md:col-span-2 xl:col-span-1">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted">Lifecycle INFO rows</p>
-          <p className="mt-0.5 text-xl font-semibold tabular-nums text-slate-900 dark:text-slate-50">
-            {(observabilitySummary?.totals.lifecycle_rows ?? deliveryOutcomes.lifecycleInfo).toLocaleString()}
-          </p>
-          <p className="mt-1 text-[11px] text-slate-500 dark:text-gdc-muted">
-            Full-window lifecycle telemetry, classified separately from outcomes
-          </p>
-        </div>
-      </section>
-
-      <section aria-label={`Log level mix (${KPI_WINDOW_LABEL})`} className="mx-1 mt-3 grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-5 xl:gap-3">
-        <div className="rounded-xl border border-slate-200/70 bg-white px-3 py-2.5 shadow-sm dark:border-gdc-border dark:bg-gdc-card dark:shadow-gdc-card">
-          <p
-            className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted"
-            title={metricDescription(logsMetricMeta, 'runtime_telemetry_rows.loaded')}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted">Logs over time</p>
+            <p className="mt-0.5 text-sm text-slate-600 dark:text-gdc-muted">
+              Loaded sample mix · ERROR {errorCount.toLocaleString()} · WARN {warnCount.toLocaleString()} · INFO{' '}
+              {infoCount.toLocaleString()}
+              {logsTotals?.total_rows != null
+                ? ` · Window telemetry ${logsTotals.total_rows.toLocaleString()}`
+                : globalDeliveryOutcomes != null
+                  ? ` · Full-window outcomes ${globalDeliveryOutcomes.toLocaleString()}`
+                  : ''}
+              {logsMetricMeta && Object.keys(logsMetricMeta).length > 0 ? ' · metric contract attached' : ''}
+            </p>
+          </div>
+          <select
+            value={chartGrain}
+            onChange={(e) => setChartGrain(e.target.value as 'Auto' | '1m' | '5m')}
+            className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-800 dark:border-gdc-inputBorder dark:bg-gdc-input dark:text-slate-100"
+            aria-label="Chart interval"
           >
-            Loaded rows
-          </p>
-          <p className="mt-0.5 text-xl font-semibold tabular-nums text-slate-900 dark:text-slate-50">
-            {kpi.total.toLocaleString()}
-          </p>
-          <p className="mt-1 text-[11px] text-slate-500 dark:text-gdc-muted">
-            {logsKpiFromApi
-              ? `${metricDescription(logsMetricMeta, 'runtime_telemetry_rows.loaded')} · total telemetry rows in window ${
-                  logsTotals?.total_rows?.toLocaleString() ?? observabilitySummary?.totals.runtime_telemetry_rows?.toLocaleString() ?? '—'
-                } · ${metricSnapshotLabel(logsMetricMeta, 'runtime_telemetry_rows.loaded', metricsWindow)}`
-              : 'Load delivery records to populate KPIs.'}
-          </p>
+            <option value="Auto">Auto</option>
+            <option value="1m">1m</option>
+            <option value="5m">5m</option>
+          </select>
         </div>
-        <div className="rounded-xl border border-slate-200/70 bg-white px-3 py-2.5 shadow-sm dark:border-gdc-border dark:bg-gdc-card dark:shadow-gdc-card">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted">ERROR level</p>
-          <p className="mt-0.5 text-xl font-semibold tabular-nums text-slate-900 dark:text-slate-50">{errorCount.toLocaleString()}</p>
-          <p className="mt-1 text-[11px] font-medium text-red-600 dark:text-red-400" title="Includes delivery failures and other ERROR-level rows">
-            {kpiPercent(errorCount, kpiTotal)} of loaded rows
-          </p>
-        </div>
-        <div className="rounded-xl border border-slate-200/70 bg-white px-3 py-2.5 shadow-sm dark:border-gdc-border dark:bg-gdc-card dark:shadow-gdc-card">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted">Warnings</p>
-          <p className="mt-0.5 text-xl font-semibold tabular-nums text-slate-900 dark:text-slate-50">{warnCount.toLocaleString()}</p>
-          <p className="mt-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">{kpiPercent(warnCount, kpiTotal)}</p>
-        </div>
-        <div className="rounded-xl border border-slate-200/70 bg-white px-3 py-2.5 shadow-sm dark:border-gdc-border dark:bg-gdc-card dark:shadow-gdc-card">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted">INFO level</p>
-          <p className="mt-0.5 text-xl font-semibold tabular-nums text-slate-900 dark:text-slate-50">{infoCount.toLocaleString()}</p>
-          <p className="mt-1 text-[11px] font-medium text-sky-700 dark:text-sky-400" title="Mostly lifecycle telemetry; use Delivery outcomes above for route health">
-            {kpiPercent(infoCount, kpiTotal)} of loaded rows
-          </p>
-        </div>
-        <div className="col-span-2 rounded-xl border border-slate-200/70 bg-white px-3 py-2.5 shadow-sm dark:border-gdc-border dark:bg-gdc-card dark:shadow-gdc-card md:col-span-3 xl:col-span-1">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted">Logs Over Time</p>
-            <select
-              value={chartGrain}
-              onChange={(e) => setChartGrain(e.target.value as 'Auto' | '1m' | '5m')}
-              className="h-7 rounded-lg border border-slate-200 bg-slate-50 px-2 text-[10px] font-semibold text-slate-800 dark:border-gdc-inputBorder dark:bg-gdc-input dark:text-slate-100"
-              aria-label="Chart interval"
-            >
-              <option value="Auto">Auto</option>
-              <option value="1m">1m</option>
-              <option value="5m">5m</option>
-            </select>
-          </div>
-          <div className={cn('mt-1 h-[72px] w-full transition-opacity duration-300', pulseFetch && 'opacity-70')}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={histogramData} margin={{ top: 2, right: 4, left: -28, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-slate-200/80 dark:stroke-slate-600/50" vertical={false} />
-                <XAxis dataKey="bucket" hide />
-                <YAxis hide domain={[0, 'dataMax + 2']} />
-                <Tooltip
-                  contentStyle={{
-                    borderRadius: 8,
-                    border: '1px solid rgb(51 65 85)',
-                    backgroundColor: 'rgb(15 23 42)',
-                    color: 'rgb(241 245 249)',
-                    fontSize: 10,
-                  }}
-                  formatter={(v: number, name: string) => [`${v}`, name]}
-                />
-                <Bar dataKey="info" stackId="a" fill="#3b82f6" maxBarSize={10} />
-                <Bar dataKey="warn" stackId="a" fill="#f59e0b" maxBarSize={10} />
-                <Bar dataKey="error" stackId="a" fill="#ef4444" radius={[2, 2, 0, 0]} maxBarSize={10} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+        <div className={cn('mt-2 h-[88px] w-full transition-opacity duration-300', pulseFetch && 'opacity-70')}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={histogramData} margin={{ top: 2, right: 4, left: -28, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" className="stroke-slate-200/80 dark:stroke-slate-600/50" vertical={false} />
+              <XAxis dataKey="bucket" hide />
+              <YAxis hide domain={[0, 'dataMax + 2']} />
+              <Tooltip
+                contentStyle={{
+                  borderRadius: 8,
+                  border: '1px solid rgb(51 65 85)',
+                  backgroundColor: 'rgb(15 23 42)',
+                  color: 'rgb(241 245 249)',
+                  fontSize: 12,
+                }}
+                formatter={(v: number, name: string) => [`${v}`, name]}
+              />
+              <Bar dataKey="info" stackId="a" fill="#3b82f6" maxBarSize={10} />
+              <Bar dataKey="warn" stackId="a" fill="#f59e0b" maxBarSize={10} />
+              <Bar dataKey="error" stackId="a" fill="#ef4444" radius={[2, 2, 0, 0]} maxBarSize={10} />
+            </BarChart>
+          </ResponsiveContainer>
         </div>
       </section>
 
@@ -1757,18 +1756,32 @@ export function LogsExplorerPage() {
               ) : pageRows.length === 0 ? (
                 <tr className={opTr}>
                   <td
-                    className={cn(opTd, 'py-10 text-center text-[12px] text-slate-500 dark:text-gdc-muted')}
+                    className={cn(opTd, 'py-12 text-center text-sm text-slate-500 dark:text-gdc-muted')}
                     colSpan={Math.max(1, visibleColCount)}
+                    data-testid={
+                      runtimeLogsError
+                        ? 'logs-empty-error'
+                        : logsSource === 'empty'
+                          ? 'logs-empty-window'
+                          : urlHasOperationalFilters
+                            ? 'logs-no-match'
+                            : 'logs-empty-filters'
+                    }
                   >
-                    <div className="space-y-2">
-                      <p>
+                    <div className="mx-auto flex max-w-md flex-col items-center gap-3">
+                      <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
                         {runtimeLogsError
-                          ? 'Runtime logs API failed — fix connectivity or permissions, then retry.'
+                          ? 'Runtime logs API failed'
                           : logsSource === 'empty'
-                            ? 'No delivery logs in the selected time window.'
+                            ? 'No delivery logs in this window'
                             : urlHasOperationalFilters
-                              ? 'No logs matched the active URL filters.'
-                              : 'No logs match the current filters.'}
+                              ? 'No logs match the active filters'
+                              : 'No logs match the current filters'}
+                      </p>
+                      <p className="text-sm text-slate-500 dark:text-gdc-muted">
+                        {runtimeLogsError
+                          ? 'Fix connectivity or permissions, then retry.'
+                          : 'Clear filters or open the full logs workspace to widen the search.'}
                       </p>
                       <div className="flex flex-wrap items-center justify-center gap-2">
                         <button
@@ -1779,13 +1792,13 @@ export function LogsExplorerPage() {
                             setLevelFilter('All Levels')
                             setStageFilter('All Stages')
                           }}
-                          className="inline-flex h-8 items-center rounded-lg border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-elevated dark:text-slate-200 dark:hover:bg-gdc-card"
+                          className="inline-flex h-9 items-center rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-elevated dark:text-slate-200 dark:hover:bg-gdc-card"
                         >
                           Clear filters
                         </button>
                         <Link
                           to={logsPath()}
-                          className="inline-flex h-8 items-center rounded-lg border border-violet-300 bg-violet-50 px-2 text-[11px] font-semibold text-violet-900 hover:bg-violet-100 dark:border-violet-700/50 dark:bg-violet-950/40 dark:text-violet-100 dark:hover:bg-violet-950/60"
+                          className="inline-flex h-9 items-center rounded-lg bg-slate-900 px-3 text-sm font-semibold text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
                         >
                           Open full logs
                         </Link>

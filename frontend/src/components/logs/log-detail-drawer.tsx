@@ -362,19 +362,45 @@ function StreamDrilldownLinks({ streamName }: { streamName: string }) {
   const target = id != null ? String(id) : slug
   const runtimeHref = id != null ? runtimeOverviewPath({ stream_id: id }) : streamRuntimePath(target)
   return (
-    <span className="flex flex-wrap items-center gap-1.5">
+    <span className="flex flex-wrap items-center gap-2">
       <span className="font-medium text-slate-800 dark:text-slate-200">{trimmed}</span>
-      <Link to={runtimeHref} className="text-[10px] font-semibold text-violet-700 hover:underline dark:text-violet-300">
+      <Link
+        to={runtimeHref}
+        className="inline-flex items-center gap-1 rounded-md border border-slate-900 bg-slate-900 px-2 py-0.5 text-xs font-semibold text-white hover:bg-slate-800 dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+        data-testid="log-detail-stream-runtime"
+      >
         Runtime
       </Link>
-      <span className="text-slate-300 dark:text-gdc-muted" aria-hidden>
-        ·
-      </span>
-      <Link to={streamEditPath(target)} className="text-[10px] font-semibold text-violet-700 hover:underline dark:text-violet-300">
-        Workflow
+      <Link
+        to={streamEditPath(target)}
+        className="text-xs font-medium text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline dark:text-gdc-muted dark:hover:text-slate-200"
+        data-testid="log-detail-stream-edit"
+      >
+        Edit
       </Link>
     </span>
   )
+}
+
+function buildLogDiagnosisSummary(row: LogExplorerRow, statusLabel: string, stage: string, retryCount: number): string {
+  if (row.level === 'ERROR') {
+    const code =
+      typeof row.contextJson.error_code === 'string' && row.contextJson.error_code.trim() !== ''
+        ? row.contextJson.error_code.trim()
+        : null
+    return [
+      `ERROR at ${stage || 'unknown stage'}`,
+      statusLabel !== '—' ? `status ${statusLabel}` : null,
+      code ? `code ${code}` : null,
+      retryCount > 0 ? `${retryCount} retr${retryCount === 1 ? 'y' : 'ies'}` : null,
+    ]
+      .filter(Boolean)
+      .join(' · ')
+  }
+  if (row.level === 'WARN') {
+    return `Warning at ${stage || 'unknown stage'} · ${statusLabel}`
+  }
+  return `${row.level} · ${stage || 'lifecycle'} · ${statusLabel}`
 }
 
 export function LogDetailDrawer({
@@ -478,10 +504,13 @@ export function LogDetailDrawer({
 
   return (
     <>
-      <div className="flex items-start justify-between gap-2 border-b border-slate-200 bg-white px-4 py-3 dark:border-gdc-border dark:bg-gdc-elevated">
+      <div
+        className="flex items-start justify-between gap-2 border-b border-slate-200 bg-white px-4 py-3 dark:border-gdc-border dark:bg-gdc-elevated"
+        data-testid="log-detail-drawer"
+      >
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted">Log Detail</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted">Log detail</p>
             <button
               type="button"
               onClick={onClose}
@@ -493,12 +522,12 @@ export function LogDetailDrawer({
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <LevelBadge level={row.level} />
-            <span className="font-mono text-[11px] text-slate-600 dark:text-gdc-muted">{formatTableTime(row.timeIso)}</span>
-            <span className="rounded border border-slate-200 bg-slate-50 px-1.5 py-px font-mono text-[10px] text-slate-700 dark:border-gdc-border dark:bg-gdc-input dark:text-slate-200">
+            <span className="font-mono text-xs text-slate-600 dark:text-gdc-muted">{formatTableTime(row.timeIso)}</span>
+            <span className="rounded border border-slate-200 bg-slate-50 px-1.5 py-px font-mono text-[11px] text-slate-700 dark:border-gdc-border dark:bg-gdc-input dark:text-slate-200">
               {getRequestId(row)}
             </span>
           </div>
-          <div className="mt-3 flex gap-1 border-b border-slate-100 pb-0 dark:border-gdc-border/80">
+          <div className="mt-3 flex gap-1 overflow-x-auto border-b border-slate-100 pb-0 dark:border-gdc-border/80" role="tablist" aria-label="Log detail tabs">
             {tabs.map((t) => (
               <button
                 key={t.id}
@@ -506,10 +535,11 @@ export function LogDetailDrawer({
                 role="tab"
                 aria-selected={tab === t.id}
                 onClick={() => setTab(t.id)}
+                data-testid={`log-detail-tab-${t.id}`}
                 className={cn(
-                  '-mb-px border-b-2 px-2.5 py-1.5 text-[11px] font-semibold transition-colors',
+                  '-mb-px shrink-0 border-b-2 px-2.5 py-1.5 text-sm font-semibold transition-colors',
                   tab === t.id
-                    ? 'border-violet-600 text-violet-700 dark:border-violet-400 dark:text-violet-300'
+                    ? 'border-slate-900 text-slate-900 dark:border-slate-100 dark:text-slate-50'
                     : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-gdc-muted dark:hover:text-slate-200',
                 )}
               >
@@ -523,10 +553,31 @@ export function LogDetailDrawer({
       <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
         {tab === 'overview' ? (
           <>
-            <dl className="grid grid-cols-[104px_1fr] gap-x-3 gap-y-2.5 text-[12px]">
+            <section
+              className={cn(
+                'rounded-xl border px-4 py-3',
+                row.level === 'ERROR' && 'border-red-200 bg-red-50/70 dark:border-red-900/50 dark:bg-red-950/30',
+                row.level === 'WARN' && 'border-amber-200 bg-amber-50/70 dark:border-amber-900/45 dark:bg-amber-950/25',
+                row.level !== 'ERROR' && row.level !== 'WARN' && 'border-slate-200 bg-slate-50/80 dark:border-gdc-border dark:bg-gdc-card',
+              )}
+              data-testid="log-detail-diagnosis"
+            >
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted">Diagnosis</p>
+              <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-50">
+                {buildLogDiagnosisSummary(row, statusUi.label, stageChipText(row), retryCount)}
+              </p>
+              <p className="mt-1 text-sm leading-snug text-slate-700 dark:text-slate-200">{row.message}</p>
+              {replayEligible ? (
+                <p className="mt-2 text-xs text-slate-600 dark:text-gdc-muted">
+                  Recovery available: dry-run or live delivery replay (checkpoints are not updated).
+                </p>
+              ) : null}
+            </section>
+
+            <dl className="grid grid-cols-[104px_1fr] gap-x-3 gap-y-2.5 text-sm">
               <DetailDt>Stage</DetailDt>
               <DetailDd>
-                <span className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-slate-800 dark:border-gdc-border dark:bg-gdc-input dark:text-slate-200">
+                <span className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-xs font-semibold text-slate-800 dark:border-gdc-border dark:bg-gdc-input dark:text-slate-200">
                   {stageChipText(row)}
                 </span>
               </DetailDd>
@@ -534,7 +585,7 @@ export function LogDetailDrawer({
               <DetailDd>
                 <span
                   className={cn(
-                    'inline-flex rounded-md border px-1.5 py-px text-[10px] font-bold uppercase',
+                    'inline-flex rounded-md border px-1.5 py-px text-[11px] font-bold uppercase',
                     statusUi.tone === 'success' &&
                       'border-emerald-300/80 bg-emerald-500/[0.09] text-emerald-900 dark:border-emerald-700/50 dark:bg-emerald-950/30 dark:text-emerald-100',
                     statusUi.tone === 'warning' &&
@@ -561,7 +612,7 @@ export function LogDetailDrawer({
                   {routeId != null ? (
                     <Link
                       to={routeEditPath(String(routeId))}
-                      className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-violet-700 hover:underline dark:text-violet-300"
+                      className="inline-flex items-center gap-0.5 text-xs font-semibold text-slate-600 underline-offset-2 hover:underline dark:text-gdc-muted"
                     >
                       #{routeId}
                       <ChevronRight className="h-3 w-3" />
@@ -574,7 +625,7 @@ export function LogDetailDrawer({
                 {destId != null ? (
                   <Link
                     to={destinationDetailPath(String(destId))}
-                    className="text-[12px] font-semibold text-violet-700 hover:underline dark:text-violet-300"
+                    className="text-sm font-semibold text-slate-800 underline-offset-2 hover:underline dark:text-slate-100"
                   >
                     Open destination #{destId}
                   </Link>
@@ -591,26 +642,24 @@ export function LogDetailDrawer({
               <DetailDt>HTTP status</DetailDt>
               <DetailDd className="tabular-nums">{httpStatus != null ? String(httpStatus) : '—'}</DetailDd>
               <DetailDt>Error code</DetailDt>
-              <DetailDd className="font-mono text-[11px]">
+              <DetailDd className="font-mono text-xs">
                 {typeof row.contextJson.error_code === 'string' && row.contextJson.error_code.trim() !== ''
                   ? row.contextJson.error_code
                   : '—'}
               </DetailDd>
-              <DetailDt>Message</DetailDt>
-              <DetailDd className="leading-snug text-slate-800 dark:text-slate-200">{row.message}</DetailDd>
               <DetailDt>Event ID</DetailDt>
-              <DetailDd className="font-mono text-[11px]">{row.eventId}</DetailDd>
+              <DetailDd className="font-mono text-xs">{row.eventId}</DetailDd>
               <DetailDt>Log ID</DetailDt>
-              <DetailDd className="font-mono text-[11px]">{logDbId != null ? String(logDbId) : row.id}</DetailDd>
+              <DetailDd className="font-mono text-xs">{logDbId != null ? String(logDbId) : row.id}</DetailDd>
             </dl>
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted">Payload sample</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted">Payload sample</p>
               <div className="mt-2 space-y-2">
                 <div className="flex justify-end">
                   <button
                     type="button"
                     onClick={() => copy(JSON.stringify(preview, null, 2))}
-                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200 dark:hover:bg-gdc-input"
+                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200 dark:hover:bg-gdc-input"
                   >
                     <ClipboardCopy className="h-3.5 w-3.5" />
                     Copy JSON
@@ -670,13 +719,17 @@ export function LogDetailDrawer({
         ) : null}
       </div>
 
-      <div className="space-y-2 border-t border-slate-200 bg-slate-50/80 p-4 dark:border-gdc-border dark:bg-gdc-panel/80">
+      <div
+        className="space-y-2 border-t border-slate-200 bg-slate-50/80 p-4 dark:border-gdc-border dark:bg-gdc-panel/80"
+        data-testid="log-detail-recovery"
+      >
         {replayEligible ? (
-          <div className="mb-3 space-y-2 rounded-lg border border-violet-200 bg-violet-50/60 p-3 dark:border-violet-800/50 dark:bg-violet-950/30">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-violet-900 dark:text-violet-200">
-              Delivery replay
-            </p>
-            <p className="text-[11px] leading-snug text-violet-950/90 dark:text-violet-100/90">
+          <div
+            className="mb-3 space-y-2 rounded-lg border border-slate-300 bg-white p-3 dark:border-gdc-border dark:bg-gdc-card"
+            data-testid="log-detail-replay-panel"
+          >
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-gdc-muted">Recovery · delivery replay</p>
+            <p className="text-sm leading-snug text-slate-700 dark:text-slate-200">
               Re-send events from this failed delivery log. Checkpoints are not updated.
             </p>
             <div className="flex flex-wrap gap-2">
@@ -684,7 +737,8 @@ export function LogDetailDrawer({
                 type="button"
                 disabled={replayBusy}
                 onClick={() => void runReplay(true)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-violet-300 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-violet-900 hover:bg-violet-100/80 disabled:opacity-60 dark:border-violet-700 dark:bg-gdc-card dark:text-violet-100"
+                data-testid="delivery-log-dry-run-replay"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-60 dark:border-gdc-border dark:bg-gdc-elevated dark:text-slate-100"
               >
                 {replayBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <RotateCcw className="h-3.5 w-3.5" aria-hidden />}
                 Dry-run replay
@@ -696,7 +750,7 @@ export function LogDetailDrawer({
                   setReplayError(null)
                   setLiveReplayConfirmOpen(true)
                 }}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-violet-600 bg-violet-600 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-violet-700 disabled:opacity-60"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-900 bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60 dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
                 data-testid="delivery-log-live-replay-open"
               >
                 {replayBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <RotateCcw className="h-3.5 w-3.5" aria-hidden />}
@@ -704,10 +758,10 @@ export function LogDetailDrawer({
               </button>
             </div>
             {replayError ? (
-              <p className="text-[11px] font-medium text-red-800 dark:text-red-300">{replayError}</p>
+              <p className="text-sm font-medium text-red-800 dark:text-red-300">{replayError}</p>
             ) : null}
             {replayResult ? (
-              <div className="rounded-md border border-slate-200 bg-white/90 p-2 text-[11px] dark:border-gdc-border dark:bg-gdc-card">
+              <div className="rounded-md border border-slate-200 bg-slate-50/90 p-2 text-sm dark:border-gdc-border dark:bg-gdc-panel">
                 <p className="font-semibold text-slate-900 dark:text-slate-100">
                   {replayResult.outcome === 'dry_run_ok'
                     ? 'Dry-run OK'
@@ -732,24 +786,25 @@ export function LogDetailDrawer({
             ) : null}
           </div>
         ) : null}
-        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted">Quick actions</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted">Context</p>
         <div className="flex flex-col gap-1.5">
           <Link
             to={runtimeHref}
             onClick={onClose}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[12px] font-semibold text-slate-800 shadow-sm hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100 dark:hover:bg-gdc-input"
+            data-testid="log-detail-open-runtime"
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-900 bg-slate-900 px-3 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
           >
-            <Activity className="h-4 w-4 text-violet-600 dark:text-violet-400" aria-hidden />
+            <Activity className="h-4 w-4" aria-hidden />
             Open Runtime
-            <ArrowRight className="ml-auto h-3.5 w-3.5 text-slate-400 dark:text-gdc-muted" aria-hidden />
+            <ArrowRight className="ml-auto h-3.5 w-3.5 opacity-70" aria-hidden />
           </Link>
           {routeId != null ? (
             <Link
               to={routeEditPath(String(routeId))}
               onClick={onClose}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[12px] font-semibold text-slate-800 shadow-sm hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100 dark:hover:bg-gdc-input"
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100 dark:hover:bg-gdc-input"
             >
-              <ChevronRight className="h-4 w-4 text-violet-600 dark:text-violet-400" aria-hidden />
+              <ChevronRight className="h-4 w-4 text-slate-500" aria-hidden />
               Open Route
               <ArrowRight className="ml-auto h-3.5 w-3.5 text-slate-400 dark:text-gdc-muted" aria-hidden />
             </Link>
@@ -758,9 +813,9 @@ export function LogDetailDrawer({
             <Link
               to={destinationDetailPath(String(destId))}
               onClick={onClose}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[12px] font-semibold text-slate-800 shadow-sm hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100 dark:hover:bg-gdc-input"
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100 dark:hover:bg-gdc-input"
             >
-              <Radio className="h-4 w-4 text-violet-600 dark:text-violet-400" aria-hidden />
+              <Radio className="h-4 w-4 text-slate-500" aria-hidden />
               Open Destination
               <ArrowRight className="ml-auto h-3.5 w-3.5 text-slate-400 dark:text-gdc-muted" aria-hidden />
             </Link>
@@ -768,9 +823,9 @@ export function LogDetailDrawer({
           <button
             type="button"
             onClick={() => setTab('trace')}
-            className="inline-flex w-full items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-left text-[12px] font-semibold text-violet-900 hover:bg-violet-100/80 dark:border-violet-800/50 dark:bg-violet-950/40 dark:text-violet-100 dark:hover:bg-violet-950/55"
+            className="inline-flex w-full items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
           >
-            <Activity className="h-4 w-4 text-violet-700 dark:text-violet-300" aria-hidden />
+            <Activity className="h-4 w-4 text-slate-500" aria-hidden />
             View Trace
           </button>
         </div>
@@ -779,15 +834,15 @@ export function LogDetailDrawer({
             <Link
               to={streamEditPath(streamTarget)}
               onClick={onClose}
-              className="text-[11px] font-semibold text-violet-700 hover:underline dark:text-violet-300"
+              className="text-xs font-medium text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline dark:text-gdc-muted"
             >
-              Open workflow
+              Edit workflow
             </Link>
             <span className="text-slate-300 dark:text-gdc-muted">·</span>
             <Link
               to={streamApiTestPath(streamTarget)}
               onClick={onClose}
-              className="text-[11px] font-semibold text-violet-700 hover:underline dark:text-violet-300"
+              className="text-xs font-medium text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline dark:text-gdc-muted"
             >
               API test
             </Link>
@@ -795,21 +850,25 @@ export function LogDetailDrawer({
             <Link
               to={streamMappingPath(streamTarget)}
               onClick={onClose}
-              className="text-[11px] font-semibold text-violet-700 hover:underline"
+              className="text-xs font-medium text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline dark:text-gdc-muted"
             >
               Mapping
             </Link>
             {connId != null ? (
               <>
                 <span className="text-slate-300">·</span>
-                <Link to={connectorDetailPath(String(connId))} onClick={onClose} className="text-[11px] font-semibold text-violet-700 hover:underline">
+                <Link
+                  to={connectorDetailPath(String(connId))}
+                  onClick={onClose}
+                  className="text-xs font-medium text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline dark:text-gdc-muted"
+                >
                   Connector #{connId}
                 </Link>
               </>
             ) : null}
           </div>
         ) : null}
-        <p className="text-[10px] text-slate-500">
+        <p className="text-xs text-slate-500">
           Worker {getWorker(row)} · Host {getHost(row)} · Summary stage {pipelineStageLabel(row)}
         </p>
       </div>
