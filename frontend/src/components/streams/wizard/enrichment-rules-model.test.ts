@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   enrichmentDictFromRules,
   formatStaticPersistedValueForEditor,
+  wizardEnrichmentFromPersistedDict,
   wizardEnrichmentRulesFromPersistedDict,
 } from './enrichment-rules-model'
 
@@ -71,5 +72,89 @@ describe('wizardEnrichmentRulesFromPersistedDict nested JSON fidelity', () => {
     expect(enrichmentDictFromRules([rule!])).toEqual({ payload: nested })
     const edited = { ...rule!, staticValue: '{"a":2}', staticPersistedValue: undefined }
     expect(enrichmentDictFromRules([edited])).toEqual({ payload: '{"a":2}' })
+  })
+})
+
+describe('wizardEnrichmentFromPersistedDict type-array fidelity', () => {
+  it('hydrates runtime type-array __rules and re-emits the same form', () => {
+    const persisted = {
+      __rules: {
+        calculated: [
+          {
+            target_field: 'metadata.label',
+            expression: 'upper({{code}})',
+            label: 'Label',
+            enabled: true,
+          },
+        ],
+        lookup: [
+          {
+            target_field: 'metadata.region_name',
+            lookup_table: 'aws_regions',
+            lookup_key_field: 'region',
+          },
+        ],
+      },
+    }
+    const parsed = wizardEnrichmentFromPersistedDict(persisted)
+    expect(parsed.emitAdvancedAsTypeArray).toBe(true)
+    expect(parsed.rules).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          fieldName: 'metadata.label',
+          type: 'calculated',
+          expression: 'upper({{code}})',
+        }),
+        expect.objectContaining({
+          fieldName: 'metadata.region_name',
+          type: 'lookup',
+          lookupTable: 'aws_regions',
+          lookupKeyField: 'region',
+        }),
+      ]),
+    )
+    expect(
+      enrichmentDictFromRules(parsed.rules, {
+        advancedPassthrough: parsed.advancedPassthrough,
+        emitAdvancedAsTypeArray: parsed.emitAdvancedAsTypeArray,
+      }),
+    ).toEqual({
+      __rules: {
+        calculated: [
+          expect.objectContaining({
+            target_field: 'metadata.label',
+            expression: 'upper({{code}})',
+          }),
+        ],
+        lookup: [
+          expect.objectContaining({
+            target_field: 'metadata.region_name',
+            lookup_table: 'aws_regions',
+            lookup_key_field: 'region',
+          }),
+        ],
+      },
+    })
+  })
+
+  it('passthrough-preserves unknown type-array keys', () => {
+    const persisted = {
+      __rules: {
+        calculated: [{ target_field: 'metadata.label', expression: '1+1' }],
+        custom_future: [{ target_field: 'x', value: 1 }],
+      },
+    }
+    const parsed = wizardEnrichmentFromPersistedDict(persisted)
+    expect(parsed.advancedPassthrough).toEqual({
+      custom_future: [{ target_field: 'x', value: 1 }],
+    })
+    const out = enrichmentDictFromRules(parsed.rules, {
+      advancedPassthrough: parsed.advancedPassthrough,
+      emitAdvancedAsTypeArray: parsed.emitAdvancedAsTypeArray,
+    })
+    expect(out.__rules).toMatchObject({
+      custom_future: [{ target_field: 'x', value: 1 }],
+      calculated: [expect.objectContaining({ target_field: 'metadata.label' })],
+    })
   })
 })

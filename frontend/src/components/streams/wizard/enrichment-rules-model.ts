@@ -199,7 +199,7 @@ export function normalizeWizardEnrichmentRules(raw: unknown): WizardEnrichmentRu
 
 /**
  * Rebuild wizard enrichment rules from a persisted enrichment dict
- * (`{ field: staticValue, __rules?: { field: advancedPayload } }`).
+ * (`{ field: staticValue, __rules?: { field: advancedPayload } | { type: [...] } }`).
  */
 export function formatStaticPersistedValueForEditor(value: WizardStaticPersistedValue): string {
   if (typeof value === 'string') return value
@@ -225,11 +225,107 @@ function isJsonLikeStaticValue(value: unknown): value is WizardStaticPersistedVa
   return false
 }
 
-export function wizardEnrichmentRulesFromPersistedDict(
+function isEnrichmentRuleType(raw: string): raw is EnrichmentRuleType {
+  return ENRICHMENT_RULE_TYPES.some((t) => t.type === raw)
+}
+
+function parseConditionsFromPayload(o: Record<string, unknown>): WizardEnrichmentRule['conditions'] {
+  const conditions = Array.isArray(o.conditions)
+    ? o.conditions
+        .map((c) => {
+          if (!c || typeof c !== 'object') return null
+          const row = c as Record<string, unknown>
+          return {
+            id: newConditionId(),
+            when: String(row.when ?? ''),
+            then: String(row.then ?? ''),
+          }
+        })
+        .filter((c): c is { id: string; when: string; then: string } => c != null)
+    : [{ id: newConditionId(), when: '', then: '' }]
+  return conditions.length > 0 ? conditions : [{ id: newConditionId(), when: '', then: '' }]
+}
+
+function normalizeFormatFromPayload(o: Record<string, unknown>): WizardEnrichmentRule['normalizeFormat'] {
+  if (o.format === 'lowercase' || o.format === 'uppercase' || o.format === 'trim') return o.format
+  if (
+    o.normalizeFormat === 'lowercase' ||
+    o.normalizeFormat === 'uppercase' ||
+    o.normalizeFormat === 'trim'
+  ) {
+    return o.normalizeFormat
+  }
+  return 'iso8601'
+}
+
+function ruleFromAdvancedPayload(
+  type: EnrichmentRuleType,
+  fieldName: string,
+  o: Record<string, unknown>,
+  index: number,
+): WizardEnrichmentRule {
+  const staticRaw = o.staticValue ?? o.value
+  const hasPersistedStatic =
+    type === 'static' &&
+    (typeof staticRaw === 'number' ||
+      typeof staticRaw === 'boolean' ||
+      staticRaw === null ||
+      (isJsonLikeStaticValue(staticRaw) &&
+        (Array.isArray(staticRaw) || (typeof staticRaw === 'object' && staticRaw !== null))))
+  return {
+    ...defaultRuleForType(type, index),
+    label: String(o.label ?? fieldName),
+    fieldName,
+    type,
+    enabled: o.enabled !== false,
+    expression: String(o.expression ?? ''),
+    lookupTable: String(o.lookup_table ?? o.lookupTable ?? 'aws-regions'),
+    lookupKeyField: String(o.lookup_key_field ?? o.lookupKeyField ?? ''),
+    conditions: parseConditionsFromPayload(o),
+    conditionalDefault: String(o.default ?? o.conditionalDefault ?? ''),
+    normalizeSourceField: String(o.source_field ?? o.normalizeSourceField ?? 'timestamp'),
+    normalizeFormat: normalizeFormatFromPayload(o),
+    staticValue:
+      hasPersistedStatic && isJsonLikeStaticValue(staticRaw)
+        ? formatStaticPersistedValueForEditor(staticRaw)
+        : String(staticRaw ?? ''),
+    ...(hasPersistedStatic && isJsonLikeStaticValue(staticRaw)
+      ? { staticPersistedValue: staticRaw }
+      : {}),
+  }
+}
+
+function ruleFromTypeArrayItem(
+  type: EnrichmentRuleType,
+  raw: unknown,
+  index: number,
+): WizardEnrichmentRule | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const o = raw as Record<string, unknown>
+  const fieldName = String(o.target_field ?? o.fieldName ?? o.field_name ?? o.field ?? '').trim()
+  if (!fieldName) return null
+  return ruleFromAdvancedPayload(type, fieldName, o, index)
+}
+
+export type WizardEnrichmentFromPersisted = {
+  rules: WizardEnrichmentRule[]
+  /** Unconverted `__rules` fragments (unknown type keys / unparseable items). */
+  advancedPassthrough: Record<string, unknown>
+  /**
+   * True when advanced rules were present only as runtime type-array form
+   * (`__rules: { calculated: [{ target_field, ... }] }`). Persist re-emits that form.
+   */
+  emitAdvancedAsTypeArray: boolean
+}
+
+export function wizardEnrichmentFromPersistedDict(
   rec: Record<string, unknown> | null | undefined,
-): WizardEnrichmentRule[] {
-  if (!rec || typeof rec !== 'object') return []
+): WizardEnrichmentFromPersisted {
+  if (!rec || typeof rec !== 'object') {
+    return { rules: [], advancedPassthrough: {}, emitAdvancedAsTypeArray: false }
+  }
   const rules: WizardEnrichmentRule[] = []
+  const advancedPassthrough: Record<string, unknown> = {}
   const advancedRaw = rec.__rules
   const advanced =
     advancedRaw && typeof advancedRaw === 'object' && !Array.isArray(advancedRaw)
@@ -279,56 +375,51 @@ export function wizardEnrichmentRulesFromPersistedDict(
     }
   }
 
-  for (const [fieldName, payload] of Object.entries(advanced)) {
-    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) continue
+  let sawTypeArray = false
+  let sawFieldKeyedAdvanced = false
+
+  for (const [key, payload] of Object.entries(advanced)) {
+    if (Array.isArray(payload)) {
+      const typeKey = key.trim().toLowerCase()
+      if (!isEnrichmentRuleType(typeKey)) {
+        advancedPassthrough[key] = payload
+        continue
+      }
+      sawTypeArray = true
+      const kept: unknown[] = []
+      for (const item of payload) {
+        const rule = ruleFromTypeArrayItem(typeKey, item, rules.length)
+        if (rule) {
+          rules.push(rule)
+        } else {
+          kept.push(item)
+        }
+      }
+      if (kept.length > 0) advancedPassthrough[key] = kept
+      continue
+    }
+    if (!payload || typeof payload !== 'object') {
+      advancedPassthrough[key] = payload
+      continue
+    }
+    sawFieldKeyedAdvanced = true
     const o = payload as Record<string, unknown>
-    const typeRaw = typeof o.type === 'string' ? o.type : 'calculated'
-    const type: EnrichmentRuleType =
-      typeRaw === 'lookup' ||
-      typeRaw === 'conditional' ||
-      typeRaw === 'normalize' ||
-      typeRaw === 'static' ||
-      typeRaw === 'calculated'
-        ? typeRaw
-        : 'calculated'
-    const conditions = Array.isArray(o.conditions)
-      ? o.conditions
-          .map((c) => {
-            if (!c || typeof c !== 'object') return null
-            const row = c as Record<string, unknown>
-            return {
-              id: newConditionId(),
-              when: String(row.when ?? ''),
-              then: String(row.then ?? ''),
-            }
-          })
-          .filter((c): c is { id: string; when: string; then: string } => c != null)
-      : [{ id: newConditionId(), when: '', then: '' }]
-    rules.push({
-      ...defaultRuleForType(type, rules.length),
-      label: String(o.label ?? fieldName),
-      fieldName,
-      type,
-      enabled: o.enabled !== false,
-      expression: String(o.expression ?? ''),
-      lookupTable: String(o.lookup_table ?? o.lookupTable ?? 'aws-regions'),
-      lookupKeyField: String(o.lookup_key_field ?? o.lookupKeyField ?? ''),
-      conditions: conditions.length > 0 ? conditions : [{ id: newConditionId(), when: '', then: '' }],
-      conditionalDefault: String(o.default ?? o.conditionalDefault ?? ''),
-      normalizeSourceField: String(o.source_field ?? o.normalizeSourceField ?? 'timestamp'),
-      normalizeFormat:
-        o.format === 'lowercase' || o.format === 'uppercase' || o.format === 'trim'
-          ? o.format
-          : o.normalizeFormat === 'lowercase' ||
-              o.normalizeFormat === 'uppercase' ||
-              o.normalizeFormat === 'trim'
-            ? o.normalizeFormat
-            : 'iso8601',
-      staticValue: String(o.staticValue ?? o.value ?? ''),
-    })
+    const typeRaw = typeof o.type === 'string' ? o.type.trim().toLowerCase() : 'calculated'
+    const type: EnrichmentRuleType = isEnrichmentRuleType(typeRaw) ? typeRaw : 'calculated'
+    rules.push(ruleFromAdvancedPayload(type, key, o, rules.length))
   }
 
-  return rules
+  return {
+    rules,
+    advancedPassthrough,
+    emitAdvancedAsTypeArray: sawTypeArray && !sawFieldKeyedAdvanced,
+  }
+}
+
+export function wizardEnrichmentRulesFromPersistedDict(
+  rec: Record<string, unknown> | null | undefined,
+): WizardEnrichmentRule[] {
+  return wizardEnrichmentFromPersistedDict(rec).rules
 }
 
 function isNowUtcTemplate(s: string): boolean {
@@ -354,9 +445,49 @@ export function enrichmentRuleSourceLabel(rule: WizardEnrichmentRule): string {
   return 'Static'
 }
 
-export function enrichmentDictFromRules(rules: readonly WizardEnrichmentRule[]): Record<string, unknown> {
+export type EnrichmentDictFromRulesOptions = {
+  /** Unconverted advanced fragments merged under `__rules` (editor keys win on conflict). */
+  advancedPassthrough?: Record<string, unknown>
+  /**
+   * Emit advanced rules as runtime type-array form
+   * (`__rules: { calculated: [{ target_field, ... }] }`) instead of field-keyed.
+   */
+  emitAdvancedAsTypeArray?: boolean
+}
+
+function advancedPayloadFromRule(rule: WizardEnrichmentRule): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    type: rule.type,
+    label: rule.label,
+    enabled: rule.enabled,
+  }
+  if (rule.type === 'static') {
+    payload.value =
+      rule.staticPersistedValue !== undefined ? rule.staticPersistedValue : rule.staticValue
+  }
+  if (rule.type === 'calculated') payload.expression = rule.expression
+  if (rule.type === 'lookup') {
+    payload.lookup_table = rule.lookupTable
+    payload.lookup_key_field = rule.lookupKeyField
+  }
+  if (rule.type === 'conditional') {
+    payload.conditions = rule.conditions.map((c) => ({ when: c.when, then: c.then }))
+    payload.default = rule.conditionalDefault
+  }
+  if (rule.type === 'normalize') {
+    payload.source_field = rule.normalizeSourceField
+    payload.format = rule.normalizeFormat
+  }
+  return payload
+}
+
+export function enrichmentDictFromRules(
+  rules: readonly WizardEnrichmentRule[],
+  options?: EnrichmentDictFromRulesOptions,
+): Record<string, unknown> {
   const out: Record<string, unknown> = {}
-  const advanced: Record<string, unknown> = {}
+  const advancedFieldKeyed: Record<string, unknown> = {}
+  const advancedTypeArray: Record<string, unknown[]> = {}
 
   for (const rule of rules) {
     const key = rule.fieldName.trim()
@@ -368,28 +499,35 @@ export function enrichmentDictFromRules(rules: readonly WizardEnrichmentRule[]):
       continue
     }
 
-    const payload: Record<string, unknown> = {
-      type: rule.type,
-      label: rule.label,
-      enabled: rule.enabled,
+    if (options?.emitAdvancedAsTypeArray === true) {
+      const item = advancedPayloadFromRule(rule)
+      delete item.type
+      item.target_field = key
+      const bucket = advancedTypeArray[rule.type] ?? []
+      bucket.push(item)
+      advancedTypeArray[rule.type] = bucket
+      continue
     }
-    if (rule.type === 'calculated') payload.expression = rule.expression
-    if (rule.type === 'lookup') {
-      payload.lookup_table = rule.lookupTable
-      payload.lookup_key_field = rule.lookupKeyField
-    }
-    if (rule.type === 'conditional') {
-      payload.conditions = rule.conditions.map((c) => ({ when: c.when, then: c.then }))
-      payload.default = rule.conditionalDefault
-    }
-    if (rule.type === 'normalize') {
-      payload.source_field = rule.normalizeSourceField
-      payload.format = rule.normalizeFormat
-    }
-    advanced[key] = payload
+
+    advancedFieldKeyed[key] = advancedPayloadFromRule(rule)
   }
 
-  if (Object.keys(advanced).length > 0) out.__rules = advanced
+  const passthrough = options?.advancedPassthrough ?? {}
+  const hasPassthrough = Object.keys(passthrough).length > 0
+  if (options?.emitAdvancedAsTypeArray === true) {
+    const merged: Record<string, unknown> = { ...passthrough }
+    for (const [type, items] of Object.entries(advancedTypeArray)) {
+      const prior = merged[type]
+      if (Array.isArray(prior)) {
+        merged[type] = [...prior, ...items]
+      } else {
+        merged[type] = items
+      }
+    }
+    if (Object.keys(merged).length > 0) out.__rules = merged
+  } else if (Object.keys(advancedFieldKeyed).length > 0 || hasPassthrough) {
+    out.__rules = { ...passthrough, ...advancedFieldKeyed }
+  }
   return out
 }
 

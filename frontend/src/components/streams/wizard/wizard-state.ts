@@ -651,6 +651,17 @@ export type WizardRouteTransformOverride = {
   enrichmentEnabled?: boolean
   /** Persisted conflict policy; written back unchanged unless edited. */
   enrichmentOverridePolicy?: WizardRouteEnrichmentOverridePolicy | null
+  /**
+   * Unconverted advanced `__rules` fragments (e.g. unknown type-array keys) merged back on save.
+   */
+  enrichmentAdvancedPassthrough?: Record<string, unknown>
+  /**
+   * When true, persist advanced enrichment as runtime type-array form
+   * (`__rules: { calculated: [{ target_field, ... }] }`).
+   */
+  enrichmentEmitAdvancedAsTypeArray?: boolean
+  /** Persisted route mapping raw_payload_mode; written back unchanged unless edited. */
+  rawPayloadMode?: string | null
   unmappedFieldsPolicy: WizardUnmappedFieldsPolicy
 }
 
@@ -1742,7 +1753,12 @@ export function resolveWizardRouteDraftId(
 
 export type RouteTransformMappingPersistAction =
   | { inherit: true }
-  | { inherit: false; fieldMappings: Record<string, unknown> }
+  | {
+      inherit: false
+      fieldMappings: Record<string, unknown>
+      /** Present when hydrated/edited; always written on mapping override save. */
+      rawPayloadMode?: string | null
+    }
 
 export type RouteTransformEnrichmentPersistAction =
   | { inherit: true }
@@ -1765,6 +1781,7 @@ export type RouteTransformOverridePersistPayload = {
   enrichmentRowPresent: boolean
   enrichmentEnabled: boolean
   enrichmentOverridePolicy: WizardRouteEnrichmentOverridePolicy
+  rawPayloadMode?: string | null
 }
 
 function normalizeEnrichmentOverridePolicy(
@@ -1780,7 +1797,10 @@ export function routeTransformOverridePersistPayload(
 ): RouteTransformOverridePersistPayload | null {
   if (!override) return null
   const fieldMappings = buildWizardFieldMappingsPayload(override)
-  const enrichment = enrichmentDictFromRows(override.enrichment)
+  const enrichment = enrichmentDictFromRows(override.enrichment, {
+    advancedPassthrough: override.enrichmentAdvancedPassthrough,
+    emitAdvancedAsTypeArray: override.enrichmentEmitAdvancedAsTypeArray === true,
+  })
   const enrichmentRowPresent =
     override.enrichmentRowPresent === true || Object.keys(enrichment).length > 0
   if (Object.keys(fieldMappings).length === 0 && !enrichmentRowPresent) return null
@@ -1790,6 +1810,7 @@ export function routeTransformOverridePersistPayload(
     enrichmentRowPresent,
     enrichmentEnabled: override.enrichmentEnabled !== false,
     enrichmentOverridePolicy: normalizeEnrichmentOverridePolicy(override.enrichmentOverridePolicy),
+    ...(override.rawPayloadMode !== undefined ? { rawPayloadMode: override.rawPayloadMode } : {}),
   }
 }
 
@@ -1851,7 +1872,13 @@ export function buildRouteTransformPersistPlans(
     plans.push({
       routeId,
       mapping: hasMapping
-        ? { inherit: false, fieldMappings: payload.fieldMappings }
+        ? {
+            inherit: false,
+            fieldMappings: payload.fieldMappings,
+            ...(payload.rawPayloadMode !== undefined
+              ? { rawPayloadMode: payload.rawPayloadMode }
+              : {}),
+          }
         : { inherit: true },
       enrichment: payload.enrichmentRowPresent
         ? {

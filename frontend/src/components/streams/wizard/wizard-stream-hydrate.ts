@@ -19,7 +19,7 @@ import type { MappingMode } from '../../../types/advancedTransform'
 import { DEFAULT_MESSAGE_PREFIX_TEMPLATE, defaultMessagePrefixEnabled } from '../../../utils/messagePrefixDefaults'
 import {
   normalizeWizardEnrichmentRules,
-  wizardEnrichmentRulesFromPersistedDict,
+  wizardEnrichmentFromPersistedDict,
 } from './enrichment-rules-model'
 import { fullEventRegexConfigJsonFromFieldMappings } from './wizard-full-event-regex-config'
 import {
@@ -167,16 +167,24 @@ export function applyRouteTransformConfigsToDraft(
     overridePolicyRaw === 'KEEP_EXISTING'
       ? overridePolicyRaw
       : 'KEEP_EXISTING'
+  const enrichmentParsed = wizardEnrichmentFromPersistedDict(enrichmentRec)
   const transform: WizardRouteTransformOverride = {
     mapping: mappingRowsFromFieldMappings(fieldMappings),
     mappingMode: mappingModeFromFieldMappings(fieldMappings),
     fullEventJsonataExpression: fullEventJsonataExpressionFromFieldMappings(fieldMappings),
     fullEventRegexConfigJson: fullEventRegexConfigJsonFromFieldMappings(fieldMappings),
     transformRules: parseTransformRulesFromFieldMappings(fieldMappings),
-    enrichment: wizardEnrichmentRulesFromPersistedDict(enrichmentRec),
+    enrichment: enrichmentParsed.rules,
     enrichmentRowPresent: !inheritEnrichment,
     enrichmentEnabled: !inheritEnrichment ? enrichmentCfg.enrichment?.enabled !== false : undefined,
     enrichmentOverridePolicy: !inheritEnrichment ? enrichmentOverridePolicy : undefined,
+    ...(Object.keys(enrichmentParsed.advancedPassthrough).length > 0
+      ? { enrichmentAdvancedPassthrough: enrichmentParsed.advancedPassthrough }
+      : {}),
+    ...(enrichmentParsed.emitAdvancedAsTypeArray
+      ? { enrichmentEmitAdvancedAsTypeArray: true }
+      : {}),
+    ...(!inheritMapping ? { rawPayloadMode: mappingCfg.mapping?.raw_payload_mode ?? null } : {}),
     unmappedFieldsPolicy: unmappedFieldsPolicyFromFieldMappings(fieldMappings),
   }
 

@@ -98,9 +98,16 @@ export async function persistWizardRouteTransformOverrides(
       if (mappingAction.inherit === true) {
         await saveRouteMappingUiConfig(plan.routeId, { inherit: true })
       } else {
+        const mappingBody: {
+          field_mappings: Record<string, unknown>
+          raw_payload_mode?: string | null
+        } = { field_mappings: mappingAction.fieldMappings }
+        if (mappingAction.rawPayloadMode !== undefined) {
+          mappingBody.raw_payload_mode = mappingAction.rawPayloadMode
+        }
         await saveRouteMappingUiConfig(plan.routeId, {
           inherit: false,
-          mapping: { field_mappings: mappingAction.fieldMappings },
+          mapping: mappingBody,
         })
       }
     } catch (err) {

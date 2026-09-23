@@ -306,6 +306,107 @@ describe('wizard-stream-persist route sync + transform', () => {
     expect(saveRouteEnrichmentUiConfig).not.toHaveBeenCalledWith(20, { inherit: true })
   })
 
+  it('preserves raw_payload_mode on mapping override save', async () => {
+    await persistWizardRouteTransformOverrides(
+      [
+        {
+          key: 'route-20',
+          destinationId: 20,
+          enabled: true,
+          failurePolicy: 'LOG_AND_CONTINUE',
+          rateLimitJson: {},
+          inherit: { transform: false, protection: true, classification: true, policy: true },
+          overrides: {
+            transform: {
+              mapping: [{ id: 'm1', outputField: 'msg', sourceJsonPath: '$.message' }],
+              mappingMode: 'basic_jsonpath',
+              fullEventJsonataExpression: '',
+              fullEventRegexConfigJson: '',
+              transformRules: [],
+              enrichment: [],
+              rawPayloadMode: 'include_raw',
+              unmappedFieldsPolicy: 'pass_through',
+            },
+          },
+        },
+      ],
+      { 'route-20': 20 },
+    )
+    expect(saveRouteMappingUiConfig).toHaveBeenCalledWith(
+      20,
+      expect.objectContaining({
+        inherit: false,
+        mapping: expect.objectContaining({
+          field_mappings: expect.objectContaining({ msg: '$.message' }),
+          raw_payload_mode: 'include_raw',
+        }),
+      }),
+    )
+  })
+
+  it('preserves type-array advanced enrichment on save', async () => {
+    await persistWizardRouteTransformOverrides(
+      [
+        {
+          key: 'route-20',
+          destinationId: 20,
+          enabled: true,
+          failurePolicy: 'LOG_AND_CONTINUE',
+          rateLimitJson: {},
+          inherit: { transform: false, protection: true, classification: true, policy: true },
+          overrides: {
+            transform: {
+              mapping: [],
+              mappingMode: 'basic_jsonpath',
+              fullEventJsonataExpression: '',
+              fullEventRegexConfigJson: '',
+              transformRules: [],
+              enrichment: [
+                {
+                  id: 'e1',
+                  label: 'Label',
+                  fieldName: 'metadata.label',
+                  type: 'calculated',
+                  enabled: true,
+                  staticValue: '',
+                  expression: 'upper({{code}})',
+                  lookupTable: 'aws-regions',
+                  lookupKeyField: '',
+                  conditions: [{ id: 'c1', when: '', then: '' }],
+                  conditionalDefault: '',
+                  normalizeSourceField: 'timestamp',
+                  normalizeFormat: 'iso8601',
+                },
+              ],
+              enrichmentRowPresent: true,
+              enrichmentEmitAdvancedAsTypeArray: true,
+              unmappedFieldsPolicy: 'pass_through',
+            },
+          },
+        },
+      ],
+      { 'route-20': 20 },
+    )
+    expect(saveRouteEnrichmentUiConfig).toHaveBeenCalledWith(
+      20,
+      expect.objectContaining({
+        inherit: false,
+        enrichment: expect.objectContaining({
+          enrichment: {
+            __rules: {
+              calculated: [
+                expect.objectContaining({
+                  target_field: 'metadata.label',
+                  expression: 'upper({{code}})',
+                }),
+              ],
+            },
+          },
+        }),
+      }),
+    )
+  })
+
   it('clears both Transform subcomponents when switching to inherit global', async () => {
     await persistWizardRouteTransformOverrides(
       [
