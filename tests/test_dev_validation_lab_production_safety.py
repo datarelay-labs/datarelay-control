@@ -57,6 +57,13 @@ class TestRuntimeGatesProduction:
         monkeypatch.setattr(settings, "ENABLE_DEV_VALIDATION_LAB", True, raising=False)
         assert dev_validation_runtime_enabled() is True
 
+    def test_dev_validation_runtime_disabled_in_development_when_flag_false(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(settings, "APP_ENV", "development", raising=False)
+        monkeypatch.setattr(settings, "ENABLE_DEV_VALIDATION_LAB", False, raising=False)
+        assert dev_validation_runtime_enabled() is False
+
     def test_lab_validation_skipped_in_production_without_lab_flag(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

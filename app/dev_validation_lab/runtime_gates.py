@@ -21,15 +21,14 @@ def is_production_app_env(app_env: str | None = None) -> bool:
 def dev_validation_runtime_enabled() -> bool:
     """Whether lab streams and ``dev_lab_*`` validations may execute in this process.
 
-    In production, lab runtime is off unless ``ENABLE_DEV_VALIDATION_LAB`` is explicitly true.
-    In non-production, runtime is not suppressed at the APP_ENV layer (slice flags still apply).
+    ``ENABLE_DEV_VALIDATION_LAB=false`` keeps existing ``[DEV VALIDATION]`` and
+    ``[DEV E2E]`` rows out of the scheduler in every environment, including
+    development. Production seeding remains separately refused by ``lab_effective()``.
     """
 
     from app.config import settings
 
-    if is_production_app_env():
-        return bool(getattr(settings, "ENABLE_DEV_VALIDATION_LAB", False))
-    return True
+    return bool(getattr(settings, "ENABLE_DEV_VALIDATION_LAB", False))
 
 
 def stream_name_is_dev_validation_lab(name: str | None) -> bool:

@@ -174,16 +174,20 @@ class PlatformAlertMonitor:
                 updated = updated.replace(tzinfo=UTC)
             if now - updated < _CHECKPOINT_STALL_THRESHOLD:
                 continue
-            # only alert if there is recent activity (run attempts), otherwise
-            # we'd alert on idle clones forever.
-            recent_runs = db.scalar(
-                select(func.count(DeliveryLog.id)).where(
+            # Bound the probe to the recent window. Counting every historical
+            # run_complete since an old checkpoint scans large partitions.
+            recent_floor = now - _RECENT_WINDOW
+            activity_since = updated if updated > recent_floor else recent_floor
+            recent_activity = db.scalar(
+                select(DeliveryLog.id)
+                .where(
                     DeliveryLog.stream_id == s.id,
                     DeliveryLog.stage == "run_complete",
-                    DeliveryLog.created_at >= updated,
+                    DeliveryLog.created_at >= activity_since,
                 )
-            ) or 0
-            if int(recent_runs) <= 0:
+                .limit(1)
+            )
+            if recent_activity is None:
                 continue
             events.append(
                 AlertEvent(
@@ -195,7 +199,7 @@ class PlatformAlertMonitor:
                     stream_id=int(s.id),
                     stream_name=str(s.name),
                     trigger_source="monitor",
-                    extra={"recent_runs": int(recent_runs)},
+                    extra={"recent_runs": 1, "activity_probe": "exists_within_recent_window"},
                 )
             )
         return events

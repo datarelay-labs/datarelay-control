@@ -298,10 +298,37 @@ class Scheduler:
                     interval = float(gate.polling_interval)
 
                     from app.dev_validation_lab.runtime_gates import (
+                        dev_validation_runtime_enabled,
                         is_lab_fixture_stream,
                         is_run_once_harness_stream,
                     )
                     from app.dev_validation_lab.lab_resource_guardrail import lab_generation_should_pause
+                    from app.streams.runtime_eligibility import is_push_only_stream_type
+
+                    if is_push_only_stream_type(getattr(gate, "stream_type", None)):
+                        logger.info(
+                            "%s",
+                            {
+                                "stage": "scheduler_skip_push_only_stream",
+                                "stream_id": stream_id,
+                                "stream_name": gate.name,
+                                "stream_type": getattr(gate, "stream_type", None),
+                                "reason": "push_ingest_not_polled",
+                            },
+                        )
+                        break
+
+                    if is_lab_fixture_stream(gate.name) and not dev_validation_runtime_enabled():
+                        logger.info(
+                            "%s",
+                            {
+                                "stage": "scheduler_skip_lab_stream_runtime_disabled",
+                                "stream_id": stream_id,
+                                "stream_name": gate.name,
+                                "reason": "dev_validation_lab_disabled",
+                            },
+                        )
+                        break
 
                     # Cross-product / FULL E2E streams are owned by harness run-once / webhook ingest.
                     # Polling them races the in-process StreamRunner lock and yields RUN_ALREADY_ACTIVE.

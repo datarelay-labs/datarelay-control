@@ -34,7 +34,7 @@ from app.platform_admin import journal
 from app.platform_admin.models import PlatformRetentionPolicy
 from app.platform_admin.repository import get_retention_policy_row
 from app.retention.batch import batch_delete_by_time_before
-from app.retention.safety import retention_execution_decision
+from app.retention.safety import AUTOMATIC_RETENTION_TRIGGERS, retention_execution_decision
 from app.validation.models import ValidationRecoveryEvent, ValidationRun
 
 logger = logging.getLogger(__name__)
@@ -369,11 +369,31 @@ def run_cleanup(
     next_at = _compute_next_cleanup(row)
     decision = retention_execution_decision(trigger=trigger)
     effective_dry_run = dry_run or not decision.allowed
+    automatic_blocked = str(trigger) in AUTOMATIC_RETENTION_TRIGGERS and not decision.allowed
     for cat in requested:
         if cat not in CATEGORIES:
             continue
-        outcome = _run_category(db, row, cat, dry_run=effective_dry_run)
-        if not dry_run and not decision.allowed and outcome.status != "not_applicable":
+        if automatic_blocked:
+            # Disabled destructive retention must not preview-count large tables.
+            outcome = CleanupOutcome(
+                category=cat,
+                status="skipped",
+                duration_ms=0,
+                cutoff=_now_utc() - timedelta(days=max(1, _category_retention_days(row, cat))),
+                retention_days=_category_retention_days(row, cat),
+                enabled=_category_enabled(row, cat),
+                dry_run=False,
+                message=f"retention execution skipped without preview count: {decision.reason}",
+                notes={"count_skipped": True, "execution_guard": decision.notes},
+            )
+        else:
+            outcome = _run_category(db, row, cat, dry_run=effective_dry_run)
+        if (
+            not automatic_blocked
+            and not dry_run
+            and not decision.allowed
+            and outcome.status != "not_applicable"
+        ):
             outcome = replace(
                 outcome,
                 status="skipped",
