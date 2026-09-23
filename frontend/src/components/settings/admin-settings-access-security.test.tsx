@@ -51,9 +51,16 @@ vi.mock('./admin-network-settings-page', () => ({
 vi.mock('./admin-settings-operational', () => ({
   AdminOperationalDashboard: () => (
     <div>
-      <h3 id="admin-retention-heading">Retention / cleanup policy</h3>
       <h3 id="admin-health-heading">Health monitoring</h3>
     </div>
+  ),
+}))
+
+vi.mock('./admin-retention-settings', () => ({
+  AdminRetentionSettings: () => (
+    <section aria-labelledby="admin-retention-heading">
+      <h3 id="admin-retention-heading">Retention / cleanup</h3>
+    </section>
   ),
 }))
 

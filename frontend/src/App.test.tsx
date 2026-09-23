@@ -709,8 +709,8 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
       await screen.findByText(/not database disaster recovery/i, {}, { timeout: 15000 }),
     ).toBeInTheDocument()
     expect(await screen.findByRole('heading', { level: 2, name: 'Backup & Import' })).toBeInTheDocument()
-    expect(screen.getByRole('region', { name: 'Workspace snapshot export' })).toBeInTheDocument()
-    expect(screen.getByRole('region', { name: 'Import configuration' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Export current workspace' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Choose source, validate, review, apply' })).toBeInTheDocument()
     expect(screen.queryByRole('option', { name: /full restore/i })).not.toBeInTheDocument()
   })
 
@@ -755,17 +755,16 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
       await screen.findByText(/Read-only readiness checks for production operations/i, {}, { timeout: 8000 }),
     ).toBeInTheDocument()
     expect(await screen.findByRole('heading', { name: 'User Management' }, { timeout: 8000 })).toBeInTheDocument()
-    expect(await screen.findByRole('heading', { name: 'System & backup' }, { timeout: 8000 })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Backup & Import' }, { timeout: 8000 })).toBeInTheDocument()
     expect(
       await screen.findByRole('heading', { name: 'Network / Reverse Proxy Settings' }, { timeout: 8000 }),
     ).toBeInTheDocument()
     expect(
-      await screen.findByRole('heading', { name: 'Retention / cleanup policy' }, { timeout: 8000 }),
+      await screen.findByRole('heading', { name: 'Retention / cleanup' }, { timeout: 8000 }),
     ).toBeInTheDocument()
     expect(await screen.findByRole('heading', { name: 'Audit log' }, { timeout: 8000 })).toBeInTheDocument()
     expect(await screen.findByRole('heading', { name: 'Config versioning' }, { timeout: 8000 })).toBeInTheDocument()
     expect(await screen.findByRole('heading', { name: 'Health monitoring' }, { timeout: 8000 })).toBeInTheDocument()
-    expect(await screen.findByText('Backup & Import', {}, { timeout: 8000 })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Alerting' })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Dev validation lab status' })).not.toBeInTheDocument()
   }, 20000)

@@ -42,11 +42,18 @@ vi.mock('./admin-network-settings-page', () => ({
 vi.mock('./admin-settings-operational', () => ({
   AdminOperationalDashboard: () => (
     <div>
-      <h3 id="admin-retention-heading">Retention / cleanup policy</h3>
       <h3 id="admin-health-heading">Health monitoring</h3>
       <h3>Audit log</h3>
       <h3>Config versioning</h3>
     </div>
+  ),
+}))
+
+vi.mock('./admin-retention-settings', () => ({
+  AdminRetentionSettings: () => (
+    <section aria-labelledby="admin-retention-heading">
+      <h3 id="admin-retention-heading">Retention / cleanup</h3>
+    </section>
   ),
 }))
 
@@ -96,6 +103,8 @@ describe('AdminSettingsPage IA modernization', () => {
     expect(screen.getByRole('heading', { name: 'User Management' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Display timezone' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Network / Reverse Proxy Settings' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Retention / cleanup' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Backup & Import' })).toBeInTheDocument()
     expect(screen.getByTestId('admin-https-current-state')).toBeInTheDocument()
     expect(screen.getByTestId('admin-https-configuration')).toBeInTheDocument()
     expect(screen.queryByText(/localStorage/i)).not.toBeInTheDocument()
@@ -106,6 +115,10 @@ describe('AdminSettingsPage IA modernization', () => {
     expect(screen.getByRole('link', { name: 'Platform & network: Network' })).toHaveAttribute(
       'href',
       '#admin-network-heading',
+    )
+    expect(screen.getByRole('link', { name: 'Lifecycle & recovery: Backup' })).toHaveAttribute(
+      'href',
+      '/operations/backup',
     )
   })
 

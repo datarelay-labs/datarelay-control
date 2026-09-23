@@ -1,6 +1,5 @@
 import {
   ChevronRight,
-  ClipboardList,
   Download,
   Eye,
   EyeOff,
@@ -41,6 +40,7 @@ import { AdminDevValidationPanel } from './admin-dev-validation-panel'
 import { AdminDisplayTimezoneSettings } from './admin-display-timezone-settings'
 import { AdminMaintenanceCenter } from './admin-maintenance-center'
 import { AdminNetworkSettingsPage } from './admin-network-settings-page'
+import { AdminRetentionSettings } from './admin-retention-settings'
 import { AdminOperationalDashboard } from './admin-settings-operational'
 import { passwordsMatch, validateNewPassword } from './admin-settings-validation'
 import {
@@ -58,6 +58,7 @@ const SETTINGS_SECTION_JUMPS = [
   { href: '#admin-display-timezone-heading', label: 'Timezone', group: 'Platform & network' },
   { href: '#admin-network-heading', label: 'Network', group: 'Platform & network' },
   { href: '#admin-retention-heading', label: 'Retention', group: 'Lifecycle & recovery' },
+  { href: '/operations/backup', label: 'Backup', group: 'Lifecycle & recovery' },
   { href: '#admin-health-heading', label: 'System Health', group: 'Operations & audit' },
 ] as const
 
@@ -1046,57 +1047,58 @@ export function AdminSettingsPage() {
         >
           Lifecycle & recovery
         </h2>
+        <p className="max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-gdc-muted">
+          Retention cleanup and portable configuration recovery live here. Audit history and system health stay under
+          Operations & audit.
+        </p>
 
-      {/* System & backup */}
-      <section className={cn(cardShell, 'p-4 md:p-6')} aria-labelledby="admin-system-heading">
-        <div className="mb-4 flex gap-3">
-          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-700 dark:border-gdc-border dark:bg-gdc-elevated dark:text-slate-200">
-            <Server className="h-5 w-5" aria-hidden />
-          </span>
-          <div>
-            <h3 id="admin-system-heading" className="text-[15px] font-semibold text-slate-900 dark:text-slate-50">
-              System & backup
-            </h3>
-            <p className="mt-0.5 text-[12px] text-slate-600 dark:text-gdc-muted">Operational utilities. Backup engine behavior is unchanged.</p>
+      <AdminRetentionSettings
+        reloadToken={opReload}
+        readOnly={readOnly}
+        busy={busy}
+        setBusy={setBusy}
+        setPageMsg={setPageMsg}
+        setPageErr={setPageErr}
+      />
+
+      <section
+        className={cn(cardShell, 'overflow-hidden')}
+        aria-labelledby="admin-backup-recovery-heading"
+        data-testid="admin-backup-recovery-card"
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 px-4 py-5 dark:border-gdc-border md:px-6">
+          <div className="flex min-w-0 gap-3">
+            <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-sky-500/20 bg-sky-500/[0.07] text-sky-700 dark:border-sky-400/35 dark:bg-sky-500/15 dark:text-sky-100">
+              <HardDrive className="h-5 w-5" aria-hidden />
+            </span>
+            <div className="min-w-0">
+              <h3 id="admin-backup-recovery-heading" className="text-base font-semibold text-slate-900 dark:text-slate-50">
+                Backup & Import
+              </h3>
+              <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-gdc-muted">
+                Export or import portable JSON workspace configuration (additive or clone). Database disaster recovery uses
+                PostgreSQL backup/restore — not JSON import.
+              </p>
+            </div>
           </div>
+          <button
+            type="button"
+            onClick={() => navigate('/operations/backup')}
+            className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200/90 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100 dark:hover:bg-gdc-rowHover"
+          >
+            Open Backup & Import
+            <ChevronRight className="h-4 w-4" aria-hidden />
+          </button>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {[
-            {
-              title: 'System information',
-              desc: 'View system status and environment details.',
-              icon: Server,
-              onClick: () => void openSystem(),
-            },
-            {
-              title: 'Backup & Import',
-              desc: 'Export, import, backup, and restore configuration from one workspace.',
-              icon: HardDrive,
-              onClick: () => navigate('/operations/backup'),
-            },
-            {
-              title: 'Audit Logs',
-              desc: 'Review operator actions: logins, configuration changes, imports, and replays.',
-              icon: ClipboardList,
-              onClick: () => navigate('/settings/audit-logs'),
-            },
-          ].map((c) => (
-            <button
-              key={c.title}
-              type="button"
-              onClick={c.onClick}
-              className="flex w-full items-start gap-3 rounded-xl border border-slate-200/90 bg-slate-50/40 p-4 text-left transition-colors hover:border-violet-300/60 hover:bg-white dark:border-gdc-border dark:bg-gdc-section dark:hover:border-violet-500/30 dark:hover:bg-gdc-cardHover"
-            >
-              <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200">
-                <c.icon className="h-4 w-4" aria-hidden />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-[13px] font-semibold text-slate-900 dark:text-slate-50">{c.title}</span>
-                <span className="mt-0.5 block text-[12px] leading-snug text-slate-600 dark:text-gdc-muted">{c.desc}</span>
-              </span>
-              <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" aria-hidden />
-            </button>
-          ))}
+        <div className="flex flex-wrap gap-3 px-4 py-4 md:px-6">
+          <button
+            type="button"
+            onClick={() => void openSystem()}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200/80 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 dark:border-gdc-border dark:text-slate-200 dark:hover:bg-gdc-rowHover"
+          >
+            <Server className="h-3.5 w-3.5" aria-hidden />
+            System information
+          </button>
         </div>
       </section>
 

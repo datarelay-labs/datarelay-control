@@ -6,10 +6,8 @@ import {
   GitCompare,
   HeartPulse,
   History,
-  Layers,
   Mail,
   MessageSquare,
-  PlayCircle,
   Send,
   Shield,
   Webhook,
@@ -22,20 +20,14 @@ import {
   getAdminAuditLog,
   getAdminConfigVersions,
   getAdminHealthSummary,
-  getAdminRetentionPolicy,
   postAdminAlertTest,
-  postAdminRetentionCleanupRun,
   putAdminAlertSettings,
-  putAdminRetentionPolicy,
   type AdminHealthSummaryDto,
   type AlertHistoryListDto,
   type AlertRuleDto,
   type AlertSettingsDto,
   type AuditLogListDto,
   type ConfigVersionListDto,
-  type RetentionCleanupCategory,
-  type RetentionCleanupRunResponseDto,
-  type RetentionPolicyDto,
 } from '../../api/gdcAdmin'
 import { isPlatformAlertingUiEnabled } from '../../lib/feature-flags'
 import { gdcUi } from '../../lib/gdc-ui-tokens'
@@ -71,30 +63,23 @@ type Props = {
 }
 
 export function AdminOperationalDashboard({ reloadToken, readOnly, busy, setBusy, setPageMsg, setPageErr }: Props) {
-  const [retention, setRetention] = useState<RetentionPolicyDto | null>(null)
   const [audit, setAudit] = useState<AuditLogListDto | null>(null)
   const [versions, setVersions] = useState<ConfigVersionListDto | null>(null)
   const [health, setHealth] = useState<AdminHealthSummaryDto | null>(null)
   const [alerts, setAlerts] = useState<AlertSettingsDto | null>(null)
   const [alertHistory, setAlertHistory] = useState<AlertHistoryListDto | null>(null)
-  const [retentionErr, setRetentionErr] = useState<string | null>(null)
   const [auditErr, setAuditErr] = useState<string | null>(null)
 
   const [auditExpanded, setAuditExpanded] = useState(false)
   const [auditFull, setAuditFull] = useState<AuditLogListDto | null>(null)
-  const [retentionOpen, setRetentionOpen] = useState(false)
   const [alertsOpen, setAlertsOpen] = useState(false)
-  const [lastCleanupRun, setLastCleanupRun] = useState<RetentionCleanupRunResponseDto | null>(null)
 
-  const [retDraft, setRetDraft] = useState<RetentionPolicyDto | null>(null)
   const [alertDraft, setAlertDraft] = useState<AlertSettingsDto | null>(null)
 
   const load = useCallback(async () => {
-    setRetentionErr(null)
     setAuditErr(null)
 
     const settled = await Promise.allSettled([
-      getAdminRetentionPolicy(),
       getAdminAuditLog({ limit: 8, offset: 0 }),
       getAdminConfigVersions({ limit: 8, offset: 0 }),
       getAdminHealthSummary(),
@@ -104,9 +89,7 @@ export function AdminOperationalDashboard({ reloadToken, readOnly, busy, setBusy
         : Promise.resolve({ total: 0, items: [] } as AlertHistoryListDto),
     ])
 
-    const [r, a, v, h, al, ah] = settled
-    if (r.status === 'fulfilled') setRetention(r.value)
-    else setRetentionErr(r.reason instanceof Error ? r.reason.message : String(r.reason))
+    const [a, v, h, al, ah] = settled
     if (a.status === 'fulfilled') setAudit(a.value)
     else setAuditErr(a.reason instanceof Error ? a.reason.message : String(a.reason))
     if (v.status === 'fulfilled') setVersions(v.value)
@@ -114,30 +97,6 @@ export function AdminOperationalDashboard({ reloadToken, readOnly, busy, setBusy
     if (al.status === 'fulfilled' && al.value) setAlerts(al.value)
     if (ah.status === 'fulfilled') setAlertHistory(ah.value)
   }, [])
-
-  const runCleanupNow = useCallback(
-    async (categories?: RetentionCleanupCategory[], dryRun = false) => {
-      if (readOnly) return
-      setBusy(true)
-      setPageErr(null)
-      setPageMsg(null)
-      try {
-        const out = await postAdminRetentionCleanupRun({ categories, dry_run: dryRun })
-        setLastCleanupRun(out)
-        setRetention(out.policy)
-        const summary = out.outcomes
-          .map((o) => `${o.category}:${o.status}(${o.deleted_count})`)
-          .join(', ')
-        setPageMsg(`Cleanup ${dryRun ? '(dry-run) ' : ''}completed: ${summary || 'no work'}.`)
-        void load()
-      } catch (e) {
-        setPageErr(e instanceof Error ? e.message : String(e))
-      } finally {
-        setBusy(false)
-      }
-    },
-    [load, readOnly, setBusy, setPageErr, setPageMsg],
-  )
 
   const sendAlertTest = useCallback(
     async (alert_type: string) => {
@@ -182,37 +141,6 @@ export function AdminOperationalDashboard({ reloadToken, readOnly, busy, setBusy
     }
   }
 
-  const saveRetention = async () => {
-    if (!retDraft || readOnly) return
-    setBusy(true)
-    setPageErr(null)
-    setPageMsg(null)
-    try {
-      const body: Record<string, unknown> = {
-        logs_retention_days: retDraft.logs.retention_days,
-        logs_enabled: retDraft.logs.enabled,
-        runtime_metrics_retention_days: retDraft.runtime_metrics.retention_days,
-        runtime_metrics_enabled: retDraft.runtime_metrics.enabled,
-        preview_cache_retention_days: retDraft.preview_cache.retention_days,
-        preview_cache_enabled: retDraft.preview_cache.enabled,
-        backup_temp_retention_days: retDraft.backup_temp.retention_days,
-        backup_temp_enabled: retDraft.backup_temp.enabled,
-        cleanup_scheduler_enabled: retDraft.cleanup_scheduler_enabled,
-        cleanup_interval_minutes: retDraft.cleanup_interval_minutes,
-        cleanup_batch_size: retDraft.cleanup_batch_size,
-      }
-      const out = await putAdminRetentionPolicy(body)
-      setRetention(out)
-      setRetentionOpen(false)
-      setPageMsg('Retention policy saved.')
-      void load()
-    } catch (e) {
-      setPageErr(e instanceof Error ? e.message : String(e))
-    } finally {
-      setBusy(false)
-    }
-  }
-
   const saveAlerts = async () => {
     if (!alertDraft || readOnly) return
     setBusy(true)
@@ -240,38 +168,6 @@ export function AdminOperationalDashboard({ reloadToken, readOnly, busy, setBusy
 
   const card = gdcUi.cardShell
 
-  const retentionRows = retention
-    ? [
-        { key: 'logs', cat: 'logs' as RetentionCleanupCategory, label: 'Logs', b: retention.logs },
-        { key: 'metrics', cat: 'runtime_metrics' as RetentionCleanupCategory, label: 'Runtime metrics', b: retention.runtime_metrics },
-        { key: 'preview', cat: 'preview_cache' as RetentionCleanupCategory, label: 'Preview cache', b: retention.preview_cache },
-        { key: 'backup', cat: 'backup_temp' as RetentionCleanupCategory, label: 'Backup temp', b: retention.backup_temp },
-      ]
-    : []
-
-  function cleanupStatusBadge(status: string | null | undefined) {
-    if (!status) return null
-    const cls =
-      status === 'ok'
-        ? 'border-emerald-500/35 bg-emerald-500/12 text-emerald-800 dark:text-emerald-200'
-        : status === 'not_applicable'
-        ? 'border-slate-300 bg-slate-100 text-slate-600 dark:border-gdc-border dark:bg-gdc-panel dark:text-gdc-muted'
-        : status === 'skipped'
-        ? 'border-amber-500/35 bg-amber-500/12 text-amber-800 dark:text-amber-200'
-        : 'border-red-500/35 bg-red-500/12 text-red-700 dark:text-red-200'
-    const text = status === 'not_applicable' ? 'N/A' : status === 'ok' ? 'OK' : status[0]!.toUpperCase() + status.slice(1)
-    return (
-      <span className={cn('rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide', cls)}>{text}</span>
-    )
-  }
-
-  function durationLabel(ms: number | null | undefined) {
-    if (ms == null) return '—'
-    if (ms < 1000) return `${ms} ms`
-    const sec = Math.round((ms / 1000) * 10) / 10
-    return `${sec}s`
-  }
-
   function deliveryStatusBadge(status: string) {
     const ok = status === 'sent'
     const skipped = status === 'cooldown_skipped' || status === 'rule_disabled' || status === 'not_configured'
@@ -289,193 +185,6 @@ export function AdminOperationalDashboard({ reloadToken, readOnly, busy, setBusy
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Retention */}
-      <section className={cn(card, 'overflow-hidden')} aria-labelledby="admin-retention-heading">
-        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 px-4 py-4 dark:border-gdc-border md:px-6">
-          <div className="flex gap-3">
-            <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-violet-500/20 bg-violet-500/[0.07] text-gdc-primary dark:border-gdc-primary/35 dark:bg-gdc-primary/15 dark:text-violet-100">
-              <Layers className="h-5 w-5" aria-hidden />
-            </span>
-            <div>
-              <h3 id="admin-retention-heading" className={cn('text-[15px] font-semibold', gdcUi.textTitle)}>
-                Retention / cleanup policy
-              </h3>
-              <p className={cn('mt-0.5 text-[12px]', gdcUi.textMuted)}>{retention?.cleanup_engine_message}</p>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span
-              className={cn(
-                'rounded border px-2 py-0.5 text-[11px] font-semibold',
-                retention?.cleanup_scheduler_active
-                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200'
-                  : 'border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-200',
-              )}
-              title="Scheduler thread state"
-            >
-              {retention?.cleanup_scheduler_active ? 'Scheduler running' : 'Scheduler not running'}
-            </span>
-            <span
-              className={cn(
-                'rounded border px-2 py-0.5 text-[11px] font-semibold',
-                retention?.cleanup_scheduler_enabled
-                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200'
-                  : 'border-slate-300 text-slate-500 dark:border-gdc-border dark:text-gdc-muted',
-              )}
-            >
-              Policy {retention?.cleanup_scheduler_enabled ? 'enabled' : 'disabled'}
-            </span>
-            <span className={cn('rounded border border-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-600 dark:border-gdc-border dark:text-gdc-muted')}>
-              Interval {retention?.cleanup_interval_minutes ?? '—'}m
-            </span>
-          </div>
-        </div>
-
-        {retentionErr ? (
-          <div
-            role="alert"
-            className="mx-4 mb-2 rounded-lg border border-amber-500/30 bg-amber-500/[0.08] px-3 py-2 text-[12px] text-amber-950 dark:border-amber-500/35 dark:bg-amber-500/10 dark:text-amber-100 md:mx-6"
-          >
-            Retention policy could not be loaded: {retentionErr}
-          </div>
-        ) : null}
-
-        {retention ? (
-          <div className="grid gap-2 px-4 pb-3 pt-3 text-[12px] md:grid-cols-4 md:px-6">
-            <div className={cn('rounded-lg border p-2.5', gdcUi.innerWell)}>
-              <p className="text-[10px] font-semibold uppercase text-slate-500 dark:text-gdc-muted">Scheduler started</p>
-              <p className={cn('mt-0.5 tabular-nums', gdcUi.textTitle)}>{formatTs(retention.scheduler_started_at)}</p>
-            </div>
-            <div className={cn('rounded-lg border p-2.5', gdcUi.innerWell)}>
-              <p className="text-[10px] font-semibold uppercase text-slate-500 dark:text-gdc-muted">Last sweep</p>
-              <p className={cn('mt-0.5 tabular-nums', gdcUi.textTitle)}>{formatTs(retention.scheduler_last_tick_at)}</p>
-            </div>
-            <div className={cn('rounded-lg border p-2.5', gdcUi.innerWell)}>
-              <p className="text-[10px] font-semibold uppercase text-slate-500 dark:text-gdc-muted">Batch size</p>
-              <p className={cn('mt-0.5 tabular-nums', gdcUi.textTitle)}>{retention.cleanup_batch_size}</p>
-            </div>
-            <div className={cn('rounded-lg border p-2.5 md:col-span-1', gdcUi.innerWell)}>
-              <p className="text-[10px] font-semibold uppercase text-slate-500 dark:text-gdc-muted">Last summary</p>
-              <p className={cn('mt-0.5 truncate', gdcUi.textMuted)} title={retention.scheduler_last_summary ?? ''}>
-                {retention.scheduler_last_summary ?? '—'}
-              </p>
-            </div>
-            {retention.delivery_logs_scheduler_metrics ? (
-              <div className={cn('rounded-lg border p-2.5 md:col-span-4', gdcUi.innerWell)}>
-                <p className="text-[10px] font-semibold uppercase text-slate-500 dark:text-gdc-muted">
-                  delivery_logs cleanup metrics (this API process)
-                </p>
-                <p className={cn('mt-1 text-[12px]', gdcUi.textMuted)}>
-                  Cumulative rows deleted by scheduled logs sweeps:{' '}
-                  <span className="font-semibold text-slate-800 dark:text-slate-100">
-                    {retention.delivery_logs_scheduler_metrics.logs_cumulative_deleted_since_process_start ?? 0}
-                  </span>{' '}
-                  · logs sweeps executed:{' '}
-                  <span className="font-semibold text-slate-800 dark:text-slate-100">
-                    {retention.delivery_logs_scheduler_metrics.logs_category_sweeps ?? 0}
-                  </span>
-                  . Policy default for delivery logs is 30 days (see retention policy row); batch deletes use the configured batch
-                  size.
-                </p>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-
-        <div className="overflow-x-auto px-2 py-2 md:px-4">
-          <table className="w-full min-w-[860px] border-collapse text-left text-[13px]">
-            <thead>
-              <tr className="border-b border-slate-100 text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:border-gdc-border dark:text-gdc-muted">
-                <th className="px-2 py-2">Data type</th>
-                <th className="px-2 py-2">Retention</th>
-                <th className="px-2 py-2">Enabled</th>
-                <th className="px-2 py-2">Last cleanup</th>
-                <th className="px-2 py-2">Next cleanup</th>
-                <th className="px-2 py-2">Last result</th>
-                <th className="px-2 py-2">Deleted</th>
-                <th className="px-2 py-2">Duration</th>
-                <th className="px-2 py-2 text-right">Run now</th>
-              </tr>
-            </thead>
-            <tbody>
-              {retentionRows.map((row) => (
-                <tr key={row.key} className="border-b border-slate-50 hover:bg-slate-50/40 dark:border-gdc-border/60 dark:hover:bg-gdc-panel/40">
-                  <td className={cn('px-2 py-2 font-medium', gdcUi.textTitle)}>{row.label}</td>
-                  <td className={cn('px-2 py-2 tabular-nums', gdcUi.textMuted)}>{row.b.retention_days} days</td>
-                  <td className="px-2 py-2">
-                    <span
-                      className={cn(
-                        'rounded px-2 py-0.5 text-[11px] font-semibold',
-                        row.b.enabled
-                          ? 'border border-emerald-500/35 bg-emerald-500/12 text-emerald-800 dark:text-emerald-200'
-                          : 'border border-slate-200 text-slate-500 dark:border-gdc-border dark:text-gdc-muted',
-                      )}
-                    >
-                      {row.b.enabled ? 'On' : 'Off'}
-                    </span>
-                  </td>
-                  <td className={cn('px-2 py-2 tabular-nums', gdcUi.textMuted)}>{formatTs(row.b.last_cleanup_at)}</td>
-                  <td className={cn('px-2 py-2 tabular-nums', gdcUi.textMuted)}>{formatTs(row.b.next_cleanup_at)}</td>
-                  <td className="px-2 py-2">{cleanupStatusBadge(row.b.last_status) ?? <span className={gdcUi.textMuted}>—</span>}</td>
-                  <td className={cn('px-2 py-2 tabular-nums', gdcUi.textTitle)}>{row.b.last_deleted_count ?? '—'}</td>
-                  <td className={cn('px-2 py-2 tabular-nums', gdcUi.textMuted)}>{durationLabel(row.b.last_duration_ms ?? null)}</td>
-                  <td className="px-2 py-2 text-right">
-                    <button
-                      type="button"
-                      disabled={readOnly || busy}
-                      onClick={() => void runCleanupNow([row.cat], false)}
-                      className={cn(
-                        'inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-semibold',
-                        readOnly || busy
-                          ? 'cursor-not-allowed border-slate-200 text-slate-400 dark:border-gdc-border dark:text-gdc-muted'
-                          : 'border-gdc-primary/40 text-gdc-primary hover:bg-gdc-primary/10 dark:text-violet-200',
-                      )}
-                    >
-                      <PlayCircle className="h-3.5 w-3.5" aria-hidden /> Run
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 px-4 py-3 dark:border-gdc-border md:px-6">
-          <button
-            type="button"
-            disabled={readOnly || busy}
-            onClick={() => void runCleanupNow(undefined, true)}
-            className={cn(gdcUi.secondaryBtn, readOnly && 'cursor-not-allowed opacity-50')}
-          >
-            Dry-run all
-          </button>
-          <button
-            type="button"
-            disabled={readOnly || busy}
-            onClick={() => void runCleanupNow(undefined, false)}
-            className={cn(gdcUi.primaryBtn, readOnly && 'cursor-not-allowed opacity-50')}
-          >
-            Run cleanup now
-          </button>
-          <button
-            type="button"
-            disabled={readOnly}
-            onClick={() => {
-              setRetDraft(retention)
-              setRetentionOpen(true)
-            }}
-            className={cn(gdcUi.primaryBtn, readOnly && 'cursor-not-allowed opacity-50')}
-          >
-            Manage retention policy
-          </button>
-        </div>
-        {lastCleanupRun ? (
-          <div className="border-t border-slate-100 px-4 py-2 text-[11px] text-slate-600 dark:border-gdc-border dark:text-gdc-muted md:px-6">
-            Last run at {formatTs(lastCleanupRun.triggered_at)} ({lastCleanupRun.dry_run ? 'dry-run' : 'live'}): {' '}
-            {lastCleanupRun.outcomes.map((o) => `${o.category}=${o.status}/${o.deleted_count}`).join(', ') || 'no work'}
-          </div>
-        ) : null}
-      </section>
-
       <div className="grid gap-6 xl:grid-cols-2">
         {/* Audit */}
         <section className={cn(card, 'flex flex-col overflow-hidden')} aria-labelledby="admin-audit-heading">
@@ -894,186 +603,6 @@ export function AdminOperationalDashboard({ reloadToken, readOnly, busy, setBusy
       ) : null}
 
       {/* Modals */}
-
-      {retentionOpen && retDraft ? (
-        <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true">
-          <div className={cn(gdcUi.modalPanel, 'max-w-lg')}>
-            <h4 className={cn('text-[15px] font-semibold', gdcUi.textTitle)}>Retention policy</h4>
-            <p className="mt-1 text-[12px] text-slate-600 dark:text-gdc-muted">{retDraft.cleanup_engine_message}</p>
-            <div className="mt-4 space-y-3">
-              <div className={cn('rounded-lg border p-3', gdcUi.innerWell)}>
-                <p className="text-[12px] font-semibold text-slate-800 dark:text-slate-100">Cleanup scheduler</p>
-                <div className="mt-2 flex flex-wrap items-center gap-3">
-                  <label className={cn('flex items-center gap-2', gdcUi.formLabel)}>
-                    <input
-                      type="checkbox"
-                      checked={retDraft.cleanup_scheduler_enabled}
-                      onChange={(e) =>
-                        setRetDraft((d) => (d ? { ...d, cleanup_scheduler_enabled: e.target.checked } : d))
-                      }
-                    />
-                    Enabled
-                  </label>
-                  <label className={cn('flex items-center gap-2', gdcUi.formLabel)}>
-                    Interval (min)
-                    <input
-                      type="number"
-                      min={5}
-                      max={1440}
-                      className={cn('w-24', gdcUi.input)}
-                      value={retDraft.cleanup_interval_minutes}
-                      onChange={(e) =>
-                        setRetDraft((d) =>
-                          d ? { ...d, cleanup_interval_minutes: Number(e.target.value) || 60 } : d,
-                        )
-                      }
-                    />
-                  </label>
-                  <label className={cn('flex items-center gap-2', gdcUi.formLabel)}>
-                    Batch size
-                    <input
-                      type="number"
-                      min={100}
-                      max={100000}
-                      className={cn('w-28', gdcUi.input)}
-                      value={retDraft.cleanup_batch_size}
-                      onChange={(e) =>
-                        setRetDraft((d) =>
-                          d ? { ...d, cleanup_batch_size: Number(e.target.value) || 5000 } : d,
-                        )
-                      }
-                    />
-                  </label>
-                </div>
-              </div>
-              <div className={cn('rounded-lg border p-3', gdcUi.innerWell)}>
-                <p className="text-[12px] font-semibold text-slate-800 dark:text-slate-100">Logs</p>
-                <div className="mt-2 flex flex-wrap items-center gap-3">
-                  <label className={cn('flex items-center gap-2', gdcUi.formLabel)}>
-                    <input
-                      type="checkbox"
-                      checked={retDraft.logs.enabled}
-                      onChange={(e) => setRetDraft((d) => (d ? { ...d, logs: { ...d.logs, enabled: e.target.checked } } : d))}
-                    />
-                    Enabled
-                  </label>
-                  <label className={cn('flex items-center gap-2', gdcUi.formLabel)}>
-                    Days
-                    <input
-                      type="number"
-                      min={1}
-                      max={3650}
-                      className={cn('w-24', gdcUi.input)}
-                      value={retDraft.logs.retention_days}
-                      onChange={(e) =>
-                        setRetDraft((d) => (d ? { ...d, logs: { ...d.logs, retention_days: Number(e.target.value) } } : d))
-                      }
-                    />
-                  </label>
-                </div>
-              </div>
-              <div className={cn('rounded-lg border p-3', gdcUi.innerWell)}>
-                <p className="text-[12px] font-semibold text-slate-800 dark:text-slate-100">Runtime metrics</p>
-                <div className="mt-2 flex flex-wrap items-center gap-3">
-                  <label className={cn('flex items-center gap-2', gdcUi.formLabel)}>
-                    <input
-                      type="checkbox"
-                      checked={retDraft.runtime_metrics.enabled}
-                      onChange={(e) =>
-                        setRetDraft((d) => (d ? { ...d, runtime_metrics: { ...d.runtime_metrics, enabled: e.target.checked } } : d))
-                      }
-                    />
-                    Enabled
-                  </label>
-                  <label className={cn('flex items-center gap-2', gdcUi.formLabel)}>
-                    Days
-                    <input
-                      type="number"
-                      min={1}
-                      max={3650}
-                      className={cn('w-24', gdcUi.input)}
-                      value={retDraft.runtime_metrics.retention_days}
-                      onChange={(e) =>
-                        setRetDraft((d) =>
-                          d ? { ...d, runtime_metrics: { ...d.runtime_metrics, retention_days: Number(e.target.value) } } : d,
-                        )
-                      }
-                    />
-                  </label>
-                </div>
-              </div>
-              <div className={cn('rounded-lg border p-3', gdcUi.innerWell)}>
-                <p className="text-[12px] font-semibold text-slate-800 dark:text-slate-100">Preview cache</p>
-                <div className="mt-2 flex flex-wrap items-center gap-3">
-                  <label className={cn('flex items-center gap-2', gdcUi.formLabel)}>
-                    <input
-                      type="checkbox"
-                      checked={retDraft.preview_cache.enabled}
-                      onChange={(e) =>
-                        setRetDraft((d) => (d ? { ...d, preview_cache: { ...d.preview_cache, enabled: e.target.checked } } : d))
-                      }
-                    />
-                    Enabled
-                  </label>
-                  <label className={cn('flex items-center gap-2', gdcUi.formLabel)}>
-                    Days
-                    <input
-                      type="number"
-                      min={1}
-                      max={3650}
-                      className={cn('w-24', gdcUi.input)}
-                      value={retDraft.preview_cache.retention_days}
-                      onChange={(e) =>
-                        setRetDraft((d) =>
-                          d ? { ...d, preview_cache: { ...d.preview_cache, retention_days: Number(e.target.value) } } : d,
-                        )
-                      }
-                    />
-                  </label>
-                </div>
-              </div>
-              <div className={cn('rounded-lg border p-3', gdcUi.innerWell)}>
-                <p className="text-[12px] font-semibold text-slate-800 dark:text-slate-100">Backup temp</p>
-                <div className="mt-2 flex flex-wrap items-center gap-3">
-                  <label className={cn('flex items-center gap-2', gdcUi.formLabel)}>
-                    <input
-                      type="checkbox"
-                      checked={retDraft.backup_temp.enabled}
-                      onChange={(e) =>
-                        setRetDraft((d) => (d ? { ...d, backup_temp: { ...d.backup_temp, enabled: e.target.checked } } : d))
-                      }
-                    />
-                    Enabled
-                  </label>
-                  <label className={cn('flex items-center gap-2', gdcUi.formLabel)}>
-                    Days
-                    <input
-                      type="number"
-                      min={1}
-                      max={3650}
-                      className={cn('w-24', gdcUi.input)}
-                      value={retDraft.backup_temp.retention_days}
-                      onChange={(e) =>
-                        setRetDraft((d) =>
-                          d ? { ...d, backup_temp: { ...d.backup_temp, retention_days: Number(e.target.value) } } : d,
-                        )
-                      }
-                    />
-                  </label>
-                </div>
-              </div>
-            </div>
-            <div className="mt-5 flex justify-end gap-2">
-              <button type="button" className="rounded-lg px-3 py-1.5 text-[13px] text-slate-600 hover:bg-slate-100 dark:text-gdc-muted dark:hover:bg-gdc-card" onClick={() => setRetentionOpen(false)}>
-                Cancel
-              </button>
-              <button type="button" disabled={busy || readOnly} className={gdcUi.primaryBtn} onClick={() => void saveRetention()}>
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       {alertsOpen && alertDraft ? (
         <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true">

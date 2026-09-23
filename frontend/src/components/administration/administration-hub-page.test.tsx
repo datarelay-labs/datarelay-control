@@ -53,7 +53,7 @@ describe('AdministrationHubPage modernization', () => {
       { testId: 'admin-hub-network', path: SETTINGS_SECTION_PATH.network, name: 'Open Network' },
       { testId: 'admin-hub-retention', path: SETTINGS_SECTION_PATH.retention, name: 'Open Retention' },
       { testId: 'admin-hub-audit', path: SETTINGS_SECTION_PATH.audit, name: 'Open Audit' },
-      { testId: 'admin-hub-backup', path: NAV_PATH.backup, name: 'Open Backup' },
+      { testId: 'admin-hub-backup', path: NAV_PATH.backup, name: 'Open Backup & Import' },
       { testId: 'admin-hub-system-health', path: SETTINGS_SECTION_PATH.systemHealth, name: 'Open System Health' },
     ] as const
 
