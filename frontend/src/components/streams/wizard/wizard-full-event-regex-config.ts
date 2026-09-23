@@ -40,7 +40,9 @@ function ruleFromUnknown(raw: unknown, index: number): FullEventRegexRuleDocumen
   if (!output_field || !source_path || !pattern) {
     throw new Error(`rules[${index}]: output_field, source_path, and pattern are required`)
   }
-  const groupRaw = obj.group ?? obj.capture_group ?? 1
+  // Runtime: rule.get("capture_group", rule.get("group", 1)) — key presence, not nullish.
+  const groupRaw =
+    'capture_group' in obj ? obj.capture_group : 'group' in obj ? obj.group : 1
   const group = Number(groupRaw)
   if (!Number.isFinite(group) || group < 0) {
     throw new Error(`rules[${index}]: group must be a non-negative integer`)
@@ -51,8 +53,10 @@ function ruleFromUnknown(raw: unknown, index: number): FullEventRegexRuleDocumen
     pattern,
     group,
   }
-  if ('default' in obj) rule.default = obj.default
-  else if ('default_value' in obj) rule.default = obj.default_value
+  // Runtime: rule.get("default_value", rule.get("default")) — presence of default_value wins
+  // even when its value is null.
+  if ('default_value' in obj) rule.default = obj.default_value
+  else if ('default' in obj) rule.default = obj.default
   return rule
 }
 

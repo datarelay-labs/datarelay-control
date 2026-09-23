@@ -118,4 +118,88 @@ describe('full-event Regex persisted-shape decode', () => {
       ],
     })
   })
+
+  it('prefers capture_group over group when both aliases differ (runtime precedence)', () => {
+    const doc = fullEventRegexConfigDocumentFromFieldMappings({
+      mapping_mode: 'full_event_regex',
+      preserve_source_fields: false,
+      regex_rules: [
+        {
+          output_field: 'user',
+          source_path: '$.username',
+          pattern: '^(.+)$',
+          group: 2,
+          capture_group: 1,
+        },
+      ],
+    })
+    expect(doc?.rules[0]?.group).toBe(1)
+
+    const saved = buildFieldMappingsFromFullEventRegexConfigJson(
+      fullEventRegexConfigJsonFromFieldMappings({
+        mapping_mode: 'full_event_regex',
+        preserve_source_fields: false,
+        regex_rules: [
+          {
+            output_field: 'user',
+            source_path: '$.username',
+            pattern: '^(.+)$',
+            group: 2,
+            capture_group: 1,
+          },
+        ],
+      }),
+    )
+    expect(saved.ok).toBe(true)
+    if (!saved.ok) return
+    expect(saved.fieldMappings.regex_rules).toEqual([
+      expect.objectContaining({ capture_group: 1 }),
+    ])
+    expect(
+      (saved.fieldMappings.regex_rules as Record<string, unknown>[])[0],
+    ).not.toHaveProperty('group')
+  })
+
+  it('prefers default_value key presence over default, including null (runtime precedence)', () => {
+    const doc = fullEventRegexConfigDocumentFromFieldMappings({
+      mapping_mode: 'full_event_regex',
+      preserve_source_fields: false,
+      regex_rules: [
+        {
+          output_field: 'user',
+          source_path: '$.username',
+          pattern: '^(.+)$',
+          capture_group: 1,
+          default_value: null,
+          default: 'legacy-fallback',
+        },
+      ],
+    })
+    expect(doc?.rules[0]?.default).toBeNull()
+
+    const saved = buildFieldMappingsFromFullEventRegexConfigJson(
+      fullEventRegexConfigJsonFromFieldMappings({
+        mapping_mode: 'full_event_regex',
+        preserve_source_fields: false,
+        regex_rules: [
+          {
+            output_field: 'user',
+            source_path: '$.username',
+            pattern: '^(.+)$',
+            capture_group: 1,
+            default_value: null,
+            default: 'legacy-fallback',
+          },
+        ],
+      }),
+    )
+    expect(saved.ok).toBe(true)
+    if (!saved.ok) return
+    expect(saved.fieldMappings.regex_rules).toEqual([
+      expect.objectContaining({ capture_group: 1, default_value: null }),
+    ])
+    expect(
+      (saved.fieldMappings.regex_rules as Record<string, unknown>[])[0],
+    ).not.toHaveProperty('default')
+  })
 })

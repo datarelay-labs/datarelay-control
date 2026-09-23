@@ -404,3 +404,116 @@ describe('lookup key_field alias + typed conditional + disabled advanced rules',
     })
   })
 })
+
+describe('lookup table + normalize source alias parity + mixed __rules fidelity', () => {
+  it('falls through falsy lookup_table to lookupTable (runtime truthy or)', () => {
+    const rules = wizardEnrichmentRulesFromPersistedDict({
+      __rules: {
+        'metadata.region_name': {
+          type: 'lookup',
+          lookup_table: '',
+          lookupTable: 'aws_regions',
+          key_field: 'region',
+          enabled: true,
+        },
+      },
+    })
+    expect(rules[0]).toMatchObject({ lookupTable: 'aws_regions' })
+    expect(enrichmentDictFromRules(rules)).toEqual({
+      __rules: {
+        'metadata.region_name': expect.objectContaining({
+          lookup_table: 'aws_regions',
+          lookup_key_field: 'region',
+        }),
+      },
+    })
+  })
+
+  it('hydrates normalize sourceField alias after falsy source_field (runtime truthy or)', () => {
+    const rules = wizardEnrichmentRulesFromPersistedDict({
+      __rules: {
+        'metadata.timestamp': {
+          type: 'normalize',
+          source_field: '',
+          sourceField: 'event_time',
+          format: 'iso8601',
+          enabled: true,
+        },
+      },
+    })
+    expect(rules[0]).toMatchObject({
+      type: 'normalize',
+      normalizeSourceField: 'event_time',
+    })
+    expect(enrichmentDictFromRules(rules)).toEqual({
+      __rules: {
+        'metadata.timestamp': expect.objectContaining({
+          type: 'normalize',
+          source_field: 'event_time',
+          format: 'iso8601',
+        }),
+      },
+    })
+  })
+
+  it('preserves mixed field-keyed + type-array __rules including duplicate type-array targets', () => {
+    const persisted = {
+      __rules: {
+        'metadata.label': {
+          type: 'calculated',
+          expression: 'upper({{code}})',
+          enabled: true,
+        },
+        calculated: [
+          {
+            target_field: 'metadata.score',
+            expression: '1',
+            enabled: true,
+          },
+          {
+            target_field: 'metadata.score',
+            expression: '2',
+            enabled: true,
+          },
+        ],
+      },
+    }
+    const parsed = wizardEnrichmentFromPersistedDict(persisted)
+    expect(parsed.emitAdvancedAsTypeArray).toBe(false)
+    expect(parsed.rules).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          fieldName: 'metadata.label',
+          type: 'calculated',
+          expression: 'upper({{code}})',
+          advancedPersistForm: 'field-keyed',
+        }),
+        expect.objectContaining({
+          fieldName: 'metadata.score',
+          expression: '1',
+          advancedPersistForm: 'type-array',
+        }),
+        expect.objectContaining({
+          fieldName: 'metadata.score',
+          expression: '2',
+          advancedPersistForm: 'type-array',
+        }),
+      ]),
+    )
+
+    const saved = enrichmentDictFromRules(parsed.rules, {
+      advancedPassthrough: parsed.advancedPassthrough,
+      emitAdvancedAsTypeArray: parsed.emitAdvancedAsTypeArray,
+    })
+    expect(saved.__rules).toEqual({
+      'metadata.label': expect.objectContaining({
+        type: 'calculated',
+        expression: 'upper({{code}})',
+      }),
+      calculated: [
+        expect.objectContaining({ target_field: 'metadata.score', expression: '1' }),
+        expect.objectContaining({ target_field: 'metadata.score', expression: '2' }),
+      ],
+    })
+  })
+})

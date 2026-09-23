@@ -56,6 +56,12 @@ export type WizardEnrichmentRule = {
   /** Normalize */
   normalizeSourceField: string
   normalizeFormat: 'iso8601' | 'lowercase' | 'uppercase' | 'trim'
+  /**
+   * How this advanced rule was persisted under `__rules`.
+   * Preserves mixed field-keyed + type-array representations through hydrate→save.
+   * Static top-level fields ignore this.
+   */
+  advancedPersistForm?: 'field-keyed' | 'type-array'
 }
 
 export type EnrichmentRuleTypeMeta = {
@@ -191,6 +197,9 @@ export function normalizeWizardEnrichmentRule(raw: unknown): WizardEnrichmentRul
         o.normalizeFormat === 'trim'
           ? o.normalizeFormat
           : 'iso8601',
+      ...(o.advancedPersistForm === 'field-keyed' || o.advancedPersistForm === 'type-array'
+        ? { advancedPersistForm: o.advancedPersistForm }
+        : {}),
     }
   }
 
@@ -358,7 +367,10 @@ function ruleFromAdvancedPayload(
     type,
     enabled: o.enabled !== false,
     expression: String(o.expression ?? ''),
-    lookupTable: String(o.lookup_table ?? o.lookupTable ?? 'aws-regions'),
+    // Runtime: lookup_table or lookupTable (truthy fallback).
+    lookupTable: String(
+      firstTruthyRuntimeAlias(o.lookup_table, o.lookupTable) || 'aws-regions',
+    ),
     // Runtime: key_field or lookup_key_field or lookupKeyField; canonical save uses lookup_key_field.
     lookupKeyField: String(
       firstTruthyRuntimeAlias(o.key_field, o.lookup_key_field, o.lookupKeyField),
@@ -368,7 +380,11 @@ function ruleFromAdvancedPayload(
     ...(defaultParsed.persisted !== undefined
       ? { conditionalDefaultPersistedValue: defaultParsed.persisted }
       : {}),
-    normalizeSourceField: String(o.source_field ?? o.normalizeSourceField ?? 'timestamp'),
+    // Runtime: source_field or normalizeSourceField or sourceField (truthy fallback).
+    normalizeSourceField: String(
+      firstTruthyRuntimeAlias(o.source_field, o.normalizeSourceField, o.sourceField) ||
+        'timestamp',
+    ),
     normalizeFormat: normalizeFormatFromPayload(o),
     staticValue:
       hasPersistedStatic && isJsonLikeStaticValue(staticRaw)
@@ -475,7 +491,7 @@ export function wizardEnrichmentFromPersistedDict(
       for (const item of payload) {
         const rule = ruleFromTypeArrayItem(typeKey, item, rules.length)
         if (rule) {
-          rules.push(rule)
+          rules.push({ ...rule, advancedPersistForm: 'type-array' })
         } else {
           kept.push(item)
         }
@@ -491,7 +507,10 @@ export function wizardEnrichmentFromPersistedDict(
     const o = payload as Record<string, unknown>
     const typeRaw = typeof o.type === 'string' ? o.type.trim().toLowerCase() : 'calculated'
     const type: EnrichmentRuleType = isEnrichmentRuleType(typeRaw) ? typeRaw : 'calculated'
-    rules.push(ruleFromAdvancedPayload(type, key, o, rules.length))
+    rules.push({
+      ...ruleFromAdvancedPayload(type, key, o, rules.length),
+      advancedPersistForm: 'field-keyed',
+    })
   }
 
   return {
@@ -593,7 +612,11 @@ export function enrichmentDictFromRules(
     }
 
     // Advanced rules: preserve enabled:false definitions through hydrate→save.
-    if (options?.emitAdvancedAsTypeArray === true) {
+    // Prefer per-rule persist form (mixed field-keyed + type-array fidelity); else global flag.
+    const persistForm =
+      rule.advancedPersistForm ??
+      (options?.emitAdvancedAsTypeArray === true ? 'type-array' : 'field-keyed')
+    if (persistForm === 'type-array') {
       const item = advancedPayloadFromRule(rule)
       delete item.type
       item.target_field = key
@@ -608,8 +631,10 @@ export function enrichmentDictFromRules(
 
   const passthrough = options?.advancedPassthrough ?? {}
   const hasPassthrough = Object.keys(passthrough).length > 0
-  if (options?.emitAdvancedAsTypeArray === true) {
-    const merged: Record<string, unknown> = { ...passthrough }
+  const hasTypeArray = Object.keys(advancedTypeArray).length > 0
+  const hasFieldKeyed = Object.keys(advancedFieldKeyed).length > 0
+  if (hasTypeArray || hasFieldKeyed || hasPassthrough) {
+    const merged: Record<string, unknown> = { ...passthrough, ...advancedFieldKeyed }
     for (const [type, items] of Object.entries(advancedTypeArray)) {
       const prior = merged[type]
       if (Array.isArray(prior)) {
@@ -618,9 +643,7 @@ export function enrichmentDictFromRules(
         merged[type] = items
       }
     }
-    if (Object.keys(merged).length > 0) out.__rules = merged
-  } else if (Object.keys(advancedFieldKeyed).length > 0 || hasPassthrough) {
-    out.__rules = { ...passthrough, ...advancedFieldKeyed }
+    out.__rules = merged
   }
   return out
 }
