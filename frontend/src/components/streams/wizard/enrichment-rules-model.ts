@@ -4,6 +4,15 @@
 
 export type EnrichmentRuleType = 'static' | 'calculated' | 'lookup' | 'conditional' | 'normalize'
 
+/** JSON-like static enrichment values accepted by runtime `_is_json_like`. */
+export type WizardStaticPersistedValue =
+  | string
+  | number
+  | boolean
+  | null
+  | WizardStaticPersistedValue[]
+  | { [key: string]: WizardStaticPersistedValue }
+
 export type WizardEnrichmentRule = {
   id: string
   /** Display label in the rule card header */
@@ -15,11 +24,11 @@ export type WizardEnrichmentRule = {
   /** Static Value (editor display string). */
   staticValue: string
   /**
-   * Original JSON scalar from persistence (`number` / `boolean` / `null`).
-   * Used on save so hydrate→persist does not coerce `5`/`false` into strings.
+   * Original JSON-like value from persistence (scalar, object, or array).
+   * Used on save so hydrate→persist does not coerce typed/nested values into strings.
    * Cleared when the operator edits `staticValue` in the UI.
    */
-  staticPersistedValue?: string | number | boolean | null
+  staticPersistedValue?: WizardStaticPersistedValue
   /** Calculated */
   expression: string
   /** Lookup */
@@ -192,6 +201,30 @@ export function normalizeWizardEnrichmentRules(raw: unknown): WizardEnrichmentRu
  * Rebuild wizard enrichment rules from a persisted enrichment dict
  * (`{ field: staticValue, __rules?: { field: advancedPayload } }`).
  */
+export function formatStaticPersistedValueForEditor(value: WizardStaticPersistedValue): string {
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  if (value === null) return 'null'
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+
+function isJsonLikeStaticValue(value: unknown): value is WizardStaticPersistedValue {
+  if (value === null) return true
+  const t = typeof value
+  if (t === 'string' || t === 'number' || t === 'boolean') return true
+  if (Array.isArray(value)) return value.every((item) => isJsonLikeStaticValue(item))
+  if (t === 'object') {
+    return Object.entries(value as Record<string, unknown>).every(
+      ([key, nested]) => typeof key === 'string' && isJsonLikeStaticValue(nested),
+    )
+  }
+  return false
+}
+
 export function wizardEnrichmentRulesFromPersistedDict(
   rec: Record<string, unknown> | null | undefined,
 ): WizardEnrichmentRule[] {
@@ -231,6 +264,17 @@ export function wizardEnrichmentRulesFromPersistedDict(
         fieldName,
         staticValue: 'null',
         staticPersistedValue: null,
+      })
+      continue
+    }
+    // Nested object/array static values (runtime `_is_json_like`); keep lossless raw.
+    if (isJsonLikeStaticValue(value) && (Array.isArray(value) || typeof value === 'object')) {
+      rules.push({
+        ...defaultRuleForType('static', rules.length),
+        label: fieldName,
+        fieldName,
+        staticValue: formatStaticPersistedValueForEditor(value),
+        staticPersistedValue: value,
       })
     }
   }

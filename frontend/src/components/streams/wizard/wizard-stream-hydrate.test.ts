@@ -575,6 +575,70 @@ describe('applyRouteTransformConfigsToDraft', () => {
     })
   })
 
+  it('preserves nested object and array static enrichment values through hydrate→plan', () => {
+    const nested = { region: 'us-east-1', flags: { canary: true } }
+    const tags = ['a', 'b']
+    const mappingCfg: RouteMappingUiConfig = {
+      route_id: 42,
+      stream_id: 10,
+      inherit_stream_mapping: true,
+      mapping: {
+        exists: false,
+        event_array_path: null,
+        event_root_path: null,
+        field_mappings: {},
+        raw_payload_mode: null,
+      },
+      stream_mapping: {
+        exists: false,
+        event_array_path: null,
+        event_root_path: null,
+        field_mappings: {},
+        raw_payload_mode: null,
+      },
+      message: 'ok',
+    }
+    const enrichmentCfg: RouteEnrichmentUiConfig = {
+      route_id: 42,
+      stream_id: 10,
+      inherit_stream_enrichment: false,
+      enrichment: {
+        exists: true,
+        enabled: true,
+        enrichment: { meta: nested, tags },
+        override_policy: 'KEEP_EXISTING',
+      },
+      stream_enrichment: {
+        exists: false,
+        enabled: false,
+        enrichment: {},
+        override_policy: null,
+      },
+      message: 'ok',
+    }
+    const next = applyRouteTransformConfigsToDraft(baseDraft, mappingCfg, enrichmentCfg)
+    expect(next.overrides?.transform?.enrichment).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          fieldName: 'meta',
+          staticPersistedValue: nested,
+          staticValue: expect.stringContaining('"region": "us-east-1"'),
+        }),
+        expect.objectContaining({
+          fieldName: 'tags',
+          staticPersistedValue: tags,
+        }),
+      ]),
+    )
+    const plans = buildRouteTransformPersistPlans([next], { 'route-42': 42 })
+    expect(plans[0]?.enrichment).toEqual({
+      inherit: false,
+      enrichment: { meta: nested, tags },
+      enabled: true,
+      override_policy: 'KEEP_EXISTING',
+    })
+  })
+
   it('hydrates full-event Regex mapping so unrelated save does not clear it', () => {
     const mappingCfg: RouteMappingUiConfig = {
       route_id: 42,
