@@ -101,6 +101,53 @@ def test_route_mapping_ui_save_override(route_transform_client: TestClient, db_s
     assert cfg.json()["mapping"]["field_mappings"] == {"route_field": "$.route_id"}
 
 
+def test_route_mapping_ui_save_empty_field_mappings_raw_payload_only(
+    route_transform_client: TestClient,
+    db_session: Session,
+) -> None:
+    """Route mapping override may persist empty field_mappings (raw-payload-only / empty row).
+
+    Stream MappingUISaveMappingPayload still requires non-empty field_mappings; this
+    contract is route-specific so empty route mapping rows are not forced to inherit.
+    """
+    h = _seed_stream_two_routes(db_session)
+    _seed_stream_mapping(db_session, h["stream_id"])
+    route_id = h["route_a_id"]
+
+    save = route_transform_client.post(
+        f"/api/v1/runtime/routes/{route_id}/mapping-ui/save",
+        json={
+            "inherit": False,
+            "mapping": {
+                "field_mappings": {},
+                "raw_payload_mode": "include_raw",
+            },
+        },
+    )
+    assert save.status_code == 200, save.text
+    assert save.json()["inherit_stream_mapping"] is False
+
+    row = db_session.query(RouteMapping).filter(RouteMapping.route_id == route_id).one()
+    assert row.field_mappings_json == {}
+    assert row.raw_payload_mode == "include_raw"
+
+    cfg = route_transform_client.get(f"/api/v1/runtime/routes/{route_id}/mapping-ui/config")
+    body = cfg.json()
+    assert body["inherit_stream_mapping"] is False
+    assert body["mapping"]["field_mappings"] == {}
+    assert body["mapping"]["raw_payload_mode"] == "include_raw"
+
+    # Empty mapping row with null raw_payload_mode is also a valid persisted override.
+    save_empty = route_transform_client.post(
+        f"/api/v1/runtime/routes/{route_id}/mapping-ui/save",
+        json={"inherit": False, "mapping": {"field_mappings": {}}},
+    )
+    assert save_empty.status_code == 200, save_empty.text
+    row2 = db_session.query(RouteMapping).filter(RouteMapping.route_id == route_id).one()
+    assert row2.field_mappings_json == {}
+    assert row2.raw_payload_mode is None
+
+
 def test_route_mapping_ui_save_inherit_clears_override(
     route_transform_client: TestClient,
     db_session: Session,

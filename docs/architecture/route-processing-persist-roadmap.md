@@ -81,7 +81,7 @@ Full **route override bundles** (`draft.inherit.<concern> === false` with route-
 
 | Gap | Wizard trigger | Current `persistKind` | Post-deploy Effective API | Runtime effect |
 |-----|----------------|----------------------|---------------------------|----------------|
-| **Transform Bundle Persist** | `inherit.transform = false` + route mapping/enrichment draft | `intent_only` | `Inherited` (stream mapping) | Stream transform fan-out only |
+| **Transform Bundle Persist** | `inherit.transform = false` + route mapping/enrichment draft | `route_transform` (complete); `intent_only` when empty | `Overridden` / `Mixed` when persisted; Effective read-back on save | Route transform dual-read when rows exist |
 | **Protection Bundle Persist** | `inherit.protection = false` + route-scoped protection intents | `intent_only` | Stream / governance only | No `RouteProtectionRule` rows |
 | **Classification Bundle Persist** | `inherit.classification = false` without floor override row | `intent_only` | Stream classification only | No `RouteClassificationRule` rows |
 | **Policy Bundle Persist** | `inherit.policy = false` + route delivery behavior | `intent_only` | Stream policy only | No route-level policy bundle |

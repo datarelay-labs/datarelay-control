@@ -43,6 +43,27 @@ def test_validate_invalid_lookup_table() -> None:
     assert any(i.code == "invalid_lookup_table" for i in result.issues)
 
 
+def test_validate_lookup_prefers_key_field_alias_over_lookup_key_field() -> None:
+    """Validation must resolve aliases in the same order as rule_executor."""
+    # key_field is valid; conflicting lookup_key_field is intentionally invalid.
+    # If validation preferred lookup_key_field, this would fail closed incorrectly.
+    result = validate_enrichment_json(
+        {
+            "__rules": {
+                "metadata.region": {
+                    "type": "lookup",
+                    "lookup_table": "aws_regions",
+                    "key_field": "region",
+                    "lookup_key_field": "bad..path",
+                    "enabled": True,
+                }
+            }
+        }
+    )
+    assert result.ok
+    assert not any(i.code == "invalid_field_path" for i in result.issues)
+
+
 def test_validate_invalid_normalize_format() -> None:
     result = validate_enrichment_json(
         {

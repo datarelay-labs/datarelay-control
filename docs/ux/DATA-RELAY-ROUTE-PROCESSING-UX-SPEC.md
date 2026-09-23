@@ -1002,13 +1002,14 @@ Deploy Summary, Route Health Cards, and projected count lists must be labeled as
 ```text
 projectRouteProcessingStatusFromDeployIntent(draft, dataProtection)
   → statuses: Inherited | Overridden | Mixed (per concern)
-  → persistKind: none | intent_only | governance
+  → persistKind: none | intent_only | governance | route_transform
 ```
 
 | `persistKind` | Operator label | Meaning |
 |---------------|----------------|---------|
 | **none** | — | Shared Processing only; no route-level deploy intent. |
-| **intent_only** | Intent only | Shown in Deploy but **not saved** at deploy for that concern bundle (e.g. full route transform override). Post-deploy Effective API may show Shared. |
+| **intent_only** | Intent only | Shown in Deploy but **not saved** at deploy for that concern bundle (e.g. Protection/Policy bundles, or empty Transform override). Post-deploy Effective API may show Shared. |
+| **route_transform** | Persisted as route Transform | Complete Transform mapping/enrichment override saved via route Transform APIs at deploy; verified by Effective read-back. |
 | **governance** | Persisted through governance rules | Field-level protection/classification overrides saved via governance `route_overrides` at deploy. |
 
 ## Deploy Summary display rules
@@ -1021,7 +1022,7 @@ projectRouteProcessingStatusFromDeployIntent(draft, dataProtection)
 
 ## Copy constraints
 
-Allowed: Deploy Intent, Projected Status, Intent only, Persisted through governance rules.
+Allowed: Deploy Intent, Projected Status, Intent only, Persisted as route Transform, Persisted through governance rules.
 
 Forbidden in operator copy: Runtime Resolver, Persist Layer, Database Row, Internal Engine.
 

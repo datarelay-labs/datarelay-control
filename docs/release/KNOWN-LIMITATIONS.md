@@ -27,25 +27,29 @@ At deploy time, the wizard projects a **Deploy Intent** status:
 | Persist kind | Meaning |
 |--------------|---------|
 | **none** | Shared processing only — inherited |
+| **route_transform** | Complete Transform override persisted via route mapping/enrichment APIs |
 | **governance** | Field-level override persisted via governance API |
 | **intent_only** | Configured in wizard but **not saved to DB** at deploy |
 
 ### What is affected
 
-Route **bundles** where `inherit.<concern> = false` with full route-scoped editor content deploy as **Intent only** for Transform, Protection (bundle), Classification (bundle), and Policy (bundle).
+Route **bundles** where `inherit.<concern> = false` with full route-scoped editor content deploy as **Intent only** for Protection (bundle), Classification (bundle), and Policy (bundle).
+
+**Transform:** a complete mapping and/or enrichment override persists at deploy (`route_transform`) and is verified via Transform Effective read-back. An empty Transform override (inherit off, no payload) remains **Intent only** and is not claimed as persisted.
 
 ### What is NOT affected
 
 - Shared stream processing (mapping, enrichment, data protection intents) — **persisted**
+- Complete route Transform overrides (mapping/enrichment) — **persisted** and Effective-verified
 - Governance **field-level** overrides (protection action, classification floor, delivery behavior) — **persisted**
 - Route delivery metadata (enabled, failure policy, formatter) — **persisted**
 - Post-deploy **Route Edit** — full persist via existing APIs
 
 ### What you should do
 
-1. After deploy, open **Routes → Edit** for each route with Intent only overrides.
-2. Save route bundles explicitly.
-3. Verify **Effective Status** shows **Overridden** (not Inherited).
+1. After deploy, open **Routes → Edit** for each route with Intent only overrides (Protection / Classification / Policy bundles, or empty Transform intent).
+2. Save those route bundles explicitly.
+3. Verify **Effective Status** shows **Overridden** or **Mixed** as intended (not Inherited).
 
 **Reference:** [`route-processing-persist-roadmap.md`](../architecture/route-processing-persist-roadmap.md)
 

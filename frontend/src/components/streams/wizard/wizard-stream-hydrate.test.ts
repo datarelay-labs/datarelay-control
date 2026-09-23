@@ -1,10 +1,23 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  applyRouteTransformConfigsToDraft,
   buildWizardDestinationsFromRouteSources,
   fullEventJsonataExpressionFromFieldMappings,
+  hydrateRouteDraftsTransform,
+  tryApplyRouteTransformConfigsToDraft,
 } from './wizard-stream-hydrate'
 import type { MappingUIConfigRouteItem } from '../../../api/types/gdcApi'
 import type { RouteRead } from '../../../api/gdcRoutes'
+import type { RouteEnrichmentUiConfig, RouteMappingUiConfig } from '../../../api/gdcRouteTransform'
+import { buildRouteTransformPersistPlans, DEFAULT_ROUTE_PROCESSING_INHERIT } from './wizard-state'
+
+const fetchRouteMappingUiConfig = vi.fn()
+const fetchRouteEnrichmentUiConfig = vi.fn()
+
+vi.mock('../../../api/gdcRouteTransform', () => ({
+  fetchRouteMappingUiConfig: (...args: unknown[]) => fetchRouteMappingUiConfig(...args),
+  fetchRouteEnrichmentUiConfig: (...args: unknown[]) => fetchRouteEnrichmentUiConfig(...args),
+}))
 
 describe('fullEventJsonataExpressionFromFieldMappings', () => {
   it('reads jsonata_expression for full_event_jsonata mappings', () => {
@@ -32,6 +45,927 @@ describe('fullEventJsonataExpressionFromFieldMappings', () => {
         jsonata_expression: 'ignored',
       }),
     ).toBe('')
+  })
+})
+
+describe('tryApplyRouteTransformConfigsToDraft fail-closed reads', () => {
+  const baseDraft = {
+    key: 'route-42',
+    destinationId: 7,
+    enabled: true,
+    failurePolicy: 'LOG_AND_CONTINUE' as const,
+    rateLimitJson: {},
+    inherit: { ...DEFAULT_ROUTE_PROCESSING_INHERIT },
+  }
+
+  const inheritedMapping: RouteMappingUiConfig = {
+    route_id: 42,
+    stream_id: 10,
+    inherit_stream_mapping: true,
+    mapping: {
+      exists: false,
+      event_array_path: null,
+      event_root_path: null,
+      field_mappings: {},
+      raw_payload_mode: null,
+    },
+    stream_mapping: {
+      exists: true,
+      event_array_path: null,
+      event_root_path: null,
+      field_mappings: { msg: '$.message' },
+      raw_payload_mode: null,
+    },
+    message: 'ok',
+  }
+
+  const overrideMapping: RouteMappingUiConfig = {
+    route_id: 42,
+    stream_id: 10,
+    inherit_stream_mapping: false,
+    mapping: {
+      exists: true,
+      event_array_path: null,
+      event_root_path: null,
+      field_mappings: { route_msg: '$.message' },
+      raw_payload_mode: null,
+    },
+    stream_mapping: {
+      exists: true,
+      event_array_path: null,
+      event_root_path: null,
+      field_mappings: {},
+      raw_payload_mode: null,
+    },
+    message: 'ok',
+  }
+
+  const inheritedEnrichment: RouteEnrichmentUiConfig = {
+    route_id: 42,
+    stream_id: 10,
+    inherit_stream_enrichment: true,
+    enrichment: {
+      exists: false,
+      enabled: false,
+      enrichment: {},
+      override_policy: null,
+    },
+    stream_enrichment: {
+      exists: true,
+      enabled: true,
+      enrichment: { tenant: 'acme' },
+      override_policy: null,
+    },
+    message: 'ok',
+  }
+
+  it('fails closed when mapping config read returns null', () => {
+    const result = tryApplyRouteTransformConfigsToDraft(baseDraft, null, inheritedEnrichment)
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error).toMatch(/mapping config read failed/)
+    expect(result.error).toMatch(/refusing to default to Inherited/)
+  })
+
+  it('fails closed when enrichment config read returns null', () => {
+    const result = tryApplyRouteTransformConfigsToDraft(baseDraft, overrideMapping, null)
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error).toMatch(/enrichment config read failed/)
+  })
+
+  it('does not return an Inherited draft from a failed read that would clear overrides', () => {
+    const result = tryApplyRouteTransformConfigsToDraft(baseDraft, null, null)
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error).toMatch(/refusing to default to Inherited/)
+    // Failed apply must not yield a draft usable for inherit:true clear plans.
+    expect('draft' in result).toBe(false)
+  })
+
+  it('applies genuine inherited configs when both reads succeed', () => {
+    const result = tryApplyRouteTransformConfigsToDraft(baseDraft, inheritedMapping, inheritedEnrichment)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.draft.inherit.transform).toBe(true)
+  })
+})
+
+describe('hydrateRouteDraftsTransform', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('fails closed when safeRequestJson-null mapping read would otherwise coerce to Inherited', async () => {
+    fetchRouteMappingUiConfig.mockResolvedValue(null)
+    fetchRouteEnrichmentUiConfig.mockResolvedValue({
+      route_id: 42,
+      stream_id: 10,
+      inherit_stream_enrichment: true,
+      enrichment: {
+        exists: false,
+        enabled: false,
+        enrichment: {},
+        override_policy: null,
+      },
+      stream_enrichment: {
+        exists: false,
+        enabled: false,
+        enrichment: {},
+        override_policy: null,
+      },
+      message: 'ok',
+    })
+
+    const result = await hydrateRouteDraftsTransform([
+      {
+        key: 'route-42',
+        destinationId: 7,
+        enabled: true,
+        failurePolicy: 'LOG_AND_CONTINUE',
+        rateLimitJson: {},
+        inherit: { ...DEFAULT_ROUTE_PROCESSING_INHERIT },
+      },
+    ])
+
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.errors[0]).toMatch(/mapping config read failed/)
+    // No drafts returned for save — cannot clear persisted overrides.
+    expect('drafts' in result).toBe(false)
+  })
+
+  it('hydrates mapping-only override when both config reads succeed', async () => {
+    fetchRouteMappingUiConfig.mockResolvedValue({
+      route_id: 42,
+      stream_id: 10,
+      inherit_stream_mapping: false,
+      mapping: {
+        exists: true,
+        event_array_path: null,
+        event_root_path: null,
+        field_mappings: { route_msg: '$.message' },
+        raw_payload_mode: null,
+      },
+      stream_mapping: {
+        exists: true,
+        event_array_path: null,
+        event_root_path: null,
+        field_mappings: {},
+        raw_payload_mode: null,
+      },
+      message: 'ok',
+    })
+    fetchRouteEnrichmentUiConfig.mockResolvedValue({
+      route_id: 42,
+      stream_id: 10,
+      inherit_stream_enrichment: true,
+      enrichment: {
+        exists: false,
+        enabled: false,
+        enrichment: {},
+        override_policy: null,
+      },
+      stream_enrichment: {
+        exists: false,
+        enabled: false,
+        enrichment: {},
+        override_policy: null,
+      },
+      message: 'ok',
+    })
+
+    const result = await hydrateRouteDraftsTransform([
+      {
+        key: 'route-42',
+        destinationId: 7,
+        enabled: true,
+        failurePolicy: 'LOG_AND_CONTINUE',
+        rateLimitJson: {},
+        inherit: { ...DEFAULT_ROUTE_PROCESSING_INHERIT },
+      },
+    ])
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.drafts[0]?.inherit.transform).toBe(false)
+    expect(result.drafts[0]?.overrides?.transform?.mapping).toEqual([
+      expect.objectContaining({ outputField: 'route_msg', sourceJsonPath: '$.message' }),
+    ])
+    const plans = buildRouteTransformPersistPlans(result.drafts, { 'route-42': 42 })
+    expect(plans[0]?.mapping).toEqual({
+      inherit: false,
+      fieldMappings: expect.objectContaining({ route_msg: '$.message' }),
+      rawPayloadMode: null,
+    })
+    expect(plans[0]?.enrichment).toEqual({ inherit: true })
+  })
+})
+
+describe('applyRouteTransformConfigsToDraft', () => {
+  const baseDraft = {
+    key: 'route-42',
+    destinationId: 7,
+    enabled: true,
+    failurePolicy: 'LOG_AND_CONTINUE' as const,
+    rateLimitJson: {},
+    inherit: { ...DEFAULT_ROUTE_PROCESSING_INHERIT },
+  }
+
+  it('keeps transform inherited when both mapping and enrichment inherit stream', () => {
+    const mappingCfg: RouteMappingUiConfig = {
+      route_id: 42,
+      stream_id: 10,
+      inherit_stream_mapping: true,
+      mapping: {
+        exists: false,
+        event_array_path: null,
+        event_root_path: null,
+        field_mappings: {},
+        raw_payload_mode: null,
+      },
+      stream_mapping: {
+        exists: true,
+        event_array_path: null,
+        event_root_path: null,
+        field_mappings: { msg: '$.message' },
+        raw_payload_mode: null,
+      },
+      message: 'ok',
+    }
+    const enrichmentCfg: RouteEnrichmentUiConfig = {
+      route_id: 42,
+      stream_id: 10,
+      inherit_stream_enrichment: true,
+      enrichment: {
+        exists: false,
+        enabled: false,
+        enrichment: {},
+        override_policy: null,
+      },
+      stream_enrichment: {
+        exists: true,
+        enabled: true,
+        enrichment: { tenant: 'acme' },
+        override_policy: null,
+      },
+      message: 'ok',
+    }
+    const next = applyRouteTransformConfigsToDraft(baseDraft, mappingCfg, enrichmentCfg)
+    expect(next.inherit.transform).toBe(true)
+    expect(next.overrides?.transform).toBeUndefined()
+  })
+
+  it('hydrates mapping-only Mixed override for truthful edit-save expectation', () => {
+    const mappingCfg: RouteMappingUiConfig = {
+      route_id: 42,
+      stream_id: 10,
+      inherit_stream_mapping: false,
+      mapping: {
+        exists: true,
+        event_array_path: null,
+        event_root_path: null,
+        field_mappings: { route_msg: '$.message' },
+        raw_payload_mode: null,
+      },
+      stream_mapping: {
+        exists: true,
+        event_array_path: null,
+        event_root_path: null,
+        field_mappings: {},
+        raw_payload_mode: null,
+      },
+      message: 'ok',
+    }
+    const enrichmentCfg: RouteEnrichmentUiConfig = {
+      route_id: 42,
+      stream_id: 10,
+      inherit_stream_enrichment: true,
+      enrichment: {
+        exists: false,
+        enabled: false,
+        enrichment: {},
+        override_policy: null,
+      },
+      stream_enrichment: {
+        exists: false,
+        enabled: false,
+        enrichment: {},
+        override_policy: null,
+      },
+      message: 'ok',
+    }
+    const next = applyRouteTransformConfigsToDraft(baseDraft, mappingCfg, enrichmentCfg)
+    expect(next.inherit.transform).toBe(false)
+    expect(next.overrides?.transform?.mapping).toEqual([
+      expect.objectContaining({ outputField: 'route_msg', sourceJsonPath: '$.message' }),
+    ])
+    expect(next.overrides?.transform?.enrichment).toEqual([])
+  })
+
+  it('hydrates enrichment-only Mixed override', () => {
+    const mappingCfg: RouteMappingUiConfig = {
+      route_id: 42,
+      stream_id: 10,
+      inherit_stream_mapping: true,
+      mapping: {
+        exists: false,
+        event_array_path: null,
+        event_root_path: null,
+        field_mappings: {},
+        raw_payload_mode: null,
+      },
+      stream_mapping: {
+        exists: false,
+        event_array_path: null,
+        event_root_path: null,
+        field_mappings: {},
+        raw_payload_mode: null,
+      },
+      message: 'ok',
+    }
+    const enrichmentCfg: RouteEnrichmentUiConfig = {
+      route_id: 42,
+      stream_id: 10,
+      inherit_stream_enrichment: false,
+      enrichment: {
+        exists: true,
+        enabled: true,
+        enrichment: { tenant: 'acme' },
+        override_policy: 'KEEP_EXISTING',
+      },
+      stream_enrichment: {
+        exists: false,
+        enabled: false,
+        enrichment: {},
+        override_policy: null,
+      },
+      message: 'ok',
+    }
+    const next = applyRouteTransformConfigsToDraft(baseDraft, mappingCfg, enrichmentCfg)
+    expect(next.inherit.transform).toBe(false)
+    expect(next.overrides?.transform?.mapping).toEqual([])
+    expect(next.overrides?.transform?.enrichment).toEqual([
+      expect.objectContaining({ fieldName: 'tenant', staticValue: 'acme' }),
+    ])
+    expect(next.overrides?.transform?.enrichmentRowPresent).toBe(true)
+    expect(next.overrides?.transform?.enrichmentEnabled).toBe(true)
+    expect(next.overrides?.transform?.enrichmentOverridePolicy).toBe('KEEP_EXISTING')
+  })
+
+  it('preserves empty enrichment row + mapping as Overridden (does not plan inherit clear)', () => {
+    const mappingCfg: RouteMappingUiConfig = {
+      route_id: 42,
+      stream_id: 10,
+      inherit_stream_mapping: false,
+      mapping: {
+        exists: true,
+        event_array_path: null,
+        event_root_path: null,
+        field_mappings: { msg: '$.message' },
+        raw_payload_mode: null,
+      },
+      stream_mapping: {
+        exists: false,
+        event_array_path: null,
+        event_root_path: null,
+        field_mappings: {},
+        raw_payload_mode: null,
+      },
+      message: 'ok',
+    }
+    const enrichmentCfg: RouteEnrichmentUiConfig = {
+      route_id: 42,
+      stream_id: 10,
+      inherit_stream_enrichment: false,
+      enrichment: {
+        exists: true,
+        enabled: true,
+        enrichment: {},
+        override_policy: 'KEEP_EXISTING',
+      },
+      stream_enrichment: {
+        exists: false,
+        enabled: false,
+        enrichment: {},
+        override_policy: null,
+      },
+      message: 'ok',
+    }
+    const next = applyRouteTransformConfigsToDraft(baseDraft, mappingCfg, enrichmentCfg)
+    expect(next.overrides?.transform?.enrichmentRowPresent).toBe(true)
+    expect(next.overrides?.transform?.enrichment).toEqual([])
+    const plans = buildRouteTransformPersistPlans([next], { 'route-42': 42 })
+    expect(plans[0]?.enrichment).toEqual({
+      inherit: false,
+      enrichment: {},
+      enabled: true,
+      override_policy: 'KEEP_EXISTING',
+    })
+    expect(plans[0]?.enrichment).not.toEqual({ inherit: true })
+  })
+
+  it('preserves enrichment enabled and OVERRIDE conflict policy through hydrate→plan', () => {
+    const mappingCfg: RouteMappingUiConfig = {
+      route_id: 42,
+      stream_id: 10,
+      inherit_stream_mapping: true,
+      mapping: {
+        exists: false,
+        event_array_path: null,
+        event_root_path: null,
+        field_mappings: {},
+        raw_payload_mode: null,
+      },
+      stream_mapping: {
+        exists: false,
+        event_array_path: null,
+        event_root_path: null,
+        field_mappings: {},
+        raw_payload_mode: null,
+      },
+      message: 'ok',
+    }
+    const enrichmentCfg: RouteEnrichmentUiConfig = {
+      route_id: 42,
+      stream_id: 10,
+      inherit_stream_enrichment: false,
+      enrichment: {
+        exists: true,
+        enabled: false,
+        enrichment: { vendor: 'acme' },
+        override_policy: 'OVERRIDE',
+      },
+      stream_enrichment: {
+        exists: false,
+        enabled: false,
+        enrichment: {},
+        override_policy: null,
+      },
+      message: 'ok',
+    }
+    const next = applyRouteTransformConfigsToDraft(baseDraft, mappingCfg, enrichmentCfg)
+    expect(next.overrides?.transform?.enrichmentEnabled).toBe(false)
+    expect(next.overrides?.transform?.enrichmentOverridePolicy).toBe('OVERRIDE')
+    const plans = buildRouteTransformPersistPlans([next], { 'route-42': 42 })
+    expect(plans[0]?.enrichment).toEqual({
+      inherit: false,
+      enrichment: { vendor: 'acme' },
+      enabled: false,
+      override_policy: 'OVERRIDE',
+    })
+  })
+
+  it('preserves numeric and boolean static enrichment scalars through hydrate→dict', () => {
+    const mappingCfg: RouteMappingUiConfig = {
+      route_id: 42,
+      stream_id: 10,
+      inherit_stream_mapping: true,
+      mapping: {
+        exists: false,
+        event_array_path: null,
+        event_root_path: null,
+        field_mappings: {},
+        raw_payload_mode: null,
+      },
+      stream_mapping: {
+        exists: false,
+        event_array_path: null,
+        event_root_path: null,
+        field_mappings: {},
+        raw_payload_mode: null,
+      },
+      message: 'ok',
+    }
+    const enrichmentCfg: RouteEnrichmentUiConfig = {
+      route_id: 42,
+      stream_id: 10,
+      inherit_stream_enrichment: false,
+      enrichment: {
+        exists: true,
+        enabled: true,
+        enrichment: { count: 5, active: false },
+        override_policy: 'ERROR_ON_CONFLICT',
+      },
+      stream_enrichment: {
+        exists: false,
+        enabled: false,
+        enrichment: {},
+        override_policy: null,
+      },
+      message: 'ok',
+    }
+    const next = applyRouteTransformConfigsToDraft(baseDraft, mappingCfg, enrichmentCfg)
+    const rules = next.overrides?.transform?.enrichment ?? []
+    expect(rules).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ fieldName: 'count', staticValue: '5', staticPersistedValue: 5 }),
+        expect.objectContaining({
+          fieldName: 'active',
+          staticValue: 'false',
+          staticPersistedValue: false,
+        }),
+      ]),
+    )
+    const plans = buildRouteTransformPersistPlans([next], { 'route-42': 42 })
+    expect(plans[0]?.enrichment).toEqual({
+      inherit: false,
+      enrichment: { count: 5, active: false },
+      enabled: true,
+      override_policy: 'ERROR_ON_CONFLICT',
+    })
+  })
+
+  it('preserves nested object and array static enrichment values through hydrate→plan', () => {
+    const nested = { region: 'us-east-1', flags: { canary: true } }
+    const tags = ['a', 'b']
+    const mappingCfg: RouteMappingUiConfig = {
+      route_id: 42,
+      stream_id: 10,
+      inherit_stream_mapping: true,
+      mapping: {
+        exists: false,
+        event_array_path: null,
+        event_root_path: null,
+        field_mappings: {},
+        raw_payload_mode: null,
+      },
+      stream_mapping: {
+        exists: false,
+        event_array_path: null,
+        event_root_path: null,
+        field_mappings: {},
+        raw_payload_mode: null,
+      },
+      message: 'ok',
+    }
+    const enrichmentCfg: RouteEnrichmentUiConfig = {
+      route_id: 42,
+      stream_id: 10,
+      inherit_stream_enrichment: false,
+      enrichment: {
+        exists: true,
+        enabled: true,
+        enrichment: { meta: nested, tags },
+        override_policy: 'KEEP_EXISTING',
+      },
+      stream_enrichment: {
+        exists: false,
+        enabled: false,
+        enrichment: {},
+        override_policy: null,
+      },
+      message: 'ok',
+    }
+    const next = applyRouteTransformConfigsToDraft(baseDraft, mappingCfg, enrichmentCfg)
+    expect(next.overrides?.transform?.enrichment).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          fieldName: 'meta',
+          staticPersistedValue: nested,
+          staticValue: expect.stringContaining('"region": "us-east-1"'),
+        }),
+        expect.objectContaining({
+          fieldName: 'tags',
+          staticPersistedValue: tags,
+        }),
+      ]),
+    )
+    const plans = buildRouteTransformPersistPlans([next], { 'route-42': 42 })
+    expect(plans[0]?.enrichment).toEqual({
+      inherit: false,
+      enrichment: { meta: nested, tags },
+      enabled: true,
+      override_policy: 'KEEP_EXISTING',
+    })
+  })
+
+  it('hydrates full-event Regex mapping so unrelated save does not clear it', () => {
+    const mappingCfg: RouteMappingUiConfig = {
+      route_id: 42,
+      stream_id: 10,
+      inherit_stream_mapping: false,
+      mapping: {
+        exists: true,
+        event_array_path: null,
+        event_root_path: null,
+        field_mappings: {
+          mapping_mode: 'full_event_regex',
+          preserve_source_fields: false,
+          regex_rules: [
+            {
+              output_field: 'user',
+              source_path: '$.username',
+              pattern: '^(.+)$',
+              capture_group: 1,
+              default_value: null,
+            },
+          ],
+        },
+        raw_payload_mode: null,
+      },
+      stream_mapping: {
+        exists: false,
+        event_array_path: null,
+        event_root_path: null,
+        field_mappings: {},
+        raw_payload_mode: null,
+      },
+      message: 'ok',
+    }
+    const enrichmentCfg: RouteEnrichmentUiConfig = {
+      route_id: 42,
+      stream_id: 10,
+      inherit_stream_enrichment: false,
+      enrichment: {
+        exists: true,
+        enabled: true,
+        enrichment: { tenant: 'acme' },
+        override_policy: 'KEEP_EXISTING',
+      },
+      stream_enrichment: {
+        exists: false,
+        enabled: false,
+        enrichment: {},
+        override_policy: null,
+      },
+      message: 'ok',
+    }
+
+    const next = applyRouteTransformConfigsToDraft(baseDraft, mappingCfg, enrichmentCfg)
+    expect(next.inherit.transform).toBe(false)
+    expect(next.overrides?.transform?.mappingMode).toBe('full_event_regex')
+    expect(next.overrides?.transform?.fullEventRegexConfigJson).toContain('"pattern": "^(.+)$"')
+    expect(next.overrides?.transform?.fullEventRegexConfigJson).toContain('"preserve_source": false')
+
+    const plans = buildRouteTransformPersistPlans([next], { 'route-42': 42 })
+    expect(plans).toHaveLength(1)
+    expect(plans[0]?.mapping).toEqual({
+      inherit: false,
+      fieldMappings: expect.objectContaining({
+        mapping_mode: 'full_event_regex',
+        preserve_source_fields: false,
+        regex_rules: expect.any(Array),
+      }),
+      rawPayloadMode: null,
+    })
+    expect(plans[0]?.enrichment).toEqual({
+      inherit: false,
+      enrichment: { tenant: 'acme' },
+      enabled: true,
+      override_policy: 'KEEP_EXISTING',
+    })
+  })
+
+  it('preserves route mapping raw_payload_mode through hydrate→plan', () => {
+    const mappingCfg: RouteMappingUiConfig = {
+      route_id: 42,
+      stream_id: 10,
+      inherit_stream_mapping: false,
+      mapping: {
+        exists: true,
+        event_array_path: null,
+        event_root_path: null,
+        field_mappings: { msg: '$.message' },
+        raw_payload_mode: 'include_raw',
+      },
+      stream_mapping: {
+        exists: false,
+        event_array_path: null,
+        event_root_path: null,
+        field_mappings: {},
+        raw_payload_mode: null,
+      },
+      message: 'ok',
+    }
+    const enrichmentCfg: RouteEnrichmentUiConfig = {
+      route_id: 42,
+      stream_id: 10,
+      inherit_stream_enrichment: true,
+      enrichment: {
+        exists: false,
+        enabled: false,
+        enrichment: {},
+        override_policy: null,
+      },
+      stream_enrichment: {
+        exists: false,
+        enabled: false,
+        enrichment: {},
+        override_policy: null,
+      },
+      message: 'ok',
+    }
+    const next = applyRouteTransformConfigsToDraft(baseDraft, mappingCfg, enrichmentCfg)
+    expect(next.overrides?.transform?.rawPayloadMode).toBe('include_raw')
+    const plans = buildRouteTransformPersistPlans([next], { 'route-42': 42 })
+    expect(plans[0]?.mapping).toEqual({
+      inherit: false,
+      fieldMappings: expect.objectContaining({ msg: '$.message' }),
+      rawPayloadMode: 'include_raw',
+    })
+  })
+
+  it('preserves empty / raw-payload-only mapping row (does not plan inherit clear)', () => {
+    const mappingCfg: RouteMappingUiConfig = {
+      route_id: 42,
+      stream_id: 10,
+      inherit_stream_mapping: false,
+      mapping: {
+        exists: true,
+        event_array_path: null,
+        event_root_path: null,
+        field_mappings: {},
+        raw_payload_mode: 'include_raw',
+      },
+      stream_mapping: {
+        exists: false,
+        event_array_path: null,
+        event_root_path: null,
+        field_mappings: {},
+        raw_payload_mode: null,
+      },
+      message: 'ok',
+    }
+    const enrichmentCfg: RouteEnrichmentUiConfig = {
+      route_id: 42,
+      stream_id: 10,
+      inherit_stream_enrichment: false,
+      enrichment: {
+        exists: true,
+        enabled: true,
+        enrichment: { tenant: 'acme' },
+        override_policy: 'KEEP_EXISTING',
+      },
+      stream_enrichment: {
+        exists: false,
+        enabled: false,
+        enrichment: {},
+        override_policy: null,
+      },
+      message: 'ok',
+    }
+    const next = applyRouteTransformConfigsToDraft(baseDraft, mappingCfg, enrichmentCfg)
+    expect(next.overrides?.transform?.mappingRowPresent).toBe(true)
+    expect(next.overrides?.transform?.mapping).toEqual([])
+    expect(next.overrides?.transform?.rawPayloadMode).toBe('include_raw')
+    const plans = buildRouteTransformPersistPlans([next], { 'route-42': 42 })
+    expect(plans[0]?.mapping).toEqual({
+      inherit: false,
+      fieldMappings: {},
+      rawPayloadMode: 'include_raw',
+    })
+    expect(plans[0]?.mapping).not.toEqual({ inherit: true })
+    expect(plans[0]?.enrichment).toEqual({
+      inherit: false,
+      enrichment: { tenant: 'acme' },
+      enabled: true,
+      override_policy: 'KEEP_EXISTING',
+    })
+  })
+
+  it('preserves type-array advanced enrichment through hydrate→plan', () => {
+    const mappingCfg: RouteMappingUiConfig = {
+      route_id: 42,
+      stream_id: 10,
+      inherit_stream_mapping: true,
+      mapping: {
+        exists: false,
+        event_array_path: null,
+        event_root_path: null,
+        field_mappings: {},
+        raw_payload_mode: null,
+      },
+      stream_mapping: {
+        exists: false,
+        event_array_path: null,
+        event_root_path: null,
+        field_mappings: {},
+        raw_payload_mode: null,
+      },
+      message: 'ok',
+    }
+    const enrichmentCfg: RouteEnrichmentUiConfig = {
+      route_id: 42,
+      stream_id: 10,
+      inherit_stream_enrichment: false,
+      enrichment: {
+        exists: true,
+        enabled: true,
+        enrichment: {
+          __rules: {
+            calculated: [
+              {
+                target_field: 'metadata.label',
+                expression: 'upper({{code}})',
+              },
+            ],
+          },
+        },
+        override_policy: 'KEEP_EXISTING',
+      },
+      stream_enrichment: {
+        exists: false,
+        enabled: false,
+        enrichment: {},
+        override_policy: null,
+      },
+      message: 'ok',
+    }
+    const next = applyRouteTransformConfigsToDraft(baseDraft, mappingCfg, enrichmentCfg)
+    expect(next.overrides?.transform?.enrichmentEmitAdvancedAsTypeArray).toBe(true)
+    expect(next.overrides?.transform?.enrichment).toEqual([
+      expect.objectContaining({
+        fieldName: 'metadata.label',
+        type: 'calculated',
+        expression: 'upper({{code}})',
+      }),
+    ])
+    const plans = buildRouteTransformPersistPlans([next], { 'route-42': 42 })
+    expect(plans[0]?.enrichment).toEqual({
+      inherit: false,
+      enabled: true,
+      override_policy: 'KEEP_EXISTING',
+      enrichment: {
+        __rules: {
+          calculated: [
+            expect.objectContaining({
+              target_field: 'metadata.label',
+              expression: 'upper({{code}})',
+            }),
+          ],
+        },
+      },
+    })
+  })
+
+  it('keeps enrichment metadata when Transform mapping is patched (panel merge contract)', () => {
+    const mappingCfg: RouteMappingUiConfig = {
+      route_id: 42,
+      stream_id: 10,
+      inherit_stream_mapping: false,
+      mapping: {
+        exists: true,
+        event_array_path: null,
+        event_root_path: null,
+        field_mappings: { msg: '$.message' },
+        raw_payload_mode: 'include_raw',
+      },
+      stream_mapping: {
+        exists: false,
+        event_array_path: null,
+        event_root_path: null,
+        field_mappings: {},
+        raw_payload_mode: null,
+      },
+      message: 'ok',
+    }
+    const enrichmentCfg: RouteEnrichmentUiConfig = {
+      route_id: 42,
+      stream_id: 10,
+      inherit_stream_enrichment: false,
+      enrichment: {
+        exists: true,
+        enabled: false,
+        enrichment: {},
+        override_policy: 'OVERRIDE',
+      },
+      stream_enrichment: {
+        exists: false,
+        enabled: false,
+        enrichment: {},
+        override_policy: null,
+      },
+      message: 'ok',
+    }
+    const hydrated = applyRouteTransformConfigsToDraft(baseDraft, mappingCfg, enrichmentCfg)
+    const current = hydrated.overrides!.transform!
+    // Mirrors WizardRouteProcessingDetailPanel.patchRouteTransform spread-merge.
+    const patched = {
+      ...current,
+      mapping: [{ id: 'm2', outputField: 'other', sourceJsonPath: '$.other' }],
+      mappingMode: current.mappingMode,
+      fullEventJsonataExpression: current.fullEventJsonataExpression,
+      fullEventRegexConfigJson: current.fullEventRegexConfigJson,
+      transformRules: current.transformRules,
+      enrichment: current.enrichment,
+      unmappedFieldsPolicy: current.unmappedFieldsPolicy,
+    }
+    expect(patched.enrichmentRowPresent).toBe(true)
+    expect(patched.enrichmentEnabled).toBe(false)
+    expect(patched.enrichmentOverridePolicy).toBe('OVERRIDE')
+    expect(patched.rawPayloadMode).toBe('include_raw')
+    const plans = buildRouteTransformPersistPlans(
+      [{ ...hydrated, overrides: { ...hydrated.overrides, transform: patched } }],
+      { 'route-42': 42 },
+    )
+    expect(plans[0]?.enrichment).toEqual({
+      inherit: false,
+      enrichment: {},
+      enabled: false,
+      override_policy: 'OVERRIDE',
+    })
+    expect(plans[0]?.mapping).toMatchObject({ rawPayloadMode: 'include_raw' })
   })
 })
 

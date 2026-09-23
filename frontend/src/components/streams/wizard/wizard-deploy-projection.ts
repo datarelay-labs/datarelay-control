@@ -1,6 +1,7 @@
 import type { RouteProcessingConcernKey } from '../route-processing/route-processing-labels'
 import {
   computeWizardRouteProcessingStatuses,
+  hasPersistableRouteTransformOverride,
   normalizeWizardRouteProcessingInherit,
   type RouteProcessingStatus,
   type WizardDataProtectionState,
@@ -10,7 +11,7 @@ import {
 } from './wizard-state'
 
 /** How deploy persists (or does not persist) a projected concern override. */
-export type DeployIntentPersistKind = 'none' | 'intent_only' | 'governance'
+export type DeployIntentPersistKind = 'none' | 'intent_only' | 'governance' | 'route_transform'
 
 export type RouteProcessingConcernProjection = {
   status: RouteProcessingStatus
@@ -32,6 +33,7 @@ export type RouteProcessingProjectedCounts = Record<RouteProcessingConcernKey, C
 export const DEPLOY_INTENT_PERSIST_LABEL: Record<Exclude<DeployIntentPersistKind, 'none'>, string> = {
   intent_only: 'Intent only',
   governance: 'Persisted through governance rules',
+  route_transform: 'Persisted as route Transform',
 }
 
 function routeHasProtectionFieldOverrides(
@@ -56,11 +58,15 @@ function persistKindForConcern(
   inherit: WizardRouteProcessingInherit,
   protectionFieldOverrides: boolean,
   classificationOverride: boolean,
+  draft: WizardRouteDraft,
 ): DeployIntentPersistKind {
   if (status === 'Inherited') return 'none'
 
   switch (concern) {
     case 'transform':
+      // Complete mapping/enrichment override persists via route Transform APIs.
+      // Empty override intent stays Intent only (not falsely marked persisted).
+      return hasPersistableRouteTransformOverride(draft) ? 'route_transform' : 'intent_only'
     case 'policy':
       return 'intent_only'
     case 'protection':
@@ -95,6 +101,7 @@ export function projectRouteProcessingStatusFromDeployIntent(
       inherit,
       protectionFieldOverrides,
       classificationOverride,
+      draft,
     ),
   })
 

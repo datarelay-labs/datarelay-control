@@ -138,7 +138,7 @@ Configure **Shared Processing** (applies to all routes unless overridden) and op
 3. **Data Protection** (optional) — protection, classification, policy intents.
 4. Per-route cards — set **Inherit Global** or **Override** per concern (Transform, Protection, Classification, Policy).
 
-> **Known limitation:** Route-level override bundles marked **Intent only** at deploy are **not persisted automatically**. After deploy, use **Route Edit** to save full route bundles. See [Known Limitations](../release/KNOWN-LIMITATIONS.md#route-bundle-persist).
+> **Known limitation:** Route-level Protection / Classification / Policy override bundles marked **Intent only** at deploy are **not persisted automatically**. Complete Transform overrides persist at deploy. After deploy, use **Route Edit** for remaining Intent-only bundles. See [Known Limitations](../release/KNOWN-LIMITATIONS.md#route-bundle-persist).
 
 ### Screenshot placeholder
 

@@ -1,5 +1,9 @@
 import { createRoute, deleteRoute, updateRouteWithFreshToken } from '../../../api/gdcRoutes'
-import { saveRouteEnrichmentUiConfig, saveRouteMappingUiConfig } from '../../../api/gdcRouteTransform'
+import {
+  fetchRouteTransformEffective,
+  saveRouteEnrichmentUiConfig,
+  saveRouteMappingUiConfig,
+} from '../../../api/gdcRouteTransform'
 import { saveStreamMappingUiConfigStrict } from '../../../api/gdcRuntimeUi'
 import { fetchStreamById, updateStream } from '../../../api/gdcStreams'
 import {
@@ -12,6 +16,8 @@ import {
   buildStreamCreatePayload,
   buildWizardFieldMappingsPayload,
   enrichmentDictFromRows,
+  expectedRouteTransformProcessingStatus,
+  routeTransformOverridePersistPayload,
   wizardFieldMappingsReady,
   type WizardRouteDraft,
   type WizardState,
@@ -83,41 +89,109 @@ export async function syncRoutes(streamId: number, state: WizardState): Promise<
 
 export async function persistWizardRouteTransformOverrides(
   drafts: WizardRouteDraft[],
-  routeIdsInDraftOrder: number[],
+  routeIdsByDraftKey: Record<string, number>,
 ): Promise<string[]> {
   const errors: string[] = []
-  for (const plan of buildRouteTransformPersistPlans(drafts, routeIdsInDraftOrder)) {
-    const hasMapping = Object.keys(plan.fieldMappings).length > 0
-    const hasEnrichment = Object.keys(plan.enrichment).length > 0
-    if (hasMapping) {
-      try {
+  for (const plan of buildRouteTransformPersistPlans(drafts, routeIdsByDraftKey)) {
+    try {
+      const mappingAction = plan.mapping
+      if (mappingAction.inherit === true) {
+        await saveRouteMappingUiConfig(plan.routeId, { inherit: true })
+      } else {
+        const mappingBody: {
+          field_mappings: Record<string, unknown>
+          raw_payload_mode?: string | null
+        } = { field_mappings: mappingAction.fieldMappings }
+        if (mappingAction.rawPayloadMode !== undefined) {
+          mappingBody.raw_payload_mode = mappingAction.rawPayloadMode
+        }
         await saveRouteMappingUiConfig(plan.routeId, {
-          inherit: plan.inherit,
-          mapping: { field_mappings: plan.fieldMappings },
+          inherit: false,
+          mapping: mappingBody,
         })
-      } catch (err) {
-        errors.push(
-          `route ${plan.routeId} mapping: ${err instanceof Error ? err.message : String(err)}`,
-        )
       }
+    } catch (err) {
+      errors.push(
+        `route ${plan.routeId} mapping: ${err instanceof Error ? err.message : String(err)}`,
+      )
     }
-    if (hasEnrichment) {
-      try {
+    try {
+      const enrichmentAction = plan.enrichment
+      if (enrichmentAction.inherit === true) {
+        await saveRouteEnrichmentUiConfig(plan.routeId, { inherit: true })
+      } else {
         await saveRouteEnrichmentUiConfig(plan.routeId, {
-          inherit: plan.inherit,
+          inherit: false,
           enrichment: {
-            enabled: true,
-            enrichment: plan.enrichment,
-            override_policy: 'KEEP_EXISTING',
+            enabled: enrichmentAction.enabled,
+            enrichment: enrichmentAction.enrichment,
+            override_policy: enrichmentAction.override_policy,
           },
         })
-      } catch (err) {
-        errors.push(
-          `route ${plan.routeId} enrichment: ${err instanceof Error ? err.message : String(err)}`,
-        )
       }
+    } catch (err) {
+      errors.push(
+        `route ${plan.routeId} enrichment: ${err instanceof Error ? err.message : String(err)}`,
+      )
     }
   }
+  return errors
+}
+
+/**
+ * Read back Transform Effective for routes with known ids and fail closed on mismatch.
+ * Inherited routes must stay Inherited. Complete overrides must match Overridden/Mixed.
+ * Incomplete (Intent only) overrides are not claimed as persisted — skipped here.
+ */
+export async function verifyWizardRouteTransformEffective(
+  drafts: WizardRouteDraft[],
+  routeIdsByDraftKey: Record<string, number>,
+): Promise<string[]> {
+  const errors: string[] = []
+
+  for (const draft of drafts) {
+    const routeId = routeIdsByDraftKey[draft.key] ?? routeKeyToId(draft.key)
+    if (routeId == null || routeId <= 0) continue
+
+    const inheritTransform = draft.inherit.transform !== false
+    const payload = inheritTransform
+      ? null
+      : routeTransformOverridePersistPayload(draft.overrides?.transform)
+
+    // Intent-only empty override: do not claim persisted/effective success.
+    if (!inheritTransform && payload == null) continue
+
+    const expectedStatus = inheritTransform
+      ? ('Inherited' as const)
+      : expectedRouteTransformProcessingStatus(payload!.fieldMappings, payload!.enrichment, {
+          enrichmentRowPresent: payload!.enrichmentRowPresent,
+          mappingRowPresent: payload!.mappingRowPresent,
+        })
+
+    let effective
+    try {
+      effective = await fetchRouteTransformEffective(routeId)
+    } catch (err) {
+      errors.push(
+        `route ${routeId} transform effective: ${err instanceof Error ? err.message : String(err)}`,
+      )
+      continue
+    }
+
+    if (effective == null) {
+      errors.push(
+        `route ${routeId} transform: Effective API returned no result (expected ${expectedStatus})`,
+      )
+      continue
+    }
+
+    if (effective.processing_status !== expectedStatus) {
+      errors.push(
+        `route ${routeId} transform: expected ${expectedStatus} after save, Effective API returned ${effective.processing_status}`,
+      )
+    }
+  }
+
   return errors
 }
 
@@ -194,11 +268,17 @@ export async function persistWizardStreamEdits(streamId: number, state: WizardSt
 
   const synced = await syncRoutes(streamId, state)
   errors.push(...synced.errors)
-  const orderedRouteIds = state.destinations.routeDrafts.map(
-    (draft) => synced.routeIdsByDraftKey[draft.key] ?? routeKeyToId(draft.key) ?? 0,
+  const routeIdsByDraftKey: Record<string, number> = { ...synced.routeIdsByDraftKey }
+  for (const draft of state.destinations.routeDrafts) {
+    if (routeIdsByDraftKey[draft.key]) continue
+    const fromKey = routeKeyToId(draft.key)
+    if (fromKey != null) routeIdsByDraftKey[draft.key] = fromKey
+  }
+  errors.push(
+    ...(await persistWizardRouteTransformOverrides(state.destinations.routeDrafts, routeIdsByDraftKey)),
   )
   errors.push(
-    ...(await persistWizardRouteTransformOverrides(state.destinations.routeDrafts, orderedRouteIds)),
+    ...(await verifyWizardRouteTransformEffective(state.destinations.routeDrafts, routeIdsByDraftKey)),
   )
 
   if (state.dataProtection.intents.length > 0) {

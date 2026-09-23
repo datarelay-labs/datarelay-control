@@ -40,7 +40,9 @@ function ruleFromUnknown(raw: unknown, index: number): FullEventRegexRuleDocumen
   if (!output_field || !source_path || !pattern) {
     throw new Error(`rules[${index}]: output_field, source_path, and pattern are required`)
   }
-  const groupRaw = obj.group ?? obj.capture_group ?? 1
+  // Runtime: rule.get("capture_group", rule.get("group", 1)) — key presence, not nullish.
+  const groupRaw =
+    'capture_group' in obj ? obj.capture_group : 'group' in obj ? obj.group : 1
   const group = Number(groupRaw)
   if (!Number.isFinite(group) || group < 0) {
     throw new Error(`rules[${index}]: group must be a non-negative integer`)
@@ -51,8 +53,10 @@ function ruleFromUnknown(raw: unknown, index: number): FullEventRegexRuleDocumen
     pattern,
     group,
   }
-  if ('default' in obj) rule.default = obj.default
-  else if ('default_value' in obj) rule.default = obj.default_value
+  // Runtime: rule.get("default_value", rule.get("default")) — presence of default_value wins
+  // even when its value is null.
+  if ('default_value' in obj) rule.default = obj.default_value
+  else if ('default' in obj) rule.default = obj.default
   return rule
 }
 
@@ -105,6 +109,17 @@ function storedRuleFromDocument(rule: FullEventRegexRuleDocument): Record<string
   return out
 }
 
+function editorRuleFromDocument(rule: FullEventRegexRuleDocument): Record<string, unknown> {
+  const out: Record<string, unknown> = {
+    output_field: rule.output_field,
+    source_path: rule.source_path,
+    pattern: rule.pattern,
+    group: rule.group,
+  }
+  if (rule.default !== undefined) out.default = rule.default
+  return out
+}
+
 function fullEventRegexConfigToPreviewFieldMappings(
   doc: FullEventRegexConfigDocument,
 ): Record<string, unknown> {
@@ -113,6 +128,55 @@ function fullEventRegexConfigToPreviewFieldMappings(
     preserve_source_fields: doc.preserve_source,
     regex_rules: doc.rules.map(storedRuleFromDocument),
   }
+}
+
+/**
+ * Reconstruct the wizard editor document from persisted field_mappings.
+ * Canonical persist shape uses top-level `preserve_source_fields` + `regex_rules`
+ * (not nested `regex_config`).
+ */
+export function fullEventRegexConfigDocumentFromFieldMappings(
+  fieldMappings: Record<string, unknown>,
+): FullEventRegexConfigDocument | null {
+  if (fieldMappings.mapping_mode !== 'full_event_regex') return null
+
+  // Legacy nested blob, if present.
+  if (fieldMappings.regex_config != null && typeof fieldMappings.regex_config === 'object') {
+    const parsed = parseFullEventRegexConfigText(JSON.stringify(fieldMappings.regex_config))
+    if (parsed.ok) return parsed.config
+  }
+
+  const preserve_source = fieldMappings.preserve_source_fields === true
+  const rulesRaw = fieldMappings.regex_rules ?? fieldMappings.rules
+  if (!Array.isArray(rulesRaw) || rulesRaw.length === 0) return null
+
+  try {
+    const rules: FullEventRegexRuleDocument[] = []
+    rulesRaw.forEach((item, i) => {
+      const rule = ruleFromUnknown(item, i)
+      if (rule) rules.push(rule)
+      else throw new Error(`rules[${i}]: must be an object`)
+    })
+    return { preserve_source, rules }
+  } catch {
+    return null
+  }
+}
+
+/** Wizard editor JSON for a persisted full-event Regex mapping, or empty when not Regex. */
+export function fullEventRegexConfigJsonFromFieldMappings(
+  fieldMappings: Record<string, unknown>,
+): string {
+  const doc = fullEventRegexConfigDocumentFromFieldMappings(fieldMappings)
+  if (!doc) return ''
+  return JSON.stringify(
+    {
+      preserve_source: doc.preserve_source,
+      rules: doc.rules.map(editorRuleFromDocument),
+    },
+    null,
+    2,
+  )
 }
 
 export function buildFieldMappingsFromFullEventRegexConfigJson(

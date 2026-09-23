@@ -1,14 +1,27 @@
 import { fetchConnectorById } from '../../../api/gdcConnectors'
 import { fetchDestinationsList } from '../../../api/gdcDestinations'
 import { fetchRoutesList, type RouteRead } from '../../../api/gdcRoutes'
+import {
+  fetchRouteEnrichmentUiConfig,
+  fetchRouteMappingUiConfig,
+  type RouteEnrichmentUiConfig,
+  type RouteMappingUiConfig,
+} from '../../../api/gdcRouteTransform'
 import { fetchStreamMappingUiConfig } from '../../../api/gdcRuntime'
 import { fetchStreamById } from '../../../api/gdcStreams'
 import type { MappingUIConfigResponse, MappingUIConfigRouteItem, StreamRead } from '../../../api/types/gdcApi'
 import { resolveStreamEndpointPath } from '../../../utils/streamHttpConfigFromStreamRead'
-import { UNMAPPED_FIELDS_POLICY_KEY } from '../../../utils/advancedTransformConfig'
+import {
+  parseTransformRulesFromFieldMappings,
+  UNMAPPED_FIELDS_POLICY_KEY,
+} from '../../../utils/advancedTransformConfig'
 import type { MappingMode } from '../../../types/advancedTransform'
 import { DEFAULT_MESSAGE_PREFIX_TEMPLATE, defaultMessagePrefixEnabled } from '../../../utils/messagePrefixDefaults'
-import { normalizeWizardEnrichmentRules } from './enrichment-rules-model'
+import {
+  normalizeWizardEnrichmentRules,
+  wizardEnrichmentFromPersistedDict,
+} from './enrichment-rules-model'
+import { fullEventRegexConfigJsonFromFieldMappings } from './wizard-full-event-regex-config'
 import {
   readAdvancedStreamConfigFromPersisted,
 } from './wizard-stream-config-sync'
@@ -20,6 +33,7 @@ import {
   type StreamConfigHeaderRow,
   type WizardMappingRow,
   type WizardRouteDraft,
+  type WizardRouteTransformOverride,
   type WizardState,
 } from './wizard-state'
 
@@ -107,6 +121,152 @@ function routeDraftFromCatalogRoute(route: RouteRead): WizardRouteDraft {
   }
 }
 
+function unmappedFieldsPolicyFromFieldMappings(
+  fieldMappings: Record<string, unknown>,
+): WizardRouteTransformOverride['unmappedFieldsPolicy'] {
+  const raw = fieldMappings[UNMAPPED_FIELDS_POLICY_KEY]
+  return raw === 'drop_unmapped' ? 'drop_unmapped' : 'pass_through'
+}
+
+/**
+ * Apply persisted route mapping/enrichment UI configs onto a wizard route draft so
+ * edit-save Effective verification expects Inherited / Mixed / Overridden truthfully.
+ *
+ * Callers must pass successfully read configs only. Null/`safeRequestJson` failure
+ * must not be coerced to Inherited (that would clear persisted overrides on save).
+ */
+export function applyRouteTransformConfigsToDraft(
+  draft: WizardRouteDraft,
+  mappingCfg: RouteMappingUiConfig,
+  enrichmentCfg: RouteEnrichmentUiConfig,
+): WizardRouteDraft {
+  const inheritMapping = mappingCfg.inherit_stream_mapping
+  const inheritEnrichment = enrichmentCfg.inherit_stream_enrichment
+  const inheritTransform = inheritMapping && inheritEnrichment
+
+  if (inheritTransform) {
+    const restOverrides = draft.overrides ? { ...draft.overrides } : undefined
+    if (restOverrides) delete restOverrides.transform
+    return {
+      ...draft,
+      inherit: { ...draft.inherit, transform: true },
+      overrides: restOverrides && Object.keys(restOverrides).length > 0 ? restOverrides : undefined,
+    }
+  }
+
+  const fieldMappings = !inheritMapping
+    ? ((mappingCfg.mapping?.field_mappings ?? {}) as Record<string, unknown>)
+    : {}
+  const enrichmentRec = !inheritEnrichment
+    ? ((enrichmentCfg.enrichment?.enrichment ?? {}) as Record<string, unknown>)
+    : {}
+  const overridePolicyRaw = enrichmentCfg.enrichment?.override_policy
+  const enrichmentOverridePolicy =
+    overridePolicyRaw === 'OVERRIDE' ||
+    overridePolicyRaw === 'ERROR_ON_CONFLICT' ||
+    overridePolicyRaw === 'KEEP_EXISTING'
+      ? overridePolicyRaw
+      : 'KEEP_EXISTING'
+  const enrichmentParsed = wizardEnrichmentFromPersistedDict(enrichmentRec)
+  const transform: WizardRouteTransformOverride = {
+    mapping: mappingRowsFromFieldMappings(fieldMappings),
+    mappingMode: mappingModeFromFieldMappings(fieldMappings),
+    fullEventJsonataExpression: fullEventJsonataExpressionFromFieldMappings(fieldMappings),
+    fullEventRegexConfigJson: fullEventRegexConfigJsonFromFieldMappings(fieldMappings),
+    transformRules: parseTransformRulesFromFieldMappings(fieldMappings),
+    enrichment: enrichmentParsed.rules,
+    mappingRowPresent: !inheritMapping,
+    enrichmentRowPresent: !inheritEnrichment,
+    enrichmentEnabled: !inheritEnrichment ? enrichmentCfg.enrichment?.enabled !== false : undefined,
+    enrichmentOverridePolicy: !inheritEnrichment ? enrichmentOverridePolicy : undefined,
+    ...(Object.keys(enrichmentParsed.advancedPassthrough).length > 0
+      ? { enrichmentAdvancedPassthrough: enrichmentParsed.advancedPassthrough }
+      : {}),
+    ...(enrichmentParsed.emitAdvancedAsTypeArray
+      ? { enrichmentEmitAdvancedAsTypeArray: true }
+      : {}),
+    ...(!inheritMapping ? { rawPayloadMode: mappingCfg.mapping?.raw_payload_mode ?? null } : {}),
+    unmappedFieldsPolicy: unmappedFieldsPolicyFromFieldMappings(fieldMappings),
+  }
+
+  return {
+    ...draft,
+    inherit: { ...draft.inherit, transform: false },
+    overrides: {
+      ...draft.overrides,
+      transform,
+    },
+  }
+}
+
+export type RouteTransformHydrateApplyResult =
+  | { ok: true; draft: WizardRouteDraft }
+  | { ok: false; error: string }
+
+/**
+ * Fail closed when mapping or enrichment config read failed (`safeRequestJson` → null).
+ * Never default a failed read to Inherited.
+ */
+export function tryApplyRouteTransformConfigsToDraft(
+  draft: WizardRouteDraft,
+  mappingCfg: RouteMappingUiConfig | null,
+  enrichmentCfg: RouteEnrichmentUiConfig | null,
+): RouteTransformHydrateApplyResult {
+  const routeLabel = draft.key.startsWith('route-') ? draft.key.slice('route-'.length) : draft.key
+  if (mappingCfg == null && enrichmentCfg == null) {
+    return {
+      ok: false,
+      error: `route ${routeLabel} transform: mapping and enrichment config read failed; refusing to default to Inherited`,
+    }
+  }
+  if (mappingCfg == null) {
+    return {
+      ok: false,
+      error: `route ${routeLabel} transform: mapping config read failed; refusing to default to Inherited`,
+    }
+  }
+  if (enrichmentCfg == null) {
+    return {
+      ok: false,
+      error: `route ${routeLabel} transform: enrichment config read failed; refusing to default to Inherited`,
+    }
+  }
+  return { ok: true, draft: applyRouteTransformConfigsToDraft(draft, mappingCfg, enrichmentCfg) }
+}
+
+export type RouteTransformDraftsHydrateResult =
+  | { ok: true; drafts: WizardRouteDraft[] }
+  | { ok: false; errors: string[] }
+
+/** Hydrate Transform for existing route drafts; fail closed on any config read failure. */
+export async function hydrateRouteDraftsTransform(
+  drafts: WizardRouteDraft[],
+): Promise<RouteTransformDraftsHydrateResult> {
+  const errors: string[] = []
+  const next: WizardRouteDraft[] = []
+
+  for (const draft of drafts) {
+    const routeId = Number(/^route-(\d+)$/.exec(draft.key)?.[1] ?? NaN)
+    if (!Number.isFinite(routeId) || routeId <= 0) {
+      next.push(draft)
+      continue
+    }
+    const [mappingCfg, enrichmentCfg] = await Promise.all([
+      fetchRouteMappingUiConfig(routeId),
+      fetchRouteEnrichmentUiConfig(routeId),
+    ])
+    const applied = tryApplyRouteTransformConfigsToDraft(draft, mappingCfg, enrichmentCfg)
+    if (applied.ok === false) {
+      errors.push(applied.error)
+      continue
+    }
+    next.push(applied.draft)
+  }
+
+  if (errors.length > 0) return { ok: false, errors }
+  return { ok: true, drafts: next }
+}
+
 /** Merge mapping-ui routes with catalog routes so edit wizard shows persisted delivery paths. */
 export function buildWizardDestinationsFromRouteSources(
   mappingRoutes: readonly MappingUIConfigRouteItem[],
@@ -175,6 +335,17 @@ export function buildWizardDestinationsFromRouteSources(
   })
 }
 
+async function withHydratedRouteTransforms(
+  destinations: WizardState['destinations'],
+): Promise<WizardState['destinations'] | null> {
+  const hydrated = await hydrateRouteDraftsTransform(destinations.routeDrafts)
+  if (!hydrated.ok) return null
+  return normalizeWizardDestinations({
+    ...destinations,
+    routeDrafts: hydrated.drafts,
+  })
+}
+
 export type WizardDestinationsRefresh = {
   destinations: WizardState['destinations']
   routeIds: number[]
@@ -188,11 +359,10 @@ export async function refreshWizardDestinationsFromStream(streamId: number): Pro
   ])
   const streamRoutes = (allRoutes ?? []).filter((route) => route.stream_id === streamId)
   if (destinations === null) return null
-  const merged = buildWizardDestinationsFromRouteSources(
-    mapping?.routes ?? [],
-    streamRoutes,
-    destinations,
+  const merged = await withHydratedRouteTransforms(
+    buildWizardDestinationsFromRouteSources(mapping?.routes ?? [], streamRoutes, destinations),
   )
+  if (merged == null) return null
   const routeIds = merged.routeDrafts
     .map((draft) => Number(/^route-(\d+)$/.exec(draft.key)?.[1] ?? NaN))
     .filter((id): id is number => Number.isFinite(id))
@@ -289,11 +459,10 @@ export async function hydrateWizardStateFromStream(streamId: number): Promise<Wi
 
   const streamRoutes = (allRoutes ?? []).filter((route) => route.stream_id === streamId)
   if (destinations === null) return null
-  const hydratedDestinations = buildWizardDestinationsFromRouteSources(
-    mapping?.routes ?? [],
-    streamRoutes,
-    destinations,
+  const hydratedDestinations = await withHydratedRouteTransforms(
+    buildWizardDestinationsFromRouteSources(mapping?.routes ?? [], streamRoutes, destinations),
   )
+  if (hydratedDestinations == null) return null
   const hydratedRouteIds = hydratedDestinations.routeDrafts
     .map((draft) => Number(/^route-(\d+)$/.exec(draft.key)?.[1] ?? NaN))
     .filter((id): id is number => Number.isFinite(id))
@@ -321,10 +490,7 @@ export async function hydrateWizardStateFromStream(streamId: number): Promise<Wi
   const fieldMappings = (mapping?.mapping?.field_mappings ?? {}) as Record<string, unknown>
   const mappingMode = mappingModeFromFieldMappings(fieldMappings)
   const fullEventJsonataExpression = fullEventJsonataExpressionFromFieldMappings(fieldMappings)
-  const fullEventRegexConfigJson =
-    mappingMode === 'full_event_regex' && fieldMappings.regex_config != null
-      ? JSON.stringify(fieldMappings.regex_config, null, 2)
-      : ''
+  const fullEventRegexConfigJson = fullEventRegexConfigJsonFromFieldMappings(fieldMappings)
 
   const unmappedPolicyRaw = fieldMappings[UNMAPPED_FIELDS_POLICY_KEY]
   const unmappedFieldsPolicy = unmappedPolicyRaw === 'drop_unmapped' ? 'drop_unmapped' : 'pass_through'

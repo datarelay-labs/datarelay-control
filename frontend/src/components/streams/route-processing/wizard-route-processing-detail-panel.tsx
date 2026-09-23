@@ -137,6 +137,7 @@ export function WizardRouteProcessingDetailPanel({
   const patchRouteTransform = (patch: Partial<WizardState>) => {
     const current = draft.overrides?.transform ?? buildRouteTransformOverrideFromGlobal(state)
     const next = {
+      ...current,
       mapping: patch.mapping ?? current.mapping,
       mappingMode: patch.mappingMode ?? current.mappingMode,
       fullEventJsonataExpression: patch.fullEventJsonataExpression ?? current.fullEventJsonataExpression,

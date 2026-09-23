@@ -1006,9 +1006,23 @@ class RouteEnrichmentUIConfigResponse(BaseModel):
     message: str
 
 
+class RouteMappingUISaveMappingPayload(BaseModel):
+    """Route mapping override save payload.
+
+    Unlike stream MappingUISaveMappingPayload, empty field_mappings are allowed so
+    raw-payload-only / empty persisted route mapping rows can round-trip without
+    being coerced to inherit/delete.
+    """
+
+    event_array_path: str | None = None
+    event_root_path: str | None = None
+    field_mappings: dict[str, Any] = Field(default_factory=dict)
+    raw_payload_mode: str | None = None
+
+
 class RouteMappingUISaveRequest(BaseModel):
     inherit: bool = False
-    mapping: MappingUISaveMappingPayload | None = None
+    mapping: RouteMappingUISaveMappingPayload | None = None
 
 
 class RouteMappingUISaveResponse(BaseModel):

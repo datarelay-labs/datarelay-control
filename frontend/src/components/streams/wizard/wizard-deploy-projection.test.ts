@@ -6,7 +6,30 @@ import {
 } from './wizard-deploy-projection'
 import { buildInitialState } from './wizard-state'
 
-function baseDraft(key: string, inherit?: Partial<{ transform: boolean; protection: boolean; classification: boolean; policy: boolean }>) {
+function baseDraft(
+  key: string,
+  inherit?: Partial<{ transform: boolean; protection: boolean; classification: boolean; policy: boolean }>,
+  overrides?: {
+    transform?: {
+      mapping: Array<{ id: string; outputField: string; sourceJsonPath: string }>
+      enrichment?: Array<{
+        id: string
+        label: string
+        fieldName: string
+        type: 'static'
+        enabled: boolean
+        staticValue: string
+        expression: string
+        lookupTable: string
+        lookupKeyField: string
+        conditions: []
+        conditionalDefault: string
+        normalizeSourceField: string
+        normalizeFormat: 'iso8601'
+      }>
+    }
+  },
+) {
   return {
     key,
     destinationId: 10,
@@ -20,6 +43,21 @@ function baseDraft(key: string, inherit?: Partial<{ transform: boolean; protecti
       policy: true,
       ...inherit,
     },
+    overrides: overrides
+      ? {
+          transform: overrides.transform
+            ? {
+                mapping: overrides.transform.mapping,
+                mappingMode: 'basic_jsonpath' as const,
+                fullEventJsonataExpression: '',
+                fullEventRegexConfigJson: '',
+                transformRules: [],
+                enrichment: overrides.transform.enrichment ?? [],
+                unmappedFieldsPolicy: 'pass_through' as const,
+              }
+            : undefined,
+        }
+      : undefined,
   }
 }
 
@@ -36,7 +74,7 @@ describe('projectRouteProcessingStatusFromDeployIntent', () => {
     expect(projection.concerns.transform.persistKind).toBe('none')
   })
 
-  it('marks transform override as intent only', () => {
+  it('marks empty transform override as intent only', () => {
     const state = buildInitialState()
     const projection = projectRouteProcessingStatusFromDeployIntent(
       baseDraft('r1', { transform: false }),
@@ -45,6 +83,62 @@ describe('projectRouteProcessingStatusFromDeployIntent', () => {
     expect(projection.statuses.transform).toBe('Overridden')
     expect(projection.concerns.transform.persistKind).toBe('intent_only')
     expect(deployIntentPersistLabel(projection.concerns.transform.persistKind)).toBe('Intent only')
+  })
+
+  it('marks complete transform override as route_transform persist', () => {
+    const state = buildInitialState()
+    const projection = projectRouteProcessingStatusFromDeployIntent(
+      baseDraft(
+        'r1',
+        { transform: false },
+        {
+          transform: {
+            mapping: [{ id: 'm1', outputField: 'msg', sourceJsonPath: '$.message' }],
+            enrichment: [
+              {
+                id: 'e1',
+                label: 'Tenant',
+                fieldName: 'tenant',
+                type: 'static',
+                enabled: true,
+                staticValue: 'acme',
+                expression: '',
+                lookupTable: 'aws-regions',
+                lookupKeyField: '',
+                conditions: [],
+                conditionalDefault: '',
+                normalizeSourceField: '',
+                normalizeFormat: 'iso8601',
+              },
+            ],
+          },
+        },
+      ),
+      state.dataProtection,
+    )
+    expect(projection.statuses.transform).toBe('Overridden')
+    expect(projection.concerns.transform.persistKind).toBe('route_transform')
+    expect(deployIntentPersistLabel(projection.concerns.transform.persistKind)).toBe(
+      'Persisted as route Transform',
+    )
+  })
+
+  it('marks mapping-only transform override as Mixed with route_transform persist', () => {
+    const state = buildInitialState()
+    const projection = projectRouteProcessingStatusFromDeployIntent(
+      baseDraft(
+        'r1',
+        { transform: false },
+        {
+          transform: {
+            mapping: [{ id: 'm1', outputField: 'msg', sourceJsonPath: '$.message' }],
+          },
+        },
+      ),
+      state.dataProtection,
+    )
+    expect(projection.statuses.transform).toBe('Mixed')
+    expect(projection.concerns.transform.persistKind).toBe('route_transform')
   })
 
   it('preserves Mixed status for protection when inherit off and field overrides exist', () => {
