@@ -116,9 +116,9 @@ export async function persistWizardRouteTransformOverrides(
         await saveRouteEnrichmentUiConfig(plan.routeId, {
           inherit: false,
           enrichment: {
-            enabled: true,
+            enabled: enrichmentAction.enabled,
             enrichment: enrichmentAction.enrichment,
-            override_policy: 'KEEP_EXISTING',
+            override_policy: enrichmentAction.override_policy,
           },
         })
       }
@@ -156,7 +156,9 @@ export async function verifyWizardRouteTransformEffective(
 
     const expectedStatus = inheritTransform
       ? ('Inherited' as const)
-      : expectedRouteTransformProcessingStatus(payload!.fieldMappings, payload!.enrichment)
+      : expectedRouteTransformProcessingStatus(payload!.fieldMappings, payload!.enrichment, {
+          enrichmentRowPresent: payload!.enrichmentRowPresent,
+        })
 
     let effective
     try {

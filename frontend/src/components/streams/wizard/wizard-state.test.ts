@@ -13,6 +13,7 @@ import {
   fieldMappingsFromRows,
   wizardFieldMappingsReady,
   buildRouteTransformPersistPlans,
+  expectedRouteTransformProcessingStatus,
   DEFAULT_ROUTE_PROCESSING_INHERIT,
 } from './wizard-state'
 
@@ -549,7 +550,12 @@ describe('wizard-state mapping/enrichment helpers', () => {
       {
         routeId: 20,
         mapping: { inherit: true },
-        enrichment: { inherit: false, enrichment: { tenant: 'acme' } },
+        enrichment: {
+          inherit: false,
+          enrichment: { tenant: 'acme' },
+          enabled: true,
+          override_policy: 'KEEP_EXISTING',
+        },
       },
     ])
   })
@@ -596,7 +602,60 @@ describe('wizard-state mapping/enrichment helpers', () => {
       inherit: false,
       fieldMappings: expect.objectContaining({ msg: '$.message' }),
     })
-    expect(plans[0]?.enrichment).toEqual({ inherit: false, enrichment: { env: 'prod' } })
+    expect(plans[0]?.enrichment).toEqual({
+      inherit: false,
+      enrichment: { env: 'prod' },
+      enabled: true,
+      override_policy: 'KEEP_EXISTING',
+    })
+  })
+
+  it('preserves empty enrichment row presence as Overridden override (not inherit clear)', () => {
+    const mappingWithEmptyEnrichmentRow = {
+      key: 'r2',
+      destinationId: 2,
+      enabled: true,
+      failurePolicy: 'LOG_AND_CONTINUE' as const,
+      rateLimitJson: {},
+      inherit: { transform: false, protection: true, classification: true, policy: true },
+      overrides: {
+        transform: {
+          mapping: [{ id: 'm1', outputField: 'msg', sourceJsonPath: '$.message' }],
+          mappingMode: 'basic_jsonpath' as const,
+          fullEventJsonataExpression: '',
+          fullEventRegexConfigJson: '',
+          transformRules: [],
+          enrichment: [],
+          enrichmentRowPresent: true,
+          enrichmentEnabled: true,
+          enrichmentOverridePolicy: 'KEEP_EXISTING' as const,
+          unmappedFieldsPolicy: 'pass_through' as const,
+        },
+      },
+    }
+    const plans = buildRouteTransformPersistPlans([mappingWithEmptyEnrichmentRow], { r2: 20 })
+    expect(plans).toEqual([
+      {
+        routeId: 20,
+        mapping: {
+          inherit: false,
+          fieldMappings: expect.objectContaining({ msg: '$.message' }),
+        },
+        enrichment: {
+          inherit: false,
+          enrichment: {},
+          enabled: true,
+          override_policy: 'KEEP_EXISTING',
+        },
+      },
+    ])
+    expect(
+      expectedRouteTransformProcessingStatus(
+        { msg: '$.message' },
+        {},
+        { enrichmentRowPresent: true },
+      ),
+    ).toBe('Overridden')
   })
 
   it('plans inherit:true clears when inherit.transform is true', () => {

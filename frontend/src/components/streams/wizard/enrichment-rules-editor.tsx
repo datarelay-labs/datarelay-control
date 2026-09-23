@@ -693,7 +693,7 @@ function renderRuleBody(
             <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Value</span>
             <input
               value={rule.staticValue}
-              onChange={(e) => onUpdate({ staticValue: e.target.value })}
+              onChange={(e) => onUpdate({ staticValue: e.target.value, staticPersistedValue: undefined })}
               className={cn(inputCls, 'font-mono')}
               placeholder="Fixed value or {{now_utc}}"
             />

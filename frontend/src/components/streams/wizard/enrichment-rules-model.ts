@@ -12,8 +12,14 @@ export type WizardEnrichmentRule = {
   fieldName: string
   type: EnrichmentRuleType
   enabled: boolean
-  /** Static Value */
+  /** Static Value (editor display string). */
   staticValue: string
+  /**
+   * Original JSON scalar from persistence (`number` / `boolean` / `null`).
+   * Used on save so hydrate→persist does not coerce `5`/`false` into strings.
+   * Cleared when the operator edits `staticValue` in the UI.
+   */
+  staticPersistedValue?: string | number | boolean | null
   /** Calculated */
   expression: string
   /** Lookup */
@@ -199,12 +205,32 @@ export function wizardEnrichmentRulesFromPersistedDict(
 
   for (const [fieldName, value] of Object.entries(rec)) {
     if (fieldName === '__rules') continue
-    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    if (typeof value === 'string') {
+      rules.push({
+        ...defaultRuleForType('static', rules.length),
+        label: fieldName,
+        fieldName,
+        staticValue: value,
+      })
+      continue
+    }
+    if (typeof value === 'number' || typeof value === 'boolean') {
       rules.push({
         ...defaultRuleForType('static', rules.length),
         label: fieldName,
         fieldName,
         staticValue: String(value),
+        staticPersistedValue: value,
+      })
+      continue
+    }
+    if (value === null) {
+      rules.push({
+        ...defaultRuleForType('static', rules.length),
+        label: fieldName,
+        fieldName,
+        staticValue: 'null',
+        staticPersistedValue: null,
       })
     }
   }
@@ -293,7 +319,8 @@ export function enrichmentDictFromRules(rules: readonly WizardEnrichmentRule[]):
     if (!key || !rule.enabled) continue
 
     if (rule.type === 'static') {
-      out[key] = rule.staticValue
+      out[key] =
+        rule.staticPersistedValue !== undefined ? rule.staticPersistedValue : rule.staticValue
       continue
     }
 

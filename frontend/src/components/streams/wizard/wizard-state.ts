@@ -633,6 +633,8 @@ export const DEFAULT_ROUTE_PROCESSING_INHERIT: WizardRouteProcessingInherit = {
 }
 
 /** Route-level transform override draft (wizard intent only). */
+export type WizardRouteEnrichmentOverridePolicy = 'KEEP_EXISTING' | 'OVERRIDE' | 'ERROR_ON_CONFLICT'
+
 export type WizardRouteTransformOverride = {
   mapping: WizardMappingRow[]
   mappingMode: MappingMode
@@ -640,6 +642,15 @@ export type WizardRouteTransformOverride = {
   fullEventRegexConfigJson: string
   transformRules: AdvancedTransformRuleDraft[]
   enrichment: WizardEnrichmentRule[]
+  /**
+   * True when a route enrichment row is persisted (even if enrichment JSON is `{}`).
+   * Distinguishes Overridden (mapping + empty enrichment row) from Mixed (mapping-only).
+   */
+  enrichmentRowPresent?: boolean
+  /** Persisted route enrichment enabled flag; written back unchanged unless edited. */
+  enrichmentEnabled?: boolean
+  /** Persisted conflict policy; written back unchanged unless edited. */
+  enrichmentOverridePolicy?: WizardRouteEnrichmentOverridePolicy | null
   unmappedFieldsPolicy: WizardUnmappedFieldsPolicy
 }
 
@@ -953,9 +964,9 @@ export function computeWizardRouteProcessingStatuses(
     if (!payload) {
       transform = 'Overridden'
     } else {
-      const hasMapping = Object.keys(payload.fieldMappings).length > 0
-      const hasEnrichment = Object.keys(payload.enrichment).length > 0
-      transform = hasMapping && hasEnrichment ? 'Overridden' : 'Mixed'
+      transform = expectedRouteTransformProcessingStatus(payload.fieldMappings, payload.enrichment, {
+        enrichmentRowPresent: payload.enrichmentRowPresent,
+      })
     }
   }
 
@@ -1735,7 +1746,12 @@ export type RouteTransformMappingPersistAction =
 
 export type RouteTransformEnrichmentPersistAction =
   | { inherit: true }
-  | { inherit: false; enrichment: Record<string, unknown> }
+  | {
+      inherit: false
+      enrichment: Record<string, unknown>
+      enabled: boolean
+      override_policy: WizardRouteEnrichmentOverridePolicy
+    }
 
 export type RouteTransformPersistPlan = {
   routeId: number
@@ -1743,15 +1759,38 @@ export type RouteTransformPersistPlan = {
   enrichment: RouteTransformEnrichmentPersistAction
 }
 
+export type RouteTransformOverridePersistPayload = {
+  fieldMappings: Record<string, unknown>
+  enrichment: Record<string, unknown>
+  enrichmentRowPresent: boolean
+  enrichmentEnabled: boolean
+  enrichmentOverridePolicy: WizardRouteEnrichmentOverridePolicy
+}
+
+function normalizeEnrichmentOverridePolicy(
+  raw: string | null | undefined,
+): WizardRouteEnrichmentOverridePolicy {
+  if (raw === 'OVERRIDE' || raw === 'ERROR_ON_CONFLICT' || raw === 'KEEP_EXISTING') return raw
+  return 'KEEP_EXISTING'
+}
+
 /** Mapping/enrichment payload for a route Transform override draft, or null when empty/incomplete. */
 export function routeTransformOverridePersistPayload(
   override: WizardRouteTransformOverride | undefined,
-): { fieldMappings: Record<string, unknown>; enrichment: Record<string, unknown> } | null {
+): RouteTransformOverridePersistPayload | null {
   if (!override) return null
   const fieldMappings = buildWizardFieldMappingsPayload(override)
   const enrichment = enrichmentDictFromRows(override.enrichment)
-  if (Object.keys(fieldMappings).length === 0 && Object.keys(enrichment).length === 0) return null
-  return { fieldMappings, enrichment }
+  const enrichmentRowPresent =
+    override.enrichmentRowPresent === true || Object.keys(enrichment).length > 0
+  if (Object.keys(fieldMappings).length === 0 && !enrichmentRowPresent) return null
+  return {
+    fieldMappings,
+    enrichment,
+    enrichmentRowPresent,
+    enrichmentEnabled: override.enrichmentEnabled !== false,
+    enrichmentOverridePolicy: normalizeEnrichmentOverridePolicy(override.enrichmentOverridePolicy),
+  }
 }
 
 /** True when the draft will persist a complete route Transform override (not Intent only). */
@@ -1764,14 +1803,16 @@ export function hasPersistableRouteTransformOverride(draft: WizardRouteDraft): b
 
 /**
  * Expected Effective API processing_status after persisting the given mapping/enrichment payload.
- * Mapping-only or enrichment-only → Mixed; both → Overridden.
+ * Mapping-only or enrichment-only → Mixed; both (including empty enrichment row) → Overridden.
  */
 export function expectedRouteTransformProcessingStatus(
   fieldMappings: Record<string, unknown>,
   enrichment: Record<string, unknown>,
+  options?: { enrichmentRowPresent?: boolean },
 ): 'Overridden' | 'Mixed' {
   const hasMapping = Object.keys(fieldMappings).length > 0
-  const hasEnrichment = Object.keys(enrichment).length > 0
+  const hasEnrichment =
+    Object.keys(enrichment).length > 0 || options?.enrichmentRowPresent === true
   if (hasMapping && hasEnrichment) return 'Overridden'
   return 'Mixed'
 }
@@ -1780,6 +1821,7 @@ export function expectedRouteTransformProcessingStatus(
  * Plans route mapping/enrichment saves so Inherited / Mixed / Overridden stay truthful.
  * - inherit.transform → clear both subcomponents (`inherit: true`)
  * - mapping-only / enrichment-only → override the present side and clear the other
+ * - empty enrichment row presence is preserved (not cleared via inherit:true)
  * - incomplete Intent-only override → skipped
  *
  * Route ids are keyed by draft key so partial create failures cannot shift bindings.
@@ -1806,14 +1848,18 @@ export function buildRouteTransformPersistPlans(
     if (!payload) continue
 
     const hasMapping = Object.keys(payload.fieldMappings).length > 0
-    const hasEnrichment = Object.keys(payload.enrichment).length > 0
     plans.push({
       routeId,
       mapping: hasMapping
         ? { inherit: false, fieldMappings: payload.fieldMappings }
         : { inherit: true },
-      enrichment: hasEnrichment
-        ? { inherit: false, enrichment: payload.enrichment }
+      enrichment: payload.enrichmentRowPresent
+        ? {
+            inherit: false,
+            enrichment: payload.enrichment,
+            enabled: payload.enrichmentEnabled,
+            override_policy: payload.enrichmentOverridePolicy,
+          }
         : { inherit: true },
     })
   }

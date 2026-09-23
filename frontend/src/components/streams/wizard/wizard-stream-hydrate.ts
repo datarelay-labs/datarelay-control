@@ -160,6 +160,13 @@ export function applyRouteTransformConfigsToDraft(
   const enrichmentRec = !inheritEnrichment
     ? ((enrichmentCfg.enrichment?.enrichment ?? {}) as Record<string, unknown>)
     : {}
+  const overridePolicyRaw = enrichmentCfg.enrichment?.override_policy
+  const enrichmentOverridePolicy =
+    overridePolicyRaw === 'OVERRIDE' ||
+    overridePolicyRaw === 'ERROR_ON_CONFLICT' ||
+    overridePolicyRaw === 'KEEP_EXISTING'
+      ? overridePolicyRaw
+      : 'KEEP_EXISTING'
   const transform: WizardRouteTransformOverride = {
     mapping: mappingRowsFromFieldMappings(fieldMappings),
     mappingMode: mappingModeFromFieldMappings(fieldMappings),
@@ -167,6 +174,9 @@ export function applyRouteTransformConfigsToDraft(
     fullEventRegexConfigJson: fullEventRegexConfigJsonFromFieldMappings(fieldMappings),
     transformRules: parseTransformRulesFromFieldMappings(fieldMappings),
     enrichment: wizardEnrichmentRulesFromPersistedDict(enrichmentRec),
+    enrichmentRowPresent: !inheritEnrichment,
+    enrichmentEnabled: !inheritEnrichment ? enrichmentCfg.enrichment?.enabled !== false : undefined,
+    enrichmentOverridePolicy: !inheritEnrichment ? enrichmentOverridePolicy : undefined,
     unmappedFieldsPolicy: unmappedFieldsPolicyFromFieldMappings(fieldMappings),
   }
 

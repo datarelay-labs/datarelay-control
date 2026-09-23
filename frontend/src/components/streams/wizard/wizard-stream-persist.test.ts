@@ -221,10 +221,89 @@ describe('wizard-stream-persist route sync + transform', () => {
       expect.objectContaining({
         inherit: false,
         enrichment: expect.objectContaining({
+          enabled: true,
+          override_policy: 'KEEP_EXISTING',
           enrichment: { tenant: 'acme' },
         }),
       }),
     )
+  })
+
+  it('preserves OVERRIDE policy and enabled:false on persist', async () => {
+    await persistWizardRouteTransformOverrides(
+      [
+        {
+          key: 'route-20',
+          destinationId: 20,
+          enabled: true,
+          failurePolicy: 'LOG_AND_CONTINUE',
+          rateLimitJson: {},
+          inherit: { transform: false, protection: true, classification: true, policy: true },
+          overrides: {
+            transform: {
+              mapping: [],
+              mappingMode: 'basic_jsonpath',
+              fullEventJsonataExpression: '',
+              fullEventRegexConfigJson: '',
+              transformRules: [],
+              enrichment: [enrichmentRow('tenant', 'acme')],
+              enrichmentRowPresent: true,
+              enrichmentEnabled: false,
+              enrichmentOverridePolicy: 'OVERRIDE',
+              unmappedFieldsPolicy: 'pass_through',
+            },
+          },
+        },
+      ],
+      { 'route-20': 20 },
+    )
+    expect(saveRouteEnrichmentUiConfig).toHaveBeenCalledWith(20, {
+      inherit: false,
+      enrichment: {
+        enabled: false,
+        enrichment: { tenant: 'acme' },
+        override_policy: 'OVERRIDE',
+      },
+    })
+  })
+
+  it('preserves empty enrichment row on mapping+empty-enrichment save', async () => {
+    await persistWizardRouteTransformOverrides(
+      [
+        {
+          key: 'route-20',
+          destinationId: 20,
+          enabled: true,
+          failurePolicy: 'LOG_AND_CONTINUE',
+          rateLimitJson: {},
+          inherit: { transform: false, protection: true, classification: true, policy: true },
+          overrides: {
+            transform: {
+              mapping: [{ id: 'm1', outputField: 'msg', sourceJsonPath: '$.message' }],
+              mappingMode: 'basic_jsonpath',
+              fullEventJsonataExpression: '',
+              fullEventRegexConfigJson: '',
+              transformRules: [],
+              enrichment: [],
+              enrichmentRowPresent: true,
+              enrichmentEnabled: true,
+              enrichmentOverridePolicy: 'KEEP_EXISTING',
+              unmappedFieldsPolicy: 'pass_through',
+            },
+          },
+        },
+      ],
+      { 'route-20': 20 },
+    )
+    expect(saveRouteEnrichmentUiConfig).toHaveBeenCalledWith(20, {
+      inherit: false,
+      enrichment: {
+        enabled: true,
+        enrichment: {},
+        override_policy: 'KEEP_EXISTING',
+      },
+    })
+    expect(saveRouteEnrichmentUiConfig).not.toHaveBeenCalledWith(20, { inherit: true })
   })
 
   it('clears both Transform subcomponents when switching to inherit global', async () => {
