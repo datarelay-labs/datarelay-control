@@ -19,6 +19,7 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 UTC = timezone.utc
+_ERROR_COOLDOWN_FLOOR_SECONDS = 900
 
 _STATE_LOCK = threading.Lock()
 _LAST_RUN_AT: datetime | None = None
@@ -440,7 +441,10 @@ def run_lab_auto_remediation(
                 "recent_eps": after.get("recent_eps"),
             },
         }
-        result = _set_result(result, cooldown_seconds=int(cfg["cooldown_seconds"]))
+        cooldown = int(cfg["cooldown_seconds"])
+        if result.get("status") == "error" or errors:
+            cooldown = max(cooldown, _ERROR_COOLDOWN_FLOOR_SECONDS)
+        result = _set_result(result, cooldown_seconds=cooldown)
         logger.info(
             "%s",
             {
@@ -476,7 +480,10 @@ def run_lab_auto_remediation(
             "partition_drop_candidates": [],
             "errors": [msg],
         }
-        result = _set_result(result, cooldown_seconds=int(cfg["cooldown_seconds"]))
+        result = _set_result(
+            result,
+            cooldown_seconds=max(int(cfg["cooldown_seconds"]), _ERROR_COOLDOWN_FLOOR_SECONDS),
+        )
         logger.warning("%s", {"stage": "lab_auto_remediation_failed", "message": msg[:300]})
         return result
     finally:

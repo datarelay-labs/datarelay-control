@@ -14,6 +14,15 @@ from __future__ import annotations
 from typing import Any
 
 
+PUSH_ONLY_SCHEDULER_STREAM_TYPES = frozenset({"WEBHOOK_RECEIVER", "WEBHOOK", "WEBHOOK_PUSH"})
+
+
+def is_push_only_stream_type(stream_type: str | None) -> bool:
+    """True for push ingest types the scheduler must never poll."""
+
+    return str(stream_type or "").strip().upper() in PUSH_ONLY_SCHEDULER_STREAM_TYPES
+
+
 def is_stream_scheduler_runnable(*, enabled: bool, status: str | None) -> bool:
     """True only when the Stream is explicitly started for delivery."""
 

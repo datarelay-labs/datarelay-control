@@ -106,6 +106,25 @@ def list_delivery_log_monthly_partitions(db: Session) -> list[tuple[str, date]]:
     return out
 
 
+def _partition_row_count(db: Session, name: str) -> int:
+    """Exact ``COUNT(*)`` for small partitions; catalog estimate for large ones."""
+
+    from app.retention.batch import _LARGE_DELIVERY_LOG_BYTES
+
+    quoted = _quote_ident(name)
+    try:
+        size = db.execute(text(f"SELECT pg_total_relation_size('{name}'::regclass)")).scalar()
+    except Exception:
+        size = None
+    if size is not None and int(size) >= _LARGE_DELIVERY_LOG_BYTES:
+        est = db.execute(
+            text("SELECT GREATEST(reltuples::bigint, 0) FROM pg_class WHERE oid = :rel::regclass"),
+            {"rel": name},
+        ).scalar()
+        return int(est or 0)
+    return int(db.execute(text(f"SELECT count(*) FROM {quoted}")).scalar() or 0)
+
+
 def calculate_delivery_log_partition_drop_targets(
     db: Session,
     *,
@@ -138,7 +157,7 @@ def calculate_delivery_log_partition_drop_targets(
             continue
         if month_end > cutoff_month:
             continue
-        row_count = int(db.execute(text(f"SELECT count(*) FROM {_quote_ident(name)}")).scalar() or 0)
+        row_count = _partition_row_count(db, name)
         targets.append(
             DeliveryLogPartitionDropTarget(
                 partition_name=name,
