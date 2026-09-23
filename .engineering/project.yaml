@@ -1,36 +1,55 @@
 engineering_system:
-  version: "1.5.1"
+  version: 1.6.5
   mode: adopted
-  baseline: "02eebeea507ef635355c4686f632775e1041d223"
+  baseline: 14150e424c922ff3a930b45dcf31d3a3d3ba28b2
   ci_mode: native
   native_ci_workflows:
-    - ".github/workflows/backend-tests.yml"
-    - ".github/workflows/frontend-tests.yml"
-    - ".github/workflows/backend-focused.yml"
-    - ".github/workflows/frontend-focused.yml"
-    - ".github/workflows/e2e-smoke.yml"
-  merge_gate_status: verified
-
+  - .github/workflows/backend-tests.yml
+  - .github/workflows/frontend-tests.yml
+  - .github/workflows/backend-focused.yml
+  - .github/workflows/frontend-focused.yml
+  - .github/workflows/e2e-smoke.yml
+  merge_gate_status: advisory
 project:
-  name: "data-relay-control"
-  type: "enterprise-data-control-gateway"
-  maturity: "production"
-
+  name: data-relay-control
+  type: enterprise-data-control-gateway
+  maturity: production
 domains:
-  - backend
-  - frontend
-  - runtime
-  - persistence
-  - e2e
-  - release
-  - documentation
-
+- backend
+- frontend
+- runtime
+- persistence
+- e2e
+- release
+- documentation
 platforms:
-  - linux
-  - docker
-  - github-actions
-
+- linux
+- docker
+- github-actions
 operations:
   production_oriented: true
   runbook_required: true
   incident_response_required: true
+  persistent_state: true
+  runbook_paths:
+  - docs/operator-runbook.md
+  - docs/deployment/backup-restore.md
+  health_command: curl -fsS "http://127.0.0.1:${GDC_HTTP_PORT:-18080}/health" >/dev/null
+  backup_command: bash scripts/ops/backup-postgres.sh
+  restore_test_command: set -euo pipefail; ./scripts/testing/start-test-stack.sh;
+    export DATABASE_URL="postgresql://gdc:gdc@127.0.0.1:${GDC_TEST_POSTGRES_HOST_PORT:-55441}/gdc_pytest";
+    export BACKUP_DIR="$(mktemp -d)"; trap 'rm -rf "$BACKUP_DIR"' EXIT; python3 -c
+    'import os,psycopg2; c=psycopg2.connect(os.environ["DATABASE_URL"]); c.autocommit=True;
+    q=c.cursor(); q.execute("CREATE TABLE IF NOT EXISTS engineering_restore_probe
+    (v text NOT NULL)"); q.execute("TRUNCATE engineering_restore_probe"); q.execute("INSERT
+    INTO engineering_restore_probe(v) VALUES (%s)",("expected",)); c.close()'; bash
+    scripts/ops/backup-postgres.sh; dump="$(find "$BACKUP_DIR" -maxdepth 1 -name "gdc-postgres-*.dump"
+    -print -quit)"; test -n "$dump"; python3 -c 'import os,psycopg2; c=psycopg2.connect(os.environ["DATABASE_URL"]);
+    c.autocommit=True; q=c.cursor(); q.execute("DROP SCHEMA public CASCADE"); q.execute("CREATE
+    SCHEMA public"); c.close()'; CONFIRM_RESTORE=yes DATABASE_URL="$DATABASE_URL"
+    bash scripts/ops/restore-postgres.sh "$dump"; python3 -c 'import os,psycopg2;
+    c=psycopg2.connect(os.environ["DATABASE_URL"]); q=c.cursor(); q.execute("SELECT
+    v FROM engineering_restore_probe"); row=q.fetchone(); assert row and row[0]=="expected",
+    row; c.close()'
+  upgrade_command: bash scripts/release/upgrade.sh
+  rollback_command: bash scripts/release/restore.sh
