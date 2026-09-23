@@ -114,6 +114,7 @@ This subsystem is **development-only** by construction. Multiple independent gua
 | `app/config.py` | `ENABLE_DEV_VALIDATION_LAB` defaults to **`False`**. |
 | `app/dev_validation_lab/seeder.py:lab_effective()` | Returns `False` whenever `APP_ENV` is `production` or `prod`, **regardless** of `ENABLE_DEV_VALIDATION_LAB`. |
 | `app/dev_validation_lab/runtime.py` | Logs `dev_validation_lab_seed_skipped` with reason `production_app_env` or `lab_disabled`; no seeding, no auto-start. |
+| Scheduler | `ENABLE_DEV_VALIDATION_LAB=false` excludes existing `[DEV VALIDATION]` and `[DEV E2E]` streams from polling in every `APP_ENV`, including development. The scheduler process flag wins if it disagrees with the API process. Push-only `WEBHOOK_RECEIVER` streams stay ingest-capable and are never polled. |
 | Compose split | `docker-compose.yml` is the full development platform; production-style HTTPS uses `deploy/docker-compose.https.yml`. The standalone lab stack (`postgres-test`, `wiremock-test`, `webhook-receiver-test`, `syslog-test`) lives in `docker-compose.test.yml` / `docker-compose.dev-validation.yml` with project name `gdc-platform-test`. |
 | Database isolation | Lab seeding only runs against `gdc` on the configured dev-validation port. `reset-db.sh` refuses any other URL. |
 
@@ -132,7 +133,7 @@ When packaging or deploying production:
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `ENABLE_DEV_VALIDATION_LAB` | `false` | Master switch; must be explicit. **Leave unset/false in production.** |
+| `ENABLE_DEV_VALIDATION_LAB` | `false` | Master switch; must be explicit. **Leave unset/false in production.** When false, existing lab streams are not polled. One-second lab polling is only active while this flag is true and the stream is started. |
 | `DEV_VALIDATION_AUTO_START` | `false` | After seed + WireMock sync, run each lab `continuous_validations` row once (fail-open). |
 | `DEV_VALIDATION_WIREMOCK_BASE_URL` | `http://127.0.0.1:18080` | WireMock admin + stubs (use `28080` for the isolated lab stack). |
 | `DEV_VALIDATION_WEBHOOK_BASE_URL` | `http://127.0.0.1:18091` | `http-https-echo` receiver. |

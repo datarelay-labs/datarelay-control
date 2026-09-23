@@ -63,6 +63,8 @@ Automatic scheduler deletes are forbidden in production. Outside production, sch
 GDC_RETENTION_AUTOMATIC_DELETES_ENABLED=true
 ```
 
+When automatic deletion is not allowed, the scheduler records a skip and does **not** run a `delivery_logs` `COUNT(*)` preview. That preview was a host-level I/O amplifier on large monthly partitions. Operator dry-run and preview still return exact counts while `delivery_logs` is under 1 GiB. At or above that size, preview and cleanup use partition catalog estimates (`pg_class.reltuples`) and bounded deletes (`max_deleted`) instead of a full-tree count. Re-enable destructive cleanup only after confirming the bounded path on a representative large `delivery_logs` tree. Current and next month partitions stay protected.
+
 Expired runtime aggregate snapshot cleanup is also disabled by default and requires:
 
 ```bash

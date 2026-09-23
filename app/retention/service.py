@@ -22,7 +22,7 @@ from app.platform_admin import journal
 from app.platform_admin.models import PlatformAuditEvent, PlatformRetentionPolicy
 from app.retention.batch import batch_delete_by_time_before, eligible_count_and_oldest
 from app.retention.config import effective_retention_policies, supplement_interval_seconds
-from app.retention.safety import retention_execution_decision
+from app.retention.safety import AUTOMATIC_RETENTION_TRIGGERS, retention_execution_decision
 from app.validation.models import ContinuousValidation, ValidationRecoveryEvent, ValidationRun
 
 logger = logging.getLogger(__name__)
@@ -451,6 +451,22 @@ def run_operational_retention(
                 cutoff=retention_cutoff(days=pol["delivery_logs_days"]),
                 start=t0,
                 message="delivery_logs retention disabled (logs_enabled=false).",
+            )
+        elif (
+            not dry_run
+            and not decision.allowed
+            and str(trigger) in AUTOMATIC_RETENTION_TRIGGERS
+        ):
+            _append(
+                "delivery_logs",
+                status="skipped",
+                matched=0,
+                deleted=0,
+                days=pol["delivery_logs_days"],
+                cutoff=retention_cutoff(days=pol["delivery_logs_days"]),
+                start=t0,
+                message=f"retention execution skipped without preview count: {decision.reason}",
+                notes={"count_skipped": True, "execution_guard": decision.notes},
             )
         else:
             try:

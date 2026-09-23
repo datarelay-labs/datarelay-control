@@ -30,6 +30,7 @@ class StreamSchedulerGate:
     status: str
     polling_interval: float
     name: str | None
+    stream_type: str = ""
 
 
 GateLoader = Callable[[], dict[int, StreamSchedulerGate]]
@@ -148,6 +149,7 @@ class EnabledStateCache:
                     status=str(row.status or ""),
                     polling_interval=float(row.polling_interval),
                     name=row.name,
+                    stream_type=str(getattr(row, "stream_type", "") or ""),
                 )
                 for row in rows
             }
