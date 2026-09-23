@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AdminSettingsPage } from './admin-settings-page'
@@ -98,6 +98,13 @@ describe('AdminSettingsPage IA modernization', () => {
     expect(screen.getByTestId('admin-settings-group-platform')).toBeInTheDocument()
     expect(screen.getByTestId('admin-settings-group-lifecycle')).toBeInTheDocument()
     expect(screen.getByTestId('admin-settings-group-operations')).toBeInTheDocument()
+    const access = screen.getByTestId('admin-settings-group-access')
+    const platform = screen.getByTestId('admin-settings-group-platform')
+    const lifecycle = screen.getByTestId('admin-settings-group-lifecycle')
+    const operations = screen.getByTestId('admin-settings-group-operations')
+    expect(access.compareDocumentPosition(platform) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(platform.compareDocumentPosition(lifecycle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(lifecycle.compareDocumentPosition(operations) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'HTTPS / Security' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Password Management' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'User Management' })).toBeInTheDocument()
@@ -105,6 +112,10 @@ describe('AdminSettingsPage IA modernization', () => {
     expect(screen.getByRole('heading', { name: 'Network / Reverse Proxy Settings' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Retention / cleanup' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Backup & Import' })).toBeInTheDocument()
+    expect(within(lifecycle).queryByRole('heading', { name: 'Support bundle' })).not.toBeInTheDocument()
+    expect(within(lifecycle).queryByRole('button', { name: /System information/i })).not.toBeInTheDocument()
+    expect(within(operations).getByRole('heading', { name: 'Support bundle' })).toBeInTheDocument()
+    expect(screen.getByTestId('admin-open-system-information')).toBeInTheDocument()
     expect(screen.getByTestId('admin-https-current-state')).toBeInTheDocument()
     expect(screen.getByTestId('admin-https-configuration')).toBeInTheDocument()
     expect(screen.queryByText(/localStorage/i)).not.toBeInTheDocument()

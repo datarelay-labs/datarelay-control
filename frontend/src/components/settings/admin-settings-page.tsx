@@ -1037,6 +1037,30 @@ export function AdminSettingsPage() {
       </section>
 
       <section
+        aria-labelledby="admin-settings-group-platform"
+        className="space-y-6"
+        data-testid="admin-settings-group-platform"
+      >
+        <h2
+          id="admin-settings-group-platform"
+          className="text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50"
+        >
+          Platform & network
+        </h2>
+
+      <AdminDisplayTimezoneSettings
+        backendRole={backendRole}
+        readOnly={readOnly}
+        busy={busy}
+        setBusy={setBusy}
+        setPageMsg={setPageMsg}
+        setPageErr={setPageErr}
+      />
+
+      <AdminNetworkSettingsPage />
+      </section>
+
+      <section
         aria-labelledby="admin-settings-group-lifecycle"
         className="space-y-6"
         data-testid="admin-settings-group-lifecycle"
@@ -1066,7 +1090,7 @@ export function AdminSettingsPage() {
         aria-labelledby="admin-backup-recovery-heading"
         data-testid="admin-backup-recovery-card"
       >
-        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 px-4 py-5 dark:border-gdc-border md:px-6">
+        <div className="flex flex-wrap items-start justify-between gap-3 px-4 py-5 dark:border-gdc-border md:px-6">
           <div className="flex min-w-0 gap-3">
             <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-sky-500/20 bg-sky-500/[0.07] text-sky-700 dark:border-sky-400/35 dark:bg-sky-500/15 dark:text-sky-100">
               <HardDrive className="h-5 w-5" aria-hidden />
@@ -1084,26 +1108,31 @@ export function AdminSettingsPage() {
           <button
             type="button"
             onClick={() => navigate('/operations/backup')}
+            data-testid="admin-open-backup-import"
             className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200/90 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100 dark:hover:bg-gdc-rowHover"
           >
             Open Backup & Import
             <ChevronRight className="h-4 w-4" aria-hidden />
           </button>
         </div>
-        <div className="flex flex-wrap gap-3 px-4 py-4 md:px-6">
-          <button
-            type="button"
-            onClick={() => void openSystem()}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200/80 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 dark:border-gdc-border dark:text-slate-200 dark:hover:bg-gdc-rowHover"
-          >
-            <Server className="h-3.5 w-3.5" aria-hidden />
-            System information
-          </button>
-        </div>
+      </section>
       </section>
 
-      {/* Support bundle */}
-      <section className={cn(cardShell, 'p-4 md:p-6')} aria-labelledby="admin-support-bundle-heading">
+      {isDevValidationLabUiEnabled() ? <AdminDevValidationPanel backendRole={backendRole} /> : null}
+
+      <section
+        aria-labelledby="admin-settings-group-operations"
+        className="space-y-6"
+        data-testid="admin-settings-group-operations"
+      >
+        <h2
+          id="admin-settings-group-operations"
+          className="text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50"
+        >
+          Operations & audit
+        </h2>
+
+      <section className={cn(cardShell, 'p-4 md:p-6')} aria-labelledby="admin-support-bundle-heading" data-testid="admin-support-bundle-panel">
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div className="flex gap-3">
             <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-violet-500/20 bg-violet-500/[0.07] text-violet-700 dark:border-gdc-primary/35 dark:bg-gdc-primary/15 dark:text-violet-100">
@@ -1141,45 +1170,8 @@ export function AdminSettingsPage() {
           </p>
         ) : null}
       </section>
-      </section>
 
-      <section
-        aria-labelledby="admin-settings-group-platform"
-        className="space-y-6"
-        data-testid="admin-settings-group-platform"
-      >
-        <h2
-          id="admin-settings-group-platform"
-          className="text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50"
-        >
-          Platform & network
-        </h2>
 
-      <AdminDisplayTimezoneSettings
-        backendRole={backendRole}
-        readOnly={readOnly}
-        busy={busy}
-        setBusy={setBusy}
-        setPageMsg={setPageMsg}
-        setPageErr={setPageErr}
-      />
-
-      <AdminNetworkSettingsPage />
-      </section>
-
-      {isDevValidationLabUiEnabled() ? <AdminDevValidationPanel backendRole={backendRole} /> : null}
-
-      <section
-        aria-labelledby="admin-settings-group-operations"
-        className="space-y-6"
-        data-testid="admin-settings-group-operations"
-      >
-        <h2
-          id="admin-settings-group-operations"
-          className="text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50"
-        >
-          Operations & audit
-        </h2>
 
       <AdminMaintenanceCenter backendRole={backendRole} busy={busy} setBusy={setBusy} />
 
@@ -1217,14 +1209,25 @@ export function AdminSettingsPage() {
             {systemFooter?.server_time_utc ? formatTs(systemFooter.server_time_utc) : '—'}
           </span>
         </div>
-        <button
-          type="button"
-          onClick={() => void refreshAll()}
-          className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-slate-200 px-3 py-1.5 text-[12px] font-semibold text-slate-700 hover:bg-slate-50 dark:border-gdc-border dark:text-slate-100 dark:hover:bg-gdc-card"
-        >
-          <RefreshCw className="h-3.5 w-3.5" aria-hidden />
-          Refresh
-        </button>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void openSystem()}
+            data-testid="admin-open-system-information"
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-1.5 text-[12px] font-semibold text-slate-700 hover:bg-slate-50 dark:border-gdc-border dark:text-slate-100 dark:hover:bg-gdc-card"
+          >
+            <Server className="h-3.5 w-3.5" aria-hidden />
+            System information
+          </button>
+          <button
+            type="button"
+            onClick={() => void refreshAll()}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-1.5 text-[12px] font-semibold text-slate-700 hover:bg-slate-50 dark:border-gdc-border dark:text-slate-100 dark:hover:bg-gdc-card"
+          >
+            <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+            Refresh
+          </button>
+        </div>
       </section>
 
       {userModal ? (
