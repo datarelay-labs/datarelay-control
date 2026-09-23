@@ -35,8 +35,24 @@ export type WizardEnrichmentRule = {
   lookupTable: string
   lookupKeyField: string
   /** Conditional */
-  conditions: Array<{ id: string; when: string; then: string }>
+  conditions: Array<{
+    id: string
+    when: string
+    /** Editor display string for `then`. */
+    then: string
+    /**
+     * Original JSON-like `then` from persistence.
+     * Cleared when the operator edits `then` in the UI.
+     */
+    thenPersistedValue?: WizardStaticPersistedValue
+  }>
+  /** Editor display string for conditional default. */
   conditionalDefault: string
+  /**
+   * Original JSON-like conditional default from persistence.
+   * Cleared when the operator edits `conditionalDefault` in the UI.
+   */
+  conditionalDefaultPersistedValue?: WizardStaticPersistedValue
   /** Normalize */
   normalizeSourceField: string
   normalizeFormat: 'iso8601' | 'lowercase' | 'uppercase' | 'trim'
@@ -229,19 +245,57 @@ function isEnrichmentRuleType(raw: string): raw is EnrichmentRuleType {
   return ENRICHMENT_RULE_TYPES.some((t) => t.type === raw)
 }
 
+function formatJsonLikeForEditor(value: WizardStaticPersistedValue): string {
+  return formatStaticPersistedValueForEditor(value)
+}
+
+function jsonLikeDisplayAndPersisted(raw: unknown): {
+  display: string
+  persisted?: WizardStaticPersistedValue
+} {
+  if (typeof raw === 'string') return { display: raw }
+  if (typeof raw === 'number') {
+    return { display: formatJsonLikeForEditor(raw), persisted: raw }
+  }
+  if (typeof raw === 'boolean') {
+    return { display: formatJsonLikeForEditor(raw), persisted: raw }
+  }
+  if (raw === null) {
+    return { display: formatJsonLikeForEditor(null), persisted: null }
+  }
+  if (isJsonLikeStaticValue(raw) && (Array.isArray(raw) || typeof raw === 'object')) {
+    return { display: formatJsonLikeForEditor(raw), persisted: raw }
+  }
+  return { display: String(raw ?? '') }
+}
+
 function parseConditionsFromPayload(o: Record<string, unknown>): WizardEnrichmentRule['conditions'] {
   const conditions = Array.isArray(o.conditions)
     ? o.conditions
         .map((c) => {
           if (!c || typeof c !== 'object') return null
           const row = c as Record<string, unknown>
+          const thenParsed =
+            'then' in row ? jsonLikeDisplayAndPersisted(row.then) : { display: '' }
           return {
             id: newConditionId(),
             when: String(row.when ?? ''),
-            then: String(row.then ?? ''),
+            then: thenParsed.display,
+            ...(thenParsed.persisted !== undefined
+              ? { thenPersistedValue: thenParsed.persisted }
+              : {}),
           }
         })
-        .filter((c): c is { id: string; when: string; then: string } => c != null)
+        .filter(
+          (
+            c,
+          ): c is {
+            id: string
+            when: string
+            then: string
+            thenPersistedValue?: WizardStaticPersistedValue
+          } => c != null,
+        )
     : [{ id: newConditionId(), when: '', then: '' }]
   return conditions.length > 0 ? conditions : [{ id: newConditionId(), when: '', then: '' }]
 }
@@ -272,6 +326,13 @@ function ruleFromAdvancedPayload(
       staticRaw === null ||
       (isJsonLikeStaticValue(staticRaw) &&
         (Array.isArray(staticRaw) || (typeof staticRaw === 'object' && staticRaw !== null))))
+  const rawDefault =
+    o.default !== undefined
+      ? o.default
+      : o.conditionalDefault !== undefined
+        ? o.conditionalDefault
+        : ''
+  const defaultParsed = jsonLikeDisplayAndPersisted(rawDefault)
   return {
     ...defaultRuleForType(type, index),
     label: String(o.label ?? fieldName),
@@ -280,9 +341,13 @@ function ruleFromAdvancedPayload(
     enabled: o.enabled !== false,
     expression: String(o.expression ?? ''),
     lookupTable: String(o.lookup_table ?? o.lookupTable ?? 'aws-regions'),
-    lookupKeyField: String(o.lookup_key_field ?? o.lookupKeyField ?? ''),
+    // Runtime accepts key_field alias; canonical save uses lookup_key_field.
+    lookupKeyField: String(o.lookup_key_field ?? o.lookupKeyField ?? o.key_field ?? ''),
     conditions: parseConditionsFromPayload(o),
-    conditionalDefault: String(o.default ?? o.conditionalDefault ?? ''),
+    conditionalDefault: defaultParsed.display,
+    ...(defaultParsed.persisted !== undefined
+      ? { conditionalDefaultPersistedValue: defaultParsed.persisted }
+      : {}),
     normalizeSourceField: String(o.source_field ?? o.normalizeSourceField ?? 'timestamp'),
     normalizeFormat: normalizeFormatFromPayload(o),
     staticValue:
@@ -471,8 +536,14 @@ function advancedPayloadFromRule(rule: WizardEnrichmentRule): Record<string, unk
     payload.lookup_key_field = rule.lookupKeyField
   }
   if (rule.type === 'conditional') {
-    payload.conditions = rule.conditions.map((c) => ({ when: c.when, then: c.then }))
-    payload.default = rule.conditionalDefault
+    payload.conditions = rule.conditions.map((c) => ({
+      when: c.when,
+      then: c.thenPersistedValue !== undefined ? c.thenPersistedValue : c.then,
+    }))
+    payload.default =
+      rule.conditionalDefaultPersistedValue !== undefined
+        ? rule.conditionalDefaultPersistedValue
+        : rule.conditionalDefault
   }
   if (rule.type === 'normalize') {
     payload.source_field = rule.normalizeSourceField
@@ -491,14 +562,17 @@ export function enrichmentDictFromRules(
 
   for (const rule of rules) {
     const key = rule.fieldName.trim()
-    if (!key || !rule.enabled) continue
+    if (!key) continue
 
+    // Static top-level fields: intentional — disabled statics are omitted (not written).
     if (rule.type === 'static') {
+      if (!rule.enabled) continue
       out[key] =
         rule.staticPersistedValue !== undefined ? rule.staticPersistedValue : rule.staticValue
       continue
     }
 
+    // Advanced rules: preserve enabled:false definitions through hydrate→save.
     if (options?.emitAdvancedAsTypeArray === true) {
       const item = advancedPayloadFromRule(rule)
       delete item.type

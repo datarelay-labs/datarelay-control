@@ -772,7 +772,11 @@ function renderRuleBody(
                 <input
                   value={cond.then}
                   onChange={(e) => {
-                    const next = rule.conditions.map((c, i) => (i === idx ? { ...c, then: e.target.value } : c))
+                    const next = rule.conditions.map((c, i) =>
+                      i === idx
+                        ? { ...c, then: e.target.value, thenPersistedValue: undefined }
+                        : c,
+                    )
                     onUpdate({ conditions: next })
                   }}
                   className={inputCls}
@@ -805,7 +809,12 @@ function renderRuleBody(
             <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Default</span>
             <input
               value={rule.conditionalDefault}
-              onChange={(e) => onUpdate({ conditionalDefault: e.target.value })}
+              onChange={(e) =>
+                onUpdate({
+                  conditionalDefault: e.target.value,
+                  conditionalDefaultPersistedValue: undefined,
+                })
+              }
               className={inputCls}
               placeholder="unknown"
             />

@@ -658,6 +658,70 @@ describe('wizard-state mapping/enrichment helpers', () => {
     ).toBe('Overridden')
   })
 
+  it('plans empty mapping row presence without inherit clear', () => {
+    const emptyMappingWithEnrichment = {
+      key: 'r2',
+      destinationId: 2,
+      enabled: true,
+      failurePolicy: 'LOG_AND_CONTINUE' as const,
+      rateLimitJson: {},
+      inherit: { transform: false, protection: true, classification: true, policy: true },
+      overrides: {
+        transform: {
+          mapping: [],
+          mappingMode: 'basic_jsonpath' as const,
+          fullEventJsonataExpression: '',
+          fullEventRegexConfigJson: '',
+          transformRules: [],
+          enrichment: [
+            {
+              id: 'e1',
+              label: 'Tenant',
+              fieldName: 'tenant',
+              type: 'static' as const,
+              enabled: true,
+              staticValue: 'acme',
+              expression: '',
+              lookupTable: 'aws-regions',
+              lookupKeyField: '',
+              conditions: [],
+              conditionalDefault: '',
+              normalizeSourceField: '',
+              normalizeFormat: 'iso8601' as const,
+            },
+          ],
+          mappingRowPresent: true,
+          rawPayloadMode: null,
+          unmappedFieldsPolicy: 'pass_through' as const,
+        },
+      },
+    }
+    const plans = buildRouteTransformPersistPlans([emptyMappingWithEnrichment], { r2: 20 })
+    expect(plans).toEqual([
+      {
+        routeId: 20,
+        mapping: {
+          inherit: false,
+          fieldMappings: {},
+          rawPayloadMode: null,
+        },
+        enrichment: {
+          inherit: false,
+          enrichment: { tenant: 'acme' },
+          enabled: true,
+          override_policy: 'KEEP_EXISTING',
+        },
+      },
+    ])
+    expect(
+      expectedRouteTransformProcessingStatus(
+        {},
+        { tenant: 'acme' },
+        { mappingRowPresent: true },
+      ),
+    ).toBe('Overridden')
+  })
+
   it('plans inherit:true clears when inherit.transform is true', () => {
     const inherited = {
       key: 'r1',

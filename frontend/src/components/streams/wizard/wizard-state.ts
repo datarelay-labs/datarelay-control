@@ -643,6 +643,11 @@ export type WizardRouteTransformOverride = {
   transformRules: AdvancedTransformRuleDraft[]
   enrichment: WizardEnrichmentRule[]
   /**
+   * True when a route mapping row is persisted (even if field_mappings is `{}`).
+   * Distinguishes Mixed/Overridden empty or raw-payload-only mapping from Inherited.
+   */
+  mappingRowPresent?: boolean
+  /**
    * True when a route enrichment row is persisted (even if enrichment JSON is `{}`).
    * Distinguishes Overridden (mapping + empty enrichment row) from Mixed (mapping-only).
    */
@@ -977,6 +982,7 @@ export function computeWizardRouteProcessingStatuses(
     } else {
       transform = expectedRouteTransformProcessingStatus(payload.fieldMappings, payload.enrichment, {
         enrichmentRowPresent: payload.enrichmentRowPresent,
+        mappingRowPresent: payload.mappingRowPresent,
       })
     }
   }
@@ -1778,6 +1784,7 @@ export type RouteTransformPersistPlan = {
 export type RouteTransformOverridePersistPayload = {
   fieldMappings: Record<string, unknown>
   enrichment: Record<string, unknown>
+  mappingRowPresent: boolean
   enrichmentRowPresent: boolean
   enrichmentEnabled: boolean
   enrichmentOverridePolicy: WizardRouteEnrichmentOverridePolicy
@@ -1801,12 +1808,15 @@ export function routeTransformOverridePersistPayload(
     advancedPassthrough: override.enrichmentAdvancedPassthrough,
     emitAdvancedAsTypeArray: override.enrichmentEmitAdvancedAsTypeArray === true,
   })
+  const mappingRowPresent =
+    override.mappingRowPresent === true || Object.keys(fieldMappings).length > 0
   const enrichmentRowPresent =
     override.enrichmentRowPresent === true || Object.keys(enrichment).length > 0
-  if (Object.keys(fieldMappings).length === 0 && !enrichmentRowPresent) return null
+  if (!mappingRowPresent && !enrichmentRowPresent) return null
   return {
     fieldMappings,
     enrichment,
+    mappingRowPresent,
     enrichmentRowPresent,
     enrichmentEnabled: override.enrichmentEnabled !== false,
     enrichmentOverridePolicy: normalizeEnrichmentOverridePolicy(override.enrichmentOverridePolicy),
@@ -1824,14 +1834,15 @@ export function hasPersistableRouteTransformOverride(draft: WizardRouteDraft): b
 
 /**
  * Expected Effective API processing_status after persisting the given mapping/enrichment payload.
- * Mapping-only or enrichment-only → Mixed; both (including empty enrichment row) → Overridden.
+ * Mapping-only or enrichment-only → Mixed; both (including empty rows) → Overridden.
  */
 export function expectedRouteTransformProcessingStatus(
   fieldMappings: Record<string, unknown>,
   enrichment: Record<string, unknown>,
-  options?: { enrichmentRowPresent?: boolean },
+  options?: { enrichmentRowPresent?: boolean; mappingRowPresent?: boolean },
 ): 'Overridden' | 'Mixed' {
-  const hasMapping = Object.keys(fieldMappings).length > 0
+  const hasMapping =
+    Object.keys(fieldMappings).length > 0 || options?.mappingRowPresent === true
   const hasEnrichment =
     Object.keys(enrichment).length > 0 || options?.enrichmentRowPresent === true
   if (hasMapping && hasEnrichment) return 'Overridden'
@@ -1868,10 +1879,9 @@ export function buildRouteTransformPersistPlans(
     const payload = routeTransformOverridePersistPayload(draft.overrides?.transform)
     if (!payload) continue
 
-    const hasMapping = Object.keys(payload.fieldMappings).length > 0
     plans.push({
       routeId,
-      mapping: hasMapping
+      mapping: payload.mappingRowPresent
         ? {
             inherit: false,
             fieldMappings: payload.fieldMappings,

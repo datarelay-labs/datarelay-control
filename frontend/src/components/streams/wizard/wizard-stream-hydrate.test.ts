@@ -766,6 +766,64 @@ describe('applyRouteTransformConfigsToDraft', () => {
     })
   })
 
+  it('preserves empty / raw-payload-only mapping row (does not plan inherit clear)', () => {
+    const mappingCfg: RouteMappingUiConfig = {
+      route_id: 42,
+      stream_id: 10,
+      inherit_stream_mapping: false,
+      mapping: {
+        exists: true,
+        event_array_path: null,
+        event_root_path: null,
+        field_mappings: {},
+        raw_payload_mode: 'include_raw',
+      },
+      stream_mapping: {
+        exists: false,
+        event_array_path: null,
+        event_root_path: null,
+        field_mappings: {},
+        raw_payload_mode: null,
+      },
+      message: 'ok',
+    }
+    const enrichmentCfg: RouteEnrichmentUiConfig = {
+      route_id: 42,
+      stream_id: 10,
+      inherit_stream_enrichment: false,
+      enrichment: {
+        exists: true,
+        enabled: true,
+        enrichment: { tenant: 'acme' },
+        override_policy: 'KEEP_EXISTING',
+      },
+      stream_enrichment: {
+        exists: false,
+        enabled: false,
+        enrichment: {},
+        override_policy: null,
+      },
+      message: 'ok',
+    }
+    const next = applyRouteTransformConfigsToDraft(baseDraft, mappingCfg, enrichmentCfg)
+    expect(next.overrides?.transform?.mappingRowPresent).toBe(true)
+    expect(next.overrides?.transform?.mapping).toEqual([])
+    expect(next.overrides?.transform?.rawPayloadMode).toBe('include_raw')
+    const plans = buildRouteTransformPersistPlans([next], { 'route-42': 42 })
+    expect(plans[0]?.mapping).toEqual({
+      inherit: false,
+      fieldMappings: {},
+      rawPayloadMode: 'include_raw',
+    })
+    expect(plans[0]?.mapping).not.toEqual({ inherit: true })
+    expect(plans[0]?.enrichment).toEqual({
+      inherit: false,
+      enrichment: { tenant: 'acme' },
+      enabled: true,
+      override_policy: 'KEEP_EXISTING',
+    })
+  })
+
   it('preserves type-array advanced enrichment through hydrate→plan', () => {
     const mappingCfg: RouteMappingUiConfig = {
       route_id: 42,

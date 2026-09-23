@@ -175,6 +175,7 @@ export function applyRouteTransformConfigsToDraft(
     fullEventRegexConfigJson: fullEventRegexConfigJsonFromFieldMappings(fieldMappings),
     transformRules: parseTransformRulesFromFieldMappings(fieldMappings),
     enrichment: enrichmentParsed.rules,
+    mappingRowPresent: !inheritMapping,
     enrichmentRowPresent: !inheritEnrichment,
     enrichmentEnabled: !inheritEnrichment ? enrichmentCfg.enrichment?.enabled !== false : undefined,
     enrichmentOverridePolicy: !inheritEnrichment ? enrichmentOverridePolicy : undefined,

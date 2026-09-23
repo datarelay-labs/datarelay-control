@@ -165,6 +165,7 @@ export async function verifyWizardRouteTransformEffective(
       ? ('Inherited' as const)
       : expectedRouteTransformProcessingStatus(payload!.fieldMappings, payload!.enrichment, {
           enrichmentRowPresent: payload!.enrichmentRowPresent,
+          mappingRowPresent: payload!.mappingRowPresent,
         })
 
     let effective

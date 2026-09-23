@@ -158,3 +158,110 @@ describe('wizardEnrichmentFromPersistedDict type-array fidelity', () => {
     })
   })
 })
+
+describe('lookup key_field alias + typed conditional + disabled advanced rules', () => {
+  it('hydrates lookup key_field alias and re-emits lookup_key_field', () => {
+    const rules = wizardEnrichmentRulesFromPersistedDict({
+      __rules: {
+        'metadata.region_name': {
+          type: 'lookup',
+          lookup_table: 'aws_regions',
+          key_field: 'region',
+          enabled: true,
+        },
+      },
+    })
+    expect(rules).toEqual([
+      expect.objectContaining({
+        fieldName: 'metadata.region_name',
+        type: 'lookup',
+        lookupKeyField: 'region',
+      }),
+    ])
+    expect(enrichmentDictFromRules(rules)).toEqual({
+      __rules: {
+        'metadata.region_name': expect.objectContaining({
+          type: 'lookup',
+          lookup_table: 'aws_regions',
+          lookup_key_field: 'region',
+        }),
+      },
+    })
+    expect(
+      (enrichmentDictFromRules(rules).__rules as Record<string, Record<string, unknown>>)[
+        'metadata.region_name'
+      ],
+    ).not.toHaveProperty('key_field')
+  })
+
+  it('preserves typed conditional then/default through hydrate→save', () => {
+    const persisted = {
+      __rules: {
+        'metadata.outcome': {
+          type: 'conditional',
+          conditions: [
+            { when: "status === 'ok'", then: true },
+            { when: "status === 'fail'", then: { code: 500 } },
+          ],
+          default: null,
+          enabled: true,
+        },
+      },
+    }
+    const rules = wizardEnrichmentRulesFromPersistedDict(persisted)
+    expect(rules[0]?.conditions[0]).toMatchObject({
+      then: 'true',
+      thenPersistedValue: true,
+    })
+    expect(rules[0]?.conditions[1]).toMatchObject({
+      thenPersistedValue: { code: 500 },
+    })
+    expect(rules[0]?.conditionalDefaultPersistedValue).toBeNull()
+    expect(enrichmentDictFromRules(rules)).toEqual({
+      __rules: {
+        'metadata.outcome': expect.objectContaining({
+          type: 'conditional',
+          conditions: [
+            { when: "status === 'ok'", then: true },
+            { when: "status === 'fail'", then: { code: 500 } },
+          ],
+          default: null,
+        }),
+      },
+    })
+  })
+
+  it('preserves enabled:false advanced rules; still omits disabled statics', () => {
+    const rules = wizardEnrichmentRulesFromPersistedDict({
+      vendor: 'acme',
+      __rules: {
+        'metadata.severity': {
+          type: 'calculated',
+          expression: '1+1',
+          enabled: false,
+        },
+      },
+    })
+    const disabledCalc = rules.find((r) => r.fieldName === 'metadata.severity')
+    expect(disabledCalc).toMatchObject({ type: 'calculated', enabled: false, expression: '1+1' })
+
+    const disabledStatic = {
+      ...rules.find((r) => r.fieldName === 'vendor')!,
+      enabled: false,
+    }
+    expect(
+      enrichmentDictFromRules([
+        disabledStatic,
+        disabledCalc!,
+      ]),
+    ).toEqual({
+      __rules: {
+        'metadata.severity': expect.objectContaining({
+          type: 'calculated',
+          expression: '1+1',
+          enabled: false,
+        }),
+      },
+    })
+  })
+})

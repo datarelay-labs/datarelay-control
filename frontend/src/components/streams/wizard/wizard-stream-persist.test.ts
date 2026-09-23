@@ -344,6 +344,54 @@ describe('wizard-stream-persist route sync + transform', () => {
     )
   })
 
+  it('preserves empty mapping row / raw-payload-only on save (no inherit clear)', async () => {
+    await persistWizardRouteTransformOverrides(
+      [
+        {
+          key: 'route-20',
+          destinationId: 20,
+          enabled: true,
+          failurePolicy: 'LOG_AND_CONTINUE',
+          rateLimitJson: {},
+          inherit: { transform: false, protection: true, classification: true, policy: true },
+          overrides: {
+            transform: {
+              mapping: [],
+              mappingMode: 'basic_jsonpath',
+              fullEventJsonataExpression: '',
+              fullEventRegexConfigJson: '',
+              transformRules: [],
+              enrichment: [],
+              mappingRowPresent: true,
+              enrichmentRowPresent: true,
+              rawPayloadMode: 'include_raw',
+              unmappedFieldsPolicy: 'pass_through',
+            },
+          },
+        },
+      ],
+      { 'route-20': 20 },
+    )
+    expect(saveRouteMappingUiConfig).toHaveBeenCalledWith(
+      20,
+      expect.objectContaining({
+        inherit: false,
+        mapping: expect.objectContaining({
+          field_mappings: {},
+          raw_payload_mode: 'include_raw',
+        }),
+      }),
+    )
+    expect(saveRouteMappingUiConfig).not.toHaveBeenCalledWith(20, { inherit: true })
+    expect(saveRouteEnrichmentUiConfig).toHaveBeenCalledWith(
+      20,
+      expect.objectContaining({
+        inherit: false,
+        enrichment: expect.objectContaining({ enrichment: {} }),
+      }),
+    )
+  })
+
   it('preserves type-array advanced enrichment on save', async () => {
     await persistWizardRouteTransformOverrides(
       [
