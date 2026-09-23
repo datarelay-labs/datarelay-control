@@ -76,7 +76,7 @@ Product constraints confirmed in code:
 | Full-event JSONata/Regex | Y | Y | Y | mapping tests + Playwright full-event | SUPPORTED |
 | Unmapped pass-through/drop | Y | Y | Y | mapping pipeline + drop-policy UI | SUPPORTED |
 | Wizard Route Processing step | Y | Y | flag-gated | unit + per-route pytest | PARTIAL |
-| Per-route transform from wizard | Y (editor) | Y (wizard + route edit) | Y | per-route transform + wizard persist/read-back tests | PASS — complete Transform overrides persist + Effective verify |
+| Per-route transform from wizard | Y (editor) | Y (route edit) | flag-gated | per-route transform tests | PARTIAL — wizard does not persist overrides |
 | Rare field badge | Y | N | N | unionSchema unit | UI_ONLY |
 | Sensitive suggestion (wizard) | Y | N | N | evaluateUnionFieldSuggestion unit | UI_ONLY |
 | Dedup | Y (config tab) | Y | Y | stream_dedup tests | SUPPORTED (not wizard step) |
