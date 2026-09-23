@@ -1,14 +1,26 @@
 import { fetchConnectorById } from '../../../api/gdcConnectors'
 import { fetchDestinationsList } from '../../../api/gdcDestinations'
 import { fetchRoutesList, type RouteRead } from '../../../api/gdcRoutes'
+import {
+  fetchRouteEnrichmentUiConfig,
+  fetchRouteMappingUiConfig,
+  type RouteEnrichmentUiConfig,
+  type RouteMappingUiConfig,
+} from '../../../api/gdcRouteTransform'
 import { fetchStreamMappingUiConfig } from '../../../api/gdcRuntime'
 import { fetchStreamById } from '../../../api/gdcStreams'
 import type { MappingUIConfigResponse, MappingUIConfigRouteItem, StreamRead } from '../../../api/types/gdcApi'
 import { resolveStreamEndpointPath } from '../../../utils/streamHttpConfigFromStreamRead'
-import { UNMAPPED_FIELDS_POLICY_KEY } from '../../../utils/advancedTransformConfig'
+import {
+  parseTransformRulesFromFieldMappings,
+  UNMAPPED_FIELDS_POLICY_KEY,
+} from '../../../utils/advancedTransformConfig'
 import type { MappingMode } from '../../../types/advancedTransform'
 import { DEFAULT_MESSAGE_PREFIX_TEMPLATE, defaultMessagePrefixEnabled } from '../../../utils/messagePrefixDefaults'
-import { normalizeWizardEnrichmentRules } from './enrichment-rules-model'
+import {
+  normalizeWizardEnrichmentRules,
+  wizardEnrichmentRulesFromPersistedDict,
+} from './enrichment-rules-model'
 import {
   readAdvancedStreamConfigFromPersisted,
 } from './wizard-stream-config-sync'
@@ -20,6 +32,7 @@ import {
   type StreamConfigHeaderRow,
   type WizardMappingRow,
   type WizardRouteDraft,
+  type WizardRouteTransformOverride,
   type WizardState,
 } from './wizard-state'
 
@@ -107,6 +120,88 @@ function routeDraftFromCatalogRoute(route: RouteRead): WizardRouteDraft {
   }
 }
 
+function fullEventRegexConfigJsonFromFieldMappings(fieldMappings: Record<string, unknown>): string {
+  if (mappingModeFromFieldMappings(fieldMappings) !== 'full_event_regex') return ''
+  if (fieldMappings.regex_config == null) return ''
+  try {
+    return JSON.stringify(fieldMappings.regex_config, null, 2)
+  } catch {
+    return ''
+  }
+}
+
+function unmappedFieldsPolicyFromFieldMappings(
+  fieldMappings: Record<string, unknown>,
+): WizardRouteTransformOverride['unmappedFieldsPolicy'] {
+  const raw = fieldMappings[UNMAPPED_FIELDS_POLICY_KEY]
+  return raw === 'drop_unmapped' ? 'drop_unmapped' : 'pass_through'
+}
+
+/**
+ * Apply persisted route mapping/enrichment UI configs onto a wizard route draft so
+ * edit-save Effective verification expects Inherited / Mixed / Overridden truthfully.
+ */
+export function applyRouteTransformConfigsToDraft(
+  draft: WizardRouteDraft,
+  mappingCfg: RouteMappingUiConfig | null,
+  enrichmentCfg: RouteEnrichmentUiConfig | null,
+): WizardRouteDraft {
+  const inheritMapping = mappingCfg?.inherit_stream_mapping ?? true
+  const inheritEnrichment = enrichmentCfg?.inherit_stream_enrichment ?? true
+  const inheritTransform = inheritMapping && inheritEnrichment
+
+  if (inheritTransform) {
+    const restOverrides = draft.overrides ? { ...draft.overrides } : undefined
+    if (restOverrides) delete restOverrides.transform
+    return {
+      ...draft,
+      inherit: { ...draft.inherit, transform: true },
+      overrides: restOverrides && Object.keys(restOverrides).length > 0 ? restOverrides : undefined,
+    }
+  }
+
+  const fieldMappings = !inheritMapping
+    ? ((mappingCfg?.mapping?.field_mappings ?? {}) as Record<string, unknown>)
+    : {}
+  const enrichmentRec = !inheritEnrichment
+    ? ((enrichmentCfg?.enrichment?.enrichment ?? {}) as Record<string, unknown>)
+    : {}
+  const transform: WizardRouteTransformOverride = {
+    mapping: mappingRowsFromFieldMappings(fieldMappings),
+    mappingMode: mappingModeFromFieldMappings(fieldMappings),
+    fullEventJsonataExpression: fullEventJsonataExpressionFromFieldMappings(fieldMappings),
+    fullEventRegexConfigJson: fullEventRegexConfigJsonFromFieldMappings(fieldMappings),
+    transformRules: parseTransformRulesFromFieldMappings(fieldMappings),
+    enrichment: wizardEnrichmentRulesFromPersistedDict(enrichmentRec),
+    unmappedFieldsPolicy: unmappedFieldsPolicyFromFieldMappings(fieldMappings),
+  }
+
+  return {
+    ...draft,
+    inherit: { ...draft.inherit, transform: false },
+    overrides: {
+      ...draft.overrides,
+      transform,
+    },
+  }
+}
+
+async function hydrateRouteDraftsTransform(
+  drafts: WizardRouteDraft[],
+): Promise<WizardRouteDraft[]> {
+  return Promise.all(
+    drafts.map(async (draft) => {
+      const routeId = Number(/^route-(\d+)$/.exec(draft.key)?.[1] ?? NaN)
+      if (!Number.isFinite(routeId) || routeId <= 0) return draft
+      const [mappingCfg, enrichmentCfg] = await Promise.all([
+        fetchRouteMappingUiConfig(routeId),
+        fetchRouteEnrichmentUiConfig(routeId),
+      ])
+      return applyRouteTransformConfigsToDraft(draft, mappingCfg, enrichmentCfg)
+    }),
+  )
+}
+
 /** Merge mapping-ui routes with catalog routes so edit wizard shows persisted delivery paths. */
 export function buildWizardDestinationsFromRouteSources(
   mappingRoutes: readonly MappingUIConfigRouteItem[],
@@ -175,6 +270,16 @@ export function buildWizardDestinationsFromRouteSources(
   })
 }
 
+async function withHydratedRouteTransforms(
+  destinations: WizardState['destinations'],
+): Promise<WizardState['destinations']> {
+  const routeDrafts = await hydrateRouteDraftsTransform(destinations.routeDrafts)
+  return normalizeWizardDestinations({
+    ...destinations,
+    routeDrafts,
+  })
+}
+
 export type WizardDestinationsRefresh = {
   destinations: WizardState['destinations']
   routeIds: number[]
@@ -188,10 +293,8 @@ export async function refreshWizardDestinationsFromStream(streamId: number): Pro
   ])
   const streamRoutes = (allRoutes ?? []).filter((route) => route.stream_id === streamId)
   if (destinations === null) return null
-  const merged = buildWizardDestinationsFromRouteSources(
-    mapping?.routes ?? [],
-    streamRoutes,
-    destinations,
+  const merged = await withHydratedRouteTransforms(
+    buildWizardDestinationsFromRouteSources(mapping?.routes ?? [], streamRoutes, destinations),
   )
   const routeIds = merged.routeDrafts
     .map((draft) => Number(/^route-(\d+)$/.exec(draft.key)?.[1] ?? NaN))
@@ -289,10 +392,8 @@ export async function hydrateWizardStateFromStream(streamId: number): Promise<Wi
 
   const streamRoutes = (allRoutes ?? []).filter((route) => route.stream_id === streamId)
   if (destinations === null) return null
-  const hydratedDestinations = buildWizardDestinationsFromRouteSources(
-    mapping?.routes ?? [],
-    streamRoutes,
-    destinations,
+  const hydratedDestinations = await withHydratedRouteTransforms(
+    buildWizardDestinationsFromRouteSources(mapping?.routes ?? [], streamRoutes, destinations),
   )
   const hydratedRouteIds = hydratedDestinations.routeDrafts
     .map((draft) => Number(/^route-(\d+)$/.exec(draft.key)?.[1] ?? NaN))

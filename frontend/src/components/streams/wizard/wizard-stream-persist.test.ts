@@ -373,6 +373,110 @@ describe('wizard-stream-persist route sync + transform', () => {
     expect(errors).toEqual([])
   })
 
+  it('edit-save of hydrated existing Mixed override expects Mixed, not Inherited', async () => {
+    fetchRouteTransformEffective.mockResolvedValue({
+      route_id: 11,
+      stream_id: 100,
+      persisted_source: 'mixed',
+      mapping_source: 'route',
+      enrichment_source: 'stream',
+      fallback_used: true,
+      mapping_count: 1,
+      enrichment_count: 0,
+      processing_status: 'Mixed',
+      message: 'ok',
+    })
+    const state = editState((s) => {
+      s.destinations.routeDrafts = [
+        {
+          key: 'route-11',
+          destinationId: 10,
+          enabled: true,
+          failurePolicy: 'LOG_AND_CONTINUE',
+          rateLimitJson: {},
+          // Hydrated from persisted route mapping override (not DEFAULT inherit).
+          inherit: { transform: false, protection: true, classification: true, policy: true },
+          overrides: {
+            transform: {
+              mapping: [{ id: 'm1', outputField: 'route_msg', sourceJsonPath: '$.message' }],
+              mappingMode: 'basic_jsonpath',
+              fullEventJsonataExpression: '',
+              fullEventRegexConfigJson: '',
+              transformRules: [],
+              enrichment: [],
+              unmappedFieldsPolicy: 'pass_through',
+            },
+          },
+        },
+      ]
+    })
+
+    const result = await persistWizardStreamEdits(100, state)
+    expect(result.ok).toBe(true)
+    expect(fetchRouteTransformEffective).toHaveBeenCalledWith(11)
+    expect(result.errors).toEqual([])
+  })
+
+  it('create/deploy verify fails closed on Effective null', async () => {
+    fetchRouteTransformEffective.mockResolvedValue(null)
+    const errors = await verifyWizardRouteTransformEffective(
+      [
+        {
+          key: 'wr-new',
+          destinationId: 20,
+          enabled: true,
+          failurePolicy: 'LOG_AND_CONTINUE',
+          rateLimitJson: {},
+          inherit: { transform: false, protection: true, classification: true, policy: true },
+          overrides: {
+            transform: {
+              mapping: [{ id: 'm1', outputField: 'msg', sourceJsonPath: '$.message' }],
+              mappingMode: 'basic_jsonpath',
+              fullEventJsonataExpression: '',
+              fullEventRegexConfigJson: '',
+              transformRules: [],
+              enrichment: [],
+              unmappedFieldsPolicy: 'pass_through',
+            },
+          },
+        },
+      ],
+      { 'wr-new': 99 },
+    )
+    expect(errors).toEqual([
+      'route 99 transform: Effective API returned no result (expected Mixed)',
+    ])
+  })
+
+  it('create/deploy verify fails closed on Effective fetch failure', async () => {
+    fetchRouteTransformEffective.mockRejectedValue(new Error('network down'))
+    const errors = await verifyWizardRouteTransformEffective(
+      [
+        {
+          key: 'wr-new',
+          destinationId: 20,
+          enabled: true,
+          failurePolicy: 'LOG_AND_CONTINUE',
+          rateLimitJson: {},
+          inherit: { transform: false, protection: true, classification: true, policy: true },
+          overrides: {
+            transform: {
+              mapping: [{ id: 'm1', outputField: 'msg', sourceJsonPath: '$.message' }],
+              mappingMode: 'basic_jsonpath',
+              fullEventJsonataExpression: '',
+              fullEventRegexConfigJson: '',
+              transformRules: [],
+              enrichment: [],
+              unmappedFieldsPolicy: 'pass_through',
+            },
+          },
+        },
+      ],
+      { 'wr-new': 99 },
+    )
+    expect(errors).toEqual(['route 99 transform effective: network down'])
+  })
+
   it('syncRoutes returns routeIdsByDraftKey for new drafts', async () => {
     createRoute.mockResolvedValue({ id: 55, stream_id: 100, destination_id: 20 })
     const state = editState((s) => {

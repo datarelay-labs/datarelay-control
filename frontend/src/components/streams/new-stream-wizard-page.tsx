@@ -67,7 +67,7 @@ import {
 } from './wizard/wizard-operational-samples'
 import { applyHttpImportToWizardState, type HttpImportWizardLocationState } from '../../utils/httpImportDraft'
 import { persistWizardDataProtectionIntents } from './wizard/wizard-data-protection-persist'
-import { persistWizardRouteTransformOverrides } from './wizard/wizard-stream-persist'
+import { persistWizardRouteTransformOverrides, verifyWizardRouteTransformEffective } from './wizard/wizard-stream-persist'
 import { persistWizardStreamGovernance } from './wizard/wizard-governance-persist'
 import {
   mergeSchemaDriftPolicyIntoConfigJson,
@@ -592,6 +592,18 @@ export function NewStreamWizardPage() {
           )
           if (xfErrors.length > 0) {
             outcome.errors.push(...xfErrors.map((err) => label(target.streamId, err)))
+          }
+          const routeIdsByDraftKey: Record<string, number> = {}
+          workingState.destinations.routeDrafts.forEach((draft, index) => {
+            const routeId = routeIdsForStream[index]
+            if (routeId && routeId > 0) routeIdsByDraftKey[draft.key] = routeId
+          })
+          const verifyErrors = await verifyWizardRouteTransformEffective(
+            workingState.destinations.routeDrafts,
+            routeIdsByDraftKey,
+          )
+          if (verifyErrors.length > 0) {
+            outcome.errors.push(...verifyErrors.map((err) => label(target.streamId, err)))
           }
         }
 

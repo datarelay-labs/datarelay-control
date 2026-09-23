@@ -182,6 +182,85 @@ export function normalizeWizardEnrichmentRules(raw: unknown): WizardEnrichmentRu
   return raw.map((r) => normalizeWizardEnrichmentRule(r)).filter((r): r is WizardEnrichmentRule => r != null)
 }
 
+/**
+ * Rebuild wizard enrichment rules from a persisted enrichment dict
+ * (`{ field: staticValue, __rules?: { field: advancedPayload } }`).
+ */
+export function wizardEnrichmentRulesFromPersistedDict(
+  rec: Record<string, unknown> | null | undefined,
+): WizardEnrichmentRule[] {
+  if (!rec || typeof rec !== 'object') return []
+  const rules: WizardEnrichmentRule[] = []
+  const advancedRaw = rec.__rules
+  const advanced =
+    advancedRaw && typeof advancedRaw === 'object' && !Array.isArray(advancedRaw)
+      ? (advancedRaw as Record<string, unknown>)
+      : {}
+
+  for (const [fieldName, value] of Object.entries(rec)) {
+    if (fieldName === '__rules') continue
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      rules.push({
+        ...defaultRuleForType('static', rules.length),
+        label: fieldName,
+        fieldName,
+        staticValue: String(value),
+      })
+    }
+  }
+
+  for (const [fieldName, payload] of Object.entries(advanced)) {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) continue
+    const o = payload as Record<string, unknown>
+    const typeRaw = typeof o.type === 'string' ? o.type : 'calculated'
+    const type: EnrichmentRuleType =
+      typeRaw === 'lookup' ||
+      typeRaw === 'conditional' ||
+      typeRaw === 'normalize' ||
+      typeRaw === 'static' ||
+      typeRaw === 'calculated'
+        ? typeRaw
+        : 'calculated'
+    const conditions = Array.isArray(o.conditions)
+      ? o.conditions
+          .map((c) => {
+            if (!c || typeof c !== 'object') return null
+            const row = c as Record<string, unknown>
+            return {
+              id: newConditionId(),
+              when: String(row.when ?? ''),
+              then: String(row.then ?? ''),
+            }
+          })
+          .filter((c): c is { id: string; when: string; then: string } => c != null)
+      : [{ id: newConditionId(), when: '', then: '' }]
+    rules.push({
+      ...defaultRuleForType(type, rules.length),
+      label: String(o.label ?? fieldName),
+      fieldName,
+      type,
+      enabled: o.enabled !== false,
+      expression: String(o.expression ?? ''),
+      lookupTable: String(o.lookup_table ?? o.lookupTable ?? 'aws-regions'),
+      lookupKeyField: String(o.lookup_key_field ?? o.lookupKeyField ?? ''),
+      conditions: conditions.length > 0 ? conditions : [{ id: newConditionId(), when: '', then: '' }],
+      conditionalDefault: String(o.default ?? o.conditionalDefault ?? ''),
+      normalizeSourceField: String(o.source_field ?? o.normalizeSourceField ?? 'timestamp'),
+      normalizeFormat:
+        o.format === 'lowercase' || o.format === 'uppercase' || o.format === 'trim'
+          ? o.format
+          : o.normalizeFormat === 'lowercase' ||
+              o.normalizeFormat === 'uppercase' ||
+              o.normalizeFormat === 'trim'
+            ? o.normalizeFormat
+            : 'iso8601',
+      staticValue: String(o.staticValue ?? o.value ?? ''),
+    })
+  }
+
+  return rules
+}
+
 function isNowUtcTemplate(s: string): boolean {
   return s.trim().replace(/\s/g, '').toLowerCase() === '{{now_utc}}'
 }
