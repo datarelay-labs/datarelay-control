@@ -1,5 +1,7 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { getAdminMaintenanceHealth } from '../../api/gdcAdmin'
 import { AdminMaintenanceCenter } from './admin-maintenance-center'
 
 vi.mock('../../api/gdcAdmin', () => ({
@@ -27,18 +29,43 @@ vi.mock('../../api/gdcAdmin', () => ({
 }))
 
 describe('AdminMaintenanceCenter', () => {
-  it('renders warning styling on database card when panel status is WARN', async () => {
+  it('renders current-state → problem evidence → progressive panel detail hierarchy', async () => {
+    const user = userEvent.setup()
     render(<AdminMaintenanceCenter backendRole="ADMINISTRATOR" busy={false} setBusy={() => {}} />)
-    const card = await screen.findByTestId('maintenance-card-database')
-    expect(card.className).toMatch(/amber-50/)
-    expect(screen.getByTestId('maintenance-warnings-block')).toBeInTheDocument()
+
+    expect(await screen.findByTestId('admin-maintenance-panel')).toBeInTheDocument()
+    expect(screen.getByTestId('maintenance-current-state')).toHaveTextContent(/WARN/)
     expect(screen.getByTestId('maintenance-overall')).toHaveTextContent('WARN')
+    expect(screen.getByTestId('maintenance-problem-evidence')).toBeInTheDocument()
+    expect(screen.getByTestId('maintenance-warnings-block')).toBeInTheDocument()
+    expect(screen.getByTestId('maintenance-problem-database')).toHaveTextContent(/Database/)
+    expect(screen.getByTestId('maintenance-problem-database').className).toMatch(/amber-50/)
+    expect(screen.queryByTestId('maintenance-panel-details-body')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('maintenance-card-database')).not.toBeInTheDocument()
+
+    await user.click(screen.getByTestId('maintenance-panel-details-toggle'))
+    expect(screen.getByTestId('maintenance-panel-details-body')).toBeInTheDocument()
+    const card = screen.getByTestId('maintenance-card-database')
+    expect(card.className).toMatch(/amber-50/)
+    expect(screen.getByTestId('maintenance-card-storage')).toBeInTheDocument()
   })
 
   it('shows access note for non-administrator', () => {
     render(<AdminMaintenanceCenter backendRole="OPERATOR" busy={false} setBusy={() => {}} />)
     expect(screen.getByTestId('maintenance-access-note')).toBeInTheDocument()
     expect(screen.queryByTestId('maintenance-card-database')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('maintenance-current-state')).not.toBeInTheDocument()
+  })
+
+  it('preserves refresh fetch behavior', async () => {
+    const user = userEvent.setup()
+    vi.mocked(getAdminMaintenanceHealth).mockClear()
+    render(<AdminMaintenanceCenter backendRole="ADMINISTRATOR" busy={false} setBusy={() => {}} />)
+    await screen.findByTestId('maintenance-current-state')
+    const before = vi.mocked(getAdminMaintenanceHealth).mock.calls.length
+    expect(before).toBeGreaterThanOrEqual(1)
+    await user.click(screen.getByTestId('maintenance-refresh'))
+    await waitFor(() => expect(getAdminMaintenanceHealth).toHaveBeenCalledTimes(before + 1))
   })
 })
 
@@ -48,16 +75,23 @@ describe('AdminMaintenanceCenter runbook shortcut', () => {
   })
 
   it('shows in-repo runbook path when hosted URL is not set', async () => {
+    const user = userEvent.setup()
     vi.stubEnv('VITE_ADMIN_BACKUP_RESTORE_RUNBOOK_URL', '')
     render(<AdminMaintenanceCenter backendRole="ADMINISTRATOR" busy={false} setBusy={() => {}} />)
+    await screen.findByTestId('maintenance-current-state')
+    expect(screen.queryByTestId('maintenance-runbook-shortcut')).not.toBeInTheDocument()
+    await user.click(screen.getByTestId('maintenance-runbook-toggle'))
     expect(await screen.findByTestId('maintenance-runbook-shortcut')).toBeInTheDocument()
     expect(screen.getByText('docs/admin/backup-restore.md')).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Backup & Restore Runbook' })).not.toBeInTheDocument()
   })
 
   it('renders runbook link when VITE_ADMIN_BACKUP_RESTORE_RUNBOOK_URL is set', async () => {
+    const user = userEvent.setup()
     vi.stubEnv('VITE_ADMIN_BACKUP_RESTORE_RUNBOOK_URL', 'https://ops.example/docs/backup-restore')
     render(<AdminMaintenanceCenter backendRole="ADMINISTRATOR" busy={false} setBusy={() => {}} />)
+    await screen.findByTestId('maintenance-current-state')
+    await user.click(screen.getByTestId('maintenance-runbook-toggle'))
     const link = await screen.findByRole('link', { name: 'Backup & Restore Runbook' })
     expect(link).toHaveAttribute('href', 'https://ops.example/docs/backup-restore')
     expect(link).toHaveAttribute('rel', 'noopener noreferrer')
