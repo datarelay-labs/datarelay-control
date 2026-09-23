@@ -94,12 +94,13 @@ export async function persistWizardRouteTransformOverrides(
   const errors: string[] = []
   for (const plan of buildRouteTransformPersistPlans(drafts, routeIdsByDraftKey)) {
     try {
-      if (plan.mapping.inherit) {
+      const mappingAction = plan.mapping
+      if (mappingAction.inherit === true) {
         await saveRouteMappingUiConfig(plan.routeId, { inherit: true })
       } else {
         await saveRouteMappingUiConfig(plan.routeId, {
           inherit: false,
-          mapping: { field_mappings: plan.mapping.fieldMappings },
+          mapping: { field_mappings: mappingAction.fieldMappings },
         })
       }
     } catch (err) {
@@ -108,14 +109,15 @@ export async function persistWizardRouteTransformOverrides(
       )
     }
     try {
-      if (plan.enrichment.inherit) {
+      const enrichmentAction = plan.enrichment
+      if (enrichmentAction.inherit === true) {
         await saveRouteEnrichmentUiConfig(plan.routeId, { inherit: true })
       } else {
         await saveRouteEnrichmentUiConfig(plan.routeId, {
           inherit: false,
           enrichment: {
             enabled: true,
-            enrichment: plan.enrichment.enrichment,
+            enrichment: enrichmentAction.enrichment,
             override_policy: 'KEEP_EXISTING',
           },
         })
