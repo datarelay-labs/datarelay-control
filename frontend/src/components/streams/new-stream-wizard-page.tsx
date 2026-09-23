@@ -564,13 +564,20 @@ export function NewStreamWizardPage() {
         }
 
         const routeIdsForStream: number[] = []
+        const createdRouteIdsByDraftKey: Record<string, number> = {}
         if (
           workingState.destinations.destinationApiBacked &&
           workingState.destinations.routeDrafts.length > 0
         ) {
-          for (const routePayload of buildRouteCreatePayloads(target.streamId, workingState.destinations)) {
+          const drafts = workingState.destinations.routeDrafts
+          const payloads = buildRouteCreatePayloads(target.streamId, workingState.destinations)
+          for (let i = 0; i < drafts.length; i++) {
+            const draft = drafts[i]
+            const routePayload = payloads[i]
+            if (!draft || !routePayload) continue
             try {
               const route = await createRoute(routePayload)
+              createdRouteIdsByDraftKey[draft.key] = route.id
               routeIdsForStream.push(route.id)
               outcome.routeId = route.id
               outcome.routeIds.push(route.id)
@@ -585,22 +592,17 @@ export function NewStreamWizardPage() {
           }
         }
 
-        if (routeIdsForStream.length > 0) {
+        if (Object.keys(createdRouteIdsByDraftKey).length > 0) {
           const xfErrors = await persistWizardRouteTransformOverrides(
             workingState.destinations.routeDrafts,
-            routeIdsForStream,
+            createdRouteIdsByDraftKey,
           )
           if (xfErrors.length > 0) {
             outcome.errors.push(...xfErrors.map((err) => label(target.streamId, err)))
           }
-          const routeIdsByDraftKey: Record<string, number> = {}
-          workingState.destinations.routeDrafts.forEach((draft, index) => {
-            const routeId = routeIdsForStream[index]
-            if (routeId && routeId > 0) routeIdsByDraftKey[draft.key] = routeId
-          })
           const verifyErrors = await verifyWizardRouteTransformEffective(
             workingState.destinations.routeDrafts,
-            routeIdsByDraftKey,
+            createdRouteIdsByDraftKey,
           )
           if (verifyErrors.length > 0) {
             outcome.errors.push(...verifyErrors.map((err) => label(target.streamId, err)))

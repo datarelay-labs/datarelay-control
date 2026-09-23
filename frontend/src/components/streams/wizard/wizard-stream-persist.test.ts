@@ -183,12 +183,14 @@ describe('wizard-stream-persist route sync + transform', () => {
         mapping: { field_mappings: expect.objectContaining({ route_b_msg: '$.message' }) },
       }),
     )
-    expect(saveRouteMappingUiConfig).not.toHaveBeenCalledWith(11, expect.anything())
+    expect(saveRouteMappingUiConfig).toHaveBeenCalledWith(11, { inherit: true })
+    expect(saveRouteEnrichmentUiConfig).toHaveBeenCalledWith(11, { inherit: true })
+    expect(saveRouteEnrichmentUiConfig).toHaveBeenCalledWith(22, { inherit: true })
     expect(fetchRouteTransformEffective).toHaveBeenCalledWith(11)
     expect(fetchRouteTransformEffective).toHaveBeenCalledWith(22)
   })
 
-  it('persists enrichment-only route override via enrichment API', async () => {
+  it('persists enrichment-only route override and clears stale mapping', async () => {
     await persistWizardRouteTransformOverrides(
       [
         {
@@ -211,9 +213,9 @@ describe('wizard-stream-persist route sync + transform', () => {
           },
         },
       ],
-      [20],
+      { 'route-20': 20 },
     )
-    expect(saveRouteMappingUiConfig).not.toHaveBeenCalled()
+    expect(saveRouteMappingUiConfig).toHaveBeenCalledWith(20, { inherit: true })
     expect(saveRouteEnrichmentUiConfig).toHaveBeenCalledWith(
       20,
       expect.objectContaining({
@@ -223,6 +225,105 @@ describe('wizard-stream-persist route sync + transform', () => {
         }),
       }),
     )
+  })
+
+  it('clears both Transform subcomponents when switching to inherit global', async () => {
+    await persistWizardRouteTransformOverrides(
+      [
+        {
+          key: 'route-20',
+          destinationId: 20,
+          enabled: true,
+          failurePolicy: 'LOG_AND_CONTINUE',
+          rateLimitJson: {},
+          inherit: { ...DEFAULT_ROUTE_PROCESSING_INHERIT },
+        },
+      ],
+      { 'route-20': 20 },
+    )
+    expect(saveRouteMappingUiConfig).toHaveBeenCalledWith(20, { inherit: true })
+    expect(saveRouteEnrichmentUiConfig).toHaveBeenCalledWith(20, { inherit: true })
+  })
+
+  it('mapping-only override clears stale enrichment row', async () => {
+    await persistWizardRouteTransformOverrides(
+      [
+        {
+          key: 'route-20',
+          destinationId: 20,
+          enabled: true,
+          failurePolicy: 'LOG_AND_CONTINUE',
+          rateLimitJson: {},
+          inherit: { transform: false, protection: true, classification: true, policy: true },
+          overrides: {
+            transform: {
+              mapping: [{ id: 'm1', outputField: 'msg', sourceJsonPath: '$.message' }],
+              mappingMode: 'basic_jsonpath',
+              fullEventJsonataExpression: '',
+              fullEventRegexConfigJson: '',
+              transformRules: [],
+              enrichment: [],
+              unmappedFieldsPolicy: 'pass_through',
+            },
+          },
+        },
+      ],
+      { 'route-20': 20 },
+    )
+    expect(saveRouteMappingUiConfig).toHaveBeenCalledWith(
+      20,
+      expect.objectContaining({
+        inherit: false,
+        mapping: { field_mappings: expect.objectContaining({ msg: '$.message' }) },
+      }),
+    )
+    expect(saveRouteEnrichmentUiConfig).toHaveBeenCalledWith(20, { inherit: true })
+  })
+
+  it('binds Transform persist to draft key when earlier route create failed', async () => {
+    await persistWizardRouteTransformOverrides(
+      [
+        {
+          key: 'wr-a',
+          destinationId: 10,
+          enabled: true,
+          failurePolicy: 'LOG_AND_CONTINUE',
+          rateLimitJson: {},
+          inherit: { ...DEFAULT_ROUTE_PROCESSING_INHERIT },
+        },
+        {
+          key: 'wr-b',
+          destinationId: 20,
+          enabled: true,
+          failurePolicy: 'LOG_AND_CONTINUE',
+          rateLimitJson: {},
+          inherit: { transform: false, protection: true, classification: true, policy: true },
+          overrides: {
+            transform: {
+              mapping: [{ id: 'm2', outputField: 'route_b_msg', sourceJsonPath: '$.message' }],
+              mappingMode: 'basic_jsonpath',
+              fullEventJsonataExpression: '',
+              fullEventRegexConfigJson: '',
+              transformRules: [],
+              enrichment: [],
+              unmappedFieldsPolicy: 'pass_through',
+            },
+          },
+        },
+      ],
+      // Positional [22] would wrongly target wr-a; draft-key map targets wr-b only.
+      { 'wr-b': 22 },
+    )
+    expect(saveRouteMappingUiConfig).toHaveBeenCalledWith(
+      22,
+      expect.objectContaining({
+        inherit: false,
+        mapping: { field_mappings: expect.objectContaining({ route_b_msg: '$.message' }) },
+      }),
+    )
+    expect(saveRouteMappingUiConfig).toHaveBeenCalledTimes(1)
+    expect(saveRouteEnrichmentUiConfig).toHaveBeenCalledWith(22, { inherit: true })
+    expect(saveRouteEnrichmentUiConfig).toHaveBeenCalledTimes(1)
   })
 
   it('verifies mixed effective status for mapping-only override', async () => {

@@ -1716,11 +1716,31 @@ export function wizardFieldMappingsReady(
   )
 }
 
+/** Resolve a draft's server route id from an explicit draft-key map, else `route-N` key. */
+export function resolveWizardRouteDraftId(
+  draft: WizardRouteDraft,
+  routeIdsByDraftKey: Record<string, number>,
+): number | null {
+  const mapped = routeIdsByDraftKey[draft.key]
+  if (typeof mapped === 'number' && Number.isFinite(mapped) && mapped > 0) return mapped
+  const match = /^route-(\d+)$/.exec(draft.key)
+  if (!match) return null
+  const id = Number(match[1])
+  return Number.isFinite(id) && id > 0 ? id : null
+}
+
+export type RouteTransformMappingPersistAction =
+  | { inherit: true }
+  | { inherit: false; fieldMappings: Record<string, unknown> }
+
+export type RouteTransformEnrichmentPersistAction =
+  | { inherit: true }
+  | { inherit: false; enrichment: Record<string, unknown> }
+
 export type RouteTransformPersistPlan = {
   routeId: number
-  inherit: boolean
-  fieldMappings: Record<string, unknown>
-  enrichment: Record<string, unknown>
+  mapping: RouteTransformMappingPersistAction
+  enrichment: RouteTransformEnrichmentPersistAction
 }
 
 /** Mapping/enrichment payload for a route Transform override draft, or null when empty/incomplete. */
@@ -1756,24 +1776,47 @@ export function expectedRouteTransformProcessingStatus(
   return 'Mixed'
 }
 
-/** Plans for existing route-mapping / route-enrichment APIs — wizard override drafts that must not stay client-only. */
+/**
+ * Plans route mapping/enrichment saves so Inherited / Mixed / Overridden stay truthful.
+ * - inherit.transform → clear both subcomponents (`inherit: true`)
+ * - mapping-only / enrichment-only → override the present side and clear the other
+ * - incomplete Intent-only override → skipped
+ *
+ * Route ids are keyed by draft key so partial create failures cannot shift bindings.
+ */
 export function buildRouteTransformPersistPlans(
   drafts: WizardRouteDraft[],
-  routeIdsInDraftOrder: number[],
+  routeIdsByDraftKey: Record<string, number>,
 ): RouteTransformPersistPlan[] {
   const plans: RouteTransformPersistPlan[] = []
-  drafts.forEach((draft, index) => {
-    const routeId = routeIdsInDraftOrder[index]
-    if (!routeId || draft.inherit.transform !== false) return
+  for (const draft of drafts) {
+    const routeId = resolveWizardRouteDraftId(draft, routeIdsByDraftKey)
+    if (routeId == null) continue
+
+    if (draft.inherit.transform !== false) {
+      plans.push({
+        routeId,
+        mapping: { inherit: true },
+        enrichment: { inherit: true },
+      })
+      continue
+    }
+
     const payload = routeTransformOverridePersistPayload(draft.overrides?.transform)
-    if (!payload) return
+    if (!payload) continue
+
+    const hasMapping = Object.keys(payload.fieldMappings).length > 0
+    const hasEnrichment = Object.keys(payload.enrichment).length > 0
     plans.push({
       routeId,
-      inherit: false,
-      fieldMappings: payload.fieldMappings,
-      enrichment: payload.enrichment,
+      mapping: hasMapping
+        ? { inherit: false, fieldMappings: payload.fieldMappings }
+        : { inherit: true },
+      enrichment: hasEnrichment
+        ? { inherit: false, enrichment: payload.enrichment }
+        : { inherit: true },
     })
-  })
+  }
   return plans
 }
 

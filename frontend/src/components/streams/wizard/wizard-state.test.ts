@@ -462,7 +462,7 @@ describe('wizard-state mapping/enrichment helpers', () => {
     ).toEqual({ event_id: '$.id' })
   })
 
-  it('builds route transform persist plans only for override drafts with mappings', () => {
+  it('builds route transform persist plans with draft-key route binding', () => {
     const inherited = {
       key: 'r1',
       destinationId: 1,
@@ -490,18 +490,25 @@ describe('wizard-state mapping/enrichment helpers', () => {
         },
       },
     }
-    const plans = buildRouteTransformPersistPlans([inherited, overridden], [10, 20])
+    const plans = buildRouteTransformPersistPlans([inherited, overridden], { r1: 10, r2: 20 })
     expect(plans).toEqual([
       {
+        routeId: 10,
+        mapping: { inherit: true },
+        enrichment: { inherit: true },
+      },
+      {
         routeId: 20,
-        inherit: false,
-        fieldMappings: expect.objectContaining({ transformed_message: '$.message' }),
-        enrichment: {},
+        mapping: {
+          inherit: false,
+          fieldMappings: expect.objectContaining({ transformed_message: '$.message' }),
+        },
+        enrichment: { inherit: true },
       },
     ])
   })
 
-  it('plans enrichment-only route override without requiring field mappings', () => {
+  it('plans enrichment-only route override and clears stale mapping', () => {
     const enrichmentOnly = {
       key: 'r2',
       destinationId: 2,
@@ -537,13 +544,12 @@ describe('wizard-state mapping/enrichment helpers', () => {
         },
       },
     }
-    const plans = buildRouteTransformPersistPlans([enrichmentOnly], [20])
+    const plans = buildRouteTransformPersistPlans([enrichmentOnly], { r2: 20 })
     expect(plans).toEqual([
       {
         routeId: 20,
-        inherit: false,
-        fieldMappings: {},
-        enrichment: { tenant: 'acme' },
+        mapping: { inherit: true },
+        enrichment: { inherit: false, enrichment: { tenant: 'acme' } },
       },
     ])
   })
@@ -584,13 +590,16 @@ describe('wizard-state mapping/enrichment helpers', () => {
         },
       },
     }
-    const plans = buildRouteTransformPersistPlans([both], [20])
+    const plans = buildRouteTransformPersistPlans([both], { r2: 20 })
     expect(plans).toHaveLength(1)
-    expect(plans[0]?.fieldMappings).toEqual(expect.objectContaining({ msg: '$.message' }))
-    expect(plans[0]?.enrichment).toEqual({ env: 'prod' })
+    expect(plans[0]?.mapping).toEqual({
+      inherit: false,
+      fieldMappings: expect.objectContaining({ msg: '$.message' }),
+    })
+    expect(plans[0]?.enrichment).toEqual({ inherit: false, enrichment: { env: 'prod' } })
   })
 
-  it('does not plan when inherit.transform is true', () => {
+  it('plans inherit:true clears when inherit.transform is true', () => {
     const inherited = {
       key: 'r1',
       destinationId: 1,
@@ -626,7 +635,55 @@ describe('wizard-state mapping/enrichment helpers', () => {
         },
       },
     }
-    expect(buildRouteTransformPersistPlans([inherited], [10])).toEqual([])
+    expect(buildRouteTransformPersistPlans([inherited], { r1: 10 })).toEqual([
+      {
+        routeId: 10,
+        mapping: { inherit: true },
+        enrichment: { inherit: true },
+      },
+    ])
+  })
+
+  it('binds persist plans by draft key when an earlier create slot is missing', () => {
+    const failedFirst = {
+      key: 'wr-a',
+      destinationId: 1,
+      enabled: true,
+      failurePolicy: 'LOG_AND_CONTINUE' as const,
+      rateLimitJson: {},
+      inherit: { ...DEFAULT_ROUTE_PROCESSING_INHERIT },
+    }
+    const successSecond = {
+      key: 'wr-b',
+      destinationId: 2,
+      enabled: true,
+      failurePolicy: 'LOG_AND_CONTINUE' as const,
+      rateLimitJson: {},
+      inherit: { transform: false, protection: true, classification: true, policy: true },
+      overrides: {
+        transform: {
+          mapping: [{ id: 'm1', outputField: 'route_b', sourceJsonPath: '$.message' }],
+          mappingMode: 'basic_jsonpath' as const,
+          fullEventJsonataExpression: '',
+          fullEventRegexConfigJson: '',
+          transformRules: [],
+          enrichment: [],
+          unmappedFieldsPolicy: 'pass_through' as const,
+        },
+      },
+    }
+    // Only B was created — must not shift id 22 onto draft A.
+    const plans = buildRouteTransformPersistPlans([failedFirst, successSecond], { 'wr-b': 22 })
+    expect(plans).toEqual([
+      {
+        routeId: 22,
+        mapping: {
+          inherit: false,
+          fieldMappings: expect.objectContaining({ route_b: '$.message' }),
+        },
+        enrichment: { inherit: true },
+      },
+    ])
   })
 
   it('skips empty enrichment rows', () => {
