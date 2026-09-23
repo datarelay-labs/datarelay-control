@@ -7,7 +7,8 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 ExportKind = Literal["workspace", "connector", "stream"]
-ImportMode = Literal["additive", "clone", "full_restore"]
+# Phase 1 contract (specs/015): additive + clone only. full_restore is retired.
+ImportMode = Literal["additive", "clone"]
 PreviewClassification = Literal["safe_create", "overwrite_candidate", "blocked"]
 
 
@@ -43,7 +44,9 @@ class WorkspaceExportQuery(BaseModel):
 
 class ImportPreviewRequest(BaseModel):
     bundle: dict[str, Any]
-    mode: ImportMode = "additive"
+    # str (not Literal) so retired mode=full_restore can be rejected with FULL_RESTORE_RETIRED
+    # instead of a generic schema 422 that could be mistaken for silent drop.
+    mode: str = Field(default="additive", description="Import mode: additive or clone. full_restore is retired.")
     dry_run: bool = Field(
         default=True,
         description=(
@@ -89,21 +92,6 @@ class ImportPreviewFinding(BaseModel):
     details: dict[str, Any] | None = None
 
 
-class FullRestorePurgePreview(BaseModel):
-    """Existing operational rows that full restore will remove before import."""
-
-    connectors: int = 0
-    sources: int = 0
-    streams: int = 0
-    mappings: int = 0
-    enrichments: int = 0
-    destinations: int = 0
-    routes: int = 0
-    checkpoints: int = 0
-    backfill_jobs: int = 0
-    continuous_validations: int = 0
-
-
 class ImportPreviewResponse(BaseModel):
     ok: bool
     export_kind: str | None = None
@@ -114,10 +102,6 @@ class ImportPreviewResponse(BaseModel):
     findings: list[ImportPreviewFinding] = Field(default_factory=list)
     classification_summary: ImportClassificationSummary = Field(default_factory=ImportClassificationSummary)
     dry_run: bool = Field(default=True, description="Echo of the request dry_run flag.")
-    full_restore_purge: FullRestorePurgePreview | None = Field(
-        default=None,
-        description="When mode=full_restore, counts of existing operational rows that will be replaced.",
-    )
     preview_token: str = Field(
         description="SHA256 of canonical bundle JSON and mode; resend on apply for double confirmation.",
     )
@@ -125,11 +109,14 @@ class ImportPreviewResponse(BaseModel):
 
 class ImportApplyRequest(BaseModel):
     bundle: dict[str, Any]
-    mode: ImportMode = "additive"
+    mode: str = Field(default="additive", description="Import mode: additive or clone. full_restore is retired.")
     confirm: bool = Field(default=False, description="Must be true to persist.")
     confirm_destructive: bool = Field(
         default=False,
-        description="Must be true when mode=full_restore after reviewing destructive purge scope.",
+        description=(
+            "Ignored. Retained for client compatibility with retired mode=full_restore; "
+            "destructive JSON restore is not supported."
+        ),
     )
     preview_token: str = Field(
         default="",
@@ -156,10 +143,6 @@ class ImportApplyEntityIds(BaseModel):
 class ImportApplyResponse(BaseModel):
     ok: bool
     created: ImportApplyEntityIds
-    replaced: FullRestorePurgePreview | None = Field(
-        default=None,
-        description="Populated when mode=full_restore: operational rows removed before import.",
-    )
     redirect_path: str | None = None
     idempotency_key: str | None = Field(
         default=None,

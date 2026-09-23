@@ -706,11 +706,12 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
   it('renders Backup & Import workspace at /operations/backup', async () => {
     renderApp('/operations/backup')
     expect(
-      await screen.findByText(/Export portable JSON snapshots/i, {}, { timeout: 15000 }),
+      await screen.findByText(/not database disaster recovery/i, {}, { timeout: 15000 }),
     ).toBeInTheDocument()
     expect(await screen.findByRole('heading', { level: 2, name: 'Backup & Import' })).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Workspace snapshot export' })).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Import configuration' })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: /full restore/i })).not.toBeInTheDocument()
   })
 
   it('renders Templates library at /templates (deep link)', async () => {

@@ -229,7 +229,9 @@ describe('Operations Center modernization', () => {
     expect(await screen.findByTestId('operations-center-page')).toBeInTheDocument()
     expect(screen.getByText(/What should I act on first/i)).toBeInTheDocument()
     expect(screen.getByTestId('ops-posture-overview')).toBeInTheDocument()
-    expect(screen.getByTestId('ops-posture-label')).toHaveTextContent('Needs recovery')
+    await waitFor(() => {
+      expect(screen.getByTestId('ops-posture-label')).toHaveTextContent('Needs recovery')
+    })
     expect(screen.getByTestId('ops-action-queue')).toBeInTheDocument()
     expect(screen.getByTestId('ops-queue-approvals-value')).toHaveTextContent('3')
   })

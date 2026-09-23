@@ -43,6 +43,20 @@ describe('OperationsBackupPage', () => {
     expect(screen.getByRole('button', { name: 'Parse collection' })).toBeInTheDocument()
   })
 
+  it('defaults to additive import and omits retired full_restore', () => {
+    render(
+      <MemoryRouter>
+        <OperationsBackupPage />
+      </MemoryRouter>,
+    )
+    expect(screen.getByText(/not database disaster recovery/i)).toBeInTheDocument()
+    const mode = screen.getByRole('combobox', { name: 'Import mode' })
+    expect(mode).toHaveValue('additive')
+    expect(screen.queryByRole('option', { name: /full restore/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /additive/i })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /clone/i })).toBeInTheDocument()
+  })
+
   it('runs preview and shows conflict summary', async () => {
     const user = userEvent.setup()
     render(

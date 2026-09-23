@@ -15,9 +15,7 @@ from app.backup.export_builder import (
     build_workspace_export,
 )
 from app.backup.import_validator import ValidationOutcome, preview_token_for, validate_import_bundle
-from app.backup.operational_purge import clear_operational_entities
 from app.backup.schemas import (
-    FullRestorePurgePreview,
     ImportApplyEntityIds,
     ImportApplyRequest,
     ImportApplyResponse,
@@ -40,6 +38,34 @@ from app.platform_admin import journal
 from app.streams.models import Stream
 
 _IMPORT_APPLY_OPERATION_ACTION = "IMPORT_APPLY_OPERATION"
+_SUPPORTED_IMPORT_MODES = frozenset({"additive", "clone"})
+
+
+def require_supported_import_mode(mode: str) -> str:
+    """Fail closed for retired or unknown import modes (never reinterpret as additive)."""
+
+    normalized = str(mode or "").strip()
+    if normalized == "full_restore":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error_code": "FULL_RESTORE_RETIRED",
+                "message": (
+                    "mode=full_restore is retired. JSON workspace import supports additive and clone only. "
+                    "Use PostgreSQL backup/restore for database disaster recovery "
+                    "(docs/admin/backup-restore.md)."
+                ),
+            },
+        )
+    if normalized not in _SUPPORTED_IMPORT_MODES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error_code": "IMPORT_MODE_UNSUPPORTED",
+                "message": f"Unsupported import mode {normalized!r}. Allowed: additive, clone.",
+            },
+        )
+    return normalized
 
 
 def _strip_mask_placeholders(value: Any) -> Any:
@@ -126,6 +152,7 @@ def _record_import_apply_operation(
 
 
 def preview_import(db: Session, bundle: dict[str, Any], mode: str, *, dry_run: bool = True) -> ImportPreviewResponse:
+    mode = require_supported_import_mode(mode)
     if dry_run:
         nested = db.begin_nested()
         try:
@@ -158,9 +185,6 @@ def preview_import(db: Session, bundle: dict[str, Any], mode: str, *, dry_run: b
                 details=f.get("details") if isinstance(f.get("details"), dict) else None,
             )
         )
-    purge_preview = None
-    if outcome.full_restore_purge:
-        purge_preview = FullRestorePurgePreview(**outcome.full_restore_purge)
 
     return ImportPreviewResponse(
         ok=outcome.ok,
@@ -175,7 +199,6 @@ def preview_import(db: Session, bundle: dict[str, Any], mode: str, *, dry_run: b
         findings=finding_models,
         classification_summary=classification,
         dry_run=dry_run,
-        full_restore_purge=purge_preview,
         preview_token=token,
     )
 
@@ -198,33 +221,13 @@ def _assert_apply_allowed(db: Session, body: ImportApplyRequest) -> ValidationOu
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"error_code": "IMPORT_CONFIRM_REQUIRED", "message": "Set confirm=true after reviewing preview."},
         )
-    if body.mode == "full_restore" and not body.confirm_destructive:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={
-                "error_code": "IMPORT_DESTRUCTIVE_CONFIRM_REQUIRED",
-                "message": "Set confirm_destructive=true after acknowledging full restore will replace operational configuration.",
-            },
-        )
-    if body.mode == "full_restore":
-        from app.streams.runtime_eligibility import reconcile_and_list_active_streams_for_destructive_ops
-
-        active = reconcile_and_list_active_streams_for_destructive_ops(db, limit=20)
-        if active:
-            names = [label for _sid, label in active]
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail={
-                    "error_code": "FULL_RESTORE_BLOCKED_STREAM_ACTIVE",
-                    "message": "Stop all active streams (and wait for workers to exit) before applying a full restore.",
-                    "running_streams": names,
-                    "active_streams": names,
-                },
-            )
     return outcome
 
 
 def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) -> ImportApplyResponse:
+    mode = require_supported_import_mode(body.mode)
+    body = body.model_copy(update={"mode": mode})
+
     idempotency_key = _normalize_idempotency_key(body.idempotency_key)
     if idempotency_key is not None:
         _acquire_import_apply_idempotency_lock(db, idempotency_key)
@@ -234,14 +237,7 @@ def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) 
 
     _assert_apply_allowed(db, body)
     bundle = deepcopy(body.bundle)
-    mode = body.mode
     suffix = (body.clone_name_suffix or " (copy)") if mode == "clone" else ""
-    preserve_runtime_state = mode == "full_restore"
-
-    replaced_preview: FullRestorePurgePreview | None = None
-    if mode == "full_restore":
-        purge = clear_operational_entities(db)
-        replaced_preview = FullRestorePurgePreview(**purge.as_dict())
 
     connectors = bundle.get("connectors") or []
     sources = bundle.get("sources") or []
@@ -277,12 +273,11 @@ def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) 
         name = str(c.get("name") or "imported-connector")
         if suffix:
             name = name + suffix
-        conn_status = str(c.get("status") or "STOPPED") if preserve_runtime_state else "STOPPED"
         row = Connector(
             name=name,
             product_group=c.get("product_group"),
             description=c.get("description"),
-            status=conn_status,
+            status="STOPPED",
         )
         db.add(row)
         db.flush()
@@ -308,7 +303,7 @@ def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) 
             source_type=str(s.get("source_type") or "HTTP_API_POLLING"),
             config_json=_strip_mask_placeholders(dict(s.get("config_json") or {})),
             auth_json=auth_json,
-            enabled=bool(s.get("enabled", True)) if preserve_runtime_state else False,
+            enabled=False,
         )
         db.add(row)
         db.flush()
@@ -328,8 +323,6 @@ def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) 
         name = str(st.get("name") or "imported-stream")
         if suffix:
             name = name + suffix
-        stream_enabled = bool(st.get("enabled", True)) if preserve_runtime_state else False
-        stream_status = str(st.get("status") or "STOPPED") if preserve_runtime_state else "STOPPED"
         row = Stream(
             connector_id=new_cid,
             source_id=new_sid,
@@ -337,8 +330,8 @@ def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) 
             stream_type=str(st.get("stream_type") or "HTTP_API_POLLING"),
             config_json=_strip_mask_placeholders(dict(st.get("config_json") or {})),
             polling_interval=int(st.get("polling_interval") or 60),
-            enabled=stream_enabled,
-            status=stream_status,
+            enabled=False,
+            status="STOPPED",
             rate_limit_json=dict(st.get("rate_limit_json") or {}),
         )
         db.add(row)
@@ -402,7 +395,7 @@ def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) 
             new_dest = int(dest_old_to_new[old_dest])
         elif mode == "clone" and db.get(Destination, old_dest) is not None:
             # Same-environment clone reuses existing local destinations. Cross-env
-            # import/full_restore must never fall back to raw foreign numeric IDs.
+            # additive import must never fall back to raw foreign numeric IDs.
             new_dest = old_dest
         else:
             unresolved_route_destinations.append(
@@ -444,13 +437,11 @@ def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) 
         "connectors_created": len(created_connectors),
         "destinations_created": len(dest_old_to_new),
     }
-    if replaced_preview is not None:
-        audit_details["replaced"] = replaced_preview.model_dump()
     if idempotency_key is not None:
         audit_details["idempotency_key"] = idempotency_key
     journal.record_audit_event(
         db,
-        action="FULL_RESTORE_APPLIED" if mode == "full_restore" else "IMPORT_APPLIED",
+        action="IMPORT_APPLIED",
         details=audit_details,
         request=request,
     )
@@ -469,7 +460,6 @@ def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) 
             stream_ids=created_streams,
             destination_ids=created_dest_ids,
         ),
-        replaced=replaced_preview,
         redirect_path=redirect_path,
         idempotency_key=idempotency_key,
         idempotent_replay=False,
