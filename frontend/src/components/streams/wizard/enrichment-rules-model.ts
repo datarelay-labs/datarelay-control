@@ -269,6 +269,28 @@ function jsonLikeDisplayAndPersisted(raw: unknown): {
   return { display: String(raw ?? '') }
 }
 
+/**
+ * Match Python truthiness for `a or b` (rule_executor alias resolution).
+ * Empty list/dict are falsy in Python; JavaScript treats them as truthy.
+ */
+function isPythonTruthy(value: unknown): boolean {
+  if (value == null) return false
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return value !== 0 && !Number.isNaN(value)
+  if (typeof value === 'string') return value.length > 0
+  if (Array.isArray(value)) return value.length > 0
+  if (typeof value === 'object') return Object.keys(value as object).length > 0
+  return Boolean(value)
+}
+
+/** Match Python `a or b or c` used by runtime enrichment alias resolution. */
+function firstTruthyRuntimeAlias(...candidates: unknown[]): unknown {
+  for (const candidate of candidates) {
+    if (isPythonTruthy(candidate)) return candidate
+  }
+  return ''
+}
+
 function parseConditionsFromPayload(o: Record<string, unknown>): WizardEnrichmentRule['conditions'] {
   const conditions = Array.isArray(o.conditions)
     ? o.conditions
@@ -326,12 +348,8 @@ function ruleFromAdvancedPayload(
       staticRaw === null ||
       (isJsonLikeStaticValue(staticRaw) &&
         (Array.isArray(staticRaw) || (typeof staticRaw === 'object' && staticRaw !== null))))
-  const rawDefault =
-    o.default !== undefined
-      ? o.default
-      : o.conditionalDefault !== undefined
-        ? o.conditionalDefault
-        : ''
+  // Runtime: rule.get("default") or rule.get("conditionalDefault") or ""
+  const rawDefault = firstTruthyRuntimeAlias(o.default, o.conditionalDefault)
   const defaultParsed = jsonLikeDisplayAndPersisted(rawDefault)
   return {
     ...defaultRuleForType(type, index),
@@ -341,8 +359,10 @@ function ruleFromAdvancedPayload(
     enabled: o.enabled !== false,
     expression: String(o.expression ?? ''),
     lookupTable: String(o.lookup_table ?? o.lookupTable ?? 'aws-regions'),
-    // Runtime accepts key_field alias; canonical save uses lookup_key_field.
-    lookupKeyField: String(o.lookup_key_field ?? o.lookupKeyField ?? o.key_field ?? ''),
+    // Runtime: key_field or lookup_key_field or lookupKeyField; canonical save uses lookup_key_field.
+    lookupKeyField: String(
+      firstTruthyRuntimeAlias(o.key_field, o.lookup_key_field, o.lookupKeyField),
+    ).trim(),
     conditions: parseConditionsFromPayload(o),
     conditionalDefault: defaultParsed.display,
     ...(defaultParsed.persisted !== undefined

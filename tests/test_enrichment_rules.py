@@ -105,6 +105,40 @@ def test_lookup_success() -> None:
     assert out["metadata"]["region_name"] == "US East (N. Virginia)"
 
 
+def test_lookup_prefers_key_field_over_lookup_key_field_alias() -> None:
+    """Runtime resolves key_field before lookup_key_field when both differ."""
+    enrichment = {
+        "__rules": {
+            "metadata.region_name": {
+                "type": "lookup",
+                "lookup_table": "aws_regions",
+                "key_field": "region",
+                "lookup_key_field": "other_region",
+                "enabled": True,
+            }
+        }
+    }
+    out = apply_enrichment({"region": "us-east-1", "other_region": "eu-west-1"}, enrichment)
+    assert out["metadata"]["region_name"] == "US East (N. Virginia)"
+
+
+def test_conditional_falsy_default_falls_through_to_conditional_default() -> None:
+    """Python truthiness: empty default aliases fall through to conditionalDefault."""
+    enrichment = {
+        "__rules": {
+            "metadata.outcome": {
+                "type": "conditional",
+                "conditions": [{"when": "severity == never", "then": "matched"}],
+                "default": [],
+                "conditionalDefault": {"reason": "unmatched"},
+                "enabled": True,
+            }
+        }
+    }
+    out = apply_enrichment({"severity": "high"}, enrichment)
+    assert out["metadata"]["outcome"] == {"reason": "unmatched"}
+
+
 def test_lookup_miss_skips_field() -> None:
     enrichment = {
         "__rules": {

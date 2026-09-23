@@ -169,8 +169,9 @@ def _validate_rule_dict(rule: dict[str, Any], *, default_target: str | None = No
                 issue.target_field = target or None
     elif rule_type == "lookup":
         table = str(rule.get("lookup_table") or rule.get("lookupTable") or "").strip()
+        # Match rule_executor: key_field → lookup_key_field → lookupKeyField
         key_field = str(
-            rule.get("lookup_key_field") or rule.get("lookupKeyField") or rule.get("key_field") or ""
+            rule.get("key_field") or rule.get("lookup_key_field") or rule.get("lookupKeyField") or ""
         ).strip()
         if not table:
             issues.append(

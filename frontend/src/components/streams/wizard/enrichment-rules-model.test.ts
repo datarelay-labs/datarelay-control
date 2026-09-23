@@ -194,6 +194,56 @@ describe('lookup key_field alias + typed conditional + disabled advanced rules',
     ).not.toHaveProperty('key_field')
   })
 
+  it('prefers key_field over lookup_key_field when both aliases differ (runtime precedence)', () => {
+    const rules = wizardEnrichmentRulesFromPersistedDict({
+      __rules: {
+        'metadata.region_name': {
+          type: 'lookup',
+          lookup_table: 'aws_regions',
+          key_field: 'region',
+          lookup_key_field: 'other_region',
+          enabled: true,
+        },
+      },
+    })
+    expect(rules[0]).toMatchObject({ lookupKeyField: 'region' })
+    const saved = enrichmentDictFromRules(rules)
+    const payload = (saved.__rules as Record<string, Record<string, unknown>>)[
+      'metadata.region_name'
+    ]
+    expect(payload).toMatchObject({ lookup_key_field: 'region' })
+    expect(payload).not.toHaveProperty('key_field')
+    expect(payload).not.toHaveProperty('lookupKeyField')
+  })
+
+  it('prefers key_field in type-array lookup dual-alias hydrate→save', () => {
+    const hydrated = wizardEnrichmentFromPersistedDict({
+      __rules: {
+        lookup: [
+          {
+            target_field: 'metadata.region_name',
+            lookup_table: 'aws_regions',
+            key_field: 'region',
+            lookup_key_field: 'other_region',
+          },
+        ],
+      },
+    })
+    expect(hydrated.rules[0]).toMatchObject({ lookupKeyField: 'region' })
+    expect(
+      enrichmentDictFromRules(hydrated.rules, { emitAdvancedAsTypeArray: true }),
+    ).toEqual({
+      __rules: {
+        lookup: [
+          expect.objectContaining({
+            target_field: 'metadata.region_name',
+            lookup_key_field: 'region',
+          }),
+        ],
+      },
+    })
+  })
+
   it('preserves typed conditional then/default through hydrate→save', () => {
     const persisted = {
       __rules: {
@@ -203,7 +253,8 @@ describe('lookup key_field alias + typed conditional + disabled advanced rules',
             { when: "status === 'ok'", then: true },
             { when: "status === 'fail'", then: { code: 500 } },
           ],
-          default: null,
+          // Runtime treats null default as falsy and falls through to "".
+          default: 'unmatched',
           enabled: true,
         },
       },
@@ -216,7 +267,7 @@ describe('lookup key_field alias + typed conditional + disabled advanced rules',
     expect(rules[0]?.conditions[1]).toMatchObject({
       thenPersistedValue: { code: 500 },
     })
-    expect(rules[0]?.conditionalDefaultPersistedValue).toBeNull()
+    expect(rules[0]?.conditionalDefault).toBe('unmatched')
     expect(enrichmentDictFromRules(rules)).toEqual({
       __rules: {
         'metadata.outcome': expect.objectContaining({
@@ -225,7 +276,95 @@ describe('lookup key_field alias + typed conditional + disabled advanced rules',
             { when: "status === 'ok'", then: true },
             { when: "status === 'fail'", then: { code: 500 } },
           ],
+          default: 'unmatched',
+        }),
+      },
+    })
+  })
+
+  it('canonicalizes sole falsy conditional default to runtime-resolved empty string', () => {
+    const rules = wizardEnrichmentRulesFromPersistedDict({
+      __rules: {
+        'metadata.outcome': {
+          type: 'conditional',
+          conditions: [{ when: "status === 'ok'", then: 'ok' }],
           default: null,
+          enabled: true,
+        },
+      },
+    })
+    expect(rules[0]?.conditionalDefault).toBe('')
+    expect(rules[0]?.conditionalDefaultPersistedValue).toBeUndefined()
+    expect(enrichmentDictFromRules(rules)).toEqual({
+      __rules: {
+        'metadata.outcome': expect.objectContaining({
+          type: 'conditional',
+          default: '',
+        }),
+      },
+    })
+  })
+
+  it.each([
+    { defaultValue: 0, conditionalDefault: 'fallback', expected: 'fallback' },
+    { defaultValue: false, conditionalDefault: true, expected: true },
+    { defaultValue: '', conditionalDefault: 'unknown', expected: 'unknown' },
+    // Python treats [] / {} as falsy; JS does not — must match runtime `a or b`.
+    { defaultValue: [], conditionalDefault: ['fallback'], expected: ['fallback'] },
+    { defaultValue: {}, conditionalDefault: { reason: 'unmatched' }, expected: { reason: 'unmatched' } },
+  ])(
+    'uses runtime truthy fallback when default=$defaultValue and conditionalDefault is set',
+    ({ defaultValue, conditionalDefault, expected }) => {
+      const rules = wizardEnrichmentRulesFromPersistedDict({
+        __rules: {
+          'metadata.outcome': {
+            type: 'conditional',
+            conditions: [{ when: "status === 'ok'", then: 'ok' }],
+            default: defaultValue,
+            conditionalDefault,
+            enabled: true,
+          },
+        },
+      })
+      if (typeof expected === 'string') {
+        expect(rules[0]?.conditionalDefault).toBe(expected)
+        expect(rules[0]?.conditionalDefaultPersistedValue).toBeUndefined()
+      } else {
+        expect(rules[0]?.conditionalDefaultPersistedValue).toEqual(expected)
+      }
+      expect(enrichmentDictFromRules(rules)).toEqual({
+        __rules: {
+          'metadata.outcome': expect.objectContaining({
+            type: 'conditional',
+            default: expected,
+          }),
+        },
+      })
+      expect(
+        (enrichmentDictFromRules(rules).__rules as Record<string, Record<string, unknown>>)[
+          'metadata.outcome'
+        ],
+      ).not.toHaveProperty('conditionalDefault')
+    },
+  )
+
+  it('preserves non-empty JSON default over conditionalDefault (Python-truthy object/array)', () => {
+    const rules = wizardEnrichmentRulesFromPersistedDict({
+      __rules: {
+        'metadata.outcome': {
+          type: 'conditional',
+          conditions: [{ when: "status === 'ok'", then: 'ok' }],
+          default: { code: 0 },
+          conditionalDefault: { reason: 'fallback' },
+          enabled: true,
+        },
+      },
+    })
+    expect(rules[0]?.conditionalDefaultPersistedValue).toEqual({ code: 0 })
+    expect(enrichmentDictFromRules(rules)).toEqual({
+      __rules: {
+        'metadata.outcome': expect.objectContaining({
+          default: { code: 0 },
         }),
       },
     })
