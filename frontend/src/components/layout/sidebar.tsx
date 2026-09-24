@@ -24,6 +24,8 @@ type SidebarProps = {
   onToggleCollapsed: () => void
   onNavigate: (path: string) => void
   onMobileClose?: () => void
+  /** Closed narrow-viewport drawer: keep it out of the keyboard path. */
+  offCanvas?: boolean
 }
 
 async function performSignOut(): Promise<void> {
@@ -115,6 +117,7 @@ export function Sidebar({
   onToggleCollapsed,
   onNavigate,
   onMobileClose,
+  offCanvas = false,
 }: SidebarProps) {
   function handleNavigate(path: string) {
     onNavigate(path)
@@ -125,9 +128,11 @@ export function Sidebar({
     <aside
       id="primary-navigation"
       aria-label="Primary navigation"
+      tabIndex={-1}
       data-mobile-open={mobileOpen ? 'true' : 'false'}
+      {...(offCanvas ? { inert: true } : {})}
       className={cn(
-        'fixed inset-y-0 left-0 z-50 flex h-screen shrink-0 flex-col border-r border-slate-200/80 bg-white transition-[width,transform] duration-200 ease-out dark:border-gdc-border dark:bg-gdc-panel',
+        'fixed inset-y-0 left-0 z-50 flex h-screen shrink-0 flex-col border-r border-slate-200/80 bg-white outline-none transition-[width,transform] duration-200 ease-out focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-violet-400 dark:border-gdc-border dark:bg-gdc-panel dark:focus:outline-violet-300',
         'md:sticky md:translate-x-0',
         mobileOpen ? 'translate-x-0 shadow-xl' : '-translate-x-full md:shadow-none',
         collapsed ? 'w-16 md:w-16' : 'w-[260px] md:w-[240px]',

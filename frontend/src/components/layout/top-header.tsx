@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { ReactNode, Ref } from 'react'
 import { Activity, Menu, Moon, RefreshCw, Settings, Sun, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { NAV_PATH } from '../../config/nav-paths'
@@ -20,6 +20,8 @@ type TopHeaderProps = {
   /** Narrow-viewport navigation drawer control. */
   mobileNavOpen?: boolean
   onMobileNavToggle?: () => void
+  /** Ref used to restore focus after the mobile drawer closes. */
+  mobileNavToggleRef?: Ref<HTMLButtonElement>
 }
 
 export function TopHeader({
@@ -32,6 +34,7 @@ export function TopHeader({
   onRefresh,
   mobileNavOpen = false,
   onMobileNavToggle,
+  mobileNavToggleRef,
 }: TopHeaderProps) {
   const navigate = useNavigate()
 
@@ -48,9 +51,10 @@ export function TopHeader({
         <div className="flex min-w-0 flex-1 items-start gap-2">
           {onMobileNavToggle ? (
             <button
+              ref={mobileNavToggleRef}
               type="button"
               onClick={onMobileNavToggle}
-              className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 md:hidden dark:text-gdc-muted dark:hover:bg-gdc-rowHover"
+              className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-600 outline-none hover:bg-slate-100 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-violet-400 md:hidden dark:text-gdc-muted dark:hover:bg-gdc-rowHover dark:focus:outline-violet-300"
               aria-label={mobileNavOpen ? 'Close navigation menu' : 'Open navigation menu'}
               aria-expanded={mobileNavOpen}
               aria-controls="primary-navigation"
@@ -60,7 +64,10 @@ export function TopHeader({
             </button>
           ) : null}
 
-          <div className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-center sm:gap-x-4">
+          <div
+            className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-center sm:gap-x-4"
+            {...(mobileNavOpen ? { inert: true } : {})}
+          >
             <div className="flex min-w-0 flex-1 flex-col gap-1">
               {breadcrumb ? (
                 <div className="min-w-0 text-xs leading-snug text-slate-500 dark:text-gdc-muted">{breadcrumb}</div>
@@ -91,7 +98,7 @@ export function TopHeader({
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1" {...(mobileNavOpen ? { inert: true } : {})}>
           <button
             type="button"
             onClick={() => navigate(SHELL_ALERTS_PATH)}

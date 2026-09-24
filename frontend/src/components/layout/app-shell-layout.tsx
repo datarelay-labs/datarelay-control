@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Outlet, useLocation, useMatch, useNavigate } from 'react-router-dom'
-import { AppShell } from '../shell/app-shell'
+import { AppShell, MAIN_CONTENT_ID } from '../shell/app-shell'
 import { Sidebar } from './sidebar'
 import { TopHeader } from './top-header'
 import { PAGE_TITLE, sidebarStructureForRole } from '../../config/app-navigation'
@@ -62,6 +62,8 @@ export function AppShellLayout() {
   const [collapsed, setCollapsed] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [isDark, setIsDark] = useState(() => loadColorScheme() === 'dark')
+  const mobileNavToggleRef = useRef<HTMLButtonElement>(null)
+  const mobileNavWasOpenRef = useRef(false)
 
   useEffect(() => {
     function onStorage(e: StorageEvent) {
@@ -88,6 +90,17 @@ export function AppShellLayout() {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [mobileNavOpen])
+
+  useEffect(() => {
+    const wasOpen = mobileNavWasOpenRef.current
+    if (mobileNavOpen && !wasOpen) {
+      const nav = document.getElementById('primary-navigation')
+      nav?.focus()
+    } else if (!mobileNavOpen && wasOpen && !isMdUp) {
+      mobileNavToggleRef.current?.focus()
+    }
+    mobileNavWasOpenRef.current = mobileNavOpen
+  }, [mobileNavOpen, isMdUp])
 
   const toggleTheme = useCallback(() => {
     setIsDark((prev) => {
@@ -610,13 +623,16 @@ export function AppShellLayout() {
     () =>
       [
         isDark ? 'dark bg-gdc-page' : 'bg-slate-100',
-        'min-h-screen text-slate-950 transition-colors dark:text-slate-100',
+        'relative min-h-screen text-slate-950 transition-colors dark:text-slate-100',
       ].join(' '),
     [isDark],
   )
 
   return (
-    <main className={rootClassName}>
+    <div className={rootClassName}>
+      <a href={`#${MAIN_CONTENT_ID}`} className="gdc-skip-link">
+        Skip to main content
+      </a>
       <AppShell
         mobileNavOpen={mobileNavOpen}
         onMobileNavClose={() => setMobileNavOpen(false)}
@@ -631,6 +647,7 @@ export function AppShellLayout() {
             onToggleCollapsed={() => setCollapsed((prev) => !prev)}
             onNavigate={(path) => navigate(path)}
             onMobileClose={() => setMobileNavOpen(false)}
+            offCanvas={!isMdUp && !mobileNavOpen}
           />
         }
         header={
@@ -643,6 +660,7 @@ export function AppShellLayout() {
             onToggleTheme={toggleTheme}
             mobileNavOpen={mobileNavOpen}
             onMobileNavToggle={() => setMobileNavOpen((prev) => !prev)}
+            mobileNavToggleRef={mobileNavToggleRef}
           />
         }
       >
@@ -652,7 +670,7 @@ export function AppShellLayout() {
           </RouteErrorBoundary>
         </div>
       </AppShell>
-    </main>
+    </div>
   )
 }
 

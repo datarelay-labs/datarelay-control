@@ -80,4 +80,14 @@ describe('Sidebar SaaS shell', () => {
       'true',
     )
   })
+
+  it('exposes the desktop collapse control and keeps the aside focusable', async () => {
+    const user = userEvent.setup()
+    const { onToggleCollapsed } = renderSidebar({ collapsed: false })
+    const aside = screen.getByRole('complementary', { name: 'Primary navigation' })
+    expect(aside).toHaveAttribute('tabIndex', '-1')
+    const collapse = screen.getByRole('button', { name: 'Collapse menu' })
+    await user.click(collapse)
+    expect(onToggleCollapsed).toHaveBeenCalled()
+  })
 })

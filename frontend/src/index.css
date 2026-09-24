@@ -14,6 +14,28 @@ body {
   margin: 0;
 }
 
+/* Visible-on-focus skip link for the application shell. */
+.gdc-skip-link {
+  position: absolute;
+  left: 1rem;
+  top: 1rem;
+  z-index: 100;
+  transform: translateY(-150%);
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  background: #0f172a;
+  color: #f8fafc;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.gdc-skip-link:focus {
+  transform: translateY(0);
+  outline: 2px solid #a78bfa;
+  outline-offset: 2px;
+}
+
 /* Dark shell: L0 canvas + very soft depth (operational dark SaaS). */
 .dark .gdc-app-workspace {
   background-color: #06101c;

@@ -1,6 +1,9 @@
 import type { ReactNode } from 'react'
 import { cn } from '../../lib/utils'
 
+/** Stable skip-link / landmark target for routed workspace content. */
+export const MAIN_CONTENT_ID = 'main-content'
+
 type AppShellProps = {
   sidebar: ReactNode
   header: ReactNode
@@ -32,9 +35,16 @@ export function AppShell({
       {sidebar}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {header}
-        <div className="gdc-app-workspace min-h-0 min-w-0 flex-1 overflow-x-hidden bg-slate-50 dark:bg-gdc-page">
+        <main
+          id={MAIN_CONTENT_ID}
+          tabIndex={-1}
+          // While the mobile drawer is open, keep workspace content out of the
+          // primary keyboard path without disabling the header menu control.
+          {...(mobileNavOpen ? { inert: true } : {})}
+          className="gdc-app-workspace min-h-0 min-w-0 flex-1 overflow-x-hidden bg-slate-50 outline-none dark:bg-gdc-page"
+        >
           {children}
-        </div>
+        </main>
       </div>
     </div>
   )
