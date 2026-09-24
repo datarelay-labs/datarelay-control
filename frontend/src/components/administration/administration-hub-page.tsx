@@ -95,7 +95,7 @@ const TASK_GROUPS: readonly HubTaskGroup[] = [
         testId: 'admin-hub-retention',
       },
       {
-        title: 'Backup',
+        title: 'Backup & Import',
         description: 'Export and import portable workspace configuration snapshots.',
         path: NAV_PATH.backup,
         icon: HardDrive,

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AdminSettingsPage } from './admin-settings-page'
@@ -42,11 +42,18 @@ vi.mock('./admin-network-settings-page', () => ({
 vi.mock('./admin-settings-operational', () => ({
   AdminOperationalDashboard: () => (
     <div>
-      <h3 id="admin-retention-heading">Retention / cleanup policy</h3>
       <h3 id="admin-health-heading">Health monitoring</h3>
       <h3>Audit log</h3>
       <h3>Config versioning</h3>
     </div>
+  ),
+}))
+
+vi.mock('./admin-retention-settings', () => ({
+  AdminRetentionSettings: () => (
+    <section aria-labelledby="admin-retention-heading">
+      <h3 id="admin-retention-heading">Retention / cleanup</h3>
+    </section>
   ),
 }))
 
@@ -91,11 +98,24 @@ describe('AdminSettingsPage IA modernization', () => {
     expect(screen.getByTestId('admin-settings-group-platform')).toBeInTheDocument()
     expect(screen.getByTestId('admin-settings-group-lifecycle')).toBeInTheDocument()
     expect(screen.getByTestId('admin-settings-group-operations')).toBeInTheDocument()
+    const access = screen.getByTestId('admin-settings-group-access')
+    const platform = screen.getByTestId('admin-settings-group-platform')
+    const lifecycle = screen.getByTestId('admin-settings-group-lifecycle')
+    const operations = screen.getByTestId('admin-settings-group-operations')
+    expect(access.compareDocumentPosition(platform) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(platform.compareDocumentPosition(lifecycle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(lifecycle.compareDocumentPosition(operations) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'HTTPS / Security' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Password Management' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'User Management' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Display timezone' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Network / Reverse Proxy Settings' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Retention / cleanup' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Backup & Import' })).toBeInTheDocument()
+    expect(within(lifecycle).queryByRole('heading', { name: 'Support bundle' })).not.toBeInTheDocument()
+    expect(within(lifecycle).queryByRole('button', { name: /System information/i })).not.toBeInTheDocument()
+    expect(within(operations).getByRole('heading', { name: 'Support bundle' })).toBeInTheDocument()
+    expect(screen.getByTestId('admin-open-system-information')).toBeInTheDocument()
     expect(screen.getByTestId('admin-https-current-state')).toBeInTheDocument()
     expect(screen.getByTestId('admin-https-configuration')).toBeInTheDocument()
     expect(screen.queryByText(/localStorage/i)).not.toBeInTheDocument()
@@ -106,6 +126,10 @@ describe('AdminSettingsPage IA modernization', () => {
     expect(screen.getByRole('link', { name: 'Platform & network: Network' })).toHaveAttribute(
       'href',
       '#admin-network-heading',
+    )
+    expect(screen.getByRole('link', { name: 'Lifecycle & recovery: Backup' })).toHaveAttribute(
+      'href',
+      '/operations/backup',
     )
   })
 
