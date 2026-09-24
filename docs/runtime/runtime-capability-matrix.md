@@ -21,8 +21,7 @@ All of the following are registered in `SourceAdapterRegistry` and invoked from 
 | `S3_OBJECT_POLLING` | **Supported (extended)** | Uses `S3ObjectPollingAdapter` (e.g. AWS S3, MinIO). Requires valid object-store config and network reachability. |
 | `DATABASE_QUERY` | **Supported (extended)** | Uses `DatabaseQuerySourceAdapter` / SELECT safeguards. PostgreSQL only; requires DB connectivity and correct SQL + checkpoint fields. |
 | `REMOTE_FILE_POLLING` | **Supported (extended)** | Uses `RemoteFilePollingAdapter` (SFTP-based SSH access; optional SFTP-compatible SCP byte transfer). Requires SSH reachability and path/pattern config. |
-
-**Not implemented as a source:** inbound **webhook receiver** (push ingest as a first-class `source_type`). The codebase lists HTTP / DB / file metaphors in places; there is no webhook-receiver adapter in `SourceAdapterRegistry` today — treat as **planned / not available** for source configuration.
+| `WEBHOOK_RECEIVER` | **Supported (push)** | Uses `WebhookReceiverSourceAdapter` and the webhook ingest runtime path. Aliases `WEBHOOK` and `WEBHOOK_PUSH` resolve to the same adapter. Push payloads enter the normal StreamRunner pipeline without a polling checkpoint. |
 
 ---
 
@@ -78,6 +77,7 @@ The Operations UI shows small **capability / provenance** badges derived from st
 
 - **Runtime supported** — HTTP API polling (primary path).
 - **Runtime supported · extended** — S3 / database / remote file (same pipeline, extra operational prerequisites).
+- **Runtime supported · push** — Webhook Receiver (inbound push through the normal StreamRunner pipeline).
 - **Demo seed** — stream name matches the bundled demo stream from `app/db/seed.py`.
 - **Lab fixture** — stream name starts with `[DEV VALIDATION] ` or `[DEV E2E] `.
 
@@ -104,6 +104,5 @@ Seeded when `ENABLE_DEV_VALIDATION_LAB` is on (see `app/dev_validation_lab/seede
 
 ## Remaining gaps (no new work in this task)
 
-- **Inbound webhook** as a source type — not in `SourceAdapterRegistry`.
 - **Partitioned `delivery_logs`** — not part of this matrix; see retention / migration docs if applicable.
 - Any **future** destination or auth modes must be added to registries and documented here when shipped.
