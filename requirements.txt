@@ -1,6 +1,7 @@
 fastapi
 uvicorn[standard]
-sqlalchemy
+# 2.1 switches bare postgresql:// to psycopg (v3). Keep the psycopg2 contract.
+sqlalchemy>=2.0.41,<2.1
 pydantic
 pydantic-settings
 python-dotenv

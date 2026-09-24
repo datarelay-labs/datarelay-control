@@ -118,8 +118,11 @@ services:
   # --- Optional dev-validation-only fixtures (S3 / DATABASE_QUERY / REMOTE_FILE_POLLING lab) ---
   minio-test:
     profiles: ["test", "dev-validation", "e2e"]
-    # Docker Hub minio/minio is no longer pullable for CI runners; Quay still serves the image.
-    image: quay.io/minio/minio:latest
+    # Published MinIO images are not anonymously pullable. Build the pinned community source.
+    build:
+      context: docker
+      dockerfile: Dockerfile.minio-test
+    image: gdc-minio-test:local
     container_name: ${GDC_TEST_CONTAINER_PREFIX:-gdc}-minio-test
     networks:
       - gdc-dev-validation
