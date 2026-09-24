@@ -62,14 +62,15 @@ def test_external_runtime_e2e_workflow_uses_shared_test_runner() -> None:
     assert "SOURCE_E2E_SFTP_CONTAINER" in (ROOT / "scripts/testing/_env.sh").read_text(encoding="utf-8")
 
 
-def test_minio_fixture_uses_pinned_upstream_source() -> None:
+def test_minio_fixture_uses_pinned_github_release() -> None:
     text = (ROOT / "docker-compose.test.yml").read_text(encoding="utf-8")
     assert "quay.io/minio/minio" not in text
     assert "minio/minio:latest" not in text
     assert "dockerfile: Dockerfile.minio-test" in text
     dockerfile = (ROOT / "docker/Dockerfile.minio-test").read_text(encoding="utf-8")
-    assert "9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a" in dockerfile
-    assert "45521908307306e925c98d629e1c17d78c8b72b6ee242b1bfb1409f7d8ee5841" in dockerfile
+    assert "minio.linux-amd64.RELEASE.2025-04-22T22-12-26Z" in dockerfile
+    assert "53e2a2cb16c5366ea6fbbc479c19ddb4c6a0948273e752f740fb1fbf27bb817c" in dockerfile
+    assert "golang:" not in dockerfile
 
 
 def test_sqlalchemy_keeps_psycopg2_postgresql_url_contract() -> None:

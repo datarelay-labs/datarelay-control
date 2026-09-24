@@ -118,7 +118,7 @@ services:
   # --- Optional dev-validation-only fixtures (S3 / DATABASE_QUERY / REMOTE_FILE_POLLING lab) ---
   minio-test:
     profiles: ["test", "dev-validation", "e2e"]
-    # Published MinIO images are not anonymously pullable. Build the pinned community source.
+    # Published MinIO images are not anonymously pullable. Build the pinned GitHub release binary.
     build:
       context: docker
       dockerfile: Dockerfile.minio-test

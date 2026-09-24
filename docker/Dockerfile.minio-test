@@ -1,25 +1,17 @@
-# Test fixture only. Anonymous pulls of the published MinIO images are no longer
-# authorized (quay.io/minio/minio and Docker Hub minio/minio). This image builds
-# the last community server release, RELEASE.2025-10-15T17-29-55Z, from its
-# pinned source commit.
-FROM golang:1.24.8-alpine AS build
-
-ARG MINIO_COMMIT=9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a
-ARG MINIO_TARBALL_SHA256=45521908307306e925c98d629e1c17d78c8b72b6ee242b1bfb1409f7d8ee5841
-
-RUN apk add --no-cache ca-certificates curl tar \
- && curl -fsSL "https://codeload.github.com/minio/minio/tar.gz/${MINIO_COMMIT}" -o /tmp/minio.tar.gz \
- && echo "${MINIO_TARBALL_SHA256}  /tmp/minio.tar.gz" | sha256sum -c - \
- && mkdir -p /src \
- && tar -xzf /tmp/minio.tar.gz -C /src --strip-components=1 \
- && cd /src \
- && CGO_ENABLED=0 go build -tags kqueue -trimpath \
-      -ldflags "-s -w -X github.com/minio/minio/cmd.Version=2025-10-15T17-29-55Z -X github.com/minio/minio/cmd.CopyrightYear=2025 -X github.com/minio/minio/cmd.ReleaseTag=RELEASE.2025-10-15T17-29-55Z -X github.com/minio/minio/cmd.CommitID=${MINIO_COMMIT} -X github.com/minio/minio/cmd.ShortCommitID=9e49d5e7a648" \
-      -o /out/minio .
-
+# Test fixture only. Anonymous pulls of the published MinIO container images
+# are unauthorized. Install the pinned first-party GitHub release binary
+# RELEASE.2025-04-22T22-12-26Z (linux-amd64).
 FROM alpine:3.22
-RUN apk add --no-cache ca-certificates
-COPY --from=build /out/minio /usr/bin/minio
+
+ARG MINIO_URL=https://github.com/minio/minio/releases/download/RELEASE.2025-04-22T22-12-26Z/minio.linux-amd64.RELEASE.2025-04-22T22-12-26Z
+ARG MINIO_SHA256=53e2a2cb16c5366ea6fbbc479c19ddb4c6a0948273e752f740fb1fbf27bb817c
+
+RUN apk add --no-cache ca-certificates curl \
+ && curl -fsSL -o /usr/bin/minio "${MINIO_URL}" \
+ && echo "${MINIO_SHA256}  /usr/bin/minio" | sha256sum -c - \
+ && chmod 755 /usr/bin/minio \
+ && apk del curl
+
 EXPOSE 9000 9001
 VOLUME ["/data"]
 ENTRYPOINT ["minio"]
