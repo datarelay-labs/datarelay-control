@@ -33,7 +33,7 @@ Operational validation unblock — no new product features.
 
 # Data Relay v1.0.0
 
-First General Availability (GA) release of the open-source Enterprise Data Control Gateway.
+First General Availability (GA) release of the Enterprise Data Control Gateway.
 
 Tagged release candidate: `v1.0.0-rc.1`
 
@@ -150,7 +150,7 @@ See also `docs/v1-readiness-checklist.md` section 8.
 - **Default login:** `admin` / `admin` with mandatory password change on first login.
 - **Production checklist:** `docs/release/production-checklist.md`.
 - **Install verification:** `docs/release/installation-validation.md`.
-- **License:** Apache License 2.0 — see [LICENSE](LICENSE).
+- **License:** Data Relay Source Available License 1.0 — see [LICENSE](LICENSE).
 
 [1.0.2]: https://github.com/datarelay-labs/datarelay-control/releases/tag/v1.0.2
 [1.0.1]: https://github.com/datarelay-labs/datarelay-control/releases/tag/v1.0.1
