@@ -69,8 +69,21 @@ describe('TopHeader SaaS shell', () => {
     renderHeader({ mobileNavOpen: false, onMobileNavToggle })
     const toggle = screen.getByTestId('shell-mobile-nav-toggle')
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(toggle).toHaveAttribute('aria-controls', 'primary-navigation')
+    expect(toggle).toHaveAttribute('aria-label', 'Open navigation menu')
     await user.click(toggle)
     expect(onMobileNavToggle).toHaveBeenCalled()
+  })
+
+  it('reflects open state on the mobile navigation toggle', () => {
+    renderHeader({ mobileNavOpen: true, onMobileNavToggle: () => undefined })
+    const toggle = screen.getByTestId('shell-mobile-nav-toggle')
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(toggle).toHaveAttribute('aria-label', 'Close navigation menu')
+    expect(screen.getByRole('button', { name: 'Open settings', hidden: true }).parentElement).toHaveAttribute('inert')
+    expect(screen.getByRole('button', { name: 'Toggle color theme', hidden: true }).parentElement).toHaveAttribute(
+      'inert',
+    )
   })
 
   it('shows a calmer healthy runtime status label', () => {

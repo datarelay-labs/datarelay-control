@@ -818,7 +818,7 @@ export function NewStreamWizardPage() {
         </p>
       ) : null}
 
-      <main>
+      <div>
         {currentStepKey === 'connect' ? (
           <StepConnect state={state} onConnectorChange={updateConnector} onStreamChange={updateStream} />
         ) : null}
@@ -859,7 +859,7 @@ export function NewStreamWizardPage() {
             onNavigateToLegacySubstep={navigateToLegacySubstep}
           />
         ) : null}
-      </main>
+      </div>
 
       <nav
         className="sticky bottom-0 z-20 mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200/80 bg-white/95 py-3 backdrop-blur-sm dark:border-gdc-border dark:bg-gdc-section"
