@@ -1131,6 +1131,12 @@ export function AdminSettingsPage() {
         >
           Operations & audit
         </h2>
+        <p className="max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-gdc-muted">
+          Maintenance readiness, support evidence, audit/config history, and health monitoring live here. Retention and
+          Backup & Import stay under Lifecycle & recovery.
+        </p>
+
+      <AdminMaintenanceCenter backendRole={backendRole} busy={busy} setBusy={setBusy} />
 
       <section className={cn(cardShell, 'p-4 md:p-6')} aria-labelledby="admin-support-bundle-heading" data-testid="admin-support-bundle-panel">
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
@@ -1170,10 +1176,6 @@ export function AdminSettingsPage() {
           </p>
         ) : null}
       </section>
-
-
-
-      <AdminMaintenanceCenter backendRole={backendRole} busy={busy} setBusy={setBusy} />
 
       <AdminOperationalDashboard
         reloadToken={opReload}

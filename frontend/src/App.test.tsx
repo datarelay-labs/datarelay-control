@@ -752,7 +752,7 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     )
     expect(await screen.findByRole('heading', { name: 'Maintenance Center' }, { timeout: 8000 })).toBeInTheDocument()
     expect(
-      await screen.findByText(/Read-only readiness checks for production operations/i, {}, { timeout: 8000 }),
+      await screen.findByText(/Read-only readiness for production operations/i, {}, { timeout: 8000 }),
     ).toBeInTheDocument()
     expect(await screen.findByRole('heading', { name: 'User Management' }, { timeout: 8000 })).toBeInTheDocument()
     expect(await screen.findByRole('heading', { name: 'Backup & Import' }, { timeout: 8000 })).toBeInTheDocument()
@@ -762,6 +762,7 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     expect(
       await screen.findByRole('heading', { name: 'Retention / cleanup' }, { timeout: 8000 }),
     ).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Audit & config evidence' }, { timeout: 8000 })).toBeInTheDocument()
     expect(await screen.findByRole('heading', { name: 'Audit log' }, { timeout: 8000 })).toBeInTheDocument()
     expect(await screen.findByRole('heading', { name: 'Config versioning' }, { timeout: 8000 })).toBeInTheDocument()
     expect(await screen.findByRole('heading', { name: 'Health monitoring' }, { timeout: 8000 })).toBeInTheDocument()
