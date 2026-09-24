@@ -168,9 +168,60 @@ function managedPolicyRouteIds(
   return ids
 }
 
+function governanceRuleKey(rule: { field_path: string }): string {
+  return normalizeOverrideFieldPath(rule.field_path)
+}
+
 /**
- * Keep field-level governance overrides and replace only Wizard-owned Policy
- * delivery overrides for routes whose Policy concern is loaded or authored.
+ * Field-level identity. Action and classification values are payload, not identity,
+ * so an edit replaces the same route/field row instead of appending a second one.
+ * Absent keys stay untouched: edit does not hydrate field-level governance, so an
+ * omitted row means unchanged rather than cleared.
+ */
+function fieldLevelOverrideKey(override: GovernanceRouteOverride): string | null {
+  if (isWizardOwnedPolicyRouteOverride(override)) return null
+  const classification = (override.classification_level ?? '').trim()
+  const field = (override.field_path ?? '').trim()
+  if (classification && !field) return `classification:${override.route_id}`
+  if (field) return `protection:${override.route_id}:${normalizeOverrideFieldPath(field)}`
+  const protection = (override.protection_action ?? '').trim()
+  const delivery = (override.delivery_behavior ?? '').trim()
+  return `other:${override.route_id}:${protection}:${delivery}:${classification}`
+}
+
+function mergeByStableKey<T>(
+  current: readonly T[],
+  incoming: readonly T[],
+  keyOf: (item: T) => string,
+): T[] {
+  const incomingByKey = new Map(incoming.map((item) => [keyOf(item), item]))
+  const seen = new Set<string>()
+  const merged: T[] = []
+  for (const item of current) {
+    const key = keyOf(item)
+    if (seen.has(key)) continue
+    seen.add(key)
+    const replacement = incomingByKey.get(key)
+    if (replacement) {
+      merged.push(replacement)
+      incomingByKey.delete(key)
+    } else {
+      merged.push(item)
+    }
+  }
+  for (const item of incoming) {
+    const key = keyOf(item)
+    if (!incomingByKey.has(key)) continue
+    merged.push(item)
+    incomingByKey.delete(key)
+  }
+  return merged
+}
+
+/**
+ * Overlay Wizard field-level rules and overrides onto current governance by stable
+ * key. Unrelated persisted rows stay. Wizard-owned Policy delivery overrides are
+ * still replaced only for routes whose Policy concern is loaded or authored.
  */
 export function mergeStreamGovernanceDocument(
   current: StreamGovernanceDocument | null,
@@ -183,14 +234,17 @@ export function mergeStreamGovernanceDocument(
     routeDrafts,
     buildRouteDraftKeyToIdMap(routeDrafts, routeIdsByDraftKey),
   )
-  const wizardHasFieldLevel = wizard.rules.length > 0 || wizard.route_overrides.length > 0
-  const baseOverrides = wizardHasFieldLevel ? wizard.route_overrides : (current?.route_overrides ?? [])
-  const kept = baseOverrides.filter((override) => {
-    if (!isWizardOwnedPolicyRouteOverride(override)) return true
-    return !managed.has(override.route_id)
+  const currentOverrides = current?.route_overrides ?? []
+  const keptPolicy = currentOverrides.filter(
+    (override) => isWizardOwnedPolicyRouteOverride(override) && !managed.has(override.route_id),
+  )
+  const currentField = currentOverrides.filter((override) => !isWizardOwnedPolicyRouteOverride(override))
+  const wizardField = wizard.route_overrides.filter((override) => !isWizardOwnedPolicyRouteOverride(override))
+  const fieldOverrides = mergeByStableKey(currentField, wizardField, (override) => {
+    return fieldLevelOverrideKey(override) ?? `policy:${override.route_id}`
   })
-  const rules = wizard.rules.length > 0 ? wizard.rules : (current?.rules ?? [])
-  const route_overrides = [...kept, ...policyOverrides]
+  const rules = mergeByStableKey(current?.rules ?? [], wizard.rules, governanceRuleKey)
+  const route_overrides = [...fieldOverrides, ...keptPolicy, ...policyOverrides]
   const enabled =
     wizard.enabled ||
     Boolean(current?.enabled) ||

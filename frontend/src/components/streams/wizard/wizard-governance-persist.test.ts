@@ -421,4 +421,223 @@ describe('wizard-governance-persist', () => {
       { field_path: null, route_id: 202, delivery_behavior: 'quarantine', enabled: true },
     ])
   })
+
+  it('keeps an unrelated field override when one wizard field override is added', () => {
+    const state = buildInitialState()
+    state.dataProtection.routeOverrides = [
+      {
+        key: 'o-new',
+        fieldPath: '$.email',
+        routeDraftKey: 'r1',
+        protectionAction: 'tokenize',
+        deliveryBehavior: 'continue',
+        enabled: true,
+      },
+    ]
+    state.destinations.routeDrafts = [
+      { key: 'r1', destinationId: 10, enabled: true, failurePolicy: 'LOG_AND_CONTINUE', rateLimitJson: {} },
+    ]
+    const merged = mergeStreamGovernanceDocument(
+      {
+        enabled: true,
+        rules: [],
+        route_overrides: [
+          {
+            field_path: '$.phone',
+            route_id: 800,
+            protection_action: 'hash',
+            delivery_behavior: 'continue',
+            enabled: true,
+          },
+        ],
+      },
+      buildStreamGovernancePayload(
+        state.dataProtection,
+        buildRouteDraftKeyToIdMap(state.destinations.routeDrafts, { r1: 900 }),
+      ),
+      state.destinations.routeDrafts,
+      { r1: 900 },
+    )
+    expect(merged.route_overrides).toEqual([
+      {
+        field_path: '$.phone',
+        route_id: 800,
+        protection_action: 'hash',
+        delivery_behavior: 'continue',
+        enabled: true,
+      },
+      {
+        field_path: '$.email',
+        route_id: 900,
+        protection_action: 'tokenize',
+        delivery_behavior: 'continue',
+        enabled: true,
+      },
+    ])
+  })
+
+  it('keeps an unrelated governance rule when one wizard rule is added', () => {
+    const state = buildInitialState()
+    state.dataProtection.intents = [
+      {
+        key: 'i-new',
+        detectedField: '$.email',
+        protectionAction: 'mask_partial',
+        deliveryBehavior: 'continue',
+      },
+    ]
+    const merged = mergeStreamGovernanceDocument(
+      {
+        enabled: true,
+        rules: [
+          {
+            field_path: '$.phone',
+            sensitivity_type: 'pii',
+            default_protection_action: 'hash',
+            default_delivery_behavior: 'continue',
+            enabled: true,
+          },
+        ],
+        route_overrides: [],
+      },
+      buildStreamGovernancePayload(state.dataProtection, new Map()),
+      [],
+      {},
+    )
+    expect(merged.rules).toEqual([
+      {
+        field_path: '$.phone',
+        sensitivity_type: 'pii',
+        default_protection_action: 'hash',
+        default_delivery_behavior: 'continue',
+        enabled: true,
+      },
+      expect.objectContaining({
+        field_path: '$.email',
+        default_protection_action: 'mask_partial',
+        default_delivery_behavior: 'continue',
+      }),
+    ])
+  })
+
+  it('clears only a wizard-owned policy override and keeps unrelated rules and field overrides', () => {
+    const state = buildInitialState()
+    state.dataProtection.routeOverrides = [
+      {
+        key: 'o-new',
+        fieldPath: '$.ssn',
+        routeDraftKey: 'r1',
+        protectionAction: 'mask_full',
+        deliveryBehavior: 'quarantine',
+        enabled: true,
+      },
+    ]
+    state.destinations.routeDrafts = [
+      {
+        key: 'r1',
+        destinationId: 10,
+        enabled: true,
+        failurePolicy: 'LOG_AND_CONTINUE',
+        rateLimitJson: {},
+        inherit: { transform: true, protection: true, classification: true, policy: true },
+        governanceLoad: { protection: 'inherited', classification: 'inherited', policy: 'inherited' },
+      },
+    ]
+    const merged = mergeStreamGovernanceDocument(
+      {
+        enabled: true,
+        rules: [
+          {
+            field_path: '$.phone',
+            sensitivity_type: 'pii',
+            default_protection_action: 'hash',
+            default_delivery_behavior: 'continue',
+            enabled: true,
+          },
+        ],
+        route_overrides: [
+          {
+            field_path: '$.phone',
+            route_id: 800,
+            protection_action: 'hash',
+            delivery_behavior: 'continue',
+            enabled: true,
+          },
+          { field_path: null, route_id: 900, delivery_behavior: 'block', enabled: true },
+        ],
+      },
+      buildStreamGovernancePayload(
+        state.dataProtection,
+        buildRouteDraftKeyToIdMap(state.destinations.routeDrafts, { r1: 900 }),
+      ),
+      state.destinations.routeDrafts,
+      { r1: 900 },
+    )
+    expect(merged.rules.map((rule) => rule.field_path)).toEqual(['$.phone'])
+    expect(merged.route_overrides).toEqual([
+      {
+        field_path: '$.phone',
+        route_id: 800,
+        protection_action: 'hash',
+        delivery_behavior: 'continue',
+        enabled: true,
+      },
+      {
+        field_path: '$.ssn',
+        route_id: 900,
+        protection_action: 'mask_full',
+        delivery_behavior: 'quarantine',
+        enabled: true,
+      },
+    ])
+  })
+
+  it('replaces one matching field override without dropping an unrelated classification override', () => {
+    const state = buildInitialState()
+    state.dataProtection.routeOverrides = [
+      {
+        key: 'o-edit',
+        fieldPath: '$.email',
+        routeDraftKey: 'r1',
+        protectionAction: 'mask_full',
+        deliveryBehavior: 'quarantine',
+        enabled: true,
+      },
+    ]
+    state.destinations.routeDrafts = [
+      { key: 'r1', destinationId: 10, enabled: true, failurePolicy: 'LOG_AND_CONTINUE', rateLimitJson: {} },
+    ]
+    const merged = mergeStreamGovernanceDocument(
+      {
+        enabled: true,
+        rules: [],
+        route_overrides: [
+          {
+            field_path: '$.email',
+            route_id: 900,
+            protection_action: 'tokenize',
+            delivery_behavior: 'continue',
+            enabled: true,
+          },
+          { route_id: 800, classification_level: 'RESTRICTED', enabled: true },
+        ],
+      },
+      buildStreamGovernancePayload(
+        state.dataProtection,
+        buildRouteDraftKeyToIdMap(state.destinations.routeDrafts, { r1: 900 }),
+      ),
+      state.destinations.routeDrafts,
+      { r1: 900 },
+    )
+    expect(merged.route_overrides).toEqual([
+      {
+        field_path: '$.email',
+        route_id: 900,
+        protection_action: 'mask_full',
+        delivery_behavior: 'quarantine',
+        enabled: true,
+      },
+      { route_id: 800, classification_level: 'RESTRICTED', enabled: true },
+    ])
+  })
 })
