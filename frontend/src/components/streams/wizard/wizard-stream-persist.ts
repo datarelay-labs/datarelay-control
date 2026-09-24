@@ -25,6 +25,10 @@ import {
 import { persistWizardDataProtectionIntents } from './wizard-data-protection-persist'
 import { persistWizardSchemaDriftPolicy } from './wizard-schema-drift-policy-persist'
 import { persistWizardStreamGovernance } from './wizard-governance-persist'
+import {
+  persistWizardRouteGovernanceBundles,
+  verifyWizardRouteGovernanceEffective,
+} from './wizard-route-governance-bundle'
 
 export type WizardStreamPersistResult = {
   ok: boolean
@@ -280,6 +284,9 @@ export async function persistWizardStreamEdits(streamId: number, state: WizardSt
   errors.push(
     ...(await verifyWizardRouteTransformEffective(state.destinations.routeDrafts, routeIdsByDraftKey)),
   )
+  errors.push(
+    ...(await persistWizardRouteGovernanceBundles(state.destinations.routeDrafts, routeIdsByDraftKey)),
+  )
 
   if (state.dataProtection.intents.length > 0) {
     const protectionResult = await persistWizardDataProtectionIntents(streamId, state)
@@ -287,14 +294,18 @@ export async function persistWizardStreamEdits(streamId: number, state: WizardSt
   }
 
   try {
-    const routeIds = state.destinations.routeDrafts
-      .map((draft) => synced.routeIdsByDraftKey[draft.key] ?? routeKeyToId(draft.key))
-      .filter((id): id is number => id != null)
-    const governanceResult = await persistWizardStreamGovernance(streamId, state, routeIds)
+    const governanceResult = await persistWizardStreamGovernance(streamId, state, routeIdsByDraftKey)
     if (!governanceResult.saved) errors.push(...governanceResult.errors)
   } catch (err) {
     errors.push(`governance: ${err instanceof Error ? err.message : String(err)}`)
   }
+  errors.push(
+    ...(await verifyWizardRouteGovernanceEffective(
+      state.destinations.routeDrafts,
+      routeIdsByDraftKey,
+      state.dataProtection,
+    )),
+  )
 
   try {
     const driftResult = await persistWizardSchemaDriftPolicy(streamId, state.dataProtection, {

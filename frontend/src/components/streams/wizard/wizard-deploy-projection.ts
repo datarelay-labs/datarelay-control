@@ -1,5 +1,10 @@
 import type { RouteProcessingConcernKey } from '../route-processing/route-processing-labels'
 import {
+  hasPersistableRouteClassificationOverride,
+  hasPersistableRoutePolicyOverride,
+  hasPersistableRouteProtectionOverride,
+} from './wizard-route-governance-bundle'
+import {
   computeWizardRouteProcessingStatuses,
   hasPersistableRouteTransformOverride,
   normalizeWizardRouteProcessingInherit,
@@ -11,7 +16,14 @@ import {
 } from './wizard-state'
 
 /** How deploy persists (or does not persist) a projected concern override. */
-export type DeployIntentPersistKind = 'none' | 'intent_only' | 'governance' | 'route_transform'
+export type DeployIntentPersistKind =
+  | 'none'
+  | 'intent_only'
+  | 'governance'
+  | 'route_transform'
+  | 'route_protection'
+  | 'route_classification'
+  | 'route_policy'
 
 export type RouteProcessingConcernProjection = {
   status: RouteProcessingStatus
@@ -34,6 +46,9 @@ export const DEPLOY_INTENT_PERSIST_LABEL: Record<Exclude<DeployIntentPersistKind
   intent_only: 'Intent only',
   governance: 'Persisted through governance rules',
   route_transform: 'Persisted as route Transform',
+  route_protection: 'Persisted as route Protection',
+  route_classification: 'Persisted as route Classification',
+  route_policy: 'Persisted as route Policy',
 }
 
 function routeHasProtectionFieldOverrides(
@@ -68,11 +83,14 @@ function persistKindForConcern(
       // Empty override intent stays Intent only (not falsely marked persisted).
       return hasPersistableRouteTransformOverride(draft) ? 'route_transform' : 'intent_only'
     case 'policy':
+      if (hasPersistableRoutePolicyOverride(draft)) return 'route_policy'
       return 'intent_only'
     case 'protection':
+      if (hasPersistableRouteProtectionOverride(draft)) return 'route_protection'
       if (inherit.protection && protectionFieldOverrides) return 'governance'
       return 'intent_only'
     case 'classification':
+      if (hasPersistableRouteClassificationOverride(draft)) return 'route_classification'
       if (classificationOverride) return 'governance'
       return 'intent_only'
     default:

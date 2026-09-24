@@ -24,16 +24,18 @@ describe('wizard-governance-persist', () => {
     vi.clearAllMocks()
   })
 
-  it('maps routeDraftKey to route_id by draft order', () => {
-    const map = buildRouteDraftKeyToIdMap(
-      [
-        { key: 'r1', destinationId: 10, enabled: true, failurePolicy: 'LOG_AND_CONTINUE', rateLimitJson: {} },
-        { key: 'r2', destinationId: 20, enabled: true, failurePolicy: 'LOG_AND_CONTINUE', rateLimitJson: {} },
-      ],
-      [101, 102],
-    )
+  it('maps routeDraftKey to route_id without shifting when an earlier route is missing', () => {
+    const drafts = [
+      { key: 'r1', destinationId: 10, enabled: true, failurePolicy: 'LOG_AND_CONTINUE' as const, rateLimitJson: {} },
+      { key: 'r2', destinationId: 20, enabled: true, failurePolicy: 'LOG_AND_CONTINUE' as const, rateLimitJson: {} },
+    ]
+    const map = buildRouteDraftKeyToIdMap(drafts, { r1: 101, r2: 102 })
     expect(map.get('r1')).toBe(101)
     expect(map.get('r2')).toBe(102)
+
+    const partial = buildRouteDraftKeyToIdMap(drafts, { r2: 202 })
+    expect(partial.has('r1')).toBe(false)
+    expect(partial.get('r2')).toBe(202)
   })
 
   it('detects duplicate field + route override', () => {
@@ -87,7 +89,7 @@ describe('wizard-governance-persist', () => {
 
     const payload = buildStreamGovernancePayload(
       state.dataProtection,
-      buildRouteDraftKeyToIdMap(state.destinations.routeDrafts, [501, 502]),
+      buildRouteDraftKeyToIdMap(state.destinations.routeDrafts, { r1: 501, r2: 502 }),
     )
 
     expect(payload.enabled).toBe(true)
@@ -115,6 +117,56 @@ describe('wizard-governance-persist', () => {
     ])
   })
 
+  it('keeps field-level overrides on the surviving draft key when an earlier route is missing', () => {
+    const state = buildInitialState()
+    state.dataProtection.routeOverrides = [
+      {
+        key: 'o1',
+        fieldPath: '$.email',
+        routeDraftKey: 'r1',
+        protectionAction: 'tokenize',
+        deliveryBehavior: 'continue',
+        enabled: true,
+      },
+      {
+        key: 'o2',
+        fieldPath: '$.ssn',
+        routeDraftKey: 'r2',
+        protectionAction: 'mask_full',
+        deliveryBehavior: 'quarantine',
+        enabled: true,
+      },
+    ]
+    state.dataProtection.routeClassificationOverrides = [
+      {
+        key: 'c2',
+        routeDraftKey: 'r2',
+        classificationLevel: 'RESTRICTED',
+        enabled: true,
+      },
+    ]
+    state.destinations.routeDrafts = [
+      { key: 'r1', destinationId: 10, enabled: true, failurePolicy: 'LOG_AND_CONTINUE', rateLimitJson: {} },
+      { key: 'r2', destinationId: 20, enabled: true, failurePolicy: 'LOG_AND_CONTINUE', rateLimitJson: {} },
+    ]
+
+    const payload = buildStreamGovernancePayload(
+      state.dataProtection,
+      buildRouteDraftKeyToIdMap(state.destinations.routeDrafts, { r2: 202 }),
+    )
+
+    expect(payload.route_overrides).toEqual([
+      {
+        field_path: '$.ssn',
+        route_id: 202,
+        protection_action: 'mask_full',
+        delivery_behavior: 'quarantine',
+        enabled: true,
+      },
+      { route_id: 202, classification_level: 'RESTRICTED', enabled: true },
+    ])
+  })
+
   it('builds classification-only route overrides in governance payload', () => {
     const state = buildInitialState()
     state.dataProtection.routeClassificationOverrides = [
@@ -138,7 +190,7 @@ describe('wizard-governance-persist', () => {
 
     const payload = buildStreamGovernancePayload(
       state.dataProtection,
-      buildRouteDraftKeyToIdMap(state.destinations.routeDrafts, [701, 702]),
+      buildRouteDraftKeyToIdMap(state.destinations.routeDrafts, { r1: 701, r2: 702 }),
     )
 
     expect(payload.enabled).toBe(true)
@@ -176,7 +228,7 @@ describe('wizard-governance-persist', () => {
       { key: 'r1', destinationId: 10, enabled: true, failurePolicy: 'LOG_AND_CONTINUE', rateLimitJson: {} },
     ]
 
-    const result = await persistWizardStreamGovernance(42, state, [900])
+    const result = await persistWizardStreamGovernance(42, state, { r1: 900 })
 
     expect(result.saved).toBe(true)
     expect(putStreamGovernance).toHaveBeenCalledWith(
@@ -191,7 +243,7 @@ describe('wizard-governance-persist', () => {
 
   it('skips PUT when no governance content', async () => {
     const state = buildInitialState()
-    const result = await persistWizardStreamGovernance(42, state, [])
+    const result = await persistWizardStreamGovernance(42, state, {})
     expect(result.saved).toBe(true)
     expect(putStreamGovernance).not.toHaveBeenCalled()
   })

@@ -18,17 +18,21 @@ export type GovernancePersistResult = {
   warnings: string[]
 }
 
+/**
+ * Bind draft keys to route ids from an explicit map.
+ * Missing ids are omitted so a failed earlier create cannot shift later bindings.
+ */
 export function buildRouteDraftKeyToIdMap(
   routeDrafts: readonly WizardRouteDraft[],
-  routeIds: readonly number[],
+  routeIdsByDraftKey: Record<string, number>,
 ): RouteDraftKeyToIdMap {
   const map = new Map<string, number>()
-  routeDrafts.forEach((draft, index) => {
-    const routeId = routeIds[index]
-    if (typeof routeId === 'number' && Number.isFinite(routeId)) {
+  for (const draft of routeDrafts) {
+    const routeId = routeIdsByDraftKey[draft.key]
+    if (typeof routeId === 'number' && Number.isFinite(routeId) && routeId > 0) {
       map.set(draft.key, routeId)
     }
-  })
+  }
   return map
 }
 
@@ -123,9 +127,9 @@ export function governancePayloadHasContent(payload: StreamGovernanceDocument): 
 export async function persistWizardStreamGovernance(
   streamId: number,
   state: WizardState,
-  routeIds: readonly number[],
+  routeIdsByDraftKey: Record<string, number>,
 ): Promise<GovernancePersistResult> {
-  const routeDraftKeyToId = buildRouteDraftKeyToIdMap(state.destinations.routeDrafts, routeIds)
+  const routeDraftKeyToId = buildRouteDraftKeyToIdMap(state.destinations.routeDrafts, routeIdsByDraftKey)
   const payload = buildStreamGovernancePayload(state.dataProtection, routeDraftKeyToId)
 
   if (!governancePayloadHasContent(payload)) {

@@ -70,6 +70,10 @@ import { persistWizardDataProtectionIntents } from './wizard/wizard-data-protect
 import { persistWizardRouteTransformOverrides, verifyWizardRouteTransformEffective } from './wizard/wizard-stream-persist'
 import { persistWizardStreamGovernance } from './wizard/wizard-governance-persist'
 import {
+  persistWizardRouteGovernanceBundles,
+  verifyWizardRouteGovernanceEffective,
+} from './wizard/wizard-route-governance-bundle'
+import {
   mergeSchemaDriftPolicyIntoConfigJson,
   persistWizardSchemaDriftPolicy,
 } from './wizard/wizard-schema-drift-policy-persist'
@@ -563,7 +567,6 @@ export function NewStreamWizardPage() {
           }
         }
 
-        const routeIdsForStream: number[] = []
         const createdRouteIdsByDraftKey: Record<string, number> = {}
         if (
           workingState.destinations.destinationApiBacked &&
@@ -578,7 +581,6 @@ export function NewStreamWizardPage() {
             try {
               const route = await createRoute(routePayload)
               createdRouteIdsByDraftKey[draft.key] = route.id
-              routeIdsForStream.push(route.id)
               outcome.routeId = route.id
               outcome.routeIds.push(route.id)
             } catch (err) {
@@ -607,13 +609,20 @@ export function NewStreamWizardPage() {
           if (verifyErrors.length > 0) {
             outcome.errors.push(...verifyErrors.map((err) => label(target.streamId, err)))
           }
+          const bundleErrors = await persistWizardRouteGovernanceBundles(
+            workingState.destinations.routeDrafts,
+            createdRouteIdsByDraftKey,
+          )
+          if (bundleErrors.length > 0) {
+            outcome.errors.push(...bundleErrors.map((err) => label(target.streamId, err)))
+          }
         }
 
         try {
           const governanceResult = await persistWizardStreamGovernance(
             target.streamId,
             workingState,
-            routeIdsForStream,
+            createdRouteIdsByDraftKey,
           )
           outcome.governanceSaved = outcome.governanceSaved || governanceResult.saved
           if (governanceResult.warnings.length > 0) {
@@ -631,6 +640,17 @@ export function NewStreamWizardPage() {
               `governance persist failed: ${err instanceof Error ? err.message : String(err)}`,
             ),
           )
+        }
+
+        if (Object.keys(createdRouteIdsByDraftKey).length > 0) {
+          const effectiveErrors = await verifyWizardRouteGovernanceEffective(
+            workingState.destinations.routeDrafts,
+            createdRouteIdsByDraftKey,
+            workingState.dataProtection,
+          )
+          if (effectiveErrors.length > 0) {
+            outcome.errors.push(...effectiveErrors.map((err) => label(target.streamId, err)))
+          }
         }
       }
     } catch (err) {

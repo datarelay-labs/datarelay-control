@@ -77,14 +77,14 @@ Code: `wizard-deploy-projection.ts`. UX spec: §24.
 
 ## 2. Known Gaps
 
-Full **route override bundles** (`draft.inherit.<concern> === false` with route-scoped editor content) are **not** persisted at wizard deploy.
+Complete **route override bundles** (`draft.inherit.<concern> === false` with a persistable payload) are saved at wizard deploy for Transform, Protection, Classification, and Policy. Empty inherit-off overrides stay Intent only.
 
 | Gap | Wizard trigger | Current `persistKind` | Post-deploy Effective API | Runtime effect |
 |-----|----------------|----------------------|---------------------------|----------------|
 | **Transform Bundle Persist** | `inherit.transform = false` + route mapping/enrichment draft | `route_transform` (complete); `intent_only` when empty | `Overridden` / `Mixed` when persisted; Effective read-back on save | Route transform dual-read when rows exist |
-| **Protection Bundle Persist** | `inherit.protection = false` + route-scoped protection intents | `intent_only` | Stream / governance only | No `RouteProtectionRule` rows |
-| **Classification Bundle Persist** | `inherit.classification = false` without floor override row | `intent_only` | Stream classification only | No `RouteClassificationRule` rows |
-| **Policy Bundle Persist** | `inherit.policy = false` + route delivery behavior | `intent_only` | Stream policy only | No route-level policy bundle |
+| **Protection Bundle Persist** | `inherit.protection = false` + route-scoped protection intents | `route_protection` (complete); `intent_only` when empty | `Overridden` / `Mixed` when persisted; rules read back and Effective checked | `RouteProtectionRule` rows when the bundle is persistable |
+| **Classification Bundle Persist** | `inherit.classification = false` with classification rules derived from route protection intents | `route_classification` (complete); `intent_only` when empty | `Overridden` / `Mixed` when persisted; rules read back and Effective checked | `RouteClassificationRule` rows when the bundle is persistable |
+| **Policy Bundle Persist** | `inherit.policy = false` + route delivery behavior | `route_policy` (complete); `intent_only` when empty | `Overridden` / `Mixed` when persisted; rules read back and Effective checked | `RoutePolicyRule` rows when delivery behavior is set |
 
 **Note:** Field-level governance overrides (protection action, classification floor) **are** persisted and are **not** listed as gaps.
 

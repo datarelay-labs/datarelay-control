@@ -33,6 +33,16 @@ describe('wizard create fail-closed', () => {
     expect(wizardCreateIsConfigurationIncomplete(o)).toBe(true)
   })
 
+  it('blocks start when a route governance bundle read-back or Effective check fails', () => {
+    const o = outcome({
+      streamId: 42,
+      routeIds: [7],
+      errors: ['route 7 protection: expected Overridden after save, Effective API returned Inherited'],
+    })
+    expect(wizardCreateIsStartEligible(o)).toBe(false)
+    expect(wizardCreateIsConfigurationIncomplete(o)).toBe(true)
+  })
+
   it('allows start only when stream created with zero persist errors', () => {
     const o = outcome({ streamId: 7, errors: [] })
     expect(wizardCreateIsStartEligible(o)).toBe(true)
