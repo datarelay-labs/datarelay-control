@@ -80,35 +80,40 @@ The supported runtime model is route-based processing. Destination-specific diff
 - TCP **18080** for HTTP
 - TCP **18443** for HTTPS
 
-### Install and run
+### Install the production-style HTTPS stack
 
 ```bash
-git clone https://github.com/datarelay-labs/datarelay-control.git datarelay-control
+git clone https://github.com/datarelay-labs/datarelay-control.git
 cd datarelay-control
+git checkout main-v2
 cp .env.example .env
 
-# Set JWT_SECRET_KEY, SECRET_KEY, ENCRYPTION_KEY,
-# and POSTGRES_PASSWORD before production use.
-
-docker compose -f docker-compose.platform.yml up -d
+export GDC_RELEASE_COMPOSE_FILE=deploy/docker-compose.https.yml
+export GDC_INSTALL_GENERATE_TLS=1
+export GDC_ENTRY_HTTP_PORT=18080
+export GDC_ENTRY_HTTPS_PORT=18443
+export GDC_PUBLIC_HTTPS_PORT=18443
+./scripts/release/install.sh
 ```
 
-Or use the release installer:
+Verify:
 
 ```bash
-./scripts/release/install.sh
+docker compose -f deploy/docker-compose.https.yml ps
+curl -k https://localhost:18443/health
 ```
 
 Open:
 
 ```text
-https://localhost:18443/
-http://localhost:18080/
+https://SERVER:18443/
 ```
 
-Default bootstrap login is `admin / admin`; a password change is required on first login. Override the bootstrap password with `GDC_SEED_ADMIN_PASSWORD` in `.env`.
+For a fresh bootstrap with no `GDC_SEED_ADMIN_PASSWORD`, use `admin / admin` and change the password on first login.
 
-For a full first-pipeline walkthrough, see [Getting Started](docs/getting-started/GETTING-STARTED.md).
+> `docker-compose.platform.yml` contains development-validation defaults and is not the documented production path. Use `deploy/docker-compose.https.yml` through the release installer for the production-style deployment flow.
+
+For the complete first-pipeline walkthrough, see [Getting Started](docs/getting-started/GETTING-STARTED.md).
 
 ## First Stream
 
