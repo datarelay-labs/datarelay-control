@@ -630,7 +630,13 @@ export function AppShellLayout() {
 
   return (
     <div className={rootClassName}>
-      <a href={`#${MAIN_CONTENT_ID}`} className="gdc-skip-link">
+      <a
+        href={`#${MAIN_CONTENT_ID}`}
+        className="gdc-skip-link"
+        // The skip link sits outside the drawer and the inert workspace. Keep it
+        // out of the keyboard path while mobile navigation is open.
+        {...(mobileNavOpen ? { inert: true } : {})}
+      >
         Skip to main content
       </a>
       <AppShell

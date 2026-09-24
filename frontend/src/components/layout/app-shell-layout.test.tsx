@@ -62,8 +62,25 @@ describe('AppShellLayout responsive accessibility', () => {
     const skip = screen.getByRole('link', { name: 'Skip to main content' })
     expect(skip).toHaveAttribute('href', `#${MAIN_CONTENT_ID}`)
     expect(skip).toHaveClass('gdc-skip-link')
+    expect(skip).not.toHaveAttribute('inert')
     expect(document.getElementById(MAIN_CONTENT_ID)?.tagName).toBe('MAIN')
     expect(screen.getByRole('main')).toHaveTextContent('Streams workspace')
+  })
+
+  it('makes the skip link inert while the mobile drawer is open', async () => {
+    const user = userEvent.setup()
+    renderShell()
+    const toggle = screen.getByTestId('shell-mobile-nav-toggle')
+    expect(screen.getByRole('link', { name: 'Skip to main content' })).not.toHaveAttribute('inert')
+
+    await user.click(toggle)
+    const skip = screen.getByRole('link', { name: 'Skip to main content', hidden: true })
+    expect(skip).toHaveAttribute('inert')
+    expect(skip).toHaveAttribute('href', `#${MAIN_CONTENT_ID}`)
+    expect(skip).toHaveClass('gdc-skip-link')
+
+    await user.click(toggle)
+    expect(screen.getByRole('link', { name: 'Skip to main content' })).not.toHaveAttribute('inert')
   })
 
   it('keeps desktop sidebar collapse available when md-up', async () => {
