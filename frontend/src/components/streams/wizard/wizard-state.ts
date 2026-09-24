@@ -687,6 +687,24 @@ export type WizardRouteProcessingOverrides = {
   policy?: WizardRoutePolicyOverride
 }
 
+/**
+ * How a route concern was loaded for edit.
+ * Omitted means the draft was authored in this wizard session.
+ * unloaded / unavailable / passthrough must not be saved as a clear.
+ */
+export type WizardRouteGovernanceConcernLoad =
+  | 'unloaded'
+  | 'unavailable'
+  | 'inherited'
+  | 'hydrated'
+  | 'passthrough'
+
+export type WizardRouteGovernanceLoad = {
+  protection: WizardRouteGovernanceConcernLoad
+  classification: WizardRouteGovernanceConcernLoad
+  policy: WizardRouteGovernanceConcernLoad
+}
+
 export type RouteProcessingStatus = 'Inherited' | 'Overridden' | 'Mixed'
 
 /** Per-route draft for wizard Destinations step (persists to POST /routes/ on create). */
@@ -706,6 +724,11 @@ export type WizardRouteDraft = {
   inherit: WizardRouteProcessingInherit
   /** Route-specific processing when inherit is unchecked for a concern. */
   overrides?: WizardRouteProcessingOverrides
+  /**
+   * Edit-load fidelity for Protection, Classification, and Policy.
+   * Absent on drafts authored in the create wizard.
+   */
+  governanceLoad?: WizardRouteGovernanceLoad
 }
 
 export type WizardDestinationsState = {
@@ -865,6 +888,32 @@ export function newWizardRouteDraftKey(): string {
   return `wr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 }
 
+const GOVERNANCE_CONCERN_LOADS = new Set<WizardRouteGovernanceConcernLoad>([
+  'unloaded',
+  'unavailable',
+  'inherited',
+  'hydrated',
+  'passthrough',
+])
+
+export function normalizeWizardRouteGovernanceLoad(
+  raw: Partial<WizardRouteGovernanceLoad> | undefined,
+): WizardRouteGovernanceLoad | undefined {
+  if (!raw) return undefined
+  if (
+    !GOVERNANCE_CONCERN_LOADS.has(raw.protection as WizardRouteGovernanceConcernLoad) ||
+    !GOVERNANCE_CONCERN_LOADS.has(raw.classification as WizardRouteGovernanceConcernLoad) ||
+    !GOVERNANCE_CONCERN_LOADS.has(raw.policy as WizardRouteGovernanceConcernLoad)
+  ) {
+    return undefined
+  }
+  return {
+    protection: raw.protection as WizardRouteGovernanceConcernLoad,
+    classification: raw.classification as WizardRouteGovernanceConcernLoad,
+    policy: raw.policy as WizardRouteGovernanceConcernLoad,
+  }
+}
+
 export function normalizeWizardRouteProcessingInherit(
   raw: Partial<WizardRouteProcessingInherit> | undefined,
 ): WizardRouteProcessingInherit {
@@ -925,6 +974,7 @@ export function normalizeWizardRouteDraft(
         : {},
     inherit,
     overrides: raw.overrides,
+    governanceLoad: normalizeWizardRouteGovernanceLoad(raw.governanceLoad),
   }
   if (!inherit.transform && !draft.overrides?.transform && globalState) {
     draft.overrides = {

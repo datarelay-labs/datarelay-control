@@ -1010,9 +1010,9 @@ projectRouteProcessingStatusFromDeployIntent(draft, dataProtection)
 | **none** | — | Shared Processing only; no route-level deploy intent. |
 | **intent_only** | Intent only | Shown in Deploy but **not saved** at deploy for that concern bundle (empty Transform, Protection, Classification, or Policy override). Post-deploy Effective API may show Shared. |
 | **route_transform** | Persisted as route Transform | Complete Transform mapping/enrichment override saved via route Transform APIs at deploy; verified by Effective read-back. |
-| **route_protection** | Persisted as route Protection | Complete route protection intents saved via route protection rules at deploy; rules are read back and Effective status is checked. |
-| **route_classification** | Persisted as route Classification | Route classification rules derived from the route protection bundle are saved at deploy; rules are read back and Effective status is checked. |
-| **route_policy** | Persisted as route Policy | Route delivery behavior saved via route policy rules at deploy; rules are read back and Effective status is checked. |
+| **route_protection** | Persisted as route Protection | Complete route protection intents saved by transactional replace of route protection rules at deploy; rules are read back and Effective status is checked. |
+| **route_classification** | Persisted as route Classification | Route classification rules derived from the route protection bundle are saved by transactional replace at deploy; rules are read back and Effective status is checked. |
+| **route_policy** | Persisted as route Policy | Route delivery behavior, including block, saved as governance `route_overrides.delivery_behavior` at deploy; governance is read back and Policy Effective status is checked. |
 | **governance** | Persisted through governance rules | Field-level protection/classification overrides saved via governance `route_overrides` at deploy. |
 
 ## Deploy Summary display rules

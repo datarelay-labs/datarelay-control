@@ -68,6 +68,13 @@ vi.mock('../../../api/gdcRouteProtection', () => ({
   createRouteProtectionRule: vi.fn(async () => ({ rule: { id: 1 } })),
   deleteRouteProtectionRule: vi.fn(async () => undefined),
   patchRouteProtectionRule: vi.fn(),
+  replaceRouteProtectionRules: vi.fn(async (routeId: number) => ({
+    route_id: routeId,
+    stream_id: 100,
+    protection_enabled: true,
+    rules: [],
+    rule_count: 0,
+  })),
 }))
 
 vi.mock('../../../api/gdcRouteClassification', () => ({
@@ -89,6 +96,12 @@ vi.mock('../../../api/gdcRouteClassification', () => ({
   createRouteClassificationRule: vi.fn(async () => ({ rule: { id: 1 } })),
   deleteRouteClassificationRule: vi.fn(async () => undefined),
   patchRouteClassificationRule: vi.fn(),
+  replaceRouteClassificationRules: vi.fn(async (routeId: number) => ({
+    route_id: routeId,
+    stream_id: 100,
+    rules: [],
+    rule_count: 0,
+  })),
 }))
 
 vi.mock('../../../api/gdcRoutePolicy', () => ({

@@ -130,6 +130,88 @@ def patch_route_classification_rule(
     return rule
 
 
+def replace_route_classification_rules(
+    db: Session,
+    *,
+    route_id: int,
+    rules: list[dict[str, Any]],
+) -> tuple[int, list[dict[str, Any]]]:
+    """Replace the route classification set in the caller's transaction.
+
+    Validates every requested rule before deleting live rows. The caller commits
+    only after this returns; any exception leaves the prior rows uncommitted.
+    """
+
+    route = db.query(Route).filter(Route.id == route_id).with_for_update().first()
+    if route is None:
+        raise RouteNotFoundError(route_id)
+
+    validated: list[dict[str, Any]] = []
+    for raw in rules:
+        label = str(raw.get("name") or "").strip()
+        if not label:
+            raise ClassificationRuleValidationError("name is required")
+        condition = raw.get("condition_json")
+        if not isinstance(condition, dict):
+            raise ClassificationRuleValidationError("condition_json is required")
+        _validate_condition_json(condition)
+        level = normalize_level(str(raw.get("classification_level") or ""))
+        if level is None:
+            raise ClassificationRuleValidationError(
+                f"unsupported classification_level: {raw.get('classification_level')!r}"
+            )
+        validated.append(
+            {
+                "name": label,
+                "enabled": bool(raw.get("enabled", True)),
+                "condition_json": dict(condition),
+                "classification_level": level,
+            }
+        )
+
+    existing = list(
+        db.execute(
+            select(RouteClassificationRule)
+            .where(RouteClassificationRule.route_id == route_id)
+            .with_for_update()
+        ).scalars()
+    )
+    for row in existing:
+        db.delete(row)
+    db.flush()
+
+    now = datetime.now(timezone.utc)
+    for item in validated:
+        db.add(
+            RouteClassificationRule(
+                route_id=route_id,
+                name=item["name"],
+                enabled=item["enabled"],
+                condition_json=item["condition_json"],
+                classification_level=item["classification_level"],
+                created_at=now,
+                updated_at=now,
+            )
+        )
+    db.flush()
+
+    stream_id, entries = list_route_classification_rules(db, route_id)
+    if len(entries) != len(validated):
+        raise ClassificationRuleValidationError("classification replace read-back count mismatch")
+    by_name = {str(entry["name"]): entry for entry in entries}
+    for item in validated:
+        actual = by_name.get(item["name"])
+        if actual is None:
+            raise ClassificationRuleValidationError("classification replace read-back missing rule")
+        if (
+            actual["classification_level"] != item["classification_level"]
+            or bool(actual["enabled"]) != item["enabled"]
+            or dict(actual["condition_json"]) != item["condition_json"]
+        ):
+            raise ClassificationRuleValidationError("classification replace read-back mismatch")
+    return stream_id, entries
+
+
 def delete_route_classification_rule(db: Session, *, route_id: int, rule_id: int) -> None:
     rule = db.execute(
         select(RouteClassificationRule).where(

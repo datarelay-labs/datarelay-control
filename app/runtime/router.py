@@ -90,6 +90,7 @@ from app.route_classification.schemas import (
     RouteClassificationRuleCreateRequest,
     RouteClassificationRulePatchRequest,
     RouteClassificationRuleResponse,
+    RouteClassificationRulesReplaceRequest,
     RouteClassificationRulesResponse,
 )
 from app.route_policy.schemas import (
@@ -104,6 +105,7 @@ from app.route_protection.schemas import (
     RouteProtectionRuleCreateRequest,
     RouteProtectionRulePatchRequest,
     RouteProtectionRuleResponse,
+    RouteProtectionRulesReplaceRequest,
     RouteProtectionRulesResponse,
 )
 from app.protection.schemas import (
@@ -479,6 +481,59 @@ async def get_route_protection_rules(
     )
 
 
+@router.put("/routes/{route_id}/protection-rules", response_model=RouteProtectionRulesResponse)
+async def replace_route_protection_rules(
+    route_id: int,
+    body: RouteProtectionRulesReplaceRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> RouteProtectionRulesResponse:
+    from app.audit.service import audit_actor_from_request
+    from app.protection.engine import protection_enabled
+    from app.protection.operator_workflow import ProtectionRuleConflictError, ProtectionRuleValidationError
+    from app.route_protection.operator_workflow import (
+        replace_route_protection_rules as replace_rules,
+    )
+
+    actor = audit_actor_from_request(request)
+    try:
+        stream_id, rules = replace_rules(
+            db,
+            route_id=route_id,
+            rules=[item.model_dump() for item in body.rules],
+            actor_username=actor.actor_username or "system",
+        )
+        db.commit()
+    except control_service.RouteNotFoundError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=404,
+            detail={"error_code": "ROUTE_NOT_FOUND", "message": f"route not found: {exc.route_id}"},
+        ) from exc
+    except ProtectionRuleConflictError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail={"error_code": "PROTECTION_RULE_CONFLICT", "message": str(exc)},
+        ) from exc
+    except ProtectionRuleValidationError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail={"error_code": "PROTECTION_RULE_INVALID", "message": str(exc)},
+        ) from exc
+    except Exception:
+        db.rollback()
+        raise
+    return RouteProtectionRulesResponse(
+        route_id=route_id,
+        stream_id=stream_id,
+        protection_enabled=protection_enabled(),
+        rules=rules,
+        rule_count=len(rules),
+    )
+
+
 @router.post("/routes/{route_id}/protection-rules", response_model=RouteProtectionRuleResponse)
 async def create_route_protection_rule(
     route_id: int,
@@ -642,6 +697,47 @@ async def get_route_classification_rules(
             status_code=404,
             detail={"error_code": "ROUTE_NOT_FOUND", "message": f"route not found: {exc.route_id}"},
         ) from exc
+    return RouteClassificationRulesResponse(
+        route_id=route_id,
+        stream_id=stream_id,
+        rules=rules,
+        rule_count=len(rules),
+    )
+
+
+@router.put("/routes/{route_id}/classification-rules", response_model=RouteClassificationRulesResponse)
+async def replace_route_classification_rules(
+    route_id: int,
+    body: RouteClassificationRulesReplaceRequest,
+    db: Session = Depends(get_db),
+) -> RouteClassificationRulesResponse:
+    from app.classification.operator_workflow import ClassificationRuleValidationError
+    from app.route_classification.operator_workflow import (
+        replace_route_classification_rules as replace_rules,
+    )
+
+    try:
+        stream_id, rules = replace_rules(
+            db,
+            route_id=route_id,
+            rules=[item.model_dump() for item in body.rules],
+        )
+        db.commit()
+    except control_service.RouteNotFoundError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=404,
+            detail={"error_code": "ROUTE_NOT_FOUND", "message": f"route not found: {exc.route_id}"},
+        ) from exc
+    except ClassificationRuleValidationError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail={"error_code": "CLASSIFICATION_RULE_INVALID", "message": str(exc)},
+        ) from exc
+    except Exception:
+        db.rollback()
+        raise
     return RouteClassificationRulesResponse(
         route_id=route_id,
         stream_id=stream_id,

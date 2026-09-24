@@ -549,3 +549,72 @@ def test_duplicate_classification_override_rejected(
     assert put.status_code == 422
     detail = _api_detail(put.json())
     assert detail["error_code"] == "INVALID_ROUTE_OVERRIDE_DUPLICATE"
+
+
+def test_policy_block_route_override_round_trip_preserves_field_overrides(
+    governance_client: TestClient,
+    db_session: Session,
+) -> None:
+    fixture = _seed_stream_runtime(db_session)
+    stream_id = fixture["stream_id"]
+    route_id = fixture["route_ids"][0]
+
+    put = _put_governance(
+        governance_client,
+        stream_id,
+        {
+            "enabled": True,
+            "rules": [],
+            "route_overrides": [
+                {
+                    "field_path": "$.email",
+                    "route_id": route_id,
+                    "protection_action": "mask_partial",
+                    "delivery_behavior": "continue",
+                    "enabled": True,
+                },
+                {
+                    "route_id": route_id,
+                    "delivery_behavior": "block",
+                    "enabled": True,
+                },
+            ],
+        },
+    )
+    assert put.status_code == 200
+    stored = put.json()["route_overrides"]
+    policy = [item for item in stored if not item.get("field_path") and item.get("delivery_behavior")]
+    assert len(policy) == 1
+    assert policy[0]["delivery_behavior"] == "block"
+    assert policy[0]["protection_action"] is None
+    field = [item for item in stored if item.get("field_path") == "$.email"]
+    assert len(field) == 1
+    assert field[0]["protection_action"] == "mask_partial"
+
+    failed = _put_governance(
+        governance_client,
+        stream_id,
+        {
+            "enabled": True,
+            "rules": [],
+            "route_overrides": [
+                {
+                    "field_path": "$.email",
+                    "route_id": route_id,
+                    "enabled": True,
+                }
+            ],
+        },
+    )
+    assert failed.status_code == 422
+
+    get_resp = governance_client.get(f"/api/v1/runtime/streams/{stream_id}/governance")
+    assert get_resp.status_code == 200
+    read_back = get_resp.json()["route_overrides"]
+    policy_again = [item for item in read_back if not item.get("field_path") and item.get("delivery_behavior")]
+    assert len(policy_again) == 1
+    assert policy_again[0]["delivery_behavior"] == "block"
+    assert any(
+        item.get("field_path") == "$.email" and item.get("protection_action") == "mask_partial"
+        for item in read_back
+    )

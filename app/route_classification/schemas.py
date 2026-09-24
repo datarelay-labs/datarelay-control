@@ -45,6 +45,12 @@ class RouteClassificationRulePatchRequest(BaseModel):
     classification_level: ClassificationLevel | None = None
 
 
+class RouteClassificationRulesReplaceRequest(BaseModel):
+    """Complete desired classification rule set for one route."""
+
+    rules: list[RouteClassificationRuleCreateRequest]
+
+
 class RouteClassificationRuleResponse(BaseModel):
     rule: RouteClassificationRuleEntry
 

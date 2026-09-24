@@ -116,3 +116,139 @@ def test_route_classification_rules_invalid(route_classification_client: TestCli
 def test_route_classification_rules_not_found(route_classification_client: TestClient) -> None:
     r = route_classification_client.get("/api/v1/runtime/routes/999999999/classification-rules")
     assert r.status_code == 404
+
+
+def test_route_classification_rules_replace_all(
+    route_classification_client: TestClient,
+    db_session: Session,
+) -> None:
+    h = _seed_stream_two_routes(db_session)
+    route_id = h["route_a_id"]
+    created = route_classification_client.post(
+        f"/api/v1/runtime/routes/{route_id}/classification-rules",
+        json={
+            "name": "old",
+            "enabled": True,
+            "condition_json": {"sensitivity_class": "pii"},
+            "classification_level": "INTERNAL",
+        },
+    )
+    assert created.status_code == 200
+
+    replaced = route_classification_client.put(
+        f"/api/v1/runtime/routes/{route_id}/classification-rules",
+        json={
+            "rules": [
+                {
+                    "name": "Wizard route: secret classification",
+                    "enabled": True,
+                    "condition_json": {"sensitivity_class": "secret"},
+                    "classification_level": "RESTRICTED",
+                }
+            ]
+        },
+    )
+    assert replaced.status_code == 200
+    assert replaced.json()["rule_count"] == 1
+    assert replaced.json()["rules"][0]["classification_level"] == "RESTRICTED"
+    listed = route_classification_client.get(f"/api/v1/runtime/routes/{route_id}/classification-rules")
+    assert listed.json()["rules"][0]["name"] == "Wizard route: secret classification"
+
+
+def test_route_classification_replace_failure_keeps_original_rows(
+    route_classification_client: TestClient,
+    db_session: Session,
+) -> None:
+    h = _seed_stream_two_routes(db_session)
+    route_id = h["route_a_id"]
+    created = route_classification_client.post(
+        f"/api/v1/runtime/routes/{route_id}/classification-rules",
+        json={
+            "name": "keep-me",
+            "enabled": True,
+            "condition_json": {"sensitivity_class": "pii"},
+            "classification_level": "CONFIDENTIAL",
+        },
+    )
+    assert created.status_code == 200
+    original_id = created.json()["rule"]["id"]
+
+    failed = route_classification_client.put(
+        f"/api/v1/runtime/routes/{route_id}/classification-rules",
+        json={
+            "rules": [
+                {
+                    "name": "bad",
+                    "enabled": True,
+                    "condition_json": {"sensitivity_class": "pii"},
+                    "classification_level": "NOT_A_LEVEL",
+                }
+            ]
+        },
+    )
+    assert failed.status_code == 422
+    db_session.expire_all()
+    rows = (
+        db_session.query(RouteClassificationRule)
+        .filter(RouteClassificationRule.route_id == route_id)
+        .all()
+    )
+    assert len(rows) == 1
+    assert rows[0].id == original_id
+    assert rows[0].name == "keep-me"
+    assert rows[0].classification_level == "CONFIDENTIAL"
+    effective = route_classification_client.get(f"/api/v1/runtime/routes/{route_id}/classification/effective")
+    assert effective.status_code == 200
+    assert effective.json()["processing_status"] == "Overridden"
+
+
+def test_route_classification_replace_read_back_failure_rolls_back(
+    route_classification_client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    h = _seed_stream_two_routes(db_session)
+    route_id = h["route_a_id"]
+    created = route_classification_client.post(
+        f"/api/v1/runtime/routes/{route_id}/classification-rules",
+        json={
+            "name": "keep-me",
+            "enabled": True,
+            "condition_json": {"sensitivity_class": "pii"},
+            "classification_level": "CONFIDENTIAL",
+        },
+    )
+    assert created.status_code == 200
+    original_id = created.json()["rule"]["id"]
+
+    from app.classification.operator_workflow import ClassificationRuleValidationError
+    from app.route_classification import operator_workflow
+
+    def fail_read_back(*_args: object, **_kwargs: object) -> tuple[int, list[dict[str, object]]]:
+        raise ClassificationRuleValidationError("classification replace read-back mismatch")
+
+    monkeypatch.setattr(operator_workflow, "list_route_classification_rules", fail_read_back)
+    failed = route_classification_client.put(
+        f"/api/v1/runtime/routes/{route_id}/classification-rules",
+        json={
+            "rules": [
+                {
+                    "name": "replacement",
+                    "enabled": True,
+                    "condition_json": {"sensitivity_class": "secret"},
+                    "classification_level": "RESTRICTED",
+                }
+            ]
+        },
+    )
+    assert failed.status_code == 400
+    monkeypatch.undo()
+    db_session.expire_all()
+    rows = (
+        db_session.query(RouteClassificationRule)
+        .filter(RouteClassificationRule.route_id == route_id)
+        .all()
+    )
+    assert len(rows) == 1
+    assert rows[0].id == original_id
+    assert rows[0].classification_level == "CONFIDENTIAL"

@@ -1,7 +1,18 @@
-import { putStreamGovernance, type StreamGovernanceDocument } from '../../../api/gdcStreamGovernance'
+import {
+  fetchStreamGovernance,
+  putStreamGovernance,
+  type GovernanceRouteOverride,
+  type StreamGovernanceDocument,
+} from '../../../api/gdcStreamGovernance'
 import { inferWizardSensitivityClass } from './wizard-data-protection-fields'
 import { normalizeWizardDetectedField } from './wizard-data-protection-fields'
 import {
+  isWizardOwnedPolicyRouteOverride,
+  routeGovernanceConcernDisposition,
+  routePolicyDeliveryBehavior,
+} from './wizard-route-governance-bundle'
+import {
+  resolveWizardRouteDraftId,
   wizardDataProtectionIntentReady,
   type WizardDataProtectionState,
   type WizardRouteDraft,
@@ -124,15 +135,118 @@ export function governancePayloadHasContent(payload: StreamGovernanceDocument): 
   return payload.rules.length > 0 || payload.route_overrides.length > 0
 }
 
+export function wizardPolicyRouteOverrides(
+  routeDrafts: readonly WizardRouteDraft[],
+  routeDraftKeyToId: RouteDraftKeyToIdMap,
+): GovernanceRouteOverride[] {
+  const overrides: GovernanceRouteOverride[] = []
+  for (const draft of routeDrafts) {
+    if (routeGovernanceConcernDisposition(draft, 'policy') !== 'replace') continue
+    const routeId = routeDraftKeyToId.get(draft.key)
+    const behavior = routePolicyDeliveryBehavior(draft)
+    if (routeId == null || behavior == null) continue
+    overrides.push({
+      field_path: null,
+      route_id: routeId,
+      delivery_behavior: behavior,
+      enabled: true,
+    })
+  }
+  return overrides
+}
+
+function managedPolicyRouteIds(
+  routeDrafts: readonly WizardRouteDraft[],
+  routeIdsByDraftKey: Record<string, number>,
+): Set<number> {
+  const ids = new Set<number>()
+  for (const draft of routeDrafts) {
+    if (routeGovernanceConcernDisposition(draft, 'policy') === 'skip') continue
+    const routeId = resolveWizardRouteDraftId(draft, routeIdsByDraftKey)
+    if (routeId != null) ids.add(routeId)
+  }
+  return ids
+}
+
+/**
+ * Keep field-level governance overrides and replace only Wizard-owned Policy
+ * delivery overrides for routes whose Policy concern is loaded or authored.
+ */
+export function mergeStreamGovernanceDocument(
+  current: StreamGovernanceDocument | null,
+  wizard: StreamGovernanceDocument,
+  routeDrafts: readonly WizardRouteDraft[],
+  routeIdsByDraftKey: Record<string, number>,
+): StreamGovernanceDocument {
+  const managed = managedPolicyRouteIds(routeDrafts, routeIdsByDraftKey)
+  const policyOverrides = wizardPolicyRouteOverrides(
+    routeDrafts,
+    buildRouteDraftKeyToIdMap(routeDrafts, routeIdsByDraftKey),
+  )
+  const wizardHasFieldLevel = wizard.rules.length > 0 || wizard.route_overrides.length > 0
+  const baseOverrides = wizardHasFieldLevel ? wizard.route_overrides : (current?.route_overrides ?? [])
+  const kept = baseOverrides.filter((override) => {
+    if (!isWizardOwnedPolicyRouteOverride(override)) return true
+    return !managed.has(override.route_id)
+  })
+  const rules = wizard.rules.length > 0 ? wizard.rules : (current?.rules ?? [])
+  const route_overrides = [...kept, ...policyOverrides]
+  const enabled =
+    wizard.enabled ||
+    Boolean(current?.enabled) ||
+    rules.length > 0 ||
+    route_overrides.length > 0
+  return { enabled, rules, route_overrides }
+}
+
+function policyReadBackErrors(
+  readBack: StreamGovernanceDocument,
+  routeDrafts: readonly WizardRouteDraft[],
+  routeIdsByDraftKey: Record<string, number>,
+): string[] {
+  const errors: string[] = []
+  for (const draft of routeDrafts) {
+    const disposition = routeGovernanceConcernDisposition(draft, 'policy')
+    if (disposition === 'skip') continue
+    const routeId = resolveWizardRouteDraftId(draft, routeIdsByDraftKey)
+    if (routeId == null) continue
+    const actual = readBack.route_overrides.find(
+      (override) =>
+        override.route_id === routeId &&
+        override.enabled !== false &&
+        isWizardOwnedPolicyRouteOverride(override),
+    )
+    if (disposition === 'clear') {
+      if (actual) {
+        errors.push(
+          `route ${routeId} policy: governance read-back still has delivery_behavior=${actual.delivery_behavior ?? 'unknown'}`,
+        )
+      }
+      continue
+    }
+    const expected = routePolicyDeliveryBehavior(draft)
+    if (expected == null || actual?.delivery_behavior !== expected) {
+      errors.push(
+        `route ${routeId} policy: governance read-back delivery_behavior=${actual?.delivery_behavior ?? 'missing'}, expected ${expected ?? 'missing'}`,
+      )
+    }
+  }
+  return errors
+}
+
 export async function persistWizardStreamGovernance(
   streamId: number,
   state: WizardState,
   routeIdsByDraftKey: Record<string, number>,
 ): Promise<GovernancePersistResult> {
-  const routeDraftKeyToId = buildRouteDraftKeyToIdMap(state.destinations.routeDrafts, routeIdsByDraftKey)
-  const payload = buildStreamGovernancePayload(state.dataProtection, routeDraftKeyToId)
+  const routeDrafts = state.destinations.routeDrafts
+  const routeDraftKeyToId = buildRouteDraftKeyToIdMap(routeDrafts, routeIdsByDraftKey)
+  const wizardPayload = buildStreamGovernancePayload(state.dataProtection, routeDraftKeyToId)
+  const policyTouchesDraft = routeDrafts.some(
+    (draft) => routeGovernanceConcernDisposition(draft, 'policy') !== 'skip',
+  )
 
-  if (!governancePayloadHasContent(payload)) {
+  if (!governancePayloadHasContent(wizardPayload) && !policyTouchesDraft) {
     return { saved: true, errors: [], warnings: [] }
   }
 
@@ -143,14 +257,51 @@ export async function persistWizardStreamGovernance(
   const skippedClassification = state.dataProtection.routeClassificationOverrides.filter(
     (o) => o.enabled && !routeDraftKeyToId.has(o.routeDraftKey),
   )
-  const skippedCount = skippedProtection.length + skippedClassification.length
+  const skippedPolicy = routeDrafts.filter((draft) => {
+    if (routeGovernanceConcernDisposition(draft, 'policy') !== 'replace') return false
+    return resolveWizardRouteDraftId(draft, routeIdsByDraftKey) == null
+  })
+  const skippedCount = skippedProtection.length + skippedClassification.length + skippedPolicy.length
   if (skippedCount > 0) {
     warnings.push(`${skippedCount} route override(s) skipped — route was not created.`)
   }
 
+  let current: Awaited<ReturnType<typeof fetchStreamGovernance>>
+  try {
+    current = await fetchStreamGovernance(streamId)
+  } catch (err) {
+    return {
+      saved: false,
+      errors: [`governance: could not read current governance; refusing to replace (${err instanceof Error ? err.message : String(err)})`],
+      warnings,
+    }
+  }
+  if (current == null) {
+    return {
+      saved: false,
+      errors: ['governance: could not read current governance; refusing to replace'],
+      warnings,
+    }
+  }
+
+  const payload = mergeStreamGovernanceDocument(current, wizardPayload, routeDrafts, routeIdsByDraftKey)
+  const policyOverrides = wizardPolicyRouteOverrides(routeDrafts, routeDraftKeyToId)
+  const managedPolicyIds = new Set(
+    routeDrafts.flatMap((draft) => {
+      if (routeGovernanceConcernDisposition(draft, 'policy') === 'skip') return []
+      const routeId = resolveWizardRouteDraftId(draft, routeIdsByDraftKey)
+      return routeId == null ? [] : [routeId]
+    }),
+  )
+  const removesExistingPolicy = (current.route_overrides ?? []).some(
+    (override) => isWizardOwnedPolicyRouteOverride(override) && managedPolicyIds.has(override.route_id),
+  )
+  if (!governancePayloadHasContent(wizardPayload) && policyOverrides.length === 0 && !removesExistingPolicy) {
+    return { saved: true, errors: [], warnings }
+  }
+
   try {
     await putStreamGovernance(streamId, payload)
-    return { saved: true, errors: [], warnings }
   } catch (err) {
     return {
       saved: false,
@@ -158,4 +309,27 @@ export async function persistWizardStreamGovernance(
       warnings,
     }
   }
+
+  let readBack: Awaited<ReturnType<typeof fetchStreamGovernance>>
+  try {
+    readBack = await fetchStreamGovernance(streamId)
+  } catch (err) {
+    return {
+      saved: false,
+      errors: [`governance: read-back failed (${err instanceof Error ? err.message : String(err)})`],
+      warnings,
+    }
+  }
+  if (readBack == null) {
+    return {
+      saved: false,
+      errors: ['governance: read-back returned no result'],
+      warnings,
+    }
+  }
+  const readBackErrors = policyReadBackErrors(readBack, routeDrafts, routeIdsByDraftKey)
+  if (readBackErrors.length > 0) {
+    return { saved: false, errors: readBackErrors, warnings }
+  }
+  return { saved: true, errors: [], warnings }
 }
