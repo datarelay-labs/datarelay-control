@@ -168,7 +168,7 @@ function managedPolicyRouteIds(
   return ids
 }
 
-function governanceRuleKey(rule: { field_path: string }): string {
+function governanceRuleKey(rule: StreamGovernanceDocument['rules'][number]): string {
   return normalizeOverrideFieldPath(rule.field_path)
 }
 
