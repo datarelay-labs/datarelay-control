@@ -39,6 +39,8 @@ export type AdvancedTransformWorkspaceProps = {
   filterUiMode?: AdvancedTransformUiMode
   /** User-facing context label (avoids Mapping/Enrichment stage terminology). */
   contextLabel?: string
+  /** Block rule edits while leaving Preview usable. */
+  readOnly?: boolean
 }
 
 function issueLabel(item: { code?: string | null; message?: string; error_message?: string }): string {
@@ -55,6 +57,7 @@ export function AdvancedTransformWorkspace({
   overridePolicy = 'KEEP_EXISTING',
   filterUiMode,
   contextLabel = 'Transform',
+  readOnly = false,
 }: AdvancedTransformWorkspaceProps) {
   const [preview, setPreview] = useState<TransformPreviewResponse | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
@@ -69,27 +72,31 @@ export function AdvancedTransformWorkspace({
 
   const updateRule = useCallback(
     (id: string, patch: Partial<AdvancedTransformRuleDraft>) => {
+      if (readOnly) return
       onRulesChange(rules.map((r) => (r.id === id ? { ...r, ...patch } : r)))
     },
-    [rules, onRulesChange],
+    [readOnly, rules, onRulesChange],
   )
 
   const removeRule = useCallback(
     (id: string) => {
+      if (readOnly) return
       onRulesChange(rules.filter((r) => r.id !== id))
     },
-    [rules, onRulesChange],
+    [readOnly, rules, onRulesChange],
   )
 
   const addRule = useCallback(
     (uiMode: AdvancedTransformUiMode) => {
+      if (readOnly) return
       onRulesChange([...rules, defaultAdvancedRule(uiMode)])
     },
-    [rules, onRulesChange],
+    [readOnly, rules, onRulesChange],
   )
 
   const insertTimestampUtcJsonataRule = useCallback(
     (expression: string) => {
+      if (readOnly) return
       const rule = defaultAdvancedRule('advanced')
       onRulesChange([
         ...rules,
@@ -102,7 +109,7 @@ export function AdvancedTransformWorkspace({
         },
       ])
     },
-    [rules, onRulesChange],
+    [readOnly, rules, onRulesChange],
   )
 
   const runPreview = useCallback(async () => {
@@ -169,7 +176,7 @@ export function AdvancedTransformWorkspace({
         mode={timestampUtcMode}
         variant="field_rule"
         sampleEvent={sampleEvent}
-        onInsertExpression={timestampUtcMode === 'regex' ? undefined : insertTimestampUtcJsonataRule}
+        onInsertExpression={readOnly || timestampUtcMode === 'regex' ? undefined : insertTimestampUtcJsonataRule}
       />
 
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -183,7 +190,8 @@ export function AdvancedTransformWorkspace({
               <button
                 type="button"
                 onClick={() => addRule('advanced')}
-                className="inline-flex h-8 items-center gap-1 rounded-md border border-violet-500/35 bg-violet-500/[0.06] px-2.5 text-[11px] font-semibold text-violet-800 dark:text-violet-200"
+                disabled={readOnly}
+                className="inline-flex h-8 items-center gap-1 rounded-md border border-violet-500/35 bg-violet-500/[0.06] px-2.5 text-[11px] font-semibold text-violet-800 disabled:opacity-50 dark:text-violet-200"
               >
                 <Plus className="h-3.5 w-3.5" aria-hidden />
                 JSONata rule
@@ -191,7 +199,8 @@ export function AdvancedTransformWorkspace({
               <button
                 type="button"
                 onClick={() => addRule('expert')}
-                className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-200/90 px-2.5 text-[11px] font-semibold text-slate-700 dark:border-gdc-border dark:text-slate-200"
+                disabled={readOnly}
+                className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-200/90 px-2.5 text-[11px] font-semibold text-slate-700 disabled:opacity-50 dark:border-gdc-border dark:text-slate-200"
               >
                 <Plus className="h-3.5 w-3.5" aria-hidden />
                 Regex extract rule
@@ -201,7 +210,8 @@ export function AdvancedTransformWorkspace({
             <button
               type="button"
               onClick={() => addRule('advanced')}
-              className="inline-flex h-8 items-center gap-1 rounded-md bg-violet-600 px-2.5 text-[11px] font-semibold text-white"
+              disabled={readOnly}
+              className="inline-flex h-8 items-center gap-1 rounded-md bg-violet-600 px-2.5 text-[11px] font-semibold text-white disabled:opacity-50"
             >
               <Plus className="h-3.5 w-3.5" aria-hidden />
               Add JSONata rule
@@ -210,7 +220,8 @@ export function AdvancedTransformWorkspace({
             <button
               type="button"
               onClick={() => addRule('expert')}
-              className="inline-flex h-8 items-center gap-1 rounded-md bg-slate-800 px-2.5 text-[11px] font-semibold text-white dark:bg-slate-600"
+              disabled={readOnly}
+              className="inline-flex h-8 items-center gap-1 rounded-md bg-slate-800 px-2.5 text-[11px] font-semibold text-white disabled:opacity-50 dark:bg-slate-600"
             >
               <Plus className="h-3.5 w-3.5" aria-hidden />
               Add Regex extract rule
@@ -257,7 +268,8 @@ export function AdvancedTransformWorkspace({
                 <button
                   type="button"
                   onClick={() => removeRule(rule.id)}
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-500 hover:bg-red-500/10 hover:text-red-600"
+                  disabled={readOnly}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-500 hover:bg-red-500/10 hover:text-red-600 disabled:opacity-40"
                   aria-label="Remove rule"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -269,6 +281,7 @@ export function AdvancedTransformWorkspace({
                   <span className="font-semibold text-slate-600 dark:text-gdc-mutedStrong">Output field</span>
                   <input
                     value={rule.outputField}
+                    disabled={readOnly}
                     onChange={(e) => updateRule(rule.id, { outputField: e.target.value })}
                     placeholder="event_source"
                     className="mt-0.5 h-8 w-full rounded-md border border-slate-200/90 bg-slate-50/50 px-2 text-[12px] dark:border-gdc-border dark:bg-gdc-section"
@@ -278,6 +291,7 @@ export function AdvancedTransformWorkspace({
                   <span className="font-semibold text-slate-600 dark:text-gdc-mutedStrong">Rule id (optional)</span>
                   <input
                     value={rule.ruleId}
+                    disabled={readOnly}
                     onChange={(e) => updateRule(rule.id, { ruleId: e.target.value })}
                     placeholder="rule-1"
                     className="mt-0.5 h-8 w-full rounded-md border border-slate-200/90 bg-slate-50/50 px-2 font-mono text-[11px] dark:border-gdc-border dark:bg-gdc-section"
@@ -290,6 +304,7 @@ export function AdvancedTransformWorkspace({
                   <span className="font-semibold text-slate-600 dark:text-gdc-mutedStrong">JSONata expression</span>
                   <textarea
                     value={rule.expression}
+                    disabled={readOnly}
                     onChange={(e) => updateRule(rule.id, { expression: e.target.value })}
                     rows={3}
                     placeholder="vendor & '_' & product & '_' & log_type"
@@ -302,6 +317,7 @@ export function AdvancedTransformWorkspace({
                     <span className="font-semibold text-slate-600 dark:text-gdc-mutedStrong">Source field</span>
                     <select
                       value={rule.sourcePath}
+                      disabled={readOnly}
                       onChange={(e) => updateRule(rule.id, { sourcePath: e.target.value })}
                       className="mt-0.5 h-8 w-full rounded-md border border-slate-200/90 bg-slate-50/50 px-2 font-mono text-[11px] dark:border-gdc-border dark:bg-gdc-section"
                     >
@@ -318,6 +334,7 @@ export function AdvancedTransformWorkspace({
                       type="number"
                       min={1}
                       value={rule.group}
+                      disabled={readOnly}
                       onChange={(e) => updateRule(rule.id, { group: Number(e.target.value) || 1 })}
                       className="mt-0.5 h-8 w-full rounded-md border border-slate-200/90 bg-slate-50/50 px-2 text-[12px] dark:border-gdc-border dark:bg-gdc-section"
                     />
@@ -326,6 +343,7 @@ export function AdvancedTransformWorkspace({
                     <span className="font-semibold text-slate-600 dark:text-gdc-mutedStrong">Pattern</span>
                     <input
                       value={rule.pattern}
+                      disabled={readOnly}
                       onChange={(e) => updateRule(rule.id, { pattern: e.target.value })}
                       placeholder="src=(\\d+\\.\\d+\\.\\d+\\.\\d+)"
                       className="mt-0.5 h-8 w-full rounded-md border border-slate-200/90 bg-slate-50/50 px-2 font-mono text-[11px] dark:border-gdc-border dark:bg-gdc-section"
@@ -338,6 +356,7 @@ export function AdvancedTransformWorkspace({
                 <span className="font-semibold text-slate-600 dark:text-gdc-mutedStrong">Default / fallback</span>
                 <input
                   value={rule.defaultValue}
+                  disabled={readOnly}
                   onChange={(e) => updateRule(rule.id, { defaultValue: e.target.value })}
                   placeholder='unknown_source or null'
                   className="mt-0.5 h-8 w-full rounded-md border border-slate-200/90 bg-slate-50/50 px-2 font-mono text-[11px] dark:border-gdc-border dark:bg-gdc-section"

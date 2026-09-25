@@ -80,10 +80,12 @@ function RoutePrefixPreviewBlock({
 
 type Props = {
   streamId: number
+  /** When true, route create/update/delete/toggle/prefix/failure-policy actions stay unavailable. */
+  readOnly?: boolean
   onSaved?: () => void
 }
 
-export function StreamEditDeliveryPanel({ streamId, onSaved }: Props) {
+export function StreamEditDeliveryPanel({ streamId, readOnly = false, onSaved }: Props) {
   const [busy, setBusy] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -182,6 +184,7 @@ export function StreamEditDeliveryPanel({ streamId, onSaved }: Props) {
     })
   }, [])
   async function onAddRoute() {
+    if (readOnly) return
     const destinationId = Number(newRouteDestinationId)
     if (!Number.isFinite(destinationId)) return
     setRouteBusyId(-1)
@@ -211,6 +214,7 @@ export function StreamEditDeliveryPanel({ streamId, onSaved }: Props) {
   }
 
   async function onDestinationChange(routeId: number, destinationId: number) {
+    if (readOnly) return
     setRouteBusyId(routeId)
     setNotice(null)
     try {
@@ -226,6 +230,7 @@ export function StreamEditDeliveryPanel({ streamId, onSaved }: Props) {
   }
 
   async function onToggleRoute(routeId: number, enabled: boolean) {
+    if (readOnly) return
     setRouteBusyId(routeId)
     setNotice(null)
     try {
@@ -245,6 +250,7 @@ export function StreamEditDeliveryPanel({ streamId, onSaved }: Props) {
   }
 
   async function executeDeleteRoute(routeId: number) {
+    if (readOnly) return
     setRouteBusyId(routeId)
     setNotice(null)
     setLoadError(null)
@@ -267,6 +273,7 @@ export function StreamEditDeliveryPanel({ streamId, onSaved }: Props) {
   }
 
   async function onSaveMessagePrefix(routeId: number) {
+    if (readOnly) return
     const row = routes.find((r) => r.route_id === routeId)
     const draft = prefixDraft[routeId]
     if (!row || !draft) return
@@ -300,6 +307,7 @@ export function StreamEditDeliveryPanel({ streamId, onSaved }: Props) {
   }
 
   async function onFailurePolicy(routeId: number, failure_policy: (typeof FAILURE_POLICIES)[number]) {
+    if (readOnly) return
     setRouteBusyId(routeId)
     setNotice(null)
     try {
@@ -336,7 +344,9 @@ export function StreamEditDeliveryPanel({ streamId, onSaved }: Props) {
         <div>
           <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Delivery</h3>
           <p className="mt-1 text-[12px] text-slate-600 dark:text-gdc-muted">
-            Configure routes and destinations for this stream. Route changes are saved through the API immediately.
+            {readOnly
+              ? 'Read-only session. Route create, remove, toggle, failure policy, and prefix save are unavailable. Prefix preview remains available.'
+              : 'Configure routes and destinations for this stream. Route changes are saved through the API immediately.'}
           </p>
         </div>
         <div className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-500/[0.08] px-2.5 py-1 text-[11px] font-semibold text-emerald-800 dark:border-emerald-500/30 dark:text-emerald-200">
@@ -347,6 +357,7 @@ export function StreamEditDeliveryPanel({ streamId, onSaved }: Props) {
       {notice ? <p className="mt-2 text-[12px] font-medium text-emerald-700 dark:text-emerald-300">{notice}</p> : null}
       {loadError ? <p className="mt-2 text-[12px] font-medium text-red-700 dark:text-red-300">{loadError}</p> : null}
 
+      {readOnly ? null : (
       <div className="mt-4 rounded-lg border border-slate-200/80 bg-slate-50/60 p-3 dark:border-gdc-border dark:bg-gdc-section">
         <div className="grid gap-2 md:grid-cols-[1fr_220px_auto]">
           <select
@@ -388,6 +399,7 @@ export function StreamEditDeliveryPanel({ streamId, onSaved }: Props) {
           </button>
         </div>
       </div>
+      )}
 
       {busy && routes.length === 0 ? (
         <p className="mt-4 inline-flex items-center gap-2 text-[12px] text-slate-600 dark:text-gdc-muted">
@@ -396,7 +408,9 @@ export function StreamEditDeliveryPanel({ streamId, onSaved }: Props) {
         </p>
       ) : routes.length === 0 ? (
         <p className="mt-4 text-[12px] text-slate-600 dark:text-gdc-muted">
-          No routes are linked to this stream yet. Select an existing destination above to attach delivery without leaving this page.
+          {readOnly
+            ? 'No routes are linked to this stream.'
+            : 'No routes are linked to this stream yet. Select an existing destination above to attach delivery without leaving this page.'}
         </p>
       ) : (
         <div className="mt-4 overflow-x-auto">
@@ -410,7 +424,7 @@ export function StreamEditDeliveryPanel({ streamId, onSaved }: Props) {
                 <th className="py-2 pr-3">Prefix template</th>
                 <th className="py-2 pr-3">Failure Policy</th>
                 <th className="py-2 pr-3">Status</th>
-                <th className="py-2 pr-1 text-right">Remove</th>
+                {readOnly ? null : <th className="py-2 pr-1 text-right">Remove</th>}
               </tr>
             </thead>
             <tbody>
@@ -420,7 +434,7 @@ export function StreamEditDeliveryPanel({ streamId, onSaved }: Props) {
                 <tr key={r.route_id} className="border-b border-slate-100 dark:border-gdc-border">
                   <td className="py-2 pr-3 align-middle">
                     <select
-                      disabled={routeBusyId === r.route_id}
+                      disabled={readOnly || routeBusyId === r.route_id}
                       value={r.destination_id}
                       onChange={(e) => void onDestinationChange(r.route_id, Number(e.target.value))}
                       className={cn(
@@ -448,7 +462,7 @@ export function StreamEditDeliveryPanel({ streamId, onSaved }: Props) {
                       <input
                         type="checkbox"
                         checked={prefixDraft[r.route_id]?.enabled ?? defaultMessagePrefixEnabled(r.destination_type ?? '')}
-                        disabled={routeBusyId === r.route_id}
+                        disabled={readOnly || routeBusyId === r.route_id}
                         onChange={(e) =>
                           setPrefixDraft((prev) => ({
                             ...prev,
@@ -469,7 +483,7 @@ export function StreamEditDeliveryPanel({ streamId, onSaved }: Props) {
                     <div className="space-y-2">
                       <textarea
                         value={prefixDraft[r.route_id]?.template ?? DEFAULT_MESSAGE_PREFIX_TEMPLATE}
-                        disabled={routeBusyId === r.route_id}
+                        disabled={readOnly || routeBusyId === r.route_id}
                         onChange={(e) =>
                           setPrefixDraft((prev) => ({
                             ...prev,
@@ -495,6 +509,7 @@ export function StreamEditDeliveryPanel({ streamId, onSaved }: Props) {
                         destination={destination}
                         destinationType={destination?.destination_type ?? r.destination_type ?? 'SYSLOG_UDP'}
                       />
+                      {readOnly ? null : (
                       <div
                         className="rounded-md border border-violet-300/70 bg-violet-500/[0.08] p-2 dark:border-violet-500/35 dark:bg-violet-500/10"
                         data-testid={`save-prefix-action-${r.route_id}`}
@@ -519,11 +534,12 @@ export function StreamEditDeliveryPanel({ streamId, onSaved }: Props) {
                           Save prefix template
                         </button>
                       </div>
+                      )}
                     </div>
                   </td>
                   <td className="py-2 pr-3 align-middle">
                     <select
-                      disabled={routeBusyId === r.route_id}
+                      disabled={readOnly || routeBusyId === r.route_id}
                       value={r.failure_policy}
                       onChange={(e) =>
                         void onFailurePolicy(r.route_id, e.target.value as (typeof FAILURE_POLICIES)[number])
@@ -542,13 +558,14 @@ export function StreamEditDeliveryPanel({ streamId, onSaved }: Props) {
                       <input
                         type="checkbox"
                         checked={r.route_enabled}
-                        disabled={routeBusyId === r.route_id}
+                        disabled={readOnly || routeBusyId === r.route_id}
                         onChange={(e) => void onToggleRoute(r.route_id, e.target.checked)}
                         className="accent-violet-600"
                       />
                       {r.route_enabled ? 'Enabled' : 'Disabled'}
                     </label>
                   </td>
+                  {readOnly ? null : (
                   <td className="py-2 pr-1 align-middle text-right">
                     <button
                       type="button"
@@ -575,6 +592,7 @@ export function StreamEditDeliveryPanel({ streamId, onSaved }: Props) {
                       )}
                     </button>
                   </td>
+                  )}
                 </tr>
                 )
               })}
