@@ -24,6 +24,7 @@ import {
 } from './route-delivery-dirty'
 import { streamRuntimePath } from '../../config/nav-paths'
 import { RouteDetailHealthPanel } from './route-detail-health-panel'
+import { useSessionCapabilities } from '../../lib/rbac'
 import { RouteEditTransformPanel } from './route-edit-transform-panel'
 import { ProtectionPanel } from '../streams/protection-panel'
 import { ClassificationPanel } from '../streams/classification-panel'
@@ -124,6 +125,8 @@ export function RouteEditPage() {
   const { routeId = '' } = useParams<{ routeId: string }>()
   const backendRouteId = /^\d+$/.test(routeId) ? Number(routeId) : null
   const isCreateMode = backendRouteId == null
+  const caps = useSessionCapabilities()
+  const canMutateWorkspace = caps.workspace_mutations === true
   const navigate = useNavigate()
   const d = ROUTE_EDIT_DEFAULTS
 
@@ -457,7 +460,7 @@ export function RouteEditPage() {
   }
 
   async function handleSaveRoute() {
-    if (isSaving || (!isCreateMode && !deliveryDirty)) return
+    if (!canMutateWorkspace || isSaving || (!isCreateMode && !deliveryDirty)) return
     setIsSaving(true)
     setSaveError(null)
     setSaveSuccess(null)
@@ -552,7 +555,9 @@ export function RouteEditPage() {
     }
   }
 
-  const saveStatusLabel = isSaving
+  const saveStatusLabel = !canMutateWorkspace
+    ? 'Read-only'
+    : isSaving
     ? 'Saving…'
     : staleConflict
       ? 'Conflict'
@@ -564,7 +569,17 @@ export function RouteEditPage() {
             ? 'Unsaved changes'
             : 'Saved'
   return (
-    <div className="w-full min-w-0 space-y-3">
+    <div className="w-full min-w-0 space-y-3" data-testid="route-edit-page">
+      {!canMutateWorkspace ? (
+        <p
+          role="status"
+          data-testid="route-edit-readonly-banner"
+          className="rounded-lg border border-amber-200/80 bg-amber-500/[0.06] px-3 py-2 text-sm text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100/95"
+        >
+          Read-only session: delivery and transform changes, save, and protection, classification, and policy mutations
+          are unavailable. Preview and inspection remain available.
+        </p>
+      ) : null}
       <header className="flex flex-wrap items-start justify-between gap-2 rounded-lg border border-slate-200/70 bg-white/80 p-3 dark:border-gdc-border dark:bg-gdc-card">
         <div className="space-y-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -650,16 +665,18 @@ export function RouteEditPage() {
           >
             Cancel
           </button>
-          <button
-            type="button"
-            disabled={isSaving || (!isCreateMode && !deliveryDirty) || (isCreateMode && !deliveryDirty && backendDestinationId == null)}
-            onClick={() => void handleSaveRoute()}
-            data-testid="route-edit-save"
-            className="inline-flex h-8 items-center gap-1 rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
-          >
-            <Save className="h-3.5 w-3.5" />
-            {isSaving ? 'Saving…' : isCreateMode ? 'Create Route' : 'Save Route'}
-          </button>
+          {canMutateWorkspace ? (
+            <button
+              type="button"
+              disabled={isSaving || (!isCreateMode && !deliveryDirty) || (isCreateMode && !deliveryDirty && backendDestinationId == null)}
+              onClick={() => void handleSaveRoute()}
+              data-testid="route-edit-save"
+              className="inline-flex h-8 items-center gap-1 rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
+            >
+              <Save className="h-3.5 w-3.5" />
+              {isSaving ? 'Saving…' : isCreateMode ? 'Create Route' : 'Save Route'}
+            </button>
+          ) : null}
         </div>
       </header>
       {hasUnsavedChanges ? (
@@ -785,6 +802,7 @@ export function RouteEditPage() {
               <RouteEditTransformPanel
                 routeId={backendRouteId}
                 streamId={backendStreamId}
+                readOnly={!canMutateWorkspace}
                 initialEffective={transformEffective}
                 onEffectiveChange={setTransformEffective}
                 onDirtyChange={setTransformDirty}
@@ -797,7 +815,7 @@ export function RouteEditPage() {
               <ProtectionPanel
                 streamId={backendStreamId}
                 routeId={backendRouteId}
-                canOperate
+                canOperate={canMutateWorkspace}
                 initialEffective={protectionEffective}
                 onEffectiveChange={setProtectionEffective}
               />
@@ -809,7 +827,7 @@ export function RouteEditPage() {
               <ClassificationPanel
                 streamId={backendStreamId}
                 routeId={backendRouteId}
-                canOperate
+                canOperate={canMutateWorkspace}
                 initialEffective={classificationEffective}
                 onEffectiveChange={setClassificationEffective}
               />
@@ -821,7 +839,7 @@ export function RouteEditPage() {
               <PolicyPanel
                 streamId={backendStreamId}
                 routeId={backendRouteId}
-                canOperate
+                canOperate={canMutateWorkspace}
                 initialEffective={policyEffective}
                 onEffectiveChange={setPolicyEffective}
               />
@@ -829,7 +847,10 @@ export function RouteEditPage() {
           ) : null}
 
           {activeTab === 'delivery' ? (
-            <>
+            <fieldset
+              disabled={!canMutateWorkspace}
+              className="m-0 min-w-0 space-y-3 border-0 p-0 disabled:opacity-100"
+            >
           <PanelChrome title="Route Information">
             <div className="grid grid-cols-1 gap-3 p-3 md:grid-cols-3">
               <Field label="Route Name *">
@@ -938,7 +959,7 @@ export function RouteEditPage() {
               </Field>
             </div>
           </PanelChrome>
-            </>
+            </fieldset>
           ) : null}
 
           {activeTab === 'transform' && isCreateMode ? (

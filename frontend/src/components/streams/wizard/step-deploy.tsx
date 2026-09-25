@@ -63,6 +63,8 @@ export type StepDeployProps = {
   state: WizardState
   busy?: boolean
   isStarting?: boolean
+  /** When false, hide Start Stream and Run Once. Defaults to true for the create wizard. */
+  canRuntimeControl?: boolean
   onStart: () => void
   onNavigateToLegacySubstep: (key: WizardLegacySubstepKey) => void
 }
@@ -673,11 +675,13 @@ function DeployConfigurationSummary({
 function DeployCreatedPanel({
   state,
   isStarting,
+  canRuntimeControl,
   onStart,
   onNavigateToLegacySubstep,
 }: {
   state: WizardState
   isStarting: boolean
+  canRuntimeControl: boolean
   onStart: () => void
   onNavigateToLegacySubstep: (key: WizardLegacySubstepKey) => void
 }) {
@@ -703,7 +707,7 @@ function DeployCreatedPanel({
   }, [displayId])
 
   const handleRunOnce = useCallback(async () => {
-    if (streamNumericId == null || runBusy) return
+    if (!canRuntimeControl || streamNumericId == null || runBusy) return
     setRunBusy(true)
     setRunError(null)
     try {
@@ -713,7 +717,7 @@ function DeployCreatedPanel({
     } finally {
       setRunBusy(false)
     }
-  }, [runBusy, streamNumericId])
+  }, [canRuntimeControl, runBusy, streamNumericId])
 
   const createdTone =
     (outcome?.errors?.length ?? 0) > 0 ||
@@ -806,33 +810,37 @@ function DeployCreatedPanel({
           ) : null}
 
           <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => onStart()}
-              disabled={!wizardCreateIsStartEligible(outcome) || isStarting}
-              className="inline-flex h-9 items-center gap-1.5 rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white shadow-sm hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
-              title={
-                wizardCreateIsConfigurationIncomplete(outcome)
-                  ? 'Resolve configuration errors before starting'
-                  : undefined
-              }
-            >
-              {isStarting ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Zap className="h-3.5 w-3.5" aria-hidden />}
-              {isStarting
-                ? 'Starting…'
-                : wizardCreateIsConfigurationIncomplete(outcome)
-                  ? 'Start Blocked'
-                  : 'Start Stream'}
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleRunOnce()}
-              disabled={streamNumericId == null || runBusy}
-              className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-200/90 bg-white px-3 text-[12px] font-semibold text-slate-800 shadow-sm hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
-            >
-              {runBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Play className="h-3.5 w-3.5" aria-hidden />}
-              {runBusy ? 'Running…' : 'Run Once'}
-            </button>
+            {canRuntimeControl ? (
+              <button
+                type="button"
+                onClick={() => onStart()}
+                disabled={!wizardCreateIsStartEligible(outcome) || isStarting}
+                className="inline-flex h-9 items-center gap-1.5 rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white shadow-sm hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
+                title={
+                  wizardCreateIsConfigurationIncomplete(outcome)
+                    ? 'Resolve configuration errors before starting'
+                    : undefined
+                }
+              >
+                {isStarting ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Zap className="h-3.5 w-3.5" aria-hidden />}
+                {isStarting
+                  ? 'Starting…'
+                  : wizardCreateIsConfigurationIncomplete(outcome)
+                    ? 'Start Blocked'
+                    : 'Start Stream'}
+              </button>
+            ) : null}
+            {canRuntimeControl ? (
+              <button
+                type="button"
+                onClick={() => void handleRunOnce()}
+                disabled={streamNumericId == null || runBusy}
+                className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-200/90 bg-white px-3 text-[12px] font-semibold text-slate-800 shadow-sm hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
+              >
+                {runBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Play className="h-3.5 w-3.5" aria-hidden />}
+                {runBusy ? 'Running…' : 'Run Once'}
+              </button>
+            ) : null}
             {streamNumericId != null ? (
               <>
                 <Link
@@ -890,6 +898,7 @@ export function StepDeploy({
   state,
   busy = false,
   isStarting = false,
+  canRuntimeControl = true,
   onStart,
   onNavigateToLegacySubstep,
 }: StepDeployProps) {
@@ -979,6 +988,7 @@ export function StepDeploy({
             <DeployCreatedPanel
               state={state}
               isStarting={isStarting}
+              canRuntimeControl={canRuntimeControl}
               onStart={onStart}
               onNavigateToLegacySubstep={onNavigateToLegacySubstep}
             />

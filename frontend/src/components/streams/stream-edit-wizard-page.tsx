@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, Loader2, Trash2 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { cn } from '../../lib/utils'
 import { NAV_PATH, streamRuntimePath, type StreamWizardStepKey } from '../../config/nav-paths'
@@ -59,6 +59,7 @@ import {
 } from '../../utils/eventExtractionPaths'
 import { normalizeCheckpointRelativePath } from '../../utils/recordSelectionPaths'
 import { StreamDeleteConfirmDialog } from './stream-delete-confirm-dialog'
+import { useSessionCapabilities } from '../../lib/rbac'
 
 const EDIT_NEXT_STEP_LABEL: Partial<Record<WizardStepKey, string>> = {
   connect: 'Sample & Record Selection',
@@ -80,6 +81,50 @@ const WIZARD_STEP_QUERY_KEYS = new Set<StreamWizardStepKey>([
   'deploy',
 ])
 
+function isReadonlyFormControl(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement ||
+    target.isContentEditable
+  )
+}
+
+/** Block field edits without disabling buttons used for section navigation and preview. */
+function blockReadonlyFormEdit(event: {
+  target: EventTarget | null
+  preventDefault: () => void
+  stopPropagation: () => void
+}) {
+  if (!isReadonlyFormControl(event.target)) return
+  event.preventDefault()
+  event.stopPropagation()
+}
+
+const readonlyFieldClass =
+  '[&_input]:pointer-events-none [&_select]:pointer-events-none [&_textarea]:pointer-events-none'
+
+function ReadonlyInspectionFrame({
+  readOnly,
+  children,
+}: {
+  readOnly: boolean
+  children: ReactNode
+}) {
+  if (!readOnly) return <>{children}</>
+  return (
+    <div
+      className={readonlyFieldClass}
+      onChangeCapture={blockReadonlyFormEdit}
+      onInputCapture={blockReadonlyFormEdit}
+      onBeforeInputCapture={blockReadonlyFormEdit}
+    >
+      {children}
+    </div>
+  )
+}
+
 function parseWizardStepQuery(raw: string | null): StreamWizardStepKey | null {
   if (!raw || !WIZARD_STEP_QUERY_KEYS.has(raw as StreamWizardStepKey)) return null
   return raw as StreamWizardStepKey
@@ -90,6 +135,11 @@ export function StreamEditWizardPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const backendStreamId = /^\d+$/.test(streamId) ? Number(streamId) : null
+  const caps = useSessionCapabilities()
+  const canMutateWorkspace = caps.workspace_mutations === true
+  const canRuntimeControl = caps.runtime_stream_control === true
+  const canMutateWorkspaceRef = useRef(canMutateWorkspace)
+  canMutateWorkspaceRef.current = canMutateWorkspace
 
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -192,11 +242,14 @@ export function StreamEditWizardPage() {
   }, [refreshRuntimeSnapshot])
 
   const updateConnector = useCallback((patch: Partial<WizardState['connector']>) => {
+    if (!canMutateWorkspaceRef.current) return
     setState((prev) => (prev ? { ...prev, connector: { ...prev.connector, ...patch } } : prev))
   }, [])
   const updateStreamConfig = useCallback((patch: Partial<WizardState['stream']>) => {
+    if (!canMutateWorkspaceRef.current) return
     setState((prev) => (prev ? { ...prev, stream: { ...prev.stream, ...patch } } : prev))
   }, [])
+  // Preview/sample results stay local. Autosave and leave-flush still require workspace_mutations.
   const updateApiTest = useCallback((next: WizardState['apiTest']) => {
     setState((prev) =>
       prev
@@ -209,10 +262,12 @@ export function StreamEditWizardPage() {
     )
   }, [])
   const patchStream = useCallback((patch: Partial<WizardState['stream']>) => {
+    if (!canMutateWorkspaceRef.current) return
     setState((prev) => (prev ? { ...prev, stream: { ...prev.stream, ...patch } } : prev))
   }, [])
 
   const setEventArrayPath = useCallback((path: string) => {
+    if (!canMutateWorkspaceRef.current) return
     setState((prev) => {
       if (!prev) return prev
       const raw = prev.apiTest.parsedJson ?? prev.apiTest.rawResponse
@@ -245,6 +300,7 @@ export function StreamEditWizardPage() {
   }, [])
 
   const setEventRootPath = useCallback((path: string) => {
+    if (!canMutateWorkspaceRef.current) return
     setState((prev) => {
       if (!prev) return prev
       const arrayPath = prev.stream.eventArrayPath.trim() || '$'
@@ -268,6 +324,7 @@ export function StreamEditWizardPage() {
 
   const setCheckpoint = useCallback(
     (patch: Partial<Pick<WizardConfigState, 'checkpointFieldType' | 'checkpointSourcePath'>>) => {
+      if (!canMutateWorkspaceRef.current) return
       setState((prev) => {
         if (!prev) return prev
         let checkpointSourcePath = patch.checkpointSourcePath ?? prev.stream.checkpointSourcePath
@@ -295,6 +352,7 @@ export function StreamEditWizardPage() {
   )
 
   const loadOperationalSample = useCallback((id: OperationalSampleId) => {
+    if (!canMutateWorkspaceRef.current) return
     const sample = getOperationalSample(id)
     const startedAt = Date.now()
     const analysis = buildAnalysisForSample(sample, '', '')
@@ -352,27 +410,35 @@ export function StreamEditWizardPage() {
   }, [])
 
   const setMapping = useCallback((mapping: WizardState['mapping']) => {
+    if (!canMutateWorkspaceRef.current) return
     setState((prev) => (prev ? { ...prev, mapping } : prev))
   }, [])
   const setMappingMode = useCallback((mappingMode: WizardState['mappingMode']) => {
+    if (!canMutateWorkspaceRef.current) return
     setState((prev) => (prev ? { ...prev, mappingMode } : prev))
   }, [])
   const setFullEventJsonata = useCallback((fullEventJsonataExpression: string) => {
+    if (!canMutateWorkspaceRef.current) return
     setState((prev) => (prev ? { ...prev, fullEventJsonataExpression } : prev))
   }, [])
   const setFullEventRegexConfigJson = useCallback((fullEventRegexConfigJson: string) => {
+    if (!canMutateWorkspaceRef.current) return
     setState((prev) => (prev ? { ...prev, fullEventRegexConfigJson } : prev))
   }, [])
   const setEnrichment = useCallback((enrichment: WizardState['enrichment']) => {
+    if (!canMutateWorkspaceRef.current) return
     setState((prev) => (prev ? { ...prev, enrichment } : prev))
   }, [])
   const setUnmappedFieldsPolicy = useCallback((unmappedFieldsPolicy: WizardState['unmappedFieldsPolicy']) => {
+    if (!canMutateWorkspaceRef.current) return
     setState((prev) => (prev ? { ...prev, unmappedFieldsPolicy } : prev))
   }, [])
   const setDataProtection = useCallback((dataProtection: WizardState['dataProtection']) => {
+    if (!canMutateWorkspaceRef.current) return
     setState((prev) => (prev ? { ...prev, dataProtection } : prev))
   }, [])
   const setDestinations = useCallback((patch: Partial<WizardState['destinations']>) => {
+    if (!canMutateWorkspaceRef.current) return
     setState((prev) => {
       if (!prev) return prev
       return {
@@ -447,7 +513,7 @@ export function StreamEditWizardPage() {
   const handleSave = useCallback(async (opts?: { manual?: boolean }) => {
     const manual = opts?.manual === true
     const stateToSave = latestStateRef.current
-    if (!stateToSave || backendStreamId == null || isSaving) return
+    if (!canMutateWorkspace || !stateToSave || backendStreamId == null || isSaving) return
     if (manual && saveTimerRef.current != null) {
       window.clearTimeout(saveTimerRef.current)
       saveTimerRef.current = null
@@ -495,10 +561,10 @@ export function StreamEditWizardPage() {
       setSaveError(result.errors.join(' · ') || 'Save failed.')
     }
     setIsSaving(false)
-  }, [backendStreamId, isSaving, refreshRuntimeSnapshot])
+  }, [backendStreamId, canMutateWorkspace, isSaving, refreshRuntimeSnapshot])
 
   useEffect(() => {
-    if (!state || backendStreamId == null || isSaving) return
+    if (!canMutateWorkspace || !state || backendStreamId == null || isSaving) return
     const snapshot = JSON.stringify(state)
     if (snapshot === saveSnapshotRef.current) return
     if (saveTimerRef.current != null) window.clearTimeout(saveTimerRef.current)
@@ -512,11 +578,12 @@ export function StreamEditWizardPage() {
         saveTimerRef.current = null
       }
     }
-  }, [backendStreamId, handleSave, isSaving, state])
+  }, [backendStreamId, canMutateWorkspace, handleSave, isSaving, state])
 
   // Flush pending autosave on leave so debounce window cannot silently drop route edits.
   useEffect(() => {
     return () => {
+      if (!canMutateWorkspace) return
       if (saveTimerRef.current != null) {
         window.clearTimeout(saveTimerRef.current)
         saveTimerRef.current = null
@@ -527,11 +594,11 @@ export function StreamEditWizardPage() {
       if (snapshot === saveSnapshotRef.current) return
       void persistWizardStreamEdits(backendStreamId, latest)
     }
-  }, [backendStreamId])
+  }, [backendStreamId, canMutateWorkspace])
 
   const runStreamControl = useCallback(
     async (action: 'start' | 'stop') => {
-      if (backendStreamId == null || controlBusy || runOnceBusy) return
+      if (!canRuntimeControl || backendStreamId == null || controlBusy || runOnceBusy) return
       setControlBusy(true)
       setControlMessage(null)
       const res =
@@ -546,11 +613,11 @@ export function StreamEditWizardPage() {
       }
       setControlBusy(false)
     },
-    [backendStreamId, controlBusy, runOnceBusy, refreshRuntimeSnapshot],
+    [backendStreamId, canRuntimeControl, controlBusy, runOnceBusy, refreshRuntimeSnapshot],
   )
 
   const executeRunOnce = useCallback(async () => {
-    if (backendStreamId == null || runOnceBusy || controlBusy) return
+    if (!canRuntimeControl || backendStreamId == null || runOnceBusy || controlBusy) return
     setRunOnceBusy(true)
     setRunOnceNotice(null)
     try {
@@ -562,18 +629,18 @@ export function StreamEditWizardPage() {
     } finally {
       setRunOnceBusy(false)
     }
-  }, [backendStreamId, controlBusy, refreshRuntimeSnapshot, runOnceBusy])
+  }, [backendStreamId, canRuntimeControl, controlBusy, refreshRuntimeSnapshot, runOnceBusy])
 
   const handleStart = useCallback(async () => {
-    if (backendStreamId == null || isStarting) return
+    if (!canRuntimeControl || backendStreamId == null || isStarting) return
     setIsStarting(true)
     await startRuntimeStream(backendStreamId)
     await refreshRuntimeSnapshot()
     setIsStarting(false)
-  }, [backendStreamId, isStarting, refreshRuntimeSnapshot])
+  }, [backendStreamId, canRuntimeControl, isStarting, refreshRuntimeSnapshot])
 
   const executeStreamDelete = useCallback(async () => {
-    if (backendStreamId == null) return
+    if (!canMutateWorkspace || backendStreamId == null) return
     const streamName = state?.stream.name ?? ''
     if (streamDeleteConfirm.trim() !== streamName.trim()) return
     setStreamDeleteBusy(true)
@@ -586,7 +653,7 @@ export function StreamEditWizardPage() {
     } finally {
       setStreamDeleteBusy(false)
     }
-  }, [backendStreamId, navigate, state?.stream.name, streamDeleteConfirm])
+  }, [backendStreamId, canMutateWorkspace, navigate, state?.stream.name, streamDeleteConfirm])
 
   const headerStatus = runtimeStatus
   const headerStatusTone =
@@ -604,13 +671,15 @@ export function StreamEditWizardPage() {
   )
   const runControlTooltipExtra = operationalRunControlTooltipSupplement(state?.stream.name ?? streamId)
 
-  const saveStateLabel = isSaving
-    ? 'Auto-saving…'
-    : saveError
-      ? 'Auto-save failed'
-      : saveSuccess
-        ? 'Changes saved'
-        : 'Auto-save enabled'
+  const saveStateLabel = !canMutateWorkspace
+    ? 'Read-only'
+    : isSaving
+      ? 'Auto-saving…'
+      : saveError
+        ? 'Auto-save failed'
+        : saveSuccess
+          ? 'Changes saved'
+          : 'Auto-save enabled'
 
   if (loading) {
     return (
@@ -633,6 +702,18 @@ export function StreamEditWizardPage() {
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-5 pb-8" data-testid="edit-stream-wizard">
+      {!canMutateWorkspace || !canRuntimeControl ? (
+        <p
+          role="status"
+          data-testid="stream-edit-readonly-banner"
+          className="rounded-lg border border-amber-200/80 bg-amber-500/[0.06] px-3 py-2 text-sm text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100/95"
+        >
+          {!canMutateWorkspace
+            ? 'Read-only session: stream configuration, route changes, save, and delete are unavailable. Navigation and inspection remain available.'
+            : null}
+          {!canRuntimeControl ? ' Start, stop, and Run Now are unavailable.' : null}
+        </p>
+      ) : null}
       {/* Toolbar only — App Shell owns the page title */}
       <div className="flex flex-col gap-3 border-b border-slate-200/80 pb-4 dark:border-gdc-divider xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0 space-y-2">
@@ -652,25 +733,31 @@ export function StreamEditWizardPage() {
             {stagePurpose}
           </p>
           <p className="text-xs text-slate-500 dark:text-gdc-muted">
-            Editing {state.stream.name} · changes auto-save to the platform
+            {canMutateWorkspace
+              ? `Editing ${state.stream.name} · changes auto-save to the platform`
+              : `Viewing ${state.stream.name} · read-only`}
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <StreamRunControlSwitch
-            status={runtimeStatus}
-            busy={controlBusy}
-            disabled={runOnceBusy}
-            tooltipExtra={runControlTooltipExtra ?? undefined}
-            onToggle={(nextActive) => void runStreamControl(nextActive ? 'start' : 'stop')}
-          />
-          <button
-            type="button"
-            disabled={controlBusy || runOnceBusy}
-            onClick={() => void executeRunOnce()}
-            className="inline-flex h-9 items-center rounded-lg bg-slate-900 px-3 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
-          >
-            {runOnceBusy ? 'Running…' : 'Run Now'}
-          </button>
+          {canRuntimeControl ? (
+            <StreamRunControlSwitch
+              status={runtimeStatus}
+              busy={controlBusy}
+              disabled={runOnceBusy}
+              tooltipExtra={runControlTooltipExtra ?? undefined}
+              onToggle={(nextActive) => void runStreamControl(nextActive ? 'start' : 'stop')}
+            />
+          ) : null}
+          {canRuntimeControl ? (
+            <button
+              type="button"
+              disabled={controlBusy || runOnceBusy}
+              onClick={() => void executeRunOnce()}
+              className="inline-flex h-9 items-center rounded-lg bg-slate-900 px-3 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+            >
+              {runOnceBusy ? 'Running…' : 'Run Now'}
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => navigate(streamRuntimePath(streamId))}
@@ -678,7 +765,7 @@ export function StreamEditWizardPage() {
           >
             Back to monitoring
           </button>
-          {backendStreamId != null ? (
+          {canMutateWorkspace && backendStreamId != null ? (
             <button
               type="button"
               disabled={runtimeStatus === 'RUNNING'}
@@ -728,6 +815,7 @@ export function StreamEditWizardPage() {
       />
 
       <div>
+        <ReadonlyInspectionFrame readOnly={!canMutateWorkspace}>
         {currentStepKey === 'connect' ? (
           <StepConnect
             state={state}
@@ -748,14 +836,6 @@ export function StreamEditWizardPage() {
             activeOperationalSampleId={operationalSampleId}
           />
         ) : null}
-        {currentStepKey === 'destinations' ? (
-          <div className="space-y-6" data-testid="edit-stream-destinations">
-            <StepDelivery state={state} onChange={setDestinations} />
-            {backendStreamId != null ? (
-              <StreamEditDeliveryPanel streamId={backendStreamId} onSaved={() => void refreshDestinationsFromApi()} />
-            ) : null}
-          </div>
-        ) : null}
         {currentStepKey === 'route_processing' ? (
           <StepRouteProcessing
             state={state}
@@ -771,10 +851,26 @@ export function StreamEditWizardPage() {
             onDataProtectionDrawerOpenChange={setDataProtectionDrawerOpen}
           />
         ) : null}
+        </ReadonlyInspectionFrame>
+        {currentStepKey === 'destinations' ? (
+          <div className="space-y-6" data-testid="edit-stream-destinations">
+            <ReadonlyInspectionFrame readOnly={!canMutateWorkspace}>
+              <StepDelivery state={state} onChange={setDestinations} />
+            </ReadonlyInspectionFrame>
+            {backendStreamId != null ? (
+              <StreamEditDeliveryPanel
+                streamId={backendStreamId}
+                readOnly={!canMutateWorkspace}
+                onSaved={() => void refreshDestinationsFromApi()}
+              />
+            ) : null}
+          </div>
+        ) : null}
         {currentStepKey === 'deploy' ? (
           <StepDeploy
             state={state}
             isStarting={isStarting}
+            canRuntimeControl={canRuntimeControl}
             onStart={() => void handleStart()}
             onNavigateToLegacySubstep={navigateToLegacySubstep}
           />
@@ -796,15 +892,17 @@ export function StreamEditWizardPage() {
           Back
         </button>
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={() => void handleSave({ manual: true })}
-            disabled={isSaving}
-            className="inline-flex h-9 items-center rounded-lg border border-slate-200/90 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200"
-            data-testid="wizard-save-now"
-          >
-            {isSaving ? 'Saving…' : 'Save now'}
-          </button>
+          {canMutateWorkspace ? (
+            <button
+              type="button"
+              onClick={() => void handleSave({ manual: true })}
+              disabled={isSaving}
+              className="inline-flex h-9 items-center rounded-lg border border-slate-200/90 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200"
+              data-testid="wizard-save-now"
+            >
+              {isSaving ? 'Saving…' : 'Save now'}
+            </button>
+          ) : null}
           {stepIndex < wizardSteps.length - 1 ? (
             <button
               type="button"

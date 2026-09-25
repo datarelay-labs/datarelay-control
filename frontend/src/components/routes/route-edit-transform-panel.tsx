@@ -22,6 +22,8 @@ import { isRouteTransformDirty, routeTransformFormFingerprint } from './route-de
 type Props = {
   routeId: number
   streamId: number | null
+  /** When true, inherit/override, mapping, enrichment, and save cannot mutate. */
+  readOnly?: boolean
   initialEffective?: RouteTransformEffective | null
   onEffectiveChange?: (effective: RouteTransformEffective | null) => void
   onDirtyChange?: (dirty: boolean) => void
@@ -31,7 +33,14 @@ function enrichmentRecord(rec: Record<string, unknown>): Record<string, unknown>
   return rec
 }
 
-export function RouteEditTransformPanel({ routeId, streamId, initialEffective, onEffectiveChange, onDirtyChange }: Props) {
+export function RouteEditTransformPanel({
+  routeId,
+  streamId,
+  readOnly = false,
+  initialEffective,
+  onEffectiveChange,
+  onDirtyChange,
+}: Props) {
   const effectivePreload =
     initialEffective != null && initialEffective.route_id === routeId ? initialEffective : undefined
   const effectivePreloadRef = useRef(effectivePreload)
@@ -157,18 +166,20 @@ export function RouteEditTransformPanel({ routeId, streamId, initialEffective, o
     return () => window.removeEventListener('beforeunload', onBeforeUnload)
   }, [hasUnsavedChanges])
 
-  const workspaceDisabled = inheritStream
+  const workspaceDisabled = inheritStream || readOnly
 
   const handleInheritChange = (checked: boolean) => {
+    if (readOnly) return
     setInheritStream(checked)
   }
 
   const handleOverrideChange = (checked: boolean) => {
+    if (readOnly) return
     setInheritStream(!checked)
   }
 
   const handleSave = async () => {
-    if (saving || streamId == null || !hasUnsavedChanges) return
+    if (readOnly || saving || streamId == null || !hasUnsavedChanges) return
     setSaving(true)
     setSaveError(null)
     setSaveSuccess(null)
@@ -244,6 +255,7 @@ export function RouteEditTransformPanel({ routeId, streamId, initialEffective, o
             <input
               type="checkbox"
               checked={inheritStream}
+              disabled={readOnly}
               onChange={(e) => handleInheritChange(e.target.checked)}
               data-testid="route-transform-inherit"
               className="accent-violet-600"
@@ -254,6 +266,7 @@ export function RouteEditTransformPanel({ routeId, streamId, initialEffective, o
             <input
               type="checkbox"
               checked={!inheritStream}
+              disabled={readOnly}
               onChange={(e) => handleOverrideChange(e.target.checked)}
               data-testid="route-transform-override"
               className="accent-violet-600"
@@ -266,8 +279,19 @@ export function RouteEditTransformPanel({ routeId, streamId, initialEffective, o
               data-testid="route-transform-save-status"
               aria-live="polite"
             >
-              {saving ? 'Saving…' : saveError ? 'Save failed' : saveSuccess ? 'Saved' : hasUnsavedChanges ? 'Unsaved changes' : 'Saved'}
+              {readOnly
+                ? 'Read-only'
+                : saving
+                  ? 'Saving…'
+                  : saveError
+                    ? 'Save failed'
+                    : saveSuccess
+                      ? 'Saved'
+                      : hasUnsavedChanges
+                        ? 'Unsaved changes'
+                        : 'Saved'}
             </span>
+            {readOnly ? null : (
             <button
               type="button"
               disabled={saving || !hasUnsavedChanges}
@@ -280,6 +304,7 @@ export function RouteEditTransformPanel({ routeId, streamId, initialEffective, o
               {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
               {saving ? 'Saving…' : 'Save Transform'}
             </button>
+            )}
           </div>
           {hasUnsavedChanges ? (
             <p className="text-[11px] text-amber-800 dark:text-amber-200" data-testid="route-transform-unsaved-hint">
@@ -291,6 +316,7 @@ export function RouteEditTransformPanel({ routeId, streamId, initialEffective, o
         </div>
       </PanelChrome>
 
+      <fieldset disabled={readOnly} className="m-0 min-w-0 border-0 p-0 disabled:opacity-100">
       <div className={cn(workspaceDisabled && 'pointer-events-none opacity-50')} aria-disabled={workspaceDisabled}>
         <MappingWorkspace
           streamId={streamId}
@@ -301,12 +327,13 @@ export function RouteEditTransformPanel({ routeId, streamId, initialEffective, o
           enrichment={enrichmentRecord(enrichment)}
           eventArrayPath={eventArrayPath}
           eventRootPath={eventRootPath}
-          onRowsChange={setRows}
-          onEventArrayPathChange={setEventArrayPath}
+          onRowsChange={readOnly ? () => undefined : setRows}
+          onEventArrayPathChange={readOnly ? () => undefined : setEventArrayPath}
           transformRules={transformRules}
-          onTransformRulesChange={setTransformRules}
+          onTransformRulesChange={readOnly ? () => undefined : setTransformRules}
         />
       </div>
+      </fieldset>
     </div>
   )
 }
