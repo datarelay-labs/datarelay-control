@@ -119,7 +119,20 @@ describe('StreamEditDeliveryPanel route removal', () => {
     })
 
     fireEvent.click(screen.getByRole('button', { name: 'Remove route' }))
-    fireEvent.click(await screen.findByTestId('route-remove-dialog-confirm'))
+    const impact = await screen.findByTestId('route-remove-dialog-impact')
+    expect(impact).toHaveTextContent(
+      'Removes this delivery path from the stream. The destination and parent stream are kept.',
+    )
+    expect(impact).toHaveTextContent(
+      'Permanently removes transform, protection, classification, and policy configuration for this path.',
+    )
+    expect(impact).toHaveTextContent(
+      'Historical delivery logs are kept, but they are no longer associated with this path.',
+    )
+    expect(screen.getByTestId('route-remove-dialog-reversibility')).toHaveTextContent(
+      'does not restore the deleted route configuration',
+    )
+    fireEvent.click(screen.getByTestId('route-remove-dialog-confirm'))
 
     await waitFor(() => {
       expect(deleteRoute).toHaveBeenCalledWith(22, { streamId: 10 })
@@ -129,6 +142,33 @@ describe('StreamEditDeliveryPanel route removal', () => {
     })
     expect(screen.getByText('Route removed from this stream.')).toBeInTheDocument()
     expect(fetchStreamMappingUiConfig).toHaveBeenLastCalledWith(10, { fresh: true })
+  })
+
+  it('keeps route removal disabled until the route is turned off', async () => {
+    fetchStreamMappingUiConfig.mockResolvedValue(
+      mappingConfig([
+        {
+          route_id: 22,
+          destination_id: 150,
+          destination_name: 'AS4 SYNC',
+          destination_type: 'SYSLOG_TCP',
+          route_enabled: true,
+          destination_enabled: true,
+          formatter_config: {},
+          route_rate_limit: {},
+          failure_policy: 'RETRY_AND_BACKOFF',
+        },
+      ]),
+    )
+
+    render(<StreamEditDeliveryPanel streamId={10} />)
+
+    const remove = await screen.findByRole('button', { name: 'Remove route (disabled until route is off)' })
+    expect(remove).toBeDisabled()
+    deleteRoute.mockClear()
+    fireEvent.click(remove)
+    expect(screen.queryByTestId('route-remove-dialog')).not.toBeInTheDocument()
+    expect(deleteRoute).not.toHaveBeenCalled()
   })
 
   it('drops a stale route row when delete returns route-not-found', async () => {
