@@ -112,7 +112,8 @@ async function fetchRoutesListUncached(signal?: AbortSignal): Promise<RouteRead[
       out.push(row as RouteRead)
     }
   }
-  return out
+  if (raw.length === 0) return []
+  return out.length ? out : null
 }
 
 export function fetchRoutesList(options?: GdcSignalOptions): Promise<RouteRead[] | null> {
