@@ -15,11 +15,13 @@ from app.streams.repository import get_stream_by_id
 
 
 def delete_stream_and_dependencies(db: Session, stream_id: int) -> None:
-    """Remove stream configuration and routes for this stream only.
+    """Remove the stream and the configuration that belongs to it.
 
-    Deletes routes (detaching destinations), mappings, enrichments, checkpoints,
-    and delivery_logs rows scoped to this stream or its routes.
-    Does not delete connector, source, or destination entities.
+    Deletes the stream row, its routes, route mapping and enrichment rows,
+    stream mapping and enrichment rows, the checkpoint, and delivery_logs
+    rows scoped to this stream or its routes. Route protection, classification,
+    policy, and runtime snapshot rows follow route deletion through database
+    ON DELETE CASCADE. Does not delete connector, source, or destination entities.
     Caller must verify the stream is not RUNNING.
     """
 

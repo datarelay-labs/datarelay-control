@@ -8,6 +8,7 @@ import {
 } from '../../api/gdcRuntime'
 import type { MappingUIConfigResponse } from '../../api/types/gdcApi'
 import { createRoute, deleteRoute, updateRouteWithFreshToken } from '../../api/gdcRoutes'
+import { ROUTE_DELETE_REVERSIBILITY, routeDeleteImpactBullets } from './destructive-lifecycle-copy'
 import { cn } from '../../lib/utils'
 import { DEFAULT_MESSAGE_PREFIX_TEMPLATE, defaultMessagePrefixEnabled } from '../../utils/messagePrefixDefaults'
 import { DELIVERY_PREVIEW_SAMPLE_EVENT } from '../../utils/deliveryPreviewSample'
@@ -589,14 +590,8 @@ export function StreamEditDeliveryPanel({ streamId, onSaved }: Props) {
           }}
           title="Remove route from stream?"
           targetName={deleteRouteDialog.destinationName}
-          impactBullets={[
-            'Removes this delivery path from the stream only.',
-            'The destination configuration is kept and can be used by other routes.',
-            ...(deleteRouteDialog.hasUnsavedPrefix
-              ? ['Unsaved message-prefix edits for this route will also be discarded.']
-              : []),
-          ]}
-          reversibility="You can add a new route to the same destination later."
+          impactBullets={routeDeleteImpactBullets(deleteRouteDialog.hasUnsavedPrefix)}
+          reversibility={ROUTE_DELETE_REVERSIBILITY}
           primaryLabel="Remove route"
           busy={routeBusyId === deleteRouteDialog.routeId}
           error={loadError}

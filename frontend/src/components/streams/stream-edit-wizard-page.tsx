@@ -58,7 +58,7 @@ import {
   normalizeEventRootPath,
 } from '../../utils/eventExtractionPaths'
 import { normalizeCheckpointRelativePath } from '../../utils/recordSelectionPaths'
-import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
+import { StreamDeleteConfirmDialog } from './stream-delete-confirm-dialog'
 
 const EDIT_NEXT_STEP_LABEL: Partial<Record<WizardStepKey, string>> = {
   connect: 'Sample & Record Selection',
@@ -828,8 +828,13 @@ export function StreamEditWizardPage() {
         </div>
       </nav>
       {streamDeleteOpen && state ? (
-        <DangerousActionDialog
-          open
+        <StreamDeleteConfirmDialog
+          streamName={state.stream.name}
+          confirmValue={streamDeleteConfirm}
+          onConfirmValueChange={setStreamDeleteConfirm}
+          busy={streamDeleteBusy}
+          error={streamDeleteError}
+          running={runtimeStatus === 'RUNNING'}
           onOpenChange={(open) => {
             if (!open && !streamDeleteBusy) {
               setStreamDeleteOpen(false)
@@ -837,24 +842,7 @@ export function StreamEditWizardPage() {
               setStreamDeleteError(null)
             }
           }}
-          title="Delete stream permanently?"
-          targetName={state.stream.name}
-          impactBullets={[
-            'Permanently removes the stream configuration.',
-            'Checkpoint and runtime state are removed.',
-            'Routes are detached; destinations remain.',
-          ]}
-          reversibility="Delete is permanent. Stop the stream first if it is still running."
-          confirmMode="type-name"
-          expectedTypeName={state.stream.name}
-          typeNameValue={streamDeleteConfirm}
-          onTypeNameChange={setStreamDeleteConfirm}
-          primaryLabel="Delete stream"
-          busy={streamDeleteBusy}
-          error={streamDeleteError}
-          blockReason={runtimeStatus === 'RUNNING' ? 'Stop the stream before deleting.' : null}
           onConfirm={() => void executeStreamDelete()}
-          dataTestId="stream-delete-dialog"
         />
       ) : null}
     </div>
