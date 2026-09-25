@@ -113,6 +113,25 @@ def test_detect_release_paths() -> None:
     assert result["frontend"] == "false"
 
 
+def test_detect_minio_fixture_dockerfile_runs_backend() -> None:
+    result = _detect("docker/Dockerfile.minio-test")
+    assert result["backend"] == "true"
+    assert result["migration"] == "true"
+    assert result["frontend"] == "false"
+    assert result["release"] == "false"
+
+
+def test_minio_fixture_dockerfile_is_on_fixture_e2e_path_filters() -> None:
+    for name in ("source-adapter-e2e.yml", "external-runtime-e2e.yml"):
+        doc = _load_workflow(name)
+        on = doc.get("on") or doc.get(True)
+        assert isinstance(on, dict)
+        pr = on.get("pull_request")
+        assert isinstance(pr, dict)
+        paths = pr.get("paths") or []
+        assert "docker/Dockerfile.minio-test" in paths
+
+
 def test_detect_required_workflow_change_is_conservative() -> None:
     result = _detect(".github/workflows/backend-tests.yml")
     assert result["backend"] == "true"
