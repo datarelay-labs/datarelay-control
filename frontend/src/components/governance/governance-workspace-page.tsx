@@ -176,14 +176,22 @@ export function GovernanceWorkspacePage() {
     }
     try {
       const [streamRows, allRoutes] = await Promise.all([fetchStreamsList(), fetchRoutesList()])
-      const sortedStreams = [...(streamRows ?? [])].sort((a, b) => {
+      if (streamRows == null || allRoutes == null) {
+        setStreams([])
+        setRoutesByStream({})
+        setSelectedStreamId(null)
+        setContext({ kind: 'none' })
+        setError('Failed to load governance workspace')
+        return
+      }
+      const sortedStreams = [...streamRows].sort((a, b) => {
         const aName = a.name?.trim() || `Stream #${a.id}`
         const bName = b.name?.trim() || `Stream #${b.id}`
         return aName.localeCompare(bName)
       })
       setStreams(sortedStreams)
 
-      const routes = allRoutes ?? []
+      const routes = allRoutes
       const grouped: Record<number, RouteRead[]> = {}
       for (const route of routes) {
         if (route.stream_id == null) continue
@@ -201,7 +209,10 @@ export function GovernanceWorkspacePage() {
         return preferredId
       })
     } catch (e) {
-      setContext(params.has('stream_id') || params.has('route_id') ? { kind: 'unavailable' } : { kind: 'none' })
+      setStreams([])
+      setRoutesByStream({})
+      setSelectedStreamId(null)
+      setContext({ kind: 'none' })
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setLoading(false)

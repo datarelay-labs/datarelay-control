@@ -235,6 +235,63 @@ describe('GovernanceWorkspacePage', () => {
     expect(await screen.findByTestId('governance-workspace-route-row-42')).toBeInTheDocument()
   })
 
+  it('reports a list-load failure instead of stale context when streams fail to load', async () => {
+    fetchStreamsList.mockResolvedValue(null)
+    render(
+      <MemoryRouter initialEntries={['/governance/workspace?stream_id=20']}>
+        <GovernanceWorkspacePage />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Failed to load governance workspace')
+    expect(screen.queryByTestId('governance-workspace-context-fallback')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('governance-workspace-active-context')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('governance-workspace-stream-row-20')).not.toBeInTheDocument()
+    expect(fetchGovernanceWorkspaceSnapshot).not.toHaveBeenCalled()
+  })
+
+  it('reports a list-load failure instead of stale context when routes fail to load', async () => {
+    fetchRoutesList.mockResolvedValue(null)
+    render(
+      <MemoryRouter initialEntries={['/governance/workspace?route_id=42']}>
+        <GovernanceWorkspacePage />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Failed to load governance workspace')
+    expect(screen.queryByTestId('governance-workspace-context-fallback')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('governance-workspace-active-context')).not.toBeInTheDocument()
+    expect(document.querySelector('[data-context-focus="route"]')).not.toBeInTheDocument()
+    expect(fetchGovernanceWorkspaceSnapshot).not.toHaveBeenCalled()
+  })
+
+  it('keeps stale fallback when successful empty lists prove the requested stream is absent', async () => {
+    fetchStreamsList.mockResolvedValue([])
+    fetchRoutesList.mockResolvedValue([])
+    render(
+      <MemoryRouter initialEntries={['/governance/workspace?stream_id=20']}>
+        <GovernanceWorkspacePage />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByTestId('governance-workspace-context-fallback')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('governance-workspace-active-context')).not.toBeInTheDocument()
+  })
+
+  it('reports a thrown list-load error without labeling the query context stale', async () => {
+    fetchStreamsList.mockRejectedValue(new Error('streams unavailable'))
+    render(
+      <MemoryRouter initialEntries={['/governance/workspace?stream_id=20&route_id=42']}>
+        <GovernanceWorkspacePage />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('streams unavailable')
+    expect(screen.queryByTestId('governance-workspace-context-fallback')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('governance-workspace-active-context')).not.toBeInTheDocument()
+  })
+
   it('refresh clears cache and refetches workspace snapshot', async () => {
     const user = userEvent.setup()
     render(

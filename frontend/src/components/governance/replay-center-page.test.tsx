@@ -204,9 +204,9 @@ describe('ReplayCenterPage', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('replay-detail-drawer')).toBeInTheDocument()
+      expect(screen.getByTestId('replay-action-execute')).toBeInTheDocument()
     })
     expect(detailSpy).toHaveBeenCalledWith(7, '30d')
-    expect(screen.getByTestId('replay-action-execute')).toBeInTheDocument()
   })
 
   it('synchronizes open/close URL with ?id while preserving ?status', async () => {
