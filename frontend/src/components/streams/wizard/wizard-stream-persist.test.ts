@@ -48,6 +48,82 @@ vi.mock('./wizard-governance-persist', () => ({
   persistWizardStreamGovernance: vi.fn(async () => ({ saved: true, errors: [] })),
 }))
 
+vi.mock('../../../api/gdcRouteProtection', () => ({
+  fetchRouteProtectionRules: vi.fn(async () => ({
+    route_id: 1,
+    stream_id: 100,
+    protection_enabled: true,
+    rules: [],
+    rule_count: 0,
+  })),
+  fetchRouteProtectionEffective: vi.fn(async (routeId: number) => ({
+    route_id: routeId,
+    stream_id: 100,
+    persisted_source: 'stream',
+    fallback_used: true,
+    rule_count: 0,
+    processing_status: 'Inherited',
+    message: 'ok',
+  })),
+  createRouteProtectionRule: vi.fn(async () => ({ rule: { id: 1 } })),
+  deleteRouteProtectionRule: vi.fn(async () => undefined),
+  patchRouteProtectionRule: vi.fn(),
+  replaceRouteProtectionRules: vi.fn(async (routeId: number) => ({
+    route_id: routeId,
+    stream_id: 100,
+    protection_enabled: true,
+    rules: [],
+    rule_count: 0,
+  })),
+}))
+
+vi.mock('../../../api/gdcRouteClassification', () => ({
+  fetchRouteClassificationRules: vi.fn(async () => ({
+    route_id: 1,
+    stream_id: 100,
+    rules: [],
+    rule_count: 0,
+  })),
+  fetchRouteClassificationEffective: vi.fn(async (routeId: number) => ({
+    route_id: routeId,
+    stream_id: 100,
+    persisted_source: 'stream',
+    fallback_used: true,
+    rule_count: 0,
+    processing_status: 'Inherited',
+    message: 'ok',
+  })),
+  createRouteClassificationRule: vi.fn(async () => ({ rule: { id: 1 } })),
+  deleteRouteClassificationRule: vi.fn(async () => undefined),
+  patchRouteClassificationRule: vi.fn(),
+  replaceRouteClassificationRules: vi.fn(async (routeId: number) => ({
+    route_id: routeId,
+    stream_id: 100,
+    rules: [],
+    rule_count: 0,
+  })),
+}))
+
+vi.mock('../../../api/gdcRoutePolicy', () => ({
+  fetchRoutePolicyRules: vi.fn(async () => ({
+    route_id: 1,
+    stream_id: 100,
+    rules: [],
+    rule_count: 0,
+  })),
+  fetchRoutePolicyEffective: vi.fn(async (routeId: number) => ({
+    route_id: routeId,
+    stream_id: 100,
+    persisted_source: 'stream',
+    fallback_used: true,
+    rule_count: 0,
+    processing_status: 'Inherited',
+  })),
+  createRoutePolicyRule: vi.fn(async () => ({ rule: { id: 1 } })),
+  deleteRoutePolicyRule: vi.fn(async () => undefined),
+  patchRoutePolicyRule: vi.fn(),
+}))
+
 import {
   persistWizardRouteTransformOverrides,
   persistWizardStreamEdits,

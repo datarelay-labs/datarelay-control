@@ -27,13 +27,18 @@ At deploy time, the wizard projects a **Deploy Intent** status:
 | Persist kind | Meaning |
 |--------------|---------|
 | **none** | Shared processing only — inherited |
-| **route_transform** | Complete Transform override persisted via route mapping/enrichment APIs |
+| **route_transform** | Complete Transform override persisted via route mapping/enrichment APIs and checked against Transform Effective |
+| **route_protection** | Complete Protection bundle replaced transactionally via route protection rules, read back, and checked against Protection Effective |
+| **route_classification** | Complete Classification bundle replaced transactionally via route classification rules, read back, and checked against Classification Effective |
+| **route_policy** | Complete Policy bundle persisted as governance `route_overrides.delivery_behavior` (including `block`), read back, and checked against Policy Effective |
 | **governance** | Field-level override persisted via governance API |
 | **intent_only** | Configured in wizard but **not saved to DB** at deploy |
 
 ### What is affected
 
-Route **bundles** where `inherit.<concern> = false` with full route-scoped editor content deploy as **Intent only** for Protection (bundle), Classification (bundle), and Policy (bundle).
+An **empty** route override (`inherit.<concern> = false` with no persistable payload) stays **Intent only** for Transform, Protection, Classification, and Policy. Deploy does not claim those bundles as saved.
+
+Complete Protection and Classification bundles persist at deploy through a transactional replace of the route rule set. Policy delivery behavior, including block, persists as a field-less Stream Governance route override. The wizard reads each concern back and compares Effective status. A mismatch or missing Effective result is a deploy error and blocks Start.
 
 **Transform:** a complete mapping and/or enrichment override persists at deploy (`route_transform`) and is verified via Transform Effective read-back. An empty Transform override (inherit off, no payload) remains **Intent only** and is not claimed as persisted.
 
@@ -41,15 +46,16 @@ Route **bundles** where `inherit.<concern> = false` with full route-scoped edito
 
 - Shared stream processing (mapping, enrichment, data protection intents) — **persisted**
 - Complete route Transform overrides (mapping/enrichment) — **persisted** and Effective-verified
+- Complete route Protection, Classification, and Policy bundles — **persisted**, read back, and Effective-verified
 - Governance **field-level** overrides (protection action, classification floor, delivery behavior) — **persisted**
 - Route delivery metadata (enabled, failure policy, formatter) — **persisted**
 - Post-deploy **Route Edit** — full persist via existing APIs
 
 ### What you should do
 
-1. After deploy, open **Routes → Edit** for each route with Intent only overrides (Protection / Classification / Policy bundles, or empty Transform intent).
-2. Save those route bundles explicitly.
-3. Verify **Effective Status** shows **Overridden** or **Mixed** as intended (not Inherited).
+1. After deploy, open **Routes → Edit** only for routes that still show **Intent only** (empty override payloads).
+2. Save those empty-intent bundles explicitly if they should become route rules.
+3. When deploy reports a per-route Effective mismatch, treat Start as blocked until that route's read-back matches.
 
 **Reference:** [`route-processing-persist-roadmap.md`](../architecture/route-processing-persist-roadmap.md)
 

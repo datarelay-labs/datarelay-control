@@ -1002,14 +1002,17 @@ Deploy Summary, Route Health Cards, and projected count lists must be labeled as
 ```text
 projectRouteProcessingStatusFromDeployIntent(draft, dataProtection)
   → statuses: Inherited | Overridden | Mixed (per concern)
-  → persistKind: none | intent_only | governance | route_transform
+  → persistKind: none | intent_only | governance | route_transform | route_protection | route_classification | route_policy
 ```
 
 | `persistKind` | Operator label | Meaning |
 |---------------|----------------|---------|
 | **none** | — | Shared Processing only; no route-level deploy intent. |
-| **intent_only** | Intent only | Shown in Deploy but **not saved** at deploy for that concern bundle (e.g. Protection/Policy bundles, or empty Transform override). Post-deploy Effective API may show Shared. |
+| **intent_only** | Intent only | Shown in Deploy but **not saved** at deploy for that concern bundle (empty Transform, Protection, Classification, or Policy override). Post-deploy Effective API may show Shared. |
 | **route_transform** | Persisted as route Transform | Complete Transform mapping/enrichment override saved via route Transform APIs at deploy; verified by Effective read-back. |
+| **route_protection** | Persisted as route Protection | Complete route protection intents saved by transactional replace of route protection rules at deploy; rules are read back and Effective status is checked. |
+| **route_classification** | Persisted as route Classification | Route classification rules derived from the route protection bundle are saved by transactional replace at deploy; rules are read back and Effective status is checked. |
+| **route_policy** | Persisted as route Policy | Route delivery behavior, including block, saved as governance `route_overrides.delivery_behavior` at deploy; governance is read back and Policy Effective status is checked. |
 | **governance** | Persisted through governance rules | Field-level protection/classification overrides saved via governance `route_overrides` at deploy. |
 
 ## Deploy Summary display rules
@@ -1022,7 +1025,7 @@ projectRouteProcessingStatusFromDeployIntent(draft, dataProtection)
 
 ## Copy constraints
 
-Allowed: Deploy Intent, Projected Status, Intent only, Persisted as route Transform, Persisted through governance rules.
+Allowed: Deploy Intent, Projected Status, Intent only, Persisted as route Transform, Persisted as route Protection, Persisted as route Classification, Persisted as route Policy, Persisted through governance rules.
 
 Forbidden in operator copy: Runtime Resolver, Persist Layer, Database Row, Internal Engine.
 

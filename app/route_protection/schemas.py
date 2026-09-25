@@ -48,6 +48,12 @@ class RouteProtectionRulePatchRequest(BaseModel):
     sensitivity_class: SensitivityClass | None = None
 
 
+class RouteProtectionRulesReplaceRequest(BaseModel):
+    """Complete desired protection rule set for one route."""
+
+    rules: list[RouteProtectionRuleCreateRequest]
+
+
 class RouteProtectionRuleResponse(BaseModel):
     rule: RouteProtectionRuleEntry
 

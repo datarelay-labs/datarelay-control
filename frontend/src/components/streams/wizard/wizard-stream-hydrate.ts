@@ -25,6 +25,7 @@ import { fullEventRegexConfigJsonFromFieldMappings } from './wizard-full-event-r
 import {
   readAdvancedStreamConfigFromPersisted,
 } from './wizard-stream-config-sync'
+import { hydrateRouteGovernanceDrafts } from './wizard-route-governance-bundle'
 import {
   buildInitialState,
   DEFAULT_ROUTE_PROCESSING_INHERIT,
@@ -336,13 +337,15 @@ export function buildWizardDestinationsFromRouteSources(
 }
 
 async function withHydratedRouteTransforms(
+  streamId: number,
   destinations: WizardState['destinations'],
 ): Promise<WizardState['destinations'] | null> {
   const hydrated = await hydrateRouteDraftsTransform(destinations.routeDrafts)
   if (!hydrated.ok) return null
+  const withGovernance = await hydrateRouteGovernanceDrafts(streamId, hydrated.drafts)
   return normalizeWizardDestinations({
     ...destinations,
-    routeDrafts: hydrated.drafts,
+    routeDrafts: withGovernance,
   })
 }
 
@@ -360,6 +363,7 @@ export async function refreshWizardDestinationsFromStream(streamId: number): Pro
   const streamRoutes = (allRoutes ?? []).filter((route) => route.stream_id === streamId)
   if (destinations === null) return null
   const merged = await withHydratedRouteTransforms(
+    streamId,
     buildWizardDestinationsFromRouteSources(mapping?.routes ?? [], streamRoutes, destinations),
   )
   if (merged == null) return null
@@ -460,6 +464,7 @@ export async function hydrateWizardStateFromStream(streamId: number): Promise<Wi
   const streamRoutes = (allRoutes ?? []).filter((route) => route.stream_id === streamId)
   if (destinations === null) return null
   const hydratedDestinations = await withHydratedRouteTransforms(
+    streamId,
     buildWizardDestinationsFromRouteSources(mapping?.routes ?? [], streamRoutes, destinations),
   )
   if (hydratedDestinations == null) return null

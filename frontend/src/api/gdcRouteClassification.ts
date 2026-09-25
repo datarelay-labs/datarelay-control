@@ -47,6 +47,22 @@ export async function fetchRouteClassificationRules(
   )
 }
 
+export async function replaceRouteClassificationRules(
+  routeId: number,
+  rules: Array<{
+    name: string
+    enabled?: boolean
+    condition_json: { sensitivity_class: string }
+    classification_level: ClassificationLevel
+  }>,
+): Promise<RouteClassificationRulesResponse> {
+  return requestJson(`${RT}/routes/${routeId}/classification-rules`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rules }),
+  })
+}
+
 export async function createRouteClassificationRule(
   routeId: number,
   body: {

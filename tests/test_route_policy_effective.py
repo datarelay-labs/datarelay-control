@@ -186,3 +186,27 @@ def test_route_policy_effective_overridden_governance_only(
     assert body["persisted_source"] == "stream"
     assert body["processing_status"] == "Overridden"
     assert body["rule_count"] == 0
+
+
+def test_route_policy_effective_block_governance_only(
+    route_policy_effective_client: TestClient,
+    db_session: Session,
+) -> None:
+    h = _seed_stream_two_routes(db_session)
+    _set_governance_route_overrides(
+        db_session,
+        h["stream_id"],
+        [
+            {
+                "route_id": h["route_a_id"],
+                "field_path": None,
+                "delivery_behavior": "block",
+                "enabled": True,
+            }
+        ],
+    )
+
+    r = route_policy_effective_client.get(f"/api/v1/runtime/routes/{h['route_a_id']}/policy/effective")
+    body = r.json()
+    assert body["processing_status"] == "Overridden"
+    assert body["rule_count"] == 0

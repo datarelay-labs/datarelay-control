@@ -50,6 +50,23 @@ export async function fetchRouteProtectionRules(
   )
 }
 
+export async function replaceRouteProtectionRules(
+  routeId: number,
+  rules: Array<{
+    field_path: string
+    sensitivity_class: string
+    protection_mode: ProtectionMode
+    enabled?: boolean
+    source_finding_id?: number | null
+  }>,
+): Promise<RouteProtectionRulesResponse> {
+  return requestJson(`${RT}/routes/${routeId}/protection-rules`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rules }),
+  })
+}
+
 export async function createRouteProtectionRule(
   routeId: number,
   body: {

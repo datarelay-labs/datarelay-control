@@ -161,6 +161,85 @@ describe('projectRouteProcessingStatusFromDeployIntent', () => {
     expect(projection.concerns.protection.persistKind).toBe('intent_only')
   })
 
+  it('marks a complete protection bundle as route_protection persist', () => {
+    const state = buildInitialState()
+    const projection = projectRouteProcessingStatusFromDeployIntent(
+      {
+        ...baseDraft('r1', { protection: false }),
+        overrides: {
+          protection: {
+            intents: [
+              {
+                key: 'i1',
+                detectedField: '$.email',
+                protectionAction: 'mask_partial',
+                deliveryBehavior: 'continue',
+              },
+            ],
+            unknownNormalFieldPolicy: 'pass_through',
+            unknownSensitiveFieldPolicy: 'auto_protect',
+          },
+        },
+      },
+      state.dataProtection,
+    )
+    expect(projection.statuses.protection).toBe('Overridden')
+    expect(projection.concerns.protection.persistKind).toBe('route_protection')
+    expect(deployIntentPersistLabel(projection.concerns.protection.persistKind)).toBe(
+      'Persisted as route Protection',
+    )
+  })
+
+  it('marks classification derived from route protection intents as route_classification persist', () => {
+    const state = buildInitialState()
+    const projection = projectRouteProcessingStatusFromDeployIntent(
+      {
+        ...baseDraft('r1', { classification: false }),
+        overrides: {
+          protection: {
+            intents: [
+              {
+                key: 'i1',
+                detectedField: '$.email',
+                protectionAction: 'mask_full',
+                deliveryBehavior: 'continue',
+              },
+            ],
+            unknownNormalFieldPolicy: 'pass_through',
+            unknownSensitiveFieldPolicy: 'auto_protect',
+          },
+        },
+      },
+      state.dataProtection,
+    )
+    expect(projection.statuses.classification).toBe('Overridden')
+    expect(projection.concerns.classification.persistKind).toBe('route_classification')
+  })
+
+  it('marks an explicit route delivery behavior as route_policy persist', () => {
+    const state = buildInitialState()
+    const projection = projectRouteProcessingStatusFromDeployIntent(
+      {
+        ...baseDraft('r1', { policy: false }),
+        overrides: { policy: { deliveryBehavior: 'quarantine' } },
+      },
+      state.dataProtection,
+    )
+    expect(projection.statuses.policy).toBe('Overridden')
+    expect(projection.concerns.policy.persistKind).toBe('route_policy')
+    expect(deployIntentPersistLabel(projection.concerns.policy.persistKind)).toBe('Persisted as route Policy')
+  })
+
+  it('keeps an empty policy override as intent only', () => {
+    const state = buildInitialState()
+    const projection = projectRouteProcessingStatusFromDeployIntent(
+      baseDraft('r1', { policy: false }),
+      state.dataProtection,
+    )
+    expect(projection.statuses.policy).toBe('Overridden')
+    expect(projection.concerns.policy.persistKind).toBe('intent_only')
+  })
+
   it('marks governance field protection override when inherit shared', () => {
     const state = buildInitialState()
     state.dataProtection.routeOverrides = [
