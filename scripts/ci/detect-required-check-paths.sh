@@ -85,6 +85,7 @@ is_backend_path() {
     || [[ "$f" == alembic/* ]] \
     || [[ "$f" == "pytest.ini" ]] \
     || [[ "$f" == docker-compose*.yml ]] \
+    || [[ "$f" == "docker/Dockerfile.minio-test" ]] \
     || [[ "$f" == deploy/* ]] \
     || [[ "$f" == scripts/release/* ]] \
     || [[ "$f" == scripts/test/* ]] \

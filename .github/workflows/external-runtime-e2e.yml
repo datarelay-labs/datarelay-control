@@ -11,6 +11,7 @@ on:
       - "tests/test_external_runtime_e2e.py"
       - "tests/e2e_runtime_helpers.py"
       - "docker-compose.test.yml"
+      - "docker/Dockerfile.minio-test"
       - "scripts/test/run-external-runtime-e2e-tests.sh"
       - "scripts/testing/**"
       - "requirements.txt"
