@@ -166,7 +166,7 @@ export function RouteEditTransformPanel({
     return () => window.removeEventListener('beforeunload', onBeforeUnload)
   }, [hasUnsavedChanges])
 
-  const workspaceDisabled = inheritStream || readOnly
+  const workspaceDisabled = inheritStream
 
   const handleInheritChange = (checked: boolean) => {
     if (readOnly) return
@@ -316,7 +316,6 @@ export function RouteEditTransformPanel({
         </div>
       </PanelChrome>
 
-      <fieldset disabled={readOnly} className="m-0 min-w-0 border-0 p-0 disabled:opacity-100">
       <div className={cn(workspaceDisabled && 'pointer-events-none opacity-50')} aria-disabled={workspaceDisabled}>
         <MappingWorkspace
           streamId={streamId}
@@ -331,9 +330,9 @@ export function RouteEditTransformPanel({
           onEventArrayPathChange={readOnly ? () => undefined : setEventArrayPath}
           transformRules={transformRules}
           onTransformRulesChange={readOnly ? () => undefined : setTransformRules}
+          readOnly={readOnly}
         />
       </div>
-      </fieldset>
     </div>
   )
 }

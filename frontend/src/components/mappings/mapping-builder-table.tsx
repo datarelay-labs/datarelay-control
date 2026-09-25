@@ -28,6 +28,8 @@ type MappingBuilderTableProps = {
   onAddBlank: () => void
   search: string
   onSearchChange: (q: string) => void
+  /** Hide row edits while leaving mapping search usable. */
+  readOnly?: boolean
 }
 
 function inferType(value: unknown): MappingFieldType {
@@ -61,6 +63,7 @@ export function MappingBuilderTable({
   onAddBlank,
   search,
   onSearchChange,
+  readOnly = false,
 }: MappingBuilderTableProps) {
   return (
     <div className="flex flex-col gap-2">
@@ -76,7 +79,8 @@ export function MappingBuilderTable({
         <button
           type="button"
           onClick={onAddBlank}
-          className="inline-flex h-7 items-center gap-1 rounded-md bg-violet-600 px-2 text-[11px] font-semibold text-white hover:bg-violet-700"
+          disabled={readOnly}
+          className="inline-flex h-7 items-center gap-1 rounded-md bg-violet-600 px-2 text-[11px] font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
         >
           <Plus className="h-3.5 w-3.5" aria-hidden />
           Add row
@@ -116,7 +120,7 @@ export function MappingBuilderTable({
             ) : (
               filteredRows.map((row) => {
                 const globalIdx = rows.findIndex((r) => r.id === row.id)
-                const editing = editingId === row.id
+                const editing = !readOnly && editingId === row.id
                 const issues = rowIssues.get(row.id)
                 const sample = inlineSamples.get(row.id)
                 return (
@@ -126,7 +130,7 @@ export function MappingBuilderTable({
                         <GripVertical className="h-3 w-3 text-slate-300" aria-hidden />
                         <button
                           type="button"
-                          disabled={globalIdx <= 0}
+                          disabled={readOnly || globalIdx <= 0}
                           onClick={() => onReorder(globalIdx, globalIdx - 1)}
                           className="inline-flex h-6 w-6 items-center justify-center rounded text-slate-500 hover:bg-slate-100 disabled:opacity-30 dark:hover:bg-gdc-rowHover"
                           aria-label="Move up"
@@ -135,7 +139,7 @@ export function MappingBuilderTable({
                         </button>
                         <button
                           type="button"
-                          disabled={globalIdx < 0 || globalIdx >= rows.length - 1}
+                          disabled={readOnly || globalIdx < 0 || globalIdx >= rows.length - 1}
                           onClick={() => onReorder(globalIdx, globalIdx + 1)}
                           className="inline-flex h-6 w-6 items-center justify-center rounded text-slate-500 hover:bg-slate-100 disabled:opacity-30 dark:hover:bg-gdc-rowHover"
                           aria-label="Move down"
@@ -183,16 +187,18 @@ export function MappingBuilderTable({
                     <td className={cn(opTd, 'text-right')}>
                       <button
                         type="button"
-                        className="mr-0.5 inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 dark:hover:bg-gdc-rowHover"
+                        className="mr-0.5 inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 disabled:opacity-40 dark:hover:bg-gdc-rowHover"
                         aria-label="Edit row"
+                        disabled={readOnly}
                         onClick={() => onEditId(editing ? null : row.id)}
                       >
                         <Pencil className="h-3.5 w-3.5" />
                       </button>
                       <button
                         type="button"
-                        className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-500 hover:bg-red-500/10 hover:text-red-700"
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-500 hover:bg-red-500/10 hover:text-red-700 disabled:opacity-40"
                         aria-label="Delete row"
+                        disabled={readOnly}
                         onClick={() => onDeleteRow(row.id)}
                       >
                         <Trash2 className="h-3.5 w-3.5" />

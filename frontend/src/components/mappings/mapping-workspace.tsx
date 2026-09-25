@@ -44,6 +44,8 @@ export type MappingWorkspaceProps = {
   hideModeTabs?: boolean
   /** Lock workspace to a single mode when hideModeTabs is set. */
   forceModeTab?: MappingModeTab
+  /** Block mapping edits while leaving mode tabs and preview navigation usable. */
+  readOnly?: boolean
 }
 
 type MappingModeTab = 'basic' | 'advanced' | 'expert'
@@ -69,6 +71,7 @@ export function MappingWorkspace({
   externalSample = null,
   hideModeTabs = false,
   forceModeTab,
+  readOnly = false,
 }: MappingWorkspaceProps) {
   const [modeTab, setModeTab] = useState<MappingModeTab>(forceModeTab ?? 'basic')
   const [rows, setRows] = useState<MappingRowModel[]>(() => [...initialRows])
@@ -129,10 +132,11 @@ export function MappingWorkspace({
 
   const updateRows = useCallback(
     (next: MappingRowModel[]) => {
+      if (readOnly) return
       setRows(next)
       onRowsChange?.(next)
     },
-    [onRowsChange],
+    [onRowsChange, readOnly],
   )
 
   const sampleEvent = sample?.extractedEvents?.[sampleEventIndex] ?? sample?.extractedEvents?.[0] ?? null
@@ -258,6 +262,7 @@ export function MappingWorkspace({
           sampleEvent={sampleEvent}
           rules={transformRules}
           onRulesChange={onTransformRulesChange}
+          readOnly={readOnly}
           simpleFieldMappings={simpleFieldMappings}
           filterUiMode={activeModeTab === 'expert' ? 'expert' : 'advanced'}
         />
@@ -304,7 +309,9 @@ export function MappingWorkspace({
                   <span className="font-semibold text-slate-600 dark:text-gdc-mutedStrong">Event array path</span>
                   <input
                     value={eventArrayPath}
+                    disabled={readOnly}
                     onChange={(e) => {
+                      if (readOnly) return
                       const v = e.target.value
                       setEventArrayPath(v)
                       onEventArrayPathChange?.(v)
@@ -339,7 +346,7 @@ export function MappingWorkspace({
                     className="min-h-0 flex-1"
                     schema={sample.unionSchema}
                     search={treeSearch}
-                    onPickPath={handlePickPath}
+                    onPickPath={readOnly ? () => undefined : handlePickPath}
                     selectedPath={selectedUnionPath}
                     onSelectPath={setSelectedUnionPath}
                   />
@@ -351,11 +358,15 @@ export function MappingWorkspace({
                     baseLabel="event"
                     basePath="$"
                     search={treeSearch}
-                    onPickPath={handlePickPath}
-                    onUseEventArrayPath={(p) => {
-                      setEventArrayPath(p)
-                      onEventArrayPathChange?.(p)
-                    }}
+                    onPickPath={readOnly ? () => undefined : handlePickPath}
+                    onUseEventArrayPath={
+                      readOnly
+                        ? undefined
+                        : (p) => {
+                            setEventArrayPath(p)
+                            onEventArrayPathChange?.(p)
+                          }
+                    }
                     expandStrategy="smart"
                   />
                 )}
@@ -386,12 +397,14 @@ export function MappingWorkspace({
               }}
               onReorder={handleReorder}
               onAddBlank={() => {
+                if (readOnly) return
                 const id = newRowId()
                 updateRows([...rows, { id, sourceJsonPath: '', outputField: '', type: 'string', origin: 'manual' }])
                 setEditingId(id)
               }}
               search={mappingSearch}
               onSearchChange={setMappingSearch}
+              readOnly={readOnly}
             />
           </PanelChrome>
         </div>

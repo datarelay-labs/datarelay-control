@@ -14,6 +14,13 @@ const patchRouteProtectionRule = vi.hoisted(() => vi.fn())
 const patchRouteClassificationRule = vi.hoisted(() => vi.fn())
 const patchRoutePolicyRule = vi.hoisted(() => vi.fn())
 const runRouteDeliveryPreview = vi.hoisted(() => vi.fn())
+const fetchRouteMappingUiConfig = vi.hoisted(() => vi.fn())
+const fetchRouteEnrichmentUiConfig = vi.hoisted(() => vi.fn())
+const fetchMappingSourceSample = vi.hoisted(() => vi.fn())
+const runTransformPreview = vi.hoisted(() => vi.fn())
+const runMappingValidate = vi.hoisted(() => vi.fn())
+const runMappingDraftPreview = vi.hoisted(() => vi.fn())
+const runFinalEventDraftPreview = vi.hoisted(() => vi.fn())
 
 vi.mock('../../api/gdcRoutes', () => ({
   fetchRouteById: (...args: unknown[]) => fetchRouteById(...args),
@@ -36,16 +43,8 @@ vi.mock('../../api/gdcDestinations', () => ({
 }))
 
 vi.mock('../../api/gdcRouteTransform', () => ({
-  fetchRouteMappingUiConfig: vi.fn(async () => ({
-    route_id: 42,
-    inherit_stream_mapping: true,
-    mapping: { field_mappings: {} },
-  })),
-  fetchRouteEnrichmentUiConfig: vi.fn(async () => ({
-    route_id: 42,
-    inherit_stream_enrichment: true,
-    enrichment: { enrichment: {} },
-  })),
+  fetchRouteMappingUiConfig: (...args: unknown[]) => fetchRouteMappingUiConfig(...args),
+  fetchRouteEnrichmentUiConfig: (...args: unknown[]) => fetchRouteEnrichmentUiConfig(...args),
   fetchRouteTransformEffective: vi.fn(async () => ({
     route_id: 42,
     stream_id: 10,
@@ -168,6 +167,10 @@ vi.mock('../../api/gdcRuntimePreview', async () => {
   return {
     ...actual,
     runRouteDeliveryPreview: (...args: unknown[]) => runRouteDeliveryPreview(...args),
+    runTransformPreview: (...args: unknown[]) => runTransformPreview(...args),
+    runMappingValidate: (...args: unknown[]) => runMappingValidate(...args),
+    runMappingDraftPreview: (...args: unknown[]) => runMappingDraftPreview(...args),
+    runFinalEventDraftPreview: (...args: unknown[]) => runFinalEventDraftPreview(...args),
   }
 })
 
@@ -178,7 +181,7 @@ vi.mock('../../utils/mappingSourceSample', async () => {
   return {
     ...actual,
     loadMappingWorkspaceContext: vi.fn(async () => null),
-    fetchMappingSourceSample: vi.fn(async () => null),
+    fetchMappingSourceSample: (...args: unknown[]) => fetchMappingSourceSample(...args),
   }
 })
 
@@ -197,6 +200,57 @@ const savedRoute = {
   formatter_config_json: { delivery_mode: 'Reliable' },
   rate_limit_json: { enabled: false },
   updated_at: '2026-09-21T10:00:00Z',
+}
+
+const inheritedMapping = {
+  route_id: 42,
+  inherit_stream_mapping: true,
+  mapping: { field_mappings: {} },
+}
+
+const inheritedEnrichment = {
+  route_id: 42,
+  inherit_stream_enrichment: true,
+  enrichment: { enrichment: {} },
+}
+
+const overrideMapping = {
+  route_id: 42,
+  inherit_stream_mapping: false,
+  mapping: {
+    field_mappings: {
+      dest: '$.src',
+      transform_rules: [
+        {
+          mode: 'jsonata',
+          output_field: 'event_source',
+          expression: 'vendor & product',
+        },
+      ],
+    },
+    event_array_path: '$.items',
+  },
+}
+
+const overrideSample = {
+  ok: true,
+  sourceType: 'HTTP_API_POLLING' as const,
+  rawPayload: { src: 'a', vendor: 'v', product: 'p' },
+  treeDocument: { src: 'a', vendor: 'v', product: 'p' },
+  extractedEvents: [{ src: 'a', vendor: 'v', product: 'p' }],
+  unionSchema: null,
+  eventArrayPath: '',
+  eventRootPath: '$',
+  sampleEventIndex: 0,
+  message: null,
+  recordsLabel: '1',
+  fetchedAt: '2026-09-25T00:00:00Z',
+}
+
+const overrideEnrichment = {
+  route_id: 42,
+  inherit_stream_enrichment: false,
+  enrichment: { enrichment: {} },
 }
 
 function signIn(role: SessionRole, capabilities?: Record<string, boolean>) {
@@ -226,6 +280,20 @@ describe('RouteEditPage workspace capability visibility', () => {
     fetchRouteById.mockResolvedValue(savedRoute)
     updateRoute.mockResolvedValue({ ...savedRoute, name: 'Route B' })
     createRoute.mockResolvedValue({ ...savedRoute, id: 99 })
+    fetchRouteMappingUiConfig.mockResolvedValue(inheritedMapping)
+    fetchRouteEnrichmentUiConfig.mockResolvedValue(inheritedEnrichment)
+    fetchMappingSourceSample.mockResolvedValue(null)
+    runTransformPreview.mockResolvedValue({
+      transformed_result: { event_source: 'vp' },
+      message: 'ok',
+      save_blocked: false,
+      warnings: [],
+      errors: [],
+      field_results: [],
+    })
+    runMappingValidate.mockResolvedValue({ warnings: [] })
+    runMappingDraftPreview.mockResolvedValue({ mapped_events: [{ dest: 'a' }], preview_event_count: 1, missing_fields: [] })
+    runFinalEventDraftPreview.mockResolvedValue({ final_events: [{ dest: 'a' }] })
     runRouteDeliveryPreview.mockResolvedValue({
       route_id: 42,
       destination_id: 5,
@@ -294,6 +362,83 @@ describe('RouteEditPage workspace capability visibility', () => {
     expect(patchRouteProtectionRule).not.toHaveBeenCalled()
     expect(patchRouteClassificationRule).not.toHaveBeenCalled()
     expect(patchRoutePolicyRule).not.toHaveBeenCalled()
+  })
+
+  it('lets a viewer inspect a transform override without mutation requests', async () => {
+    const user = userEvent.setup()
+    fetchRouteMappingUiConfig.mockResolvedValue(overrideMapping)
+    fetchRouteEnrichmentUiConfig.mockResolvedValue(overrideEnrichment)
+    fetchMappingSourceSample.mockResolvedValue(overrideSample)
+    signIn('VIEWER')
+    renderRouteEdit()
+
+    await user.click(await screen.findByTestId('route-edit-tab-transform'))
+    const panel = await screen.findByTestId('route-edit-transform-panel')
+    const modes = within(panel).getByRole('tablist', { name: 'Mapping mode' })
+    const advanced = within(modes).getByRole('tab', { name: /Advanced/ })
+    const expert = within(modes).getByRole('tab', { name: /Expert/ })
+    const basic = within(modes).getByRole('tab', { name: /Basic/ })
+    expect(advanced).toBeEnabled()
+    expect(expert).toBeEnabled()
+    expect(basic).toBeEnabled()
+
+    await user.click(advanced)
+    const expression = await within(panel).findByDisplayValue('vendor & product')
+    expect(expression).toBeDisabled()
+    expect(within(panel).getByRole('button', { name: 'Add JSONata rule' })).toBeDisabled()
+    expect(within(panel).getByRole('button', { name: 'Remove rule' })).toBeDisabled()
+    const preview = within(panel).getByRole('button', { name: 'Preview' })
+    expect(preview).toBeEnabled()
+    await user.click(preview)
+    await waitFor(() => {
+      expect(runTransformPreview).toHaveBeenCalled()
+    })
+
+    await user.click(expert)
+    expect(within(panel).getByRole('button', { name: 'Add Regex extract rule' })).toBeDisabled()
+
+    await user.click(basic)
+    const transformed = within(panel).getByRole('button', { name: 'Transformed' })
+    const tableView = within(panel).getByRole('button', { name: 'Table' })
+    expect(transformed).toBeEnabled()
+    expect(tableView).toBeEnabled()
+    expect(within(panel).getByRole('button', { name: 'JSON' })).toBeEnabled()
+    await user.click(transformed)
+    await user.click(tableView)
+    expect(within(panel).getByRole('button', { name: 'Add row' })).toBeDisabled()
+    for (const button of within(panel).getAllByRole('button', { name: 'Edit row' })) {
+      expect(button).toBeDisabled()
+    }
+    for (const button of within(panel).getAllByRole('button', { name: 'Delete row' })) {
+      expect(button).toBeDisabled()
+    }
+    expect(within(panel).getByRole('textbox', { name: /Event array path/i })).toBeDisabled()
+    expect(within(panel).getByRole('searchbox', { name: 'Search mapping rows' })).toBeEnabled()
+
+    expect(saveRouteMappingUiConfig).not.toHaveBeenCalled()
+    expect(saveRouteEnrichmentUiConfig).not.toHaveBeenCalled()
+    expect(updateRoute).not.toHaveBeenCalled()
+  })
+
+  it('keeps transform override editing available for an operator', async () => {
+    const user = userEvent.setup()
+    fetchRouteMappingUiConfig.mockResolvedValue(overrideMapping)
+    fetchRouteEnrichmentUiConfig.mockResolvedValue(overrideEnrichment)
+    fetchMappingSourceSample.mockResolvedValue(overrideSample)
+    signIn('OPERATOR')
+    renderRouteEdit()
+
+    await user.click(await screen.findByTestId('route-edit-tab-transform'))
+    const panel = await screen.findByTestId('route-edit-transform-panel')
+    expect(within(panel).getByTestId('route-transform-save')).toBeInTheDocument()
+    const modes = within(panel).getByRole('tablist', { name: 'Mapping mode' })
+    await user.click(within(modes).getByRole('tab', { name: /Advanced/ }))
+    expect(await within(panel).findByDisplayValue('vendor & product')).toBeEnabled()
+    expect(within(panel).getByRole('button', { name: 'Add JSONata rule' })).toBeEnabled()
+    expect(within(panel).getByRole('button', { name: 'Preview' })).toBeEnabled()
+    await user.click(within(modes).getByRole('tab', { name: /Basic/ }))
+    expect(within(panel).getByRole('button', { name: 'Add row' })).toBeEnabled()
+    expect(within(panel).getByRole('button', { name: 'Transformed' })).toBeEnabled()
   })
 
   it('hides create for a viewer opening a new route', async () => {
