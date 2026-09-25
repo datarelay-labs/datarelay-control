@@ -1,5 +1,6 @@
 import { Loader2, RefreshCw, Shield } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   fetchGovernanceWorkspaceSnapshot,
   type GovernanceWorkspaceSnapshot,
@@ -8,6 +9,10 @@ import { fetchRoutesList, type RouteRead } from '../../api/gdcRoutes'
 import { fetchStreamsList } from '../../api/gdcStreams'
 import { mapBackendStreamStatus } from '../../api/streamRows'
 import type { StreamRead } from '../../api/types/gdcApi'
+import {
+  resolveGovernanceWorkspaceContext,
+  type GovernanceWorkspaceContext,
+} from '../../lib/governance-workspace-context'
 import {
   buildStreamGovernanceSummary,
   type GovernanceProcessingStatus,
@@ -108,6 +113,8 @@ function SummaryCard({
 }
 
 export function GovernanceWorkspacePage() {
+  const [searchParams] = useSearchParams()
+  const queryKey = searchParams.toString()
   const [loading, setLoading] = useState(true)
   const [snapshotsLoading, setSnapshotsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -115,8 +122,11 @@ export function GovernanceWorkspacePage() {
   const [routesByStream, setRoutesByStream] = useState<Record<number, RouteRead[]>>({})
   const [snapshotsByStream, setSnapshotsByStream] = useState<Record<number, RouteGovernanceSnapshot[]>>({})
   const [selectedStreamId, setSelectedStreamId] = useState<number | null>(null)
+  const [context, setContext] = useState<GovernanceWorkspaceContext>({ kind: 'none' })
   const snapshotsLoadGenRef = useRef(0)
   const snapshotsAbortRef = useRef<AbortController | null>(null)
+  const manualSelectionRef = useRef(false)
+  const appliedQueryKeyRef = useRef<string | null>(null)
 
   const loadSnapshotsForStream = useCallback(async (streamId: number, streamRoutes: RouteRead[]) => {
     const gen = ++snapshotsLoadGenRef.current
@@ -159,6 +169,11 @@ export function GovernanceWorkspacePage() {
     setSnapshotsLoading(false)
     setError(null)
     setSnapshotsByStream({})
+    const params = new URLSearchParams(queryKey)
+    if (appliedQueryKeyRef.current !== queryKey) {
+      appliedQueryKeyRef.current = queryKey
+      manualSelectionRef.current = false
+    }
     try {
       const [streamRows, allRoutes] = await Promise.all([fetchStreamsList(), fetchRoutesList()])
       const sortedStreams = [...(streamRows ?? [])].sort((a, b) => {
@@ -178,17 +193,20 @@ export function GovernanceWorkspacePage() {
       }
       setRoutesByStream(grouped)
 
-      const nextSelectedId = sortedStreams[0]?.id ?? null
+      const resolved = resolveGovernanceWorkspaceContext(params, sortedStreams, routes)
+      setContext(resolved)
+      const preferredId = resolved.kind === 'matched' ? resolved.streamId : sortedStreams[0]?.id ?? null
       setSelectedStreamId((prev) => {
-        if (prev != null && sortedStreams.some((stream) => stream.id === prev)) return prev
-        return nextSelectedId
+        if (manualSelectionRef.current && prev != null && sortedStreams.some((stream) => stream.id === prev)) return prev
+        return preferredId
       })
     } catch (e) {
+      setContext(params.has('stream_id') || params.has('route_id') ? { kind: 'unavailable' } : { kind: 'none' })
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [queryKey])
 
   useEffect(() => {
     void load()
@@ -213,6 +231,19 @@ export function GovernanceWorkspacePage() {
   )
 
   const routeCountForStream = selectedStreamId != null ? routesByStream[selectedStreamId]?.length ?? 0 : 0
+  const activeContext =
+    context.kind === 'matched' && selectedStreamId === context.streamId ? context : null
+  const focusedRouteId = activeContext?.routeId ?? null
+
+  useEffect(() => {
+    if (focusedRouteId == null) return
+    const row = document.querySelector<HTMLElement>(
+      `[data-testid="governance-workspace-route-row-${focusedRouteId}"]`,
+    )
+    if (row?.getAttribute('data-context-focus') !== 'route') return
+    row.scrollIntoView?.({ block: 'nearest' })
+    row.focus()
+  }, [focusedRouteId, selectedSnapshots])
 
   return (
     <section
@@ -229,6 +260,23 @@ export function GovernanceWorkspacePage() {
           <p className="mt-1 text-[11px] text-slate-500 dark:text-gdc-muted">
             Read-only overview of stream and route governance configuration — protection, classification, policy, and transform inheritance.
           </p>
+          {activeContext ? (
+            <p
+              className="mt-2 text-[12px] font-semibold text-violet-800 dark:text-violet-200"
+              data-testid="governance-workspace-active-context"
+            >
+              Governance context: {activeContext.streamName}
+              {activeContext.routeName ? ` · ${activeContext.routeName}` : ''}
+            </p>
+          ) : context.kind === 'unavailable' ? (
+            <p
+              className="mt-2 text-[12px] font-medium text-amber-800 dark:text-amber-200"
+              data-testid="governance-workspace-context-fallback"
+              role="status"
+            >
+              Requested governance context is not available. Showing the workspace without that context.
+            </p>
+          ) : null}
         </div>
         <button
           type="button"
@@ -283,7 +331,10 @@ export function GovernanceWorkspacePage() {
                         <td className={opTd}>
                           <button
                             type="button"
-                            onClick={() => setSelectedStreamId(stream.id)}
+                            onClick={() => {
+                              manualSelectionRef.current = true
+                              setSelectedStreamId(stream.id)
+                            }}
                             className={cn(
                               'text-left text-[12px] font-semibold hover:text-violet-700 dark:hover:text-violet-300',
                               isSelected ? 'text-violet-700 dark:text-violet-300' : 'text-slate-900 dark:text-slate-100',
@@ -389,8 +440,16 @@ export function GovernanceWorkspacePage() {
                     <td className={cn(opTd, 'text-slate-500 dark:text-gdc-muted')} colSpan={5}>No routes for this stream.</td>
                   </tr>
                 ) : (
-                  selectedSnapshots.map((snapshot) => (
-                    <tr key={snapshot.routeId} className={opTr} data-testid={`governance-workspace-route-row-${snapshot.routeId}`}>
+                  selectedSnapshots.map((snapshot) => {
+                    const focused = snapshot.routeId === focusedRouteId
+                    return (
+                    <tr
+                      key={snapshot.routeId}
+                      tabIndex={focused ? -1 : undefined}
+                      className={cn(opTr, focused && 'bg-violet-500/[0.08] outline-none ring-1 ring-inset ring-violet-400/70 dark:bg-violet-500/15')}
+                      data-testid={`governance-workspace-route-row-${snapshot.routeId}`}
+                      data-context-focus={focused ? 'route' : undefined}
+                    >
                       <td className={opTd}>{snapshot.routeName}</td>
                       <td className={opTd}>
                         <ProcessingStatusBadge status={snapshot.transform} />
@@ -405,7 +464,8 @@ export function GovernanceWorkspacePage() {
                         <ProcessingStatusBadge status={snapshot.policy} />
                       </td>
                     </tr>
-                  ))
+                    )
+                  })
                 )}
               </tbody>
             </table>

@@ -76,7 +76,7 @@ export function WizardGovernanceStartModal({
               Enable data governance?
             </h2>
             <p className="mt-1 text-[13px] text-slate-600 dark:text-gdc-muted">
-              Adds a Data Policy step with sensitive-data and response presets. Default is off for connector operators.
+              Applies sensitive-data, protection, classification, and response controls in Route Processing. Default is off for connector operators.
             </p>
           </div>
         </div>
@@ -94,13 +94,13 @@ export function WizardGovernanceStartModal({
                 Enable data governance for this stream
               </p>
               <p className="mt-0.5 text-[11px] text-slate-600 dark:text-gdc-muted">
-                Recommended for regulated data. Adds Sensitive Data, Protection, Classification, and Response Action.
+                Recommended for regulated data. Includes sensitive data, protection, classification, and response actions in Route Processing.
               </p>
             </div>
           </label>
         ) : (
           <p className="mt-4 rounded-md border border-slate-200/80 bg-slate-50/80 px-3 py-2 text-[11px] text-slate-600 dark:border-gdc-border dark:bg-gdc-card dark:text-gdc-muted">
-            Tenant governance mode is off. Standard 4-step wizard will be used.
+            Tenant governance mode is off. The standard wizard continues without stream governance controls.
           </p>
         )}
 

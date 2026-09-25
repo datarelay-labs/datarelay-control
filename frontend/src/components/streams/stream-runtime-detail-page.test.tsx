@@ -477,6 +477,11 @@ describe('StreamRuntimeDetailPage M17.2 layout', () => {
     await user.click(screen.getByTestId('stream-detail-tab-audit'))
     expect(screen.getByTestId('stream-governance-drawer')).toBeInTheDocument()
     expect(screen.queryByTestId('schema-drift-panel')).not.toBeInTheDocument()
+    await user.click(screen.getByTitle('Open Governance drawer'))
+    expect(screen.getByTestId('stream-governance-drawer-workspace-link')).toHaveAttribute(
+      'href',
+      '/governance/workspace?stream_id=42',
+    )
   })
 
   it('renders six-tab stream runtime shell', async () => {
@@ -488,6 +493,10 @@ describe('StreamRuntimeDetailPage M17.2 layout', () => {
     expect(screen.getByTestId('stream-detail-tab-schema')).toBeInTheDocument()
     expect(screen.getByTestId('stream-detail-tab-violations')).toBeInTheDocument()
     expect(screen.getByTestId('stream-detail-tab-audit')).toBeInTheDocument()
+    expect(screen.getByTestId('stream-runtime-governance-workspace-link')).toHaveAttribute(
+      'href',
+      '/governance/workspace?stream_id=42',
+    )
     expect(screen.getByTestId('stream-recent-issues-panel')).toBeInTheDocument()
     expect(screen.getByTestId('stream-why-panel')).toBeInTheDocument()
     expect(screen.getByTestId('stream-information-panel')).toBeInTheDocument()
@@ -937,6 +946,7 @@ describe('StreamRuntimeDetailPage diagnosis overview', () => {
     expect(screen.queryByRole('button', { name: 'Run Now' })).not.toBeInTheDocument()
     expect(screen.queryByTestId('stream-run-backfill-open')).not.toBeInTheDocument()
     expect(screen.getByText('Edit').closest('span')).toHaveAttribute('title', 'Viewer role cannot edit stream configuration.')
+    expect(screen.queryByTestId('stream-runtime-governance-workspace-link')).not.toBeInTheDocument()
   })
 })
 

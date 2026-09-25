@@ -96,6 +96,22 @@ export function routeEditPath(routeId: string): string {
   return `/routes/${encodeURIComponent(routeId)}/edit`
 }
 
+/** Governance Workspace with optional stream/route landing context. */
+export function governanceWorkspacePath(context?: {
+  stream_id?: number | null
+  route_id?: number | null
+}): string {
+  const q = new URLSearchParams()
+  if (context?.stream_id != null && Number.isInteger(context.stream_id) && context.stream_id > 0) {
+    q.set('stream_id', String(context.stream_id))
+  }
+  if (context?.route_id != null && Number.isInteger(context.route_id) && context.route_id > 0) {
+    q.set('route_id', String(context.route_id))
+  }
+  const qs = q.toString()
+  return qs ? `${NAV_PATH.governanceWorkspace}?${qs}` : NAV_PATH.governanceWorkspace
+}
+
 /** Logs explorer scoped to a stream (slug → label resolved in UI). */
 export function logsPath(streamSlug?: string): string {
   if (!streamSlug || streamSlug.trim() === '') return '/logs'

@@ -1,7 +1,7 @@
 import { ArrowRight, HelpCircle, Loader2, Play, Save, ShieldCheck } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { cn } from '../../lib/utils'
 import { StatusBadge } from '../shell/status-badge'
 import { PanelChrome } from '../streams/mapping-json-tree'
@@ -22,8 +22,9 @@ import {
   isRouteDeliveryDirty,
   type RouteDeliveryFormState,
 } from './route-delivery-dirty'
-import { streamRuntimePath } from '../../config/nav-paths'
+import { governanceWorkspacePath, streamRuntimePath } from '../../config/nav-paths'
 import { RouteDetailHealthPanel } from './route-detail-health-panel'
+import { useGovernanceCapabilities } from '../../lib/governance-rbac'
 import { useSessionCapabilities } from '../../lib/rbac'
 import { RouteEditTransformPanel } from './route-edit-transform-panel'
 import { ProtectionPanel } from '../streams/protection-panel'
@@ -127,6 +128,7 @@ export function RouteEditPage() {
   const isCreateMode = backendRouteId == null
   const caps = useSessionCapabilities()
   const canMutateWorkspace = caps.workspace_mutations === true
+  const canOpenGovernanceWorkspace = useGovernanceCapabilities().governance_read === true
   const navigate = useNavigate()
   const d = ROUTE_EDIT_DEFAULTS
 
@@ -629,6 +631,18 @@ export function RouteEditPage() {
             Save state ·{' '}
             {isCreateMode ? 'API-backed (POST /api/v1/routes/)' : 'API-backed (PUT /api/v1/routes/{id})'}
           </p>
+          {!isCreateMode && backendRouteId != null && canOpenGovernanceWorkspace ? (
+            <Link
+              to={governanceWorkspacePath({
+                route_id: backendRouteId,
+                stream_id: backendStreamId,
+              })}
+              data-testid="route-edit-governance-workspace-link"
+              className="inline-flex text-[12px] font-semibold text-violet-700 hover:underline dark:text-violet-300"
+            >
+              Governance Workspace
+            </Link>
+          ) : null}
         </div>
         <div
           className="inline-flex h-7 items-center rounded-full border border-slate-200/90 bg-slate-50 px-2.5 text-[11px] font-semibold text-slate-700 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200"

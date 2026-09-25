@@ -111,6 +111,8 @@ describe('GovernanceWorkspacePage', () => {
     expect(within(row42).getAllByText('Inherited').length).toBeGreaterThan(0)
     expect(screen.getByTestId('governance-workspace-route-row-43')).toBeInTheDocument()
     expect(screen.queryByTestId('governance-workspace-route-row-99')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('governance-workspace-active-context')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('governance-workspace-context-fallback')).not.toBeInTheDocument()
   })
 
   it('updates summary and routes when another stream is selected', async () => {
@@ -163,6 +165,74 @@ describe('GovernanceWorkspacePage', () => {
     await user.click(within(screen.getByTestId('governance-workspace-stream-row-10')).getByRole('button'))
     await screen.findByTestId('governance-workspace-route-row-42')
     expect(fetchGovernanceWorkspaceSnapshot).toHaveBeenCalledTimes(2)
+  })
+
+  it('selects the stream from a stream query and leaves route focus unset', async () => {
+    render(
+      <MemoryRouter initialEntries={['/governance/workspace?stream_id=20']}>
+        <GovernanceWorkspacePage />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByTestId('governance-workspace-active-context')).toHaveTextContent('Stream B')
+    expect(await screen.findByTestId('governance-workspace-route-row-99')).toBeInTheDocument()
+    expect(screen.queryByTestId('governance-workspace-route-row-42')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('governance-workspace-context-fallback')).not.toBeInTheDocument()
+    expect(document.querySelector('[data-context-focus="route"]')).not.toBeInTheDocument()
+  })
+
+  it('selects the route stream and focuses the matching route', async () => {
+    render(
+      <MemoryRouter initialEntries={['/governance/workspace?stream_id=10&route_id=42']}>
+        <GovernanceWorkspacePage />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByTestId('governance-workspace-active-context')).toHaveTextContent('Stream A · Route A')
+    const row = await screen.findByTestId('governance-workspace-route-row-42')
+    expect(row).toHaveAttribute('data-context-focus', 'route')
+    expect(screen.queryByTestId('governance-workspace-route-row-99')).not.toBeInTheDocument()
+  })
+
+  it('falls back when the route does not belong to the requested stream', async () => {
+    render(
+      <MemoryRouter initialEntries={['/governance/workspace?stream_id=20&route_id=42']}>
+        <GovernanceWorkspacePage />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByTestId('governance-workspace-context-fallback')).toHaveTextContent(
+      'Requested governance context is not available',
+    )
+    expect(screen.queryByTestId('governance-workspace-active-context')).not.toBeInTheDocument()
+    const row = await screen.findByTestId('governance-workspace-route-row-42')
+    expect(row).not.toHaveAttribute('data-context-focus')
+  })
+
+  it('falls back for a stale stream id without claiming that context', async () => {
+    render(
+      <MemoryRouter initialEntries={['/governance/workspace?stream_id=999']}>
+        <GovernanceWorkspacePage />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByTestId('governance-workspace-context-fallback')).toBeInTheDocument()
+    expect(screen.queryByTestId('governance-workspace-active-context')).not.toBeInTheDocument()
+    expect(await screen.findByTestId('governance-workspace-route-row-42')).toBeInTheDocument()
+    expect(screen.queryByTestId('governance-workspace-stream-row-999')).not.toBeInTheDocument()
+  })
+
+  it('falls back for a stale route id', async () => {
+    render(
+      <MemoryRouter initialEntries={['/governance/workspace?route_id=777']}>
+        <GovernanceWorkspacePage />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByTestId('governance-workspace-context-fallback')).toBeInTheDocument()
+    expect(screen.queryByTestId('governance-workspace-active-context')).not.toBeInTheDocument()
+    expect(document.querySelector('[data-context-focus="route"]')).not.toBeInTheDocument()
+    expect(await screen.findByTestId('governance-workspace-route-row-42')).toBeInTheDocument()
   })
 
   it('refresh clears cache and refetches workspace snapshot', async () => {

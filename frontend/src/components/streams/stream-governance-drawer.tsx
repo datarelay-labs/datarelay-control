@@ -1,5 +1,8 @@
 import { ChevronDown, ChevronUp, Shield, X } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
+import { Link } from 'react-router-dom'
+import { governanceWorkspacePath } from '../../config/nav-paths'
+import { useGovernanceCapabilities } from '../../lib/governance-rbac'
 import { cn } from '../../lib/utils'
 import type { StreamGovernanceSnapshot } from '../../lib/stream-governance-snapshot'
 import { SchemaDriftPanel } from './schema-drift-panel'
@@ -37,6 +40,7 @@ export function StreamGovernanceDrawer({
 }: StreamGovernanceDrawerProps) {
   const [expanded, setExpanded] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const canOpenGovernanceWorkspace = useGovernanceCapabilities().governance_read === true
 
   useEffect(() => {
     if (!expanded) setMobileOpen(false)
@@ -50,6 +54,15 @@ export function StreamGovernanceDrawer({
 
   const panelContent = (
     <DrawerPanelStack>
+      {canOpenGovernanceWorkspace ? (
+        <Link
+          to={governanceWorkspacePath({ stream_id: streamId })}
+          data-testid="stream-governance-drawer-workspace-link"
+          className="inline-flex text-[12px] font-semibold text-violet-700 hover:underline dark:text-violet-300"
+        >
+          Open Governance Workspace
+        </Link>
+      ) : null}
       {schemaDriftPolicy ? <SchemaDriftPolicyCard policy={schemaDriftPolicy} /> : null}
       <SchemaDriftPanel
         streamId={streamId}
