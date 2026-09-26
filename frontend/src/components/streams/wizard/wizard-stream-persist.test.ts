@@ -7,6 +7,7 @@ import {
 
 const createRoute = vi.fn()
 const deleteRoute = vi.fn()
+const updateRoute = vi.fn()
 const updateRouteWithFreshToken = vi.fn()
 const saveRouteMappingUiConfig = vi.fn()
 const saveRouteEnrichmentUiConfig = vi.fn()
@@ -14,10 +15,15 @@ const fetchRouteTransformEffective = vi.fn()
 const saveStreamMappingUiConfigStrict = vi.fn()
 const fetchStreamById = vi.fn()
 const updateStream = vi.fn()
+const fetchStreamPolicyRules = vi.fn()
+const fetchStreamClassificationRules = vi.fn()
+const fetchStreamProtectionRules = vi.fn()
+const fetchStreamGovernance = vi.fn()
 
 vi.mock('../../../api/gdcRoutes', () => ({
   createRoute: (...args: unknown[]) => createRoute(...args),
   deleteRoute: (...args: unknown[]) => deleteRoute(...args),
+  updateRoute: (...args: unknown[]) => updateRoute(...args),
   updateRouteWithFreshToken: (...args: unknown[]) => updateRouteWithFreshToken(...args),
 }))
 
@@ -29,6 +35,22 @@ vi.mock('../../../api/gdcRouteTransform', () => ({
 
 vi.mock('../../../api/gdcRuntimeUi', () => ({
   saveStreamMappingUiConfigStrict: (...args: unknown[]) => saveStreamMappingUiConfigStrict(...args),
+}))
+
+vi.mock('../../../api/gdcPolicy', () => ({
+  fetchStreamPolicyRules: (...args: unknown[]) => fetchStreamPolicyRules(...args),
+}))
+
+vi.mock('../../../api/gdcClassification', () => ({
+  fetchStreamClassificationRules: (...args: unknown[]) => fetchStreamClassificationRules(...args),
+}))
+
+vi.mock('../../../api/gdcProtection', () => ({
+  fetchStreamProtectionRules: (...args: unknown[]) => fetchStreamProtectionRules(...args),
+}))
+
+vi.mock('../../../api/gdcStreamGovernance', () => ({
+  fetchStreamGovernance: (...args: unknown[]) => fetchStreamGovernance(...args),
 }))
 
 vi.mock('../../../api/gdcStreams', () => ({
@@ -124,7 +146,10 @@ vi.mock('../../../api/gdcRoutePolicy', () => ({
   patchRoutePolicyRule: vi.fn(),
 }))
 
+import { persistWizardDataProtectionIntents } from './wizard-data-protection-persist'
+import { saveStreamMappingUiConfigStrict } from '../../../api/gdcRuntimeUi'
 import {
+  applyCreatedRouteIdentity,
   persistWizardRouteTransformOverrides,
   persistWizardStreamEdits,
   syncRoutes,
@@ -154,6 +179,9 @@ function editState(mutate: (state: WizardState) => void): WizardState {
     createdAt: null,
   }
   mutate(state)
+  for (const draft of state.destinations.routeDrafts) {
+    if (/^route-\d+$/.test(draft.key) && draft.updatedAt == null) draft.updatedAt = 'route-a'
+  }
   return state
 }
 
@@ -178,11 +206,16 @@ function enrichmentRow(fieldName: string, staticValue: string) {
 describe('wizard-stream-persist route sync + transform', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    fetchStreamById.mockResolvedValue({ id: 100, config_json: {} })
-    updateStream.mockResolvedValue({})
+    fetchStreamById.mockResolvedValue({ id: 100, updated_at: 'stream-a', config_json: {} })
+    fetchStreamPolicyRules.mockResolvedValue({ rules: [] })
+    fetchStreamClassificationRules.mockResolvedValue({ rules: [] })
+    fetchStreamProtectionRules.mockResolvedValue({ rules: [] })
+    fetchStreamGovernance.mockResolvedValue({ rules: [] })
+    updateStream.mockResolvedValue({ id: 100, updated_at: 'stream-b' })
     saveStreamMappingUiConfigStrict.mockResolvedValue({})
     saveRouteMappingUiConfig.mockResolvedValue({})
     saveRouteEnrichmentUiConfig.mockResolvedValue({})
+    updateRoute.mockResolvedValue({ id: 5, updated_at: 'route-b' })
     updateRouteWithFreshToken.mockResolvedValue({})
     deleteRoute.mockResolvedValue({})
     fetchRouteTransformEffective.mockImplementation(async (routeId: number) => {
@@ -915,5 +948,444 @@ describe('wizard-stream-persist route sync + transform', () => {
     const synced = await syncRoutes(100, state)
     expect(synced.errors).toEqual([])
     expect(synced.routeIdsByDraftKey).toEqual({ 'wr-temp-1': 55 })
+  })
+
+  it('disables a removed route before deleting it and skips delete when disable fails', async () => {
+    const removed = editState((s) => {
+      s.outcome = { ...s.outcome!, routeIds: [5] }
+      s.destinations.routeDrafts = []
+    })
+    await syncRoutes(100, removed)
+    expect(updateRouteWithFreshToken).toHaveBeenCalledWith(
+      5,
+      expect.objectContaining({ enabled: false, status: 'DISABLED' }),
+    )
+    expect(deleteRoute).toHaveBeenCalledWith(5)
+
+    updateRouteWithFreshToken.mockRejectedValueOnce(new Error('stale write'))
+    deleteRoute.mockClear()
+    const failed = await syncRoutes(100, removed)
+    expect(failed.errors[0]).toMatch(/disable route 5/)
+    expect(deleteRoute).not.toHaveBeenCalled()
+  })
+
+  it('does not delete an existing route when its update fails', async () => {
+    updateRoute.mockRejectedValueOnce(new Error('stale write'))
+    const state = editState((s) => {
+      s.outcome = { ...s.outcome!, routeIds: [5] }
+      s.destinations.routeDrafts = [
+        {
+          key: 'route-5',
+          destinationId: 10,
+          enabled: true,
+          failurePolicy: 'LOG_AND_CONTINUE',
+          rateLimitJson: {},
+          inherit: { ...DEFAULT_ROUTE_PROCESSING_INHERIT },
+        },
+      ]
+    })
+    await syncRoutes(100, state)
+    expect(deleteRoute).not.toHaveBeenCalled()
+  })
+
+  it('persists two routes to the same destination independently', async () => {
+    createRoute.mockResolvedValueOnce({ id: 71, stream_id: 100, destination_id: 7 })
+    createRoute.mockResolvedValueOnce({ id: 72, stream_id: 100, destination_id: 7 })
+    const state = editState((s) => {
+      s.destinations.routeDrafts = [
+        {
+          key: 'wr-a',
+          destinationId: 7,
+          enabled: true,
+          failurePolicy: 'RETRY_AND_BACKOFF',
+          rateLimitJson: { per_minute: 10 },
+          inherit: { ...DEFAULT_ROUTE_PROCESSING_INHERIT },
+        },
+        {
+          key: 'wr-b',
+          destinationId: 7,
+          enabled: false,
+          failurePolicy: 'LOG_AND_CONTINUE',
+          rateLimitJson: { per_minute: 30 },
+          inherit: { ...DEFAULT_ROUTE_PROCESSING_INHERIT },
+        },
+      ]
+    })
+    const synced = await syncRoutes(100, state)
+    expect(synced.routeIdsByDraftKey).toEqual({ 'wr-a': 71, 'wr-b': 72 })
+    expect(createRoute).toHaveBeenNthCalledWith(1, expect.objectContaining({ failure_policy: 'RETRY_AND_BACKOFF', enabled: true }))
+    expect(createRoute).toHaveBeenNthCalledWith(2, expect.objectContaining({ failure_policy: 'LOG_AND_CONTINUE', enabled: false }))
+  })
+
+  it('remaps a created route id without replacing newer draft fields', () => {
+    const state = editState((s) => {
+      s.destinations.routeDrafts = [
+        {
+          key: 'wr-X',
+          destinationId: 7,
+          enabled: true,
+          failurePolicy: 'RETRY_AND_BACKOFF',
+          rateLimitJson: { per_minute: 4 },
+          inherit: { ...DEFAULT_ROUTE_PROCESSING_INHERIT },
+        },
+      ]
+    })
+    const next = applyCreatedRouteIdentity(state, { 'wr-X': 55 })
+    expect(next.destinations.routeDrafts[0]).toMatchObject({
+      key: 'route-55',
+      failurePolicy: 'RETRY_AND_BACKOFF',
+      rateLimitJson: { per_minute: 4 },
+    })
+    expect(next.outcome?.routeIds).toContain(55)
+    const linked = editState((s) => {
+      s.destinations.routeDrafts = [
+        {
+          key: 'wr-X',
+          destinationId: 7,
+          enabled: true,
+          failurePolicy: 'LOG_AND_CONTINUE',
+          rateLimitJson: {},
+          inherit: { ...DEFAULT_ROUTE_PROCESSING_INHERIT },
+        },
+      ]
+      s.dataProtection.routeOverrides = [
+        {
+          key: 'ov-1',
+          fieldPath: 'email',
+          routeDraftKey: 'wr-X',
+          protectionAction: 'mask_partial',
+          deliveryBehavior: 'continue',
+          enabled: true,
+        },
+      ]
+    })
+    const remapped = applyCreatedRouteIdentity(linked, { 'wr-X': 55 })
+    expect(remapped.dataProtection.routeOverrides[0]?.routeDraftKey).toBe('route-55')
+    expect(remapped.dataProtection.routeClassificationOverrides).toEqual([])
+    const classified = editState((s) => {
+      s.destinations.routeDrafts = [
+        {
+          key: 'wr-a',
+          destinationId: 7,
+          enabled: true,
+          failurePolicy: 'LOG_AND_CONTINUE',
+          rateLimitJson: {},
+          inherit: { ...DEFAULT_ROUTE_PROCESSING_INHERIT },
+        },
+        {
+          key: 'wr-b',
+          destinationId: 8,
+          enabled: true,
+          failurePolicy: 'LOG_AND_CONTINUE',
+          rateLimitJson: {},
+          inherit: { ...DEFAULT_ROUTE_PROCESSING_INHERIT },
+        },
+      ]
+      s.dataProtection.routeClassificationOverrides = [
+        { key: 'c1', routeDraftKey: 'wr-a', classificationLevel: 'INTERNAL', enabled: true },
+        { key: 'c2', routeDraftKey: 'wr-b', classificationLevel: 'RESTRICTED', enabled: true },
+      ]
+    })
+    const both = applyCreatedRouteIdentity(classified, { 'wr-a': 71, 'wr-b': 72 })
+    expect(both.dataProtection.routeClassificationOverrides.map((row) => row.routeDraftKey)).toEqual(['route-71', 'route-72'])
+    expect(both.dataProtection.routeClassificationOverrides.map((row) => row.classificationLevel)).toEqual(['INTERNAL', 'RESTRICTED'])
+  })
+
+  it('merges wizard prefix edits into the hydrated formatter and uses the route token', async () => {
+    const state = editState((s) => {
+      s.outcome = { ...s.outcome!, routeIds: [5, 6] }
+      s.destinations.routeDrafts = [
+        {
+          key: 'route-5',
+          destinationId: 7,
+          enabled: true,
+          failurePolicy: 'LOG_AND_CONTINUE',
+          rateLimitJson: {},
+          inherit: { ...DEFAULT_ROUTE_PROCESSING_INHERIT },
+          updatedAt: 'token-5',
+          formatterConfig: { message_format: 'json', delivery_mode: 'batch', vendor_key: 'keep' },
+          messagePrefixEnabled: true,
+          messagePrefixTemplate: 'prefix-a',
+        },
+        {
+          key: 'route-6',
+          destinationId: 7,
+          enabled: true,
+          failurePolicy: 'LOG_AND_CONTINUE',
+          rateLimitJson: {},
+          inherit: { ...DEFAULT_ROUTE_PROCESSING_INHERIT },
+          updatedAt: 'token-6',
+          formatterConfig: { message_format: 'text', delivery_mode: 'single', vendor_key: 'other' },
+          messagePrefixEnabled: false,
+          messagePrefixTemplate: 'prefix-b',
+        },
+      ]
+    })
+    await syncRoutes(100, state)
+    expect(updateRouteWithFreshToken).not.toHaveBeenCalled()
+    expect(updateRoute).toHaveBeenNthCalledWith(
+      1,
+      5,
+      expect.objectContaining({
+        expected_updated_at: 'token-5',
+        formatter_config_json: expect.objectContaining({
+          message_format: 'json',
+          delivery_mode: 'batch',
+          vendor_key: 'keep',
+          message_prefix_template: 'prefix-a',
+          message_prefix_enabled: true,
+        }),
+      }),
+    )
+    expect(updateRoute).toHaveBeenNthCalledWith(
+      2,
+      6,
+      expect.objectContaining({
+        expected_updated_at: 'token-6',
+        formatter_config_json: expect.objectContaining({
+          message_format: 'text',
+          message_prefix_template: 'prefix-b',
+          message_prefix_enabled: false,
+        }),
+      }),
+    )
+  })
+
+  it('does not confirm a mapping clear or create duplicate data-protection rules for an unchanged intent', async () => {
+    const confirmed = editState((s) => {
+      s.mapping = [{ id: 'm1', outputField: 'message', sourceJsonPath: '$.message' }]
+      s.dataProtection.intents = [
+        {
+          id: 'intent-1',
+          detectedField: 'email',
+          sensitivityClass: 'pii',
+          protectionAction: 'mask_partial',
+          deliveryBehavior: 'deliver',
+          enabled: true,
+        } as never,
+      ]
+    })
+    const cleared = editState((s) => {
+      s.mapping = []
+      s.dataProtection = confirmed.dataProtection
+    })
+    const clearResult = await persistWizardStreamEdits(100, cleared, { confirmedState: confirmed })
+    expect(clearResult.ok).toBe(false)
+    expect(clearResult.errors.join(' ')).toMatch(/not supported/)
+    expect(saveStreamMappingUiConfigStrict).not.toHaveBeenCalled()
+
+    const renamed = editState((s) => {
+      s.stream.name = 'Renamed'
+      s.mapping = confirmed.mapping
+      s.dataProtection = confirmed.dataProtection
+    })
+    vi.mocked(persistWizardDataProtectionIntents).mockClear()
+    const sameIntent = await persistWizardStreamEdits(100, renamed, { confirmedState: confirmed })
+    expect(sameIntent.ok).toBe(true)
+    expect(persistWizardDataProtectionIntents).not.toHaveBeenCalled()
+  })
+
+  it('does not create Data Protection rules when the server already has policy rows', async () => {
+    fetchStreamPolicyRules.mockResolvedValue({ rules: [{ id: 1 }] })
+    const confirmed = editState((s) => {
+      s.dataProtection.intents = []
+    })
+    const added = editState((s) => {
+      s.stream.name = 'Renamed'
+      s.dataProtection.intents = [
+        { key: 'intent-1', detectedField: 'email', protectionAction: 'mask_partial', deliveryBehavior: 'continue' },
+      ]
+    })
+    const result = await persistWizardStreamEdits(100, added, { confirmedState: confirmed })
+    expect(result.ok).toBe(false)
+    expect(result.errors.join(' ')).toMatch(/already present/)
+    expect(persistWizardDataProtectionIntents).not.toHaveBeenCalled()
+  })
+
+  it('sends the same stream token used to merge config and fails closed on 409', async () => {
+    let reads = 0
+    fetchStreamById.mockImplementation(async () => {
+      reads += 1
+      return {
+        id: 100,
+        updated_at: reads === 1 ? 'stream-a' : 'stream-external',
+        config_json: { sentinel: true },
+        rate_limit_json: { max_events: 120, per_seconds: 60, vendor_limit: 'keep' },
+      }
+    })
+    const state = editState((s) => {
+      s.stream.name = 'Renamed'
+      s.stream.rateLimitPerMinute = 30
+      s.stream.rateLimitUnknownKeys = { vendor_limit: 'keep' }
+    })
+    const saved = await persistWizardStreamEdits(100, state, { confirmedState: editState(() => undefined) })
+    expect(saved.ok).toBe(true)
+    expect(fetchStreamById).toHaveBeenCalledTimes(1)
+    const payload = updateStream.mock.calls.at(-1)?.[1] as {
+      expected_updated_at: string
+      config_json: Record<string, unknown>
+      rate_limit_json: Record<string, unknown>
+    }
+    expect(payload.expected_updated_at).toBe('stream-a')
+    expect(payload.config_json.sentinel).toBe(true)
+    expect(payload.rate_limit_json).toEqual({ vendor_limit: 'keep', max_events: 30, per_seconds: 60 })
+
+    updateStream.mockRejectedValueOnce(new Error('STREAM_STALE_WRITE'))
+    const stale = await persistWizardStreamEdits(100, state, { confirmedState: editState(() => undefined) })
+    expect(stale.ok).toBe(false)
+    expect(stale.streamUpdatedAt).toBeNull()
+    expect(stale.errors.join(' ')).toMatch(/STREAM_STALE_WRITE/)
+  })
+
+  it('refuses a broad route update that has no hydrated concurrency token', async () => {
+    const state = editState((s) => {
+      s.outcome = { ...s.outcome!, routeIds: [5] }
+      s.destinations.routeDrafts = [
+        {
+          key: 'route-5',
+          destinationId: 7,
+          enabled: true,
+          failurePolicy: 'LOG_AND_CONTINUE',
+          rateLimitJson: {},
+          inherit: { ...DEFAULT_ROUTE_PROCESSING_INHERIT },
+          updatedAt: '',
+        },
+      ]
+    })
+    const synced = await syncRoutes(100, state)
+    expect(updateRoute).not.toHaveBeenCalled()
+    expect(updateRouteWithFreshToken).not.toHaveBeenCalled()
+    expect(synced.errors[0]).toMatch(/concurrency token/)
+  })
+
+  it('advances Data Protection after a later concern fails, and blocks create when the preflight read fails', async () => {
+    const { persistWizardStreamGovernance } = await import('./wizard-governance-persist')
+    vi.mocked(persistWizardStreamGovernance).mockResolvedValueOnce({ saved: false, errors: ['governance failed'] })
+    const confirmed = editState((s) => {
+      s.dataProtection.intents = []
+    })
+    const added = editState((s) => {
+      s.dataProtection.intents = [
+        { key: 'intent-1', detectedField: 'email', protectionAction: 'mask_partial', deliveryBehavior: 'continue' },
+      ]
+    })
+    vi.mocked(persistWizardDataProtectionIntents).mockClear()
+    const partial = await persistWizardStreamEdits(100, added, { confirmedState: confirmed })
+    expect(partial.ok).toBe(false)
+    expect(partial.dataProtectionPersisted).toBe(true)
+    expect(persistWizardDataProtectionIntents).toHaveBeenCalledTimes(1)
+
+    fetchStreamClassificationRules.mockResolvedValueOnce(null)
+    vi.mocked(persistWizardDataProtectionIntents).mockClear()
+    const unreadable = await persistWizardStreamEdits(100, added, { confirmedState: confirmed })
+    expect(unreadable.dataProtectionPersisted).toBe(false)
+    expect(unreadable.errors.join(' ')).toMatch(/could not be read/)
+    expect(persistWizardDataProtectionIntents).not.toHaveBeenCalled()
+  })
+
+  it('removes an explicitly cleared checkpoint and keeps an untouched checkpoint on rename', async () => {
+    fetchStreamById.mockResolvedValue({
+      id: 100,
+      updated_at: 'stream-a',
+      config_json: {
+        checkpoint: { mode: 'Cursor', cursor_path: '$.id', secondary_cursor_path: '$.seq', vendor_cursor: 'keep' },
+        remote_directory: '/incoming',
+      },
+    })
+    const confirmed = editState((s) => {
+      s.connector.sourceType = 'REMOTE_FILE_POLLING'
+      s.stream.checkpointSourcePath = '$.id'
+      s.stream.checkpointSecondaryPath = '$.seq'
+      s.stream.remoteDirectory = '/incoming'
+      s.stream.filePattern = '*.ndjson'
+    })
+    const cleared = editState((s) => {
+      s.connector.sourceType = 'REMOTE_FILE_POLLING'
+      s.stream.checkpointSourcePath = ''
+      s.stream.checkpointSecondaryPath = ''
+      s.stream.remoteDirectory = '/incoming'
+      s.stream.filePattern = '*.ndjson'
+    })
+    await persistWizardStreamEdits(100, cleared, { confirmedState: confirmed })
+    const clearedPayload = updateStream.mock.calls.at(-1)?.[1] as { config_json: Record<string, unknown> }
+    expect(clearedPayload.config_json).not.toHaveProperty('checkpoint')
+    expect(clearedPayload.config_json.remote_directory).toBe('/incoming')
+    expect(clearedPayload.config_json.file_pattern).toBe('*.ndjson')
+
+    const renamed = editState((s) => {
+      s.stream.name = 'Renamed only'
+      s.connector.sourceType = 'REMOTE_FILE_POLLING'
+      s.stream.checkpointSourcePath = '$.id'
+      s.stream.checkpointSecondaryPath = '$.seq'
+      s.stream.remoteDirectory = '/incoming'
+      s.stream.filePattern = '*.ndjson'
+    })
+    await persistWizardStreamEdits(100, renamed, { confirmedState: confirmed })
+    const renamedPayload = updateStream.mock.calls.at(-1)?.[1] as { config_json: Record<string, unknown> }
+    expect(renamedPayload.config_json.checkpoint).toMatchObject({
+      cursor_path: '$.id',
+      secondary_cursor_path: '$.seq',
+      vendor_cursor: 'keep',
+    })
+  })
+
+  it('keeps disabled enrichment metadata and passthrough when the rules do not change', async () => {
+    const confirmed = editState((s) => {
+      s.enrichment = [enrichmentRow('host', 'acme')]
+      s.enrichmentEnabled = false
+      s.enrichmentOverridePolicy = 'OVERRIDE'
+      s.enrichmentPassthrough = { vendor_fragment: { keep: true } }
+    })
+    const renamed = editState((s) => {
+      s.stream.name = 'Renamed'
+      s.enrichment = confirmed.enrichment
+      s.enrichmentEnabled = false
+      s.enrichmentOverridePolicy = 'OVERRIDE'
+      s.enrichmentPassthrough = { vendor_fragment: { keep: true } }
+    })
+    await persistWizardStreamEdits(100, renamed, { confirmedState: confirmed })
+    const unchanged = saveStreamMappingUiConfigStrict.mock.calls.at(-1)?.[1] as { enrichment: unknown }
+    expect(unchanged.enrichment).toBeNull()
+    saveStreamMappingUiConfigStrict.mockClear()
+
+    const added = editState((s) => {
+      s.enrichment = [...confirmed.enrichment, enrichmentRow('env', 'prod')]
+      s.enrichmentEnabled = false
+      s.enrichmentOverridePolicy = 'ERROR_ON_CONFLICT'
+      s.enrichmentPassthrough = { vendor_fragment: { keep: true } }
+    })
+    await persistWizardStreamEdits(100, added, { confirmedState: confirmed })
+    const mappingPayload = saveStreamMappingUiConfigStrict.mock.calls.at(-1)?.[1] as {
+      enrichment: { enabled: boolean; override_policy: string; enrichment: Record<string, unknown> }
+    }
+    expect(mappingPayload.enrichment.enabled).toBe(false)
+    expect(mappingPayload.enrichment.override_policy).toBe('ERROR_ON_CONFLICT')
+    expect(mappingPayload.enrichment.enrichment.__rules).toMatchObject({ vendor_fragment: { keep: true } })
+  })
+
+  it('removes a cleared config event path and does not confirm a mapping-only clear', async () => {
+    fetchStreamById.mockResolvedValue({
+      id: 100,
+      updated_at: 'stream-a',
+      config_json: { event_array_path: '$.items', vendor: 1 },
+    })
+    const confirmed = editState((s) => {
+      s.stream.eventArrayPath = 'items'
+      s.mapping = []
+    })
+    const cleared = editState((s) => {
+      s.stream.eventArrayPath = ''
+      s.mapping = []
+    })
+    const removed = await persistWizardStreamEdits(100, cleared, { confirmedState: confirmed })
+    expect(removed.ok).toBe(true)
+    const removedPayload = updateStream.mock.calls.at(-1)?.[1] as { config_json: Record<string, unknown> }
+    expect(removedPayload.config_json).not.toHaveProperty('event_array_path')
+    expect(removedPayload.config_json.vendor).toBe(1)
+
+    fetchStreamById.mockResolvedValue({ id: 100, updated_at: 'stream-a', config_json: { vendor: 1 } })
+    const mappingOnly = await persistWizardStreamEdits(100, cleared, { confirmedState: confirmed })
+    expect(mappingOnly.ok).toBe(false)
+    expect(mappingOnly.errors.join(' ')).toMatch(/extraction path/)
   })
 })

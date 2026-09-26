@@ -12,7 +12,7 @@ import {
   wizardCreateIsConfigurationIncomplete,
   wizardCreateIsStartEligible,
 } from './wizard/wizard-create-fail-closed'
-import { reconcileWizardAfterPartialPersist } from './wizard/wizard-partial-save-reconcile'
+import { MULTI_STREAM_PARTIAL_UNCONFIRMED_NOTE, multiStreamPartialSaveIsUnconfirmed, reconcileWizardAfterPartialPersist } from './wizard/wizard-partial-save-reconcile'
 import {
   buildStreamsToConfigureFromMaterialization,
   wizardPersistErrorLabel,
@@ -672,7 +672,9 @@ export function NewStreamWizardPage() {
         | 'unmappedFieldsPolicy'
         | 'enrichment'
       > | null = null
-      if (outcome.errors.length > 0 && outcome.streamId != null) {
+      if (multiStreamPartialSaveIsUnconfirmed(streamsToConfigure.length, outcome.errors.length)) {
+        outcome.reconciliationNote = MULTI_STREAM_PARTIAL_UNCONFIRMED_NOTE
+      } else if (outcome.errors.length > 0 && outcome.streamId != null) {
         try {
           const reconciled = await reconcileWizardAfterPartialPersist(
             outcome.streamId,

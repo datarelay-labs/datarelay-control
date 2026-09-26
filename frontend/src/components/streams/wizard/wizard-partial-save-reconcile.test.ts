@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { wizardCreateIsStartEligible } from './wizard-create-fail-closed'
 import { buildInitialState, type WizardState } from './wizard-state'
-import { classifyPersistError, reconcileWizardAfterPartialPersist } from './wizard-partial-save-reconcile'
+import {
+  classifyPersistError,
+  multiStreamPartialSaveIsUnconfirmed,
+  reconcileWizardAfterPartialPersist,
+} from './wizard-partial-save-reconcile'
 
 function draftWithError(error: string): WizardState {
   const state = buildInitialState()
@@ -78,7 +82,7 @@ describe('reconcileWizardAfterPartialPersist', () => {
     const refreshDestinations = vi.fn(async () => null)
     const result = await reconcileWizardAfterPartialPersist(9, state, ['mapping-ui: timeout'], {
       refreshDestinations,
-      hydrateStream: vi.fn(async () => hydrated),
+      readMapping: vi.fn(async () => hydrated),
     })
     expect(refreshDestinations).not.toHaveBeenCalled()
     expect(result.appliedMapping).toBe(true)
@@ -121,14 +125,23 @@ describe('reconcileWizardAfterPartialPersist', () => {
 
   it('keeps the draft and says read-back is unavailable when the server read fails', async () => {
     const state = draftWithError('mapping-ui: timeout')
+    state.mapping = [{ id: 'draft', outputField: 'draft', sourceJsonPath: '$.draft' }]
     const result = await reconcileWizardAfterPartialPersist(9, state, ['mapping-ui: timeout'], {
       refreshDestinations: vi.fn(async () => null),
-      hydrateStream: vi.fn(),
+      readMapping: vi.fn(async () => null),
     })
     expect(result.readBack).toBe('unavailable')
+    expect(result.appliedMapping).toBe(false)
+    expect(result.state.mapping).toEqual([{ id: 'draft', outputField: 'draft', sourceJsonPath: '$.draft' }])
     expect(result.state.stream.name).toBe('Draft name')
     expect(result.state.outcome?.routeIds).toEqual([1])
     expect(result.note).toMatch(/not confirmed as saved/i)
     expect(wizardCreateIsStartEligible(result.state.outcome)).toBe(false)
+  })
+
+  it('does not treat a later materialized stream failure as the first stream read-back', () => {
+    expect(multiStreamPartialSaveIsUnconfirmed(2, 1)).toBe(true)
+    expect(multiStreamPartialSaveIsUnconfirmed(1, 1)).toBe(false)
+    expect(multiStreamPartialSaveIsUnconfirmed(2, 0)).toBe(false)
   })
 })

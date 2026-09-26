@@ -12,7 +12,7 @@ import {
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { fetchDestinationsList, type DestinationListItem } from '../../../api/gdcDestinations'
-import { deliveryProofStatusLabel, type ExactRunDeliveryProof, type PriorDeliveryProof } from './deploy-delivery-proof'
+import { deliveryProofStatusLabel, nextDeliveryProofPrior, type ExactRunDeliveryProof, type PriorDeliveryProof } from './deploy-delivery-proof'
 import { proveStreamRunOnce } from './prove-stream-run-once'
 import { isDestinationConnectivityVerified } from '../../../utils/destination-connectivity-health'
 import {
@@ -70,6 +70,13 @@ export type StepDeployProps = {
   onNavigateToLegacySubstep: (key: WizardLegacySubstepKey) => void
   /** Edit mode: block Start and Run Once until the visible draft matches a confirmed save. */
   runtimeVerificationBlocked?: boolean
+  /** Edit mode shares one Run Once controller with the page header. */
+  sharedRunOnce?: {
+    busy: boolean
+    proof: ExactRunDeliveryProof | null
+    error: string | null
+    onRunOnce: () => void
+  } | null
 }
 
 function formatScheduleHuman(sec: number): string {
@@ -682,6 +689,7 @@ function DeployCreatedPanel({
   onStart,
   onNavigateToLegacySubstep,
   runtimeVerificationBlocked = false,
+  sharedRunOnce = null,
 }: {
   state: WizardState
   isStarting: boolean
@@ -689,6 +697,7 @@ function DeployCreatedPanel({
   onStart: () => void
   onNavigateToLegacySubstep: (key: WizardLegacySubstepKey) => void
   runtimeVerificationBlocked?: boolean
+  sharedRunOnce?: StepDeployProps['sharedRunOnce']
 }) {
   const outcome = state.outcome
   const streamNumericId = outcome?.streamId ?? null
@@ -719,18 +728,22 @@ function DeployCreatedPanel({
     }
   }, [displayId])
 
+  const displayedRunBusy = sharedRunOnce ? sharedRunOnce.busy : runBusy
+  const displayedRunError = sharedRunOnce ? sharedRunOnce.error : runError
+  const displayedProof = sharedRunOnce ? sharedRunOnce.proof : deliveryProof
+
   const handleRunOnce = useCallback(async () => {
-    if (!canRuntimeControl || streamNumericId == null || runBusy || isStarting || runtimeVerificationBlocked) return
+    if (!canRuntimeControl || streamNumericId == null || displayedRunBusy || isStarting || runtimeVerificationBlocked) return
+    if (sharedRunOnce) {
+      sharedRunOnce.onRunOnce()
+      return
+    }
     setRunBusy(true)
     setRunError(null)
     setDeliveryProof(null)
     try {
       const proof = await proveStreamRunOnce(streamNumericId, priorProofRef.current)
-      priorProofRef.current = {
-        streamId: streamNumericId,
-        runtimeRunId: proof.runtimeRunId,
-        status: proof.status,
-      }
+      priorProofRef.current = nextDeliveryProofPrior(streamNumericId, priorProofRef.current, proof)
       setDeliveryProof(proof)
     } catch (e) {
       setDeliveryProof(null)
@@ -738,7 +751,7 @@ function DeployCreatedPanel({
     } finally {
       setRunBusy(false)
     }
-  }, [canRuntimeControl, isStarting, runBusy, runtimeVerificationBlocked, streamNumericId])
+  }, [canRuntimeControl, displayedRunBusy, isStarting, runtimeVerificationBlocked, sharedRunOnce, streamNumericId])
 
   const createdTone =
     (outcome?.errors?.length ?? 0) > 0 ||
@@ -844,10 +857,10 @@ function DeployCreatedPanel({
               <button
                 type="button"
                 onClick={() => {
-                  if (runBusy || isStarting || runtimeVerificationBlocked) return
+                  if (displayedRunBusy || isStarting || runtimeVerificationBlocked) return
                   onStart()
                 }}
-                disabled={!wizardCreateIsStartEligible(outcome) || isStarting || runBusy || runtimeVerificationBlocked}
+                disabled={!wizardCreateIsStartEligible(outcome) || isStarting || displayedRunBusy || runtimeVerificationBlocked}
                 className="inline-flex h-9 items-center gap-1.5 rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white shadow-sm hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
                 title={
                   wizardCreateIsConfigurationIncomplete(outcome)
@@ -867,11 +880,11 @@ function DeployCreatedPanel({
               <button
                 type="button"
                 onClick={() => void handleRunOnce()}
-                disabled={streamNumericId == null || runBusy || isStarting || runtimeVerificationBlocked}
+                disabled={streamNumericId == null || displayedRunBusy || isStarting || runtimeVerificationBlocked}
                 className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-200/90 bg-white px-3 text-[12px] font-semibold text-slate-800 shadow-sm hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
               >
-                {runBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Play className="h-3.5 w-3.5" aria-hidden />}
-                {runBusy ? 'Running…' : 'Run Once'}
+                {displayedRunBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Play className="h-3.5 w-3.5" aria-hidden />}
+                {displayedRunBusy ? 'Running…' : 'Run Once'}
               </button>
             ) : null}
             {streamNumericId != null ? (
@@ -918,16 +931,16 @@ function DeployCreatedPanel({
               Back to Route Processing
             </button>
           </div>
-          {runError ? (
-            <p className="text-[11px] font-medium text-red-700 dark:text-red-300">{runError}</p>
+          {displayedRunError ? (
+            <p className="text-[11px] font-medium text-red-700 dark:text-red-300">{displayedRunError}</p>
           ) : null}
-          {deliveryProof ? (
+          {displayedProof ? (
             <div
               className="space-y-1 rounded-md border border-slate-200/80 p-2 text-[11px] text-slate-700 dark:border-gdc-border dark:text-slate-200"
               data-testid="deploy-delivery-proof"
-              data-status={deliveryProof.status}
+              data-status={displayedProof.status}
             >
-              <p className="font-semibold">{deliveryProofStatusLabel(deliveryProof.status)}</p>
+              <p className="font-semibold">{deliveryProofStatusLabel(displayedProof.status)}</p>
               <p data-testid="deploy-delivery-proof-scope">
                 Delivery check for stream {streamNumericId}
                 {state.stream.name.trim() ? ` (${state.stream.name.trim()})` : ''}.
@@ -935,10 +948,10 @@ function DeployCreatedPanel({
                   ? ' This result does not prove the other materialized streams.'
                   : ''}
               </p>
-              <p>{deliveryProof.reason}</p>
-              <p>Run id: {deliveryProof.runtimeRunId ?? '—'}</p>
-              <p>Evidence: {deliveryProof.evidenceAt ?? 'none'}</p>
-              {deliveryProof.routes.map((route) => (
+              <p>{displayedProof.reason}</p>
+              <p>Run id: {displayedProof.runtimeRunId ?? '—'}</p>
+              <p>Evidence: {displayedProof.evidenceAt ?? 'none'}</p>
+              {displayedProof.routes.map((route) => (
                 <p
                   key={`${route.routeId ?? 'none'}-${route.destinationId ?? 'none'}`}
                   data-testid={`deploy-delivery-route-${route.routeId ?? 'none'}`}
@@ -947,9 +960,9 @@ function DeployCreatedPanel({
                   {route.evidenceAt ? ` · ${route.evidenceAt}` : ''}
                 </p>
               ))}
-              {streamNumericId != null && deliveryProof.runtimeRunId ? (
+              {streamNumericId != null && displayedProof.runtimeRunId ? (
                 <Link
-                  to={logsExplorerPath({ stream_id: streamNumericId, run_id: deliveryProof.runtimeRunId })}
+                  to={logsExplorerPath({ stream_id: streamNumericId, run_id: displayedProof.runtimeRunId })}
                   data-testid="deploy-delivery-proof-logs"
                 >
                   View this run
@@ -971,6 +984,7 @@ export function StepDeploy({
   onStart,
   onNavigateToLegacySubstep,
   runtimeVerificationBlocked = false,
+  sharedRunOnce = null,
 }: StepDeployProps) {
   const created = state.outcome?.streamId != null
   const [destinations, setDestinations] = useState<DestinationListItem[]>([])
@@ -1062,6 +1076,7 @@ export function StepDeploy({
               onStart={onStart}
               onNavigateToLegacySubstep={onNavigateToLegacySubstep}
               runtimeVerificationBlocked={runtimeVerificationBlocked}
+              sharedRunOnce={sharedRunOnce}
             />
           )}
 

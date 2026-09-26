@@ -1,33 +1,28 @@
-import type { FailoverRoute } from '../../../api/gdcFailoverRouting'
-import { fetchStreamFailoverRoutes } from '../../../api/gdcFailoverRouting'
 import { fetchRuntimeRunTrace, runStreamOnce } from '../../../api/gdcRuntime'
 import type { RuntimeTraceResponse, RuntimeTraceTimelineEntry } from '../../../api/types/gdcApi'
 import {
-  DELIVERY_FAILURE_STAGES,
-  DELIVERY_SUCCESS_STAGES,
+  deliveryEvidenceScope,
   evaluateExactRunDelivery,
   type DeliveryEvidenceRow,
-  type DeliveryEvidenceScope,
   type ExactRunDeliveryProof,
   type PriorDeliveryProof,
+  type RunDeliveryAggregates,
 } from './deploy-delivery-proof'
 
-function stageScope(stage: string): DeliveryEvidenceScope | null {
-  if (stage.startsWith('failover_route_send_')) return 'failover'
-  if (stage.startsWith('dynamic_route_send_')) return 'dynamic'
-  if (DELIVERY_SUCCESS_STAGES.has(stage) || DELIVERY_FAILURE_STAGES.has(stage)) return 'route'
-  return null
-}
-
-/** Map a full run trace into exact-run evidence. Failover success is attributed to the secondary destination. */
+/**
+ * Map a full run trace into exact-run evidence.
+ * Destination attribution prefers an earlier exact-run destination on the same route.
+ * Current route config is not exact-run destination proof.
+ * Failover uses the secondary destination recorded on the run log when present.
+ */
 export function evidenceFromRuntimeTrace(
-  trace: Pick<RuntimeTraceResponse, 'timeline' | 'routes'>,
-  failoverRoutes: FailoverRoute[],
+  trace: Pick<RuntimeTraceResponse, 'timeline'>,
 ): DeliveryEvidenceRow[] {
   const ordered = [...trace.timeline].sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id - b.id)
+  const lastExactDestination = new Map<number, number>()
   const rows: DeliveryEvidenceRow[] = []
   for (const entry of ordered) {
-    const mapped = evidenceRowFromTimelineEntry(entry, trace.routes, failoverRoutes)
+    const mapped = evidenceRowFromTimelineEntry(entry, lastExactDestination)
     if (mapped) rows.push(mapped)
   }
   return rows
@@ -35,47 +30,78 @@ export function evidenceFromRuntimeTrace(
 
 function evidenceRowFromTimelineEntry(
   entry: RuntimeTraceTimelineEntry,
-  traceRoutes: RuntimeTraceResponse['routes'],
-  failoverRoutes: FailoverRoute[],
+  lastExactDestination: Map<number, number>,
 ): DeliveryEvidenceRow | null {
   const stage = entry.stage.trim()
-  const scope = stageScope(stage)
+  const scope = deliveryEvidenceScope(stage)
   if (scope == null) return null
   if (scope === 'failover') {
-    const primaryId = traceRoutes.find((route) => route.id === entry.route_id)?.destination_id ?? null
-    const match =
-      primaryId == null ? null : failoverRoutes.find((route) => route.primary_destination_id === primaryId) ?? null
+    const secondaryId = entry.secondary_destination_id ?? null
     return {
       route_id: entry.route_id,
-      destination_id: match?.secondary_destination_id ?? null,
-      destination_label: match
-        ? match.secondary_destination_name?.trim() || `destination ${match.secondary_destination_id}`
-        : 'secondary destination unknown',
+      destination_id: secondaryId,
+      destination_label: secondaryId == null ? 'secondary destination unknown' : `destination ${secondaryId}`,
       stage,
+      skip_reason: entry.skip_reason ?? null,
       created_at: entry.created_at,
       sequence: entry.id,
       scope,
     }
   }
   if (scope === 'dynamic') {
+    const destinationId = entry.destination_id
     return {
-      route_id: entry.route_id,
-      destination_id: entry.destination_id,
-      destination_label: 'dynamic target',
+      route_id: null,
+      dynamic_route_id: entry.dynamic_route_id ?? null,
+      destination_id: destinationId,
+      destination_label:
+        entry.dynamic_route_id == null
+          ? destinationId == null
+            ? 'dynamic target'
+            : `dynamic target ${destinationId}`
+          : `dynamic route ${entry.dynamic_route_id}`,
       stage,
+      skip_reason: entry.skip_reason ?? null,
       created_at: entry.created_at,
       sequence: entry.id,
       scope,
     }
   }
+
+  let destinationId = entry.destination_id
+  if (destinationId != null && entry.route_id != null) {
+    lastExactDestination.set(entry.route_id, destinationId)
+  } else if (destinationId == null && entry.route_id != null) {
+    const exact = lastExactDestination.get(entry.route_id)
+    if (exact != null) destinationId = exact
+  }
   return {
     route_id: entry.route_id,
-    destination_id: entry.destination_id,
-    destination_label: entry.destination_id == null ? 'destination unavailable' : `destination ${entry.destination_id}`,
+    destination_id: destinationId,
+    destination_label: destinationId == null ? 'destination unavailable' : `destination ${destinationId}`,
     stage,
+    skip_reason: entry.skip_reason ?? null,
     created_at: entry.created_at,
     sequence: entry.id,
     scope,
+  }
+}
+
+function aggregatesFromRun(response: {
+  route_delivery_success_count?: number | null
+  route_delivery_failure_count?: number | null
+  route_delivery_blocked_count?: number | null
+  route_delivery_review_count?: number | null
+  route_delivery_quarantine_count?: number | null
+  route_delivery_attempt_count?: number | null
+}): RunDeliveryAggregates {
+  return {
+    successCount: response.route_delivery_success_count,
+    failureCount: response.route_delivery_failure_count,
+    blockedCount: response.route_delivery_blocked_count,
+    reviewCount: response.route_delivery_review_count,
+    quarantineCount: response.route_delivery_quarantine_count,
+    attemptCount: response.route_delivery_attempt_count,
   }
 }
 
@@ -86,6 +112,7 @@ export async function proveStreamRunOnce(
 ): Promise<ExactRunDeliveryProof> {
   const response = await runStreamOnce(streamId)
   const runtimeRunId = response.runtime_run_id?.trim() || null
+  const aggregates = aggregatesFromRun(response)
   if (runtimeRunId == null) {
     return evaluateExactRunDelivery({
       streamId,
@@ -93,6 +120,7 @@ export async function proveStreamRunOnce(
       commandAccepted: true,
       evidence: [],
       prior,
+      aggregates,
     })
   }
   const trace = await fetchRuntimeRunTrace(runtimeRunId)
@@ -104,15 +132,16 @@ export async function proveStreamRunOnce(
       commandAccepted: true,
       evidence: null,
       prior,
+      aggregates,
     })
   }
-  const needsFailover = trace.timeline.some((entry) => entry.stage.startsWith('failover_route_send_'))
-  const failover = needsFailover ? await fetchStreamFailoverRoutes(streamId) : null
+
   return evaluateExactRunDelivery({
     streamId,
     runtimeRunId,
     commandAccepted: true,
-    evidence: evidenceFromRuntimeTrace(trace, failover?.routes ?? []),
+    evidence: evidenceFromRuntimeTrace(trace),
     prior,
+    aggregates,
   })
 }

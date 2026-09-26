@@ -803,6 +803,10 @@ export type RuntimeTraceTimelineEntry = {
   message: string
   route_id: number | null
   destination_id: number | null
+  primary_destination_id?: number | null
+  secondary_destination_id?: number | null
+  dynamic_route_id?: number | null
+  skip_reason?: string | null
   latency_ms: number | null
   retry_count: number
   http_status: number | null
@@ -907,6 +911,10 @@ export type RuntimeStreamRunOnceResponse = {
   delivered_batch_event_count: number | null
   route_delivery_success_count?: number | null
   route_delivery_failure_count?: number | null
+  route_delivery_attempt_count?: number | null
+  route_delivery_blocked_count?: number | null
+  route_delivery_review_count?: number | null
+  route_delivery_quarantine_count?: number | null
   checkpoint_updated: boolean
   transaction_committed: boolean
   runtime_run_id?: string | null

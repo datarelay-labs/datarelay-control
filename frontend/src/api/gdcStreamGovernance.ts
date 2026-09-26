@@ -32,6 +32,7 @@ export type StreamGovernanceDocument = {
 
 export type StreamGovernanceResponse = StreamGovernanceDocument & {
   stream_id: number
+  updated_at?: string | null
 }
 
 export type EffectiveProtectionAction = {
@@ -97,7 +98,7 @@ export async function fetchStreamGovernance(
 
 export async function putStreamGovernance(
   streamId: number,
-  body: StreamGovernanceDocument,
+  body: StreamGovernanceDocument & { expected_updated_at: string },
 ): Promise<StreamGovernanceResponse> {
   return requestJson(`${RT}/streams/${streamId}/governance`, {
     method: 'PUT',

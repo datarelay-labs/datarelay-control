@@ -22,6 +22,7 @@ describe('wizard-governance-persist', () => {
     vi.clearAllMocks()
     let stored = {
       stream_id: 42,
+      updated_at: 'gov-1',
       enabled: false,
       rules: [] as Array<Record<string, unknown>>,
       route_overrides: [] as Array<Record<string, unknown>>,
@@ -243,10 +244,38 @@ describe('wizard-governance-persist', () => {
     expect(putStreamGovernance).toHaveBeenCalledWith(
       42,
       expect.objectContaining({
+        expected_updated_at: 'gov-1',
         rules: expect.arrayContaining([
           expect.objectContaining({ field_path: '$.email', default_protection_action: 'mask_partial' }),
         ]),
       }),
+    )
+  })
+
+  it('sends the merge-read governance token and does not replay after a stale write', async () => {
+    fetchStreamGovernance.mockResolvedValue({
+      stream_id: 42,
+      updated_at: 'gov-baseline',
+      enabled: true,
+      rules: [],
+      route_overrides: [],
+    })
+    putStreamGovernance.mockRejectedValue(new Error('GOVERNANCE_STALE_WRITE'))
+    const state = buildInitialState()
+    state.dataProtection.intents = [
+      { key: 'i1', detectedField: '$.email', protectionAction: 'mask_partial', deliveryBehavior: 'continue' },
+    ]
+    state.destinations.routeDrafts = [
+      { key: 'r1', destinationId: 10, enabled: true, failurePolicy: 'LOG_AND_CONTINUE', rateLimitJson: {} },
+    ]
+    const stale = await persistWizardStreamGovernance(42, state, { r1: 900 })
+    expect(stale.saved).toBe(false)
+    expect(stale.errors.join(' ')).toMatch(/GOVERNANCE_STALE_WRITE/)
+    expect(fetchStreamGovernance).toHaveBeenCalledTimes(1)
+    expect(putStreamGovernance).toHaveBeenCalledTimes(1)
+    expect(putStreamGovernance).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({ expected_updated_at: 'gov-baseline' }),
     )
   })
 
@@ -262,6 +291,7 @@ describe('wizard-governance-persist', () => {
     putStreamGovernance.mockReset()
     let stored = {
       stream_id: 42,
+      updated_at: 'gov-1',
       enabled: true,
       rules: [],
       route_overrides: [
@@ -318,6 +348,7 @@ describe('wizard-governance-persist', () => {
     putStreamGovernance.mockReset()
     const prior = {
       stream_id: 42,
+      updated_at: 'gov-1',
       enabled: true,
       rules: [],
       route_overrides: [

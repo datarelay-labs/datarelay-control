@@ -373,6 +373,16 @@ function createdDeployState() {
   return state
 }
 
+const provenRun = {
+  outcome: 'completed' as const,
+  route_delivery_success_count: 1,
+  route_delivery_failure_count: 0,
+  route_delivery_blocked_count: 0,
+  route_delivery_review_count: 0,
+  route_delivery_quarantine_count: 0,
+  route_delivery_attempt_count: 1,
+}
+
 function traceSuccess(runId: string, stage = 'route_send_success') {
   return {
     run_id: runId,
@@ -409,7 +419,7 @@ describe('StepDeploy exact-run delivery proof', () => {
   })
 
   it('shows delivery proven only for the exact runtime run and links that run', async () => {
-    runStreamOnce.mockResolvedValue({ outcome: 'completed', runtime_run_id: 'run-new' })
+    runStreamOnce.mockResolvedValue({ ...provenRun, runtime_run_id: 'run-new' })
     fetchRuntimeRunTrace.mockResolvedValue(traceSuccess('run-new'))
 
     const state = createdDeployState()
@@ -437,7 +447,7 @@ describe('StepDeploy exact-run delivery proof', () => {
   it('does not call a later success recovered when the previous run was only unverified', async () => {
     runStreamOnce
       .mockResolvedValueOnce({ outcome: 'completed', runtime_run_id: 'run-1' })
-      .mockResolvedValueOnce({ outcome: 'completed', runtime_run_id: 'run-2' })
+      .mockResolvedValueOnce({ ...provenRun, runtime_run_id: 'run-2' })
     fetchRuntimeRunTrace.mockResolvedValueOnce({ ...traceSuccess('run-1'), timeline: [] }).mockResolvedValueOnce(traceSuccess('run-2'))
 
     render(
@@ -457,8 +467,17 @@ describe('StepDeploy exact-run delivery proof', () => {
 
   it('marks a later success recovered only after a failed run, and clears stale proof when the next run throws', async () => {
     runStreamOnce
-      .mockResolvedValueOnce({ outcome: 'completed', runtime_run_id: 'run-1' })
-      .mockResolvedValueOnce({ outcome: 'completed', runtime_run_id: 'run-2' })
+      .mockResolvedValueOnce({
+        outcome: 'completed',
+        runtime_run_id: 'run-1',
+        route_delivery_success_count: 0,
+        route_delivery_failure_count: 1,
+        route_delivery_blocked_count: 0,
+        route_delivery_review_count: 0,
+        route_delivery_quarantine_count: 0,
+        route_delivery_attempt_count: 1,
+      })
+      .mockResolvedValueOnce({ ...provenRun, runtime_run_id: 'run-2' })
       .mockRejectedValueOnce(new Error('locked'))
     fetchRuntimeRunTrace
       .mockResolvedValueOnce({
@@ -500,6 +519,64 @@ describe('StepDeploy exact-run delivery proof', () => {
       expect(screen.getByText('locked')).toBeInTheDocument()
     })
     expect(screen.queryByTestId('deploy-delivery-proof')).not.toBeInTheDocument()
+  })
+
+  it('recovers after an unverified run when an earlier failure is still unresolved', async () => {
+    runStreamOnce
+      .mockResolvedValueOnce({
+        outcome: 'completed',
+        runtime_run_id: 'run-failed',
+        route_delivery_success_count: 0,
+        route_delivery_failure_count: 1,
+        route_delivery_blocked_count: 0,
+        route_delivery_review_count: 0,
+        route_delivery_quarantine_count: 0,
+        route_delivery_attempt_count: 1,
+      })
+      .mockResolvedValueOnce({ outcome: 'completed', runtime_run_id: 'run-unknown' })
+      .mockResolvedValueOnce({ ...provenRun, runtime_run_id: 'run-recovered' })
+    fetchRuntimeRunTrace
+      .mockResolvedValueOnce({
+        ...traceSuccess('run-failed'),
+        timeline: [
+          {
+            id: 1,
+            created_at: '2026-09-26T01:00:00Z',
+            stage: 'route_send_failed',
+            level: 'error',
+            status: 'failed',
+            message: 'failed',
+            route_id: 7,
+            destination_id: 11,
+            latency_ms: 1,
+            retry_count: 0,
+            http_status: 500,
+            error_code: 'send_failed',
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ ...traceSuccess('run-unknown'), timeline: [] })
+      .mockResolvedValueOnce(traceSuccess('run-recovered'))
+
+    render(
+      <MemoryRouter>
+        <StepDeploy state={createdDeployState()} onStart={vi.fn()} onNavigateToLegacySubstep={vi.fn()} />
+      </MemoryRouter>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Run Once' }))
+    expect(await screen.findByTestId('deploy-delivery-proof')).toHaveAttribute('data-status', 'failed')
+    fireEvent.click(screen.getByRole('button', { name: 'Run Once' }))
+    await waitFor(() => {
+      expect(screen.getByTestId('deploy-delivery-proof')).toHaveAttribute('data-status', 'unverified')
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Run Once' }))
+    await waitFor(() => {
+      expect(screen.getByTestId('deploy-delivery-proof')).toHaveAttribute('data-status', 'recovered')
+    })
+    expect(fetchRuntimeRunTrace).toHaveBeenNthCalledWith(1, 'run-failed')
+    expect(fetchRuntimeRunTrace).toHaveBeenNthCalledWith(2, 'run-unknown')
+    expect(fetchRuntimeRunTrace).toHaveBeenNthCalledWith(3, 'run-recovered')
   })
 
   it('does not run while Start is active, and does not treat one stream proof as every materialized stream', async () => {

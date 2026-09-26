@@ -7,6 +7,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.config_concurrency import require_fresh_updated_at
 from app.destinations.models import Destination
 from app.protection.models import (
     PROTECTION_MODE_DROP_FIELD,
@@ -29,8 +30,8 @@ from app.stream_governance.schemas import (
     EffectiveRouteOverrideRef,
     GovernanceRouteOverride,
     GovernanceRule,
-    StreamGovernanceDocument,
     StreamGovernanceResponse,
+    StreamGovernanceWrite,
 )
 from app.stream_governance.validation import (
     flatten_route_overrides,
@@ -58,7 +59,11 @@ def _load_governance_dict(stream: Stream) -> dict[str, Any]:
     return dict(governance) if isinstance(governance, dict) else {}
 
 
-def _governance_to_response(stream_id: int, governance: dict[str, Any]) -> StreamGovernanceResponse:
+def _governance_to_response(
+    stream_id: int,
+    governance: dict[str, Any],
+    updated_at: datetime | None,
+) -> StreamGovernanceResponse:
     rules_raw = governance.get("rules") if isinstance(governance.get("rules"), list) else []
     overrides_raw = governance.get("route_overrides") if isinstance(governance.get("route_overrides"), list) else []
     rules = [GovernanceRule.model_validate(item) for item in rules_raw if isinstance(item, dict)]
@@ -67,6 +72,7 @@ def _governance_to_response(stream_id: int, governance: dict[str, Any]) -> Strea
     ]
     return StreamGovernanceResponse(
         stream_id=stream_id,
+        updated_at=updated_at,
         enabled=bool(governance.get("enabled", True)),
         rules=rules,
         route_overrides=overrides,
@@ -77,17 +83,23 @@ def get_stream_governance(db: Session, stream_id: int) -> StreamGovernanceRespon
     stream = db.query(Stream).filter(Stream.id == stream_id).first()
     if stream is None:
         return None
-    return _governance_to_response(stream_id, _load_governance_dict(stream))
+    return _governance_to_response(stream_id, _load_governance_dict(stream), stream.updated_at)
 
 
 def put_stream_governance(
     db: Session,
     stream_id: int,
-    payload: StreamGovernanceDocument,
+    payload: StreamGovernanceWrite,
 ) -> StreamGovernanceResponse | None:
-    stream = db.query(Stream).filter(Stream.id == stream_id).first()
+    stream = db.query(Stream).filter(Stream.id == stream_id).with_for_update().first()
     if stream is None:
         return None
+    require_fresh_updated_at(
+        entity_label="Stream governance",
+        error_code="GOVERNANCE_STALE_WRITE",
+        current_updated_at=stream.updated_at,
+        expected_updated_at=payload.expected_updated_at,
+    )
 
     routes = db.query(Route).filter(Route.stream_id == stream_id).all()
     valid_route_ids = {int(route.id) for route in routes}
@@ -106,10 +118,11 @@ def put_stream_governance(
     governance["route_overrides"] = flat_overrides
     config["governance"] = governance
     stream.config_json = config
+    stream.updated_at = _utc_now()
     db.add(stream)
     db.commit()
     db.refresh(stream)
-    return _governance_to_response(stream_id, _load_governance_dict(stream))
+    return _governance_to_response(stream_id, _load_governance_dict(stream), stream.updated_at)
 
 
 def _protection_mode_to_action(mode: str | None) -> str | None:

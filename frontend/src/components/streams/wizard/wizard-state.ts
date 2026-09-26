@@ -476,6 +476,8 @@ export type WizardConfigState = {
   paginationMaxPages: number
   rateLimitPerMinute: number
   rateLimitBurst: number
+  /** Rate-limit keys the wizard does not own. Preserved across edit saves. */
+  rateLimitUnknownKeys?: Record<string, unknown>
   /** S3_OBJECT_POLLING stream: objects fetched per StreamRunner execution (default 20). */
   maxObjectsPerRun: number
   /** REMOTE_FILE_POLLING: remote directory (required for sample fetch). */
@@ -720,6 +722,14 @@ export type WizardRouteDraft = {
     | 'DISABLE_ROUTE_ON_FAILURE'
   /** Route-level rate limits (optional); merged with destination at runtime when empty. */
   rateLimitJson: Record<string, unknown>
+  /** Hydrated Route.updated_at. Broad edits must send this token and must not fetch a newer one. */
+  updatedAt?: string | null
+  /** Full formatter_config_json from the server, including keys the wizard does not edit. */
+  formatterConfig?: Record<string, unknown>
+  /** Route-scoped prefix flag. Absent on new drafts, which use the destinations-step default. */
+  messagePrefixEnabled?: boolean
+  /** Route-scoped prefix template. Absent on new drafts, which use the shared template. */
+  messagePrefixTemplate?: string
   /** Inherit global processing per concern (default all true). */
   inherit: WizardRouteProcessingInherit
   /** Route-specific processing when inherit is unchecked for a concern. */
@@ -786,6 +796,14 @@ export type WizardState = {
   /** Unmapped source fields: pass through (default) or drop at mapping. */
   unmappedFieldsPolicy: WizardUnmappedFieldsPolicy
   enrichment: WizardEnrichmentRule[]
+  /** Stream enrichment row metadata. Undefined until hydrate. */
+  enrichmentEnabled?: boolean
+  enrichmentOverridePolicy?: 'KEEP_EXISTING' | 'OVERRIDE' | 'ERROR_ON_CONFLICT'
+  enrichmentPassthrough?: Record<string, unknown>
+  /** Stream mapping raw_payload_mode. Undefined until hydrate; null is an explicit empty mode. */
+  mappingRawPayloadMode?: string | null
+  /** Stream.updated_at for the hydrated or last confirmed edit. Not a persisted config field. */
+  streamUpdatedAt?: string | null
   destinations: WizardDestinationsState
   /** Wizard-only data policy draft (legacy governance modal; superseded by dataProtection in v3). */
   dataPolicy: WizardDataPolicyState
@@ -1607,7 +1625,7 @@ export function buildStreamConfigPayload(state: WizardState): Record<string, unk
     const out: Record<string, unknown> = {
       query: state.stream.sqlQuery.trim(),
       checkpoint_mode: ckMode,
-      timeout_seconds: state.stream.timeoutSec,
+      query_timeout_seconds: state.stream.timeoutSec,
     }
     if (ckCol) out.checkpoint_column = ckCol
     return out
@@ -1693,6 +1711,24 @@ export function buildIncrementalTestStreamConfigPayload(state: WizardState): Rec
   }
 }
 
+/** Runtime SourceRateLimiter reads max_events and per_seconds. UI per-minute maps to a 60-second window. */
+export function canonicalStreamRateLimitJson(
+  perMinute: number,
+  unknownKeys?: Record<string, unknown> | null,
+): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...(unknownKeys ?? {}) }
+  delete next.per_minute
+  delete next.burst
+  delete next.max_events
+  delete next.per_seconds
+  const events = Math.floor(perMinute)
+  if (events > 0) {
+    next.max_events = events
+    next.per_seconds = 60
+  }
+  return next
+}
+
 export function buildStreamCreatePayload(state: WizardState): {
   name: string
   connector_id: number
@@ -1732,10 +1768,7 @@ export function buildStreamCreatePayload(state: WizardState): {
     enabled: false,
     status: 'STOPPED',
     config_json,
-    rate_limit_json: {
-      per_minute: state.stream.rateLimitPerMinute,
-      burst: state.stream.rateLimitBurst,
-    },
+    rate_limit_json: canonicalStreamRateLimitJson(state.stream.rateLimitPerMinute, state.stream.rateLimitUnknownKeys),
   }
 }
 
@@ -1980,10 +2013,16 @@ export function buildRouteCreatePayloads(streamId: number, destinations: WizardD
       enabled: draft.enabled,
       failure_policy: draft.failurePolicy,
       status: draft.enabled ? 'ENABLED' : 'DISABLED',
-      formatter_config_json: {
-        message_prefix_enabled: prefixEnabled,
-        message_prefix_template: tmpl,
-      },
+      formatter_config_json: draft.formatterConfig
+      ? {
+          ...draft.formatterConfig,
+          message_prefix_enabled: draft.messagePrefixEnabled ?? prefixEnabled,
+          message_prefix_template: draft.messagePrefixTemplate?.trim() || tmpl,
+        }
+      : {
+          message_prefix_enabled: prefixEnabled,
+          message_prefix_template: tmpl,
+        },
       rate_limit_json: rl,
     }
   })

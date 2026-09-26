@@ -1,7 +1,9 @@
+import { fetchStreamMappingUiConfig } from '../../../api/gdcRuntime'
 import type { WizardState } from './wizard-state'
 import {
   hydrateWizardStateFromStream,
   refreshWizardDestinationsFromStream,
+  wizardMappingStateFromUiConfig,
   type WizardDestinationsRefresh,
 } from './wizard-stream-hydrate'
 
@@ -67,8 +69,21 @@ export function applyMappingReadBack(state: WizardState, hydrated: WizardState):
     fullEventJsonataExpression: hydrated.fullEventJsonataExpression,
     fullEventRegexConfigJson: hydrated.fullEventRegexConfigJson,
     unmappedFieldsPolicy: hydrated.unmappedFieldsPolicy,
+    transformRules: hydrated.transformRules,
+    mappingRawPayloadMode: hydrated.mappingRawPayloadMode,
     enrichment: hydrated.enrichment,
+    enrichmentEnabled: hydrated.enrichmentEnabled,
+    enrichmentOverridePolicy: hydrated.enrichmentOverridePolicy,
+    enrichmentPassthrough: hydrated.enrichmentPassthrough,
   }
+}
+
+export const MULTI_STREAM_PARTIAL_UNCONFIRMED_NOTE =
+  'Multiple streams were materialized and a later save failed. Persisted state was not read back from the first stream and is not confirmed.'
+
+/** A single visible draft cannot safely show one stream's read-back for another stream's failure. */
+export function multiStreamPartialSaveIsUnconfirmed(materializedStreamCount: number, errorCount: number): boolean {
+  return materializedStreamCount > 1 && errorCount > 0
 }
 
 export async function reconcileWizardAfterPartialPersist(
@@ -78,6 +93,7 @@ export async function reconcileWizardAfterPartialPersist(
   readers: {
     refreshDestinations?: (id: number) => Promise<WizardDestinationsRefresh | null>
     hydrateStream?: (id: number) => Promise<WizardState | null>
+    readMapping?: (id: number) => Promise<WizardState | null>
   } = {},
 ): Promise<{
   state: WizardState
@@ -105,9 +121,8 @@ export async function reconcileWizardAfterPartialPersist(
   let appliedStream = false
   let appliedMapping = false
   let readerFailed = false
-  const needsHydrate = concerns.has('stream') || concerns.has('mapping')
-  const hydrated = needsHydrate ? await hydrateStream(streamId) : null
-  if (needsHydrate && hydrated == null) readerFailed = true
+  const hydrated = concerns.has('stream') ? await hydrateStream(streamId) : null
+  if (concerns.has('stream') && hydrated == null) readerFailed = true
 
   if (concerns.has('routes')) {
     const refreshed = await refreshDestinations(streamId)
@@ -121,9 +136,13 @@ export async function reconcileWizardAfterPartialPersist(
     next = applyStreamReadBack(next, hydrated)
     appliedStream = true
   }
-  if (concerns.has('mapping') && hydrated) {
-    next = applyMappingReadBack(next, hydrated)
-    appliedMapping = true
+  if (concerns.has('mapping')) {
+    const mapped = await (readers.readMapping ?? readStrictWizardMappingState)(streamId)
+    if (mapped == null) readerFailed = true
+    else {
+      next = applyMappingReadBack(next, mapped)
+      appliedMapping = true
+    }
   }
 
   const reconstructable = ['stream', 'mapping', 'routes'].filter((concern) => concerns.has(concern as PersistConcern))
@@ -146,4 +165,11 @@ export async function reconcileWizardAfterPartialPersist(
     appliedStream,
     appliedMapping,
   }
+}
+
+/** A null mapping config is a failed read, not an empty saved mapping. */
+export async function readStrictWizardMappingState(streamId: number): Promise<WizardState | null> {
+  const mapping = await fetchStreamMappingUiConfig(streamId, { fresh: true })
+  if (mapping == null) return null
+  return wizardMappingStateFromUiConfig(mapping)
 }

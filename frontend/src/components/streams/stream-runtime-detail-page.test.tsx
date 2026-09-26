@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
@@ -27,6 +28,10 @@ const { mockFetchStreamById } = vi.hoisted(() => ({
 
 vi.mock('../../api/gdcStreams', () => ({
   fetchStreamById: mockFetchStreamById,
+}))
+
+vi.mock('../../api/gdcConnectors', () => ({
+  fetchConnectorById: vi.fn(async () => null),
 }))
 
 vi.mock('../../api/gdcBackfill', () => ({
@@ -971,6 +976,278 @@ describe('StreamRuntimeDetailPage diagnosis overview', () => {
     expect(screen.queryByTestId('stream-run-backfill-open')).not.toBeInTheDocument()
     expect(screen.getByText('Edit').closest('span')).toHaveAttribute('title', 'Viewer role cannot edit stream configuration.')
     expect(screen.queryByTestId('stream-runtime-governance-workspace-link')).not.toBeInTheDocument()
+  })
+})
+
+function traceFor(runId: string, timeline: Array<Record<string, unknown>>) {
+  return {
+    run_id: runId,
+    anchor_log_id: 1,
+    stream_id: 42,
+    connector: null,
+    stream: { id: 42, name: 'Stream 42' },
+    routes: [],
+    destinations: [],
+    timeline,
+    checkpoint: null,
+  }
+}
+
+function successTimeline(id = 1) {
+  return {
+    id,
+    created_at: '2026-09-26T01:00:00Z',
+    stage: 'route_send_success',
+    level: 'info',
+    status: 'ok',
+    message: 'sent',
+    route_id: 7,
+    destination_id: 11,
+    latency_ms: 10,
+    retry_count: 0,
+    http_status: 200,
+    error_code: null,
+  }
+}
+
+const provenCounts = {
+  route_delivery_success_count: 1,
+  route_delivery_failure_count: 0,
+  route_delivery_blocked_count: 0,
+  route_delivery_review_count: 0,
+  route_delivery_quarantine_count: 0,
+  route_delivery_attempt_count: 1,
+}
+
+describe('StreamRuntimeDetailPage exact-run proof', () => {
+  beforeEach(() => {
+    mockFetchStreamById.mockImplementation(async (id: number) => ({
+      id,
+      name: `Stream ${id}`,
+      stream_type: 'HTTP_API_POLLING',
+      connector_id: null,
+    }))
+    vi.spyOn(streamGovernanceSnapshot, 'fetchStreamGovernanceSnapshot').mockResolvedValue(emptyGovernanceSnapshot())
+    vi.mocked(gdcRuntime.fetchRuntimeRunTrace).mockReset()
+    vi.mocked(gdcRuntime.runStreamOnce).mockReset()
+  })
+
+  it('shows proven, failed, partial, and unverified tones with the exact run id', async () => {
+    const user = userEvent.setup()
+    vi.mocked(gdcRuntime.runStreamOnce).mockResolvedValueOnce({
+      stream_id: 42,
+      outcome: 'completed',
+      message: null,
+      extracted_event_count: 1,
+      mapped_event_count: 1,
+      enriched_event_count: 1,
+      delivered_batch_event_count: 1,
+      checkpoint_updated: true,
+      transaction_committed: true,
+      runtime_run_id: 'run-proven',
+      ...provenCounts,
+    })
+    vi.mocked(gdcRuntime.fetchRuntimeRunTrace).mockResolvedValueOnce(traceFor('run-proven', [successTimeline()]))
+    renderRuntimePage('42')
+    await user.click(await screen.findByRole('button', { name: 'Run Now' }))
+    const proven = await screen.findByTestId('stream-runtime-run-once-proof')
+    expect(proven).toHaveAttribute('data-status', 'proven')
+    expect(proven).toHaveTextContent('Delivery proven')
+    expect(proven.className).toMatch(/emerald/)
+    expect(screen.getByTestId('stream-runtime-run-once-logs')).toHaveAttribute('href', '/logs?stream_id=42&run_id=run-proven')
+
+    vi.mocked(gdcRuntime.runStreamOnce).mockResolvedValueOnce({
+      stream_id: 42,
+      outcome: 'completed',
+      message: null,
+      extracted_event_count: 1,
+      mapped_event_count: null,
+      enriched_event_count: null,
+      delivered_batch_event_count: 0,
+      checkpoint_updated: false,
+      transaction_committed: true,
+      runtime_run_id: 'run-failed',
+      route_delivery_success_count: 0,
+      route_delivery_failure_count: 1,
+      route_delivery_blocked_count: 0,
+      route_delivery_review_count: 0,
+      route_delivery_quarantine_count: 0,
+      route_delivery_attempt_count: 1,
+    })
+    vi.mocked(gdcRuntime.fetchRuntimeRunTrace).mockResolvedValueOnce(
+      traceFor('run-failed', [{ ...successTimeline(), stage: 'route_send_failed', status: 'failed', http_status: 500 }]),
+    )
+    await user.click(screen.getByRole('button', { name: 'Run Now' }))
+    await waitFor(() => expect(screen.getByTestId('stream-runtime-run-once-proof')).toHaveAttribute('data-status', 'failed'))
+    const failed = screen.getByTestId('stream-runtime-run-once-proof')
+    expect(failed).toHaveTextContent('Delivery failed')
+    expect(failed.className).toMatch(/red/)
+
+    vi.mocked(gdcRuntime.runStreamOnce).mockResolvedValueOnce({
+      stream_id: 42,
+      outcome: 'completed',
+      message: null,
+      extracted_event_count: 1,
+      mapped_event_count: null,
+      enriched_event_count: null,
+      delivered_batch_event_count: 1,
+      checkpoint_updated: false,
+      transaction_committed: true,
+      runtime_run_id: 'run-partial',
+    })
+    vi.mocked(gdcRuntime.fetchRuntimeRunTrace).mockResolvedValueOnce(
+      traceFor('run-partial', [
+        successTimeline(1),
+        {
+          ...successTimeline(2),
+          route_id: 8,
+          destination_id: 12,
+          stage: 'destination_rate_limited',
+          created_at: '2026-09-26T01:01:00Z',
+        },
+      ]),
+    )
+    await user.click(screen.getByRole('button', { name: 'Run Now' }))
+    await waitFor(() => expect(screen.getByTestId('stream-runtime-run-once-proof')).toHaveAttribute('data-status', 'partial'))
+    const partial = screen.getByTestId('stream-runtime-run-once-proof')
+    expect(partial).toHaveTextContent('Partial delivery')
+    expect(partial.className).toMatch(/amber/)
+
+    vi.mocked(gdcRuntime.runStreamOnce).mockResolvedValueOnce({
+      stream_id: 42,
+      outcome: 'completed',
+      message: null,
+      extracted_event_count: 0,
+      mapped_event_count: null,
+      enriched_event_count: null,
+      delivered_batch_event_count: 0,
+      checkpoint_updated: false,
+      transaction_committed: true,
+      runtime_run_id: 'run-open',
+    })
+    vi.mocked(gdcRuntime.fetchRuntimeRunTrace).mockResolvedValueOnce(traceFor('run-open', []))
+    await user.click(screen.getByRole('button', { name: 'Run Now' }))
+    await waitFor(() => expect(screen.getByTestId('stream-runtime-run-once-proof')).toHaveAttribute('data-status', 'unverified'))
+    const unverified = screen.getByTestId('stream-runtime-run-once-proof')
+    expect(unverified).toHaveTextContent('Delivery unverified')
+    expect(unverified.className).toMatch(/amber/)
+  })
+
+  it('clears the previous proof when the next run starts and still recovers after an unverified gap', async () => {
+    const user = userEvent.setup()
+    let releaseRun: (value: unknown) => void = () => {}
+    vi.mocked(gdcRuntime.runStreamOnce)
+      .mockResolvedValueOnce({
+        stream_id: 42,
+        outcome: 'completed',
+        message: null,
+        extracted_event_count: 1,
+        mapped_event_count: null,
+        enriched_event_count: null,
+        delivered_batch_event_count: 0,
+        checkpoint_updated: false,
+        transaction_committed: true,
+        runtime_run_id: 'run-failed',
+        route_delivery_success_count: 0,
+        route_delivery_failure_count: 1,
+        route_delivery_blocked_count: 0,
+        route_delivery_review_count: 0,
+        route_delivery_quarantine_count: 0,
+        route_delivery_attempt_count: 1,
+      })
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            releaseRun = resolve
+          }),
+      )
+      .mockResolvedValueOnce({
+        stream_id: 42,
+        outcome: 'completed',
+        message: null,
+        extracted_event_count: 1,
+        mapped_event_count: 1,
+        enriched_event_count: 1,
+        delivered_batch_event_count: 1,
+        checkpoint_updated: true,
+        transaction_committed: true,
+        runtime_run_id: 'run-recovered',
+        ...provenCounts,
+      })
+    vi.mocked(gdcRuntime.fetchRuntimeRunTrace)
+      .mockResolvedValueOnce(
+        traceFor('run-failed', [{ ...successTimeline(), stage: 'route_send_failed', status: 'failed', http_status: 500 }]),
+      )
+      .mockResolvedValueOnce(traceFor('run-gap', []))
+      .mockResolvedValueOnce(traceFor('run-recovered', [successTimeline()]))
+
+    renderRuntimePage('42')
+    await user.click(await screen.findByRole('button', { name: 'Run Now' }))
+    expect(await screen.findByTestId('stream-runtime-run-once-proof')).toHaveAttribute('data-status', 'failed')
+
+    await user.click(screen.getByRole('button', { name: 'Run Now' }))
+    await waitFor(() => {
+      expect(screen.queryByTestId('stream-runtime-run-once-proof')).not.toBeInTheDocument()
+    })
+    expect(screen.getByRole('button', { name: 'Running…' })).toBeDisabled()
+    releaseRun({
+      stream_id: 42,
+      outcome: 'completed',
+      message: null,
+      extracted_event_count: 0,
+      mapped_event_count: null,
+      enriched_event_count: null,
+      delivered_batch_event_count: 0,
+      checkpoint_updated: false,
+      transaction_committed: true,
+      runtime_run_id: 'run-gap',
+    })
+    expect(await screen.findByTestId('stream-runtime-run-once-proof')).toHaveAttribute('data-status', 'unverified')
+
+    await user.click(screen.getByRole('button', { name: 'Run Now' }))
+    const recovered = await screen.findByTestId('stream-runtime-run-once-proof')
+    expect(recovered).toHaveAttribute('data-status', 'recovered')
+    expect(recovered).toHaveTextContent('Delivery recovered')
+    expect(screen.getByTestId('stream-runtime-run-once-logs')).toHaveAttribute('href', '/logs?stream_id=42&run_id=run-recovered')
+  })
+
+  it('drops proof and recovery history when the stream id changes', async () => {
+    const user = userEvent.setup()
+    vi.mocked(gdcRuntime.runStreamOnce).mockResolvedValue({
+      stream_id: 42,
+      outcome: 'completed',
+      message: null,
+      extracted_event_count: 1,
+      mapped_event_count: 1,
+      enriched_event_count: 1,
+      delivered_batch_event_count: 1,
+      checkpoint_updated: true,
+      transaction_committed: true,
+      runtime_run_id: 'run-proven',
+      ...provenCounts,
+    })
+    vi.mocked(gdcRuntime.fetchRuntimeRunTrace).mockResolvedValue(traceFor('run-proven', [successTimeline()]))
+
+    function Host() {
+      const [streamId, setStreamId] = useState('42')
+      return (
+        <MemoryRouter key={streamId} initialEntries={[`/streams/${streamId}/runtime`]}>
+          <button type="button" onClick={() => setStreamId('99')}>
+            Open stream 99
+          </button>
+          <Routes>
+            <Route path="/streams/:streamId/runtime" element={<StreamRuntimeDetailPage />} />
+          </Routes>
+        </MemoryRouter>
+      )
+    }
+
+    render(<Host />)
+    await user.click(await screen.findByRole('button', { name: 'Run Now' }))
+    expect(await screen.findByTestId('stream-runtime-run-once-proof')).toHaveAttribute('data-status', 'proven')
+    await user.click(screen.getByRole('button', { name: 'Open stream 99' }))
+    await screen.findByRole('heading', { level: 2, name: 'Stream 99' })
+    expect(screen.queryByTestId('stream-runtime-run-once-proof')).not.toBeInTheDocument()
   })
 })
 

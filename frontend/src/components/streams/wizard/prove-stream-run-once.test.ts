@@ -76,6 +76,12 @@ describe('proveStreamRunOnce', () => {
       checkpoint_updated: true,
       transaction_committed: true,
       runtime_run_id: 'run-f',
+      route_delivery_success_count: 1,
+      route_delivery_failure_count: 0,
+      route_delivery_blocked_count: 0,
+      route_delivery_review_count: 0,
+      route_delivery_quarantine_count: 0,
+      route_delivery_attempt_count: 1,
     })
     vi.mocked(fetchRuntimeRunTrace).mockResolvedValue({
       run_id: 'run-f',
@@ -109,6 +115,7 @@ describe('proveStreamRunOnce', () => {
           message: 'failover sent',
           route_id: 7,
           destination_id: null,
+          secondary_destination_id: 22,
           latency_ms: 2,
           retry_count: 0,
           http_status: 200,
@@ -138,6 +145,7 @@ describe('proveStreamRunOnce', () => {
 
     const proof = await proveStreamRunOnce(42, null)
     expect(proof.status).toBe('proven')
-    expect(proof.routes[0]).toMatchObject({ destinationId: 22, destinationLabel: 'Secondary', status: 'proven' })
+    expect(proof.routes[0]).toMatchObject({ destinationId: 22, destinationLabel: 'destination 22', status: 'proven' })
+    expect(fetchStreamFailoverRoutes).not.toHaveBeenCalled()
   })
 })

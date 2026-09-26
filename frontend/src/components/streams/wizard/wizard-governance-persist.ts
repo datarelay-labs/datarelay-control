@@ -337,6 +337,13 @@ export async function persistWizardStreamGovernance(
       warnings,
     }
   }
+  if (!current.updated_at) {
+    return {
+      saved: false,
+      errors: ['governance: concurrency token is missing, so this draft was not written.'],
+      warnings,
+    }
+  }
 
   const payload = mergeStreamGovernanceDocument(current, wizardPayload, routeDrafts, routeIdsByDraftKey)
   const policyOverrides = wizardPolicyRouteOverrides(routeDrafts, routeDraftKeyToId)
@@ -355,7 +362,7 @@ export async function persistWizardStreamGovernance(
   }
 
   try {
-    await putStreamGovernance(streamId, payload)
+    await putStreamGovernance(streamId, { ...payload, expected_updated_at: current.updated_at })
   } catch (err) {
     return {
       saved: false,

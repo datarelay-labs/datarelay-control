@@ -4,7 +4,7 @@ const fetchStreamMappingUiConfig = vi.fn()
 const fetchRoutesList = vi.fn()
 const fetchDestinationsList = vi.fn()
 
-vi.mock('../../../api/gdcRuntimeUi', () => ({
+vi.mock('../../../api/gdcRuntime', () => ({
   fetchStreamMappingUiConfig: (...args: unknown[]) => fetchStreamMappingUiConfig(...args),
 }))
 
@@ -29,5 +29,6 @@ describe('refreshWizardDestinationsFromStream null catalog', () => {
     fetchRoutesList.mockResolvedValue(null)
     const { refreshWizardDestinationsFromStream } = await import('./wizard-stream-hydrate')
     await expect(refreshWizardDestinationsFromStream(9)).resolves.toBeNull()
+    expect(fetchStreamMappingUiConfig).toHaveBeenCalled()
   })
 })

@@ -76,7 +76,7 @@ import { useGovernanceCapabilities } from '../../lib/governance-rbac'
 import { computeStreamWorkflow } from '../../utils/streamWorkflow'
 import { resolveSourceTypePresentation } from '../../utils/sourceTypePresentation'
 import { operationalRunControlTooltipSupplement } from '../../utils/streamOperationalBadges'
-import { deliveryProofLines, type PriorDeliveryProof } from './wizard/deploy-delivery-proof'
+import { deliveryProofLines, nextDeliveryProofPrior, type PriorDeliveryProof } from './wizard/deploy-delivery-proof'
 import { proveStreamRunOnce } from './wizard/prove-stream-run-once'
 import { RecentRouteErrorsPanel, RouteOperationalPanel } from './route-operational-panel'
 import { PipelineDebuggerPanel } from './pipeline-debugger-panel'
@@ -548,11 +548,11 @@ export function StreamRuntimeDetailPage() {
     try {
       const proof = await proveStreamRunOnce(backendStreamId, priorDeliveryProofRef.current)
       if (!mountedRef.current) return
-      priorDeliveryProofRef.current = {
-        streamId: backendStreamId,
-        runtimeRunId: proof.runtimeRunId,
-        status: proof.status,
-      }
+      priorDeliveryProofRef.current = nextDeliveryProofPrior(
+        backendStreamId,
+        priorDeliveryProofRef.current,
+        proof,
+      )
       setRunOnceStatus(proof.status)
       setRunOnceRunId(proof.runtimeRunId)
       setRunOnceLines(deliveryProofLines(proof))
