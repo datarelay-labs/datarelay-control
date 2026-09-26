@@ -360,8 +360,8 @@ export async function refreshWizardDestinationsFromStream(streamId: number): Pro
     fetchRoutesList(),
     fetchDestinationsList(),
   ])
-  const streamRoutes = (allRoutes ?? []).filter((route) => route.stream_id === streamId)
-  if (destinations === null) return null
+  if (allRoutes == null || destinations === null) return null
+  const streamRoutes = allRoutes.filter((route) => route.stream_id === streamId)
   const merged = await withHydratedRouteTransforms(
     streamId,
     buildWizardDestinationsFromRouteSources(mapping?.routes ?? [], streamRoutes, destinations),

@@ -47,7 +47,6 @@ import {
   fetchStreamRuntimeStatsHealth,
   fetchStreamRuntimeTimeline,
   invalidateStreamRuntimeReadCache,
-  runStreamOnce,
   saveRuntimeRouteEnabledState,
   startRuntimeStream,
   stopRuntimeStream,
@@ -77,7 +76,8 @@ import { useGovernanceCapabilities } from '../../lib/governance-rbac'
 import { computeStreamWorkflow } from '../../utils/streamWorkflow'
 import { resolveSourceTypePresentation } from '../../utils/sourceTypePresentation'
 import { operationalRunControlTooltipSupplement } from '../../utils/streamOperationalBadges'
-import { formatRunOnceSummaryLines } from '../../utils/formatRunOnceSummary'
+import { deliveryProofLines, type PriorDeliveryProof } from './wizard/deploy-delivery-proof'
+import { proveStreamRunOnce } from './wizard/prove-stream-run-once'
 import { RecentRouteErrorsPanel, RouteOperationalPanel } from './route-operational-panel'
 import { PipelineDebuggerPanel } from './pipeline-debugger-panel'
 import { StreamRuntimeHealthExtension } from './stream-runtime-health-extension'
@@ -154,7 +154,10 @@ export function StreamRuntimeDetailPage() {
   const [controlMessage, setControlMessage] = useState<string | null>(null)
   const [runOnceBusy, setRunOnceBusy] = useState(false)
   const [runOnceLines, setRunOnceLines] = useState<string[] | null>(null)
+  const [runOnceStatus, setRunOnceStatus] = useState<string | null>(null)
+  const [runOnceRunId, setRunOnceRunId] = useState<string | null>(null)
   const [runOnceError, setRunOnceError] = useState<string | null>(null)
+  const priorDeliveryProofRef = useRef<PriorDeliveryProof | null>(null)
   const [streamEntity, setStreamEntity] = useState<StreamRead | null>(null)
   const [streamMetaReady, setStreamMetaReady] = useState(false)
   const [streamMetaError, setStreamMetaError] = useState<string | null>(null)
@@ -208,6 +211,14 @@ export function StreamRuntimeDetailPage() {
   const canClone = caps.backup_clone === true
 
   const backendStreamId = useMemo(() => (/^\d+$/.test(streamId) ? Number(streamId) : undefined), [streamId])
+
+  useEffect(() => {
+    priorDeliveryProofRef.current = null
+    setRunOnceLines(null)
+    setRunOnceStatus(null)
+    setRunOnceRunId(null)
+    setRunOnceError(null)
+  }, [backendStreamId])
 
   const logsExplorerDrilldown = useMemo(() => {
     if (backendStreamId == null) return null
@@ -530,16 +541,25 @@ export function StreamRuntimeDetailPage() {
     if (!canRuntimeControl || backendStreamId == null || runOnceBusy || controlBusy) return
     setRunOnceBusy(true)
     setRunOnceLines(null)
+    setRunOnceStatus(null)
+    setRunOnceRunId(null)
     setRunOnceError(null)
     setControlMessage(null)
     try {
-      const r = await runStreamOnce(backendStreamId)
+      const proof = await proveStreamRunOnce(backendStreamId, priorDeliveryProofRef.current)
       if (!mountedRef.current) return
-      setRunOnceLines(formatRunOnceSummaryLines(r))
+      priorDeliveryProofRef.current = {
+        streamId: backendStreamId,
+        runtimeRunId: proof.runtimeRunId,
+        status: proof.status,
+      }
+      setRunOnceStatus(proof.status)
+      setRunOnceRunId(proof.runtimeRunId)
+      setRunOnceLines(deliveryProofLines(proof))
       await refreshAfterMutation()
       if (activeTab === 'audit') void loadCheckpointHistory()
       if (!mountedRef.current) return
-      window.dispatchEvent(new CustomEvent('gdc-runtime-run-once', { detail: { streamId: backendStreamId, response: r } }))
+      window.dispatchEvent(new CustomEvent('gdc-runtime-run-once', { detail: { streamId: backendStreamId, proof } }))
     } catch (e) {
       if (mountedRef.current) setRunOnceError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -1151,7 +1171,16 @@ export function StreamRuntimeDetailPage() {
       {runOnceLines?.length ? (
         <div
           role="status"
-          className="rounded-md border border-emerald-300/70 bg-emerald-500/[0.06] px-2 py-1.5 text-[11px] text-emerald-950 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100"
+          data-testid="stream-runtime-run-once-proof"
+          data-status={runOnceStatus ?? 'unverified'}
+          className={cn(
+            'rounded-md border px-2 py-1.5 text-[11px]',
+            runOnceStatus === 'proven' || runOnceStatus === 'recovered'
+              ? 'border-emerald-300/70 bg-emerald-500/[0.06] text-emerald-950 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100'
+              : runOnceStatus === 'failed'
+                ? 'border-red-300/70 bg-red-500/[0.06] text-red-950 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-100'
+                : 'border-amber-300/70 bg-amber-500/[0.06] text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100',
+          )}
         >
           <p className="font-semibold">Latest run once</p>
           <ul className="mt-0.5 list-inside list-disc space-y-0.5">
@@ -1159,6 +1188,14 @@ export function StreamRuntimeDetailPage() {
               <li key={`run-once-${i}`}>{line}</li>
             ))}
           </ul>
+          {backendStreamId != null && runOnceRunId ? (
+            <Link
+              to={logsExplorerPath({ stream_id: backendStreamId, run_id: runOnceRunId })}
+              data-testid="stream-runtime-run-once-logs"
+            >
+              View this run
+            </Link>
+          ) : null}
         </div>
       ) : null}
 

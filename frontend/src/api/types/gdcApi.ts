@@ -893,17 +893,23 @@ export type RuntimeStreamControlResponse = {
   message: string
 }
 
-/** POST /runtime/streams/{id}/run-once */
+/**
+ * POST /runtime/streams/{id}/run-once.
+ * Lock contention is HTTP 409, not a 2xx `skipped_lock` outcome.
+ */
 export type RuntimeStreamRunOnceResponse = {
   stream_id: number
-  outcome: 'completed' | 'skipped_lock' | 'no_events'
+  outcome: 'completed' | 'no_events'
   message: string | null
   extracted_event_count: number | null
   mapped_event_count: number | null
   enriched_event_count: number | null
   delivered_batch_event_count: number | null
+  route_delivery_success_count?: number | null
+  route_delivery_failure_count?: number | null
   checkpoint_updated: boolean
   transaction_committed: boolean
+  runtime_run_id?: string | null
 }
 
 export type RuntimeRouteEnabledSaveResponse = {

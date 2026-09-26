@@ -761,6 +761,8 @@ export type WizardCreateOutcome = {
   dataProtectionEnforcementIncomplete: boolean
   dataProtectionWarnings: string[]
   errors: string[]
+  /** Set when a partial save read back server state, or when that read-back was unavailable. */
+  reconciliationNote?: string | null
   apiBacked: boolean
   /** ISO timestamp from POST /streams/ response when available. */
   createdAt: string | null
