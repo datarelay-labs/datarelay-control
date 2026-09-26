@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { appNavKeyFromPathname, legacyRuntimeRedirectTarget, NAV_PATH, runtimeOverviewPath, streamsExpandedGroupPath } from './nav-paths'
+import { appNavKeyFromPathname, governanceWorkspacePath, legacyRuntimeRedirectTarget, NAV_PATH, runtimeOverviewPath, streamsExpandedGroupPath } from './nav-paths'
 
 describe('nav-paths M17.1', () => {
   it('maps templates to templates nav key under Streams IA', () => {
@@ -48,5 +48,14 @@ describe('nav-paths M17.1', () => {
   it('builds streams path with expand_group for dashboard drill-down', () => {
     expect(streamsExpandedGroupPath('Payment API')).toBe('/streams?expand_group=Payment+API')
     expect(streamsExpandedGroupPath('')).toBe('/streams')
+  })
+
+  it('builds governance workspace context paths', () => {
+    expect(governanceWorkspacePath()).toBe('/governance/workspace')
+    expect(governanceWorkspacePath({ stream_id: 10 })).toBe('/governance/workspace?stream_id=10')
+    expect(governanceWorkspacePath({ route_id: 42, stream_id: 10 })).toBe(
+      '/governance/workspace?stream_id=10&route_id=42',
+    )
+    expect(governanceWorkspacePath({ stream_id: 0, route_id: -1 })).toBe('/governance/workspace')
   })
 })

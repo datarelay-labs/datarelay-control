@@ -441,6 +441,23 @@ describe('RouteEditPage workspace capability visibility', () => {
     expect(within(panel).getByRole('button', { name: 'Transformed' })).toBeEnabled()
   })
 
+  it('links an existing route into governance workspace with resolved stream context', async () => {
+    signIn('OPERATOR')
+    renderRouteEdit()
+    const link = await screen.findByTestId('route-edit-governance-workspace-link')
+    await waitFor(() => {
+      expect(link).toHaveAttribute('href', '/governance/workspace?stream_id=10&route_id=42')
+    })
+  })
+
+  it('hides the governance workspace link for a viewer', async () => {
+    signIn('VIEWER')
+    renderRouteEdit()
+    expect(await screen.findByTestId('route-edit-page')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('textbox', { name: /Route Name/i })).toHaveValue('Route A'))
+    expect(screen.queryByTestId('route-edit-governance-workspace-link')).not.toBeInTheDocument()
+  })
+
   it('hides create for a viewer opening a new route', async () => {
     signIn('VIEWER')
     renderRouteEdit('/routes/new')

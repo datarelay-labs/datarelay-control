@@ -72,7 +72,8 @@ import { createRefreshCycleSnapshotId, resetRefreshCycleSnapshotId } from '../..
 import { visualizationSummary } from '../../api/visualizationMeta'
 import { cn } from '../../lib/utils'
 import { useSessionCapabilities } from '../../lib/rbac'
-import { logsExplorerPath, logsPath, NAV_PATH, streamEditPath, streamMappingPath } from '../../config/nav-paths'
+import { governanceWorkspacePath, logsExplorerPath, logsPath, NAV_PATH, streamEditPath, streamMappingPath } from '../../config/nav-paths'
+import { useGovernanceCapabilities } from '../../lib/governance-rbac'
 import { computeStreamWorkflow } from '../../utils/streamWorkflow'
 import { resolveSourceTypePresentation } from '../../utils/sourceTypePresentation'
 import { operationalRunControlTooltipSupplement } from '../../utils/streamOperationalBadges'
@@ -200,6 +201,7 @@ export function StreamRuntimeDetailPage() {
   const [governanceSnapshot, setGovernanceSnapshot] = useState<StreamGovernanceSnapshot | null>(null)
 
   const caps = useSessionCapabilities()
+  const canOpenGovernanceWorkspace = useGovernanceCapabilities().governance_read === true
   const canRuntimeControl = caps.runtime_stream_control === true
   const canMutateWorkspace = caps.workspace_mutations === true
   const canBackfill = caps.backfill_mutations === true
@@ -967,6 +969,15 @@ export function StreamRuntimeDetailPage() {
           <p className="mt-1 text-sm text-slate-600 dark:text-gdc-mutedStrong">
             {connectorProductGroup ?? connectorDisplayName ?? 'Source'}
           </p>
+          {backendStreamId != null && canOpenGovernanceWorkspace ? (
+            <Link
+              to={governanceWorkspacePath({ stream_id: backendStreamId })}
+              data-testid="stream-runtime-governance-workspace-link"
+              className="mt-1 inline-flex text-[12px] font-semibold text-violet-700 hover:underline dark:text-violet-300"
+            >
+              Governance Workspace
+            </Link>
+          ) : null}
         </div>
         <StatusBadge tone={statusTone(displayStatus)} className="w-fit px-2.5 py-1 text-sm font-semibold uppercase tracking-wide">
           {displayStatus}

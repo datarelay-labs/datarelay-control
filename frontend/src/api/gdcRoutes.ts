@@ -112,6 +112,7 @@ async function fetchRoutesListUncached(signal?: AbortSignal): Promise<RouteRead[
       out.push(row as RouteRead)
     }
   }
+  if (raw.length === 0) return []
   return out.length ? out : null
 }
 
