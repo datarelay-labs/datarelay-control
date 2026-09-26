@@ -12,6 +12,7 @@ import {
   wizardCreateIsConfigurationIncomplete,
   wizardCreateIsStartEligible,
 } from './wizard/wizard-create-fail-closed'
+import { reconcileWizardAfterPartialPersist } from './wizard/wizard-partial-save-reconcile'
 import {
   buildStreamsToConfigureFromMaterialization,
   wizardPersistErrorLabel,
@@ -660,7 +661,56 @@ export function NewStreamWizardPage() {
       )
       setCreationError(message)
     } finally {
-      setState((s) => ({ ...s, outcome }))
+      let destinationReadBack: WizardState['destinations'] | null = null
+      let streamReadBack: WizardState['stream'] | null = null
+      let mappingReadBack: Pick<
+        WizardState,
+        | 'mapping'
+        | 'mappingMode'
+        | 'fullEventJsonataExpression'
+        | 'fullEventRegexConfigJson'
+        | 'unmappedFieldsPolicy'
+        | 'enrichment'
+      > | null = null
+      if (outcome.errors.length > 0 && outcome.streamId != null) {
+        try {
+          const reconciled = await reconcileWizardAfterPartialPersist(
+            outcome.streamId,
+            { ...workingState, outcome },
+            outcome.errors,
+          )
+          if (reconciled.note) outcome.reconciliationNote = reconciled.note
+          if (reconciled.appliedDestinations) {
+            destinationReadBack = reconciled.state.destinations
+            const readBackOutcome = reconciled.state.outcome
+            if (readBackOutcome) {
+              outcome.routeId = readBackOutcome.routeId
+              outcome.routeIds = readBackOutcome.routeIds
+            }
+          }
+          if (reconciled.appliedStream) streamReadBack = reconciled.state.stream
+          if (reconciled.appliedMapping) {
+            mappingReadBack = {
+              mapping: reconciled.state.mapping,
+              mappingMode: reconciled.state.mappingMode,
+              fullEventJsonataExpression: reconciled.state.fullEventJsonataExpression,
+              fullEventRegexConfigJson: reconciled.state.fullEventRegexConfigJson,
+              unmappedFieldsPolicy: reconciled.state.unmappedFieldsPolicy,
+              enrichment: reconciled.state.enrichment,
+            }
+          }
+        } catch {
+          outcome.reconciliationNote =
+            'Could not read back persisted state after the save error. This draft is not confirmed as saved.'
+        }
+      }
+      setState((current) => ({
+        ...current,
+        ...(destinationReadBack ? { destinations: destinationReadBack } : {}),
+        ...(streamReadBack ? { stream: streamReadBack } : {}),
+        ...(mappingReadBack ?? {}),
+        outcome,
+      }))
       // Fail-closed: keep draft when configuration is incomplete so the operator can repair.
       if (wizardCreateIsStartEligible(outcome)) {
         clearWizardDraft()

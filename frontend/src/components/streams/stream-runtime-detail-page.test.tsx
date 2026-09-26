@@ -151,6 +151,7 @@ vi.mock('../../api/gdcRuntime', () => ({
     streamRuntimeMetricsFixture(params),
   ),
   saveRuntimeRouteEnabledState: vi.fn(async () => null),
+  fetchRuntimeRunTrace: vi.fn(async () => null),
   runStreamOnce: vi.fn(async () => ({
     stream_id: 42,
     outcome: 'completed',
@@ -859,6 +860,29 @@ describe('StreamRuntimeDetailPage diagnosis overview', () => {
     expect(screen.getByTestId('stream-runtime-primary-actions')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Run Now' })).toBeInTheDocument()
     expect(screen.getByTestId('stream-runtime-secondary-actions')).toHaveTextContent('Export JSON')
+  })
+
+  it('shows exact-run delivery as unverified when the run trace is missing', async () => {
+    const user = userEvent.setup()
+    vi.mocked(gdcRuntime.runStreamOnce).mockResolvedValue({
+      stream_id: 42,
+      outcome: 'completed',
+      message: null,
+      extracted_event_count: 1,
+      mapped_event_count: 1,
+      enriched_event_count: 1,
+      delivered_batch_event_count: 1,
+      checkpoint_updated: true,
+      transaction_committed: true,
+      runtime_run_id: 'run-missing',
+    })
+    vi.mocked(gdcRuntime.fetchRuntimeRunTrace).mockResolvedValue(null)
+    renderRuntimePage('42')
+    await user.click(await screen.findByRole('button', { name: 'Run Now' }))
+    const proof = await screen.findByTestId('stream-runtime-run-once-proof')
+    expect(proof).toHaveAttribute('data-status', 'unverified')
+    expect(proof).toHaveTextContent('Delivery unverified')
+    expect(proof).not.toHaveTextContent('Delivery proven')
   })
 
   it('shows warning and critical causes with supported next steps', async () => {

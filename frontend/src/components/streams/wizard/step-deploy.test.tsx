@@ -31,8 +31,12 @@ vi.mock('../../../api/gdcDestinations', () => ({
   ]),
 }))
 
+const runStreamOnce = vi.hoisted(() => vi.fn())
+const fetchRuntimeRunTrace = vi.hoisted(() => vi.fn())
+
 vi.mock('../../../api/gdcRuntime', () => ({
-  runStreamOnce: vi.fn(async () => ({ outcome: 'completed' })),
+  runStreamOnce: (...args: unknown[]) => runStreamOnce(...args),
+  fetchRuntimeRunTrace: (...args: unknown[]) => fetchRuntimeRunTrace(...args),
 }))
 
 function readyState() {
@@ -344,5 +348,175 @@ describe('StepDeploy', () => {
     expect(summary).toHaveTextContent('Protection Rules')
     expect(summary).toHaveTextContent('$.email')
     expect(summary).toHaveTextContent('Mask (partial)')
+  })
+})
+
+function createdDeployState() {
+  const state = readyState()
+  state.outcome = {
+    streamId: 42,
+    routeId: 7,
+    routeIds: [7, 8],
+    mappingSaved: true,
+    enrichmentSaved: true,
+    dataProtectionSaved: true,
+    governanceSaved: true,
+    schemaDriftPolicySaved: true,
+    schemaDriftPolicyWarnings: [],
+    dataProtectionEnforcementIncomplete: false,
+    dataProtectionWarnings: [],
+    errors: ['route 8: save failed'],
+    reconciliationNote: 'Read back persisted state after the save error. Changes that failed to save are not shown as saved.',
+    apiBacked: true,
+    createdAt: '2026-09-26T00:00:00.000Z',
+  }
+  return state
+}
+
+function traceSuccess(runId: string, stage = 'route_send_success') {
+  return {
+    run_id: runId,
+    anchor_log_id: 1,
+    stream_id: 42,
+    connector: null,
+    stream: { id: 42, name: 'Test Stream' },
+    routes: [{ id: 7, destination_id: 11, label: 'Route 7' }],
+    destinations: [],
+    timeline: [
+      {
+        id: 1,
+        created_at: '2026-09-26T01:00:00Z',
+        stage,
+        level: 'info',
+        status: 'ok',
+        message: 'sent',
+        route_id: 7,
+        destination_id: 11,
+        latency_ms: 10,
+        retry_count: stage.includes('retry') ? 1 : 0,
+        http_status: 200,
+        error_code: null,
+      },
+    ],
+    checkpoint: null,
+  }
+}
+
+describe('StepDeploy exact-run delivery proof', () => {
+  beforeEach(() => {
+    runStreamOnce.mockReset()
+    fetchRuntimeRunTrace.mockReset()
+  })
+
+  it('shows delivery proven only for the exact runtime run and links that run', async () => {
+    runStreamOnce.mockResolvedValue({ outcome: 'completed', runtime_run_id: 'run-new' })
+    fetchRuntimeRunTrace.mockResolvedValue(traceSuccess('run-new'))
+
+    const state = createdDeployState()
+    state.outcome = { ...state.outcome!, materializedStreamIds: [42, 43] }
+    render(
+      <MemoryRouter>
+        <StepDeploy state={state} onStart={vi.fn()} onNavigateToLegacySubstep={vi.fn()} />
+      </MemoryRouter>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Run Once' }))
+    const proof = await screen.findByTestId('deploy-delivery-proof')
+    expect(proof).toHaveAttribute('data-status', 'proven')
+    expect(proof).toHaveTextContent('Delivery proven')
+    expect(proof).toHaveTextContent('run-new')
+    expect(screen.getByTestId('deploy-delivery-route-7')).toHaveTextContent('proven')
+    expect(screen.getByTestId('deploy-delivery-proof-logs')).toHaveAttribute('href', '/logs?stream_id=42&run_id=run-new')
+    expect(screen.getByTestId('deploy-delivery-proof-scope')).toHaveTextContent('stream 42')
+    expect(screen.getByTestId('deploy-delivery-proof-scope')).toHaveTextContent('does not prove the other materialized streams')
+    expect(fetchRuntimeRunTrace).toHaveBeenCalledWith('run-new')
+    expect(screen.getByRole('button', { name: 'Start Blocked' })).toBeDisabled()
+    expect(screen.getByTestId('deploy-reconciliation-note')).toHaveTextContent('not shown as saved')
+  })
+
+  it('does not call a later success recovered when the previous run was only unverified', async () => {
+    runStreamOnce
+      .mockResolvedValueOnce({ outcome: 'completed', runtime_run_id: 'run-1' })
+      .mockResolvedValueOnce({ outcome: 'completed', runtime_run_id: 'run-2' })
+    fetchRuntimeRunTrace.mockResolvedValueOnce({ ...traceSuccess('run-1'), timeline: [] }).mockResolvedValueOnce(traceSuccess('run-2'))
+
+    render(
+      <MemoryRouter>
+        <StepDeploy state={createdDeployState()} onStart={vi.fn()} onNavigateToLegacySubstep={vi.fn()} />
+      </MemoryRouter>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Run Once' }))
+    expect(await screen.findByTestId('deploy-delivery-proof')).toHaveAttribute('data-status', 'unverified')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Run Once' }))
+    await waitFor(() => {
+      expect(screen.getByTestId('deploy-delivery-proof')).toHaveAttribute('data-status', 'proven')
+    })
+  })
+
+  it('marks a later success recovered only after a failed run, and clears stale proof when the next run throws', async () => {
+    runStreamOnce
+      .mockResolvedValueOnce({ outcome: 'completed', runtime_run_id: 'run-1' })
+      .mockResolvedValueOnce({ outcome: 'completed', runtime_run_id: 'run-2' })
+      .mockRejectedValueOnce(new Error('locked'))
+    fetchRuntimeRunTrace
+      .mockResolvedValueOnce({
+        ...traceSuccess('run-1'),
+        timeline: [
+          {
+            id: 1,
+            created_at: '2026-09-26T01:00:00Z',
+            stage: 'route_send_failed',
+            level: 'error',
+            status: 'failed',
+            message: 'failed',
+            route_id: 7,
+            destination_id: 11,
+            latency_ms: 1,
+            retry_count: 0,
+            http_status: 500,
+            error_code: 'send_failed',
+          },
+        ],
+      })
+      .mockResolvedValueOnce(traceSuccess('run-2'))
+
+    render(
+      <MemoryRouter>
+        <StepDeploy state={createdDeployState()} onStart={vi.fn()} onNavigateToLegacySubstep={vi.fn()} />
+      </MemoryRouter>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Run Once' }))
+    expect(await screen.findByTestId('deploy-delivery-proof')).toHaveAttribute('data-status', 'failed')
+    fireEvent.click(screen.getByRole('button', { name: 'Run Once' }))
+    await waitFor(() => {
+      expect(screen.getByTestId('deploy-delivery-proof')).toHaveAttribute('data-status', 'recovered')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Run Once' }))
+    await waitFor(() => {
+      expect(screen.getByText('locked')).toBeInTheDocument()
+    })
+    expect(screen.queryByTestId('deploy-delivery-proof')).not.toBeInTheDocument()
+  })
+
+  it('does not run while Start is active, and does not treat one stream proof as every materialized stream', async () => {
+    const state = createdDeployState()
+    state.outcome = {
+      ...state.outcome!,
+      errors: [],
+      reconciliationNote: null,
+      materializedStreamIds: [42, 43],
+    }
+    render(
+      <MemoryRouter>
+        <StepDeploy state={state} isStarting onStart={vi.fn()} onNavigateToLegacySubstep={vi.fn()} />
+      </MemoryRouter>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Run Once' }))
+    expect(runStreamOnce).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Starting…' })).toBeDisabled()
   })
 })
