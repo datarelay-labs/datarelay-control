@@ -44,7 +44,7 @@ Historical or explicitly retired behavior is not protected by no-regression poli
 - Preserve operational visibility required by current Source of Truth, including EPS, delivery success, checkpoint state, route health, and delivery health where those surfaces require them.
 - Preserve user-created connectors, streams, sources, destinations, routes, mappings, checkpoints, and persisted configuration. Do not delete, truncate, reset, or overwrite live/operator data unless the user explicitly requests the specific destructive action. Destructive fixtures and resets must target test-only databases.
 - Repository artifacts are English by default: source identifiers/comments, user-facing product copy, docs/specs, commit messages, PR descriptions, and repository rules. Chat replies may follow the user's language.
-- Do not hard-code temporary release scope into permanent rules. For AI Gateway / AI Proxy or other release-scoped capabilities, read the current Product Charter and current release scope/limitations when the task is relevant.
+- Product scope follows the current Product Charter and Master WBS. AI Gateway / AI Proxy / AI Provider / AI Stream and Phase E are outside DataRelay Control scope (as is Phase F Enterprise Edition); do not promote historical implementation/spec files into current capability, E2E, release-readiness, or backlog claims. If product authority changes, update this rule together with the authority documents.
 
 ## Validation
 
