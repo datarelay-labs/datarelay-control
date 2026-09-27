@@ -6,6 +6,8 @@
 **Prior release:** [OSS v1 RC Release Notes](./OSS-v1-RC-RELEASE-NOTES.md)  
 **Stabilization audit:** GO WITH KNOWN GAPS (2026-06-20)
 
+> **Current product behavior:** This file is the 2026-06-20 GA snapshot. Later product authority retired the flag-OFF runtime. Current Data Relay Control rejects `GDC_ROUTE_PROCESSING_ENABLED=false` and runs Route Processing only. Statements below that the default is OFF record that historical snapshot; they are not current runtime guidance. See [`KNOWN-LIMITATIONS.md`](./KNOWN-LIMITATIONS.md) and [`OSS-v1-ARCHITECTURE.md`](../architecture/OSS-v1-ARCHITECTURE.md).
+
 ---
 
 ## 제품 소개
@@ -65,7 +67,7 @@ GA는 **추가 기능 개발 없이** RC 기능을 문서화·온�oarding·운
 | **Governance Workspace Scale** | Route당 4 effective API → 50 routes ≈ 200+ HTTP on load | Stream 선택 후 확인; v1.x에서 lazy load 예정 |
 | **Streams Scale (50+)** | Collapsed groups 기준 ~64 HTTP @50 streams (stats/health N calls) | Group collapsed 유지; auto-refresh 간격 조정 |
 | **Database Query Source** | Runtime fetch **PostgreSQL only** | PG query source 사용 또는 HTTP/Webhook |
-| **`GDC_ROUTE_PROCESSING_ENABLED`** | Default **OFF** — experimental per-route pipeline | Production: stream-scoped path (default) 유지 |
+| **`GDC_ROUTE_PROCESSING_ENABLED`** | Historical GA snapshot: default **OFF** — experimental per-route pipeline. Not current behavior. | Historical GA workaround only. Current product rejects `false` and runs Route Processing only. |
 | **Dashboard Schema Drift KPI** | Operational Issues panel에 schema drift count 미연동 | Stream runtime / governance surfaces에서 확인 |
 | **Wizard Onboarding** | Connector 생성이 wizard 밖; Destinations → Transform 순서 | [Getting Started](../getting-started/GETTING-STARTED.md) 참조 |
 
@@ -79,7 +81,7 @@ GA는 **추가 기능 개발 없이** RC 기능을 문서화·온�oarding·운
 
 - **Database migration:** `alembic upgrade head` (install/upgrade script 사용)
 - **API contract:** Breaking change 없음
-- **Runtime behavior:** Default path (`GDC_ROUTE_PROCESSING_ENABLED=false`) unchanged
+- **Runtime behavior (historical GA snapshot):** Default path at GA was `GDC_ROUTE_PROCESSING_ENABLED=false`. Current product behavior is Route Processing only; explicit `false` is rejected.
 - **Frontend:** `VITE_OSS_RELEASE_MODE=true` production build 유지
 
 ### Fresh install
@@ -103,7 +105,7 @@ docker compose -f docker-compose.platform.yml up -d
 
 | Variable | GA recommendation |
 |----------|-------------------|
-| `GDC_ROUTE_PROCESSING_ENABLED` | `false` (default) |
+| `GDC_ROUTE_PROCESSING_ENABLED` | Historical GA snapshot: `false` (default). Current product: leave unset or `true`; `false` is rejected. |
 | `ENABLE_DEV_VALIDATION_LAB` | `false` in production |
 | `REQUIRE_AUTH` | `true` |
 | `SMTP_ENABLED` | Configure before relying on email notifications |

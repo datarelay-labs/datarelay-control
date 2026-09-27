@@ -39,7 +39,7 @@ The product is designed for **data delivery and data control**. It is not a SIEM
 
 | Capability | What Data Relay Control provides |
 |---|---|
-| **Collect** | HTTP API polling, webhook receiver, and PostgreSQL database-query source |
+| **Collect** | Phase A–D Charter: HTTP API polling, webhook receiver, and database source (PostgreSQL query). Supported release-qualified extensions: S3 object polling and remote file polling |
 | **Transform** | Mapping, enrichment, JSONPath/JSONata/regex-based processing |
 | **Route** | Multi-route delivery, destination-specific processing, dynamic routing and failover |
 | **Protect** | Schema drift, sensitive-data detection, protection, classification and policy |
