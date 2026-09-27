@@ -9,8 +9,8 @@ from app.database import get_db, get_db_read_bounded
 from app.stream_governance.errors import StreamGovernanceValidationError
 from app.stream_governance.schemas import (
     EffectiveProtectionResponse,
-    StreamGovernanceDocument,
     StreamGovernanceResponse,
+    StreamGovernanceWrite,
     governance_error_detail,
 )
 from app.stream_governance.service import (
@@ -39,7 +39,7 @@ async def get_stream_governance_endpoint(
 @router.put("/streams/{stream_id}/governance", response_model=StreamGovernanceResponse)
 async def put_stream_governance_endpoint(
     stream_id: int,
-    body: StreamGovernanceDocument,
+    body: StreamGovernanceWrite,
     db: Session = Depends(get_db),
 ) -> StreamGovernanceResponse:
     try:

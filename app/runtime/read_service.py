@@ -1987,6 +1987,24 @@ def search_runtime_logs(
     )
 
 
+def _payload_str(row: DeliveryLog, key: str) -> str | None:
+    raw = _row_payload(row).get(key)
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    return None
+
+
+def _payload_int(row: DeliveryLog, key: str) -> int | None:
+    raw = _row_payload(row).get(key)
+    if isinstance(raw, bool) or raw is None:
+        return None
+    if isinstance(raw, int):
+        return raw
+    if isinstance(raw, str) and raw.isdigit():
+        return int(raw)
+    return None
+
+
 def _row_payload(row: DeliveryLog | None) -> dict[str, Any]:
     if row is None:
         return {}
@@ -2243,6 +2261,10 @@ def _assemble_runtime_trace(
             message=r.message,
             route_id=int(r.route_id) if r.route_id is not None else None,
             destination_id=int(r.destination_id) if r.destination_id is not None else None,
+            primary_destination_id=_payload_int(r, "primary_destination_id"),
+            secondary_destination_id=_payload_int(r, "secondary_destination_id"),
+            dynamic_route_id=_payload_int(r, "dynamic_route_id"),
+            skip_reason=_payload_str(r, "skip_reason"),
             latency_ms=r.latency_ms,
             retry_count=int(r.retry_count or 0),
             http_status=r.http_status,

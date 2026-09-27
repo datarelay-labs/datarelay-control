@@ -789,6 +789,10 @@ class RuntimeTraceTimelineEntry(BaseModel):
     message: str
     route_id: int | None = None
     destination_id: int | None = None
+    primary_destination_id: int | None = None
+    secondary_destination_id: int | None = None
+    dynamic_route_id: int | None = None
+    skip_reason: str | None = None
     latency_ms: int | None = None
     retry_count: int = 0
     http_status: int | None = None
@@ -895,6 +899,10 @@ class RuntimeStreamRunOnceResponse(BaseModel):
     delivered_batch_event_count: int | None = None
     route_delivery_success_count: int | None = None
     route_delivery_failure_count: int | None = None
+    route_delivery_attempt_count: int | None = None
+    route_delivery_blocked_count: int | None = None
+    route_delivery_review_count: int | None = None
+    route_delivery_quarantine_count: int | None = None
     checkpoint_updated: bool = False
     transaction_committed: bool = False
     runtime_run_id: str | None = None

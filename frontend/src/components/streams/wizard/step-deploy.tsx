@@ -9,10 +9,11 @@ import {
   XCircle,
   Zap,
 } from 'lucide-react'
-import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { fetchDestinationsList, type DestinationListItem } from '../../../api/gdcDestinations'
-import { runStreamOnce } from '../../../api/gdcRuntime'
+import { deliveryProofStatusLabel, nextDeliveryProofPrior, type ExactRunDeliveryProof, type PriorDeliveryProof } from './deploy-delivery-proof'
+import { proveStreamRunOnce } from './prove-stream-run-once'
 import { isDestinationConnectivityVerified } from '../../../utils/destination-connectivity-health'
 import {
   connectorDetailPath,
@@ -67,6 +68,15 @@ export type StepDeployProps = {
   canRuntimeControl?: boolean
   onStart: () => void
   onNavigateToLegacySubstep: (key: WizardLegacySubstepKey) => void
+  /** Edit mode: block Start and Run Once until the visible draft matches a confirmed save. */
+  runtimeVerificationBlocked?: boolean
+  /** Edit mode shares one Run Once controller with the page header. */
+  sharedRunOnce?: {
+    busy: boolean
+    proof: ExactRunDeliveryProof | null
+    error: string | null
+    onRunOnce: () => void
+  } | null
 }
 
 function formatScheduleHuman(sec: number): string {
@@ -678,12 +688,16 @@ function DeployCreatedPanel({
   canRuntimeControl,
   onStart,
   onNavigateToLegacySubstep,
+  runtimeVerificationBlocked = false,
+  sharedRunOnce = null,
 }: {
   state: WizardState
   isStarting: boolean
   canRuntimeControl: boolean
   onStart: () => void
   onNavigateToLegacySubstep: (key: WizardLegacySubstepKey) => void
+  runtimeVerificationBlocked?: boolean
+  sharedRunOnce?: StepDeployProps['sharedRunOnce']
 }) {
   const outcome = state.outcome
   const streamNumericId = outcome?.streamId ?? null
@@ -693,6 +707,14 @@ function DeployCreatedPanel({
   const [copyFlash, setCopyFlash] = useState(false)
   const [runBusy, setRunBusy] = useState(false)
   const [runError, setRunError] = useState<string | null>(null)
+  const [deliveryProof, setDeliveryProof] = useState<ExactRunDeliveryProof | null>(null)
+  const priorProofRef = useRef<PriorDeliveryProof | null>(null)
+
+  useEffect(() => {
+    setDeliveryProof(null)
+    setRunError(null)
+    priorProofRef.current = null
+  }, [streamNumericId])
 
   const handleCopyId = useCallback(async () => {
     try {
@@ -706,18 +728,30 @@ function DeployCreatedPanel({
     }
   }, [displayId])
 
+  const displayedRunBusy = sharedRunOnce ? sharedRunOnce.busy : runBusy
+  const displayedRunError = sharedRunOnce ? sharedRunOnce.error : runError
+  const displayedProof = sharedRunOnce ? sharedRunOnce.proof : deliveryProof
+
   const handleRunOnce = useCallback(async () => {
-    if (!canRuntimeControl || streamNumericId == null || runBusy) return
+    if (!canRuntimeControl || streamNumericId == null || displayedRunBusy || isStarting || runtimeVerificationBlocked) return
+    if (sharedRunOnce) {
+      sharedRunOnce.onRunOnce()
+      return
+    }
     setRunBusy(true)
     setRunError(null)
+    setDeliveryProof(null)
     try {
-      await runStreamOnce(streamNumericId)
+      const proof = await proveStreamRunOnce(streamNumericId, priorProofRef.current)
+      priorProofRef.current = nextDeliveryProofPrior(streamNumericId, priorProofRef.current, proof)
+      setDeliveryProof(proof)
     } catch (e) {
+      setDeliveryProof(null)
       setRunError(e instanceof Error ? e.message : String(e))
     } finally {
       setRunBusy(false)
     }
-  }, [canRuntimeControl, runBusy, streamNumericId])
+  }, [canRuntimeControl, displayedRunBusy, isStarting, runtimeVerificationBlocked, sharedRunOnce, streamNumericId])
 
   const createdTone =
     (outcome?.errors?.length ?? 0) > 0 ||
@@ -773,6 +807,15 @@ function DeployCreatedPanel({
             </div>
           ) : null}
 
+          {outcome?.reconciliationNote ? (
+            <p
+              className="text-[11px] font-medium text-amber-900 dark:text-amber-100"
+              data-testid="deploy-reconciliation-note"
+            >
+              {outcome.reconciliationNote}
+            </p>
+          ) : null}
+
           {outcome?.errors?.length ? (
             <ul className="list-disc space-y-1 pl-5 text-[11px] text-amber-900 dark:text-amber-100">
               {outcome.errors.map((error, idx) => (
@@ -813,8 +856,11 @@ function DeployCreatedPanel({
             {canRuntimeControl ? (
               <button
                 type="button"
-                onClick={() => onStart()}
-                disabled={!wizardCreateIsStartEligible(outcome) || isStarting}
+                onClick={() => {
+                  if (displayedRunBusy || isStarting || runtimeVerificationBlocked) return
+                  onStart()
+                }}
+                disabled={!wizardCreateIsStartEligible(outcome) || isStarting || displayedRunBusy || runtimeVerificationBlocked}
                 className="inline-flex h-9 items-center gap-1.5 rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white shadow-sm hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
                 title={
                   wizardCreateIsConfigurationIncomplete(outcome)
@@ -834,11 +880,11 @@ function DeployCreatedPanel({
               <button
                 type="button"
                 onClick={() => void handleRunOnce()}
-                disabled={streamNumericId == null || runBusy}
+                disabled={streamNumericId == null || displayedRunBusy || isStarting || runtimeVerificationBlocked}
                 className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-200/90 bg-white px-3 text-[12px] font-semibold text-slate-800 shadow-sm hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
               >
-                {runBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Play className="h-3.5 w-3.5" aria-hidden />}
-                {runBusy ? 'Running…' : 'Run Once'}
+                {displayedRunBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Play className="h-3.5 w-3.5" aria-hidden />}
+                {displayedRunBusy ? 'Running…' : 'Run Once'}
               </button>
             ) : null}
             {streamNumericId != null ? (
@@ -885,8 +931,44 @@ function DeployCreatedPanel({
               Back to Route Processing
             </button>
           </div>
-          {runError ? (
-            <p className="text-[11px] font-medium text-red-700 dark:text-red-300">{runError}</p>
+          {displayedRunError ? (
+            <p className="text-[11px] font-medium text-red-700 dark:text-red-300">{displayedRunError}</p>
+          ) : null}
+          {displayedProof ? (
+            <div
+              className="space-y-1 rounded-md border border-slate-200/80 p-2 text-[11px] text-slate-700 dark:border-gdc-border dark:text-slate-200"
+              data-testid="deploy-delivery-proof"
+              data-status={displayedProof.status}
+            >
+              <p className="font-semibold">{deliveryProofStatusLabel(displayedProof.status)}</p>
+              <p data-testid="deploy-delivery-proof-scope">
+                Delivery check for stream {streamNumericId}
+                {state.stream.name.trim() ? ` (${state.stream.name.trim()})` : ''}.
+                {(outcome?.materializedStreamIds?.length ?? 0) > 1
+                  ? ' This result does not prove the other materialized streams.'
+                  : ''}
+              </p>
+              <p>{displayedProof.reason}</p>
+              <p>Run id: {displayedProof.runtimeRunId ?? '—'}</p>
+              <p>Evidence: {displayedProof.evidenceAt ?? 'none'}</p>
+              {displayedProof.routes.map((route) => (
+                <p
+                  key={`${route.routeId ?? 'none'}-${route.destinationId ?? 'none'}`}
+                  data-testid={`deploy-delivery-route-${route.routeId ?? 'none'}`}
+                >
+                  {route.scope === 'dynamic' ? 'Dynamic target' : `Route ${route.routeId ?? '—'}`} · {route.destinationLabel} · {route.status}
+                  {route.evidenceAt ? ` · ${route.evidenceAt}` : ''}
+                </p>
+              ))}
+              {streamNumericId != null && displayedProof.runtimeRunId ? (
+                <Link
+                  to={logsExplorerPath({ stream_id: streamNumericId, run_id: displayedProof.runtimeRunId })}
+                  data-testid="deploy-delivery-proof-logs"
+                >
+                  View this run
+                </Link>
+              ) : null}
+            </div>
           ) : null}
         </div>
       </div>
@@ -901,6 +983,8 @@ export function StepDeploy({
   canRuntimeControl = true,
   onStart,
   onNavigateToLegacySubstep,
+  runtimeVerificationBlocked = false,
+  sharedRunOnce = null,
 }: StepDeployProps) {
   const created = state.outcome?.streamId != null
   const [destinations, setDestinations] = useState<DestinationListItem[]>([])
@@ -991,6 +1075,8 @@ export function StepDeploy({
               canRuntimeControl={canRuntimeControl}
               onStart={onStart}
               onNavigateToLegacySubstep={onNavigateToLegacySubstep}
+              runtimeVerificationBlocked={runtimeVerificationBlocked}
+              sharedRunOnce={sharedRunOnce}
             />
           )}
 

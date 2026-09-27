@@ -1,12 +1,18 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { fetchStreamById } from '../../api/gdcStreams'
 import { clearSession, persistSession, type SessionRole } from '../../auth/session'
 import { StreamEditWizardPage } from './stream-edit-wizard-page'
 import { buildInitialState } from './wizard/wizard-state'
 
 const persistWizardStreamEdits = vi.hoisted(() => vi.fn())
+const hydrateHolder = vi.hoisted(() => ({
+  factory: (): unknown => {
+    throw new Error('hydrate factory not set')
+  },
+}))
 const deleteStream = vi.hoisted(() => vi.fn())
 const startRuntimeStream = vi.hoisted(() => vi.fn())
 const stopRuntimeStream = vi.hoisted(() => vi.fn())
@@ -18,13 +24,20 @@ const saveRuntimeRouteEnabledState = vi.hoisted(() => vi.fn())
 const saveRuntimeRouteFailurePolicy = vi.hoisted(() => vi.fn())
 
 vi.mock('./wizard/wizard-stream-hydrate', () => ({
-  hydrateWizardStateFromStream: vi.fn(async () => hydratedStream()),
+  hydrateWizardStateFromStream: vi.fn(async () => hydrateHolder.factory()),
   refreshWizardDestinationsFromStream: vi.fn(async () => null),
 }))
 
-vi.mock('./wizard/wizard-stream-persist', () => ({
-  persistWizardStreamEdits: (...args: unknown[]) => persistWizardStreamEdits(...args),
-}))
+vi.mock('./wizard/wizard-stream-persist', async () => {
+  const actual = await vi.importActual<typeof import('./wizard/wizard-stream-persist')>(
+    './wizard/wizard-stream-persist',
+  )
+  return {
+    applyCreatedRouteIdentity: actual.applyCreatedRouteIdentity,
+    applyPersistedRevisions: actual.applyPersistedRevisions,
+    persistWizardStreamEdits: (...args: unknown[]) => persistWizardStreamEdits(...args),
+  }
+})
 
 vi.mock('../../api/gdcStreams', () => ({
   fetchStreamById: vi.fn(async () => ({ id: 10, name: 'Viewer Stream', status: 'STOPPED' })),
@@ -61,6 +74,8 @@ vi.mock('../../api/gdcRuntime', () => ({
   saveRuntimeRouteEnabledState: (...args: unknown[]) => saveRuntimeRouteEnabledState(...args),
   saveRuntimeRouteFailurePolicy: (...args: unknown[]) => saveRuntimeRouteFailurePolicy(...args),
   runStreamOnce: (...args: unknown[]) => runStreamOnce(...args),
+  fetchRuntimeRunTrace: vi.fn(async () => null),
+  searchRuntimeDeliveryLogs: vi.fn(async () => null),
   startRuntimeStream: (...args: unknown[]) => startRuntimeStream(...args),
   stopRuntimeStream: (...args: unknown[]) => stopRuntimeStream(...args),
 }))
@@ -155,6 +170,7 @@ describe('StreamEditWizardPage workspace capability visibility', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     clearSession()
+    hydrateHolder.factory = () => hydratedStream()
     persistWizardStreamEdits.mockResolvedValue({ ok: true, errors: [] })
   })
 
@@ -263,5 +279,170 @@ describe('StreamEditWizardPage workspace capability visibility', () => {
     const page = wizard()
     expect(page.queryByRole('button', { name: 'Run Now' })).not.toBeInTheDocument()
     expect(page.getByTestId('stream-edit-readonly-banner')).toHaveTextContent(/Start, stop, and Run Now are unavailable/i)
+  })
+
+  it('blocks Start and Run Now until a failed save is corrected and saved again', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    persistWizardStreamEdits.mockResolvedValue({ ok: false, errors: ['route 3: save failed'] })
+    renderStreamEdit()
+
+    const runNow = await screen.findByRole('button', { name: 'Run Now' })
+    await waitFor(() => expect(runNow).toBeEnabled())
+    await user.click(screen.getByTestId('wizard-connect-tab-request'))
+    const name = screen.getByPlaceholderText('e.g. Cybereason Malop Stream')
+    await user.clear(name)
+    await user.type(name, 'Corrected stream')
+    expect(screen.getByRole('button', { name: 'Run Now' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Run Now' }))
+    expect(runStreamOnce).not.toHaveBeenCalled()
+
+    await user.click(screen.getByTestId('wizard-save-now'))
+    expect(await screen.findByText(/route 3: save failed/)).toBeInTheDocument()
+    expect(screen.getByTestId('stream-run-control-switch')).toBeDisabled()
+    fireEvent.click(screen.getByTestId('stream-run-control-switch'))
+    expect(startRuntimeStream).not.toHaveBeenCalled()
+
+    persistWizardStreamEdits.mockResolvedValue({ ok: true, errors: [] })
+    await user.click(screen.getByTestId('wizard-save-now'))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Run Now' })).toBeEnabled())
+    expect(screen.queryByText(/route 3: save failed/)).not.toBeInTheDocument()
+    expect(screen.getByTestId('stream-run-control-switch')).toBeEnabled()
+  })
+
+  it('keeps Stop available after an edit while the stream is running', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    vi.mocked(fetchStreamById).mockResolvedValue({ id: 10, name: 'Viewer Stream', status: 'RUNNING' })
+    renderStreamEdit()
+    await screen.findByRole('button', { name: 'Run Now' })
+    await waitFor(() => expect(screen.getByTestId('stream-run-control-switch')).toHaveTextContent('Running'))
+    await user.click(screen.getByTestId('wizard-connect-tab-request'))
+    const name = screen.getByPlaceholderText('e.g. Cybereason Malop Stream')
+    await user.type(name, ' edited')
+    expect(screen.getByRole('button', { name: 'Run Now' })).toBeDisabled()
+    expect(screen.getByTestId('stream-run-control-switch')).toBeEnabled()
+    await user.click(screen.getByTestId('stream-run-control-switch'))
+    await waitFor(() => expect(stopRuntimeStream).toHaveBeenCalledWith(10))
+    expect(startRuntimeStream).not.toHaveBeenCalled()
+  })
+
+  it('does not autosave a hydrated stream before the operator edits it', async () => {
+    signIn('OPERATOR')
+    renderStreamEdit()
+    await screen.findByTestId('wizard-save-now')
+    await new Promise((resolve) => window.setTimeout(resolve, 1500))
+    expect(persistWizardStreamEdits).not.toHaveBeenCalled()
+  })
+
+  it('keeps a created route id on a newer in-flight draft', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    hydrateHolder.factory = () => {
+      const state = hydratedStream()
+      state.destinations.routeDrafts = [
+        {
+          key: 'wr-a',
+          destinationId: 5,
+          enabled: true,
+          failurePolicy: 'LOG_AND_CONTINUE',
+          rateLimitJson: {},
+          inherit: {
+            transform: true,
+            protection: true,
+            classification: true,
+            policy: true,
+          },
+        },
+      ]
+      return state
+    }
+    let releaseSave: (value: { ok: boolean; errors: string[]; routeIdsByDraftKey: Record<string, number> }) => void = () => {}
+    let persistCalls = 0
+    persistWizardStreamEdits.mockImplementation(() => {
+      persistCalls += 1
+      if (persistCalls === 1) {
+        return new Promise((resolve) => {
+          releaseSave = resolve
+        })
+      }
+      return Promise.resolve({ ok: true, errors: [], routeIdsByDraftKey: { 'route-55': 55 } })
+    })
+    renderStreamEdit()
+    await screen.findByTestId('wizard-save-now')
+    await user.click(screen.getByTestId('wizard-connect-tab-request'))
+    const name = screen.getByPlaceholderText('e.g. Cybereason Malop Stream')
+    await user.clear(name)
+    await user.type(name, 'Attempt A')
+    await user.click(screen.getByTestId('wizard-save-now'))
+    await waitFor(() => expect(persistWizardStreamEdits).toHaveBeenCalledTimes(1))
+    const firstState = persistWizardStreamEdits.mock.calls[0]?.[1] as { destinations: { routeDrafts: Array<{ key: string }> }; stream: { name: string } }
+    expect(firstState.destinations.routeDrafts[0]?.key).toBe('wr-a')
+    await user.clear(name)
+    await user.type(name, 'Attempt B')
+    releaseSave({ ok: true, errors: [], routeIdsByDraftKey: { 'wr-a': 55 } })
+    await waitFor(() => expect(screen.getByTestId('wizard-save-now')).toBeEnabled())
+    await user.click(screen.getByTestId('wizard-save-now'))
+    await waitFor(() => expect(persistWizardStreamEdits).toHaveBeenCalledTimes(2))
+    const secondState = persistWizardStreamEdits.mock.calls[1]?.[1] as {
+      destinations: { routeDrafts: Array<{ key: string; failurePolicy: string }> }
+      stream: { name: string }
+    }
+    expect(secondState.stream.name).toBe('Attempt B')
+    expect(secondState.destinations.routeDrafts[0]?.key).toBe('route-55')
+  })
+
+  it('keeps Stop available while Run Now is in flight on an active stream', async () => {
+    signIn('OPERATOR')
+    vi.mocked(fetchStreamById).mockResolvedValue({ id: 10, name: 'Viewer Stream', status: 'RUNNING' })
+    let releaseRun: (value: unknown) => void = () => {}
+    runStreamOnce.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releaseRun = resolve
+        }),
+    )
+    renderStreamEdit()
+    await waitFor(() => expect(screen.getByTestId('stream-run-control-switch')).toHaveTextContent('Running'))
+    fireEvent.click(screen.getByRole('button', { name: 'Run Now' }))
+    expect(await screen.findByRole('button', { name: 'Running…' })).toBeDisabled()
+    expect(screen.getByTestId('stream-run-control-switch')).toBeEnabled()
+    fireEvent.click(screen.getByTestId('stream-run-control-switch'))
+    await waitFor(() => expect(stopRuntimeStream).toHaveBeenCalledWith(10))
+    releaseRun({ outcome: 'completed', runtime_run_id: null })
+  })
+
+  it('uses one Run Once controller for the header and the deploy card', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    let releaseRun: (value: unknown) => void = () => {}
+    runStreamOnce.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releaseRun = resolve
+        }),
+    )
+    renderStreamEdit()
+    await screen.findByTestId('edit-stream-wizard')
+    const page = wizard()
+    await user.click(await page.findByTestId('wizard-stepper-deploy'))
+    await user.click(await page.findByRole('button', { name: 'Run Once' }))
+    await waitFor(() => expect(page.getAllByRole('button', { name: 'Running…' })).toHaveLength(2))
+    for (const button of page.getAllByRole('button', { name: 'Running…' })) {
+      expect(button).toBeDisabled()
+    }
+    expect(runStreamOnce).toHaveBeenCalledTimes(1)
+    releaseRun({
+      outcome: 'completed',
+      runtime_run_id: 'run-shared',
+      route_delivery_success_count: 0,
+      route_delivery_failure_count: 0,
+      route_delivery_blocked_count: 0,
+      route_delivery_review_count: 0,
+      route_delivery_quarantine_count: 0,
+      route_delivery_attempt_count: 0,
+    })
+    expect(await page.findByTestId('deploy-delivery-proof')).toBeInTheDocument()
+    expect(runStreamOnce).toHaveBeenCalledTimes(1)
   })
 })

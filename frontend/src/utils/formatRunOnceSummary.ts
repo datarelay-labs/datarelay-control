@@ -64,20 +64,23 @@ export function formatRunOnceErrorLines(err: unknown, opts?: { compareTestOutbou
 /** Human-readable lines from run-once API (actual fields only). */
 export function formatRunOnceSummaryLines(r: RuntimeStreamRunOnceResponse): string[] {
   const lines: string[] = []
-  if (r.outcome === 'skipped_lock') {
-    lines.push(`Skipped: ${r.message ?? 'stream lock held (another run in progress)'}`)
-  }
   if (r.outcome === 'no_events') {
     lines.push(r.message ?? 'No new events extracted')
   }
+  if (r.runtime_run_id) lines.push(`Run id: ${r.runtime_run_id}`)
   lines.push(`Extracted: ${r.extracted_event_count ?? '—'}`)
   lines.push(`Delivered (batch events): ${r.delivered_batch_event_count ?? '—'}`)
+  if (r.route_delivery_success_count != null || r.route_delivery_failure_count != null) {
+    lines.push(
+      `Route delivery: ${r.route_delivery_success_count ?? 0} succeeded · ${r.route_delivery_failure_count ?? 0} failed`,
+    )
+  }
   if (r.mapped_event_count != null || r.enriched_event_count != null) {
     lines.push(`Mapped: ${r.mapped_event_count ?? '—'} · Enriched: ${r.enriched_event_count ?? '—'}`)
   }
   lines.push(`Checkpoint updated: ${r.checkpoint_updated ? 'yes' : 'no'}`)
   lines.push(`Transaction committed: ${r.transaction_committed ? 'yes' : 'no'}`)
-  if (r.message && r.outcome !== 'skipped_lock' && r.outcome !== 'no_events') {
+  if (r.message && r.outcome !== 'no_events') {
     lines.push(`Note: ${r.message}`)
   }
   return lines

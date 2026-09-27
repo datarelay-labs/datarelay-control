@@ -253,6 +253,57 @@ export function buildAdvancedStreamConfigJsonPatch(
   return patch
 }
 
+function clearCheckpointSentinels(checkpoint: Record<string, unknown>): Record<string, unknown> {
+  const next = { ...checkpoint }
+  if (next.secondary_cursor_path === null) delete next.secondary_cursor_path
+  if (Array.isArray(next.cursor_paths)) {
+    next.cursor_paths = next.cursor_paths.filter((item) => item != null && item !== '')
+  }
+  return next
+}
+
+/** Explicit empty extraction paths remove persisted config keys. Untouched paths stay. */
+export function applyExplicitEventPathClear(
+  config: Record<string, unknown>,
+  confirmed: { eventArrayPath: string; eventRootPath: string; useWholeResponseAsEvent: boolean } | null | undefined,
+  current: { eventArrayPath: string; eventRootPath: string; useWholeResponseAsEvent: boolean },
+): { config: Record<string, unknown>; clearArray: boolean; clearRoot: boolean } {
+  if (!confirmed) return { config, clearArray: false, clearRoot: false }
+  const clearArray =
+    confirmed.eventArrayPath.trim().length > 0 &&
+    (current.eventArrayPath.trim().length === 0 || current.useWholeResponseAsEvent)
+  const clearRoot = confirmed.eventRootPath.trim().length > 0 && current.eventRootPath.trim().length === 0
+  if (!clearArray && !clearRoot) return { config, clearArray, clearRoot }
+  const next = { ...config }
+  if (clearArray) delete next.event_array_path
+  if (clearRoot) delete next.event_root_path
+  return { config: next, clearArray, clearRoot }
+}
+
+/** Explicit empty checkpoint fields remove persisted cursor state. Untouched fields stay on the patch. */
+export function applyExplicitCheckpointClear(
+  patch: Record<string, unknown>,
+  confirmed: { checkpointSourcePath: string; checkpointSecondaryPath: string } | null | undefined,
+  current: { checkpointSourcePath: string; checkpointSecondaryPath: string },
+): Record<string, unknown> {
+  if (!confirmed) return patch
+  const hadPrimary = confirmed.checkpointSourcePath.trim().length > 0
+  const hasPrimary = current.checkpointSourcePath.trim().length > 0
+  const hadSecondary = confirmed.checkpointSecondaryPath.trim().length > 0
+  const hasSecondary = current.checkpointSecondaryPath.trim().length > 0
+  if (hadPrimary && !hasPrimary) return { ...patch, checkpoint: null }
+  if (hadSecondary && !hasSecondary && patch.checkpoint && typeof patch.checkpoint === 'object') {
+    return {
+      ...patch,
+      checkpoint: {
+        ...(patch.checkpoint as Record<string, unknown>),
+        secondary_cursor_path: null,
+      },
+    }
+  }
+  return patch
+}
+
 export function mergeStreamConfigJson(
   existing: Record<string, unknown> | null | undefined,
   streamPayload: Record<string, unknown>,
@@ -268,13 +319,17 @@ export function mergeStreamConfigJson(
   const nextPagination = advancedPatch.pagination
   const nextRuntimeUi = advancedPatch.runtime_ui
 
-  return {
+  const checkpoint =
+    nextCheckpoint === null
+      ? null
+      : nextCheckpoint && typeof nextCheckpoint === 'object'
+        ? clearCheckpointSentinels({ ...existingCheckpoint, ...nextCheckpoint })
+        : existingCheckpoint
+
+  const merged: Record<string, unknown> = {
     ...base,
     initial_delay_sec: advancedPatch.initial_delay_sec ?? base.initial_delay_sec,
-    checkpoint:
-      nextCheckpoint && typeof nextCheckpoint === 'object'
-        ? { ...existingCheckpoint, ...nextCheckpoint }
-        : existingCheckpoint,
+    checkpoint: checkpoint ?? undefined,
     schema:
       nextSchema && typeof nextSchema === 'object' ? { ...existingSchema, ...nextSchema } : existingSchema,
     pagination:
@@ -286,6 +341,8 @@ export function mergeStreamConfigJson(
         ? { ...existingRuntimeUi, ...nextRuntimeUi }
         : existingRuntimeUi,
   }
+  if (checkpoint === null) delete merged.checkpoint
+  return merged
 }
 
 export function formatMappingPathForDisplay(path: string, useWholeResponseAsEvent: boolean): string {

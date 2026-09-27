@@ -20,6 +20,7 @@ import { DEFAULT_MESSAGE_PREFIX_TEMPLATE, defaultMessagePrefixEnabled } from '..
 import {
   normalizeWizardEnrichmentRules,
   wizardEnrichmentFromPersistedDict,
+  wizardEnrichmentRulesFromPersistedDict,
 } from './enrichment-rules-model'
 import { fullEventRegexConfigJsonFromFieldMappings } from './wizard-full-event-regex-config'
 import {
@@ -29,6 +30,8 @@ import { hydrateRouteGovernanceDrafts } from './wizard-route-governance-bundle'
 import {
   buildInitialState,
   DEFAULT_ROUTE_PROCESSING_INHERIT,
+  normalizeUnknownNormalFieldPolicy,
+  normalizeUnknownSensitiveFieldPolicy,
   normalizeWizardDestinations,
   wizardConnectorPatchFromApi,
   type StreamConfigHeaderRow,
@@ -53,6 +56,89 @@ function stripJsonPathPrefix(path: string | null | undefined): string {
   return trimmed.startsWith('$.') ? trimmed.slice(2) : trimmed
 }
 
+function enrichmentRulesFromServer(raw: unknown) {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    return wizardEnrichmentRulesFromPersistedDict(raw as Record<string, unknown>)
+  }
+  return normalizeWizardEnrichmentRules(raw)
+}
+
+function enrichmentMetadataFromServer(
+  enrichment: MappingUIConfigResponse['enrichment'],
+): Pick<WizardState, 'enrichment' | 'enrichmentEnabled' | 'enrichmentOverridePolicy' | 'enrichmentPassthrough'> {
+  const raw = enrichment?.enrichment
+  const parsed =
+    raw && typeof raw === 'object' && !Array.isArray(raw) ? wizardEnrichmentFromPersistedDict(raw) : null
+  const policy = enrichment?.override_policy
+  const enrichmentOverridePolicy: WizardState['enrichmentOverridePolicy'] =
+    policy === 'OVERRIDE' || policy === 'ERROR_ON_CONFLICT' || policy === 'KEEP_EXISTING' ? policy : undefined
+  return {
+    enrichment: parsed?.rules ?? enrichmentRulesFromServer(raw),
+    enrichmentEnabled: enrichment?.enabled,
+    enrichmentOverridePolicy,
+    enrichmentPassthrough: parsed?.advancedPassthrough,
+  }
+}
+
+function rateLimitPatchFromRead(rateLimit: Record<string, unknown> | null | undefined): Partial<WizardState['stream']> {
+  const rl = rateLimit ?? {}
+  const unknown: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(rl)) {
+    if (key === 'max_events' || key === 'per_seconds' || key === 'per_minute' || key === 'burst') continue
+    unknown[key] = value
+  }
+  let rateLimitPerMinute = 60
+  if (typeof rl.max_events === 'number' && typeof rl.per_seconds === 'number' && rl.per_seconds > 0) {
+    rateLimitPerMinute = Math.round(rl.max_events * (60 / rl.per_seconds))
+  } else if (typeof rl.per_minute === 'number') {
+    rateLimitPerMinute = rl.per_minute
+  }
+  return {
+    rateLimitPerMinute,
+    rateLimitBurst: typeof rl.burst === 'number' ? rl.burst : 10,
+    rateLimitUnknownKeys: unknown,
+  }
+}
+
+function readSchemaDriftPolicy(cfg: Record<string, unknown>):
+  | { ok: true; policy: { unknownNormalFieldPolicy: ReturnType<typeof normalizeUnknownNormalFieldPolicy>; unknownSensitiveFieldPolicy: ReturnType<typeof normalizeUnknownSensitiveFieldPolicy> } | null }
+  | { ok: false } {
+  const governance = cfg.governance
+  if (governance == null) return { ok: true, policy: null }
+  if (typeof governance !== 'object' || Array.isArray(governance)) return { ok: false }
+  if (!('schema_drift_policy' in governance)) return { ok: true, policy: null }
+  const policy = (governance as Record<string, unknown>).schema_drift_policy
+  if (policy == null) return { ok: true, policy: null }
+  if (typeof policy !== 'object' || Array.isArray(policy)) return { ok: false }
+  const raw = policy as Record<string, unknown>
+  return {
+    ok: true,
+    policy: {
+      unknownNormalFieldPolicy: normalizeUnknownNormalFieldPolicy(raw.unknown_normal_field_policy),
+      unknownSensitiveFieldPolicy: normalizeUnknownSensitiveFieldPolicy(raw.unknown_sensitive_field_policy),
+    },
+  }
+}
+
+function sourceSpecificStreamPatch(cfg: Record<string, unknown>): Partial<WizardState['stream']> {
+  const patch: Partial<WizardState['stream']> = {}
+  if (typeof cfg.remote_directory === 'string') patch.remoteDirectory = cfg.remote_directory
+  if (typeof cfg.file_pattern === 'string') patch.filePattern = cfg.file_pattern
+  if (typeof cfg.recursive === 'boolean') patch.remoteRecursive = cfg.recursive
+  if (typeof cfg.parser_type === 'string') patch.parserType = cfg.parser_type
+  if (typeof cfg.max_files_per_run === 'number') patch.maxFilesPerRun = cfg.max_files_per_run
+  if (typeof cfg.max_file_size_mb === 'number') patch.maxFileSizeMb = cfg.max_file_size_mb
+  if (typeof cfg.encoding === 'string') patch.encoding = cfg.encoding
+  if (typeof cfg.csv_delimiter === 'string') patch.csvDelimiter = cfg.csv_delimiter
+  if (typeof cfg.line_event_field === 'string') patch.lineEventField = cfg.line_event_field
+  if (typeof cfg.include_file_metadata === 'boolean') patch.includeFileMetadata = cfg.include_file_metadata
+  if (typeof cfg.max_objects_per_run === 'number') patch.maxObjectsPerRun = cfg.max_objects_per_run
+  if (typeof cfg.query === 'string') patch.sqlQuery = cfg.query
+  if (typeof cfg.checkpoint_column === 'string') patch.dbCheckpointColumn = cfg.checkpoint_column
+  if (typeof cfg.checkpoint_mode === 'string') patch.dbCheckpointMode = cfg.checkpoint_mode
+  return patch
+}
+
 function mappingRowsFromFieldMappings(fieldMappings: Record<string, unknown>): WizardMappingRow[] {
   const rows: WizardMappingRow[] = []
   let index = 0
@@ -69,6 +155,23 @@ function mappingRowsFromFieldMappings(fieldMappings: Record<string, unknown>): W
     })
   }
   return rows
+}
+
+export function wizardMappingStateFromUiConfig(mapping: MappingUIConfigResponse): WizardState {
+  const base = buildInitialState()
+  const fieldMappings = (mapping.mapping?.field_mappings ?? {}) as Record<string, unknown>
+  const unmappedPolicyRaw = fieldMappings[UNMAPPED_FIELDS_POLICY_KEY]
+  return {
+    ...base,
+    mapping: mappingRowsFromFieldMappings(fieldMappings),
+    mappingMode: mappingModeFromFieldMappings(fieldMappings),
+    fullEventJsonataExpression: fullEventJsonataExpressionFromFieldMappings(fieldMappings),
+    fullEventRegexConfigJson: fullEventRegexConfigJsonFromFieldMappings(fieldMappings),
+    unmappedFieldsPolicy: unmappedPolicyRaw === 'drop_unmapped' ? 'drop_unmapped' : 'pass_through',
+    transformRules: parseTransformRulesFromFieldMappings(fieldMappings),
+    ...enrichmentMetadataFromServer(mapping.enrichment),
+    mappingRawPayloadMode: mapping.mapping?.raw_payload_mode ?? null,
+  }
 }
 
 function mappingModeFromFieldMappings(fieldMappings: Record<string, unknown>): MappingMode {
@@ -93,7 +196,20 @@ function normalizeFailurePolicy(raw: string): WizardRouteDraft['failurePolicy'] 
   return 'LOG_AND_CONTINUE'
 }
 
-function routeDraftFromMappingItem(route: MappingUIConfigRouteItem): WizardRouteDraft {
+function formatterFields(
+  raw: Record<string, unknown> | null | undefined,
+): Pick<WizardRouteDraft, 'formatterConfig' | 'messagePrefixEnabled' | 'messagePrefixTemplate'> {
+  const formatterConfig = raw && typeof raw === 'object' ? { ...raw } : {}
+  return {
+    formatterConfig,
+    messagePrefixEnabled:
+      typeof formatterConfig.message_prefix_enabled === 'boolean' ? formatterConfig.message_prefix_enabled : undefined,
+    messagePrefixTemplate:
+      typeof formatterConfig.message_prefix_template === 'string' ? formatterConfig.message_prefix_template : undefined,
+  }
+}
+
+function routeDraftFromMappingItem(route: MappingUIConfigRouteItem, updatedAt?: string | null): WizardRouteDraft {
   return {
     key: `route-${route.route_id}`,
     destinationId: route.destination_id,
@@ -104,6 +220,8 @@ function routeDraftFromMappingItem(route: MappingUIConfigRouteItem): WizardRoute
         ? { ...(route.route_rate_limit as Record<string, unknown>) }
         : {},
     inherit: { ...DEFAULT_ROUTE_PROCESSING_INHERIT },
+    updatedAt: updatedAt ?? null,
+    ...formatterFields(route.formatter_config),
   }
 }
 
@@ -119,6 +237,8 @@ function routeDraftFromCatalogRoute(route: RouteRead): WizardRouteDraft {
         : {},
     inherit: { ...DEFAULT_ROUTE_PROCESSING_INHERIT },
     overrides: undefined,
+    updatedAt: route.updated_at ?? null,
+    ...formatterFields(route.formatter_config_json ?? undefined),
   }
 }
 
@@ -277,6 +397,7 @@ export function buildWizardDestinationsFromRouteSources(
   const destinationKindsById: Record<number, string> = {}
   const messagePrefixEnabledByDestinationId: Record<number, boolean> = {}
   const destById = new Map(destinations.map((d) => [d.id, d]))
+  const catalogById = new Map(catalogRoutes.map((route) => [route.id, route]))
   const seenRouteIds = new Set<number>()
   const routeDrafts: WizardRouteDraft[] = []
   let messagePrefixTemplate = DEFAULT_MESSAGE_PREFIX_TEMPLATE
@@ -294,7 +415,7 @@ export function buildWizardDestinationsFromRouteSources(
     if (typeof prefixTemplate === 'string' && prefixTemplate.trim()) {
       messagePrefixTemplate = prefixTemplate.trim()
     }
-    routeDrafts.push(routeDraftFromMappingItem(route))
+    routeDrafts.push(routeDraftFromMappingItem(route, catalogById.get(route.route_id)?.updated_at))
   }
 
   for (const route of catalogRoutes) {
@@ -360,8 +481,8 @@ export async function refreshWizardDestinationsFromStream(streamId: number): Pro
     fetchRoutesList(),
     fetchDestinationsList(),
   ])
-  const streamRoutes = (allRoutes ?? []).filter((route) => route.stream_id === streamId)
-  if (destinations === null) return null
+  if (allRoutes == null || destinations === null) return null
+  const streamRoutes = allRoutes.filter((route) => route.stream_id === streamId)
   const merged = await withHydratedRouteTransforms(
     streamId,
     buildWizardDestinationsFromRouteSources(mapping?.routes ?? [], streamRoutes, destinations),
@@ -422,11 +543,20 @@ function streamConfigPatchFromRead(
     pollingIntervalSec:
       typeof found.polling_interval === 'number' && found.polling_interval > 0 ? found.polling_interval : 60,
     timeoutSec:
-      typeof cfg.timeout_seconds === 'number'
-        ? cfg.timeout_seconds
-        : typeof cfg.timeout_sec === 'number'
-          ? cfg.timeout_sec
-          : 30,
+      mapping?.source_type === 'DATABASE_QUERY'
+        ? typeof cfg.query_timeout_seconds === 'number'
+          ? cfg.query_timeout_seconds
+          : typeof cfg.timeout_seconds === 'number'
+            ? cfg.timeout_seconds
+            : typeof cfg.timeout_sec === 'number'
+              ? cfg.timeout_sec
+              : 30
+        : typeof cfg.timeout_seconds === 'number'
+          ? cfg.timeout_seconds
+          : typeof cfg.timeout_sec === 'number'
+            ? cfg.timeout_sec
+            : 30,
+    ...sourceSpecificStreamPatch(cfg),
     eventArrayPath: advanced.eventArrayPath ?? eventArrayPath,
     eventRootPath: advanced.eventRootPath ?? eventRootPath,
     useWholeResponseAsEvent,
@@ -443,8 +573,7 @@ function streamConfigPatchFromRead(
     paginationCursorParam: advanced.paginationCursorParam ?? '',
     paginationPageSize: advanced.paginationPageSize ?? 0,
     paginationMaxPages: advanced.paginationMaxPages ?? 0,
-    rateLimitPerMinute: typeof rl.per_minute === 'number' ? rl.per_minute : 60,
-    rateLimitBurst: typeof rl.burst === 'number' ? rl.burst : 10,
+    ...rateLimitPatchFromRead(rl),
     recordPathConfirmedForApiTestAt:
       (advanced.eventArrayPath ?? eventArrayPath) || useWholeResponseAsEvent ? confirmedAt : null,
     eventRootConfirmedForApiTestAt: (advanced.eventRootPath ?? eventRootPath) ? confirmedAt : null,
@@ -459,7 +588,9 @@ export async function hydrateWizardStateFromStream(streamId: number): Promise<Wi
     fetchRoutesList(),
     fetchDestinationsList(),
   ])
-  if (!found) return null
+  if (!found || mapping == null) return null
+  const schemaDrift = readSchemaDriftPolicy((found.config_json ?? {}) as Record<string, unknown>)
+  if (!schemaDrift.ok) return null
 
   const streamRoutes = (allRoutes ?? []).filter((route) => route.stream_id === streamId)
   if (destinations === null) return null
@@ -519,8 +650,14 @@ export async function hydrateWizardStateFromStream(streamId: number): Promise<Wi
     fullEventJsonataExpression,
     fullEventRegexConfigJson,
     unmappedFieldsPolicy,
-    enrichment: normalizeWizardEnrichmentRules(mapping?.enrichment?.enrichment),
+    transformRules: parseTransformRulesFromFieldMappings(fieldMappings),
+    ...enrichmentMetadataFromServer(mapping.enrichment),
+    mappingRawPayloadMode: mapping.mapping?.raw_payload_mode ?? null,
+    streamUpdatedAt: found.updated_at ?? null,
     destinations: hydratedDestinations,
+    dataProtection: schemaDrift.policy
+      ? { ...base.dataProtection, ...schemaDrift.policy }
+      : base.dataProtection,
     outcome: {
       streamId: found.id,
       routeId: hydratedRouteIds[0] ?? null,

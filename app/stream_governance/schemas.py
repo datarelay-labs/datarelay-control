@@ -51,10 +51,17 @@ class StreamGovernanceDocument(BaseModel):
     route_overrides: list[GovernanceRouteOverride] = Field(default_factory=list)
 
 
+class StreamGovernanceWrite(StreamGovernanceDocument):
+    """PUT body. expected_updated_at is the stream revision from the GET used to merge."""
+
+    expected_updated_at: datetime
+
+
 class StreamGovernanceResponse(StreamGovernanceDocument):
     """GET response."""
 
     stream_id: int
+    updated_at: datetime | None = None
 
 
 class EffectiveProtectionAction(BaseModel):

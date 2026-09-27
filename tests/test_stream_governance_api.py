@@ -47,7 +47,11 @@ def _api_detail(body: dict[str, Any]) -> dict[str, Any]:
 
 
 def _put_governance(client: TestClient, stream_id: int, payload: dict[str, Any]) -> Any:
-    return client.put(f"/api/v1/runtime/streams/{stream_id}/governance", json=payload)
+    current = client.get(f"/api/v1/runtime/streams/{stream_id}/governance")
+    body = dict(payload)
+    if current.status_code == 200 and "expected_updated_at" not in body:
+        body["expected_updated_at"] = current.json()["updated_at"]
+    return client.put(f"/api/v1/runtime/streams/{stream_id}/governance", json=body)
 
 
 def _get_effective(client: TestClient, stream_id: int) -> Any:
@@ -618,3 +622,97 @@ def test_policy_block_route_override_round_trip_preserves_field_overrides(
         item.get("field_path") == "$.email" and item.get("protection_action") == "mask_partial"
         for item in read_back
     )
+
+
+def test_stale_governance_put_does_not_replace_a_newer_document(
+    governance_client: TestClient,
+    db_session: Session,
+) -> None:
+    fixture = _seed_stream_runtime(db_session, failure_policies=["LOG_AND_CONTINUE"])
+    stream_id = fixture["stream_id"]
+    stream = db_session.get(Stream, stream_id)
+    assert stream is not None
+    config = dict(stream.config_json or {})
+    governance = dict(config.get("governance") or {})
+    governance["schema_drift_policy"] = {"unknown_normal_field_policy": "require_review"}
+    governance["rules"] = [
+        {
+            "field_path": "$.external",
+            "default_protection_action": "audit",
+            "default_delivery_behavior": "continue",
+            "enabled": True,
+        }
+    ]
+    config["governance"] = governance
+    stream.config_json = config
+    db_session.add(stream)
+    db_session.commit()
+    db_session.refresh(stream)
+
+    baseline = governance_client.get(f"/api/v1/runtime/streams/{stream_id}/governance")
+    assert baseline.status_code == 200
+    stale_token = baseline.json()["updated_at"]
+
+    stream.updated_at = stream.updated_at.replace(year=stream.updated_at.year + 1)
+    external = dict(stream.config_json or {})
+    external_governance = dict(external.get("governance") or {})
+    external_governance["rules"] = [
+        {
+            "field_path": "$.added-later",
+            "default_protection_action": "mask_full",
+            "default_delivery_behavior": "quarantine",
+            "enabled": True,
+        }
+    ]
+    external_governance["schema_drift_policy"] = {"unknown_normal_field_policy": "require_review"}
+    external["governance"] = external_governance
+    stream.config_json = external
+    db_session.add(stream)
+    db_session.commit()
+
+    stale = governance_client.put(
+        f"/api/v1/runtime/streams/{stream_id}/governance",
+        json={
+            "enabled": True,
+            "rules": [
+                {
+                    "field_path": "$.stale",
+                    "default_protection_action": "audit",
+                    "default_delivery_behavior": "continue",
+                    "enabled": True,
+                }
+            ],
+            "route_overrides": [],
+            "expected_updated_at": stale_token,
+        },
+    )
+    assert stale.status_code == 409
+    assert _api_detail(stale.json()).get("error_code") == "GOVERNANCE_STALE_WRITE"
+
+    current = governance_client.get(f"/api/v1/runtime/streams/{stream_id}/governance")
+    assert current.status_code == 200
+    body = current.json()
+    assert [rule["field_path"] for rule in body["rules"]] == ["$.added-later"]
+    fresh = _put_governance(
+        governance_client,
+        stream_id,
+        {
+            "enabled": True,
+            "rules": body["rules"]
+            + [
+                {
+                    "field_path": "$.fresh",
+                    "default_protection_action": "audit",
+                    "default_delivery_behavior": "continue",
+                    "enabled": True,
+                }
+            ],
+            "route_overrides": [],
+        },
+    )
+    assert fresh.status_code == 200
+    db_session.refresh(stream)
+    stored = (stream.config_json or {}).get("governance") or {}
+    assert stored.get("schema_drift_policy") == {"unknown_normal_field_policy": "require_review"}
+    assert "$.added-later" in {rule.get("field_path") for rule in stored.get("rules") or []}
+    assert "$.stale" not in {rule.get("field_path") for rule in stored.get("rules") or []}

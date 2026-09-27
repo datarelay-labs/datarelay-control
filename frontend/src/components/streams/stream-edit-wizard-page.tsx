@@ -6,7 +6,6 @@ import { NAV_PATH, streamRuntimePath, type StreamWizardStepKey } from '../../con
 import { deleteStream, fetchStreamById } from '../../api/gdcStreams'
 import {
   fetchStreamRuntimeStatsHealth,
-  runStreamOnce,
   startRuntimeStream,
   stopRuntimeStream,
 } from '../../api/gdcRuntime'
@@ -14,12 +13,12 @@ import { mapBackendStreamStatus } from '../../api/streamRows'
 import type { StreamRuntimeStatus } from '../../api/streamRows'
 import { StatusBadge } from '../shell/status-badge'
 import { StreamOperationalBadges } from './stream-operational-badges'
-import { StreamRunControlSwitch } from './stream-run-control-switch'
+import { isStreamSchedulerActive, StreamRunControlSwitch } from './stream-run-control-switch'
 import {
   buildOperationalStreamBadges,
   operationalRunControlTooltipSupplement,
 } from '../../utils/streamOperationalBadges'
-import { formatRunOnceErrorLines, formatRunOnceSummaryLines } from '../../utils/formatRunOnceSummary'
+import { formatRunOnceErrorLines } from '../../utils/formatRunOnceSummary'
 import { wizardStepsWithSourcePresentation } from '../../utils/sourceTypePresentation'
 import { StepConnect } from './wizard/step-connect'
 import { StepSample } from './wizard/step-sample'
@@ -30,7 +29,11 @@ import { StepDeploy } from './wizard/step-deploy'
 import { WizardStepper } from './wizard/wizard-stepper'
 import { wizardStagePurpose } from './wizard/wizard-stage-guidance'
 import { hydrateWizardStateFromStream, refreshWizardDestinationsFromStream } from './wizard/wizard-stream-hydrate'
-import { persistWizardStreamEdits } from './wizard/wizard-stream-persist'
+import { reconcileWizardAfterPartialPersist } from './wizard/wizard-partial-save-reconcile'
+import { proveStreamRunOnce } from './wizard/prove-stream-run-once'
+import { deliveryProofLines, nextDeliveryProofPrior, type ExactRunDeliveryProof, type PriorDeliveryProof } from './wizard/deploy-delivery-proof'
+import { confirmDeliveryPanelServerFields, editRuntimeVerificationBlocked, mergeDeliveryPanelRouteDrafts, persistedWizardConfigSnapshot, replacePersistedConcernSnapshot, shouldScheduleEditAutosave } from './wizard/wizard-edit-runtime-gate'
+import { applyCreatedRouteIdentity, applyPersistedRevisions, persistWizardStreamEdits } from './wizard/wizard-stream-persist'
 import {
   WIZARD_STEPS,
   computeStepCompletion,
@@ -153,6 +156,8 @@ export function StreamEditWizardPage() {
   const [runOnceBusy, setRunOnceBusy] = useState(false)
   const [controlMessage, setControlMessage] = useState<string | null>(null)
   const [runOnceNotice, setRunOnceNotice] = useState<{ variant: 'success' | 'error'; lines: string[] } | null>(null)
+  const [editDeliveryProof, setEditDeliveryProof] = useState<ExactRunDeliveryProof | null>(null)
+  const [editRunOnceError, setEditRunOnceError] = useState<string | null>(null)
   const [isStarting, setIsStarting] = useState(false)
   const [operationalSampleId, setOperationalSampleId] = useState<OperationalSampleId | null>(null)
   const [dataProtectionDrawerOpen, setDataProtectionDrawerOpen] = useState(false)
@@ -160,9 +165,15 @@ export function StreamEditWizardPage() {
   const [streamDeleteConfirm, setStreamDeleteConfirm] = useState('')
   const [streamDeleteBusy, setStreamDeleteBusy] = useState(false)
   const [streamDeleteError, setStreamDeleteError] = useState<string | null>(null)
-  const saveSnapshotRef = useRef<string>('')
+  const confirmedSavedSnapshotRef = useRef<string>('')
+  const confirmedStateRef = useRef<WizardState | null>(null)
+  const failedAttemptSnapshotRef = useRef<string | null>(null)
   const saveTimerRef = useRef<number | null>(null)
   const latestStateRef = useRef<WizardState | null>(null)
+  const isSavingRef = useRef(false)
+  const saveErrorRef = useRef<string | null>(null)
+  const priorDeliveryProofRef = useRef<PriorDeliveryProof | null>(null)
+  saveErrorRef.current = saveError
   const appliedQueryStepRef = useRef<StreamWizardStepKey | null>(null)
 
   useEffect(() => {
@@ -176,6 +187,9 @@ export function StreamEditWizardPage() {
       return
     }
     let cancelled = false
+    priorDeliveryProofRef.current = null
+    setEditDeliveryProof(null)
+    setEditRunOnceError(null)
     setLoading(true)
     setLoadError(null)
     void (async () => {
@@ -189,7 +203,10 @@ export function StreamEditWizardPage() {
       }
       const next = applySampleConfirmationToWizardState(hydrated)
       setState(next)
-      saveSnapshotRef.current = JSON.stringify(next)
+      confirmedStateRef.current = next
+      confirmedSavedSnapshotRef.current = persistedWizardConfigSnapshot(next)
+      failedAttemptSnapshotRef.current = null
+      priorDeliveryProofRef.current = null
       setLoading(false)
       const found = await fetchStreamById(backendStreamId)
       if (!cancelled && found?.status) {
@@ -483,29 +500,37 @@ export function StreamEditWizardPage() {
     if (!refreshed) return
     setState((prev) => {
       if (!prev) return prev
-      const localByKey = new Map(prev.destinations.routeDrafts.map((d) => [d.key, d]))
-      const mergedDrafts = refreshed.destinations.routeDrafts.map((server) => {
-        const local = localByKey.get(server.key)
-        if (!local) return server
-        // Keep local processing/protection/classification overrides; sync delivery fields from API.
-        return {
-          ...local,
-          destinationId: server.destinationId,
-          enabled: server.enabled,
-          failurePolicy: server.failurePolicy,
-        }
-      })
+      const confirmedDrafts = confirmedStateRef.current?.destinations.routeDrafts ?? []
+      const mergedDrafts = mergeDeliveryPanelRouteDrafts(
+        prev.destinations.routeDrafts,
+        refreshed.destinations.routeDrafts,
+        confirmedDrafts,
+      )
+      if (confirmedStateRef.current && confirmedSavedSnapshotRef.current) {
+        const nextConfirmed = confirmDeliveryPanelServerFields(
+          confirmedStateRef.current,
+          refreshed.destinations.routeDrafts,
+        )
+        confirmedStateRef.current = nextConfirmed
+        confirmedSavedSnapshotRef.current = replacePersistedConcernSnapshot(
+          confirmedSavedSnapshotRef.current,
+          nextConfirmed,
+          'destinations',
+        )
+      }
       return {
         ...prev,
         destinations: {
-          ...refreshed.destinations,
+          ...prev.destinations,
           routeDrafts: mergedDrafts,
         },
-        outcome: {
-          ...prev.outcome,
-          routeId: refreshed.routeIds[0] ?? prev.outcome?.routeId ?? null,
-          routeIds: refreshed.routeIds,
-        },
+        outcome: prev.outcome
+          ? {
+              ...prev.outcome,
+              routeId: refreshed.routeIds[0] ?? prev.outcome.routeId,
+              routeIds: refreshed.routeIds,
+            }
+          : prev.outcome,
       }
     })
   }, [backendStreamId])
@@ -513,60 +538,193 @@ export function StreamEditWizardPage() {
   const handleSave = useCallback(async (opts?: { manual?: boolean }) => {
     const manual = opts?.manual === true
     const stateToSave = latestStateRef.current
-    if (!canMutateWorkspace || !stateToSave || backendStreamId == null || isSaving) return
+    if (!canMutateWorkspace || !stateToSave || backendStreamId == null || isSavingRef.current) return
     if (manual && saveTimerRef.current != null) {
       window.clearTimeout(saveTimerRef.current)
       saveTimerRef.current = null
     }
+    isSavingRef.current = true
     setIsSaving(true)
     setSaveError(null)
     setSaveSuccess(null)
-    const result = await persistWizardStreamEdits(backendStreamId, stateToSave)
-    if (result.ok) {
-      if (manual) {
-        const rehydrated = await hydrateWizardStateFromStream(backendStreamId)
-        if (rehydrated) {
-          saveSnapshotRef.current = JSON.stringify(rehydrated)
-          latestStateRef.current = rehydrated
-          setState(rehydrated)
-        } else {
-          saveSnapshotRef.current = JSON.stringify(stateToSave)
+    const submittedSnapshot = persistedWizardConfigSnapshot(stateToSave)
+    const draftStillMatches = () => {
+      const current = latestStateRef.current
+      return current != null && persistedWizardConfigSnapshot(current) === submittedSnapshot
+    }
+    try {
+      const result = await persistWizardStreamEdits(backendStreamId, stateToSave, {
+        confirmedState: confirmedStateRef.current,
+      })
+      const draftMovedDuringSave = !draftStillMatches()
+      const routeIdsByDraftKey = result.routeIdsByDraftKey ?? {}
+      const withIdentity = (current: WizardState) =>
+        applyPersistedRevisions(applyCreatedRouteIdentity(current, routeIdsByDraftKey), {
+          streamUpdatedAt: result.streamUpdatedAt,
+          routeUpdatedAtByDraftKey: result.routeUpdatedAtByDraftKey,
+        })
+      if (latestStateRef.current) latestStateRef.current = withIdentity(latestStateRef.current)
+      setState((prev) => {
+        if (!prev) return prev
+        const next = withIdentity(prev)
+        latestStateRef.current = next
+        return next
+      })
+      const confirmedIdentity = withIdentity(stateToSave)
+      const identitySnapshot = persistedWizardConfigSnapshot(confirmedIdentity)
+      const draftStillMatchesIdentity = () => {
+        const current = latestStateRef.current
+        return current != null && persistedWizardConfigSnapshot(current) === identitySnapshot
+      }
+      const clearPersistFailure = (current: WizardState, routePatch?: { routeId: number | null; routeIds: number[] }) => {
+        if (!current.outcome) return current
+        return {
+          ...current,
+          outcome: {
+            ...current.outcome,
+            ...(routePatch ?? {}),
+            errors: [],
+            reconciliationNote: null,
+          },
         }
+      }
+      const confirmSaved = (next: WizardState) => {
+        confirmedSavedSnapshotRef.current = persistedWizardConfigSnapshot(next)
+        confirmedStateRef.current = next
+        failedAttemptSnapshotRef.current = null
+        latestStateRef.current = next
+      }
+      const confirmSubmittedIdentityOnly = () => {
+        confirmedSavedSnapshotRef.current = identitySnapshot
+        confirmedStateRef.current = confirmedIdentity
+        failedAttemptSnapshotRef.current = null
+      }
+      if (result.dataProtectionPersisted && confirmedSavedSnapshotRef.current && !result.ok) {
+        confirmedSavedSnapshotRef.current = replacePersistedConcernSnapshot(
+          confirmedSavedSnapshotRef.current,
+          confirmedIdentity,
+          'dataProtection',
+        )
+        if (confirmedStateRef.current) {
+          confirmedStateRef.current = {
+            ...confirmedStateRef.current,
+            dataProtection: confirmedIdentity.dataProtection,
+          }
+        }
+      }
+      if (result.ok) {
+        if (draftMovedDuringSave) {
+          confirmSubmittedIdentityOnly()
+        } else if (manual) {
+          const rehydrated = await hydrateWizardStateFromStream(backendStreamId)
+          if (!draftStillMatchesIdentity()) {
+            confirmSubmittedIdentityOnly()
+          } else {
+            const next = rehydrated ? clearPersistFailure(rehydrated) : clearPersistFailure(confirmedIdentity)
+            confirmSaved(next)
+            setState(next)
+          }
+        } else {
+          const refreshedDestinations = await refreshWizardDestinationsFromStream(backendStreamId)
+          if (!draftStillMatchesIdentity()) {
+            confirmSubmittedIdentityOnly()
+          } else {
+            setState((prev) => {
+              if (!prev) return prev
+              if (persistedWizardConfigSnapshot(prev) !== identitySnapshot) {
+                confirmSubmittedIdentityOnly()
+                latestStateRef.current = prev
+                return prev
+              }
+              const next = clearPersistFailure(
+                refreshedDestinations
+                  ? { ...prev, destinations: refreshedDestinations.destinations }
+                  : prev,
+                refreshedDestinations
+                  ? {
+                      routeId: refreshedDestinations.routeIds[0] ?? prev.outcome?.routeId ?? null,
+                      routeIds: refreshedDestinations.routeIds,
+                    }
+                  : undefined,
+              )
+              confirmSaved(next)
+              return next
+            })
+          }
+        }
+        await refreshRuntimeSnapshot()
+        setSaveSuccess(manual ? 'Saved now and applied.' : 'Changes saved.')
+        window.setTimeout(() => setSaveSuccess(null), 3000)
+      } else if (draftMovedDuringSave) {
+        failedAttemptSnapshotRef.current = identitySnapshot
+        setSaveError(result.errors.join(' · ') || 'Save failed.')
       } else {
-        const refreshedDestinations = await refreshWizardDestinationsFromStream(backendStreamId)
-        if (refreshedDestinations) {
-          setState((prev) => {
+        let message = result.errors.join(' · ') || 'Save failed.'
+        try {
+          const reconciled = await reconcileWizardAfterPartialPersist(backendStreamId, stateToSave, result.errors)
+          if (reconciled.note) message = `${message} ${reconciled.note}`
+          if (!draftStillMatchesIdentity()) {
+            failedAttemptSnapshotRef.current = identitySnapshot
+          } else setState((prev) => {
             if (!prev) return prev
-            const next = {
-              ...prev,
-              destinations: refreshedDestinations.destinations,
-              outcome: {
-                ...prev.outcome,
-                routeId: refreshedDestinations.routeIds[0] ?? prev.outcome?.routeId ?? null,
-                routeIds: refreshedDestinations.routeIds,
-              },
+            if (persistedWizardConfigSnapshot(prev) !== identitySnapshot) {
+              failedAttemptSnapshotRef.current = identitySnapshot
+              latestStateRef.current = prev
+              return prev
             }
-            saveSnapshotRef.current = JSON.stringify(next)
+            const next: WizardState = {
+              ...prev,
+              ...(reconciled.appliedDestinations ? { destinations: reconciled.state.destinations } : {}),
+              ...(reconciled.appliedStream ? { stream: reconciled.state.stream } : {}),
+              ...(reconciled.appliedMapping
+                ? {
+                    mapping: reconciled.state.mapping,
+                    mappingMode: reconciled.state.mappingMode,
+                    fullEventJsonataExpression: reconciled.state.fullEventJsonataExpression,
+                    fullEventRegexConfigJson: reconciled.state.fullEventRegexConfigJson,
+                    unmappedFieldsPolicy: reconciled.state.unmappedFieldsPolicy,
+                    transformRules: reconciled.state.transformRules,
+                    mappingRawPayloadMode: reconciled.state.mappingRawPayloadMode,
+                    enrichment: reconciled.state.enrichment,
+                    enrichmentEnabled: reconciled.state.enrichmentEnabled,
+                    enrichmentOverridePolicy: reconciled.state.enrichmentOverridePolicy,
+                    enrichmentPassthrough: reconciled.state.enrichmentPassthrough,
+                  }
+                : {}),
+            }
+            if (prev.outcome) {
+              next.outcome = {
+                ...prev.outcome,
+                ...(reconciled.appliedDestinations && reconciled.state.outcome
+                  ? {
+                      routeId: reconciled.state.outcome.routeId,
+                      routeIds: reconciled.state.outcome.routeIds,
+                    }
+                  : {}),
+                errors: result.errors,
+                reconciliationNote: reconciled.note,
+              }
+            }
+            failedAttemptSnapshotRef.current = persistedWizardConfigSnapshot(next)
             latestStateRef.current = next
             return next
           })
-        } else {
-          saveSnapshotRef.current = JSON.stringify(stateToSave)
+        } catch {
+          message = `${message} Could not read back persisted state after the save error. This draft is not confirmed as saved.`
+          failedAttemptSnapshotRef.current = identitySnapshot
         }
+        setSaveError(message)
       }
-      await refreshRuntimeSnapshot()
-      setSaveSuccess(manual ? 'Saved now and applied.' : 'Changes saved.')
-      window.setTimeout(() => setSaveSuccess(null), 3000)
-    } else {
-      setSaveError(result.errors.join(' · ') || 'Save failed.')
+    } finally {
+      isSavingRef.current = false
+      setIsSaving(false)
     }
-    setIsSaving(false)
-  }, [backendStreamId, canMutateWorkspace, isSaving, refreshRuntimeSnapshot])
+  }, [backendStreamId, canMutateWorkspace, refreshRuntimeSnapshot])
 
   useEffect(() => {
     if (!canMutateWorkspace || !state || backendStreamId == null || isSaving) return
-    const snapshot = JSON.stringify(state)
-    if (snapshot === saveSnapshotRef.current) return
+    const snapshot = persistedWizardConfigSnapshot(state)
+    if (!shouldScheduleEditAutosave(snapshot, confirmedSavedSnapshotRef.current, failedAttemptSnapshotRef.current)) return
     if (saveTimerRef.current != null) window.clearTimeout(saveTimerRef.current)
     saveTimerRef.current = window.setTimeout(() => {
       saveTimerRef.current = null
@@ -590,15 +748,29 @@ export function StreamEditWizardPage() {
       }
       const latest = latestStateRef.current
       if (!latest || backendStreamId == null) return
-      const snapshot = JSON.stringify(latest)
-      if (snapshot === saveSnapshotRef.current) return
-      void persistWizardStreamEdits(backendStreamId, latest)
+      const snapshot = persistedWizardConfigSnapshot(latest)
+      if (!shouldScheduleEditAutosave(snapshot, confirmedSavedSnapshotRef.current, failedAttemptSnapshotRef.current)) return
+      if (isSavingRef.current) return
+      void persistWizardStreamEdits(backendStreamId, latest, { confirmedState: confirmedStateRef.current })
     }
   }, [backendStreamId, canMutateWorkspace])
 
+  const runtimeVerificationBlockedNow = useCallback(() => {
+    const latest = latestStateRef.current
+    if (!latest) return true
+    return editRuntimeVerificationBlocked({
+      isSaving: isSavingRef.current,
+      saveFailed: saveErrorRef.current != null,
+      persistErrorCount: latest.outcome?.errors.length ?? 0,
+      draftSnapshot: persistedWizardConfigSnapshot(latest),
+      confirmedSavedSnapshot: confirmedSavedSnapshotRef.current,
+    })
+  }, [])
+
   const runStreamControl = useCallback(
     async (action: 'start' | 'stop') => {
-      if (!canRuntimeControl || backendStreamId == null || controlBusy || runOnceBusy) return
+      if (!canRuntimeControl || backendStreamId == null || controlBusy) return
+      if (action === 'start' && (runOnceBusy || runtimeVerificationBlockedNow())) return
       setControlBusy(true)
       setControlMessage(null)
       const res =
@@ -613,31 +785,45 @@ export function StreamEditWizardPage() {
       }
       setControlBusy(false)
     },
-    [backendStreamId, canRuntimeControl, controlBusy, runOnceBusy, refreshRuntimeSnapshot],
+    [backendStreamId, canRuntimeControl, controlBusy, refreshRuntimeSnapshot, runOnceBusy, runtimeVerificationBlockedNow],
   )
 
   const executeRunOnce = useCallback(async () => {
-    if (!canRuntimeControl || backendStreamId == null || runOnceBusy || controlBusy) return
+    if (!canRuntimeControl || backendStreamId == null || runOnceBusy || controlBusy || isStarting || runtimeVerificationBlockedNow()) return
     setRunOnceBusy(true)
     setRunOnceNotice(null)
+    setEditDeliveryProof(null)
+    setEditRunOnceError(null)
     try {
-      const response = await runStreamOnce(backendStreamId)
-      setRunOnceNotice({ variant: 'success', lines: formatRunOnceSummaryLines(response) })
+      const proof = await proveStreamRunOnce(backendStreamId, priorDeliveryProofRef.current)
+      priorDeliveryProofRef.current = nextDeliveryProofPrior(
+        backendStreamId,
+        priorDeliveryProofRef.current,
+        proof,
+      )
+      setEditDeliveryProof(proof)
+      const proven = proof.status === 'proven' || proof.status === 'recovered'
+      setRunOnceNotice({
+        variant: proven ? 'success' : 'error',
+        lines: deliveryProofLines(proof),
+      })
       await refreshRuntimeSnapshot()
     } catch (error) {
+      setEditDeliveryProof(null)
+      setEditRunOnceError(error instanceof Error ? error.message : String(error))
       setRunOnceNotice({ variant: 'error', lines: formatRunOnceErrorLines(error) })
     } finally {
       setRunOnceBusy(false)
     }
-  }, [backendStreamId, canRuntimeControl, controlBusy, refreshRuntimeSnapshot, runOnceBusy])
+  }, [backendStreamId, canRuntimeControl, controlBusy, isStarting, refreshRuntimeSnapshot, runOnceBusy, runtimeVerificationBlockedNow])
 
   const handleStart = useCallback(async () => {
-    if (!canRuntimeControl || backendStreamId == null || isStarting) return
+    if (!canRuntimeControl || backendStreamId == null || isStarting || runOnceBusy || runtimeVerificationBlockedNow()) return
     setIsStarting(true)
     await startRuntimeStream(backendStreamId)
     await refreshRuntimeSnapshot()
     setIsStarting(false)
-  }, [backendStreamId, canRuntimeControl, isStarting, refreshRuntimeSnapshot])
+  }, [backendStreamId, canRuntimeControl, isStarting, refreshRuntimeSnapshot, runOnceBusy, runtimeVerificationBlockedNow])
 
   const executeStreamDelete = useCallback(async () => {
     if (!canMutateWorkspace || backendStreamId == null) return
@@ -670,6 +856,16 @@ export function StreamEditWizardPage() {
     [state?.connector.sourceType, state?.stream.name, streamId],
   )
   const runControlTooltipExtra = operationalRunControlTooltipSupplement(state?.stream.name ?? streamId)
+
+  const runtimeVerificationBlocked = !state
+    ? true
+    : editRuntimeVerificationBlocked({
+        isSaving,
+        saveFailed: saveError != null,
+        persistErrorCount: state.outcome?.errors.length ?? 0,
+        draftSnapshot: persistedWizardConfigSnapshot(state),
+        confirmedSavedSnapshot: confirmedSavedSnapshotRef.current,
+      })
 
   const saveStateLabel = !canMutateWorkspace
     ? 'Read-only'
@@ -743,7 +939,7 @@ export function StreamEditWizardPage() {
             <StreamRunControlSwitch
               status={runtimeStatus}
               busy={controlBusy}
-              disabled={runOnceBusy}
+              disabled={!isStreamSchedulerActive(runtimeStatus) && (runOnceBusy || runtimeVerificationBlocked)}
               tooltipExtra={runControlTooltipExtra ?? undefined}
               onToggle={(nextActive) => void runStreamControl(nextActive ? 'start' : 'stop')}
             />
@@ -751,7 +947,7 @@ export function StreamEditWizardPage() {
           {canRuntimeControl ? (
             <button
               type="button"
-              disabled={controlBusy || runOnceBusy}
+              disabled={controlBusy || runOnceBusy || isStarting || runtimeVerificationBlocked}
               onClick={() => void executeRunOnce()}
               className="inline-flex h-9 items-center rounded-lg bg-slate-900 px-3 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
             >
@@ -873,6 +1069,13 @@ export function StreamEditWizardPage() {
             canRuntimeControl={canRuntimeControl}
             onStart={() => void handleStart()}
             onNavigateToLegacySubstep={navigateToLegacySubstep}
+            runtimeVerificationBlocked={runtimeVerificationBlocked}
+            sharedRunOnce={{
+              busy: runOnceBusy,
+              proof: editDeliveryProof,
+              error: editRunOnceError,
+              onRunOnce: () => void executeRunOnce(),
+            }}
           />
         ) : null}
       </div>
