@@ -57,6 +57,33 @@ format_elapsed() {
   fi
 }
 
+prepare_build_identity() {
+  local git_sha source_digest
+  if [[ -z "${GDC_BUILD_GIT_SHA:-}" ]] && command -v git >/dev/null 2>&1; then
+    git_sha="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+    export GDC_BUILD_GIT_SHA="$git_sha"
+  fi
+  if [[ -z "${GDC_BUILD_GIT_DIRTY:-}" ]] && command -v git >/dev/null 2>&1; then
+    if [[ -n "$(git -C "$ROOT" status --porcelain 2>/dev/null || true)" ]]; then
+      export GDC_BUILD_GIT_DIRTY=true
+    else
+      export GDC_BUILD_GIT_DIRTY=false
+    fi
+  fi
+  if [[ -z "${GDC_BUILD_SOURCE_DIGEST:-}" ]]; then
+    source_digest="$(
+      PYTHONPATH="$ROOT" python3 - <<'PY' 2>/dev/null || true
+from app.build_identity import compute_build_source_digest
+print(compute_build_source_digest())
+PY
+    )"
+    export GDC_BUILD_SOURCE_DIGEST="$source_digest"
+  fi
+  export GDC_BUILD_TIME="${GDC_BUILD_TIME:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
+  export GDC_BUILD_WORKTREE="${GDC_BUILD_WORKTREE:-$ROOT}"
+  echo "Build identity: git_sha=${GDC_BUILD_GIT_SHA:-unknown} dirty=${GDC_BUILD_GIT_DIRTY:-unknown} source_digest=${GDC_BUILD_SOURCE_DIGEST:-unknown}"
+}
+
 err_trap() {
   local ec=$?
   echo "" >&2
@@ -251,6 +278,17 @@ port_in_use() {
   return 1
 }
 
+using_https_compose() {
+  case "$COMPOSE_REL" in
+    deploy/docker-compose.https.yml|*/deploy/docker-compose.https.yml|docker-compose.https.yml|*/docker-compose.https.yml)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 validate_required_ports_free() {
   local port busy=()
   resolve_install_required_ports
@@ -260,6 +298,9 @@ validate_required_ports_free() {
     fi
   done
   if [[ "${#busy[@]}" -gt 0 ]]; then
+    if using_https_compose; then
+      die "Required host ports already in use: ${busy[*]} (production HTTPS HTTP ${GDC_HTTP_PORT_RESOLVED}, HTTPS ${GDC_HTTPS_PORT_RESOLVED})."
+    fi
     die "Required host ports already in use: ${busy[*]} (platform HTTP ${GDC_HTTP_PORT_RESOLVED}, HTTPS ${GDC_HTTPS_PORT_RESOLVED}, PostgreSQL ${GDC_PLATFORM_POSTGRES_HOST_PORT_RESOLVED})."
   fi
 }
@@ -297,8 +338,26 @@ validate_numeric_port() {
 
 validate_reverse_proxy_ports() {
   local http_port https_port api_port pg_port reserved
-  http_port="$(env_first_value GDC_HTTP_PORT GDC_ENTRY_HTTP_PORT)"
-  https_port="$(env_first_value GDC_HTTPS_PORT GDC_ENTRY_HTTPS_PORT)"
+  if using_https_compose; then
+    http_port="$(env_value GDC_ENTRY_HTTP_PORT)"
+    https_port="$(env_value GDC_ENTRY_HTTPS_PORT)"
+    [[ -z "$http_port" ]] && http_port="80"
+    [[ -z "$https_port" ]] && https_port="443"
+
+    validate_numeric_port GDC_ENTRY_HTTP_PORT "$http_port"
+    validate_numeric_port GDC_ENTRY_HTTPS_PORT "$https_port"
+    if [[ "$http_port" == "$https_port" ]]; then
+      die "GDC_ENTRY_HTTP_PORT and GDC_ENTRY_HTTPS_PORT cannot be identical ($http_port)."
+    fi
+
+    GDC_HTTP_PORT_RESOLVED="$http_port"
+    GDC_HTTPS_PORT_RESOLVED="$https_port"
+    GDC_PLATFORM_POSTGRES_HOST_PORT_RESOLVED=""
+    return 0
+  fi
+
+  http_port="$(env_value GDC_HTTP_PORT)"
+  https_port="$(env_value GDC_HTTPS_PORT)"
   api_port="$(env_value GDC_API_HOST_PORT)"
   pg_port="$(env_value GDC_PLATFORM_POSTGRES_HOST_PORT)"
   [[ -z "$http_port" ]] && http_port="18080"
@@ -330,7 +389,10 @@ validate_reverse_proxy_ports() {
 
 resolve_install_required_ports() {
   validate_reverse_proxy_ports
-  INSTALL_REQUIRED_PORTS=("$GDC_HTTP_PORT_RESOLVED" "$GDC_HTTPS_PORT_RESOLVED" "$GDC_PLATFORM_POSTGRES_HOST_PORT_RESOLVED")
+  INSTALL_REQUIRED_PORTS=("$GDC_HTTP_PORT_RESOLVED" "$GDC_HTTPS_PORT_RESOLVED")
+  if [[ -n "$GDC_PLATFORM_POSTGRES_HOST_PORT_RESOLVED" ]]; then
+    INSTALL_REQUIRED_PORTS+=("$GDC_PLATFORM_POSTGRES_HOST_PORT_RESOLVED")
+  fi
 }
 
 # Read a single KEY=value from .env-style file (no shell evaluation). Empty if missing.
@@ -362,7 +424,8 @@ PY
 
 # shellcheck disable=SC2317
 resolve_install_web_ui_url() {
-  python3 - "$ENV_FILE" <<'PY'
+  local resolved_port="${1:-$(resolve_entry_http_port)}"
+  python3 - "$ENV_FILE" "$resolved_port" <<'PY'
 import os, re, socket, subprocess, sys
 from pathlib import Path
 
@@ -424,12 +487,11 @@ def hostname_i_first() -> str | None:
 
 
 env_file = sys.argv[1]
+port = sys.argv[2]
 public = (os.environ.get("GDC_PUBLIC_URL") or "").strip() or read_env(env_file, "GDC_PUBLIC_URL").strip()
 if public:
     print(public.rstrip("/") + "/")
     raise SystemExit(0)
-
-port = read_env(env_file, "GDC_HTTP_PORT").strip() or "18080"
 ip = udp_local_ip() or first_non_loopback_from_hostname_i() or hostname_i_first()
 if not ip or ip.startswith("127."):
     ip = "localhost"
@@ -439,10 +501,9 @@ PY
 
 print_install_completion_banner() {
   local web_url http_port https_port
-  web_url="$(resolve_install_web_ui_url)"
   http_port="$(resolve_entry_http_port)"
-  https_port="$(read_env_assignment "$ENV_FILE" GDC_HTTPS_PORT)"
-  [[ -z "$https_port" ]] && https_port="18443"
+  https_port="$(resolve_entry_https_port)"
+  web_url="$(resolve_install_web_ui_url "$http_port")"
   echo ""
   echo "=================================================="
   echo "GDC Platform installation completed successfully"
@@ -451,8 +512,13 @@ print_install_completion_banner() {
   echo "Access URLs:"
   echo "  Web UI (HTTP):  ${web_url}"
   echo "  API health:     http://127.0.0.1:${http_port}/health"
-  echo "  HTTPS (optional): configure Admin → TLS, then use port ${https_port}"
-  echo "    See docs/deployment/https-reverse-proxy.md"
+  if using_https_compose; then
+    echo "  HTTPS entry:    https://127.0.0.1:${https_port}/"
+    echo "    Production HTTPS compose is active; certificate trust depends on the configured PEM material."
+  else
+    echo "  HTTPS (optional): configure Admin → TLS, then use port ${https_port}"
+    echo "    See docs/deployment/https-reverse-proxy.md"
+  fi
   echo ""
   echo "Administrator login:"
   echo "  Username: admin"
@@ -566,6 +632,10 @@ bootstrap_env() {
     echo "Created $ENV_FILE from .env.example."
   fi
   bootstrap_env_secrets
+  # Compose files may live below the repository root (for example deploy/).
+  # Pin interpolation to the installer-owned root .env so every topology sees
+  # the same generated secrets and operator values regardless of -f location.
+  export COMPOSE_ENV_FILES="$ENV_FILE"
 }
 
 bootstrap_env_secrets() {
@@ -809,19 +879,35 @@ print_final_banner() {
   echo ""
   echo "Health checks: backend=$health_backend frontend=$health_frontend ($overall_health)"
   echo "Elapsed: $(format_elapsed "$(elapsed_seconds)")"
-  if [[ "$COMPOSE_REL" == *"https"* ]]; then
+  if using_https_compose; then
     local _https_port
-    _https_port="$(read_env_assignment "$ENV_FILE" GDC_HTTPS_PORT)"
-    [[ -z "$_https_port" ]] && _https_port=443
-    echo "HTTPS (after Admin TLS + PEM): see docs/deployment/https-reverse-proxy.md (host port often ${_https_port})."
+    _https_port="$(resolve_entry_https_port)"
+    echo "HTTPS production entry: host port ${_https_port}; see docs/deployment/https-reverse-proxy.md."
   fi
   echo "Compose file: $COMPOSE_REL"
 }
 
 resolve_entry_http_port() {
   local raw
-  raw="$(read_env_assignment "$ENV_FILE" GDC_HTTP_PORT)"
-  [[ -z "$raw" ]] && raw="18080"
+  if using_https_compose; then
+    raw="$(env_value GDC_ENTRY_HTTP_PORT)"
+    [[ -z "$raw" ]] && raw="80"
+  else
+    raw="$(env_value GDC_HTTP_PORT)"
+    [[ -z "$raw" ]] && raw="18080"
+  fi
+  printf '%s' "$raw"
+}
+
+resolve_entry_https_port() {
+  local raw
+  if using_https_compose; then
+    raw="$(env_value GDC_ENTRY_HTTPS_PORT)"
+    [[ -z "$raw" ]] && raw="443"
+  else
+    raw="$(env_value GDC_HTTPS_PORT)"
+    [[ -z "$raw" ]] && raw="18443"
+  fi
   printf '%s' "$raw"
 }
 
@@ -959,6 +1045,7 @@ install_full() {
 
   local _build_start _build_end _built=0
   if [[ "$DO_BUILD" -eq 1 ]]; then
+    prepare_build_identity
     log_step "$STEP_TOTAL" "Building backend (api) image"
     _build_start="$(date +%s)"
     docker compose -f "$COMPOSE_REL" build api

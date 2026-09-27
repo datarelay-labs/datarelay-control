@@ -83,7 +83,9 @@ services:
       GDC_ROUTE_PROCESSING_ENABLED: ${GDC_ROUTE_PROCESSING_ENABLED:-true}
       GDC_ENABLE_IN_PROCESS_SCHEDULER: ${GDC_ENABLE_IN_PROCESS_SCHEDULER:-false}
       GDC_UVICORN_WORKERS: ${GDC_UVICORN_WORKERS:-2}
-      APP_ENV: ${APP_ENV:-development}
+      # This topology intentionally permits REQUIRE_AUTH=false for lab/public-smoke use.
+      # Keep it development-only even when the root .env is production-oriented.
+      APP_ENV: development
       ENABLE_DEV_VALIDATION_LAB: ${ENABLE_DEV_VALIDATION_LAB:-true}
       DEV_VALIDATION_AUTO_START: ${DEV_VALIDATION_AUTO_START:-true}
       GDC_SEED_ADMIN_PASSWORD: ${GDC_SEED_ADMIN_PASSWORD:-}
@@ -186,7 +188,9 @@ services:
       # Canonical Route Processing only (explicit false fails startup; do not set false).
       GDC_ROUTE_PROCESSING_ENABLED: ${GDC_ROUTE_PROCESSING_ENABLED:-true}
       GDC_ENABLE_IN_PROCESS_SCHEDULER: "true"
-      APP_ENV: ${APP_ENV:-development}
+      # This topology intentionally permits REQUIRE_AUTH=false for lab/public-smoke use.
+      # Keep it development-only even when the root .env is production-oriented.
+      APP_ENV: development
       ENABLE_DEV_VALIDATION_LAB: ${ENABLE_DEV_VALIDATION_LAB:-true}
       DEV_VALIDATION_AUTO_START: ${DEV_VALIDATION_AUTO_START:-true}
       DEV_VALIDATION_WIREMOCK_BASE_URL: http://gdc-platform-wiremock-test:8080
