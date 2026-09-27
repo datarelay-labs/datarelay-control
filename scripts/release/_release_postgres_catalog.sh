@@ -81,3 +81,35 @@ gdc_release_resolve_postgres_db_name() {
   fi
   printf '%s\n' "$inferred"
 }
+
+# Args: ROOT COMPOSE_REL POSTGRES_USER POSTGRES_DB
+#
+# Probe the final PostgreSQL server over TCP and execute a real query against
+# the target catalog. The official postgres image starts a temporary init
+# server on the Unix socket only; pg_isready without -h can therefore report
+# ready before POSTGRES_DB creation and before the final server restart.
+gdc_release_postgres_catalog_usable() {
+  local root="$1" compose_rel="$2" pg_user="$3" pg_db="$4"
+  (
+    cd "$root" || exit 1
+    docker compose -f "$compose_rel" exec -T postgres sh -ec '
+      export PGPASSWORD="${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
+      exec psql -h 127.0.0.1 -U "$1" -d "$2" -v ON_ERROR_STOP=1 -Atqc "SELECT 1"
+    ' sh "$pg_user" "$pg_db"
+  ) >/dev/null 2>&1
+}
+
+# Args: ROOT COMPOSE_REL POSTGRES_USER POSTGRES_DB [attempts] [sleep_seconds]
+gdc_release_wait_for_postgres_catalog() {
+  local root="$1" compose_rel="$2" pg_user="$3" pg_db="$4"
+  local attempts="${5:-45}" sleep_seconds="${6:-2}" attempt
+  for attempt in $(seq 1 "$attempts"); do
+    if gdc_release_postgres_catalog_usable "$root" "$compose_rel" "$pg_user" "$pg_db"; then
+      return 0
+    fi
+    if [[ "$attempt" -lt "$attempts" ]]; then
+      sleep "$sleep_seconds"
+    fi
+  done
+  return 1
+}
