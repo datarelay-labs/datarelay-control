@@ -26,6 +26,7 @@ IMAGE_BUILD_SECONDS=""
 MIGRATION_SECONDS=""
 INSTALL_ADMIN_ALREADY_EXISTS=0
 INSTALL_SECRETS_GENERATED=0
+INSTALL_ENV_CREATED=0
 INSTALL_ORIGINAL_ARGS=()
 
 DO_PULL=0
@@ -513,8 +514,8 @@ print_install_completion_banner() {
   echo "  Web UI (HTTP):  ${web_url}"
   echo "  API health:     http://127.0.0.1:${http_port}/health"
   if using_https_compose; then
-    echo "  HTTPS entry:    https://127.0.0.1:${https_port}/"
-    echo "    Production HTTPS compose is active; certificate trust depends on the configured PEM material."
+    echo "  HTTPS (after Admin TLS enablement): https://127.0.0.1:${https_port}/"
+    echo "    The production HTTPS compose publishes this port, but TLS is not active until Admin → TLS renders/enables the SSL listener."
   else
     echo "  HTTPS (optional): configure Admin → TLS, then use port ${https_port}"
     echo "    See docs/deployment/https-reverse-proxy.md"
@@ -629,13 +630,45 @@ bootstrap_env() {
       die ".env.example not found at $ENV_EXAMPLE"
     fi
     cp "$ENV_EXAMPLE" "$ENV_FILE"
+    INSTALL_ENV_CREATED=1
     echo "Created $ENV_FILE from .env.example."
   fi
   bootstrap_env_secrets
+  synchronize_new_https_public_port
   # Compose files may live below the repository root (for example deploy/).
   # Pin interpolation to the installer-owned root .env so every topology sees
   # the same generated secrets and operator values regardless of -f location.
   export COMPOSE_ENV_FILES="$ENV_FILE"
+}
+
+synchronize_new_https_public_port() {
+  [[ "$INSTALL_ENV_CREATED" -eq 1 ]] || return 0
+  using_https_compose || return 0
+
+  local https_port
+  https_port="$(resolve_entry_https_port)"
+  python3 - "$ENV_FILE" "$https_port" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+port = sys.argv[2]
+lines = path.read_text(encoding="utf-8").splitlines()
+pat = re.compile(r"^\s*GDC_PUBLIC_HTTPS_PORT\s*=.*$")
+out = []
+replaced = False
+for line in lines:
+    if pat.match(line):
+        out.append(f"GDC_PUBLIC_HTTPS_PORT={port}")
+        replaced = True
+    else:
+        out.append(line)
+if not replaced:
+    out.append(f"GDC_PUBLIC_HTTPS_PORT={port}")
+path.write_text("\n".join(out) + "\n", encoding="utf-8")
+PY
+  echo "Aligned GDC_PUBLIC_HTTPS_PORT=$https_port with the fresh production HTTPS entry port."
 }
 
 bootstrap_env_secrets() {
@@ -882,7 +915,7 @@ print_final_banner() {
   if using_https_compose; then
     local _https_port
     _https_port="$(resolve_entry_https_port)"
-    echo "HTTPS production entry: host port ${_https_port}; see docs/deployment/https-reverse-proxy.md."
+    echo "HTTPS production port: ${_https_port} (available after Admin TLS enablement); see docs/deployment/https-reverse-proxy.md."
   fi
   echo "Compose file: $COMPOSE_REL"
 }
@@ -912,20 +945,31 @@ resolve_entry_https_port() {
 }
 
 verify_reverse_proxy_health() {
-  local port body
-  port="$(resolve_entry_http_port)"
+  local http_port https_port http_code https_code
+  http_port="$(resolve_entry_http_port)"
   if ! command -v curl >/dev/null 2>&1; then
     echo "WARN: curl not installed; skipping reverse-proxy /health check." >&2
     return 0
   fi
-  body="$(curl -fsS "http://127.0.0.1:${port}/health" 2>/dev/null || true)"
-  [[ -n "$body" ]] || return 1
-  return 0
+
+  http_code="$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:${http_port}/health" 2>/dev/null || echo "000")"
+  [[ "$http_code" == "200" ]] && return 0
+
+  case "$http_code" in
+    301|302|307|308)
+      if using_https_compose; then
+        https_port="$(resolve_entry_https_port)"
+        https_code="$(curl -ksS -o /dev/null -w '%{http_code}' "https://127.0.0.1:${https_port}/health" 2>/dev/null || echo "000")"
+        [[ "$https_code" == "200" ]] && return 0
+      fi
+      ;;
+  esac
+  return 1
 }
 
 verify_login_endpoint() {
-  local port pw payload http_code
-  port="$(resolve_entry_http_port)"
+  local http_port https_port pw payload http_code https_code
+  http_port="$(resolve_entry_http_port)"
   pw="$(resolve_install_admin_password)"
   if ! command -v curl >/dev/null 2>&1; then
     echo "WARN: curl not installed; skipping login endpoint check." >&2
@@ -937,10 +981,24 @@ print(json.dumps({"username": "admin", "password": sys.argv[1]}))
 PY
 )"
   http_code="$(curl -sS -o /dev/null -w '%{http_code}' -X POST \
-    "http://127.0.0.1:${port}/api/v1/auth/login" \
+    "http://127.0.0.1:${http_port}/api/v1/auth/login" \
     -H "Content-Type: application/json" \
     -d "$payload" 2>/dev/null || echo "000")"
-  [[ "$http_code" == "200" ]]
+  [[ "$http_code" == "200" ]] && return 0
+
+  case "$http_code" in
+    301|302|307|308)
+      if using_https_compose; then
+        https_port="$(resolve_entry_https_port)"
+        https_code="$(curl -ksS -o /dev/null -w '%{http_code}' -X POST \
+          "https://127.0.0.1:${https_port}/api/v1/auth/login" \
+          -H "Content-Type: application/json" \
+          -d "$payload" 2>/dev/null || echo "000")"
+        [[ "$https_code" == "200" ]] && return 0
+      fi
+      ;;
+  esac
+  return 1
 }
 
 run_health_checks_or_fail() {
@@ -1122,4 +1180,6 @@ main() {
   install_full
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

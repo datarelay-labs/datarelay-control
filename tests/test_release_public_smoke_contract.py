@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import shlex
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -53,3 +55,61 @@ def test_installer_is_compose_aware_for_production_entry_ports() -> None:
     assert 'port="$(resolve_entry_http_port)"' in install
     assert '_https_port="$(resolve_entry_https_port)"' in install
     assert 'export COMPOSE_ENV_FILES="$ENV_FILE"' in install
+
+
+def _run_install_functions(body: str) -> subprocess.CompletedProcess[str]:
+    install = ROOT / "scripts" / "release" / "install.sh"
+    return subprocess.run(
+        ["bash", "-c", f"source {shlex.quote(str(install))}\n{body}"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def test_fresh_https_env_aligns_public_redirect_port(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("GDC_PUBLIC_HTTPS_PORT=18443\n", encoding="utf-8")
+    result = _run_install_functions(
+        f"""
+ENV_FILE={shlex.quote(str(env_file))}
+COMPOSE_REL=deploy/docker-compose.https.yml
+INSTALL_ENV_CREATED=1
+export GDC_ENTRY_HTTPS_PORT=19443
+synchronize_new_https_public_port
+"""
+    )
+    assert result.returncode == 0, result.stderr
+    assert "GDC_PUBLIC_HTTPS_PORT=19443" in env_file.read_text(encoding="utf-8")
+
+
+def test_https_redirect_health_and_login_retry_direct_https() -> None:
+    result = _run_install_functions(
+        r"""
+COMPOSE_REL=deploy/docker-compose.https.yml
+export GDC_ENTRY_HTTP_PORT=19080
+export GDC_ENTRY_HTTPS_PORT=19443
+export GDC_SEED_ADMIN_PASSWORD=unit-test-password
+curl() {
+  case "$*" in
+    *"http://127.0.0.1:19080/health"*) printf '301' ;;
+    *"https://127.0.0.1:19443/health"*) printf '200' ;;
+    *"http://127.0.0.1:19080/api/v1/auth/login"*) printf '301' ;;
+    *"https://127.0.0.1:19443/api/v1/auth/login"*) printf '200' ;;
+    *) printf '000' ;;
+  esac
+}
+verify_reverse_proxy_health
+verify_login_endpoint
+echo PASS
+"""
+    )
+    assert result.returncode == 0, result.stderr
+    assert "PASS" in result.stdout
+
+
+def test_https_banner_does_not_claim_tls_is_enabled_before_admin_activation() -> None:
+    install = _read("scripts/release/install.sh")
+    assert "Production HTTPS compose is active" not in install
+    assert "after Admin TLS enablement" in install

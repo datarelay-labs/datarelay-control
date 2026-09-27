@@ -43,9 +43,11 @@ For production-style HTTPS deployment:
 ```bash
 export GDC_RELEASE_COMPOSE_FILE=deploy/docker-compose.https.yml
 export GDC_INSTALL_GENERATE_TLS=1
-# Optional non-privileged rehearsal ports:
+export GDC_PUBLIC_HTTPS_PORT=443
+# Optional non-privileged rehearsal ports (keep public HTTPS aligned):
 # export GDC_ENTRY_HTTP_PORT=18080
 # export GDC_ENTRY_HTTPS_PORT=18443
+# export GDC_PUBLIC_HTTPS_PORT=18443
 ./scripts/release/install.sh --build
 ```
 

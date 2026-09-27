@@ -57,13 +57,17 @@ Example production HTTPS install:
 ```bash
 export GDC_RELEASE_COMPOSE_FILE=deploy/docker-compose.https.yml
 export GDC_INSTALL_GENERATE_TLS=1
-# Optional host-port overrides; production defaults are 80/443.
+# Production defaults are HTTP 80 / HTTPS 443.
+# For an existing .env, keep the public redirect port aligned with the entry HTTPS port.
+export GDC_PUBLIC_HTTPS_PORT=443
+# Optional non-privileged override:
 # export GDC_ENTRY_HTTP_PORT=18080
 # export GDC_ENTRY_HTTPS_PORT=18443
+# export GDC_PUBLIC_HTTPS_PORT=18443
 ./scripts/release/install.sh --build
 ```
 
-For this compose contract, the installer validates only the published HTTP/HTTPS entry ports; PostgreSQL and API are internal-only and are not treated as required host ports.
+For this compose contract, the installer validates only the published HTTP/HTTPS entry ports; PostgreSQL and API are internal-only and are not treated as required host ports. When the installer creates a fresh `.env`, it automatically aligns `GDC_PUBLIC_HTTPS_PORT` with the selected production HTTPS entry port. Existing operator-owned `.env` files are preserved, so custom deployments must keep those two values aligned explicitly.
 
 ## Ports and data
 
