@@ -27,11 +27,9 @@ Operators do **not** need to understand internal engine names (Schema Drift Engi
 ```
 Connector
    ↓
-Stream  (execution unit)
+Stream  (execution unit: fetch, extract, observe, detect, checkpoint)
    ↓
-Shared Processing  (stream-scoped mapping, enrichment, governance defaults)
-   ↓
-Route  (destination-specific processing unit)
+Route  (processing unit: transform, protection, classification, policy, delivery)
    ↓
 Destination  (delivery endpoint)
 ```
@@ -41,9 +39,8 @@ Destination  (delivery endpoint)
 | Entity | Role |
 |--------|------|
 | **Connector** | Source product connection (credentials, base URL, product group) |
-| **Stream** | Pipeline execution unit — one source, one checkpoint, many routes |
-| **Shared Processing** | Default transform and governance applied before route fan-out |
-| **Route** | Links stream to destination; may override processing per concern |
+| **Stream** | Execution unit — one source, shared fetch/extract/observation/detection, one checkpoint, many routes. Holds inherited mapping, enrichment, and governance defaults |
+| **Route** | Processing unit — applies transform and governance per destination (inherit those defaults or override), then delivers |
 | **Destination** | Reusable delivery target (webhook, syslog, etc.) |
 
 ### Charter rule
@@ -81,12 +78,14 @@ Source Adapter
   Phase A–D Charter: HTTP API, Database Source, Webhook Receiver
   Supported extensions: S3 Object Polling, Remote File Polling
         ↓
-Shared Processing (stream defaults: mapping, enrichment, governance)
+Fetch → Extract → Schema Observation → Sensitive Detection
+        ↓
+SharedBatchContext
         ↓
 Per-route pipeline
-  Transform → Protection → Classification → Policy → Delivery
+  Transform (mapping/enrichment) → Protection → Classification → Policy → Delivery
         ↓
-Checkpoint update (on successful delivery only)
+Shared checkpoint decision (after successful delivery)
 ```
 
 **Code entry:** `app/runners/stream_runner.py`  
@@ -169,19 +168,23 @@ Failover uses the Active/Standby engine on the Route Processing delivery path.
 ## Route Processing Model
 
 ```
-Shared Processing (stream)
-├── Transform: StreamMapping + StreamEnrichment
-├── Protection: StreamProtectionRule
-├── Classification: StreamClassificationRule
-└── Policy: StreamPolicyRule
+Shared phase (once per batch) → SharedBatchContext
+├── Fetch
+├── Extract
+├── Schema Observation
+└── Sensitive Detection
 
-Route (per destination)
-├── Transform override (Route Edit / wizard intent)
-├── Protection override (governance field + route bundle)
-├── Classification override (floor + route bundle)
-├── Policy override (delivery behavior)
-└── Delivery metadata (enabled, rate limit, formatter)
+Route (per destination; inherit stream config or override)
+├── Transform (mapping/enrichment)
+├── Protection
+├── Classification
+├── Policy
+└── Delivery
+
+Then: shared checkpoint decision
 ```
+
+Stream mapping, enrichment, protection, classification, and policy rules are inherited configuration. They are resolved and executed inside the per-route pipeline, not as a shared processing phase.
 
 **Effective Status:** Each route exposes Inherited / Overridden / Mixed via Effective API — used in Route Edit and Governance Workspace.
 
@@ -206,22 +209,25 @@ Route (per destination)
 ## Data Flow Diagram
 
 ```
-┌─────────────┐     ┌──────────────┐     ┌─────────────────┐
-│  Connector  │────▶│    Stream    │────▶│ Shared Processing│
-│  (source)   │     │  (execution) │     │ Map · Enrich · Gov│
-└─────────────┘     └──────────────┘     └────────┬────────┘
-                                                   │
-                     ┌─────────────────────────────┼─────────────────────────────┐
-                     ▼                             ▼                             ▼
-              ┌────────────┐               ┌────────────┐               ┌────────────┐
-              │  Route A   │               │  Route B   │               │  Route C   │
-              │  + override│               │  inherited │               │  + override│
-              └─────┬──────┘               └─────┬──────┘               └─────┬──────┘
-                    ▼                             ▼                             ▼
-              ┌────────────┐               ┌────────────┐               ┌────────────┐
-              │ Destination│               │ Destination│               │ Destination│
-              │     1      │               │     2      │               │     3      │
-              └────────────┘               └────────────┘               └────────────┘
+┌─────────────┐     ┌──────────────────────────┐
+│  Connector  │────▶│          Stream          │
+│  (source)   │     │ fetch · extract · observe│
+└─────────────┘     │ · detect · checkpoint    │
+                    └────────────┬─────────────┘
+                                 │
+       ┌─────────────────────────┼─────────────────────────┐
+       ▼                         ▼                         ▼
+┌────────────┐           ┌────────────┐           ┌────────────┐
+│  Route A   │           │  Route B   │           │  Route C   │
+│ transform ·│           │ transform ·│           │ transform ·│
+│ governance │           │ governance │           │ governance │
+│  override  │           │  inherited │           │  override  │
+└─────┬──────┘           └─────┬──────┘           └─────┬──────┘
+      ▼                        ▼                        ▼
+┌────────────┐           ┌────────────┐           ┌────────────┐
+│ Destination│           │ Destination│           │ Destination│
+│     1      │           │     2      │           │     3      │
+└────────────┘           └────────────┘           └────────────┘
 ```
 
 ---

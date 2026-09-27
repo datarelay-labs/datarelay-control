@@ -1,10 +1,22 @@
 # M13.1 Route Processing Architecture — Foundation
 
 **Milestone:** M13.1 (Route Processing Foundation)  
-**Status:** Spec only — no implementation authorized by this document  
+**Status:** Foundation spec retained. Current flag contract is normative; M13.1 flag-OFF rollout text below is historical and non-normative.
 **Authority:** `.specify/memory/constitution.md`, Product Charter 1.2.1, Master WBS 1.2.1  
 **Architecture companion:** [`docs/architecture/route-processing-foundation-implementation-spec.md`](../../docs/architecture/route-processing-foundation-implementation-spec.md)  
 **Gap analysis:** [`docs/architecture/route-architecture-gap-analysis.md`](../../docs/architecture/route-architecture-gap-analysis.md)
+
+---
+
+## Current contract (normative)
+
+Route Processing is the only supported product runtime.
+
+- `GDC_ROUTE_PROCESSING_ENABLED` defaults to **true**.
+- An explicit `false` is rejected at settings load. There is no flag-OFF runtime and no silent coercion to true.
+- Emergency rollback uses a previous release image, not an in-process flag.
+
+Statements later in this document that describe flag default `false`, a live flag-OFF path, flag-OFF regression gates, production default-off rollout, or flag-off rollback record the historical M13.1 plan. They are not current normative contracts. This section wins where they differ.
 
 ---
 
@@ -147,7 +159,7 @@ StreamRunner (sole transaction owner — no new runner class)
        Checkpoint (stream cursor, post-delivery ACK — unchanged)
 ```
 
-When `GDC_ROUTE_PROCESSING_ENABLED=false` (default): **identical to current behavior**.
+**Historical M13.1 plan (non-normative):** `GDC_ROUTE_PROCESSING_ENABLED=false` was specified as identical to the pre-split stream pipeline and as the default. That flag-OFF path is retired. Current runtime defaults the flag to true and rejects explicit `false`. See **Current contract**.
 
 ### 4.3 Config resolution
 
@@ -188,7 +200,7 @@ M13.1 **in scope** — foundation only:
 
 | # | Deliverable | Owner files (future impl) |
 |---|-------------|---------------------------|
-| 1 | **Feature flag** `GDC_ROUTE_PROCESSING_ENABLED`, default `false` | settings / env |
+| 1 | **Feature flag** `GDC_ROUTE_PROCESSING_ENABLED`. Historical M13.1 plan: default `false`. **Current:** default `true`; explicit `false` rejected | settings / env |
 | 2 | **`SharedBatchContext`** dataclass or equivalent | `app/runners/` |
 | 3 | **`RouteRuntimeContext`** dataclass or equivalent | `app/runners/` |
 | 4 | **`resolve_route_config()`** dual-read function | `app/runners/stream_loader.py` |
@@ -332,7 +344,7 @@ Conceptual contract for stream-scoped shared phase output.
 
 ### 8.3 Contract rules
 
-1. Built **once** per execution cycle when flag on; when flag off, existing path may not instantiate explicitly (backward compat).
+1. Built **once** per execution cycle. **Historical M13.1 plan (non-normative):** when the flag was off, the pre-split path might not instantiate this context. That flag-OFF path is retired.
 2. `extracted_events` shared across all routes — no per-route extraction.
 3. Union Schema is **not** rebuilt per route.
 4. Sensitive detection runs **once**; routes apply different protection later (M13.3).
@@ -356,35 +368,51 @@ All routes on a stream consume the same `union_schema`. Implementation of Union 
 
 ## 9. Feature Flag Strategy
 
-### 9.1 Flag definition
+### 9.1 Current flag contract
 
 | Property | Value |
 |----------|-------|
 | Name | `GDC_ROUTE_PROCESSING_ENABLED` |
-| Default | **`false`** |
-| Scope | Platform / deployment (env or admin settings) |
-| Per-stream override | **Not in M13.1** — platform flag only |
+| Default | **`true`** |
+| Explicit `false` | Rejected at settings load. No flag-OFF runtime |
+| Scope | Platform / deployment (env) |
+| Per-stream override | Not supported |
+| Rollback | Previous release image |
 
-### 9.2 Behavior matrix
+### 9.2 Historical M13.1 flag definition (non-normative)
+
+| Property | Historical M13.1 value |
+|----------|------------------------|
+| Name | `GDC_ROUTE_PROCESSING_ENABLED` |
+| Default | `false` |
+| Scope | Platform / deployment (env or admin settings) |
+| Per-stream override | Not in M13.1 — platform flag only |
+
+### 9.3 Historical M13.1 behavior matrix (non-normative)
 
 | Flag | Runtime path | User impact |
 |------|--------------|-------------|
-| `false` | Legacy: process once at stream scope → fan-out identical payload | **Zero change** for all existing streams |
-| `true`, no route config | New orchestration: shared phase + per-route loop; dual-read falls back to stream config; stage slots no-op | Behavior equivalent to legacy until M13.2+ populates route config |
-| `true`, route config present | New orchestration; route config used where populated (M13.2+) | Per-route processing active for configured concerns |
+| `false` | Legacy: process once at stream scope → fan-out identical payload | Zero change for streams that still had the pre-split path |
+| `true`, no route config | Shared phase + per-route loop; dual-read falls back to stream config; stage slots no-op in the M13.1 skeleton | Behavior equivalent to the pre-split path until later milestones populated route config |
+| `true`, route config present | Route config used where populated | Per-route processing active for configured concerns |
 
-### 9.3 Flag evaluation
+The `false` row is not a live path.
 
-- Evaluated at **stream run start** (not mid-batch toggle).
-- `stream_loader` and `StreamRunner` branch on flag at entry.
-- No hot-reload requirement in M13.1.
+### 9.4 Flag evaluation
 
-### 9.4 Safety requirements
+- Route Processing is always the runtime path. Explicit `false` fails settings load before a run starts.
+- No hot-reload of a flag-OFF path exists.
+
+**Historical M13.1 plan (non-normative):** the flag was evaluated at stream run start, and `stream_loader` / `StreamRunner` branched between the legacy path and the new path.
+
+### 9.5 Historical M13.1 safety requirements (non-normative)
 
 1. Default OFF in all environments until M13.2+ validation complete.
-2. Flag OFF must pass **full existing e2e suite** without modification to test expectations.
-3. Flag ON with empty route config must produce **equivalent delivery outcomes** to flag OFF (dual-read fallback).
+2. Flag OFF must pass the full existing e2e suite without modification to test expectations.
+3. Flag ON with empty route config must produce equivalent delivery outcomes to flag OFF (dual-read fallback).
 4. Flag must not disable checkpoint, fan-out, or failure policy behavior.
+
+**Current safety requirement:** explicit `false` is rejected. Checkpoint, fan-out, and failure policy stay on the Route Processing path. Rollback uses a previous release image.
 
 ---
 
@@ -429,7 +457,7 @@ M13.1 documents policy only; shim implementation deferred.
 
 | Guarantee | Mechanism |
 |-----------|-----------|
-| Same delivery payload when flag off | Legacy code path preserved |
+| Same delivery payload when flag off | **Historical M13.1 plan (non-normative).** The legacy flag-OFF path is retired |
 | Same delivery payload when flag on, no route config | Dual-read → stream config |
 | Checkpoint semantics unchanged | Shared cursor; specs/004 rules |
 | Multi-route fan-out unchanged | Per-route loop still iterates all enabled routes |
@@ -456,8 +484,8 @@ M13.1 is **complete** when all criteria pass:
 
 ### 11.2 Feature flag
 
-- [ ] **AC-3** `GDC_ROUTE_PROCESSING_ENABLED` exists, default **`false`**.
-- [ ] **AC-4** Flag off: runtime behavior matches pre-M13.1 baseline (e2e green, no orchestration split invoked).
+- [ ] **AC-3 (historical M13.1, non-normative)** `GDC_ROUTE_PROCESSING_ENABLED` exists, default `false`. **Superseded:** current default is `true`; explicit `false` is rejected.
+- [ ] **AC-4 (historical M13.1, non-normative)** Flag off: runtime behavior matches pre-M13.1 baseline. **Superseded:** there is no flag-OFF runtime.
 
 ### 11.3 Context contracts
 
@@ -497,9 +525,11 @@ No test code in this spec; defines **required test matrix** for M13.1 implementa
 | `resolve_route_config` | Route config present → use route; absent → stream; both absent → default/null |
 | `RouteRuntimeContext` build | All fields populated; disabled route skipped in loop |
 | `SharedBatchContext` build | Events, observation, detection populated from shared phase mocks |
-| Flag branch | Loader/runner select legacy vs new path |
+| Flag branch | **Historical M13.1 plan (non-normative):** loader/runner select legacy vs new path. Current settings reject explicit `false` |
 
-### 12.2 Integration tests (flag OFF — regression gate)
+### 12.2 Historical integration tests (flag OFF — non-normative)
+
+This matrix recorded the M13.1 flag-OFF regression plan. It is not a current regression gate. Current runtime rejects explicit `false`.
 
 | Case | Expected |
 |------|----------|
@@ -509,9 +539,11 @@ No test code in this spec; defines **required test matrix** for M13.1 implementa
 | Failure policy LOG_AND_CONTINUE | Checkpoint behavior unchanged |
 | Failure policy PAUSE_STREAM_ON_FAILURE | Stream paused on route failure |
 
-**Gate:** Full existing runtime integration suite passes with flag OFF **without test expectation changes**.
+**Historical gate (non-normative):** Full existing runtime integration suite passes with flag OFF without test expectation changes.
 
 ### 12.3 Integration tests (flag ON — skeleton)
+
+Comparisons to flag OFF in this table mean the historical pre-split baseline. They do not authorize a live flag-OFF path.
 
 | Case | Expected |
 |------|----------|
@@ -543,6 +575,8 @@ No test code in this spec; defines **required test matrix** for M13.1 implementa
 
 ### 13.1 Phases
 
+The phase table below is the historical M13.1 rollout plan, including a production default-off deploy. It is not the current release procedure. Current runtime defaults the flag to true and rejects explicit `false`.
+
 | Phase | Action | Exit criteria |
 |-------|--------|---------------|
 | **R0 — Spec** | Publish this spec + architecture doc | AC-1, AC-2 |
@@ -551,15 +585,19 @@ No test code in this spec; defines **required test matrix** for M13.1 implementa
 | **R3 — Production default off** | Deploy M13.1 with flag off | AC-4; production e2e green |
 | **R4 — M13.2+** | Populate route config tables and stage executors | Separate milestone gates |
 
-### 13.2 Rollout rules
+### 13.2 Historical M13.1 rollout rules (non-normative)
 
-1. **Never** enable flag globally until M13.2 validates transform per route in staging.
-2. M13.1 production deploy is safe with flag **OFF** — zero operator action required.
-3. Staging may enable flag ON to validate skeleton; expect equivalent behavior to legacy when no route config exists.
+1. Never enable flag globally until M13.2 validates transform per route in staging.
+2. M13.1 production deploy is safe with flag OFF — zero operator action required.
+3. Staging may enable flag ON to validate skeleton; expect equivalent behavior to the pre-split path when no route config exists.
 4. No backfill script runs as part of M13.1 rollout.
 5. No wizard or UI changes required for M13.1 deploy.
 
 ### 13.3 Rollback
+
+**Current:** Emergency rollback uses a previous release image. Setting `GDC_ROUTE_PROCESSING_ENABLED=false` does not restore a legacy path; explicit `false` is rejected.
+
+**Historical M13.1 plan (non-normative):**
 
 | Trigger | Action |
 |---------|--------|
