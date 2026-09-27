@@ -40,6 +40,8 @@ function renderShell(initialPath = '/streams') {
           <Route path="/streams" element={<p>Streams workspace</p>} />
           <Route path="/destinations" element={<p>Destinations workspace</p>} />
           <Route path="/monitoring" element={<p>Dashboard workspace</p>} />
+          <Route path="/admin" element={<p>Administration workspace</p>} />
+          <Route path="/routes" element={<p>Routes workspace</p>} />
         </Route>
       </Routes>
     </MemoryRouter>,
@@ -153,6 +155,28 @@ describe('AppShellLayout responsive accessibility', () => {
     await user.click(screen.getByTestId('shell-mobile-nav-toggle'))
     await user.click(screen.getByRole('button', { name: 'Close navigation' }))
     expect(screen.getByTestId('shell-mobile-nav-toggle')).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('gives Dashboard a single shell title without a repeated breadcrumb', () => {
+    renderShell('/monitoring')
+    expect(screen.getAllByRole('heading', { name: 'Dashboard' })).toHaveLength(1)
+    expect(screen.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeInTheDocument()
+    expect(screen.queryByRole('navigation', { name: 'Breadcrumb' })).not.toBeInTheDocument()
+    expect(within(screen.getByRole('main')).queryByText(/^Dashboard$/)).not.toBeInTheDocument()
+  })
+
+  it('gives Administration a single shell title without a repeated breadcrumb', () => {
+    renderShell('/admin')
+    expect(screen.getAllByRole('heading', { name: 'Administration' })).toHaveLength(1)
+    expect(screen.getByRole('heading', { level: 1, name: 'Administration' })).toBeInTheDocument()
+    expect(screen.queryByRole('navigation', { name: 'Breadcrumb' })).not.toBeInTheDocument()
+    expect(within(screen.getByRole('main')).queryByText(/^Administration$/)).not.toBeInTheDocument()
+  })
+
+  it('gives Routes a single shell title', () => {
+    renderShell('/routes')
+    expect(screen.getAllByRole('heading', { name: 'Routes' })).toHaveLength(1)
+    expect(screen.queryByRole('navigation', { name: 'Breadcrumb' })).not.toBeInTheDocument()
   })
 
   it('preserves primary navigation role and persona-facing nav labels', () => {

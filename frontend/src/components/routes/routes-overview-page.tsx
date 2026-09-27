@@ -416,13 +416,11 @@ export function RoutesOverviewPage() {
         </div>
       ) : null}
       <RuntimeFixtureModeBanner surface="routes" />
+      {/* Purpose only — App Shell owns the page title */}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div className="space-y-1">
-          <h2 className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-50">Routes</h2>
-          <p className="max-w-xl text-[13px] text-slate-600 dark:text-gdc-muted">
-            End-to-end delivery flow across streams, routes, and destinations
-          </p>
-        </div>
+        <p className="max-w-2xl text-sm text-slate-600 dark:text-gdc-muted">
+          End-to-end delivery flow across streams, routes, and destinations
+        </p>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           {operationalSnapshot ? (
             <div

@@ -221,6 +221,7 @@ describe('StreamsConsole SaaS modernization', () => {
 
     const empty = await screen.findByTestId('streams-empty-state')
     expect(empty).toHaveTextContent(/No streams are configured yet/i)
+    expect(empty).toHaveClass('text-slate-600', 'dark:text-gdc-muted')
     expect(empty).not.toHaveTextContent(/ENABLE_DEV_VALIDATION_LAB/)
     expect(empty).not.toHaveTextContent(/scripts\/seed\.py/)
     expect(empty).not.toHaveTextContent(/dev-validation-lab/)
