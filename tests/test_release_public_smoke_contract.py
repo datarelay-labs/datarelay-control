@@ -113,3 +113,19 @@ def test_https_banner_does_not_claim_tls_is_enabled_before_admin_activation() ->
     install = _read("scripts/release/install.sh")
     assert "Production HTTPS compose is active" not in install
     assert "after Admin TLS enablement" in install
+
+
+def test_existing_https_env_preserves_operator_public_redirect_port(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("GDC_PUBLIC_HTTPS_PORT=24443\n", encoding="utf-8")
+    result = _run_install_functions(
+        f"""
+ENV_FILE={shlex.quote(str(env_file))}
+COMPOSE_REL=deploy/docker-compose.https.yml
+INSTALL_ENV_CREATED=0
+export GDC_ENTRY_HTTPS_PORT=19443
+synchronize_new_https_public_port
+"""
+    )
+    assert result.returncode == 0, result.stderr
+    assert "GDC_PUBLIC_HTTPS_PORT=24443" in env_file.read_text(encoding="utf-8")
