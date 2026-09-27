@@ -123,7 +123,7 @@ function apiFailureDetail(res: { ok: boolean; body: unknown; timedOut?: boolean 
 }
 
 async function stopStream(client: CleanupClient, streamId: number): Promise<CleanupAction> {
-  const res = await api(client, 'PUT', `/api/v1/streams/${streamId}`, { enabled: false, status: 'STOPPED' })
+  const res = await api(client, 'POST', `/api/v1/runtime/streams/${streamId}/stop`, {})
   if (res.status === 404) {
     return { kind: 'stream', id: streamId, action: 'stop', ok: true, status: 404, alreadyGone: true }
   }
@@ -131,7 +131,7 @@ async function stopStream(client: CleanupClient, streamId: number): Promise<Clea
     kind: 'stream',
     id: streamId,
     action: 'stop',
-    ok: res.ok || res.status === 404,
+    ok: res.ok,
     status: res.status,
     detail: apiFailureDetail(res),
   }
@@ -154,7 +154,38 @@ async function deleteStream(client: CleanupClient, streamId: number): Promise<Cl
 }
 
 async function deleteRoute(client: CleanupClient, routeId: number): Promise<CleanupAction> {
-  const disable = await api(client, 'PUT', `/api/v1/routes/${routeId}`, { enabled: false, status: 'DISABLED' })
+  const current = await api(client, 'GET', `/api/v1/routes/${routeId}`)
+  if (current.status === 404) {
+    return { kind: 'route', id: routeId, action: 'delete', ok: true, status: 404, alreadyGone: true }
+  }
+  const token =
+    current.body && typeof current.body === 'object'
+      ? String((current.body as { updated_at?: unknown }).updated_at ?? '')
+      : ''
+  if (!current.ok || !token) {
+    return {
+      kind: 'route',
+      id: routeId,
+      action: 'delete',
+      ok: false,
+      status: current.status,
+      detail: current.ok ? 'route updated_at unavailable for cleanup' : apiFailureDetail(current),
+    }
+  }
+  const disable = await api(client, 'PUT', `/api/v1/routes/${routeId}`, {
+    enabled: false,
+    expected_updated_at: token,
+  })
+  if (!disable.ok && disable.status !== 404) {
+    return {
+      kind: 'route',
+      id: routeId,
+      action: 'delete',
+      ok: false,
+      status: disable.status,
+      detail: apiFailureDetail(disable),
+    }
+  }
   if (disable.status === 404) {
     return { kind: 'route', id: routeId, action: 'delete', ok: true, status: 404, alreadyGone: true }
   }
@@ -173,7 +204,38 @@ async function deleteRoute(client: CleanupClient, routeId: number): Promise<Clea
 }
 
 async function deleteDestination(client: CleanupClient, destinationId: number): Promise<CleanupAction> {
-  const disable = await api(client, 'PUT', `/api/v1/destinations/${destinationId}`, { enabled: false })
+  const current = await api(client, 'GET', `/api/v1/destinations/${destinationId}`)
+  if (current.status === 404) {
+    return { kind: 'destination', id: destinationId, action: 'delete', ok: true, status: 404, alreadyGone: true }
+  }
+  const token =
+    current.body && typeof current.body === 'object'
+      ? String((current.body as { updated_at?: unknown }).updated_at ?? '')
+      : ''
+  if (!current.ok || !token) {
+    return {
+      kind: 'destination',
+      id: destinationId,
+      action: 'delete',
+      ok: false,
+      status: current.status,
+      detail: current.ok ? 'destination updated_at unavailable for cleanup' : apiFailureDetail(current),
+    }
+  }
+  const disable = await api(client, 'PUT', `/api/v1/destinations/${destinationId}`, {
+    enabled: false,
+    expected_updated_at: token,
+  })
+  if (!disable.ok && disable.status !== 404) {
+    return {
+      kind: 'destination',
+      id: destinationId,
+      action: 'delete',
+      ok: false,
+      status: disable.status,
+      detail: apiFailureDetail(disable),
+    }
+  }
   if (disable.status === 404) {
     return { kind: 'destination', id: destinationId, action: 'delete', ok: true, status: 404, alreadyGone: true }
   }

@@ -15,7 +15,24 @@ import {
   buildRouteTransformPersistPlans,
   expectedRouteTransformProcessingStatus,
   DEFAULT_ROUTE_PROCESSING_INHERIT,
+  normalizeWizardRouteDraft,
 } from './wizard-state'
+
+describe('normalizeWizardRouteDraft', () => {
+  it('preserves the hydrated route concurrency token', () => {
+    const normalized = normalizeWizardRouteDraft({
+      key: 'route-42',
+      destinationId: 7,
+      enabled: true,
+      failurePolicy: 'LOG_AND_CONTINUE',
+      rateLimitJson: { per_second: 10 },
+      updatedAt: '2026-09-27T14:12:27.729833Z',
+      inherit: { ...DEFAULT_ROUTE_PROCESSING_INHERIT },
+    })
+
+    expect(normalized.updatedAt).toBe('2026-09-27T14:12:27.729833Z')
+  })
+})
 
 function withConfirmedSample(state: ReturnType<typeof buildInitialState>) {
   const finishedAt = Date.now()

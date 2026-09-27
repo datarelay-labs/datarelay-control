@@ -843,11 +843,12 @@ export class DataRelayDriver {
   }
 
   async stopStream(streamId: number): Promise<void> {
-    const res = await this.request.put(this.url(`/api/v1/streams/${streamId}`), {
+    const res = await this.request.post(this.url(`/api/v1/runtime/streams/${streamId}/stop`), {
       headers: this.authHeaders(),
-      data: { enabled: false, status: 'STOPPED' },
+      data: {},
     })
-    await readJson(res).catch(() => null)
+    if (res.status() === 404) return
+    await readJson(res)
   }
 
   async listQuarantine(limit = 50): Promise<unknown> {
@@ -1161,9 +1162,9 @@ export class DataRelayDriver {
   }
 
   async deployStream(streamId: number): Promise<void> {
-    const res = await this.request.put(this.url(`/api/v1/streams/${streamId}`), {
+    const res = await this.request.post(this.url(`/api/v1/runtime/streams/${streamId}/start`), {
       headers: this.authHeaders(),
-      data: { enabled: true, status: 'RUNNING' },
+      data: {},
     })
     await readJson(res)
   }

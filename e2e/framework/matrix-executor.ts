@@ -36,6 +36,32 @@ function destKind(destType?: string): 'webhook' | 'syslog' {
   return destType.startsWith('SYSLOG') ? 'syslog' : 'webhook'
 }
 
+function apiJsonHeaders(accessToken: string | null): Record<string, string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (accessToken) headers.Authorization = `Bearer ${accessToken}`
+  return headers
+}
+
+async function readApiJson(
+  response: { ok: () => boolean; status: () => number; text: () => Promise<string> },
+  label: string,
+): Promise<Record<string, unknown>> {
+  const raw = await response.text()
+  let body: unknown = null
+  try {
+    body = raw ? JSON.parse(raw) : null
+  } catch {
+    body = raw
+  }
+  if (!response.ok()) {
+    throw Object.assign(
+      new Error(`${label} failed HTTP ${response.status()}: ${typeof body === 'string' ? body : JSON.stringify(body)}`),
+      { classification: 'API' as FailureClassification },
+    )
+  }
+  return body && typeof body === 'object' ? (body as Record<string, unknown>) : { value: body }
+}
+
 function mapAuth(auth?: string): AuthKind {
   switch (auth) {
     case 'basic':
@@ -120,6 +146,12 @@ export async function executeScenario(opts: {
       syslog: await fixtures.countSyslog(),
     })
 
+    const suffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
+
+    if (scenario.capabilities.includes('wizard.step.route_processing')) {
+      return await runWizardRouteProcessingScenario(scenario, driver, fixtures, evidence, env, suffix, started, opts)
+    }
+
     if (scenario.executionMode === 'browser') {
       if (!opts.page) {
         throw Object.assign(new Error('BLOCKED: browser page required for browser execution mode'), {
@@ -141,7 +173,6 @@ export async function executeScenario(opts: {
       }
     }
 
-    const suffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
     const sourceType = scenario.source?.type || 'HTTP_API_POLLING'
     const destType = scenario.destination?.type || 'WEBHOOK_POST'
     const bad = scenario.authOutcome === 'failure' || scenario.source?.variant === 'bad_credentials'
@@ -472,6 +503,121 @@ async function runBrowserPortion(
   }
 }
 
+async function runWizardRouteProcessingScenario(
+  scenario: E2EScenario,
+  driver: Awaited<ReturnType<typeof createTestContext>>['driver'],
+  fixtures: Awaited<ReturnType<typeof createTestContext>>['fixtures'],
+  evidence: Awaited<ReturnType<typeof createTestContext>>['evidence'],
+  env: Awaited<ReturnType<typeof createTestContext>>['env'],
+  suffix: string,
+  started: number,
+  opts: { request: APIRequestContext; page: Page | null },
+): Promise<ScenarioRunResult> {
+  if (!opts.page) {
+    throw Object.assign(new Error('BLOCKED: browser page required for wizard route-processing scenario'), {
+      classification: 'TEST_INFRA' as FailureClassification,
+    })
+  }
+
+  const connector = await driver.createHttpConnector({
+    name: `${env.namePrefix} wizard route ${suffix}`,
+    auth: 'no_auth',
+    path: '/no-auth/events',
+  })
+  const dest = await driver.createWebhookDestination(`${env.namePrefix} wizard route dest ${suffix}`)
+  const stream = await driver.createStream({
+    name: `${env.namePrefix} wizard route stream ${suffix}`,
+    connectorId: connector.connectorId,
+    sourceId: connector.sourceId,
+    destinationId: dest.destinationId,
+    endpointPath: connector.endpointPath,
+  })
+  const routeId = stream.routeIds[0]
+  if (!routeId) {
+    throw Object.assign(new Error('wizard route-processing stream created without a route id'), {
+      classification: 'API' as FailureClassification,
+    })
+  }
+
+  await uiLogin(opts.page, env.uiBaseUrl)
+  await opts.page.goto(`${env.uiBaseUrl}/streams/${stream.streamId}/edit?step=route_processing`, {
+    timeout: 15_000,
+    waitUntil: 'domcontentloaded',
+  })
+  await expect(opts.page.getByTestId('wizard-step-route-processing')).toBeVisible({ timeout: 15_000 })
+
+  const routeCard = opts.page.locator('[data-testid^="route-processing-list-card-"]').first()
+  await expect(routeCard).toBeVisible()
+  await routeCard.click()
+
+  const detail = opts.page.getByTestId('route-processing-detail-panel')
+  await expect(detail).toBeVisible()
+  await detail.getByTestId('route-processing-mode-override').click()
+  await expect(detail.getByTestId('route-processing-mode-override')).toHaveAttribute('aria-checked', 'true')
+
+  await detail.getByTestId('wizard-transform-add-field-trigger').click()
+  await detail.getByTestId('wizard-enrichment-add-static').click()
+  const targetField = detail.getByLabel('Target field').last()
+  const staticValue = detail.getByLabel('Value').last()
+  await expect(targetField).toBeVisible()
+  await targetField.fill('e2e_route_marker')
+  await staticValue.fill('wizard-route-processing')
+
+  const saveButton = opts.page.getByTestId('wizard-save-now')
+  await expect(saveButton).toBeEnabled({ timeout: 15_000 })
+  await saveButton.click()
+
+  const headers = apiJsonHeaders(driver.accessToken)
+  await expect.poll(
+    async () => {
+      const current = await readApiJson(
+        await driver.request.get(`${env.apiBaseUrl}/api/v1/runtime/routes/${routeId}/enrichment-ui/config`, { headers }),
+        'wizard route enrichment read-back poll',
+      )
+      return current.inherit_stream_enrichment === false &&
+        JSON.stringify(current).includes('wizard-route-processing')
+    },
+    { timeout: 15_000, intervals: [250, 500, 1000] },
+  ).toBe(true)
+
+  const enrichmentCfg = await readApiJson(
+    await driver.request.get(`${env.apiBaseUrl}/api/v1/runtime/routes/${routeId}/enrichment-ui/config`, { headers }),
+    'wizard route enrichment read-back',
+  )
+  const transformEffective = await readApiJson(
+    await driver.request.get(`${env.apiBaseUrl}/api/v1/runtime/routes/${routeId}/transform/effective`, { headers }),
+    'wizard route transform effective',
+  )
+  evidence.writeJsonFile('wizard-route-processing-readback.json', { routeId, enrichmentCfg, transformEffective })
+  expect(enrichmentCfg.inherit_stream_enrichment).toBe(false)
+  expect(JSON.stringify(enrichmentCfg)).toContain('wizard-route-processing')
+  expect(['route', 'mixed']).toContain(String(transformEffective.persisted_source))
+  expect(['Mixed', 'Overridden']).toContain(String(transformEffective.processing_status))
+
+  await driver.deployStream(stream.streamId)
+  await driver.runStream(stream.streamId)
+  const received = await driver.waitForDelivery({
+    kind: 'webhook',
+    correlationId: 'full-e2e-corr-noauth-1',
+    timeoutMs: 45_000,
+  })
+  evidence.writeJsonFile('collector-messages.json', received)
+  expect(JSON.stringify(received)).toContain('wizard-route-processing')
+  const logs = await driver.getDeliveryLogs(stream.streamId)
+  evidence.writeJsonFile('delivery-logs.json', logs)
+  evidence.recordFixtureState('after', {
+    webhook: await fixtures.countWebhook(),
+    syslog: await fixtures.countSyslog(),
+  })
+  evidence.writeJsonFile('result.json', {
+    status: 'PASS',
+    routeId,
+    browserPersisted: true,
+    effectiveRuntimeMarker: 'wizard-route-processing',
+  })
+  return { scenarioId: scenario.id, status: 'PASS', durationMs: Date.now() - started }
+}
+
 async function runProcessingScenario(
   scenario: E2EScenario,
   driver: Awaited<ReturnType<typeof createTestContext>>['driver'],
@@ -576,6 +722,140 @@ async function runMultiRouteScenario(
   const cfg = await driver.getStreamConfig(stream.streamId)
   evidence.writeJsonFile('stream-config.json', cfg)
 
+  const primaryRouteId = stream.routeIds[0]!
+  const headers = apiJsonHeaders(driver.accessToken)
+  let expectedRuntimeMarker: string | null = null
+
+  if (scenario.capabilities.includes('routes.per_route_transform')) {
+    expectedRuntimeMarker = 'route-transform-override'
+    const saved = await readApiJson(
+      await driver.request.post(
+        `${env.apiBaseUrl}/api/v1/runtime/routes/${primaryRouteId}/enrichment-ui/save`,
+        {
+          headers,
+          data: {
+            inherit: false,
+            enrichment: {
+              enabled: true,
+              enrichment: { e2e_route_transform_marker: expectedRuntimeMarker },
+              override_policy: 'OVERRIDE',
+            },
+          },
+        },
+      ),
+      'route transform override save',
+    )
+    const readBack = await readApiJson(
+      await driver.request.get(
+        `${env.apiBaseUrl}/api/v1/runtime/routes/${primaryRouteId}/enrichment-ui/config`,
+        { headers },
+      ),
+      'route transform override read-back',
+    )
+    const effective = await readApiJson(
+      await driver.request.get(
+        `${env.apiBaseUrl}/api/v1/runtime/routes/${primaryRouteId}/transform/effective`,
+        { headers },
+      ),
+      'route transform effective',
+    )
+    evidence.writeJsonFile('route-transform-effective.json', { primaryRouteId, saved, readBack, effective })
+    expect(readBack.inherit_stream_enrichment).toBe(false)
+    expect(JSON.stringify(readBack)).toContain(expectedRuntimeMarker)
+    expect(['route', 'mixed']).toContain(String(effective.persisted_source))
+    expect(['Mixed', 'Overridden']).toContain(String(effective.processing_status))
+  }
+
+  if (scenario.capabilities.includes('routes.per_route_protection_classification_policy')) {
+    const protection = await readApiJson(
+      await driver.request.put(
+        `${env.apiBaseUrl}/api/v1/runtime/routes/${primaryRouteId}/protection-rules`,
+        {
+          headers,
+          data: {
+            rules: [{
+              field_path: '$.message',
+              sensitivity_class: 'secret',
+              protection_mode: 'partial_mask',
+              enabled: true,
+            }],
+          },
+        },
+      ),
+      'route protection override save',
+    )
+    const classification = await readApiJson(
+      await driver.request.put(
+        `${env.apiBaseUrl}/api/v1/runtime/routes/${primaryRouteId}/classification-rules`,
+        {
+          headers,
+          data: {
+            rules: [{
+              name: 'E2E route secret classification',
+              enabled: true,
+              condition_json: { sensitivity_class: 'secret' },
+              classification_level: 'RESTRICTED',
+            }],
+          },
+        },
+      ),
+      'route classification override save',
+    )
+    const policy = await readApiJson(
+      await driver.request.post(
+        `${env.apiBaseUrl}/api/v1/runtime/routes/${primaryRouteId}/policy-rules`,
+        {
+          headers,
+          data: {
+            name: 'E2E route audit policy',
+            enabled: true,
+            condition_json: { sensitivity_class: 'secret' },
+            action_type: 'audit_only',
+          },
+        },
+      ),
+      'route policy override save',
+    )
+    const protectionEffective = await readApiJson(
+      await driver.request.get(
+        `${env.apiBaseUrl}/api/v1/runtime/routes/${primaryRouteId}/protection/effective`,
+        { headers },
+      ),
+      'route protection effective',
+    )
+    const classificationEffective = await readApiJson(
+      await driver.request.get(
+        `${env.apiBaseUrl}/api/v1/runtime/routes/${primaryRouteId}/classification/effective`,
+        { headers },
+      ),
+      'route classification effective',
+    )
+    const policyEffective = await readApiJson(
+      await driver.request.get(
+        `${env.apiBaseUrl}/api/v1/runtime/routes/${primaryRouteId}/policy/effective`,
+        { headers },
+      ),
+      'route policy effective',
+    )
+    evidence.writeJsonFile('route-governance-effective.json', {
+      primaryRouteId,
+      protection,
+      classification,
+      policy,
+      protectionEffective,
+      classificationEffective,
+      policyEffective,
+    })
+    expect(Number(protection.rule_count)).toBeGreaterThan(0)
+    expect(Number(classification.rule_count)).toBeGreaterThan(0)
+    expect(String(protectionEffective.persisted_source)).toBe('route')
+    expect(String(classificationEffective.persisted_source)).toBe('route')
+    expect(String(policyEffective.persisted_source)).toBe('route')
+    expect(['Overridden', 'Mixed']).toContain(String(protectionEffective.processing_status))
+    expect(['Overridden', 'Mixed']).toContain(String(classificationEffective.processing_status))
+    expect(['Overridden', 'Mixed']).toContain(String(policyEffective.processing_status))
+  }
+
   if (scenario.tags.includes('partial_failure') || scenario.id.includes('partial_failure')) {
     // Disable second route to simulate partial path; keep webhook
     if (stream.routeIds[1]) {
@@ -596,9 +876,39 @@ async function runMultiRouteScenario(
     timeoutMs: 45_000,
   })
   evidence.writeJsonFile('collector-messages.json', received)
+  if (expectedRuntimeMarker) {
+    expect(JSON.stringify(received)).toContain(expectedRuntimeMarker)
+  }
+
   const runtime = await driver.getRuntimeStatus(stream.streamId)
   evidence.writeJsonFile('route-metrics.json', runtime)
-  evidence.writeJsonFile('result.json', { status: 'PASS', routes: stream.routeIds.length })
+  const logs = await driver.getDeliveryLogs(stream.streamId)
+  evidence.writeJsonFile('delivery-logs.json', logs)
+
+  if (scenario.capabilities.includes('routes.per_route_protection_classification_policy')) {
+    const runtimeRows =
+      logs && typeof logs === 'object' && Array.isArray((logs as { logs?: unknown[] }).logs)
+        ? ((logs as { logs: Array<Record<string, unknown>> }).logs)
+        : []
+    const primaryRouteStages = new Set(
+      runtimeRows
+        .filter((row) => Number(row.route_id) === primaryRouteId)
+        .map((row) => String(row.stage ?? '')),
+    )
+    const runtimeStages = new Set(runtimeRows.map((row) => String(row.stage ?? '')))
+    expect(primaryRouteStages.has('protection_complete')).toBe(true)
+    expect(primaryRouteStages.has('classification_complete')).toBe(true)
+    expect(runtimeStages.has('policy_evaluation_complete')).toBe(true)
+  }
+
+  evidence.writeJsonFile('result.json', {
+    status: 'PASS',
+    routes: stream.routeIds.length,
+    primaryRouteId,
+    transformRuntimeVerified: expectedRuntimeMarker != null,
+    governanceRuntimeVerified:
+      scenario.capabilities.includes('routes.per_route_protection_classification_policy'),
+  })
   return { scenarioId: scenario.id, status: 'PASS', durationMs: Date.now() - started }
 }
 
