@@ -116,6 +116,20 @@ Mapping UI config is **lazy-loaded** on group expand (P1) — not fetched for co
 
 ---
 
+## Source scope
+
+Product Charter Phase A–D Data Collection is unchanged:
+
+- HTTP API
+- Database Source
+- Webhook Receiver
+
+S3 Object Polling and Remote File Polling are **supported, release-qualified extensions**. Their runtime adapters and deterministic release tests stay enabled. They are not Product Charter Data Collection scope, and this limitation note does not promote them into the Charter.
+
+AI Proxy / AI Gateway remains outside Data Relay Control Phase A–D.
+
+---
+
 ## Database Query Source (PostgreSQL-centric)
 
 ### What it is
@@ -180,7 +194,8 @@ GDC_ROUTE_PROCESSING_ENABLED: bool = True  # app/config.py
 
 ## What is NOT limited (GA-ready)
 
-- HTTP API polling and Webhook receiver sources
+- HTTP API polling, Database Source (PostgreSQL query), and Webhook receiver sources (Phase A–D Charter)
+- S3 Object Polling and Remote File Polling (supported, release-qualified extensions)
 - Multi-route delivery with failure policies
 - Dynamic routing (M9)
 - Failover (M10) on default path

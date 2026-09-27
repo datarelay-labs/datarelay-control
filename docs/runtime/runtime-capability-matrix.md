@@ -15,13 +15,15 @@ This document separates **what the runtime can execute today** (StreamRunner + s
 
 All of the following are registered in `SourceAdapterRegistry` and invoked from `StreamRunner` via the linked source row’s **`source_type`** (not the stream name).
 
-| `source_type` | Status | Notes |
-|---------------|--------|--------|
-| `HTTP_API_POLLING` | **Supported (primary path)** | Default UI and lab HTTP fixtures; uses `HttpApiSourceAdapter`. |
-| `S3_OBJECT_POLLING` | **Supported (extended)** | Uses `S3ObjectPollingAdapter` (e.g. AWS S3, MinIO). Requires valid object-store config and network reachability. |
-| `DATABASE_QUERY` | **Supported (extended)** | Uses `DatabaseQuerySourceAdapter` / SELECT safeguards. PostgreSQL only; requires DB connectivity and correct SQL + checkpoint fields. |
-| `REMOTE_FILE_POLLING` | **Supported (extended)** | Uses `RemoteFilePollingAdapter` (SFTP-based SSH access; optional SFTP-compatible SCP byte transfer). Requires SSH reachability and path/pattern config. |
-| `WEBHOOK_RECEIVER` | **Supported (push)** | Uses `WebhookReceiverSourceAdapter` and the webhook ingest runtime path. Aliases `WEBHOOK` and `WEBHOOK_PUSH` resolve to the same adapter. Push payloads enter the normal StreamRunner pipeline without a polling checkpoint. |
+Product Charter Phase A–D Data Collection stays **HTTP API**, **Database Source**, and **Webhook Receiver**. **S3 Object Polling** and **Remote File Polling** are supported, release-qualified extensions: their adapters and deterministic release tests remain, and this packet does not add them to the Charter list. AI Proxy / AI Gateway stays outside Data Relay Control Phase A–D.
+
+| `source_type` | Product scope | Runtime status | Notes |
+|---------------|---------------|----------------|--------|
+| `HTTP_API_POLLING` | Phase A–D Charter | **Supported** | Default UI and lab HTTP fixtures; uses `HttpApiSourceAdapter`. |
+| `DATABASE_QUERY` | Phase A–D Charter (Database Source) | **Supported** | Uses `DatabaseQuerySourceAdapter` / SELECT safeguards. PostgreSQL only; requires DB connectivity and correct SQL + checkpoint fields. |
+| `WEBHOOK_RECEIVER` | Phase A–D Charter | **Supported (push)** | Uses `WebhookReceiverSourceAdapter` and the webhook ingest runtime path. Aliases `WEBHOOK` and `WEBHOOK_PUSH` resolve to the same adapter. Push payloads enter the normal StreamRunner pipeline without a polling checkpoint. |
+| `S3_OBJECT_POLLING` | Supported extension | **Release-qualified** | Uses `S3ObjectPollingAdapter` (e.g. AWS S3, MinIO). Requires valid object-store config and network reachability. Not Charter Data Collection scope. |
+| `REMOTE_FILE_POLLING` | Supported extension | **Release-qualified** | Uses `RemoteFilePollingAdapter` (SFTP-based SSH access; optional SFTP-compatible SCP byte transfer). Requires SSH reachability and path/pattern config. Not Charter Data Collection scope. |
 
 ---
 
@@ -76,7 +78,7 @@ Lab rows are **fixtures**, not “fake” streams — if prerequisites are missi
 The Operations UI shows small **capability / provenance** badges derived from stream name and configured source type:
 
 - **Runtime supported** — HTTP API polling (primary path).
-- **Runtime supported · extended** — S3 / database / remote file (same pipeline, extra operational prerequisites).
+- **Runtime supported · extended** — S3 / database / remote file (same pipeline, extra operational prerequisites). This badge is an operational label. Database Query remains Phase A–D Charter scope; S3 Object Polling and Remote File Polling are the supported extensions.
 - **Runtime supported · push** — Webhook Receiver (inbound push through the normal StreamRunner pipeline).
 - **Demo seed** — stream name matches the bundled demo stream from `app/db/seed.py`.
 - **Lab fixture** — stream name starts with `[DEV VALIDATION] ` or `[DEV E2E] `.

@@ -9,11 +9,16 @@ lab (`docs/testing/dev-validation-lab.md`), source adapter E2E
 
 ## Scope
 
-Currently supported sources:
+Currently supported sources in this procedure:
+
+Phase A–D Charter Data Collection:
 
 - `HTTP_API_POLLING`
+- `DATABASE_QUERY` (PostgreSQL Database Source)
+
+Supported, release-qualified extensions (not Charter Data Collection scope):
+
 - `S3_OBJECT_POLLING`
-- `DATABASE_QUERY`
 - `REMOTE_FILE_POLLING`
 
 Currently supported destinations:
