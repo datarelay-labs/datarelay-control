@@ -992,6 +992,7 @@ export function normalizeWizardRouteDraft(
       typeof raw.rateLimitJson === 'object' && raw.rateLimitJson && !Array.isArray(raw.rateLimitJson)
         ? { ...raw.rateLimitJson }
         : {},
+    updatedAt: raw.updatedAt ?? null,
     inherit,
     overrides: raw.overrides,
     governanceLoad: normalizeWizardRouteGovernanceLoad(raw.governanceLoad),

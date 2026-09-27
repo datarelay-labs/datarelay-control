@@ -3,12 +3,17 @@
 # Status enum: SUPPORTED | PARTIAL | UI_ONLY | API_ONLY | RUNTIME_ONLY | NOT_IMPLEMENTED | UNKNOWN
 
 metadata:
-  generated_from_commit: "42c4092270af0c789327d218cd805766f7317bdd"
-  generated_at: "2026-07-16T01:58:51Z"
+  generated_from_commit: "9d5b6a652973e9580959561315f17820ef0d9bcf"
+  generated_at: "2026-09-27T04:05:00Z"
+  control_scope: phase_a_d
   notes: |
-    Phase 1 support-scope inventory. Evidence is file+symbol only (no line numbers).
+    Phase A-D Control capability inventory rebuilt from current code and tests.
+    Evidence is file+symbol only (no line numbers).
     Product DB source path supports POSTGRESQL only; MySQL/MariaDB exist as lab fixtures, not product db_type.
-    GDC_ROUTE_PROCESSING_ENABLED defaults False; wizard Route Processing UI is always shown.
+    Route Processing is the only product runtime. GDC_ROUTE_PROCESSING_ENABLED defaults true; explicit false is rejected.
+    Charter core sources: HTTP API Polling, Database Query, Webhook Receiver.
+    S3 Object Polling and Remote File Polling are supported release-qualified extensions.
+    AI Proxy, AI Provider, and Phase E/F are out of current Control scope and are excluded from release totals.
 
 authentication:
   - id: auth.http.no_auth
@@ -386,7 +391,8 @@ authentication:
 
   - id: auth.ai_provider.api_key_or_bearer
     display_name: AI Provider API Key / Bearer
-    status: SUPPORTED
+    status: OUT_OF_SCOPE
+    product_scope: phase_e_out_of_scope
     ui_supported: true
     api_supported: true
     runtime_supported: true
@@ -473,6 +479,7 @@ sources:
   - id: source.s3_object_polling
     display_name: S3 Object Polling
     status: SUPPORTED
+    product_scope: release_qualified_extension
     ui_supported: true
     api_supported: true
     runtime_supported: true
@@ -568,6 +575,7 @@ sources:
   - id: source.remote_file_polling
     display_name: Remote File Polling (SFTP / SFTP-compatible SCP)
     status: SUPPORTED
+    product_scope: release_qualified_extension
     ui_supported: true
     api_supported: true
     runtime_supported: true
@@ -659,7 +667,8 @@ sources:
 
   - id: source.ai_proxy_receiver
     display_name: AI Proxy Receiver
-    status: RUNTIME_ONLY
+    status: OUT_OF_SCOPE
+    product_scope: phase_e_out_of_scope
     ui_supported: false
     api_supported: partial
     runtime_supported: true
@@ -860,7 +869,8 @@ destinations:
 
   - id: destination.ai_provider_post
     display_name: AI Provider POST
-    status: PARTIAL
+    status: OUT_OF_SCOPE
+    product_scope: phase_e_out_of_scope
     ui_supported: false
     api_supported: true
     runtime_supported: true
@@ -969,31 +979,30 @@ wizard:
 
   - id: wizard.step.route_processing
     display_name: Wizard Step — Route Processing
-    status: PARTIAL
+    status: SUPPORTED
     ui_supported: true
     api_supported: true
-    runtime_supported: partial
+    runtime_supported: true
     connection_test_supported: false
     applicable_to: [wizard]
-    feature_flag: GDC_ROUTE_PROCESSING_ENABLED
+    feature_flag: null
     existing_tests:
       - frontend/src/components/streams/wizard/step-route-processing.test.tsx
+      - frontend/src/components/streams/wizard/wizard-stream-persist.test.ts
       - tests/test_per_route_transform.py
     required_e2e:
-      - playwright_wizard_route_processing_with_flag_on_and_off
+      - playwright_wizard_route_processing_persist_and_effective_runtime
     evidence:
       - file: frontend/src/components/streams/wizard/step-route-processing.tsx
         symbol: StepRouteProcessing
-        note: UI always shown
+        note: Route Processing step is part of the wizard
+      - file: frontend/src/components/streams/wizard/wizard-stream-persist.ts
+        symbol: persistWizardRouteTransformOverrides
+        note: Wizard deploy persists per-route transform overrides
       - file: app/config.py
         symbol: GDC_ROUTE_PROCESSING_ENABLED
-        note: Default False
-      - file: docs/architecture/m13-route-processing-ui-deferral.md
-        symbol: deferral doc
-        note: Stale — claims Route Processing UI not implemented
-    limitations:
-      - Per-route transform overrides from wizard are not persisted to route_mappings on deploy
-      - Runtime per-route pipeline requires feature flag
+        note: Default true; explicit false is rejected
+    limitations: []
 
   - id: wizard.step.deploy
     display_name: Wizard Step — Deploy
@@ -1571,46 +1580,48 @@ routes:
 
   - id: routes.per_route_transform
     display_name: Per-Route Transform Inherit / Override
-    status: PARTIAL
+    status: SUPPORTED
     ui_supported: true
     api_supported: true
     runtime_supported: true
     connection_test_supported: false
     applicable_to: [routes]
-    feature_flag: GDC_ROUTE_PROCESSING_ENABLED
+    feature_flag: null
     existing_tests:
       - tests/test_per_route_transform.py
       - tests/test_route_transform_api.py
+      - tests/test_route_transform_effective.py
+      - frontend/src/components/streams/wizard/wizard-stream-persist.test.ts
     required_e2e:
-      - playwright_route_edit_transform_override_with_flag
+      - playwright_route_transform_override_effective
     evidence:
       - file: app/runtime/route_transform_service.py
         symbol: resolve_route_transform_config
         note: Route mapping/enrichment resolution
+      - file: frontend/src/components/streams/wizard/wizard-stream-persist.ts
+        symbol: persistWizardRouteTransformOverrides
+        note: Wizard create persists route transform overrides
       - file: frontend/src/components/routes/route-edit-transform-panel.tsx
         symbol: RouteEditTransformPanel
-        note: Real persist path for route transform
-      - file: frontend/src/components/streams/wizard/wizard-stream-hydrate.ts
-        symbol: hydrateWizardStateFromStream
-        note: Hydrate sets inherit-all; drops route overrides
-    limitations:
-      - Wizard create/edit does not save route_mappings overrides
-      - Runtime per-route pipeline gated by GDC_ROUTE_PROCESSING_ENABLED (default False)
+        note: Route edit persist path
+    limitations: []
 
   - id: routes.per_route_protection_classification_policy
     display_name: Per-Route Protection / Classification / Policy Overrides
-    status: PARTIAL
+    status: SUPPORTED
     ui_supported: true
     api_supported: true
     runtime_supported: true
     connection_test_supported: false
     applicable_to: [routes]
-    feature_flag: GDC_ROUTE_PROCESSING_ENABLED
+    feature_flag: null
     existing_tests:
       - tests/test_per_route_classification.py
+      - tests/test_per_route_protection.py
+      - tests/test_per_route_policy.py
       - tests/test_stream_governance_api.py
     required_e2e:
-      - playwright_route_protection_override_runtime
+      - playwright_route_protection_classification_policy_effective
     evidence:
       - file: app/route_classification
         symbol: route_classification package
@@ -1618,12 +1629,10 @@ routes:
       - file: app/route_policy
         symbol: route_policy package
         note: Route policy stage
-      - file: frontend/src/components/streams/wizard/wizard-governance-persist.ts
-        symbol: wizard-governance-persist
-        note: Governance route_overrides persist
-    limitations:
-      - Full per-route pipeline requires GDC_ROUTE_PROCESSING_ENABLED
-      - Legacy protection path still applies when flag off
+      - file: frontend/src/components/streams/wizard/wizard-route-governance-bundle.ts
+        symbol: persistWizardRouteGovernanceBundles
+        note: Wizard persists per-route protection, classification, and policy
+    limitations: []
 
   - id: routes.delivery_settings
     display_name: Route Delivery Settings (enable, failure policy, rate limit)
@@ -2254,22 +2263,21 @@ feature_flags:
     connection_test_supported: false
     applicable_to: [routes]
     feature_flag: GDC_ROUTE_PROCESSING_ENABLED
-    default_value: false
-    test_env_value: often monkeypatched True/False in pytest; not set in compose by default
-    runtime_impact: When False, legacy shared transform then fan-out; when True, per-route transform/protection/classification/policy pipeline
+    default_value: true
+    test_env_value: explicit false is rejected at settings load
+    runtime_impact: Route Processing is the only product runtime. Explicit false is rejected. Per-route transform, protection, classification, and policy run on this path.
     existing_tests:
+      - tests/test_legacy_resurrection_gates.py
       - tests/test_per_route_transform.py
-    required_e2e:
-      - matrix_flag_on_and_off
+    required_e2e: []
     evidence:
       - file: app/config.py
         symbol: GDC_ROUTE_PROCESSING_ENABLED
-        note: Default False
+        note: Default true; explicit false is rejected
       - file: app/runners/stream_runner.py
-        symbol: _route_processing_enabled
-        note: Gates per-route pipeline
-    limitations:
-      - Wizard always shows Route Processing UI regardless of flag
+        symbol: StreamRunner
+        note: Canonical per-route pipeline
+    limitations: []
 
   - id: flag.gdc_protection_enabled
     display_name: GDC_PROTECTION_ENABLED

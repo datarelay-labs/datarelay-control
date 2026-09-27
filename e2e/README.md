@@ -122,9 +122,9 @@ Full 332 / XP    → not automatically executed by normal PR CI
 Release PASS (when evaluating local evidence) requires:
 
 - FAIL / BLOCKED / GAP / Missing = 0
-- Browser / route-off / route-on complete
+- Browser and Route-ON scenarios complete; supported Route-OFF count is 0
 - Smoke PASS + Coverage Validation PASS
-- NOT_IMPLEMENTED not increased beyond baseline (current expected: 20 with Manifest PARTIAL evidence)
+- NOT_IMPLEMENTED not increased beyond baseline (current expected: 10, Phase A-D partials only)
 - Evidence commit matches release target; result age within policy
 
 Gate statuses: `PASS` | `FAIL` | `STALE` | `INCOMPLETE`

@@ -151,10 +151,9 @@ function anyTransformOn(a: CrossProductAxes): boolean {
   )
 }
 
-/** Frozen NOT_IMPLEMENTED scenario IDs from release-gate baseline (must not change). */
+/** NOT_IMPLEMENTED scenario IDs for current Phase A-D Control scope. */
 export const NOT_IMPLEMENTED_SCENARIO_IDS: readonly string[] = [
   'auth__auth-destination-webhook-headers__status-partial',
-  'dest__destination-ai-provider-post__partial',
   'governance__audit__review__api__route-on',
   'governance__governance-delivery-require-review__partial',
   'governance__hash__review__api__route-on',
@@ -162,26 +161,20 @@ export const NOT_IMPLEMENTED_SCENARIO_IDS: readonly string[] = [
   'governance__remove__review__api__route-on',
   'governance__tokenize__review__api__route-on',
   'processing__processing-enrichment-lookup__partial',
-  'route__routes-per-route-protection-classification-policy__partial',
-  'route__routes-per-route-transform__partial',
   'runtime__runtime-fault-injection-fixtures__partial',
   'runtime__runtime-rate-limit__partial',
-  'source__source-ai-proxy-receiver__runtime_only',
-  'wizard__wizard-step-route-processing__partial',
 ] as const
 
-/** Capability IDs excluded from cartesian product (NI / PARTIAL / RUNTIME_ONLY / no-op). */
+/** Capability IDs excluded from the supported product matrix (partial, no-op, or Phase E). */
 export const EXCLUDED_FROM_PRODUCT_CAPABILITY_IDS: readonly string[] = [
+  'auth.ai_provider.api_key_or_bearer',
   'auth.destination.webhook_headers',
   'destination.ai_provider_post',
   'governance.delivery.require_review',
   'processing.enrichment.lookup',
-  'routes.per_route_protection_classification_policy',
-  'routes.per_route_transform',
   'runtime.fault_injection.fixtures',
   'runtime.rate_limit',
   'source.ai_proxy_receiver',
-  'wizard.step.route_processing',
 ] as const
 
 export const APPLICABILITY_RULES: ApplicabilityRule[] = [
@@ -788,8 +781,8 @@ export const APPLICABILITY_RULES: ApplicabilityRule[] = [
     evaluate: () => null, // enforced by axis registry exclusion
   },
   {
-    rule_id: 'R022_NI_SET_IMMUTABLE',
-    description: 'Existing NOT_IMPLEMENTED 20 scenario ID set must not change',
+    rule_id: 'R022_NI_SET_MATCHES_RELEASE_BASELINE',
+    description: 'NOT_IMPLEMENTED scenario IDs must match the release-gate baseline for current Control scope',
     capability_ids: [...EXCLUDED_FROM_PRODUCT_CAPABILITY_IDS],
     evidence: ['e2e/release-gate/baseline/not-implemented-baseline.json'],
     evaluate: () => null, // validated in validate-cross-product / gate

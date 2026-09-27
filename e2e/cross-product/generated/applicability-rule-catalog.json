@@ -61,14 +61,14 @@
     ]
   },
   {
-    "rule_id": "R006_ROUTE_OFF_NO_OVERRIDE",
-    "description": "route-off: multi-route and route overrides are NOT_APPLICABLE",
+    "rule_id": "R006_ROUTE_OFF_RETIRED",
+    "description": "ROUTE_OFF is retired; only ROUTE_ON is a supported product runtime path",
     "capability_ids": [
       "flag.gdc_route_processing_enabled"
     ],
     "evidence": [
-      "app/config.py GDC_ROUTE_PROCESSING_ENABLED",
-      "app/runners/stream_runner.py"
+      "app/config.py GDC_ROUTE_PROCESSING_ENABLED default true; false rejected",
+      "e2e/cross-product/cross-product-axes.yaml route_runtime=[ROUTE_ON]"
     ]
   },
   {
@@ -320,35 +320,31 @@
     "rule_id": "R021_EXCLUDE_NOT_IMPLEMENTED",
     "description": "NOT_IMPLEMENTED capabilities are not included in cartesian product",
     "capability_ids": [
+      "auth.ai_provider.api_key_or_bearer",
       "auth.destination.webhook_headers",
       "destination.ai_provider_post",
       "governance.delivery.require_review",
       "processing.enrichment.lookup",
-      "routes.per_route_protection_classification_policy",
-      "routes.per_route_transform",
       "runtime.fault_injection.fixtures",
       "runtime.rate_limit",
-      "source.ai_proxy_receiver",
-      "wizard.step.route_processing"
+      "source.ai_proxy_receiver"
     ],
     "evidence": [
       "e2e/release-gate/baseline/not-implemented-baseline.json"
     ]
   },
   {
-    "rule_id": "R022_NI_SET_IMMUTABLE",
-    "description": "Existing NOT_IMPLEMENTED 20 scenario ID set must not change",
+    "rule_id": "R022_NI_SET_MATCHES_RELEASE_BASELINE",
+    "description": "NOT_IMPLEMENTED scenario IDs must match the release-gate baseline for current Control scope",
     "capability_ids": [
+      "auth.ai_provider.api_key_or_bearer",
       "auth.destination.webhook_headers",
       "destination.ai_provider_post",
       "governance.delivery.require_review",
       "processing.enrichment.lookup",
-      "routes.per_route_protection_classification_policy",
-      "routes.per_route_transform",
       "runtime.fault_injection.fixtures",
       "runtime.rate_limit",
-      "source.ai_proxy_receiver",
-      "wizard.step.route_processing"
+      "source.ai_proxy_receiver"
     ],
     "evidence": [
       "e2e/release-gate/baseline/not-implemented-baseline.json"

@@ -82,6 +82,7 @@ export type CapabilityRecord = {
   connection_test_supported?: boolean | string
   applicable_to?: string[]
   feature_flag?: string | null
+  product_scope?: string
   limitations?: string[]
   required_e2e?: string[]
 }

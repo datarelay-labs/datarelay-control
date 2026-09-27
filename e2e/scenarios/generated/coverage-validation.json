@@ -6,8 +6,8 @@
   "unknown_capability_refs": [],
   "duplicate_scenario_ids": [],
   "stats": {
-    "supported_capabilities": 82,
-    "scenarios": 186,
+    "supported_capabilities": 84,
+    "scenarios": 181,
     "not_applicable": 5
   }
 }

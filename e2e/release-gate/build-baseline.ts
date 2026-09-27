@@ -5,7 +5,7 @@
  */
 import {
   BASELINE_DIR,
-  allCapabilities,
+  currentControlCapabilities,
   gitCommit,
   loadMatrix,
   loadManifest,
@@ -34,7 +34,7 @@ function main(): void {
   const generated_at = new Date().toISOString()
   const manifest = loadManifest()
   const matrix = loadMatrix()
-  const caps = allCapabilities(manifest)
+  const caps = currentControlCapabilities(manifest)
   const byStatus: Record<string, number> = {}
   for (const c of caps) byStatus[c.status] = (byStatus[c.status] || 0) + 1
 
@@ -66,8 +66,13 @@ function main(): void {
   }
 
   const niScenarios = matrix.scenarios.filter((s) => s.expectedStatus === 'NOT_IMPLEMENTED')
+  const statusById = new Map(caps.map((c) => [c.id, c.status]))
   const niCaps = new Set<string>()
-  for (const s of niScenarios) for (const c of s.capabilities) niCaps.add(c)
+  for (const s of niScenarios) {
+    for (const c of s.capabilities) {
+      if (statusById.get(c) !== 'SUPPORTED') niCaps.add(c)
+    }
+  }
 
   const notImplemented: NotImplementedBaseline = {
     commit,

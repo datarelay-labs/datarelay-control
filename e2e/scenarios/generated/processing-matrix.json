@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-09-21T13:17:44.462Z",
-  "manifest_commit": "42c4092270af0c789327d218cd805766f7317bdd",
+  "generated_at": "2026-09-27T04:47:16.286Z",
+  "manifest_commit": "9d5b6a652973e9580959561315f17820ef0d9bcf",
   "scenarios": [
     {
       "idStem": "processing__processing-enrichment-static__browser",
@@ -734,19 +734,26 @@
       "id": "wizard__union_schema__browser__route-on"
     },
     {
-      "id": "wizard__wizard-step-route-processing__partial",
+      "id": "wizard__wizard-step-route-processing__browser__route-on",
       "suite": "wizard",
       "executionMode": "browser",
       "routeProcessing": "on",
+      "source": {
+        "type": "HTTP_API_POLLING",
+        "authentication": "no_auth"
+      },
+      "destination": {
+        "type": "WEBHOOK_POST"
+      },
       "capabilities": [
-        "wizard.step.route_processing"
+        "wizard.step.route_processing",
+        "source.http_api_polling",
+        "destination.webhook_post"
       ],
       "fixture": "wizard/wizard-step-route-processing",
-      "expectedStatus": "NOT_IMPLEMENTED",
-      "reason": "Manifest status=PARTIAL",
+      "expectedStatus": "PASS",
       "tags": [
         "wizard",
-        "partial",
         "shard:processing"
       ],
       "shard": "processing"
@@ -884,8 +891,8 @@
       "wizard": 6
     },
     "by_expected_status": {
-      "PASS": 27,
-      "NOT_IMPLEMENTED": 2
+      "PASS": 28,
+      "NOT_IMPLEMENTED": 1
     }
   }
 }

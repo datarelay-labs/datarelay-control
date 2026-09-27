@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-09-21T13:17:44.467Z",
-  "manifest_commit": "42c4092270af0c789327d218cd805766f7317bdd",
+  "generated_at": "2026-09-27T04:47:16.289Z",
+  "manifest_commit": "9d5b6a652973e9580959561315f17820ef0d9bcf",
   "scenarios": [
     {
       "idStem": "auth__auth-http-no-auth__success__browser",
@@ -1159,94 +1159,6 @@
       ],
       "shard": "authentication",
       "authOutcome": "success"
-    },
-    {
-      "idStem": "auth__auth-ai-provider-api-key-or-bearer__success__browser",
-      "suite": "authentication",
-      "executionMode": "browser",
-      "routeProcessing": "on",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "AI_PROVIDER_POST",
-        "authentication": "ai_provider"
-      },
-      "capabilities": [
-        "auth.ai_provider.api_key_or_bearer",
-        "wizard.feature.connection_auth_test",
-        "destination.webhook_post"
-      ],
-      "fixture": "auth/ai_provider/success",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "success",
-        "shard:authentication",
-        "browser",
-        "route-on"
-      ],
-      "shard": "authentication",
-      "authOutcome": "success",
-      "id": "auth__auth-ai-provider-api-key-or-bearer__success__browser__route-on"
-    },
-    {
-      "idStem": "auth__auth-ai-provider-api-key-or-bearer__success__api_seeded",
-      "suite": "authentication",
-      "executionMode": "api_seeded",
-      "routeProcessing": "on",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "AI_PROVIDER_POST",
-        "authentication": "ai_provider"
-      },
-      "capabilities": [
-        "auth.ai_provider.api_key_or_bearer",
-        "wizard.feature.connection_auth_test",
-        "destination.webhook_post"
-      ],
-      "fixture": "auth/ai_provider/success",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "success",
-        "shard:authentication",
-        "api_seeded",
-        "route-on"
-      ],
-      "shard": "authentication",
-      "authOutcome": "success",
-      "id": "auth__auth-ai-provider-api-key-or-bearer__success__api_seeded__route-on"
-    },
-    {
-      "idStem": "auth__auth-ai-provider-api-key-or-bearer__failure__browser",
-      "suite": "authentication",
-      "executionMode": "browser",
-      "routeProcessing": "on",
-      "destination": {
-        "type": "AI_PROVIDER_POST",
-        "authentication": "ai_provider",
-        "variant": "bad_credentials"
-      },
-      "capabilities": [
-        "auth.ai_provider.api_key_or_bearer",
-        "wizard.feature.connection_auth_test"
-      ],
-      "fixture": "auth/ai_provider/failure",
-      "expectedStatus": "PASS",
-      "tags": [
-        "authentication",
-        "failure",
-        "shard:authentication",
-        "route-on"
-      ],
-      "shard": "authentication",
-      "authOutcome": "failure",
-      "id": "auth__auth-ai-provider-api-key-or-bearer__failure__browser__route-on"
     },
     {
       "idStem": "source__source-http-api-polling__lifecycle__browser",
@@ -2494,24 +2406,6 @@
       "shard": "http"
     },
     {
-      "id": "source__source-ai-proxy-receiver__runtime_only",
-      "suite": "source",
-      "executionMode": "api_seeded",
-      "routeProcessing": "on",
-      "capabilities": [
-        "source.ai_proxy_receiver"
-      ],
-      "fixture": "source/source-ai-proxy-receiver",
-      "expectedStatus": "NOT_IMPLEMENTED",
-      "reason": "Manifest status=RUNTIME_ONLY",
-      "tags": [
-        "source",
-        "runtime_only",
-        "shard:http"
-      ],
-      "shard": "http"
-    },
-    {
       "id": "dest__destination-syslog-udp__lifecycle__browser__route-on",
       "suite": "destination",
       "executionMode": "browser",
@@ -2724,24 +2618,6 @@
         "lifecycle",
         "shard:destination",
         "api_seeded"
-      ],
-      "shard": "destination"
-    },
-    {
-      "id": "dest__destination-ai-provider-post__partial",
-      "suite": "destination",
-      "executionMode": "api_seeded",
-      "routeProcessing": "on",
-      "capabilities": [
-        "destination.ai_provider_post"
-      ],
-      "fixture": "destination/destination-ai-provider-post",
-      "expectedStatus": "NOT_IMPLEMENTED",
-      "reason": "Manifest status=PARTIAL",
-      "tags": [
-        "destination",
-        "partial",
-        "shard:destination"
       ],
       "shard": "destination"
     },
@@ -3477,19 +3353,26 @@
       "id": "wizard__union_schema__browser__route-on"
     },
     {
-      "id": "wizard__wizard-step-route-processing__partial",
+      "id": "wizard__wizard-step-route-processing__browser__route-on",
       "suite": "wizard",
       "executionMode": "browser",
       "routeProcessing": "on",
+      "source": {
+        "type": "HTTP_API_POLLING",
+        "authentication": "no_auth"
+      },
+      "destination": {
+        "type": "WEBHOOK_POST"
+      },
       "capabilities": [
-        "wizard.step.route_processing"
+        "wizard.step.route_processing",
+        "source.http_api_polling",
+        "destination.webhook_post"
       ],
       "fixture": "wizard/wizard-step-route-processing",
-      "expectedStatus": "NOT_IMPLEMENTED",
-      "reason": "Manifest status=PARTIAL",
+      "expectedStatus": "PASS",
       "tags": [
         "wizard",
-        "partial",
         "shard:processing"
       ],
       "shard": "processing"
@@ -3662,7 +3545,7 @@
       "id": "route__routes-global-processing__api__route-on"
     },
     {
-      "id": "route__routes-per-route-transform__partial",
+      "idStem": "route__routes-per-route-transform__api",
       "suite": "route",
       "executionMode": "api_seeded",
       "routeProcessing": "on",
@@ -3671,23 +3554,30 @@
         "authentication": "no_auth"
       },
       "destination": {
-        "type": "WEBHOOK_POST"
+        "type": "WEBHOOK_POST",
+        "variant": "multi_route"
       },
       "capabilities": [
-        "routes.per_route_transform"
+        "routes.per_route_transform",
+        "routes.architecture.one_stream_many_routes",
+        "source.http_api_polling",
+        "destination.webhook_post",
+        "destination.syslog_tcp",
+        "destination.syslog_tls"
       ],
-      "fixture": "route/routes-per-route-transform",
-      "expectedStatus": "NOT_IMPLEMENTED",
-      "reason": "Manifest status=PARTIAL",
+      "fixture": "route/multi-route",
+      "expectedStatus": "PASS",
       "tags": [
         "route",
-        "partial",
-        "shard:route"
+        "multi-route",
+        "shard:route",
+        "route-on"
       ],
-      "shard": "route"
+      "shard": "route",
+      "id": "route__routes-per-route-transform__api__route-on"
     },
     {
-      "id": "route__routes-per-route-protection-classification-policy__partial",
+      "idStem": "route__routes-per-route-protection-classification-policy__api",
       "suite": "route",
       "executionMode": "api_seeded",
       "routeProcessing": "on",
@@ -3696,20 +3586,27 @@
         "authentication": "no_auth"
       },
       "destination": {
-        "type": "WEBHOOK_POST"
+        "type": "WEBHOOK_POST",
+        "variant": "multi_route"
       },
       "capabilities": [
-        "routes.per_route_protection_classification_policy"
+        "routes.per_route_protection_classification_policy",
+        "routes.architecture.one_stream_many_routes",
+        "source.http_api_polling",
+        "destination.webhook_post",
+        "destination.syslog_tcp",
+        "destination.syslog_tls"
       ],
-      "fixture": "route/routes-per-route-protection-classification-policy",
-      "expectedStatus": "NOT_IMPLEMENTED",
-      "reason": "Manifest status=PARTIAL",
+      "fixture": "route/multi-route",
+      "expectedStatus": "PASS",
       "tags": [
         "route",
-        "partial",
-        "shard:route"
+        "multi-route",
+        "shard:route",
+        "route-on"
       ],
-      "shard": "route"
+      "shard": "route",
+      "id": "route__routes-per-route-protection-classification-policy__api__route-on"
     },
     {
       "idStem": "route__routes-delivery-settings__api",
@@ -5529,16 +5426,16 @@
     }
   ],
   "counts": {
-    "total": 186,
-    "browser": 63,
-    "api_seeded": 123,
+    "total": 181,
+    "browser": 61,
+    "api_seeded": 120,
     "route_off": 0,
-    "route_on": 186,
+    "route_on": 181,
     "route_both": 0,
     "by_suite": {
-      "authentication": 41,
-      "source": 11,
-      "destination": 29,
+      "authentication": 38,
+      "source": 10,
+      "destination": 28,
       "runtime": 26,
       "processing": 23,
       "wizard": 6,
@@ -5548,7 +5445,7 @@
     },
     "by_expected_status": {
       "PASS": 171,
-      "NOT_IMPLEMENTED": 15
+      "NOT_IMPLEMENTED": 10
     }
   }
 }

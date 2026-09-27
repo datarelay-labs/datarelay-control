@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-09-21T13:17:44.463Z",
-  "manifest_commit": "42c4092270af0c789327d218cd805766f7317bdd",
+  "generated_at": "2026-09-27T04:47:16.287Z",
+  "manifest_commit": "9d5b6a652973e9580959561315f17820ef0d9bcf",
   "scenarios": [
     {
       "id": "governance__governance-delivery-require-review__partial",

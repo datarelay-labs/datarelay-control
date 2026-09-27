@@ -103,7 +103,11 @@ with open(sys.argv[1]) as f:
 }
 
 function isSupported(c: CapabilityRecord): boolean {
-  return c.status === 'SUPPORTED'
+  return c.status === 'SUPPORTED' && c.product_scope !== 'phase_e_out_of_scope'
+}
+
+function inCurrentControlScope(c: CapabilityRecord): boolean {
+  return c.product_scope !== 'phase_e_out_of_scope'
 }
 
 function isTrue(v: boolean | string | undefined): boolean {
@@ -139,7 +143,7 @@ function buildAuthentication(
   scenarios: E2EScenario[],
   na: NotApplicableRecord[],
 ): void {
-  for (const auth of manifest.authentication) {
+  for (const auth of manifest.authentication.filter(inCurrentControlScope)) {
     const applicable = auth.applicable_to ?? []
     const variant = AUTH_VARIANT[auth.id] ?? slug(auth.id)
     const sourceType = applicable.map((a) => AUTH_TO_SOURCE[a]).find(Boolean)
@@ -251,7 +255,7 @@ function buildSourceDestination(
   const sources = manifest.sources.filter(isSupported)
   const dests = manifest.destinations.filter(isSupported)
 
-  for (const src of manifest.sources) {
+  for (const src of manifest.sources.filter(inCurrentControlScope)) {
     if (!isSupported(src)) {
       pushScenario(scenarios, {
         id: `source__${slug(src.id)}__${src.status.toLowerCase()}`,
@@ -396,7 +400,7 @@ function buildSourceDestination(
     })
   }
 
-  for (const dest of manifest.destinations) {
+  for (const dest of manifest.destinations.filter(inCurrentControlScope)) {
     if (isSupported(dest)) {
       const destType = DEST_TYPE_MAP[dest.id]
       if (!destType) continue

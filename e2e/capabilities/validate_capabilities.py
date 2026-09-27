@@ -37,7 +37,45 @@ ALLOWED_STATUS = frozenset(
         "RUNTIME_ONLY",
         "NOT_IMPLEMENTED",
         "UNKNOWN",
+        "OUT_OF_SCOPE",
     }
+)
+
+PHASE_E_CAPABILITY_IDS = (
+    "auth.ai_provider.api_key_or_bearer",
+    "source.ai_proxy_receiver",
+    "destination.ai_provider_post",
+)
+
+CONTROL_SOURCE_CAPABILITIES = {
+    "HTTP_API_POLLING": "source.http_api_polling",
+    "DATABASE_QUERY": "source.database_query_postgresql",
+    "WEBHOOK_RECEIVER": "source.webhook_receiver",
+    "S3_OBJECT_POLLING": "source.s3_object_polling",
+    "REMOTE_FILE_POLLING": "source.remote_file_polling",
+}
+
+ROUTE_ON_REQUIRED_SUPPORTED = (
+    "wizard.step.route_processing",
+    "routes.per_route_transform",
+    "routes.per_route_protection_classification_policy",
+    "flag.gdc_route_processing_enabled",
+)
+
+STALE_TRUTH_PHRASES = (
+    "defaults False",
+    "defaults **False**",
+    "Default False",
+    "default False",
+    "default is `False`",
+    "Route Processing UI not implemented",
+    "wizard does not persist",
+    "does not save route_mappings",
+)
+
+PHASE_E_SOURCE_DEST_LABELS = (
+    "AI_PROXY_RECEIVER",
+    "AI_PROVIDER_POST",
 )
 
 CAPABILITY_SECTIONS = (
@@ -118,6 +156,20 @@ def _iter_capabilities(doc: dict) -> list[dict]:
     return caps
 
 
+def _assignment_default_true(py_text: str, name: str) -> bool:
+    tree = ast.parse(py_text)
+    for node in tree.body:
+        if not isinstance(node, ast.ClassDef):
+            continue
+        for stmt in node.body:
+            if not isinstance(stmt, ast.AnnAssign):
+                continue
+            if not isinstance(stmt.target, ast.Name) or stmt.target.id != name:
+                continue
+            return isinstance(stmt.value, ast.Constant) and stmt.value.value is True
+    return False
+
+
 def _has_evidence_for_layer(cap: dict, layer: str) -> bool:
     """Heuristic: evidence notes/files mention layer, or applicable evidence exists when flag true."""
     evidence = cap.get("evidence") or []
@@ -180,7 +232,27 @@ def main() -> int:
             if not _path_exists(t):
                 errors.append(f"{cid}: existing_tests path missing: {t}")
 
+        product_scope = cap.get("product_scope")
+        if status == "SUPPORTED" and product_scope == "phase_e_out_of_scope":
+            errors.append(f"{cid}: Phase E capability cannot be SUPPORTED in Control scope")
+        if product_scope == "phase_e_out_of_scope" and status != "OUT_OF_SCOPE":
+            errors.append(f"{cid}: phase_e_out_of_scope requires status OUT_OF_SCOPE")
+        if status == "OUT_OF_SCOPE" and product_scope != "phase_e_out_of_scope":
+            errors.append(f"{cid}: OUT_OF_SCOPE requires product_scope phase_e_out_of_scope")
+
         if status == "SUPPORTED":
+            evidence = cap.get("evidence") or []
+            product_evidence = [
+                e
+                for e in evidence
+                if isinstance(e, dict)
+                and str(e.get("file") or "")
+                and not str(e.get("file")).startswith("docs/")
+            ]
+            if not product_evidence:
+                errors.append(
+                    f"{cid}: SUPPORTED requires evidence outside docs/; generated text alone cannot promote it"
+                )
             if cap.get("ui_supported") and not _has_evidence_for_layer(cap, "ui"):
                 errors.append(f"{cid}: SUPPORTED with ui_supported=true but no evidence")
             if cap.get("api_supported") and not _has_evidence_for_layer(cap, "api"):
@@ -249,17 +321,21 @@ def main() -> int:
 
     # Canonical product source types (aliases counted under primary)
     source_id_map = {
-        "HTTP_API_POLLING": "source.http_api_polling",
-        "S3_OBJECT_POLLING": "source.s3_object_polling",
-        "DATABASE_QUERY": "source.database_query_postgresql",
-        "REMOTE_FILE_POLLING": "source.remote_file_polling",
-        "WEBHOOK_RECEIVER": "source.webhook_receiver",
+        **CONTROL_SOURCE_CAPABILITIES,
         "AI_PROXY_RECEIVER": "source.ai_proxy_receiver",
     }
-    for st, cid in source_id_map.items():
-        if st in source_types or st in source_adapter_keys:
-            if cid not in id_set:
-                errors.append(f"source type {st!r} missing capability {cid}")
+    by_id = {c.get("id"): c for c in caps}
+    for st, cid in CONTROL_SOURCE_CAPABILITIES.items():
+        if st not in source_adapter_keys and st not in source_types:
+            errors.append(f"control source {st!r} missing from source registry/schema")
+            continue
+        cap = by_id.get(cid)
+        if not cap or cap.get("status") != "SUPPORTED":
+            errors.append(f"control source {st!r} must be SUPPORTED capability {cid}")
+    if "AI_PROXY_RECEIVER" in source_adapter_keys:
+        ai_source = by_id.get("source.ai_proxy_receiver")
+        if not ai_source or ai_source.get("status") != "OUT_OF_SCOPE":
+            errors.append("AI_PROXY_RECEIVER must stay OUT_OF_SCOPE and must not be a supported Control source")
 
     # Aliases should be mentioned in manifest text at least
     for alias in ("S3", "REMOTE_FILE", "WEBHOOK", "WEBHOOK_PUSH"):
@@ -275,8 +351,17 @@ def main() -> int:
         "AI_PROVIDER_POST": "destination.ai_provider_post",
     }
     for dt, cid in dest_id_map.items():
-        if dt in dest_types and cid not in id_set:
+        if dt not in dest_types:
+            continue
+        if dt == "AI_PROVIDER_POST":
+            cap = by_id.get(cid)
+            if not cap or cap.get("status") != "OUT_OF_SCOPE":
+                errors.append("AI_PROVIDER_POST must stay OUT_OF_SCOPE and must not be a supported Control destination")
+            continue
+        if cid not in id_set:
             errors.append(f"destination type {dt!r} missing capability {cid}")
+        elif by_id.get(cid, {}).get("status") != "SUPPORTED":
+            errors.append(f"destination type {dt!r} must be SUPPORTED capability {cid}")
 
     for ct in sorted(connector_types):
         if ct not in manifest_text:
@@ -304,6 +389,78 @@ def main() -> int:
         expected = f"governance.delivery.{beh}"
         if expected not in id_set:
             errors.append(f"delivery behavior {beh!r} missing capability {expected}")
+
+    config_text = (REPO_ROOT / "app/config.py").read_text(encoding="utf-8")
+    if not _assignment_default_true(config_text, "GDC_ROUTE_PROCESSING_ENABLED"):
+        errors.append("app/config.py GDC_ROUTE_PROCESSING_ENABLED default must be True")
+    if "false is no longer supported" not in config_text:
+        errors.append("app/config.py must reject explicit Route Processing false")
+
+    flag = by_id.get("flag.gdc_route_processing_enabled") or {}
+    if flag.get("default_value") is not True:
+        errors.append("flag.gdc_route_processing_enabled default_value must be true")
+    for cid in ROUTE_ON_REQUIRED_SUPPORTED:
+        if by_id.get(cid, {}).get("status") != "SUPPORTED":
+            errors.append(f"{cid} must be SUPPORTED on the Route-ON product path")
+
+    for phrase in STALE_TRUTH_PHRASES:
+        if phrase in manifest_text:
+            errors.append(f"capability manifest contains stale current-truth phrase: {phrase}")
+
+    coverage_path = REPO_ROOT / "e2e/COVERAGE.md"
+    coverage_text = coverage_path.read_text(encoding="utf-8") if coverage_path.exists() else ""
+    for phrase in STALE_TRUTH_PHRASES:
+        if phrase in coverage_text:
+            errors.append(f"e2e/COVERAGE.md contains stale current-truth phrase: {phrase}")
+    for label in PHASE_E_SOURCE_DEST_LABELS:
+        if label in coverage_text:
+            errors.append(f"e2e/COVERAGE.md must not list {label} as current Control support")
+
+    for cid in PHASE_E_CAPABILITY_IDS:
+        cap = by_id.get(cid)
+        if not cap or cap.get("status") == "SUPPORTED" or cap.get("product_scope") != "phase_e_out_of_scope":
+            errors.append(f"{cid} must be classified phase_e_out_of_scope and must not be SUPPORTED")
+
+    axes_path = REPO_ROOT / "e2e/cross-product/cross-product-axes.yaml"
+    axes_doc = yaml.safe_load(axes_path.read_text(encoding="utf-8"))
+    route_values = (((axes_doc or {}).get("axes") or {}).get("route_runtime") or {}).get("values")
+    if route_values != ["ROUTE_ON"]:
+        errors.append(f"cross-product route_runtime values must be ['ROUTE_ON'], got {route_values!r}")
+
+    release_cfg = yaml.safe_load(
+        (REPO_ROOT / "e2e/release-gate/release-gate-config.yaml").read_text(encoding="utf-8")
+    )
+    route_cfg = (release_cfg or {}).get("route_processing") or {}
+    if route_cfg.get("require_off") is not False or route_cfg.get("require_on") is not True:
+        errors.append("release-gate route_processing must require ON and must not require OFF")
+
+    baseline_path = REPO_ROOT / "e2e/cross-product/baseline/cross-product-baseline.json"
+    if baseline_path.exists():
+        import json
+
+        baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+        if int(baseline.get("route_off_combinations") or 0) != 0:
+            errors.append(
+                "cross-product baseline route_off_combinations must be 0 "
+                f"(got {baseline.get('route_off_combinations')})"
+            )
+
+    matrix_path = REPO_ROOT / "e2e/scenarios/generated/full-matrix.json"
+    if matrix_path.exists():
+        import json
+
+        matrix = json.loads(matrix_path.read_text(encoding="utf-8"))
+        if int((matrix.get("counts") or {}).get("route_off") or 0) != 0:
+            errors.append("supported full matrix route_off count must be 0")
+        for scenario in matrix.get("scenarios") or []:
+            caps_for_scenario = scenario.get("capabilities") or []
+            if any(cid in PHASE_E_CAPABILITY_IDS for cid in caps_for_scenario):
+                errors.append(f"full matrix scenario includes Phase E capability: {scenario.get('id')}")
+                break
+
+    provenance = str((doc.get("metadata") or {}).get("generated_from_commit") or "")
+    if not re.fullmatch(r"[0-9a-f]{40}", provenance):
+        errors.append("metadata.generated_from_commit must be a 40-character commit")
 
     print(f"Manifest: {MANIFEST_PATH.relative_to(REPO_ROOT)}")
     print(f"Capabilities: {len(ids)}")

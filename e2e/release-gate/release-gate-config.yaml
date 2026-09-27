@@ -5,14 +5,14 @@ required:
   execution_validation: true
 
 full_matrix:
-  expected_scenarios: 186
+  expected_scenarios: 181
   fail_allowed: 0
   blocked_allowed: 0
   gap_allowed: 0
   missing_allowed: 0
 
 browser:
-  expected_scenarios: 63
+  expected_scenarios: 61
   missing_allowed: 0
 
 route_processing:
@@ -20,7 +20,7 @@ route_processing:
   require_on: true
 
 not_implemented:
-  expected: 15
+  expected: 10
   require_manifest_evidence: true
   fail_on_increase: true
 
