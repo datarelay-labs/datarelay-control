@@ -978,16 +978,10 @@ install_full() {
   local _pg_db _pg_user
   _pg_db="$(gdc_release_resolve_postgres_db_name "$ROOT" "$COMPOSE_REL" "")"
   _pg_user="$(gdc_release_resolve_postgres_user "$ROOT" "$COMPOSE_REL")"
-  log_step "$STEP_TOTAL" "Starting PostgreSQL and waiting for readiness (catalog: $_pg_db, user: $_pg_user)"
+  log_step "$STEP_TOTAL" "Starting PostgreSQL and waiting for final catalog readiness (catalog: $_pg_db, user: $_pg_user)"
   docker compose -f "$COMPOSE_REL" up -d postgres
-  for _ in $(seq 1 45); do
-    if docker compose -f "$COMPOSE_REL" exec -T postgres pg_isready -U "$_pg_user" -d "$_pg_db" >/dev/null 2>&1; then
-      break
-    fi
-    sleep 2
-  done
-  if ! docker compose -f "$COMPOSE_REL" exec -T postgres pg_isready -U "$_pg_user" -d "$_pg_db" >/dev/null 2>&1; then
-    die "PostgreSQL did not become ready in time (expected catalog $_pg_db). Check: docker compose -f $COMPOSE_REL logs postgres"
+  if ! gdc_release_wait_for_postgres_catalog "$ROOT" "$COMPOSE_REL" "$_pg_user" "$_pg_db" 45 2; then
+    die "PostgreSQL final server/catalog did not become usable in time (expected catalog $_pg_db). Check: docker compose -f $COMPOSE_REL logs postgres"
   fi
 
   log_step "$STEP_TOTAL" "Pre-migration integrity check (read-only)"
