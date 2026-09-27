@@ -606,7 +606,9 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
   it('redirects / to Dashboard at /monitoring', async () => {
     renderApp('/')
     expect(await screen.findByTestId('dashboard-overall-health-hero', {}, { timeout: 15000 })).toBeInTheDocument()
-    expect(screen.getAllByRole('heading', { level: 1, name: 'Dashboard' }).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByRole('heading', { name: 'Dashboard' })).toHaveLength(1)
+    expect(screen.queryByRole('navigation', { name: 'Breadcrumb' })).not.toBeInTheDocument()
+    expect(within(screen.getByRole('main')).queryByRole('heading', { name: 'Dashboard' })).not.toBeInTheDocument()
   })
 
   it('shows operator dashboard hierarchy driven by runtime APIs', async () => {
@@ -736,7 +738,9 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
   it('renders Administration hub at /admin with task groups', async () => {
     renderApp('/admin')
     expect(await screen.findByTestId('administration-hub-page', {}, { timeout: 8000 })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 1, name: 'Administration' })).toBeInTheDocument()
+    expect(screen.getAllByRole('heading', { name: 'Administration' })).toHaveLength(1)
+    expect(screen.queryByRole('navigation', { name: 'Breadcrumb' })).not.toBeInTheDocument()
+    expect(within(screen.getByRole('main')).queryByRole('heading', { name: /^Administration$/ })).not.toBeInTheDocument()
     expect(screen.getByTestId('admin-hub-purpose')).toHaveTextContent(/What needs configuring/i)
     expect(screen.getByRole('heading', { name: 'Access & security' })).toBeInTheDocument()
     expect(screen.getByTestId('admin-hub-https')).toHaveAttribute('href', '/settings#admin-https-heading')
@@ -854,9 +858,11 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
   it('renders Routes operational console at /routes', async () => {
     renderApp('/routes')
     expect(await screen.findByRole('heading', { level: 1, name: 'Routes' }, { timeout: 8000 })).toBeInTheDocument()
-    // LazyRoutesOverviewPage loads asynchronously; wait for page chrome before h2 assertions.
+    // LazyRoutesOverviewPage loads asynchronously; wait for page chrome before title assertions.
     expect(await screen.findByRole('region', { name: 'Route KPI summary' }, { timeout: 15000 })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 2, name: 'Routes' })).toBeInTheDocument()
+    expect(screen.getAllByRole('heading', { name: 'Routes' })).toHaveLength(1)
+    expect(screen.queryByRole('heading', { level: 2, name: 'Routes' })).not.toBeInTheDocument()
+    expect(within(screen.getByRole('main')).queryByRole('heading', { name: 'Routes' })).not.toBeInTheDocument()
     expect(screen.getByText(/End-to-end delivery flow across streams, routes, and destinations/i)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Create Route' })).toBeInTheDocument()
   }, 20000)

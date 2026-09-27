@@ -300,20 +300,6 @@ export function AppShellLayout() {
         </nav>
       )
     }
-    if (location.pathname === '/monitoring') {
-      return (
-        <nav className="flex flex-wrap items-center gap-1" aria-label="Breadcrumb">
-          <span className="font-semibold text-slate-800 dark:text-slate-200">Dashboard</span>
-        </nav>
-      )
-    }
-    if (location.pathname === '/admin') {
-      return (
-        <nav className="flex flex-wrap items-center gap-1" aria-label="Breadcrumb">
-          <span className="font-semibold text-slate-800 dark:text-slate-200">Administration</span>
-        </nav>
-      )
-    }
     if (location.pathname === '/settings' || location.pathname.startsWith('/settings/')) {
       return (
         <nav className="flex flex-wrap items-center gap-1" aria-label="Breadcrumb">

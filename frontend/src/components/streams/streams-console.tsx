@@ -26,6 +26,7 @@ import {
   type SetStateAction,
 } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { gdcUi } from '../../lib/gdc-ui-tokens'
 import { cn } from '../../lib/utils'
 import {
   logsPath,
@@ -797,7 +798,10 @@ export function StreamsConsole() {
         ) : filteredRows.length === 0 ? (
           <div className="px-5 py-12 text-center" data-testid="streams-empty-panel">
             <p
-              className={cn('text-sm', streamsAuthRequired && 'font-medium text-amber-800 dark:text-amber-200')}
+              className={cn(
+                'text-sm',
+                streamsAuthRequired ? 'font-medium text-amber-800 dark:text-amber-200' : gdcUi.textMuted,
+              )}
               data-testid={streamsAuthRequired ? 'streams-auth-required' : 'streams-empty-state'}
             >
               {streamsEmptyMessage}
