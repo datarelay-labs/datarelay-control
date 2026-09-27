@@ -1,15 +1,15 @@
 {
-  "commit": "51d9802eed1d604165afb5d9c64c80c49ecb825c",
-  "generated_at": "2026-09-21T13:18:09.157Z",
-  "scenario_count": 186,
-  "browser_count": 63,
-  "api_seeded_count": 123,
+  "commit": "9d5b6a652973e9580959561315f17820ef0d9bcf",
+  "generated_at": "2026-09-27T05:05:40.331Z",
+  "scenario_count": 181,
+  "browser_count": 61,
+  "api_seeded_count": 120,
   "route_off_count": 0,
-  "route_on_count": 186,
+  "route_on_count": 181,
   "by_suite": {
-    "authentication": 41,
-    "source": 11,
-    "destination": 29,
+    "authentication": 38,
+    "source": 10,
+    "destination": 28,
     "runtime": 26,
     "processing": 23,
     "wizard": 6,
@@ -19,12 +19,9 @@
   },
   "by_expected_status": {
     "PASS": 171,
-    "NOT_IMPLEMENTED": 15
+    "NOT_IMPLEMENTED": 10
   },
   "scenario_ids": [
-    "auth__auth-ai-provider-api-key-or-bearer__failure__browser__route-on",
-    "auth__auth-ai-provider-api-key-or-bearer__success__api_seeded__route-on",
-    "auth__auth-ai-provider-api-key-or-bearer__success__browser__route-on",
     "auth__auth-database-username-password__failure__browser__route-on",
     "auth__auth-database-username-password__success__api_seeded__route-on",
     "auth__auth-database-username-password__success__browser__route-on",
@@ -63,7 +60,6 @@
     "auth__auth-s3-access-key-secret__success__browser__route-on",
     "auth__auth-webhook-receiver-inbound__success__api_seeded__route-on",
     "auth__auth-webhook-receiver-inbound__success__browser__route-on",
-    "dest__destination-ai-provider-post__partial",
     "dest__destination-syslog-tcp__lifecycle__api_seeded__route-on",
     "dest__destination-syslog-tcp__lifecycle__browser__route-on",
     "dest__destination-syslog-tls__lifecycle__api_seeded__route-on",
@@ -144,8 +140,8 @@
     "route__routes-delivery-settings__api__route-on",
     "route__routes-global-processing__api__route-on",
     "route__routes-metrics-health__api__route-on",
-    "route__routes-per-route-protection-classification-policy__partial",
-    "route__routes-per-route-transform__partial",
+    "route__routes-per-route-protection-classification-policy__api__route-on",
+    "route__routes-per-route-transform__api__route-on",
     "runtime__dedup__source-database-query-postgresql__route-on",
     "runtime__dedup__source-http-api-polling__route-on",
     "runtime__dedup__source-remote-file-polling__route-on",
@@ -166,7 +162,6 @@
     "runtime__scheduler__source-remote-file-polling__route-on",
     "runtime__scheduler__source-s3-object-polling__route-on",
     "runtime__scheduler__source-webhook-receiver__route-on",
-    "source__source-ai-proxy-receiver__runtime_only",
     "source__source-database-query-postgresql__lifecycle__api_seeded__route-on",
     "source__source-database-query-postgresql__lifecycle__browser__route-on",
     "source__source-http-api-polling__lifecycle__api_seeded__route-on",
@@ -207,11 +202,9 @@
     "wizard__wizard-feature-resume__browser__route-on",
     "wizard__wizard-feature-sensitive-suggestion__ui_only__browser__route-on",
     "wizard__wizard-feature-stream-edit__browser__route-on",
-    "wizard__wizard-step-route-processing__partial"
+    "wizard__wizard-step-route-processing__browser__route-on"
   ],
   "browser_ids": [
-    "auth__auth-ai-provider-api-key-or-bearer__failure__browser__route-on",
-    "auth__auth-ai-provider-api-key-or-bearer__success__browser__route-on",
     "auth__auth-database-username-password__failure__browser__route-on",
     "auth__auth-database-username-password__success__browser__route-on",
     "auth__auth-destination-syslog-tls-client-cert__failure__browser__route-on",
@@ -272,6 +265,6 @@
     "wizard__wizard-feature-resume__browser__route-on",
     "wizard__wizard-feature-sensitive-suggestion__ui_only__browser__route-on",
     "wizard__wizard-feature-stream-edit__browser__route-on",
-    "wizard__wizard-step-route-processing__partial"
+    "wizard__wizard-step-route-processing__browser__route-on"
   ]
 }

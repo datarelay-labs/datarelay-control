@@ -423,8 +423,10 @@ export function generateCrossProduct(): GenerationSummary {
   const dupWriter = createJsonlWriter(dupPath)
 
   const ni = JSON.parse(fs.readFileSync(NI_BASELINE, 'utf-8')) as { scenario_ids: string[] }
-  if (ni.scenario_ids.length !== 20) {
-    throw new Error(`NOT_IMPLEMENTED baseline must have 20 ids, got ${ni.scenario_ids.length}`)
+  if (ni.scenario_ids.length !== NOT_IMPLEMENTED_SCENARIO_IDS.length) {
+    throw new Error(
+      `NOT_IMPLEMENTED baseline must have ${NOT_IMPLEMENTED_SCENARIO_IDS.length} ids, got ${ni.scenario_ids.length}`,
+    )
   }
   for (const id of NOT_IMPLEMENTED_SCENARIO_IDS) {
     if (!ni.scenario_ids.includes(id)) throw new Error(`NOT_IMPLEMENTED set drift: missing ${id}`)
@@ -564,7 +566,7 @@ export function generateCrossProduct(): GenerationSummary {
     niPath,
     `${JSON.stringify(
       {
-        count: 20,
+        count: NOT_IMPLEMENTED_SCENARIO_IDS.length,
         scenario_ids: [...NOT_IMPLEMENTED_SCENARIO_IDS],
         excluded_capability_ids: [...EXCLUDED_FROM_PRODUCT_CAPABILITY_IDS].sort(),
         not_implemented_combinations: notImplementedCombinations,

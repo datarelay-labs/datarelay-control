@@ -7,7 +7,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import {
   BASELINE_DIR,
-  allCapabilities,
+  currentControlCapabilities,
   evidenceFiles,
   finalDir,
   loadBaselines,
@@ -43,7 +43,7 @@ function main(): void {
 
   const manifest = loadManifest()
   const matrix = loadMatrix()
-  const caps = allCapabilities(manifest)
+  const caps = currentControlCapabilities(manifest)
   const supported = caps.filter((c) => c.status === 'SUPPORTED')
   const issues: ReleaseGateIssue[] = []
   const warnings: ReleaseGateIssue[] = []

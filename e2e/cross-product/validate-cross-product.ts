@@ -125,8 +125,10 @@ export function validateCrossProduct(): ValidationResult {
 
   const niFile = JSON.parse(fs.readFileSync(niPath, 'utf-8')) as { scenario_ids: string[]; count: number }
   const niBaseline = JSON.parse(fs.readFileSync(NI_BASELINE, 'utf-8')) as { scenario_ids: string[] }
-  if (niFile.count !== 20 || niFile.scenario_ids.length !== 20) {
-    errors.push(`NOT_IMPLEMENTED count must be 20, got ${niFile.count}`)
+  if (niFile.count !== NOT_IMPLEMENTED_SCENARIO_IDS.length || niFile.scenario_ids.length !== NOT_IMPLEMENTED_SCENARIO_IDS.length) {
+    errors.push(
+      `NOT_IMPLEMENTED count must be ${NOT_IMPLEMENTED_SCENARIO_IDS.length}, got ${niFile.count}`,
+    )
   }
   const expectedNi = [...NOT_IMPLEMENTED_SCENARIO_IDS].sort().join('\n')
   const actualNi = [...niFile.scenario_ids].sort().join('\n')
@@ -153,6 +155,10 @@ export function validateCrossProduct(): ValidationResult {
     if (/mysql|mariadb/i.test(s)) errors.push(`lab-only source in product: ${s}`)
     if (s === 'AI_PROXY_RECEIVER') errors.push('AI_PROXY_RECEIVER must not be in valid set')
     if (d === 'AI_PROVIDER_POST') errors.push('AI_PROVIDER_POST must not be in valid set')
+    if (row.axes.route_runtime === 'ROUTE_OFF') errors.push('ROUTE_OFF must not be a supported combination')
+  }
+  if (summary.route_off_combinations !== 0) {
+    errors.push(`route_off_combinations must be 0, got ${summary.route_off_combinations}`)
   }
 
   if (fs.existsSync(BASELINE)) {
@@ -189,6 +195,12 @@ export function validateCrossProduct(): ValidationResult {
     }
     if (baseline.api_combinations !== summary.api_combinations) {
       diffs.push(`api ${baseline.api_combinations} → ${summary.api_combinations}`)
+    }
+    if (baseline.route_off_combinations !== 0 || summary.route_off_combinations !== 0) {
+      diffs.push(`route_off ${baseline.route_off_combinations} → ${summary.route_off_combinations}`)
+    }
+    if (baseline.route_on_combinations !== summary.route_on_combinations) {
+      diffs.push(`route_on ${baseline.route_on_combinations} → ${summary.route_on_combinations}`)
     }
     if (diffs.length) {
       const candidatePath = path.join(GEN, 'baseline-candidate-diff.json')

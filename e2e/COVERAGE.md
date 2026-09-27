@@ -1,10 +1,10 @@
-# Data Relay E2E Coverage — Phase 1 Capability Inventory
+# Data Relay E2E Coverage — Phase A-D Control Inventory
 
 Source of truth: [`e2e/capabilities/data-relay-capabilities.yaml`](capabilities/data-relay-capabilities.yaml)  
-Commit: `42c4092270af0c789327d218cd805766f7317bdd` (at generation time)  
-Generated: `2026-07-16T01:58:51Z`
+Provenance commit: `9d5b6a652973e9580959561315f17820ef0d9bcf`
+Generated: `2026-09-27T04:05:00Z`
 
-This document inventories **actual code-supported** capabilities. It does **not** invent features and does **not** implement new E2E tests.
+This document inventories **current Phase A-D Control** capabilities. AI Proxy, AI Provider, and Phase E/F are out of current Control scope and are not Source or Destination support rows. It does **not** invent features.
 
 Validate with:
 
@@ -18,22 +18,22 @@ python3 e2e/capabilities/validate_capabilities.py
 
 | Area | Count | Notes |
 | ---- | ----: | ----- |
-| Authentication capabilities | 15 | 8 HTTP `AuthType` + S3 keys + DB password + SSH creds + webhook inbound + syslog mTLS + webhook headers (PARTIAL) + AI provider keys |
-| Source types | 6 | 5 product UI sources + `AI_PROXY_RECEIVER` (RUNTIME_ONLY) |
-| Destination types | 5 | 4 Destinations UI types + `AI_PROVIDER_POST` (PARTIAL / not in Destinations type union) |
+| Authentication capabilities | 14 | 8 HTTP `AuthType` + S3 keys + DB password + SSH creds + webhook inbound + syslog mTLS + webhook headers (PARTIAL). AI provider auth is Phase E and excluded. |
+| Source types | 5 | Charter core: HTTP API Polling, Database Query, Webhook Receiver. Release-qualified extensions: S3 Object Polling, Remote File Polling. |
+| Destination types | 4 | Syslog UDP/TCP/TLS and Webhook POST. |
 | Transform / processing | 12 | 8 enrichment rule types + 4 mapping/policy features |
-| Wizard features / steps | 16 | 5 steps + feature capabilities |
-| Route capabilities | 6 | Architecture + global/per-route/delivery/metrics |
+| Wizard features / steps | 16 | 5 steps + feature capabilities, including Route Processing |
+| Route capabilities | 6 | Architecture, global processing, per-route transform, per-route protection/classification/policy, delivery, metrics |
 | Governance capabilities | 16 | Protection, delivery behaviors, ops surfaces |
 | Runtime capabilities | 10 | Retry, checkpoint, dedup, failover, fault fixtures, etc. |
-| Feature flags | 4 | Route processing (default off), protection, sensitive detection, classification |
+| Feature flags | 4 | Route Processing (default true, false rejected), protection, sensitive detection, classification |
 | Test infrastructure | 5 | Playwright, WireMock pytest, source E2E, lab, auth fixtures |
-| **Total capabilities** | **95** | |
+| **Phase A-D capabilities** | **92** | Three Phase E rows remain in the manifest as `OUT_OF_SCOPE` and are excluded from this total. |
 
 Product constraints confirmed in code:
 
 - Database Query product `db_type` = **POSTGRESQL only** (MySQL/MariaDB are lab fixtures only).
-- `GDC_ROUTE_PROCESSING_ENABLED` defaults **False**.
+- Route Processing is ON-only. `GDC_ROUTE_PROCESSING_ENABLED` defaults **true**, and explicit false is rejected.
 - `SourceRateLimiter.allow` is a no-op (always `True`).
 
 ---
@@ -47,7 +47,6 @@ Product constraints confirmed in code:
 | DATABASE_QUERY (PostgreSQL) | username/password | Yes | Yes | Yes (SQL checkpoint modes) | Yes | `source_e2e` / external runtime | Playwright DB path |
 | REMOTE_FILE_POLLING | SSH password/key | Yes | Yes | Yes (mtime/path) | Yes | `source_e2e` / external runtime | Playwright remote-file path |
 | WEBHOOK_RECEIVER | inbound no_auth / shared_secret / bearer | No (push) | Partial | Partial (observability hidden) | Yes | ingest unit + visible E2E seed | Playwright ingest→delivery |
-| AI_PROXY_RECEIVER | inbound/provider auth | No | No | No | Yes | AI proxy pytest E2E | Operator-path documentation / UI exposure |
 
 ---
 
@@ -59,7 +58,6 @@ Product constraints confirmed in code:
 | SYSLOG_TCP | none | Yes | Route-level | Yes | No | same | Playwright create + test |
 | SYSLOG_TLS | optional mTLS client cert | Yes | Route-level | Yes | Yes | `test_syslog_tls_destination.py` | Playwright TLS path |
 | WEBHOOK_POST | headers in config (UI missing) | Yes | Sender + route | Yes | Via HTTPS URL | WireMock matrix | Playwright payload modes + header auth |
-| AI_PROVIDER_POST | provider api_key/bearer | Yes (health) | Adapter local | Yes (AI failover) | Via provider HTTPS | AI pytest E2E | Expose/document Destinations operator path |
 
 ---
 
@@ -70,13 +68,12 @@ Product constraints confirmed in code:
 | HTTP auth (8 types) | Y | Y | Y | connector auth + WireMock | SUPPORTED |
 | S3 / DB / SSH credentials | Y | Y | Y | source adapter E2E | SUPPORTED |
 | Webhook dest header auth | N | Y | Y | destination test endpoint | PARTIAL |
-| AI_PROVIDER_POST destination | N (Destinations UI) | Y | Y | AI E2E | PARTIAL |
-| AI_PROXY_RECEIVER source | N | partial | Y | AI proxy E2E | RUNTIME_ONLY |
 | Enrichment rules (8) | Y | Y | Y | enrichment + normalize/timestamp E2E | SUPPORTED (lookup PARTIAL UI) |
 | Full-event JSONata/Regex | Y | Y | Y | mapping tests + Playwright full-event | SUPPORTED |
 | Unmapped pass-through/drop | Y | Y | Y | mapping pipeline + drop-policy UI | SUPPORTED |
-| Wizard Route Processing step | Y | Y | flag-gated | unit + per-route pytest | PARTIAL |
-| Per-route transform from wizard | Y (editor) | Y (route edit) | flag-gated | per-route transform tests | PARTIAL — wizard does not persist overrides |
+| Wizard Route Processing step | Y | Y | Y | wizard persist tests + per-route pytest | SUPPORTED |
+| Per-route transform from wizard | Y | Y | Y | wizard persist + effective transform tests | SUPPORTED |
+| Per-route protection / classification / policy | Y | Y | Y | per-route governance tests | SUPPORTED |
 | Rare field badge | Y | N | N | unionSchema unit | UI_ONLY |
 | Sensitive suggestion (wizard) | Y | N | N | evaluateUnionFieldSuggestion unit | UI_ONLY |
 | Dedup | Y (config tab) | Y | Y | stream_dedup tests | SUPPORTED (not wizard step) |
@@ -97,15 +94,10 @@ Product constraints confirmed in code:
 | Item | UI | API | Runtime | Problem |
 | ---- | -: | --: | ------: | ------- |
 | Webhook destination auth headers | N | Y | Y | Destinations form stores `url` + `payload_mode` only; headers API/runtime supported |
-| AI_PROVIDER_POST | N in Destinations type union | Y | Y | Backend destination type exists; managed via AI Providers, omitted from `gdcDestinations.ts` |
-| AI_PROXY_RECEIVER | N in connector wizard | partial | Y | Registered in `SourceAdapterRegistry` but not in `SourceType` Literal / presentation list |
-| Route Processing wizard overrides | Y | Y via Route Edit | flag-gated | Wizard create/hydrate does not persist `route_mappings`; hydrate forces inherit-all |
-| `GDC_ROUTE_PROCESSING_ENABLED` | UI always shows Route Processing | — | Default **False** | UI implies per-route pipeline; runtime uses legacy shared transform unless flag on |
 | Rare field / sensitive suggestion | Y | N | N | Client-only heuristics; runtime sensitive detection is separate flag/engine |
 | Lookup enrichment | Partial (excluded from some add menus) | Y | Y | `excludeRuleTypes={['lookup']}` on Charter transform panel |
 | Source rate limiter | config present | stored | always allow | `SourceRateLimiter.allow` TODO / returns `True` |
 | Destination capacity/burst UI | Y | stored | not consumed | Limiter only reads `max_events` / `per_seconds` |
-| `docs/architecture/m13-route-processing-ui-deferral.md` | — | — | — | **Stale**: claims Route Processing UI not implemented; step exists |
 | Wizard delivery behaviors vs `require_review` | continue/quarantine/block | require_review aliases | Y | Review used for drift/unknown fields, not wizard delivery enum |
 | Preview vs runtime sensitive | suggestion heuristic | findings API | detector | Different implementations — not comparable 1:1 |
 | Playwright browser E2E | local scripts | — | — | **Not in CI** (frontend-tests runs Vitest + build only) |
@@ -138,7 +130,7 @@ Product constraints confirmed in code:
 - Quarantine center release/discard
 - Replay center dry-run + live
 - Failover route activation
-- `GDC_ROUTE_PROCESSING_ENABLED` on/off matrix for per-route transform/protection
+- Per-route transform, protection, classification, and policy on the Route-ON runtime
 - Schema drift / require_review / auto_protect
 
 ### P3 — Fault injection · a11y · volume · browsers
@@ -158,7 +150,7 @@ Priority-ordered inputs for the next phase:
 2. **Auth emulators (WireMock)** — already strong for HTTP auth; add missing **403** source fault; keep 401/429/500/retry scenarios.
 3. **Destination auth fixture** — webhook with required Authorization header; optional Syslog TLS mTLS receiver already partially present via `syslog-test`.
 4. **Per-source Playwright fixtures** — seeded or API-created connectors for S3 (MinIO), PostgreSQL query, SFTP; reuse `scripts/testing/source-e2e/seed-fixtures.sh`.
-5. **Route-processing flag matrix** — test env with `GDC_ROUTE_PROCESSING_ENABLED=true` and `false`.
+5. **Route Processing runtime** — test env uses the canonical ON path. Explicit false is rejected and is not a supported matrix axis.
 6. **Governance fixtures** — quarantine events, replayable deliveries, policy packages for ops-page Playwright.
 7. **CI Playwright job** — smoke subset first (record-selection + operator-auth + one deploy path); keep backend WireMock CI as-is.
 8. **Do not** treat MySQL/MariaDB lab containers as product DB types unless product `db_type` is implemented.
@@ -231,7 +223,7 @@ Configs: `frontend/playwright.config*.ts` (9 configs). **Not run in GitHub Actio
 
 These need a live environment or product decision; inventory alone cannot close them:
 
-1. Exact production default for `GDC_ROUTE_PROCESSING_ENABLED` in each deploy compose overlay (code default is `False`; overlays may differ — verify per environment).
+1. Route Processing code default is true. Explicit false is rejected at settings load.
 2. Whether AI destinations should appear in Destinations UI (product decision; currently API/runtime only via AI Providers).
 3. End-to-end parity of every enrichment preview path vs runtime under route overrides with flag on (unit parity exists for classification/policy; wizard path incomplete).
 4. Full fault-injection coverage for DB disconnect / object-storage outage / connector TLS beyond current partial tests.
@@ -265,13 +257,13 @@ Outcomes used (no silent skips): `PASS` | `FAIL` | `BLOCKED` | `NOT_APPLICABLE` 
 
 Release Gate binds Full Matrix evidence to commits and blocks stale/incomplete/regressed releases.
 
-Developers do **not** need to run Full Matrix (186) or Cross-Product (32k) for routine PR work. Those suites are **manual** (`./e2e/run-full-e2e-lab.sh`, `e2e/` npm scripts). Normal PR CI stays path-filtered and cheap.
+Developers do **not** need to run Full Matrix (181) or Cross-Product for routine PR work. Those suites are **manual** (`./e2e/run-full-e2e-lab.sh`, `e2e/` npm scripts). Normal PR CI stays path-filtered and cheap.
 
 | Gate | Mechanism | Scope |
 | ---- | --------- | ----- |
 | PR (required) | `backend-tests.yml` / `frontend-tests.yml` / `oss-v1-release-validation.yml` | Path-filtered backend/frontend + always-on `release-gate-unit` |
 | PR (path-filtered E2E) | `e2e-smoke.yml`, optional `source-adapter-e2e.yml` / `external-runtime-e2e.yml` | WireMock smoke / adapter / runtime when paths match |
-| Nightly (pytest) | `e2e-regression.yml` | WireMock/syslog pytest regression — **not** Full Matrix 186 |
+| Nightly (pytest) | `e2e-regression.yml` | WireMock/syslog pytest regression — **not** the Full Matrix |
 | Full Matrix / XP / RC / Release evidence | Manual CLI | `release-gate evaluate` / `rc` / `validate-evidence` against local run evidence |
 | Continuous Lab / Keycloak | Manual / ON_DEMAND | `e2e/continuous/`, `e2e/real-apps/` — not normal PR CI |
 

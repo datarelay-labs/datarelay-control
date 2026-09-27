@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-09-21T13:17:44.460Z",
-  "manifest_commit": "42c4092270af0c789327d218cd805766f7317bdd",
+  "generated_at": "2026-09-27T04:47:16.285Z",
+  "manifest_commit": "9d5b6a652973e9580959561315f17820ef0d9bcf",
   "scenarios": [
     {
       "idStem": "source__source-http-api-polling__lifecycle__browser",
@@ -863,24 +863,6 @@
       "id": "srcdest__source-webhook-receiver__destination-webhook-post__api__route-on"
     },
     {
-      "id": "source__source-ai-proxy-receiver__runtime_only",
-      "suite": "source",
-      "executionMode": "api_seeded",
-      "routeProcessing": "on",
-      "capabilities": [
-        "source.ai_proxy_receiver"
-      ],
-      "fixture": "source/source-ai-proxy-receiver",
-      "expectedStatus": "NOT_IMPLEMENTED",
-      "reason": "Manifest status=RUNTIME_ONLY",
-      "tags": [
-        "source",
-        "runtime_only",
-        "shard:http"
-      ],
-      "shard": "http"
-    },
-    {
       "id": "dest__destination-syslog-udp__lifecycle__browser__route-on",
       "suite": "destination",
       "executionMode": "browser",
@@ -1095,24 +1077,6 @@
         "api_seeded"
       ],
       "shard": "destination"
-    },
-    {
-      "id": "dest__destination-ai-provider-post__partial",
-      "suite": "destination",
-      "executionMode": "api_seeded",
-      "routeProcessing": "on",
-      "capabilities": [
-        "destination.ai_provider_post"
-      ],
-      "fixture": "destination/destination-ai-provider-post",
-      "expectedStatus": "NOT_IMPLEMENTED",
-      "reason": "Manifest status=PARTIAL",
-      "tags": [
-        "destination",
-        "partial",
-        "shard:destination"
-      ],
-      "shard": "destination"
     }
   ],
   "not_applicable": [
@@ -1133,19 +1097,18 @@
     }
   ],
   "counts": {
-    "total": 40,
+    "total": 38,
     "browser": 9,
-    "api_seeded": 31,
+    "api_seeded": 29,
     "route_off": 0,
-    "route_on": 40,
+    "route_on": 38,
     "route_both": 0,
     "by_suite": {
-      "source": 11,
-      "destination": 29
+      "source": 10,
+      "destination": 28
     },
     "by_expected_status": {
-      "PASS": 38,
-      "NOT_IMPLEMENTED": 2
+      "PASS": 38
     }
   }
 }

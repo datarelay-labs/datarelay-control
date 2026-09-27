@@ -1,10 +1,9 @@
 {
-  "commit": "51d9802eed1d604165afb5d9c64c80c49ecb825c",
-  "generated_at": "2026-09-21T13:18:09.157Z",
-  "count": 15,
+  "commit": "9d5b6a652973e9580959561315f17820ef0d9bcf",
+  "generated_at": "2026-09-27T05:05:40.331Z",
+  "count": 10,
   "scenario_ids": [
     "auth__auth-destination-webhook-headers__status-partial",
-    "dest__destination-ai-provider-post__partial",
     "governance__audit__review__api__route-on",
     "governance__governance-delivery-require-review__partial",
     "governance__hash__review__api__route-on",
@@ -12,35 +11,15 @@
     "governance__remove__review__api__route-on",
     "governance__tokenize__review__api__route-on",
     "processing__processing-enrichment-lookup__partial",
-    "route__routes-per-route-protection-classification-policy__partial",
-    "route__routes-per-route-transform__partial",
     "runtime__runtime-fault-injection-fixtures__partial",
-    "runtime__runtime-rate-limit__partial",
-    "source__source-ai-proxy-receiver__runtime_only",
-    "wizard__wizard-step-route-processing__partial"
+    "runtime__runtime-rate-limit__partial"
   ],
   "capability_ids": [
     "auth.destination.webhook_headers",
-    "destination.ai_provider_post",
-    "destination.webhook_post",
-    "flag.gdc_protection_enabled",
-    "flag.gdc_sensitive_detection_enabled",
-    "governance.audit_violations_notifications",
     "governance.delivery.require_review",
-    "governance.protection.audit",
-    "governance.protection.drop_field",
-    "governance.protection.hash",
-    "governance.protection.mask",
-    "governance.protection.tokenize",
-    "governance.sensitive_detection",
     "processing.enrichment.lookup",
-    "routes.per_route_protection_classification_policy",
-    "routes.per_route_transform",
     "runtime.fault_injection.fixtures",
-    "runtime.rate_limit",
-    "source.ai_proxy_receiver",
-    "source.http_api_polling",
-    "wizard.step.route_processing"
+    "runtime.rate_limit"
   ],
   "require_manifest_status": [
     "PARTIAL",

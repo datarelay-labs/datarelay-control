@@ -5,8 +5,9 @@
 metadata:
   purpose: full_cross_product_axes
   excludes:
-    - source.ai_proxy_receiver  # RUNTIME_ONLY → NOT_IMPLEMENTED suite
-    - destination.ai_provider_post  # PARTIAL
+    - source.ai_proxy_receiver  # Phase E — out of current Control scope
+    - destination.ai_provider_post  # Phase E — out of current Control scope
+    - auth.ai_provider.api_key_or_bearer  # Phase E — out of current Control scope
     - auth.destination.webhook_headers  # PARTIAL (API exists, Destinations UI missing)
     - runtime.rate_limit  # PARTIAL — SourceRateLimiter.allow is no-op
     - governance.delivery.require_review  # PARTIAL — not in wizard delivery enum

@@ -1,19 +1,17 @@
 {
-  "commit": "51d9802eed1d604165afb5d9c64c80c49ecb825c",
-  "generated_at": "2026-09-21T13:18:09.157Z",
-  "capability_count": 95,
-  "supported_count": 82,
-  "partial_count": 10,
+  "commit": "9d5b6a652973e9580959561315f17820ef0d9bcf",
+  "generated_at": "2026-09-27T05:05:40.331Z",
+  "capability_count": 92,
+  "supported_count": 84,
+  "partial_count": 6,
   "ui_only_count": 2,
-  "runtime_only_count": 1,
+  "runtime_only_count": 0,
   "by_status": {
-    "SUPPORTED": 82,
-    "PARTIAL": 10,
-    "RUNTIME_ONLY": 1,
+    "SUPPORTED": 84,
+    "PARTIAL": 6,
     "UI_ONLY": 2
   },
   "capability_ids": [
-    "auth.ai_provider.api_key_or_bearer",
     "auth.database.username_password",
     "auth.destination.syslog_tls_client_cert",
     "auth.destination.webhook_headers",
@@ -28,7 +26,6 @@
     "auth.remote_file.ssh_password_or_key",
     "auth.s3.access_key_secret",
     "auth.webhook_receiver.inbound",
-    "destination.ai_provider_post",
     "destination.syslog_tcp",
     "destination.syslog_tls",
     "destination.syslog_udp",
@@ -81,7 +78,6 @@
     "runtime.rate_limit",
     "runtime.retry_backoff",
     "runtime.timeout",
-    "source.ai_proxy_receiver",
     "source.database_query_postgresql",
     "source.http_api_polling",
     "source.remote_file_polling",
@@ -110,7 +106,6 @@
     "wizard.step.sample"
   ],
   "supported_ids": [
-    "auth.ai_provider.api_key_or_bearer",
     "auth.database.username_password",
     "auth.destination.syslog_tls_client_cert",
     "auth.http.api_key",
@@ -162,6 +157,8 @@
     "routes.delivery_settings",
     "routes.global_processing",
     "routes.metrics_health",
+    "routes.per_route_protection_classification_policy",
+    "routes.per_route_transform",
     "runtime.checkpoint_after_delivery",
     "runtime.dedup",
     "runtime.failover",
@@ -191,6 +188,7 @@
     "wizard.step.connect",
     "wizard.step.deploy",
     "wizard.step.destinations",
+    "wizard.step.route_processing",
     "wizard.step.sample"
   ]
 }

@@ -50,6 +50,7 @@ export function loadMatrix(matrixPath = MATRIX_PATH): MatrixBundle {
 export function allCapabilities(m: Manifest): Array<{
   id: string
   status: string
+  product_scope?: string
   evidence?: unknown
   limitations?: string[]
 }> {
@@ -65,13 +66,20 @@ export function allCapabilities(m: Manifest): Array<{
     m.feature_flags,
     m.test_infrastructure,
   ]
-  const out: Array<{ id: string; status: string; evidence?: unknown; limitations?: string[] }> = []
+  const out: Array<{
+    id: string
+    status: string
+    product_scope?: string
+    evidence?: unknown
+    limitations?: string[]
+  }> = []
   for (const sec of sections) {
     for (const c of sec || []) {
       if (c?.id) {
         out.push({
           id: c.id,
           status: String(c.status || ''),
+          product_scope: c.product_scope,
           evidence: (c as { evidence?: unknown }).evidence,
           limitations: c.limitations,
         })
@@ -79,6 +87,11 @@ export function allCapabilities(m: Manifest): Array<{
     }
   }
   return out
+}
+
+/** Phase A-D Control rows. Phase E stays in the manifest as OUT_OF_SCOPE and is not a release denominator. */
+export function currentControlCapabilities(m: Manifest): ReturnType<typeof allCapabilities> {
+  return allCapabilities(m).filter((c) => c.product_scope !== 'phase_e_out_of_scope')
 }
 
 export function evidenceFiles(evidence: unknown): string[] {
