@@ -1,7 +1,7 @@
 # M13.1 Route Processing Architecture — Foundation
 
 **Milestone:** M13.1 (Route Processing Foundation)  
-**Status:** Foundation spec retained. Current flag contract is normative; M13.1 flag-OFF rollout text below is historical and non-normative.
+**Status:** Foundation spec retained. Only **Current contract** is normative. Sections 1 through Appendix C are historical M13.1 foundation design and are non-normative.
 **Authority:** `.specify/memory/constitution.md`, Product Charter 1.2.1, Master WBS 1.2.1  
 **Architecture companion:** [`docs/architecture/route-processing-foundation-implementation-spec.md`](../../docs/architecture/route-processing-foundation-implementation-spec.md)  
 **Gap analysis:** [`docs/architecture/route-architecture-gap-analysis.md`](../../docs/architecture/route-architecture-gap-analysis.md)
@@ -16,7 +16,13 @@ Route Processing is the only supported product runtime.
 - An explicit `false` is rejected at settings load. There is no flag-OFF runtime and no silent coercion to true.
 - Emergency rollback uses a previous release image, not an in-process flag.
 
-Statements later in this document that describe flag default `false`, a live flag-OFF path, flag-OFF regression gates, production default-off rollout, or flag-off rollback record the historical M13.1 plan. They are not current normative contracts. This section wins where they differ.
+This section is the only normative contract in this document. Sections 1 through Appendix C record the historical M13.1 foundation design. They are non-normative, including staged implementation, future work, no-op stage slots, and pre-split pipeline statements. Where those sections differ from this contract, this section wins.
+
+---
+
+## Historical M13.1 foundation design (non-normative)
+
+Sections 1 through Appendix C are the original M13.1 foundation design. They are not current implementation authority. Staged rollout, future milestones, no-op processing slots, and the pre-split stream pipeline described below are historical. The normative contract is **Current contract** above.
 
 ---
 
@@ -368,7 +374,9 @@ All routes on a stream consume the same `union_schema`. Implementation of Union 
 
 ## 9. Feature Flag Strategy
 
-### 9.1 Current flag contract
+### 9.1 Flag contract restatement
+
+This subsection restates **Current contract**. It does not add normative requirements.
 
 | Property | Value |
 |----------|-------|

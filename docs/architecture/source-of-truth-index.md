@@ -71,7 +71,7 @@ Version/header inconsistencies are documented in [`docs/source-of-truth/README.m
 | Core architecture contract | [`specs/001-core-architecture/spec.md`](../../specs/001-core-architecture/spec.md) | Implementation contract |
 | Runtime pipeline contract | [`specs/002-runtime-pipeline/spec.md`](../../specs/002-runtime-pipeline/spec.md) | Implementation contract |
 | Delivery / routing contract | [`specs/004-delivery-routing/spec.md`](../../specs/004-delivery-routing/spec.md) | Implementation contract |
-| Route Processing architecture | [`specs/091-route-processing-architecture/spec.md`](../../specs/091-route-processing-architecture/spec.md) | Current Route Processing contract. The spec's M13.1 flag-OFF rollout, default-off, and flag-off rollback text is historical and non-normative |
+| Route Processing architecture | [`specs/091-route-processing-architecture/spec.md`](../../specs/091-route-processing-architecture/spec.md) | Normative authority is only the Current contract section. Sections 1 through the appendices are historical M13.1 foundation design and non-normative, including staged implementation, future, no-op, and pre-split statements |
 | Route Processing UX | [`specs/097-route-processing-ux/spec.md`](../../specs/097-route-processing-ux/spec.md) | Current Route Processing UX contract |
 
 Route Processing is the only supported product runtime. An explicit `GDC_ROUTE_PROCESSING_ENABLED=false` is rejected; rollback uses a previous release image rather than a parallel in-process runtime.

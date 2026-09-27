@@ -89,7 +89,7 @@ Shared checkpoint decision (after successful delivery)
 ```
 
 **Code entry:** `app/runners/stream_runner.py`  
-**Spec:** `specs/002-runtime-pipeline/spec.md`, `specs/004-delivery-routing/spec.md`, `specs/091-route-processing-architecture/spec.md`
+**Spec:** `specs/002-runtime-pipeline/spec.md`, `specs/004-delivery-routing/spec.md`, `specs/091-route-processing-architecture/spec.md` (Current contract section only)
 
 ### Supported path (Route Processing)
 
