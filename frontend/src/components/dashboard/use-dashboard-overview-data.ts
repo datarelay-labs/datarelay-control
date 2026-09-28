@@ -8,7 +8,7 @@ import {
   invalidateDashboardAnalyticsCache,
 } from '../../api/gdcRuntime'
 import { fetchConnectorsList, type ConnectorRead } from '../../api/gdcConnectors'
-import { getOperationalSnapshot, type OperationalSnapshotResponse } from '../../api/operationalSnapshot'
+import { clearOperationalSnapshotCache, getOperationalSnapshot, type OperationalSnapshotResponse } from '../../api/operationalSnapshot'
 import { canUseOperationalFixture } from '../../lib/runtime-operational-fixture-mode'
 import { fetchStreamsList } from '../../api/gdcStreams'
 import type {
@@ -212,6 +212,7 @@ export function useDashboardOverviewData(window: ExtendedMetricsWindow, refreshM
   /** Manual reload: clears analytics caches so fresh data is always fetched. */
   const manualReload = useCallback(() => {
     invalidateDashboardAnalyticsCache()
+    clearOperationalSnapshotCache()
     return load()
   }, [load])
 
