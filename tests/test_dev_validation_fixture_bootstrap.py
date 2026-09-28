@@ -61,7 +61,8 @@ def test_platform_dev_validation_overlay_container_urls() -> None:
 
 def test_platform_compose_core_lab_bootstrap_is_self_contained() -> None:
     text = _read("docker-compose.platform.yml")
-    assert "APP_ENV: ${APP_ENV:-development}" in text
+    assert text.count("APP_ENV: development") >= 2
+    assert "APP_ENV: ${APP_ENV:-development}" not in text
     assert "ENABLE_DEV_VALIDATION_LAB: ${ENABLE_DEV_VALIDATION_LAB:-true}" in text
     assert "DEV_VALIDATION_AUTO_START: ${DEV_VALIDATION_AUTO_START:-true}" in text
     assert "GDC_SEED_ADMIN_PASSWORD: ${GDC_SEED_ADMIN_PASSWORD:-}" in text

@@ -205,13 +205,14 @@ def test_production_compose_has_no_insecure_secret_fallbacks() -> None:
         assert "REQUIRE_AUTH: \"true\"" in text or "REQUIRE_AUTH: 'true'" in text
 
 
-def test_lab_platform_compose_keeps_development_fallbacks() -> None:
+def test_lab_platform_compose_is_unambiguously_development_only() -> None:
     text = (ROOT / "docker-compose.platform.yml").read_text(encoding="utf-8")
-    assert "APP_ENV: ${APP_ENV:-development}" in text
+    assert text.count("APP_ENV: development") >= 2
+    assert "APP_ENV: ${APP_ENV:-development}" not in text
     assert "POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gdc}" in text
     assert "JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-production}" in text
     assert "GDC_PROXY_RELOAD_TOKEN: ${GDC_PROXY_RELOAD_TOKEN:-devtoken}" in text
-    assert "REQUIRE_AUTH: \"false\"" in text or "REQUIRE_AUTH: 'false'" in text
+    assert text.count('REQUIRE_AUTH: "false"') >= 2 or text.count("REQUIRE_AUTH: 'false'") >= 2
 
 
 def test_lab_platform_compose_defaults_to_loopback_binds() -> None:

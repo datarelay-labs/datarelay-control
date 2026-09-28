@@ -28,23 +28,43 @@ cp .env.example .env
 
 ---
 
-## Step 2 — Start platform
+## Step 2 — Start the selected install contract
+
+For repository/local qualification:
 
 ```bash
-docker compose -f docker-compose.platform.yml up -d
+GDC_RELEASE_COMPOSE_FILE=docker-compose.platform.yml ./scripts/release/install.sh --build
 ```
 
-Or use the release installer:
+This profile is intentionally development-only and loopback-oriented. It is not the externally reachable production security profile.
+
+For the release public-smoke gate, use the disposable wrapper:
 
 ```bash
-./scripts/release/install.sh
+bash scripts/release/public-smoke.sh
 ```
 
-**Expected:**
+The wrapper requires a clean worktree, selects isolated loopback ports, uses a unique Compose project/container prefix and networks, writes a dedicated ignored env file, verifies the baked Git SHA/clean provenance through `/health`, and removes its containers/volumes/network/env file afterward. It does not reuse or replace the normal `gdc-platform-*` stack.
+
+For production-style HTTPS deployment:
+
+```bash
+export GDC_RELEASE_COMPOSE_FILE=deploy/docker-compose.https.yml
+export GDC_INSTALL_GENERATE_TLS=1
+export GDC_PUBLIC_HTTPS_PORT=443
+# Optional non-privileged rehearsal ports (keep public HTTPS aligned):
+# export GDC_ENTRY_HTTP_PORT=18080
+# export GDC_ENTRY_HTTPS_PORT=18443
+# export GDC_PUBLIC_HTTPS_PORT=18443
+./scripts/release/install.sh --build
+```
+
+**Expected for either selected contract:**
 
 - `postgres`, `api`, `frontend`, `reverse-proxy` containers healthy
-- Alembic migrations applied automatically on API startup
+- Alembic migrations applied
 - Default admin user created when missing (`admin` / `admin`, password change required)
+- host `/health` and administrator login smoke succeed through the selected reverse-proxy entry port
 
 ---
 
@@ -145,7 +165,7 @@ Start the stream from Streams console or runtime panel.
 | Step | Result | Notes |
 |------|--------|-------|
 | Static clean-install checks | ✅ PASS | `validate-clean-install.sh` |
-| Compose file / env template | ✅ PASS | Required keys present in `.env.example` |
+| Compose / installer contracts | ✅ PASS | Local public-smoke and production HTTPS profiles are explicitly separated and statically guarded |
 | OSS UI surface | ✅ PASS | Internal routes gated |
 | Sample pack | ✅ PASS | `samples/` created |
 | Full Docker E2E | ⚠️ Manual | Run on target host with Docker; steps documented above |

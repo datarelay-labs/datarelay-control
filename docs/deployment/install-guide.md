@@ -2,9 +2,9 @@
 
 This guide covers installing the platform on a **clean Ubuntu 24.04** server using Docker Compose and `scripts/release/install.sh`. It complements `docs/deployment/https-reverse-proxy.md` and `docs/operator-runbook.md`.
 
-## One-command clean install
+## One-command local qualification install
 
-On a fresh server with Git only:
+On a fresh server with Git only, the default installer uses the loopback-oriented local qualification stack:
 
 ```bash
 git clone https://github.com/datarelay-labs/datarelay-control.git datarelay-control
@@ -14,11 +14,13 @@ chmod +x scripts/release/*.sh
 ./scripts/release/install.sh
 ```
 
+For an externally reachable production deployment, use the production HTTPS compose contract shown below instead of relying on the default local stack.
+
 No separate Docker install, volume creation, or network creation is required. `install.sh`:
 
 1. Installs **Docker Engine** and the **Compose v2 plugin** on Ubuntu 24.04 when missing (`scripts/install-docker-ubuntu2404.sh` via `sudo`).
 2. Verifies the Docker daemon is running and the current user can run `docker` (if not, prints `newgrp docker` and exits).
-3. Validates host memory, disk, and that configured ports **GDC_HTTP_PORT**, **GDC_HTTPS_PORT**, and PostgreSQL host port **55432** are free.
+3. Validates host memory, disk, and the host ports actually published by the selected compose contract: local platform HTTP/HTTPS/PostgreSQL ports, or production HTTPS **GDC_ENTRY_HTTP_PORT** / **GDC_ENTRY_HTTPS_PORT** only.
 4. Creates `.env` from `.env.example` when `.env` is absent (never overwrites an existing `.env`) and adds missing reverse-proxy port defaults.
 5. Validates required `.env` keys (`POSTGRES_*`, `DATABASE_URL`) and reverse-proxy port values.
 6. Starts PostgreSQL (compose volume **`gdc_platform_postgres_data`**, catalog **`gdc`**, role **`gdc`**).
@@ -41,27 +43,43 @@ Pre-flight static checks (no Docker required):
 
 | Goal | `GDC_RELEASE_COMPOSE_FILE` |
 |------|----------------------------|
-| Default platform (DB host **55432**, UI **18080** / **18443**) | `docker-compose.platform.yml` (default) |
+| Default platform / local qualification (DB host **55432**, UI **18080** / **18443**) | `docker-compose.platform.yml` (default) |
 | Production-style HTTPS (no DB/API on host) | `deploy/docker-compose.https.yml` |
 
-Example HTTPS install:
+The default platform compose is deliberately a **development/lab security profile**: it pins
+`APP_ENV=development` and `REQUIRE_AUTH=false` even when the root `.env` is production-oriented.
+Use it for local qualification on loopback/private test hosts. Repository public-smoke uses
+`scripts/release/public-smoke.sh`, which runs this same development/lab topology with disposable
+container/network/volume names, isolated loopback ports, a dedicated env file, exact build-identity
+verification, and automatic cleanup so an existing `gdc-platform-*` stack is not reused or replaced.
+For any externally reachable production deployment, use `deploy/docker-compose.https.yml`, which
+pins `APP_ENV=production`, requires authentication, and fail-closes on insecure secrets.
+
+Example production HTTPS install:
 
 ```bash
 export GDC_RELEASE_COMPOSE_FILE=deploy/docker-compose.https.yml
 export GDC_INSTALL_GENERATE_TLS=1
-./scripts/release/install.sh
+# Production defaults are HTTP 80 / HTTPS 443.
+# For an existing .env, keep the public redirect port aligned with the entry HTTPS port.
+export GDC_PUBLIC_HTTPS_PORT=443
+# Optional non-privileged override:
+# export GDC_ENTRY_HTTP_PORT=18080
+# export GDC_ENTRY_HTTPS_PORT=18443
+# export GDC_PUBLIC_HTTPS_PORT=18443
+./scripts/release/install.sh --build
 ```
 
-## Production ports and data
+For this compose contract, the installer validates only the published HTTP/HTTPS entry ports; PostgreSQL and API are internal-only and are not treated as required host ports. When the installer creates a fresh `.env`, it automatically aligns `GDC_PUBLIC_HTTPS_PORT` with the selected production HTTPS entry port. Existing operator-owned `.env` files are preserved, so custom deployments must keep those two values aligned explicitly.
 
-| Item | Default |
-|------|---------|
-| HTTP (browser) | Host **18080** → reverse-proxy **80** (`GDC_HTTP_PORT`) |
-| HTTPS (after Admin TLS) | Host **18443** → **443** (`GDC_HTTPS_PORT`) |
-| PostgreSQL (host tools) | **55432** → container **5432** |
-| Database catalog | **`gdc`** |
-| Database role | **`gdc`** |
-| Compose volume | **`gdc_platform_postgres_data`** (created on first `up`) |
+## Ports and data
+
+| Contract | HTTP | HTTPS | PostgreSQL host port | Database |
+|---|---|---|---|---|
+| Local qualification `docker-compose.platform.yml` | **18080** (`GDC_HTTP_PORT`) | **18443** (`GDC_HTTPS_PORT`) | **55432** | `gdc` / `gdc` |
+| Production `deploy/docker-compose.https.yml` | **80** (`GDC_ENTRY_HTTP_PORT`) | **443** (`GDC_ENTRY_HTTPS_PORT`) | **none** | `gdc` / `gdc` |
+
+The local platform stack uses compose-managed volume `gdc_platform_postgres_data`. The production HTTPS stack uses its own internal PostgreSQL volume and does not publish PostgreSQL or API ports to the host.
 
 Set strong values in `.env` before exposure: `POSTGRES_PASSWORD`, `JWT_SECRET_KEY`, `SECRET_KEY`, `ENCRYPTION_KEY`, `GDC_PROXY_RELOAD_TOKEN`.
 

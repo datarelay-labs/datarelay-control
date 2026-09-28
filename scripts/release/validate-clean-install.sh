@@ -94,6 +94,15 @@ if grep -q 'sudo usermod -aG docker' "$INSTALL_SH" && ! grep -q 'user_in_docker_
 fi
 ok "install.sh includes clean-install bootstrap helpers"
 
+PUBLIC_SMOKE_SH="$ROOT/scripts/release/public-smoke.sh"
+[[ -x "$PUBLIC_SMOKE_SH" ]] || fail "public-smoke.sh missing or not executable"
+for token in GDC_PLATFORM_CONTAINER_PREFIX GDC_PLATFORM_DEFAULT_NETWORK_NAME GDC_DEV_VALIDATION_NETWORK_NAME GDC_RELEASE_ENV_FILE GDC_RUNTIME_IMAGE_TAG; do
+  grep -q "$token" "$PUBLIC_SMOKE_SH" || fail "public-smoke.sh missing isolation control: $token"
+done
+grep -q 'git -C "$ROOT" status --porcelain=v1' "$PUBLIC_SMOKE_SH"   || fail "public-smoke.sh must require a clean worktree"
+grep -q 'down -v --remove-orphans' "$PUBLIC_SMOKE_SH"   || fail "public-smoke.sh must clean disposable volumes/containers"
+ok "public-smoke isolation contract is static-guarded"
+
 MIGRATION_INTEGRITY="$ROOT/app/db/migration_integrity.py"
 grep -q 'Fresh database detected (no alembic_version found)' "$MIGRATION_INTEGRITY" \
   || fail "migration_integrity.py must allow fresh empty DB bootstrap (--pre-upgrade)"
