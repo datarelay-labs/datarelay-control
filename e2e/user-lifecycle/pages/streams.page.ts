@@ -218,6 +218,11 @@ export class StreamsPage {
     await this.openList()
     await this.search(name)
     this.session.artifacts.action('open-stream', '/streams', name)
+    // The search control renders before async stream rows. Wait for a matching
+    // product group to exist before expanding it; otherwise a group that loads
+    // later remains collapsed and the child row can never become visible.
+    const firstGroup = this.page.locator('[data-testid^="stream-group-row-"]').first()
+    await firstGroup.waitFor({ timeout: ACTION }).catch(() => null)
     await this.expandVisibleStreamGroups()
     const short = name.length > 24 ? name.slice(-24) : name
     const row = this.page.locator(`[data-testid^="stream-group-child-row-"]`, { hasText: short }).first()
