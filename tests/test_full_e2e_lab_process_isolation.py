@@ -113,8 +113,13 @@ def test_signal_traps_do_not_skip_down_when_evidence_returns_nonzero() -> None:
 
 def test_ui_build_failure_is_not_silently_ignored() -> None:
     script = _runner()
-    assert 'npm run build >"$LOG_DIR/ui_build_$RUN_ID.log" 2>&1\n' in script
+    assert 'if ! npm run build >"$LOG_DIR/ui_build_$RUN_ID.log" 2>&1; then' in script
+    assert "frontend build failed; refusing to stamp current HEAD or launch stale dist" in script
     assert 'npm run build >"$LOG_DIR/ui_build_$RUN_ID.log" 2>&1 || true' not in script
+    assert ') || return 1\n    require_started_process "UI"' in script
+    assert 'wait_http "$WIREMOCK_BASE_URL/__admin/mappings" "WireMock" 60 || return 1' in script
+    assert 'alembic upgrade head' in script
+    assert 'ERROR: Alembic upgrade failed' in script
 
 
 def test_up_fails_closed_before_compose_when_api_port_is_unowned() -> None:

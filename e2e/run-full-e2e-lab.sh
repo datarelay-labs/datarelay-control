@@ -391,9 +391,9 @@ cmd_up() {
     compose up -d --build webhook-collector syslog-collector 2>/dev/null || true
   fi
 
-  wait_http "$WIREMOCK_BASE_URL/__admin/mappings" "WireMock" 60
-  wait_http "${GDC_E2E_WEBHOOK_COLLECTOR_URL}/health" "Webhook collector" 40
-  wait_http "${GDC_E2E_SYSLOG_COLLECTOR_API_URL}/health" "Syslog collector" 40
+  wait_http "$WIREMOCK_BASE_URL/__admin/mappings" "WireMock" 60 || return 1
+  wait_http "${GDC_E2E_WEBHOOK_COLLECTOR_URL}/health" "Webhook collector" 40 || return 1
+  wait_http "${GDC_E2E_SYSLOG_COLLECTOR_API_URL}/health" "Syslog collector" 40 || return 1
 
   # Wait postgres-test (optional if only fixture DB is used)
   for i in $(seq 1 60); do
@@ -410,7 +410,11 @@ cmd_up() {
   (
     cd "$ROOT"
     alembic upgrade head
-  ) >"$LOG_DIR/alembic_$RUN_ID.log" 2>&1
+  ) >"$LOG_DIR/alembic_$RUN_ID.log" 2>&1 || {
+    echo "ERROR: Alembic upgrade failed; see $LOG_DIR/alembic_$RUN_ID.log" >&2
+    tail -n 80 "$LOG_DIR/alembic_$RUN_ID.log" >&2 || true
+    return 1
+  }
 
   # Ensure browser UI can sign in with the first-install default (admin/admin).
   # API may run with REQUIRE_AUTH=false, but the SPA still gates on platform login.
@@ -469,7 +473,7 @@ PY
         --workers "$api_workers" \
         >"$LOG_DIR/api_$RUN_ID.log" 2>&1 &
       echo $! >"$PID_DIR/api.pid"
-    )
+    ) || return 1
     require_started_process "API" "$PID_DIR/api.pid" "$LOG_DIR/api_$RUN_ID.log" || return 1
     echo "$want_flag" >"$PID_DIR/api-route-flag.txt"
     echo "$git_head" >"$api_head_file"
@@ -501,7 +505,7 @@ PY
       nohup setsid python3 -m app.scheduler.standalone \
         >"$LOG_DIR/lab_scheduler_$RUN_ID.log" 2>&1 &
       echo $! >"$PID_DIR/lab-scheduler.pid"
-    )
+    ) || return 1
     require_started_process "lab scheduler" "$PID_DIR/lab-scheduler.pid" "$LOG_DIR/lab_scheduler_$RUN_ID.log" || return 1
     echo "$git_head" >"$scheduler_head_file"
     echo "    lab scheduler pid=$(cat "$PID_DIR/lab-scheduler.pid") head=$git_head"
@@ -539,14 +543,18 @@ PY
     (
       cd "$ROOT/frontend"
       if [[ ! -d dist ]] || [[ "$ui_build_head" != "$git_head" ]] || [[ "${GDC_E2E_FORCE_UI_BUILD:-0}" == "1" ]]; then
-        npm run build >"$LOG_DIR/ui_build_$RUN_ID.log" 2>&1
+        if ! npm run build >"$LOG_DIR/ui_build_$RUN_ID.log" 2>&1; then
+          echo "ERROR: frontend build failed; refusing to stamp current HEAD or launch stale dist." >&2
+          tail -n 80 "$LOG_DIR/ui_build_$RUN_ID.log" >&2 || true
+          exit 1
+        fi
         echo "$git_head" >"$ui_build_head_file"
       fi
       export VITE_DEV_API_PROXY_TARGET="$ui_proxy_want"
       nohup setsid npx --yes vite preview --host 127.0.0.1 --port "${GDC_E2E_UI_PORT:-4173}" --strictPort \
         >"$LOG_DIR/ui_$RUN_ID.log" 2>&1 &
       echo $! >"$PID_DIR/ui.pid"
-    )
+    ) || return 1
     require_started_process "UI" "$PID_DIR/ui.pid" "$LOG_DIR/ui_$RUN_ID.log" || return 1
     echo "$ui_proxy_want" >"$PID_DIR/ui-api-proxy.txt"
     echo "$git_head" >"$ui_head_file"
