@@ -1,5 +1,10 @@
 """Connectors catalog read cache."""
 
+import os
+import subprocess
+import sys
+import time
+from pathlib import Path
 from unittest.mock import MagicMock
 
 from app.connectors.read_cache import (
@@ -10,6 +15,7 @@ from app.connectors.read_cache import (
     invalidate_connectors_read_cache_after_auth_check,
     peek_connectors_list_cache,
     peek_connectors_list_stale_cache,
+    publish_connectors_catalog_epoch,
     resolve_connectors_list_catalog,
 )
 from app.connectors.operations_schemas import ConnectorOperationsSummaryResponse
@@ -125,3 +131,158 @@ def test_auth_check_invalidation_patches_stale_without_clearing_ops() -> None:
     assert stale is not None
     assert stale[0].last_auth_check_status == "success"
     clear_connectors_read_cache()
+
+
+def _isolate_epoch(monkeypatch, tmp_path: Path) -> Path:
+    epoch = tmp_path / "connectors-catalog-epoch"
+    monkeypatch.setenv("GDC_CONNECTORS_CACHE_EPOCH_PATH", str(epoch))
+    return epoch
+
+
+def test_clear_publishes_distinct_shared_epochs(monkeypatch, tmp_path: Path) -> None:
+    epoch = _isolate_epoch(monkeypatch, tmp_path)
+    clear_connectors_read_cache()
+    first = epoch.read_text(encoding="utf-8").strip()
+    clear_connectors_read_cache()
+    second = epoch.read_text(encoding="utf-8").strip()
+    assert first
+    assert second
+    assert first != second
+
+
+def test_shared_epoch_publish_drops_fresh_list_and_reloads(monkeypatch, tmp_path: Path) -> None:
+    _isolate_epoch(monkeypatch, tmp_path)
+    clear_connectors_read_cache()
+    calls = {"n": 0}
+
+    def loader(_db) -> list[ConnectorRead]:
+        calls["n"] += 1
+        return [_sample_connector(f"gen-{calls['n']}")]
+
+    first = get_connectors_list_cached(MagicMock(), loader)
+    assert first[0].name == "gen-1"
+    assert calls["n"] == 1
+
+    publish_connectors_catalog_epoch()
+    assert peek_connectors_list_cache() is None
+    stale = peek_connectors_list_stale_cache()
+    assert stale is not None
+    assert stale[0].name == "gen-1"
+
+    second = get_connectors_list_cached(MagicMock(), loader)
+    assert second[0].name == "gen-2"
+    assert calls["n"] == 2
+    assert peek_connectors_list_cache() is not None
+    clear_connectors_read_cache()
+
+
+def test_shared_epoch_publish_keeps_stale_fallback_when_reload_fails(monkeypatch, tmp_path: Path) -> None:
+    _isolate_epoch(monkeypatch, tmp_path)
+    clear_connectors_read_cache()
+    get_connectors_list_cached(MagicMock(), lambda _db: [_sample_connector("BeforeDelete")])
+    publish_connectors_catalog_epoch()
+
+    def failing_loader() -> tuple[list[ConnectorRead], float, float]:
+        raise TimeoutError("pool exhausted")
+
+    rows, metrics = resolve_connectors_list_catalog(failing_loader)
+    assert metrics.stale_fallback is True
+    assert rows[0].name == "BeforeDelete"
+    assert peek_connectors_list_cache() is None
+    clear_connectors_read_cache()
+
+
+def test_catalog_snapshot_is_not_cached_when_epoch_changes_during_load(monkeypatch, tmp_path: Path) -> None:
+    _isolate_epoch(monkeypatch, tmp_path)
+    clear_connectors_read_cache()
+
+    def loader(_db) -> list[ConnectorRead]:
+        publish_connectors_catalog_epoch()
+        return [_sample_connector("Torn")]
+
+    rows = get_connectors_list_cached(MagicMock(), loader)
+    assert rows[0].name == "Torn"
+    assert peek_connectors_list_cache() is None
+    assert peek_connectors_list_stale_cache() is None
+    clear_connectors_read_cache()
+
+
+def test_operations_cache_reloads_after_shared_epoch_publish(monkeypatch, tmp_path: Path, db_session) -> None:
+    _isolate_epoch(monkeypatch, tmp_path)
+    clear_connectors_read_cache()
+    calls = {"n": 0}
+
+    def loader(_db) -> ConnectorOperationsSummaryResponse:
+        calls["n"] += 1
+        return ConnectorOperationsSummaryResponse(window="1h", generated_at=None, connectors=[])
+
+    get_connectors_operations_summary_cached(db_session, window="1h", loader=loader)
+    get_connectors_operations_summary_cached(db_session, window="1h", loader=loader)
+    assert calls["n"] == 1
+    publish_connectors_catalog_epoch()
+    get_connectors_operations_summary_cached(db_session, window="1h", loader=loader)
+    assert calls["n"] == 2
+    clear_connectors_read_cache()
+
+
+def test_other_process_epoch_publish_invalidates_cached_catalog(tmp_path: Path) -> None:
+    """A sibling worker must miss after another process publishes the catalog epoch."""
+
+    epoch = tmp_path / "connectors-catalog-epoch"
+    status = tmp_path / "status"
+    release = tmp_path / "release"
+    result = tmp_path / "result"
+    script = tmp_path / "worker_cache.py"
+    script.write_text(
+        f"""
+import os
+import time
+
+os.environ["GDC_CONNECTORS_CACHE_EPOCH_PATH"] = {str(epoch)!r}
+from app.connectors.read_cache import get_connectors_list_cached, peek_connectors_list_cache
+from app.connectors.schemas import ConnectorRead
+
+def loader(_db):
+    return [ConnectorRead(id=1, name="Cached", status="STOPPED", auth={{"auth_type": "no_auth"}})]
+
+get_connectors_list_cached(object(), loader)
+open({str(status)!r}, "w", encoding="utf-8").write("filled\\n")
+deadline = time.time() + 15
+while not os.path.exists({str(release)!r}):
+    if time.time() > deadline:
+        raise SystemExit(2)
+    time.sleep(0.05)
+peek = peek_connectors_list_cache()
+open({str(result)!r}, "w", encoding="utf-8").write("hit\\n" if peek else "miss\\n")
+""",
+        encoding="utf-8",
+    )
+    env = os.environ.copy()
+    env["GDC_CONNECTORS_CACHE_EPOCH_PATH"] = str(epoch)
+    env["PYTHONPATH"] = os.pathsep.join(
+        [os.getcwd(), env.get("PYTHONPATH", "")]
+    ).rstrip(os.pathsep)
+    proc = subprocess.Popen(
+        [sys.executable, str(script)],
+        cwd=os.getcwd(),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        deadline = time.time() + 15
+        while not status.exists():
+            if proc.poll() is not None or time.time() > deadline:
+                out, err = proc.communicate(timeout=5)
+                raise AssertionError(f"worker exited early code={proc.returncode} stdout={out} stderr={err}")
+            time.sleep(0.05)
+        epoch.write_text(f"{time.time_ns()}\n", encoding="utf-8")
+        release.write_text("go\n", encoding="utf-8")
+        out, err = proc.communicate(timeout=15)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.communicate(timeout=5)
+    assert proc.returncode == 0, f"stdout={out} stderr={err}"
+    assert result.read_text(encoding="utf-8").strip() == "miss"

@@ -69,6 +69,91 @@ function alreadyPassed(store: ArtifactStore, id: string): boolean {
   return store.scenarios.some((s) => s.id === id && s.status === 'PASS')
 }
 
+function currentGitHead(): string {
+  const result = spawnSync('git', ['-C', REPO, 'rev-parse', 'HEAD'], { encoding: 'utf8' })
+  if (result.status !== 0) throw new Error(`cannot resolve candidate HEAD: ${String(result.stderr || '').trim()}`)
+  return String(result.stdout || '').trim()
+}
+
+function restoreResumeState(store: ArtifactStore, state: Record<string, unknown>): void {
+  if (Array.isArray(state.scenarios)) store.scenarios = state.scenarios as ArtifactStore['scenarios']
+  if (Array.isArray(state.ledger)) store.ledger = state.ledger as ArtifactStore['ledger']
+  if (state.flags && typeof state.flags === 'object') store.flags = state.flags as Record<string, string>
+  if (state.counts && typeof state.counts === 'object') store.counts = state.counts as Record<string, number>
+}
+
+function finalAcceptanceBlocked(store: ArtifactStore): boolean {
+  return (store.counts.FAIL || 0) > 0 || (store.counts.PARTIAL || 0) > 0 || (store.counts.BLOCKED || 0) > 0
+}
+
+function worktreeIsClean(): boolean {
+  const result = spawnSync('git', ['-C', REPO, 'status', '--porcelain=v1', '--untracked-files=all'], { encoding: 'utf8' })
+  if (result.status !== 0) throw new Error(`cannot inspect candidate worktree: ${String(result.stderr || '').trim()}`)
+  return String(result.stdout || '').trim() === ''
+}
+
+function emptyResources(): Record<string, Record<string, number>> {
+  return { connectors: {}, streams: {}, destinations: {}, routes: {} }
+}
+
+function rehydrateResourcesFromLedger(store: ArtifactStore, runId: string): Record<string, Record<string, number>> {
+  const resources = emptyResources()
+  const connectorKeys = new Map<string, string>([
+    [`e2e-${runId}-http`, 'HTTP'],
+    [`e2e-${runId}-db`, 'DATABASE'],
+    [`e2e-${runId}-s3`, 'S3'],
+    [`e2e-${runId}-sftp`, 'SFTP'],
+    [`e2e-${runId}-webhook`, 'WEBHOOK'],
+  ])
+  const destinationKeys = new Map<string, string>([
+    [`e2e-${runId}-dest-a`, 'A'],
+    [`e2e-${runId}-dest-b`, 'B'],
+  ])
+  const streamKeys = new Map<string, string>([
+    [`e2e-${runId}-http-stream-H1`, 'H1'],
+    [`e2e-${runId}-http-stream-H2`, 'H2'],
+    [`e2e-${runId}-http-stream-H3`, 'H3'],
+    [`e2e-${runId}-http-stream-H4`, 'H4'],
+    [`e2e-${runId}-http-stream-H5`, 'H5'],
+    [`e2e-${runId}-http-stream-H6`, 'H6'],
+    [`e2e-${runId}-s3-stream-a`, 'S3A'],
+    [`e2e-${runId}-s3-stream-b`, 'S3B'],
+    [`e2e-${runId}-sftp-stream-a`, 'SFTPA'],
+    [`e2e-${runId}-sftp-stream-b`, 'SFTPB'],
+    [`e2e-${runId}-webhook-stream-a`, 'WHA'],
+    [`e2e-${runId}-webhook-stream-b`, 'WHB'],
+    [`e2e-${runId}-db-stream-orders`, 'DBS1'],
+    [`e2e-${runId}-db-stream-users`, 'DBS2'],
+  ])
+
+  for (const row of store.ledger) {
+    const id = Number(row.RESOURCE_ID)
+    if (!Number.isFinite(id) || id <= 0) continue
+    if (row.RESOURCE_TYPE === 'CONNECTOR') {
+      const key = connectorKeys.get(row.RESOURCE_NAME)
+      if (key) resources.connectors[key] = id
+    } else if (row.RESOURCE_TYPE === 'DESTINATION') {
+      const key = destinationKeys.get(row.RESOURCE_NAME)
+      if (key) resources.destinations[key] = id
+    } else if (row.RESOURCE_TYPE === 'STREAM') {
+      const key = streamKeys.get(row.RESOURCE_NAME)
+      if (key) resources.streams[key] = id
+    }
+  }
+
+  if (resources.streams.H1) resources.streams.WIZARD = resources.streams.H1
+  for (const [streamKey, streamId] of Object.entries(resources.streams)) {
+    if (streamKey === 'WIZARD') continue
+    const routeIds = store.ledger
+      .filter((row) => row.RESOURCE_TYPE === 'ROUTE' && row.PARENT.includes(`stream:${streamId}`))
+      .map((row) => Number(row.RESOURCE_ID))
+      .filter((id) => Number.isFinite(id) && id > 0)
+    if (routeIds[0]) resources.routes[`${streamKey}A`] = routeIds[0]
+    if (routeIds[1]) resources.routes[`${streamKey}B`] = routeIds[1]
+  }
+  return resources
+}
+
 async function findConnectorId(api: ApiClient, name: string): Promise<number | null> {
   for (let i = 0; i < 16; i++) {
     const rows = await api.listConnectors()
@@ -77,6 +162,15 @@ async function findConnectorId(api: ApiClient, name: string): Promise<number | n
     await new Promise((r) => setTimeout(r, 400))
   }
   return null
+}
+
+async function waitForStreamEnabled(api: ApiClient, id: number, enabled: boolean, tries = 20): Promise<boolean> {
+  for (let i = 0; i < tries; i++) {
+    const stream = await api.getStream(id).catch(() => null)
+    if (stream && Boolean(stream.enabled) === enabled) return true
+    await new Promise((r) => setTimeout(r, 500))
+  }
+  return false
 }
 
 async function findStreamId(api: ApiClient, name: string): Promise<number | null> {
@@ -274,6 +368,8 @@ function writeFinalSummary(store: ArtifactStore, extra: Record<string, string>):
 async function main(): Promise<number> {
   const args = parseArgs(process.argv.slice(2))
   const runId = args.runId || createRunId()
+  const candidateHead = currentGitHead()
+  const candidateClean = worktreeIsClean()
   process.env.ULC_RUN_ID = runId
   const store = new ArtifactStore(runId)
   if (args.mode === 'resume') {
@@ -282,7 +378,21 @@ async function main(): Promise<number> {
       console.error('No state to resume')
       return 2
     }
+    const stateFlags = st.flags as Record<string, unknown> | undefined
+    const recordedHead = String(stateFlags?.CANDIDATE_HEAD || '')
+    const recordedClean = String(stateFlags?.CANDIDATE_WORKTREE_CLEAN || '')
+    if (!recordedHead || recordedHead !== candidateHead) {
+      console.error(`Resume candidate mismatch: recorded=${recordedHead || '<missing>'} current=${candidateHead}`)
+      return 2
+    }
+    if (recordedClean !== 'YES' || !candidateClean) {
+      console.error(`Resume requires the same clean committed source: recordedClean=${recordedClean || '<missing>'} currentClean=${candidateClean ? 'YES' : 'NO'}`)
+      return 2
+    }
+    restoreResumeState(store, st)
   }
+  store.setFlag('CANDIDATE_HEAD', candidateHead)
+  store.setFlag('CANDIDATE_WORKTREE_CLEAN', candidateClean ? 'YES' : 'NO')
 
   const apiBase = env('PLAYWRIGHT_API_BASE_URL', env('GDC_E2E_API_BASE_URL', 'http://127.0.0.1:18010'))
   const uiBase = env('PLAYWRIGHT_BASE_URL', env('GDC_E2E_UI_BASE_URL', 'http://127.0.0.1:4174'))
@@ -304,12 +414,8 @@ async function main(): Promise<number> {
   let context: BrowserContext | null = null
   let page: Page | null = null
 
-  const resources: Record<string, any> = {
-    connectors: {},
-    streams: {},
-    destinations: {},
-    routes: {},
-  }
+  const resources: Record<string, any> =
+    args.mode === 'resume' ? rehydrateResourcesFromLedger(store, runId) : emptyResources()
 
   try {
     browser = await chromium.launch({ headless: !args.headed })
@@ -520,6 +626,7 @@ async function main(): Promise<number> {
     // ---- destinations (browser) ----
     const destAName = `e2e-${runId}-dest-a`
     const destBName = `e2e-${runId}-dest-b`
+    const browserCreatedDestinations = new Set<string>()
     if (want('05_DEST_CREATE', ['browser', 'delivery']) && !skipIfResume('05_DEST_CREATE')) {
       try {
         for (const [key, name, pathSuffix] of [
@@ -546,16 +653,24 @@ async function main(): Promise<number> {
             ])
           }
           if (id) {
-            if (viaBrowser) trackBrowser(store, 'DESTINATION', id, name)
-            else store.track('DESTINATION', id, name, 'via:api-fallback')
+            if (viaBrowser) {
+              trackBrowser(store, 'DESTINATION', id, name)
+              browserCreatedDestinations.add(key)
+            } else {
+              store.track('DESTINATION', id, name, 'via:api-fallback')
+            }
             resources.destinations[key] = id
           }
         }
-        const ok = resources.destinations.A && resources.destinations.B
-        store.rec('05_DEST_CREATE', ok ? 'PASS' : 'FAIL', `A=${resources.destinations.A} B=${resources.destinations.B}`, [
-          'BROWSER_E2E',
-          'API_INTEGRATION',
-        ])
+        const idsPresent = Boolean(resources.destinations.A && resources.destinations.B)
+        const browserComplete = browserCreatedDestinations.has('A') && browserCreatedDestinations.has('B')
+        const status = browserComplete ? 'PASS' : idsPresent ? 'PARTIAL' : 'FAIL'
+        store.rec(
+          '05_DEST_CREATE',
+          status,
+          `A=${resources.destinations.A} B=${resources.destinations.B} browserA=${browserCreatedDestinations.has('A')} browserB=${browserCreatedDestinations.has('B')}`,
+          ['BROWSER_E2E', 'API_INTEGRATION'],
+        )
       } catch (e) {
         await session.screenshotOnFail('dest-create-fail')
         store.issue({
@@ -711,7 +826,7 @@ async function main(): Promise<number> {
           ac.json?.success === true ||
           ac.json?.ok === true ||
           /success/i.test(String(ac.json?.last_auth_check_status || '')))
-      const ok = failVisible && (passVisible || apiOk)
+      const ok = failVisible && passVisible
       store.setFlag('SUCCESS_VISIBLE', passVisible ? 'YES' : 'NO')
       store.setFlag('FAILURE_VISIBLE', failVisible ? 'YES' : 'NO')
       store.setFlag('FAILURE_REASON_VISIBLE', rootCauseVisible ? 'YES' : 'NO')
@@ -728,8 +843,8 @@ async function main(): Promise<number> {
       )
       store.rec(
         '17_R3_002_ROOT_VS_RESOURCE',
-        rootStatus && (passVisible || apiOk) ? 'PASS' : 'PARTIAL',
-        `rootShownAsClientError=${rootStatus} resourceOk=${passVisible || apiOk}`,
+        rootStatus && passVisible ? 'PASS' : 'PARTIAL',
+        `rootShownAsClientError=${rootStatus} browserResourceOk=${passVisible} apiVerify=${apiOk}`,
         ['BROWSER_E2E'],
       )
       store.setFlag('AUTH_FAILURE_RECOVERY_BROWSER_JOURNEY', ok ? 'PASS' : 'FAIL')
@@ -1029,39 +1144,61 @@ async function main(): Promise<number> {
     const runningIds: number[] = []
     if (want('07_START_STREAMS', ['browser', 'runtime']) && !skipIfResume('07_START_STREAMS')) {
       const streamKeys = Object.keys(resources.streams)
+      const targetIds = [...new Set(streamKeys.map((key) => Number(resources.streams[key])).filter((id) => Number.isFinite(id) && id > 0))]
+      const browserStartedIds: number[] = []
+      const apiFallbackStartedIds: number[] = []
       try {
-        for (const key of streamKeys) {
-          const id = resources.streams[key]
-          if (!id) continue
-          const nameRow = store.ledger.find((r) => r.RESOURCE_TYPE === 'STREAM' && r.RESOURCE_ID === String(id))
-          const sname = nameRow?.RESOURCE_NAME || ''
+        for (const id of targetIds) {
+          const isPrimary = id === Number(resources.streams.H1)
+          let browserStarted = false
           try {
-            if (sname) {
-              const opened = await streams.openStreamByName(sname)
-              if (opened) {
-                await streams.clickStart()
-                if (key === 'H1') {
-                  await streams.clickStartTwice()
-                  store.rec('46_START_TWICE', 'PASS', 'no crash', ['BROWSER_E2E'])
-                }
-              } else {
-                await api.startStream(id)
+            // Runtime control verification must not depend on Streams list search/virtualization.
+            // Navigate the known persisted resource id to the real browser runtime surface.
+            await streams.openRuntime(id)
+            const activeBefore = await streams.runControlActive()
+            if (activeBefore === true && (await waitForStreamEnabled(api, id, true))) {
+              // Wizard deploy is a browser "Create and Start" action. If the runtime control
+              // is already active here, that browser start is authoritative; do not mutate by API.
+              browserStarted = true
+              if (isPrimary) {
+                store.rec('46_START_TWICE', 'PASS', 'already running from browser Create and Start', ['BROWSER_E2E'])
               }
             } else {
-              await api.startStream(id)
+              const clicked = await streams.clickStart()
+              browserStarted = clicked && (await waitForStreamEnabled(api, id, true))
+              if (isPrimary && browserStarted) {
+                store.rec('46_START_TWICE', 'PASS', 'browser start control activated successfully', ['BROWSER_E2E'])
+              }
             }
-            runningIds.push(id)
           } catch (e) {
-            await api.startStream(id).catch(() => null)
+            if (isPrimary) store.rec('46_START_TWICE', 'PARTIAL', String(e).slice(0, 120), ['BROWSER_E2E'])
+          }
+
+          if (browserStarted) {
+            browserStartedIds.push(id)
             runningIds.push(id)
-            if (key === 'H1') store.rec('46_START_TWICE', 'PARTIAL', String(e).slice(0, 120), ['BROWSER_E2E'])
+            continue
+          }
+
+          // Forensic/downstream continuation only. This mutation must never contribute to browser PASS.
+          const fallback = await api.startStream(id).catch(() => null)
+          if (fallback && fallback.status < 300 && (await waitForStreamEnabled(api, id, true))) {
+            apiFallbackStartedIds.push(id)
+            runningIds.push(id)
           }
         }
         store.setFlag(
           'MULTI_STREAM_RUNTIME_PROVEN',
           runningIds.length >= 8 ? 'YES' : runningIds.length >= 2 ? 'PARTIAL' : 'NO',
         )
-        store.rec('07_START_STREAMS', runningIds.length >= 1 ? 'PASS' : 'FAIL', `running=${runningIds.length}`, ['BROWSER_E2E'])
+        const browserComplete = targetIds.length > 0 && browserStartedIds.length === targetIds.length
+        const status = browserComplete ? 'PASS' : runningIds.length > 0 ? 'PARTIAL' : 'FAIL'
+        store.rec(
+          '07_START_STREAMS',
+          status,
+          `targets=${targetIds.length} browserStarted=${browserStartedIds.length} apiFallback=${apiFallbackStartedIds.length} running=${runningIds.length}`,
+          ['BROWSER_E2E', 'API_INTEGRATION'],
+        )
       } catch (e) {
         store.rec('07_START_STREAMS', 'FAIL', String(e).slice(0, 200), ['BROWSER_E2E'])
       }
@@ -1337,7 +1474,8 @@ async function main(): Promise<number> {
       store.setFlag('FAILED_ROUTE_IDENTIFIABLE', diag.AFFECTED_RESOURCE_IDENTIFIABLE)
       store.setFlag('ERROR_REASON_VISIBLE', diag.ROOT_CAUSE_VISIBLE)
       store.setFlag('RECOVERY_ACTION_VISIBLE', diag.RECOVERY_ACTION_VISIBLE)
-      const isolationOk = persistOk && aOk && !bOk
+      const browserEditOk = edited && uiPersisted
+      const isolationOk = browserEditOk && persistOk && aOk && !bOk
       store.setFlag('ROUTE_FAILURE_ISOLATION_PROVEN', isolationOk ? 'YES' : 'NO')
       store.delivery('08_DEST_FAIL_ISOLATION', marker, pathA, aOk)
       store.delivery('08_DEST_FAIL_ISOLATION', marker, pathB, bOk)
@@ -1346,11 +1484,13 @@ async function main(): Promise<number> {
       store.rec(
         '08_DEST_FAIL_ISOLATION',
         isolationOk ? 'PASS' : 'FAIL',
-        `persist=${persistOk} a=${aOk} b=${bOk} runOnce=${runOnceIso.status} uiErr=${diag.ERROR_VISIBLE}`,
+        `browserEdit=${browserEditOk} persist=${persistOk} a=${aOk} b=${bOk} runOnce=${runOnceIso.status} uiErr=${diag.ERROR_VISIBLE}`,
         ['BROWSER_E2E', 'ACTUAL_DELIVERY'],
       )
       const recoveredEdit = await destinations.editWebhookUrl(destBName, `${echo}${pathB}`)
+      let recoveryApiFallback = false
       if (!recoveredEdit) {
+        recoveryApiFallback = true
         await api.patchDestination(resources.destinations.B, {
           config_json: { url: `${echo}${pathB}`, retry_count: 0, retry_backoff_seconds: 0.01 },
         })
@@ -1368,8 +1508,14 @@ async function main(): Promise<number> {
       deliveryTests += 2
       if (recA) deliveryPass++
       if (recB) deliveryPass++
-      store.setFlag('DESTINATION_RECOVERY_PROVEN', recA && recB ? 'YES' : 'NO')
-      store.rec('09_DEST_RECOVERY', recA && recB ? 'PASS' : 'FAIL', `a=${recA} b=${recB}`, ['ACTUAL_DELIVERY', 'BROWSER_E2E'])
+      const browserRecoveryOk = recoveredEdit && recA && recB
+      store.setFlag('DESTINATION_RECOVERY_PROVEN', browserRecoveryOk ? 'YES' : 'NO')
+      store.rec(
+        '09_DEST_RECOVERY',
+        browserRecoveryOk ? 'PASS' : recA && recB && recoveryApiFallback ? 'PARTIAL' : 'FAIL',
+        `browserEdit=${recoveredEdit} apiFallback=${recoveryApiFallback} a=${recA} b=${recB}`,
+        ['ACTUAL_DELIVERY', 'BROWSER_E2E', 'API_INTEGRATION'],
+      )
     }
 
     // ---- source failure diagnosis (UI first) ----
@@ -1391,6 +1537,7 @@ async function main(): Promise<number> {
       let dashSignal = { visible: false, posture: '', issuesText: '', problemCount: 0 }
       for (let i = 0; i < 6; i++) {
         await streams.openDashboard()
+        await streams.refreshDashboard()
         dashSignal = await streams.readDashboardProblemSignal()
         if (dashSignal.visible) break
         await page.waitForTimeout(2500)
@@ -1526,11 +1673,16 @@ async function main(): Promise<number> {
         deliveryTests++
         deliveryPass++
       }
-      // UI checkpoint visibility
-      await streams.openStreamByName(`e2e-${runId}-http-stream-H3`)
-      const txt = await streams.visibleStatusText()
-      const uiCp = /checkpoint|last (success|event|activity)/i.test(txt)
-      store.rec('38_CHECKPOINT_UI_VISIBLE', uiCp ? 'PASS' : 'PARTIAL', '', ['BROWSER_E2E'])
+      // UI checkpoint visibility: verify the dedicated Stream Information panel,
+      // not a truncated body-text prefix or virtualized Streams list navigation.
+      await streams.openRuntime(resources.streams.H3)
+      const checkpointUi = await streams.checkpointVisible()
+      store.rec(
+        '38_CHECKPOINT_UI_VISIBLE',
+        checkpointUi.visible ? 'PASS' : 'PARTIAL',
+        checkpointUi.text.slice(0, 240),
+        ['BROWSER_E2E'],
+      )
     }
 
     // ---- new browser context persistence ----
@@ -1562,12 +1714,12 @@ async function main(): Promise<number> {
       const sharedPathStreamIds = Object.entries(resources.streams)
         .filter(([key, id]) => id && (key === 'H1' || key === 'H5' || key === 'WIZARD' || Number(id) === primaryHttp))
         .map(([, id]) => Number(id))
+        .filter((id) => id !== primaryHttp)
       for (const sid of [...new Set(sharedPathStreamIds)]) {
         await api.stopStream(sid).catch(() => null)
       }
-      await streamsPg.openStreamByName(primaryHttpName)
-      await streamsPg.clickStop()
-      await api.stopStream(primaryHttp).catch(() => null)
+      await streamsPg.openRuntime(primaryHttp)
+      const stopClicked = await streamsPg.clickStop()
       // Wait until API reports terminal stopped (enabled=false).
       let stoppedApi = false
       for (let i = 0; i < 20; i++) {
@@ -1602,8 +1754,8 @@ async function main(): Promise<number> {
       const whileStoppedRunOnce = await waitForDelivery(marker, `/ulc-${runId}-a`, 20_000)
       store.setFlag('STOP_BLOCKS_SCHEDULER_DELIVERY', !whileStoppedScheduler ? 'PASS' : 'FAIL')
       store.setFlag('RUN_ONCE_WHILE_STOPPED', whileStoppedRunOnce ? 'ALLOWED_BY_DESIGN' : 'FAIL')
-      await streamsPg.clickStart()
-      await api.startStream(primaryHttp).catch(() => null)
+      const startClicked = await streamsPg.clickStart()
+      const startedApi = startClicked && (await waitForStreamEnabled(api, primaryHttp, true))
       txt = await streamsPg.visibleStatusText()
       const marker2 = `STOPTEST-${runId}-002`
       await stubWiremock(
@@ -1614,12 +1766,12 @@ async function main(): Promise<number> {
       )
       await api.runOnce(primaryHttp)
       const afterStart = await waitForDelivery(marker2, `/ulc-${runId}-a`)
-      const stopStartOk = stoppedApi && !whileStoppedScheduler && afterStart
+      const stopStartOk = stopClicked && stoppedUi && stoppedApi && !whileStoppedScheduler && startClicked && startedApi && afterStart
       store.setFlag('STOP_START_BROWSER_LIFECYCLE', stopStartOk ? 'PASS' : 'FAIL')
       store.rec(
         '11_STOP_START',
         stopStartOk ? 'PASS' : 'FAIL',
-        `stoppedUi=${stoppedUi} stoppedApi=${stoppedApi} schedulerDelivered=${whileStoppedScheduler} runOnceWhileStopped=${whileStoppedRunOnce} after=${afterStart}`,
+        `stopClicked=${stopClicked} stoppedUi=${stoppedUi} stoppedApi=${stoppedApi} schedulerDelivered=${whileStoppedScheduler} runOnceWhileStopped=${whileStoppedRunOnce} startClicked=${startClicked} startedApi=${startedApi} after=${afterStart}`,
         ['BROWSER_E2E', 'ACTUAL_DELIVERY'],
       )
       store.rec('11_STOP_NE_DISABLED', /disabled/i.test(txt) && !/stopped/i.test(txt) ? 'FAIL' : 'PASS', '', [
@@ -1680,36 +1832,31 @@ async function main(): Promise<number> {
         : primaryHttpName
     const deleteLifecycleId = resources.streams.H1 || resources.streams.H4 || primaryHttp
     if (deleteLifecycleId && want('12_DELETE_LIFECYCLE', ['browser', 'cleanup', 'destructive'])) {
-      await api.stopStream(deleteLifecycleId).catch(() => null)
-      for (let i = 0; i < 30; i++) {
-        const st = await api.getStream(deleteLifecycleId).catch(() => null)
-        if (st && st.enabled === false && !/^RUNNING$/i.test(String(st.status || ''))) break
-        await new Promise((r) => setTimeout(r, 500))
-      }
       await streamsPg.openEditByStreamId(deleteLifecycleId)
-      await streamsPg.clickStop()
-      await api.stopStream(deleteLifecycleId).catch(() => null)
-      for (let i = 0; i < 20; i++) {
-        const st = await api.getStream(deleteLifecycleId).catch(() => null)
-        if (st && st.enabled === false && !/^RUNNING$/i.test(String(st.status || ''))) break
-        await new Promise((r) => setTimeout(r, 500))
-      }
-      // Reload edit page so Delete guard sees STOPPED runtime status.
-      await streamsPg.openEditByStreamId(deleteLifecycleId)
-      const del = await streamsPg.tryDelete(deleteLifecycleName)
-      let gone = !(await findStreamId(api, deleteLifecycleName))
-      if (!gone && /disabled|Stop the stream/i.test(del.message)) {
-        await api.stopStream(deleteLifecycleId).catch(() => null)
-        await api.deleteStream(deleteLifecycleId)
-        gone = !(await findStreamId(api, deleteLifecycleName))
-        store.rec('12_DELETE_STREAM_BROWSER', gone ? 'PARTIAL' : 'FAIL', `API delete fallback after UI guard: ${del.message.slice(0, 80)}`, [
-          'BROWSER_E2E',
-          'API_INTEGRATION',
-        ])
+      const deleteStopClicked = await streamsPg.clickStop()
+      const deleteStoppedApi = deleteStopClicked && (await waitForStreamEnabled(api, deleteLifecycleId, false))
+      if (!deleteStopClicked || !deleteStoppedApi) {
+        store.rec(
+          '12_DELETE_STREAM_BROWSER',
+          'FAIL',
+          `browserStop=${deleteStopClicked} stoppedApi=${deleteStoppedApi}; delete not attempted`,
+          ['BROWSER_E2E', 'API_INTEGRATION'],
+        )
+        store.setFlag('FULL_CREATE_TO_DELETE_BROWSER_LIFECYCLE', 'FAIL')
       } else {
-        store.rec('12_DELETE_STREAM_BROWSER', gone ? 'PASS' : 'PARTIAL', del.message.slice(0, 120), ['BROWSER_E2E'])
+        // Reload edit page so Delete guard sees the browser-driven STOPPED runtime state.
+        await streamsPg.openEditByStreamId(deleteLifecycleId)
+        const del = await streamsPg.tryDelete(deleteLifecycleName)
+        const gone = !(await findStreamId(api, deleteLifecycleName))
+        const browserDeleteOk = del.deleteClicked && del.confirmClicked && gone
+        store.rec(
+          '12_DELETE_STREAM_BROWSER',
+          browserDeleteOk ? 'PASS' : 'FAIL',
+          `stopClicked=${deleteStopClicked} stoppedApi=${deleteStoppedApi} deleteClicked=${del.deleteClicked} confirmClicked=${del.confirmClicked} gone=${gone} message=${del.message.slice(0, 100)}`,
+          ['BROWSER_E2E', 'API_INTEGRATION'],
+        )
+        store.setFlag('FULL_CREATE_TO_DELETE_BROWSER_LIFECYCLE', browserDeleteOk ? 'PASS' : 'FAIL')
       }
-      store.setFlag('FULL_CREATE_TO_DELETE_BROWSER_LIFECYCLE', gone ? 'PASS' : 'FAIL')
     }
 
     store.setFlag('ACTUAL_DELIVERY_TESTS', String(deliveryTests))
@@ -1754,7 +1901,7 @@ async function main(): Promise<number> {
       LIVE_RUNTIME_MODIFIED: 'NO',
     })
     store.saveState({ step: 'DONE' })
-    return (store.counts.FAIL || 0) > 0 ? 1 : 0
+    return finalAcceptanceBlocked(store) ? 1 : 0
   } catch (e) {
     console.error(e)
     store.rec('FATAL', 'FAIL', String(e), ['NOT_PROVEN'])

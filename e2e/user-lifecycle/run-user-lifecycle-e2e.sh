@@ -29,7 +29,7 @@ while [[ $# -gt 0 ]]; do
     --all) MODE="all"; EXTRA_ARGS+=(--all); shift ;;
     --headed) EXTRA_ARGS+=(--headed); shift ;;
     --headless) EXTRA_ARGS+=(--headless); shift ;;
-    --scenario) EXTRA_ARGS+=(--scenario "$2"); shift 2 ;;
+    --scenario) MODE="scenario"; EXTRA_ARGS+=(--scenario "$2"); shift 2 ;;
     --tag) EXTRA_ARGS+=(--tag "$2"); shift 2 ;;
     --resume) MODE="resume"; RUN_ID="$2"; EXTRA_ARGS+=(--resume "$2"); shift 2 ;;
     --cleanup-only) MODE="cleanup"; RUN_ID="$2"; EXTRA_ARGS+=(--cleanup-only "$2"); shift 2 ;;

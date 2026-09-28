@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { useDashboardOverviewData } from './use-dashboard-overview-data'
 
 vi.mock('../../api/gdcRuntime', () => ({
@@ -25,6 +25,7 @@ vi.mock('../../api/gdcConnectors', () => ({
 }))
 
 vi.mock('../../api/operationalSnapshot', () => ({
+  clearOperationalSnapshotCache: vi.fn(),
   getOperationalSnapshot: vi.fn(async () => ({
     global: {
       health_status: 'HEALTHY',
@@ -144,5 +145,20 @@ describe('useDashboardOverviewData', () => {
     expect(result.current.bundle?.operationalSnapshot?.global.running_streams).toBe(2)
     expect(result.current.bundle?.dashboard).not.toBeNull()
     expect(result.current.bundle?.alerts).toBeNull()
+  })
+
+  it('clears the operational snapshot cache on manual reload', async () => {
+    const operationalSnapshot = await import('../../api/operationalSnapshot')
+    const { result } = renderHook(() => useDashboardOverviewData('1h', null))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    const snapshotCallsBeforeReload = vi.mocked(operationalSnapshot.getOperationalSnapshot).mock.calls.length
+    const clearCallsBeforeReload = vi.mocked(operationalSnapshot.clearOperationalSnapshotCache).mock.calls.length
+
+    await act(async () => {
+      await result.current.reload()
+    })
+
+    expect(operationalSnapshot.clearOperationalSnapshotCache).toHaveBeenCalledTimes(clearCallsBeforeReload + 1)
+    expect(operationalSnapshot.getOperationalSnapshot).toHaveBeenCalledTimes(snapshotCallsBeforeReload + 1)
   })
 })

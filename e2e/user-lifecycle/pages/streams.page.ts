@@ -177,6 +177,15 @@ export class StreamsPage {
     await this.page.getByTestId('dashboard-operational-issues').waitFor({ timeout: ACTION }).catch(() => null)
   }
 
+  async refreshDashboard(): Promise<void> {
+    const refresh = this.page.getByRole('button', { name: /Refresh dashboard data now/i }).first()
+    if (await refresh.count()) {
+      await refresh.click({ timeout: SHORT })
+      await this.page.waitForTimeout(1000)
+      await this.page.getByTestId('dashboard-operational-issues').waitFor({ timeout: ACTION }).catch(() => null)
+    }
+  }
+
   async openMonitoring(): Promise<void> {
     await this.session.goto('/monitoring', 'monitoring')
   }
@@ -209,14 +218,25 @@ export class StreamsPage {
     await this.openList()
     await this.search(name)
     this.session.artifacts.action('open-stream', '/streams', name)
+    // The search control renders before async stream rows. Wait for a matching
+    // product group to exist before expanding it; otherwise a group that loads
+    // later remains collapsed and the child row can never become visible.
+    const firstGroup = this.page.locator('[data-testid^="stream-group-row-"]').first()
+    await firstGroup.waitFor({ timeout: ACTION }).catch(() => null)
     await this.expandVisibleStreamGroups()
     const short = name.length > 24 ? name.slice(-24) : name
     const row = this.page.locator(`[data-testid^="stream-group-child-row-"]`, { hasText: short }).first()
     await row.waitFor({ timeout: ACTION }).catch(() => null)
     if (await row.count()) {
+      const runtimeLink = row.locator('a[href*="/runtime"]').first()
+      if (await runtimeLink.count()) {
+        await runtimeLink.click({ timeout: SHORT })
+        await this.page.waitForTimeout(600)
+        return /\/streams\/\d+\/runtime/.test(this.page.url())
+      }
       await row.click({ timeout: SHORT })
       await this.page.waitForTimeout(600)
-      return true
+      return /\/streams\/\d+\/runtime/.test(this.page.url())
     }
     const text = this.page.getByText(short, { exact: false }).first()
     if (await text.count()) {
@@ -287,27 +307,45 @@ export class StreamsPage {
     }
   }
 
-  async clickStart(): Promise<void> {
-    this.session.artifacts.action('stream-start', 'stream-detail', 'Start')
-    const btn = this.page.getByRole('button', { name: /^(Start|Run|Enable)$/i }).first()
-    const sw = this.page.getByRole('switch').first()
-    if (await btn.count()) await btn.click()
-    else if (await sw.count()) await sw.click()
-    await this.page.waitForTimeout(800)
+  async runControlActive(): Promise<boolean | null> {
+    const sw = this.page.getByTestId('stream-run-control-switch').or(this.page.getByRole('switch').first())
+    if (!(await sw.count())) return null
+    return (await sw.getAttribute('aria-checked')) === 'true'
   }
 
-  async clickStop(): Promise<void> {
+  async clickStart(): Promise<boolean> {
+    this.session.artifacts.action('stream-start', 'stream-detail', 'Start')
+    const sw = this.page.getByTestId('stream-run-control-switch').or(this.page.getByRole('switch').first())
+    if (await sw.count()) {
+      const checked = await sw.getAttribute('aria-checked')
+      if (checked === 'true') return false
+      await sw.click()
+      await this.page.waitForTimeout(800)
+      return true
+    }
+    const btn = this.page.getByRole('button', { name: /^(Start|Run|Enable)$/i }).first()
+    if (!(await btn.count())) return false
+    await btn.click()
+    await this.page.waitForTimeout(800)
+    return true
+  }
+
+  async clickStop(): Promise<boolean> {
     this.session.artifacts.action('stream-stop', 'stream-detail', 'Stop')
     // Canonical control is role=switch ("Stream scheduler: Running|Stopped"), not a Stop button.
     const sw = this.page.getByTestId('stream-run-control-switch').or(this.page.getByRole('switch').first())
     if (await sw.count()) {
       const checked = await sw.getAttribute('aria-checked')
-      if (checked === 'true') await sw.click()
-    } else {
-      const btn = this.page.getByRole('button', { name: /^Stop$/i }).first()
-      if (await btn.count()) await btn.click()
+      if (checked !== 'true') return false
+      await sw.click()
+      await this.page.waitForTimeout(1000)
+      return true
     }
+    const btn = this.page.getByRole('button', { name: /^Stop$/i }).first()
+    if (!(await btn.count())) return false
+    await btn.click()
     await this.page.waitForTimeout(1000)
+    return true
   }
 
   async clickStartTwice(): Promise<void> {
@@ -333,9 +371,11 @@ export class StreamsPage {
     await this.page.waitForTimeout(800)
   }
 
-  async tryDelete(streamName?: string): Promise<{ message: string }> {
+  async tryDelete(streamName?: string): Promise<{ message: string; deleteClicked: boolean; confirmClicked: boolean }> {
     this.session.artifacts.action('stream-delete', 'stream-edit', 'Delete')
     const btn = this.page.getByRole('button', { name: /^Delete$/i }).first()
+    let deleteClicked = false
+    let confirmClicked = false
     // Wait for Stop to release the delete guard (button becomes enabled).
     for (let i = 0; i < 30; i++) {
       if (!(await btn.count())) break
@@ -345,9 +385,10 @@ export class StreamsPage {
     if (await btn.count()) {
       if (await btn.isDisabled().catch(() => false)) {
         const title = (await btn.getAttribute('title').catch(() => '')) || ''
-        return { message: `Delete still disabled: ${title}` }
+        return { message: `Delete still disabled: ${title}`, deleteClicked, confirmClicked }
       }
       await btn.click({ timeout: ACTION })
+      deleteClicked = true
     }
     await this.page.waitForTimeout(400)
     if (streamName) {
@@ -358,13 +399,16 @@ export class StreamsPage {
     }
     const confirm = this.page.getByRole('button', { name: /Delete stream|Confirm|Yes/i }).last()
     if (await confirm.isVisible().catch(() => false)) {
-      if (!(await confirm.isDisabled().catch(() => false))) await confirm.click().catch(() => null)
+      if (!(await confirm.isDisabled().catch(() => false))) {
+        await confirm.click()
+        confirmClicked = true
+      }
     }
     await this.page.waitForTimeout(1200)
     const msg =
       (await this.page.getByRole('alert').first().innerText().catch(() => '')) ||
       (await this.page.locator('body').innerText()).slice(0, 1500)
-    return { message: msg }
+    return { message: msg, deleteClicked, confirmClicked }
   }
 
   async deleteBlockedGuidance(): Promise<string> {
@@ -372,6 +416,17 @@ export class StreamsPage {
     const titleAttr = (await title.getAttribute('title').catch(() => '')) || ''
     const body = await this.visibleStatusText()
     return `${titleAttr}\n${body}`.slice(0, 2000)
+  }
+
+  async checkpointVisible(): Promise<{ visible: boolean; text: string }> {
+    const panel = this.page.getByTestId('stream-information-panel')
+    for (let i = 0; i < 20; i++) {
+      const text = (await panel.innerText().catch(() => '')) || ''
+      if (/Current Checkpoint/i.test(text)) return { visible: true, text: text.slice(0, 2000) }
+      await this.page.waitForTimeout(500)
+    }
+    const text = (await panel.innerText().catch(() => '')) || ''
+    return { visible: false, text: text.slice(0, 2000) }
   }
 
   async visibleStatusText(): Promise<string> {
