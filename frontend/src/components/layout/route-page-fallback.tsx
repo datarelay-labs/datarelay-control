@@ -7,7 +7,7 @@ export function RoutePageFallback() {
       role="status"
       aria-label="Loading page"
       aria-live="polite"
-      className="flex min-h-[12rem] items-center justify-center rounded-xl border border-slate-200 bg-white p-8 shadow-sm dark:border-gdc-border dark:bg-gdc-card dark:shadow-gdc-card dark:ring-1 dark:ring-[rgba(120,150,220,0.07)]"
+      className="flex min-h-[12rem] items-center justify-center rounded-xl border border-slate-200 bg-white p-8 shadow-sm dark:border-gdc-border dark:bg-gdc-card dark:shadow-gdc-card"
       data-testid="route-page-fallback"
     >
       <Loader2 className="h-6 w-6 animate-spin text-slate-400 dark:text-gdc-muted" aria-hidden />

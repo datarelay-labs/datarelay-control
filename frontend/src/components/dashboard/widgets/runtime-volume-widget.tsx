@@ -68,11 +68,11 @@ export function RuntimeVolumeWidget({ buckets, windowLabel, loading, visualizati
             <BarChart data={chartData} margin={{ top: 8, right: 8, left: -4, bottom: 4 }}>
               <XAxis
                 dataKey="bucket"
-                tick={{ fill: '#64748b', fontSize: 10 }}
-                axisLine={{ stroke: '#e2e8f0' }}
+                tick={{ fill: 'var(--gdc-chart-muted)', fontSize: 10 }}
+                axisLine={{ stroke: 'var(--gdc-chart-line)' }}
                 tickLine={false}
               />
-              <YAxis tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
+              <YAxis tick={{ fill: 'var(--gdc-chart-muted)', fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
               <Tooltip
                 cursor={{ fill: 'rgb(148 163 184 / 0.06)' }}
                 formatter={(value, name) => [`${value} events`, name]}

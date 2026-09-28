@@ -83,11 +83,11 @@ function postureLabel(posture: OverallHealthCounts['posture']): string {
 const KPI_SPARK: Record<DashboardKpiItem['tone'], string> = {
   blue: '#38bdf8',
   green: '#34d399',
-  violet: '#a78bfa',
+  violet: '#8D58EE',
   teal: '#2dd4bf',
   amber: '#fbbf24',
   red: '#f87171',
-  neutral: '#94a3b8',
+  neutral: 'var(--gdc-chart-muted)',
 }
 
 const KPI_ICON: Record<string, typeof Layers> = {
@@ -308,10 +308,10 @@ export function OverallHealthBeaconCard({
   const isWarning = beacon.posture === 'warning'
 
   const borderClass = isHealthy
-    ? 'border-emerald-500/40 bg-gradient-to-br from-emerald-950/50 via-emerald-900/15 to-transparent'
+    ? 'border-emerald-500/40 bg-emerald-950/20'
     : isWarning
-      ? 'border-amber-500/40 bg-gradient-to-br from-amber-950/50 via-amber-900/15 to-transparent'
-      : 'border-red-500/40 bg-gradient-to-br from-red-950/50 via-red-900/20 to-transparent'
+      ? 'border-amber-500/40 bg-amber-950/20'
+      : 'border-red-500/40 bg-red-950/20'
 
   const labelClass = isHealthy ? 'text-emerald-300' : isWarning ? 'text-amber-300' : 'text-red-300'
 
@@ -775,8 +775,9 @@ function flowCurvePath(x0: number, y0: number, x1: number, y1: number): string {
   return `M ${x0} ${y0} C ${cpx} ${y0}, ${cpx} ${y1}, ${x1} ${y1}`
 }
 
-const FLOW_SRC_COLORS = ['#38bdf8', '#06b6d4', '#22d3ee', '#0ea5e9', '#7dd3fc'] as const
-const FLOW_DST_COLORS = ['#a78bfa', '#c084fc', '#8b5cf6', '#9333ea', '#6ee7b7'] as const
+// Cloudflare Kumo chart palettes: sequential blue for sources, categorical for destinations.
+const FLOW_SRC_COLORS = ['#03254F', '#0E58B4', '#4290F0', '#A6BFDD', '#E1EAF4'] as const
+const FLOW_DST_COLORS = ['#4290F0', '#EEB720', '#E8649D', '#8D58EE', '#50C3B6', '#D37536'] as const
 
 type FlowIcon = typeof Activity
 
@@ -1049,11 +1050,11 @@ export function EventsOverTimeChart({
                   <stop offset="100%" stopColor="#f87171" stopOpacity={0.02} />
                 </linearGradient>
               </defs>
-              <XAxis dataKey="label" tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} width={36} />
+              <XAxis dataKey="label" tick={{ fill: 'var(--gdc-chart-muted)', fontSize: 10 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: 'var(--gdc-chart-muted)', fontSize: 10 }} axisLine={false} tickLine={false} width={36} />
               <Tooltip
-                contentStyle={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 8, fontSize: 11 }}
-                labelStyle={{ color: '#94a3b8' }}
+                contentStyle={{ background: 'var(--gdc-chart-tooltip-bg)', border: '1px solid var(--gdc-chart-tooltip-border)', borderRadius: 8, fontSize: 11 }}
+                labelStyle={{ color: 'var(--gdc-chart-muted)' }}
               />
               <Area type="monotone" dataKey="ingested" name="Ingested" stroke="#38bdf8" strokeWidth={2.5} fill="url(#dash-ingested-fill)" dot={false} isAnimationActive={false} />
               <Area type="monotone" dataKey="delivered" name="Delivered" stroke="#34d399" strokeWidth={2.5} fill="url(#dash-delivered-fill)" dot={false} isAnimationActive={false} />
@@ -1103,7 +1104,7 @@ function DonutPanel({
               </Pie>
               <Tooltip
                 formatter={(value, name) => [`${value}`, String(name)]}
-                contentStyle={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 8, fontSize: 11 }}
+                contentStyle={{ background: 'var(--gdc-chart-tooltip-bg)', border: '1px solid var(--gdc-chart-tooltip-border)', borderRadius: 8, fontSize: 11 }}
               />
             </PieChart>
           </ResponsiveContainer>
@@ -1150,13 +1151,7 @@ export function StreamsStatusDonut({ status }: { status: StreamsOperationalStatu
 export function TopSourcesByIngestRatePanel({ sources, className }: { sources: TopSourceIngestItem[]; className?: string }) {
   const max = Math.max(1, ...sources.map((s) => s.rateEps))
 
-  const barGradients = [
-    'from-teal-600 to-teal-400',
-    'from-sky-600 to-sky-400',
-    'from-emerald-600 to-emerald-400',
-    'from-orange-600 to-orange-400',
-    'from-violet-600 to-violet-400',
-  ]
+  const barColors = ['#4290F0', '#EEB720', '#E8649D', '#8D58EE', '#50C3B6', '#D37536'] as const
 
   return (
     <section aria-label="Top sources by ingest rate" data-testid="dashboard-top-sources" className={cn(dashboardCardClass, className)}>
@@ -1175,7 +1170,7 @@ export function TopSourcesByIngestRatePanel({ sources, className }: { sources: T
               : source.rateEps >= 1000
                 ? `${formatMetricCount(Math.round(source.rateEps))}/s`
                 : `${formatThroughputEps(source.rateEps)}/s`
-            const barGrad = barGradients[idx % barGradients.length]
+            const barColor = barColors[idx % barColors.length]
             return (
               <li key={source.name}>
                 <div className="flex items-center justify-between gap-2 text-[11px]">
@@ -1186,8 +1181,8 @@ export function TopSourcesByIngestRatePanel({ sources, className }: { sources: T
                 </div>
                 <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-800/70">
                   <div
-                    className={cn('h-full rounded-full bg-gradient-to-r transition-all', noThroughput ? 'opacity-20' : '', barGrad)}
-                    style={{ width: `${noThroughput ? 4 : Math.max(8, pct)}%` }}
+                    className={cn('h-full rounded-full transition-all', noThroughput ? 'opacity-20' : '')}
+                    style={{ width: `${noThroughput ? 4 : Math.max(8, pct)}%`, backgroundColor: barColor }}
                   />
                 </div>
               </li>
@@ -1358,7 +1353,7 @@ export function SystemHealthBar({ items }: { items: SystemHealthItem[] }) {
     <section
       aria-label="System health"
       data-testid="dashboard-system-health"
-      className="rounded-xl border border-slate-200/80 bg-white px-4 py-3 dark:border-[rgba(120,150,220,0.2)] dark:bg-[#111827]/95 dark:ring-1 dark:ring-[rgba(120,150,220,0.1)]"
+      className="rounded-lg border border-slate-200/80 bg-white px-4 py-3 dark:border-gdc-border dark:bg-gdc-card"
     >
       <div className="flex items-center gap-4 sm:gap-6">
         <p className="shrink-0 text-[12px] font-semibold text-slate-400">System Health</p>

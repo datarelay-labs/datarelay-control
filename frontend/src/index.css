@@ -3,15 +3,112 @@
 @tailwind utilities;
 
 :root {
-  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+:root {
+  --gdc-chart-muted: oklch(55.6% 0 0);
+  --gdc-chart-line: oklch(92.2% 0 0);
+  --gdc-chart-tooltip-bg: #fff;
+  --gdc-chart-tooltip-border: oklch(92.2% 0 0);
+  --gdc-chart-primary: oklch(57.72% 0.2324 260);
+}
+
+html.dark {
+  --gdc-chart-muted: oklch(70.8% 0 0);
+  --gdc-chart-line: oklch(26.9% 0 0);
+  --gdc-chart-tooltip-bg: oklch(12% 0 0);
+  --gdc-chart-tooltip-border: oklch(32% 0 0);
+  --gdc-chart-primary: oklch(52% 0.209 260);
 }
 
 * {
   box-sizing: border-box;
 }
 
+html {
+  background: oklch(98.75% 0 0);
+}
+
+html.dark {
+  background: oklch(10% 0 0);
+}
+
 body {
   margin: 0;
+  min-width: 320px;
+  background: oklch(98.75% 0 0);
+  color: oklch(21% 0.006 285.885);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.dark body {
+  background: oklch(10% 0 0);
+  color: oklch(97% 0 0);
+}
+
+::selection {
+  background: rgba(0, 81, 195, 0.22);
+}
+
+.dark ::selection {
+  background: rgba(79, 148, 255, 0.28);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+:focus-visible {
+  outline-color: #1473e6;
+}
+
+/* Thin, neutral scrollbars reduce visual noise in dense operator workspaces. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #b8b8b8 transparent;
+}
+
+.dark * {
+  scrollbar-color: #555 transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 9999px;
+  background-clip: padding-box;
+  background-color: #b8b8b8;
+}
+
+.dark *::-webkit-scrollbar-thumb {
+  background-color: #555;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 /* Visible-on-focus skip link for the application shell. */
@@ -21,23 +118,25 @@ body {
   top: 1rem;
   z-index: 100;
   transform: translateY(-150%);
-  padding: 0.5rem 1rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 0.5rem;
-  background: #0f172a;
-  color: #f8fafc;
+  background: oklch(17% 0 0);
+  color: oklch(97% 0 0);
   font-size: 0.875rem;
   font-weight: 600;
   text-decoration: none;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
 }
 
 .gdc-skip-link:focus {
   transform: translateY(0);
-  outline: 2px solid #a78bfa;
+  outline: 2px solid #4f94ff;
   outline-offset: 2px;
 }
 
-/* Dark shell: L0 canvas + very soft depth (operational dark SaaS). */
+/* Cloudflare-like dark shell: flat off-black canvas, no decorative glow. */
 .dark .gdc-app-workspace {
-  background-color: #06101c;
-  background-image: radial-gradient(120% 90% at 50% -28%, rgba(124, 58, 237, 0.04), transparent 55%);
+  background-color: oklch(10% 0 0);
+  background-image: none;
 }

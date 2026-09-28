@@ -52,7 +52,7 @@ export function breakdownSlicesFromMetrics(metrics: StreamRuntimeMetricsResponse
     { key: 'fail', label: 'Failed (1h)', value: failed, color: '#ef4444' },
   ]
   if (other > 0) {
-    slices.push({ key: 'oth', label: 'Other / in-flight', value: other, color: '#a78bfa' })
+    slices.push({ key: 'oth', label: 'Other / in-flight', value: other, color: '#8EC5FF' })
   }
   return slices
 }

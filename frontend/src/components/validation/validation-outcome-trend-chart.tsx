@@ -28,8 +28,8 @@ export function ValidationOutcomeTrendChart({ buckets }: { buckets: ValidationOu
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" className="stroke-slate-200 dark:stroke-gdc-divider" />
-          <XAxis dataKey="label" tick={{ fontSize: 9 }} stroke="#64748b" />
-          <YAxis width={28} tick={{ fontSize: 9 }} stroke="#64748b" allowDecimals={false} />
+          <XAxis dataKey="label" tick={{ fontSize: 9 }} stroke="var(--gdc-chart-muted)" />
+          <YAxis width={28} tick={{ fontSize: 9 }} stroke="var(--gdc-chart-muted)" allowDecimals={false} />
           <Tooltip contentStyle={{ fontSize: 11 }} />
           <Legend wrapperStyle={{ fontSize: 10 }} />
           <Line type="monotone" dataKey="pass_count" name="PASS" stroke="#10b981" strokeWidth={2} dot={false} />

@@ -8,7 +8,7 @@ const SEG = {
   healthy: '#16a34a',
   warning: '#d97706',
   error: '#dc2626',
-  inactive: '#94a3b8',
+  inactive: 'var(--gdc-chart-muted)',
 } as const
 
 export type PipelineHealthStripProps = {

@@ -428,10 +428,10 @@ function LazyAnalyticsSection({
               ) : chartsReady ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={chartData.slice(0, 120)} margin={{ top: 8, right: 8, left: -8, bottom: 4 }}>
-                    <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#64748b' }} />
-                    <YAxis tick={{ fontSize: 10, fill: '#64748b' }} width={32} />
+                    <XAxis dataKey="name" tick={{ fontSize: 10, fill: 'var(--gdc-chart-muted)' }} />
+                    <YAxis tick={{ fontSize: 10, fill: 'var(--gdc-chart-muted)' }} width={32} />
                     <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} />
-                    <Line type="monotone" dataKey="total" stroke="#7c3aed" strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey="total" stroke="var(--gdc-chart-primary)" strokeWidth={2} dot={false} />
                   </LineChart>
                 </ResponsiveContainer>
               ) : (

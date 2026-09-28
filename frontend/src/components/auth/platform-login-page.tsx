@@ -114,13 +114,7 @@ export function PlatformLoginPage({ onAuthenticated }: PlatformLoginPageProps) {
   }
 
   return (
-    <div
-      className="relative flex min-h-screen flex-col bg-[#020617] text-slate-200"
-      style={{
-        backgroundImage:
-          'radial-gradient(ellipse 80% 60% at 50% 20%, rgba(30, 58, 138, 0.35), transparent 55%), radial-gradient(ellipse 70% 50% at 50% 100%, rgba(6, 78, 59, 0.12), transparent 50%)',
-      }}
-    >
+    <div className="relative flex min-h-screen flex-col bg-gdc-page text-gdc-foreground">
       <div className="flex flex-1 flex-col items-center justify-center px-4 py-10 sm:px-6 lg:px-10">
         <div className="grid w-full max-w-5xl gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,380px)] lg:items-center lg:gap-14">
           {/* Left — identity & resources */}
@@ -130,20 +124,16 @@ export function PlatformLoginPage({ onAuthenticated }: PlatformLoginPageProps) {
                 <DataRelayLogoMark className="h-10 w-14 sm:h-11 sm:w-[3.9rem]" aria-label="DataRelay logo" />
               </div>
               <DataRelayWordmark />
-              <p className="text-sm font-medium text-slate-400">Operational Data Connector Platform</p>
-              <p className="text-base font-semibold leading-relaxed">
-                <span className="text-sky-400">Collect.</span>{' '}
-                <span className="text-emerald-400">Transform.</span>{' '}
-                <span className="text-sky-400">Deliver.</span>
-              </p>
-              <p className="text-sm leading-relaxed text-slate-400">
+              <p className="text-sm font-medium text-gdc-muted">Operational Data Connector Platform</p>
+              <p className="text-base font-semibold leading-relaxed text-gdc-foreground">Collect. Transform. Deliver.</p>
+              <p className="text-sm leading-relaxed text-gdc-muted">
                 Connect to any source, transform and enrich your data, then deliver it to multiple destinations reliably and
                 securely.
               </p>
             </header>
 
             <section aria-labelledby="login-resources-heading" className="space-y-3">
-              <h2 id="login-resources-heading" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <h2 id="login-resources-heading" className="text-xs font-medium text-gdc-muted">
                 Resources
               </h2>
               <ul className="space-y-1">
@@ -154,18 +144,18 @@ export function PlatformLoginPage({ onAuthenticated }: PlatformLoginPageProps) {
                     <li key={item.title}>
                       <a
                         href={item.href}
-                        className="group flex items-center gap-3 rounded-lg border border-transparent px-2 py-2 transition-colors hover:border-sky-500/20 hover:bg-white/[0.03]"
+                        className="group flex items-center gap-3 rounded-lg border border-transparent px-2 py-2 hover:bg-gdc-rowHover"
                         {...(isHttp ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
                       >
-                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-sky-500/10 text-sky-400">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gdc-section text-violet-400">
                           <Icon className="h-4 w-4" aria-hidden />
                         </span>
                         <span className="min-w-0 flex-1">
-                          <span className="block text-sm font-medium text-white">{item.title}</span>
-                          <span className="block truncate text-xs text-sky-400/90">{item.subtitle}</span>
+                          <span className="block text-sm font-medium text-gdc-foreground">{item.title}</span>
+                          <span className="block truncate text-xs text-violet-400">{item.subtitle}</span>
                         </span>
                         {isHttp ? (
-                          <ExternalLink className="h-3.5 w-3.5 shrink-0 text-sky-500/80 opacity-70 group-hover:opacity-100" aria-hidden />
+                          <ExternalLink className="h-3.5 w-3.5 shrink-0 text-violet-400 opacity-60 group-hover:opacity-100" aria-hidden />
                         ) : null}
                       </a>
                     </li>
@@ -178,32 +168,29 @@ export function PlatformLoginPage({ onAuthenticated }: PlatformLoginPageProps) {
           {/* Right — sign-in card */}
           <div
             className={cn(
-              'w-full max-w-md justify-self-center rounded-2xl border border-white/10 bg-slate-950/55 p-6 shadow-[0_24px_80px_-24px_rgba(0,0,0,0.75)] backdrop-blur-md sm:p-8',
+              'w-full max-w-md justify-self-center rounded-lg border border-gdc-border bg-gdc-card p-6 sm:p-8',
               'lg:justify-self-end',
             )}
           >
             <div className="mb-6 flex flex-col items-center text-center">
               <div
-                className="mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-white/10 bg-slate-900/80"
-                style={{
-                  background: 'linear-gradient(135deg, rgba(56,189,248,0.2), rgba(52,211,153,0.18))',
-                }}
+                className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg border border-gdc-border bg-gdc-section"
                 aria-hidden
               >
-                <Lock className="h-6 w-6 text-sky-300 drop-shadow-[0_0_10px_rgba(52,211,153,0.35)]" strokeWidth={2} />
+                <Lock className="h-5 w-5 text-violet-400" strokeWidth={2} />
               </div>
-              <h1 className="text-xl font-semibold text-white sm:text-2xl">Welcome to DataRelay</h1>
-              <p className="mt-1 text-sm text-slate-400">Please sign in to continue.</p>
+              <h1 className="text-xl font-semibold text-gdc-foreground sm:text-2xl">Welcome to DataRelay</h1>
+              <p className="mt-1 text-sm text-gdc-muted">Please sign in to continue.</p>
             </div>
 
             <form onSubmit={(e) => void onSubmit(e)} className="space-y-4">
               <div>
-                <label htmlFor="platform-login-username" className="mb-1.5 block text-xs font-medium text-slate-400">
+                <label htmlFor="platform-login-username" className="mb-1.5 block text-xs font-medium text-gdc-mutedStrong">
                   Username
                 </label>
                 <div className="relative">
                   <User
-                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
+                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gdc-placeholder"
                     aria-hidden
                   />
                   <input
@@ -213,18 +200,18 @@ export function PlatformLoginPage({ onAuthenticated }: PlatformLoginPageProps) {
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
                     placeholder="Enter your username"
-                    className="h-11 w-full rounded-lg border border-white/12 bg-slate-950/60 py-2 pl-10 pr-3 text-sm text-white placeholder:text-slate-600 focus:border-sky-500/50 focus:outline-none focus:ring-2 focus:ring-sky-500/25"
+                    className="h-9 w-full rounded-lg border border-gdc-inputBorder bg-gdc-input py-2 pl-10 pr-3 text-sm text-gdc-foreground placeholder:text-gdc-placeholder focus:border-gdc-primary focus:outline-none focus:ring-2 focus:ring-violet-400/30"
                   />
                 </div>
               </div>
 
               <div>
-                <label htmlFor="platform-login-password" className="mb-1.5 block text-xs font-medium text-slate-400">
+                <label htmlFor="platform-login-password" className="mb-1.5 block text-xs font-medium text-gdc-mutedStrong">
                   Password
                 </label>
                 <div className="relative">
                   <Lock
-                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
+                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gdc-placeholder"
                     aria-hidden
                   />
                   <input
@@ -235,12 +222,12 @@ export function PlatformLoginPage({ onAuthenticated }: PlatformLoginPageProps) {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Enter your password"
-                    className="h-11 w-full rounded-lg border border-white/12 bg-slate-950/60 py-2 pl-10 pr-11 text-sm text-white placeholder:text-slate-600 focus:border-sky-500/50 focus:outline-none focus:ring-2 focus:ring-sky-500/25"
+                    className="h-9 w-full rounded-lg border border-gdc-inputBorder bg-gdc-input py-2 pl-10 pr-11 text-sm text-gdc-foreground placeholder:text-gdc-placeholder focus:border-gdc-primary focus:outline-none focus:ring-2 focus:ring-violet-400/30"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword((v) => !v)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1.5 text-slate-500 hover:bg-white/5 hover:text-slate-300"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-gdc-muted hover:bg-gdc-rowHover hover:text-gdc-foreground"
                     aria-label={showPassword ? 'Hide password' : 'Show password'}
                   >
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -263,12 +250,12 @@ export function PlatformLoginPage({ onAuthenticated }: PlatformLoginPageProps) {
               <button
                 type="submit"
                 disabled={busy}
-                className="mt-2 flex h-12 w-full items-center justify-center rounded-xl bg-gradient-to-r from-sky-500 to-emerald-500 text-sm font-semibold text-white shadow-lg shadow-sky-900/30 transition-opacity hover:opacity-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
+                className="mt-2 flex h-9 w-full items-center justify-center rounded-lg bg-gdc-primary text-sm font-semibold text-white hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/60 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {busy ? 'Signing in…' : 'Sign In'}
               </button>
 
-              <p className="pt-1 text-center text-[11px] leading-relaxed text-slate-500">
+              <p className="pt-1 text-center text-xs leading-relaxed text-gdc-muted">
                 Accounts are created by an administrator. Self-service registration is not available.
               </p>
             </form>
@@ -276,16 +263,16 @@ export function PlatformLoginPage({ onAuthenticated }: PlatformLoginPageProps) {
         </div>
       </div>
 
-      <footer className="border-t border-white/[0.06] px-4 py-5 text-center text-[11px] text-slate-500 sm:text-xs">
+      <footer className="border-t border-gdc-divider px-4 py-5 text-center text-xs text-gdc-muted">
         <p className="mb-2">© 2026 DataRelay. All rights reserved.</p>
         <p className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
-          <a href="https://datarelay.run/privacy" className="text-sky-400/90 hover:underline" rel="noopener noreferrer" target="_blank">
+          <a href="https://datarelay.run/privacy" className="text-violet-400 hover:underline" rel="noopener noreferrer" target="_blank">
             Privacy Policy
           </a>
           <span className="text-slate-600" aria-hidden>
             |
           </span>
-          <a href="https://datarelay.run/terms" className="text-sky-400/90 hover:underline" rel="noopener noreferrer" target="_blank">
+          <a href="https://datarelay.run/terms" className="text-violet-400 hover:underline" rel="noopener noreferrer" target="_blank">
             Terms of Use
           </a>
           <span className="text-slate-600" aria-hidden>
@@ -293,7 +280,7 @@ export function PlatformLoginPage({ onAuthenticated }: PlatformLoginPageProps) {
           </span>
           <a
             href="https://datarelay.run/security"
-            className="text-sky-400/90 hover:underline"
+            className="text-violet-400 hover:underline"
             rel="noopener noreferrer"
             target="_blank"
           >

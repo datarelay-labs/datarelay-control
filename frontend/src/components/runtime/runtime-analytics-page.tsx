@@ -340,9 +340,9 @@ export function RuntimeAnalyticsPage() {
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={trendData} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                      <XAxis dataKey="t" tick={{ fontSize: 10, fill: '#64748b' }} />
-                      <YAxis tick={{ fontSize: 10, fill: '#64748b' }} width={28} allowDecimals={false} />
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--gdc-chart-line)" />
+                      <XAxis dataKey="t" tick={{ fontSize: 10, fill: 'var(--gdc-chart-muted)' }} />
+                      <YAxis tick={{ fontSize: 10, fill: 'var(--gdc-chart-muted)' }} width={28} allowDecimals={false} />
                       <Tooltip
                         formatter={(value) => [`${value} failures`, 'Failures']}
                         labelFormatter={(label) => `Bucket ${label} · ${failureTrendSemantics}`}

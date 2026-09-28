@@ -46,7 +46,7 @@ export function TopHeader({
   }
 
   return (
-    <header className="sticky top-0 z-10 border-b border-slate-200/80 bg-white/95 px-3 py-3 backdrop-blur-md dark:border-gdc-border dark:bg-gdc-panel/95 md:px-6">
+    <header className="sticky top-0 z-10 min-h-[58px] border-b border-slate-200 bg-white px-3 py-2 dark:border-gdc-border dark:bg-gdc-panel md:px-6">
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
         <div className="flex min-w-0 flex-1 items-start gap-2">
           {onMobileNavToggle ? (
@@ -54,7 +54,7 @@ export function TopHeader({
               ref={mobileNavToggleRef}
               type="button"
               onClick={onMobileNavToggle}
-              className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-600 outline-none hover:bg-slate-100 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-violet-400 md:hidden dark:text-gdc-muted dark:hover:bg-gdc-rowHover dark:focus:outline-violet-300"
+              className="mt-0.5 inline-flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg text-slate-600 outline-none hover:bg-slate-100 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-violet-400 md:hidden dark:text-gdc-muted dark:hover:bg-gdc-rowHover dark:focus:outline-violet-300"
               aria-label={mobileNavOpen ? 'Close navigation menu' : 'Open navigation menu'}
               aria-expanded={mobileNavOpen}
               aria-controls="primary-navigation"
@@ -72,7 +72,7 @@ export function TopHeader({
               {breadcrumb ? (
                 <div className="min-w-0 text-xs leading-snug text-slate-500 dark:text-gdc-muted">{breadcrumb}</div>
               ) : null}
-              <h1 className="shrink-0 text-lg font-semibold tracking-tight text-slate-900 dark:text-gdc-foreground">
+              <h1 className="shrink-0 text-lg font-semibold text-slate-900 dark:text-gdc-foreground">
                 {title}
               </h1>
             </div>
@@ -102,7 +102,7 @@ export function TopHeader({
           <button
             type="button"
             onClick={() => navigate(SHELL_ALERTS_PATH)}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:text-gdc-muted dark:hover:bg-gdc-rowHover"
+            className="inline-flex h-[34px] w-[34px] items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:text-gdc-muted dark:hover:bg-gdc-rowHover"
             aria-label="Open runtime health alerts"
             title="Runtime health — Alerts"
             data-testid="shell-health-alerts"
@@ -112,7 +112,7 @@ export function TopHeader({
           <button
             type="button"
             onClick={() => navigate(NAV_PATH.settings)}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:text-gdc-muted dark:hover:bg-gdc-rowHover"
+            className="inline-flex h-[34px] w-[34px] items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:text-gdc-muted dark:hover:bg-gdc-rowHover"
             aria-label="Open settings"
             title="Settings"
           >
@@ -121,7 +121,7 @@ export function TopHeader({
           <button
             type="button"
             onClick={handleHeaderRefresh}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:text-gdc-muted dark:hover:bg-gdc-rowHover"
+            className="inline-flex h-[34px] w-[34px] items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:text-gdc-muted dark:hover:bg-gdc-rowHover"
             aria-label="Refresh dashboard and runtime data"
             title="Refresh data"
           >
@@ -130,7 +130,7 @@ export function TopHeader({
           <button
             type="button"
             onClick={onToggleTheme}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:text-gdc-muted dark:hover:bg-gdc-rowHover"
+            className="inline-flex h-[34px] w-[34px] items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:text-gdc-muted dark:hover:bg-gdc-rowHover"
             aria-label="Toggle color theme"
           >
             {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}

@@ -47,7 +47,7 @@ function JsonCodeView({ text }: { text: string }) {
   const useColors = text.length <= MAX_SYNTAX_HIGHLIGHT_CHARS
   return (
     <pre
-      className="max-h-[min(280px,42vh)] overflow-auto rounded-lg border border-slate-700/80 bg-[#1e1e2e] p-3 font-mono text-[11px] leading-relaxed text-slate-100 subpixel-antialiased dark:bg-[#151520]"
+      className="max-h-[min(280px,42vh)] overflow-auto rounded-lg border border-slate-700/80 bg-[#1e1e2e] p-3 font-mono text-[11px] leading-relaxed text-slate-100 subpixel-antialiased dark:bg-gdc-section"
       tabIndex={0}
     >
       <code className="text-[11px]">{useColors ? highlightJson(text) : text}</code>

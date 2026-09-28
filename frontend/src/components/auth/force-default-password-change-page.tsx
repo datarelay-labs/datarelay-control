@@ -54,13 +54,7 @@ export function ForceDefaultPasswordChangePage({ onCompleted }: ForceDefaultPass
   }
 
   return (
-    <div
-      className="relative flex min-h-screen flex-col bg-[#020617] text-slate-200"
-      style={{
-        backgroundImage:
-          'radial-gradient(ellipse 80% 60% at 50% 20%, rgba(30, 58, 138, 0.35), transparent 55%), radial-gradient(ellipse 70% 50% at 50% 100%, rgba(6, 78, 59, 0.12), transparent 50%)',
-      }}
-    >
+    <div className="relative flex min-h-screen flex-col bg-gdc-page text-gdc-foreground">
       <div className="flex flex-1 flex-col items-center justify-center px-4 py-10 sm:px-6">
         <div className="w-full max-w-md">
           <header className="mb-8 flex flex-col items-center text-center">
@@ -68,23 +62,16 @@ export function ForceDefaultPasswordChangePage({ onCompleted }: ForceDefaultPass
             <DataRelayWordmark />
           </header>
 
-          <div
-            className={cn(
-              'rounded-2xl border border-white/10 bg-slate-950/55 p-6 shadow-[0_24px_80px_-24px_rgba(0,0,0,0.75)] backdrop-blur-md sm:p-8',
-            )}
-          >
+          <div className={cn('rounded-lg border border-gdc-border bg-gdc-card p-6 sm:p-8')}>
             <div className="mb-6 flex flex-col items-center text-center">
               <div
-                className="mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-white/10 bg-slate-900/80"
-                style={{
-                  background: 'linear-gradient(135deg, rgba(56,189,248,0.2), rgba(52,211,153,0.18))',
-                }}
+                className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg border border-gdc-border bg-gdc-section"
                 aria-hidden
               >
-                <Lock className="h-6 w-6 text-sky-300 drop-shadow-[0_0_10px_rgba(52,211,153,0.35)]" strokeWidth={2} />
+                <Lock className="h-5 w-5 text-violet-400" strokeWidth={2} />
               </div>
-              <h1 className="text-xl font-semibold text-white sm:text-2xl">Change your password</h1>
-              <p className="mt-3 text-sm leading-relaxed text-slate-400">
+              <h1 className="text-xl font-semibold text-gdc-foreground sm:text-2xl">Change your password</h1>
+              <p className="mt-2 text-sm leading-relaxed text-gdc-muted">
                 Your account must use a new password before you can access the platform.
               </p>
             </div>
@@ -97,7 +84,7 @@ export function ForceDefaultPasswordChangePage({ onCompleted }: ForceDefaultPass
 
             <form onSubmit={(e) => void onSubmit(e)} className="space-y-4">
               <div>
-                <label htmlFor="force-pw-current" className="mb-1.5 block text-xs font-medium text-slate-400">
+                <label htmlFor="force-pw-current" className="mb-1.5 block text-xs font-medium text-gdc-mutedStrong">
                   Current password
                 </label>
                 <div className="relative">
@@ -108,12 +95,12 @@ export function ForceDefaultPasswordChangePage({ onCompleted }: ForceDefaultPass
                     autoComplete="current-password"
                     value={currentPassword}
                     onChange={(e) => setCurrentPassword(e.target.value)}
-                    className="h-11 w-full rounded-lg border border-white/12 bg-slate-950/60 py-2 pl-3 pr-11 text-sm text-white placeholder:text-slate-600 focus:border-sky-500/50 focus:outline-none focus:ring-2 focus:ring-sky-500/25"
+                    className="h-9 w-full rounded-lg border border-gdc-inputBorder bg-gdc-input py-2 pl-3 pr-11 text-sm text-gdc-foreground placeholder:text-gdc-placeholder focus:border-gdc-primary focus:outline-none focus:ring-2 focus:ring-violet-400/30"
                   />
                   <button
                     type="button"
                     onClick={() => setShowCurrent((v) => !v)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1.5 text-slate-500 hover:bg-white/5 hover:text-slate-300"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-gdc-muted hover:bg-gdc-rowHover hover:text-gdc-foreground"
                     aria-label={showCurrent ? 'Hide password' : 'Show password'}
                   >
                     {showCurrent ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -122,7 +109,7 @@ export function ForceDefaultPasswordChangePage({ onCompleted }: ForceDefaultPass
               </div>
 
               <div>
-                <label htmlFor="force-pw-new" className="mb-1.5 block text-xs font-medium text-slate-400">
+                <label htmlFor="force-pw-new" className="mb-1.5 block text-xs font-medium text-gdc-mutedStrong">
                   New password
                 </label>
                 <div className="relative">
@@ -133,12 +120,12 @@ export function ForceDefaultPasswordChangePage({ onCompleted }: ForceDefaultPass
                     autoComplete="new-password"
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
-                    className="h-11 w-full rounded-lg border border-white/12 bg-slate-950/60 py-2 pl-3 pr-11 text-sm text-white placeholder:text-slate-600 focus:border-sky-500/50 focus:outline-none focus:ring-2 focus:ring-sky-500/25"
+                    className="h-9 w-full rounded-lg border border-gdc-inputBorder bg-gdc-input py-2 pl-3 pr-11 text-sm text-gdc-foreground placeholder:text-gdc-placeholder focus:border-gdc-primary focus:outline-none focus:ring-2 focus:ring-violet-400/30"
                   />
                   <button
                     type="button"
                     onClick={() => setShowNew((v) => !v)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1.5 text-slate-500 hover:bg-white/5 hover:text-slate-300"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-gdc-muted hover:bg-gdc-rowHover hover:text-gdc-foreground"
                     aria-label={showNew ? 'Hide password' : 'Show password'}
                   >
                     {showNew ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -147,7 +134,7 @@ export function ForceDefaultPasswordChangePage({ onCompleted }: ForceDefaultPass
               </div>
 
               <div>
-                <label htmlFor="force-pw-confirm" className="mb-1.5 block text-xs font-medium text-slate-400">
+                <label htmlFor="force-pw-confirm" className="mb-1.5 block text-xs font-medium text-gdc-mutedStrong">
                   Confirm new password
                 </label>
                 <div className="relative">
@@ -158,12 +145,12 @@ export function ForceDefaultPasswordChangePage({ onCompleted }: ForceDefaultPass
                     autoComplete="new-password"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="h-11 w-full rounded-lg border border-white/12 bg-slate-950/60 py-2 pl-3 pr-11 text-sm text-white placeholder:text-slate-600 focus:border-sky-500/50 focus:outline-none focus:ring-2 focus:ring-sky-500/25"
+                    className="h-9 w-full rounded-lg border border-gdc-inputBorder bg-gdc-input py-2 pl-3 pr-11 text-sm text-gdc-foreground placeholder:text-gdc-placeholder focus:border-gdc-primary focus:outline-none focus:ring-2 focus:ring-violet-400/30"
                   />
                   <button
                     type="button"
                     onClick={() => setShowConfirm((v) => !v)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1.5 text-slate-500 hover:bg-white/5 hover:text-slate-300"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-gdc-muted hover:bg-gdc-rowHover hover:text-gdc-foreground"
                     aria-label={showConfirm ? 'Hide password' : 'Show password'}
                   >
                     {showConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -180,7 +167,7 @@ export function ForceDefaultPasswordChangePage({ onCompleted }: ForceDefaultPass
               <button
                 type="submit"
                 disabled={busy}
-                className="mt-2 flex h-12 w-full items-center justify-center rounded-xl bg-gradient-to-r from-sky-500 to-emerald-500 text-sm font-semibold text-white shadow-lg shadow-sky-900/30 transition-opacity hover:opacity-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
+                className="mt-2 flex h-9 w-full items-center justify-center rounded-lg bg-gdc-primary text-sm font-semibold text-white hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/60 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {busy ? 'Updating…' : 'Update password and sign in again'}
               </button>

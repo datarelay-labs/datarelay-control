@@ -39,7 +39,7 @@ export function KpiSummaryWidget({ cards, loading }: KpiSummaryWidgetProps) {
                   <Line
                     type="monotone"
                     dataKey="y"
-                    stroke="#7c3aed"
+                    stroke="var(--gdc-chart-primary)"
                     strokeWidth={1.5}
                     dot={false}
                     isAnimationActive={false}
