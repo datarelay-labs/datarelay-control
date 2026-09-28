@@ -91,7 +91,7 @@ Mandatory invariants:
 - Processing unit: Route; destination-specific Transform / Protection / Classification / Policy must be representable per Route.
 - Destination selection precedes Route Processing.
 - Route Processing is the only supported runtime path; retired Route-OFF/parallel pipeline behavior cannot qualify the product.
-- Checkpoint advances only after delivery success according to current runtime contract.
+- Checkpoint normally advances only after required delivery success; the current delivery contract explicitly treats configured `LOG_AND_CONTINUE` as an absorbed exception that may advance checkpoint despite that route send failure.
 - **Runtime Is Truth**; a green UI state cannot override runtime/receiver failure.
 - Phase E AI Gateway and Phase F Enterprise Edition are outside current Data Relay Control scope and must not enter the denominator.
 
@@ -156,7 +156,7 @@ RUNTIME_ENQUEUED != DELIVERY_PASS
 RECEIVER_OBSERVED_EXPECTED_EVENT = REQUIRED where a receiver exists
 ~~~
 
-Governance output must match effective configuration. Checkpoint advancement is accepted only after the corresponding successful delivery boundary.
+Governance output must match effective configuration. Checkpoint advancement is accepted only after the corresponding required delivery-success boundary, except where the current delivery contract explicitly defines an absorbed `LOG_AND_CONTINUE` failure as checkpoint-advancing.
 
 ## 5. Canonical use-case families
 
@@ -167,7 +167,7 @@ Governance output must match effective configuration. Checkpoint advancement is 
 | UC-02 | Supported source authentication and sampling |
 | UC-03 | Record path, Union Schema, checkpoint, incremental fetch and dedup |
 | UC-04 | Final Event: Mapping, JSONata/Regex, Enrichment, type/time normalization |
-| UC-05 | One Stream -> many Routes/Destinations with independent health |
+| UC-05 | One Stream -> many Routes/Destinations with independent health, including Dynamic Routing additive fan-out |
 | UC-06 | Destination-specific Route Processing and effective override truth |
 | UC-07 | Deploy/start/stop/edit/reload and daily operation |
 | UC-08 | Dashboard/Runtime/Logs/delivery trace consistency |
@@ -204,6 +204,7 @@ Governance output must match effective configuration. Checkpoint advancement is 
 | U-014 | P0 | Deploy and first delivery | deploy/start in UI, first real delivery verified, Runtime continuation works |
 | U-015 | P1 | Terminology/guidance consistency | Connector/Stream/Route/Destination/processing/status terms and next actions do not contradict |
 | U-016 | P1 | Keyboard critical path | login/nav/forms/dialogs/destructive confirm operable with visible focus/labels |
+| U-017 | P0 | Dynamic Routing additive delivery | create/modify a dynamic rule through the current supported public UI; matching event adds the expected destination delivery, nonmatching event does not; runtime panel/log/receiver evidence agree; if no public mutation surface exists, record the product gap rather than configuring privately for PASS |
 
 ### 6.2 Operations
 
@@ -214,7 +215,7 @@ Governance output must match effective configuration. Checkpoint advancement is 
 | O-003 | P0 | Destination failure | one Route fails, sibling continues, UI diagnosis/correction/recovery |
 | O-004 | P0 | Partial-route failure | aggregate state shows partial impact without hiding failed Route |
 | O-005 | P1 | Retry/failover | retry truth, no false success/loss; failover and recovery where claimed |
-| O-006 | P0 | Checkpoint-after-delivery | failed delivery does not advance; recovery delivers then advances |
+| O-006 | P0 | Checkpoint-after-delivery | required/unabsorbed failed delivery does not advance; `LOG_AND_CONTINUE` follows its explicit absorbed-failure exception; recovery delivers then advances where blocking policy applies |
 | O-007 | P1 | Dedup/incremental | duplicate skipped per contract; new event delivers; restart continuity |
 | O-008 | P0 | Stop/start/repeated action | browser stop/start works; repeated actions do not spawn phantom/duplicate runtime work |
 | O-009 | P1 | Runtime/Logs traceability | delivered and failed event trace Stream -> Route -> Destination -> result |
@@ -259,7 +260,7 @@ Governance output must match effective configuration. Checkpoint advancement is 
 | S-003 | P0 | Authorization boundary | known URL/direct request does not bypass role restriction or leak protected object data |
 | S-004 | P0 | Source auth/TLS negatives | truthful failure, actionable recovery, no false sample/delivery success |
 | S-005 | P0 | Destination outage/TLS negatives | route isolation, retry/health/log/recovery correctness |
-| S-006 | P0 | No false checkpoint advance | any undelivered failure cannot cross delivery-success checkpoint boundary |
+| S-006 | P0 | No false checkpoint advance | required/unabsorbed route failures cannot cross the checkpoint boundary; explicitly configured `LOG_AND_CONTINUE` must be tested as the documented absorbed-failure exception |
 | S-007 | P0 | No false healthy/success | UI status never contradicts activation/route/runtime/receiver truth |
 | S-008 | P0 | Destructive safeguards | impact clear, cancel safe, referenced resource protected/mediated, correct target deleted |
 | S-009 | P1 | Refresh/stale-cache consistency | create/update/delete converges across requests/workers; deleted object does not reappear as current |
@@ -313,7 +314,7 @@ Execute at least one source/auth failure and one destination failure from an ini
 
 ### 7.5 Checkpoint safety
 
-Healthy delivery advances. Failed delivery does not falsely advance. After recovery the intended item is delivered and only then may checkpoint advance. Runtime/Logs/checkpoint views must agree.
+Healthy required delivery advances. A required/unabsorbed failed delivery must not falsely advance. Separately, configure and exercise `LOG_AND_CONTINUE`: its failed route send is an explicitly absorbed outcome and may advance checkpoint according to `specs/004-delivery-routing/spec.md`. After recovery under a blocking/retry policy, the intended item is delivered and checkpoint then advances. Runtime/Logs/checkpoint views must agree in both cases.
 
 ### 7.6 Destructive lifecycle
 
@@ -332,6 +333,7 @@ Before every full run, rebuild the candidate's current capability ledger. At min
 - Route global/per-route processing and delivery settings;
 - Governance: Protection actions, sensitive detection, schema drift, Classification, Policy, Quarantine, Replay, audit/violations/notifications;
 - Runtime: retry/backoff, failover, checkpoint-after-delivery, dedup, partial-route failure, restart recovery, health/metrics/logs;
+- Dynamic Routing: mandatory from Product Charter/runtime architecture even if the generated capability inventory currently lacks a dedicated `dynamic_routing` capability ID; execute matching and nonmatching rules with additive receiver evidence and record the inventory omission as reconciliation drift until corrected;
 - PARTIAL rate-limit/require-review/webhook-header behavior;
 - current browser lifecycle infrastructure status.
 
@@ -442,6 +444,7 @@ PRIVATE_API_USER_ACTION_SUBSTITUTIONS=
 REAL_DELIVERY=
 CHECKPOINT_AFTER_DELIVERY=
 MULTI_ROUTE_ISOLATION=
+DYNAMIC_ROUTING=
 SOURCE_FAILURE_RECOVERY=
 DESTINATION_FAILURE_RECOVERY=
 STOP_START=
@@ -474,7 +477,7 @@ If final status is not PASS, list the exact failing/blocking scenario IDs.
 
 ## 13. Maintenance rule
 
-Review this document in the same workstream whenever product scope, public navigation/Wizard stages, source/auth/destination support, Mapping/Enrichment, Route Processing, checkpoint/dedup/retry/failover, Governance, Dashboard/Runtime/Logs semantics, RBAC/Admin/DR/upgrade contract, browser lifecycle acceptance, or release qualification changes.
+Review this document in the same workstream whenever product scope, public navigation/Wizard stages, source/auth/destination support, Mapping/Enrichment, Route Processing, Dynamic Routing, checkpoint/dedup/retry/failover, Governance, Dashboard/Runtime/Logs semantics, RBAC/Admin/DR/upgrade contract, browser lifecycle acceptance, or release qualification changes.
 
 Future Full User E2E invariant:
 
@@ -518,6 +521,8 @@ Product semantics remain governed by Data Relay Control's own Source of Truth.
 This appendix snapshots the current Phase A–D capability inventory used while authoring this contract. It is an **auditor reconciliation oracle**, not a higher-level product authority. Rebuild/reconcile it against the tested candidate at execution time.
 
 Authoring snapshot:
+
+The current generated inventory has no dedicated Dynamic Routing capability row even though Dynamic Routing is explicitly in the Product Charter and implemented runtime/UI observation path. Product authority wins: U-017 is mandatory, and the missing inventory row is recorded as reconciliation drift rather than silently dropping the feature from E2E.
 
 ~~~text
 TOTAL=95
