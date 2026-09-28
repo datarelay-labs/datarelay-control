@@ -95,3 +95,22 @@ def test_pytest_sessionlocal_targets_allowed_pytest_catalog() -> None:
     catalog = catalog_name_from_database_url(DATABASE_URL)
     assert catalog in ALLOWED_PYTEST_DATABASE_CATALOGS
     assert catalog != "gdc"
+
+
+def test_backend_full_resolves_sftp_seed_container_from_runtime_port_owner() -> None:
+    text = (ROOT / "scripts/test/run-backend-full.sh").read_text(encoding="utf-8")
+    assert "sftp_container_for_runtime_port()" in text
+    assert "resolve_sftp_fixture_owner()" in text
+    assert 'docker ps --filter "publish=$port"' in text
+    assert 'docker port "$candidate" 22/tcp' in text
+    assert 'export SOURCE_E2E_SFTP_CONTAINER="$owner"' in text
+    assert "Refusing to seed a different container than the runtime reads." in text
+
+
+def test_testing_env_links_sftp_runtime_port_to_compose_port() -> None:
+    text = (ROOT / "scripts/testing/_env.sh").read_text(encoding="utf-8")
+    assert 'GDC_TEST_SFTP_HOST_PORT="${GDC_TEST_SFTP_HOST_PORT:-22222}"' in text
+    assert 'SOURCE_E2E_SFTP_PORT="${SOURCE_E2E_SFTP_PORT:-$GDC_TEST_SFTP_HOST_PORT}"' in text
+
+    runner = (ROOT / "scripts/test/run-backend-full.sh").read_text(encoding="utf-8")
+    assert 'SOURCE_E2E_SFTP_PORT="${SOURCE_E2E_SFTP_PORT:-${GDC_TEST_SFTP_HOST_PORT:-22222}}"' in runner
