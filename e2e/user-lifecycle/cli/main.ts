@@ -1601,11 +1601,16 @@ async function main(): Promise<number> {
         deliveryTests++
         deliveryPass++
       }
-      // UI checkpoint visibility
-      await streams.openStreamByName(`e2e-${runId}-http-stream-H3`)
-      const txt = await streams.visibleStatusText()
-      const uiCp = /checkpoint|last (success|event|activity)/i.test(txt)
-      store.rec('38_CHECKPOINT_UI_VISIBLE', uiCp ? 'PASS' : 'PARTIAL', '', ['BROWSER_E2E'])
+      // UI checkpoint visibility: verify the dedicated Stream Information panel,
+      // not a truncated body-text prefix or virtualized Streams list navigation.
+      await streams.openRuntime(resources.streams.H3)
+      const checkpointUi = await streams.checkpointVisible()
+      store.rec(
+        '38_CHECKPOINT_UI_VISIBLE',
+        checkpointUi.visible ? 'PASS' : 'PARTIAL',
+        checkpointUi.text.slice(0, 240),
+        ['BROWSER_E2E'],
+      )
     }
 
     // ---- new browser context persistence ----

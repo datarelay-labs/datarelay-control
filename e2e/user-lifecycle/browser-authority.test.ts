@@ -40,6 +40,9 @@ assert.match(main, /browserRecoveryOk \? 'PASS' : recA && recB && recoveryApiFal
 
 assert.match(streamsPage, /clickStart\(\): Promise<boolean>/)
 assert.match(streamsPage, /clickStop\(\): Promise<boolean>/)
+assert.match(streamsPage, /checkpointVisible\(\): Promise<\{ visible: boolean; text: string \}>/)
+assert.match(streamsPage, /getByTestId\('stream-information-panel'\)/)
+assert.match(main, /const checkpointUi = await streams\.checkpointVisible\(\)/)
 assert.match(streamsPage, /deleteClicked: boolean; confirmClicked: boolean/)
 
 console.log('browser-authority contract PASS')

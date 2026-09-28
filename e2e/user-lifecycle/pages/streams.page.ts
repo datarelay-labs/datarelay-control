@@ -413,6 +413,17 @@ export class StreamsPage {
     return `${titleAttr}\n${body}`.slice(0, 2000)
   }
 
+  async checkpointVisible(): Promise<{ visible: boolean; text: string }> {
+    const panel = this.page.getByTestId('stream-information-panel')
+    for (let i = 0; i < 20; i++) {
+      const text = (await panel.innerText().catch(() => '')) || ''
+      if (/Current Checkpoint/i.test(text)) return { visible: true, text: text.slice(0, 2000) }
+      await this.page.waitForTimeout(500)
+    }
+    const text = (await panel.innerText().catch(() => '')) || ''
+    return { visible: false, text: text.slice(0, 2000) }
+  }
+
   async visibleStatusText(): Promise<string> {
     const body = await this.page.locator('body').innerText()
     return body.slice(0, 4000)
