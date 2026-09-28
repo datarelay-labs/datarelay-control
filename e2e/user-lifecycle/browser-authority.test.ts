@@ -33,6 +33,11 @@ assert.match(deleteLifecycle, /browserDeleteOk = del\.deleteClicked && del\.conf
 assert.match(deleteLifecycle, /FULL_CREATE_TO_DELETE_BROWSER_LIFECYCLE', browserDeleteOk \? 'PASS' : 'FAIL'/)
 
 assert.match(main, /return finalAcceptanceBlocked\(store\) \? 1 : 0/)
+assert.match(main, /const candidateClean = worktreeIsClean\(\)/)
+assert.match(main, /recordedClean !== 'YES' \|\| !candidateClean/)
+assert.match(main, /args\.mode === 'resume' \? rehydrateResourcesFromLedger\(store, runId\) : emptyResources\(\)/)
+assert.match(main, /resources\.streams\.WIZARD = resources\.streams\.H1/)
+assert.match(main, /row\.PARENT\.includes\(`stream:\$\{streamId\}`\)/)
 assert.match(main, /const status = browserComplete \? 'PASS' : idsPresent \? 'PARTIAL' : 'FAIL'/)
 assert.match(main, /const ok = failVisible && passVisible/)
 assert.match(main, /const isolationOk = browserEditOk && persistOk && aOk && !bOk/)

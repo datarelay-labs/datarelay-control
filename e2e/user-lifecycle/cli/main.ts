@@ -86,6 +86,74 @@ function finalAcceptanceBlocked(store: ArtifactStore): boolean {
   return (store.counts.FAIL || 0) > 0 || (store.counts.PARTIAL || 0) > 0 || (store.counts.BLOCKED || 0) > 0
 }
 
+function worktreeIsClean(): boolean {
+  const result = spawnSync('git', ['-C', REPO, 'status', '--porcelain=v1', '--untracked-files=all'], { encoding: 'utf8' })
+  if (result.status !== 0) throw new Error(`cannot inspect candidate worktree: ${String(result.stderr || '').trim()}`)
+  return String(result.stdout || '').trim() === ''
+}
+
+function emptyResources(): Record<string, Record<string, number>> {
+  return { connectors: {}, streams: {}, destinations: {}, routes: {} }
+}
+
+function rehydrateResourcesFromLedger(store: ArtifactStore, runId: string): Record<string, Record<string, number>> {
+  const resources = emptyResources()
+  const connectorKeys = new Map<string, string>([
+    [`e2e-${runId}-http`, 'HTTP'],
+    [`e2e-${runId}-db`, 'DATABASE'],
+    [`e2e-${runId}-s3`, 'S3'],
+    [`e2e-${runId}-sftp`, 'SFTP'],
+    [`e2e-${runId}-webhook`, 'WEBHOOK'],
+  ])
+  const destinationKeys = new Map<string, string>([
+    [`e2e-${runId}-dest-a`, 'A'],
+    [`e2e-${runId}-dest-b`, 'B'],
+  ])
+  const streamKeys = new Map<string, string>([
+    [`e2e-${runId}-http-stream-H1`, 'H1'],
+    [`e2e-${runId}-http-stream-H2`, 'H2'],
+    [`e2e-${runId}-http-stream-H3`, 'H3'],
+    [`e2e-${runId}-http-stream-H4`, 'H4'],
+    [`e2e-${runId}-http-stream-H5`, 'H5'],
+    [`e2e-${runId}-http-stream-H6`, 'H6'],
+    [`e2e-${runId}-s3-stream-a`, 'S3A'],
+    [`e2e-${runId}-s3-stream-b`, 'S3B'],
+    [`e2e-${runId}-sftp-stream-a`, 'SFTPA'],
+    [`e2e-${runId}-sftp-stream-b`, 'SFTPB'],
+    [`e2e-${runId}-webhook-stream-a`, 'WHA'],
+    [`e2e-${runId}-webhook-stream-b`, 'WHB'],
+    [`e2e-${runId}-db-stream-orders`, 'DBS1'],
+    [`e2e-${runId}-db-stream-users`, 'DBS2'],
+  ])
+
+  for (const row of store.ledger) {
+    const id = Number(row.RESOURCE_ID)
+    if (!Number.isFinite(id) || id <= 0) continue
+    if (row.RESOURCE_TYPE === 'CONNECTOR') {
+      const key = connectorKeys.get(row.RESOURCE_NAME)
+      if (key) resources.connectors[key] = id
+    } else if (row.RESOURCE_TYPE === 'DESTINATION') {
+      const key = destinationKeys.get(row.RESOURCE_NAME)
+      if (key) resources.destinations[key] = id
+    } else if (row.RESOURCE_TYPE === 'STREAM') {
+      const key = streamKeys.get(row.RESOURCE_NAME)
+      if (key) resources.streams[key] = id
+    }
+  }
+
+  if (resources.streams.H1) resources.streams.WIZARD = resources.streams.H1
+  for (const [streamKey, streamId] of Object.entries(resources.streams)) {
+    if (streamKey === 'WIZARD') continue
+    const routeIds = store.ledger
+      .filter((row) => row.RESOURCE_TYPE === 'ROUTE' && row.PARENT.includes(`stream:${streamId}`))
+      .map((row) => Number(row.RESOURCE_ID))
+      .filter((id) => Number.isFinite(id) && id > 0)
+    if (routeIds[0]) resources.routes[`${streamKey}A`] = routeIds[0]
+    if (routeIds[1]) resources.routes[`${streamKey}B`] = routeIds[1]
+  }
+  return resources
+}
+
 async function findConnectorId(api: ApiClient, name: string): Promise<number | null> {
   for (let i = 0; i < 16; i++) {
     const rows = await api.listConnectors()
@@ -301,6 +369,7 @@ async function main(): Promise<number> {
   const args = parseArgs(process.argv.slice(2))
   const runId = args.runId || createRunId()
   const candidateHead = currentGitHead()
+  const candidateClean = worktreeIsClean()
   process.env.ULC_RUN_ID = runId
   const store = new ArtifactStore(runId)
   if (args.mode === 'resume') {
@@ -309,14 +378,21 @@ async function main(): Promise<number> {
       console.error('No state to resume')
       return 2
     }
-    const recordedHead = String((st.flags as Record<string, unknown> | undefined)?.CANDIDATE_HEAD || '')
+    const stateFlags = st.flags as Record<string, unknown> | undefined
+    const recordedHead = String(stateFlags?.CANDIDATE_HEAD || '')
+    const recordedClean = String(stateFlags?.CANDIDATE_WORKTREE_CLEAN || '')
     if (!recordedHead || recordedHead !== candidateHead) {
       console.error(`Resume candidate mismatch: recorded=${recordedHead || '<missing>'} current=${candidateHead}`)
+      return 2
+    }
+    if (recordedClean !== 'YES' || !candidateClean) {
+      console.error(`Resume requires the same clean committed source: recordedClean=${recordedClean || '<missing>'} currentClean=${candidateClean ? 'YES' : 'NO'}`)
       return 2
     }
     restoreResumeState(store, st)
   }
   store.setFlag('CANDIDATE_HEAD', candidateHead)
+  store.setFlag('CANDIDATE_WORKTREE_CLEAN', candidateClean ? 'YES' : 'NO')
 
   const apiBase = env('PLAYWRIGHT_API_BASE_URL', env('GDC_E2E_API_BASE_URL', 'http://127.0.0.1:18010'))
   const uiBase = env('PLAYWRIGHT_BASE_URL', env('GDC_E2E_UI_BASE_URL', 'http://127.0.0.1:4174'))
@@ -338,12 +414,8 @@ async function main(): Promise<number> {
   let context: BrowserContext | null = null
   let page: Page | null = null
 
-  const resources: Record<string, any> = {
-    connectors: {},
-    streams: {},
-    destinations: {},
-    routes: {},
-  }
+  const resources: Record<string, any> =
+    args.mode === 'resume' ? rehydrateResourcesFromLedger(store, runId) : emptyResources()
 
   try {
     browser = await chromium.launch({ headless: !args.headed })
