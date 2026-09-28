@@ -1314,11 +1314,11 @@ export function StreamRuntimeDetailPage() {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={[...eventsOverChartData]} margin={{ top: 4, right: 4, left: -18, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-slate-200/80 dark:stroke-gdc-divider" vertical={false} />
-                  <XAxis dataKey="bucket" tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} width={32} />
+                  <XAxis dataKey="bucket" tick={{ fontSize: 10, fill: 'var(--gdc-chart-muted)' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 10, fill: 'var(--gdc-chart-muted)' }} axisLine={false} tickLine={false} width={32} />
                   <Tooltip contentStyle={{ borderRadius: 6, border: '1px solid rgb(226 232 240)', fontSize: 11 }} />
                   <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" />
-                  <Bar dataKey="ingested" name="Events" stackId="s" fill="#7c3aed" maxBarSize={18} />
+                  <Bar dataKey="ingested" name="Events" stackId="s" fill="var(--gdc-chart-primary)" maxBarSize={18} />
                   <Bar dataKey="delivered" name="Delivered" stackId="s" fill="#22c55e" maxBarSize={18} />
                   <Bar dataKey="failed" name="Failed" stackId="s" fill="#ef4444" maxBarSize={18} />
                 </BarChart>

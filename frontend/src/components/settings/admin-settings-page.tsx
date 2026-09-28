@@ -1338,7 +1338,7 @@ export function AdminSettingsPage() {
               <p className="mt-3 text-[13px] text-slate-500">Loading…</p>
             )}
             <div className="mt-4 flex justify-end">
-              <button type="button" className="rounded-lg bg-slate-900 px-3 py-1.5 text-[13px] font-semibold text-white dark:bg-slate-100 dark:text-slate-900" onClick={() => setSystemOpen(false)}>
+              <button type="button" className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[13px] font-semibold text-slate-700 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200 dark:hover:bg-gdc-rowHover" onClick={() => setSystemOpen(false)}>
                 Close
               </button>
             </div>

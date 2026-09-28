@@ -100,7 +100,7 @@ function RuntimeOverviewContent() {
         <div className="flex flex-wrap items-center gap-2">
           <Link
             to={NAV_PATH.analytics}
-            className="inline-flex items-center gap-1 rounded-md border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-800 dark:border-violet-900/60 dark:bg-violet-950/40 dark:text-violet-200"
+            className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 text-[11px] font-semibold text-violet-700 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-violet-300 dark:hover:bg-gdc-rowHover"
           >
             Delivery analytics
           </Link>
@@ -127,8 +127,7 @@ function RuntimeOverviewContent() {
           metricsWindow={metricsWindow}
         />
         <p className="text-[10px] text-slate-500 dark:text-gdc-muted">
-          Initial load uses one operational snapshot request. Auto-refresh re-fetches only that snapshot (paused when the tab is
-          hidden). Per-stream metrics load only when you click Load chart in analytics.
+          Operational status refreshes from the current snapshot. Detailed stream analytics load only when requested.
         </p>
       </div>
       <div className="w-full shrink-0 space-y-3 lg:w-[280px]">

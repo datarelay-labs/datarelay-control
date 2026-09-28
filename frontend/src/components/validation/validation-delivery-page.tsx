@@ -44,7 +44,7 @@ export function ValidationDeliveryPage() {
         </button>
       </div>
       {err ? <p className="text-sm text-rose-600 dark:text-rose-400">{err}</p> : null}
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm dark:border-gdc-border dark:bg-gdc-card dark:shadow-gdc-card dark:ring-1 dark:ring-[rgba(120,150,220,0.07)]">
+      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm dark:border-gdc-border dark:bg-gdc-card dark:shadow-gdc-card">
         <table className={opTable}>
           <thead>
             <tr className={opThRow}>

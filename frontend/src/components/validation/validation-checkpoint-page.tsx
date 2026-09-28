@@ -49,7 +49,7 @@ export function ValidationCheckpointPage() {
       <p className="text-xs text-slate-600 dark:text-gdc-mutedStrong">
         FULL_RUNTIME checks treat missing <span className="font-mono">checkpoint_updated</span> after successful delivery as checkpoint drift.
       </p>
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm dark:border-gdc-border dark:bg-gdc-card dark:shadow-gdc-card dark:ring-1 dark:ring-[rgba(120,150,220,0.07)]">
+      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm dark:border-gdc-border dark:bg-gdc-card dark:shadow-gdc-card">
         <table className={opTable}>
           <thead>
             <tr className={opThRow}>

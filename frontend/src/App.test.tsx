@@ -797,12 +797,11 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     renderApp('/streams/malop-api/enrichment')
     expect(await screen.findByRole('navigation', { name: 'Breadcrumb' }, { timeout: 15000 })).toBeInTheDocument()
     expect(
-      await screen.findByText(/Add static fields and computed fields to enrich your events/i, {}, { timeout: 15000 }),
+      await screen.findByText(/Add or calculate fields that should appear in the final event/i, {}, { timeout: 15000 }),
     ).toBeInTheDocument()
-    expect(screen.getAllByRole('heading', { name: 'Enrichment Configuration' }).length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByRole('button', { name: 'Static Fields' })).toBeInTheDocument()
+    expect(screen.getAllByRole('heading', { name: 'Transform rules' }).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByRole('button', { name: 'Add values' })).toBeInTheDocument()
     expect(screen.getByText('Override Policy')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 3, name: 'Enrichment Summary' })).toBeInTheDocument()
   }, 20000)
 
   it('renders source test page at /streams/:streamId/api-test with HTTP-aware labels for malop-api', async () => {

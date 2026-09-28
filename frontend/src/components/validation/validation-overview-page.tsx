@@ -119,7 +119,7 @@ export function ValidationOverviewPage() {
 
       {!loading && rows && rows.length > 0 ? (
         <section
-          className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm dark:border-gdc-border dark:bg-gdc-card dark:shadow-gdc-card dark:ring-1 dark:ring-[rgba(120,150,220,0.07)]"
+          className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm dark:border-gdc-border dark:bg-gdc-card dark:shadow-gdc-card"
           aria-label="Dev validation source lab"
         >
           <div className="border-b border-slate-100 px-3 py-2 dark:border-gdc-border">
@@ -198,7 +198,7 @@ export function ValidationOverviewPage() {
 
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
         <div className="min-w-0 flex-1 space-y-3">
-          <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm dark:border-gdc-border dark:bg-gdc-card dark:shadow-gdc-card dark:ring-1 dark:ring-[rgba(120,150,220,0.07)]">
+          <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm dark:border-gdc-border dark:bg-gdc-card dark:shadow-gdc-card">
             <table className={opTable} aria-label="Continuous validation definitions">
               <thead>
                 <tr className={opThRow}>

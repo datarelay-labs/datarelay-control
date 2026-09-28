@@ -84,23 +84,23 @@ function NavButton({
       title={collapsed ? item.label : undefined}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'flex w-full items-center gap-2.5 rounded-lg py-2 text-left text-sm transition-colors',
+        'flex min-h-[34px] w-full items-center gap-2.5 rounded-lg py-1.5 text-left text-sm font-medium',
         active
-          ? 'bg-slate-100 font-medium text-slate-900 dark:bg-gdc-rowHover dark:text-gdc-foreground'
-          : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-gdc-muted dark:hover:bg-gdc-rowHover dark:hover:text-gdc-foreground',
+          ? 'bg-slate-100 text-slate-900 dark:bg-gdc-rowHover dark:text-gdc-foreground'
+          : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-gdc-muted dark:hover:bg-gdc-rowHover dark:hover:text-gdc-foreground',
         collapsed ? 'justify-center px-0' : nested ? 'pl-8 pr-3' : 'px-3',
       )}
     >
       {!nested || collapsed ? (
         <ItemIcon
           className={cn(
-            'h-[18px] w-[18px] shrink-0',
-            active ? 'text-slate-700 dark:text-gdc-foreground' : 'text-slate-400 dark:text-gdc-muted',
+            'h-4 w-4 shrink-0 opacity-50',
+            active ? 'text-slate-900 dark:text-gdc-foreground' : 'text-slate-600 dark:text-gdc-muted',
           )}
           aria-hidden
         />
       ) : (
-        <span className="h-[18px] w-[18px] shrink-0" aria-hidden />
+        <span className="h-4 w-4 shrink-0" aria-hidden />
       )}
       {!collapsed ? <span className="truncate">{item.label}</span> : <span className="sr-only">{item.label}</span>}
     </button>
@@ -132,15 +132,15 @@ export function Sidebar({
       data-mobile-open={mobileOpen ? 'true' : 'false'}
       {...(offCanvas ? { inert: true } : {})}
       className={cn(
-        'fixed inset-y-0 left-0 z-50 flex h-screen shrink-0 flex-col border-r border-slate-200/80 bg-white outline-none transition-[width,transform] duration-200 ease-out focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-violet-400 dark:border-gdc-border dark:bg-gdc-panel dark:focus:outline-violet-300',
+        'fixed inset-y-0 left-0 z-50 flex h-screen shrink-0 flex-col border-r border-slate-200 bg-white outline-none transition-[width,transform] duration-200 ease-out focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-violet-400 dark:border-gdc-border dark:bg-gdc-panel dark:focus:outline-violet-300',
         'md:sticky md:translate-x-0',
         mobileOpen ? 'translate-x-0 shadow-xl' : '-translate-x-full md:shadow-none',
-        collapsed ? 'w-16 md:w-16' : 'w-[260px] md:w-[240px]',
+        collapsed ? 'w-[57px] md:w-[57px]' : 'w-[260px] md:w-[260px]',
       )}
     >
       <div
         className={cn(
-          'flex items-center gap-2 border-b border-slate-100 px-3 py-3 dark:border-gdc-border',
+          'flex min-h-[58px] items-center gap-2 border-b border-slate-200 px-3 py-2 dark:border-gdc-border',
           collapsed ? 'flex-col gap-2' : 'justify-between',
         )}
       >
@@ -199,11 +199,11 @@ export function Sidebar({
 
           const groupActive = isGroupActive(pathname, entry.group.items)
           return (
-            <div key={entry.group.id} className="space-y-0.5 pt-2 first:pt-0">
+            <div key={entry.group.id} className="space-y-0.5">
               {!collapsed ? (
                 <p
                   className={cn(
-                    'px-3 pb-1 text-[11px] font-medium tracking-wide',
+                    'mb-2 mt-4 px-3 text-sm font-medium first:mt-2',
                     groupActive ? 'text-slate-700 dark:text-gdc-foreground' : 'text-slate-400 dark:text-gdc-muted',
                   )}
                 >

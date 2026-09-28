@@ -66,12 +66,12 @@ import {
 
 function postureHeroClass(posture: OverallHealthCounts['posture']): string {
   if (posture === 'critical') {
-    return 'border-red-300/80 bg-red-50 dark:border-red-500/40 dark:bg-red-950/30'
+    return 'border-red-300 border-l-4 border-l-red-500 bg-white dark:border-red-500/35 dark:border-l-red-400 dark:bg-gdc-card'
   }
   if (posture === 'warning') {
-    return 'border-amber-300/80 bg-amber-50 dark:border-amber-500/35 dark:bg-amber-950/25'
+    return 'border-amber-300 border-l-4 border-l-amber-500 bg-white dark:border-amber-500/30 dark:border-l-amber-400 dark:bg-gdc-card'
   }
-  return 'border-emerald-300/80 bg-emerald-50 dark:border-emerald-500/35 dark:bg-emerald-950/25'
+  return 'border-slate-200 border-l-4 border-l-emerald-500 bg-white dark:border-gdc-border dark:border-l-emerald-400 dark:bg-gdc-card'
 }
 
 function postureLabel(posture: OverallHealthCounts['posture']): string {
@@ -83,11 +83,11 @@ function postureLabel(posture: OverallHealthCounts['posture']): string {
 const KPI_SPARK: Record<DashboardKpiItem['tone'], string> = {
   blue: '#38bdf8',
   green: '#34d399',
-  violet: '#a78bfa',
+  violet: '#8D58EE',
   teal: '#2dd4bf',
   amber: '#fbbf24',
   red: '#f87171',
-  neutral: '#94a3b8',
+  neutral: 'var(--gdc-chart-muted)',
 }
 
 const KPI_ICON: Record<string, typeof Layers> = {
@@ -128,7 +128,7 @@ export function DashboardRunningBadge({
     <div
       data-testid="dashboard-running-badge"
       className={cn(
-        'inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-semibold',
+        'inline-flex items-center gap-2 rounded-md border px-2.5 py-1 text-[11px] font-semibold',
         isUnknown
           ? 'border-slate-600/40 bg-slate-700/20 text-slate-400'
           : running && posture === 'healthy'
@@ -144,7 +144,7 @@ export function DashboardRunningBadge({
         <span
           className={cn(
             'h-2 w-2 rounded-full',
-            isUnknown ? 'bg-slate-500' : running ? 'bg-emerald-400 shadow-[0_0_8px_2px_rgba(52,211,153,0.7)]' : 'bg-amber-400',
+            isUnknown ? 'bg-slate-500' : running ? 'bg-emerald-400' : 'bg-amber-400',
           )}
           aria-hidden
         />
@@ -171,10 +171,10 @@ export function DataModeBadge({ isFixtureMode }: { isFixtureMode: boolean }) {
   return (
     <div
       data-testid="dashboard-fixture-mode-badge"
-      className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/60 bg-amber-500/15 px-3 py-1 text-[11px] font-bold uppercase tracking-widest text-amber-300"
+      className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-300"
       title="Dashboard is showing fixture / test data, not live backend data"
     >
-      <span className="h-2 w-2 rounded-full bg-amber-400 shadow-[0_0_6px_2px_rgba(251,191,36,0.6)]" aria-hidden />
+      <span className="h-2 w-2 rounded-full bg-amber-400" aria-hidden />
       Fixture Mode
     </div>
   )
@@ -191,7 +191,7 @@ export function OverallHealthHero({
     <section
       aria-label="Overall health"
       data-testid="dashboard-overall-health-hero"
-      className={cn('relative overflow-hidden rounded-xl border px-5 py-5 shadow-sm', postureHeroClass(health.posture))}
+      className={cn('relative overflow-hidden rounded-lg border px-4 py-4', postureHeroClass(health.posture))}
     >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-3">
@@ -240,10 +240,10 @@ export function OverallHealthHero({
               to={NAV_PATH.streams}
               data-testid={testId}
               className={cn(
-                'min-w-[5.5rem] rounded-lg border bg-white/70 px-3 py-2 text-center transition hover:bg-white dark:bg-black/20 dark:hover:bg-black/30',
-                tone === 'healthy' && 'border-emerald-200 dark:border-emerald-500/30',
-                tone === 'warning' && 'border-amber-200 dark:border-amber-500/30',
-                tone === 'critical' && 'border-red-200 dark:border-red-500/35',
+                'min-w-[5.5rem] rounded-md border border-transparent px-2.5 py-1.5 text-center hover:bg-slate-50 dark:hover:bg-gdc-rowHover',
+                tone === 'healthy' && 'hover:border-emerald-500/20',
+                tone === 'warning' && 'hover:border-amber-500/25',
+                tone === 'critical' && 'hover:border-red-500/25',
               )}
             >
               <p className="text-xs font-medium text-slate-600 dark:text-slate-400">{label}</p>
@@ -308,10 +308,10 @@ export function OverallHealthBeaconCard({
   const isWarning = beacon.posture === 'warning'
 
   const borderClass = isHealthy
-    ? 'border-emerald-500/40 bg-gradient-to-br from-emerald-950/50 via-emerald-900/15 to-transparent'
+    ? 'border-emerald-500/40 bg-emerald-950/20'
     : isWarning
-      ? 'border-amber-500/40 bg-gradient-to-br from-amber-950/50 via-amber-900/15 to-transparent'
-      : 'border-red-500/40 bg-gradient-to-br from-red-950/50 via-red-900/20 to-transparent'
+      ? 'border-amber-500/40 bg-amber-950/20'
+      : 'border-red-500/40 bg-red-950/20'
 
   const labelClass = isHealthy ? 'text-emerald-300' : isWarning ? 'text-amber-300' : 'text-red-300'
 
@@ -775,8 +775,9 @@ function flowCurvePath(x0: number, y0: number, x1: number, y1: number): string {
   return `M ${x0} ${y0} C ${cpx} ${y0}, ${cpx} ${y1}, ${x1} ${y1}`
 }
 
-const FLOW_SRC_COLORS = ['#38bdf8', '#06b6d4', '#22d3ee', '#0ea5e9', '#7dd3fc'] as const
-const FLOW_DST_COLORS = ['#a78bfa', '#c084fc', '#8b5cf6', '#9333ea', '#6ee7b7'] as const
+// Cloudflare Kumo chart palettes: sequential blue for sources, categorical for destinations.
+const FLOW_SRC_COLORS = ['#03254F', '#0E58B4', '#4290F0', '#A6BFDD', '#E1EAF4'] as const
+const FLOW_DST_COLORS = ['#4290F0', '#EEB720', '#E8649D', '#8D58EE', '#50C3B6', '#D37536'] as const
 
 type FlowIcon = typeof Activity
 
@@ -948,7 +949,7 @@ export function DataFlowOverview({
           data-testid="dashboard-data-flow-streams-pill"
           style={{ left: hubCX - 34, top: hubCY - 40, width: 68 }}
         >
-          <div className="flex h-[60px] w-[60px] items-center justify-center rounded-full border border-emerald-500/55 bg-emerald-500/20 shadow-[0_0_18px_-4px_rgba(52,211,153,0.6)]">
+          <div className="flex h-[60px] w-[60px] items-center justify-center rounded-full border border-emerald-500/45 bg-emerald-500/15">
             <Activity className="h-5 w-5 text-emerald-100" aria-hidden />
           </div>
           <p className="mt-0.5 text-[10px] font-semibold leading-tight text-emerald-300/90">Streams</p>
@@ -1049,11 +1050,11 @@ export function EventsOverTimeChart({
                   <stop offset="100%" stopColor="#f87171" stopOpacity={0.02} />
                 </linearGradient>
               </defs>
-              <XAxis dataKey="label" tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} width={36} />
+              <XAxis dataKey="label" tick={{ fill: 'var(--gdc-chart-muted)', fontSize: 10 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: 'var(--gdc-chart-muted)', fontSize: 10 }} axisLine={false} tickLine={false} width={36} />
               <Tooltip
-                contentStyle={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 8, fontSize: 11 }}
-                labelStyle={{ color: '#94a3b8' }}
+                contentStyle={{ background: 'var(--gdc-chart-tooltip-bg)', border: '1px solid var(--gdc-chart-tooltip-border)', borderRadius: 8, fontSize: 11 }}
+                labelStyle={{ color: 'var(--gdc-chart-muted)' }}
               />
               <Area type="monotone" dataKey="ingested" name="Ingested" stroke="#38bdf8" strokeWidth={2.5} fill="url(#dash-ingested-fill)" dot={false} isAnimationActive={false} />
               <Area type="monotone" dataKey="delivered" name="Delivered" stroke="#34d399" strokeWidth={2.5} fill="url(#dash-delivered-fill)" dot={false} isAnimationActive={false} />
@@ -1103,7 +1104,7 @@ function DonutPanel({
               </Pie>
               <Tooltip
                 formatter={(value, name) => [`${value}`, String(name)]}
-                contentStyle={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 8, fontSize: 11 }}
+                contentStyle={{ background: 'var(--gdc-chart-tooltip-bg)', border: '1px solid var(--gdc-chart-tooltip-border)', borderRadius: 8, fontSize: 11 }}
               />
             </PieChart>
           </ResponsiveContainer>
@@ -1150,13 +1151,7 @@ export function StreamsStatusDonut({ status }: { status: StreamsOperationalStatu
 export function TopSourcesByIngestRatePanel({ sources, className }: { sources: TopSourceIngestItem[]; className?: string }) {
   const max = Math.max(1, ...sources.map((s) => s.rateEps))
 
-  const barGradients = [
-    'from-teal-600 to-teal-400',
-    'from-sky-600 to-sky-400',
-    'from-emerald-600 to-emerald-400',
-    'from-orange-600 to-orange-400',
-    'from-violet-600 to-violet-400',
-  ]
+  const barColors = ['#4290F0', '#EEB720', '#E8649D', '#8D58EE', '#50C3B6', '#D37536'] as const
 
   return (
     <section aria-label="Top sources by ingest rate" data-testid="dashboard-top-sources" className={cn(dashboardCardClass, className)}>
@@ -1175,7 +1170,7 @@ export function TopSourcesByIngestRatePanel({ sources, className }: { sources: T
               : source.rateEps >= 1000
                 ? `${formatMetricCount(Math.round(source.rateEps))}/s`
                 : `${formatThroughputEps(source.rateEps)}/s`
-            const barGrad = barGradients[idx % barGradients.length]
+            const barColor = barColors[idx % barColors.length]
             return (
               <li key={source.name}>
                 <div className="flex items-center justify-between gap-2 text-[11px]">
@@ -1186,8 +1181,8 @@ export function TopSourcesByIngestRatePanel({ sources, className }: { sources: T
                 </div>
                 <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-800/70">
                   <div
-                    className={cn('h-full rounded-full bg-gradient-to-r transition-all', noThroughput ? 'opacity-20' : '', barGrad)}
-                    style={{ width: `${noThroughput ? 4 : Math.max(8, pct)}%` }}
+                    className={cn('h-full rounded-full transition-all', noThroughput ? 'opacity-20' : '')}
+                    style={{ width: `${noThroughput ? 4 : Math.max(8, pct)}%`, backgroundColor: barColor }}
                   />
                 </div>
               </li>
@@ -1358,7 +1353,7 @@ export function SystemHealthBar({ items }: { items: SystemHealthItem[] }) {
     <section
       aria-label="System health"
       data-testid="dashboard-system-health"
-      className="rounded-xl border border-slate-200/80 bg-white px-4 py-3 dark:border-[rgba(120,150,220,0.2)] dark:bg-[#111827]/95 dark:ring-1 dark:ring-[rgba(120,150,220,0.1)]"
+      className="rounded-lg border border-slate-200/80 bg-white px-4 py-3 dark:border-gdc-border dark:bg-gdc-card"
     >
       <div className="flex items-center gap-4 sm:gap-6">
         <p className="shrink-0 text-[12px] font-semibold text-slate-400">System Health</p>
@@ -1618,7 +1613,7 @@ export function OperationalProblemsList({
                   <span
                     className={cn(
                       'mt-0.5 h-2 w-2 shrink-0 rounded-full',
-                      isCritical ? 'bg-red-400 shadow-[0_0_6px_1px_rgba(248,113,113,0.6)]' : 'bg-amber-400',
+                      isCritical ? 'bg-red-400' : 'bg-amber-400',
                     )}
                     aria-hidden
                   />
@@ -1665,7 +1660,7 @@ export function StreamGroupHealthPanel({
   )
 }
 
-/** Charter Traffic Overview — Incoming / Outgoing / Delivery Success Rate only. */
+/** Charter Traffic Overview — Incoming / Outgoing / Delivery Gap / Delivery Success Rate. */
 export function TrafficOverviewPanel({
   traffic,
 }: {
@@ -1673,7 +1668,16 @@ export function TrafficOverviewPanel({
 }) {
   const rate = traffic.deliverySuccessRatePct
   const rateTone =
-    rate == null ? 'text-slate-700 dark:text-slate-200' : rate >= 99 ? 'text-teal-700 dark:text-teal-300' : 'text-amber-700 dark:text-amber-300'
+    rate == null ? 'text-slate-700 dark:text-slate-200' : rate >= 99 ? 'text-emerald-700 dark:text-emerald-300' : 'text-amber-700 dark:text-amber-300'
+  const deliveryGap =
+    traffic.incomingEvents != null && traffic.outgoingEvents != null
+      ? Math.max(0, traffic.incomingEvents - traffic.outgoingEvents)
+      : null
+  const deliveryGapPct =
+    deliveryGap != null && traffic.incomingEvents != null && traffic.incomingEvents > 0
+      ? (deliveryGap / traffic.incomingEvents) * 100
+      : null
+  const gapIsMaterial = deliveryGapPct != null && deliveryGapPct >= 1
 
   return (
     <section aria-label="Traffic overview" data-testid="dashboard-traffic-overview" className={dashboardCardClass}>
@@ -1688,36 +1692,53 @@ export function TrafficOverviewPanel({
         </Link>
       </div>
       <p className="mt-1 text-sm text-slate-500 dark:text-gdc-muted">Snapshot window {traffic.windowLabel}</p>
-      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="mt-3 divide-y divide-slate-200 rounded-lg border border-slate-200 dark:divide-gdc-divider dark:border-gdc-border">
         <Link
           to={NAV_PATH.streams}
           data-testid="dashboard-traffic-incoming"
-          className="rounded-lg border border-slate-200/80 bg-slate-50/80 px-3 py-3 transition hover:border-slate-300 dark:border-gdc-border dark:bg-gdc-section/60 dark:hover:border-slate-600"
+          className="flex items-center justify-between gap-4 px-3 py-2.5 hover:bg-slate-50 dark:hover:bg-gdc-rowHover"
         >
-          <p className="text-sm font-medium text-slate-600 dark:text-gdc-muted">Incoming Events</p>
-          <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900 dark:text-sky-300">
+          <span className="text-sm font-medium text-slate-600 dark:text-gdc-muted">Incoming Events</span>
+          <span className="text-base font-semibold tabular-nums text-slate-900 dark:text-gdc-foreground">
             {formatMetricCount(traffic.incomingEvents)}
-          </p>
+          </span>
         </Link>
         <Link
           to={NAV_PATH.destinations}
           data-testid="dashboard-traffic-outgoing"
-          className="rounded-lg border border-slate-200/80 bg-slate-50/80 px-3 py-3 transition hover:border-slate-300 dark:border-gdc-border dark:bg-gdc-section/60 dark:hover:border-slate-600"
+          className="flex items-center justify-between gap-4 px-3 py-2.5 hover:bg-slate-50 dark:hover:bg-gdc-rowHover"
         >
-          <p className="text-sm font-medium text-slate-600 dark:text-gdc-muted">Outgoing Events</p>
-          <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900 dark:text-emerald-300">
+          <span className="text-sm font-medium text-slate-600 dark:text-gdc-muted">Outgoing Events</span>
+          <span className="text-base font-semibold tabular-nums text-slate-900 dark:text-gdc-foreground">
             {formatMetricCount(traffic.outgoingEvents)}
-          </p>
+          </span>
         </Link>
+        <div className="flex items-center justify-between gap-4 px-3 py-2.5" data-testid="dashboard-traffic-gap">
+          <span>
+            <span className="block text-sm font-medium text-slate-600 dark:text-gdc-muted">Delivery Gap</span>
+            <span className="block text-[11px] text-slate-500 dark:text-gdc-muted">
+              Incoming events not yet reflected as successful delivery
+            </span>
+          </span>
+          <span
+            className={cn(
+              'text-right text-sm font-semibold tabular-nums',
+              gapIsMaterial ? 'text-amber-700 dark:text-amber-300' : 'text-slate-700 dark:text-gdc-mutedStrong',
+            )}
+          >
+            {deliveryGap == null ? '—' : formatMetricCount(deliveryGap)}
+            {deliveryGapPct != null ? <span className="ml-1 text-[11px] font-medium">({deliveryGapPct.toFixed(1)}%)</span> : null}
+          </span>
+        </div>
         <Link
           to={NAV_PATH.destinations}
           data-testid="dashboard-traffic-success"
-          className="rounded-lg border border-slate-200/80 bg-slate-50/80 px-3 py-3 transition hover:border-slate-300 dark:border-gdc-border dark:bg-gdc-section/60 dark:hover:border-slate-600"
+          className="flex items-center justify-between gap-4 px-3 py-2.5 hover:bg-slate-50 dark:hover:bg-gdc-rowHover"
         >
-          <p className="text-sm font-medium text-slate-600 dark:text-gdc-muted">Delivery Success Rate</p>
-          <p className={cn('mt-1 text-xl font-semibold tabular-nums', rateTone)}>
+          <span className="text-sm font-medium text-slate-600 dark:text-gdc-muted">Delivery Success Rate</span>
+          <span className={cn('text-base font-semibold tabular-nums', rateTone)}>
             {formatSuccessRate(traffic.deliverySuccessRatePct)}
-          </p>
+          </span>
         </Link>
       </div>
     </section>
@@ -1815,17 +1836,19 @@ export function OperationalIssuesPanel({
   issues: import('./dashboard-charter-metrics').OperationalIssueCounts
   className?: string
 }) {
-  const rows: Array<{ key: IssueKey; label: string; count: number | null; testId: string }> = [
-    { key: 'no-data', label: 'No Data Streams', count: issues.noDataStreams, testId: 'dashboard-issue-no-data' },
-    { key: 'low-volume', label: 'Low Volume Streams', count: issues.lowVolumeStreams, testId: 'dashboard-issue-low-volume' },
-    { key: 'schema-drift', label: 'Schema Drift Count', count: issues.schemaDriftCount, testId: 'dashboard-issue-schema-drift' },
+  const rows: Array<{ key: IssueKey; label: string; count: number | null; testId: string; action: string }> = [
+    { key: 'no-data', label: 'No Data Streams', count: issues.noDataStreams, testId: 'dashboard-issue-no-data', action: 'Review streams' },
+    { key: 'low-volume', label: 'Low Volume Streams', count: issues.lowVolumeStreams, testId: 'dashboard-issue-low-volume', action: 'Review volume' },
+    { key: 'schema-drift', label: 'Schema Drift Count', count: issues.schemaDriftCount, testId: 'dashboard-issue-schema-drift', action: 'Review governance' },
     {
       key: 'dest-capacity',
       label: 'Destination Capacity Warning Count',
       count: issues.destinationCapacityWarnings,
       testId: 'dashboard-issue-destination-capacity',
+      action: 'Review destinations',
     },
   ]
+  const totalIssues = rows.reduce((sum, row) => sum + (row.count ?? 0), 0)
 
   return (
     <section
@@ -1833,16 +1856,21 @@ export function OperationalIssuesPanel({
       data-testid="dashboard-operational-issues"
       className={cn(dashboardCardClass, className)}
     >
-      <div className="flex items-baseline justify-between gap-2">
-        <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">Operational Issues</h2>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">Operational Issues</h2>
+          <p className="mt-1 text-sm text-slate-500 dark:text-gdc-muted">
+            {totalIssues === 0 ? 'No open operational signals.' : `${totalIssues} open signal${totalIssues === 1 ? '' : 's'} need attention.`}
+          </p>
+        </div>
         <Link
           to={NAV_PATH.streams}
-          className="text-sm font-medium text-slate-600 underline-offset-2 hover:underline dark:text-slate-300"
+          className="shrink-0 text-sm font-medium text-violet-700 underline-offset-2 hover:underline dark:text-violet-300"
         >
-          View streams
+          Review all
         </Link>
       </div>
-      <ul className="mt-4 space-y-2">
+      <ul className="mt-3 divide-y divide-slate-200 overflow-hidden rounded-lg border border-slate-200 dark:divide-gdc-divider dark:border-gdc-border">
         {rows.map((row) => {
           const n = row.count ?? 0
           const hot = n > 0
@@ -1852,10 +1880,15 @@ export function OperationalIssuesPanel({
               <Link
                 to={ISSUE_DRILLDOWN_HREF[row.key]}
                 data-testid={row.testId}
-                className="flex items-center justify-between gap-3 rounded-lg border border-slate-200/70 px-3 py-2.5 transition hover:border-slate-300 hover:bg-slate-50 dark:border-gdc-border dark:hover:border-slate-600 dark:hover:bg-gdc-section/50"
+                className="flex items-center justify-between gap-3 px-3 py-2.5 hover:bg-slate-50 dark:hover:bg-gdc-rowHover"
               >
-                <span className={cn('text-sm font-medium', hot ? 'text-slate-900 dark:text-slate-100' : 'text-slate-600 dark:text-gdc-muted')}>
-                  {row.label}
+                <span className="min-w-0">
+                  <span className={cn('block text-sm font-medium', hot ? 'text-slate-900 dark:text-slate-100' : 'text-slate-600 dark:text-gdc-muted')}>
+                    {row.label}
+                  </span>
+                  <span className={cn('block text-[11px]', hot ? 'text-violet-700 dark:text-violet-300' : 'text-slate-400 dark:text-gdc-placeholder')}>
+                    {hot ? row.action : 'No issue'}
+                  </span>
                 </span>
                 <span
                   className={cn(

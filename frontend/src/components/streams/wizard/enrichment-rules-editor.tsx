@@ -251,7 +251,7 @@ export function EnrichmentRulesEditor({
   return (
     <section
       data-testid={dataTestId}
-      className={cn('rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-gdc-border dark:bg-gdc-card', className)}
+      className={cn('rounded-lg border border-slate-200 bg-white p-4 dark:border-gdc-border dark:bg-gdc-card', className)}
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-0.5">
@@ -334,7 +334,7 @@ export function EnrichmentRulesEditor({
       </div>
 
       <div className="mt-3">
-        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Quick Add Presets</p>
+        <p className="text-[11px] font-semibold text-slate-700 dark:text-gdc-mutedStrong">Common fields</p>
         <div className="mt-2 flex flex-wrap gap-1.5">
           {QUICK_ADD_PRESETS.map((p) => {
             const added = rules.some((r) => r.fieldName.trim().toLowerCase() === p.field.toLowerCase())
@@ -346,10 +346,10 @@ export function EnrichmentRulesEditor({
                 onClick={() => addPreset(p)}
                 title={added ? 'Already added' : `Add ${p.field}`}
                 className={cn(
-                  'inline-flex h-7 items-center rounded-full border px-2.5 text-[11px] font-semibold transition-colors',
+                  'inline-flex h-7 items-center rounded-md border px-2.5 text-[11px] font-semibold',
                   added
-                    ? 'cursor-not-allowed border-violet-200/80 bg-violet-500/10 text-violet-600 opacity-80 dark:border-violet-500/30 dark:text-violet-300'
-                    : 'border-violet-300/70 bg-violet-500/[0.07] text-violet-800 hover:bg-violet-500/15 dark:border-violet-500/40 dark:text-violet-200 dark:hover:bg-violet-500/20',
+                    ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 dark:border-gdc-border dark:bg-gdc-section dark:text-gdc-placeholder'
+                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-violet-700 dark:border-gdc-border dark:bg-gdc-card dark:text-gdc-mutedStrong dark:hover:bg-gdc-rowHover dark:hover:text-violet-300',
                 )}
               >
                 {p.field}
@@ -397,9 +397,8 @@ export function EnrichmentRulesEditor({
         )}
       </div>
 
-      <p className="mt-3 flex items-center gap-1 text-[10px] text-slate-500 dark:text-gdc-muted">
-        <GripVertical className="h-3 w-3 shrink-0 opacity-50" aria-hidden />
-        Drag to reorder fields (ordering follows list order; reordering UI is not enabled).
+      <p className="mt-3 text-[10px] text-slate-500 dark:text-gdc-muted">
+        Rules are applied in list order. Reordering is not available in this editor yet.
       </p>
     </section>
   )
@@ -421,10 +420,10 @@ function FilterChip({
       type="button"
       onClick={onClick}
       className={cn(
-        'inline-flex h-7 items-center gap-1 rounded-full border px-2.5 text-[10px] font-semibold transition-colors',
+        'inline-flex h-7 items-center gap-1 rounded-md border px-2.5 text-[10px] font-semibold',
         active
-          ? 'border-violet-500/50 bg-violet-500/15 text-violet-800 dark:border-violet-400/40 dark:text-violet-200'
-          : 'border-slate-200/90 bg-white text-slate-600 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-gdc-muted',
+          ? 'border-violet-500/40 bg-violet-500/10 text-violet-800 dark:border-violet-400/40 dark:text-violet-200'
+          : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-gdc-muted',
       )}
     >
       {icon}

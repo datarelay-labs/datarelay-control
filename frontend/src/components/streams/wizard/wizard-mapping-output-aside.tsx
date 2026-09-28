@@ -132,11 +132,11 @@ export function WizardMappingOutputAside({
       )}
       data-testid="route-processing-output-workspace"
     >
-      <PanelChrome title="Final Event Preview" className="max-h-[min(42vh,440px)]">
+      <PanelChrome title="3. Final event" className="max-h-[min(42vh,440px)]">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/70 px-2.5 py-2 dark:border-gdc-border">
           <div className="flex items-center gap-2">
-            <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-800 dark:text-emerald-200">
-              Live
+            <span className="rounded-md border border-emerald-500/25 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">
+              Preview ready
             </span>
             <div className="inline-flex rounded-md border border-slate-200/90 p-0.5 dark:border-gdc-border">
               <button
@@ -145,7 +145,7 @@ export function WizardMappingOutputAside({
                 className={cn(
                   'rounded px-2 py-0.5 text-[10px] font-semibold',
                   previewTab === 'preview'
-                    ? 'bg-violet-600 text-white'
+                    ? 'bg-white text-slate-900 dark:bg-gdc-card dark:text-gdc-foreground'
                     : 'text-slate-600 hover:bg-slate-100 dark:text-gdc-mutedStrong dark:hover:bg-gdc-rowHover',
                 )}
               >
@@ -157,11 +157,11 @@ export function WizardMappingOutputAside({
                 className={cn(
                   'rounded px-2 py-0.5 text-[10px] font-semibold',
                   previewTab === 'raw_final'
-                    ? 'bg-violet-600 text-white'
+                    ? 'bg-white text-slate-900 dark:bg-gdc-card dark:text-gdc-foreground'
                     : 'text-slate-600 hover:bg-slate-100 dark:text-gdc-mutedStrong dark:hover:bg-gdc-rowHover',
                 )}
               >
-                Raw vs Final
+                Compare
               </button>
             </div>
           </div>
@@ -176,20 +176,20 @@ export function WizardMappingOutputAside({
         </div>
         <div className="min-h-0 overflow-auto p-2">
           {previewTab === 'preview' ? (
-            <pre className="overflow-x-auto rounded-lg border border-slate-200/80 bg-slate-950 p-2.5 text-[10px] leading-snug text-emerald-100 dark:border-gdc-border">
+            <pre className="overflow-x-auto rounded-lg border border-slate-200 bg-slate-950 p-2.5 text-[10px] leading-snug text-slate-100 dark:border-gdc-border dark:bg-gdc-section dark:text-gdc-foreground">
               {mappedPreviewJson || '—'}
             </pre>
           ) : (
             <div className="grid gap-2 md:grid-cols-2">
               <div>
                 <p className="mb-1 text-[10px] font-semibold text-slate-500">Raw sample (first event)</p>
-                <pre className="max-h-[32vh] overflow-auto rounded-lg border border-slate-200/80 bg-slate-900 p-2 text-[9px] leading-snug text-slate-200 dark:border-gdc-border">
+                <pre className="max-h-[32vh] overflow-auto rounded-lg border border-slate-200 bg-slate-950 p-2 text-[9px] leading-snug text-slate-100 dark:border-gdc-border dark:bg-gdc-section dark:text-gdc-foreground">
                   {rawSampleJson || '—'}
                 </pre>
               </div>
               <div>
                 <p className="mb-1 text-[10px] font-semibold text-slate-500">Mapped output</p>
-                <pre className="max-h-[32vh] overflow-auto rounded-lg border border-slate-200/80 bg-slate-950 p-2 text-[9px] leading-snug text-emerald-100 dark:border-gdc-border">
+                <pre className="max-h-[32vh] overflow-auto rounded-lg border border-slate-200 bg-slate-950 p-2 text-[9px] leading-snug text-slate-100 dark:border-gdc-border dark:bg-gdc-section dark:text-gdc-foreground">
                   {mappedPreviewJson || '—'}
                 </pre>
               </div>
@@ -198,8 +198,8 @@ export function WizardMappingOutputAside({
         </div>
       </PanelChrome>
 
-      <section className="rounded-lg border border-slate-200/80 bg-white p-3 shadow-sm dark:border-gdc-border dark:bg-gdc-card">
-        <h4 className="text-[12px] font-semibold text-slate-800 dark:text-slate-100">Unmapped Field Behavior</h4>
+      <section className="rounded-lg border border-slate-200 bg-white p-3 dark:border-gdc-border dark:bg-gdc-card">
+        <h4 className="text-[12px] font-semibold text-slate-800 dark:text-slate-100">Unmapped fields</h4>
         <p className="mt-1 text-[11px] text-slate-600 dark:text-gdc-muted">
           How to handle source fields not covered by a mapping row. Drop removes fields from the output event only — it
           does not block delivery.
@@ -240,8 +240,8 @@ export function WizardMappingOutputAside({
         </div>
       </section>
 
-      <section className="rounded-lg border border-slate-200/80 bg-white p-3 shadow-sm dark:border-gdc-border dark:bg-gdc-card">
-        <h4 className="text-[12px] font-semibold text-slate-800 dark:text-slate-100">Mapping Summary</h4>
+      <section className="rounded-lg border border-slate-200 bg-white p-3 dark:border-gdc-border dark:bg-gdc-card">
+        <h4 className="text-[12px] font-semibold text-slate-800 dark:text-slate-100">Output summary</h4>
         <ul className="mt-2 space-y-1.5 text-[11px] text-slate-700 dark:text-slate-200">
           <li className="flex justify-between gap-2">
             <span className="text-slate-500">Mapped fields</span>

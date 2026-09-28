@@ -68,7 +68,7 @@ export type RecentAlertsSummary = {
 }
 
 const cardClass =
-  'rounded-xl border border-slate-200/80 bg-white px-4 py-3 shadow-sm dark:border-[rgba(120,150,220,0.2)] dark:bg-[#111827]/95 dark:shadow-[0_4px_24px_-8px_rgba(0,0,0,0.5)] dark:ring-1 dark:ring-[rgba(120,150,220,0.1)]'
+  'rounded-lg border border-slate-200/80 bg-white px-4 py-3 shadow-sm dark:border-gdc-border dark:bg-gdc-card dark:shadow-gdc-card'
 
 export { cardClass as dashboardCardClass }
 
@@ -733,7 +733,7 @@ export function operationalStatusDonutSlices(
 ): Array<{ name: string; value: number; color: string; pct: number }> {
   const total = status.running + status.warning + status.stopped
   if (total <= 0) {
-    return [{ name: 'No streams', value: 1, color: '#64748b', pct: 100 }]
+    return [{ name: 'No streams', value: 1, color: 'var(--gdc-chart-muted)', pct: 100 }]
   }
   const mk = (name: string, value: number, color: string) => ({
     name,
@@ -744,7 +744,7 @@ export function operationalStatusDonutSlices(
   return [
     mk('Running', status.running, '#22c55e'),
     mk('Warning', status.warning, '#f59e0b'),
-    mk('Stopped', status.stopped, '#64748b'),
+    mk('Stopped', status.stopped, 'var(--gdc-chart-muted)'),
   ].filter((s) => s.value > 0)
 }
 
@@ -1052,7 +1052,7 @@ export function donutSlicesFromCounts(
 ): Array<{ name: string; value: number; color: string; pct: number }> {
   const total = healthy + warning + critical
   if (total <= 0) {
-    return [{ name: 'No groups', value: 1, color: '#64748b', pct: 100 }]
+    return [{ name: 'No groups', value: 1, color: 'var(--gdc-chart-muted)', pct: 100 }]
   }
   const mk = (name: string, value: number, color: string) => ({
     name,

@@ -1048,7 +1048,7 @@ export function DestinationsManagementPage() {
             type="button"
             data-testid="destinations-new"
             onClick={openCreateSheet}
-            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-500/40 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-gdc-primary px-4 text-sm font-semibold text-white hover:bg-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500/30"
           >
             <Plus className="h-4 w-4" aria-hidden />
             New Destination
@@ -1162,7 +1162,7 @@ export function DestinationsManagementPage() {
             data-testid="destinations-view-table"
             className={cn(
               'flex h-7 w-7 items-center justify-center rounded-md transition-colors',
-              viewMode === 'table' ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900' : 'text-slate-500 hover:text-slate-700 dark:text-slate-300'
+              viewMode === 'table' ? 'bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-200' : 'text-slate-500 hover:text-slate-700 dark:text-slate-300'
             )}
             title="Table view"
             aria-pressed={viewMode === 'table'}
@@ -1175,7 +1175,7 @@ export function DestinationsManagementPage() {
             data-testid="destinations-view-card"
             className={cn(
               'flex h-7 w-7 items-center justify-center rounded-md transition-colors',
-              viewMode === 'card' ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900' : 'text-slate-500 hover:text-slate-700 dark:text-slate-300'
+              viewMode === 'card' ? 'bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-200' : 'text-slate-500 hover:text-slate-700 dark:text-slate-300'
             )}
             title="Card view"
             aria-pressed={viewMode === 'card'}
@@ -1203,7 +1203,7 @@ export function DestinationsManagementPage() {
                 type="button"
                 onClick={openCreateSheet}
                 data-testid="destinations-create-first"
-                className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-gdc-primary px-3.5 py-2 text-sm font-semibold text-white hover:bg-violet-700"
               >
                 <Plus className="h-4 w-4" aria-hidden />
                 Create First Destination
@@ -1421,7 +1421,7 @@ export function DestinationsManagementPage() {
                 {/* ── Section 1: Connection ── */}
                 <section>
                   <div className="mb-4 flex items-center gap-3">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[11px] font-bold text-white dark:bg-slate-100 dark:text-slate-900">1</span>
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-gdc-primary text-[11px] font-bold text-white">1</span>
                     <div>
                       <p className="text-[13px] font-semibold text-slate-800 dark:text-slate-200">Connection</p>
                       <p className="text-[11px] text-slate-500">Configure how Data Relay connects to your destination.</p>
@@ -1599,7 +1599,7 @@ export function DestinationsManagementPage() {
                 {/* ── Section 2: Capacity & Monitoring ── */}
                 <section>
                   <div className="mb-4 flex items-center gap-3">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[11px] font-bold text-white dark:bg-slate-100 dark:text-slate-900">2</span>
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-gdc-primary text-[11px] font-bold text-white">2</span>
                     <div>
                       <p className="text-[13px] font-semibold text-slate-800 dark:text-slate-200">Capacity &amp; Monitoring</p>
                       <p className="text-[11px] text-slate-500">Define expected capacity for monitoring and alerting.</p>
@@ -1884,7 +1884,7 @@ export function DestinationsManagementPage() {
                   form="dest-form"
                   type="submit"
                   disabled={saving || validateCapacityForm(form) !== null}
-                  className="inline-flex h-10 min-w-[140px] items-center justify-center rounded-md bg-slate-900 px-4 text-[13px] font-semibold text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white disabled:opacity-60"
+                  className="inline-flex h-10 min-w-[140px] items-center justify-center rounded-md bg-gdc-primary px-4 text-[13px] font-semibold text-white hover:bg-violet-700 disabled:opacity-60"
                 >
                   {saving ? 'Saving…' : sheetMode === 'create' ? 'Save Destination' : 'Save Changes'}
                 </button>

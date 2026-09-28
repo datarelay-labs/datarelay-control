@@ -404,6 +404,8 @@ describe('DashboardOverview', () => {
     const traffic = await within(mainRegion()).findByTestId('dashboard-traffic-overview')
     expect(within(traffic).getByText('Incoming Events')).toBeInTheDocument()
     expect(within(traffic).getByText('Outgoing Events')).toBeInTheDocument()
+    expect(within(traffic).getByText('Delivery Gap')).toBeInTheDocument()
+    expect(within(traffic).getByTestId('dashboard-traffic-gap')).toBeInTheDocument()
     expect(within(traffic).getByText('Delivery Success Rate')).toBeInTheDocument()
     expect(within(traffic).getByTestId('dashboard-traffic-incoming')).toHaveAttribute('href', '/streams')
     expect(within(traffic).getByTestId('dashboard-traffic-outgoing')).toHaveAttribute('href', '/destinations')

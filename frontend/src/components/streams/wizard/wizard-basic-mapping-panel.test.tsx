@@ -16,9 +16,10 @@ describe('WizardBasicMappingPanel layout (206f0f7)', () => {
 
     const { container } = render(<WizardBasicMappingPanel state={state} onChangeMapping={() => {}} />)
 
-    expect(screen.getByText('Sample Event')).toBeInTheDocument()
-    expect(screen.getByText('Field Mapping')).toBeInTheDocument()
-    const grid = container.querySelector('.xl\\:grid-cols-\\[minmax\\(300px\\,1\\.15fr\\)_minmax\\(280px\\,1fr\\)_minmax\\(320px\\,1\\.05fr\\)\\]')
+    expect(screen.getByText('1. Source fields')).toBeInTheDocument()
+    expect(screen.getByText('2. Transform rules')).toBeInTheDocument()
+    expect(screen.getByText('3. Final event')).toBeInTheDocument()
+    const grid = container.querySelector('.xl\\:grid-cols-\\[minmax\\(360px\\,1\\.45fr\\)_minmax\\(280px\\,0\\.9fr\\)_minmax\\(320px\\,1\\.05fr\\)\\]')
     expect(grid).toBeTruthy()
   })
 })

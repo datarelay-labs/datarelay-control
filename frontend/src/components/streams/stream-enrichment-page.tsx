@@ -233,7 +233,7 @@ export function StreamEnrichmentPage() {
     setSaveSuccess(null)
     if (backendStreamId == null) {
       setSavedSnapshot(JSON.stringify({ staticRows, computedRows, advancedRules }))
-      setSaveSuccess('Saved locally (preview only) · numeric stream id required for API-backed save.')
+      setSaveSuccess('Saved locally for preview only. Save to the stream after it has been created.')
       setIsSaving(false)
       return
     }
@@ -266,10 +266,10 @@ export function StreamEnrichmentPage() {
         },
       })
       setSavedSnapshot(JSON.stringify({ staticRows, computedRows, advancedRules }))
-      setSaveSuccess(`API-backed · ${result.message}`)
+      setSaveSuccess(`Saved · ${result.message}`)
     } catch (err) {
-      const message = err instanceof Error ? err.message : '보강 규칙 저장에 실패했습니다.'
-      setSaveError(`API save failed: ${message}`)
+      const message = err instanceof Error ? err.message : 'Unable to save transform rules.'
+      setSaveError(`Unable to save changes: ${message}`)
     } finally {
       setIsSaving(false)
     }
@@ -279,20 +279,17 @@ export function StreamEnrichmentPage() {
     <div className="flex w-full min-w-0 flex-col gap-4 pb-28" data-stream-id={streamId}>
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="space-y-1">
-          <h2 className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-50">Enrichment Configuration</h2>
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Transform rules</h2>
           <p className="max-w-2xl text-[13px] text-slate-600 dark:text-gdc-muted">
-            Add static fields and computed fields to enrich your events with required metadata.
+            Add or calculate fields that should appear in the final event delivered by this stream.
           </p>
           <p className="text-[11px] text-slate-500 dark:text-gdc-muted">
-            Save state ·{' '}
-            {backendStreamId != null
-              ? 'API-backed (POST /runtime/streams/{id}/mapping-ui/save)'
-              : 'empty shell (no numeric stream id)'}
+            {backendStreamId != null ? 'Changes are saved to this stream.' : 'Preview-only mode until this stream has a numeric ID.'}
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
           <span
-            className="inline-flex h-9 items-center rounded-full border border-slate-200/90 bg-slate-50 px-2.5 text-[11px] font-semibold text-slate-700 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200"
+            className="inline-flex h-9 items-center rounded-md border border-slate-200 bg-slate-50 px-2.5 text-[11px] font-semibold text-slate-700 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-200"
             aria-live="polite"
           >
             {isSaving ? 'Saving…' : saveError ? 'Save failed' : saveSuccess ? 'Saved' : hasUnsavedChanges ? 'Unsaved changes' : 'Saved'}
@@ -345,7 +342,7 @@ export function StreamEnrichmentPage() {
                     : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-gdc-muted',
                 )}
               >
-                Static Fields
+                Add values
               </button>
               <button
                 type="button"
@@ -357,7 +354,7 @@ export function StreamEnrichmentPage() {
                     : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-gdc-muted',
                 )}
               >
-                Computed Fields
+                Calculate values
               </button>
               <button
                 type="button"
@@ -391,7 +388,7 @@ export function StreamEnrichmentPage() {
               <p className="py-8 text-center text-[12px] text-slate-500">Loading enrichment config…</p>
             ) : rulesTab === 'static' ? (
               <div className="space-y-3">
-                <p className="text-[12px] text-slate-600 dark:text-gdc-muted">Add static key-value pairs to all events.</p>
+                <p className="text-[12px] text-slate-600 dark:text-gdc-muted">Add fixed values to every final event, such as environment or tenant metadata.</p>
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div className="relative min-w-0 flex-1">
                     <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" aria-hidden />
@@ -409,7 +406,7 @@ export function StreamEnrichmentPage() {
                     className="inline-flex h-9 shrink-0 items-center gap-1 rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white hover:bg-violet-700"
                   >
                     <Plus className="h-3.5 w-3.5" aria-hidden />
-                    Add Static Field
+                    Add value
                   </button>
                 </div>
 
@@ -503,7 +500,7 @@ export function StreamEnrichmentPage() {
               </div>
             ) : rulesTab === 'computed' ? (
               <div className="space-y-3">
-                <p className="text-[12px] text-slate-600 dark:text-gdc-muted">Add dynamic fields using expressions.</p>
+                <p className="text-[12px] text-slate-600 dark:text-gdc-muted">Calculate values from existing event fields using expressions.</p>
                 <div className="flex justify-end">
                   <button
                     type="button"
@@ -511,7 +508,7 @@ export function StreamEnrichmentPage() {
                     className="inline-flex h-9 items-center gap-1 rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white hover:bg-violet-700"
                   >
                     <Plus className="h-3.5 w-3.5" aria-hidden />
-                    Add Computed Field
+                    Add calculated field
                   </button>
                 </div>
 

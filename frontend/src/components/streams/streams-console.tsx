@@ -265,7 +265,7 @@ function GroupHealthBadge({
           ? 'border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-400'
           : 'border-slate-500/40 bg-slate-500/10 text-slate-600 dark:text-slate-400'
   return (
-    <span className={cn('inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold', toneClass)}>
+    <span className={cn('inline-flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-semibold', toneClass)}>
       <Icon className="h-3.5 w-3.5" aria-hidden />
       {label}
     </span>
@@ -291,9 +291,9 @@ function StreamRowActions({ row }: { row: StreamConsoleRow }) {
         title={hasId ? 'Open Runtime' : 'Runtime unavailable: missing stream id'}
         aria-label={`Open Runtime: ${row.name}`}
         className={cn(
-          'inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold shadow-sm transition-colors',
+          'inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold',
           hasId
-            ? 'bg-slate-900 text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white'
+            ? 'bg-gdc-primary text-white hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/60'
             : 'cursor-not-allowed bg-slate-300/60 text-slate-500 dark:bg-slate-700 dark:text-slate-500',
         )}
       >
@@ -394,7 +394,7 @@ function StreamOperationalStatusBadge({
           ? 'border-slate-400/40 bg-slate-500/10 text-slate-600 dark:text-slate-400'
           : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
   return (
-    <span className={cn('inline-flex items-center rounded-lg border px-2 py-0.5 text-xs font-semibold', toneClass)}>
+    <span className={cn('inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-semibold', toneClass)}>
       {label}
     </span>
   )
@@ -745,7 +745,7 @@ export function StreamsConsole() {
         <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
           <Link
             to={newStreamPath()}
-            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-500/40 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-gdc-primary px-4 text-sm font-semibold text-white hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/60"
           >
             <Plus className="h-4 w-4" aria-hidden />
             New Stream
@@ -789,7 +789,7 @@ export function StreamsConsole() {
         timeRangeIsDefault={timeRange === '1h'}
       />
 
-      <div className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm dark:border-gdc-border dark:bg-gdc-card" data-testid="streams-product-groups">
+      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-gdc-border dark:bg-gdc-card" data-testid="streams-product-groups">
         {initialLoading ? (
           <div className="flex items-center justify-center gap-2 py-12 text-sm text-slate-500 dark:text-gdc-muted">
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -810,7 +810,7 @@ export function StreamsConsole() {
               <Link
                 to={newStreamPath()}
                 data-testid="streams-create-first"
-                className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+                className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-gdc-primary px-3.5 py-2 text-sm font-semibold text-white hover:bg-violet-700"
               >
                 <Plus className="h-4 w-4" aria-hidden />
                 Create First Stream

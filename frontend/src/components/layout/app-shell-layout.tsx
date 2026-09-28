@@ -20,7 +20,7 @@ function PlaceholderPage({ title }: { title: string }) {
     <section
       role="region"
       aria-label={`${title} workspace`}
-      className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-gdc-border dark:bg-gdc-card dark:shadow-gdc-card dark:ring-1 dark:ring-[rgba(120,150,220,0.07)]"
+      className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-gdc-border dark:bg-gdc-card dark:shadow-gdc-card"
     >
       <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-gdc-muted">Workspace</p>
       <h2 className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100">{title}</h2>
@@ -36,7 +36,7 @@ function NotFoundPage() {
     <section
       role="region"
       aria-label="Page not found"
-      className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-gdc-border dark:bg-gdc-card dark:shadow-gdc-card dark:ring-1 dark:ring-[rgba(120,150,220,0.07)]"
+      className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-gdc-border dark:bg-gdc-card dark:shadow-gdc-card"
     >
       <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-gdc-muted">Error</p>
       <h2 className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100">Page not found</h2>

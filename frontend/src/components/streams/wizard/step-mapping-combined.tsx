@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { cn } from '../../../lib/utils'
 import { EnrichmentAddFieldMenu } from './enrichment-add-field-menu'
 import { EnrichmentRulesEditor } from './enrichment-rules-editor'
 import type { WizardEnrichmentRule } from './enrichment-rules-model'
@@ -113,10 +114,12 @@ export function StepMappingCombined({
       : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-gdc-muted'
 
   const transformSampleReady = wizardTransformSampleReady(state)
+  const mappedFieldCount = state.mapping.filter((row) => row.sourceJsonPath.trim() && row.outputField.trim()).length
+  const activeTransformRuleCount = state.enrichment.filter((rule) => rule.enabled && rule.fieldName.trim()).length
 
   return (
     <div data-testid="wizard-step-transform">
-      <section className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-gdc-border dark:bg-gdc-card">
+      <section className="rounded-lg border border-slate-200 bg-white p-4 dark:border-gdc-border dark:bg-gdc-card">
         {!transformSampleReady ? (
           <div
             className="mb-3 rounded-md border border-amber-300/70 bg-amber-50 px-3 py-2 text-[11px] text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100"
@@ -127,11 +130,32 @@ export function StepMappingCombined({
             need a new API Test.
           </div>
         ) : null}
-        <p className="text-[12px] leading-relaxed text-slate-600 dark:text-gdc-muted">
-          Map fields from the sample event to your output schema. Click a field in the JSON to add it to the mapping.
+        <div className="grid gap-2 sm:grid-cols-3" aria-label="Transform workflow summary">
+          <TransformSummaryCell
+            step="1"
+            label="Source"
+            value={transformSampleReady ? `${state.apiTest.eventCount || state.apiTest.extractedEvents.length || 1} sample event${(state.apiTest.eventCount || state.apiTest.extractedEvents.length || 1) === 1 ? '' : 's'}` : 'Sample required'}
+            ready={transformSampleReady}
+          />
+          <TransformSummaryCell
+            step="2"
+            label="Rules"
+            value={`${mappedFieldCount} mapped · ${activeTransformRuleCount} added field${activeTransformRuleCount === 1 ? '' : 's'}`}
+            ready={mappedFieldCount > 0 || activeTransformRuleCount > 0}
+          />
+          <TransformSummaryCell
+            step="3"
+            label="Final event"
+            value="Verify before delivery"
+            ready={transformSampleReady && (mappedFieldCount > 0 || activeTransformRuleCount > 0)}
+          />
+        </div>
+
+        <p className="mt-3 text-[12px] leading-relaxed text-slate-600 dark:text-gdc-muted">
+          Choose source fields, add transform rules, then verify the exact event that will be delivered.
         </p>
 
-        <div className="mt-4 flex flex-wrap items-end justify-between gap-2 border-b border-slate-200/80 dark:border-gdc-border">
+        <div className="mt-4 flex flex-wrap items-end justify-between gap-2 border-b border-slate-200 dark:border-gdc-border">
           <div className="flex flex-wrap gap-1" role="tablist" aria-label="Transform mode">
             <button
               type="button"
@@ -220,6 +244,37 @@ export function StepMappingCombined({
           onDrawerOpenChange={onDataProtectionDrawerOpenChange}
         />
       </div>
+    </div>
+  )
+}
+
+function TransformSummaryCell({
+  step,
+  label,
+  value,
+  ready,
+}: {
+  step: string
+  label: string
+  value: string
+  ready: boolean
+}) {
+  return (
+    <div className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 dark:border-gdc-border dark:bg-gdc-section">
+      <span
+        className={cn(
+          'flex h-6 w-6 shrink-0 items-center justify-center rounded-md border text-[11px] font-semibold',
+          ready
+            ? 'border-violet-500/40 bg-violet-500/10 text-violet-700 dark:text-violet-300'
+            : 'border-slate-200 bg-white text-slate-500 dark:border-gdc-border dark:bg-gdc-card dark:text-gdc-muted',
+        )}
+      >
+        {step}
+      </span>
+      <span className="min-w-0">
+        <span className="block text-[11px] font-semibold text-slate-900 dark:text-gdc-foreground">{label}</span>
+        <span className="block truncate text-[10px] text-slate-500 dark:text-gdc-muted">{value}</span>
+      </span>
     </div>
   )
 }

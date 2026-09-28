@@ -18,7 +18,7 @@ describe('Drop policy UI', () => {
       />,
     )
 
-    expect(screen.getByText('Unmapped Field Behavior')).toBeInTheDocument()
+    expect(screen.getByText('Unmapped fields')).toBeInTheDocument()
     expect(screen.getByTestId('unmapped-fields-policy-pass_through')).toBeInTheDocument()
     expect(screen.getByTestId('unmapped-fields-policy-drop')).toBeInTheDocument()
     expect(screen.getByText('Pass Through')).toBeInTheDocument()

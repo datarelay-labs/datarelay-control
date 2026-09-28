@@ -67,14 +67,14 @@ export function capacityColor(
   pct: number | null,
   thresholds: CapacityThresholds = DEFAULT_CAPACITY_THRESHOLDS,
 ): string {
-  if (pct == null) return '#64748b'
+  if (pct == null) return 'var(--gdc-chart-muted)'
   if (pct >= thresholds.criticalPct) return '#ef4444'
   if (pct >= thresholds.warningPct) return '#f59e0b'
   return '#10b981'
 }
 
 export function successRateColor(pct: number | null): string {
-  if (pct == null) return '#64748b'
+  if (pct == null) return 'var(--gdc-chart-muted)'
   if (pct < 90) return '#ef4444'
   if (pct < 98) return '#f59e0b'
   return '#10b981'
@@ -238,12 +238,12 @@ export function LargeSemiGauge({ pct, label, sublabel, thresholds = DEFAULT_CAPA
           {displayLabel}
         </text>
         {sublabel && (
-          <text x={cx} y={cy + 22} textAnchor="middle" dominantBaseline="middle" fontSize="11" fill="#94a3b8">
+          <text x={cx} y={cy + 22} textAnchor="middle" dominantBaseline="middle" fontSize="11" fill="var(--gdc-chart-muted)">
             {sublabel}
           </text>
         )}
-        <text x={cx - r} y={size / 2 + 14} textAnchor="middle" fontSize="9" fill="#94a3b8">0%</text>
-        <text x={cx + r} y={size / 2 + 14} textAnchor="middle" fontSize="9" fill="#94a3b8">100%</text>
+        <text x={cx - r} y={size / 2 + 14} textAnchor="middle" fontSize="9" fill="var(--gdc-chart-muted)">0%</text>
+        <text x={cx + r} y={size / 2 + 14} textAnchor="middle" fontSize="9" fill="var(--gdc-chart-muted)">100%</text>
       </svg>
     </div>
   )
@@ -326,12 +326,12 @@ export function CapacityGaugePreviewCard({
             <text x={cx} y={cy + 2} textAnchor="middle" dominantBaseline="middle" fontSize="24" fontWeight="700" fill={fillColor}>
               {EXAMPLE_PCT}%
             </text>
-            <text x={cx} y={cy + 20} textAnchor="middle" dominantBaseline="middle" fontSize="9.5" fill="#94a3b8">
+            <text x={cx} y={cy + 20} textAnchor="middle" dominantBaseline="middle" fontSize="9.5" fill="var(--gdc-chart-muted)">
               {exampleEps.toLocaleString()} / {displayLimit.toLocaleString()} EPS
             </text>
             {/* End labels */}
-            <text x={cx - r} y={size / 2 + 22} textAnchor="middle" fontSize="8" fill="#64748b">0%</text>
-            <text x={cx + r} y={size / 2 + 22} textAnchor="middle" fontSize="8" fill="#64748b">100%</text>
+            <text x={cx - r} y={size / 2 + 22} textAnchor="middle" fontSize="8" fill="var(--gdc-chart-muted)">0%</text>
+            <text x={cx + r} y={size / 2 + 22} textAnchor="middle" fontSize="8" fill="var(--gdc-chart-muted)">100%</text>
           </svg>
         </div>
       )}
@@ -342,7 +342,7 @@ export function CapacityGaugePreviewCard({
           { label: `0 – ${warnPct}%`, status: 'Healthy', color: '#10b981' },
           { label: `${warnPct} – ${critPct}%`, status: 'Warning', color: '#f59e0b' },
           { label: `${critPct} – 100%`, status: 'Critical', color: '#ef4444' },
-          { label: '→ 90% Target', color: '#64748b' },
+          { label: '→ 90% Target', color: 'var(--gdc-chart-muted)' },
         ].map(({ label, status, color }) => (
           <div key={label} className="flex items-center gap-2 text-[10px]">
             <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />

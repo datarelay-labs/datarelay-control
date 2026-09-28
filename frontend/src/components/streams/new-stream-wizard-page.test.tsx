@@ -414,7 +414,7 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
           loading: false,
           error: null,
           mapped: null,
-          final: null,
+          final: { final_events: [{ id: '1', environment: 'prod' }] },
           validationWarnings: [],
         }}
         rawSampleEvent={{ id: '1' }}
@@ -425,8 +425,9 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
         localWarnings={[]}
       />,
     )
-    expect(screen.getByRole('button', { name: /^Transformed$/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /^Final event$/i })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /^Transformed$/i })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /^Final event$/i })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /^Changes \(1\)$/i })).toBeInTheDocument()
     expect(screen.queryByText(/^Mapped event$/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/Enriched final event/i)).not.toBeInTheDocument()
   })

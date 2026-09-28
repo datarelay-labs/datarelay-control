@@ -1,11 +1,11 @@
 /**
  * GDC dark theme surface tokens (shell, admin, modals).
  * Hierarchy: page (L0) < panel/section (L1) < card (L2) < elevated (L3).
- * Dark surfaces stay in the navy family — no white / light-gray panels.
+ * Dark surfaces use Cloudflare-like neutral off-black/gray layers — no navy glow.
  */
 export const gdcUi = {
   cardShell:
-    'rounded-2xl border border-slate-200/90 bg-white shadow-sm dark:border-gdc-border dark:bg-gdc-card dark:shadow-gdc-card dark:ring-1 dark:ring-[rgba(120,150,220,0.08)]',
+    'rounded-lg border border-slate-200/90 bg-white shadow-sm dark:border-gdc-border dark:bg-gdc-card dark:shadow-gdc-card',
   innerWell:
     'rounded-lg border border-slate-100 bg-slate-50/40 dark:border-gdc-divider dark:bg-gdc-section dark:shadow-gdc-control',
   input:
@@ -13,16 +13,16 @@ export const gdcUi = {
   select:
     'rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] shadow-sm focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/30 dark:border-gdc-inputBorder dark:bg-gdc-input dark:text-gdc-foreground dark:shadow-gdc-control dark:focus:border-gdc-primary dark:focus:ring-gdc-primary/45',
   modalPanel:
-    'w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-5 shadow-xl dark:border-gdc-borderStrong dark:bg-gdc-elevated dark:shadow-gdc-elevated dark:ring-1 dark:ring-[rgba(120,150,220,0.1)]',
-  primaryBtn: 'rounded-lg bg-gdc-primary px-3 py-1.5 text-[13px] font-semibold text-white shadow-sm hover:opacity-95 disabled:opacity-50',
+    'w-full max-w-lg rounded-lg border border-slate-200 bg-white p-5 shadow-xl dark:border-gdc-borderStrong dark:bg-gdc-elevated dark:shadow-gdc-elevated',
+  primaryBtn: 'rounded-lg bg-gdc-primary px-3 py-2 text-[13px] font-semibold text-white shadow-sm transition-colors hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/70 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:focus-visible:ring-offset-gdc-card',
   secondaryBtn:
-    'rounded-lg border border-gdc-primary/50 bg-white px-3 py-1.5 text-[12px] font-semibold text-gdc-primary shadow-sm hover:bg-violet-50 dark:border-gdc-primary/45 dark:bg-gdc-card dark:text-violet-200 dark:shadow-gdc-control dark:hover:bg-gdc-cardHover',
+    'rounded-lg border border-slate-300 bg-white px-3 py-2 text-[12px] font-semibold text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/60 dark:border-gdc-borderStrong dark:bg-gdc-card dark:text-gdc-foreground dark:shadow-gdc-control dark:hover:bg-gdc-cardHover',
   textMuted: 'text-slate-600 dark:text-gdc-muted',
   textTitle: 'text-slate-900 dark:text-gdc-foreground',
   formLabel: 'text-xs font-semibold text-slate-600 dark:text-gdc-mutedStrong',
   /** Empty / zero-data panels */
   emptyPanel:
-    'rounded-xl border border-dashed border-slate-200/90 bg-slate-50/60 px-5 py-8 text-center dark:border-gdc-border dark:bg-gdc-section dark:shadow-gdc-control',
+    'rounded-lg border border-dashed border-slate-200/90 bg-slate-50/60 px-5 py-8 text-center dark:border-gdc-border dark:bg-gdc-section',
 } as const
 
 /**

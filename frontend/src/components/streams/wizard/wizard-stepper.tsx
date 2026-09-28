@@ -26,7 +26,7 @@ export function WizardStepper({
       id="wizard-stepper"
       data-testid="wizard-stepper"
       className={cn(
-        'grid grid-cols-2 gap-2 rounded-xl border border-slate-200/80 bg-white p-2 shadow-sm dark:border-gdc-border dark:bg-gdc-card sm:grid-cols-3 lg:grid-cols-5',
+        'grid grid-cols-2 gap-1 rounded-lg border border-slate-200 bg-white p-1 dark:border-gdc-border dark:bg-gdc-card sm:grid-cols-3 lg:grid-cols-5',
         className,
       )}
     >
@@ -38,7 +38,7 @@ export function WizardStepper({
           status === 'complete'
             ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
             : active
-              ? 'border-slate-700 bg-slate-900 text-white dark:border-slate-200 dark:bg-slate-100 dark:text-slate-900'
+              ? 'border-violet-500/40 bg-violet-500/10 text-violet-700 dark:border-violet-400/40 dark:text-violet-300'
               : status === 'in_progress'
                 ? 'border-amber-300/60 bg-amber-500/10 text-amber-800 dark:text-amber-200'
                 : 'border-slate-300 bg-white text-slate-500 dark:border-gdc-border dark:bg-gdc-card dark:text-gdc-muted'
@@ -55,9 +55,9 @@ export function WizardStepper({
                 !reachable ? 'Complete required steps before opening this section.' : undefined
               }
               className={cn(
-                'w-full rounded-lg border px-2.5 py-2 text-left transition-colors',
+                'w-full rounded-md border px-2.5 py-2 text-left',
                 active
-                  ? 'border-slate-300 bg-slate-50 dark:border-slate-500/40 dark:bg-gdc-section'
+                  ? 'border-violet-500/30 bg-violet-500/[0.06] dark:border-violet-400/30 dark:bg-violet-500/[0.08]'
                   : 'border-transparent bg-transparent hover:bg-slate-50 dark:hover:bg-gdc-rowHover',
                 !reachable && 'cursor-not-allowed opacity-60',
               )}
@@ -69,7 +69,7 @@ export function WizardStepper({
               <p className="flex items-center gap-2">
                 <span
                   className={cn(
-                    'inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-xs font-semibold',
+                    'inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border text-xs font-semibold',
                     tone,
                   )}
                 >
@@ -78,7 +78,7 @@ export function WizardStepper({
                 <span
                   className={cn(
                     'min-w-0 truncate text-sm font-semibold',
-                    active ? 'text-slate-900 dark:text-slate-50' : 'text-slate-700 dark:text-gdc-mutedStrong',
+                    active ? 'text-violet-800 dark:text-violet-200' : 'text-slate-700 dark:text-gdc-mutedStrong',
                   )}
                 >
                   {step.title}
