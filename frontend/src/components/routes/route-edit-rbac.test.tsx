@@ -398,12 +398,14 @@ describe('RouteEditPage workspace capability visibility', () => {
     expect(within(panel).getByRole('button', { name: 'Add Regex extract rule' })).toBeDisabled()
 
     await user.click(basic)
+    const changes = within(panel).getByRole('tab', { name: /^Changes/ })
     const transformed = within(panel).getByRole('tab', { name: 'Transformed' })
-    const tableView = within(panel).getByRole('button', { name: 'Table' })
+    expect(changes).toHaveAttribute('aria-selected', 'true')
     expect(transformed).toBeEnabled()
+    await user.click(transformed)
+    const tableView = within(panel).getByRole('button', { name: 'Table' })
     expect(tableView).toBeEnabled()
     expect(within(panel).getByRole('button', { name: 'JSON' })).toBeEnabled()
-    await user.click(transformed)
     await user.click(tableView)
     expect(within(panel).getByRole('button', { name: 'Add row' })).toBeDisabled()
     for (const button of within(panel).getAllByRole('button', { name: 'Edit row' })) {
