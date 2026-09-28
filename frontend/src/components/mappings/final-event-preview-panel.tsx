@@ -92,7 +92,11 @@ export function FinalEventPreviewPanel({
     [rawSampleEvents, rows, preview.mapped, preview.final, warnings],
   )
   const availableEventCount = Math.max(
-    summary.previewEventCount > 0 ? summary.previewEventCount : Math.min(eventCount, 20),
+    Math.min(
+      summary.previewEventCount > 0 ? summary.previewEventCount : eventCount,
+      rawSampleEvents.length > 0 ? rawSampleEvents.length : eventCount,
+      20,
+    ),
     1,
   )
   const displayObject = useMemo(() => {
@@ -176,7 +180,7 @@ export function FinalEventPreviewPanel({
 
         <div className="grid grid-cols-2 overflow-hidden rounded-md border border-slate-200 bg-slate-50/60 dark:border-gdc-border dark:bg-gdc-section sm:grid-cols-3">
           <PreviewMetric
-            label="Matched"
+            label="Field matches"
             value={summary.totalApplications > 0 ? `${summary.matchedApplications}/${summary.totalApplications}` : '—'}
             detail={summary.previewEventCount > 0 ? `${summary.previewEventCount} sample${summary.previewEventCount === 1 ? '' : 's'}` : 'No preview'}
             tone={summary.missingApplications === 0 ? 'good' : 'neutral'}
@@ -282,7 +286,7 @@ export function FinalEventPreviewPanel({
                     </thead>
                     <tbody>
                       {changeRows.map((row) => (
-                        <tr key={row.key} className={opTr}>
+                        <tr key={`${row.kind}:${row.path}`} className={opTr}>
                           <td className={opTd}>
                             <span
                               className={cn(
