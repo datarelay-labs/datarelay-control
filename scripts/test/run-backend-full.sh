@@ -87,7 +87,7 @@ export SOURCE_E2E_MINIO_SECRET_KEY="${SOURCE_E2E_MINIO_SECRET_KEY:-gdcminioacces
 export SOURCE_E2E_MINIO_BUCKET="${SOURCE_E2E_MINIO_BUCKET:-gdc-source-e2e}"
 export SOURCE_E2E_PG_FIXTURE_URL="${SOURCE_E2E_PG_FIXTURE_URL:-postgresql://gdc_fixture:gdc_fixture_pw@127.0.0.1:55433/gdc_query_fixture}"
 export SOURCE_E2E_SFTP_HOST="${SOURCE_E2E_SFTP_HOST:-127.0.0.1}"
-export SOURCE_E2E_SFTP_PORT="${SOURCE_E2E_SFTP_PORT:-22222}"
+export SOURCE_E2E_SFTP_PORT="${SOURCE_E2E_SFTP_PORT:-${GDC_TEST_SFTP_HOST_PORT:-22222}}"
 
 echo "==> Enforced TEST_DATABASE_URL / DATABASE_URL:"
 echo "    $TEST_DATABASE_URL"
@@ -239,7 +239,54 @@ pg_fixture_already_healthy() {
 }
 
 sftp_already_healthy() {
-  host_tcp_open 127.0.0.1 "${GDC_TEST_SFTP_HOST_PORT:-22222}"
+  host_tcp_open 127.0.0.1 "${SOURCE_E2E_SFTP_PORT:-${GDC_TEST_SFTP_HOST_PORT:-22222}}"
+}
+
+sftp_container_for_runtime_port() {
+  local port="${SOURCE_E2E_SFTP_PORT:-${GDC_TEST_SFTP_HOST_PORT:-22222}}"
+  local candidate mapping
+  local -a matches=()
+
+  while IFS= read -r candidate; do
+    [[ -n "$candidate" ]] || continue
+    [[ "$candidate" == *-sftp-test ]] || continue
+    mapping="$(docker port "$candidate" 22/tcp 2>/dev/null || true)"
+    if printf '%s\n' "$mapping" | grep -Eq ":${port}$"; then
+      matches+=("$candidate")
+    fi
+  done < <(docker ps --filter "publish=$port" --format '{{.Names}}')
+
+  if [[ "${#matches[@]}" -eq 1 ]]; then
+    printf '%s\n' "${matches[0]}"
+    return 0
+  fi
+  if [[ "${#matches[@]}" -gt 1 ]]; then
+    echo "ERROR: multiple running SFTP fixture containers publish host port $port: ${matches[*]}" >&2
+    return 2
+  fi
+  return 1
+}
+
+resolve_sftp_fixture_owner() {
+  local port="${SOURCE_E2E_SFTP_PORT:-${GDC_TEST_SFTP_HOST_PORT:-22222}}"
+  local owner=""
+  for _ in $(seq 1 40); do
+    if sftp_already_healthy; then
+      if owner="$(sftp_container_for_runtime_port)"; then
+        export SOURCE_E2E_SFTP_CONTAINER="$owner"
+        echo "  SFTP runtime/seed owner: $SOURCE_E2E_SFTP_CONTAINER (127.0.0.1:$port -> 22/tcp)"
+        return 0
+      else
+        local owner_rc=$?
+        [[ "$owner_rc" -eq 1 ]] || return "$owner_rc"
+      fi
+    fi
+    sleep 0.5
+  done
+
+  echo "ERROR: SFTP runtime endpoint 127.0.0.1:$port is not owned by exactly one running *-sftp-test container." >&2
+  echo "       Refusing to seed a different container than the runtime reads." >&2
+  return 1
 }
 
 syslog_already_healthy() {
@@ -295,13 +342,12 @@ if command -v docker >/dev/null 2>&1; then
     echo "  All fixture ports already healthy — skipping compose up."
   fi
 
-  # When reusing full-e2e-lab containers (gdc-* prefix), point seed helpers at those names.
-  if ! docker ps --format '{{.Names}}' | grep -qx "${GDC_TEST_CONTAINER_PREFIX}-sftp-test"; then
-    if docker ps --format '{{.Names}}' | grep -qx "gdc-sftp-test"; then
-      export SOURCE_E2E_SFTP_CONTAINER="gdc-sftp-test"
-      echo "  Seed SFTP container override: $SOURCE_E2E_SFTP_CONTAINER"
-    fi
-  fi
+  # Bind SFTP seed writes to the same running fixture that owns the runtime
+  # host port. Container existence alone is insufficient because another stack
+  # may keep a same-prefix fixture alive on a different published port.
+  resolve_sftp_fixture_owner
+
+  # When reusing full-e2e-lab PG fixtures, point seed helpers at those names.
   if ! docker ps --format '{{.Names}}' | grep -qx "${GDC_TEST_CONTAINER_PREFIX}-postgres-query-test"; then
     if docker ps --format '{{.Names}}' | grep -qx "gdc-postgres-query-test"; then
       export SOURCE_E2E_PG_FIXTURE_CONTAINER="gdc-postgres-query-test"
