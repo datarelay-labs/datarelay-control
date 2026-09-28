@@ -38,7 +38,7 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: gdc-platform-postgres
+    container_name: ${GDC_PLATFORM_CONTAINER_PREFIX:-gdc-platform}-postgres
     command:
       - postgres
       - -c
@@ -71,7 +71,7 @@ services:
         GDC_BUILD_SOURCE_DIGEST: ${GDC_BUILD_SOURCE_DIGEST:-}
         GDC_BUILD_WORKTREE: ${GDC_BUILD_WORKTREE:-${PWD:-/workspace}}
         GDC_BUILD_TIME: ${GDC_BUILD_TIME:-unknown}
-    container_name: gdc-platform-api
+    container_name: ${GDC_PLATFORM_CONTAINER_PREFIX:-gdc-platform}-api
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-gdc}:${POSTGRES_PASSWORD:-gdc}@postgres:5432/${POSTGRES_DB:-gdc}
       GDC_DB_POOL_SIZE: ${GDC_DB_POOL_SIZE:-12}
@@ -133,7 +133,7 @@ services:
       GDC_HTTP_PORT: ${GDC_HTTP_PORT:-18080}
       GDC_HTTPS_PORT: ${GDC_HTTPS_PORT:-18443}
       GDC_PUBLIC_HTTPS_PORT: ${GDC_PUBLIC_HTTPS_PORT:-${GDC_HTTPS_PORT:-18443}}
-      GDC_PLATFORM_ENV_PATH: ${PWD:-/workspace}/.env
+      GDC_PLATFORM_ENV_PATH: ${GDC_PLATFORM_ENV_PATH:-${PWD:-/workspace}/.env}
       GDC_PLATFORM_COMPOSE_ROOT: ${PWD:-/workspace}
       COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-gdc-platform}
     volumes:
@@ -178,7 +178,7 @@ services:
         GDC_BUILD_SOURCE_DIGEST: ${GDC_BUILD_SOURCE_DIGEST:-}
         GDC_BUILD_WORKTREE: ${GDC_BUILD_WORKTREE:-${PWD:-/workspace}}
         GDC_BUILD_TIME: ${GDC_BUILD_TIME:-unknown}
-    container_name: gdc-platform-scheduler
+    container_name: ${GDC_PLATFORM_CONTAINER_PREFIX:-gdc-platform}-scheduler
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-gdc}:${POSTGRES_PASSWORD:-gdc}@postgres:5432/${POSTGRES_DB:-gdc}
       GDC_DB_POOL_SIZE: ${GDC_SCHEDULER_DB_POOL_SIZE:-8}
@@ -250,7 +250,7 @@ services:
       dockerfile: docker/Dockerfile.frontend
       args:
         VITE_OSS_RELEASE_MODE: ${VITE_OSS_RELEASE_MODE:-true}
-    container_name: gdc-platform-frontend
+    container_name: ${GDC_PLATFORM_CONTAINER_PREFIX:-gdc-platform}-frontend
     expose:
       - "80"
     healthcheck:
@@ -265,7 +265,7 @@ services:
     build:
       context: ./docker/reverse-proxy
       dockerfile: Dockerfile
-    container_name: gdc-platform-reverse-proxy
+    container_name: ${GDC_PLATFORM_CONTAINER_PREFIX:-gdc-platform}-reverse-proxy
     environment:
       GDC_PROXY_RELOAD_TOKEN: ${GDC_PROXY_RELOAD_TOKEN:-devtoken}
       GDC_UPSTREAM_API_HOST: api
@@ -293,6 +293,7 @@ volumes:
 
 networks:
   default:
-    name: gdc-platform_default
+    name: ${GDC_PLATFORM_DEFAULT_NETWORK_NAME:-gdc-platform_default}
   gdc-dev-validation:
+    name: ${GDC_DEV_VALIDATION_NETWORK_NAME:-gdc-dev-validation}
     external: true

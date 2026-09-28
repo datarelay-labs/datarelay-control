@@ -48,9 +48,12 @@ Pre-flight static checks (no Docker required):
 
 The default platform compose is deliberately a **development/lab security profile**: it pins
 `APP_ENV=development` and `REQUIRE_AUTH=false` even when the root `.env` is production-oriented.
-Use it for local qualification and repository public-smoke checks on loopback/private test hosts. For
-any externally reachable production deployment, use `deploy/docker-compose.https.yml`, which pins
-`APP_ENV=production`, requires authentication, and fail-closes on insecure secrets.
+Use it for local qualification on loopback/private test hosts. Repository public-smoke uses
+`scripts/release/public-smoke.sh`, which runs this same development/lab topology with disposable
+container/network/volume names, isolated loopback ports, a dedicated env file, exact build-identity
+verification, and automatic cleanup so an existing `gdc-platform-*` stack is not reused or replaced.
+For any externally reachable production deployment, use `deploy/docker-compose.https.yml`, which
+pins `APP_ENV=production`, requires authentication, and fail-closes on insecure secrets.
 
 Example production HTTPS install:
 

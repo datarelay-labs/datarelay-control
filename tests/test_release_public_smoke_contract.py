@@ -11,12 +11,30 @@ def _read(rel: str) -> str:
     return (ROOT / rel).read_text(encoding="utf-8")
 
 
-def test_public_smoke_rebuilds_candidate_images_on_explicit_local_stack() -> None:
+def test_public_smoke_is_candidate_bound_and_disposable() -> None:
     release = _read(".engineering/release.yaml")
-    assert (
-        "public_smoke_command: GDC_RELEASE_COMPOSE_FILE=docker-compose.platform.yml "
-        "bash scripts/release/install.sh --build"
-    ) in release
+    smoke = _read("scripts/release/public-smoke.sh")
+    platform = _read("docker-compose.platform.yml")
+    install = _read("scripts/release/install.sh")
+
+    assert "public_smoke_command: bash scripts/release/public-smoke.sh" in release
+    assert "bash scripts/release/install.sh --build" in smoke
+    assert 'git -C "$ROOT" status --porcelain=v1' in smoke
+    assert "ensure_platform_external_network()" in install
+    assert 'docker network create "$network_name"' in install
+    assert 'docker compose -p "$project" -f "$COMPOSE" down -v --remove-orphans' in smoke
+    assert 'GDC_PLATFORM_CONTAINER_PREFIX="$prefix"' in smoke
+    assert 'GDC_PLATFORM_DEFAULT_NETWORK_NAME="$default_network"' in smoke
+    assert 'GDC_DEV_VALIDATION_NETWORK_NAME="$dev_network"' in smoke
+    assert 'GDC_RELEASE_ENV_FILE="$env_file"' in smoke
+    assert 'GDC_RUNTIME_IMAGE_TAG="$runtime_tag"' in smoke
+    assert "public-smoke build identity mismatch" in smoke
+    assert "PUBLIC_SMOKE=PASS" in smoke
+
+    assert '${GDC_PLATFORM_CONTAINER_PREFIX:-gdc-platform}-api' in platform
+    assert '${GDC_PLATFORM_DEFAULT_NETWORK_NAME:-gdc-platform_default}' in platform
+    assert '${GDC_DEV_VALIDATION_NETWORK_NAME:-gdc-dev-validation}' in platform
+    assert 'ENV_FILE="${GDC_RELEASE_ENV_FILE:-$ROOT/.env}"' in install
 
 
 def test_install_build_path_prepares_exact_source_identity() -> None:

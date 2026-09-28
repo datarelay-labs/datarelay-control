@@ -19,7 +19,7 @@ source "$SCRIPT_DIR/_release_postgres_catalog.sh"
 source "$SCRIPT_DIR/_release_migration_validate.sh"
 COMPOSE_REL="${GDC_RELEASE_COMPOSE_FILE:-docker-compose.platform.yml}"
 ENV_EXAMPLE="$ROOT/.env.example"
-ENV_FILE="$ROOT/.env"
+ENV_FILE="${GDC_RELEASE_ENV_FILE:-$ROOT/.env}"
 
 INSTALL_START_EPOCH="$(date +%s)"
 IMAGE_BUILD_SECONDS=""
@@ -288,6 +288,18 @@ using_https_compose() {
       return 1
       ;;
   esac
+}
+
+ensure_platform_external_network() {
+  using_https_compose && return 0
+
+  local network_name
+  network_name="${GDC_DEV_VALIDATION_NETWORK_NAME:-gdc-dev-validation}"
+  if docker network inspect "$network_name" >/dev/null 2>&1; then
+    return 0
+  fi
+  docker network create "$network_name" >/dev/null
+  echo "Created required platform external network: $network_name"
 }
 
 validate_required_ports_free() {
@@ -1038,6 +1050,7 @@ install_restart_only() {
 
   log_step "$STEP_TOTAL" "Checking Docker and Compose"
   ensure_docker_ready
+  ensure_platform_external_network
 
   log_step "$STEP_TOTAL" "Preparing environment (.env validation)"
   bootstrap_env
@@ -1070,6 +1083,7 @@ install_full() {
 
   log_step "$STEP_TOTAL" "Checking Docker and Compose (install if missing on Ubuntu 24.04)"
   ensure_docker_ready
+  ensure_platform_external_network
 
   log_step "$STEP_TOTAL" "Validating system resources (memory, disk)"
   validate_system_resources

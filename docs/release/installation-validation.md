@@ -30,13 +30,21 @@ cp .env.example .env
 
 ## Step 2 — Start the selected install contract
 
-For repository/local qualification and the release public-smoke gate:
+For repository/local qualification:
 
 ```bash
 GDC_RELEASE_COMPOSE_FILE=docker-compose.platform.yml ./scripts/release/install.sh --build
 ```
 
 This profile is intentionally development-only and loopback-oriented. It is not the externally reachable production security profile.
+
+For the release public-smoke gate, use the disposable wrapper:
+
+```bash
+bash scripts/release/public-smoke.sh
+```
+
+The wrapper requires a clean worktree, selects isolated loopback ports, uses a unique Compose project/container prefix and networks, writes a dedicated ignored env file, verifies the baked Git SHA/clean provenance through `/health`, and removes its containers/volumes/network/env file afterward. It does not reuse or replace the normal `gdc-platform-*` stack.
 
 For production-style HTTPS deployment:
 
