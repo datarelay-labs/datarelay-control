@@ -60,7 +60,7 @@ compose_service_for() {
 wait_http() {
   local url="$1" name="$2" tries="${3:-60}"
   for _ in $(seq 1 "$tries"); do
-    if curl -sf "$url" >/dev/null 2>&1; then
+    if curl -sf --connect-timeout 1 --max-time 2 "$url" >/dev/null 2>&1; then
       echo "    OK $name"
       return 0
     fi
@@ -68,6 +68,62 @@ wait_http() {
   done
   echo "ERROR: timeout waiting for $name at $url" >&2
   return 1
+}
+
+port_in_use() {
+  local port="$1"
+  python3 - "$port" <<'PY'
+import socket
+import sys
+
+port = int(sys.argv[1])
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.settimeout(0.25)
+try:
+    rc = sock.connect_ex(("127.0.0.1", port))
+finally:
+    sock.close()
+raise SystemExit(0 if rc == 0 else 1)
+PY
+}
+
+tracked_process_matches() {
+  local pid_file="$1" expected_cwd="$2"
+  [[ -f "$pid_file" ]] || return 1
+  local pid actual_cwd
+  pid="$(tr -d '[:space:]' <"$pid_file" 2>/dev/null || true)"
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  kill -0 "$pid" 2>/dev/null || return 1
+  actual_cwd="$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)"
+  [[ "$actual_cwd" == "$expected_cwd" ]]
+}
+
+terminate_tracked_process_group() {
+  local pid_file="$1" expected_cwd="$2"
+  [[ -f "$pid_file" ]] || return 0
+  local pid
+  pid="$(tr -d '[:space:]' <"$pid_file" 2>/dev/null || true)"
+  [[ "$pid" =~ ^[0-9]+$ ]] || { rm -f "$pid_file"; return 0; }
+  if ! tracked_process_matches "$pid_file" "$expected_cwd"; then
+    echo "WARN: refusing to terminate unowned/stale tracked PID $pid from $pid_file" >&2
+    rm -f "$pid_file"
+    return 0
+  fi
+  kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+  for _ in $(seq 1 20); do
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.1
+  done
+  kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+  rm -f "$pid_file"
+}
+
+require_free_api_port() {
+  local port="$1"
+  if port_in_use "$port"; then
+    echo "ERROR: API port 127.0.0.1:$port is occupied by an unowned/stale process." >&2
+    return 1
+  fi
 }
 
 api_port() {
@@ -108,7 +164,7 @@ wait_dedup_put_ready() {
   local url="http://127.0.0.1:${port}/api/v1/runtime/streams/1/deduplication"
   local code body
   for _ in $(seq 1 "$tries"); do
-    body="$(curl -sS -o /tmp/gdc-dedup-ready.body -w '%{http_code}' -X PUT "$url" \
+    body="$(curl -sS --connect-timeout 1 --max-time 3 -o /tmp/gdc-dedup-ready.body -w '%{http_code}' -X PUT "$url" \
       -H 'Content-Type: application/json' \
       -d '{"enabled":true,"key_field":"id","duplicate_handling":"skip_duplicate","scope":"current_run"}' \
       2>/dev/null || echo '000')"
@@ -146,13 +202,19 @@ api_workers() {
 }
 
 start_lab_scheduler() {
-  local api_code_root env_file
+  local api_code_root env_file git_head head_file have_head
   api_code_root="$(api_root)"
   env_file="$(api_env_file)"
-  if [[ -f "$PID_DIR/lab-scheduler.pid" ]] && kill -0 "$(cat "$PID_DIR/lab-scheduler.pid")" 2>/dev/null; then
-    echo "    lab scheduler already running pid=$(cat "$PID_DIR/lab-scheduler.pid")"
+  git_head="$(git -C "$api_code_root" rev-parse HEAD 2>/dev/null || printf 'unknown\n')"
+  head_file="$PID_DIR/lab-scheduler-git-head.txt"
+  have_head=""
+  [[ -f "$head_file" ]] && have_head="$(tr -d '[:space:]' <"$head_file")"
+
+  if tracked_process_matches "$PID_DIR/lab-scheduler.pid" "$api_code_root" && [[ "$have_head" == "$git_head" ]]; then
+    echo "    lab scheduler already running pid=$(cat "$PID_DIR/lab-scheduler.pid") head=$have_head"
     return 0
   fi
+  terminate_tracked_process_group "$PID_DIR/lab-scheduler.pid" "$api_code_root"
   if [[ ! -d "$api_code_root/app" ]]; then
     echo "ERROR: API root missing app/: $api_code_root" >&2
     return 1
@@ -164,37 +226,44 @@ start_lab_scheduler() {
     # Force out-of-process scheduling for the lab HTTP API tree.
     export GDC_ENABLE_IN_PROCESS_SCHEDULER=false
     export PYTHONPATH="$api_code_root${PYTHONPATH:+:$PYTHONPATH}"
-    nohup python3 -m app.scheduler.standalone \
+    nohup setsid python3 -m app.scheduler.standalone \
       >"$LOG_DIR/lab_scheduler.log" 2>&1 &
     echo $! >"$PID_DIR/lab-scheduler.pid"
   )
   sleep 2
-  if ! kill -0 "$(cat "$PID_DIR/lab-scheduler.pid")" 2>/dev/null; then
+  if ! tracked_process_matches "$PID_DIR/lab-scheduler.pid" "$api_code_root"; then
     echo "ERROR: lab scheduler failed to start; see $LOG_DIR/lab_scheduler.log" >&2
     return 1
   fi
-  echo "    lab scheduler pid=$(cat "$PID_DIR/lab-scheduler.pid")"
+  echo "$git_head" >"$head_file"
+  echo "    lab scheduler pid=$(cat "$PID_DIR/lab-scheduler.pid") head=$git_head"
 }
 
 stop_lab_scheduler() {
-  if [[ -f "$PID_DIR/lab-scheduler.pid" ]]; then
-    kill "$(cat "$PID_DIR/lab-scheduler.pid")" 2>/dev/null || true
-    rm -f "$PID_DIR/lab-scheduler.pid"
-    sleep 1
-  fi
+  local api_code_root
+  api_code_root="$(api_root)"
+  terminate_tracked_process_group "$PID_DIR/lab-scheduler.pid" "$api_code_root"
+  rm -f "$PID_DIR/lab-scheduler-git-head.txt"
 }
 
 start_api() {
-  local port api_code_root env_file workers
+  local port api_code_root env_file workers git_head head_file have_head
   port="$(api_port)"
   api_code_root="$(api_root)"
   env_file="$(api_env_file)"
-  if [[ -f "$PID_DIR/api.pid" ]] && kill -0 "$(cat "$PID_DIR/api.pid")" 2>/dev/null; then
-    echo "    API already running pid=$(cat "$PID_DIR/api.pid")"
+  git_head="$(git -C "$api_code_root" rev-parse HEAD 2>/dev/null || printf 'unknown\n')"
+  head_file="$PID_DIR/api-git-head.txt"
+  have_head=""
+  [[ -f "$head_file" ]] && have_head="$(tr -d '[:space:]' <"$head_file")"
+
+  if tracked_process_matches "$PID_DIR/api.pid" "$api_code_root" && [[ "$have_head" == "$git_head" ]]; then
+    echo "    API already running pid=$(cat "$PID_DIR/api.pid") head=$have_head"
     wait_dedup_put_ready "$port" 5 || return 1
     start_lab_scheduler || return 1
     return 0
   fi
+  terminate_tracked_process_group "$PID_DIR/api.pid" "$api_code_root"
+  require_free_api_port "$port" || return 1
   if [[ ! -d "$api_code_root/app" ]]; then
     echo "ERROR: API root missing app/: $api_code_root" >&2
     return 1
@@ -207,47 +276,34 @@ start_api() {
     export GDC_ENABLE_IN_PROCESS_SCHEDULER=false
     export PYTHONPATH="$api_code_root${PYTHONPATH:+:$PYTHONPATH}"
     workers="$(api_workers)"
-    nohup python3 -m uvicorn app.main:app \
+    nohup setsid python3 -m uvicorn app.main:app \
       --host 127.0.0.1 --port "$port" \
       --workers "$workers" \
       >"$LOG_DIR/api_fault_restart.log" 2>&1 &
     echo $! >"$PID_DIR/api.pid"
   )
-  wait_http "http://127.0.0.1:$port/health" "API" "${GDC_E2E_API_HEALTH_TRIES:-120}"
-  wait_dedup_put_ready "$port" 45
+  sleep 1
+  if ! tracked_process_matches "$PID_DIR/api.pid" "$api_code_root"; then
+    echo "ERROR: API process exited during recovery startup." >&2
+    tail -n 80 "$LOG_DIR/api_fault_restart.log" >&2 || true
+    return 1
+  fi
+  echo "$git_head" >"$head_file"
+  wait_http "http://127.0.0.1:$port/health" "API" "${GDC_E2E_API_HEALTH_TRIES:-120}" || return 1
+  wait_dedup_put_ready "$port" 45 || return 1
   start_lab_scheduler
 }
 
 stop_api() {
-  if [[ -f "$PID_DIR/api.pid" ]]; then
-    local pid
-    pid="$(tr -d '[:space:]' <"$PID_DIR/api.pid" || true)"
-    if [[ -n "${pid:-}" ]]; then
-      # Multi-worker uvicorn: kill the whole process group when possible.
-      kill -- "-$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
-      sleep 1
-      kill -9 -- "-$pid" 2>/dev/null || kill -9 "$pid" 2>/dev/null || true
-    fi
-    rm -f "$PID_DIR/api.pid"
-    sleep 1
-  fi
-  # Also kill any leftover lab API on the dedicated port
-  local port
+  local api_code_root port
+  api_code_root="$(api_root)"
   port="$(api_port)"
-  if command -v fuser >/dev/null 2>&1; then
-    fuser -k "${port}/tcp" 2>/dev/null || true
-  elif command -v lsof >/dev/null 2>&1; then
-    local pids
-    pids="$(lsof -t -iTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
-    if [[ -n "${pids:-}" ]]; then
-      # shellcheck disable=SC2086
-      kill $pids 2>/dev/null || true
-      sleep 1
-      # shellcheck disable=SC2086
-      kill -9 $pids 2>/dev/null || true
-    fi
+  terminate_tracked_process_group "$PID_DIR/api.pid" "$api_code_root"
+  rm -f "$PID_DIR/api-git-head.txt"
+  if port_in_use "$port"; then
+    echo "ERROR: API port 127.0.0.1:$port remains occupied by an unowned process; refusing cross-worktree kill." >&2
+    return 1
   fi
-  sleep 1
   # Keep lab scheduler running across api/runtime fault injection so stream
   # processing resumes when the HTTP workers return.
 }
@@ -364,6 +420,12 @@ fault_status() {
 }
 
 fault_reset() {
+  if [[ "${GDC_E2E_TEARDOWN:-0}" == "1" ]]; then
+    rm -f "$STATE_DIR"/*.active "$STATE_DIR"/*.json 2>/dev/null || true
+    echo "==> [fault reset] teardown mode: state cleared without restarting fixtures/API"
+    return 0
+  fi
+
   echo "==> [fault reset] recovering all injected faults"
   for t in database s3 sftp webhook syslog syslog-tls api runtime; do
     if [[ -f "$STATE_DIR/${t}.active" ]]; then

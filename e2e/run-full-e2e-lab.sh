@@ -239,6 +239,83 @@ wait_http() {
   return 1
 }
 
+current_git_head() {
+  git -C "$ROOT" rev-parse HEAD 2>/dev/null || printf 'unknown\n'
+}
+
+port_in_use() {
+  local port="$1"
+  python3 - "$port" <<'PY'
+import socket
+import sys
+
+port = int(sys.argv[1])
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.settimeout(0.25)
+try:
+    rc = sock.connect_ex(("127.0.0.1", port))
+finally:
+    sock.close()
+raise SystemExit(0 if rc == 0 else 1)
+PY
+}
+
+require_free_untracked_port() {
+  local name="$1" port="$2" tracked_alive="$3"
+  if [[ "$tracked_alive" -eq 0 ]] && port_in_use "$port"; then
+    echo "ERROR: $name port 127.0.0.1:$port is already in use, but this harness has no live tracked process for it." >&2
+    echo "       Refusing to reuse an unowned/stale listener; clean the owning E2E profile/worktree or choose an isolated port." >&2
+    return 1
+  fi
+}
+
+tracked_process_matches() {
+  local pid_file="$1" expected_cwd="$2"
+  [[ -f "$pid_file" ]] || return 1
+  local pid actual_cwd
+  pid="$(tr -d '[:space:]' <"$pid_file" 2>/dev/null || true)"
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  kill -0 "$pid" 2>/dev/null || return 1
+  actual_cwd="$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)"
+  [[ "$actual_cwd" == "$expected_cwd" ]]
+}
+
+terminate_tracked_process_group() {
+  local pid_file="$1" expected_cwd="$2"
+  [[ -f "$pid_file" ]] || return 0
+  local pid
+  pid="$(tr -d '[:space:]' <"$pid_file" 2>/dev/null || true)"
+  [[ "$pid" =~ ^[0-9]+$ ]] || { rm -f "$pid_file"; return 0; }
+
+  # Never signal a reused/unowned PID. A stale state file is safe to discard;
+  # an occupied target port will then fail closed in the next preflight.
+  if ! tracked_process_matches "$pid_file" "$expected_cwd"; then
+    echo "WARN: refusing to terminate unowned/stale tracked PID $pid from $pid_file" >&2
+    rm -f "$pid_file"
+    return 0
+  fi
+
+  # New harness processes are started with setsid, making the tracked PID the
+  # process-group leader. Fall back to the PID for older state files.
+  kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+  for _ in $(seq 1 20); do
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.1
+  done
+  kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+  rm -f "$pid_file"
+}
+
+require_started_process() {
+  local name="$1" pid_file="$2" log_file="$3"
+  sleep 1
+  if [[ ! -f "$pid_file" ]] || ! kill -0 "$(cat "$pid_file")" 2>/dev/null; then
+    echo "ERROR: $name process exited during startup." >&2
+    [[ -f "$log_file" ]] && tail -n 80 "$log_file" >&2 || true
+    return 1
+  fi
+}
+
 print_matrix_summary() {
   local summary="$ROOT/e2e/reports/$RUN_ID/final/matrix-summary.json"
   if [[ ! -f "$summary" ]]; then
@@ -266,6 +343,19 @@ PY
 cmd_up() {
   echo "==> [up] Full E2E Lab (route-processing=$ROUTE_MODE project=$COMPOSE_PROJECT_NAME prefix=$GDC_TEST_CONTAINER_PREFIX)"
   echo "    run_id=$RUN_ID env=$ENV_FILE api_port=${GDC_E2E_API_PORT:-18000}"
+
+  # Fail before touching fixtures when the target API/UI ports are already
+  # owned outside this worktree's tracked process state.
+  local preflight_api_tracked=0
+  local preflight_ui_tracked=0
+  if tracked_process_matches "$PID_DIR/api.pid" "$ROOT"; then
+    preflight_api_tracked=1
+  fi
+  if tracked_process_matches "$PID_DIR/ui.pid" "$ROOT/frontend"; then
+    preflight_ui_tracked=1
+  fi
+  require_free_untracked_port "API" "${GDC_E2E_API_PORT:-18000}" "$preflight_api_tracked" || return 1
+  require_free_untracked_port "UI" "${GDC_E2E_UI_PORT:-4173}" "$preflight_ui_tracked" || return 1
 
   # Prefer compose; if containers already exist under another compose project
   # (same GDC_TEST_CONTAINER_PREFIX names), reuse them instead of failing.
@@ -347,55 +437,74 @@ PY
   local have_flag=""
   local api_running=0
   local api_workers="${GDC_E2E_API_WORKERS:-2}"
-  if [[ -f "$PID_DIR/api.pid" ]] && kill -0 "$(cat "$PID_DIR/api.pid")" 2>/dev/null; then
+  local git_head
+  git_head="$(current_git_head)"
+  local api_head_file="$PID_DIR/api-git-head.txt"
+  local api_have_head=""
+  if tracked_process_matches "$PID_DIR/api.pid" "$ROOT"; then
     api_running=1
   fi
   if [[ -f "$PID_DIR/api-route-flag.txt" ]]; then
     have_flag="$(tr -d '[:space:]' <"$PID_DIR/api-route-flag.txt")"
   fi
-  # Restart when route flag changes so triage/scenario can flip route-off ↔ route-on.
-  if [[ $api_running -eq 1 && "$have_flag" == "$want_flag" && "${GDC_E2E_FORCE_API_RESTART:-0}" != "1" ]]; then
-    echo "    API already running pid=$(cat "$PID_DIR/api.pid") flag=$have_flag"
+  if [[ -f "$api_head_file" ]]; then
+    api_have_head="$(tr -d '[:space:]' <"$api_head_file")"
+  fi
+  # Reuse is allowed only for a live process started by this harness on the
+  # same exact Git HEAD and route-processing mode.
+  if [[ $api_running -eq 1 && "$have_flag" == "$want_flag" && "$api_have_head" == "$git_head" && "${GDC_E2E_FORCE_API_RESTART:-0}" != "1" ]]; then
+    echo "    API already running pid=$(cat "$PID_DIR/api.pid") flag=$have_flag head=$api_have_head"
   else
     if [[ $api_running -eq 1 ]]; then
-      echo "    Restarting API (flag $have_flag -> $want_flag)"
-      kill "$(cat "$PID_DIR/api.pid")" 2>/dev/null || true
-      sleep 1
-      fuser -k "${GDC_E2E_API_PORT:-18000}/tcp" 2>/dev/null || true
-      sleep 1
+      echo "    Restarting API (flag $have_flag -> $want_flag, head $api_have_head -> $git_head)"
+      terminate_tracked_process_group "$PID_DIR/api.pid" "$ROOT"
     fi
+    require_free_untracked_port "API" "${GDC_E2E_API_PORT:-18000}" 0 || return 1
     (
       cd "$ROOT"
       # Isolate stream scheduling from HTTP workers (prevents POST /connectors starvation).
       export GDC_ENABLE_IN_PROCESS_SCHEDULER=false
-      nohup python3 -m uvicorn app.main:app \
+      nohup setsid python3 -m uvicorn app.main:app \
         --host 127.0.0.1 --port "${GDC_E2E_API_PORT:-8000}" \
         --workers "$api_workers" \
         >"$LOG_DIR/api_$RUN_ID.log" 2>&1 &
       echo $! >"$PID_DIR/api.pid"
     )
+    require_started_process "API" "$PID_DIR/api.pid" "$LOG_DIR/api_$RUN_ID.log" || return 1
     echo "$want_flag" >"$PID_DIR/api-route-flag.txt"
+    echo "$git_head" >"$api_head_file"
   fi
-  wait_http "http://127.0.0.1:${GDC_E2E_API_PORT:-8000}/health" "API" 60
+  wait_http "http://127.0.0.1:${GDC_E2E_API_PORT:-8000}/health" "API" 60 || return 1
   echo "$want_flag" >"$PID_DIR/api-route-flag.txt"
+  echo "$git_head" >"$api_head_file"
 
   echo "==> [up] Starting lab standalone scheduler (GDC_ENABLE_IN_PROCESS_SCHEDULER=false)"
-  if [[ -f "$PID_DIR/lab-scheduler.pid" ]] && kill -0 "$(cat "$PID_DIR/lab-scheduler.pid")" 2>/dev/null; then
-    echo "    lab scheduler already running pid=$(cat "$PID_DIR/lab-scheduler.pid")"
+  local scheduler_running=0
+  local scheduler_head_file="$PID_DIR/lab-scheduler-git-head.txt"
+  local scheduler_have_head=""
+  if tracked_process_matches "$PID_DIR/lab-scheduler.pid" "$ROOT"; then
+    scheduler_running=1
+  fi
+  if [[ -f "$scheduler_head_file" ]]; then
+    scheduler_have_head="$(tr -d '[:space:]' <"$scheduler_head_file")"
+  fi
+  if [[ $scheduler_running -eq 1 && "$scheduler_have_head" == "$git_head" ]]; then
+    echo "    lab scheduler already running pid=$(cat "$PID_DIR/lab-scheduler.pid") head=$scheduler_have_head"
   else
+    if [[ $scheduler_running -eq 1 ]]; then
+      echo "    Restarting lab scheduler (head $scheduler_have_head -> $git_head)"
+      terminate_tracked_process_group "$PID_DIR/lab-scheduler.pid" "$ROOT"
+    fi
     (
       cd "$ROOT"
       export GDC_ENABLE_IN_PROCESS_SCHEDULER=false
-      nohup python3 -m app.scheduler.standalone \
+      nohup setsid python3 -m app.scheduler.standalone \
         >"$LOG_DIR/lab_scheduler_$RUN_ID.log" 2>&1 &
       echo $! >"$PID_DIR/lab-scheduler.pid"
     )
-    sleep 2
-    if kill -0 "$(cat "$PID_DIR/lab-scheduler.pid")" 2>/dev/null; then
-      echo "    lab scheduler pid=$(cat "$PID_DIR/lab-scheduler.pid")"
-    else
-      echo "WARN: lab scheduler failed to start; see $LOG_DIR/lab_scheduler_$RUN_ID.log"
-    fi
+    require_started_process "lab scheduler" "$PID_DIR/lab-scheduler.pid" "$LOG_DIR/lab_scheduler_$RUN_ID.log" || return 1
+    echo "$git_head" >"$scheduler_head_file"
+    echo "    lab scheduler pid=$(cat "$PID_DIR/lab-scheduler.pid") head=$git_head"
   fi
 
   # Lightweight static UI for Playwright baseURL (optional; smoke is API-driven).
@@ -403,35 +512,47 @@ PY
   local ui_proxy_want="http://127.0.0.1:${GDC_E2E_API_PORT:-18000}"
   local ui_proxy_have=""
   local ui_running=0
-  if [[ -f "$PID_DIR/ui.pid" ]] && kill -0 "$(cat "$PID_DIR/ui.pid")" 2>/dev/null; then
+  local ui_head_file="$PID_DIR/ui-git-head.txt"
+  local ui_build_head_file="$PID_DIR/ui-build-git-head.txt"
+  local ui_have_head=""
+  local ui_build_head=""
+  if tracked_process_matches "$PID_DIR/ui.pid" "$ROOT/frontend"; then
     ui_running=1
   fi
   if [[ -f "$PID_DIR/ui-api-proxy.txt" ]]; then
     ui_proxy_have="$(tr -d '[:space:]' <"$PID_DIR/ui-api-proxy.txt")"
   fi
-  if [[ $ui_running -eq 1 && "$ui_proxy_have" == "$ui_proxy_want" && "${GDC_E2E_FORCE_UI_RESTART:-0}" != "1" ]]; then
-    echo "    UI already running pid=$(cat "$PID_DIR/ui.pid") proxy=$ui_proxy_have"
+  if [[ -f "$ui_head_file" ]]; then
+    ui_have_head="$(tr -d '[:space:]' <"$ui_head_file")"
+  fi
+  if [[ -f "$ui_build_head_file" ]]; then
+    ui_build_head="$(tr -d '[:space:]' <"$ui_build_head_file")"
+  fi
+  if [[ $ui_running -eq 1 && "$ui_proxy_have" == "$ui_proxy_want" && "$ui_have_head" == "$git_head" && "${GDC_E2E_FORCE_UI_RESTART:-0}" != "1" ]]; then
+    echo "    UI already running pid=$(cat "$PID_DIR/ui.pid") proxy=$ui_proxy_have head=$ui_have_head"
   else
     if [[ $ui_running -eq 1 ]]; then
-      echo "    Restarting UI (proxy $ui_proxy_have -> $ui_proxy_want)"
-      kill "$(cat "$PID_DIR/ui.pid")" 2>/dev/null || true
-      sleep 1
-      fuser -k "${GDC_E2E_UI_PORT:-4173}/tcp" 2>/dev/null || true
-      sleep 1
+      echo "    Restarting UI (proxy $ui_proxy_have -> $ui_proxy_want, head $ui_have_head -> $git_head)"
+      terminate_tracked_process_group "$PID_DIR/ui.pid" "$ROOT/frontend"
     fi
+    require_free_untracked_port "UI" "${GDC_E2E_UI_PORT:-4173}" 0 || return 1
     (
       cd "$ROOT/frontend"
-      if [[ ! -d dist ]] || [[ "${GDC_E2E_FORCE_UI_BUILD:-0}" == "1" ]]; then
-        npm run build >"$LOG_DIR/ui_build_$RUN_ID.log" 2>&1 || true
+      if [[ ! -d dist ]] || [[ "$ui_build_head" != "$git_head" ]] || [[ "${GDC_E2E_FORCE_UI_BUILD:-0}" == "1" ]]; then
+        npm run build >"$LOG_DIR/ui_build_$RUN_ID.log" 2>&1
+        echo "$git_head" >"$ui_build_head_file"
       fi
       export VITE_DEV_API_PROXY_TARGET="$ui_proxy_want"
-      nohup npx --yes vite preview --host 127.0.0.1 --port "${GDC_E2E_UI_PORT:-4173}" \
+      nohup setsid npx --yes vite preview --host 127.0.0.1 --port "${GDC_E2E_UI_PORT:-4173}" --strictPort \
         >"$LOG_DIR/ui_$RUN_ID.log" 2>&1 &
       echo $! >"$PID_DIR/ui.pid"
     )
+    require_started_process "UI" "$PID_DIR/ui.pid" "$LOG_DIR/ui_$RUN_ID.log" || return 1
     echo "$ui_proxy_want" >"$PID_DIR/ui-api-proxy.txt"
+    echo "$git_head" >"$ui_head_file"
   fi
-  wait_http "http://127.0.0.1:${GDC_E2E_UI_PORT:-4173}/" "UI" 40 || echo "WARN: UI preview not ready (API smoke still runs)"
+  wait_http "http://127.0.0.1:${GDC_E2E_UI_PORT:-4173}/" "UI" 40 || return 1
+  echo "$git_head" >"$ui_head_file"
 
   echo "$GDC_ROUTE_PROCESSING_ENABLED" >"$ROOT/e2e/reports/$RUN_ID/route-flag-used.txt"
   echo "==> [up] ready"
@@ -485,10 +606,10 @@ cmd_scenario() {
   echo "==> [scenario] id=$SCENARIO_ID route=$ROUTE_MODE run_id=$RUN_ID"
   export GDC_E2E_SCENARIO_IDS="$SCENARIO_ID"
   # Ensure lab is healthy, reset fixtures, run only the selected scenario.
-  cmd_up
-  cmd_reset
+  cmd_up || { local up_ec=$?; cmd_down || true; return "$up_ec"; }
+  cmd_reset || { local reset_ec=$?; cmd_down || true; return "$reset_ec"; }
   local ec=0
-  trap 'ec=130; post_run_evidence_and_cleanup "$ec"; exit 130' INT TERM
+  trap 'ec=130; post_run_evidence_and_cleanup "$ec" || true; exit 130' INT TERM
   (
     cd "$ROOT/e2e"
     if [[ ! -d node_modules/@playwright/test ]]; then
@@ -599,20 +720,17 @@ cmd_down() {
   echo "==> [down] stopping lab API/UI + compose"
   # Clear any active fault injections first
   if [[ -x "$FAULT_SCRIPT" ]]; then
-    GDC_E2E_ENV_FILE="$ENV_FILE" "$FAULT_SCRIPT" reset >/dev/null 2>&1 || true
+    GDC_E2E_TEARDOWN=1 GDC_E2E_ENV_FILE="$ENV_FILE" "$FAULT_SCRIPT" reset >/dev/null 2>&1 || true
   fi
-  if [[ -f "$PID_DIR/api.pid" ]]; then
-    kill "$(cat "$PID_DIR/api.pid")" 2>/dev/null || true
-    rm -f "$PID_DIR/api.pid"
-  fi
-  if [[ -f "$PID_DIR/lab-scheduler.pid" ]]; then
-    kill "$(cat "$PID_DIR/lab-scheduler.pid")" 2>/dev/null || true
-    rm -f "$PID_DIR/lab-scheduler.pid"
-  fi
-  if [[ -f "$PID_DIR/ui.pid" ]]; then
-    kill "$(cat "$PID_DIR/ui.pid")" 2>/dev/null || true
-    rm -f "$PID_DIR/ui.pid"
-  fi
+  terminate_tracked_process_group "$PID_DIR/api.pid" "$ROOT"
+  terminate_tracked_process_group "$PID_DIR/lab-scheduler.pid" "$ROOT"
+  terminate_tracked_process_group "$PID_DIR/ui.pid" "$ROOT/frontend"
+  rm -f \
+    "$PID_DIR/api-route-flag.txt" \
+    "$PID_DIR/api-git-head.txt" \
+    "$PID_DIR/lab-scheduler-git-head.txt" \
+    "$PID_DIR/ui-api-proxy.txt" \
+    "$PID_DIR/ui-git-head.txt"
   # Stop collectors + fixtures for this project (keep volumes by default)
   compose stop webhook-collector syslog-collector \
     wiremock-test webhook-receiver-test syslog-test \
@@ -626,9 +744,9 @@ cmd_down() {
 
 cmd_all() {
   local ec=0
-  cmd_up
-  cmd_reset
-  trap 'ec=130; post_run_evidence_and_cleanup "$ec"; [[ "${GDC_E2E_KEEP_UP:-0}" != "1" ]] && cmd_down; exit 130' INT TERM
+  cmd_up || { ec=$?; cmd_down || true; return "$ec"; }
+  cmd_reset || { ec=$?; cmd_down || true; return "$ec"; }
+  trap 'ec=130; post_run_evidence_and_cleanup "$ec" || true; [[ "${GDC_E2E_KEEP_UP:-0}" != "1" ]] && cmd_down; exit 130' INT TERM
   set +e
   cmd_test
   ec=$?
@@ -644,9 +762,9 @@ cmd_all() {
 
 cmd_all_matrix() {
   local ec=0
-  cmd_up
-  cmd_reset
-  trap 'ec=130; post_run_evidence_and_cleanup "$ec"; [[ "${GDC_E2E_KEEP_UP:-0}" != "1" ]] && cmd_down; exit 130' INT TERM
+  cmd_up || { ec=$?; cmd_down || true; return "$ec"; }
+  cmd_reset || { ec=$?; cmd_down || true; return "$ec"; }
+  trap 'ec=130; post_run_evidence_and_cleanup "$ec" || true; [[ "${GDC_E2E_KEEP_UP:-0}" != "1" ]] && cmd_down; exit 130' INT TERM
   set +e
   cmd_matrix
   ec=$?
