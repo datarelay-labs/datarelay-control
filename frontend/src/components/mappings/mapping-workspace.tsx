@@ -1,5 +1,6 @@
-import { AlertCircle, Loader2, RefreshCw, Search } from 'lucide-react'
+import { AlertCircle, ArrowRight, CheckCircle2, Loader2, RefreshCw, Search } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { cn } from '../../lib/utils'
 import { AdvancedTransformWorkspace } from '../transform/advanced-transform-workspace'
 import { useMappingPreview } from '../../hooks/useMappingPreview'
 import type { AdvancedTransformRuleDraft } from '../../types/advancedTransform'
@@ -238,9 +239,41 @@ export function MappingWorkspace({
       ? 'border-violet-600 text-violet-700 dark:border-violet-400 dark:text-violet-300'
       : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-gdc-muted'
 
+  const readyMappingCount = rows.filter((row) => row.sourceJsonPath.trim() && row.outputField.trim()).length
+  const transformWarningCount = mergedWarnings.length
+  const previewReady = Boolean(preview.final?.final_events?.length)
+
   return (
     <div className="space-y-3">
       {headerSlot}
+
+      <div
+        className="grid overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-gdc-border dark:bg-gdc-card sm:grid-cols-[1fr_auto_1fr_auto_1fr]"
+        aria-label="Transform workflow"
+      >
+        <TransformFlowStep
+          number="1"
+          label="Source"
+          detail={sample?.ok ? `${sample.extractedEvents.length} sample event${sample.extractedEvents.length === 1 ? '' : 's'}` : 'Load a sample'}
+          complete={Boolean(sample?.ok)}
+        />
+        <TransformFlowArrow />
+        <TransformFlowStep
+          number="2"
+          label="Rules"
+          detail={readyMappingCount > 0 ? `${readyMappingCount} mapped field${readyMappingCount === 1 ? '' : 's'}` : 'Map fields'}
+          complete={readyMappingCount > 0}
+          warning={transformWarningCount > 0 ? `${transformWarningCount} warning${transformWarningCount === 1 ? '' : 's'}` : undefined}
+        />
+        <TransformFlowArrow />
+        <TransformFlowStep
+          number="3"
+          label="Final event"
+          detail={previewReady ? 'Preview ready' : 'Verify output'}
+          complete={previewReady && transformWarningCount === 0}
+          warning={previewReady && transformWarningCount > 0 ? 'Review output' : undefined}
+        />
+      </div>
 
       {!hideModeTabs ? (
         <div className="flex flex-wrap gap-1 border-b border-slate-200/80 dark:border-gdc-border" role="tablist" aria-label="Mapping mode">
@@ -284,8 +317,8 @@ export function MappingWorkspace({
         </p>
       ) : null}
 
-      <div className="grid grid-cols-12 gap-3">
-        <div className="col-span-12 xl:col-span-4">
+      <div className="grid grid-cols-12 gap-3 xl:items-stretch">
+        <div className="col-span-12 xl:col-span-5">
           <PanelChrome
             title={sourcePanelTitle}
             right={
@@ -381,8 +414,8 @@ export function MappingWorkspace({
           </PanelChrome>
         </div>
 
-        <div className="col-span-12 xl:col-span-4">
-          <PanelChrome title={`Field mapping (${rows.length})`} className="max-h-[min(72vh,780px)]">
+        <div className="col-span-12 xl:col-span-3">
+          <PanelChrome title={`Transform rules (${rows.length})`} className="max-h-[min(72vh,780px)]">
             <MappingBuilderTable
               rows={rows}
               filteredRows={filteredRows}
@@ -423,6 +456,49 @@ export function MappingWorkspace({
       </div>
       </>
       ) : null}
+    </div>
+  )
+}
+
+function TransformFlowArrow() {
+  return (
+    <div className="hidden items-center justify-center border-x border-slate-200 px-2 text-slate-400 dark:border-gdc-border dark:text-gdc-muted sm:flex" aria-hidden>
+      <ArrowRight className="h-4 w-4" />
+    </div>
+  )
+}
+
+function TransformFlowStep({
+  number,
+  label,
+  detail,
+  complete,
+  warning,
+}: {
+  number: string
+  label: string
+  detail: string
+  complete: boolean
+  warning?: string
+}) {
+  return (
+    <div className="flex min-w-0 items-center gap-2.5 px-3 py-2.5">
+      <span
+        className={cn(
+          'flex h-6 w-6 shrink-0 items-center justify-center rounded-md border text-[11px] font-semibold',
+          complete
+            ? 'border-violet-500/40 bg-violet-500/10 text-violet-700 dark:text-violet-300'
+            : 'border-slate-200 bg-slate-50 text-slate-500 dark:border-gdc-border dark:bg-gdc-section dark:text-gdc-muted',
+        )}
+      >
+        {complete ? <CheckCircle2 className="h-3.5 w-3.5" aria-hidden /> : number}
+      </span>
+      <span className="min-w-0">
+        <span className="block text-[12px] font-semibold text-slate-900 dark:text-gdc-foreground">{label}</span>
+        <span className={cn('block truncate text-[11px] text-slate-500 dark:text-gdc-muted', warning && 'text-amber-700 dark:text-amber-300')}>
+          {warning ?? detail}
+        </span>
+      </span>
     </div>
   )
 }

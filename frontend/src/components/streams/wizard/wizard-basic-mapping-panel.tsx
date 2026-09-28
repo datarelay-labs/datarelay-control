@@ -301,12 +301,19 @@ export function WizardBasicMappingPanel({
 
   return (
     <>
-      <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+      <div className="mt-4 flex flex-col gap-2 rounded-lg border border-slate-200 bg-slate-50/60 p-2.5 dark:border-gdc-border dark:bg-gdc-section sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-[12px] font-semibold text-slate-900 dark:text-gdc-foreground">Build the final event</p>
+          <p className="text-[11px] text-slate-500 dark:text-gdc-muted">
+            Start with suggestions or choose source fields. Every change is reflected in the final event preview.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           onClick={autoSuggest}
           disabled={!sampleEvent}
-          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-violet-300/70 bg-white px-3 text-[12px] font-semibold text-violet-700 shadow-sm hover:bg-violet-500/[0.08] disabled:opacity-60 dark:border-violet-500/40 dark:bg-gdc-card dark:text-violet-300 dark:hover:bg-violet-500/15"
+          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-violet-300/70 bg-white px-3 text-[12px] font-semibold text-violet-700 hover:bg-violet-500/[0.08] disabled:opacity-60 dark:border-violet-500/40 dark:bg-gdc-card dark:text-violet-300 dark:hover:bg-violet-500/15"
         >
           <Wand2 className="h-3.5 w-3.5" aria-hidden />
           Auto-suggest top-level fields
@@ -321,6 +328,7 @@ export function WizardBasicMappingPanel({
           <RefreshCw className="h-3.5 w-3.5" aria-hidden />
           Reset mapping
         </button>
+        </div>
       </div>
 
       {!sampleEvent ? (
@@ -334,15 +342,15 @@ export function WizardBasicMappingPanel({
         className={cn(
           'mt-4 grid gap-3 xl:items-stretch',
           showOutputAside
-            ? 'xl:grid-cols-[minmax(300px,1.15fr)_minmax(280px,1fr)_minmax(320px,1.05fr)]'
-            : 'xl:grid-cols-[minmax(300px,1.15fr)_minmax(280px,1fr)]',
+            ? 'xl:grid-cols-[minmax(360px,1.45fr)_minmax(280px,0.9fr)_minmax(320px,1.05fr)]'
+            : 'xl:grid-cols-[minmax(360px,1.45fr)_minmax(280px,0.9fr)]',
         )}
       >
         {/* Left: sample event */}
         <PanelChrome
           className="max-h-[min(72vh,760px)] min-h-[min(72vh,760px)]"
           bodyClassName="flex min-h-0 flex-1 flex-col overflow-hidden"
-          title="Sample Event"
+          title="1. Source fields"
           right={
             <div className="flex items-center gap-1.5">
               {duplicateNotice ? (
@@ -457,7 +465,7 @@ export function WizardBasicMappingPanel({
         <div className="flex min-h-0 min-w-0 flex-col gap-3">
           <PanelChrome
             className="max-h-[min(52vh,560px)] min-h-0"
-            title="Field Mapping"
+            title="2. Transform rules"
             right={
               <span className="rounded-full bg-violet-500/15 px-2 py-0.5 text-[10px] font-bold text-violet-800 dark:text-violet-200">
                 {mappedCount} mapped
@@ -502,7 +510,7 @@ export function WizardBasicMappingPanel({
             <div className="min-h-0 overflow-auto">
               {state.mapping.length === 0 ? (
                 <p className="p-3 text-[11px] italic text-slate-500">
-                  No mappings yet. Click a JSON node on the left to add one, or use Auto-suggest.
+                  No transform rules yet. Choose a source field on the left or use Auto-suggest.
                 </p>
               ) : (
                 (() => {

@@ -815,8 +815,8 @@ export function NewStreamWizardPage() {
   }, [state, wizardSteps])
 
   const persistenceLabel = state.connector.apiBacked
-    ? 'API-backed catalog · creation will hit /api/v1/streams/'
-    : 'Offline catalog · stream creation uses a local draft until the API is available'
+    ? 'Changes will be saved to Data Relay Control when you create the stream.'
+    : 'Offline mode · this wizard is using a local draft until the Control API is available.'
 
   const nextLabel = NEXT_STEP_LABEL[currentStepKey]
 
@@ -836,7 +836,7 @@ export function NewStreamWizardPage() {
           <button
             type="button"
             onClick={() => navigate(NAV_PATH.streams)}
-            className="inline-flex h-9 items-center rounded-lg border border-slate-200/90 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-200 dark:hover:bg-gdc-rowHover"
+            className="inline-flex h-9 items-center rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-200 dark:hover:bg-gdc-rowHover"
           >
             Cancel
           </button>
@@ -845,7 +845,7 @@ export function NewStreamWizardPage() {
 
       {creationError ? (
         <p className="rounded-md border border-red-200/80 bg-red-500/[0.06] p-3 text-[12px] font-medium text-red-700 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-300">
-          API save failed: {creationError}
+          Unable to create the stream: {creationError}
         </p>
       ) : null}
 
@@ -867,7 +867,7 @@ export function NewStreamWizardPage() {
             <button
               type="button"
               onClick={handleResumeDraft}
-              className="inline-flex h-8 items-center rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white shadow-sm hover:bg-violet-700"
+              className="inline-flex h-8 items-center rounded-md bg-gdc-primary px-3 text-[12px] font-semibold text-white hover:bg-violet-700"
               data-testid="wizard-draft-resume"
             >
               Resume draft
@@ -875,7 +875,7 @@ export function NewStreamWizardPage() {
             <button
               type="button"
               onClick={handleStartFresh}
-              className="inline-flex h-8 items-center rounded-md border border-slate-200/90 bg-white px-3 text-[12px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200"
+              className="inline-flex h-8 items-center rounded-md border border-slate-200 bg-white px-3 text-[12px] font-semibold text-slate-700 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200"
               data-testid="wizard-draft-start-fresh"
             >
               Start fresh
@@ -934,7 +934,7 @@ export function NewStreamWizardPage() {
       </div>
 
       <nav
-        className="sticky bottom-0 z-20 mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200/80 bg-white/95 py-3 backdrop-blur-sm dark:border-gdc-border dark:bg-gdc-section"
+        className="sticky bottom-0 z-20 mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 dark:border-gdc-border dark:bg-gdc-panel"
         aria-label="Wizard navigation"
         data-testid="wizard-action-bar"
       >
@@ -963,7 +963,7 @@ export function NewStreamWizardPage() {
               <button
                 type="button"
                 onClick={() => handleCreateAnother()}
-                className="inline-flex h-9 items-center rounded-lg border border-slate-200/90 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100 dark:hover:bg-gdc-rowHover"
+                className="inline-flex h-9 items-center rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100 dark:hover:bg-gdc-rowHover"
               >
                 Create Another Stream
               </button>
@@ -973,7 +973,7 @@ export function NewStreamWizardPage() {
                     ? runtimeOverviewPath({ stream_id: state.outcome.streamId })
                     : NAV_PATH.runtime
                 }
-                className="inline-flex h-9 items-center gap-1 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+                className="inline-flex h-9 items-center gap-1 rounded-lg bg-gdc-primary px-4 text-sm font-semibold text-white hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/60"
               >
                 {WIZARD_LABEL.goToOperations}
                 <ChevronRight className="h-3.5 w-3.5" aria-hidden />
@@ -985,7 +985,7 @@ export function NewStreamWizardPage() {
                 <button
                   type="button"
                   onClick={() => saveDraft()}
-                  className="inline-flex h-9 items-center rounded-lg border border-slate-200/90 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200 dark:hover:bg-gdc-rowHover"
+                  className="inline-flex h-9 items-center rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200 dark:hover:bg-gdc-rowHover"
                   data-testid="wizard-save-draft"
                 >
                   Save as Draft
@@ -996,7 +996,7 @@ export function NewStreamWizardPage() {
                   type="button"
                   onClick={() => void handleCreate({ startAfter: true })}
                   disabled={busy || isStarting || !deployReadiness.canCreate}
-                  className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+                  className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-gdc-primary px-4 text-sm font-semibold text-white hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/60 disabled:cursor-not-allowed disabled:opacity-60"
                   data-testid="deploy-create-and-start"
                 >
                   {busy || isStarting ? (
@@ -1013,7 +1013,7 @@ export function NewStreamWizardPage() {
                   onClick={goToNextStep}
                   disabled={!canAdvance}
                   title={nextStepBlockReason}
-                  className="inline-flex h-9 items-center gap-1 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+                  className="inline-flex h-9 items-center gap-1 rounded-lg bg-gdc-primary px-4 text-sm font-semibold text-white hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/60 disabled:cursor-not-allowed disabled:opacity-60"
                   data-testid="wizard-next"
                 >
                   {nextLabel ? (

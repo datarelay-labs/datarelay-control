@@ -398,7 +398,7 @@ describe('RouteEditPage workspace capability visibility', () => {
     expect(within(panel).getByRole('button', { name: 'Add Regex extract rule' })).toBeDisabled()
 
     await user.click(basic)
-    const transformed = within(panel).getByRole('button', { name: 'Transformed' })
+    const transformed = within(panel).getByRole('tab', { name: 'Transformed' })
     const tableView = within(panel).getByRole('button', { name: 'Table' })
     expect(transformed).toBeEnabled()
     expect(tableView).toBeEnabled()
@@ -438,7 +438,7 @@ describe('RouteEditPage workspace capability visibility', () => {
     expect(within(panel).getByRole('button', { name: 'Preview' })).toBeEnabled()
     await user.click(within(modes).getByRole('tab', { name: /Basic/ }))
     expect(within(panel).getByRole('button', { name: 'Add row' })).toBeEnabled()
-    expect(within(panel).getByRole('button', { name: 'Transformed' })).toBeEnabled()
+    expect(within(panel).getByRole('tab', { name: 'Transformed' })).toBeEnabled()
   })
 
   it('links an existing route into governance workspace with resolved stream context', async () => {
