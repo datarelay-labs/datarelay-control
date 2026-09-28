@@ -609,13 +609,42 @@ cmd_matrix() {
   return "$ec"
 }
 
+SETUP_STEP_EC=0
+run_setup_step_preserving_errexit() {
+  # Calling a function as the left operand of ||/if disables Bash errexit
+  # semantics inside that function. Run setup in a subshell with errexit
+  # explicitly enabled, then publish only its status to the parent shell.
+  local step="$1"
+  shift || true
+  local ec=0
+  set +e
+  (
+    set -e
+    "$step" "$@"
+  )
+  ec=$?
+  set -e
+  SETUP_STEP_EC="$ec"
+  return 0
+}
+
 cmd_scenario() {
   [[ -n "$SCENARIO_ID" ]] || { echo "Usage: $0 scenario --id <scenario-id> --route-processing=off|on" >&2; exit 2; }
   echo "==> [scenario] id=$SCENARIO_ID route=$ROUTE_MODE run_id=$RUN_ID"
   export GDC_E2E_SCENARIO_IDS="$SCENARIO_ID"
   # Ensure lab is healthy, reset fixtures, run only the selected scenario.
-  cmd_up || { local up_ec=$?; cmd_down || true; return "$up_ec"; }
-  cmd_reset || { local reset_ec=$?; cmd_down || true; return "$reset_ec"; }
+  run_setup_step_preserving_errexit cmd_up
+  local up_ec="$SETUP_STEP_EC"
+  if [[ "$up_ec" -ne 0 ]]; then
+    cmd_down || true
+    return "$up_ec"
+  fi
+  run_setup_step_preserving_errexit cmd_reset
+  local reset_ec="$SETUP_STEP_EC"
+  if [[ "$reset_ec" -ne 0 ]]; then
+    cmd_down || true
+    return "$reset_ec"
+  fi
   local ec=0
   trap 'ec=130; post_run_evidence_and_cleanup "$ec" || true; exit 130' INT TERM
   (
@@ -752,8 +781,18 @@ cmd_down() {
 
 cmd_all() {
   local ec=0
-  cmd_up || { ec=$?; cmd_down || true; return "$ec"; }
-  cmd_reset || { ec=$?; cmd_down || true; return "$ec"; }
+  run_setup_step_preserving_errexit cmd_up
+  ec="$SETUP_STEP_EC"
+  if [[ "$ec" -ne 0 ]]; then
+    cmd_down || true
+    return "$ec"
+  fi
+  run_setup_step_preserving_errexit cmd_reset
+  ec="$SETUP_STEP_EC"
+  if [[ "$ec" -ne 0 ]]; then
+    cmd_down || true
+    return "$ec"
+  fi
   trap 'ec=130; post_run_evidence_and_cleanup "$ec" || true; [[ "${GDC_E2E_KEEP_UP:-0}" != "1" ]] && cmd_down; exit 130' INT TERM
   set +e
   cmd_test
@@ -770,8 +809,18 @@ cmd_all() {
 
 cmd_all_matrix() {
   local ec=0
-  cmd_up || { ec=$?; cmd_down || true; return "$ec"; }
-  cmd_reset || { ec=$?; cmd_down || true; return "$ec"; }
+  run_setup_step_preserving_errexit cmd_up
+  ec="$SETUP_STEP_EC"
+  if [[ "$ec" -ne 0 ]]; then
+    cmd_down || true
+    return "$ec"
+  fi
+  run_setup_step_preserving_errexit cmd_reset
+  ec="$SETUP_STEP_EC"
+  if [[ "$ec" -ne 0 ]]; then
+    cmd_down || true
+    return "$ec"
+  fi
   trap 'ec=130; post_run_evidence_and_cleanup "$ec" || true; [[ "${GDC_E2E_KEEP_UP:-0}" != "1" ]] && cmd_down; exit 130' INT TERM
   set +e
   cmd_matrix

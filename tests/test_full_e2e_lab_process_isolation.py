@@ -148,12 +148,44 @@ def test_up_fails_closed_before_compose_when_ui_port_is_unowned() -> None:
     assert "docker compose" not in result.stdout
 
 
-def test_command_wrappers_propagate_setup_failures_and_cleanup() -> None:
+def test_command_wrappers_preserve_errexit_while_capturing_setup_status() -> None:
     script = _runner()
-    assert 'cmd_up || { ec=$?; cmd_down || true; return "$ec"; }' in script
-    assert 'cmd_reset || { ec=$?; cmd_down || true; return "$ec"; }' in script
-    assert 'cmd_up || { local up_ec=$?; cmd_down || true; return "$up_ec"; }' in script
-    assert 'cmd_reset || { local reset_ec=$?; cmd_down || true; return "$reset_ec"; }' in script
+    assert "run_setup_step_preserving_errexit()" in script
+    assert 'run_setup_step_preserving_errexit cmd_up' in script
+    assert 'run_setup_step_preserving_errexit cmd_reset' in script
+    assert 'cmd_up ||' not in script
+    assert 'cmd_reset ||' not in script
+    assert script.count('run_setup_step_preserving_errexit cmd_up') == 3
+    assert script.count('run_setup_step_preserving_errexit cmd_reset') == 3
+
+
+def test_setup_status_helper_reenables_errexit_inside_actual_helper_body() -> None:
+    script = _runner()
+    helper = (
+        "SETUP_STEP_EC=0\n"
+        + script.split("SETUP_STEP_EC=0\n", 1)[1].split("\n\ncmd_scenario() {", 1)[0]
+    )
+    probe = helper + r"""
+failing_setup() {
+  false
+  echo SHOULD_NOT_RUN
+}
+run_setup_step_preserving_errexit failing_setup
+echo "SETUP_STEP_EC=$SETUP_STEP_EC"
+"""
+    result = subprocess.run(
+        ["bash", "-c", "set -e\n" + probe],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        timeout=5,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert "SETUP_STEP_EC=1" in result.stdout
+    assert "SHOULD_NOT_RUN" not in result.stdout
 
 
 def test_fault_inject_uses_same_process_ownership_contract() -> None:
