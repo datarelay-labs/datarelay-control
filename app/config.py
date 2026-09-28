@@ -25,7 +25,9 @@ class Settings(BaseSettings):
     GDC_CATALOG_DB_POOL_SIZE: int = 2
     GDC_CATALOG_DB_MAX_OVERFLOW: int = 2
     GDC_CATALOG_DB_POOL_TIMEOUT: int = 5
-    # Process-local TTL for connectors catalog list; stale last-success payload kept on refresh failure.
+    # Process-local TTL for connectors catalog list; mutations publish a shared epoch
+    # so other workers cannot serve pre-mutation rows. Stale last-success payload is
+    # kept on refresh failure.
     GDC_CONNECTORS_LIST_CACHE_TTL_SEC: float = 30.0
     # Log individual statement timings over thresholds (see app/observability/slow_query.py).
     GDC_SLOW_QUERY_LOG: bool = True
