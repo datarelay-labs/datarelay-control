@@ -158,7 +158,7 @@ export function DashboardOverview() {
           </p>
           <Link
             to={newStreamPath()}
-            className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+            className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-gdc-primary px-3.5 py-2 text-sm font-semibold text-white hover:bg-violet-700"
           >
             <Plus className="h-4 w-4" aria-hidden />
             Create First Stream

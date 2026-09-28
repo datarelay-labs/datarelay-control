@@ -949,7 +949,7 @@ export function StreamEditWizardPage() {
               type="button"
               disabled={controlBusy || runOnceBusy || isStarting || runtimeVerificationBlocked}
               onClick={() => void executeRunOnce()}
-              className="inline-flex h-9 items-center rounded-lg bg-slate-900 px-3 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+              className="inline-flex h-9 items-center rounded-lg bg-gdc-primary px-3 text-sm font-semibold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {runOnceBusy ? 'Running…' : 'Run Now'}
             </button>
@@ -1110,7 +1110,7 @@ export function StreamEditWizardPage() {
             <button
               type="button"
               onClick={() => setStepIndex((idx) => Math.min(wizardSteps.length - 1, idx + 1))}
-              className="inline-flex h-9 items-center gap-1 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+              className="inline-flex h-9 items-center gap-1 rounded-lg bg-gdc-primary px-4 text-sm font-semibold text-white hover:bg-violet-700"
               data-testid="wizard-next"
             >
               {nextLabel ?? 'Next'}
@@ -1119,7 +1119,7 @@ export function StreamEditWizardPage() {
           ) : (
             <Link
               to={streamRuntimePath(streamId)}
-              className="inline-flex h-9 items-center gap-1 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+              className="inline-flex h-9 items-center gap-1 rounded-lg bg-gdc-primary px-4 text-sm font-semibold text-white hover:bg-violet-700"
               data-testid="wizard-open-monitoring"
             >
               Open monitoring

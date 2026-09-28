@@ -949,7 +949,7 @@ export function DataFlowOverview({
           data-testid="dashboard-data-flow-streams-pill"
           style={{ left: hubCX - 34, top: hubCY - 40, width: 68 }}
         >
-          <div className="flex h-[60px] w-[60px] items-center justify-center rounded-full border border-emerald-500/55 bg-emerald-500/20 shadow-[0_0_18px_-4px_rgba(52,211,153,0.6)]">
+          <div className="flex h-[60px] w-[60px] items-center justify-center rounded-full border border-emerald-500/45 bg-emerald-500/15">
             <Activity className="h-5 w-5 text-emerald-100" aria-hidden />
           </div>
           <p className="mt-0.5 text-[10px] font-semibold leading-tight text-emerald-300/90">Streams</p>
@@ -1613,7 +1613,7 @@ export function OperationalProblemsList({
                   <span
                     className={cn(
                       'mt-0.5 h-2 w-2 shrink-0 rounded-full',
-                      isCritical ? 'bg-red-400 shadow-[0_0_6px_1px_rgba(248,113,113,0.6)]' : 'bg-amber-400',
+                      isCritical ? 'bg-red-400' : 'bg-amber-400',
                     )}
                     aria-hidden
                   />

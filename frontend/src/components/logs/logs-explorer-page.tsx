@@ -1127,11 +1127,11 @@ export function LogsExplorerPage() {
             className={cn(
               'inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-sm font-semibold shadow-sm transition-colors',
               liveTail
-                ? 'border-slate-900 bg-slate-900 text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900'
+                ? 'border-violet-600 bg-gdc-primary text-white dark:border-violet-500 dark:bg-gdc-primary dark:text-white'
                 : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-elevated dark:text-slate-200 dark:hover:bg-gdc-card',
             )}
           >
-            <Zap className={cn('h-4 w-4', liveTail ? 'text-white dark:text-slate-900' : 'text-slate-400 dark:text-gdc-muted')} aria-hidden />
+            <Zap className={cn('h-4 w-4', liveTail ? 'text-white' : 'text-slate-400 dark:text-gdc-muted')} aria-hidden />
             Live Tail
           </button>
         </div>
@@ -1359,7 +1359,7 @@ export function LogsExplorerPage() {
               type="button"
               onClick={runManualRefresh}
               data-testid="logs-search-submit"
-              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-gdc-primary px-3.5 text-sm font-semibold text-white hover:bg-violet-700"
             >
               <Search className="h-4 w-4" />
               Search
@@ -1798,7 +1798,7 @@ export function LogsExplorerPage() {
                         </button>
                         <Link
                           to={logsPath()}
-                          className="inline-flex h-9 items-center rounded-lg bg-slate-900 px-3 text-sm font-semibold text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+                          className="inline-flex h-9 items-center rounded-lg bg-gdc-primary px-3 text-sm font-semibold text-white hover:bg-violet-700"
                         >
                           Open full logs
                         </Link>

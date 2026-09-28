@@ -60,7 +60,7 @@ export function StreamsOperationsToolbar({
               className={cn(
                 'rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors',
                 quickFilter === f.id
-                  ? 'border-slate-700 bg-slate-900 text-white dark:border-slate-200 dark:bg-slate-100 dark:text-slate-900'
+                  ? 'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-500/40 dark:bg-violet-500/15 dark:text-violet-200'
                   : 'border-slate-200/80 text-slate-600 hover:bg-slate-50 dark:border-gdc-border dark:text-gdc-muted dark:hover:bg-gdc-elevated',
               )}
             >

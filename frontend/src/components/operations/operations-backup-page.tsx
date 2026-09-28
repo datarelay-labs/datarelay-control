@@ -388,7 +388,7 @@ export function OperationsBackupPage() {
                     title={!canApplyImport ? 'Administrator role required to apply import.' : undefined}
                     onClick={() => openApplyDialog()}
                     data-testid="backup-apply-open"
-                    className="inline-flex h-9 items-center gap-2 rounded-lg bg-slate-900 px-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+                    className="inline-flex h-9 items-center gap-2 rounded-lg bg-gdc-primary px-3 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
                   >
                     {applyBusy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
                     Apply import

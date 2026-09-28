@@ -146,7 +146,7 @@ export function ValidationAlertsPage() {
                         disabled={busyId === a.id}
                         onClick={() => void onAck(a.id)}
                         className={cn(
-                          'rounded bg-slate-800 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-slate-900 disabled:opacity-50 dark:bg-slate-200 dark:text-slate-900',
+                          'rounded-md border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-700 hover:bg-violet-100 disabled:opacity-50 dark:border-violet-500/40 dark:bg-violet-500/10 dark:text-violet-200',
                         )}
                       >
                         Ack
