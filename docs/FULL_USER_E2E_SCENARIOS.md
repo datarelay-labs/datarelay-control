@@ -350,7 +350,7 @@ RESULT=
 GAP=
 ~~~
 
-Completion requires zero supported capabilities without a real user use case and zero PARTIAL capabilities silently counted as supported PASS.
+Completion requires zero **supported product-surface capabilities** without a real user use case and zero PARTIAL capabilities silently counted as supported PASS. Inventory rows whose purpose is test infrastructure or feature-flag enforcement are validation-support rows: they require explicit qualification disposition, but they are not invented into end-user use cases.
 
 ## 9. Relationship to `e2e/user-lifecycle`
 
@@ -461,7 +461,7 @@ SCENARIO_PASS=
 SCENARIO_FAIL=
 SCENARIO_BLOCKED=
 MANDATORY_SCENARIOS_UNEXECUTED=
-SUPPORTED_CAPABILITIES_WITHOUT_USE_CASE=
+SUPPORTED_PRODUCT_CAPABILITIES_WITHOUT_USE_CASE=
 PARTIAL_CAPABILITIES=
 UNRESOLVED_P0=
 UNRESOLVED_P1=
@@ -512,3 +512,143 @@ This contract carries over the **testing philosophy** of Data Relay Link's `FULL
 Carried over unchanged in spirit: one canonical entry point, persona-based black-box execution, use-case coverage instead of shallow sweep, current-run candidate evidence, negative/recovery and cleanup, independent-lane continuation after defects, explicit blocked/not-applicable outcomes, functional behavior under concurrency/load, and cross-surface terminology/guidance grading.
 
 Product semantics remain governed by Data Relay Control's own Source of Truth.
+
+## Appendix B — Current capability-inventory reconciliation oracle
+
+This appendix snapshots the current Phase A–D capability inventory used while authoring this contract. It is an **auditor reconciliation oracle**, not a higher-level product authority. Rebuild/reconcile it against the tested candidate at execution time.
+
+Authoring snapshot:
+
+~~~text
+TOTAL=95
+SUPPORTED=84
+PARTIAL=6
+UI_ONLY=2
+OUT_OF_SCOPE=3
+~~~
+
+Current supported capability IDs:
+
+~~~text
+auth.http.no_auth
+auth.http.basic
+auth.http.bearer
+auth.http.api_key
+auth.http.oauth2_client_credentials
+auth.http.session_login
+auth.http.jwt_refresh_token
+auth.http.vendor_jwt_exchange
+auth.s3.access_key_secret
+auth.database.username_password
+auth.remote_file.ssh_password_or_key
+auth.webhook_receiver.inbound
+auth.destination.syslog_tls_client_cert
+source.http_api_polling
+source.s3_object_polling
+source.database_query_postgresql
+source.remote_file_polling
+source.webhook_receiver
+destination.syslog_udp
+destination.syslog_tcp
+destination.syslog_tls
+destination.webhook_post
+wizard.step.connect
+wizard.step.sample
+wizard.step.destinations
+wizard.step.route_processing
+wizard.step.deploy
+wizard.feature.connection_auth_test
+wizard.feature.record_path
+wizard.feature.event_root
+wizard.feature.union_schema
+wizard.feature.checkpoint
+wizard.feature.incremental_fetch
+wizard.feature.dedup
+wizard.feature.resume
+wizard.feature.stream_edit
+processing.enrichment.static
+processing.enrichment.calculated
+processing.enrichment.conditional
+processing.enrichment.normalize
+processing.enrichment.timestamp_conversion
+processing.enrichment.type_conversion
+processing.enrichment.jsonata
+processing.mapping.field_jsonpath
+processing.mapping.full_event_jsonata
+processing.mapping.full_event_regex
+processing.mapping.unmapped_policy
+routes.architecture.one_stream_many_routes
+routes.global_processing
+routes.per_route_transform
+routes.per_route_protection_classification_policy
+routes.delivery_settings
+routes.metrics_health
+governance.protection.audit
+governance.protection.mask
+governance.protection.tokenize
+governance.protection.hash
+governance.protection.drop_field
+governance.delivery.continue
+governance.delivery.quarantine
+governance.delivery.block
+governance.sensitive_detection
+governance.schema_drift
+governance.classification
+governance.policy
+governance.replay
+governance.quarantine_ops
+governance.audit_violations_notifications
+runtime.retry_backoff
+runtime.timeout
+runtime.failover
+runtime.checkpoint_after_delivery
+runtime.dedup
+runtime.partial_route_failure
+runtime.process_restart_recovery
+runtime.health_metrics_audit_logs
+flag.gdc_route_processing_enabled
+flag.gdc_protection_enabled
+flag.gdc_sensitive_detection_enabled
+flag.gdc_classification_enabled
+test.pytest.wiremock_e2e
+test.source_adapter_e2e
+test.dev_validation_lab
+test.wiremock_auth_fixtures
+~~~
+
+Current PARTIAL capability IDs — each requires explicit disposition and may not be silently counted as full support:
+
+~~~text
+auth.destination.webhook_headers
+processing.enrichment.lookup
+governance.delivery.require_review
+runtime.rate_limit
+runtime.fault_injection.fixtures
+test.playwright.browser_e2e
+~~~
+
+Current UI-only heuristic capability IDs — validate UX behavior but do not treat them as independent runtime truth:
+
+~~~text
+wizard.feature.rare_field
+wizard.feature.sensitive_suggestion
+~~~
+
+Current out-of-scope IDs — excluded from Data Relay Control Phase A–D coverage/readiness denominators:
+
+~~~text
+auth.ai_provider.api_key_or_bearer
+source.ai_proxy_receiver
+destination.ai_provider_post
+~~~
+
+Required reconciliation invariant:
+
+~~~text
+SUPPORTED_PRODUCT_CAPABILITIES_WITHOUT_USE_CASE=0
+SUPPORTED_CAPABILITIES_WITHOUT_SCENARIO_DISPOSITION=0
+TEST_OR_FLAG_ROWS_WITHOUT_VALIDATION_DISPOSITION=0
+PARTIAL_CAPABILITIES_WITHOUT_EXPLICIT_DISPOSITION=0
+UI_ONLY_CAPABILITIES_MISREPRESENTED_AS_RUNTIME_TRUTH=0
+OUT_OF_SCOPE_CAPABILITIES_IN_CONTROL_DENOMINATOR=0
+~~~
