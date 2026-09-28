@@ -92,6 +92,12 @@ printf 'RC=%s COUNT=%s\n' "$rc" "${#FIXTURE_SERVICES[@]}"
     assert "RC=1 COUNT=0" in result.stdout
 
 
+def test_ontology_planner_uses_the_compose_contract_port() -> None:
+    script = STARTER.read_text(encoding="utf-8")
+    assert "ONTOLOGY_PORT=55440" in script
+    assert "GDC_TEST_ONTOLOGY_POSTGRES_HOST_PORT" not in script
+
+
 def test_starter_has_no_unconditional_all_service_compose_up() -> None:
     script = STARTER.read_text(encoding="utf-8")
     assert 'FIXTURE_SERVICES=()' in script
