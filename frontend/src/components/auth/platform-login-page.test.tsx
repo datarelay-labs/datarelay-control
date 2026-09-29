@@ -10,7 +10,7 @@ describe('PlatformLoginPage', () => {
 
     expect(screen.getByRole('img', { name: 'DataRelay logo' })).toHaveAttribute(
       'src',
-      '/logo/datarelay-logo.svg',
+      '/logo/datarelay-logo.svg?v=dr-monogram-1',
     )
   })
 

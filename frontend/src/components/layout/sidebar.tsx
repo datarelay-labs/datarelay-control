@@ -155,7 +155,7 @@ export function Sidebar({
         >
           <div className="flex h-8 w-8 shrink-0 items-center justify-center">
             <img
-              src="/logo/datarelay-logo.svg"
+              src="/logo/datarelay-logo.svg?v=dr-monogram-1"
               alt=""
               width={32}
               height={32}
