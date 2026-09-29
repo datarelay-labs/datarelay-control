@@ -5,6 +5,15 @@ import { readSession } from '../../auth/session'
 import { PlatformLoginPage } from './platform-login-page'
 
 describe('PlatformLoginPage', () => {
+  it('uses the shared DataRelay master logo asset', () => {
+    render(<PlatformLoginPage onAuthenticated={vi.fn()} />)
+
+    expect(screen.getByRole('img', { name: 'DataRelay logo' })).toHaveAttribute(
+      'src',
+      '/logo/datarelay-logo.svg',
+    )
+  })
+
   it('stores must_change_password and advances to the password-change gate after bootstrap login', async () => {
     const onAuthenticated = vi.fn()
     vi.stubGlobal(
