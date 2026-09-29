@@ -1,4 +1,4 @@
-import { CheckCircle2, ClipboardCheck, Loader2, RefreshCw, ShieldAlert } from 'lucide-react'
+import { CheckCircle2, ChevronDown, ClipboardCheck, Loader2, RefreshCw, ShieldAlert } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   activateGovernanceApproval,
@@ -26,6 +26,8 @@ import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operati
 
 const WINDOWS: readonly ApprovalWindow[] = ['24h', '7d', '30d'] as const
 const POLICY_STATUSES: readonly PolicyStatus[] = ['DRAFT', 'REVIEW', 'ACTIVE', 'RETIRED'] as const
+const APPROVAL_FILTER_SELECT =
+  'block h-8 min-w-[92px] cursor-pointer appearance-none rounded-md border border-slate-300 bg-white py-1 pl-2.5 pr-8 text-[12px] font-medium text-slate-800 shadow-sm outline-none hover:border-slate-400 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/15 dark:border-gdc-borderStrong dark:bg-gdc-input dark:text-gdc-foreground dark:hover:border-slate-500 dark:focus:border-gdc-primary dark:focus:ring-gdc-primary/20'
 
 function formatTime(iso: string | null | undefined) {
   if (!iso) return '—'
@@ -422,69 +424,81 @@ export function ApprovalWorkflowPage() {
         data-testid="approval-filters"
       >
         <label className="space-y-1 text-[11px]">
-          <span className="font-medium text-slate-500">Time range</span>
-          <select
-            value={window}
-            onChange={(e) => setWindow(e.target.value as ApprovalWindow)}
-            className="block rounded border border-slate-200 px-2 py-1 text-[12px] dark:border-gdc-border dark:bg-gdc-card"
-            data-testid="approval-filter-window"
-          >
-            {WINDOWS.map((w) => (
-              <option key={w} value={w}>
-                {w}
-              </option>
-            ))}
-          </select>
+          <span className="font-medium text-slate-600 dark:text-gdc-mutedStrong">Time range</span>
+          <span className="relative block">
+            <select
+              value={window}
+              onChange={(e) => setWindow(e.target.value as ApprovalWindow)}
+              className={APPROVAL_FILTER_SELECT}
+              data-testid="approval-filter-window"
+            >
+              {WINDOWS.map((w) => (
+                <option key={w} value={w}>
+                  {w}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500 dark:text-gdc-mutedStrong" aria-hidden />
+          </span>
         </label>
         <label className="space-y-1 text-[11px]">
-          <span className="font-medium text-slate-500">Status</span>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="block rounded border border-slate-200 px-2 py-1 text-[12px] dark:border-gdc-border dark:bg-gdc-card"
-            data-testid="approval-filter-status"
-          >
-            <option value="">All</option>
-            {POLICY_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-            <option value="PENDING_REVIEW">PENDING REVIEW</option>
-            <option value="APPROVED">APPROVED</option>
-          </select>
+          <span className="font-medium text-slate-600 dark:text-gdc-mutedStrong">Status</span>
+          <span className="relative block">
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className={APPROVAL_FILTER_SELECT}
+              data-testid="approval-filter-status"
+            >
+              <option value="">All</option>
+              {POLICY_STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+              <option value="PENDING_REVIEW">PENDING REVIEW</option>
+              <option value="APPROVED">APPROVED</option>
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500 dark:text-gdc-mutedStrong" aria-hidden />
+          </span>
         </label>
         <label className="space-y-1 text-[11px]">
-          <span className="font-medium text-slate-500">Requester</span>
-          <select
-            value={requesterFilter}
-            onChange={(e) => setRequesterFilter(e.target.value)}
-            className="block rounded border border-slate-200 px-2 py-1 text-[12px] dark:border-gdc-border dark:bg-gdc-card"
-            data-testid="approval-filter-requester"
-          >
-            <option value="">All</option>
-            {requesters.map((r) => (
-              <option key={r} value={r}>
-                {r}
-              </option>
-            ))}
-          </select>
+          <span className="font-medium text-slate-600 dark:text-gdc-mutedStrong">Requester</span>
+          <span className="relative block">
+            <select
+              value={requesterFilter}
+              onChange={(e) => setRequesterFilter(e.target.value)}
+              className={APPROVAL_FILTER_SELECT}
+              data-testid="approval-filter-requester"
+            >
+              <option value="">All</option>
+              {requesters.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500 dark:text-gdc-mutedStrong" aria-hidden />
+          </span>
         </label>
         <label className="space-y-1 text-[11px]">
-          <span className="font-medium text-slate-500">Reviewer</span>
-          <select
-            value={reviewerFilter}
-            onChange={(e) => setReviewerFilter(e.target.value)}
-            className="block rounded border border-slate-200 px-2 py-1 text-[12px] dark:border-gdc-border dark:bg-gdc-card"
-            data-testid="approval-filter-reviewer"
-          >
-            <option value="">All</option>
-            {reviewers.map((r) => (
-              <option key={r} value={r}>
-                {r}
-              </option>
-            ))}
-          </select>
+          <span className="font-medium text-slate-600 dark:text-gdc-mutedStrong">Reviewer</span>
+          <span className="relative block">
+            <select
+              value={reviewerFilter}
+              onChange={(e) => setReviewerFilter(e.target.value)}
+              className={APPROVAL_FILTER_SELECT}
+              data-testid="approval-filter-reviewer"
+            >
+              <option value="">All</option>
+              {reviewers.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500 dark:text-gdc-mutedStrong" aria-hidden />
+          </span>
         </label>
       </div>
 

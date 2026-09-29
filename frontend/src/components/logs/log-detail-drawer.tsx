@@ -54,16 +54,16 @@ function highlightJsonLine(line: string) {
     const [, fullKey, , rest] = keyMatch
     return (
       <>
-        <span className="text-slate-500">{indent}</span>
+        <span className="text-slate-500 dark:text-gdc-muted">{indent}</span>
         <span className="text-violet-400">{fullKey}</span>
-        <span className="text-slate-600"> </span>
+        <span className="text-slate-600 dark:text-gdc-muted"> </span>
         {highlightJsonValue(rest)}
       </>
     )
   }
   return (
     <>
-      <span className="text-slate-500">{indent}</span>
+      <span className="text-slate-500 dark:text-gdc-muted">{indent}</span>
       <span className="text-slate-300">{trimmed}</span>
     </>
   )
@@ -71,11 +71,11 @@ function highlightJsonLine(line: string) {
 
 function highlightJsonValue(rest: string) {
   const t = rest.trim()
-  if (t === 'null') return <span className="text-slate-500">null</span>
+  if (t === 'null') return <span className="text-slate-500 dark:text-gdc-muted">null</span>
   if (t === 'true' || t === 'false') return <span className="text-amber-400">{t}</span>
   if (/^-?\d+(\.\d+)?$/.test(t)) return <span className="text-sky-400">{t}</span>
   if (t.startsWith('"') && t.endsWith('"')) return <span className="text-emerald-400">{t}</span>
-  if (t === '{' || t === '}' || t === '[' || t === ']') return <span className="text-slate-400">{t}</span>
+  if (t === '{' || t === '}' || t === '[' || t === ']') return <span className="text-slate-400 dark:text-gdc-muted">{t}</span>
   return <span className="text-slate-300">{rest}</span>
 }
 
@@ -146,18 +146,18 @@ function CheckpointRunPanel({ runId }: { runId: string | null }) {
   }, [runId])
 
   if (runId == null || runId.trim() === '') {
-    return <p className="text-[12px] text-slate-600">No run ID on this row — open a log from a committed stream run.</p>
+    return <p className="text-[12px] text-slate-600 dark:text-gdc-muted">No run ID on this row — open a log from a committed stream run.</p>
   }
   if (loading) {
     return (
-      <div className="flex items-center gap-2 text-[12px] text-slate-600">
+      <div className="flex items-center gap-2 text-[12px] text-slate-600 dark:text-gdc-muted">
         <Loader2 className="h-4 w-4 animate-spin text-violet-600" aria-hidden />
         Loading checkpoint trace…
       </div>
     )
   }
   if (!data) {
-    return <p className="text-[12px] text-slate-600">Checkpoint trace unavailable.</p>
+    return <p className="text-[12px] text-slate-600 dark:text-gdc-muted">Checkpoint trace unavailable.</p>
   }
 
   return (
@@ -191,7 +191,7 @@ function CheckpointRunPanel({ runId }: { runId: string | null }) {
         </div>
       ) : null}
       <div>
-        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Checkpoint timeline</p>
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted">Checkpoint timeline</p>
         <ol className="relative mt-2 space-y-0 border-l border-slate-200 pl-4 dark:border-gdc-border">
           {data.timeline_events.map((e) => (
             <li key={`${e.kind}-${e.log_id ?? e.title}-${e.created_at ?? ''}`} className="relative pb-5 last:pb-0">
@@ -203,23 +203,23 @@ function CheckpointRunPanel({ runId }: { runId: string | null }) {
               />
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-[11px] font-semibold text-slate-900 dark:text-slate-100">{e.title}</span>
-                <span className="font-mono text-[9px] text-slate-500">{e.kind}</span>
+                <span className="font-mono text-[9px] text-slate-500 dark:text-gdc-muted">{e.kind}</span>
               </div>
               {e.detail ? <p className="mt-1 text-[11px] text-slate-700 dark:text-gdc-mutedStrong">{e.detail}</p> : null}
-              {e.created_at ? <p className="mt-0.5 font-mono text-[9px] text-slate-400">{e.created_at}</p> : null}
+              {e.created_at ? <p className="mt-0.5 font-mono text-[9px] text-slate-400 dark:text-gdc-muted">{e.created_at}</p> : null}
             </li>
           ))}
         </ol>
       </div>
       <div className="grid gap-2 lg:grid-cols-2">
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Checkpoint before</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted">Checkpoint before</p>
           <pre className="mt-1 max-h-[28vh] overflow-auto rounded-lg border border-slate-200 bg-slate-950 p-2 font-mono text-[10px] text-slate-100">
             {JSON.stringify(data.checkpoint_before ?? {}, null, 2)}
           </pre>
         </div>
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Checkpoint after</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted">Checkpoint after</p>
           <pre className="mt-1 max-h-[28vh] overflow-auto rounded-lg border border-slate-200 bg-slate-950 p-2 font-mono text-[10px] text-slate-100">
             {JSON.stringify(data.checkpoint_after ?? {}, null, 2)}
           </pre>
@@ -251,36 +251,36 @@ function LogExecutionTracePanel({ logDbId, highlightLogId }: { logDbId: number |
   }, [logDbId])
 
   if (logDbId == null) {
-    return <p className="text-[12px] leading-relaxed text-slate-600">Open a row loaded from the Runtime API to load an execution trace.</p>
+    return <p className="text-[12px] leading-relaxed text-slate-600 dark:text-gdc-muted">Open a row loaded from the Runtime API to load an execution trace.</p>
   }
   if (loading) {
     return (
-      <div className="flex items-center gap-2 text-[12px] text-slate-600">
+      <div className="flex items-center gap-2 text-[12px] text-slate-600 dark:text-gdc-muted">
         <Loader2 className="h-4 w-4 animate-spin text-violet-600" aria-hidden />
         Loading trace…
       </div>
     )
   }
   if (!data?.timeline?.length) {
-    return <p className="text-[12px] text-slate-600">No trace data available for this log.</p>
+    return <p className="text-[12px] text-slate-600 dark:text-gdc-muted">No trace data available for this log.</p>
   }
 
   return (
     <div className="space-y-4">
       {data.stream ? (
-        <p className="text-[11px] text-slate-600">
-          Stream <span className="font-semibold text-slate-900">{data.stream.name}</span>
+        <p className="text-[11px] text-slate-600 dark:text-gdc-muted">
+          Stream <span className="font-semibold text-slate-900 dark:text-slate-100">{data.stream.name}</span>
           {data.connector ? (
             <>
               {' '}
-              · Connector <span className="font-semibold text-slate-900">{data.connector.name}</span>
+              · Connector <span className="font-semibold text-slate-900 dark:text-slate-100">{data.connector.name}</span>
             </>
           ) : null}
         </p>
       ) : null}
       {data.run_id ? (
-        <p className="font-mono text-[10px] text-slate-600">
-          run_id: <span className="select-all text-slate-900">{data.run_id}</span>
+        <p className="font-mono text-[10px] text-slate-600 dark:text-gdc-muted">
+          run_id: <span className="select-all text-slate-900 dark:text-slate-100">{data.run_id}</span>
         </p>
       ) : (
         <p className="text-[11px] text-amber-800">This log predates run correlation; showing a single-row trace.</p>
@@ -301,29 +301,29 @@ function LogExecutionTracePanel({ logDbId, highlightLogId }: { logDbId: number |
             >
               <span className="absolute -left-[21px] top-1.5 flex h-3 w-3 rounded-full border-2 border-white bg-violet-500 dark:border-slate-950" />
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{sec}</span>
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted">{sec}</span>
                 <span
                   className={cn(
                     'inline-flex rounded border px-1.5 py-px text-[9px] font-bold uppercase',
                     badge.tone === 'success' && 'border-emerald-300/80 bg-emerald-500/[0.08] text-emerald-900',
                     badge.tone === 'warning' && 'border-amber-300/80 bg-amber-500/[0.1] text-amber-950',
                     badge.tone === 'danger' && 'border-red-300/80 bg-red-500/[0.08] text-red-900',
-                    badge.tone === 'muted' && 'border-slate-200 bg-slate-50 text-slate-700',
+                    badge.tone === 'muted' && 'border-slate-200 bg-slate-50 text-slate-700 dark:text-gdc-mutedStrong',
                   )}
                 >
                   {badge.label}
                 </span>
-                <span className="font-mono text-[10px] text-slate-500">{e.stage}</span>
+                <span className="font-mono text-[10px] text-slate-500 dark:text-gdc-muted">{e.stage}</span>
               </div>
-              <p className="mt-1 text-[11px] leading-snug text-slate-800">{e.message}</p>
-              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-slate-600">
+              <p className="mt-1 text-[11px] leading-snug text-slate-800 dark:text-slate-200">{e.message}</p>
+              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-slate-600 dark:text-gdc-muted">
                 {e.route_id != null ? <span>Route #{e.route_id}</span> : null}
                 {e.destination_id != null ? <span>Destination #{e.destination_id}</span> : null}
                 {e.latency_ms != null ? <span className="tabular-nums">Latency {formatLatencyMs(e.latency_ms)}</span> : null}
                 {e.retry_count > 0 ? <span className="tabular-nums font-semibold text-amber-800">Retries {e.retry_count}</span> : null}
                 <span className={cn('tabular-nums uppercase', st.tone === 'danger' && 'text-red-700')}>{st.label}</span>
               </div>
-              <p className="mt-1 font-mono text-[9px] text-slate-400">{e.created_at}</p>
+              <p className="mt-1 font-mono text-[9px] text-slate-400 dark:text-gdc-muted">{e.created_at}</p>
             </li>
           )
         })}
@@ -333,7 +333,7 @@ function LogExecutionTracePanel({ logDbId, highlightLogId }: { logDbId: number |
           <p className="font-semibold text-slate-800 dark:text-slate-100">Checkpoint</p>
           <p className="text-slate-600 dark:text-gdc-muted">{data.checkpoint.message ?? '—'}</p>
           {data.checkpoint.checkpoint_type ? (
-            <p className="mt-1 font-mono text-[10px] text-slate-500">Type {data.checkpoint.checkpoint_type}</p>
+            <p className="mt-1 font-mono text-[10px] text-slate-500 dark:text-gdc-muted">Type {data.checkpoint.checkpoint_type}</p>
           ) : null}
           {data.checkpoint.update_reason ? (
             <p className="mt-1 text-slate-700 dark:text-gdc-mutedStrong">Reason: {data.checkpoint.update_reason}</p>
@@ -804,7 +804,7 @@ export function LogDetailDrawer({
               onClick={onClose}
               className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100 dark:hover:bg-gdc-input"
             >
-              <ChevronRight className="h-4 w-4 text-slate-500" aria-hidden />
+              <ChevronRight className="h-4 w-4 text-slate-500 dark:text-gdc-muted" aria-hidden />
               Open Route
               <ArrowRight className="ml-auto h-3.5 w-3.5 text-slate-400 dark:text-gdc-muted" aria-hidden />
             </Link>
@@ -815,7 +815,7 @@ export function LogDetailDrawer({
               onClick={onClose}
               className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100 dark:hover:bg-gdc-input"
             >
-              <Radio className="h-4 w-4 text-slate-500" aria-hidden />
+              <Radio className="h-4 w-4 text-slate-500 dark:text-gdc-muted" aria-hidden />
               Open Destination
               <ArrowRight className="ml-auto h-3.5 w-3.5 text-slate-400 dark:text-gdc-muted" aria-hidden />
             </Link>
@@ -825,7 +825,7 @@ export function LogDetailDrawer({
             onClick={() => setTab('trace')}
             className="inline-flex w-full items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
           >
-            <Activity className="h-4 w-4 text-slate-500" aria-hidden />
+            <Activity className="h-4 w-4 text-slate-500 dark:text-gdc-muted" aria-hidden />
             View Trace
           </button>
         </div>
@@ -868,7 +868,7 @@ export function LogDetailDrawer({
             ) : null}
           </div>
         ) : null}
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-slate-500 dark:text-gdc-muted">
           Worker {getWorker(row)} · Host {getHost(row)} · Summary stage {pipelineStageLabel(row)}
         </p>
       </div>
