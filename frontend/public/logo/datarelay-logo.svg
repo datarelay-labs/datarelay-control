@@ -1,38 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" aria-hidden="true">
-  <defs>
-    <linearGradient id="dr-blue" x1="8" y1="10" x2="39" y2="54" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#2563EB"/>
-      <stop offset="1" stop-color="#38BDF8"/>
-    </linearGradient>
-    <linearGradient id="dr-green" x1="28" y1="10" x2="58" y2="54" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#22D3EE"/>
-      <stop offset="1" stop-color="#10B981"/>
-    </linearGradient>
-  </defs>
-
-  <!-- D: rounded data inlet / left half of the monogram -->
+  <!-- Small-size optimized DR monogram: solid fills, no overlapping strokes. -->
   <path
-    d="M11 13v38h12.5C34.4 51 41 43.2 41 32S34.4 13 23.5 13H11"
-    stroke="url(#dr-blue)"
-    stroke-width="8"
-    stroke-linecap="round"
-    stroke-linejoin="round"
+    fill="#3B82F6"
+    fill-rule="evenodd"
+    d="M6 8h11c10.5 0 17 9.3 17 24s-6.5 24-17 24H6V8Zm9 9v30h2c5.2 0 8-5.8 8-15s-2.8-15-8-15h-2Z"
+    clip-rule="evenodd"
   />
-
-  <!-- R: shared relay stem and outgoing leg -->
   <path
-    d="M31 51V13h12c8.2 0 13 4.7 13 11.5S51.2 36 43 36H31M43 36l13 15"
-    stroke="url(#dr-green)"
-    stroke-width="8"
-    stroke-linecap="round"
-    stroke-linejoin="round"
+    fill="#34D399"
+    fill-rule="evenodd"
+    d="M35 8h11c8.2 0 13 5.4 13 13.5 0 5.8-2.5 9.8-7.1 11.9L61 56H50.5L43 37h1v19h-9V8Zm9 9v12h2c3 0 4.5-2.2 4.5-6s-1.5-6-4.5-6h-2Z"
+    clip-rule="evenodd"
   />
-
-  <!-- Relay bridge: makes the handoff readable at favicon size -->
-  <path
-    d="M23 32h18"
-    stroke="#22D3EE"
-    stroke-width="6"
-    stroke-linecap="round"
-  />
+  <rect x="30" y="29" width="8" height="6" rx="3" fill="#22D3EE"/>
 </svg>
