@@ -42,6 +42,8 @@ scenarios:
   - id: BACKEND-FOCUSED-AFFECTED
     name: Backend focused affected tests
     level: integration
+    cost: medium
+    agent_default: true
     domains: [backend]
     triggers: [affected, pr]
     platforms: [linux]
@@ -55,7 +57,7 @@ scenarios:
     name: Runtime WireMock and PostgreSQL smoke
     level: e2e
     domains: [runtime, e2e]
-    triggers: [affected, pr, rc, release]
+    triggers: [rc, release]
     platforms: [linux, docker]
     command: "./scripts/testing/start-test-stack.sh && ./scripts/testing/run-smoke-tests.sh"
     invariants:
@@ -103,6 +105,8 @@ scenarios:
   - id: DEV-VALIDATION-EPS-GUARDRAIL
     name: Dev Validation Lab and visible E2E throughput guardrail
     level: integration
+    cost: medium
+    agent_default: true
     domains: [runtime, e2e]
     triggers: [affected, pr]
     platforms: [linux]

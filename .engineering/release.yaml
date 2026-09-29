@@ -21,3 +21,4 @@ provenance_command: git rev-parse HEAD && git status --porcelain=v1
 sbom_command: ''
 operational_e2e_command: ./scripts/testing/run-full-regression.sh
 public_smoke_command: bash scripts/release/public-smoke.sh
+execution_context: github-hosted

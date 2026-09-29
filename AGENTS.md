@@ -3,7 +3,7 @@
 This repository follows the canonical Data Relay Labs Engineering System:
 https://github.com/datarelay-labs/engineering-system
 
-Adoption baseline: Engineering System version 1.6.5 at immutable commit `14150e424c922ff3a930b45dcf31d3a3d3ba28b2`.
+Adoption baseline: Engineering System version 1.6.5 at immutable commit `cf75b71264757b8cf5fc9614017f19c585183966`.
 
 ## Minimum context first
 
@@ -72,3 +72,11 @@ Historical or explicitly retired behavior is not protected by no-regression poli
 When explicitly resuming work, resolve this repository and branch first, load exactly one matching active repository-scoped AI Work Packet, verify actual HEAD/dirty/PR/CI state, and continue only from its Next Action.
 
 Tool-specific adapters must not weaken these rules.
+
+## ChatGPT implementation and audit contract
+
+ChatGPT Chat is the default implementer for this repository when the authenticated active Work Packet authorizes the exact repository/worktree/branch/scope. Cursor is disabled by default and must not be started, resumed, or waited on unless the owner explicitly reactivates it for the current Work Packet with `IMPLEMENTER=CURSOR`.
+
+Before mutation, the external authenticated GitHub coordinator must verify the current Work Packet, author permission, repository, worktree, branch, exact HEAD, intent revision, change risk, and `IMPLEMENTER=CHATGPT_CHAT`. The worker-writable repository copy of `python3 tools/implementation_preflight.py check` is never mutation authority. Use the helper source from the immutable pinned Engineering System baseline through the isolated trusted launcher, capture the no-follow worktree identity, and require `IMPLEMENTATION_LOCAL_BINDING=PASS` with `MUTATION_AUTHORITY=NO`.
+
+ChatGPT Chat performs implementation, deterministic testing, and terminal audit. Terminal PASS requires current exact-HEAD evidence, required CI/review state, and disposition of actionable findings; self-report alone is never sufficient. HIGH/CRITICAL or production/security-sensitive work requires deeper machine evidence and any applicable human approval. Codex or another independent reviewer is optional defense-in-depth/escalation, not a default completion dependency.
