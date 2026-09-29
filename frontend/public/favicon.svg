@@ -1,15 +1,51 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" aria-hidden="true">
-  <!-- Small-size optimized DR monogram: solid fills, no overlapping strokes. -->
+  <defs>
+    <linearGradient id="datarelay-mark" x1="7" y1="10" x2="58" y2="54" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2563EB"/>
+      <stop offset="0.48" stop-color="#22D3EE"/>
+      <stop offset="1" stop-color="#10B981"/>
+    </linearGradient>
+  </defs>
+
+  <!--
+    DR Relay Monogram
+    One continuous glyph reads as both D and R:
+    - the rounded bowl establishes D
+    - the shared bowl/stem plus outgoing lower-right leg establishes R
+    - the small center cue communicates relay / data handoff
+  -->
   <path
-    fill="#3B82F6"
+    fill="url(#datarelay-mark)"
     fill-rule="evenodd"
-    d="M6 8h11c10.5 0 17 9.3 17 24s-6.5 24-17 24H6V8Zm9 9v30h2c5.2 0 8-5.8 8-15s-2.8-15-8-15h-2Z"
     clip-rule="evenodd"
+    d="
+      M7 8
+      H27
+      C42.2 8 52 17.1 52 31.4
+      C52 39.6 48.5 46.0 42.0 50.0
+      L58 56
+      H43.2
+      L32.8 43.7
+      C31.0 44.0 29.0 44.2 27 44.2
+      H18
+      V56
+      H7
+      V8
+      Z
+
+      M18 18
+      V34.2
+      H27
+      C35.5 34.2 41 30.5 41 24.9
+      C41 20.5 36.6 18 27 18
+      H18
+      Z
+    "
   />
+
+  <!-- Relay / handoff cue. Deliberately simple so it survives favicon scale. -->
   <path
-    fill="#34D399"
-    fill-rule="evenodd"
-    d="M35 8h11c8.2 0 13 5.4 13 13.5 0 5.8-2.5 9.8-7.1 11.9L61 56H50.5L43 37h1v19h-9V8Zm9 9v12h2c3 0 4.5-2.2 4.5-6s-1.5-6-4.5-6h-2Z"
-    clip-rule="evenodd"
+    d="M27 29H35V26L42 32L35 38V35H27Z"
+    fill="#F8FAFC"
   />
 </svg>

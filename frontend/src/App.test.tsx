@@ -500,7 +500,7 @@ describe('DataRelay sidebar branding', () => {
     expect(home).toHaveTextContent('Relay')
     const logo = home.querySelector('img')
     expect(logo).not.toBeNull()
-    expect(logo).toHaveAttribute('src', '/logo/datarelay-logo.svg?v=dr-monogram-3')
+    expect(logo).toHaveAttribute('src', '/logo/datarelay-logo.svg?v=dr-monogram-4')
   })
 
   it('honors VITE_DATARELAY_INSTANCE_LABEL for the instance subtitle', () => {
