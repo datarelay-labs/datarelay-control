@@ -1,7 +1,8 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useCallback, useState } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { runEnrichmentTracePreview, runMappingDraftPreview, runTransformPreview } from '../../../api/gdcRuntimePreview'
 import { StepMappingCombined } from './step-mapping-combined'
 import {
   ENRICHMENT_RULE_TYPES,
@@ -12,6 +13,22 @@ import {
 } from './enrichment-rules-model'
 import { loadWizardDraft, saveWizardDraft, clearWizardDraft } from './wizard-draft-migration'
 import { buildInitialState, enrichmentDictFromRows, type WizardState } from './wizard-state'
+
+vi.mock('../../../api/gdcRuntimePreview', async () => {
+  const actual = await vi.importActual<typeof import('../../../api/gdcRuntimePreview')>(
+    '../../../api/gdcRuntimePreview',
+  )
+  return {
+    ...actual,
+    runMappingDraftPreview: vi.fn(),
+    runEnrichmentTracePreview: vi.fn(),
+    runTransformPreview: vi.fn(),
+  }
+})
+
+const mockedMappingDraftPreview = vi.mocked(runMappingDraftPreview)
+const mockedEnrichmentTracePreview = vi.mocked(runEnrichmentTracePreview)
+const mockedTransformPreview = vi.mocked(runTransformPreview)
 
 vi.mock('./wizard-basic-mapping-panel', () => ({
   WizardBasicMappingPanel: () => (
@@ -101,6 +118,12 @@ function TransformHarness({
 }
 
 describe('StepMappingCombined v3 Transform (206f0f7 mapping UI)', () => {
+  beforeEach(() => {
+    mockedMappingDraftPreview.mockReset()
+    mockedEnrichmentTracePreview.mockReset()
+    mockedTransformPreview.mockReset()
+  })
+
   it('renders three tabs and + Add field action (no Generated Fields tab)', () => {
     render(<StepMappingCombined {...combinedProps(readyTransformState())} />)
 
@@ -231,6 +254,232 @@ describe('StepMappingCombined v3 Transform (206f0f7 mapping UI)', () => {
       type: 'conditional',
     })
     expect(enrichmentDictFromRules(rules)).toEqual(payload)
+  })
+
+  it('uses runtime mapping preview before guided rule debugging', async () => {
+    const user = userEvent.setup()
+    const state = readyTransformState()
+    state.mapping = [
+      { id: 'm1', sourceJsonPath: '$.id', outputField: 'event_id', origin: 'manual' },
+    ]
+    state.unmappedFieldsPolicy = 'drop_unmapped'
+    const staticRule = defaultRuleForType('static', 0)
+    staticRule.fieldName = 'vendor'
+    staticRule.staticValue = 'Acme'
+    state.enrichment = [staticRule]
+
+    mockedMappingDraftPreview.mockResolvedValue({
+      input_event_count: 1,
+      preview_event_count: 1,
+      mapped_events: [{ event_id: 'e1' }],
+      missing_fields: [],
+      message: 'ok',
+    })
+    mockedEnrichmentTracePreview.mockResolvedValue({
+      input_event_count: 1,
+      preview_event_count: 1,
+      rule_count: 1,
+      through_step: null,
+      rule_summaries: [
+        {
+          step_index: 0,
+          rule_type: 'static',
+          target_field: 'vendor',
+          executed_count: 1,
+          changed_count: 1,
+          warning_count: 0,
+          error_count: 0,
+          blocked_count: 0,
+          failed_sample_indices: [],
+        },
+      ],
+      samples: [
+        {
+          sample_index: 0,
+          output_event: { event_id: 'e1', vendor: 'Acme' },
+          steps: [],
+          failed_step_index: null,
+          duration_ms: 0,
+        },
+      ],
+      message: 'ok',
+    })
+
+    render(<StepMappingCombined {...combinedProps(state)} />)
+    await user.click(screen.getByRole('button', { name: 'Preview rules' }))
+
+    await waitFor(() => expect(mockedMappingDraftPreview).toHaveBeenCalledTimes(1))
+    expect(mockedMappingDraftPreview).toHaveBeenCalledWith({
+      payload: { events: [{ id: 'e1', message: 'hello' }] },
+      event_array_path: '$.events',
+      event_root_path: null,
+      field_mappings: {
+        event_id: '$.id',
+        unmapped_fields_policy: 'drop_unmapped',
+      },
+      max_events: 20,
+    })
+    expect(mockedEnrichmentTracePreview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mapped_events: [{ event_id: 'e1' }],
+        enrichment: { vendor: 'Acme' },
+      }),
+    )
+  })
+
+  it('uses runtime full-event JSONata preview before guided rule debugging', async () => {
+    const user = userEvent.setup()
+    const state = readyTransformState()
+    state.mappingMode = 'full_event_jsonata'
+    state.fullEventJsonataExpression = '{"event_id": id}'
+    const staticRule = defaultRuleForType('static', 0)
+    staticRule.fieldName = 'vendor'
+    staticRule.staticValue = 'Acme'
+    state.enrichment = [staticRule]
+
+    mockedTransformPreview.mockResolvedValue({
+      stage: 'mapping',
+      input_sample_summary: {
+        is_object: true,
+        top_level_keys: ['id', 'message'],
+        top_level_key_count: 2,
+      },
+      transformed_result: { event_id: 'e1' },
+      field_results: [],
+      errors: [],
+      warnings: [],
+      save_blocked: false,
+      duration_ms: 1,
+      message: 'ok',
+    })
+    mockedEnrichmentTracePreview.mockResolvedValue({
+      input_event_count: 1,
+      preview_event_count: 1,
+      rule_count: 1,
+      through_step: null,
+      rule_summaries: [
+        {
+          step_index: 0,
+          rule_type: 'static',
+          target_field: 'vendor',
+          executed_count: 1,
+          changed_count: 1,
+          warning_count: 0,
+          error_count: 0,
+          blocked_count: 0,
+          failed_sample_indices: [],
+        },
+      ],
+      samples: [
+        {
+          sample_index: 0,
+          output_event: { event_id: 'e1', vendor: 'Acme' },
+          steps: [],
+          failed_step_index: null,
+          duration_ms: 0,
+        },
+      ],
+      message: 'ok',
+    })
+
+    render(<StepMappingCombined {...combinedProps(state)} />)
+    await user.click(screen.getByRole('button', { name: 'Preview rules' }))
+
+    await waitFor(() => expect(mockedTransformPreview).toHaveBeenCalledTimes(1))
+    expect(mockedTransformPreview).toHaveBeenCalledWith({
+      stage: 'mapping',
+      sample_event: { id: 'e1', message: 'hello' },
+      field_mappings: {
+        mapping_mode: 'full_event_jsonata',
+        jsonata_expression: '{"event_id": id}',
+      },
+    })
+    expect(mockedMappingDraftPreview).not.toHaveBeenCalled()
+    expect(mockedEnrichmentTracePreview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mapped_events: [{ event_id: 'e1' }],
+        enrichment: { vendor: 'Acme' },
+      }),
+    )
+  })
+
+  it('uses runtime full-event Regex preview before guided rule debugging', async () => {
+    const user = userEvent.setup()
+    const state = readyTransformState()
+    state.mappingMode = 'full_event_regex'
+    state.fullEventRegexConfigJson = JSON.stringify({
+      preserve_source: false,
+      rules: [
+        {
+          output_field: 'event_id',
+          source_path: '$.id',
+          pattern: '^(.+)$',
+          group: 1,
+        },
+      ],
+    })
+    const staticRule = defaultRuleForType('static', 0)
+    staticRule.fieldName = 'vendor'
+    staticRule.staticValue = 'Acme'
+    state.enrichment = [staticRule]
+
+    mockedTransformPreview.mockResolvedValue({
+      stage: 'mapping',
+      input_sample_summary: {
+        is_object: true,
+        top_level_keys: ['id', 'message'],
+        top_level_key_count: 2,
+      },
+      transformed_result: { event_id: 'e1' },
+      field_results: [],
+      errors: [],
+      warnings: [],
+      save_blocked: false,
+      duration_ms: 1,
+      message: 'ok',
+    })
+    mockedEnrichmentTracePreview.mockResolvedValue({
+      input_event_count: 1,
+      preview_event_count: 1,
+      rule_count: 1,
+      through_step: null,
+      rule_summaries: [],
+      samples: [
+        {
+          sample_index: 0,
+          output_event: { event_id: 'e1', vendor: 'Acme' },
+          steps: [],
+          failed_step_index: null,
+          duration_ms: 0,
+        },
+      ],
+      message: 'ok',
+    })
+
+    render(<StepMappingCombined {...combinedProps(state)} />)
+    await user.click(screen.getByRole('button', { name: 'Preview rules' }))
+
+    await waitFor(() => expect(mockedTransformPreview).toHaveBeenCalledTimes(1))
+    expect(mockedTransformPreview).toHaveBeenCalledWith({
+      stage: 'mapping',
+      sample_event: { id: 'e1', message: 'hello' },
+      field_mappings: {
+        mapping_mode: 'full_event_regex',
+        preserve_source_fields: false,
+        regex_rules: [
+          {
+            output_field: 'event_id',
+            source_path: '$.id',
+            pattern: '^(.+)$',
+            capture_group: 1,
+          },
+        ],
+      },
+    })
+    expect(mockedMappingDraftPreview).not.toHaveBeenCalled()
+    expect(mockedEnrichmentTracePreview).toHaveBeenCalledWith(
+      expect.objectContaining({ mapped_events: [{ event_id: 'e1' }] }),
+    )
   })
 
   it('shows warning but keeps Transform editable when latest sample is missing', () => {

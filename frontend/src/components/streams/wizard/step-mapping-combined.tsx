@@ -1,15 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { runMappingDraftPreview, runTransformPreview } from '../../../api/gdcRuntimePreview'
 import { cn } from '../../../lib/utils'
+import { mapWithConcurrency } from './bounded-async-map'
 import { EnrichmentAddFieldMenu } from './enrichment-add-field-menu'
 import { EnrichmentRulesEditor } from './enrichment-rules-editor'
+import { TransformRuleDebugger } from './transform-rule-debugger'
 import type { WizardEnrichmentRule } from './enrichment-rules-model'
 import { WizardBasicMappingPanel } from './wizard-basic-mapping-panel'
 import { WizardFullEventTransformWorkspace } from './wizard-full-event-transform-workspace'
+import { buildFieldMappingsFromFullEventRegexConfigJson } from './wizard-full-event-regex-config'
+import { buildWizardJsonataPreviewFieldMappings } from './wizard-full-event-preview'
 import { wizardExtractEvents } from './wizard-json-extract'
 import { buildMappedBaseFromState } from './wizard-review-preview'
 import type { WizardDataProtectionState, WizardMappingRow, WizardState } from './wizard-state'
 import { WizardTransformDataProtectionCard } from './wizard-transform-data-protection-card'
-import { wizardTransformSampleReady } from './wizard-transform-sample'
+import { buildWizardTransformSample, wizardTransformSampleReady } from './wizard-transform-sample'
 
 export type StepMappingCombinedProps = {
   state: WizardState
@@ -98,9 +103,65 @@ export function StepMappingCombined({
   ])
 
   const mappedBase = useMemo(
-    () => buildMappedBaseFromState(sampleEvent, state.mapping),
-    [sampleEvent, state.mapping],
+    () => buildMappedBaseFromState(sampleEvent, state.mapping, state.unmappedFieldsPolicy),
+    [sampleEvent, state.mapping, state.unmappedFieldsPolicy],
   )
+
+  const loadDebuggerMappedEvents = useCallback(async () => {
+    const sample = buildWizardTransformSample(state)
+    if (!sample) return []
+
+    if (state.mappingMode === 'full_event_jsonata') {
+      const expression = state.fullEventJsonataExpression.trim()
+      if (!expression) throw new Error('Enter and validate a JSONata expression before previewing Guided rules.')
+      return mapWithConcurrency(sample.extractedEvents.slice(0, 20), 4, async (event) => {
+        const preview = await runTransformPreview({
+          stage: 'mapping',
+          sample_event: event,
+          field_mappings: buildWizardJsonataPreviewFieldMappings(expression),
+        })
+        if (preview.save_blocked || preview.errors.length > 0) {
+          throw new Error(preview.errors[0]?.message ?? 'JSONata mapping preview failed.')
+        }
+        return preview.transformed_result
+      })
+    }
+
+    if (state.mappingMode === 'full_event_regex') {
+      const built = buildFieldMappingsFromFullEventRegexConfigJson(state.fullEventRegexConfigJson)
+      if (built.ok === false) throw new Error(built.error)
+      return mapWithConcurrency(sample.extractedEvents.slice(0, 20), 4, async (event) => {
+        const preview = await runTransformPreview({
+          stage: 'mapping',
+          sample_event: event,
+          field_mappings: built.fieldMappings,
+        })
+        if (preview.save_blocked || preview.errors.length > 0) {
+          throw new Error(preview.errors[0]?.message ?? 'Regex mapping preview failed.')
+        }
+        return preview.transformed_result
+      })
+    }
+
+    const fieldMappings: Record<string, string> = {}
+    for (const row of state.mapping) {
+      const outputField = row.outputField.trim()
+      const sourceJsonPath = row.sourceJsonPath.trim()
+      if (outputField && sourceJsonPath) fieldMappings[outputField] = sourceJsonPath
+    }
+    if (state.unmappedFieldsPolicy === 'drop_unmapped') {
+      fieldMappings.unmapped_fields_policy = 'drop_unmapped'
+    }
+
+    const preview = await runMappingDraftPreview({
+      payload: sample.rawPayload,
+      event_array_path: sample.eventArrayPath || null,
+      event_root_path: sample.eventRootPath || null,
+      field_mappings: fieldMappings,
+      max_events: 20,
+    })
+    return preview.mapped_events
+  }, [state])
 
   const mappedKeysLower = useMemo(() => {
     const keys = new Set<string>()
@@ -224,7 +285,7 @@ export function StepMappingCombined({
           </div>
         )}
 
-        <div className="mt-4">
+        <div className="mt-4 space-y-3">
           <EnrichmentRulesEditor
             rules={state.enrichment}
             onChange={onChangeEnrichment}
@@ -232,6 +293,12 @@ export function StepMappingCombined({
             mappedSampleEvent={mappedBase}
             hideAddMenu
             data-testid="wizard-transform-enrichment-editor"
+          />
+          <TransformRuleDebugger
+            loadMappedEvents={loadDebuggerMappedEvents}
+            sampleAvailable={transformSampleReady}
+            rules={state.enrichment}
+            overridePolicy={state.enrichmentOverridePolicy}
           />
         </div>
       </section>

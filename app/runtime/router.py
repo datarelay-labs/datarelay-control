@@ -137,6 +137,8 @@ from app.runtime.schemas import (
     ExtractionValidateResponse,
     EnrichmentExecPreviewRequest,
     EnrichmentExecPreviewResponse,
+    EnrichmentTracePreviewRequest,
+    EnrichmentTracePreviewResponse,
     EnrichmentValidateRequest,
     EnrichmentValidateResponse,
     FinalEventDraftPreviewRequest,
@@ -4045,6 +4047,15 @@ async def preview_enrichment_exec(payload: EnrichmentExecPreviewRequest) -> Enri
         return preview_service.run_enrichment_exec_preview(payload)
     except PreviewRequestError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@router.post("/preview/enrichment-trace", response_model=EnrichmentTracePreviewResponse)
+async def preview_enrichment_trace(
+    payload: EnrichmentTracePreviewRequest,
+) -> EnrichmentTracePreviewResponse:
+    """Trace guided Transform rules with the same enrichment engine as runtime."""
+
+    return preview_service.run_enrichment_trace_preview(payload)
 
 
 @router.post("/preview/transform", response_model=TransformPreviewResponse)

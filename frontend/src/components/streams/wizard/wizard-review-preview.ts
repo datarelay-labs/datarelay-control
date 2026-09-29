@@ -22,9 +22,10 @@ export function enrichmentValueKind(rule: WizardEnrichmentRule): 'static' | 'aut
 export function buildMappedBaseFromState(
   sampleEvent: Record<string, unknown> | null,
   mapping: WizardMappingRow[],
+  unmappedFieldsPolicy: 'pass_through' | 'drop_unmapped' = 'pass_through',
 ): Record<string, unknown> {
   if (!sampleEvent) return {}
-  return applyMappingWithPassThrough(sampleEvent, mapping, resolveJsonPath)
+  return applyMappingWithPassThrough(sampleEvent, mapping, resolveJsonPath, unmappedFieldsPolicy)
 }
 
 export function countDuplicateEnrichmentKeys(rules: WizardEnrichmentRule[]): number {

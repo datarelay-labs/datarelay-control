@@ -361,6 +361,68 @@ export async function runEnrichmentExecPreview(
   })
 }
 
+export type EnrichmentTraceStep = {
+  step_index: number
+  rule_type: string
+  target_field: string
+  executed: boolean
+  blocked: boolean
+  before_present: boolean
+  before_value: unknown
+  after_present: boolean
+  after_value: unknown
+  changed: boolean
+  warning_codes: string[]
+  warning_messages: string[]
+  error_message: string | null
+}
+
+export type EnrichmentTraceSample = {
+  sample_index: number
+  output_event: Record<string, unknown>
+  steps: EnrichmentTraceStep[]
+  failed_step_index: number | null
+  duration_ms: number
+}
+
+export type EnrichmentTraceRuleSummary = {
+  step_index: number
+  rule_type: string
+  target_field: string
+  executed_count: number
+  changed_count: number
+  warning_count: number
+  error_count: number
+  blocked_count: number
+  failed_sample_indices: number[]
+}
+
+export type EnrichmentTracePreviewRequest = {
+  mapped_events: Array<Record<string, unknown>>
+  enrichment: Record<string, unknown>
+  override_policy?: 'KEEP_EXISTING' | 'OVERRIDE' | 'ERROR_ON_CONFLICT'
+  through_step?: number | null
+}
+
+export type EnrichmentTracePreviewResponse = {
+  input_event_count: number
+  preview_event_count: number
+  rule_count: number
+  through_step: number | null
+  rule_summaries: EnrichmentTraceRuleSummary[]
+  samples: EnrichmentTraceSample[]
+  message: string
+}
+
+export async function runEnrichmentTracePreview(
+  payload: EnrichmentTracePreviewRequest,
+): Promise<EnrichmentTracePreviewResponse> {
+  return requestJson<EnrichmentTracePreviewResponse>(`${RT}/preview/enrichment-trace`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
 export type TransformPreviewSampleSummary = {
   is_object: boolean
   top_level_keys: string[]
