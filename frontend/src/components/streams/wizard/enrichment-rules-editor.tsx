@@ -398,7 +398,7 @@ export function EnrichmentRulesEditor({
       </div>
 
       <p className="mt-3 text-[10px] text-slate-500 dark:text-gdc-muted">
-        Rules are applied in list order. Reordering is not available in this editor yet.
+        Rule debugger shows the effective runtime order. Reordering is not available in this editor yet.
       </p>
     </section>
   )

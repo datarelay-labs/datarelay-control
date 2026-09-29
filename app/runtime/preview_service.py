@@ -31,7 +31,7 @@ from app.formatters.message_prefix import (
 )
 from app.formatters.syslog_formatter import format_syslog
 from app.pollers.http_query_params import httpx_body_kwargs
-from app.enrichers.rule_executor import execute_enrichment
+from app.enrichers.rule_executor import execute_enrichment, execute_enrichment_trace
 from app.enrichers.rule_validation import validate_enrichment_json
 from app.mappers.full_event_mapping import (
     apply_full_event_mapping,
@@ -113,6 +113,11 @@ from app.runtime.schemas import (
     EnrichmentExecPreviewRequest,
     EnrichmentExecPreviewResponse,
     EnrichmentExecPreviewWarning,
+    EnrichmentTracePreviewRequest,
+    EnrichmentTracePreviewResponse,
+    EnrichmentTraceRuleSummaryItem,
+    EnrichmentTraceSampleItem,
+    EnrichmentTraceStepItem,
     EnrichmentValidateRequest,
     EnrichmentValidateResponse,
     EnrichmentValidationIssueItem,
@@ -2277,6 +2282,95 @@ def run_enrichment_exec_preview(payload: EnrichmentExecPreviewRequest) -> Enrich
         message="Enrichment preview executed successfully",
     )
 
+
+
+def run_enrichment_trace_preview(
+    payload: EnrichmentTracePreviewRequest,
+) -> EnrichmentTracePreviewResponse:
+    events = list(payload.mapped_events[:20])
+    if not events:
+        return EnrichmentTracePreviewResponse(
+            input_event_count=0,
+            preview_event_count=0,
+            rule_count=0,
+            through_step=payload.through_step,
+            message="No mapped sample events available for rule trace",
+        )
+
+    samples: list[EnrichmentTraceSampleItem] = []
+    summaries: dict[int, EnrichmentTraceRuleSummaryItem] = {}
+
+    for sample_index, event in enumerate(events):
+        trace = execute_enrichment_trace(
+            event,
+            payload.enrichment,
+            override_policy=payload.override_policy,
+            through_step=payload.through_step,
+        )
+        failed_step_index: int | None = None
+        step_items: list[EnrichmentTraceStepItem] = []
+
+        for step in trace.steps:
+            warning_codes = [warning.code for warning in step.warnings]
+            warning_messages = [warning.message for warning in step.warnings]
+            item = EnrichmentTraceStepItem(
+                step_index=step.step_index,
+                rule_type=step.rule_type,
+                target_field=step.target_field,
+                executed=step.executed,
+                blocked=step.blocked,
+                before_present=step.before_present,
+                before_value=step.before_value,
+                after_present=step.after_present,
+                after_value=step.after_value,
+                changed=step.changed,
+                warning_codes=warning_codes,
+                warning_messages=warning_messages,
+                error_message=step.error_message,
+            )
+            step_items.append(item)
+
+            summary = summaries.get(step.step_index)
+            if summary is None:
+                summary = EnrichmentTraceRuleSummaryItem(
+                    step_index=step.step_index,
+                    rule_type=step.rule_type,
+                    target_field=step.target_field,
+                )
+                summaries[step.step_index] = summary
+            if step.executed:
+                summary.executed_count += 1
+            if step.changed:
+                summary.changed_count += 1
+            summary.warning_count += len(step.warnings)
+            if step.error_message:
+                summary.error_count += 1
+                summary.failed_sample_indices.append(sample_index)
+                if failed_step_index is None:
+                    failed_step_index = step.step_index
+            if step.blocked:
+                summary.blocked_count += 1
+
+        samples.append(
+            EnrichmentTraceSampleItem(
+                sample_index=sample_index,
+                output_event=trace.event,
+                steps=step_items,
+                failed_step_index=failed_step_index,
+                duration_ms=trace.duration_ms,
+            )
+        )
+
+    ordered_summaries = [summaries[idx] for idx in sorted(summaries)]
+    return EnrichmentTracePreviewResponse(
+        input_event_count=len(payload.mapped_events),
+        preview_event_count=len(events),
+        rule_count=len(ordered_summaries),
+        through_step=payload.through_step,
+        rule_summaries=ordered_summaries,
+        samples=samples,
+        message="Transform rule trace completed using the runtime enrichment engine",
+    )
 
 def run_enrichment_validate(payload: EnrichmentValidateRequest) -> EnrichmentValidateResponse:
     enrichment = payload.enrichment if isinstance(payload.enrichment, dict) else {}
