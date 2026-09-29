@@ -803,10 +803,23 @@ export class DataRelayDriver {
     const protectionAction = actionMap[opts.action] || 'audit'
     const rawField = opts.field || 'message'
     const fieldPath = rawField.startsWith('$') ? rawField : `$.${rawField}`
+    const currentGovernance = await this.request.get(
+      this.url(`/api/v1/runtime/streams/${streamId}/governance`),
+      { headers: this.authHeaders() },
+    )
+    if (!currentGovernance.ok()) {
+      const body = await currentGovernance.text().catch(() => '')
+      throw new Error(`governance read failed HTTP ${currentGovernance.status()}: ${body}`)
+    }
+    const currentGovernanceDocument = await currentGovernance.json()
+    if (!currentGovernanceDocument.updated_at) {
+      throw new Error('governance read failed: response missing updated_at')
+    }
     const pol = await this.request.put(this.url(`/api/v1/runtime/streams/${streamId}/governance`), {
       headers: this.authHeaders(),
       data: {
         enabled: true,
+        expected_updated_at: currentGovernanceDocument.updated_at,
         rules: [
           {
             field_path: fieldPath,
