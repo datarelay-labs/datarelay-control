@@ -10,7 +10,7 @@ type DataRelayLogoMarkProps = {
 export function DataRelayLogoMark({ className, 'aria-label': ariaLabel }: DataRelayLogoMarkProps) {
   return (
     <img
-      src="/logo/datarelay-logo.svg?v=dr-monogram-4"
+      src="/logo/datarelay-logo.svg?v=dr-monogram-5"
       alt={ariaLabel ?? ''}
       width={64}
       height={64}

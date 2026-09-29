@@ -9,7 +9,7 @@ describe('PlatformLoginPage', () => {
     render(<PlatformLoginPage onAuthenticated={vi.fn()} />)
 
     const logo = screen.getByRole('img', { name: 'DataRelay logo' })
-    expect(logo).toHaveAttribute('src', '/logo/datarelay-logo.svg?v=dr-monogram-4')
+    expect(logo).toHaveAttribute('src', '/logo/datarelay-logo.svg?v=dr-monogram-5')
     expect(logo).toHaveAttribute('width', '64')
     expect(logo).toHaveAttribute('height', '64')
     expect(logo).toHaveClass('h-12', 'w-auto')

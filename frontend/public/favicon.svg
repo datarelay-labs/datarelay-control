@@ -1,51 +1,30 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" aria-hidden="true">
   <defs>
-    <linearGradient id="datarelay-mark" x1="7" y1="10" x2="58" y2="54" gradientUnits="userSpaceOnUse">
+    <linearGradient id="dr-blue" x1="8" y1="8" x2="38" y2="56" gradientUnits="userSpaceOnUse">
       <stop stop-color="#2563EB"/>
-      <stop offset="0.48" stop-color="#22D3EE"/>
+      <stop offset="1" stop-color="#38BDF8"/>
+    </linearGradient>
+    <linearGradient id="dr-green" x1="30" y1="10" x2="58" y2="54" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#22D3EE"/>
       <stop offset="1" stop-color="#10B981"/>
     </linearGradient>
   </defs>
 
-  <!--
-    DR Relay Monogram
-    One continuous glyph reads as both D and R:
-    - the rounded bowl establishes D
-    - the shared bowl/stem plus outgoing lower-right leg establishes R
-    - the small center cue communicates relay / data handoff
-  -->
+  <!-- D: source / inlet path -->
   <path
-    fill="url(#datarelay-mark)"
-    fill-rule="evenodd"
-    clip-rule="evenodd"
-    d="
-      M7 8
-      H27
-      C42.2 8 52 17.1 52 31.4
-      C52 39.6 48.5 46.0 42.0 50.0
-      L58 56
-      H43.2
-      L32.8 43.7
-      C31.0 44.0 29.0 44.2 27 44.2
-      H18
-      V56
-      H7
-      V8
-      Z
-
-      M18 18
-      V34.2
-      H27
-      C35.5 34.2 41 30.5 41 24.9
-      C41 20.5 36.6 18 27 18
-      H18
-      Z
-    "
+    d="M10 12V52H23C36 52 43 44 43 32S36 12 23 12H10"
+    stroke="url(#dr-blue)"
+    stroke-width="7"
+    stroke-linecap="round"
+    stroke-linejoin="round"
   />
 
-  <!-- Relay / handoff cue. Deliberately simple so it survives favicon scale. -->
+  <!-- R: relay / outgoing path; intentionally overlaps the D bowl -->
   <path
-    d="M27 29H35V26L42 32L35 38V35H27Z"
-    fill="#F8FAFC"
+    d="M31 52V12H43C52 12 57 17 57 24S52 36 43 36H31M43 36L56 52"
+    stroke="url(#dr-green)"
+    stroke-width="7"
+    stroke-linecap="round"
+    stroke-linejoin="round"
   />
 </svg>
