@@ -43,6 +43,12 @@ assert.match(main, /const ok = failVisible && passVisible/)
 assert.match(main, /const isolationOk = browserEditOk && persistOk && aOk && !bOk/)
 assert.match(main, /browserRecoveryOk \? 'PASS' : recA && recB && recoveryApiFallback \? 'PARTIAL' : 'FAIL'/)
 
+const sourceFailure = section(main, '// ---- source failure diagnosis (UI first) ----', '// ---- checkpoint invariant')
+assert.match(sourceFailure, /const openedAffectedStream = await streams\.openStreamByName\(primaryHttpName\)/)
+assert.match(sourceFailure, /openedAffectedStream \|\|/)
+assert.match(sourceFailure, /if \(!openedAffectedStream\) await streams\.openRuntime\(primaryHttp\)/)
+assert.doesNotMatch(sourceFailure, /await streams\.expandVisibleStreamGroups\(\)/)
+
 assert.match(streamsPage, /clickStart\(\): Promise<boolean>/)
 assert.match(streamsPage, /clickStop\(\): Promise<boolean>/)
 assert.match(streamsPage, /await firstGroup\.waitFor\(\{ timeout: ACTION \}\)\.catch/)
