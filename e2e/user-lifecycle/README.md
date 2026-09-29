@@ -1,5 +1,7 @@
 # Real Browser Operator E2E (User Lifecycle)
 
+> Canonical human Full User E2E contract: [`../../docs/FULL_USER_E2E_SCENARIOS.md`](../../docs/FULL_USER_E2E_SCENARIOS.md). This package is the automated browser-first lifecycle layer and supporting release evidence; it does not replace the human black-box Full User E2E contract.
+
 Reusable package for **browser-first** Data Relay operator journeys.
 
 ```text

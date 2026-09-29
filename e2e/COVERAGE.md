@@ -4,7 +4,7 @@ Source of truth: [`e2e/capabilities/data-relay-capabilities.yaml`](capabilities/
 Provenance commit: `9d5b6a652973e9580959561315f17820ef0d9bcf`
 Generated: `2026-09-27T04:05:00Z`
 
-This document inventories **current Phase A-D Control** capabilities. AI Proxy, AI Provider, and Phase E/F are out of current Control scope and are not Source or Destination support rows. It does **not** invent features.
+This document inventories **current Phase A-D Control** capabilities. AI Proxy, AI Provider, and Phase E/F are out of current Control scope and are not Source or Destination support rows. It does **not** invent features. The canonical human Full User E2E execution contract is [`../docs/FULL_USER_E2E_SCENARIOS.md`](../docs/FULL_USER_E2E_SCENARIOS.md); this inventory is reconciled into that contract but does not replace it.
 
 Validate with:
 
