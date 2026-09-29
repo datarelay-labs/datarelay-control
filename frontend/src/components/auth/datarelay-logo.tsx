@@ -12,6 +12,8 @@ export function DataRelayLogoMark({ className, 'aria-label': ariaLabel }: DataRe
     <img
       src="/logo/datarelay-logo.svg?v=dr-monogram-1"
       alt={ariaLabel ?? ''}
+      width={64}
+      height={64}
       className={cn('shrink-0 object-contain', className)}
       draggable={false}
     />

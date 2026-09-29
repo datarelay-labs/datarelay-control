@@ -121,7 +121,7 @@ export function PlatformLoginPage({ onAuthenticated }: PlatformLoginPageProps) {
           <div className="flex flex-col gap-6 lg:max-w-md">
             <header className="space-y-4">
               <div className="flex items-start gap-3">
-                <DataRelayLogoMark className="h-10 w-14 sm:h-11 sm:w-[3.9rem]" aria-label="DataRelay logo" />
+                <DataRelayLogoMark className="h-12 w-auto sm:h-12" aria-label="DataRelay logo" />
               </div>
               <DataRelayWordmark />
               <p className="text-sm font-medium text-gdc-muted">Operational Data Connector Platform</p>

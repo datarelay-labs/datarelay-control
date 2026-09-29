@@ -8,10 +8,11 @@ describe('PlatformLoginPage', () => {
   it('uses the shared DataRelay master logo asset', () => {
     render(<PlatformLoginPage onAuthenticated={vi.fn()} />)
 
-    expect(screen.getByRole('img', { name: 'DataRelay logo' })).toHaveAttribute(
-      'src',
-      '/logo/datarelay-logo.svg?v=dr-monogram-1',
-    )
+    const logo = screen.getByRole('img', { name: 'DataRelay logo' })
+    expect(logo).toHaveAttribute('src', '/logo/datarelay-logo.svg?v=dr-monogram-1')
+    expect(logo).toHaveAttribute('width', '64')
+    expect(logo).toHaveAttribute('height', '64')
+    expect(logo).toHaveClass('h-12', 'w-auto')
   })
 
   it('stores must_change_password and advances to the password-change gate after bootstrap login', async () => {
