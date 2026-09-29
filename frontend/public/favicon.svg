@@ -1,17 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-  <!-- Interlocking arrows: blue (→) and emerald (←), rounded caps -->
-  <path
-    stroke="#2563EB"
-    stroke-width="3.5"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-    d="M5 9l11 7-11 7"
-  />
-  <path
-    stroke="#00D084"
-    stroke-width="3.5"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-    d="M27 9l-11 7 11 7"
-  />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 169 108" fill="none" aria-hidden="true">
+  <defs>
+    <linearGradient id="datarelay-a" x1="0" y1="0" x2="169" y2="108" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2563EB"/>
+      <stop offset="0.5" stop-color="#38BDF8"/>
+      <stop offset="1" stop-color="#10B981"/>
+    </linearGradient>
+  </defs>
+  <path d="M114 76 L136 107 L168 107 L167 104 L161 97 L146 75 L142 75 L141 76 Z" fill="url(#datarelay-a)"/>
+  <path d="M164 18 L160 12 L155 7 L146 2 L139 0 L91 0 L92 3 L102 15 L106 23 L135 23 L139 25 L142 28 L144 34 L142 41 L135 46 L101 46 L100 47 L95 47 L88 49 L79 54 L73 60 L63 74 L58 79 L48 84 L29 84 L28 83 L28 37 L12 37 L8 39 L2 48 L2 107 L51 107 L52 106 L60 105 L73 98 L83 88 L92 76 L98 71 L105 70 L106 69 L137 69 L138 68 L143 68 L150 65 L156 61 L161 56 L167 44 L168 31 L167 30 L167 25 Z" fill="url(#datarelay-a)"/>
+  <path d="M0 1 L3 14 L7 22 L9 23 L51 23 L52 24 L55 24 L64 30 L71 40 L73 49 L85 42 L97 39 L97 37 L92 27 L84 16 L76 9 L65 3 L59 1 L55 1 L54 0 L1 0 Z" fill="url(#datarelay-a)"/>
 </svg>

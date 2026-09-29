@@ -120,6 +120,32 @@ describe('ApprovalWorkflowPage', () => {
     expect(screen.getByText(/No policies in the approval queue/i)).toBeInTheDocument()
   })
 
+  it('keeps approval filter menus visually discoverable in light and dark themes', async () => {
+    vi.spyOn(gdcGovernanceApprovals, 'fetchGovernanceApprovals').mockResolvedValue({
+      window: '24h',
+      total: 0,
+      approvals: [],
+    })
+
+    renderPage()
+    await screen.findByTestId('approval-empty-state')
+
+    const filters = [
+      screen.getByTestId('approval-filter-window'),
+      screen.getByTestId('approval-filter-status'),
+      screen.getByTestId('approval-filter-requester'),
+      screen.getByTestId('approval-filter-reviewer'),
+    ]
+
+    for (const filter of filters) {
+      expect(filter).toHaveClass('appearance-none')
+      expect(filter).toHaveClass('cursor-pointer')
+      expect(filter).toHaveClass('dark:bg-gdc-input')
+      expect(filter).toHaveClass('dark:border-gdc-borderStrong')
+      expect(filter).toHaveClass('dark:text-gdc-foreground')
+    }
+  })
+
   it('opens detail drawer on row click', async () => {
     const user = userEvent.setup()
     vi.spyOn(gdcGovernanceApprovals, 'fetchGovernanceApprovals').mockResolvedValue({

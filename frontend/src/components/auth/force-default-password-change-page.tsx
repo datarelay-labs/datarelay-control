@@ -58,7 +58,7 @@ export function ForceDefaultPasswordChangePage({ onCompleted }: ForceDefaultPass
       <div className="flex flex-1 flex-col items-center justify-center px-4 py-10 sm:px-6">
         <div className="w-full max-w-md">
           <header className="mb-8 flex flex-col items-center text-center">
-            <DataRelayLogoMark className="mb-4 h-10 w-14 sm:h-11 sm:w-[3.9rem]" aria-label="DataRelay logo" />
+            <DataRelayLogoMark className="mb-4 h-12 w-auto sm:h-12" aria-label="DataRelay logo" />
             <DataRelayWordmark />
           </header>
 

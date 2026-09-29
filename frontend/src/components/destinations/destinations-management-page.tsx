@@ -402,7 +402,7 @@ function Pagination({
   const to = Math.min(page * pageSize, total)
 
   return (
-    <div className="flex items-center justify-between px-3 py-2 text-[11px] text-slate-400">
+    <div className="flex items-center justify-between px-3 py-2 text-[11px] text-slate-400 dark:text-gdc-muted">
       <div className="flex items-center gap-2">
         <span>Rows per page</span>
         <select
@@ -492,7 +492,7 @@ function CapacityRecommendationCard({
 
   const isPeakCritical = peakUsagePct != null && peakUsagePct >= criticalPct
   const usageColor =
-    currentUsagePct == null ? 'text-slate-500'
+    currentUsagePct == null ? 'text-slate-500 dark:text-gdc-muted'
     : currentUsagePct >= criticalPct ? 'text-red-400'
     : currentUsagePct >= warningPct ? 'text-amber-400'
     : 'text-emerald-400'
@@ -503,7 +503,7 @@ function CapacityRecommendationCard({
 
   return (
     <div className="rounded-xl border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section p-4">
-      <p className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Capacity Recommendation</p>
+      <p className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-slate-500 dark:text-gdc-muted">Capacity Recommendation</p>
 
       <div className="space-y-2 text-[12px]">
         {/* Traffic metrics */}
@@ -513,20 +513,20 @@ function CapacityRecommendationCard({
           { label: 'Peak (24h)', value: peakEps != null ? `${fmtEps(peakEps)} EPS` : '—' },
         ] as const).map(({ label, value }) => (
           <div key={label} className="flex items-center justify-between gap-2">
-            <span className="text-slate-500">{label}</span>
+            <span className="text-slate-500 dark:text-gdc-muted">{label}</span>
             <span className="tabular-nums font-semibold text-slate-700 dark:text-slate-300">{value}</span>
           </div>
         ))}
 
         <div className="border-t border-slate-200/80 dark:border-gdc-border pt-2 space-y-2">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-slate-500">Configured</span>
+            <span className="text-slate-500 dark:text-gdc-muted">Configured</span>
             <span className="tabular-nums font-semibold text-slate-700 dark:text-slate-300">
               {unlimited ? 'No limit' : configuredLimitEps != null ? `${configuredLimitEps.toLocaleString()} EPS` : '—'}
             </span>
           </div>
           <div className="flex items-center justify-between gap-2">
-            <span className="text-slate-500">Recommended</span>
+            <span className="text-slate-500 dark:text-gdc-muted">Recommended</span>
             <span className={cn('tabular-nums font-semibold', recommendedEps != null ? 'text-slate-700 dark:text-slate-300' : 'text-slate-500 italic')}>
               {recommendedEps != null ? `${recommendedEps.toLocaleString()} EPS` : 'Unavailable'}
             </span>
@@ -537,20 +537,20 @@ function CapacityRecommendationCard({
         {!unlimited && configuredLimitEps != null && (
           <div className="border-t border-slate-200/80 dark:border-gdc-border pt-2 space-y-2">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-slate-500">Expected Usage</span>
+              <span className="text-slate-500 dark:text-gdc-muted">Expected Usage</span>
               <span className={cn('tabular-nums font-semibold', usageColor)}>
                 {currentUsagePct != null ? `${currentUsagePct}%` : '—'}
               </span>
             </div>
             <div className="flex items-center justify-between gap-2">
-              <span className="text-slate-500">Remaining</span>
+              <span className="text-slate-500 dark:text-gdc-muted">Remaining</span>
               <span className="tabular-nums font-semibold text-slate-700 dark:text-slate-300">
                 {remainingEps != null ? `${fmtEps(remainingEps)} EPS` : '—'}
               </span>
             </div>
             {headroomEps != null && (
               <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-500">Headroom</span>
+                <span className="text-slate-500 dark:text-gdc-muted">Headroom</span>
                 <span className={cn('tabular-nums font-semibold', headroomEps < 0 ? 'text-red-400' : 'text-slate-700 dark:text-slate-300')}>
                   {fmtEps(headroomEps)} EPS
                 </span>
@@ -578,7 +578,7 @@ function CapacityRecommendationCard({
           Apply Recommendation ({recommendedEps.toLocaleString()} EPS)
         </button>
       ) : (
-        <p className="mt-3 text-[11px] italic text-slate-600">
+        <p className="mt-3 text-[11px] italic text-slate-600 dark:text-gdc-muted">
           Recommendation unavailable — no traffic data yet.
         </p>
       )}
@@ -596,29 +596,29 @@ function TestConnectionResultCard({ result }: { result: FormProbeResult }) {
         ? 'border-emerald-500/30 bg-emerald-950/20'
         : 'border-red-500/30 bg-red-950/20',
     )}>
-      <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Test Connection</p>
+      <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500 dark:text-gdc-muted">Test Connection</p>
       <div className="space-y-2 text-[12px]">
         <div className="flex items-center justify-between gap-2">
-          <span className="text-slate-500">Connection</span>
+          <span className="text-slate-500 dark:text-gdc-muted">Connection</span>
           <span className={cn('font-bold', result.success ? 'text-emerald-400' : 'text-red-400')}>
             {result.success ? '✓ Success' : '✗ Failed'}
           </span>
         </div>
         {result.success && result.latencyMs > 0 && (
           <div className="flex items-center justify-between gap-2">
-            <span className="text-slate-500">Latency</span>
+            <span className="text-slate-500 dark:text-gdc-muted">Latency</span>
             <span className="tabular-nums font-semibold text-slate-800 dark:text-slate-200">{result.latencyMs.toFixed(1)} ms</span>
           </div>
         )}
         {!result.success && result.message && (
           <div className="flex items-start justify-between gap-2">
-            <span className="shrink-0 text-slate-500">Error</span>
+            <span className="shrink-0 text-slate-500 dark:text-gdc-muted">Error</span>
             <span className="text-right text-[11px] text-red-300 line-clamp-2">{result.message}</span>
           </div>
         )}
         <div className="flex items-center justify-between gap-2">
-          <span className="text-slate-500">Last Tested</span>
-          <span className="text-slate-400">{result.testedAt}</span>
+          <span className="text-slate-500 dark:text-gdc-muted">Last Tested</span>
+          <span className="text-slate-400 dark:text-gdc-muted">{result.testedAt}</span>
         </div>
       </div>
     </div>
@@ -627,7 +627,7 @@ function TestConnectionResultCard({ result }: { result: FormProbeResult }) {
 
 // ─── Column header ────────────────────────────────────────────────────────────
 
-const TH = 'px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-500 whitespace-nowrap'
+const TH = 'px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-gdc-muted whitespace-nowrap'
 const TD = 'px-3 py-2.5'
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -1123,12 +1123,12 @@ export function DestinationsManagementPage() {
       <div className="flex flex-wrap items-center gap-2" data-testid="destinations-list-toolbar">
         <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-200">
           Destinations
-          <span className="ml-1.5 tabular-nums text-slate-500">({filteredRows.length})</span>
+          <span className="ml-1.5 tabular-nums text-slate-500 dark:text-gdc-muted">({filteredRows.length})</span>
         </h2>
 
         <div className="flex flex-1 items-center gap-2 sm:max-w-xs ml-auto lg:ml-4">
           <label className="relative flex flex-1 items-center">
-            <Search className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-slate-500" aria-hidden />
+            <Search className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-slate-500 dark:text-gdc-muted" aria-hidden />
             <input
               placeholder="Search destinations…"
               value={searchQ}
@@ -1247,14 +1247,14 @@ export function DestinationsManagementPage() {
                             {/* Destination */}
                             <td className={cn(TD, 'min-w-[180px]')}>
                               <div className="flex items-start gap-2">
-                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section text-[11px] font-bold text-slate-400">
+                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section text-[11px] font-bold text-slate-400 dark:text-gdc-muted">
                                   {row.name.slice(0, 2).toUpperCase()}
                                 </div>
                                 <div className="min-w-0">
                                   <div className="text-[12px] font-semibold text-slate-900 dark:text-slate-50 truncate max-w-[160px]">{row.name}</div>
                                   <div className="mt-0.5 flex items-center gap-1.5">
                                     <TypeBadge type={row.destination_type} />
-                                    <span className="text-[10px] text-slate-500">{rt.connectedStreams} route{rt.connectedStreams !== 1 ? 's' : ''}</span>
+                                    <span className="text-[10px] text-slate-500 dark:text-gdc-muted">{rt.connectedStreams} route{rt.connectedStreams !== 1 ? 's' : ''}</span>
                                   </div>
                                 </div>
                               </div>
@@ -1270,9 +1270,9 @@ export function DestinationsManagementPage() {
                               <div className="tabular-nums">
                                 <div className="text-[13px] font-bold text-slate-900 dark:text-slate-50">{runtimeLoading ? '…' : formatEps(rt.currentEps)}</div>
                                 {limitEps != null ? (
-                                  <div className="text-[10px] text-slate-500">/ {limitEps.toLocaleString()} EPS</div>
+                                  <div className="text-[10px] text-slate-500 dark:text-gdc-muted">/ {limitEps.toLocaleString()} EPS</div>
                                 ) : (
-                                  <div className="text-[10px] text-slate-600">No limit</div>
+                                  <div className="text-[10px] text-slate-600 dark:text-gdc-muted">No limit</div>
                                 )}
                               </div>
                             </td>
@@ -1377,7 +1377,7 @@ export function DestinationsManagementPage() {
                 <h3 className="text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50">
                   {sheetMode === 'create' ? 'Create Destination' : 'Edit Destination'}
                 </h3>
-                <p className="mt-1 text-[12px] text-slate-500">
+                <p className="mt-1 text-[12px] text-slate-500 dark:text-gdc-muted">
                   Test connection with current fields, then save.
                 </p>
               </div>
@@ -1424,7 +1424,7 @@ export function DestinationsManagementPage() {
                     <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-gdc-primary text-[11px] font-bold text-white">1</span>
                     <div>
                       <p className="text-[13px] font-semibold text-slate-800 dark:text-slate-200">Connection</p>
-                      <p className="text-[11px] text-slate-500">Configure how Data Relay connects to your destination.</p>
+                      <p className="text-[11px] text-slate-500 dark:text-gdc-muted">Configure how Data Relay connects to your destination.</p>
                     </div>
                   </div>
 
@@ -1463,7 +1463,7 @@ export function DestinationsManagementPage() {
                       </label>
                     </div>
 
-                    <p className="text-[12px] text-slate-500">
+                    <p className="text-[12px] text-slate-500 dark:text-gdc-muted">
                       Protocol: <span className="font-semibold text-slate-700 dark:text-slate-300">{protocolLabel(form)}</span>
                     </p>
 
@@ -1519,12 +1519,12 @@ export function DestinationsManagementPage() {
                         {form.destination_type === 'SYSLOG_TLS' && (
                           <fieldset
                             data-testid="syslog-tls-section"
-                            className="space-y-3 rounded-lg border border-amber-500/30 bg-amber-950/20 p-4"
+                            className="space-y-3 rounded-lg border border-amber-200 bg-amber-50/70 p-4 dark:border-amber-500/30 dark:bg-amber-950/20"
                           >
-                            <legend className="px-1 text-[12px] font-semibold uppercase tracking-wide text-amber-300">
+                            <legend className="px-1 text-[12px] font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300">
                               TLS Settings
                             </legend>
-                            <label className="block text-[13px] font-medium text-slate-400">
+                            <label className="block text-[13px] font-medium text-slate-400 dark:text-gdc-muted">
                               Verification Mode
                               <select
                                 className="mt-1.5 h-10 w-full rounded-md border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section px-3 text-[13px] text-slate-900 dark:text-slate-50"
@@ -1536,7 +1536,7 @@ export function DestinationsManagementPage() {
                               </select>
                             </label>
                             {form.tlsVerifyMode === 'insecure_skip_verify' && (
-                              <p role="alert" data-testid="tls-insecure-warning" className="rounded-md border border-amber-500/40 bg-amber-900/40 px-3 py-2 text-[12px] text-amber-100">
+                              <p role="alert" data-testid="tls-insecure-warning" className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] text-amber-800 dark:border-amber-500/40 dark:bg-amber-900/40 dark:text-amber-100">
                                 Insecure mode disables certificate verification. Use only for lab/local testing.
                               </p>
                             )}
@@ -1547,7 +1547,7 @@ export function DestinationsManagementPage() {
                                 { label: 'Client Certificate Path (optional)', key: 'tlsClientCertPath' as const, placeholder: '/etc/gdc/tls/client.crt' },
                                 { label: 'Client Key Path (optional)', key: 'tlsClientKeyPath' as const, placeholder: '/etc/gdc/tls/client.key' },
                               ].map(({ label, key, placeholder }) => (
-                                <label key={key} className="text-[13px] font-medium text-slate-400">
+                                <label key={key} className="text-[13px] font-medium text-slate-400 dark:text-gdc-muted">
                                   {label}
                                   <input
                                     placeholder={placeholder}
@@ -1561,7 +1561,7 @@ export function DestinationsManagementPage() {
                                 { label: 'Connect Timeout (s)', key: 'tlsConnectTimeout' as const },
                                 { label: 'Write Timeout (s)', key: 'tlsWriteTimeout' as const },
                               ].map(({ label, key }) => (
-                                <label key={key} className="text-[13px] font-medium text-slate-400">
+                                <label key={key} className="text-[13px] font-medium text-slate-400 dark:text-gdc-muted">
                                   {label}
                                   <input
                                     type="number"
@@ -1579,7 +1579,7 @@ export function DestinationsManagementPage() {
                       </div>
                     )}
 
-                    <label className="inline-flex items-center gap-2 text-[13px] text-slate-400">
+                    <label className="inline-flex items-center gap-2 text-[13px] text-slate-400 dark:text-gdc-muted">
                       <input
                         type="checkbox"
                         checked={form.enabled}
@@ -1602,14 +1602,14 @@ export function DestinationsManagementPage() {
                     <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-gdc-primary text-[11px] font-bold text-white">2</span>
                     <div>
                       <p className="text-[13px] font-semibold text-slate-800 dark:text-slate-200">Capacity &amp; Monitoring</p>
-                      <p className="text-[11px] text-slate-500">Define expected capacity for monitoring and alerting.</p>
+                      <p className="text-[11px] text-slate-500 dark:text-gdc-muted">Define expected capacity for monitoring and alerting.</p>
                     </div>
                   </div>
 
                   <div className="space-y-4">
                     {/* Maximum Throughput */}
                     <div>
-                      <p className="mb-1.5 text-[13px] font-medium text-slate-400">
+                      <p className="mb-1.5 text-[13px] font-medium text-slate-400 dark:text-gdc-muted">
                         Maximum Throughput (EPS)
                         <HelpTooltip content="Expected maximum events per second. Used for capacity gauges and alerts only — does not throttle delivery." ariaLabel="Maximum throughput help" />
                       </p>
@@ -1633,7 +1633,7 @@ export function DestinationsManagementPage() {
                         >
                           <option value="EPS">EPS</option>
                         </select>
-                        <label className="inline-flex items-center gap-1.5 text-[12px] text-slate-400">
+                        <label className="inline-flex items-center gap-1.5 text-[12px] text-slate-400 dark:text-gdc-muted">
                           <input
                             type="checkbox"
                             checked={form.capacityUnlimited}
@@ -1643,7 +1643,7 @@ export function DestinationsManagementPage() {
                           Unlimited
                         </label>
                       </div>
-                      <p className="mt-1 text-[11px] text-slate-600">
+                      <p className="mt-1 text-[11px] text-slate-600 dark:text-gdc-muted">
                         {form.capacityUnlimited ? 'No capacity limit — excluded from overall capacity calculation.' : 'Expected maximum events per second that this destination can handle.'}
                       </p>
                       {!form.capacityUnlimited && form.capacityLimitEps.trim() !== '' && (() => {
@@ -1679,7 +1679,7 @@ export function DestinationsManagementPage() {
                             onChange={(e) => setForm((s) => ({ ...s, capacityWarningPct: e.target.value }))}
                           />
                         </label>
-                        <p className="mt-1 text-[11px] text-slate-600">When usage exceeds this, warning status is shown.</p>
+                        <p className="mt-1 text-[11px] text-slate-600 dark:text-gdc-muted">When usage exceeds this, warning status is shown.</p>
                       </div>
                       <div>
                         <label className="text-[13px] font-medium text-slate-700 dark:text-slate-300">
@@ -1703,7 +1703,7 @@ export function DestinationsManagementPage() {
                             onChange={(e) => setForm((s) => ({ ...s, capacityCriticalPct: e.target.value }))}
                           />
                         </label>
-                        <p className="mt-1 text-[11px] text-slate-600">When usage exceeds this, critical status is shown.</p>
+                        <p className="mt-1 text-[11px] text-slate-600 dark:text-gdc-muted">When usage exceeds this, critical status is shown.</p>
                       </div>
                     </div>
 
@@ -1712,14 +1712,14 @@ export function DestinationsManagementPage() {
                       const err = validateCapacityForm(form)
                       if (!err) return null
                       return (
-                        <p className="rounded-md border border-amber-500/40 bg-amber-950/30 px-3 py-2 text-[12px] text-amber-300">
+                        <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] text-amber-800 dark:border-amber-500/40 dark:bg-amber-950/30 dark:text-amber-300">
                           {err}
                         </p>
                       )
                     })()}
 
                     {/* Info banner */}
-                    <div className="flex items-start gap-2 rounded-lg border border-sky-500/20 bg-sky-500/5 px-4 py-3 text-[12px] text-sky-300">
+                    <div className="flex items-start gap-2 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-[12px] text-sky-800 dark:border-sky-500/20 dark:bg-sky-500/5 dark:text-sky-300">
                       <span className="mt-0.5 shrink-0 text-sky-400">ⓘ</span>
                       <span>Capacity settings are used for monitoring and alerting only. They do not throttle or limit delivery.</span>
                     </div>
@@ -1731,10 +1731,10 @@ export function DestinationsManagementPage() {
                 {/* ── Section 3: Advanced ── */}
                 <section>
                   <div className="mb-3 flex items-center gap-3">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-slate-200/80 dark:border-gdc-border text-[11px] font-bold text-slate-500">3</span>
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-slate-200/80 dark:border-gdc-border text-[11px] font-bold text-slate-500 dark:text-gdc-muted">3</span>
                     <div>
-                      <p className="text-[13px] font-semibold text-slate-500">Advanced <span className="text-[11px] font-normal text-slate-600">(Optional)</span></p>
-                      <p className="text-[11px] text-slate-600">Additional connection settings.</p>
+                      <p className="text-[13px] font-semibold text-slate-500 dark:text-gdc-muted">Advanced <span className="text-[11px] font-normal text-slate-600 dark:text-gdc-muted">(Optional)</span></p>
+                      <p className="text-[11px] text-slate-600 dark:text-gdc-muted">Additional connection settings.</p>
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -1742,7 +1742,7 @@ export function DestinationsManagementPage() {
                       <button
                         key={label}
                         type="button"
-                        className="inline-flex items-center gap-1.5 rounded-md border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section px-3 py-1.5 text-[11px] text-slate-500 hover:border-slate-600 hover:text-slate-400"
+                        className="inline-flex items-center gap-1.5 rounded-md border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section px-3 py-1.5 text-[11px] text-slate-500 dark:text-gdc-muted hover:border-slate-600 hover:text-slate-400 dark:text-gdc-muted"
                         disabled
                       >
                         <ChevronRight className="h-3 w-3" />
@@ -1753,7 +1753,7 @@ export function DestinationsManagementPage() {
                 </section>
 
                 {probeOk === false && (
-                  <div className="rounded-lg border border-amber-500/40 bg-amber-950/40 px-4 py-3 text-[12px] leading-relaxed text-amber-100">
+                  <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-[12px] leading-relaxed text-amber-800 dark:border-amber-500/40 dark:bg-amber-950/40 dark:text-amber-100">
                     The last connection test did not succeed. You can still save; verify host, port, or URL and firewall rules.
                   </div>
                 )}
@@ -1779,8 +1779,8 @@ export function DestinationsManagementPage() {
                     : liveUsagePct >= warnPct ? `${liveUsagePct}% Capacity`
                     : `${liveUsagePct}% Capacity`
                   const healthColor =
-                    form.capacityUnlimited ? 'text-slate-400 border-slate-600 bg-slate-700/30'
-                    : liveUsagePct == null ? 'text-slate-500 border-slate-700 bg-transparent'
+                    form.capacityUnlimited ? 'text-slate-400 dark:text-gdc-muted border-slate-600 bg-slate-700/30'
+                    : liveUsagePct == null ? 'text-slate-500 dark:text-gdc-muted border-slate-700 bg-transparent'
                     : liveUsagePct >= critPct ? 'text-red-300 border-red-500/40 bg-red-500/10'
                     : liveUsagePct >= warnPct ? 'text-amber-300 border-amber-500/40 bg-amber-500/10'
                     : 'text-emerald-300 border-emerald-500/40 bg-emerald-500/10'
@@ -1795,7 +1795,7 @@ export function DestinationsManagementPage() {
                     <>
                       {/* ── Destination Summary ── */}
                       <div className="rounded-xl border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section p-4">
-                        <p className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Destination Summary</p>
+                        <p className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-slate-500 dark:text-gdc-muted">Destination Summary</p>
                         <div className="space-y-2.5 text-[12px]">
                           {([
                             { label: 'Type', value: form.destination_type },
@@ -1809,7 +1809,7 @@ export function DestinationsManagementPage() {
                             {
                               label: 'Status',
                               value: form.enabled ? 'Enabled' : 'Disabled',
-                              color: form.enabled ? 'text-emerald-400' : 'text-slate-500',
+                              color: form.enabled ? 'text-emerald-400' : 'text-slate-500 dark:text-gdc-muted',
                             },
                             {
                               label: 'Capacity',
@@ -1821,14 +1821,14 @@ export function DestinationsManagementPage() {
                             { label: 'Critical at', value: `${critPct}%` },
                           ] as const).map(({ label, value, color }: { label: string; value: string; color?: string }) => (
                             <div key={label} className="flex items-start justify-between gap-2">
-                              <span className="shrink-0 text-slate-500">{label}</span>
+                              <span className="shrink-0 text-slate-500 dark:text-gdc-muted">{label}</span>
                               <span className={cn('text-right font-semibold', color ?? 'text-slate-800 dark:text-slate-200')}>{value}</span>
                             </div>
                           ))}
                           {/* Capacity Health Badge */}
                           {(healthStatusLabel != null || form.capacityUnlimited) && (
                             <div className="flex items-center justify-between gap-2 pt-1">
-                              <span className="shrink-0 text-slate-500">Health</span>
+                              <span className="shrink-0 text-slate-500 dark:text-gdc-muted">Health</span>
                               <span className={cn('inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[10px] font-semibold', healthColor)}>
                                 {healthStatusLabel && <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" />}
                                 {healthStatusLabel ? `${healthStatusLabel} · ${healthLabel}` : healthLabel}
@@ -1899,13 +1899,13 @@ export function DestinationsManagementPage() {
       {deleteBlocked && (
         <div
           role="alert"
-          className="fixed bottom-4 left-1/2 z-50 w-[min(100%,520px)] -translate-x-1/2 rounded-lg border border-amber-500/40 bg-amber-950/90 px-4 py-3 shadow-lg"
+          className="fixed bottom-4 left-1/2 z-50 w-[min(100%,520px)] -translate-x-1/2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 shadow-lg dark:border-amber-500/40 dark:bg-amber-950/90"
         >
           <div className="flex gap-3">
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" aria-hidden />
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-amber-100">{deleteBlocked.title}</p>
-              <p className="mt-1 text-[12px] text-amber-200/90">{deleteBlocked.message}</p>
+              <p className="text-sm font-semibold text-amber-900 dark:text-amber-100">{deleteBlocked.title}</p>
+              <p className="mt-1 text-[12px] text-amber-800 dark:text-amber-200/90">{deleteBlocked.message}</p>
             </div>
             <button type="button" onClick={() => setDeleteBlocked(null)} className="shrink-0 text-amber-400" aria-label="Dismiss">
               <X className="h-4 w-4" />
@@ -1922,8 +1922,8 @@ export function DestinationsManagementPage() {
           className={cn(
             'fixed bottom-4 left-1/2 z-[60] w-[min(100%,560px)] -translate-x-1/2 rounded-lg border px-4 py-3 shadow-xl',
             testBottomToast.success
-              ? 'border-emerald-500/50 bg-emerald-950/95'
-              : 'border-red-500/50 bg-red-950/95',
+              ? 'border-emerald-300 bg-emerald-50 dark:border-emerald-500/50 dark:bg-emerald-950/95'
+              : 'border-red-300 bg-red-50 dark:border-red-500/50 dark:bg-red-950/95',
           )}
         >
           <div className="flex gap-3">
@@ -1937,16 +1937,16 @@ export function DestinationsManagementPage() {
                 Connection test · {testBottomToast.destinationName}
               </p>
               <p className="mt-1 line-clamp-3 text-[12px] leading-snug text-slate-700 dark:text-slate-300">
-                <span className={testBottomToast.success ? 'text-emerald-300' : 'text-red-300'}>
+                <span className={testBottomToast.success ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-700 dark:text-red-300'}>
                   {testBottomToast.success ? 'Success' : 'Failed'}
                 </span>
                 {testBottomToast.latencyMs > 0 && (
-                  <span className="text-slate-500"> · {testBottomToast.latencyMs.toFixed(1)} ms</span>
+                  <span className="text-slate-500 dark:text-gdc-muted"> · {testBottomToast.latencyMs.toFixed(1)} ms</span>
                 )}
-                <span className="text-slate-500"> · {testBottomToast.message}</span>
+                <span className="text-slate-500 dark:text-gdc-muted"> · {testBottomToast.message}</span>
               </p>
               {testBottomToast.tlsDetail && (
-                <p data-testid="tls-test-detail" className="mt-1 text-[11px] font-mono text-slate-400">
+                <p data-testid="tls-test-detail" className="mt-1 text-[11px] font-mono text-slate-400 dark:text-gdc-muted">
                   TLS · {testBottomToast.tlsDetail.verifyMode ?? '—'}
                   {testBottomToast.tlsDetail.negotiatedVersion ? ` · ${testBottomToast.tlsDetail.negotiatedVersion}` : ''}
                   {testBottomToast.tlsDetail.cipher ? ` · ${testBottomToast.tlsDetail.cipher}` : ''}

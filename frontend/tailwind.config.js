@@ -53,6 +53,8 @@ export default {
         gdc: {
           /** Kumo dark surface hierarchy. */
           page: 'oklch(10% 0 0 / <alpha-value>)',
+          /** Backward-compatible semantic canvas alias used by overlays and form surfaces. */
+          bg: 'oklch(10% 0 0 / <alpha-value>)',
           panel: 'oklch(17% 0 0 / <alpha-value>)',
           section: 'oklch(15% 0 0 / <alpha-value>)',
           card: 'oklch(17% 0 0 / <alpha-value>)',
@@ -60,6 +62,8 @@ export default {
           elevated: 'oklch(12% 0 0 / <alpha-value>)',
           tableHeader: 'oklch(15% 0 0 / <alpha-value>)',
           rowHover: 'oklch(26.9% 0 0 / <alpha-value>)',
+          /** Stable row surface for non-hover state variants. */
+          row: 'oklch(26.9% 0 0 / <alpha-value>)',
           border: 'oklch(32% 0 0 / <alpha-value>)',
           borderStrong: 'oklch(37.1% 0 0 / <alpha-value>)',
           divider: 'oklch(26.9% 0 0 / <alpha-value>)',
@@ -73,6 +77,9 @@ export default {
           inputHover: 'oklch(26.9% 0 0 / <alpha-value>)',
           inputBorder: 'oklch(32% 0 0 / <alpha-value>)',
           primary: 'oklch(52% 0.209 260 / <alpha-value>)',
+          /** Destructive action pair shared by light/dark overlays. */
+          critical: 'oklch(57.7% 0.245 27.325 / <alpha-value>)',
+          criticalFg: 'oklch(97.1% 0.013 17.38 / <alpha-value>)',
         },
       },
       fontSize: {

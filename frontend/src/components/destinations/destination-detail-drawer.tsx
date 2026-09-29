@@ -86,10 +86,10 @@ function MetricCard({ label, value, sub, note, sparkline }: {
 }) {
   return (
     <div className="rounded-lg border border-slate-200/80 bg-slate-50/80 px-3 py-2.5 dark:border-gdc-border dark:bg-gdc-section">
-      <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500 dark:text-gdc-muted">{label}</p>
       <p className="mt-0.5 text-[15px] font-semibold tabular-nums text-slate-900 dark:text-slate-50">{value}</p>
-      {sub && <p className="text-[10px] text-slate-500">{sub}</p>}
-      {note && <p className="mt-0.5 text-[9px] italic text-slate-500">{note}</p>}
+      {sub && <p className="text-[10px] text-slate-500 dark:text-gdc-muted">{sub}</p>}
+      {note && <p className="mt-0.5 text-[9px] italic text-slate-500 dark:text-gdc-muted">{note}</p>}
       {sparkline && <div className="mt-1.5">{sparkline}</div>}
     </div>
   )
@@ -98,7 +98,7 @@ function MetricCard({ label, value, sub, note, sparkline }: {
 function Placeholder({ label }: { label: string }) {
   return (
     <div className="flex items-center gap-1.5 rounded border border-dashed border-slate-200/80 dark:border-gdc-border px-2 py-1">
-      <span className="text-[10px] italic text-slate-600">{label}</span>
+      <span className="text-[10px] italic text-slate-600 dark:text-gdc-muted">{label}</span>
     </div>
   )
 }
@@ -108,13 +108,13 @@ function SectionBox({ title, children, className = '' }: {
 }) {
   return (
     <div className={cn('rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-gdc-border dark:bg-gdc-card', className)}>
-      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</p>
+      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted">{title}</p>
       {children}
     </div>
   )
 }
 
-const TH = 'px-2.5 py-2 text-left text-[9px] font-semibold uppercase tracking-wider text-slate-500 whitespace-nowrap'
+const TH = 'px-2.5 py-2 text-left text-[9px] font-semibold uppercase tracking-wider text-slate-500 dark:text-gdc-muted whitespace-nowrap'
 const TD = 'px-2.5 py-2 align-top'
 
 // ─── Route health derivation ──────────────────────────────────────────────────
@@ -130,10 +130,10 @@ function deriveRouteHealth(enabled: boolean | undefined, status: string | undefi
 }
 
 const ROUTE_HEALTH_BADGE: Record<RouteHealth, string> = {
-  Healthy: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300',
-  Warning: 'border-amber-500/40 bg-amber-500/10 text-amber-300',
-  Critical: 'border-red-500/40 bg-red-500/10 text-red-300',
-  Disabled: 'border-slate-600 bg-slate-700/30 text-slate-400',
+  Healthy: 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-300',
+  Warning: 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300',
+  Critical: 'border-red-300 bg-red-50 text-red-700 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-300',
+  Disabled: 'border-slate-300 bg-slate-100 text-slate-600 dark:border-gdc-border dark:bg-gdc-elevated dark:text-gdc-muted',
 }
 
 function RouteHealthBadge({ health }: { health: RouteHealth }) {
@@ -152,9 +152,9 @@ function RouteHealthBadge({ health }: { health: RouteHealth }) {
 
 function ProcessingBadge({ value }: { value: 'Inherited' | 'Override' | 'Unknown' }) {
   const cls =
-    value === 'Override' ? 'text-amber-400 border-amber-500/30 bg-amber-500/8'
-    : value === 'Unknown' ? 'text-slate-600 border-slate-700 bg-transparent'
-    : 'text-slate-500 border-slate-700 bg-transparent'
+    value === 'Override' ? 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300'
+    : value === 'Unknown' ? 'text-slate-600 dark:text-gdc-muted border-slate-700 bg-transparent'
+    : 'text-slate-500 dark:text-gdc-muted border-slate-700 bg-transparent'
   return (
     <span className={cn('inline-block rounded border px-1 py-0 text-[9px]', cls)}>
       {value === 'Inherited' ? 'Inh' : value === 'Override' ? 'Ovr' : '?'}
@@ -186,7 +186,7 @@ function OverviewTab({
       <SectionBox title="Capacity Usage">
         {limitEps == null ? (
           <div>
-            <p className="text-[12px] italic text-slate-500">No capacity limit — destination is unlimited.</p>
+            <p className="text-[12px] italic text-slate-500 dark:text-gdc-muted">No capacity limit — destination is unlimited.</p>
             <div className="mt-3 grid grid-cols-2 gap-2">
               <MetricCard label="Current EPS" value={fmt(currentEps)} />
               <MetricCard label="Maximum EPS" value="No limit" />
@@ -225,7 +225,7 @@ function OverviewTab({
             color="#6366f1"
           />
         ) : (
-          <p className="text-[12px] italic text-slate-500">No EPS data for selected time range</p>
+          <p className="text-[12px] italic text-slate-500 dark:text-gdc-muted">No EPS data for selected time range</p>
         )}
       </SectionBox>
 
@@ -244,13 +244,13 @@ function OverviewTab({
                 </div>
                 <div className="flex items-center gap-2 text-[12px]">
                   <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-red-400" />
-                  <span className="text-slate-400">
+                  <span className="text-slate-400 dark:text-gdc-muted">
                     Failed <span className="tabular-nums">{(100 - rt.successRatePct).toFixed(1)}%</span>
                   </span>
                 </div>
               </>
             ) : (
-              <p className="text-[12px] text-slate-500">No delivery data</p>
+              <p className="text-[12px] text-slate-500 dark:text-gdc-muted">No delivery data</p>
             )}
           </div>
         </div>
@@ -265,7 +265,7 @@ function OverviewTab({
           <MetricCard label="Retry Queue" value="—" note="API required" />
         </div>
         <div className="mt-2">
-          <p className="mb-1 text-[9px] text-slate-600 uppercase tracking-wider">Queue Trend</p>
+          <p className="mb-1 text-[9px] text-slate-600 dark:text-gdc-muted uppercase tracking-wider">Queue Trend</p>
           <Placeholder label="Time-series API required for queue trend" />
         </div>
       </SectionBox>
@@ -306,10 +306,10 @@ function OverviewTab({
               ) : (
                 <AlertTriangle className="h-4 w-4 text-red-400" />
               )}
-              <span className={cn('text-[13px] font-semibold', lastTestResult.success ? 'text-emerald-300' : 'text-red-300')}>
+              <span className={cn('text-[13px] font-semibold', lastTestResult.success ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-700 dark:text-red-300')}>
                 {lastTestResult.success ? 'Success' : 'Failed'}
               </span>
-              <span className="text-[11px] text-slate-500">{lastTestResult.time}</span>
+              <span className="text-[11px] text-slate-500 dark:text-gdc-muted">{lastTestResult.time}</span>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <MetricCard label="Response Time" value={`${lastTestResult.latencyMs.toFixed(1)} ms`} />
@@ -318,11 +318,11 @@ function OverviewTab({
               )}
             </div>
             {lastTestResult.message && (
-              <p className="text-[11px] text-slate-400">{lastTestResult.message}</p>
+              <p className="text-[11px] text-slate-400 dark:text-gdc-muted">{lastTestResult.message}</p>
             )}
           </div>
         ) : (
-          <p className="text-[12px] italic text-slate-500">No test result yet. Run "Test delivery" from the Actions menu.</p>
+          <p className="text-[12px] italic text-slate-500 dark:text-gdc-muted">No test result yet. Run "Test delivery" from the Actions menu.</p>
         )}
         {onEdit && (
           <button
@@ -366,15 +366,15 @@ function StreamsTab({ row }: { row: DestinationOverviewRow }) {
   if (streams.length === 0) {
     return (
       <div className="flex flex-col items-center gap-2 py-12">
-        <Activity className="h-8 w-8 text-slate-600" />
-        <p className="text-[12px] text-slate-500">No streams connected to this destination.</p>
+        <Activity className="h-8 w-8 text-slate-600 dark:text-gdc-muted" />
+        <p className="text-[12px] text-slate-500 dark:text-gdc-muted">No streams connected to this destination.</p>
       </div>
     )
   }
 
   return (
     <div className="space-y-2">
-      <p className="text-[11px] text-slate-500">{streams.length} stream{streams.length !== 1 ? 's' : ''} connected</p>
+      <p className="text-[11px] text-slate-500 dark:text-gdc-muted">{streams.length} stream{streams.length !== 1 ? 's' : ''} connected</p>
       <div className="overflow-hidden rounded-xl border border-slate-200/80 dark:border-gdc-border">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[480px]">
@@ -400,7 +400,7 @@ function StreamsTab({ row }: { row: DestinationOverviewRow }) {
                       {s.streamName}
                       <ExternalLink className="h-2.5 w-2.5 opacity-50" />
                     </Link>
-                    <p className="text-[10px] text-slate-500">id:{s.streamId}</p>
+                    <p className="text-[10px] text-slate-500 dark:text-gdc-muted">id:{s.streamId}</p>
                   </td>
                   <td className={TD}>
                     <div className="flex flex-col gap-0.5">
@@ -416,16 +416,16 @@ function StreamsTab({ row }: { row: DestinationOverviewRow }) {
                     </div>
                   </td>
                   {/* EPS, Delivery Rate, Last Checkpoint, Last Delivery — require runtime API */}
-                  <td className={TD}><span className="text-[11px] tabular-nums text-slate-500">—</span></td>
-                  <td className={TD}><span className="text-[11px] tabular-nums text-slate-500">—</span></td>
-                  <td className={TD}><span className="text-[11px] text-slate-500">—</span></td>
-                  <td className={TD}><span className="text-[11px] text-slate-500">—</span></td>
+                  <td className={TD}><span className="text-[11px] tabular-nums text-slate-500 dark:text-gdc-muted">—</span></td>
+                  <td className={TD}><span className="text-[11px] tabular-nums text-slate-500 dark:text-gdc-muted">—</span></td>
+                  <td className={TD}><span className="text-[11px] text-slate-500 dark:text-gdc-muted">—</span></td>
+                  <td className={TD}><span className="text-[11px] text-slate-500 dark:text-gdc-muted">—</span></td>
                   <td className={TD}>
                     <span className={cn(
                       'inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] font-semibold',
                       s.enabled
                         ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                        : 'border-slate-600 bg-slate-700/30 text-slate-400'
+                        : 'border-slate-600 bg-slate-700/30 text-slate-400 dark:text-gdc-muted'
                     )}>
                       <span className={cn('h-1.5 w-1.5 rounded-full', s.enabled ? 'bg-emerald-400' : 'bg-slate-500')} />
                       {s.enabled ? 'Active' : 'Disabled'}
@@ -437,7 +437,7 @@ function StreamsTab({ row }: { row: DestinationOverviewRow }) {
           </table>
         </div>
       </div>
-      <p className="text-[9px] italic text-slate-600">
+      <p className="text-[9px] italic text-slate-600 dark:text-gdc-muted">
         EPS / Delivery Rate / Checkpoint — requires per-stream runtime API integration
       </p>
     </div>
@@ -452,15 +452,15 @@ function RoutesTab({ row }: { row: DestinationOverviewRow }) {
   if (routes.length === 0) {
     return (
       <div className="flex flex-col items-center gap-2 py-12">
-        <Activity className="h-8 w-8 text-slate-600" />
-        <p className="text-[12px] text-slate-500">No routes connected to this destination.</p>
+        <Activity className="h-8 w-8 text-slate-600 dark:text-gdc-muted" />
+        <p className="text-[12px] text-slate-500 dark:text-gdc-muted">No routes connected to this destination.</p>
       </div>
     )
   }
 
   return (
     <div className="space-y-2">
-      <p className="text-[11px] text-slate-500">
+      <p className="text-[11px] text-slate-500 dark:text-gdc-muted">
         {routes.length} route{routes.length !== 1 ? 's' : ''} · click any row to open Route Processing
       </p>
 
@@ -526,17 +526,17 @@ function RoutesTab({ row }: { row: DestinationOverviewRow }) {
 
                     {/* Delivery Status */}
                     <td className={TD}>
-                      <span className="text-[10px] text-slate-400">{r.route_status ?? '—'}</span>
+                      <span className="text-[10px] text-slate-400 dark:text-gdc-muted">{r.route_status ?? '—'}</span>
                     </td>
 
                     {/* Checkpoint — runtime API required */}
-                    <td className={TD}><span className="text-[10px] text-slate-600">—</span></td>
+                    <td className={TD}><span className="text-[10px] text-slate-600 dark:text-gdc-muted">—</span></td>
 
                     {/* EPS, Retry, Latency, Last Delivery — runtime API required */}
-                    <td className={TD}><span className="text-[10px] tabular-nums text-slate-600">—</span></td>
-                    <td className={TD}><span className="text-[10px] tabular-nums text-slate-600">—</span></td>
-                    <td className={TD}><span className="text-[10px] tabular-nums text-slate-600">—</span></td>
-                    <td className={TD}><span className="text-[10px] text-slate-600">—</span></td>
+                    <td className={TD}><span className="text-[10px] tabular-nums text-slate-600 dark:text-gdc-muted">—</span></td>
+                    <td className={TD}><span className="text-[10px] tabular-nums text-slate-600 dark:text-gdc-muted">—</span></td>
+                    <td className={TD}><span className="text-[10px] tabular-nums text-slate-600 dark:text-gdc-muted">—</span></td>
+                    <td className={TD}><span className="text-[10px] text-slate-600 dark:text-gdc-muted">—</span></td>
 
                     {/* Status */}
                     <td className={TD}>
@@ -550,7 +550,7 @@ function RoutesTab({ row }: { row: DestinationOverviewRow }) {
         </div>
       </div>
 
-      <p className="text-[9px] italic text-slate-600">
+      <p className="text-[9px] italic text-slate-600 dark:text-gdc-muted">
         Transform / Protection / Classification / Policy — override status requires route config API.
         Checkpoint / EPS / Retry / Latency — requires per-route runtime API.
       </p>
@@ -592,7 +592,7 @@ function PerformanceTab({ row }: { row: DestinationOverviewRow }) {
           <MetricCard label="Serialization" value="—" sub="ms" note="API required" />
         </div>
         <div className="mt-3">
-          <p className="mb-1 text-[9px] uppercase tracking-wider text-slate-600">Latency Trend</p>
+          <p className="mb-1 text-[9px] uppercase tracking-wider text-slate-600 dark:text-gdc-muted">Latency Trend</p>
           <Placeholder label="Latency time-series API required" />
         </div>
       </SectionBox>
@@ -693,7 +693,7 @@ function AlertsTab({ row }: { row: DestinationOverviewRow }) {
       <div className="flex flex-col items-center justify-center gap-3 py-16">
         <CheckCircle2 className="h-10 w-10 text-emerald-400" />
         <p className="text-[13px] font-semibold text-slate-700 dark:text-slate-300">No active alerts</p>
-        <p className="text-[12px] text-slate-500">This destination is operating normally.</p>
+        <p className="text-[12px] text-slate-500 dark:text-gdc-muted">This destination is operating normally.</p>
       </div>
     )
   }
@@ -711,7 +711,7 @@ function AlertsTab({ row }: { row: DestinationOverviewRow }) {
 
   return (
     <div className="space-y-3">
-      <p className="text-[11px] text-slate-500">{alerts.length} alert{alerts.length !== 1 ? 's' : ''} · {alerts.filter(a => a.status === 'Open').length} open</p>
+      <p className="text-[11px] text-slate-500 dark:text-gdc-muted">{alerts.length} alert{alerts.length !== 1 ? 's' : ''} · {alerts.filter(a => a.status === 'Open').length} open</p>
 
       {alerts.map((alert, i) => (
         <div key={i} className={cn('rounded-xl border p-3', SEV[alert.severity])}>
@@ -737,9 +737,9 @@ function AlertsTab({ row }: { row: DestinationOverviewRow }) {
           <p className="mt-1.5 text-[12px] text-slate-700 dark:text-slate-300">{alert.message}</p>
 
           {/* Metadata grid */}
-          <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] text-slate-500">
-            <span>First seen: <span className="text-slate-400">{alert.firstSeen}</span></span>
-            <span>Last seen: <span className="text-slate-400">{alert.lastSeen}</span></span>
+          <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] text-slate-500 dark:text-gdc-muted">
+            <span>First seen: <span className="text-slate-400 dark:text-gdc-muted">{alert.firstSeen}</span></span>
+            <span>Last seen: <span className="text-slate-400 dark:text-gdc-muted">{alert.lastSeen}</span></span>
             <span>Occurrences: <span className="tabular-nums font-semibold text-slate-700 dark:text-slate-300">{alert.occurrences}</span></span>
             <span>
               Route:{' '}
@@ -892,7 +892,7 @@ export function DestinationDetailDrawer({
                 <h2 className="text-[16px] font-bold text-slate-900 dark:text-slate-50 truncate">{row.name}</h2>
                 <HealthBadge health={rt.health} />
               </div>
-              <p className="mt-0.5 text-[11px] text-slate-500">{buildTargetSummary(row)}</p>
+              <p className="mt-0.5 text-[11px] text-slate-500 dark:text-gdc-muted">{buildTargetSummary(row)}</p>
               {issueText && (
                 <p className="mt-0.5 text-[11px] text-amber-400">{issueText}</p>
               )}
@@ -909,18 +909,18 @@ export function DestinationDetailDrawer({
 
           {/* Info pills */}
           <div className="mt-2 flex flex-wrap gap-1.5">
-            <span className="rounded-md border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section px-2 py-0.5 text-[10px] text-slate-400">
+            <span className="rounded-md border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section px-2 py-0.5 text-[10px] text-slate-400 dark:text-gdc-muted">
               {typeLabel(row.destination_type)}
             </span>
             {capacityPct != null && (
-              <span className="rounded-md border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section px-2 py-0.5 text-[10px] text-slate-400">
+              <span className="rounded-md border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section px-2 py-0.5 text-[10px] text-slate-400 dark:text-gdc-muted">
                 Capacity {capacityPct}%
               </span>
             )}
-            <span className="rounded-md border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section px-2 py-0.5 text-[10px] text-slate-400">
+            <span className="rounded-md border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section px-2 py-0.5 text-[10px] text-slate-400 dark:text-gdc-muted">
               {rt.connectedStreams} stream{rt.connectedStreams !== 1 ? 's' : ''}
             </span>
-            <span className="rounded-md border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section px-2 py-0.5 text-[10px] text-slate-400">
+            <span className="rounded-md border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section px-2 py-0.5 text-[10px] text-slate-400 dark:text-gdc-muted">
               {row.routes?.length ?? 0} route{(row.routes?.length ?? 0) !== 1 ? 's' : ''}
             </span>
           </div>

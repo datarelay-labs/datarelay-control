@@ -139,7 +139,7 @@ export function DestinationDetailPage() {
         <button
           type="button"
           onClick={() => void runtime.refresh()}
-          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-red-300 bg-white px-3 text-[12px] font-semibold text-red-800"
+          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-red-300 bg-white px-3 text-[12px] font-semibold text-red-800 dark:border-red-800/60 dark:bg-red-950/30 dark:text-red-100"
         >
           <RefreshCw className="h-3.5 w-3.5" />
           Retry

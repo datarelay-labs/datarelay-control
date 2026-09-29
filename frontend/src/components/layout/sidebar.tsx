@@ -153,13 +153,13 @@ export function Sidebar({
           )}
           aria-label="DataRelay — Dashboard home"
         >
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center">
+          <div className="flex h-8 w-10 shrink-0 items-center justify-center">
             <img
-              src="/logo/datarelay-logo.svg"
+              src="/logo/datarelay-logo.svg?v=dr-monogram-6"
               alt=""
-              width={32}
-              height={32}
-              className="h-8 w-8"
+              width={40}
+              height={26}
+              className="h-6 w-auto"
               draggable={false}
             />
           </div>
