@@ -5,7 +5,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { runEnrichmentTracePreview, runMappingDraftPreview, runTransformPreview } from '../../../api/gdcRuntimePreview'
 import { StepMappingCombined } from './step-mapping-combined'
 import {
-  ENRICHMENT_RULE_TYPES,
   defaultRuleForType,
   enrichmentDictFromRules,
   type EnrichmentRuleType,
@@ -124,15 +123,15 @@ describe('StepMappingCombined v3 Transform (206f0f7 mapping UI)', () => {
     mockedTransformPreview.mockReset()
   })
 
-  it('renders three tabs and + Add field action (no Generated Fields tab)', () => {
+  it('renders a task-first launcher and secondary editor tabs', () => {
     render(<StepMappingCombined {...combinedProps(readyTransformState())} />)
 
     expect(screen.getByTestId('wizard-step-transform')).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /Basic · JSONPath/i })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /Advanced · JSONata/i })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /Expert · Regex/i })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /Fields · Basic/i })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /JSONata · Advanced/i })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /Regex · Expert/i })).toBeInTheDocument()
     expect(screen.queryByRole('tab', { name: /Generated Fields/i })).not.toBeInTheDocument()
-    expect(screen.getByTestId('wizard-transform-add-field-menu')).toBeInTheDocument()
+    expect(screen.getByTestId('transform-rule-launcher')).toBeInTheDocument()
     expect(screen.getByTestId('wizard-transform-enrichment-editor')).toBeInTheDocument()
     expect(screen.getByTestId('wizard-transform-data-protection-card')).toBeInTheDocument()
     expect(screen.queryByTestId('wizard-generated-fields-panel')).not.toBeInTheDocument()
@@ -152,14 +151,14 @@ describe('StepMappingCombined v3 Transform (206f0f7 mapping UI)', () => {
     const user = userEvent.setup()
     render(<StepMappingCombined {...combinedProps(readyTransformState())} />)
 
-    await user.click(screen.getByRole('tab', { name: /Advanced · JSONata/i }))
+    await user.click(screen.getByRole('tab', { name: /JSONata · Advanced/i }))
     expect(screen.getByTestId('wizard-full-event-transform-workspace')).toHaveAttribute(
       'data-filter-ui-mode',
       'advanced',
     )
     expect(screen.queryByTestId('wizard-basic-mapping-panel')).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('tab', { name: /Expert · Regex/i }))
+    await user.click(screen.getByRole('tab', { name: /Regex · Expert/i }))
     expect(screen.getByTestId('wizard-full-event-transform-workspace')).toHaveAttribute(
       'data-filter-ui-mode',
       'expert',
@@ -176,54 +175,88 @@ describe('StepMappingCombined v3 Transform (206f0f7 mapping UI)', () => {
     state.stream.eventArrayPath = '$.events'
     render(<StepMappingCombined {...combinedProps(state)} />)
 
-    await user.click(screen.getByRole('tab', { name: /Advanced · JSONata/i }))
+    await user.click(screen.getByRole('tab', { name: /JSONata · Advanced/i }))
     expect(screen.getByTestId('wizard-full-event-transform-workspace')).toHaveAttribute(
       'data-has-sample-event',
       'yes',
     )
   })
 
-  it('opens 206f0f7 enrichment add-field menu from + Add field while staying on current tab', async () => {
+  it('opens a task-first Add transform menu without promoting Lookup', async () => {
     const user = userEvent.setup()
-    const props = combinedProps(readyTransformState())
-    render(<StepMappingCombined {...props} />)
+    render(<StepMappingCombined {...combinedProps(readyTransformState())} />)
 
-    expect(screen.getByTestId('wizard-basic-mapping-panel')).toBeInTheDocument()
+    await user.click(screen.getByTestId('transform-rule-launcher-trigger'))
 
-    await user.click(screen.getByTestId('wizard-transform-add-field-trigger'))
-    for (const meta of ENRICHMENT_RULE_TYPES) {
-      expect(screen.getByTestId(`wizard-enrichment-add-${meta.type}`)).toBeInTheDocument()
+    for (const action of ['map_rename', 'static', 'calculated', 'normalize', 'conditional', 'jsonata', 'regex']) {
+      expect(screen.getByTestId(`transform-launcher-${action}`)).toBeInTheDocument()
     }
-
-    await user.click(screen.getByTestId('wizard-enrichment-add-calculated'))
-    expect(props.onChangeEnrichment).toHaveBeenCalled()
-    expect(screen.getByTestId('wizard-basic-mapping-panel')).toBeInTheDocument()
+    expect(screen.queryByTestId('transform-launcher-lookup')).not.toBeInTheDocument()
+    expect(screen.getByText('Guided')).toBeInTheDocument()
+    expect(screen.getByText('Full-event editors')).toBeInTheDocument()
   })
 
-  it.each(ENRICHMENT_RULE_TYPES.map((meta) => [meta.type] as const))(
-    'add-field menu creates a visible %s enrichment rule in wizard state',
-    async (type) => {
+  it('Map / rename opens the Fields editor and creates an empty mapping row', async () => {
+    const user = userEvent.setup()
+    const state = readyTransformState()
+    state.mappingMode = 'full_event_jsonata'
+    const props = combinedProps(state)
+    render(<StepMappingCombined {...props} />)
+
+    await user.click(screen.getByTestId('transform-rule-launcher-trigger'))
+    await user.click(screen.getByTestId('transform-launcher-map_rename'))
+
+    expect(props.onChangeMappingMode).toHaveBeenCalledWith('basic_jsonpath')
+    expect(props.onChangeMapping).toHaveBeenCalledWith([
+      expect.objectContaining({ outputField: '', sourceJsonPath: '', origin: 'manual' }),
+    ])
+  })
+
+  it.each([
+    ['static', 'static'],
+    ['calculated', 'calculated'],
+    ['normalize', 'normalize'],
+    ['conditional', 'conditional'],
+  ] as const)(
+    'task launcher creates a runtime-backed %s Guided Transform rule',
+    async (action, type) => {
       const user = userEvent.setup()
       render(<TransformHarness initialState={readyTransformState()} />)
 
-      await user.click(screen.getByTestId('wizard-transform-add-field-trigger'))
-      await user.click(screen.getByTestId(`wizard-enrichment-add-${type}`))
+      await user.click(screen.getByTestId('transform-rule-launcher-trigger'))
+      await user.click(screen.getByTestId(`transform-launcher-${action}`))
 
       expect(screen.getByText(RULE_TYPE_LABELS[type])).toBeInTheDocument()
       expect(screen.getByTestId('wizard-transform-enrichment-editor')).toHaveTextContent('1 total')
     },
   )
 
-  it('persists added enrichment rules through draft save and restore', async () => {
+  it('JSONata and Regex tasks open their real full-event editors', async () => {
+    const user = userEvent.setup()
+    const props = combinedProps(readyTransformState())
+    const { rerender } = render(<StepMappingCombined {...props} />)
+
+    await user.click(screen.getByTestId('transform-rule-launcher-trigger'))
+    await user.click(screen.getByTestId('transform-launcher-jsonata'))
+    expect(props.onChangeMappingMode).toHaveBeenCalledWith('full_event_jsonata')
+
+    const regexProps = combinedProps({ ...readyTransformState(), mappingMode: 'full_event_jsonata' })
+    rerender(<StepMappingCombined {...regexProps} />)
+    await user.click(screen.getByTestId('transform-rule-launcher-trigger'))
+    await user.click(screen.getByTestId('transform-launcher-regex'))
+    expect(regexProps.onChangeMappingMode).toHaveBeenCalledWith('full_event_regex')
+  })
+
+  it('persists launcher-created Guided Transform rules through draft save and restore', async () => {
     const user = userEvent.setup()
     clearWizardDraft()
     let latestState: WizardState | undefined
     render(<TransformHarness initialState={readyTransformState()} onState={(s) => { latestState = s }} />)
 
-    await user.click(screen.getByTestId('wizard-transform-add-field-trigger'))
-    await user.click(screen.getByTestId('wizard-enrichment-add-static'))
-    await user.click(screen.getByTestId('wizard-transform-add-field-trigger'))
-    await user.click(screen.getByTestId('wizard-enrichment-add-lookup'))
+    await user.click(screen.getByTestId('transform-rule-launcher-trigger'))
+    await user.click(screen.getByTestId('transform-launcher-static'))
+    await user.click(screen.getByTestId('transform-rule-launcher-trigger'))
+    await user.click(screen.getByTestId('transform-launcher-calculated'))
 
     await waitFor(() => {
       expect(latestState?.enrichment).toHaveLength(2)
@@ -233,8 +266,19 @@ describe('StepMappingCombined v3 Transform (206f0f7 mapping UI)', () => {
     const restored = loadWizardDraft()
     expect(restored?.state.enrichment).toHaveLength(2)
     expect(restored?.state.enrichment[0]?.type).toBe('static')
-    expect(restored?.state.enrichment[1]?.type).toBe('lookup')
+    expect(restored?.state.enrichment[1]?.type).toBe('calculated')
     clearWizardDraft()
+  })
+
+  it('keeps an existing persisted Lookup rule visible even though Lookup is not a primary add action', () => {
+    const state = readyTransformState()
+    state.enrichment = [defaultRuleForType('lookup', 0)]
+
+    render(<StepMappingCombined {...combinedProps(state)} />)
+
+    expect(screen.getByText('Region Display Name')).toBeInTheDocument()
+    expect(screen.getByText('Lookup')).toBeInTheDocument()
+    expect(screen.queryByTestId('transform-launcher-lookup')).not.toBeInTheDocument()
   })
 
   it('includes created enrichment rules in mapping-ui save payload adapter', () => {
@@ -486,6 +530,6 @@ describe('StepMappingCombined v3 Transform (206f0f7 mapping UI)', () => {
     render(<StepMappingCombined {...combinedProps(buildInitialState())} />)
 
     expect(screen.getByTestId('wizard-transform-sample-warning')).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /Basic · JSONPath/i })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /Fields · Basic/i })).toBeInTheDocument()
   })
 })

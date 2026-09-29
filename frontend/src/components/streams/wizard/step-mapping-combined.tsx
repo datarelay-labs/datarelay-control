@@ -2,10 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { runMappingDraftPreview, runTransformPreview } from '../../../api/gdcRuntimePreview'
 import { cn } from '../../../lib/utils'
 import { mapWithConcurrency } from './bounded-async-map'
-import { EnrichmentAddFieldMenu } from './enrichment-add-field-menu'
 import { EnrichmentRulesEditor } from './enrichment-rules-editor'
 import { TransformRuleDebugger } from './transform-rule-debugger'
-import type { WizardEnrichmentRule } from './enrichment-rules-model'
+import { TransformRuleLauncher, type TransformLauncherAction } from './transform-rule-launcher'
+import { defaultRuleForType, type WizardEnrichmentRule } from './enrichment-rules-model'
 import { WizardBasicMappingPanel } from './wizard-basic-mapping-panel'
 import { WizardFullEventTransformWorkspace } from './wizard-full-event-transform-workspace'
 import { buildFieldMappingsFromFullEventRegexConfigJson } from './wizard-full-event-regex-config'
@@ -31,6 +31,10 @@ export type StepMappingCombinedProps = {
 }
 
 type MappingModeTab = 'basic' | 'advanced' | 'expert'
+
+function newMappingRowId(): string {
+  return `row-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 6)}`
+}
 
 /**
  * v3 Transform step body — restored from 206f0f7 Mapping step (Basic · JSONPath / Advanced · JSONata / Expert · Regex).
@@ -178,6 +182,43 @@ export function StepMappingCombined({
   const mappedFieldCount = state.mapping.filter((row) => row.sourceJsonPath.trim() && row.outputField.trim()).length
   const activeTransformRuleCount = state.enrichment.filter((rule) => rule.enabled && rule.fieldName.trim()).length
 
+  const addTransform = useCallback(
+    (action: TransformLauncherAction) => {
+      if (action === 'map_rename') {
+        setModeTab('basic')
+        onChangeMappingMode('basic_jsonpath')
+        onChangeMapping([
+          ...state.mapping,
+          { id: newMappingRowId(), outputField: '', sourceJsonPath: '', origin: 'manual' },
+        ])
+        return
+      }
+
+      if (action === 'jsonata') {
+        setModeTab('advanced')
+        onChangeMappingMode('full_event_jsonata')
+        return
+      }
+
+      if (action === 'regex') {
+        setModeTab('expert')
+        onChangeMappingMode('full_event_regex')
+        return
+      }
+
+      const type =
+        action === 'static'
+          ? 'static'
+          : action === 'calculated'
+            ? 'calculated'
+            : action === 'normalize'
+              ? 'normalize'
+              : 'conditional'
+      onChangeEnrichment([...state.enrichment, defaultRuleForType(type, state.enrichment.length)])
+    },
+    [onChangeEnrichment, onChangeMapping, onChangeMappingMode, state.enrichment, state.mapping],
+  )
+
   return (
     <div data-testid="wizard-step-transform">
       <section className="rounded-lg border border-slate-200 bg-white p-4 dark:border-gdc-border dark:bg-gdc-card">
@@ -216,50 +257,60 @@ export function StepMappingCombined({
           Choose source fields, add transform rules, then verify the exact event that will be delivered.
         </p>
 
-        <div className="mt-4 flex flex-wrap items-end justify-between gap-2 border-b border-slate-200 dark:border-gdc-border">
-          <div className="flex flex-wrap gap-1" role="tablist" aria-label="Transform mode">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={modeTab === 'basic'}
-              className={`-mb-px border-b-2 px-3 pb-2 text-[12px] font-semibold ${modeTabClass('basic')}`}
-              onClick={() => {
-                setModeTab('basic')
-                onChangeMappingMode('basic_jsonpath')
-              }}
-            >
-              Basic · JSONPath
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={modeTab === 'advanced'}
-              className={`-mb-px border-b-2 px-3 pb-2 text-[12px] font-semibold ${modeTabClass('advanced')}`}
-              onClick={() => {
-                setModeTab('advanced')
-                onChangeMappingMode('full_event_jsonata')
-              }}
-            >
-              Advanced · JSONata
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={modeTab === 'expert'}
-              className={`-mb-px border-b-2 px-3 pb-2 text-[12px] font-semibold ${modeTabClass('expert')}`}
-              onClick={() => {
-                setModeTab('expert')
-                onChangeMappingMode('full_event_regex')
-              }}
-            >
-              Expert · Regex
-            </button>
+        <div className="mt-4 flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50/60 p-3 dark:border-gdc-border dark:bg-gdc-section">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[12px] font-semibold text-slate-900 dark:text-gdc-foreground">
+                What do you want to change?
+              </p>
+              <p className="mt-0.5 text-[11px] text-slate-500 dark:text-gdc-muted">
+                Choose a task. Control opens the right editor and keeps the final event preview in sync.
+              </p>
+            </div>
+            <TransformRuleLauncher onSelect={addTransform} />
           </div>
-          <EnrichmentAddFieldMenu
-            rules={state.enrichment}
-            onRulesChange={onChangeEnrichment}
-            className="-mb-px pb-2"
-          />
+
+          <div className="flex flex-wrap items-end justify-between gap-2 border-t border-slate-200 pt-2 dark:border-gdc-border">
+            <span className="pb-2 text-[10px] font-medium text-slate-500 dark:text-gdc-muted">Editor</span>
+            <div className="flex flex-wrap gap-1" role="tablist" aria-label="Transform editor">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={modeTab === 'basic'}
+                className={`-mb-px border-b-2 px-3 pb-2 text-[12px] font-semibold ${modeTabClass('basic')}`}
+                onClick={() => {
+                  setModeTab('basic')
+                  onChangeMappingMode('basic_jsonpath')
+                }}
+              >
+                Fields · Basic
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={modeTab === 'advanced'}
+                className={`-mb-px border-b-2 px-3 pb-2 text-[12px] font-semibold ${modeTabClass('advanced')}`}
+                onClick={() => {
+                  setModeTab('advanced')
+                  onChangeMappingMode('full_event_jsonata')
+                }}
+              >
+                JSONata · Advanced
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={modeTab === 'expert'}
+                className={`-mb-px border-b-2 px-3 pb-2 text-[12px] font-semibold ${modeTabClass('expert')}`}
+                onClick={() => {
+                  setModeTab('expert')
+                  onChangeMappingMode('full_event_regex')
+                }}
+              >
+                Regex · Expert
+              </button>
+            </div>
+          </div>
         </div>
 
         {modeTab === 'basic' ? (
