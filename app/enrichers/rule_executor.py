@@ -80,6 +80,29 @@ class EnrichmentExecutionResult:
     duration_ms: int = 0
 
 
+@dataclass
+class EnrichmentTraceStepResult:
+    step_index: int
+    rule_type: str
+    target_field: str
+    executed: bool = True
+    blocked: bool = False
+    before_present: bool = False
+    before_value: Any = None
+    after_present: bool = False
+    after_value: Any = None
+    changed: bool = False
+    warnings: list[EnrichmentWarning] = field(default_factory=list)
+    error_message: str | None = None
+
+
+@dataclass
+class EnrichmentTraceExecutionResult:
+    event: dict[str, Any]
+    steps: list[EnrichmentTraceStepResult] = field(default_factory=list)
+    duration_ms: int = 0
+
+
 def _log_warning(warning: EnrichmentWarning) -> None:
     logger.warning("%s", warning.to_log_dict())
 
@@ -516,6 +539,96 @@ def _apply_advanced_rule(
             target_field=str(rule.get("target_field") or ""),
         )
         warnings.append(warning)
+
+
+def _trace_value(
+    event: dict[str, Any],
+    target_field: str,
+) -> tuple[bool, Any]:
+    present = has_field_value(event, target_field)
+    value = get_field_value(event, target_field) if present else None
+    return present, copy_json_value(value)
+
+
+def execute_enrichment_trace(
+    event: dict[str, Any],
+    enrichment: dict[str, Any],
+    override_policy: str = _OVERRIDE_KEEP_EXISTING,
+    *,
+    through_step: int | None = None,
+) -> EnrichmentTraceExecutionResult:
+    """Trace the existing enrichment engine without changing runtime semantics.
+
+    Runtime order is preserved exactly: top-level static fields first, followed by
+    normalized advanced rules. This is a read-only preview/debug helper.
+    """
+
+    started = time.monotonic()
+    policy = _validate_policy(override_policy)
+    if not isinstance(event, dict):
+        raise EnrichmentError(f"execute_enrichment expects dict event, got {type(event).__name__}")
+
+    current = copy_event_dict(event)
+    steps: list[EnrichmentTraceStepResult] = []
+    plan: list[tuple[str, str, Any]] = []
+
+    for target, value in _split_static_fields(enrichment).items():
+        plan.append(("static", str(target), value))
+    for rule in _iter_advanced_rules(enrichment):
+        plan.append((str(rule.get("type") or ""), str(rule.get("target_field") or ""), rule))
+
+    failed = False
+    for step_index, (rule_type, target_field, payload) in enumerate(plan):
+        if through_step is not None and step_index > through_step:
+            break
+
+        if failed:
+            steps.append(
+                EnrichmentTraceStepResult(
+                    step_index=step_index,
+                    rule_type=rule_type,
+                    target_field=target_field,
+                    executed=False,
+                    blocked=True,
+                )
+            )
+            continue
+
+        before_present, before_value = _trace_value(current, target_field)
+        warnings: list[EnrichmentWarning] = []
+        error_message: str | None = None
+
+        try:
+            if rule_type == "static":
+                current = _apply_static_fields(current, {target_field: payload}, policy)
+            else:
+                _apply_advanced_rule(current, payload, policy, warnings)
+        except EnrichmentError as exc:
+            error_message = str(exc)
+            failed = True
+
+        after_present, after_value = _trace_value(current, target_field)
+        steps.append(
+            EnrichmentTraceStepResult(
+                step_index=step_index,
+                rule_type=rule_type,
+                target_field=target_field,
+                before_present=before_present,
+                before_value=before_value,
+                after_present=after_present,
+                after_value=after_value,
+                changed=(before_present != after_present or before_value != after_value),
+                warnings=warnings,
+                error_message=error_message,
+            )
+        )
+
+    safe_event = sanitize_delivery_event(current)
+    return EnrichmentTraceExecutionResult(
+        event=safe_event,
+        steps=steps,
+        duration_ms=max(0, int((time.monotonic() - started) * 1000)),
+    )
 
 
 def execute_enrichment(

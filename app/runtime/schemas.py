@@ -2062,6 +2062,61 @@ class EnrichmentExecPreviewResponse(BaseModel):
     message: str = ""
 
 
+class EnrichmentTracePreviewRequest(BaseModel):
+    """Read-only multi-sample rule trace using the runtime enrichment engine."""
+
+    mapped_events: list[dict[str, Any]] = Field(default_factory=list, max_length=20)
+    enrichment: dict[str, Any] = Field(default_factory=dict)
+    override_policy: Literal["KEEP_EXISTING", "OVERRIDE", "ERROR_ON_CONFLICT"] = "KEEP_EXISTING"
+    through_step: int | None = Field(default=None, ge=0)
+
+
+class EnrichmentTraceStepItem(BaseModel):
+    step_index: int
+    rule_type: str
+    target_field: str
+    executed: bool = True
+    blocked: bool = False
+    before_present: bool = False
+    before_value: Any = None
+    after_present: bool = False
+    after_value: Any = None
+    changed: bool = False
+    warning_codes: list[str] = Field(default_factory=list)
+    warning_messages: list[str] = Field(default_factory=list)
+    error_message: str | None = None
+
+
+class EnrichmentTraceSampleItem(BaseModel):
+    sample_index: int
+    output_event: dict[str, Any] = Field(default_factory=dict)
+    steps: list[EnrichmentTraceStepItem] = Field(default_factory=list)
+    failed_step_index: int | None = None
+    duration_ms: int = 0
+
+
+class EnrichmentTraceRuleSummaryItem(BaseModel):
+    step_index: int
+    rule_type: str
+    target_field: str
+    executed_count: int = 0
+    changed_count: int = 0
+    warning_count: int = 0
+    error_count: int = 0
+    blocked_count: int = 0
+    failed_sample_indices: list[int] = Field(default_factory=list)
+
+
+class EnrichmentTracePreviewResponse(BaseModel):
+    input_event_count: int = 0
+    preview_event_count: int = 0
+    rule_count: int = 0
+    through_step: int | None = None
+    rule_summaries: list[EnrichmentTraceRuleSummaryItem] = Field(default_factory=list)
+    samples: list[EnrichmentTraceSampleItem] = Field(default_factory=list)
+    message: str = ""
+
+
 class EnrichmentValidationIssueItem(BaseModel):
     code: str
     severity: Literal["error", "warning"] = "warning"
