@@ -3,8 +3,10 @@ import fs from 'node:fs'
 
 const mainUrl = new URL('./cli/main.ts', import.meta.url)
 const pageUrl = new URL('./pages/streams.page.ts', import.meta.url)
+const runnerUrl = new URL('./run-user-lifecycle-e2e.sh', import.meta.url)
 const main = fs.readFileSync(mainUrl, 'utf8')
 const streamsPage = fs.readFileSync(pageUrl, 'utf8')
+const runner = fs.readFileSync(runnerUrl, 'utf8')
 
 function section(source: string, start: string, end: string): string {
   const from = source.indexOf(start)
@@ -56,5 +58,9 @@ assert.match(streamsPage, /checkpointVisible\(\): Promise<\{ visible: boolean; t
 assert.match(streamsPage, /getByTestId\('stream-information-panel'\)/)
 assert.match(main, /const checkpointUi = await streams\.checkpointVisible\(\)/)
 assert.match(streamsPage, /deleteClicked: boolean; confirmClicked: boolean/)
+assert.match(runner, /candidate_head="\$\(git -C "\$ROOT" rev-parse HEAD\)"/)
+assert.match(runner, /ui-build-head\.txt/)
+assert.match(runner, /ULC_REUSE_UI_DIST/)
+assert.match(runner, /npm run build/)
 
 console.log('browser-authority contract PASS')

@@ -90,3 +90,15 @@ This is an execution request, not a plan-only request. ChatGPT Chat owns the run
 For browser-required user actions, API/runtime/database are verification or forensic layers only. They must never replace a blocked browser action and promote the scenario to PASS.
 
 Do not patch product code during the active reconciliation audit. Exhaust independent scenarios, freeze evidence, complete offboarding, then create bounded remediation Work Packets for findings.
+
+## Full User E2E and pre-release exhaustive user-test gates
+
+When the user says `Full User E2E 진행해`, `사용자 E2E 진행해`, `전체 사용자 E2E 진행해`, or equivalent wording without narrower scope, execute `docs/FULL_USER_E2E_SCENARIOS.md` immediately. This is an execution request, not a planning request. ChatGPT Chat owns onboarding, exact-candidate isolation, browser execution, runtime/delivery verification, failure continuation, cleanup/offboarding, GitHub reporting, and final status.
+
+For release readiness, the exhaustive user-test order is mandatory:
+
+`exact-head machine qualification → Browser Feature Scenario Reconciliation → Full User E2E → owner/manual acceptance → release authorization`.
+
+Both exhaustive tests must PASS on the same exact candidate HEAD. Neither test substitutes for the other, and machine Full Regression / operational E2E passes do not substitute for either ChatGPT-executed exhaustive user test.
+
+Do not declare a candidate release-ready while either required exhaustive test is missing, PARTIAL, BLOCKED, from another HEAD, or has unresolved P0/P1/user-blocking P2 findings.

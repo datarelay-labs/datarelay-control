@@ -81,6 +81,35 @@ Required production env (HTTPS / offline compose interpolation):
 
 ---
 
+## Pre-release exhaustive user gates — mandatory
+
+A release candidate is not ready for owner sign-off until all of the following are complete on the **same exact candidate HEAD**:
+
+- [ ] Exact-head machine qualification is PASS.
+- [ ] `docs/BROWSER_FEATURE_SCENARIO_RECONCILIATION.md` is executed by ChatGPT Chat and is PASS.
+- [ ] `docs/FULL_USER_E2E_SCENARIOS.md` is executed by ChatGPT Chat and is PASS.
+- [ ] Neither exhaustive user test contains required FAIL, PARTIAL, or BLOCKED scenarios.
+- [ ] Actual delivery and failure/recovery evidence are retained.
+- [ ] Destructive lifecycle and zero-orphan cleanup gates are PASS.
+- [ ] Unresolved P0 / P1 / user-blocking P2 findings are zero.
+- [ ] Evidence roots and Work Packet/run IDs for both exhaustive tests are recorded in the release decision.
+
+Mandatory order:
+
+~~~text
+exact-head machine qualification
+→ Browser Feature Scenario Reconciliation
+→ Full User E2E
+→ owner/manual acceptance
+→ release authorization/publication
+~~~
+
+Machine Full Regression/operational E2E passes do not substitute for either exhaustive ChatGPT-executed user test.
+
+Any relevant candidate change after either exhaustive user-test PASS invalidates affected evidence and requires the required same-head gates to be re-established.
+
+---
+
 ## Sign-off
 
 | Role | Name | Date |

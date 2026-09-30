@@ -199,8 +199,18 @@ start_ui() {
   if [[ -f "$GDC_E2E_PID_DIR/ui.pid" ]] && kill -0 "$(cat "$GDC_E2E_PID_DIR/ui.pid")" 2>/dev/null; then
     running=1
   fi
-  if [[ $running -eq 1 && "$have" == "$proxy" ]]; then
-    echo "UI already running proxy=$have"
+  local candidate_head
+  candidate_head="$(git -C "$ROOT" rev-parse HEAD)"
+  local recorded_build_head=""
+  if [[ -f "$GDC_E2E_PID_DIR/ui-build-head.txt" ]]; then
+    recorded_build_head="$(tr -d '[:space:]' <"$GDC_E2E_PID_DIR/ui-build-head.txt")"
+  fi
+  local reuse_running_ui=0
+  if [[ "${ULC_REUSE_UI_DIST:-0}" == "1" && $running -eq 1 && "$have" == "$proxy" && -d "$ROOT/frontend/dist" && "$recorded_build_head" == "$candidate_head" ]]; then
+    reuse_running_ui=1
+  fi
+  if [[ $reuse_running_ui -eq 1 ]]; then
+    echo "UI already running exact candidate=$candidate_head proxy=$have"
   else
     if [[ $running -eq 1 ]]; then
       kill "$(cat "$GDC_E2E_PID_DIR/ui.pid")" 2>/dev/null || true
@@ -210,8 +220,9 @@ start_ui() {
     (
       exec 9>&-
       cd "$ROOT/frontend"
-      if [[ ! -d dist ]]; then
+      if [[ "${ULC_REUSE_UI_DIST:-0}" != "1" || ! -d dist || "$recorded_build_head" != "$candidate_head" ]]; then
         npm run build >"$GDC_E2E_LOG_DIR/ui_build_${RUN_ID}.log" 2>&1
+        printf '%s\n' "$candidate_head" >"$GDC_E2E_PID_DIR/ui-build-head.txt"
       fi
       export VITE_DEV_API_PROXY_TARGET="$proxy"
       nohup npx --yes vite preview --host 127.0.0.1 --port "$GDC_E2E_UI_PORT" \

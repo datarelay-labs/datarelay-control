@@ -4,7 +4,7 @@
 > **Executor:** ChatGPT Chat
 > **Scope:** Phase A-D browser surface completeness, buttons/actions, discoverability, terminology, procedure, persistence, runtime truth, safety, recovery, evidence, and cleanup
 > **Target:** current Data Relay Control exact candidate until superseded
-> **Release relationship:** independent from Full Matrix and the final Browser User Lifecycle; may compose their evidence but MUST NOT substitute either
+> **Release relationship:** mandatory independent pre-release exhaustive gate; separate from Full Matrix and Full User E2E, and neither may substitute for another
 > **Primary rule:** the user acts through the browser first; API/runtime/database are verification and forensic layers, never a substitute for a browser-required action
 
 ## 1. Exact execution trigger
@@ -1465,7 +1465,27 @@ However, this reconciliation is broader in **surface completeness**:
 - it probes discoverability/dead ends;
 - it checks buttons/actions not necessarily exercised by the representative lifecycle.
 
-It does not replace the final Browser User Lifecycle PASS.
+It does not replace Full User E2E in `docs/FULL_USER_E2E_SCENARIOS.md`.
+
+### Full User E2E
+
+Full User E2E is the depth-first real-user mission gate. It consumes the same exact candidate after this reconciliation passes and proves complete real workflows, actual delivery, failure/recovery, repetition, concurrent edits/load, destructive lifecycle, and zero-orphan cleanup.
+
+This reconciliation is breadth-first; Full User E2E is depth-first. Neither substitutes for the other.
+
+### Mandatory pre-release order
+
+For release qualification:
+
+~~~text
+exact-head machine qualification
+→ BROWSER_FEATURE_SCENARIO_RECONCILIATION=PASS
+→ FULL_USER_E2E=PASS
+→ owner/manual acceptance
+→ release authorization
+~~~
+
+Both exhaustive user tests MUST use the same exact candidate HEAD. Any relevant candidate change invalidates affected evidence and requires the required gates to be re-established.
 
 ### Exact-head qualification
 
