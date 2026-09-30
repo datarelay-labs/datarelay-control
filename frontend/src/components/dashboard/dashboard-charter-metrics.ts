@@ -375,6 +375,8 @@ export type StreamHealthMatrixCellStatus = 'healthy' | 'warning' | 'failed' | 'n
 export type StreamHealthMatrixCell = {
   status: StreamHealthMatrixCellStatus
   routeCount: number
+  problemStreamId: number | null
+  problemRouteId: number | null
 }
 
 export type StreamHealthMatrixRow = {
@@ -1248,12 +1250,14 @@ export function deriveStreamHealthMatrix(
     .sort((a, b) => b.inbound_eps_1m - a.inbound_eps_1m || b.route_count - a.route_count)
     .slice(0, 5)
 
-  // Build route lookup: `${stream_id}:${destination_id}` → worst health_status string
-  const routeWorst = new Map<string, string>()
+  // Build route lookup preserving exact drill-down context for the worst route.
+  const routeWorst = new Map<string, { status: string; routeId: number; streamId: number }>()
   for (const r of snapshot.routes ?? []) {
     if (r.destination_id == null) continue
     const key = `${r.stream_id}:${r.destination_id}`
-    routeWorst.set(key, worstStatus(routeWorst.get(key) ?? null, r.health_status))
+    const current = routeWorst.get(key)
+    const worst = worstStatus(current?.status ?? null, r.health_status)
+    if (current == null || worst !== current.status) routeWorst.set(key, { status: worst, routeId: r.route_id, streamId: r.stream_id })
   }
 
   // Build matrix rows
@@ -1261,15 +1265,22 @@ export function deriveStreamHealthMatrix(
     const cells: StreamHealthMatrixCell[] = topDestinations.map((dest) => {
       let cellWorst: string | null = null
       let routeCount = 0
+      let problemStreamId: number | null = null
+      let problemRouteId: number | null = null
       for (const sid of streamIds) {
         const key = `${sid}:${dest.destination_id}`
-        const status = routeWorst.get(key)
-        if (status != null) {
+        const route = routeWorst.get(key)
+        if (route != null) {
           routeCount++
-          cellWorst = worstStatus(cellWorst, status)
+          const nextWorst = worstStatus(cellWorst, route.status)
+          if (cellWorst == null || nextWorst !== cellWorst) {
+            problemStreamId = route.streamId
+            problemRouteId = route.routeId
+          }
+          cellWorst = nextWorst
         }
       }
-      return { status: cellStatusFromHealthStatus(cellWorst, routeCount), routeCount }
+      return { status: cellStatusFromHealthStatus(cellWorst, routeCount), routeCount, problemStreamId, problemRouteId }
     })
     return { label, streamCount: streamIds.length, streamIds, cells }
   })
