@@ -52,7 +52,7 @@ PHASE_E_F_EXCLUDED=YES
 
 Full Matrix asks whether declared capability combinations execute.
 
-Final Browser User Lifecycle asks whether a representative operator can complete the full end-to-end journey.
+Full User E2E asks whether a representative operator can complete the full end-to-end journey.
 
 This reconciliation asks a different question:
 
@@ -1452,9 +1452,9 @@ This reconciliation consumes that inventory but asks whether users can actually 
 
 It does not replace Full Matrix.
 
-### Browser User Lifecycle
+### Full User E2E / user-lifecycle harness
 
-`e2e/user-lifecycle/` remains the reusable browser-first execution harness.
+`e2e/user-lifecycle/` remains the reusable browser-first execution harness for Full User E2E.
 
 This reconciliation SHOULD reuse its Playwright session, page objects, isolation, resource ledger, actual-delivery verification, and cleanup mechanisms where valid.
 

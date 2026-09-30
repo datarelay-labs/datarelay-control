@@ -1,8 +1,11 @@
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[1]
 DOC = ROOT / "docs" / "FULL_USER_E2E_SCENARIOS.md"
 AGENTS = ROOT / "AGENTS.md"
+CAPABILITIES = ROOT / "e2e" / "capabilities" / "data-relay-capabilities.yaml"
 
 
 def test_full_user_e2e_contract_is_executable_and_release_grade() -> None:
@@ -36,3 +39,27 @@ def test_full_user_e2e_contract_is_executable_and_release_grade() -> None:
     assert "Route Processing is the only supported runtime" in doc
     assert "Runtime Is Truth" in doc
     assert "Phase E/F are outside Control release scope" in doc
+
+def test_full_user_e2e_supported_capability_anchors_match_manifest() -> None:
+    doc = DOC.read_text(encoding="utf-8")
+    manifest = yaml.safe_load(CAPABILITIES.read_text(encoding="utf-8"))
+
+    for group in ("sources", "destinations", "authentication"):
+        supported = [
+            str(row["id"])
+            for row in manifest[group]
+            if row.get("status") == "SUPPORTED"
+        ]
+        for capability_id in supported:
+            assert capability_id in doc, (
+                f"{group} capability {capability_id} is SUPPORTED in the manifest "
+                "but missing from the Full User E2E maintenance anchors"
+            )
+
+    for group in ("sources", "destinations", "authentication"):
+        out_of_scope = {
+            str(row["id"])
+            for row in manifest[group]
+            if row.get("status") == "OUT_OF_SCOPE"
+        }
+        assert not any(capability_id in doc for capability_id in out_of_scope)

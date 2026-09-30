@@ -395,6 +395,46 @@ Backup/recovery only where current public UI/product contract exposes it
 
 Engineering-only test infrastructure rows are not user missions.
 
+### 12.1 Current capability anchors — maintenance guard
+
+The following IDs are the current exact-candidate supported Source / Destination / operator-facing Authentication anchors. They are intentionally listed so a manifest expansion cannot silently bypass this contract.
+
+~~~text
+SOURCE_CAPABILITY_ANCHORS
+source.http_api_polling
+source.s3_object_polling
+source.database_query_postgresql
+source.remote_file_polling
+source.webhook_receiver
+
+DESTINATION_CAPABILITY_ANCHORS
+destination.syslog_udp
+destination.syslog_tcp
+destination.syslog_tls
+destination.webhook_post
+
+AUTH_CAPABILITY_ANCHORS
+auth.http.no_auth
+auth.http.basic
+auth.http.bearer
+auth.http.api_key
+auth.http.oauth2_client_credentials
+auth.http.session_login
+auth.http.jwt_refresh_token
+auth.http.vendor_jwt_exchange
+auth.s3.access_key_secret
+auth.database.username_password
+auth.remote_file.ssh_password_or_key
+auth.webhook_receiver.inbound
+auth.destination.syslog_tls_client_cert
+~~~
+
+The contract regression test MUST compare these anchors with the current capability manifest.
+
+If a new `SUPPORTED` Source, Destination, or operator-facing Authentication capability appears in the manifest, this document must be reviewed in the same change and the corresponding Full User E2E mission added before release qualification.
+
+`PARTIAL` capabilities remain explicitly dispositioned but are not silently promoted into this supported-anchor list.
+
 Phase E/F are excluded except negative exposure checks.
 
 ## 13. Persona and mission contract
