@@ -3,7 +3,7 @@
 This repository follows the canonical Data Relay Labs Engineering System:
 https://github.com/datarelay-labs/engineering-system
 
-Adoption baseline: Engineering System version 1.6.5 at immutable commit `32a8dfc522163de8b0aaedac57a63280cc2977e9`.
+Adoption baseline: Engineering System version 1.6.5 at immutable commit `d6fc00d432e94b8fe4d15245c3ee6b7dd366d651`.
 
 ## Minimum context first
 
@@ -56,7 +56,7 @@ Historical or explicitly retired behavior is not protected by no-regression poli
 
 ## Execution rules
 
-- **Execute useful work continuously.** Implement in coherent small/medium batches, validate locally with the cheapest relevant tests, and keep going while a safe authorized next action exists. Use fast CI for quick integration feedback when useful; reserve full qualification/release CI for a stable candidate. If waiting on an external condition, work on the highest-priority independent roadmap item instead of polling. Stop only for a real owner decision/credential, an irreconcilable blocker, a status-only request, or a completed bounded outcome.
+- **Execute useful work continuously.** Implement in coherent small/medium batches, validate locally with the cheapest relevant tests, and keep going while a safe authorized next action exists. Use fast CI for quick integration feedback when useful; reserve full qualification/release CI for a stable candidate. If a workstream is waiting on machine-observable CI/review/deploy or another external condition, record/yield that wait and return to repository-level scheduling; switch to the highest-priority dependency-eligible independent ACTIVE Work Packet/worktree when safe instead of polling or stopping. The single-matching-ACTIVE-packet rule selects one packet for the current branch/workstream; it does not serialize unrelated repository work behind a waiting packet. Stop only for a real owner decision/credential, an irreconcilable blocker, a status-only request, or a completed bounded outcome.
 - Classify the change and identify affected domains/contracts/security/operations.
 - For material design-bearing changes, apply the canonical `standards/DESIGN.md` minimal design gate before implementation.
 - Preserve unrelated user work and dirty worktrees.
