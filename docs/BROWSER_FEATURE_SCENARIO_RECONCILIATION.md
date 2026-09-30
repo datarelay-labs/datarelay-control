@@ -1484,17 +1484,21 @@ This reconciliation is breadth-first; Full User E2E is depth-first. Neither subs
 For release qualification:
 
 ~~~text
-BROWSER_FEATURE_SCENARIO_RECONCILIATION PASS1 (exhaust all safe independent scenarios)
+exact-head machine qualification baseline
+→ Browser Feature Scenario Reconciliation PASS1
 → batch remediation
-→ BROWSER_FEATURE_SCENARIO_RECONCILIATION PASS2
-→ FULL_USER_E2E PASS1 (exhaust all safe independent scenarios)
+→ exact-head machine requalification
+→ Browser Feature Scenario Reconciliation PASS2
+→ Full User E2E PASS1
 → batch remediation
-→ FULL_USER_E2E PASS2
+→ exact-head machine requalification
+→ re-establish Browser Feature Scenario Reconciliation on the remediated HEAD
+→ Full User E2E PASS2
 → release-specific gates
 → final exact-head CI
 → release audit
 → owner/manual acceptance
-→ release authorization
+→ release authorization/publication
 ~~~
 
 Both exhaustive user tests MUST use the same exact candidate HEAD. Any relevant candidate change invalidates affected evidence and requires the required gates to be re-established.

@@ -97,9 +97,19 @@ A release candidate is not ready for owner sign-off until all of the following a
 Mandatory order:
 
 ~~~text
-exact-head machine qualification
-→ Browser Feature Scenario Reconciliation
-→ Full User E2E
+exact-head machine qualification baseline
+→ Browser Feature Scenario Reconciliation PASS1
+→ batch remediation
+→ exact-head machine requalification
+→ Browser Feature Scenario Reconciliation PASS2
+→ Full User E2E PASS1
+→ batch remediation
+→ exact-head machine requalification
+→ re-establish Browser Feature Scenario Reconciliation on the remediated HEAD
+→ Full User E2E PASS2
+→ release-specific gates
+→ final exact-head CI
+→ release audit
 → owner/manual acceptance
 → release authorization/publication
 ~~~
