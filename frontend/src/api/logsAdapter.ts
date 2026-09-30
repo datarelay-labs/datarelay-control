@@ -59,6 +59,12 @@ export function runtimeLogSearchItemToExplorerRow(log: RuntimeLogSearchItem): Lo
       latency_ms: log.latency_ms,
       log_db_id: log.id,
       run_id: log.run_id,
+      batch_id: log.batch_id,
+      policy_action: log.policy_action,
+      decision_reason: log.decision_reason,
+      delivery_disposition: log.delivery_disposition,
+      skip_reason: log.skip_reason,
+      quarantine_event_id: log.quarantine_event_id,
     },
     relatedEventId: null,
   }
