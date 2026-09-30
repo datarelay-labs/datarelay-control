@@ -13,6 +13,7 @@ import { buildFieldMappingsWithTransformRules, parseTransformRulesFromFieldMappi
 import { rowsFromFieldMappings } from '../../utils/mappingFieldMappings'
 import { fieldMappingsFromRows } from '../../utils/mappingValidation'
 import { loadMappingWorkspaceContext } from '../../utils/mappingSourceSample'
+import { runFinalEventDraftPreview } from '../../api/gdcRuntimePreview'
 import type { AdvancedTransformRuleDraft } from '../../types/advancedTransform'
 import type { MappingRowModel } from '../streams/stream-mapping-model'
 import { MappingWorkspace } from '../mappings/mapping-workspace'
@@ -59,6 +60,9 @@ export function RouteEditTransformPanel({
   const [eventArrayPath, setEventArrayPath] = useState('')
   const [eventRootPath, setEventRootPath] = useState('')
   const [savedSnapshot, setSavedSnapshot] = useState<string | null>(null)
+  const [sourceSample, setSourceSample] = useState<unknown>(null)
+  const [effectivePreview, setEffectivePreview] = useState<Array<Record<string, unknown>>>([])
+  const [effectivePreviewMessage, setEffectivePreviewMessage] = useState<string | null>(null)
   const loadGenRef = useRef(0)
   const refreshEffective = useCallback(async () => {
     const effective = await fetchRouteTransformEffective(routeId)
@@ -102,6 +106,7 @@ export function RouteEditTransformPanel({
         setStreamTitle(ctx.cfg.stream_name || ctx.stream.name || `Stream ${streamId}`)
         setConnectorLabel(ctx.connectorName)
         setSourceType(ctx.cfg.source_type ?? ctx.stream.stream_type ?? null)
+        setSourceSample(ctx.sample.rawPayload)
         if (!mappingCfg?.mapping?.event_array_path) {
           nextArray = String(ctx.cfg.mapping?.event_array_path ?? ctx.sample.eventArrayPath ?? '')
           setEventArrayPath(nextArray)
@@ -165,6 +170,39 @@ export function RouteEditTransformPanel({
     window.addEventListener('beforeunload', onBeforeUnload)
     return () => window.removeEventListener('beforeunload', onBeforeUnload)
   }, [hasUnsavedChanges])
+
+  useEffect(() => {
+    let cancelled = false
+    if (sourceSample == null || initialEffective == null) {
+      setEffectivePreview([])
+      setEffectivePreviewMessage(null)
+      return
+    }
+    void runFinalEventDraftPreview({
+      payload: sourceSample,
+      field_mappings: Object.fromEntries(
+        Object.entries(initialEffective.effective_field_mappings ?? {}).filter(([, value]) => typeof value === 'string'),
+      ) as Record<string, string>,
+      enrichment: initialEffective.effective_enrichment ?? {},
+      override_policy: (['KEEP_EXISTING', 'OVERRIDE', 'ERROR_ON_CONFLICT'].includes(initialEffective.effective_override_policy)
+        ? initialEffective.effective_override_policy
+        : 'KEEP_EXISTING') as 'KEEP_EXISTING' | 'OVERRIDE' | 'ERROR_ON_CONFLICT',
+      max_events: 3,
+    })
+      .then((result) => {
+        if (cancelled) return
+        setEffectivePreview(result.final_events)
+        setEffectivePreviewMessage(result.message)
+      })
+      .catch((error) => {
+        if (cancelled) return
+        setEffectivePreview([])
+        setEffectivePreviewMessage(error instanceof Error ? error.message : String(error))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [initialEffective, sourceSample])
 
   const workspaceDisabled = inheritStream
 
@@ -317,7 +355,28 @@ export function RouteEditTransformPanel({
       </PanelChrome>
 
       <div className={cn(workspaceDisabled && 'pointer-events-none opacity-50')} aria-disabled={workspaceDisabled}>
-        <MappingWorkspace
+        <section className="rounded-lg border border-violet-200/80 bg-violet-50/40 p-3 dark:border-violet-500/30 dark:bg-violet-500/[0.06]" data-testid="route-effective-final-event-preview">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <p className="text-[11px] font-semibold text-violet-900 dark:text-violet-100">Effective Final Event</p>
+            <p className="mt-0.5 text-[10px] text-slate-600 dark:text-gdc-muted">
+              Persisted effective mapping + enrichment resolved for this Route ({initialEffective?.processing_status ?? '—'}).
+            </p>
+          </div>
+          <span className="rounded-full border border-violet-200 bg-white px-2 py-0.5 text-[9px] font-semibold text-violet-700 dark:border-violet-500/30 dark:bg-gdc-card dark:text-violet-200">
+            Runtime-resolved config
+          </span>
+        </div>
+        {effectivePreview.length > 0 ? (
+          <pre className="mt-2 max-h-56 overflow-auto rounded-md bg-slate-950 p-2 text-[10px] leading-relaxed text-slate-100" data-testid="route-effective-final-event-json">
+            {JSON.stringify(effectivePreview[0], null, 2)}
+          </pre>
+        ) : (
+          <p className="mt-2 text-[10px] text-slate-500">{effectivePreviewMessage || 'Load a source sample to preview the effective Final Event.'}</p>
+        )}
+      </section>
+
+      <MappingWorkspace
           streamId={streamId}
           streamTitle={streamTitle}
           connectorLabel={connectorLabel}

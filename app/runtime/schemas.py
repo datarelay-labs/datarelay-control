@@ -1063,6 +1063,9 @@ class RouteTransformEffectiveResponse(BaseModel):
     fallback_used: bool
     mapping_count: int
     enrichment_count: int
+    effective_field_mappings: dict[str, Any] = Field(default_factory=dict)
+    effective_enrichment: dict[str, Any] = Field(default_factory=dict)
+    effective_override_policy: str = "KEEP_EXISTING"
     processing_status: Literal["Inherited", "Overridden", "Mixed"]
     message: str
 
