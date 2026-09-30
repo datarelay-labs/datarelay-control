@@ -15,28 +15,30 @@ RELEASE_READINESS = ROOT / "docs" / "operations" / "release-readiness-checklist.
 def test_release_requires_both_exhaustive_user_tests() -> None:
     project = yaml.safe_load(PROJECT.read_text(encoding="utf-8"))
     release = yaml.safe_load(RELEASE.read_text(encoding="utf-8"))
-    config = release["exhaustive_user_tests"]
+    config = release["human_equivalent_user_tests"]
 
     assert project["project"]["user_facing"] is True
     assert project["project"]["primary_user_surface"] == "browser"
-    assert release["exhaustive_user_tests_required"] is True
+    assert release["human_equivalent_user_tests_required"] is True
     assert config["executor"] == "CHATGPT_CHAT"
+    assert config["actual_user_surface_required"] is True
+    assert config["primary_user_surface"] == "browser"
+    assert config["actual_browser_process_required"] is True
+    assert config["same_candidate_required"] is True
+    assert config["ci_contract_validation_only"] is True
     assert config["exact_head_required"] is True
     assert config["machine_qualification_required_first"] is True
-    assert config["same_candidate_required"] is True
     assert config["zero_fail_partial_blocked"] is True
-    assert config["actual_browser_process_required"] is True
     assert config["browser_engine"] == "CHROMIUM_OR_CHROME"
-    assert config["ci_contract_validation_only"] is True
     assert config["execution_authority"] == "CHATGPT_WORK_PACKET"
     assert config["evidence_authority"] == "ACTIVE_RELEASE_WORK_PACKET"
     assert config["order"] == [
-        "BROWSER_FEATURE_SCENARIO_RECONCILIATION",
+        "SURFACE_RECONCILIATION",
         "FULL_USER_E2E",
     ]
 
-    browser = config["gates"]["BROWSER_FEATURE_SCENARIO_RECONCILIATION"]
-    full_user = config["gates"]["FULL_USER_E2E"]
+    browser = config["surface_reconciliation"]
+    full_user = config["full_user_e2e"]
     assert browser == {
         "mandatory": True,
         "contract": "docs/BROWSER_FEATURE_SCENARIO_RECONCILIATION.md",

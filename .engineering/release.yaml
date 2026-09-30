@@ -9,30 +9,31 @@ operational_e2e_required: true
 full_e2e_passes: 2
 public_smoke_required: true
 
-exhaustive_user_tests_required: true
-exhaustive_user_tests:
+human_equivalent_user_tests_required: true
+human_equivalent_user_tests:
   executor: CHATGPT_CHAT
+  actual_user_surface_required: true
+  primary_user_surface: browser
+  actual_browser_process_required: true
+  same_candidate_required: true
+  ci_contract_validation_only: true
   exact_head_required: true
   machine_qualification_required_first: true
-  same_candidate_required: true
   zero_fail_partial_blocked: true
-  actual_browser_process_required: true
   browser_engine: CHROMIUM_OR_CHROME
-  ci_contract_validation_only: true
   execution_authority: CHATGPT_WORK_PACKET
   evidence_authority: ACTIVE_RELEASE_WORK_PACKET
   order:
-    - BROWSER_FEATURE_SCENARIO_RECONCILIATION
+    - SURFACE_RECONCILIATION
     - FULL_USER_E2E
-  gates:
-    BROWSER_FEATURE_SCENARIO_RECONCILIATION:
-      mandatory: true
-      contract: docs/BROWSER_FEATURE_SCENARIO_RECONCILIATION.md
-      minimum_passes: 1
-    FULL_USER_E2E:
-      mandatory: true
-      contract: docs/FULL_USER_E2E_SCENARIOS.md
-      minimum_passes: 1
+  surface_reconciliation:
+    mandatory: true
+    contract: docs/BROWSER_FEATURE_SCENARIO_RECONCILIATION.md
+    minimum_passes: 1
+  full_user_e2e:
+    mandatory: true
+    contract: docs/FULL_USER_E2E_SCENARIOS.md
+    minimum_passes: 1
 
 blockers:
   p0: true
