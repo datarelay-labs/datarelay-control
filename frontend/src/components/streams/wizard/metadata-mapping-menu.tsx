@@ -9,10 +9,9 @@ import {
 import type { WizardMappingRow, WizardState } from './wizard-state'
 import {
   analyzeStellarSuggestions,
-  applyMetadataMappingWithAutoFallback,
   applySelectedMetadataSuggestions,
+  previewSelectedMetadataSuggestions,
   collectTopLevelSourceFieldPaths,
-  unmappedTopLevelSourcePaths,
   type StellarSuggestion,
 } from './wizard-mapping-merge'
 
@@ -26,12 +25,10 @@ import {
  *     `detect_mapping_candidates` heuristic against the wizard's sample event.
  *   - Compact operational style — no fullscreen modal, wizard step move, or
  *     side panel. Popover-only (portal-rendered to avoid clip).
- *   - Apply merges suggestions into existing rows: any candidate whose
- *     `output_field` OR `source_json_path` is already mapped is treated as
- *     already-handled and left alone. Only truly-unmapped candidates are
- *     appended, tagged `origin: 'stellar'`, then any remaining top-level
- *     source fields receive the same Auto-suggest top-level fallback as the
- *     Mapping toolbar (`origin: 'auto'`).
+ *   - Apply merges only explicitly selected suggestions into existing rows:
+ *     any candidate whose `output_field` OR `source_json_path` is already
+ *     mapped is treated as already-handled and left alone. Only truly-unmapped
+ *     selected candidates are appended, tagged `origin: 'stellar'`.
  *
  * UI sketch:
  *
@@ -177,21 +174,25 @@ export function MetadataMappingMenu({ state, onChangeMapping }: MetadataMappingM
     ? (sampleEvent as Record<string, unknown>)
     : null
 
+  const selectedSuggestions = useMemo(() => {
+    if (!suggestions) return []
+    return suggestions.filter((item) => selectedSuggestionKeys.has(`${item.sourceJsonPath}→${item.outputField}`))
+  }, [selectedSuggestionKeys, suggestions])
+
   const analysis = useMemo(() => {
     if (!suggestions) return null
-    return analyzeStellarSuggestions(state.mapping, suggestions)
-  }, [state.mapping, suggestions])
+    return analyzeStellarSuggestions(state.mapping, selectedSuggestions)
+  }, [selectedSuggestions, state.mapping, suggestions])
 
   const sourceFieldStats = useMemo(() => {
     const total = collectTopLevelSourceFieldPaths(sampleRecord).length
-    const currentlyUnmapped = unmappedTopLevelSourcePaths(state.mapping, sampleRecord).length
-    return { total, currentlyUnmapped }
-  }, [sampleRecord, state.mapping])
+    return { total }
+  }, [sampleRecord])
 
   const applyPreview = useMemo(() => {
     if (!suggestions || !sampleRecord) return null
-    return applyMetadataMappingWithAutoFallback(state.mapping, suggestions, sampleRecord, () => 'preview')
-  }, [sampleRecord, state.mapping, suggestions])
+    return previewSelectedMetadataSuggestions(state.mapping, selectedSuggestions, sampleRecord, () => 'preview')
+  }, [sampleRecord, selectedSuggestions, state.mapping, suggestions])
 
   const generateSuggestions = useCallback(async () => {
     if (busy || !hasSample) return
@@ -226,10 +227,9 @@ export function MetadataMappingMenu({ state, onChangeMapping }: MetadataMappingM
 
   const applySuggestions = useCallback(() => {
     if (!suggestions || !sampleRecord) return
-    const selected = suggestions.filter((item) => selectedSuggestionKeys.has(`${item.sourceJsonPath}→${item.outputField}`))
-    onChangeMapping(applySelectedMetadataSuggestions(state.mapping, selected, () => makeRowId('merge')))
+    onChangeMapping(applySelectedMetadataSuggestions(state.mapping, selectedSuggestions, () => makeRowId('merge')))
     setOpen(false)
-  }, [onChangeMapping, sampleRecord, selectedSuggestionKeys, state.mapping, suggestions])
+  }, [onChangeMapping, sampleRecord, selectedSuggestions, state.mapping, suggestions])
 
   const canApply =
     hasSample &&
@@ -372,9 +372,8 @@ export function MetadataMappingMenu({ state, onChangeMapping }: MetadataMappingM
               {analysis && applyPreview ? (
                 <div className="mt-2 rounded-md border border-slate-200/80 bg-slate-50/70 p-2 text-[11px] dark:border-gdc-border dark:bg-gdc-section">
                   <p className="font-semibold text-slate-700 dark:text-slate-100">Summary</p>
-                  <ul className="mt-1 grid grid-cols-3 gap-1.5">
-                    <SummaryStat label="Stellar" value={applyPreview.stellarAdded} tone="neutral" />
-                    <SummaryStat label="Auto" value={applyPreview.autoAdded} tone="success" />
+                  <ul className="mt-1 grid grid-cols-2 gap-1.5">
+                    <SummaryStat label="Selected" value={applyPreview.stellarAdded} tone="neutral" />
                     <SummaryStat
                       label="Unmapped"
                       value={applyPreview.unmappedSourceFields}
@@ -416,7 +415,7 @@ export function MetadataMappingMenu({ state, onChangeMapping }: MetadataMappingM
                   <p className="mt-1 text-[9px] text-slate-500">High-confidence suggestions are preselected. Review medium-confidence suggestions; leave No Match unchecked to skip. Nothing is applied until you confirm.</p>
                   {analysis.conflicts.length > 0 ? (
                     <p className="mt-1 text-[10px] leading-snug text-amber-700 dark:text-amber-300">
-                      Manual output fields win over Stellar; remaining top-level fields use Auto-suggest.
+                      Manual output fields win over selected Stellar suggestions; no unselected field is applied automatically.
                     </p>
                   ) : null}
                   <button
@@ -431,8 +430,8 @@ export function MetadataMappingMenu({ state, onChangeMapping }: MetadataMappingM
                 </div>
               ) : !busy && hasSample ? (
                 <p className="mt-2 text-[10px] leading-snug text-slate-500 dark:text-gdc-mutedStrong">
-                  Generate to preview Stellar output field suggestions plus Auto-suggest for any remaining top-level source
-                  fields. Existing rows are never overwritten.
+                  Generate to preview Stellar output field suggestions. Existing rows are never overwritten; only
+                  suggestions you select are applied.
                 </p>
               ) : null}
             </div>,

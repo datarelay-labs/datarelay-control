@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applySelectedMetadataSuggestions } from './wizard-mapping-merge'
+import { applySelectedMetadataSuggestions, previewSelectedMetadataSuggestions } from './wizard-mapping-merge'
 
 describe('applySelectedMetadataSuggestions', () => {
   it('applies only explicitly selected suggestions and preserves manual rows', () => {
@@ -22,5 +22,20 @@ describe('applySelectedMetadataSuggestions', () => {
       () => 'selected',
     )
     expect(rows).toEqual(current)
+  })
+
+  it('previews exactly the selected suggestions without implicit auto fallback', () => {
+    const current = [{ id: 'manual', outputField: 'message', sourceJsonPath: '$.msg', origin: 'manual' as const }]
+    const preview = previewSelectedMetadataSuggestions(
+      current,
+      [{ outputField: 'srcip', sourceJsonPath: '$.source_ip' }],
+      { msg: 'hello', source_ip: '1.2.3.4', user: 'alice' },
+      () => 'preview',
+    )
+
+    expect(preview.stellarAdded).toBe(1)
+    expect(preview.autoAdded).toBe(0)
+    expect(preview.unmappedSourceFields).toBe(1)
+    expect(preview.rows.map((row) => row.sourceJsonPath)).toEqual(['$.msg', '$.source_ip'])
   })
 })

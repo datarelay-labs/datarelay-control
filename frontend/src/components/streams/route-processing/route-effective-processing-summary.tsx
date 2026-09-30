@@ -7,7 +7,7 @@ type EffectiveStatuses = Record<(typeof ROUTE_PROCESSING_CONCERN_KEYS)[number], 
 function deltaLabel(status: RouteProcessingStatus | null): string {
   if (status === 'Inherited') return 'No route delta — shared processing is effective'
   if (status === 'Overridden') return 'Route override replaces shared processing'
-  if (status === 'Mixed') return 'Route override and shared processing are both effective'
+  if (status === 'Mixed') return 'Mixed effective state — inspect inherited, route, and governance details'
   return 'Effective state unavailable'
 }
 

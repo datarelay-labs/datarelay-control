@@ -17,7 +17,7 @@ describe('RouteEffectiveProcessingSummary', () => {
     )
 
     expect(screen.getByTestId('route-effective-processing-summary')).toHaveTextContent('Runtime truth')
-    expect(screen.getByTestId('route-effective-transform')).toHaveTextContent('Route override and shared processing are both effective')
+    expect(screen.getByTestId('route-effective-transform')).toHaveTextContent('Mixed effective state')
     expect(screen.getByTestId('route-effective-protection')).toHaveTextContent('No route delta')
     expect(screen.getByTestId('route-effective-classification')).toHaveTextContent('Route override replaces shared processing')
     expect(screen.getByText(/effective Final Event preview/i)).toBeInTheDocument()

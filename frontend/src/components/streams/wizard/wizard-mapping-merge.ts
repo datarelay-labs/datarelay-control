@@ -143,6 +143,21 @@ export function applySelectedMetadataSuggestions(
   return next
 }
 
+export function previewSelectedMetadataSuggestions(
+  current: ReadonlyArray<WizardMappingRow>,
+  suggestions: ReadonlyArray<StellarSuggestion>,
+  sampleEvent: Record<string, unknown> | null,
+  newRowId: () => string,
+): MetadataMappingApplyResult {
+  const rows = applySelectedMetadataSuggestions(current, suggestions, newRowId)
+  return {
+    rows,
+    stellarAdded: rows.length - current.length,
+    autoAdded: 0,
+    unmappedSourceFields: unmappedTopLevelSourcePaths(rows, sampleEvent).length,
+  }
+}
+
 export type MetadataMappingApplyResult = {
   rows: WizardMappingRow[]
   stellarAdded: number
