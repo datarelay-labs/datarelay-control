@@ -3,7 +3,7 @@
 This repository follows the canonical Data Relay Labs Engineering System:
 https://github.com/datarelay-labs/engineering-system
 
-Adoption baseline: Engineering System version 1.6.5 at immutable commit `772c4928af1c720d39936843ee80e55a35655b6f`.
+Adoption baseline: Engineering System version 1.6.5 at immutable commit `1539bfe91835265019a817fa7ae41347f3832713`.
 
 ## Minimum context first
 
@@ -56,6 +56,7 @@ Historical or explicitly retired behavior is not protected by no-regression poli
 
 ## Execution rules
 
+- **Execute useful work continuously.** Implement in coherent small/medium batches, validate locally with the cheapest relevant tests, and keep going while a safe authorized next action exists. Use fast CI for quick integration feedback when useful; reserve full qualification/release CI for a stable candidate. If waiting on an external condition, work on the highest-priority independent roadmap item instead of polling. Stop only for a real owner decision/credential, an irreconcilable blocker, a status-only request, or a completed bounded outcome.
 - Classify the change and identify affected domains/contracts/security/operations.
 - For material design-bearing changes, apply the canonical `standards/DESIGN.md` minimal design gate before implementation.
 - Preserve unrelated user work and dirty worktrees.
