@@ -31,6 +31,7 @@ import { ProtectionPanel } from '../streams/protection-panel'
 import { ClassificationPanel } from '../streams/classification-panel'
 import { PolicyPanel } from '../streams/policy-panel'
 import { fetchDestinationsList } from '../../api/gdcDestinations'
+import { listAuditLogs } from '../../api/gdcAudit'
 import { HelpTooltip } from '../ui/help-tooltip'
 import { HELP_COPY } from '../ui/help-tooltip-copy'
 import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
@@ -165,6 +166,7 @@ export function RouteEditPage() {
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null)
   const [staleConflict, setStaleConflict] = useState(false)
   const [routeUpdatedAt, setRouteUpdatedAt] = useState<string | null>(null)
+  const [streamLastStartedAt, setStreamLastStartedAt] = useState<string | null>(null)
   const [discardOpen, setDiscardOpen] = useState(false)
   const [refreshConfirmOpen, setRefreshConfirmOpen] = useState(false)
   const [deliveryBaseline, setDeliveryBaseline] = useState<RouteDeliveryFormState | null>(
@@ -389,12 +391,18 @@ export function RouteEditPage() {
     if (backendStreamId == null) {
       setStreamLabel('—')
       setConnectorLabel('—')
+      setStreamLastStartedAt(null)
       return
     }
     ;(async () => {
-      const stream = await fetchStreamById(backendStreamId)
+      const [stream, audit] = await Promise.all([
+        fetchStreamById(backendStreamId),
+        listAuditLogs({ action: 'STREAM_STARTED', entity_type: 'STREAM', limit: 100 }).catch(() => null),
+      ])
       if (cancelled || !stream) return
       setStreamLabel(stream.name?.trim() || `Stream #${stream.id}`)
+      const latestStart = audit?.items.find((item) => item.entity_id === backendStreamId) ?? null
+      setStreamLastStartedAt(latestStart?.created_at ?? null)
       const cid = typeof stream.connector_id === 'number' ? stream.connector_id : null
       if (cid == null) {
         setConnectorLabel('—')
@@ -764,8 +772,8 @@ export function RouteEditPage() {
           ['Route Status', enabled ? 'Enabled' : 'Disabled'],
           ['Delivery Mode', deliveryMode],
           ['Processing', transformStatus || protectionStatus || classificationStatus || policyStatus ? `Transform: ${transformStatus ?? '—'} · Protection: ${protectionStatus ?? '—'} · Classification: ${classificationStatus ?? '—'} · Policy: ${policyStatus ?? '—'}` : '—'],
-          ['Last Updated', '—'],
-          ['Updated By', '—'],
+          ['Route Updated', routeUpdatedAt ? new Date(routeUpdatedAt).toLocaleString() : '—'],
+          ['Last Started', streamLastStartedAt ? new Date(streamLastStartedAt).toLocaleString() : '—'],
         ].map(([label, value]) => (
           <div key={label} className="min-w-0">
             <p className="text-[10px] uppercase tracking-wide text-slate-500">{label}</p>
