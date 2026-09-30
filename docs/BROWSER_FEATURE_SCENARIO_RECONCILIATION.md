@@ -143,6 +143,7 @@ ACTIVE_WORK_PACKET=
 PR=
 CANDIDATE_EXACT_HEAD=YES|NO
 QUALIFICATION_CONCURRENT=YES|NO
+RELEASE_MODE=
 AUDIT_DB=
 API_BASE_URL=
 UI_BASE_URL=
@@ -159,14 +160,25 @@ Different-SHA findings are useful diagnostics but MUST NOT be reported as exact-
 
 Before starting browser actions:
 
-1. list active browser/E2E/qualification processes;
-2. identify shared PostgreSQL, WireMock, MinIO, SFTP, webhook, syslog, and ports;
-3. allocate unique API/UI ports and unique PID/log directories;
-4. use a disposable `datarelay_rue2e_<run-id>` or equivalent test-only database;
-5. use an audit-specific resource name prefix;
-6. snapshot pre-existing resources if any shared state must be touched;
-7. never stop another workstream's process;
-8. never delete a resource only because its name looks temporary.
+1. acquire a host-level reconciliation lock before any mutable audit action;
+2. list active browser/E2E/qualification processes;
+3. identify shared PostgreSQL, WireMock, MinIO, SFTP, webhook, syslog, and ports;
+4. allocate unique API/UI ports and unique PID/log directories;
+5. use a disposable `datarelay_rue2e_<run-id>` or equivalent test-only database;
+6. use an audit-specific resource name prefix;
+7. snapshot pre-existing resources if any shared state must be touched;
+8. never stop another workstream's process;
+9. never delete a resource only because its name looks temporary.
+
+Recommended lock:
+
+~~~text
+/tmp/datarelay-control-browser-reconciliation.lock
+~~~
+
+The lock owner record must include RUN_ID, candidate HEAD, PID, start time, and evidence root.
+
+If the lock is held by a live reconciliation run, do not start a second mutable run. Resume/observe the existing owned run when appropriate, or mark mutable scenarios `BLOCKED_CONCURRENT_RECONCILIATION` and continue only non-mutating independent checks.
 
 When another test owns required mutable shared state:
 
@@ -193,8 +205,10 @@ For a fresh reconciliation run:
 6. build/serve the frontend from the exact candidate;
 7. start API/scheduler processes bound to the disposable audit database;
 8. start Chromium through the repository Playwright dependencies;
-9. verify API `/health` and browser login before scenario execution;
-10. write candidate/build identity into evidence before the first mutable user action.
+9. seed/use a disposable audit administrator/session according to the existing test harness without writing raw credentials to durable evidence;
+10. verify API `/health` and browser login before scenario execution;
+11. verify the served frontend/backend build identity belongs to the exact candidate when the product exposes build identity;
+12. write candidate/build identity into evidence before the first mutable user action.
 
 Useful existing assets include:
 
@@ -207,7 +221,15 @@ e2e/framework/**
 scripts/testing/start-test-stack.sh
 ~~~
 
-The reconciliation executor may extend page coverage during the run only through audit tooling/evidence code that does not change product behavior. Any product defect fix belongs to a later remediation Work Packet.
+The active exact-candidate repository MUST remain clean for the entire evidence-producing run.
+
+Do not create or edit repository files, page objects, tests, fixtures, or generated assets during the active audit.
+
+If additional browser-driving logic is needed, create ephemeral audit-only scripts under the evidence root or another run-scoped temporary directory outside the repository, and record their SHA-256 in evidence. They may call/reuse existing repository modules but MUST NOT mutate repository source.
+
+If reusable repository test/page-object coverage is missing, record that as an audit-harness finding and implement it only in a separate Work Packet before a fresh reconciliation run.
+
+Any product defect fix belongs to a later remediation Work Packet.
 
 ## 7. Evidence root
 
@@ -242,7 +264,11 @@ cleanup/
 summary.txt
 ~~~
 
+Create the evidence root with mode 0700 where supported. Secret-bearing temporary files MUST be mode 0600.
+
 Evidence containing credentials, tokens, cookies, private keys, raw Authorization headers, backup contents, or secret connector configuration MUST be redacted before durable retention.
+
+Do not retain raw browser storage state unless it is encrypted and explicitly required; prefer derived/redacted evidence.
 
 ## 8. Build the capability inventory first
 
@@ -278,6 +304,7 @@ Partial-route failure isolation
 Retry / timeout / failover
 Quarantine
 Replay
+Approval Workflow
 Violations / Audit / Notifications
 Administration / local users / RBAC
 Timezone / platform settings
@@ -294,6 +321,9 @@ FEATURE=
 PRODUCT_AUTHORITY=
 MANIFEST_STATUS=
 IN_SCOPE=YES|NO
+CAPABILITY_CLASS=OPERATOR_FEATURE|RUNTIME_CONFIG|ENGINEERING_TEST_INFRA|OUT_OF_SCOPE
+OPERATOR_SURFACE_EXPECTED=YES|NO
+NO_BROWSER_JUSTIFICATION=
 EXPECTED_PRIMARY_SURFACE=
 EXPECTED_SECONDARY_SURFACE=
 EXPECTED_LIFECYCLE=
@@ -304,12 +334,19 @@ ACTUAL_DELIVERY_REQUIRED=YES|NO
 
 Status handling:
 
-- `SUPPORTED`: must have a complete justified public lifecycle unless explicitly API-only by product contract.
+- `SUPPORTED`: operator-facing product features must have a complete justified public lifecycle. Runtime/config or engineering-only rows require an explicit `OPERATOR_SURFACE_EXPECTED=NO` justification instead of being misclassified as browser gaps.
 - `PARTIAL`: test the supported subset; do not promote to full support.
 - `UI_ONLY`: browser behavior may PASS as UI behavior, but MUST NOT imply runtime support.
-- `API_ONLY` / `RUNTIME_ONLY`: require explicit justification; visible UI absence may be a gap if the product promises operator use.
+- `API_ONLY` / `RUNTIME_ONLY`: require explicit product justification; visible UI absence is a gap only when current product authority promises operator use.
 - `OUT_OF_SCOPE`: exclude from positive capability totals and test for accidental Control exposure.
 - `NOT_IMPLEMENTED`: must not appear as a working Control feature.
+
+Special classification rules:
+
+- `test_infrastructure.*` rows are engineering validation capabilities, not operator product features. Reconcile them to the test architecture, set `OPERATOR_SURFACE_EXPECTED=NO`, and do not count them as browser gaps.
+- feature flags that are intentionally startup/config-only are not required to have browser controls unless current product authority says otherwise.
+- a capability present in current Product/UX authority but missing from the capability manifest MUST be added to the audit ledger as `AUTHORITY_ONLY_CAPABILITY`; the manifest omission itself is a reconciliation finding.
+- current routed/visible product features missing from both manifest and higher authority MUST NOT be silently accepted; classify them as `BROWSER_CONTROL_WITHOUT_FEATURE` or an equivalent explicit finding.
 
 ## 9. Build the browser surface inventory independently
 
@@ -350,6 +387,71 @@ Administration
 ~~~
 
 Do not treat source code route existence as proof of public discoverability.
+
+### 9.1 State-aware page/control census
+
+A one-time control inventory is insufficient.
+
+For every reachable public page, repeat the browser control census in every applicable state:
+
+~~~text
+EMPTY
+POPULATED
+EDITING
+RUNNING
+STOPPED
+WARNING
+ERROR
+PARTIAL_FAILURE
+READ_ONLY_RBAC
+MUTATING_RBAC
+~~~
+
+At each state, enumerate visible actionable elements from the rendered browser DOM/accessibility surface, including at minimum:
+
+~~~text
+button
+a[href]
+input
+select
+textarea
+role=button
+role=switch
+role=tab
+role=menuitem
+row actions
+dialog actions
+empty-state CTAs
+recovery CTAs
+~~~
+
+Record a deterministic control identity such as:
+
+~~~text
+CONTROL_ID=<page>|<state>|<role>|<accessible-name>|<ordinal-if-needed>
+~~~
+
+Re-run the census after resource creation, after entering an error state, after role changes, and after opening modal/drawer/overflow menus.
+
+A control that appears only in a populated/error/RBAC-specific state is still part of the public surface and MUST be reconciled.
+
+### 9.2 Routed-page completeness check
+
+After black-box discovery is frozen, enumerate all current frontend routes.
+
+For every routable path classify:
+
+~~~text
+PUBLIC_DISCOVERABLE
+PUBLIC_DEEP_LINK_JUSTIFIED
+LEGACY_REDIRECT
+OSS_GUARDED
+OUT_OF_SCOPE_REDIRECT
+ROUTED_BUT_UNDISCOVERABLE
+NOT_OPERATOR_SURFACE
+~~~
+
+Every route must have a disposition. A source-code route is not automatically a product feature.
 
 ## 10. Browser control ledger
 
@@ -521,7 +623,7 @@ PASS_PROMOTION=NO
 
 ## 15. Button and action semantics
 
-For every material control verify applicable behaviors:
+For every visible actionable public control verify applicable behaviors:
 
 1. visible label and accessible name are understandable;
 2. control is reachable from the expected workflow;
@@ -537,7 +639,9 @@ For every material control verify applicable behaviors:
 12. browser reload shows actual persisted truth;
 13. new browser context shows actual persisted truth;
 14. keyboard activation matches click semantics for standard controls;
-15. destructive actions require impact-appropriate confirmation.
+15. destructive actions require impact-appropriate confirmation;
+16. paired lifecycle actions are semantically symmetric where the product model requires them (create/delete, start/stop, enable/disable, submit/approve/reject, quarantine/release/discard);
+17. the control remains discoverable/readable in the supported light/dark theme where theme support is part of the current UI, without duplicating the full mutation journey in both themes.
 
 ## 16. Discoverability and navigation
 
@@ -778,8 +882,29 @@ Webhook Receiver
 
 ### BFS-003 — Authentication variants
 
-Exercise representative HTTP auth plus source-specific credential forms.
-At minimum cover positive and negative authentication, browser-visible failure reason, correction, retest, and recovery.
+This is exhaustive, not representative.
+
+Derive the current in-scope authentication rows from the exact-candidate capability inventory and execute every `SUPPORTED` operator-facing authentication variant that has a browser configuration path.
+
+For each variant cover:
+
+~~~text
+DISCOVER
+CONFIGURE
+POSITIVE TEST
+NEGATIVE TEST
+BROWSER-VISIBLE FAILURE REASON
+CORRECT
+RETEST
+SAVE/READ-BACK
+RECOVERY
+~~~
+
+For HTTP auth, the current audit is expected to include all supported `auth.http.*` rows from the manifest rather than a hand-picked subset.
+
+For source-specific credentials also reconcile S3 keys, PostgreSQL username/password, Remote File SSH password/private-key behavior, Webhook Receiver inbound auth, and applicable destination credential/certificate controls.
+
+If a required fixture cannot safely exercise a supported mode, record `BLOCKED`; do not silently downgrade exhaustive coverage to representative coverage.
 
 ### BFS-004 — Stream Wizard end-to-end
 
@@ -824,7 +949,15 @@ Policy
 Delivery
 ~~~
 
-Verify shared/default behavior, per-route override, persisted read-back, effective runtime, actual output, and no parallel legacy processing path.
+Transform coverage MUST be derived from every current in-scope `processing.*` capability row.
+
+For every `SUPPORTED` processing capability, prove the applicable browser authoring/preview/save/read-back/effective-runtime path. For `PARTIAL` rows, test exactly the supported subset and retain the partial limitation.
+
+At minimum the current model requires coverage across field JSONPath mapping, full-event JSONata, full-event Regex, unmapped-field policy, and each supported enrichment rule type. Do not collapse multiple visible rule/action choices into one generic "Transform works" PASS.
+
+For Protection, Classification, Policy, and Delivery, enumerate every visible behavior-changing option that maps to a current capability, including protection actions and delivery behaviors.
+
+Verify shared/default behavior, per-route inherit/override, persisted read-back, effective runtime, actual output where applicable, and no parallel legacy processing path.
 
 ### BFS-009 — Deploy, Start, first real delivery
 
@@ -867,6 +1000,7 @@ Sensitive Detection
 Protection
 Classification
 Policy
+Approval Workflow — submit / approve / reject / activate as role permits
 Violations
 Quarantine
 Replay
@@ -876,6 +1010,8 @@ Governance Workspace stream/route context
 ~~~
 
 Verify Dashboard is operational, configuration remains in intended configuration surfaces, and Route-aware context is preserved.
+
+Approval Workflow is a current Governance SoT capability and MUST be reconciled even if the capability manifest does not currently contain a dedicated approval row. In that case classify it as `AUTHORITY_ONLY_CAPABILITY` and separately record the manifest coverage gap.
 
 ### BFS-016 — Administration / settings / RBAC
 
@@ -893,6 +1029,16 @@ Use disposable test state only.
 ### BFS-018 — Invalid input, empty state, deep-link, reload, new-context resilience
 
 Probe representative invalid names/URLs/credentials, empty lists, direct deep links, browser Back/Forward, hard reload, and new browser context.
+
+Also perform negative route-surface testing after normal black-box discovery is frozen:
+
+- known retired/legacy Control paths must redirect or reject according to current navigation contract;
+- current OSS-guarded paths must fail closed or redirect according to the active release mode;
+- out-of-scope Phase E/F routes (including legacy AI Gateway entry points) must not render a current Control feature;
+- arbitrary unknown paths must not expose a hidden product surface;
+- redirects must preserve safe relevant search/hash context only when current helpers/contracts require it.
+
+A redirect is not automatically PASS: its destination must be current, understandable, and must not create a loop or misleading feature identity.
 
 User-facing state must remain coherent and persisted truth must win.
 
@@ -972,6 +1118,30 @@ When a defect is found:
 
 The goal is to exhaust the surface before remediation.
 
+### 26.1 Scenario terminal status vocabulary
+
+Every BFS scenario and every independently recorded subscenario MUST end in exactly one of:
+
+~~~text
+PASS
+FAIL
+PARTIAL
+BLOCKED
+NOT_APPLICABLE
+~~~
+
+Rules:
+
+- `PASS`: all applicable required assertions for that scenario/subscenario passed on the recorded exact candidate.
+- `FAIL`: the behavior was exercised and violated the current contract.
+- `PARTIAL`: only a documented subset was proven; it never counts as PASS.
+- `BLOCKED`: required coverage could not safely execute. A BLOCKED mandatory/in-scope item prevents overall PASS.
+- `NOT_APPLICABLE`: allowed only when current product/release authority proves the scenario does not apply. Evidence/reason is mandatory.
+- `SKIP`, silent omission, or missing row are not terminal dispositions.
+- `NOT_RUN_SHARED_STATE` and `BLOCKED_CONCURRENT_RECONCILIATION` are diagnostic reasons; the terminal scenario status is `BLOCKED` when the scenario is in scope.
+
+For a capability whose manifest status is `PARTIAL`, a subscenario may PASS the explicitly supported subset while the capability remains PARTIAL in the capability ledger. Do not upgrade capability status from test success alone.
+
 ## 27. Severity
 
 - **P0** — security, destructive/data-loss, credential exposure, unsafe restore/delete, or severe authorization bypass; release blocker.
@@ -990,17 +1160,23 @@ CAPABILITY_SUPPORTED_TOTAL=
 CAPABILITY_PARTIAL_TOTAL=
 CAPABILITY_UI_ONLY_TOTAL=
 CAPABILITY_OUT_OF_SCOPE_TOTAL=
+AUTHORITY_ONLY_CAPABILITY_COUNT=
+ENGINEERING_TEST_INFRA_COUNT=
 IN_SCOPE_CAPABILITIES_RECONCILED=
 PUBLIC_PAGE_COUNT=
 PUBLIC_ACTION_CONTROL_COUNT=
 PUBLIC_MUTATION_CONTROL_COUNT=
-FEATURE_NO_BROWSER_GAP_COUNT=
+OPERATOR_FEATURE_BROWSER_GAP_COUNT=
 CAPABILITY_WITHOUT_BROWSER_SURFACE_COUNT=
 VISIBLE_CONTROL_WITHOUT_CAPABILITY_COUNT=
 DUPLICATE_PUBLIC_MUTATION_PATH_COUNT=
 ROUTED_BUT_UNDISCOVERABLE_PAGE_COUNT=
 DISCOVERY_GAP_COUNT=
+SCENARIO_PASS_COUNT=
+SCENARIO_FAIL_COUNT=
+SCENARIO_PARTIAL_COUNT=
 SCENARIO_BLOCKED_COUNT=
+SCENARIO_NOT_APPLICABLE_COUNT=
 SCENARIO_DEAD_END_COUNT=
 TERMINOLOGY_DRIFT_COUNT=
 PROCEDURE_DRIFT_COUNT=
@@ -1021,15 +1197,46 @@ CLEANUP_RESIDUE_COUNT=
 UNRESOLVED_P0=
 UNRESOLVED_P1=
 UNRESOLVED_USER_BLOCKING_P2=
+CLOSURE_VALIDATION=PASS|FAIL
 ~~~
+
+### 28.1 Machine-derived closure validation
+
+The executor MUST NOT hand-type final coverage counters from memory.
+
+Before PASS/FAIL determination, parse the final ledgers and validate all closure equations programmatically using an ephemeral script outside the repository.
+
+Minimum closure assertions:
+
+~~~text
+every in-scope capability has exactly one terminal disposition
+every OPERATOR_SURFACE_EXPECTED=YES capability maps to >=1 reconciled public control or an explicit GAP
+every visible actionable control has exactly one feature/operational-action disposition
+every routed page has exactly one route disposition
+every BFS-001..BFS-020 has a terminal status
+no PASS scenario has browser-required action satisfied only by API mutation fallback
+no unresolved audit-owned resource exists
+summary counters equal ledger-derived counts
+~~~
+
+The closure script and its SHA-256 MUST be retained under the evidence root.
+
+If ledger parsing, uniqueness, or counter reconciliation fails:
+
+~~~text
+BROWSER_FEATURE_SCENARIO_RECONCILIATION=FAIL
+CLOSURE_VALIDATION=FAIL
+~~~
+
+Do not manually override a closure-validation failure.
 
 ## 29. PASS / FAIL contract
 
 PASS requires all of the following:
 
 1. every applicable supported Phase A-D capability is reconciled;
-2. every visible material control maps to a current capability or justified operational action;
-3. every user-required action has a usable browser path;
+2. every visible actionable public control in every audited page/state maps to a current capability or justified operational action;
+3. `OPERATOR_FEATURE_BROWSER_GAP_COUNT=0` and every user-required action has a usable browser path;
 4. no browser-required PASS is created by API mutation fallback;
 5. no unjustified duplicate public mutation path exists;
 6. no operator scenario dead end remains;
@@ -1042,7 +1249,10 @@ PASS requires all of the following:
 13. empty/error/partial states are actionable;
 14. Phase E/F are not exposed as current Control capability;
 15. cleanup residue count is zero;
-16. unresolved P0/P1/user-blocking P2 are zero.
+16. unresolved P0/P1/user-blocking P2 are zero;
+17. `SCENARIO_PARTIAL_COUNT=0` for mandatory in-scope coverage;
+18. `SCENARIO_BLOCKED_COUNT=0` for mandatory in-scope coverage;
+19. machine-derived `CLOSURE_VALIDATION=PASS`.
 
 Anything else is FAIL or explicitly BLOCKED with evidence.
 
@@ -1120,9 +1330,51 @@ FINAL_WORKTREE_CLEAN=
 SOURCE_MUTATION_DURING_AUDIT=NO
 ~~~
 
+### 30.6 Interrupted-run recovery
+
+The audit MUST be resumable without confusing partial evidence for PASS.
+
+Persist a run-state file outside the repository containing at minimum:
+
+~~~text
+RUN_ID
+CANDIDATE_HEAD
+CURRENT_PHASE
+LAST_COMPLETED_SCENARIO
+CREATED_RESOURCE_IDS
+OWNED_PROCESS_IDS
+OWNED_PORTS
+CLEANUP_REQUIRED
+~~~
+
+On crash/interruption, the next executor action is:
+
+1. verify candidate identity;
+2. verify whether audit-owned processes/resources still exist;
+3. perform cleanup/offboarding or safely resume the same RUN_ID;
+4. never start a second mutable run that collides with unresolved ownership from the interrupted run.
+
+An interrupted run cannot PASS.
+
 ## 31. GitHub reporting — mandatory
 
 Before declaring terminal completion, update the active `[AI Work]` issue with:
+
+The audit packet is a run record, not a remediation packet. After the audit is exhausted and mandatory offboarding finishes, it may reach terminal `STATUS=DONE` with `FINAL_STATUS=PASS|FAIL|BLOCKED`. Product fixes belong to separate follow-up Work Packets.
+
+For terminal audit packet state:
+
+~~~text
+STATUS=DONE
+FINAL_STATUS=PASS|FAIL|BLOCKED
+Next Action=NONE
+Blockers=NONE
+FOLLOW_UP_ISSUES=<ids-or-NONE>
+~~~
+
+A FAIL audit is still a completed audit run; it does not become PASS, and release gating remains failed until remediation and a fresh RUN_ID pass.
+
+Then record:
 
 ~~~text
 RUN_ID=
@@ -1156,6 +1408,25 @@ For each P0/P1/P2 include:
 - remediation boundary.
 
 Never paste secrets.
+
+### 31.1 Terminal notification
+
+After the audit issue is truly terminal `STATUS=DONE`, required evidence is durable, and cleanup is complete, send the repository's terminal notification.
+
+On `dev-drcontrol`, when available:
+
+~~~bash
+/usr/local/bin/notify.sh COMPLETE "Task: Data Relay Control Browser Feature Scenario Reconciliation
+Status: PASS|FAIL|BLOCKED
+Branch: <branch>
+HEAD: <short-sha>
+Run: <RUN_ID>
+Evidence: <EVIDENCE_ROOT>"
+~~~
+
+Do not send this terminal COMPLETE notification while scenarios are still running, cleanup is pending, or the audit packet remains non-terminal.
+
+Check the notification exit status. If notification is required by current repository workflow and fails after the allowed retry, record the notification blocker instead of claiming terminal completion.
 
 ## 32. Remediation after FAIL
 
