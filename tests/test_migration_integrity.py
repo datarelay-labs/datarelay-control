@@ -22,7 +22,7 @@ def test_known_orphan_revision_list_includes_reported_drift() -> None:
 
 def test_load_script_directory_heads_match_repo() -> None:
     heads = load_script_directory(project_root()).get_heads()
-    assert heads == ["20260804_0062"]
+    assert heads == ["20260930_0063"]
 
 
 def test_audit_database_url_platform_compose_mismatch() -> None:
@@ -66,7 +66,7 @@ def test_evaluate_migration_integrity_ok_on_migrated_db(
     assert report.status in ("ok", "warn")
     assert report.ok is True
     assert report.db_revision_is_head is True
-    assert report.repo_heads == ("20260804_0062",)
+    assert report.repo_heads == ("20260930_0063",)
 
 
 def test_evaluate_migration_integrity_orphan_revision_errors(db_engine) -> None:
