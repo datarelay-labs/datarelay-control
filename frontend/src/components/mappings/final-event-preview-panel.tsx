@@ -20,6 +20,7 @@ type FinalEventPreviewPanelProps = {
   onSampleIndexChange: (idx: number) => void
   onRefresh: () => void
   warnings: MappingValidationWarning[]
+  selectedRow?: MappingRowModel | null
 }
 
 function jsonBlock(data: unknown): string {
@@ -73,6 +74,7 @@ export function FinalEventPreviewPanel({
   onSampleIndexChange,
   onRefresh,
   warnings,
+  selectedRow = null,
 }: FinalEventPreviewPanelProps) {
   const [stage, setStage] = useState<PreviewStage>('comparison')
   const [view, setView] = useState<'json' | 'table'>('json')
@@ -138,6 +140,12 @@ export function FinalEventPreviewPanel({
         <p className="text-[10px] text-slate-500 dark:text-gdc-muted">
           Changes-first preview across up to 20 sample events. Event {sampleEventIndex + 1} of {availableEventCount}.
         </p>
+        {selectedRow ? (
+          <div className="rounded-md border border-violet-200/80 bg-violet-500/[0.06] px-2.5 py-2 text-[10px] dark:border-violet-500/30" data-testid="mapping-selection-trace">
+            <span className="font-semibold text-violet-800 dark:text-violet-200">Selected trace</span>
+            <span className="ml-2 font-mono text-slate-600 dark:text-gdc-muted">{selectedRow.sourceJsonPath || '—'} → {selectedRow.outputField || '—'}</span>
+          </div>
+        ) : null}
         {availableEventCount > 1 ? (
           <div className="flex flex-wrap items-center gap-2">
             <label className="text-[10px] font-semibold text-slate-600 dark:text-gdc-mutedStrong" htmlFor="sample-idx">

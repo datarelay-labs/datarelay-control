@@ -86,6 +86,7 @@ export function MappingWorkspace({
   const [eventRootPath] = useState(initialEventRootPath)
   const [sampleEventIndex, setSampleEventIndex] = useState(0)
   const [selectedUnionPath, setSelectedUnionPath] = useState<string | null>(null)
+  const [selectedMappingId, setSelectedMappingId] = useState<string | null>(null)
 
   const presentation = useMemo(() => resolveSourceTypePresentation(sourceType), [sourceType])
 
@@ -223,6 +224,8 @@ export function MappingWorkspace({
     },
     [rows, updateRows],
   )
+
+  const selectedMappingRow = rows.find((row) => row.id === selectedMappingId) ?? null
 
   const simpleFieldMappings = useMemo(() => fieldMappingsFromRows(rows), [rows])
 
@@ -439,6 +442,12 @@ export function MappingWorkspace({
               search={mappingSearch}
               onSearchChange={setMappingSearch}
               readOnly={readOnly}
+              selectedId={selectedMappingId}
+              onSelectId={(id) => {
+                setSelectedMappingId(id)
+                const row = rows.find((candidate) => candidate.id === id)
+                if (row?.sourceJsonPath) setSelectedUnionPath(row.sourceJsonPath)
+              }}
             />
           </PanelChrome>
         </div>
@@ -454,6 +463,7 @@ export function MappingWorkspace({
             onSampleIndexChange={setSampleEventIndex}
             onRefresh={preview.refresh}
             warnings={mergedWarnings}
+            selectedRow={selectedMappingRow}
           />
         </div>
       </div>
