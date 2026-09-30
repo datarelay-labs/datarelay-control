@@ -13,7 +13,7 @@ import { buildFieldMappingsWithTransformRules, parseTransformRulesFromFieldMappi
 import { rowsFromFieldMappings } from '../../utils/mappingFieldMappings'
 import { fieldMappingsFromRows } from '../../utils/mappingValidation'
 import { loadMappingWorkspaceContext } from '../../utils/mappingSourceSample'
-import { runFinalEventDraftPreview } from '../../api/gdcRuntimePreview'
+import { runRouteE2EDraftPreview } from '../../api/gdcRuntimePreview'
 import type { AdvancedTransformRuleDraft } from '../../types/advancedTransform'
 import type { MappingRowModel } from '../streams/stream-mapping-model'
 import { MappingWorkspace } from '../mappings/mapping-workspace'
@@ -63,6 +63,8 @@ export function RouteEditTransformPanel({
   const [sourceSample, setSourceSample] = useState<unknown>(null)
   const [effectivePreview, setEffectivePreview] = useState<Array<Record<string, unknown>>>([])
   const [effectivePreviewMessage, setEffectivePreviewMessage] = useState<string | null>(null)
+  const [routeStageTimeline, setRouteStageTimeline] = useState<Array<Record<string, unknown>>>([])
+  const [routePolicyAction, setRoutePolicyAction] = useState<string | null>(null)
   const loadGenRef = useRef(0)
   const refreshEffective = useCallback(async () => {
     const effective = await fetchRouteTransformEffective(routeId)
@@ -178,8 +180,12 @@ export function RouteEditTransformPanel({
       setEffectivePreviewMessage(null)
       return
     }
-    void runFinalEventDraftPreview({
+    void runRouteE2EDraftPreview({
       payload: sourceSample,
+      stream_id: streamId as number,
+      route_id: routeId,
+      destination_type: 'WEBHOOK_POST',
+      formatter_config: {},
       field_mappings: Object.fromEntries(
         Object.entries(initialEffective.effective_field_mappings ?? {}).filter(([, value]) => typeof value === 'string'),
       ) as Record<string, string>,
@@ -192,17 +198,21 @@ export function RouteEditTransformPanel({
       .then((result) => {
         if (cancelled) return
         setEffectivePreview(result.final_events)
+        setRouteStageTimeline(result.route_stage_timeline ?? [])
+        setRoutePolicyAction(result.policy_action ?? null)
         setEffectivePreviewMessage(result.message)
       })
       .catch((error) => {
         if (cancelled) return
         setEffectivePreview([])
+        setRouteStageTimeline([])
+        setRoutePolicyAction(null)
         setEffectivePreviewMessage(error instanceof Error ? error.message : String(error))
       })
     return () => {
       cancelled = true
     }
-  }, [initialEffective, sourceSample])
+  }, [initialEffective, routeId, sourceSample, streamId])
 
   const workspaceDisabled = inheritStream
 
@@ -367,6 +377,16 @@ export function RouteEditTransformPanel({
             Runtime-resolved config
           </span>
         </div>
+        {routeStageTimeline.length > 0 ? (
+          <div className="mt-2 flex flex-wrap gap-1" data-testid="route-effective-stage-timeline">
+            {routeStageTimeline.map((stage, index) => (
+              <span key={index} className="rounded-full border border-violet-200 bg-white px-2 py-0.5 text-[9px] text-violet-800 dark:border-violet-500/30 dark:bg-gdc-card dark:text-violet-200">
+                {String(stage.stage ?? 'stage')}: {String(stage.status ?? stage.decision ?? 'completed')}
+              </span>
+            ))}
+            {routePolicyAction ? <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[9px] text-amber-800">Policy: {routePolicyAction}</span> : null}
+          </div>
+        ) : null}
         {effectivePreview.length > 0 ? (
           <pre className="mt-2 max-h-56 overflow-auto rounded-md bg-slate-950 p-2 text-[10px] leading-relaxed text-slate-100" data-testid="route-effective-final-event-json">
             {JSON.stringify(effectivePreview[0], null, 2)}

@@ -2669,9 +2669,43 @@ def run_e2e_draft_preview(
         ),
         db=db,
     )
+    route_stage_timeline: list[dict[str, Any]] = []
+    delivery_allowed: bool | None = None
+    policy_action: str | None = None
+    route_final_events = final_preview.final_events
+    if payload.route_id is not None:
+        if db is None or payload.stream_id is None:
+            raise PreviewRequestError(400, {"code": "ROUTE_PREVIEW_CONTEXT_REQUIRED", "message": "route_id preview requires stream_id and database context"})
+        from app.runners.stream_loader import load_stream_context
+        from app.runners.route_context_builder import build_route_runtime_contexts, build_shared_batch_context
+        from app.runners.route_stage import process_route_pipeline
+        runtime_stream = load_stream_context(db, int(payload.stream_id), require_enabled_stream=False)
+        route_contexts, _ = build_route_runtime_contexts(runtime_stream)
+        route_ctx = next((ctx for ctx in route_contexts if int(ctx.route_id) == int(payload.route_id)), None)
+        if route_ctx is None:
+            raise PreviewRequestError(404, {"code": "ROUTE_NOT_FOUND", "message": f"Route {payload.route_id} is not available for Stream {payload.stream_id}"})
+        shared = build_shared_batch_context(
+            stream_id=int(payload.stream_id),
+            batch_id="route-preview",
+            runtime_stream=runtime_stream,
+            extracted_events=final_preview.mapped_events,
+            shared_runtime_data={
+                "stream_protection_rules": list(runtime_stream.get("stream_protection_rules") or []),
+                "stream_classification_rules": list(runtime_stream.get("stream_classification_rules") or []),
+                "stream_policy_rules": list(runtime_stream.get("stream_policy_rules") or []),
+                "route_overrides": list(runtime_stream.get("route_overrides") or []),
+                "governance_rules": list(runtime_stream.get("governance_rules") or []),
+            },
+        )
+        result = process_route_pipeline(route_ctx, shared, db=db, send_fn=None, run_id="route-preview")
+        route_final_events = list(route_ctx.processing_state.current_events)
+        route_stage_timeline = list(result.stage_timeline)
+        delivery_allowed = bool(result.delivery_allowed)
+        policy_action = result.policy_result.policy_action if result.policy_result is not None else None
+
     formatted_preview = run_delivery_format_draft_preview(
         DeliveryFormatDraftPreviewRequest(
-            final_events=final_preview.final_events,
+            final_events=route_final_events,
             destination_type=payload.destination_type,
             formatter_config=payload.formatter_config,
             max_events=payload.max_events,
@@ -2683,10 +2717,14 @@ def run_e2e_draft_preview(
         input_event_count=final_preview.input_event_count,
         preview_event_count=final_preview.preview_event_count,
         mapped_events=final_preview.mapped_events,
-        final_events=final_preview.final_events,
+        final_events=route_final_events,
         preview_messages=formatted_preview.preview_messages,
         missing_fields=final_preview.missing_fields,
         destination_type=formatted_preview.destination_type,
+        route_id=payload.route_id,
+        route_stage_timeline=route_stage_timeline,
+        delivery_allowed=delivery_allowed,
+        policy_action=policy_action,
         message="E2E draft preview generated successfully",
     )
 

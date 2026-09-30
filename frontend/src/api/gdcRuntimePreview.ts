@@ -305,6 +305,36 @@ export async function runFinalEventDraftPreview(
   })
 }
 
+
+export type RouteE2EDraftPreviewRequest = {
+  payload: unknown
+  field_mappings: Record<string, string>
+  enrichment: Record<string, unknown>
+  override_policy?: 'KEEP_EXISTING' | 'OVERRIDE' | 'ERROR_ON_CONFLICT'
+  destination_type: 'SYSLOG_UDP' | 'SYSLOG_TCP' | 'SYSLOG_TLS' | 'WEBHOOK_POST'
+  formatter_config?: Record<string, unknown>
+  max_events?: number
+  stream_id: number
+  route_id: number
+}
+
+export type RouteE2EDraftPreviewResponse = {
+  final_events: Array<Record<string, unknown>>
+  preview_messages: unknown[]
+  route_id: number | null
+  route_stage_timeline: Array<Record<string, unknown>>
+  delivery_allowed: boolean | null
+  policy_action: string | null
+  message: string
+}
+
+export async function runRouteE2EDraftPreview(payload: RouteE2EDraftPreviewRequest): Promise<RouteE2EDraftPreviewResponse> {
+  return requestJson<RouteE2EDraftPreviewResponse>(`${RT}/preview/e2e-draft`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
 export type EnrichmentExecPreviewRequest = {
   mapped_event: Record<string, unknown>
   enrichment: Record<string, unknown>

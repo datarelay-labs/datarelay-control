@@ -2236,7 +2236,11 @@ class E2EDraftPreviewRequest(BaseModel):
     webhook_batch_size: int | None = Field(default=None, ge=1, le=10_000)
     stream_id: int | None = Field(
         default=None,
-        description="When set, apply stream protection rules after enrichment in preview.",
+        description="When set, apply stream governance rules after enrichment in preview.",
+    )
+    route_id: int | None = Field(
+        default=None,
+        description="When set with stream_id, preview the persisted effective Route Processing pipeline without sending.",
     )
 
 
@@ -2248,6 +2252,10 @@ class E2EDraftPreviewResponse(BaseModel):
     preview_messages: list[Any]
     missing_fields: list[MappingDraftPreviewMissingFieldItem]
     destination_type: str
+    route_id: int | None = None
+    route_stage_timeline: list[dict[str, Any]] = Field(default_factory=list)
+    delivery_allowed: bool | None = None
+    policy_action: str | None = None
     message: str
 
 
