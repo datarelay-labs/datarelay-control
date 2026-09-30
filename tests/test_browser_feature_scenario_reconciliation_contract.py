@@ -16,6 +16,9 @@ def test_browser_reconciliation_contract_is_executable_and_discoverable() -> Non
     assert "**Executor:** ChatGPT Chat" in doc
     assert "FIRST_ACTION=EXECUTE" in doc
     assert "BROWSER_FIRST=YES" in doc
+    assert "ACTUAL_BROWSER_PROCESS_REQUIRED=YES" in doc
+    assert "BROWSER_ENGINE=CHROMIUM_OR_CHROME" in doc
+    assert "JSDOM_COMPONENT_TEST_SUBSTITUTE=NO" in doc
     assert "API_FALLBACK_CAN_CREATE_PASS=NO" in doc
     assert "PRODUCT_SOURCE_EDITS_DURING_ACTIVE_AUDIT=NO" in doc
     assert "### 6.1 Exact-candidate browser lab bring-up" in doc

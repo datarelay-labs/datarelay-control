@@ -16,6 +16,8 @@ exhaustive_user_tests:
   machine_qualification_required_first: true
   same_candidate_required: true
   zero_fail_partial_blocked: true
+  actual_browser_process_required: true
+  browser_engine: CHROMIUM_OR_CHROME
   ci_contract_validation_only: true
   execution_authority: CHATGPT_WORK_PACKET
   evidence_authority: ACTIVE_RELEASE_WORK_PACKET

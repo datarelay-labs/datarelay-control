@@ -18,6 +18,9 @@ def test_full_user_e2e_contract_is_executable_and_release_grade() -> None:
     assert "FIRST_ACTION=ONBOARD_AND_EXECUTE" in doc
     assert "CURSOR_EXECUTION=FORBIDDEN" in doc
     assert "BROWSER_FIRST=YES" in doc
+    assert "ACTUAL_BROWSER_PROCESS_REQUIRED=YES" in doc
+    assert "BROWSER_ENGINE=CHROMIUM_OR_CHROME" in doc
+    assert "JSDOM_COMPONENT_TEST_SUBSTITUTE=NO" in doc
     assert "API_MUTATION_SUBSTITUTION_FOR_BROWSER_PASS=FORBIDDEN" in doc
     assert "REQUIRE_AUTH=true" in doc
     assert "ULC_REUSE_UI_DIST=0" in doc

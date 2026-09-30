@@ -21,6 +21,8 @@ def test_release_requires_both_exhaustive_user_tests() -> None:
     assert config["machine_qualification_required_first"] is True
     assert config["same_candidate_required"] is True
     assert config["zero_fail_partial_blocked"] is True
+    assert config["actual_browser_process_required"] is True
+    assert config["browser_engine"] == "CHROMIUM_OR_CHROME"
     assert config["ci_contract_validation_only"] is True
     assert config["execution_authority"] == "CHATGPT_WORK_PACKET"
     assert config["evidence_authority"] == "ACTIVE_RELEASE_WORK_PACKET"
