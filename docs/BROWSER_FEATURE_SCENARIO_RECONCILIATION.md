@@ -1484,9 +1484,15 @@ This reconciliation is breadth-first; Full User E2E is depth-first. Neither subs
 For release qualification:
 
 ~~~text
-exact-head machine qualification
-→ BROWSER_FEATURE_SCENARIO_RECONCILIATION=PASS
-→ FULL_USER_E2E=PASS
+BROWSER_FEATURE_SCENARIO_RECONCILIATION PASS1 (exhaust all safe independent scenarios)
+→ batch remediation
+→ BROWSER_FEATURE_SCENARIO_RECONCILIATION PASS2
+→ FULL_USER_E2E PASS1 (exhaust all safe independent scenarios)
+→ batch remediation
+→ FULL_USER_E2E PASS2
+→ release-specific gates
+→ final exact-head CI
+→ release audit
 → owner/manual acceptance
 → release authorization
 ~~~
