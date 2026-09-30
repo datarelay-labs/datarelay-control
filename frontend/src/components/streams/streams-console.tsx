@@ -196,7 +196,6 @@ export async function enrichMappingUiForStreamIds(
   fetchOpts: { signal?: AbortSignal },
   setters: {
     setDisplayRows: Dispatch<SetStateAction<StreamConsoleRow[]>>
-    setConnectors: Dispatch<SetStateAction<ConnectorRead[]>>
     setWorkflowExtrasByStreamId: Dispatch<SetStateAction<Record<string, Partial<StreamWorkflowInput>>>>
   },
 ): Promise<number[]> {
