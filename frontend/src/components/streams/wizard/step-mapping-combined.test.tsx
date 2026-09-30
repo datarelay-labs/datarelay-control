@@ -70,6 +70,7 @@ function combinedProps(state: ReturnType<typeof buildInitialState>) {
     onChangeMappingMode: vi.fn(),
     onChangeFullEventJsonata: vi.fn(),
     onChangeFullEventRegexConfigJson: vi.fn(),
+    onChangeTransformRules: vi.fn(),
     onChangeEnrichment: vi.fn(),
     onChangeDataProtection: vi.fn(),
   }
@@ -147,22 +148,22 @@ describe('StepMappingCombined v3 Transform (206f0f7 mapping UI)', () => {
     expect(screen.getByTestId('mapping-field-table-panel')).toHaveTextContent('Field Mapping')
   })
 
-  it('switches to full-event workspace on Advanced and Expert tabs', async () => {
+  it('keeps Advanced and Expert tabs in per-field mode until full-event mode is selected', async () => {
     const user = userEvent.setup()
-    render(<StepMappingCombined {...combinedProps(readyTransformState())} />)
+    render(<TransformHarness initialState={readyTransformState()} />)
 
     await user.click(screen.getByRole('tab', { name: /JSONata · Advanced/i }))
+    expect(screen.queryByTestId('wizard-full-event-transform-workspace')).not.toBeInTheDocument()
+    expect(screen.getByText(/Per-field mode is active/i)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Full-event mode' }))
     expect(screen.getByTestId('wizard-full-event-transform-workspace')).toHaveAttribute(
       'data-filter-ui-mode',
       'advanced',
     )
-    expect(screen.queryByTestId('wizard-basic-mapping-panel')).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('tab', { name: /Regex · Expert/i }))
-    expect(screen.getByTestId('wizard-full-event-transform-workspace')).toHaveAttribute(
-      'data-filter-ui-mode',
-      'expert',
-    )
+    expect(screen.queryByTestId('wizard-full-event-transform-workspace')).not.toBeInTheDocument()
+    expect(screen.getByText(/Per-field mode is active/i)).toBeInTheDocument()
   })
 
   it('rebuilds sample event from raw preview when extracted events are empty', async () => {
@@ -173,9 +174,10 @@ describe('StepMappingCombined v3 Transform (206f0f7 mapping UI)', () => {
       events: [{ id: 'e2', message: 'rebuilt' }],
     }
     state.stream.eventArrayPath = '$.events'
-    render(<StepMappingCombined {...combinedProps(state)} />)
+    render(<TransformHarness initialState={state} />)
 
     await user.click(screen.getByRole('tab', { name: /JSONata · Advanced/i }))
+    await user.click(screen.getByRole('button', { name: 'Full-event mode' }))
     expect(screen.getByTestId('wizard-full-event-transform-workspace')).toHaveAttribute(
       'data-has-sample-event',
       'yes',
@@ -231,20 +233,27 @@ describe('StepMappingCombined v3 Transform (206f0f7 mapping UI)', () => {
     },
   )
 
-  it('JSONata and Regex tasks open their real full-event editors', async () => {
+  it('JSONata and Regex tasks create persisted per-field transform rules', async () => {
     const user = userEvent.setup()
-    const props = combinedProps(readyTransformState())
-    const { rerender } = render(<StepMappingCombined {...props} />)
+    const jsonataProps = combinedProps(readyTransformState())
+    const { unmount } = render(<StepMappingCombined {...jsonataProps} />)
 
     await user.click(screen.getByTestId('transform-rule-launcher-trigger'))
     await user.click(screen.getByTestId('transform-launcher-jsonata'))
-    expect(props.onChangeMappingMode).toHaveBeenCalledWith('full_event_jsonata')
+    expect(jsonataProps.onChangeMappingMode).toHaveBeenCalledWith('basic_jsonpath')
+    expect(jsonataProps.onChangeTransformRules).toHaveBeenCalledWith([
+      expect.objectContaining({ mode: 'jsonata', uiMode: 'advanced' }),
+    ])
 
-    const regexProps = combinedProps({ ...readyTransformState(), mappingMode: 'full_event_jsonata' })
-    rerender(<StepMappingCombined {...regexProps} />)
+    unmount()
+    const regexProps = combinedProps(readyTransformState())
+    render(<StepMappingCombined {...regexProps} />)
     await user.click(screen.getByTestId('transform-rule-launcher-trigger'))
     await user.click(screen.getByTestId('transform-launcher-regex'))
-    expect(regexProps.onChangeMappingMode).toHaveBeenCalledWith('full_event_regex')
+    expect(regexProps.onChangeMappingMode).toHaveBeenCalledWith('basic_jsonpath')
+    expect(regexProps.onChangeTransformRules).toHaveBeenCalledWith([
+      expect.objectContaining({ mode: 'regex_extract', uiMode: 'expert' }),
+    ])
   })
 
   it('persists launcher-created Guided Transform rules through draft save and restore', async () => {

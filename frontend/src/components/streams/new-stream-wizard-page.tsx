@@ -359,6 +359,9 @@ export function NewStreamWizardPage() {
   const setFullEventRegexConfigJson = useCallback((fullEventRegexConfigJson: string) => {
     setState((s) => ({ ...s, fullEventRegexConfigJson }))
   }, [])
+  const setTransformRules = useCallback((transformRules: WizardState['transformRules']) => {
+    setState((s) => ({ ...s, transformRules }))
+  }, [])
   const setEnrichment = useCallback((enrichment: WizardState['enrichment']) => {
     setState((s) => ({ ...s, enrichment }))
   }, [])
@@ -448,7 +451,9 @@ export function NewStreamWizardPage() {
             : { ...payload.config_json }
 
         const fieldMappings = buildWizardFieldMappingsPayload(workingState)
-        const enrichmentDict = enrichmentDictFromRows(workingState.enrichment)
+        const enrichmentDict = enrichmentDictFromRows(workingState.enrichment, {
+          advancedPassthrough: workingState.enrichmentPassthrough,
+        })
         const hasMapping = wizardFieldMappingsReady(workingState)
         const hasEnrichment = Object.keys(enrichmentDict).length > 0
 
@@ -458,6 +463,7 @@ export function NewStreamWizardPage() {
               mapping: hasMapping
                 ? {
                     field_mappings: fieldMappings,
+                    raw_payload_mode: workingState.mappingRawPayloadMode ?? null,
                     event_array_path:
                       workingState.stream.useWholeResponseAsEvent || !workingState.stream.eventArrayPath.trim()
                         ? null
@@ -473,9 +479,9 @@ export function NewStreamWizardPage() {
                 : null,
               enrichment: hasEnrichment
                 ? {
-                    enabled: true,
+                    enabled: workingState.enrichmentEnabled ?? true,
                     enrichment: enrichmentDict,
-                    override_policy: 'KEEP_EXISTING',
+                    override_policy: workingState.enrichmentOverridePolicy ?? 'KEEP_EXISTING',
                   }
                 : null,
             })
@@ -914,6 +920,7 @@ export function NewStreamWizardPage() {
             onChangeMappingMode={setMappingMode}
             onChangeFullEventJsonata={setFullEventJsonata}
             onChangeFullEventRegexConfigJson={setFullEventRegexConfigJson}
+            onChangeTransformRules={setTransformRules}
             onChangeEnrichment={setEnrichment}
             onChangeUnmappedFieldsPolicy={setUnmappedFieldsPolicy}
             onChangeDataProtection={setDataProtection}

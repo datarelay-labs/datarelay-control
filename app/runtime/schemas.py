@@ -2000,7 +2000,7 @@ class MappingDraftPreviewRequest(BaseModel):
     payload: dict[str, Any] | list[Any]
     event_array_path: str | None = None
     event_root_path: str | None = None
-    field_mappings: dict[str, str] = Field(default_factory=dict)
+    field_mappings: dict[str, Any] = Field(default_factory=dict)
     max_events: int = Field(default=5, ge=1, le=100)
 
 
@@ -2010,11 +2010,26 @@ class MappingDraftPreviewMissingFieldItem(BaseModel):
     event_index: int
 
 
+class MappingDraftPreviewTransformResultItem(BaseModel):
+    event_index: int
+    success: bool = True
+    value: Any = None
+    error_code: str | None = None
+    error_message: str | None = None
+    rule_id: str | None = None
+    output_field: str = ""
+    mode: str = ""
+    recovered_via_default: bool = False
+    executed: bool = True
+    blocked: bool = False
+
+
 class MappingDraftPreviewResponse(BaseModel):
     input_event_count: int
     preview_event_count: int
     mapped_events: list[dict[str, Any]]
     missing_fields: list[MappingDraftPreviewMissingFieldItem]
+    transform_results: list[MappingDraftPreviewTransformResultItem] = Field(default_factory=list)
     message: str
 
 
@@ -2022,7 +2037,7 @@ class FinalEventDraftPreviewRequest(BaseModel):
     payload: dict[str, Any] | list[Any]
     event_array_path: str | None = None
     event_root_path: str | None = None
-    field_mappings: dict[str, str] = Field(default_factory=dict)
+    field_mappings: dict[str, Any] = Field(default_factory=dict)
     enrichment: dict[str, Any] = Field(default_factory=dict)
     override_policy: Literal["KEEP_EXISTING", "OVERRIDE", "ERROR_ON_CONFLICT"] = "KEEP_EXISTING"
     max_events: int = Field(default=5, ge=1, le=100)
@@ -2047,6 +2062,8 @@ class FinalEventDraftPreviewResponse(BaseModel):
     mapped_events: list[dict[str, Any]]
     final_events: list[dict[str, Any]]
     missing_fields: list[MappingDraftPreviewMissingFieldItem]
+    mapping_transform_results: list[MappingDraftPreviewTransformResultItem] = Field(default_factory=list)
+    enrichment_transform_results: list[MappingDraftPreviewTransformResultItem] = Field(default_factory=list)
     classification_level: str | None = None
     matched_policies: list[MatchedPolicyPreviewItem] = Field(default_factory=list)
     selected_destinations: list[str] = Field(default_factory=list)
@@ -2070,9 +2087,17 @@ class EnrichmentExecPreviewWarning(BaseModel):
     target_field: str | None = None
 
 
+class EnrichmentExecPreviewFieldError(BaseModel):
+    rule_id: str | None = None
+    output_field: str = ""
+    error_code: str
+    error_message: str
+
+
 class EnrichmentExecPreviewResponse(BaseModel):
     final_event: dict[str, Any] = Field(default_factory=dict)
     warnings: list[EnrichmentExecPreviewWarning] = Field(default_factory=list)
+    field_errors: list[EnrichmentExecPreviewFieldError] = Field(default_factory=list)
     duration_ms: int = 0
     message: str = ""
 
@@ -2169,6 +2194,8 @@ class TransformPreviewFieldResultItem(BaseModel):
     output_field: str = ""
     mode: str = ""
     recovered_via_default: bool = False
+    executed: bool = True
+    blocked: bool = False
 
 
 class TransformPreviewIssueItem(BaseModel):
@@ -2189,6 +2216,7 @@ class TransformPreviewRequest(BaseModel):
     rules: list[dict[str, Any]] = Field(default_factory=list)
     field_mappings: dict[str, Any] | None = None
     enrichment: dict[str, Any] | None = None
+    override_policy: Literal["KEEP_EXISTING", "OVERRIDE", "ERROR_ON_CONFLICT"] = "KEEP_EXISTING"
 
 
 class TransformPreviewResponse(BaseModel):
@@ -2226,7 +2254,7 @@ class E2EDraftPreviewRequest(BaseModel):
     payload: dict[str, Any] | list[Any]
     event_array_path: str | None = None
     event_root_path: str | None = None
-    field_mappings: dict[str, str] = Field(default_factory=dict)
+    field_mappings: dict[str, Any] = Field(default_factory=dict)
     enrichment: dict[str, Any] = Field(default_factory=dict)
     override_policy: Literal["KEEP_EXISTING", "OVERRIDE", "ERROR_ON_CONFLICT"] = "KEEP_EXISTING"
     destination_type: Literal["SYSLOG_UDP", "SYSLOG_TCP", "SYSLOG_TLS", "WEBHOOK_POST"]
@@ -2382,7 +2410,7 @@ class MappingValidateRequest(BaseModel):
     payload: dict[str, Any] | list[Any] | None = None
     event_array_path: str | None = None
     event_root_path: str | None = None
-    field_mappings: dict[str, str] = Field(default_factory=dict)
+    field_mappings: dict[str, Any] = Field(default_factory=dict)
 
 
 class MappingValidateResponse(BaseModel):

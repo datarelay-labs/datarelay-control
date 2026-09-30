@@ -2,21 +2,18 @@ import { ChevronDown, Loader2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { saveStreamMappingUiConfigStrict } from '../../api/gdcRuntimeUi'
+import {
+  buildFieldMappingsWithTransformRules,
+  extractPreservedFieldMappingMetadata,
+  parseTransformRulesFromFieldMappings,
+} from '../../utils/advancedTransformConfig'
+import { rowsFromFieldMappings } from '../../utils/mappingFieldMappings'
+import { fieldMappingsFromRows } from '../../utils/mappingValidation'
 import { loadMappingWorkspaceContext } from '../../utils/mappingSourceSample'
+import type { AdvancedTransformRuleDraft } from '../../types/advancedTransform'
 import { StatusBadge } from '../shell/status-badge'
 import type { MappingRowModel } from '../streams/stream-mapping-model'
 import { MappingWorkspace } from './mapping-workspace'
-
-function fieldMappingsToEditRows(fieldMappings: Record<string, string>): MappingRowModel[] {
-  let i = 0
-  return Object.entries(fieldMappings).map(([outputField, sourceJsonPath]) => ({
-    id: `m-${i++}-${outputField}`,
-    outputField,
-    sourceJsonPath,
-    type: 'string' as const,
-    origin: 'auto' as const,
-  }))
-}
 
 type MappingMeta = {
   connector: string
@@ -40,9 +37,16 @@ export function MappingEditPage() {
   const streamNum = /^\d+$/.test(mappingId) ? Number(mappingId) : null
   const [meta, setMeta] = useState<MappingMeta>(EMPTY_META)
   const [rows, setRows] = useState<MappingRowModel[]>([])
+  const [transformRules, setTransformRules] = useState<AdvancedTransformRuleDraft[]>([])
+  const [preservedFieldMappings, setPreservedFieldMappings] = useState<Record<string, unknown>>({})
   const [enrichment, setEnrichment] = useState<Record<string, unknown>>({})
+  const [enrichmentEnabled, setEnrichmentEnabled] = useState(true)
+  const [enrichmentOverridePolicy, setEnrichmentOverridePolicy] = useState<
+    'KEEP_EXISTING' | 'OVERRIDE' | 'ERROR_ON_CONFLICT'
+  >('KEEP_EXISTING')
   const [eventArrayPath, setEventArrayPath] = useState('')
   const [eventRootPath, setEventRootPath] = useState('')
+  const [rawPayloadMode, setRawPayloadMode] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
@@ -65,11 +69,21 @@ export function MappingEditPage() {
           return
         }
         const { stream, cfg, connectorName } = ctx
-        const fm = cfg.mapping?.field_mappings ?? {}
-        setRows(Object.keys(fm).length > 0 ? fieldMappingsToEditRows(fm) : [])
+        const fm = (cfg.mapping?.field_mappings ?? {}) as Record<string, unknown>
+        setRows(Object.keys(fm).length > 0 ? rowsFromFieldMappings(fm) : [])
+        setTransformRules(parseTransformRulesFromFieldMappings(fm))
+        setPreservedFieldMappings(extractPreservedFieldMappingMetadata(fm))
         setEventArrayPath(String(cfg.mapping?.event_array_path ?? ''))
         setEventRootPath(String(cfg.mapping?.event_root_path ?? ''))
+        setRawPayloadMode(cfg.mapping?.raw_payload_mode ?? null)
         setEnrichment((cfg.enrichment?.enrichment ?? {}) as Record<string, unknown>)
+        setEnrichmentEnabled(cfg.enrichment?.enabled !== false)
+        const policy = cfg.enrichment?.override_policy
+        setEnrichmentOverridePolicy(
+          policy === 'OVERRIDE' || policy === 'ERROR_ON_CONFLICT' || policy === 'KEEP_EXISTING'
+            ? policy
+            : 'KEEP_EXISTING',
+        )
         setMeta({
           connector: connectorName,
           stream: cfg.stream_name || stream.name || `Stream ${streamNum}`,
@@ -94,20 +108,31 @@ export function MappingEditPage() {
   async function handleSave() {
     if (streamNum == null || isSaving) return
     const valid = rows.filter((r) => r.outputField.trim() && r.sourceJsonPath.trim())
-    if (valid.length === 0) {
-      setSaveMessage('Add at least one mapping row before saving.')
+    const advanced = transformRules.filter((rule) => rule.outputField.trim())
+    if (
+      valid.length === 0 &&
+      advanced.length === 0 &&
+      Object.keys(preservedFieldMappings).length === 0
+    ) {
+      setSaveMessage('Add at least one mapping row or Advanced Transform rule before saving.')
       return
     }
     setIsSaving(true)
     setSaveMessage(null)
     try {
-      const fieldMappings: Record<string, string> = {}
-      for (const row of valid) fieldMappings[row.outputField] = row.sourceJsonPath
+      const fieldMappings = {
+        ...preservedFieldMappings,
+        ...buildFieldMappingsWithTransformRules(
+          fieldMappingsFromRows(valid),
+          transformRules,
+        ),
+      }
       const res = await saveStreamMappingUiConfigStrict(streamNum, {
         mapping: {
           field_mappings: fieldMappings,
           event_array_path: eventArrayPath || null,
           event_root_path: eventRootPath || null,
+          raw_payload_mode: rawPayloadMode,
         },
       })
       setSaveMessage(res.message)
@@ -175,11 +200,15 @@ export function MappingEditPage() {
           connectorLabel={meta.connector}
           sourceType={meta.sourceType}
           initialRows={rows}
-          enrichment={enrichment}
+          enrichment={enrichmentEnabled ? enrichment : {}}
+          enrichmentOverridePolicy={enrichmentOverridePolicy}
           eventArrayPath={eventArrayPath}
           eventRootPath={eventRootPath}
           onRowsChange={setRows}
           onEventArrayPathChange={setEventArrayPath}
+          transformRules={transformRules}
+          onTransformRulesChange={setTransformRules}
+          preservedFieldMappings={preservedFieldMappings}
         />
       ) : null}
     </div>

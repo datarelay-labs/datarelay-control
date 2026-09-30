@@ -14,12 +14,14 @@ function row(id: string, sourceJsonPath: string, outputField: string): MappingRo
 function mapped(
   mappedEvents: Array<Record<string, unknown>>,
   missingFields: MappingDraftPreviewResponse['missing_fields'] = [],
+  transformResults: MappingDraftPreviewResponse['transform_results'] = [],
 ): MappingDraftPreviewResponse {
   return {
     input_event_count: mappedEvents.length,
     preview_event_count: mappedEvents.length,
     mapped_events: mappedEvents,
     missing_fields: missingFields,
+    transform_results: transformResults,
     message: 'ok',
   }
 }
@@ -74,7 +76,49 @@ describe('buildTransformPreviewSummary', () => {
     expect(summary.nullOutputCount).toBe(1)
     expect(summary.typeChangeCount).toBe(1)
     expect(summary.duplicateTargetCount).toBe(0)
+    expect(summary.defaultRecoveryCount).toBe(0)
+    expect(summary.advancedTransformErrorCount).toBe(0)
     expect(summary.fieldSummaries.find((field) => field.outputField === 'id')?.typeChangeCount).toBe(1)
+  })
+
+  it('counts runtime-backed advanced-transform default recovery evidence', () => {
+    const summary = buildTransformPreviewSummary({
+      rawEvents: [{ message: 'no match' }, { message: 'src=10.0.0.1' }],
+      rows: [],
+      mapped: mapped(
+        [{ source_ip: 'unknown' }, { source_ip: '10.0.0.1' }],
+        [],
+        [
+          {
+            event_index: 0,
+            success: true,
+            value: 'unknown',
+            error_code: null,
+            error_message: null,
+            rule_id: 'extract-src',
+            output_field: 'source_ip',
+            mode: 'regex_extract',
+            recovered_via_default: true,
+          },
+          {
+            event_index: 1,
+            success: true,
+            value: '10.0.0.1',
+            error_code: null,
+            error_message: null,
+            rule_id: 'extract-src',
+            output_field: 'source_ip',
+            mode: 'regex_extract',
+            recovered_via_default: false,
+          },
+        ],
+      ),
+      final: null,
+      warnings: [],
+    })
+
+    expect(summary.defaultRecoveryCount).toBe(1)
+    expect(summary.advancedTransformErrorCount).toBe(0)
   })
 
   it('reports missing sample applications, duplicate targets and validation severity without inventing defaults', () => {

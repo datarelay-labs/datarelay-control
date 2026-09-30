@@ -51,6 +51,12 @@ function buildRouteScopedState(global: WizardState, draft: WizardRouteDraft): Wi
     fullEventRegexConfigJson: override.fullEventRegexConfigJson,
     transformRules: override.transformRules,
     enrichment: override.enrichment,
+    enrichmentEnabled: override.enrichmentEnabled ?? global.enrichmentEnabled,
+    enrichmentOverridePolicy:
+      override.enrichmentOverridePolicy ?? global.enrichmentOverridePolicy,
+    enrichmentPassthrough:
+      override.enrichmentAdvancedPassthrough ?? global.enrichmentPassthrough,
+    mappingRawPayloadMode: override.rawPayloadMode ?? global.mappingRawPayloadMode,
     unmappedFieldsPolicy: override.unmappedFieldsPolicy,
   }
 }
@@ -226,6 +232,7 @@ export function WizardRouteProcessingDetailPanel({
               onChangeMappingMode={(mode) => patchRouteTransform({ mappingMode: mode })}
               onChangeFullEventJsonata={(expr) => patchRouteTransform({ fullEventJsonataExpression: expr })}
               onChangeFullEventRegexConfigJson={(json) => patchRouteTransform({ fullEventRegexConfigJson: json })}
+              onChangeTransformRules={(rules) => patchRouteTransform({ transformRules: rules })}
               onChangeEnrichment={(rules) => patchRouteTransform({ enrichment: rules })}
               onChangeUnmappedFieldsPolicy={(policy) => patchRouteTransform({ unmappedFieldsPolicy: policy })}
               onChangeDataProtection={() => {}}

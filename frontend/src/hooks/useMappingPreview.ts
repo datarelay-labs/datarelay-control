@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   runFinalEventDraftPreview,
   runMappingDraftPreview,
@@ -31,6 +31,7 @@ type UseMappingPreviewArgs = {
   eventArrayPath: string
   eventRootPath: string
   rows: MappingRowModel[]
+  fieldMappingsConfig?: Record<string, unknown>
   enrichment: Record<string, unknown>
   overridePolicy?: 'KEEP_EXISTING' | 'OVERRIDE' | 'ERROR_ON_CONFLICT'
   enabled?: boolean
@@ -43,6 +44,7 @@ export function useMappingPreview({
   eventArrayPath,
   eventRootPath,
   rows,
+  fieldMappingsConfig,
   enrichment,
   overridePolicy = 'KEEP_EXISTING',
   enabled = true,
@@ -54,6 +56,10 @@ export function useMappingPreview({
   const [state, setState] = useState<MappingPreviewState>(EMPTY)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const reqIdRef = useRef(0)
+  const resolvedFieldMappings = useMemo(
+    () => fieldMappingsConfig ?? fieldMappingsFromRows(rows),
+    [fieldMappingsConfig, rows],
+  )
 
   const refresh = useCallback(() => {
     const reqId = ++reqIdRef.current
@@ -61,7 +67,7 @@ export function useMappingPreview({
       setState(EMPTY)
       return
     }
-    const fieldMappings = fieldMappingsFromRows(rows)
+    const fieldMappings = resolvedFieldMappings
     setState((s) => ({ ...s, loading: true, error: null }))
 
     void (async () => {
@@ -114,7 +120,7 @@ export function useMappingPreview({
         })
       }
     })()
-  }, [enabled, rawPayload, eventArrayPath, eventRootPath, rows, enrichment, overridePolicy, maxEvents])
+  }, [enabled, rawPayload, eventArrayPath, eventRootPath, resolvedFieldMappings, enrichment, overridePolicy, maxEvents])
 
   useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current)

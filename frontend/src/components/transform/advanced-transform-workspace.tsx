@@ -28,10 +28,13 @@ const GUIDANCE_LINES = [
 export type AdvancedTransformWorkspaceProps = {
   stage: TransformPreviewStage
   sampleEvent: Record<string, unknown> | null
+  /** Runtime-backed samples for rule evidence. Falls back to sampleEvent when omitted. */
+  sampleEvents?: Array<Record<string, unknown>>
   rules: AdvancedTransformRuleDraft[]
   onRulesChange: (rules: AdvancedTransformRuleDraft[]) => void
   /** Mapping: simple JSONPath map merged into preview/save. */
   simpleFieldMappings?: Record<string, string>
+  unmappedFieldsPolicy?: 'pass_through' | 'drop_unmapped'
   /** Enrichment: static keys merged into preview/save. */
   enrichmentStatic?: Record<string, unknown>
   overridePolicy?: 'KEEP_EXISTING' | 'OVERRIDE' | 'ERROR_ON_CONFLICT'
@@ -47,12 +50,85 @@ function issueLabel(item: { code?: string | null; message?: string; error_messag
   return item.message || item.error_message || item.code || 'Unknown issue'
 }
 
+type AdvancedRuleRuntimeEvidence = {
+  key: string
+  outputField: string
+  mode: string
+  sampleCount: number
+  executedCount: number
+  blockedCount: number
+  defaultRecoveryCount: number
+  errorCount: number
+  warningCount: number
+  failedSampleIndices: number[]
+}
+
+function runtimeEvidenceKey(rule: AdvancedTransformRuleDraft): string {
+  return rule.ruleId.trim() || rule.id
+}
+
+function aggregateRuntimeEvidence(
+  rules: readonly AdvancedTransformRuleDraft[],
+  responses: readonly TransformPreviewResponse[],
+): AdvancedRuleRuntimeEvidence[] {
+  return rules.map((rule, ruleIndex) => {
+    const key = runtimeEvidenceKey(rule)
+    let executedCount = 0
+    let blockedCount = 0
+    let defaultRecoveryCount = 0
+    let errorCount = 0
+    let warningCount = 0
+    const failedSampleIndices: number[] = []
+
+    responses.forEach((response, sampleIndex) => {
+      const byIndex = response.field_results[ruleIndex]
+      const fieldResult =
+        byIndex &&
+        byIndex.output_field === rule.outputField.trim() &&
+        byIndex.mode === rule.mode
+          ? byIndex
+          : response.field_results.find((item) => {
+              if (rule.ruleId.trim() && item.rule_id) return item.rule_id === rule.ruleId.trim()
+              return item.output_field === rule.outputField.trim() && item.mode === rule.mode
+            })
+      if (fieldResult) {
+        if (fieldResult.executed !== false) executedCount += 1
+        if (fieldResult.blocked === true) blockedCount += 1
+        if (!fieldResult.success) {
+          errorCount += 1
+          failedSampleIndices.push(sampleIndex)
+        }
+        if (fieldResult.recovered_via_default) defaultRecoveryCount += 1
+      }
+      warningCount += response.warnings.filter((item) => {
+        if (rule.ruleId.trim() && item.rule_id) return item.rule_id === rule.ruleId.trim()
+        return item.output_field === rule.outputField.trim()
+      }).length
+    })
+
+    return {
+      key,
+      outputField: rule.outputField.trim() || '—',
+      mode: rule.mode,
+      sampleCount: responses.length,
+      executedCount,
+      blockedCount,
+      defaultRecoveryCount,
+      errorCount,
+      warningCount,
+      failedSampleIndices,
+    }
+  })
+}
+
 export function AdvancedTransformWorkspace({
   stage,
   sampleEvent,
+  sampleEvents = [],
   rules,
   onRulesChange,
   simpleFieldMappings = {},
+  unmappedFieldsPolicy = 'pass_through',
   enrichmentStatic = {},
   overridePolicy = 'KEEP_EXISTING',
   filterUiMode,
@@ -60,6 +136,7 @@ export function AdvancedTransformWorkspace({
   readOnly = false,
 }: AdvancedTransformWorkspaceProps) {
   const [preview, setPreview] = useState<TransformPreviewResponse | null>(null)
+  const [runtimeEvidence, setRuntimeEvidence] = useState<AdvancedRuleRuntimeEvidence[]>([])
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewError, setPreviewError] = useState<string | null>(null)
 
@@ -113,44 +190,72 @@ export function AdvancedTransformWorkspace({
   )
 
   const runPreview = useCallback(async () => {
-    if (!sampleEvent) {
-      setPreviewError('샘플 이벤트가 없습니다. 소스 샘플을 먼저 불러오세요.')
-      return
-    }
-    const apiRules = filterUiMode
-      ? rules.filter((r) => r.uiMode === filterUiMode).map(ruleDraftToApiPayload)
-      : rules.map(ruleDraftToApiPayload)
+    const previewRules = filterUiMode
+      ? rules.filter((r) => r.uiMode === filterUiMode)
+      : rules
+    const apiRules = previewRules.map(ruleDraftToApiPayload)
     if (apiRules.length === 0) {
       setPreviewError('Preview할 규칙이 없습니다. 출력 필드와 표현식을 입력하세요.')
       return
     }
 
+    const evidenceSamples = (sampleEvents.length > 0 ? sampleEvents : sampleEvent ? [sampleEvent] : []).slice(0, 20)
+    if (evidenceSamples.length === 0) {
+      setPreviewError('샘플 이벤트가 없습니다. 소스 샘플을 먼저 불러오세요.')
+      return
+    }
+
     setPreviewLoading(true)
     setPreviewError(null)
+    setRuntimeEvidence([])
     try {
-      const body =
-        stage === 'mapping'
-          ? {
-              stage: 'mapping' as const,
-              sample_event: sampleEvent,
-              rules: apiRules,
-              field_mappings: buildFieldMappingsWithTransformRules(simpleFieldMappings, rules),
-            }
-          : {
-              stage: 'enrichment' as const,
-              sample_event: sampleEvent,
-              enrichment: buildEnrichmentWithAdvancedFields(enrichmentStatic, rules),
-              override_policy: overridePolicy,
-            }
-      const res = await runTransformPreview(body)
-      setPreview(res)
+      const runForSample = (event: Record<string, unknown>) =>
+        runTransformPreview(
+          stage === 'mapping'
+            ? {
+                stage: 'mapping' as const,
+                sample_event: event,
+                rules: apiRules,
+                field_mappings: buildFieldMappingsWithTransformRules(
+                  simpleFieldMappings,
+                  previewRules,
+                  unmappedFieldsPolicy,
+                ),
+              }
+            : {
+                stage: 'enrichment' as const,
+                sample_event: event,
+                enrichment: buildEnrichmentWithAdvancedFields(enrichmentStatic, previewRules),
+                override_policy: overridePolicy,
+              },
+        )
+
+      const responses: TransformPreviewResponse[] = []
+      for (let i = 0; i < evidenceSamples.length; i += 4) {
+        const batch = await Promise.all(evidenceSamples.slice(i, i + 4).map(runForSample))
+        responses.push(...batch)
+      }
+
+      setPreview(responses[0] ?? null)
+      setRuntimeEvidence(aggregateRuntimeEvidence(previewRules, responses))
     } catch (e) {
       setPreview(null)
+      setRuntimeEvidence([])
       setPreviewError(e instanceof Error ? e.message : 'Preview request failed')
     } finally {
       setPreviewLoading(false)
     }
-  }, [sampleEvent, rules, filterUiMode, stage, simpleFieldMappings, enrichmentStatic, overridePolicy])
+  }, [
+    sampleEvent,
+    sampleEvents,
+    rules,
+    filterUiMode,
+    stage,
+    simpleFieldMappings,
+    unmappedFieldsPolicy,
+    enrichmentStatic,
+    overridePolicy,
+  ])
 
   const previewJson = useMemo(
     () => (preview ? JSON.stringify(preview.transformed_result, null, 2) : ''),
@@ -431,6 +536,71 @@ export function AdvancedTransformWorkspace({
               </div>
             )}
 
+            {runtimeEvidence.length > 0 ? (
+              <div
+                className="overflow-x-auto rounded-md border border-slate-200/70 dark:border-gdc-border"
+                data-testid="advanced-transform-runtime-evidence"
+              >
+                <div className="border-b border-slate-200/70 bg-slate-50/80 px-2 py-1.5 dark:border-gdc-border dark:bg-gdc-section">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-slate-600 dark:text-gdc-mutedStrong">
+                    Runtime rule evidence · {runtimeEvidence[0]?.sampleCount ?? 0} sample
+                    {(runtimeEvidence[0]?.sampleCount ?? 0) === 1 ? '' : 's'}
+                  </p>
+                </div>
+                <table className="w-full border-collapse text-[11px]">
+                  <thead>
+                    <tr className="border-b border-slate-200/80 bg-slate-50/80 text-left dark:border-gdc-border dark:bg-gdc-section">
+                      <th className="px-2 py-1 font-semibold">Rule</th>
+                      <th className="px-2 py-1 font-semibold">Executed</th>
+                      <th className="px-2 py-1 font-semibold">Blocked</th>
+                      <th className="px-2 py-1 font-semibold">Defaults</th>
+                      <th className="px-2 py-1 font-semibold">Warnings</th>
+                      <th className="px-2 py-1 font-semibold">Errors</th>
+                      <th className="px-2 py-1 font-semibold">Failed samples</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {runtimeEvidence.map((item) => (
+                      <tr key={item.key} className="border-b border-slate-100 last:border-0 dark:border-gdc-border">
+                        <td className="px-2 py-1">
+                          <span className="block font-mono font-semibold">{item.outputField}</span>
+                          <span className="block text-[9px] text-slate-500 dark:text-gdc-muted">{item.mode}</span>
+                        </td>
+                        <td className="px-2 py-1 font-semibold tabular-nums text-emerald-700 dark:text-emerald-300">
+                          {item.executedCount}/{item.sampleCount}
+                        </td>
+                        <td
+                          className={cn(
+                            'px-2 py-1 tabular-nums',
+                            item.blockedCount > 0 && 'text-amber-700 dark:text-amber-300',
+                          )}
+                        >
+                          {item.blockedCount}
+                        </td>
+                        <td className="px-2 py-1 tabular-nums text-amber-700 dark:text-amber-300">
+                          {item.defaultRecoveryCount}
+                        </td>
+                        <td className="px-2 py-1 tabular-nums">{item.warningCount}</td>
+                        <td
+                          className={cn(
+                            'px-2 py-1 tabular-nums',
+                            item.errorCount > 0 && 'text-red-700 dark:text-red-300',
+                          )}
+                        >
+                          {item.errorCount}
+                        </td>
+                        <td className="px-2 py-1 text-[10px] text-slate-500 dark:text-gdc-muted">
+                          {item.failedSampleIndices.length > 0
+                            ? item.failedSampleIndices.map((index) => `#${index + 1}`).join(', ')
+                            : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+
             {preview.field_results.length > 0 ? (
               <div className="overflow-x-auto rounded-md border border-slate-200/70 dark:border-gdc-border">
                 <table className="w-full border-collapse text-[11px]">
@@ -450,7 +620,9 @@ export function AdvancedTransformWorkspace({
                         <td className="max-w-[140px] truncate px-2 py-1 font-mono">{JSON.stringify(fr.value)}</td>
                         <td className="px-2 py-1">
                           {fr.success ? (
-                            fr.recovered_via_default ? (
+                            fr.blocked ? (
+                              <span className="text-amber-700 dark:text-amber-300">blocked · kept existing</span>
+                            ) : fr.recovered_via_default ? (
                               <span className="text-amber-700 dark:text-amber-300">default</span>
                             ) : (
                               <span className="text-emerald-700 dark:text-emerald-300">ok</span>

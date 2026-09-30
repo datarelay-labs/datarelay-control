@@ -80,22 +80,30 @@ export function isRouteDeliveryDirty(baseline: RouteDeliveryFormState | null, cu
 }
 
 export type RouteTransformFormState = {
-  inheritStream: boolean
+  inheritMapping: boolean
+  inheritEnrichment: boolean
   rows: unknown
   transformRules: unknown
   enrichment: unknown
+  enrichmentEnabled: boolean
+  enrichmentOverridePolicy: string
   eventArrayPath: string
   eventRootPath: string
+  rawPayloadMode: string | null
 }
 
 export function routeTransformFormFingerprint(state: RouteTransformFormState): string {
   return JSON.stringify({
-    inheritStream: Boolean(state.inheritStream),
+    inheritMapping: Boolean(state.inheritMapping),
+    inheritEnrichment: Boolean(state.inheritEnrichment),
     rows: state.rows,
     transformRules: state.transformRules,
     enrichment: state.enrichment ?? {},
+    enrichmentEnabled: Boolean(state.enrichmentEnabled),
+    enrichmentOverridePolicy: String(state.enrichmentOverridePolicy ?? 'KEEP_EXISTING'),
     eventArrayPath: String(state.eventArrayPath ?? '').trim(),
     eventRootPath: String(state.eventRootPath ?? '').trim(),
+    rawPayloadMode: state.rawPayloadMode ?? null,
   })
 }
 

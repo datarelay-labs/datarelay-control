@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { defaultAdvancedRule } from '../../types/advancedTransform'
 import { AdvancedTransformWorkspace } from './advanced-transform-workspace'
@@ -107,7 +107,53 @@ describe('AdvancedTransformWorkspace', () => {
     await waitFor(() => {
       expect(screen.getByText(/ok with warnings/i)).toBeInTheDocument()
     })
+    const defaultStatus = screen.getByText('default')
+    expect(defaultStatus).toBeInTheDocument()
+    const resultRow = defaultStatus.closest('tr')
+    expect(resultRow).not.toBeNull()
+    expect(within(resultRow as HTMLElement).getByText('"fallback"')).toBeInTheDocument()
     expect(screen.queryByText(/Save blocked/i)).not.toBeInTheDocument()
+  })
+
+  it('previews only the rules visible in the active Advanced/Expert tab', async () => {
+    runTransformPreview.mockResolvedValue({
+      stage: 'mapping',
+      input_sample_summary: { is_object: true, top_level_keys: ['message'], top_level_key_count: 1 },
+      transformed_result: {},
+      field_results: [],
+      errors: [],
+      warnings: [],
+      save_blocked: false,
+      duration_ms: 1,
+      message: 'ok',
+    })
+
+    const jsonataRule = defaultAdvancedRule('advanced')
+    jsonataRule.outputField = 'principal'
+    jsonataRule.expression = 'message'
+    const regexRule = defaultAdvancedRule('expert')
+    regexRule.outputField = 'source_ip'
+    regexRule.sourcePath = '$.message'
+    regexRule.pattern = 'src=(\\S+)'
+
+    render(
+      <AdvancedTransformWorkspace
+        stage="mapping"
+        sampleEvent={{ message: 'src=10.0.0.1' }}
+        rules={[jsonataRule, regexRule]}
+        onRulesChange={() => {}}
+        filterUiMode="advanced"
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /Preview/i }))
+    await waitFor(() => expect(runTransformPreview).toHaveBeenCalledTimes(1))
+
+    const body = runTransformPreview.mock.calls[0][0]
+    expect(body.rules).toHaveLength(1)
+    expect(body.rules[0].mode).toBe('jsonata')
+    expect(body.field_mappings.transform_rules).toHaveLength(1)
+    expect(body.field_mappings.transform_rules[0].mode).toBe('jsonata')
   })
 
   it('exposes Timestamp → UTC insert for JSONata and limitation guidance for Regex', () => {

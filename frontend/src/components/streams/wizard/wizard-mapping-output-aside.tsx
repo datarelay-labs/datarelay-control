@@ -1,11 +1,17 @@
-import { Copy } from 'lucide-react'
-import { useCallback, useMemo, useState } from 'react'
+import { Copy, Loader2, RefreshCw } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '../../../lib/utils'
 import { resolveJsonPath } from '../mapping-jsonpath'
 import { PanelChrome } from '../mapping-json-tree'
-import { applyMappingWithPassThrough } from '../../../utils/mappingPassThrough'
 import { unmappedTopLevelSourcePaths } from './wizard-mapping-merge'
-import type { WizardState, WizardUnmappedFieldsPolicy } from './wizard-state'
+import { runFinalEventDraftPreview, type FinalEventDraftPreviewResponse } from '../../../api/gdcRuntimePreview'
+import {
+  buildWizardFieldMappingsPayload,
+  enrichmentDictFromRows,
+  type WizardState,
+  type WizardUnmappedFieldsPolicy,
+} from './wizard-state'
+import { buildWizardTransformSample } from './wizard-transform-sample'
 
 export type WizardMappingOutputAsideProps = {
   state: WizardState
@@ -19,18 +25,76 @@ export function WizardMappingOutputAside({
   className,
 }: WizardMappingOutputAsideProps) {
   const [previewTab, setPreviewTab] = useState<'preview' | 'raw_final'>('preview')
+  const [runtimePreview, setRuntimePreview] = useState<FinalEventDraftPreviewResponse | null>(null)
+  const [runtimeLoading, setRuntimeLoading] = useState(false)
+  const [runtimeError, setRuntimeError] = useState<string | null>(null)
+  const [refreshTick, setRefreshTick] = useState(0)
+  const requestIdRef = useRef(0)
 
+  const transformSample = useMemo(() => buildWizardTransformSample(state), [state])
   const sampleEvent = state.apiTest.extractedEvents[0] ?? null
+  const runtimeFieldMappings = useMemo(() => buildWizardFieldMappingsPayload(state), [state])
+  const runtimeEnrichment = useMemo(
+    () =>
+      enrichmentDictFromRows(state.enrichment, {
+        advancedPassthrough: state.enrichmentPassthrough,
+      }),
+    [state.enrichment, state.enrichmentPassthrough],
+  )
 
-  const mappedPreview = useMemo(() => {
-    if (!sampleEvent) return null
-    return applyMappingWithPassThrough(
-      sampleEvent,
-      state.mapping,
-      resolveJsonPath,
-      state.unmappedFieldsPolicy,
-    )
-  }, [sampleEvent, state.mapping, state.unmappedFieldsPolicy])
+  useEffect(() => {
+    const requestId = ++requestIdRef.current
+    let cancelled = false
+    if (!transformSample) {
+      setRuntimePreview(null)
+      setRuntimeError(null)
+      setRuntimeLoading(false)
+      return () => {
+        cancelled = true
+      }
+    }
+
+    const timer = window.setTimeout(() => {
+      setRuntimeLoading(true)
+      setRuntimeError(null)
+      void runFinalEventDraftPreview({
+        payload: transformSample.rawPayload,
+        event_array_path: transformSample.eventArrayPath || null,
+        event_root_path: transformSample.eventRootPath || null,
+        field_mappings: runtimeFieldMappings,
+        enrichment: state.enrichmentEnabled === false ? {} : runtimeEnrichment,
+        override_policy: state.enrichmentOverridePolicy ?? 'KEEP_EXISTING',
+        max_events: 20,
+      })
+        .then((response) => {
+          if (cancelled || requestId !== requestIdRef.current) return
+          setRuntimePreview(response)
+        })
+        .catch((error) => {
+          if (cancelled || requestId !== requestIdRef.current) return
+          setRuntimePreview(null)
+          setRuntimeError(error instanceof Error ? error.message : 'Runtime preview failed')
+        })
+        .finally(() => {
+          if (cancelled || requestId !== requestIdRef.current) return
+          setRuntimeLoading(false)
+        })
+    }, 350)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [
+    transformSample,
+    runtimeFieldMappings,
+    runtimeEnrichment,
+    state.enrichmentEnabled,
+    state.enrichmentOverridePolicy,
+    refreshTick,
+  ])
+
+  const runtimeFinalEvent = runtimePreview?.final_events?.[0] ?? null
 
   const rawSampleJson = useMemo(() => {
     if (!sampleEvent) return ''
@@ -41,14 +105,25 @@ export function WizardMappingOutputAside({
     }
   }, [sampleEvent])
 
-  const mappedPreviewJson = useMemo(() => {
-    if (!mappedPreview) return ''
+  const runtimeFinalJson = useMemo(() => {
+    if (!runtimeFinalEvent) return ''
     try {
-      return JSON.stringify(mappedPreview, null, 2)
+      return JSON.stringify(runtimeFinalEvent, null, 2)
     } catch {
       return ''
     }
-  }, [mappedPreview])
+  }, [runtimeFinalEvent])
+
+  const runtimeTransformEvidence = useMemo(
+    () => [
+      ...(runtimePreview?.mapping_transform_results ?? []),
+      ...(runtimePreview?.enrichment_transform_results ?? []),
+    ],
+    [runtimePreview?.mapping_transform_results, runtimePreview?.enrichment_transform_results],
+  )
+  const runtimeDefaultCount = runtimeTransformEvidence.filter((item) => item.recovered_via_default).length
+  const runtimeBlockedCount = runtimeTransformEvidence.filter((item) => item.blocked === true).length
+  const runtimeFailureCount = runtimeTransformEvidence.filter((item) => !item.success).length
 
   const duplicateOutputKeys = useMemo(() => {
     const counts = new Map<string, number>()
@@ -83,10 +158,15 @@ export function WizardMappingOutputAside({
 
   const stats = useMemo(() => {
     const mappedCount = state.mapping.filter((r) => r.outputField.trim() && r.sourceJsonPath.trim()).length
+    const transformRuleCount = state.transformRules.filter((rule) => rule.outputField.trim()).length
     const staticCount = state.enrichment.filter((e) => e.fieldName.trim()).length
     const totalKeys = new Set<string>()
     for (const r of state.mapping) {
       const k = r.outputField.trim()
+      if (k) totalKeys.add(k)
+    }
+    for (const rule of state.transformRules) {
+      const k = rule.outputField.trim()
       if (k) totalKeys.add(k)
     }
     for (const e of state.enrichment) {
@@ -101,20 +181,33 @@ export function WizardMappingOutputAside({
     const missingRequired = state.mapping.some((r) => !r.outputField.trim() || !r.sourceJsonPath.trim())
     const potentialIssues =
       duplicateOutputKeys.size > 0 ||
-      [...rowWarnings.values()].some((w) => w.dup || w.missing)
+      [...rowWarnings.values()].some((w) => w.dup || w.missing) ||
+      runtimeFailureCount > 0 ||
+      runtimeError != null
     return {
       mappedCount,
+      transformRuleCount,
       staticCount,
       enrichedCount: staticCount,
-      totalOutput: totalKeys.size,
+      totalOutput: runtimeFinalEvent ? Object.keys(runtimeFinalEvent).length : totalKeys.size,
       unmappedSourceCount,
       missingRequired,
       potentialIssues,
     }
-  }, [sampleEvent, state.mapping, state.enrichment, duplicateOutputKeys, rowWarnings])
+  }, [
+    sampleEvent,
+    state.mapping,
+    state.transformRules,
+    state.enrichment,
+    duplicateOutputKeys,
+    rowWarnings,
+    runtimeFailureCount,
+    runtimeError,
+    runtimeFinalEvent,
+  ])
 
   const copyFinalJson = useCallback(async () => {
-    const text = mappedPreviewJson || '{}'
+    const text = runtimeFinalJson || '{}'
     try {
       if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(text)
@@ -122,7 +215,7 @@ export function WizardMappingOutputAside({
     } catch {
       // ignore
     }
-  }, [mappedPreviewJson])
+  }, [runtimeFinalJson])
 
   return (
     <div
@@ -135,8 +228,20 @@ export function WizardMappingOutputAside({
       <PanelChrome title="3. Final event" className="max-h-[min(42vh,440px)]">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/70 px-2.5 py-2 dark:border-gdc-border">
           <div className="flex items-center gap-2">
-            <span className="rounded-md border border-emerald-500/25 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">
-              Preview ready
+            <span
+              className={cn(
+                'inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold',
+                runtimeLoading
+                  ? 'border-violet-500/25 bg-violet-500/10 text-violet-700 dark:text-violet-300'
+                  : runtimeError
+                    ? 'border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300'
+                    : runtimePreview
+                      ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                      : 'border-slate-300 bg-slate-100 text-slate-600 dark:border-gdc-border dark:bg-gdc-section dark:text-gdc-muted',
+              )}
+            >
+              {runtimeLoading ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : null}
+              {runtimeLoading ? 'Runtime preview' : runtimeError ? 'Preview failed' : runtimePreview ? 'Runtime verified' : 'Preview pending'}
             </span>
             <div className="inline-flex rounded-md border border-slate-200/90 p-0.5 dark:border-gdc-border">
               <button
@@ -165,19 +270,36 @@ export function WizardMappingOutputAside({
               </button>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => void copyFinalJson()}
-            className="inline-flex h-7 items-center gap-1 rounded-md border border-slate-200/90 bg-white px-2 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200"
-          >
-            <Copy className="h-3.5 w-3.5" aria-hidden />
-            Copy JSON
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setRefreshTick((value) => value + 1)}
+              disabled={runtimeLoading || !transformSample}
+              className="inline-flex h-7 items-center gap-1 rounded-md border border-slate-200/90 bg-white px-2 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200"
+            >
+              <RefreshCw className={cn('h-3.5 w-3.5', runtimeLoading && 'animate-spin')} aria-hidden />
+              Refresh
+            </button>
+            <button
+              type="button"
+              onClick={() => void copyFinalJson()}
+              disabled={!runtimeFinalJson}
+              className="inline-flex h-7 items-center gap-1 rounded-md border border-slate-200/90 bg-white px-2 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200"
+            >
+              <Copy className="h-3.5 w-3.5" aria-hidden />
+              Copy JSON
+            </button>
+          </div>
         </div>
         <div className="min-h-0 overflow-auto p-2">
+          {runtimeError ? (
+            <p className="mb-2 rounded-md border border-red-200/80 bg-red-500/[0.06] px-2.5 py-2 text-[10px] text-red-800 dark:border-red-500/30 dark:text-red-200">
+              Runtime preview failed: {runtimeError}
+            </p>
+          ) : null}
           {previewTab === 'preview' ? (
             <pre className="overflow-x-auto rounded-lg border border-slate-200 bg-slate-950 p-2.5 text-[10px] leading-snug text-slate-100 dark:border-gdc-border dark:bg-gdc-section dark:text-gdc-foreground">
-              {mappedPreviewJson || '—'}
+              {runtimeLoading ? 'Computing runtime Final Event…' : runtimeFinalJson || '—'}
             </pre>
           ) : (
             <div className="grid gap-2 md:grid-cols-2">
@@ -188,9 +310,9 @@ export function WizardMappingOutputAside({
                 </pre>
               </div>
               <div>
-                <p className="mb-1 text-[10px] font-semibold text-slate-500">Mapped output</p>
+                <p className="mb-1 text-[10px] font-semibold text-slate-500">Runtime Final Event</p>
                 <pre className="max-h-[32vh] overflow-auto rounded-lg border border-slate-200 bg-slate-950 p-2 text-[9px] leading-snug text-slate-100 dark:border-gdc-border dark:bg-gdc-section dark:text-gdc-foreground">
-                  {mappedPreviewJson || '—'}
+                  {runtimeLoading ? 'Computing…' : runtimeFinalJson || '—'}
                 </pre>
               </div>
             </div>
@@ -261,12 +383,45 @@ export function WizardMappingOutputAside({
             </span>
           </li>
           <li className="flex justify-between gap-2">
-            <span className="text-slate-500">Static fields</span>
-            <span className="font-semibold">{stats.staticCount}</span>
+            <span className="text-slate-500">Per-field transforms</span>
+            <span className="font-semibold">{stats.transformRuleCount}</span>
           </li>
           <li className="flex justify-between gap-2">
-            <span className="text-slate-500">Enriched fields</span>
+            <span className="text-slate-500">Static / guided fields</span>
             <span className="font-semibold">{stats.enrichedCount}</span>
+          </li>
+          <li className="flex justify-between gap-2">
+            <span className="text-slate-500">Defaults used</span>
+            <span
+              className={cn(
+                'font-semibold',
+                runtimeDefaultCount > 0 ? 'text-amber-700 dark:text-amber-300' : 'text-slate-700 dark:text-slate-200',
+              )}
+            >
+              {runtimeDefaultCount}
+            </span>
+          </li>
+          <li className="flex justify-between gap-2">
+            <span className="text-slate-500">Blocked by KEEP_EXISTING</span>
+            <span
+              className={cn(
+                'font-semibold',
+                runtimeBlockedCount > 0 ? 'text-amber-700 dark:text-amber-300' : 'text-slate-700 dark:text-slate-200',
+              )}
+            >
+              {runtimeBlockedCount}
+            </span>
+          </li>
+          <li className="flex justify-between gap-2">
+            <span className="text-slate-500">Transform errors</span>
+            <span
+              className={cn(
+                'font-semibold',
+                runtimeFailureCount > 0 ? 'text-red-700 dark:text-red-300' : 'text-emerald-700 dark:text-emerald-300',
+              )}
+            >
+              {runtimeFailureCount}
+            </span>
           </li>
           <li className="flex justify-between gap-2 border-t border-slate-100 pt-1.5 dark:border-gdc-border">
             <span className="text-slate-500">Total output fields</span>

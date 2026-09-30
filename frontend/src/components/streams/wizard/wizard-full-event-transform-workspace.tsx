@@ -16,7 +16,6 @@ import type { WizardEnrichmentRule } from './enrichment-rules-model'
 import { UnionSchemaSamplePolicyBanner } from './union-schema-sample-policy-banner'
 import {
   buildWizardJsonataPreviewFieldMappings,
-  runWizardLocalTransformPreview,
 } from './wizard-full-event-preview'
 import {
   buildFieldMappingsFromFullEventRegexConfigJson,
@@ -262,21 +261,6 @@ export function WizardFullEventTransformWorkspace({
     return buildWizardJsonataPreviewFieldMappings(expressionTrimmed)
   }, [isExpertMode, regexConfigTrimmed, regexConfigValid, parsedRegexConfig, expressionTrimmed])
 
-  const runLocalPreview = useCallback((): TransformPreviewResponse | null => {
-    if (!sampleEvent) return null
-    if (isExpertMode) {
-      if (!parsedRegexConfig?.ok) return null
-      return runWizardLocalTransformPreview(sampleEvent, {
-        isExpert: true,
-        regexConfig: parsedRegexConfig.config,
-      })
-    }
-    return runWizardLocalTransformPreview(sampleEvent, {
-      isExpert: false,
-      expression: expressionTrimmed,
-    })
-  }, [sampleEvent, isExpertMode, parsedRegexConfig, expressionTrimmed])
-
   const runPreview = useCallback(
     async (fingerprintOverride?: string, opts?: { auto?: boolean }) => {
       const fingerprint = fingerprintOverride ?? currentFingerprint
@@ -331,24 +315,11 @@ export function WizardFullEventTransformWorkspace({
       setPreviewError(null)
 
       try {
-        let res: TransformPreviewResponse
-        try {
-          res = await runTransformPreview({
-            stage: 'mapping',
-            sample_event: sampleEvent,
-            field_mappings: previewFieldMappings ?? undefined,
-          })
-        } catch (apiErr) {
-          if (isExpertMode) {
-            const local = runLocalPreview()
-            if (!local) {
-              throw apiErr instanceof Error ? apiErr : new Error('Preview request failed')
-            }
-            res = local
-          } else {
-            throw apiErr instanceof Error ? apiErr : new Error('JSONata preview request failed')
-          }
-        }
+        const res: TransformPreviewResponse = await runTransformPreview({
+          stage: 'mapping',
+          sample_event: sampleEvent,
+          field_mappings: previewFieldMappings ?? undefined,
+        })
         if (reqId !== previewReqIdRef.current) return
         setPreview(res)
         const ok = !res.save_blocked
@@ -374,7 +345,6 @@ export function WizardFullEventTransformWorkspace({
       parsedRegexConfig,
       previewFieldMappings,
       currentFingerprint,
-      runLocalPreview,
     ],
   )
 

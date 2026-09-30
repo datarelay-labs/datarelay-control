@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { clearSession, persistSession } from '../../auth/session'
 import { RouteEditPage } from './route-edit-page'
 
 const fetchRouteById = vi.fn()
@@ -36,6 +37,10 @@ vi.mock('../../api/gdcConnectors', () => ({
 
 vi.mock('../../api/gdcDestinations', () => ({
   fetchDestinationsList: (...args: unknown[]) => fetchDestinationsList(...args),
+}))
+
+vi.mock('../../api/gdcAudit', () => ({
+  listAuditLogs: vi.fn(async () => ({ items: [], total: 0 })),
 }))
 
 vi.mock('../../api/gdcRouteTransform', () => ({
@@ -94,6 +99,13 @@ function renderRouteEdit(routeId = '42') {
 describe('RouteEditPage transform persist', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    clearSession()
+    persistSession({
+      access_token: 'test-token',
+      refresh_token: 'test-refresh',
+      expires_at: new Date(Date.now() + 3600_000).toISOString(),
+      user: { username: 'operator', role: 'OPERATOR', status: 'ACTIVE' },
+    })
     fetchRouteById.mockResolvedValue({
       id: 42,
       name: 'Route A',
@@ -179,6 +191,10 @@ describe('RouteEditPage transform persist', () => {
     saveRouteEnrichmentUiConfig.mockResolvedValue({ route_id: 42, stream_id: 10, enrichment_saved: true, inherit_stream_enrichment: true, message: 'ok' })
   })
 
+  afterEach(() => {
+    clearSession()
+  })
+
   it('loads delivery fields and shows processing status', async () => {
     renderRouteEdit()
     expect(await screen.findByTestId('route-transform-processing-status')).toHaveTextContent('Transform: Inherited')
@@ -190,9 +206,12 @@ describe('RouteEditPage transform persist', () => {
   it('persists inherit transform from transform tab', async () => {
     renderRouteEdit()
     fireEvent.click(await screen.findByTestId('route-edit-tab-transform'))
-    expect(await screen.findByTestId('route-transform-override')).toBeChecked()
-    fireEvent.click(screen.getByTestId('route-transform-inherit'))
-    expect(screen.getByTestId('route-transform-inherit')).toBeChecked()
+    expect(await screen.findByTestId('route-transform-inherit-mapping')).not.toBeChecked()
+    expect(screen.getByTestId('route-transform-inherit-enrichment')).not.toBeChecked()
+    fireEvent.click(screen.getByTestId('route-transform-inherit-mapping'))
+    fireEvent.click(screen.getByTestId('route-transform-inherit-enrichment'))
+    expect(screen.getByTestId('route-transform-inherit-mapping')).toBeChecked()
+    expect(screen.getByTestId('route-transform-inherit-enrichment')).toBeChecked()
     await waitFor(() => expect(screen.getByTestId('route-transform-save')).not.toBeDisabled())
     fireEvent.click(screen.getByTestId('route-transform-save'))
     await waitFor(() => {

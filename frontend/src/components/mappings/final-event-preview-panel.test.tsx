@@ -20,6 +20,19 @@ const preview: MappingPreviewState = {
       { count: 2, missing: null },
     ],
     missing_fields: [{ output_field: 'missing', json_path: '$.missing', event_index: 1 }],
+    transform_results: [
+      {
+        event_index: 0,
+        success: true,
+        value: 'fallback',
+        error_code: null,
+        error_message: null,
+        rule_id: 'advanced-1',
+        output_field: 'derived',
+        mode: 'regex_extract',
+        recovered_via_default: true,
+      },
+    ],
     message: 'ok',
   },
   final: {
@@ -65,6 +78,9 @@ describe('FinalEventPreviewPanel', () => {
     expect(screen.getByRole('tab', { name: /^Changes \(2\)$/ })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByText('Field matches')).toBeInTheDocument()
     expect(screen.getByText('3/4')).toBeInTheDocument()
+    const defaultsMetric = screen.getByText('Defaults used').closest('div')
+    expect(defaultsMetric).not.toBeNull()
+    expect(within(defaultsMetric as HTMLElement).getByText('1')).toBeInTheDocument()
 
     const validationTable = screen.getByText('Validation by field').closest('section')
     expect(validationTable).not.toBeNull()

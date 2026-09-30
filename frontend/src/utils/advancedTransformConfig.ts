@@ -4,6 +4,36 @@ const TRANSFORM_RULES_KEY = 'transform_rules'
 const ADVANCED_FIELDS_KEY = 'advanced_fields'
 export const UNMAPPED_FIELDS_POLICY_KEY = 'unmapped_fields_policy'
 
+const FIELD_MAPPING_PRESERVED_META_KEYS = new Set([
+  'mapping_mode',
+  'jsonata_expression',
+  'regex_rules',
+  'preserve_source_fields',
+  UNMAPPED_FIELDS_POLICY_KEY,
+])
+
+/**
+ * Preserve stored mapping metadata that legacy field editors do not own.
+ * transform_rules is intentionally excluded because the active editor owns it.
+ */
+export function extractPreservedFieldMappingMetadata(
+  fieldMappings: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  if (!fieldMappings) return {}
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(fieldMappings)) {
+    if (key === TRANSFORM_RULES_KEY) continue
+    if (
+      FIELD_MAPPING_PRESERVED_META_KEYS.has(key) ||
+      key.startsWith('_') ||
+      typeof value !== 'string'
+    ) {
+      out[key] = value
+    }
+  }
+  return out
+}
+
 function parseDefaultValue(raw: string): unknown {
   const t = raw.trim()
   if (!t) return undefined

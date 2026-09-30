@@ -26,6 +26,9 @@ export type TransformPreviewSummary = {
   nullOutputCount: number
   typeChangeCount: number
   duplicateTargetCount: number
+  defaultRecoveryCount: number
+  advancedTransformBlockedCount: number
+  advancedTransformErrorCount: number
   warningCount: number
   errorCount: number
   fieldSummaries: TransformPreviewFieldSummary[]
@@ -146,6 +149,13 @@ export function buildTransformPreviewSummary({
   let missingApplications = 0
   let nullOutputCount = 0
   let typeChangeCount = 0
+  const mappingTransformResults =
+    mapped?.transform_results ?? final?.mapping_transform_results ?? []
+  const enrichmentTransformResults = final?.enrichment_transform_results ?? []
+  const transformResults = [...mappingTransformResults, ...enrichmentTransformResults]
+  const defaultRecoveryCount = transformResults.filter((item) => item.recovered_via_default).length
+  const advancedTransformBlockedCount = transformResults.filter((item) => item.blocked === true).length
+  const advancedTransformErrorCount = transformResults.filter((item) => !item.success).length
 
   const fieldSummaries = validRows.map<TransformPreviewFieldSummary>((row) => {
     const outputField = row.outputField.trim()
@@ -205,8 +215,12 @@ export function buildTransformPreviewSummary({
     nullOutputCount,
     typeChangeCount,
     duplicateTargetCount: duplicateTargets.size,
+    defaultRecoveryCount,
+    advancedTransformBlockedCount,
+    advancedTransformErrorCount,
     warningCount: warnings.filter((warning) => warning.severity === 'warning').length,
-    errorCount: warnings.filter((warning) => warning.severity === 'error').length,
+    errorCount:
+      warnings.filter((warning) => warning.severity === 'error').length + advancedTransformErrorCount,
     fieldSummaries,
   }
 }

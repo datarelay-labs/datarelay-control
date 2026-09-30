@@ -118,6 +118,18 @@ export function FinalEventPreviewPanel({
     [rawSampleEvent, finalEvent],
   )
 
+  const runtimeTransformEvidence = useMemo(() => {
+    const mappingResults =
+      preview.mapped?.transform_results ?? preview.final?.mapping_transform_results ?? []
+    const enrichmentResults = preview.final?.enrichment_transform_results ?? []
+    return [
+      ...mappingResults.map((item) => ({ ...item, stage: 'Mapping' as const })),
+      ...enrichmentResults.map((item) => ({ ...item, stage: 'Enrichment' as const })),
+    ]
+  }, [preview.mapped?.transform_results, preview.final?.mapping_transform_results, preview.final?.enrichment_transform_results])
+  const defaultEvidence = runtimeTransformEvidence.filter((item) => item.recovered_via_default)
+  const transformFailures = runtimeTransformEvidence.filter((item) => !item.success)
+
   return (
     <PanelChrome
       title="Final event preview"
@@ -186,7 +198,7 @@ export function FinalEventPreviewPanel({
           ))}
         </div>
 
-        <div className="grid grid-cols-2 overflow-hidden rounded-md border border-slate-200 bg-slate-50/60 dark:border-gdc-border dark:bg-gdc-section sm:grid-cols-3">
+        <div className="grid grid-cols-2 overflow-hidden rounded-md border border-slate-200 bg-slate-50/60 dark:border-gdc-border dark:bg-gdc-section sm:grid-cols-4">
           <PreviewMetric
             label="Field matches"
             value={summary.totalApplications > 0 ? `${summary.matchedApplications}/${summary.totalApplications}` : '—'}
@@ -204,6 +216,18 @@ export function FinalEventPreviewPanel({
             value={String(summary.nullOutputCount)}
             detail="Mapped targets with null final values"
             tone={summary.nullOutputCount > 0 ? 'warning' : 'good'}
+          />
+          <PreviewMetric
+            label="Defaults used"
+            value={String(summary.defaultRecoveryCount)}
+            detail="Advanced transform samples recovered with configured defaults"
+            tone={summary.defaultRecoveryCount > 0 ? 'warning' : 'good'}
+          />
+          <PreviewMetric
+            label="Blocked"
+            value={String(summary.advancedTransformBlockedCount)}
+            detail="Advanced enrichment rules skipped because KEEP_EXISTING preserved an existing value"
+            tone={summary.advancedTransformBlockedCount > 0 ? 'warning' : 'good'}
           />
           <PreviewMetric
             label="Type changes"
@@ -224,6 +248,68 @@ export function FinalEventPreviewPanel({
             tone={summary.errorCount > 0 ? 'error' : summary.warningCount > 0 ? 'warning' : 'good'}
           />
         </div>
+
+        {(defaultEvidence.length > 0 || transformFailures.length > 0) ? (
+          <div className="grid gap-2 sm:grid-cols-2" data-testid="final-event-transform-runtime-evidence">
+            {defaultEvidence.length > 0 ? (
+              <section className="rounded-md border border-amber-200/80 bg-amber-500/[0.05] p-2 dark:border-amber-500/30">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-amber-900 dark:text-amber-100">
+                  Defaults applied
+                </p>
+                <ul className="mt-1 space-y-1 text-[10px] text-amber-950 dark:text-amber-100/90">
+                  {defaultEvidence.slice(0, 8).map((item, index) => (
+                    <li key={`default:${item.stage}:${item.rule_id ?? item.output_field}:${item.event_index}:${index}`}>
+                      <button
+                        type="button"
+                        onClick={() => onSampleIndexChange(Math.min(item.event_index, availableEventCount - 1))}
+                        className="text-left hover:underline"
+                      >
+                        <span className="font-semibold">{item.stage}</span>
+                        {' · '}
+                        <span className="font-mono">{item.output_field || item.rule_id || 'transform'}</span>
+                        {' · '}
+                        sample {item.event_index + 1}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                {defaultEvidence.length > 8 ? (
+                  <p className="mt-1 text-[9px] text-amber-800 dark:text-amber-200">+{defaultEvidence.length - 8} more</p>
+                ) : null}
+              </section>
+            ) : null}
+
+            {transformFailures.length > 0 ? (
+              <section className="rounded-md border border-red-200/80 bg-red-500/[0.05] p-2 dark:border-red-500/30">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-red-800 dark:text-red-200">
+                  Transform failures
+                </p>
+                <ul className="mt-1 space-y-1 text-[10px] text-red-900 dark:text-red-100">
+                  {transformFailures.slice(0, 8).map((item, index) => (
+                    <li key={`failure:${item.stage}:${item.rule_id ?? item.output_field}:${item.event_index}:${index}`}>
+                      <button
+                        type="button"
+                        onClick={() => onSampleIndexChange(Math.min(item.event_index, availableEventCount - 1))}
+                        className="text-left hover:underline"
+                        title={item.error_message ?? item.error_code ?? 'Advanced transform failed'}
+                      >
+                        <span className="font-semibold">{item.stage}</span>
+                        {' · '}
+                        <span className="font-mono">{item.output_field || item.rule_id || 'transform'}</span>
+                        {' · '}
+                        sample {item.event_index + 1}
+                        {item.error_code ? ` · ${item.error_code}` : ''}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                {transformFailures.length > 8 ? (
+                  <p className="mt-1 text-[9px] text-red-700 dark:text-red-300">+{transformFailures.length - 8} more</p>
+                ) : null}
+              </section>
+            ) : null}
+          </div>
+        ) : null}
 
         {allWarnings.length > 0 ? (
           <ul className="max-h-24 space-y-1 overflow-auto rounded-md border border-amber-200/80 bg-amber-500/[0.06] p-2 text-[10px] dark:border-amber-500/30">

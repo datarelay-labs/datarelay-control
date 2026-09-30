@@ -412,6 +412,8 @@ export type WizardEnrichmentFromPersisted = {
   rules: WizardEnrichmentRule[]
   /** Unconverted `__rules` fragments (unknown type keys / unparseable items). */
   advancedPassthrough: Record<string, unknown>
+  /** Reserved top-level runtime fragments not owned by the Guided editor (for example advanced_fields/__computed). */
+  topLevelPassthrough: Record<string, unknown>
   /**
    * True when advanced rules were present only as runtime type-array form
    * (`__rules: { calculated: [{ target_field, ... }] }`). Persist re-emits that form.
@@ -423,10 +425,16 @@ export function wizardEnrichmentFromPersistedDict(
   rec: Record<string, unknown> | null | undefined,
 ): WizardEnrichmentFromPersisted {
   if (!rec || typeof rec !== 'object') {
-    return { rules: [], advancedPassthrough: {}, emitAdvancedAsTypeArray: false }
+    return {
+      rules: [],
+      advancedPassthrough: {},
+      topLevelPassthrough: {},
+      emitAdvancedAsTypeArray: false,
+    }
   }
   const rules: WizardEnrichmentRule[] = []
   const advancedPassthrough: Record<string, unknown> = {}
+  const topLevelPassthrough: Record<string, unknown> = {}
   const advancedRaw = rec.__rules
   const advanced =
     advancedRaw && typeof advancedRaw === 'object' && !Array.isArray(advancedRaw)
@@ -435,6 +443,10 @@ export function wizardEnrichmentFromPersistedDict(
 
   for (const [fieldName, value] of Object.entries(rec)) {
     if (fieldName === '__rules') continue
+    if (fieldName === 'advanced_fields' || fieldName === '__computed' || fieldName.startsWith('__')) {
+      topLevelPassthrough[fieldName] = value
+      continue
+    }
     if (typeof value === 'string') {
       rules.push({
         ...defaultRuleForType('static', rules.length),
@@ -516,6 +528,7 @@ export function wizardEnrichmentFromPersistedDict(
   return {
     rules,
     advancedPassthrough,
+    topLevelPassthrough,
     emitAdvancedAsTypeArray: sawTypeArray && !sawFieldKeyedAdvanced,
   }
 }
@@ -552,6 +565,8 @@ export function enrichmentRuleSourceLabel(rule: WizardEnrichmentRule): string {
 export type EnrichmentDictFromRulesOptions = {
   /** Unconverted advanced fragments merged under `__rules` (editor keys win on conflict). */
   advancedPassthrough?: Record<string, unknown>
+  /** Reserved top-level runtime fragments merged back unchanged (editor-owned keys win on conflict). */
+  topLevelPassthrough?: Record<string, unknown>
   /**
    * Emit advanced rules as runtime type-array form
    * (`__rules: { calculated: [{ target_field, ... }] }`) instead of field-keyed.
@@ -595,7 +610,7 @@ export function enrichmentDictFromRules(
   rules: readonly WizardEnrichmentRule[],
   options?: EnrichmentDictFromRulesOptions,
 ): Record<string, unknown> {
-  const out: Record<string, unknown> = {}
+  const out: Record<string, unknown> = { ...(options?.topLevelPassthrough ?? {}) }
   const advancedFieldKeyed: Record<string, unknown> = {}
   const advancedTypeArray: Record<string, unknown[]> = {}
 

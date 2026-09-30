@@ -376,7 +376,9 @@ export async function persistWizardStreamEdits(
   }
 
   const fieldMappings = buildWizardFieldMappingsPayload(state)
-  const enrichmentDict = enrichmentDictFromRows(state.enrichment)
+  const enrichmentDict = enrichmentDictFromRows(state.enrichment, {
+    advancedPassthrough: state.enrichmentPassthrough,
+  })
   const hasMapping = wizardFieldMappingsReady(state)
   const hasEnrichment = Object.keys(enrichmentDict).length > 0
 

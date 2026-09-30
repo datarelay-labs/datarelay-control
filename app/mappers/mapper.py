@@ -10,8 +10,11 @@ from typing import Any
 from app.runtime.copy_utils import copy_json_value
 
 from app.mappers.full_event_mapping import (
+    FieldTransformRuleResult,
+    apply_field_transform_rules,
     apply_full_event_mapping,
     extract_basic_jsonpath_mappings,
+    extract_field_transform_rules,
     is_full_event_mapping,
 )
 from app.mappers.mapping_results import MappingApplyResult, MappingEventError, MappingFieldError
@@ -22,46 +25,60 @@ from app.parsers.jsonpath_parser import compile_jsonpath, extract_one_compiled
 from app.runtime.errors import MappingError, ParserError
 
 
-def apply_mapping(event: dict[str, Any], field_mappings: dict[str, Any] | None) -> dict[str, Any]:
-    """Project ``event`` through mapping rules (JSONPath or full-event modes).
-
-    Each basic ``field_mappings`` entry maps ``output_field_name → JSONPath string``.
-    Full-event configs use ``mapping_mode`` with ``jsonata_expression`` or ``regex_rules``.
-
-    Does not mutate ``event``. Does not apply enrichment or formatting.
-
-    Raises:
-        MappingError: Non-dict ``event``, invalid JSONPath, or full-event evaluation failure.
-    """
+def apply_mapping_with_transform_results(
+    event: dict[str, Any],
+    field_mappings: dict[str, Any] | None,
+) -> tuple[dict[str, Any], list[FieldTransformRuleResult]]:
+    """Project one event through the persisted Mapping config and expose per-field advanced evidence."""
 
     if not isinstance(event, dict):
         raise MappingError(f"apply_mapping expects dict event, got {type(event).__name__}")
 
     fm = field_mappings or {}
     if not fm:
-        return copy_json_value(event)
+        return copy_json_value(event), []
 
     if is_full_event_mapping(fm):
         mapped, errors, _warnings = apply_full_event_mapping(event, fm)
         if errors:
             raise MappingError(errors[0])
-        return mapped
+        return mapped, []
 
     basic = extract_basic_jsonpath_mappings(fm)
     compiled = compile_mappings(basic)
     pass_unmapped = should_pass_through_unmapped(fm)
-    return apply_compiled_mapping(
+    mapped = apply_compiled_mapping(
         event,
         compiled,
         source_json_paths=tuple(basic.values()) if pass_unmapped else None,
     )
+    rules = extract_field_transform_rules(fm, "transform_rules")
+    if not rules:
+        return mapped, []
+
+    transformed, results = apply_field_transform_rules(
+        event,
+        rules,
+        initial_output=mapped,
+    )
+    return transformed, results
+
+
+def apply_mapping(event: dict[str, Any], field_mappings: dict[str, Any] | None) -> dict[str, Any]:
+    """Project ``event`` through basic, full-event, and persisted per-field Mapping rules."""
+
+    mapped, transform_results = apply_mapping_with_transform_results(event, field_mappings)
+    first_error = next((result for result in transform_results if not result.success), None)
+    if first_error is not None:
+        raise MappingError(first_error.error_message or first_error.error_code or "Advanced transform failed")
+    return mapped
 
 
 def apply_mappings(events: list[dict[str, Any]], field_mappings: dict[str, Any] | None) -> list[dict[str, Any]]:
     """Apply :func:`apply_mapping` to each event independently."""
 
     fm = field_mappings or {}
-    if is_full_event_mapping(fm):
+    if is_full_event_mapping(fm) or extract_field_transform_rules(fm, "transform_rules"):
         return [apply_mapping(event, fm) for event in events]
 
     basic = extract_basic_jsonpath_mappings(fm)
@@ -141,6 +158,7 @@ def apply_mappings_with_results(
     compiled = compile_mappings(basic)
     pass_unmapped = should_pass_through_unmapped(fm)
     source_paths = tuple(basic.values()) if pass_unmapped else None
+    advanced_rules = extract_field_transform_rules(fm, "transform_rules")
     results = []
     for event in events:
         if not isinstance(event, dict):
@@ -156,14 +174,32 @@ def apply_mappings_with_results(
                 )
             )
             continue
+        mapped_event = apply_compiled_mapping(
+            event,
+            compiled,
+            source_json_paths=source_paths,
+        )
+        transform_results: list[FieldTransformRuleResult] = []
+        if advanced_rules:
+            mapped_event, transform_results = apply_field_transform_rules(
+                event,
+                advanced_rules,
+                initial_output=mapped_event,
+            )
+        field_errors = [
+            MappingFieldError(
+                rule_id=result.rule_id,
+                output_field=result.output_field,
+                error_code=result.error_code or "ADVANCED_TRANSFORM_FAILED",
+                error_message=result.error_message or "Advanced transform failed",
+            )
+            for result in transform_results
+            if not result.success
+        ]
         results.append(
             MappingApplyResult(
-                mapped_event=apply_compiled_mapping(
-                    event,
-                    compiled,
-                    source_json_paths=source_paths,
-                ),
-                field_errors=[],
+                mapped_event=mapped_event,
+                field_errors=field_errors,
             )
         )
     return results

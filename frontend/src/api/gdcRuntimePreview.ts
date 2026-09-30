@@ -195,8 +195,22 @@ export type MappingDraftPreviewRequest = {
   payload: unknown
   event_array_path?: string | null
   event_root_path?: string | null
-  field_mappings: Record<string, string>
+  field_mappings: Record<string, unknown>
   max_events?: number
+}
+
+export type MappingDraftPreviewTransformResult = {
+  event_index: number
+  success: boolean
+  value: unknown
+  error_code: string | null
+  error_message: string | null
+  rule_id: string | null
+  output_field: string
+  mode: string
+  recovered_via_default: boolean
+  executed?: boolean
+  blocked?: boolean
 }
 
 export type MappingDraftPreviewResponse = {
@@ -204,6 +218,7 @@ export type MappingDraftPreviewResponse = {
   preview_event_count: number
   mapped_events: Array<Record<string, unknown>>
   missing_fields: Array<{ output_field: string; json_path: string; event_index: number }>
+  transform_results?: MappingDraftPreviewTransformResult[]
   message: string
 }
 
@@ -229,7 +244,7 @@ export type MappingValidateRequest = {
   payload?: unknown | null
   event_array_path?: string | null
   event_root_path?: string | null
-  field_mappings?: Record<string, string>
+  field_mappings?: Record<string, unknown>
 }
 
 export type MappingValidateResponse = {
@@ -281,7 +296,7 @@ export type FinalEventDraftPreviewRequest = {
   payload: unknown
   event_array_path?: string | null
   event_root_path?: string | null
-  field_mappings: Record<string, string>
+  field_mappings: Record<string, unknown>
   enrichment: Record<string, unknown>
   override_policy?: 'KEEP_EXISTING' | 'OVERRIDE' | 'ERROR_ON_CONFLICT'
   max_events?: number
@@ -293,6 +308,8 @@ export type FinalEventDraftPreviewResponse = {
   mapped_events: Array<Record<string, unknown>>
   final_events: Array<Record<string, unknown>>
   missing_fields: Array<{ output_field: string; json_path: string; event_index: number }>
+  mapping_transform_results?: MappingDraftPreviewTransformResult[]
+  enrichment_transform_results?: MappingDraftPreviewTransformResult[]
   message: string
 }
 
@@ -308,7 +325,7 @@ export async function runFinalEventDraftPreview(
 
 export type RouteE2EDraftPreviewRequest = {
   payload: unknown
-  field_mappings: Record<string, string>
+  field_mappings: Record<string, unknown>
   enrichment: Record<string, unknown>
   override_policy?: 'KEEP_EXISTING' | 'OVERRIDE' | 'ERROR_ON_CONFLICT'
   destination_type: 'SYSLOG_UDP' | 'SYSLOG_TCP' | 'SYSLOG_TLS' | 'WEBHOOK_POST'
@@ -351,6 +368,12 @@ export type EnrichmentExecPreviewWarning = {
 export type EnrichmentExecPreviewResponse = {
   final_event: Record<string, unknown>
   warnings: EnrichmentExecPreviewWarning[]
+  field_errors?: Array<{
+    rule_id?: string | null
+    output_field: string
+    error_code: string
+    error_message: string
+  }>
   duration_ms?: number
   message: string
 }
@@ -473,6 +496,8 @@ export type TransformPreviewFieldResult = {
   output_field: string
   mode: string
   recovered_via_default: boolean
+  executed?: boolean
+  blocked?: boolean
 }
 
 export type TransformPreviewIssue = {

@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { runMappingDraftPreview, runTransformPreview } from '../../../api/gdcRuntimePreview'
 import { cn } from '../../../lib/utils'
+import { defaultAdvancedRule, type AdvancedTransformRuleDraft } from '../../../types/advancedTransform'
+import { buildFieldMappingsWithTransformRules } from '../../../utils/advancedTransformConfig'
+import { AdvancedTransformWorkspace } from '../../transform/advanced-transform-workspace'
 import { mapWithConcurrency } from './bounded-async-map'
 import { EnrichmentRulesEditor } from './enrichment-rules-editor'
 import { TransformRuleDebugger } from './transform-rule-debugger'
@@ -22,6 +25,7 @@ export type StepMappingCombinedProps = {
   onChangeMappingMode: (mode: WizardState['mappingMode']) => void
   onChangeFullEventJsonata: (expression: string) => void
   onChangeFullEventRegexConfigJson: (json: string) => void
+  onChangeTransformRules?: (rules: AdvancedTransformRuleDraft[]) => void
   onChangeEnrichment: (rules: WizardEnrichmentRule[]) => void
   onChangeUnmappedFieldsPolicy?: (policy: WizardState['unmappedFieldsPolicy']) => void
   onChangeDataProtection: (patch: Partial<WizardDataProtectionState>) => void
@@ -45,6 +49,7 @@ export function StepMappingCombined({
   onChangeMappingMode,
   onChangeFullEventJsonata,
   onChangeFullEventRegexConfigJson,
+  onChangeTransformRules = () => undefined,
   onChangeEnrichment,
   onChangeUnmappedFieldsPolicy,
   onChangeDataProtection,
@@ -57,6 +62,7 @@ export function StepMappingCombined({
     if (state.mappingMode === 'full_event_regex') return 'expert'
     return 'basic'
   })
+  const [runtimeMappedSample, setRuntimeMappedSample] = useState<Record<string, unknown> | null>(null)
 
   const mappingModeRef = useRef(state.mappingMode)
   useEffect(() => {
@@ -65,7 +71,8 @@ export function StepMappingCombined({
     if (prev === state.mappingMode) return
     if (state.mappingMode === 'full_event_jsonata') setModeTab('advanced')
     else if (state.mappingMode === 'full_event_regex') setModeTab('expert')
-    else setModeTab('basic')
+    // basic_jsonpath is also the runtime for per-field JSONata/Regex transform_rules.
+    // Keep the current Advanced/Expert editor visible when switching from a full-event mode.
   }, [state.mappingMode])
 
   const sampleEvent = useMemo(() => {
@@ -111,6 +118,26 @@ export function StepMappingCombined({
     [sampleEvent, state.mapping, state.unmappedFieldsPolicy],
   )
 
+  const simpleFieldMappings = useMemo(() => {
+    const out: Record<string, string> = {}
+    for (const row of state.mapping) {
+      const outputField = row.outputField.trim()
+      const sourceJsonPath = row.sourceJsonPath.trim()
+      if (outputField && sourceJsonPath) out[outputField] = sourceJsonPath
+    }
+    return out
+  }, [state.mapping])
+
+  const transformSampleEvents = useMemo(() => {
+    const sample = buildWizardTransformSample(state)
+    return (sample?.extractedEvents ?? [])
+      .filter(
+        (event): event is Record<string, unknown> =>
+          event != null && typeof event === 'object' && !Array.isArray(event),
+      )
+      .slice(0, 20)
+  }, [state])
+
   const loadDebuggerMappedEvents = useCallback(async () => {
     const sample = buildWizardTransformSample(state)
     if (!sample) return []
@@ -147,15 +174,11 @@ export function StepMappingCombined({
       })
     }
 
-    const fieldMappings: Record<string, string> = {}
-    for (const row of state.mapping) {
-      const outputField = row.outputField.trim()
-      const sourceJsonPath = row.sourceJsonPath.trim()
-      if (outputField && sourceJsonPath) fieldMappings[outputField] = sourceJsonPath
-    }
-    if (state.unmappedFieldsPolicy === 'drop_unmapped') {
-      fieldMappings.unmapped_fields_policy = 'drop_unmapped'
-    }
+    const fieldMappings = buildFieldMappingsWithTransformRules(
+      simpleFieldMappings,
+      state.transformRules,
+      state.unmappedFieldsPolicy,
+    )
 
     const preview = await runMappingDraftPreview({
       payload: sample.rawPayload,
@@ -167,11 +190,41 @@ export function StepMappingCombined({
     return preview.mapped_events
   }, [state])
 
+  useEffect(() => {
+    let cancelled = false
+    if (!wizardTransformSampleReady(state)) {
+      setRuntimeMappedSample(Object.keys(mappedBase).length > 0 ? mappedBase : null)
+      return
+    }
+
+    setRuntimeMappedSample(Object.keys(mappedBase).length > 0 ? mappedBase : null)
+    const timer = window.setTimeout(() => {
+      void loadDebuggerMappedEvents()
+        .then((events) => {
+          if (cancelled) return
+          const first = events.find(
+            (event): event is Record<string, unknown> =>
+              event != null && typeof event === 'object' && !Array.isArray(event),
+          )
+          setRuntimeMappedSample(first ?? (Object.keys(mappedBase).length > 0 ? mappedBase : null))
+        })
+        .catch(() => {
+          if (!cancelled) setRuntimeMappedSample(Object.keys(mappedBase).length > 0 ? mappedBase : null)
+        })
+    }, 250)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [loadDebuggerMappedEvents, mappedBase, state])
+
+  const editorMappedSample = runtimeMappedSample ?? mappedBase
   const mappedKeysLower = useMemo(() => {
     const keys = new Set<string>()
-    for (const key of Object.keys(mappedBase)) keys.add(key.toLowerCase())
+    for (const key of Object.keys(editorMappedSample)) keys.add(key.toLowerCase())
     return keys
-  }, [mappedBase])
+  }, [editorMappedSample])
 
   const modeTabClass = (tab: MappingModeTab) =>
     modeTab === tab
@@ -180,7 +233,9 @@ export function StepMappingCombined({
 
   const transformSampleReady = wizardTransformSampleReady(state)
   const mappedFieldCount = state.mapping.filter((row) => row.sourceJsonPath.trim() && row.outputField.trim()).length
-  const activeTransformRuleCount = state.enrichment.filter((rule) => rule.enabled && rule.fieldName.trim()).length
+  const activeTransformRuleCount =
+    state.enrichment.filter((rule) => rule.enabled && rule.fieldName.trim()).length +
+    state.transformRules.filter((rule) => rule.outputField.trim()).length
 
   const addTransform = useCallback(
     (action: TransformLauncherAction) => {
@@ -196,13 +251,15 @@ export function StepMappingCombined({
 
       if (action === 'jsonata') {
         setModeTab('advanced')
-        onChangeMappingMode('full_event_jsonata')
+        onChangeMappingMode('basic_jsonpath')
+        onChangeTransformRules([...state.transformRules, defaultAdvancedRule('advanced')])
         return
       }
 
       if (action === 'regex') {
         setModeTab('expert')
-        onChangeMappingMode('full_event_regex')
+        onChangeMappingMode('basic_jsonpath')
+        onChangeTransformRules([...state.transformRules, defaultAdvancedRule('expert')])
         return
       }
 
@@ -216,7 +273,15 @@ export function StepMappingCombined({
               : 'conditional'
       onChangeEnrichment([...state.enrichment, defaultRuleForType(type, state.enrichment.length)])
     },
-    [onChangeEnrichment, onChangeMapping, onChangeMappingMode, state.enrichment, state.mapping],
+    [
+      onChangeEnrichment,
+      onChangeMapping,
+      onChangeMappingMode,
+      onChangeTransformRules,
+      state.enrichment,
+      state.mapping,
+      state.transformRules,
+    ],
   )
 
   return (
@@ -242,7 +307,7 @@ export function StepMappingCombined({
           <TransformSummaryCell
             step="2"
             label="Rules"
-            value={`${mappedFieldCount} mapped · ${activeTransformRuleCount} added field${activeTransformRuleCount === 1 ? '' : 's'}`}
+            value={`${mappedFieldCount} mapped · ${activeTransformRuleCount} transform rule${activeTransformRuleCount === 1 ? '' : 's'}`}
             ready={mappedFieldCount > 0 || activeTransformRuleCount > 0}
           />
           <TransformSummaryCell
@@ -292,7 +357,7 @@ export function StepMappingCombined({
                 className={`-mb-px border-b-2 px-3 pb-2 text-[12px] font-semibold ${modeTabClass('advanced')}`}
                 onClick={() => {
                   setModeTab('advanced')
-                  onChangeMappingMode('full_event_jsonata')
+                  if (state.mappingMode === 'full_event_regex') onChangeMappingMode('basic_jsonpath')
                 }}
               >
                 JSONata · Advanced
@@ -304,7 +369,7 @@ export function StepMappingCombined({
                 className={`-mb-px border-b-2 px-3 pb-2 text-[12px] font-semibold ${modeTabClass('expert')}`}
                 onClick={() => {
                   setModeTab('expert')
-                  onChangeMappingMode('full_event_regex')
+                  if (state.mappingMode === 'full_event_jsonata') onChangeMappingMode('basic_jsonpath')
                 }}
               >
                 Regex · Expert
@@ -321,18 +386,83 @@ export function StepMappingCombined({
             showOutputAside={showOutputAside}
           />
         ) : (
-          <div className="mt-4">
-            <WizardFullEventTransformWorkspace
+          <div className="mt-4 space-y-4">
+            <AdvancedTransformWorkspace
+              stage="mapping"
+              contextLabel={modeTab === 'expert' ? 'Per-field Regex' : 'Per-field JSONata'}
               sampleEvent={sampleEvent}
-              unionSchema={state.apiTest.unionSchema}
-              enrichment={state.enrichment}
-              eventCount={state.apiTest.eventCount}
-              jsonataExpression={state.fullEventJsonataExpression}
-              onJsonataExpressionChange={onChangeFullEventJsonata}
-              fullEventRegexConfigJson={state.fullEventRegexConfigJson}
-              onFullEventRegexConfigJsonChange={onChangeFullEventRegexConfigJson}
+              sampleEvents={transformSampleEvents}
+              rules={state.transformRules}
+              onRulesChange={(nextRules) => {
+                onChangeMappingMode('basic_jsonpath')
+                onChangeTransformRules(nextRules)
+              }}
+              simpleFieldMappings={simpleFieldMappings}
+              unmappedFieldsPolicy={state.unmappedFieldsPolicy}
               filterUiMode={modeTab === 'expert' ? 'expert' : 'advanced'}
             />
+
+            <section className="rounded-lg border border-slate-200/80 bg-white p-3 dark:border-gdc-border dark:bg-gdc-card">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p className="text-[12px] font-semibold text-slate-900 dark:text-slate-100">
+                    Full-event {modeTab === 'expert' ? 'Regex' : 'JSONata'} alternative
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-slate-600 dark:text-gdc-muted">
+                    Use this only when the entire event should be replaced. Per-field rules above stay persisted but
+                    execute only in per-field mode.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onChangeMappingMode('basic_jsonpath')}
+                    className={cn(
+                      'h-8 rounded-md border px-2.5 text-[11px] font-semibold',
+                      state.mappingMode === 'basic_jsonpath'
+                        ? 'border-violet-500 bg-violet-500/10 text-violet-700 dark:text-violet-300'
+                        : 'border-slate-200 text-slate-600 dark:border-gdc-border dark:text-gdc-mutedStrong',
+                    )}
+                  >
+                    Per-field mode
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onChangeMappingMode(modeTab === 'expert' ? 'full_event_regex' : 'full_event_jsonata')
+                    }
+                    className={cn(
+                      'h-8 rounded-md border px-2.5 text-[11px] font-semibold',
+                      state.mappingMode === (modeTab === 'expert' ? 'full_event_regex' : 'full_event_jsonata')
+                        ? 'border-violet-500 bg-violet-500/10 text-violet-700 dark:text-violet-300'
+                        : 'border-slate-200 text-slate-600 dark:border-gdc-border dark:text-gdc-mutedStrong',
+                    )}
+                  >
+                    Full-event mode
+                  </button>
+                </div>
+              </div>
+
+              {state.mappingMode === (modeTab === 'expert' ? 'full_event_regex' : 'full_event_jsonata') ? (
+                <div className="mt-3">
+                  <WizardFullEventTransformWorkspace
+                    sampleEvent={sampleEvent}
+                    unionSchema={state.apiTest.unionSchema}
+                    enrichment={state.enrichment}
+                    eventCount={state.apiTest.eventCount}
+                    jsonataExpression={state.fullEventJsonataExpression}
+                    onJsonataExpressionChange={onChangeFullEventJsonata}
+                    fullEventRegexConfigJson={state.fullEventRegexConfigJson}
+                    onFullEventRegexConfigJsonChange={onChangeFullEventRegexConfigJson}
+                    filterUiMode={modeTab === 'expert' ? 'expert' : 'advanced'}
+                  />
+                </div>
+              ) : (
+                <p className="mt-3 rounded-md border border-violet-200/70 bg-violet-500/[0.05] px-2.5 py-2 text-[11px] text-violet-800 dark:border-violet-500/30 dark:text-violet-200">
+                  Per-field mode is active. JSONata/Regex rules execute through the persisted transform_rules runtime.
+                </p>
+              )}
+            </section>
           </div>
         )}
 
@@ -341,16 +471,26 @@ export function StepMappingCombined({
             rules={state.enrichment}
             onChange={onChangeEnrichment}
             mappedKeysLower={mappedKeysLower}
-            mappedSampleEvent={mappedBase}
+            mappedSampleEvent={editorMappedSample}
             hideAddMenu
             data-testid="wizard-transform-enrichment-editor"
           />
-          <TransformRuleDebugger
-            loadMappedEvents={loadDebuggerMappedEvents}
-            sampleAvailable={transformSampleReady}
-            rules={state.enrichment}
-            overridePolicy={state.enrichmentOverridePolicy}
-          />
+          {state.enrichmentEnabled === false ? (
+            <p
+              className="rounded-md border border-amber-200/80 bg-amber-500/[0.06] px-2.5 py-2 text-[11px] text-amber-900 dark:border-amber-500/30 dark:text-amber-100"
+              data-testid="wizard-transform-enrichment-disabled"
+            >
+              Enrichment is disabled for runtime delivery. Rules remain editable, but rule execution evidence is hidden
+              until the stage is enabled.
+            </p>
+          ) : (
+            <TransformRuleDebugger
+              loadMappedEvents={loadDebuggerMappedEvents}
+              sampleAvailable={transformSampleReady}
+              rules={state.enrichment}
+              overridePolicy={state.enrichmentOverridePolicy}
+            />
+          )}
         </div>
       </section>
 
