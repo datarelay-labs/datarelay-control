@@ -3,6 +3,7 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
+PROJECT = ROOT / ".engineering" / "project.yaml"
 RELEASE = ROOT / ".engineering" / "release.yaml"
 TESTS = ROOT / ".engineering" / "tests.yaml"
 BROWSER_DOC = ROOT / "docs" / "BROWSER_FEATURE_SCENARIO_RECONCILIATION.md"
@@ -12,9 +13,12 @@ RELEASE_READINESS = ROOT / "docs" / "operations" / "release-readiness-checklist.
 
 
 def test_release_requires_both_exhaustive_user_tests() -> None:
+    project = yaml.safe_load(PROJECT.read_text(encoding="utf-8"))
     release = yaml.safe_load(RELEASE.read_text(encoding="utf-8"))
     config = release["exhaustive_user_tests"]
 
+    assert project["project"]["user_facing"] is True
+    assert project["project"]["primary_user_surface"] == "browser"
     assert release["exhaustive_user_tests_required"] is True
     assert config["executor"] == "CHATGPT_CHAT"
     assert config["exact_head_required"] is True
