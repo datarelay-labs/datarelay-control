@@ -14,6 +14,8 @@ project:
   name: data-relay-control
   type: enterprise-data-control-gateway
   maturity: production
+  user_facing: true
+  primary_user_surface: browser
 domains:
 - backend
 - frontend

@@ -8,14 +8,40 @@ preflight_command: ''
 operational_e2e_required: true
 full_e2e_passes: 2
 public_smoke_required: true
+
+human_equivalent_user_tests_required: true
+human_equivalent_user_tests:
+  executor: CHATGPT_CHAT
+  actual_user_surface_required: true
+  primary_user_surface: browser
+  actual_browser_process_required: true
+  same_candidate_required: true
+  ci_contract_validation_only: true
+  exact_head_required: true
+  machine_qualification_required_first: true
+  zero_fail_partial_blocked: true
+  browser_engine: CHROMIUM_OR_CHROME
+  execution_authority: CHATGPT_WORK_PACKET
+  evidence_authority: ACTIVE_RELEASE_WORK_PACKET
+  order:
+    - SURFACE_RECONCILIATION
+    - FULL_USER_E2E
+  surface_reconciliation:
+    mandatory: true
+    contract: docs/BROWSER_FEATURE_SCENARIO_RECONCILIATION.md
+    minimum_passes: 1
+  full_user_e2e:
+    mandatory: true
+    contract: docs/FULL_USER_E2E_SCENARIOS.md
+    minimum_passes: 1
+
 blockers:
   p0: true
   p1: true
   user_blocking_p2: true
 setup_command: sudo apt-get update -qq && sudo apt-get install -y postgresql-client
   && python -m pip install -r requirements.txt && (cd frontend && npm ci)
-qualification_command: ./scripts/test/run-backend-full.sh && (cd frontend && npm run
-  validate)
+qualification_command: python3 -m pytest -q tests/test_exhaustive_user_test_release_contract.py tests/test_browser_feature_scenario_reconciliation_contract.py tests/test_full_user_e2e_contract.py && ./scripts/test/run-backend-full.sh && (cd frontend && npm run validate)
 artifact_hash_command: git archive --format=tar HEAD | sha256sum
 provenance_command: git rev-parse HEAD && git status --porcelain=v1
 sbom_command: ''

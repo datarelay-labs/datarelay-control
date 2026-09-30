@@ -132,3 +132,20 @@ scenarios:
       - "Superseded master-design content cannot regain current authority silently."
     origin: "docs/architecture/source-of-truth-index.md"
     release_gate: true
+
+  - id: PRE-RELEASE-EXHAUSTIVE-USER-TEST-CONTRACT
+    name: Pre-release exhaustive user-test contract
+    level: static
+    cost: cheap
+    domains: [release, e2e, documentation]
+    triggers: [rc, release]
+    platforms: [linux]
+    command: "python3 -m pytest -q tests/test_exhaustive_user_test_release_contract.py tests/test_browser_feature_scenario_reconciliation_contract.py tests/test_full_user_e2e_contract.py"
+    invariants:
+      - "Browser Feature Scenario Reconciliation is mandatory before release."
+      - "Full User E2E is mandatory before release."
+      - "Both exhaustive user tests use the same exact candidate HEAD and neither substitutes for machine E2E."
+      - "Required exhaustive user-test documents remain executable ChatGPT-owned contracts."
+      - "This CI/static contract check never counts as execution PASS for either exhaustive user test; release evidence must come from the active release Work Packet."
+    origin: ".engineering/release.yaml"
+    release_gate: true

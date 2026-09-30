@@ -419,6 +419,11 @@ async function main(): Promise<number> {
 
   try {
     browser = await chromium.launch({ headless: !args.headed })
+    store.setFlag('ACTUAL_BROWSER_PROCESS', 'YES')
+    store.setFlag('BROWSER_DRIVER', 'PLAYWRIGHT')
+    store.setFlag('BROWSER_ENGINE', 'CHROMIUM')
+    store.setFlag('BROWSER_VERSION', browser.version())
+    store.setFlag('BROWSER_MODE', args.headed ? 'HEADED' : 'HEADLESS')
     context = await browser.newContext({ ignoreHTTPSErrors: true })
     page = await context.newPage()
     page.setDefaultTimeout(TIMEOUTS.actionMs)

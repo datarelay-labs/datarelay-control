@@ -12,6 +12,10 @@ FORENSICS = API/log/DB only after user-visible path checked
 
 Exercise the full operator lifecycle before release: create connectors and streams in the UI, configure routes/protection/transform, run actual delivery, diagnose failures from the UI, recover, edit, stop/start, and delete safely.
 
+The canonical execution contract is `docs/FULL_USER_E2E_SCENARIOS.md`. This package is the reusable browser harness; the document owns release-grade onboarding, mandatory FUE scenarios, evidence acceptance, first-login proof, failure continuation, and offboarding.
+
+For release readiness, `docs/BROWSER_FEATURE_SCENARIO_RECONCILIATION.md` must PASS first on the same exact candidate. Neither exhaustive user test substitutes for the other.
+
 ## Architecture
 
 ```text
@@ -45,6 +49,10 @@ Reuses `e2e/framework/` (ui-helpers, fixture-client redaction patterns) and exis
 Disposable platform DB: `postgresql://gdc:gdc@127.0.0.1:55441/<run_db>` (never live `55432`).
 
 ## How to run
+
+The runner rebuilds the frontend from the current candidate by default and records the build HEAD. `ULC_REUSE_UI_DIST=1` may reuse `frontend/dist` only when the recorded build HEAD matches the current repository HEAD.
+
+For release Full User E2E, use `REQUIRE_AUTH=true`, unique API/UI ports and run-scoped PID/log directories, and follow the separate first-login/password-change proof in the canonical document.
 
 ```bash
 # Smoke (package self-test)

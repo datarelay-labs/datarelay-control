@@ -140,7 +140,33 @@
 
 ---
 
-## 8. 릴리스 차단 요인·잔여 리스크 (요약)
+## 8. 릴리스 전 전수 사용자 테스트 — 필수
+
+릴리스 후보는 아래 순서를 **동일 exact candidate HEAD**에서 모두 만족해야 합니다.
+
+~~~text
+exact-head machine qualification
+→ Browser Feature Scenario Reconciliation
+→ Full User E2E
+→ owner/manual acceptance
+→ release authorization/publication
+~~~
+
+- [ ] `docs/BROWSER_FEATURE_SCENARIO_RECONCILIATION.md` — ChatGPT Chat 직접 실행, PASS.
+- [ ] `docs/FULL_USER_E2E_SCENARIOS.md` — ChatGPT Chat 직접 실행, PASS.
+- [ ] 두 테스트 모두 required FAIL / PARTIAL / BLOCKED = 0.
+- [ ] 실제 delivery와 장애/복구 증거 보존.
+- [ ] destructive lifecycle / cleanup / zero-orphan PASS.
+- [ ] unresolved P0 / P1 / user-blocking P2 = 0.
+- [ ] 두 실행의 RUN_ID / evidence root / exact HEAD를 릴리스 결정에 기록.
+
+Machine Full Regression 또는 operational E2E PASS는 위 두 전수 사용자 테스트를 대체하지 않습니다. CI/static contract 검증은 두 gate가 설정되어 있음을 확인할 뿐 실제 실행 PASS가 아닙니다. 실제 PASS 증거는 동일 exact candidate의 active release Work Packet과 evidence root에 남아 있어야 합니다.
+
+두 전수 테스트 PASS 이후 관련 product/runtime/browser/harness/release contract가 변경되면 affected evidence는 무효화하고 동일 HEAD gate를 다시 성립시켜야 합니다.
+
+---
+
+## 9. 릴리스 차단 요인·잔여 리스크 (요약)
 
 | 항목 | 내용 |
 |------|------|
@@ -151,7 +177,7 @@
 
 ---
 
-## 9. 스크립트·도구 인덱스 (감사용)
+## 10. 스크립트·도구 인덱스 (감사용)
 
 | 경로 | 용도 |
 |------|------|
@@ -165,4 +191,4 @@
 
 ---
 
-*문서 버전: 저장소 상태 기준 2026-05-16 운영 감사 반영.*
+*문서 버전: 저장소 상태 기준 2026-09-30 운영 감사 및 릴리스 전 전수 사용자 테스트 gate 반영.*
