@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
 
 from app.main import app
+from tests.test_stream_runner_e2e import _seed_stream_runtime
 
 
 def test_e2e_draft_preview_syslog_udp_success() -> None:
@@ -28,6 +30,37 @@ def test_e2e_draft_preview_syslog_udp_success() -> None:
     assert body["destination_type"] == "SYSLOG_UDP"
     assert body["final_events"][0]["vendor"] == "Acme"
     assert body["preview_messages"][0].startswith("<134> gdc generic-connector acme_edr: ")
+
+
+def test_e2e_draft_preview_route_id_runs_effective_pipeline_once(db_session: Session) -> None:
+    fixture = _seed_stream_runtime(db_session)
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/runtime/preview/e2e-draft",
+        json={
+            "payload": {"items": [{"id": "evt-route", "message": "hello", "vendor": "Acme"}]},
+            "event_array_path": "$.items",
+            "field_mappings": {"event_id": "$.id", "message": "$.message", "vendor": "$.vendor"},
+            "enrichment": {"vendor": "MappedVendorShouldWin", "product": "GDC"},
+            "destination_type": "WEBHOOK_POST",
+            "formatter_config": {},
+            "stream_id": fixture["stream_id"],
+            "route_id": fixture["route_ids"][0],
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["route_id"] == fixture["route_ids"][0]
+    final_event = body["final_events"][0]
+    assert final_event["event_id"] == "evt-route"
+    assert final_event["message"] == "hello"
+    assert final_event["vendor"] == "Acme"
+    assert final_event["product"] == "GDC"
+    assert final_event["classification_level"] == "INTERNAL"
+    stages = [item["stage"] for item in body["route_stage_timeline"]]
+    assert stages[:4] == ["transform", "transform", "protection", "classification"]
+    assert "policy" in stages
+    assert body["delivery_allowed"] is True
 
 
 def test_e2e_draft_preview_syslog_tcp_success() -> None:

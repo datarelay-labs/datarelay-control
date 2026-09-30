@@ -449,6 +449,7 @@ class StreamRunner(BaseRunner):
                     summary["route_policy_allow_count"] = route_pipeline.metrics.route_policy_allow_count
                     summary["route_policy_audit_count"] = route_pipeline.metrics.route_policy_audit_count
                     summary["route_policy_block_count"] = route_pipeline.metrics.route_policy_block_count
+                    summary["route_policy_blocked_count"] = route_pipeline.metrics.route_policy_blocked_count
                     summary["route_policy_review_count"] = route_pipeline.metrics.route_policy_review_count
                     summary["route_policy_quarantine_count"] = route_pipeline.metrics.route_policy_quarantine_count
                     summary["route_delivery_attempt_count"] = route_pipeline.metrics.route_delivery_attempt_count
@@ -745,6 +746,14 @@ class StreamRunner(BaseRunner):
                 "route_classification_count": pipeline.metrics.route_classification_count,
                 "route_classification_duration_ms": pipeline.metrics.route_classification_duration_ms,
                 "route_classification_override_count": pipeline.metrics.route_classification_override_count,
+                "route_policy_count": pipeline.metrics.route_policy_count,
+                "route_policy_duration_ms": pipeline.metrics.route_policy_duration_ms,
+                "route_policy_allow_count": pipeline.metrics.route_policy_allow_count,
+                "route_policy_audit_count": pipeline.metrics.route_policy_audit_count,
+                "route_policy_block_count": pipeline.metrics.route_policy_block_count,
+                "route_policy_blocked_count": pipeline.metrics.route_policy_blocked_count,
+                "route_policy_review_count": pipeline.metrics.route_policy_review_count,
+                "route_policy_quarantine_count": pipeline.metrics.route_policy_quarantine_count,
                 "route_delivery_attempt_count": pipeline.metrics.route_delivery_attempt_count,
                 "route_delivery_success_count": pipeline.metrics.route_delivery_success_count,
                 "route_delivery_failure_count": pipeline.metrics.route_delivery_failure_count,
@@ -771,6 +780,14 @@ class StreamRunner(BaseRunner):
                 "route_classification_count": pipeline.metrics.route_classification_count,
                 "route_classification_duration_ms": pipeline.metrics.route_classification_duration_ms,
                 "route_classification_override_count": pipeline.metrics.route_classification_override_count,
+                "route_policy_count": pipeline.metrics.route_policy_count,
+                "route_policy_duration_ms": pipeline.metrics.route_policy_duration_ms,
+                "route_policy_allow_count": pipeline.metrics.route_policy_allow_count,
+                "route_policy_audit_count": pipeline.metrics.route_policy_audit_count,
+                "route_policy_block_count": pipeline.metrics.route_policy_block_count,
+                "route_policy_blocked_count": pipeline.metrics.route_policy_blocked_count,
+                "route_policy_review_count": pipeline.metrics.route_policy_review_count,
+                "route_policy_quarantine_count": pipeline.metrics.route_policy_quarantine_count,
                 "route_delivery_attempt_count": pipeline.metrics.route_delivery_attempt_count,
                 "route_delivery_success_count": pipeline.metrics.route_delivery_success_count,
                 "route_delivery_failure_count": pipeline.metrics.route_delivery_failure_count,

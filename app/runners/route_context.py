@@ -157,6 +157,12 @@ class RouteProcessingMetrics:
     route_delivery_quarantine_count: int = 0
     route_delivery_duration_ms: int = 0
 
+    @property
+    def route_policy_blocked_count(self) -> int:
+        """Compatibility name used by the M13.5 policy observability contract."""
+
+        return self.route_policy_block_count
+
 
 @dataclass(slots=True)
 class RouteStageResult:

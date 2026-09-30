@@ -39,6 +39,7 @@ def map_protection_action_to_mode(action: str | None) -> str | None:
         "tokenize": PROTECTION_MODE_TOKENIZATION,
         "tokenization": PROTECTION_MODE_TOKENIZATION,
         "hash": PROTECTION_MODE_HASH,
+        "remove": PROTECTION_MODE_DROP_FIELD,
         "drop_field": PROTECTION_MODE_DROP_FIELD,
     }
     return mapping.get(normalized)

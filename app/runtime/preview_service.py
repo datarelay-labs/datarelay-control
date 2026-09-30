@@ -2665,7 +2665,7 @@ def run_e2e_draft_preview(
             enrichment=payload.enrichment,
             override_policy=payload.override_policy,
             max_events=payload.max_events,
-            stream_id=payload.stream_id,
+            stream_id=None if payload.route_id is not None else payload.stream_id,
         ),
         db=db,
     )
@@ -2679,7 +2679,22 @@ def run_e2e_draft_preview(
         from app.runners.stream_loader import load_stream_context
         from app.runners.route_context_builder import build_route_runtime_contexts, build_shared_batch_context
         from app.runners.route_stage import process_route_pipeline
-        runtime_stream = load_stream_context(db, int(payload.stream_id), require_enabled_stream=False)
+        from app.sensitive_detection.context import build_sensitive_detection_context
+
+        try:
+            route_input_events = extract_events(
+                payload.payload,
+                payload.event_array_path,
+                payload.event_root_path,
+            )[: payload.max_events]
+        except (MappingError, ParserError) as exc:
+            raise PreviewRequestError(
+                400,
+                {"code": "EVENT_EXTRACTION_FAILED", "message": str(exc)},
+            ) from exc
+
+        loaded_stream = load_stream_context(db, int(payload.stream_id), require_enabled_stream=False)
+        runtime_stream = loaded_stream.stream
         route_contexts, _ = build_route_runtime_contexts(runtime_stream)
         route_ctx = next((ctx for ctx in route_contexts if int(ctx.route_id) == int(payload.route_id)), None)
         if route_ctx is None:
@@ -2688,7 +2703,11 @@ def run_e2e_draft_preview(
             stream_id=int(payload.stream_id),
             batch_id="route-preview",
             runtime_stream=runtime_stream,
-            extracted_events=final_preview.mapped_events,
+            extracted_events=route_input_events,
+            sensitive_detection_result=build_sensitive_detection_context(
+                stream_id=int(payload.stream_id),
+                events=route_input_events,
+            ),
             shared_runtime_data={
                 "stream_protection_rules": list(runtime_stream.get("stream_protection_rules") or []),
                 "stream_classification_rules": list(runtime_stream.get("stream_classification_rules") or []),

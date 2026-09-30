@@ -250,6 +250,8 @@ def test_feature_flag_on_executes_route_loop(db_session: Session, monkeypatch: p
     assert summary.get("route_count") == 1
     assert summary.get("route_context_build_time_ms") is not None
     assert summary.get("route_transform_count") == 1
+    assert summary.get("route_policy_count") == 1
+    assert summary.get("route_policy_blocked_count") == 0
     assert webhook.calls
 
     loop_logs = (
@@ -262,3 +264,17 @@ def test_feature_flag_on_executes_route_loop(db_session: Session, monkeypatch: p
     )
     assert loop_logs
     assert loop_logs[0].message == "route processing pipeline complete"
+    payload_sample = loop_logs[0].payload_sample or {}
+    assert payload_sample["route_policy_count"] == 1
+    assert payload_sample["route_policy_blocked_count"] == 0
+
+    policy_log = (
+        db.query(DeliveryLog)
+        .filter(
+            DeliveryLog.stream_id == stream_id,
+            DeliveryLog.route_id == fixture["route_ids"][0],
+            DeliveryLog.stage == "policy_evaluation_complete",
+        )
+        .first()
+    )
+    assert policy_log is not None

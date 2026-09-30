@@ -1,7 +1,7 @@
 # M13.5 Per Route Policy
 
 **Milestone:** M13.5 (Per Route Policy)  
-**Status:** Spec only — no implementation authorized by this document  
+**Status:** Implemented in the current Route-only runtime; reconciled 2026-09-30. This specification documents the bounded contract and does not independently grant mutation authority.
 **Depends on:** M13.1 Route Processing Foundation (`specs/091-route-processing-architecture/spec.md`), M13.2 Per Route Transform (`specs/092-per-route-transform/spec.md`), M13.3 Per Route Protection (`specs/093-per-route-protection/spec.md`), M13.4 Per Route Classification (`specs/094-per-route-classification/spec.md`)  
 **Design review:** [`docs/architecture/route-data-model-review.md`](../../docs/architecture/route-data-model-review.md), [`docs/architecture/m13-route-architecture-design-review.md`](../../docs/architecture/m13-route-architecture-design-review.md), [`docs/architecture/m13-3-protection-design-review.md`](../../docs/architecture/m13-3-protection-design-review.md), [`docs/architecture/m13-4-classification-design-review.md`](../../docs/architecture/m13-4-classification-design-review.md), [`docs/architecture/route-architecture-gap-analysis.md`](../../docs/architecture/route-architecture-gap-analysis.md)  
 **Authority:** Product Charter 1.2.1, Master WBS 1.2.1, `.specify/memory/constitution.md`, Governance & Transform Policy v1.1, Governance UX Charter v1.1, Governance Workspace v1.1  
@@ -10,9 +10,19 @@
 
 ---
 
+## Current implementation reconciliation — 2026-09-30
+
+- Route Processing is the only supported runtime. Historical `GDC_ROUTE_PROCESSING_ENABLED=false`, flag-OFF rollback, and staged stub-only wording in this milestone narrative are superseded by the current Route-only contract in spec 091 and must not be used as current operational guidance.
+- The acceptance checklist in this document was reconciled against current code and deterministic tests. A checked item means the requirement is implemented, or the original staged-only requirement is explicitly marked **superseded** below.
+- Policy is active after Classification in the Route-only pipeline. Route policy decisions gate delivery, route-attributed quarantine/audit evidence is persisted, and route-loop policy metrics are emitted with the compatibility name `route_policy_blocked_count`.
+- Primary evidence: `tests/test_per_route_policy.py`, `tests/test_route_policy_effective.py`, `tests/test_route_processing_foundation.py`, `tests/test_route_runtime_delivery.py`.
+- No historical milestone statement in this file overrides the current Product Charter, source-of-truth index, spec 091 Current contract, or later implemented route-runtime contracts.
+
+---
+
 ## 1. Problem Statement
 
-Policy evaluation and enforcement are **Stream-scoped** today. One policy rule set evaluates a **single batch-level** decision that applies identically before fan-out. Every route on a stream receives the same allow / audit / block / quarantine / require-review outcome, regardless of destination governance posture.
+At the pre-M13.5 baseline, Policy evaluation and enforcement were **Stream-scoped**. One batch-level policy decision applied identically before fan-out.
 
 ```text
 Stream
@@ -32,7 +42,7 @@ Destinations
 
 **Product violation:** Operators who need different policy behavior per destination (e.g. Route A → internal SIEM **Continue**, Route B → partner API **Quarantine on CONFIDENTIAL**, Route C → archive **Block on drift Require Review**) must **duplicate Streams** for the same source. Product Charter 1.2.1 forbids this: *목적지별 처리 차이는 Route를 통해 구성한다* and *users must not duplicate Streams because destinations require different processing*.
 
-**Gap (evidence):** `stream_policy_rules.stream_id` FK only; no `route_id`; `_evaluate_policies()` in `app/runners/stream_runner.py` runs once on the legacy path after stream protection; `process_route_pipeline()` records `policy_stub` as NO-OP pass-through (`app/runners/route_stage.py`); `stream_quarantine_events` has `stream_id` only — no `route_id`; `evaluate_batch()` in `app/protection/policy_engine.py` queries stream rules via DB hardcoded to `stream_policy_rules`.
+**Historical gap (pre-M13.5 evidence):** policy rules were stream-only, route policy was still a NO-OP stub, quarantine lacked route attribution, and policy evaluation used stream-scoped DB rules.
 
 **M13.4 delivers:** Per-route Classification inside `process_route_pipeline()`; stamped `classification_level` / `classification_level_gdc` on classified route events; Policy **stub** (pass-through); stream-level `_evaluate_policies()` **skipped** when `GDC_ROUTE_PROCESSING_ENABLED=true` (spec 092 §9.2); M13.4 → M13.5 handoff contract in spec 094 §10.6.
 
@@ -82,7 +92,7 @@ Destinations
 | Do NOT create parallel runtime | Policy stage inside existing `process_route_pipeline()` |
 | Route Policy additive | New `route_policy_rules` table; stream table preserved |
 | Existing Streams continue working | Dual-read + flag OFF parity |
-| Feature flag default OFF | `GDC_ROUTE_PROCESSING_ENABLED=false` — legacy path unchanged |
+| Historical feature-flag baseline | Superseded — current Route Processing defaults ON and explicit `GDC_ROUTE_PROCESSING_ENABLED=false` is rejected |
 | Do NOT redesign Route DB model | Additive `route_policy_rules` + nullable quarantine `route_id` only |
 
 ---
@@ -1022,9 +1032,9 @@ Conceptual only — no UI implementation authorized by this document.
 
 ## 17. Backward Compatibility
 
-### 17.1 Feature flag OFF
+### 17.1 Historical feature flag OFF (superseded)
 
-`GDC_ROUTE_PROCESSING_ENABLED=false` (default):
+Historical pre-retirement `GDC_ROUTE_PROCESSING_ENABLED=false` behavior (not a current runnable mode):
 
 - **Zero behavior change** vs pre-M13.5 baseline
 - Stream policy runs in `_evaluate_policies()` after stream protection
@@ -1057,11 +1067,11 @@ Existing deployments with stream rules only: **no migration required** beyond `r
 
 | Trigger | Action |
 |---------|--------|
-| Regression with flag ON | Set `GDC_ROUTE_PROCESSING_ENABLED=false` — immediate legacy path |
+| Route regression rollback | Current rollback: use a previous release image; explicit `GDC_ROUTE_PROCESSING_ENABLED=false` is rejected |
 | Policy bug | Disable policy evaluation flag if available — global skip |
 | Route config error | Delete route policy rules — fallback to stream |
 
-No data migration rollback required for flag OFF. Nullable `route_id` column may remain unused on legacy path.
+Historical rollback note (superseded): the flag-OFF runtime is retired. Nullable `route_id` remains backward-compatible for historical rows; current rollback uses a previous release image.
 
 ---
 
@@ -1071,67 +1081,67 @@ M13.5 is **complete** when all criteria pass.
 
 ### 18.0 Task-mandate gates
 
-- [ ] **AC-0a** `RouteEffectiveConfig.policy` is **`RoutePolicyConfig`** (typed) — not `Any | None`.
-- [ ] **AC-0b** `route_overrides[]` JSON shape documents `delivery_behavior` with §8.2 semantics.
-- [ ] **AC-0c** Resolver order: `route_policy_rules` → `stream_policy_rules` → empty config; then governance + drift merge.
-- [ ] **AC-0d** Policy engine reused via adapter — no new policy engine; no stream DB rule query on route path.
-- [ ] **AC-0e** Policy does **not** re-run Classification, Protection, or Sensitive Detection.
-- [ ] **AC-0f** `RouteStageResult.policy_result` attached; `delivery_allowed` gates fan-out.
-- [ ] **AC-0g** Flag ON order: **Transform → Protection → Classification → Policy → Delivery handoff**.
-- [ ] **AC-0h** Flag OFF legacy order unchanged.
+- [x] **AC-0a** `RouteEffectiveConfig.policy` is **`RoutePolicyConfig`** (typed) — not `Any | None`.
+- [x] **AC-0b** `route_overrides[]` JSON shape documents `delivery_behavior` with §8.2 semantics.
+- [x] **AC-0c** Resolver order: `route_policy_rules` → `stream_policy_rules` → empty config; then governance + drift merge.
+- [x] **AC-0d** Policy engine reused via adapter — no new policy engine; no stream DB rule query on route path.
+- [x] **AC-0e** Policy does **not** re-run Classification, Protection, or Sensitive Detection.
+- [x] **AC-0f** `RouteStageResult.policy_result` attached; `delivery_allowed` gates fan-out.
+- [x] **AC-0g** Flag ON order: **Transform → Protection → Classification → Policy → Delivery handoff**.
+- [x] **AC-0h (superseded)** The flag-OFF legacy runtime is retired by the current Route-only contract.
 
 ### 18.1 Prerequisites (M13.2–M13.4)
 
-- [ ] **AC-1** M13.4 acceptance criteria satisfied — classification active, stamped events.
-- [ ] **AC-2** `SharedBatchContext.schema_drift_policy_result` available on route path.
-- [ ] **AC-3** Stream `_evaluate_policies()` **not** called when `GDC_ROUTE_PROCESSING_ENABLED=true`.
+- [x] **AC-1** M13.4 acceptance criteria satisfied — classification active, stamped events.
+- [x] **AC-2** `SharedBatchContext.schema_drift_policy_result` available on route path.
+- [x] **AC-3** Stream `_evaluate_policies()` **not** called when `GDC_ROUTE_PROCESSING_ENABLED=true`.
 
 ### 18.2 Policy stage activation
 
-- [ ] **AC-4** `policy_stub` replaced with `route_policy_stage()` invoking existing engine.
-- [ ] **AC-5** Policy runs **after** Classification in `process_route_pipeline()`.
-- [ ] **AC-6** `_fan_out()` receives only **policy-allowed** per-route events.
-- [ ] **AC-7** No new Policy Engine class or parallel pipeline.
+- [x] **AC-4** `policy_stub` replaced with `route_policy_stage()` invoking existing engine.
+- [x] **AC-5** Policy runs **after** Classification in `process_route_pipeline()`.
+- [x] **AC-6 (superseded wiring detail; intent preserved)** Only policy-allowed per-route events reach the delivery stage; current M13.6 wiring gates `route_delivery_stage()` rather than the old `_fan_out()` handoff.
+- [x] **AC-7** No new Policy Engine class or parallel pipeline.
 
 ### 18.3 Config resolution
 
-- [ ] **AC-8** Resolution order: `route_policy_rules` → `stream_policy_rules` → empty config.
-- [ ] **AC-9** Route rules present → route rule set replaces stream base (list-replacement).
-- [ ] **AC-10** `route_overrides[].delivery_behavior` enforced per route after rule evaluation.
-- [ ] **AC-11** `RouteRuntimeContext.effective_config.policy` populated as typed **`RoutePolicyConfig`**.
+- [x] **AC-8** Resolution order: `route_policy_rules` → `stream_policy_rules` → empty config.
+- [x] **AC-9** Route rules present → route rule set replaces stream base (list-replacement).
+- [x] **AC-10** `route_overrides[].delivery_behavior` enforced per route after rule evaluation.
+- [x] **AC-11** `RouteRuntimeContext.effective_config.policy` populated as typed **`RoutePolicyConfig`**.
 
 ### 18.4 Product scenarios
 
-- [ ] **AC-12** Same stream, Route A allow, Route B quarantine — divergent delivery outcomes.
-- [ ] **AC-13** Operator achieves destination-specific policy **without** duplicating streams.
-- [ ] **AC-14** Sensitive Detection runs once per batch — not N times per route.
+- [x] **AC-12** Same stream, Route A allow, Route B quarantine — divergent delivery outcomes.
+- [x] **AC-13** Operator achieves destination-specific policy **without** duplicating streams.
+- [x] **AC-14** Sensitive Detection runs once per batch — not N times per route.
 
 ### 18.5 Engine reuse
 
-- [ ] **AC-15** `evaluate_batch()` / condition matching used unchanged in algorithm.
-- [ ] **AC-16** Stream-scoped policy DB query **not** called from route path.
-- [ ] **AC-17** If engine coupled to `StreamPolicyRule` ORM, adapter maps route entries only.
+- [x] **AC-15** `evaluate_batch()` / condition matching used unchanged in algorithm.
+- [x] **AC-16** Stream-scoped policy DB query **not** called from route path.
+- [x] **AC-17** If engine coupled to `StreamPolicyRule` ORM, adapter maps route entries only.
 
 ### 18.6 Quarantine
 
-- [ ] **AC-18** Quarantine rows record nullable **`route_id`** when flag ON.
-- [ ] **AC-19** Legacy quarantine (`route_id=NULL`) unchanged when flag OFF.
-- [ ] **AC-20** Existing quarantine release/discard flows work with route-attributed rows.
+- [x] **AC-18** Quarantine rows record nullable **`route_id`** when flag ON.
+- [x] **AC-19 (reconciled compatibility)** Historical quarantine rows with `route_id=NULL` remain valid; the flag-OFF runtime itself is retired.
+- [x] **AC-20** Existing quarantine release/discard flows work with route-attributed rows.
 
 ### 18.7 Audit
 
-- [ ] **AC-21** `delivery_logs` policy entries include **`route_id`** when flag ON.
-- [ ] **AC-22** Policy preview accepts `route_id` and uses effective route config.
+- [x] **AC-21** `delivery_logs` policy entries include **`route_id`** when flag ON.
+- [x] **AC-22** Policy preview accepts `route_id` and uses effective route config.
 
 ### 18.8 Boundaries
 
-- [ ] **AC-23** M13.6 delivery metrics / health **not** implemented.
-- [ ] **AC-24** `route_governance_overrides` normalized table **not** introduced (§8.4).
-- [ ] **AC-25** No truncate of user `stream_policy_rules`.
+- [x] **AC-23 (superseded staged boundary)** M13.6 route delivery metrics/health are now implemented and are current runtime behavior.
+- [x] **AC-24** `route_governance_overrides` normalized table **not** introduced (§8.4).
+- [x] **AC-25** No truncate of user `stream_policy_rules`.
 
 ### 18.9 Metrics (M13.5 scope)
 
-- [ ] **AC-26** `route_policy_count`, `route_policy_duration_ms`, `route_policy_blocked_count` emitted on route loop summary.
+- [x] **AC-26** `route_policy_count`, `route_policy_duration_ms`, `route_policy_blocked_count` emitted on route loop summary.
 
 ---
 

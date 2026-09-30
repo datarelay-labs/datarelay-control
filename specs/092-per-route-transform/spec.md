@@ -1,7 +1,7 @@
 # M13.2 Per Route Transform
 
 **Milestone:** M13.2 (Per Route Transform)  
-**Status:** Spec only — no implementation authorized by this document  
+**Status:** Implemented in the current Route-only runtime; reconciled 2026-09-30. This specification documents the bounded contract and does not independently grant mutation authority.
 **Depends on:** M13.1 Route Processing Foundation (`specs/091-route-processing-architecture/spec.md`)  
 **Design review:** [`docs/architecture/m13-route-architecture-design-review.md`](../../docs/architecture/m13-route-architecture-design-review.md) — findings incorporated in this revision  
 **Authority:** Product Charter 1.2.1, Master WBS 1.2.1, `.specify/memory/constitution.md`, `specs/064-advanced-transform/spec.md` (via `.cursor/rules/advanced-transform.mdc`)  
@@ -10,9 +10,19 @@
 
 ---
 
+## Current implementation reconciliation — 2026-09-30
+
+- Route Processing is the only supported runtime. Historical `GDC_ROUTE_PROCESSING_ENABLED=false`, flag-OFF rollback, and staged stub-only wording in this milestone narrative are superseded by the current Route-only contract in spec 091 and must not be used as current operational guidance.
+- The acceptance checklist in this document was reconciled against current code and deterministic tests. A checked item means the requirement is implemented, or the original staged-only requirement is explicitly marked **superseded** below.
+- Transform is active in the Route-only pipeline and uses the existing Mapping/Enrichment engines. The unified route-aware `/api/v1/runtime/preview/e2e-draft` preview is the current effective preview path.
+- Primary evidence: `tests/test_per_route_transform.py`, `tests/test_route_transform_effective.py`, `tests/test_runtime_e2e_draft_preview_endpoint.py`.
+- No historical milestone statement in this file overrides the current Product Charter, source-of-truth index, spec 091 Current contract, or later implemented route-runtime contracts.
+
+---
+
 ## 1. Problem Statement
 
-Transform (Mapping + Enrichment) is **Stream-scoped** today. One mapping and one enrichment configuration apply to all destinations on a stream. After transform, `StreamRunner` fan-out sends the **same payload** to every route.
+At the pre-M13.2 baseline, Transform (Mapping + Enrichment) was **Stream-scoped**. One mapping and one enrichment configuration applied to all destinations on a stream, and fan-out sent the **same payload** to every route.
 
 ```text
 Stream
@@ -26,7 +36,7 @@ Destinations
 
 **Product violation:** Operators who need different field shapes per destination (e.g. Route A → raw syslog, Route B → normalized XDR schema, Route C → data lake custom transform) must **duplicate Streams** for the same source. Product Charter 1.2.1 explicitly forbids this: *목적지별 처리 차이는 Route를 통해 구성한다* and *users must not duplicate Streams because destinations require different processing*.
 
-**Gap (evidence):** `mappings.stream_id` UNIQUE, `enrichments.stream_id` UNIQUE; `stream_loader` injects transform config on stream dict only; `_collect_and_transform_events()` runs mapping/enrichment once (`app/runners/stream_runner.py`).
+**Historical gap (pre-M13.2 evidence):** `mappings.stream_id` UNIQUE, `enrichments.stream_id` UNIQUE; `stream_loader` injected transform config on the stream only; `_collect_and_transform_events()` ran mapping/enrichment once.
 
 **M13.1 delivered:** Route loop skeleton, `SharedBatchContext`, `RouteRuntimeContext`, `GDC_ROUTE_PROCESSING_ENABLED`, dual-read helper, NO-OP `process_route()`.
 
@@ -453,14 +463,14 @@ Conceptual only.
 
 | Condition | Expected behavior |
 |-----------|-------------------|
-| `GDC_ROUTE_PROCESSING_ENABLED=false` | **Identical** to OSS GA — no route pipeline |
+| Historical pre-retirement `GDC_ROUTE_PROCESSING_ENABLED=false` | **Superseded** — current settings reject explicit false; rollback uses a previous release image |
 | Flag ON, no `route_*` rows | Dual-read stream config per route → **delivery parity** with flag OFF |
 | Flag ON, partial route config | Unconfigured routes use stream fallback |
 | User data | No truncate of mappings or enrichments |
 
 **Parity:** Stream S, routes R1..Rn, no route transform rows → flag ON outbound payloads **byte-equivalent** to flag OFF per route.
 
-**Rollback:** Set flag OFF — immediate legacy path; delete route rows to force stream fallback.
+**Rollback (current):** Flag-OFF rollback is retired. Emergency rollback uses a previous release image while preserving persisted Stream/Route configuration.
 
 ---
 
@@ -470,40 +480,40 @@ M13.2 is **complete** when all criteria pass.
 
 ### 14.1 Prerequisites (context alignment)
 
-- [ ] **AC-1** `RouteRuntimeContext` matches spec 091 §7 (including `stream_id`, `effective_config`, `processing_state`, `shared_batch_ref`).
-- [ ] **AC-2** `SharedBatchContext` matches spec 091 §8 (`extracted_events`, `schema_observation`, `sensitive_detection_result`, `checkpoint_cursor_before`).
-- [ ] **AC-3** `extracted_events` are pre-mapping raw events — never post-protection copy.
+- [x] **AC-1** `RouteRuntimeContext` matches spec 091 §7 (including `stream_id`, `effective_config`, `processing_state`, `shared_batch_ref`).
+- [x] **AC-2** `SharedBatchContext` matches spec 091 §8 (`extracted_events`, `schema_observation`, `sensitive_detection_result`, `checkpoint_cursor_before`).
+- [x] **AC-3** `extracted_events` are pre-mapping raw events — never post-protection copy.
 
 ### 14.2 Pipeline order (design review gate)
 
-- [ ] **AC-4** When flag ON, route loop executes **before** Protection, Classification, and Policy.
-- [ ] **AC-5** Stream-scoped `_prepare_delivery_events()` and `_evaluate_policies()` are **not** invoked on shared batch when flag ON.
-- [ ] **AC-6** `process_route_pipeline()` runs stages: Transform (active) → Protection stub → Classification stub → Policy stub → Delivery handoff.
-- [ ] **AC-7** Protection, Classification, and Policy engines are **not** invoked in M13.2 (stubs only).
+- [x] **AC-4** When flag ON, route loop executes **before** Protection, Classification, and Policy.
+- [x] **AC-5** Stream-scoped `_prepare_delivery_events()` and `_evaluate_policies()` are **not** invoked on shared batch when flag ON.
+- [x] **AC-6 (superseded staged gate)** M13.2 originally required Transform active with later stages as stubs. Current runtime intentionally runs the full `Transform → Protection → Classification → Policy → Delivery` pipeline.
+- [x] **AC-7 (superseded staged gate)** Stub-only behavior was an M13.2 sequencing boundary; current runtime invokes the implemented Protection, Classification, and Policy stages.
 
 ### 14.3 Transform and delivery
 
-- [ ] **AC-8** Flag OFF: zero behavior change vs pre-M13.2 baseline (full e2e green).
-- [ ] **AC-9** Flag ON, no route rows: dual-read stream transform per route; delivery parity with flag OFF.
-- [ ] **AC-10** Flag ON, route A config differs: Route A outbound payload differs; others use stream fallback unless configured.
-- [ ] **AC-11** Mapping and Enrichment use **existing engines** only.
-- [ ] **AC-12** **`RouteStageResult` output is passed to `_fan_out()`** — route transform output used for destination delivery.
-- [ ] **AC-13** `_fan_out()` does **not** deliver stream-level transformed events to all routes when flag ON.
+- [x] **AC-8 (superseded)** The flag-OFF runtime was retired by the current Route-only contract; rollback is release-image based.
+- [x] **AC-9 (historical parity baseline; current fallback retained)** With no route transform rows, each Route uses the stream transform via dual-read. This preserves the pre-retirement flag-OFF payload semantics.
+- [x] **AC-10** Flag ON, route A config differs: Route A outbound payload differs; others use stream fallback unless configured.
+- [x] **AC-11** Mapping and Enrichment use **existing engines** only.
+- [x] **AC-12 (superseded wiring detail; intent preserved)** Route-transformed `RouteStageResult` output is the delivery payload; current M13.6 wiring sends it through `route_delivery_stage()`/the shared send primitive instead of the old `_fan_out()` handoff.
+- [x] **AC-13 (superseded wiring detail; intent preserved)** Current Route-only delivery never re-sends one stream-level transformed payload to all routes; each route delivers its own effective pipeline output.
 
 ### 14.4 Config and API
 
-- [ ] **AC-14** `route_mappings` and `route_enrichments` additive tables exist.
-- [ ] **AC-15** Dual-read: route row absent → stream config; route row present → route config.
-- [ ] **AC-16** Route mapping/enrichment APIs and preview `route_id` functional.
-- [ ] **AC-17** Stream mapping/enrichment APIs remain functional.
+- [x] **AC-14** `route_mappings` and `route_enrichments` additive tables exist.
+- [x] **AC-15** Dual-read: route row absent → stream config; route row present → route config.
+- [x] **AC-16** Route mapping/enrichment APIs and preview `route_id` functional.
+- [x] **AC-17** Stream mapping/enrichment APIs remain functional.
 
 ### 14.5 Observability and boundaries
 
-- [ ] **AC-18** `delivery_logs` include `route_id` for per-route mapping/enrichment stages.
-- [ ] **AC-19** Checkpoint semantics unchanged per `specs/004-delivery-routing/spec.md`.
-- [ ] **AC-20** No new runtime class or parallel pipeline.
-- [ ] **AC-21** No user mapping/enrichment data truncated.
-- [ ] **AC-22** Operator can configure different transforms per route without duplicate streams.
+- [x] **AC-18** `delivery_logs` include `route_id` for per-route mapping/enrichment stages.
+- [x] **AC-19** Checkpoint semantics unchanged per `specs/004-delivery-routing/spec.md`.
+- [x] **AC-20** No new runtime class or parallel pipeline.
+- [x] **AC-21** No user mapping/enrichment data truncated.
+- [x] **AC-22** Operator can configure different transforms per route without duplicate streams.
 
 ---
 

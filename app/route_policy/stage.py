@@ -173,6 +173,7 @@ def route_policy_stage(
         log_fn(
             build_policy_evaluation_complete_payload(
                 stream_id=route_ctx.stream_id,
+                route_id=route_ctx.route_id,
                 result=policy_batch_result,
             )
         )

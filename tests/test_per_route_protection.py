@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.protection.ephemeral import EphemeralProtectionRule
-from app.protection.models import PROTECTION_MODE_FULL_MASK, PROTECTION_MODE_PARTIAL_MASK, PROTECTION_MODE_TOKENIZATION, StreamProtectionRule
+from app.protection.models import PROTECTION_MODE_DROP_FIELD, PROTECTION_MODE_FULL_MASK, PROTECTION_MODE_PARTIAL_MASK, PROTECTION_MODE_TOKENIZATION, StreamProtectionRule
 from app.mappings.models import Mapping
 from app.checkpoints.models import Checkpoint
 from app.route_protection.config import RouteProtectionConfig
@@ -86,6 +86,23 @@ def test_resolve_route_protection_route_override_wins() -> None:
     assert config.rules[0].protection_mode == PROTECTION_MODE_TOKENIZATION
     assert config.rules[0].source == "route_override"
     assert config.resolution.override_count == 1
+
+
+def test_resolve_route_protection_remove_override_maps_to_drop_field() -> None:
+    config = resolve_route_protection_config(
+        route_id=10,
+        stream_id=1,
+        route_overrides=[
+            {
+                "route_id": 10,
+                "field_path": "$.secret",
+                "protection_action": "remove",
+                "enabled": True,
+            }
+        ],
+    )
+    assert len(config.rules) == 1
+    assert config.rules[0].protection_mode == PROTECTION_MODE_DROP_FIELD
 
 
 def test_resolve_route_protection_route_rules_replace_stream() -> None:
