@@ -99,6 +99,6 @@ For release readiness, the exhaustive user-test order is mandatory:
 
 `exact-head machine qualification → Browser Feature Scenario Reconciliation → Full User E2E → owner/manual acceptance → release authorization`.
 
-Both exhaustive tests must PASS on the same exact candidate HEAD. Neither test substitutes for the other, and machine Full Regression / operational E2E passes do not substitute for either ChatGPT-executed exhaustive user test.
+Both exhaustive tests must PASS on the same exact candidate HEAD. Neither test substitutes for the other, and machine Full Regression / operational E2E passes do not substitute for either ChatGPT-executed exhaustive user test. CI/static contract validation only proves the gates are wired; actual PASS authority is the active release Work Packet plus retained exact-HEAD run evidence.
 
 Do not declare a candidate release-ready while either required exhaustive test is missing, PARTIAL, BLOCKED, from another HEAD, or has unresolved P0/P1/user-blocking P2 findings.

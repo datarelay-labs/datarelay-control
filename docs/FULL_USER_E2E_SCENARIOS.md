@@ -1332,6 +1332,10 @@ These are separate from the repository machine operational-E2E pass count in .en
 
 The current machine release profile may require multiple Full Regression/operational E2E passes. Those machine passes do not replace either exhaustive ChatGPT-executed user test.
 
+The CI/static release-contract check only proves that these mandatory contracts are present and correctly wired. It is **not** execution evidence for either exhaustive user test.
+
+Actual PASS authority comes from the active release Work Packet and retained run evidence for the exact candidate HEAD.
+
 ## 29. Candidate invalidation rule
 
 After either exhaustive user-test PASS, any relevant change to the following invalidates affected evidence:

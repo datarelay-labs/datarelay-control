@@ -146,5 +146,6 @@ scenarios:
       - "Full User E2E is mandatory before release."
       - "Both exhaustive user tests use the same exact candidate HEAD and neither substitutes for machine E2E."
       - "Required exhaustive user-test documents remain executable ChatGPT-owned contracts."
+      - "This CI/static contract check never counts as execution PASS for either exhaustive user test; release evidence must come from the active release Work Packet."
     origin: ".engineering/release.yaml"
     release_gate: true

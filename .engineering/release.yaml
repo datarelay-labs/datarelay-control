@@ -16,6 +16,9 @@ exhaustive_user_tests:
   machine_qualification_required_first: true
   same_candidate_required: true
   zero_fail_partial_blocked: true
+  ci_contract_validation_only: true
+  execution_authority: CHATGPT_WORK_PACKET
+  evidence_authority: ACTIVE_RELEASE_WORK_PACKET
   order:
     - BROWSER_FEATURE_SCENARIO_RECONCILIATION
     - FULL_USER_E2E

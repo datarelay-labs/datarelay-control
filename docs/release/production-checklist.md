@@ -104,7 +104,7 @@ exact-head machine qualification
 → release authorization/publication
 ~~~
 
-Machine Full Regression/operational E2E passes do not substitute for either exhaustive ChatGPT-executed user test.
+Machine Full Regression/operational E2E passes do not substitute for either exhaustive ChatGPT-executed user test. CI/static contract validation only proves the gates are configured; it does not count as execution PASS. Actual PASS evidence must be retained in the active release Work Packet for the exact candidate.
 
 Any relevant candidate change after either exhaustive user-test PASS invalidates affected evidence and requires the required same-head gates to be re-established.
 
