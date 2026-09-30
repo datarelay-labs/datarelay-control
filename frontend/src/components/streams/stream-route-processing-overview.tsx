@@ -16,6 +16,7 @@ import { StreamSharedProcessingSection } from './route-processing/stream-global-
 import { StreamRouteProcessingNavigator } from './route-processing/stream-route-processing-navigator'
 import { RouteProcessingDetailHeader } from './route-processing/route-processing-detail-header'
 import { RouteProcessingModeSelector } from './route-processing/route-processing-mode-selector'
+import { RouteEffectiveProcessingSummary } from './route-processing/route-effective-processing-summary'
 import { ROUTE_PROCESSING_COPY } from './route-processing/route-processing-labels'
 import { ClassificationPanel } from './classification-panel'
 import { ProtectionPanel } from './protection-panel'
@@ -170,6 +171,7 @@ function StreamRouteDetailTabs({
       </div>
 
       <div className="space-y-3 p-3">
+        <RouteEffectiveProcessingSummary statuses={processingStatuses} pending={statusesPending} />
         {!usesShared && tab === 'transform' ? (
           <div className="space-y-3" data-testid="route-processing-transform-section">
             <RouteEditTransformPanel routeId={route.id} streamId={streamId} />
