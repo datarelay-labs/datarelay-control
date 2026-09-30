@@ -56,6 +56,7 @@ Historical or explicitly retired behavior is not protected by no-regression poli
 
 ## Execution rules
 
+- **Execute useful work continuously.** Implement in coherent small/medium batches, validate locally with the cheapest relevant tests, and keep going while a safe authorized next action exists. Use fast CI for quick integration feedback when useful; reserve full qualification/release CI for a stable candidate. If waiting on an external condition, work on the highest-priority independent roadmap item instead of polling. Stop only for a real owner decision/credential, an irreconcilable blocker, a status-only request, or a completed bounded outcome.
 - Classify the change and identify affected domains/contracts/security/operations.
 - For material design-bearing changes, apply the canonical `standards/DESIGN.md` minimal design gate before implementation.
 - Preserve unrelated user work and dirty worktrees.
