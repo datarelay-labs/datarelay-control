@@ -145,9 +145,19 @@
 릴리스 후보는 아래 순서를 **동일 exact candidate HEAD**에서 모두 만족해야 합니다.
 
 ~~~text
-exact-head machine qualification
-→ Browser Feature Scenario Reconciliation
-→ Full User E2E
+exact-head machine qualification baseline
+→ Browser Feature Scenario Reconciliation PASS1
+→ batch remediation
+→ exact-head machine requalification
+→ Browser Feature Scenario Reconciliation PASS2
+→ Full User E2E PASS1
+→ batch remediation
+→ exact-head machine requalification
+→ re-establish Browser Feature Scenario Reconciliation on the remediated HEAD
+→ Full User E2E PASS2
+→ release-specific gates
+→ final exact-head CI
+→ release audit
 → owner/manual acceptance
 → release authorization/publication
 ~~~

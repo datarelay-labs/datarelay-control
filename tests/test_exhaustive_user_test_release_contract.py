@@ -33,8 +33,19 @@ def test_release_requires_both_exhaustive_user_tests() -> None:
     assert config["execution_authority"] == "CHATGPT_WORK_PACKET"
     assert config["evidence_authority"] == "ACTIVE_RELEASE_WORK_PACKET"
     assert config["order"] == [
-        "SURFACE_RECONCILIATION",
-        "FULL_USER_E2E",
+        "EXACT_HEAD_MACHINE_QUALIFICATION_BASELINE",
+        "SURFACE_RECONCILIATION_PASS1",
+        "SURFACE_RECONCILIATION_BATCH_REMEDIATION",
+        "EXACT_HEAD_MACHINE_REQUALIFICATION_AFTER_BROWSER_REMEDIATION",
+        "SURFACE_RECONCILIATION_PASS2",
+        "FULL_USER_E2E_PASS1",
+        "FULL_USER_E2E_BATCH_REMEDIATION",
+        "EXACT_HEAD_MACHINE_REQUALIFICATION_AFTER_FULL_USER_REMEDIATION",
+        "SURFACE_RECONCILIATION_REESTABLISH_AFTER_FULL_USER_REMEDIATION",
+        "FULL_USER_E2E_PASS2",
+        "RELEASE_SPECIFIC_GATES",
+        "FINAL_EXACT_HEAD_CI",
+        "RELEASE_AUDIT",
     ]
 
     browser = config["surface_reconciliation"]
@@ -42,12 +53,16 @@ def test_release_requires_both_exhaustive_user_tests() -> None:
     assert browser == {
         "mandatory": True,
         "contract": "docs/BROWSER_FEATURE_SCENARIO_RECONCILIATION.md",
-        "minimum_passes": 1,
+        "minimum_passes": 2,
+        "batch_remediation_between_passes": True,
+        "exhaust_safe_independent_scenarios_before_remediation": True,
     }
     assert full_user == {
         "mandatory": True,
         "contract": "docs/FULL_USER_E2E_SCENARIOS.md",
-        "minimum_passes": 1,
+        "minimum_passes": 2,
+        "batch_remediation_between_passes": True,
+        "exhaust_safe_independent_scenarios_before_remediation": True,
     }
     assert BROWSER_DOC.is_file()
     assert FULL_USER_DOC.is_file()

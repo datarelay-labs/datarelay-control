@@ -1309,9 +1309,19 @@ A Full User E2E run can be a completed audit with FINAL_STATUS=FAIL; that does n
 The exhaustive pre-release user-test order is:
 
 ~~~text
-exact-head machine qualification
-→ Browser Feature Scenario Reconciliation
-→ Full User E2E
+exact-head machine qualification baseline
+→ Browser Feature Scenario Reconciliation PASS1
+→ batch remediation
+→ exact-head machine requalification
+→ Browser Feature Scenario Reconciliation PASS2
+→ Full User E2E PASS1
+→ batch remediation
+→ exact-head machine requalification
+→ re-establish Browser Feature Scenario Reconciliation on the remediated HEAD
+→ Full User E2E PASS2
+→ release-specific gates
+→ final exact-head CI
+→ release audit
 → owner/manual acceptance
 → release authorization/publication
 ~~~
@@ -1327,9 +1337,9 @@ Release requirements:
 
 ~~~text
 BROWSER_FEATURE_SCENARIO_RECONCILIATION_REQUIRED=YES
-BROWSER_FEATURE_SCENARIO_RECONCILIATION_MIN_PASSES=1
+BROWSER_FEATURE_SCENARIO_RECONCILIATION_MIN_PASSES=2
 FULL_USER_E2E_REQUIRED=YES
-FULL_USER_E2E_MIN_PASSES=1
+FULL_USER_E2E_MIN_PASSES=2
 SAME_EXACT_CANDIDATE=YES
 ZERO_FAIL_PARTIAL_BLOCKED=YES
 ~~~
