@@ -36,6 +36,7 @@ def build_policy_evaluation_complete_payload(
     stream_id: int,
     result: PolicyBatchResult,
     cumulative_totals: dict[str, int] | None = None,
+    route_id: int | None = None,
 ) -> dict[str, Any]:
     """Structured payload for policy_evaluation_complete delivery_logs row."""
 
@@ -47,7 +48,7 @@ def build_policy_evaluation_complete_payload(
     total_audit_events = prev_audit + audit_this_run
     total_matched_policies = prev_matched + matched_this_run
 
-    return {
+    payload: dict[str, Any] = {
         "stage": POLICY_EVALUATION_COMPLETE_STAGE,
         "stream_id": stream_id,
         "message": "policy evaluation complete",
@@ -59,6 +60,9 @@ def build_policy_evaluation_complete_payload(
         "total_audit_events": total_audit_events,
         "total_matched_policies": total_matched_policies,
     }
+    if route_id is not None:
+        payload["route_id"] = int(route_id)
+    return payload
 
 
 def load_policy_runtime_metrics(

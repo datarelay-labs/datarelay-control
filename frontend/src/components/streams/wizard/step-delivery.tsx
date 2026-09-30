@@ -29,7 +29,15 @@ import {
   type DestinationLibraryTab,
 } from './wizard-delivery-helpers'
 import { wizardExtractEvents } from './wizard-json-extract'
-import { enrichmentDictFromRows, fieldMappingsFromRows, DEFAULT_ROUTE_PROCESSING_INHERIT, newWizardRouteDraftKey, type WizardDestinationsState, type WizardRouteDraft, type WizardState } from './wizard-state'
+import {
+  buildWizardFieldMappingsPayload,
+  enrichmentDictFromRows,
+  DEFAULT_ROUTE_PROCESSING_INHERIT,
+  newWizardRouteDraftKey,
+  type WizardDestinationsState,
+  type WizardRouteDraft,
+  type WizardState,
+} from './wizard-state'
 
 function normalizeWebhookPayloadMode(raw: unknown): 'SINGLE_EVENT_OBJECT' | 'BATCH_JSON_ARRAY' {
   if (raw === 'BATCH_JSON_ARRAY') return 'BATCH_JSON_ARRAY'
@@ -49,15 +57,21 @@ const btnPrimarySm =
   'inline-flex h-8 shrink-0 items-center rounded-md bg-violet-600 px-2.5 text-[11px] font-semibold text-white shadow-sm hover:bg-violet-700'
 
 function buildWizardFinalDraftRequest(state: WizardState) {
-  const payload = state.apiTest.parsedJson
+  const payload = state.apiTest.parsedJson ?? state.apiTest.rawResponse
   if (payload === null || payload === undefined) return null
+  const enrichment = enrichmentDictFromRows(state.enrichment, {
+    advancedPassthrough: state.enrichmentPassthrough,
+  })
   return {
     payload,
-    event_array_path: state.stream.eventArrayPath.trim() || null,
+    event_array_path:
+      state.stream.useWholeResponseAsEvent || !state.stream.eventArrayPath.trim()
+        ? null
+        : state.stream.eventArrayPath.trim(),
     event_root_path: state.stream.eventRootPath.trim() || null,
-    field_mappings: fieldMappingsFromRows(state.mapping),
-    enrichment: enrichmentDictFromRows(state.enrichment),
-    override_policy: 'KEEP_EXISTING' as const,
+    field_mappings: buildWizardFieldMappingsPayload(state),
+    enrichment: state.enrichmentEnabled === false ? {} : enrichment,
+    override_policy: state.enrichmentOverridePolicy ?? ('KEEP_EXISTING' as const),
     max_events: 1,
   }
 }
@@ -240,10 +254,20 @@ export function StepDelivery({ state, onChange }: StepDeliveryProps) {
   }, [
     fallbackSampleEvent,
     state.apiTest.parsedJson,
+    state.apiTest.rawResponse,
+    state.stream.useWholeResponseAsEvent,
     state.stream.eventArrayPath,
     state.stream.eventRootPath,
     state.mapping,
+    state.mappingMode,
+    state.fullEventJsonataExpression,
+    state.fullEventRegexConfigJson,
+    state.transformRules,
+    state.unmappedFieldsPolicy,
     state.enrichment,
+    state.enrichmentPassthrough,
+    state.enrichmentEnabled,
+    state.enrichmentOverridePolicy,
   ])
 
   useEffect(() => {

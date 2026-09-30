@@ -195,8 +195,22 @@ export type MappingDraftPreviewRequest = {
   payload: unknown
   event_array_path?: string | null
   event_root_path?: string | null
-  field_mappings: Record<string, string>
+  field_mappings: Record<string, unknown>
   max_events?: number
+}
+
+export type MappingDraftPreviewTransformResult = {
+  event_index: number
+  success: boolean
+  value: unknown
+  error_code: string | null
+  error_message: string | null
+  rule_id: string | null
+  output_field: string
+  mode: string
+  recovered_via_default: boolean
+  executed?: boolean
+  blocked?: boolean
 }
 
 export type MappingDraftPreviewResponse = {
@@ -204,6 +218,7 @@ export type MappingDraftPreviewResponse = {
   preview_event_count: number
   mapped_events: Array<Record<string, unknown>>
   missing_fields: Array<{ output_field: string; json_path: string; event_index: number }>
+  transform_results?: MappingDraftPreviewTransformResult[]
   message: string
 }
 
@@ -229,7 +244,7 @@ export type MappingValidateRequest = {
   payload?: unknown | null
   event_array_path?: string | null
   event_root_path?: string | null
-  field_mappings?: Record<string, string>
+  field_mappings?: Record<string, unknown>
 }
 
 export type MappingValidateResponse = {
@@ -281,7 +296,7 @@ export type FinalEventDraftPreviewRequest = {
   payload: unknown
   event_array_path?: string | null
   event_root_path?: string | null
-  field_mappings: Record<string, string>
+  field_mappings: Record<string, unknown>
   enrichment: Record<string, unknown>
   override_policy?: 'KEEP_EXISTING' | 'OVERRIDE' | 'ERROR_ON_CONFLICT'
   max_events?: number
@@ -293,6 +308,8 @@ export type FinalEventDraftPreviewResponse = {
   mapped_events: Array<Record<string, unknown>>
   final_events: Array<Record<string, unknown>>
   missing_fields: Array<{ output_field: string; json_path: string; event_index: number }>
+  mapping_transform_results?: MappingDraftPreviewTransformResult[]
+  enrichment_transform_results?: MappingDraftPreviewTransformResult[]
   message: string
 }
 
@@ -300,6 +317,36 @@ export async function runFinalEventDraftPreview(
   payload: FinalEventDraftPreviewRequest,
 ): Promise<FinalEventDraftPreviewResponse> {
   return requestJson<FinalEventDraftPreviewResponse>(`${RT}/preview/final-event-draft`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+
+export type RouteE2EDraftPreviewRequest = {
+  payload: unknown
+  field_mappings: Record<string, unknown>
+  enrichment: Record<string, unknown>
+  override_policy?: 'KEEP_EXISTING' | 'OVERRIDE' | 'ERROR_ON_CONFLICT'
+  destination_type: 'SYSLOG_UDP' | 'SYSLOG_TCP' | 'SYSLOG_TLS' | 'WEBHOOK_POST'
+  formatter_config?: Record<string, unknown>
+  max_events?: number
+  stream_id: number
+  route_id: number
+}
+
+export type RouteE2EDraftPreviewResponse = {
+  final_events: Array<Record<string, unknown>>
+  preview_messages: unknown[]
+  route_id: number | null
+  route_stage_timeline: Array<Record<string, unknown>>
+  delivery_allowed: boolean | null
+  policy_action: string | null
+  message: string
+}
+
+export async function runRouteE2EDraftPreview(payload: RouteE2EDraftPreviewRequest): Promise<RouteE2EDraftPreviewResponse> {
+  return requestJson<RouteE2EDraftPreviewResponse>(`${RT}/preview/e2e-draft`, {
     method: 'POST',
     body: JSON.stringify(payload),
   })
@@ -321,6 +368,12 @@ export type EnrichmentExecPreviewWarning = {
 export type EnrichmentExecPreviewResponse = {
   final_event: Record<string, unknown>
   warnings: EnrichmentExecPreviewWarning[]
+  field_errors?: Array<{
+    rule_id?: string | null
+    output_field: string
+    error_code: string
+    error_message: string
+  }>
   duration_ms?: number
   message: string
 }
@@ -361,6 +414,70 @@ export async function runEnrichmentExecPreview(
   })
 }
 
+export type EnrichmentTraceStep = {
+  step_index: number
+  rule_type: string
+  target_field: string
+  executed: boolean
+  blocked: boolean
+  before_present: boolean
+  before_value: unknown
+  after_present: boolean
+  after_value: unknown
+  changed: boolean
+  warning_codes: string[]
+  warning_messages: string[]
+  error_message: string | null
+}
+
+export type EnrichmentTraceSample = {
+  sample_index: number
+  output_event: Record<string, unknown>
+  steps: EnrichmentTraceStep[]
+  failed_step_index: number | null
+  duration_ms: number
+}
+
+export type EnrichmentTraceRuleSummary = {
+  step_index: number
+  rule_type: string
+  target_field: string
+  executed_count: number
+  changed_count: number
+  unchanged_count: number
+  missing_input_count: number
+  warning_count: number
+  error_count: number
+  blocked_count: number
+  failed_sample_indices: number[]
+}
+
+export type EnrichmentTracePreviewRequest = {
+  mapped_events: Array<Record<string, unknown>>
+  enrichment: Record<string, unknown>
+  override_policy?: 'KEEP_EXISTING' | 'OVERRIDE' | 'ERROR_ON_CONFLICT'
+  through_step?: number | null
+}
+
+export type EnrichmentTracePreviewResponse = {
+  input_event_count: number
+  preview_event_count: number
+  rule_count: number
+  through_step: number | null
+  rule_summaries: EnrichmentTraceRuleSummary[]
+  samples: EnrichmentTraceSample[]
+  message: string
+}
+
+export async function runEnrichmentTracePreview(
+  payload: EnrichmentTracePreviewRequest,
+): Promise<EnrichmentTracePreviewResponse> {
+  return requestJson<EnrichmentTracePreviewResponse>(`${RT}/preview/enrichment-trace`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
 export type TransformPreviewSampleSummary = {
   is_object: boolean
   top_level_keys: string[]
@@ -379,6 +496,8 @@ export type TransformPreviewFieldResult = {
   output_field: string
   mode: string
   recovered_via_default: boolean
+  executed?: boolean
+  blocked?: boolean
 }
 
 export type TransformPreviewIssue = {

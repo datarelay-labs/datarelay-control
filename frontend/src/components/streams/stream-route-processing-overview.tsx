@@ -16,6 +16,7 @@ import { StreamSharedProcessingSection } from './route-processing/stream-global-
 import { StreamRouteProcessingNavigator } from './route-processing/stream-route-processing-navigator'
 import { RouteProcessingDetailHeader } from './route-processing/route-processing-detail-header'
 import { RouteProcessingModeSelector } from './route-processing/route-processing-mode-selector'
+import { RouteEffectiveProcessingSummary } from './route-processing/route-effective-processing-summary'
 import { ROUTE_PROCESSING_COPY } from './route-processing/route-processing-labels'
 import { ClassificationPanel } from './classification-panel'
 import { ProtectionPanel } from './protection-panel'
@@ -28,6 +29,7 @@ type RouteProcessingStatuses = {
   protection: ProcessingStatus | null
   classification: ProcessingStatus | null
   policy: ProcessingStatus | null
+  latestChangeAt?: Partial<Record<'protection' | 'classification' | 'policy', string | null>>
 }
 
 type DetailTab = 'transform' | 'data_protection' | 'delivery'
@@ -39,15 +41,15 @@ const DETAIL_TABS: ReadonlyArray<{ key: DetailTab; label: string }> = [
 ]
 
 async function fetchConcernProcessingStatus(
-  fetcher: (options?: { signal?: AbortSignal }) => Promise<{ processing_status?: ProcessingStatus } | null>,
+  fetcher: (options?: { signal?: AbortSignal }) => Promise<{ processing_status?: ProcessingStatus; latest_rule_updated_at?: string | null } | null>,
   signal?: AbortSignal,
-): Promise<ProcessingStatus | null> {
+): Promise<{ status: ProcessingStatus | null; latestRuleUpdatedAt: string | null }> {
   try {
     const result = await fetcher({ signal })
-    return result?.processing_status ?? null
+    return { status: result?.processing_status ?? null, latestRuleUpdatedAt: result?.latest_rule_updated_at ?? null }
   } catch (e) {
     if (isRequestAborted(e)) throw e
-    return null
+    return { status: null, latestRuleUpdatedAt: null }
   }
 }
 
@@ -61,7 +63,17 @@ async function fetchRouteProcessingStatuses(
     fetchConcernProcessingStatus((opts) => fetchRouteClassificationEffective(routeId, opts), signal),
     fetchConcernProcessingStatus((opts) => fetchRoutePolicyEffective(routeId, opts), signal),
   ])
-  return { transform, protection, classification, policy }
+  return {
+    transform: transform.status,
+    protection: protection.status,
+    classification: classification.status,
+    policy: policy.status,
+    latestChangeAt: {
+      protection: protection.latestRuleUpdatedAt,
+      classification: classification.latestRuleUpdatedAt,
+      policy: policy.latestRuleUpdatedAt,
+    },
+  }
 }
 
 function routeStatusesUseShared(statuses: RouteProcessingStatuses | undefined): boolean {
@@ -83,6 +95,7 @@ function StreamRouteDetailTabs({
   onTabChange,
   processingStatuses,
   statusesPending,
+  destinationUpdatedAt,
 }: {
   streamId: number
   route: RouteRead
@@ -92,6 +105,7 @@ function StreamRouteDetailTabs({
   onTabChange: (tab: DetailTab) => void
   processingStatuses: RouteProcessingStatuses | undefined
   statusesPending: boolean
+  destinationUpdatedAt?: string | null
 }) {
   const routeEditHref = routeEditPath(String(route.id))
   const usesShared = routeStatusesUseShared(processingStatuses)
@@ -170,6 +184,7 @@ function StreamRouteDetailTabs({
       </div>
 
       <div className="space-y-3 p-3">
+        <RouteEffectiveProcessingSummary statuses={processingStatuses} pending={statusesPending} latestChangeAt={processingStatuses?.latestChangeAt} routeUpdatedAt={route.updated_at} destinationUpdatedAt={destinationUpdatedAt} />
         {!usesShared && tab === 'transform' ? (
           <div className="space-y-3" data-testid="route-processing-transform-section">
             <RouteEditTransformPanel routeId={route.id} streamId={streamId} />
@@ -352,6 +367,11 @@ export function StreamRouteProcessingOverview({ streamId }: { streamId: number }
             destinationMissing={
               selectedRoute.destination_id == null ||
               !destinationById.get(selectedRoute.destination_id)
+            }
+            destinationUpdatedAt={
+              selectedRoute.destination_id != null
+                ? destinationById.get(selectedRoute.destination_id)?.updated_at ?? null
+                : null
             }
             tab={detailTab}
             onTabChange={setDetailTab}

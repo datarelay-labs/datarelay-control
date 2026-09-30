@@ -226,6 +226,112 @@ def test_fanout_uses_route_payloads(db_session: Session, monkeypatch: pytest.Mon
     assert route_event["mapped_only"] == "hello"
     assert "event_id" not in route_event
 
+
+def test_fanout_executes_persisted_per_field_regex_transform(
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", True)
+    db = db_session
+    fixture = _seed_stream_runtime(db)
+    stream_id = fixture["stream_id"]
+    route_id = fixture["route_ids"][0]
+
+    db.add(
+        RouteMapping(
+            route_id=route_id,
+            field_mappings_json={
+                "message": "$.message",
+                "transform_rules": [
+                    {
+                        "rule_id": "extract-src",
+                        "mode": "regex_extract",
+                        "output_field": "source_ip",
+                        "source_path": "$.message",
+                        "pattern": r"src=(\d+\.\d+\.\d+\.\d+)",
+                        "group": 1,
+                    }
+                ],
+            },
+        )
+    )
+    db.commit()
+    ctx = load_stream_context(db, stream_id)
+    runner = _build_runner(
+        poller=_FakePoller(
+            response={"items": [{"id": "e1", "message": "src=10.20.30.40 action=allow", "vendor": "acme"}]}
+        ),
+        webhook_sender=_FakeWebhookSender(),
+    )
+    captured_payloads: dict[int, list[dict[str, Any]]] = {}
+    original_deliver = runner._deliver_single_route
+
+    def _capture_deliver(stream: Any, route_ctx: Any, events: list[dict[str, Any]]) -> Any:
+        captured_payloads[int(route_ctx.route_id)] = [dict(e) for e in events]
+        return original_deliver(stream, route_ctx, events)
+
+    runner._deliver_single_route = _capture_deliver  # type: ignore[method-assign]
+    summary = runner.run(ctx, db=db)
+
+    assert summary["outcome"] == "completed"
+    route_event = captured_payloads[route_id][0]
+    assert route_event["message"] == "src=10.20.30.40 action=allow"
+    assert route_event["source_ip"] == "10.20.30.40"
+
+
+def test_fanout_executes_persisted_per_field_regex_enrichment(
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", True)
+    db = db_session
+    fixture = _seed_stream_runtime(db)
+    stream_id = fixture["stream_id"]
+    route_id = fixture["route_ids"][0]
+
+    db.add(
+        RouteEnrichment(
+            route_id=route_id,
+            enrichment_json={
+                "advanced_fields": [
+                    {
+                        "rule_id": "extract-action",
+                        "mode": "regex_extract",
+                        "output_field": "action",
+                        "source_path": "$.message",
+                        "pattern": r"action=(\w+)",
+                        "group": 1,
+                    }
+                ]
+            },
+            override_policy="KEEP_EXISTING",
+            enabled=True,
+        )
+    )
+    db.commit()
+    ctx = load_stream_context(db, stream_id)
+    runner = _build_runner(
+        poller=_FakePoller(
+            response={"items": [{"id": "e1", "message": "src=10.20.30.40 action=allow", "vendor": "acme"}]}
+        ),
+        webhook_sender=_FakeWebhookSender(),
+    )
+    captured_payloads: dict[int, list[dict[str, Any]]] = {}
+    original_deliver = runner._deliver_single_route
+
+    def _capture_deliver(stream: Any, route_ctx: Any, events: list[dict[str, Any]]) -> Any:
+        captured_payloads[int(route_ctx.route_id)] = [dict(e) for e in events]
+        return original_deliver(stream, route_ctx, events)
+
+    runner._deliver_single_route = _capture_deliver  # type: ignore[method-assign]
+    summary = runner.run(ctx, db=db)
+
+    assert summary["outcome"] == "completed"
+    route_event = captured_payloads[route_id][0]
+    assert route_event["action"] == "allow"
+    assert "advanced_fields" not in route_event
+
+
 def test_route_transform_metrics_emitted(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "GDC_ROUTE_PROCESSING_ENABLED", True)
     db = db_session

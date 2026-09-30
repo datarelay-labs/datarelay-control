@@ -449,6 +449,7 @@ class StreamRunner(BaseRunner):
                     summary["route_policy_allow_count"] = route_pipeline.metrics.route_policy_allow_count
                     summary["route_policy_audit_count"] = route_pipeline.metrics.route_policy_audit_count
                     summary["route_policy_block_count"] = route_pipeline.metrics.route_policy_block_count
+                    summary["route_policy_blocked_count"] = route_pipeline.metrics.route_policy_blocked_count
                     summary["route_policy_review_count"] = route_pipeline.metrics.route_policy_review_count
                     summary["route_policy_quarantine_count"] = route_pipeline.metrics.route_policy_quarantine_count
                     summary["route_delivery_attempt_count"] = route_pipeline.metrics.route_delivery_attempt_count
@@ -745,6 +746,14 @@ class StreamRunner(BaseRunner):
                 "route_classification_count": pipeline.metrics.route_classification_count,
                 "route_classification_duration_ms": pipeline.metrics.route_classification_duration_ms,
                 "route_classification_override_count": pipeline.metrics.route_classification_override_count,
+                "route_policy_count": pipeline.metrics.route_policy_count,
+                "route_policy_duration_ms": pipeline.metrics.route_policy_duration_ms,
+                "route_policy_allow_count": pipeline.metrics.route_policy_allow_count,
+                "route_policy_audit_count": pipeline.metrics.route_policy_audit_count,
+                "route_policy_block_count": pipeline.metrics.route_policy_block_count,
+                "route_policy_blocked_count": pipeline.metrics.route_policy_blocked_count,
+                "route_policy_review_count": pipeline.metrics.route_policy_review_count,
+                "route_policy_quarantine_count": pipeline.metrics.route_policy_quarantine_count,
                 "route_delivery_attempt_count": pipeline.metrics.route_delivery_attempt_count,
                 "route_delivery_success_count": pipeline.metrics.route_delivery_success_count,
                 "route_delivery_failure_count": pipeline.metrics.route_delivery_failure_count,
@@ -771,6 +780,14 @@ class StreamRunner(BaseRunner):
                 "route_classification_count": pipeline.metrics.route_classification_count,
                 "route_classification_duration_ms": pipeline.metrics.route_classification_duration_ms,
                 "route_classification_override_count": pipeline.metrics.route_classification_override_count,
+                "route_policy_count": pipeline.metrics.route_policy_count,
+                "route_policy_duration_ms": pipeline.metrics.route_policy_duration_ms,
+                "route_policy_allow_count": pipeline.metrics.route_policy_allow_count,
+                "route_policy_audit_count": pipeline.metrics.route_policy_audit_count,
+                "route_policy_block_count": pipeline.metrics.route_policy_block_count,
+                "route_policy_blocked_count": pipeline.metrics.route_policy_blocked_count,
+                "route_policy_review_count": pipeline.metrics.route_policy_review_count,
+                "route_policy_quarantine_count": pipeline.metrics.route_policy_quarantine_count,
                 "route_delivery_attempt_count": pipeline.metrics.route_delivery_attempt_count,
                 "route_delivery_success_count": pipeline.metrics.route_delivery_success_count,
                 "route_delivery_failure_count": pipeline.metrics.route_delivery_failure_count,
@@ -2889,6 +2906,12 @@ class StreamRunner(BaseRunner):
             latency_ms=latency_ms,
             error_code=error_code,
             run_id=str(run_id_raw) if run_id_raw else None,
+            batch_id=str(payload.get("batch_id")) if payload.get("batch_id") is not None else None,
+            policy_action=str(payload.get("policy_action")) if payload.get("policy_action") is not None else None,
+            decision_reason=str(payload.get("decision_reason")) if payload.get("decision_reason") is not None else None,
+            delivery_disposition=str(payload.get("delivery_disposition")) if payload.get("delivery_disposition") is not None else None,
+            skip_reason=str(payload.get("skip_reason")) if payload.get("skip_reason") is not None else None,
+            quarantine_event_id=int(payload.get("quarantine_event_id")) if payload.get("quarantine_event_id") is not None else None,
         )
 
     def _persist_delivery_log(self, payload: dict[str, Any]) -> None:

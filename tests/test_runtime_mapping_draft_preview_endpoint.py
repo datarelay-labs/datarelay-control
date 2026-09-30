@@ -103,6 +103,40 @@ def test_mapping_draft_preview_missing_jsonpath_records_null_and_missing_fields(
     ]
 
 
+def test_mapping_draft_preview_returns_advanced_default_evidence() -> None:
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/runtime/preview/mapping-draft",
+        json={
+            "payload": [
+                {"message": "no source"},
+                {"message": "src=10.0.0.8"},
+            ],
+            "field_mappings": {
+                "message": "$.message",
+                "transform_rules": [
+                    {
+                        "rule_id": "extract-src",
+                        "mode": "regex_extract",
+                        "output_field": "source_ip",
+                        "source_path": "$.message",
+                        "pattern": r"src=(\d+\.\d+\.\d+\.\d+)",
+                        "group": 1,
+                        "default_value": "0.0.0.0",
+                    }
+                ],
+            },
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert [event["source_ip"] for event in body["mapped_events"]] == ["0.0.0.0", "10.0.0.8"]
+    assert body["transform_results"][0]["event_index"] == 0
+    assert body["transform_results"][0]["recovered_via_default"] is True
+    assert body["transform_results"][1]["event_index"] == 1
+    assert body["transform_results"][1]["recovered_via_default"] is False
+
+
 def test_mapping_draft_preview_invalid_jsonpath_returns_400() -> None:
     client = TestClient(app)
     response = client.post(

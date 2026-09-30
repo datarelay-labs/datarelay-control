@@ -596,6 +596,12 @@ class RuntimeLogSearchItem(BaseModel):
     route_id: int | None = None
     destination_id: int | None = None
     run_id: str | None = None
+    batch_id: str | None = None
+    policy_action: str | None = None
+    decision_reason: str | None = None
+    delivery_disposition: str | None = None
+    skip_reason: str | None = None
+    quarantine_event_id: int | None = None
     stage: str
     level: str
     status: str | None = None
@@ -822,6 +828,12 @@ class RuntimeTimelineItem(BaseModel):
     route_id: int | None = None
     destination_id: int | None = None
     run_id: str | None = None
+    batch_id: str | None = None
+    policy_action: str | None = None
+    decision_reason: str | None = None
+    delivery_disposition: str | None = None
+    skip_reason: str | None = None
+    quarantine_event_id: int | None = None
     stage: str
     level: str
     status: str | None = None
@@ -1063,6 +1075,9 @@ class RouteTransformEffectiveResponse(BaseModel):
     fallback_used: bool
     mapping_count: int
     enrichment_count: int
+    effective_field_mappings: dict[str, Any] = Field(default_factory=dict)
+    effective_enrichment: dict[str, Any] = Field(default_factory=dict)
+    effective_override_policy: str = "KEEP_EXISTING"
     processing_status: Literal["Inherited", "Overridden", "Mixed"]
     message: str
 
@@ -1985,7 +2000,7 @@ class MappingDraftPreviewRequest(BaseModel):
     payload: dict[str, Any] | list[Any]
     event_array_path: str | None = None
     event_root_path: str | None = None
-    field_mappings: dict[str, str] = Field(default_factory=dict)
+    field_mappings: dict[str, Any] = Field(default_factory=dict)
     max_events: int = Field(default=5, ge=1, le=100)
 
 
@@ -1995,11 +2010,26 @@ class MappingDraftPreviewMissingFieldItem(BaseModel):
     event_index: int
 
 
+class MappingDraftPreviewTransformResultItem(BaseModel):
+    event_index: int
+    success: bool = True
+    value: Any = None
+    error_code: str | None = None
+    error_message: str | None = None
+    rule_id: str | None = None
+    output_field: str = ""
+    mode: str = ""
+    recovered_via_default: bool = False
+    executed: bool = True
+    blocked: bool = False
+
+
 class MappingDraftPreviewResponse(BaseModel):
     input_event_count: int
     preview_event_count: int
     mapped_events: list[dict[str, Any]]
     missing_fields: list[MappingDraftPreviewMissingFieldItem]
+    transform_results: list[MappingDraftPreviewTransformResultItem] = Field(default_factory=list)
     message: str
 
 
@@ -2007,7 +2037,7 @@ class FinalEventDraftPreviewRequest(BaseModel):
     payload: dict[str, Any] | list[Any]
     event_array_path: str | None = None
     event_root_path: str | None = None
-    field_mappings: dict[str, str] = Field(default_factory=dict)
+    field_mappings: dict[str, Any] = Field(default_factory=dict)
     enrichment: dict[str, Any] = Field(default_factory=dict)
     override_policy: Literal["KEEP_EXISTING", "OVERRIDE", "ERROR_ON_CONFLICT"] = "KEEP_EXISTING"
     max_events: int = Field(default=5, ge=1, le=100)
@@ -2032,6 +2062,8 @@ class FinalEventDraftPreviewResponse(BaseModel):
     mapped_events: list[dict[str, Any]]
     final_events: list[dict[str, Any]]
     missing_fields: list[MappingDraftPreviewMissingFieldItem]
+    mapping_transform_results: list[MappingDraftPreviewTransformResultItem] = Field(default_factory=list)
+    enrichment_transform_results: list[MappingDraftPreviewTransformResultItem] = Field(default_factory=list)
     classification_level: str | None = None
     matched_policies: list[MatchedPolicyPreviewItem] = Field(default_factory=list)
     selected_destinations: list[str] = Field(default_factory=list)
@@ -2055,10 +2087,75 @@ class EnrichmentExecPreviewWarning(BaseModel):
     target_field: str | None = None
 
 
+class EnrichmentExecPreviewFieldError(BaseModel):
+    rule_id: str | None = None
+    output_field: str = ""
+    error_code: str
+    error_message: str
+
+
 class EnrichmentExecPreviewResponse(BaseModel):
     final_event: dict[str, Any] = Field(default_factory=dict)
     warnings: list[EnrichmentExecPreviewWarning] = Field(default_factory=list)
+    field_errors: list[EnrichmentExecPreviewFieldError] = Field(default_factory=list)
     duration_ms: int = 0
+    message: str = ""
+
+
+class EnrichmentTracePreviewRequest(BaseModel):
+    """Read-only multi-sample rule trace using the runtime enrichment engine."""
+
+    mapped_events: list[dict[str, Any]] = Field(default_factory=list, max_length=20)
+    enrichment: dict[str, Any] = Field(default_factory=dict)
+    override_policy: Literal["KEEP_EXISTING", "OVERRIDE", "ERROR_ON_CONFLICT"] = "KEEP_EXISTING"
+    through_step: int | None = Field(default=None, ge=0)
+
+
+class EnrichmentTraceStepItem(BaseModel):
+    step_index: int
+    rule_type: str
+    target_field: str
+    executed: bool = True
+    blocked: bool = False
+    before_present: bool = False
+    before_value: Any = None
+    after_present: bool = False
+    after_value: Any = None
+    changed: bool = False
+    warning_codes: list[str] = Field(default_factory=list)
+    warning_messages: list[str] = Field(default_factory=list)
+    error_message: str | None = None
+
+
+class EnrichmentTraceSampleItem(BaseModel):
+    sample_index: int
+    output_event: dict[str, Any] = Field(default_factory=dict)
+    steps: list[EnrichmentTraceStepItem] = Field(default_factory=list)
+    failed_step_index: int | None = None
+    duration_ms: int = 0
+
+
+class EnrichmentTraceRuleSummaryItem(BaseModel):
+    step_index: int
+    rule_type: str
+    target_field: str
+    executed_count: int = 0
+    changed_count: int = 0
+    unchanged_count: int = 0
+    missing_input_count: int = 0
+    warning_count: int = 0
+    error_count: int = 0
+    blocked_count: int = 0
+    failed_sample_indices: list[int] = Field(default_factory=list)
+
+
+class EnrichmentTracePreviewResponse(BaseModel):
+    input_event_count: int = 0
+    preview_event_count: int = 0
+    rule_count: int = 0
+    through_step: int | None = None
+    rule_summaries: list[EnrichmentTraceRuleSummaryItem] = Field(default_factory=list)
+    samples: list[EnrichmentTraceSampleItem] = Field(default_factory=list)
     message: str = ""
 
 
@@ -2097,6 +2194,8 @@ class TransformPreviewFieldResultItem(BaseModel):
     output_field: str = ""
     mode: str = ""
     recovered_via_default: bool = False
+    executed: bool = True
+    blocked: bool = False
 
 
 class TransformPreviewIssueItem(BaseModel):
@@ -2117,6 +2216,7 @@ class TransformPreviewRequest(BaseModel):
     rules: list[dict[str, Any]] = Field(default_factory=list)
     field_mappings: dict[str, Any] | None = None
     enrichment: dict[str, Any] | None = None
+    override_policy: Literal["KEEP_EXISTING", "OVERRIDE", "ERROR_ON_CONFLICT"] = "KEEP_EXISTING"
 
 
 class TransformPreviewResponse(BaseModel):
@@ -2154,7 +2254,7 @@ class E2EDraftPreviewRequest(BaseModel):
     payload: dict[str, Any] | list[Any]
     event_array_path: str | None = None
     event_root_path: str | None = None
-    field_mappings: dict[str, str] = Field(default_factory=dict)
+    field_mappings: dict[str, Any] = Field(default_factory=dict)
     enrichment: dict[str, Any] = Field(default_factory=dict)
     override_policy: Literal["KEEP_EXISTING", "OVERRIDE", "ERROR_ON_CONFLICT"] = "KEEP_EXISTING"
     destination_type: Literal["SYSLOG_UDP", "SYSLOG_TCP", "SYSLOG_TLS", "WEBHOOK_POST"]
@@ -2164,7 +2264,11 @@ class E2EDraftPreviewRequest(BaseModel):
     webhook_batch_size: int | None = Field(default=None, ge=1, le=10_000)
     stream_id: int | None = Field(
         default=None,
-        description="When set, apply stream protection rules after enrichment in preview.",
+        description="When set, apply stream governance rules after enrichment in preview.",
+    )
+    route_id: int | None = Field(
+        default=None,
+        description="When set with stream_id, preview the persisted effective Route Processing pipeline without sending.",
     )
 
 
@@ -2176,6 +2280,10 @@ class E2EDraftPreviewResponse(BaseModel):
     preview_messages: list[Any]
     missing_fields: list[MappingDraftPreviewMissingFieldItem]
     destination_type: str
+    route_id: int | None = None
+    route_stage_timeline: list[dict[str, Any]] = Field(default_factory=list)
+    delivery_allowed: bool | None = None
+    policy_action: str | None = None
     message: str
 
 
@@ -2302,7 +2410,7 @@ class MappingValidateRequest(BaseModel):
     payload: dict[str, Any] | list[Any] | None = None
     event_array_path: str | None = None
     event_root_path: str | None = None
-    field_mappings: dict[str, str] = Field(default_factory=dict)
+    field_mappings: dict[str, Any] = Field(default_factory=dict)
 
 
 class MappingValidateResponse(BaseModel):

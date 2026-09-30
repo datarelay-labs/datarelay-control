@@ -1,7 +1,7 @@
 # M13.4 Per Route Classification
 
 **Milestone:** M13.4 (Per Route Classification)  
-**Status:** Spec only — no implementation authorized by this document  
+**Status:** Implemented in the current Route-only runtime; reconciled 2026-09-30. This specification documents the bounded contract and does not independently grant mutation authority.
 **Depends on:** M13.1 Route Processing Foundation (`specs/091-route-processing-architecture/spec.md`), M13.2 Per Route Transform (`specs/092-per-route-transform/spec.md`), M13.3 Per Route Protection (`specs/093-per-route-protection/spec.md`)  
 **Design review:** [`docs/architecture/route-data-model-review.md`](../../docs/architecture/route-data-model-review.md), [`docs/architecture/m13-3-protection-design-review.md`](../../docs/architecture/m13-3-protection-design-review.md), [`docs/architecture/m13-4-classification-design-review.md`](../../docs/architecture/m13-4-classification-design-review.md), [`docs/architecture/m13-route-architecture-design-review.md`](../../docs/architecture/m13-route-architecture-design-review.md)  
 **Authority:** Product Charter 1.2.1, Master WBS 1.2.1, `.specify/memory/constitution.md`, Governance & Transform Policy v1.1, Governance UX Charter v1.1, Governance Workspace v1.1  
@@ -11,9 +11,19 @@
 
 ---
 
+## Current implementation reconciliation — 2026-09-30
+
+- Route Processing is the only supported runtime. Historical `GDC_ROUTE_PROCESSING_ENABLED=false`, flag-OFF rollback, and staged stub-only wording in this milestone narrative are superseded by the current Route-only contract in spec 091 and must not be used as current operational guidance.
+- The acceptance checklist in this document was reconciled against current code and deterministic tests. A checked item means the requirement is implemented, or the original staged-only requirement is explicitly marked **superseded** below.
+- Classification is active after Protection in the Route-only pipeline, uses the existing classification engine, and exposes typed effective configuration plus route-aware preview evidence.
+- Primary evidence: `tests/test_per_route_classification.py`, `tests/test_route_classification_effective.py`, `tests/test_governance_workspace_snapshot.py`.
+- No historical milestone statement in this file overrides the current Product Charter, source-of-truth index, spec 091 Current contract, or later implemented route-runtime contracts.
+
+---
+
 ## 1. Problem Statement
 
-Classification is **Stream-scoped** today. One classification rule set resolves a **single batch-level** `classification_level` that is stamped on all events before fan-out. Every route on a stream receives events with the **same classification label**, regardless of destination sensitivity requirements.
+At the pre-M13.4 baseline, Classification was **Stream-scoped**. One classification rule set resolved a single batch-level classification that was stamped before fan-out.
 
 ```text
 Stream
@@ -31,7 +41,7 @@ Destinations
 
 **Product violation:** Operators who need different classification posture per destination (e.g. Route A → internal SIEM **INTERNAL**, Route B → partner API **RESTRICTED**, Route C → archive **CONFIDENTIAL**) must **duplicate Streams** for the same source. Product Charter 1.2.1 forbids this: *목적지별 처리 차이는 Route를 통해 구성한다* and *users must not duplicate Streams because destinations require different processing*.
 
-**Gap (evidence):** `stream_classification_rules.stream_id` FK only; no `route_id`; `classify_events_for_delivery()` in `app/classification/service.py` queries stream rules via `evaluate_batch()`; `_classify_events()` in `app/runners/stream_runner.py` runs once in the shared phase **before** protection on the legacy path; `process_route_pipeline()` records `classification_stub` as NO-OP pass-through (`app/runners/route_stage.py`).
+**Historical gap (pre-M13.4 evidence):** classification rules were stream-only, classification ran on the legacy shared path, and the route classification slot was still a NO-OP stub.
 
 **M13.3 delivers:** Per-route Protection inside `process_route_pipeline()`; Classification **stub** (pass-through); Policy **stub** (pass-through); stream-level classification **skipped** when `GDC_ROUTE_PROCESSING_ENABLED=true` (spec 092 §9.2).
 
@@ -76,7 +86,7 @@ Destinations
 | Do NOT create parallel runtime | Classification stage inside existing `process_route_pipeline()` |
 | Route Classification additive | New `route_classification_rules` table; stream table preserved |
 | Existing Streams continue working | Dual-read + flag OFF parity |
-| Feature flag default OFF | `GDC_ROUTE_PROCESSING_ENABLED=false` — legacy path unchanged |
+| Historical feature-flag baseline | Superseded — current Route Processing defaults ON and explicit `GDC_ROUTE_PROCESSING_ENABLED=false` is rejected |
 | Do NOT redesign Route DB model | Additive `route_classification_rules` only (spec 091 Appendix A) |
 
 ---
@@ -1071,9 +1081,9 @@ Conceptual only — no UI implementation authorized by this document.
 
 ## 14. Backward Compatibility
 
-### 14.1 Feature flag OFF
+### 14.1 Historical feature flag OFF (superseded)
 
-`GDC_ROUTE_PROCESSING_ENABLED=false` (default):
+Historical pre-retirement `GDC_ROUTE_PROCESSING_ENABLED=false` behavior (not a current runnable mode):
 
 - **Zero behavior change** vs pre-M13.4 baseline
 - Stream classification runs in `_collect_and_transform_events()` **before** protection
@@ -1107,11 +1117,11 @@ Existing deployments with stream rules only: **no migration required**. Routes i
 
 | Trigger | Action |
 |---------|--------|
-| Regression with flag ON | Set `GDC_ROUTE_PROCESSING_ENABLED=false` — immediate legacy path |
+| Route regression rollback | Current rollback: use a previous release image; explicit `GDC_ROUTE_PROCESSING_ENABLED=false` is rejected |
 | Classification bug | Set `GDC_CLASSIFICATION_ENABLED=false` — global skip |
 | Route config error | Delete route classification rules — fallback to stream |
 
-No data migration rollback required for flag OFF.
+Historical rollback note (superseded): the flag-OFF runtime is retired. Current rollback uses a previous release image while preserving additive route classification data.
 
 ---
 
@@ -1121,74 +1131,74 @@ M13.4 is **complete** when all criteria pass.
 
 ### 15.0 Task-mandate gates (design review R1–R8)
 
-- [ ] **AC-0a** `RouteEffectiveConfig.classification` is **`RouteClassificationConfig`** (typed) — not `Any | None`.
-- [ ] **AC-0b** `route_overrides[]` JSON shape documented with required `route_id`, optional `classification_level`, and §7.2.1 floor semantics (not field-path override).
-- [ ] **AC-0c** Resolver order enforced: `route_classification_rules` → `stream_classification_rules` → empty config; then `route_overrides[].classification_level` floor via `max_level()`.
-- [ ] **AC-0d** `classify_batch()` reuses existing engine; ORM coupling resolved via adapter/protocol only — no new classification engine.
-- [ ] **AC-0e** `RouteStageResult.classification_result` attached after classification stage.
-- [ ] **AC-0f** M13.5 handoff documented: Policy consumes stamped events — does not re-run classification (§10.6).
-- [ ] **AC-0g** Flag ON stage order: **Transform → Protection → Classification → Policy stub** (unchanged stub).
-- [ ] **AC-0h** Flag OFF legacy order unchanged: Classification **before** Protection on stream path.
+- [x] **AC-0a** `RouteEffectiveConfig.classification` is **`RouteClassificationConfig`** (typed) — not `Any | None`.
+- [x] **AC-0b** `route_overrides[]` JSON shape documented with required `route_id`, optional `classification_level`, and §7.2.1 floor semantics (not field-path override).
+- [x] **AC-0c** Resolver order enforced: `route_classification_rules` → `stream_classification_rules` → empty config; then `route_overrides[].classification_level` floor via `max_level()`.
+- [x] **AC-0d** `classify_batch()` reuses existing engine; ORM coupling resolved via adapter/protocol only — no new classification engine.
+- [x] **AC-0e** `RouteStageResult.classification_result` attached after classification stage.
+- [x] **AC-0f** M13.5 handoff documented: Policy consumes stamped events — does not re-run classification (§10.6).
+- [x] **AC-0g (superseded staged gate)** The stage order is preserved, but Policy is now active: `Transform → Protection → Classification → Policy → Delivery`.
+- [x] **AC-0h (superseded)** The flag-OFF legacy stream path is retired by the Route-only runtime contract.
 
 ### 15.1 Prerequisites (M13.2 + M13.3)
 
-- [ ] **AC-1** M13.2 acceptance criteria satisfied — route loop, transform, fan-out wiring.
-- [ ] **AC-2** M13.3 acceptance criteria satisfied — protection stage active, protected fan-out.
-- [ ] **AC-3** `SharedBatchContext.sensitive_detection_result` available to classification stage.
-- [ ] **AC-4** Stream `_classify_events()` **not** called when `GDC_ROUTE_PROCESSING_ENABLED=true`.
+- [x] **AC-1** M13.2 acceptance criteria satisfied — route loop, transform, fan-out wiring.
+- [x] **AC-2** M13.3 acceptance criteria satisfied — protection stage active, protected fan-out.
+- [x] **AC-3** `SharedBatchContext.sensitive_detection_result` available to classification stage.
+- [x] **AC-4** Stream `_classify_events()` **not** called when `GDC_ROUTE_PROCESSING_ENABLED=true`.
 
 ### 15.2 Classification stage activation
 
-- [ ] **AC-5** `classification_stub` replaced with `route_classification_stage()` invoking existing engine.
-- [ ] **AC-6** Classification runs **after** Protection in `process_route_pipeline()`.
-- [ ] **AC-7** `_fan_out()` delivers **classified** per-route events from `RouteStageResult.events`.
-- [ ] **AC-8** No new Classification Engine class or parallel pipeline.
+- [x] **AC-5** `classification_stub` replaced with `route_classification_stage()` invoking existing engine.
+- [x] **AC-6** Classification runs **after** Protection in `process_route_pipeline()`.
+- [x] **AC-7 (superseded wiring detail; intent preserved)** Classified per-route `RouteStageResult.events` are the delivery payload. Current M13.6 wiring uses `route_delivery_stage()`/the shared send primitive instead of the old `_fan_out()` handoff.
+- [x] **AC-8** No new Classification Engine class or parallel pipeline.
 
 ### 15.3 Config resolution
 
-- [ ] **AC-9** Resolution order: `route_classification_rules` → `stream_classification_rules` → empty config.
-- [ ] **AC-10** Route rules present → route rule set replaces stream base for that route (list-replacement).
-- [ ] **AC-11** Route-level classification floor: `route_overrides[].classification_level` applies via `max_level()` **after** rule resolution — not as field-path protection override.
-- [ ] **AC-12** `RouteRuntimeContext.effective_config.classification` populated as typed **`RouteClassificationConfig`**.
-- [ ] **AC-13** `RouteClassificationConfig.resolution` metadata exposed in effective config API/debug.
+- [x] **AC-9** Resolution order: `route_classification_rules` → `stream_classification_rules` → empty config.
+- [x] **AC-10** Route rules present → route rule set replaces stream base for that route (list-replacement).
+- [x] **AC-11** Route-level classification floor: `route_overrides[].classification_level` applies via `max_level()` **after** rule resolution — not as field-path protection override.
+- [x] **AC-12** `RouteRuntimeContext.effective_config.classification` populated as typed **`RouteClassificationConfig`**.
+- [x] **AC-13** `RouteClassificationConfig.resolution` metadata exposed in effective config API/debug.
 
 ### 15.4 Product scenarios
 
-- [ ] **AC-14** Same stream, Route A INTERNAL, Route B RESTRICTED — outbound stamps differ accordingly.
-- [ ] **AC-15** Operator achieves destination-specific classification **without** duplicating streams.
-- [ ] **AC-16** Sensitive Detection runs once per batch — not N times per route.
+- [x] **AC-14** Same stream, Route A INTERNAL, Route B RESTRICTED — outbound stamps differ accordingly.
+- [x] **AC-15** Operator achieves destination-specific classification **without** duplicating streams.
+- [x] **AC-16** Sensitive Detection runs once per batch — not N times per route.
 
 ### 15.5 Engine reuse
 
-- [ ] **AC-17** `classify_batch()` / `resolve_classification_level()` used unchanged in algorithm.
-- [ ] **AC-18** `evaluate_batch()` **not** called from route path (no stream-only DB query in route stage).
-- [ ] **AC-19** If `classify_batch()` coupled to `StreamClassificationRule` ORM, adapter/protocol maps route entries — no algorithm fork.
-- [ ] **AC-20** Stamp fields `classification_level` / `classification_level_gdc` per spec 066.
+- [x] **AC-17** `classify_batch()` / `resolve_classification_level()` used unchanged in algorithm.
+- [x] **AC-18** `evaluate_batch()` **not** called from route path (no stream-only DB query in route stage).
+- [x] **AC-19** If `classify_batch()` coupled to `StreamClassificationRule` ORM, adapter/protocol maps route entries — no algorithm fork.
+- [x] **AC-20** Stamp fields `classification_level` / `classification_level_gdc` per spec 066.
 
 ### 15.6 Stage order regression
 
-- [ ] **AC-21** Flag OFF: Classification before Protection — **unchanged legacy order** (zero behavior change).
-- [ ] **AC-22** Flag ON: **Transform → Protection → Classification → Policy stub** on post-protection route events.
-- [ ] **AC-23** Regression matrix documents delta between legacy and route paths.
+- [x] **AC-21 (superseded)** The flag-OFF legacy ordering contract is retired; current Route-only order is Protection before Classification.
+- [x] **AC-22 (superseded staged wording; order preserved)** Current Route-only order is `Transform → Protection → Classification → Policy → Delivery`; Policy is no longer a stub.
+- [x] **AC-23 (superseded)** The dual-path regression matrix is historical because the legacy flag-OFF path was retired.
 
 ### 15.7 Compatibility
 
-- [ ] **AC-24** Flag OFF: zero behavior change vs pre-M13.4 baseline (e2e green).
-- [ ] **AC-25** Flag ON, no route config: classification parity with flag OFF when transform + protection parity holds.
-- [ ] **AC-26** No truncate of user `stream_classification_rules`.
+- [x] **AC-24 (superseded)** The flag-OFF runtime is retired; rollback is release-image based.
+- [x] **AC-25 (historical parity baseline; current fallback retained)** With no route classification config, stream rules remain the effective fallback and preserve historical classification semantics.
+- [x] **AC-26** No truncate of user `stream_classification_rules`.
 
 ### 15.8 Observability and route result
 
-- [ ] **AC-27** `RouteStageResult.classification_result` populated with `effective_level`, `matched_rule_count`, `persisted_source`, `override_applied`.
-- [ ] **AC-28** `delivery_logs` `classification_complete` entries include `route_id` when flag ON.
-- [ ] **AC-29** Classification preview accepts `route_id` and uses effective route config.
+- [x] **AC-27** `RouteStageResult.classification_result` populated with `effective_level`, `matched_rule_count`, `persisted_source`, `override_applied`.
+- [x] **AC-28** `delivery_logs` `classification_complete` entries include `route_id` when flag ON.
+- [x] **AC-29** Classification preview accepts `route_id` and uses effective route config.
 
 ### 15.9 Boundaries (stubs and deferred work)
 
-- [ ] **AC-30** Policy engine **not** invoked in M13.4 — stub remains NO-OP; M13.5 will consume stamps only (§10.6).
-- [ ] **AC-31** Quarantine and Require Review workflows **not** implemented (M13.5).
-- [ ] **AC-32** Route delivery metrics / health **not** implemented (M13.6).
-- [ ] **AC-33** `route_governance_overrides` normalized table **not** introduced (§7.3).
+- [x] **AC-30 (superseded staged gate)** Policy was deferred from M13.4 and is now active, consuming classification stamps without re-running classification.
+- [x] **AC-31 (superseded staged boundary)** Quarantine and Require Review are now implemented by the later Policy/Delivery runtime.
+- [x] **AC-32 (superseded staged boundary)** Route delivery metrics/health are now implemented under M13.6.
+- [x] **AC-33** `route_governance_overrides` normalized table **not** introduced (§7.3).
 
 ---
 

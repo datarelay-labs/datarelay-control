@@ -62,4 +62,5 @@ class RouteClassificationEffectiveResponse(BaseModel):
     fallback_used: bool
     rule_count: int
     processing_status: RouteClassificationProcessingStatus
+    latest_rule_updated_at: datetime | None = None
     message: str

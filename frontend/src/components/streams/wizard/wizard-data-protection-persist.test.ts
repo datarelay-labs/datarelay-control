@@ -39,7 +39,36 @@ vi.mock('../../../api/gdcRuntimePreview', () => ({
     warnings: [],
     message: 'ok',
   })),
-  runTransformPreview: vi.fn(),
+  runTransformPreview: vi.fn(async ({
+    sample_event,
+    field_mappings,
+  }: {
+    sample_event: Record<string, unknown>
+    field_mappings: Record<string, unknown>
+  }) => {
+    const transformed: Record<string, unknown> = {}
+    for (const [outputField, sourcePath] of Object.entries(field_mappings)) {
+      if (typeof sourcePath !== 'string' || outputField === 'transform_rules') continue
+      const segments = sourcePath.replace(/^\$\.?/, '').split('.').filter(Boolean)
+      let value: unknown = sample_event
+      for (const segment of segments) {
+        if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+          value = undefined
+          break
+        }
+        value = (value as Record<string, unknown>)[segment]
+      }
+      transformed[outputField] = value
+    }
+    return {
+      transformed_result: transformed,
+      message: 'ok',
+      save_blocked: false,
+      warnings: [],
+      errors: [],
+      field_results: [],
+    }
+  }),
 }))
 
 import { createPolicyRule } from '../../../api/gdcPolicy'

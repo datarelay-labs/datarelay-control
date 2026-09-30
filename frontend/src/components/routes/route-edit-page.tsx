@@ -31,6 +31,7 @@ import { ProtectionPanel } from '../streams/protection-panel'
 import { ClassificationPanel } from '../streams/classification-panel'
 import { PolicyPanel } from '../streams/policy-panel'
 import { fetchDestinationsList } from '../../api/gdcDestinations'
+import { listAuditLogs } from '../../api/gdcAudit'
 import { HelpTooltip } from '../ui/help-tooltip'
 import { HELP_COPY } from '../ui/help-tooltip-copy'
 import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
@@ -165,6 +166,7 @@ export function RouteEditPage() {
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null)
   const [staleConflict, setStaleConflict] = useState(false)
   const [routeUpdatedAt, setRouteUpdatedAt] = useState<string | null>(null)
+  const [streamLastStartedAt, setStreamLastStartedAt] = useState<string | null>(null)
   const [discardOpen, setDiscardOpen] = useState(false)
   const [refreshConfirmOpen, setRefreshConfirmOpen] = useState(false)
   const [deliveryBaseline, setDeliveryBaseline] = useState<RouteDeliveryFormState | null>(
@@ -389,12 +391,18 @@ export function RouteEditPage() {
     if (backendStreamId == null) {
       setStreamLabel('—')
       setConnectorLabel('—')
+      setStreamLastStartedAt(null)
       return
     }
     ;(async () => {
-      const stream = await fetchStreamById(backendStreamId)
+      const [stream, audit] = await Promise.all([
+        fetchStreamById(backendStreamId),
+        listAuditLogs({ action: 'STREAM_STARTED', entity_type: 'STREAM', limit: 100 }).catch(() => null),
+      ])
       if (cancelled || !stream) return
       setStreamLabel(stream.name?.trim() || `Stream #${stream.id}`)
+      const latestStart = audit?.items.find((item) => item.entity_id === backendStreamId) ?? null
+      setStreamLastStartedAt(latestStart?.created_at ?? null)
       const cid = typeof stream.connector_id === 'number' ? stream.connector_id : null
       if (cid == null) {
         setConnectorLabel('—')
@@ -764,8 +772,8 @@ export function RouteEditPage() {
           ['Route Status', enabled ? 'Enabled' : 'Disabled'],
           ['Delivery Mode', deliveryMode],
           ['Processing', transformStatus || protectionStatus || classificationStatus || policyStatus ? `Transform: ${transformStatus ?? '—'} · Protection: ${protectionStatus ?? '—'} · Classification: ${classificationStatus ?? '—'} · Policy: ${policyStatus ?? '—'}` : '—'],
-          ['Last Updated', '—'],
-          ['Updated By', '—'],
+          ['Route Updated', routeUpdatedAt ? new Date(routeUpdatedAt).toLocaleString() : '—'],
+          ['Last Started', streamLastStartedAt ? new Date(streamLastStartedAt).toLocaleString() : '—'],
         ].map(([label, value]) => (
           <div key={label} className="min-w-0">
             <p className="text-[10px] uppercase tracking-wide text-slate-500">{label}</p>
@@ -1047,17 +1055,31 @@ export function RouteEditPage() {
           </PanelChrome>
 
           <PanelChrome title="Need help?">
-            <div className="space-y-2 p-2.5 text-[12px]">
-              <p className="text-slate-600 dark:text-gdc-muted">Learn more about routes in our documentation.</p>
-              <a
-                href="https://example.com/docs/routes"
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 text-violet-700 hover:underline dark:text-violet-300"
-              >
-                <HelpCircle className="h-3.5 w-3.5" />
-                View Docs
-              </a>
+            <div className="space-y-2 p-2.5 text-[11px] text-slate-600 dark:text-gdc-muted" data-testid="route-contextual-help">
+              <p>Jump to the part of this Route that answers the question you are working on.</p>
+              <div className="grid gap-1.5">
+                {([
+                  ['delivery', 'Show me delivery', 'Destination, retry, rate limit and no-send preview'],
+                  ['transform', 'Show me effective event', 'Inherited/overridden mapping, enrichment and Final Event'],
+                  ['protection', 'Show me protection', 'Field protection effective for this Route'],
+                  ['classification', 'Show me classification', 'Classification effective for this Route'],
+                  ['policy', 'Show me policy', 'Policy effective for this Route'],
+                ] as const).map(([tab, label, detail]) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    className="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-left hover:border-violet-300 hover:bg-violet-50/50 dark:border-gdc-border dark:bg-gdc-card dark:hover:border-violet-500/40"
+                    onClick={() => {
+                      setActiveTab(tab)
+                      setVisitedTabs((prev) => new Set(prev).add(tab))
+                    }}
+                    data-testid={`route-help-${tab}`}
+                  >
+                    <span className="flex items-center gap-1 font-semibold text-violet-700 dark:text-violet-300"><HelpCircle className="h-3 w-3" />{label}</span>
+                    <span className="mt-0.5 block text-[10px] text-slate-500">{detail}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           </PanelChrome>
         </div>

@@ -4,6 +4,7 @@ import { cn } from '../../lib/utils'
 import { AdvancedTransformWorkspace } from '../transform/advanced-transform-workspace'
 import { useMappingPreview } from '../../hooks/useMappingPreview'
 import type { AdvancedTransformRuleDraft } from '../../types/advancedTransform'
+import { buildFieldMappingsWithTransformRules } from '../../utils/advancedTransformConfig'
 import { fieldMappingsFromRows } from '../../utils/mappingValidation'
 import { resolveSourceTypePresentation } from '../../utils/sourceTypePresentation'
 import {
@@ -32,12 +33,17 @@ export type MappingWorkspaceProps = {
   sourceType: string | null
   initialRows: MappingRowModel[]
   enrichment: Record<string, unknown>
+  enrichmentOverridePolicy?: 'KEEP_EXISTING' | 'OVERRIDE' | 'ERROR_ON_CONFLICT'
   eventArrayPath: string
   eventRootPath: string
   onRowsChange?: (rows: MappingRowModel[]) => void
   onEventArrayPathChange?: (path: string) => void
+  /** Route Mapping keeps extraction paths Stream-scoped; lock only this control when true. */
+  eventPathReadOnly?: boolean
   transformRules?: AdvancedTransformRuleDraft[]
   onTransformRulesChange?: (rules: AdvancedTransformRuleDraft[]) => void
+  /** Stored mapping metadata this editor does not own (for example full-event mode). */
+  preservedFieldMappings?: Record<string, unknown>
   headerSlot?: ReactNode
   /** Wizard / offline path: use in-memory sample instead of fetchMappingSourceSample(streamId). */
   externalSample?: MappingSourceSampleResult | null
@@ -62,12 +68,15 @@ export function MappingWorkspace({
   sourceType,
   initialRows,
   enrichment,
+  enrichmentOverridePolicy = 'KEEP_EXISTING',
   eventArrayPath: initialEventArrayPath,
   eventRootPath: initialEventRootPath,
   onRowsChange,
   onEventArrayPathChange,
+  eventPathReadOnly = false,
   transformRules = [],
   onTransformRulesChange,
+  preservedFieldMappings = {},
   headerSlot,
   externalSample = null,
   hideModeTabs = false,
@@ -86,6 +95,7 @@ export function MappingWorkspace({
   const [eventRootPath] = useState(initialEventRootPath)
   const [sampleEventIndex, setSampleEventIndex] = useState(0)
   const [selectedUnionPath, setSelectedUnionPath] = useState<string | null>(null)
+  const [selectedMappingId, setSelectedMappingId] = useState<string | null>(null)
 
   const presentation = useMemo(() => resolveSourceTypePresentation(sourceType), [sourceType])
 
@@ -102,6 +112,13 @@ export function MappingWorkspace({
   }, [forceModeTab])
 
   const activeModeTab = forceModeTab ?? modeTab
+  const persistedMappingMode =
+    typeof preservedFieldMappings.mapping_mode === 'string' ? preservedFieldMappings.mapping_mode : ''
+  const fullEventMappingActive =
+    persistedMappingMode === 'full_event_jsonata' || persistedMappingMode === 'full_event_regex'
+  const previewUnmappedFieldsPolicy =
+    preservedFieldMappings.unmapped_fields_policy === 'drop_unmapped' ? 'drop_unmapped' : 'pass_through'
+  const ruleEditorReadOnly = readOnly || fullEventMappingActive
 
   const loadSample = useCallback(async () => {
     if (externalSample != null) {
@@ -133,23 +150,33 @@ export function MappingWorkspace({
 
   const updateRows = useCallback(
     (next: MappingRowModel[]) => {
-      if (readOnly) return
+      if (ruleEditorReadOnly) return
       setRows(next)
       onRowsChange?.(next)
     },
-    [onRowsChange, readOnly],
+    [onRowsChange, ruleEditorReadOnly],
   )
 
   const sampleEvent = sample?.extractedEvents?.[sampleEventIndex] ?? sample?.extractedEvents?.[0] ?? null
   const treeValue = sampleEvent ?? sample?.treeDocument ?? {}
+  const previewFieldMappings = useMemo(
+    () => ({
+      ...preservedFieldMappings,
+      ...buildFieldMappingsWithTransformRules(fieldMappingsFromRows(rows), transformRules),
+    }),
+    [preservedFieldMappings, rows, transformRules],
+  )
 
   const preview = useMappingPreview({
     rawPayload: sample?.rawPayload ?? null,
     eventArrayPath,
     eventRootPath,
     rows,
+    fieldMappingsConfig: previewFieldMappings,
     enrichment,
+    overridePolicy: enrichmentOverridePolicy,
     enabled: Boolean(sample?.ok && sample.rawPayload != null),
+    maxEvents: 20,
   })
 
   const { warnings: localWarnings, rowIssues: baseRowIssues } = useMemo(() => validateMappingRowsLocal(rows), [rows])
@@ -223,6 +250,8 @@ export function MappingWorkspace({
     [rows, updateRows],
   )
 
+  const selectedMappingRow = rows.find((row) => row.id === selectedMappingId) ?? null
+
   const simpleFieldMappings = useMemo(() => fieldMappingsFromRows(rows), [rows])
 
   const sourcePanelTitle = useMemo(() => {
@@ -240,12 +269,34 @@ export function MappingWorkspace({
       : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-gdc-muted'
 
   const readyMappingCount = rows.filter((row) => row.sourceJsonPath.trim() && row.outputField.trim()).length
+  const readyAdvancedCount = transformRules.filter((rule) => rule.outputField.trim()).length
   const transformWarningCount = mergedWarnings.length
   const previewReady = Boolean(preview.final?.final_events?.length)
+  const rulesReady = fullEventMappingActive || readyMappingCount > 0 || readyAdvancedCount > 0
+  const rulesDetail = fullEventMappingActive
+    ? persistedMappingMode === 'full_event_regex'
+      ? 'Full-event Regex'
+      : 'Full-event JSONata'
+    : readyAdvancedCount > 0
+      ? `${readyMappingCount} mapped · ${readyAdvancedCount} advanced`
+      : readyMappingCount > 0
+        ? `${readyMappingCount} mapped field${readyMappingCount === 1 ? '' : 's'}`
+        : 'Map fields'
 
   return (
     <div className="space-y-3">
       {headerSlot}
+
+      {fullEventMappingActive ? (
+        <div className="rounded-lg border border-amber-200/80 bg-amber-500/[0.06] px-3 py-2 text-[11px] text-amber-900 dark:border-amber-500/30 dark:text-amber-100">
+          <span className="font-semibold">
+            {persistedMappingMode === 'full_event_regex' ? 'Full-event Regex' : 'Full-event JSONata'} runtime is active.
+          </span>{' '}
+          Per-field Mapping/Advanced rule editors are read-only here because those edits would not execute while the
+          persisted full-event mode is authoritative. Edit or switch the full-event mode from Stream Edit → Route
+          Processing.
+        </div>
+      ) : null}
 
       <div
         className="grid overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-gdc-border dark:bg-gdc-card sm:grid-cols-[1fr_auto_1fr_auto_1fr]"
@@ -261,8 +312,8 @@ export function MappingWorkspace({
         <TransformFlowStep
           number="2"
           label="Rules"
-          detail={readyMappingCount > 0 ? `${readyMappingCount} mapped field${readyMappingCount === 1 ? '' : 's'}` : 'Map fields'}
-          complete={readyMappingCount > 0}
+          detail={rulesDetail}
+          complete={rulesReady}
           warning={transformWarningCount > 0 ? `${transformWarningCount} warning${transformWarningCount === 1 ? '' : 's'}` : undefined}
         />
         <TransformFlowArrow />
@@ -293,10 +344,15 @@ export function MappingWorkspace({
         <AdvancedTransformWorkspace
           stage="mapping"
           sampleEvent={sampleEvent}
+          sampleEvents={(sample?.extractedEvents ?? []).filter(
+            (event): event is Record<string, unknown> =>
+              event != null && typeof event === 'object' && !Array.isArray(event),
+          )}
           rules={transformRules}
           onRulesChange={onTransformRulesChange}
-          readOnly={readOnly}
+          readOnly={ruleEditorReadOnly}
           simpleFieldMappings={simpleFieldMappings}
+          unmappedFieldsPolicy={previewUnmappedFieldsPolicy}
           filterUiMode={activeModeTab === 'expert' ? 'expert' : 'advanced'}
         />
       ) : null}
@@ -339,12 +395,14 @@ export function MappingWorkspace({
               </p>
               <div className="grid gap-2 sm:grid-cols-2">
                 <label className="block text-[10px]">
-                  <span className="font-semibold text-slate-600 dark:text-gdc-mutedStrong">Event array path</span>
+                  <span className="font-semibold text-slate-600 dark:text-gdc-mutedStrong">
+                    Event array path{eventPathReadOnly ? ' · Stream-scoped' : ''}
+                  </span>
                   <input
                     value={eventArrayPath}
-                    disabled={readOnly}
+                    disabled={readOnly || eventPathReadOnly}
                     onChange={(e) => {
-                      if (readOnly) return
+                      if (readOnly || eventPathReadOnly) return
                       const v = e.target.value
                       setEventArrayPath(v)
                       onEventArrayPathChange?.(v)
@@ -379,7 +437,7 @@ export function MappingWorkspace({
                     className="min-h-0 flex-1"
                     schema={sample.unionSchema}
                     search={treeSearch}
-                    onPickPath={readOnly ? () => undefined : handlePickPath}
+                    onPickPath={ruleEditorReadOnly ? () => undefined : handlePickPath}
                     selectedPath={selectedUnionPath}
                     onSelectPath={setSelectedUnionPath}
                   />
@@ -391,7 +449,7 @@ export function MappingWorkspace({
                     baseLabel="event"
                     basePath="$"
                     search={treeSearch}
-                    onPickPath={readOnly ? () => undefined : handlePickPath}
+                    onPickPath={ruleEditorReadOnly ? () => undefined : handlePickPath}
                     onUseEventArrayPath={
                       readOnly
                         ? undefined
@@ -430,14 +488,20 @@ export function MappingWorkspace({
               }}
               onReorder={handleReorder}
               onAddBlank={() => {
-                if (readOnly) return
+                if (ruleEditorReadOnly) return
                 const id = newRowId()
                 updateRows([...rows, { id, sourceJsonPath: '', outputField: '', type: 'string', origin: 'manual' }])
                 setEditingId(id)
               }}
               search={mappingSearch}
               onSearchChange={setMappingSearch}
-              readOnly={readOnly}
+              readOnly={ruleEditorReadOnly}
+              selectedId={selectedMappingId}
+              onSelectId={(id) => {
+                setSelectedMappingId(id)
+                const row = rows.find((candidate) => candidate.id === id)
+                if (row?.sourceJsonPath) setSelectedUnionPath(row.sourceJsonPath)
+              }}
             />
           </PanelChrome>
         </div>
@@ -446,11 +510,14 @@ export function MappingWorkspace({
           <FinalEventPreviewPanel
             preview={preview}
             rawSampleEvent={sampleEvent}
+            rawSampleEvents={sample?.extractedEvents ?? []}
+            rows={rows}
             eventCount={sample?.extractedEvents.length ?? preview.mapped?.preview_event_count ?? 1}
             sampleEventIndex={sampleEventIndex}
             onSampleIndexChange={setSampleEventIndex}
             onRefresh={preview.refresh}
-            localWarnings={mergedWarnings}
+            warnings={mergedWarnings}
+            selectedRow={selectedMappingRow}
           />
         </div>
       </div>

@@ -1493,8 +1493,12 @@ export function StreamHealthMatrix({
                     <td key={ci} className="py-1.5 text-center">
                       {colDest ? (
                         <Link
-                          to={destinationDetailPath(String(colDest.id))}
-                          title={`${row.label} → ${colDest.name}: ${cell.status}`}
+                          to={
+                            cell.status !== 'healthy' && cell.status !== 'no-data' && cell.problemStreamId != null
+                              ? streamRuntimePath(String(cell.problemStreamId)) + (cell.problemRouteId != null ? `?route=${cell.problemRouteId}` : '')
+                              : destinationDetailPath(String(colDest.id))
+                          }
+                          title={`${row.label} → ${colDest.name}: ${cell.status}${cell.problemRouteId != null ? ` · Route #${cell.problemRouteId}` : ''}`}
                           className={cn(
                             'inline-flex h-6 w-6 items-center justify-center rounded',
                             MATRIX_CELL_CLASS[cell.status],

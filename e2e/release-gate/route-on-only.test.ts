@@ -24,6 +24,11 @@ const config = yaml.parse(
 assert.equal(config.route_processing.require_off, false)
 assert.equal(config.route_processing.require_on, true)
 
+const validatorSource = fs.readFileSync(path.join(root, 'scenarios/validate-execution-results.ts'), 'utf-8')
+assert.doesNotMatch(validatorSource, /routeOffNeeded|routeOffMissing/)
+assert.match(validatorSource, /off_needed:\s*0/)
+assert.match(validatorSource, /off_missing:\s*0/)
+
 const matrix = JSON.parse(
   fs.readFileSync(path.join(root, 'scenarios/generated/full-matrix.json'), 'utf-8'),
 ) as {

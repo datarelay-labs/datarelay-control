@@ -49,3 +49,30 @@ def test_enrichment_exec_preview_rules_not_leaked() -> None:
     )
     assert response.status_code == 200
     assert "__rules" not in response.json()["final_event"]
+
+
+def test_enrichment_exec_preview_surfaces_advanced_transform_field_error() -> None:
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/runtime/preview/enrichment-exec",
+        json={
+            "mapped_event": {"message": "src=10.0.0.1"},
+            "enrichment": {
+                "advanced_fields": [
+                    {
+                        "mode": "regex_extract",
+                        "output_field": "source_ip",
+                        "source_path": "$.message",
+                        "pattern": "(",
+                        "group": 1,
+                    }
+                ]
+            },
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "advanced_fields" not in body["final_event"]
+    assert body["warnings"]
+    assert body["warnings"][0]["code"] == "REGEX_PATTERN_INVALID"
+    assert body["warnings"][0]["target_field"] == "source_ip"

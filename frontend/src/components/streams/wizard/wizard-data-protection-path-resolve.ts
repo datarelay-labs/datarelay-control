@@ -1,13 +1,14 @@
 import { runEnrichmentExecPreview, runTransformPreview } from '../../../api/gdcRuntimePreview'
-import { applyMappingWithPassThrough } from '../../../utils/mappingPassThrough'
 import { parseFullEventRegexConfigText } from './wizard-full-event-regex-config'
 import { runWizardLocalTransformPreview } from './wizard-full-event-preview'
-import { buildWizardJsonataPreviewFieldMappings } from './wizard-full-event-preview'
 import { flattenSampleFields } from './wizard-json-extract'
 import { resolveJsonPath } from '../mapping-jsonpath'
 import { buildMappedBaseFromState } from './wizard-review-preview'
-import type { WizardState } from './wizard-state'
-import { enrichmentDictFromRows } from './wizard-state'
+import {
+  buildWizardFieldMappingsPayload,
+  enrichmentDictFromRows,
+  type WizardState,
+} from './wizard-state'
 
 export type ProtectionPathResolveResult =
   | { ok: true; resolvedPath: string }
@@ -48,7 +49,12 @@ export function buildProtectionPathAliasMap(state: WizardState): Map<string, str
       if (!source || !outputField) continue
       aliases.set(source, normalizeProtectionJsonPath(outputField))
     }
-    return aliases
+    for (const rule of state.transformRules) {
+      if (rule.mode !== 'regex_extract') continue
+      const source = normalizeProtectionJsonPath(rule.sourcePath)
+      const output = normalizeProtectionJsonPath(rule.outputField)
+      if (source && output) aliases.set(source, output)
+    }
   }
 
   if (state.mappingMode === 'full_event_regex') {
@@ -123,36 +129,25 @@ async function buildMappedEventForProtection(state: WizardState): Promise<Record
     return {}
   }
 
-  if (state.mappingMode === 'full_event_jsonata') {
-    const expr = state.fullEventJsonataExpression.trim()
-    if (!expr) return {}
-    try {
-      const preview = await runTransformPreview({
-        stage: 'mapping',
-        sample_event: sample as Record<string, unknown>,
-        field_mappings: buildWizardJsonataPreviewFieldMappings(expr),
-      })
-      const transformed = preview.transformed_result
-      if (transformed && typeof transformed === 'object' && !Array.isArray(transformed)) {
-        return transformed as Record<string, unknown>
-      }
-    } catch {
-      return {}
-    }
+  const fieldMappings = buildWizardFieldMappingsPayload(state)
+  if (Object.keys(fieldMappings).length === 0) {
+    return buildMappedBaseFromState(sample as Record<string, unknown>, state.mapping)
+  }
+
+  try {
+    const preview = await runTransformPreview({
+      stage: 'mapping',
+      sample_event: sample as Record<string, unknown>,
+      field_mappings: fieldMappings,
+    })
+    if (preview.save_blocked || preview.errors.length > 0) return {}
+    const transformed = preview.transformed_result
+    return transformed && typeof transformed === 'object' && !Array.isArray(transformed)
+      ? (transformed as Record<string, unknown>)
+      : {}
+  } catch {
     return {}
   }
-
-  if (state.mappingMode === 'full_event_regex') {
-    const parsed = parseFullEventRegexConfigText(state.fullEventRegexConfigJson)
-    if (!parsed.ok) return {}
-    const preview = runWizardLocalTransformPreview(sample as Record<string, unknown>, {
-      isExpert: true,
-      regexConfig: parsed.config,
-    })
-    return preview.transformed_result ?? {}
-  }
-
-  return buildMappedBaseFromState(sample as Record<string, unknown>, state.mapping)
 }
 
 /** Final enriched event used for protection path resolution (matches runtime namespace). */
@@ -160,35 +155,36 @@ export async function buildWizardEnrichedEventForProtection(
   state: WizardState,
 ): Promise<{ event: Record<string, unknown>; paths: string[]; error?: string }> {
   const mapped = await buildMappedEventForProtection(state)
-  if (Object.keys(mapped).length === 0 && state.enrichment.length === 0) {
-    const sample = state.apiTest.extractedEvents[0] ?? state.apiTest.analysis?.sampleEvent
-    if (sample && typeof sample === 'object' && !Array.isArray(sample)) {
-      const passthrough = applyMappingWithPassThrough(
-        sample as Record<string, unknown>,
-        state.mapping,
-        resolveJsonPath,
-      )
-      const paths = collectRuntimeEventFieldPaths(passthrough)
-      return { event: passthrough, paths }
-    }
-    return { event: {}, paths: [], error: 'No sample event available for protection path resolution.' }
-  }
+  const enrichmentPayload = enrichmentDictFromRows(state.enrichment, {
+    advancedPassthrough: state.enrichmentPassthrough,
+  })
 
-  const enrichmentPayload = enrichmentDictFromRows(state.enrichment)
-  if (Object.keys(enrichmentPayload).length === 0) {
-    const paths = collectRuntimeEventFieldPaths(mapped)
-    return { event: mapped, paths }
+  if (state.enrichmentEnabled === false || Object.keys(enrichmentPayload).length === 0) {
+    return {
+      event: mapped,
+      paths: collectRuntimeEventFieldPaths(mapped),
+    }
   }
 
   try {
     const preview = await runEnrichmentExecPreview({
       mapped_event: mapped,
       enrichment: enrichmentPayload,
-      override_policy: 'KEEP_EXISTING',
+      override_policy: state.enrichmentOverridePolicy ?? 'KEEP_EXISTING',
     })
     const finalEvent = preview.final_event ?? mapped
-    const paths = collectRuntimeEventFieldPaths(finalEvent)
-    return { event: finalEvent, paths }
+    const fieldErrors = preview.field_errors ?? []
+    return {
+      event: finalEvent,
+      paths: collectRuntimeEventFieldPaths(finalEvent),
+      ...(fieldErrors.length > 0
+        ? {
+            error: fieldErrors
+              .map((item) => `${item.output_field || item.rule_id || 'field'}: ${item.error_message}`)
+              .join(' · '),
+          }
+        : {}),
+    }
   } catch (err) {
     return {
       event: mapped,
@@ -218,12 +214,17 @@ function buildWizardProtectionMappedEventSync(state: WizardState): Record<string
     })
     mapped = preview.transformed_result ?? {}
   } else if (state.mappingMode === 'full_event_jsonata') {
-    return null
+    // Full-event JSONata cannot be executed synchronously in the UI. Keep only known configured outputs.
+    mapped = {}
   } else {
     mapped = buildMappedBaseFromState(sample as Record<string, unknown>, state.mapping)
+    for (const rule of state.transformRules) {
+      const output = rule.outputField.trim()
+      if (output && !(output in mapped)) mapped[output] = null
+    }
   }
 
-  for (const rule of state.enrichment) {
+  if (state.enrichmentEnabled !== false) for (const rule of state.enrichment) {
     if (!rule.enabled) continue
     const key = rule.fieldName.trim()
     if (!key) continue

@@ -33,6 +33,7 @@ export type RouteClassificationEffective = {
   fallback_used: boolean
   rule_count: number
   processing_status: 'Inherited' | 'Overridden' | 'Mixed'
+  latest_rule_updated_at?: string | null
   message: string
 }
 

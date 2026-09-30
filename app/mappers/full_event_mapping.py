@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from typing import Any
 
 from app.parsers.jsonpath_parser import extract_one
@@ -24,6 +25,247 @@ FIELD_MAPPINGS_META_KEYS = frozenset(
 
 _FULL_EVENT_JSONATA = "full_event_jsonata"
 _FULL_EVENT_REGEX = "full_event_regex"
+
+
+@dataclass(frozen=True, slots=True)
+class FieldTransformRuleResult:
+    output_field: str
+    mode: str
+    rule_id: str | None
+    success: bool
+    value: Any = None
+    recovered_via_default: bool = False
+    warning_message: str | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+    executed: bool = True
+    blocked: bool = False
+
+
+def _field_rule_default(rule: dict[str, Any]) -> tuple[bool, Any]:
+    if "default_value" in rule:
+        return True, copy_json_value(rule.get("default_value"))
+    if "fallback_value" in rule:
+        return True, copy_json_value(rule.get("fallback_value"))
+    return False, None
+
+
+def _field_rule_result_error(
+    *,
+    output_field: str,
+    mode: str,
+    rule_id: str | None,
+    code: str,
+    message: str,
+) -> FieldTransformRuleResult:
+    return FieldTransformRuleResult(
+        output_field=output_field,
+        mode=mode,
+        rule_id=rule_id,
+        success=False,
+        error_code=code,
+        error_message=message,
+    )
+
+
+def evaluate_field_transform_rule(
+    event: dict[str, Any],
+    rule: dict[str, Any],
+) -> FieldTransformRuleResult:
+    """Evaluate one persisted per-field JSONata/Regex rule against the current event context."""
+
+    mode = str(rule.get("mode") or rule.get("type") or "").strip().lower()
+    output_field = str(rule.get("output_field") or rule.get("field") or rule.get("target_field") or "").strip()
+    rule_id = str(rule.get("rule_id") or rule.get("id") or "").strip() or None
+    default_present, default_value = _field_rule_default(rule)
+
+    if not output_field:
+        return _field_rule_result_error(
+            output_field="",
+            mode=mode,
+            rule_id=rule_id,
+            code="TRANSFORM_OUTPUT_FIELD_REQUIRED",
+            message="Advanced transform output field is required.",
+        )
+
+    if mode == "jsonata":
+        expression = str(rule.get("expression") or "").strip()
+        if not expression:
+            return _field_rule_result_error(
+                output_field=output_field,
+                mode=mode,
+                rule_id=rule_id,
+                code="JSONATA_EXPRESSION_REQUIRED",
+                message=f"{output_field}: JSONata expression is required.",
+            )
+        try:
+            import jsonata  # type: ignore[import-untyped]
+        except ImportError:
+            return _field_rule_result_error(
+                output_field=output_field,
+                mode=mode,
+                rule_id=rule_id,
+                code="TRANSFORM_ENGINE_UNAVAILABLE",
+                message="JSONata engine is not installed in the runtime environment.",
+            )
+        try:
+            value = jsonata.Jsonata(expression).evaluate(event)
+        except Exception as exc:  # noqa: BLE001 - expression errors are returned as bounded field evidence
+            return _field_rule_result_error(
+                output_field=output_field,
+                mode=mode,
+                rule_id=rule_id,
+                code="JSONATA_EVALUATION_FAILED",
+                message=f"{output_field}: JSONata evaluation failed: {exc}",
+            )
+        if value is None and default_present:
+            return FieldTransformRuleResult(
+                output_field=output_field,
+                mode=mode,
+                rule_id=rule_id,
+                success=True,
+                value=default_value,
+                recovered_via_default=True,
+                warning_message=f"{output_field}: JSONata produced null/missing output; used default.",
+            )
+        return FieldTransformRuleResult(
+            output_field=output_field,
+            mode=mode,
+            rule_id=rule_id,
+            success=True,
+            value=copy_json_value(value),
+        )
+
+    if mode == "regex_extract":
+        source_path = str(rule.get("source_path") or rule.get("path") or "").strip()
+        pattern = str(rule.get("pattern") or "").strip()
+        if not source_path or not pattern:
+            return _field_rule_result_error(
+                output_field=output_field,
+                mode=mode,
+                rule_id=rule_id,
+                code="REGEX_RULE_INVALID",
+                message=f"{output_field}: source_path and pattern are required.",
+            )
+        group_raw = rule.get("group", rule.get("capture_group", 1))
+        try:
+            group_idx = int(group_raw)
+        except (TypeError, ValueError):
+            group_idx = -1
+        if group_idx < 1:
+            return _field_rule_result_error(
+                output_field=output_field,
+                mode=mode,
+                rule_id=rule_id,
+                code="REGEX_GROUP_INVALID",
+                message=f"{output_field}: capture group must be a positive integer.",
+            )
+
+        raw_value = extract_one(event, source_path, default=None)
+        source_text = _coerce_regex_source(raw_value)
+        if source_text is None:
+            if default_present:
+                return FieldTransformRuleResult(
+                    output_field=output_field,
+                    mode=mode,
+                    rule_id=rule_id,
+                    success=True,
+                    value=default_value,
+                    recovered_via_default=True,
+                    warning_message=f"{output_field}: regex source missing; used default.",
+                )
+            return _field_rule_result_error(
+                output_field=output_field,
+                mode=mode,
+                rule_id=rule_id,
+                code="REGEX_SOURCE_MISSING",
+                message=f"{output_field}: source at {source_path} is missing.",
+            )
+
+        try:
+            compiled = re.compile(pattern)
+        except re.error as exc:
+            return _field_rule_result_error(
+                output_field=output_field,
+                mode=mode,
+                rule_id=rule_id,
+                code="REGEX_PATTERN_INVALID",
+                message=f"{output_field}: invalid regex pattern ({exc}).",
+            )
+
+        match = compiled.search(source_text)
+        if match is not None and group_idx <= len(match.groups()):
+            captured = match.group(group_idx)
+            if captured is not None:
+                return FieldTransformRuleResult(
+                    output_field=output_field,
+                    mode=mode,
+                    rule_id=rule_id,
+                    success=True,
+                    value=captured,
+                )
+
+        if default_present:
+            return FieldTransformRuleResult(
+                output_field=output_field,
+                mode=mode,
+                rule_id=rule_id,
+                success=True,
+                value=default_value,
+                recovered_via_default=True,
+                warning_message=f"{output_field}: regex did not match; used default.",
+            )
+        return _field_rule_result_error(
+            output_field=output_field,
+            mode=mode,
+            rule_id=rule_id,
+            code="REGEX_NO_MATCH",
+            message=f"{output_field}: regex pattern did not match.",
+        )
+
+    return _field_rule_result_error(
+        output_field=output_field,
+        mode=mode,
+        rule_id=rule_id,
+        code="TRANSFORM_MODE_UNSUPPORTED",
+        message=f"{output_field}: unsupported advanced transform mode {mode!r}.",
+    )
+
+
+def extract_field_transform_rules(
+    config: dict[str, Any] | None,
+    key: str,
+) -> list[dict[str, Any]]:
+    if not isinstance(config, dict):
+        return []
+    raw = config.get(key)
+    if not isinstance(raw, list):
+        return []
+    return [dict(item) for item in raw if isinstance(item, dict)]
+
+
+def apply_field_transform_rules(
+    event: dict[str, Any],
+    rules: list[dict[str, Any]],
+    *,
+    initial_output: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], list[FieldTransformRuleResult]]:
+    """Apply ordered per-field transforms while exposing the same runtime results to preview/debug."""
+
+    output = copy_json_value(initial_output) if isinstance(initial_output, dict) else {}
+    context = copy_json_value(event)
+    if isinstance(output, dict):
+        context.update(copy_json_value(output))
+
+    results: list[FieldTransformRuleResult] = []
+    for rule in rules:
+        result = evaluate_field_transform_rule(context, rule)
+        results.append(result)
+        if not result.success or not result.output_field:
+            continue
+        output[result.output_field] = copy_json_value(result.value)
+        context[result.output_field] = copy_json_value(result.value)
+    return output, results
 
 
 def get_mapping_mode(field_mappings: dict[str, Any] | None) -> str | None:
@@ -185,10 +427,14 @@ def apply_full_event_mapping(
 
 __all__ = [
     "FIELD_MAPPINGS_META_KEYS",
+    "FieldTransformRuleResult",
+    "apply_field_transform_rules",
     "apply_full_event_jsonata_mapping",
     "apply_full_event_mapping",
     "apply_full_event_regex_mapping",
+    "evaluate_field_transform_rule",
     "extract_basic_jsonpath_mappings",
+    "extract_field_transform_rules",
     "get_mapping_mode",
     "is_full_event_mapping",
 ]

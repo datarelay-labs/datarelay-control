@@ -418,16 +418,19 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
           validationWarnings: [],
         }}
         rawSampleEvent={{ id: '1' }}
+        rawSampleEvents={[{ id: '1' }]}
+        rows={[]}
         eventCount={1}
         sampleEventIndex={0}
         onSampleIndexChange={() => {}}
         onRefresh={() => {}}
-        localWarnings={[]}
+        warnings={[]}
       />,
     )
     expect(screen.getByRole('tab', { name: /^Transformed$/i })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: /^Final event$/i })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /^Changes \(1\)$/i })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /^Changes \(1\)$/i })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByText('Validation by field')).toBeInTheDocument()
     expect(screen.queryByText(/^Mapped event$/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/Enriched final event/i)).not.toBeInTheDocument()
   })

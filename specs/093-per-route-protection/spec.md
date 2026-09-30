@@ -1,7 +1,7 @@
 # M13.3 Per Route Protection
 
 **Milestone:** M13.3 (Per Route Protection)  
-**Status:** Spec only — no implementation authorized by this document  
+**Status:** Implemented in the current Route-only runtime; reconciled 2026-09-30. This specification documents the bounded contract and does not independently grant mutation authority.
 **Depends on:** M13.1 Route Processing Foundation (`specs/091-route-processing-architecture/spec.md`), M13.2 Per Route Transform (`specs/092-per-route-transform/spec.md`)  
 **Design review:** [`docs/architecture/m13-3-protection-design-review.md`](../../docs/architecture/m13-3-protection-design-review.md) (M13.3 findings incorporated); [`docs/architecture/m13-route-architecture-design-review.md`](../../docs/architecture/m13-route-architecture-design-review.md)  
 **Authority:** Product Charter 1.2.1, Master WBS 1.2.1, `.specify/memory/constitution.md`, Governance & Transform Policy v1.1, Governance UX Charter v1.1, Governance Workspace v1.1  
@@ -10,9 +10,19 @@
 
 ---
 
+## Current implementation reconciliation — 2026-09-30
+
+- Route Processing is the only supported runtime. Historical `GDC_ROUTE_PROCESSING_ENABLED=false`, flag-OFF rollback, and staged stub-only wording in this milestone narrative are superseded by the current Route-only contract in spec 091 and must not be used as current operational guidance.
+- The acceptance checklist in this document was reconciled against current code and deterministic tests. A checked item means the requirement is implemented, or the original staged-only requirement is explicitly marked **superseded** below.
+- Protection is active in the Route-only pipeline, shares stream-scoped detection/vault context, and applies route rules/overrides without a second Protection engine. The user-facing `Remove` action maps to internal `drop_field` semantics.
+- Primary evidence: `tests/test_per_route_protection.py`, `tests/test_route_protection_effective.py`, `tests/test_protection_inherited_reuse.py`, `tests/test_drop_field.py`.
+- No historical milestone statement in this file overrides the current Product Charter, source-of-truth index, spec 091 Current contract, or later implemented route-runtime contracts.
+
+---
+
 ## 1. Problem Statement
 
-Protection is **Stream-scoped** today. One protection rule set applies to all destinations on a stream. After transform (currently also stream-scoped), `_prepare_delivery_events()` builds a **single masked outbound copy** that `_fan_out()` sends identically to every route.
+At the pre-M13.3 baseline, Protection was **Stream-scoped**. One protection rule set applied to all destinations on a stream, producing one protected payload for fan-out.
 
 ```text
 Stream
@@ -28,7 +38,7 @@ Destinations
 
 **Product violation:** Operators who need different protection per destination (e.g. Route A → internal syslog **Audit Only**, Route B → third-party SaaS **Mask**, Route C → data lake **Tokenize**) must **duplicate Streams** for the same source. Product Charter 1.2.1 and Governance Policy §20 explicitly forbid this: *목적지별 처리 차이는 Route를 통해 구성한다* and *users must not duplicate Streams because destinations require different processing*.
 
-**Gap (evidence):** `stream_protection_rules.stream_id` FK only; no `route_id`; `_prepare_delivery_events()` in `app/runners/stream_runner.py` runs once per batch; `protect_batch()` in `app/protection/engine.py` receives stream rules only; Governance Workspace `route_overrides[]` model exists in SoT but not in runtime.
+**Historical gap (pre-M13.3 evidence):** `stream_protection_rules` was stream-only, protection ran once per batch, and Governance Workspace `route_overrides[]` had not yet been wired into runtime.
 
 **M13.2 delivers:** Per-route Transform inside `process_route_pipeline()`; Protection **stub** (pass-through); stream-level `_prepare_delivery_events()` disabled when `GDC_ROUTE_PROCESSING_ENABLED=true`.
 
@@ -1006,7 +1016,7 @@ Show per route:
 
 ### 14.1 Legacy stream behavior (flag OFF)
 
-When `GDC_ROUTE_PROCESSING_ENABLED=false`:
+Historical pre-retirement behavior for `GDC_ROUTE_PROCESSING_ENABLED=false` (current settings reject explicit false):
 
 - **Identical** to OSS GA — stream protection once, identical fan-out
 - No operator action required
@@ -1039,11 +1049,11 @@ Routes without overrides use stream fallback. Routes with overrides diverge only
 
 | Trigger | Action |
 |---------|--------|
-| Route protection regression | Set `GDC_ROUTE_PROCESSING_ENABLED=false` — immediate legacy path |
+| Route protection regression | Current rollback: use a previous release image; explicit `GDC_ROUTE_PROCESSING_ENABLED=false` is rejected |
 | Route config error | Delete route overrides / route rules — fallback to stream |
 | Engine issue | Set `GDC_PROTECTION_ENABLED=false` — global pass-through |
 
-No data migration rollback required for flag OFF.
+Historical rollback note (superseded): the flag-OFF runtime is retired. Current rollback uses a previous release image; additive route protection data remains preserved.
 
 ---
 
@@ -1053,64 +1063,64 @@ M13.3 is **complete** when all criteria pass.
 
 ### 15.1 Prerequisites (M13.2 + shared phase)
 
-- [ ] **AC-1** M13.2 acceptance criteria satisfied — route loop, transform, fan-out wiring.
-- [ ] **AC-2** `RouteRuntimeContext.effective_config.protection` populated as **`RouteProtectionConfig`** by resolver.
-- [ ] **AC-3** `SharedBatchContext.sensitive_detection_result` available to protection stage.
-- [ ] **AC-3a** When flag ON, shared phase **calls schema drift policy** on `extracted_events` before route loop.
-- [ ] **AC-3b** `SharedBatchContext.schema_drift_policy_result` populated after shared-phase drift policy.
-- [ ] **AC-3c** `SharedBatchContext.ephemeral_auto_protect_rules` accessor available (may be empty list).
+- [x] **AC-1** M13.2 acceptance criteria satisfied — route loop, transform, fan-out wiring.
+- [x] **AC-2** `RouteRuntimeContext.effective_config.protection` populated as **`RouteProtectionConfig`** by resolver.
+- [x] **AC-3** `SharedBatchContext.sensitive_detection_result` available to protection stage.
+- [x] **AC-3a** When flag ON, shared phase **calls schema drift policy** on `extracted_events` before route loop.
+- [x] **AC-3b** `SharedBatchContext.schema_drift_policy_result` populated after shared-phase drift policy.
+- [x] **AC-3c** `SharedBatchContext.ephemeral_auto_protect_rules` accessor available (may be empty list).
 
 ### 15.2 Protection stage activation
 
-- [ ] **AC-4** Protection stub replaced with `route_protection_stage()` invoking existing engine.
-- [ ] **AC-5** Stream `_prepare_delivery_events()` **not** called when flag ON.
-- [ ] **AC-6** `_fan_out()` delivers **protected** per-route events from `RouteStageResult` **only** — not unprotected transform output (§4.6).
-- [ ] **AC-7** No new Protection Engine class or parallel pipeline.
+- [x] **AC-4** Protection stub replaced with `route_protection_stage()` invoking existing engine.
+- [x] **AC-5** Stream `_prepare_delivery_events()` **not** called when flag ON.
+- [x] **AC-6 (superseded wiring detail; intent preserved)** Delivery uses protected per-route `RouteStageResult` events only. Current M13.6 wiring sends them through `route_delivery_stage()`/the shared send primitive rather than the old `_fan_out()` handoff.
+- [x] **AC-7** No new Protection Engine class or parallel pipeline.
 
 ### 15.3 Config resolution
 
-- [ ] **AC-8** Resolution order: `route_protection_rules` → `stream_protection_rules` → ephemeral merge → empty config.
-- [ ] **AC-9** Route rules present → route rule set replaces stream base for that route (full-bundle).
-- [ ] **AC-10** `route_overrides[]` merge replaces per-field action for matching `route_id`; override **wins** over stream/default rules.
-- [ ] **AC-11** Audit Only override skips field mutation and logs audit metadata.
-- [ ] **AC-12** `RouteProtectionConfig.resolution` metadata exposed in effective config API/debug.
+- [x] **AC-8** Resolution order: `route_protection_rules` → `stream_protection_rules` → ephemeral merge → empty config.
+- [x] **AC-9** Route rules present → route rule set replaces stream base for that route (full-bundle).
+- [x] **AC-10** `route_overrides[]` merge replaces per-field action for matching `route_id`; override **wins** over stream/default rules.
+- [x] **AC-11** Audit Only override skips field mutation and logs audit metadata.
+- [x] **AC-12** `RouteProtectionConfig.resolution` metadata exposed in effective config API/debug.
 
 ### 15.4 Product scenarios
 
-- [ ] **AC-13** Same stream, Route A Audit Only, Route B Mask — outbound payloads differ accordingly.
-- [ ] **AC-14** Operator achieves destination-specific protection **without** duplicating streams.
-- [ ] **AC-15** Sensitive Detection runs once per batch — not N times per route.
+- [x] **AC-13** Same stream, Route A Audit Only, Route B Mask — outbound payloads differ accordingly.
+- [x] **AC-14** Operator achieves destination-specific protection **without** duplicating streams.
+- [x] **AC-15** Sensitive Detection runs once per batch — not N times per route.
 
 ### 15.5 Engine reuse and actions
 
-- [ ] **AC-16** `protect_batch()` / `apply_protection_mode()` used unchanged for Mask / Tokenize / Hash.
-- [ ] **AC-17** Tokenization vault remains stream-scoped — tokens consistent across routes on same stream.
-- [ ] **AC-18** Remove is exposed as SoT label with internal `drop_field` semantics; outbound field deletion proven by engine tests.
+- [x] **AC-16** `protect_batch()` / `apply_protection_mode()` used unchanged for Mask / Tokenize / Hash.
+- [x] **AC-17** Tokenization vault remains stream-scoped — tokens consistent across routes on same stream.
+- [x] **AC-18** Remove is exposed as SoT label with internal `drop_field` semantics; outbound field deletion proven by engine tests.
 
 ### 15.6 Unknown field / Auto Protect
 
-- [ ] **AC-19** Auto Protect creates ephemeral protection rules in shared phase when drift policy triggers.
-- [ ] **AC-20** Ephemeral Auto Protect rules applied in route protection stage via `merge_ephemeral_for_route()`.
-- [ ] **AC-21** Route override can change Auto Protect mode per destination.
-- [ ] **AC-22** Pass Through unknown normal fields deliver unmutated on all routes (when policy = pass_through).
+- [x] **AC-19** Auto Protect creates ephemeral protection rules in shared phase when drift policy triggers.
+- [x] **AC-20** Ephemeral Auto Protect rules applied in route protection stage via `merge_ephemeral_for_route()`.
+- [x] **AC-21** Route override can change Auto Protect mode per destination.
+- [x] **AC-22** Pass Through unknown normal fields deliver unmutated on all routes (when policy = pass_through).
 
 ### 15.7 Compatibility
 
-- [ ] **AC-23** Flag OFF: zero behavior change vs pre-M13.3 baseline (e2e green).
-- [ ] **AC-24** Flag ON, no route config: delivery parity with flag OFF when transform parity holds.
-- [ ] **AC-25** No truncate of user `stream_protection_rules`.
+- [x] **AC-23 (superseded)** The flag-OFF runtime is retired; historical compatibility is preserved through data/schema compatibility and release-image rollback.
+- [x] **AC-24 (historical parity baseline; current fallback retained)** With no route protection config, stream protection rules remain the effective fallback and preserve the historical payload semantics.
+- [x] **AC-25** No truncate of user `stream_protection_rules`.
 
 ### 15.8 Observability
 
-- [ ] **AC-26** `delivery_logs` protection entries include `route_id` when flag ON.
-- [ ] **AC-27** Protection preview accepts `route_id` and uses effective route config.
+- [x] **AC-26** `delivery_logs` protection entries include `route_id` when flag ON.
+- [x] **AC-27** Protection preview accepts `route_id` and uses effective route config.
 
 ### 15.9 Boundaries (stubs and deferred work)
 
-- [ ] **AC-28** Classification engine **not** invoked in M13.3 — stub remains NO-OP.
-- [ ] **AC-29** Policy engine **not** invoked in M13.3 — stub remains NO-OP.
-- [ ] **AC-30** Require Review and Quarantine workflows **not** implemented in M13.3 (M13.5).
-- [ ] **AC-31** Route delivery metrics / health **not** implemented in M13.3 (M13.6).
+- [x] **AC-28 (superseded staged gate)** Classification was intentionally a later-stage stub at M13.3; current runtime runs the implemented Classification stage.
+- [x] **AC-29 (superseded staged gate)** Policy was intentionally a later-stage stub at M13.3; current runtime runs the implemented Policy stage.
+- [x] **AC-30 (superseded staged boundary)** Require Review and Quarantine were deferred from M13.3 and are now implemented by the later route Policy/Delivery runtime.
+- [x] **AC-31 (superseded staged boundary)** Route delivery metrics/health were deferred from M13.3 and are now implemented under M13.6.
 
 ---
 

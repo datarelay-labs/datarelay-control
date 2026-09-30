@@ -8,8 +8,8 @@ from typing import Any, Literal
 
 from app.enrichers.lookup_tables import TABLES, normalize_table_name
 
-_RULE_TYPES = frozenset({"static", "calculated", "lookup", "conditional", "normalize"})
-_RESERVED_TOP_LEVEL = frozenset({"__rules", "__computed", "__preview", "__enrichment_meta"})
+_RULE_TYPES = frozenset({"static", "calculated", "lookup", "conditional", "normalize", "jsonata", "regex_extract"})
+_RESERVED_TOP_LEVEL = frozenset({"__rules", "__computed", "__preview", "__enrichment_meta", "advanced_fields"})
 _FIELD_PATH_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")
 _NORMALIZE_FORMATS = frozenset({"iso8601", "iso_8601", "lowercase", "uppercase", "trim"})
 _ALLOWED_FUNCTIONS = ("concat", "upper", "lower", "coalesce", "now_utc")
@@ -118,7 +118,7 @@ def _lookup_table_exists(name: str) -> bool:
 
 def _validate_rule_dict(rule: dict[str, Any], *, default_target: str | None = None) -> list[EnrichmentValidationIssue]:
     issues: list[EnrichmentValidationIssue] = []
-    rule_type = str(rule.get("type") or "").strip().lower()
+    rule_type = str(rule.get("type") or rule.get("mode") or "").strip().lower()
     if rule_type not in _RULE_TYPES:
         issues.append(
             EnrichmentValidationIssue(
@@ -298,6 +298,74 @@ def _validate_rule_dict(rule: dict[str, Any], *, default_target: str | None = No
                     field="format",
                 )
             )
+    elif rule_type == "jsonata":
+        expression = str(rule.get("expression") or "").strip()
+        if not expression:
+            issues.append(
+                EnrichmentValidationIssue(
+                    code="jsonata_expression_required",
+                    severity="error",
+                    message="JSONata expression is required",
+                    rule_type="jsonata",
+                    target_field=target or None,
+                    field="expression",
+                )
+            )
+    elif rule_type == "regex_extract":
+        source = str(rule.get("source_path") or rule.get("path") or "").strip()
+        pattern = str(rule.get("pattern") or "").strip()
+        if not source:
+            issues.append(
+                EnrichmentValidationIssue(
+                    code="regex_source_required",
+                    severity="error",
+                    message="Regex source path is required",
+                    rule_type="regex_extract",
+                    target_field=target or None,
+                    field="source_path",
+                )
+            )
+        if not pattern:
+            issues.append(
+                EnrichmentValidationIssue(
+                    code="regex_pattern_required",
+                    severity="error",
+                    message="Regex pattern is required",
+                    rule_type="regex_extract",
+                    target_field=target or None,
+                    field="pattern",
+                )
+            )
+        else:
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                issues.append(
+                    EnrichmentValidationIssue(
+                        code="regex_pattern_invalid",
+                        severity="error",
+                        message=f"Invalid regex pattern: {exc}",
+                        rule_type="regex_extract",
+                        target_field=target or None,
+                        field="pattern",
+                    )
+                )
+        group_raw = rule.get("group", rule.get("capture_group", 1))
+        try:
+            group_idx = int(group_raw)
+        except (TypeError, ValueError):
+            group_idx = -1
+        if group_idx < 1:
+            issues.append(
+                EnrichmentValidationIssue(
+                    code="regex_group_invalid",
+                    severity="error",
+                    message="Regex capture group must be a positive integer",
+                    rule_type="regex_extract",
+                    target_field=target or None,
+                    field="group",
+                )
+            )
 
     return issues
 
@@ -322,6 +390,24 @@ def _iter_rules_from_enrichment(enrichment: dict[str, Any]) -> list[tuple[dict[s
                         if key_type in _RULE_TYPES and "type" not in merged:
                             merged["type"] = key_type
                         rules.append((merged, None))
+
+    raw_advanced = enrichment.get("advanced_fields")
+    if isinstance(raw_advanced, list):
+        for item in raw_advanced:
+            if not isinstance(item, dict):
+                continue
+            merged = dict(item)
+            mode = str(merged.get("mode") or "").strip().lower()
+            if mode not in {"jsonata", "regex_extract"}:
+                continue
+            merged["type"] = mode
+            merged["target_field"] = str(
+                merged.get("target_field")
+                or merged.get("output_field")
+                or merged.get("field")
+                or ""
+            ).strip()
+            rules.append((merged, None))
     return rules
 
 

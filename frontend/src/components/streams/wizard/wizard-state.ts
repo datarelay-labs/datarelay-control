@@ -1795,21 +1795,29 @@ export function buildWizardFieldMappingsPayload(
     | 'unmappedFieldsPolicy'
   >,
 ): Record<string, unknown> {
-  if (state.mappingMode === 'full_event_jsonata') {
-    const expr = state.fullEventJsonataExpression.trim()
-    if (!expr) return {}
-    return buildWizardJsonataPreviewFieldMappings(expr)
-  }
-  if (state.mappingMode === 'full_event_regex') {
-    const built = buildFieldMappingsFromFullEventRegexConfigJson(state.fullEventRegexConfigJson)
-    if (!built.ok) return {}
-    return built.fieldMappings
-  }
-  return buildFieldMappingsWithTransformRules(
+  const inactivePerFieldConfig = buildFieldMappingsWithTransformRules(
     fieldMappingsFromRows(state.mapping),
     state.transformRules,
     state.unmappedFieldsPolicy,
   )
+
+  if (state.mappingMode === 'full_event_jsonata') {
+    const expr = state.fullEventJsonataExpression.trim()
+    if (!expr) return {}
+    return {
+      ...inactivePerFieldConfig,
+      ...buildWizardJsonataPreviewFieldMappings(expr),
+    }
+  }
+  if (state.mappingMode === 'full_event_regex') {
+    const built = buildFieldMappingsFromFullEventRegexConfigJson(state.fullEventRegexConfigJson)
+    if (!built.ok) return {}
+    return {
+      ...inactivePerFieldConfig,
+      ...built.fieldMappings,
+    }
+  }
+  return inactivePerFieldConfig
 }
 
 export function wizardFieldMappingsReady(

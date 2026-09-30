@@ -9,9 +9,9 @@ import {
 import type { WizardMappingRow, WizardState } from './wizard-state'
 import {
   analyzeStellarSuggestions,
-  applyMetadataMappingWithAutoFallback,
+  applySelectedMetadataSuggestions,
+  previewSelectedMetadataSuggestions,
   collectTopLevelSourceFieldPaths,
-  unmappedTopLevelSourcePaths,
   type StellarSuggestion,
 } from './wizard-mapping-merge'
 
@@ -25,12 +25,10 @@ import {
  *     `detect_mapping_candidates` heuristic against the wizard's sample event.
  *   - Compact operational style — no fullscreen modal, wizard step move, or
  *     side panel. Popover-only (portal-rendered to avoid clip).
- *   - Apply merges suggestions into existing rows: any candidate whose
- *     `output_field` OR `source_json_path` is already mapped is treated as
- *     already-handled and left alone. Only truly-unmapped candidates are
- *     appended, tagged `origin: 'stellar'`, then any remaining top-level
- *     source fields receive the same Auto-suggest top-level fallback as the
- *     Mapping toolbar (`origin: 'auto'`).
+ *   - Apply merges only explicitly selected suggestions into existing rows:
+ *     any candidate whose `output_field` OR `source_json_path` is already
+ *     mapped is treated as already-handled and left alone. Only truly-unmapped
+ *     selected candidates are appended, tagged `origin: 'stellar'`.
  *
  * UI sketch:
  *
@@ -122,6 +120,7 @@ export function MetadataMappingMenu({ state, onChangeMapping }: MetadataMappingM
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [suggestions, setSuggestions] = useState<SuggestionRow[] | null>(null)
+  const [selectedSuggestionKeys, setSelectedSuggestionKeys] = useState<Set<string>>(new Set())
 
   const sampleEvent = state.apiTest.extractedEvents[0] ?? null
   const samplePayload = state.apiTest.parsedJson ?? sampleEvent ?? null
@@ -175,21 +174,25 @@ export function MetadataMappingMenu({ state, onChangeMapping }: MetadataMappingM
     ? (sampleEvent as Record<string, unknown>)
     : null
 
+  const selectedSuggestions = useMemo(() => {
+    if (!suggestions) return []
+    return suggestions.filter((item) => selectedSuggestionKeys.has(`${item.sourceJsonPath}→${item.outputField}`))
+  }, [selectedSuggestionKeys, suggestions])
+
   const analysis = useMemo(() => {
     if (!suggestions) return null
-    return analyzeStellarSuggestions(state.mapping, suggestions)
-  }, [state.mapping, suggestions])
+    return analyzeStellarSuggestions(state.mapping, selectedSuggestions)
+  }, [selectedSuggestions, state.mapping, suggestions])
 
   const sourceFieldStats = useMemo(() => {
     const total = collectTopLevelSourceFieldPaths(sampleRecord).length
-    const currentlyUnmapped = unmappedTopLevelSourcePaths(state.mapping, sampleRecord).length
-    return { total, currentlyUnmapped }
-  }, [sampleRecord, state.mapping])
+    return { total }
+  }, [sampleRecord])
 
   const applyPreview = useMemo(() => {
     if (!suggestions || !sampleRecord) return null
-    return applyMetadataMappingWithAutoFallback(state.mapping, suggestions, sampleRecord, () => 'preview')
-  }, [sampleRecord, state.mapping, suggestions])
+    return previewSelectedMetadataSuggestions(state.mapping, selectedSuggestions, sampleRecord, () => 'preview')
+  }, [sampleRecord, selectedSuggestions, state.mapping, suggestions])
 
   const generateSuggestions = useCallback(async () => {
     if (busy || !hasSample) return
@@ -204,7 +207,9 @@ export function MetadataMappingMenu({ state, onChangeMapping }: MetadataMappingM
             : state.stream.eventArrayPath.trim(),
         source_type: state.connector.sourceType || 'HTTP_API_POLLING',
       })
-      setSuggestions(normalizeMappingCandidates(inference.mapping_candidates))
+      const nextSuggestions = normalizeMappingCandidates(inference.mapping_candidates)
+      setSuggestions(nextSuggestions)
+      setSelectedSuggestionKeys(new Set(nextSuggestions.filter((item) => item.confidence >= 0.85).map((item) => `${item.sourceJsonPath}→${item.outputField}`)))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate output field suggestions.')
       setSuggestions(null)
@@ -222,21 +227,15 @@ export function MetadataMappingMenu({ state, onChangeMapping }: MetadataMappingM
 
   const applySuggestions = useCallback(() => {
     if (!suggestions || !sampleRecord) return
-    const result = applyMetadataMappingWithAutoFallback(
-      state.mapping,
-      suggestions,
-      sampleRecord,
-      () => makeRowId('merge'),
-    )
-    onChangeMapping(result.rows)
+    onChangeMapping(applySelectedMetadataSuggestions(state.mapping, selectedSuggestions, () => makeRowId('merge')))
     setOpen(false)
-  }, [onChangeMapping, sampleRecord, state.mapping, suggestions])
+  }, [onChangeMapping, sampleRecord, selectedSuggestions, state.mapping, suggestions])
 
   const canApply =
     hasSample &&
     suggestions != null &&
     applyPreview != null &&
-    (applyPreview.stellarAdded > 0 || applyPreview.autoAdded > 0)
+    selectedSuggestionKeys.size > 0
 
   const popoverStyle: CSSProperties | null = coords
     ? { position: 'fixed', top: coords.top, left: coords.left, width: POPOVER_WIDTH, zIndex: 50 }
@@ -373,9 +372,8 @@ export function MetadataMappingMenu({ state, onChangeMapping }: MetadataMappingM
               {analysis && applyPreview ? (
                 <div className="mt-2 rounded-md border border-slate-200/80 bg-slate-50/70 p-2 text-[11px] dark:border-gdc-border dark:bg-gdc-section">
                   <p className="font-semibold text-slate-700 dark:text-slate-100">Summary</p>
-                  <ul className="mt-1 grid grid-cols-3 gap-1.5">
-                    <SummaryStat label="Stellar" value={applyPreview.stellarAdded} tone="neutral" />
-                    <SummaryStat label="Auto" value={applyPreview.autoAdded} tone="success" />
+                  <ul className="mt-1 grid grid-cols-2 gap-1.5">
+                    <SummaryStat label="Selected" value={applyPreview.stellarAdded} tone="neutral" />
                     <SummaryStat
                       label="Unmapped"
                       value={applyPreview.unmappedSourceFields}
@@ -385,9 +383,39 @@ export function MetadataMappingMenu({ state, onChangeMapping }: MetadataMappingM
                   <p className="mt-1.5 text-[10px] leading-snug text-slate-600 dark:text-gdc-mutedStrong">
                     {sourceFieldStats.total} source fields · {analysis.conflicts.length} Stellar conflicts (kept manual)
                   </p>
+                  <div className="mt-2 max-h-40 space-y-1 overflow-auto" data-testid="mapping-confidence-review">
+                    {suggestions?.map((item) => {
+                      const key = `${item.sourceJsonPath}→${item.outputField}`
+                      const bucket = item.confidence >= 0.85 ? 'High Confidence' : item.confidence >= 0.6 ? 'Medium Confidence' : 'No Match'
+                      const checked = selectedSuggestionKeys.has(key)
+                      return (
+                        <label key={key} className="flex items-start gap-2 rounded border border-slate-200/80 bg-white p-1.5 dark:border-gdc-border dark:bg-gdc-card">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => setSelectedSuggestionKeys((current) => {
+                              const next = new Set(current)
+                              if (next.has(key)) next.delete(key)
+                              else next.add(key)
+                              return next
+                            })}
+                            className="mt-0.5"
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="flex items-center justify-between gap-2">
+                              <span className="truncate font-mono text-[10px]">{item.sourceJsonPath} → {item.outputField}</span>
+                              <span className="shrink-0 text-[9px] font-semibold text-violet-700 dark:text-violet-300">{bucket}</span>
+                            </span>
+                            <span className="block text-[9px] text-slate-500">{Math.round(item.confidence * 100)}% · {item.reason || 'Deterministic schema/sample match'}</span>
+                          </span>
+                        </label>
+                      )
+                    })}
+                  </div>
+                  <p className="mt-1 text-[9px] text-slate-500">High-confidence suggestions are preselected. Review medium-confidence suggestions; leave No Match unchecked to skip. Nothing is applied until you confirm.</p>
                   {analysis.conflicts.length > 0 ? (
                     <p className="mt-1 text-[10px] leading-snug text-amber-700 dark:text-amber-300">
-                      Manual output fields win over Stellar; remaining top-level fields use Auto-suggest.
+                      Manual output fields win over selected Stellar suggestions; no unselected field is applied automatically.
                     </p>
                   ) : null}
                   <button
@@ -396,16 +424,14 @@ export function MetadataMappingMenu({ state, onChangeMapping }: MetadataMappingM
                     disabled={!canApply}
                     className="mt-2 inline-flex h-7 w-full items-center justify-center gap-1.5 rounded-md bg-emerald-600 px-2 text-[11px] font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    Apply suggested output fields
-                    {applyPreview.stellarAdded + applyPreview.autoAdded > 0 ? (
-                      <span>(+{applyPreview.stellarAdded + applyPreview.autoAdded})</span>
-                    ) : null}
+                    Apply selected suggestions
+                    {selectedSuggestionKeys.size > 0 ? <span>(+{selectedSuggestionKeys.size})</span> : null}
                   </button>
                 </div>
               ) : !busy && hasSample ? (
                 <p className="mt-2 text-[10px] leading-snug text-slate-500 dark:text-gdc-mutedStrong">
-                  Generate to preview Stellar output field suggestions plus Auto-suggest for any remaining top-level source
-                  fields. Existing rows are never overwritten.
+                  Generate to preview Stellar output field suggestions. Existing rows are never overwritten; only
+                  suggestions you select are applied.
                 </p>
               ) : null}
             </div>,

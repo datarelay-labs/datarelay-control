@@ -25,6 +25,14 @@ POLICY_DISPOSITION_STAGES = frozenset(
         "policy_quarantine",
     }
 )
+ROUTE_DIAGNOSTIC_FAILURE_STAGES = frozenset({
+    "route_send_failed",
+    "route_retry_failed",
+    "route_unknown_failure_policy",
+    "policy_blocked",
+    "policy_review_required",
+    "policy_quarantine",
+})
 # Destination/route delivery failures (PR #30). Keep route/destination aggregates
 # delivery-only so source outages do not falsely attribute to destinations.
 FAILURE_STAGES = frozenset(
@@ -375,7 +383,8 @@ def fetch_route_last_outcomes(
         db,
         group_column="route_id",
         group_ids=ids,
-        failure_stages=tuple(FAILURE_STAGES),
+        failure_stages=tuple(ROUTE_DIAGNOSTIC_FAILURE_STAGES),
+        outcome_stages=tuple(SUCCESS_STAGES | ROUTE_DIAGNOSTIC_FAILURE_STAGES),
     )
 
 

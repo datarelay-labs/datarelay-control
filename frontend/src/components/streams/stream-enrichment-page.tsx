@@ -6,6 +6,7 @@ import {
   ExternalLink,
   Eye,
   Lightbulb,
+  Loader2,
   Pencil,
   Plus,
   RefreshCw,
@@ -15,20 +16,25 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { cn } from '../../lib/utils'
-import { NAV_PATH } from '../../config/nav-paths'
+import { streamEditWizardStepPath } from '../../config/nav-paths'
 import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
 import {
   type ComputedFieldRow,
-  type OverridePolicy,
   type StaticFieldRow,
   DEFAULT_COMPUTED_FIELDS,
   DEFAULT_STATIC_FIELDS,
-  buildEnrichedPreviewRecord,
 } from './stream-enrichment-model'
 import { StreamWorkflowSummaryStrip } from './stream-workflow-checklist'
 import { computeStreamWorkflow } from '../../utils/streamWorkflow'
 import { saveStreamMappingUiConfigStrict } from '../../api/gdcRuntimeUi'
+import { runFinalEventDraftPreview } from '../../api/gdcRuntimePreview'
 import { AdvancedTransformWorkspace } from '../transform/advanced-transform-workspace'
+import { EnrichmentRulesEditor } from './wizard/enrichment-rules-editor'
+import {
+  enrichmentDictFromRules,
+  type WizardEnrichmentRule,
+  wizardEnrichmentFromPersistedDict,
+} from './wizard/enrichment-rules-model'
 import type { AdvancedTransformRuleDraft } from '../../types/advancedTransform'
 import {
   buildEnrichmentWithAdvancedFields,
@@ -63,61 +69,202 @@ function SummaryTile({ label, value }: { label: string; value: string | number }
   )
 }
 
+function staticRowRuntimeValue(row: StaticFieldRow): unknown {
+  const type = row.type.trim().toLowerCase()
+  if (type === 'null') return null
+  if (type === 'boolean' || type === 'bool') {
+    if (row.value.trim().toLowerCase() === 'true') return true
+    if (row.value.trim().toLowerCase() === 'false') return false
+    return row.value
+  }
+  if (type === 'number' || type === 'integer' || type === 'float' || type === 'double') {
+    const parsed = Number(row.value)
+    return Number.isFinite(parsed) ? parsed : row.value
+  }
+  return row.value
+}
+
+function buildRuntimeEnrichmentPayload(
+  staticRows: readonly StaticFieldRow[],
+  computedRows: readonly ComputedFieldRow[],
+  guidedRules: readonly WizardEnrichmentRule[],
+  guidedPassthrough: Record<string, unknown>,
+  emitGuidedAsTypeArray: boolean,
+  advancedRules: readonly AdvancedTransformRuleDraft[],
+  passthrough: Record<string, unknown>,
+): Record<string, unknown> {
+  const guided = enrichmentDictFromRules(guidedRules, {
+    advancedPassthrough: guidedPassthrough,
+    emitAdvancedAsTypeArray: emitGuidedAsTypeArray,
+  })
+  const enrichment: Record<string, unknown> = { ...passthrough, ...guided }
+  for (const row of staticRows) {
+    if (!row.fieldName.trim()) continue
+    enrichment[row.fieldName.trim()] = staticRowRuntimeValue(row)
+  }
+
+  const computed: Record<string, { expression: string; type: string; description?: string }> = {}
+  for (const row of computedRows) {
+    if (!row.fieldName.trim()) continue
+    computed[row.fieldName.trim()] = {
+      expression: row.expression,
+      type: row.type,
+      description: row.description,
+    }
+  }
+  if (Object.keys(computed).length > 0) enrichment.__computed = computed
+  else delete enrichment.__computed
+
+  return buildEnrichmentWithAdvancedFields(enrichment, advancedRules)
+}
+
 export function StreamEnrichmentPage() {
   const { streamId = 'malop-api' } = useParams<{ streamId: string }>()
   const navigate = useNavigate()
   const previewRef = useRef<HTMLDivElement>(null)
   const backendStreamId = useMemo(() => (/^\d+$/.test(streamId) ? Number(streamId) : null), [streamId])
 
-  const [rulesTab, setRulesTab] = useState<'static' | 'computed' | 'advanced' | 'expert'>('static')
+  const [rulesTab, setRulesTab] = useState<'static' | 'computed' | 'guided' | 'advanced' | 'expert'>('static')
+  const [guidedRules, setGuidedRules] = useState<WizardEnrichmentRule[]>([])
+  const [guidedPassthrough, setGuidedPassthrough] = useState<Record<string, unknown>>({})
+  const [emitGuidedAsTypeArray, setEmitGuidedAsTypeArray] = useState(false)
   const [advancedRules, setAdvancedRules] = useState<AdvancedTransformRuleDraft[]>([])
-  const [sampleEvent, setSampleEvent] = useState<Record<string, unknown> | null>(null)
+  const [enrichmentPassthrough, setEnrichmentPassthrough] = useState<Record<string, unknown>>({})
+  const [enrichmentEnabled, setEnrichmentEnabled] = useState(true)
+  const [enrichmentOverridePolicy, setEnrichmentOverridePolicy] = useState<
+    'KEEP_EXISTING' | 'OVERRIDE' | 'ERROR_ON_CONFLICT'
+  >('KEEP_EXISTING')
+  const [runtimeMappingContext, setRuntimeMappingContext] = useState<{
+    payload: unknown
+    eventArrayPath: string
+    eventRootPath: string
+    fieldMappings: Record<string, unknown>
+  } | null>(null)
   const [configLoading, setConfigLoading] = useState(false)
   const [previewTab, setPreviewTab] = useState<'table' | 'json'>('table')
   const [staticSearch, setStaticSearch] = useState('')
   const [staticRows, setStaticRows] = useState<StaticFieldRow[]>(() => [...DEFAULT_STATIC_FIELDS])
   const [computedRows, setComputedRows] = useState<ComputedFieldRow[]>(() => [...DEFAULT_COMPUTED_FIELDS])
   const [previewTick, setPreviewTick] = useState(0)
+  const [runtimePreviewRecord, setRuntimePreviewRecord] = useState<Record<string, unknown> | null>(null)
+  const [runtimeMappedEvents, setRuntimeMappedEvents] = useState<Array<Record<string, unknown>>>([])
+  const [runtimePreviewLoading, setRuntimePreviewLoading] = useState(false)
+  const [runtimePreviewError, setRuntimePreviewError] = useState<string | null>(null)
+  const runtimePreviewRequestRef = useRef(0)
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null)
   const [savedSnapshot, setSavedSnapshot] = useState<string>(() =>
-    JSON.stringify({ staticRows: DEFAULT_STATIC_FIELDS, computedRows: DEFAULT_COMPUTED_FIELDS, advancedRules: [] }),
+    JSON.stringify({
+      staticRows: DEFAULT_STATIC_FIELDS,
+      computedRows: DEFAULT_COMPUTED_FIELDS,
+      guidedRules: [],
+      advancedRules: [],
+      enrichmentEnabled: true,
+      enrichmentOverridePolicy: 'KEEP_EXISTING',
+    }),
   )
 
   useEffect(() => {
     let cancelled = false
-    if (backendStreamId == null) return
+    if (backendStreamId == null) {
+      setRuntimeMappingContext(null)
+      setRuntimeMappedEvents([])
+      setRuntimePreviewRecord(null)
+      setRuntimePreviewError(null)
+      setConfigLoading(false)
+      return
+    }
     setConfigLoading(true)
     void loadMappingWorkspaceContext(backendStreamId)
       .then((ctx) => {
         if (cancelled || !ctx) return
         const en = (ctx.cfg.enrichment?.enrichment ?? {}) as Record<string, unknown>
         const loadedAdvanced = parseAdvancedFieldsFromEnrichment(en)
+        const guidedParsed = wizardEnrichmentFromPersistedDict(
+          en.__rules && typeof en.__rules === 'object' && !Array.isArray(en.__rules)
+            ? { __rules: en.__rules }
+            : {},
+        )
+        setGuidedRules(guidedParsed.rules)
+        setGuidedPassthrough(guidedParsed.advancedPassthrough)
+        setEmitGuidedAsTypeArray(guidedParsed.emitAdvancedAsTypeArray)
+        const loadedEnabled = ctx.cfg.enrichment?.enabled !== false
+        const loadedPolicyRaw = ctx.cfg.enrichment?.override_policy
+        const loadedPolicy =
+          loadedPolicyRaw === 'OVERRIDE' ||
+          loadedPolicyRaw === 'ERROR_ON_CONFLICT' ||
+          loadedPolicyRaw === 'KEEP_EXISTING'
+            ? loadedPolicyRaw
+            : 'KEEP_EXISTING'
         setAdvancedRules(loadedAdvanced)
+        setEnrichmentEnabled(loadedEnabled)
+        setEnrichmentOverridePolicy(loadedPolicy)
+        setRuntimeMappingContext({
+          payload: ctx.sample.rawPayload,
+          eventArrayPath: String(ctx.cfg.mapping?.event_array_path ?? ctx.sample.eventArrayPath ?? ''),
+          eventRootPath: String(ctx.cfg.mapping?.event_root_path ?? ctx.sample.eventRootPath ?? ''),
+          fieldMappings: (ctx.cfg.mapping?.field_mappings ?? {}) as Record<string, unknown>,
+        })
 
         const staticFromApi: StaticFieldRow[] = []
+        const computedFromApi: ComputedFieldRow[] = []
+        const passthroughFromApi: Record<string, unknown> = {}
+
+        const rawComputed = en.__computed
+        if (rawComputed && typeof rawComputed === 'object' && !Array.isArray(rawComputed)) {
+          for (const [key, rawValue] of Object.entries(rawComputed as Record<string, unknown>)) {
+            if (!rawValue || typeof rawValue !== 'object' || Array.isArray(rawValue)) continue
+            const item = rawValue as Record<string, unknown>
+            if (typeof item.expression !== 'string') continue
+            computedFromApi.push({
+              id: `cf-api-${key}`,
+              fieldName: key,
+              expression: item.expression,
+              type: typeof item.type === 'string' ? item.type : 'string',
+              description: typeof item.description === 'string' ? item.description : '',
+            })
+          }
+        }
+
         for (const [key, value] of Object.entries(en)) {
-          if (key.startsWith('__') || key === 'advanced_fields') continue
-          if (value && typeof value === 'object' && ('type' in value || 'mode' in value)) continue
+          if (key === '__computed' || key === 'advanced_fields' || key === '__rules') continue
+          if (key.startsWith('__')) {
+            passthroughFromApi[key] = value
+            continue
+          }
+          if (value !== null && typeof value === 'object') {
+            passthroughFromApi[key] = value
+            continue
+          }
           staticFromApi.push({
             id: `sf-api-${key}`,
             fieldName: key,
-            value: typeof value === 'string' ? value : JSON.stringify(value),
-            type: 'string',
+            value: value == null ? 'null' : String(value),
+            type:
+              value === null
+                ? 'null'
+                : typeof value === 'number'
+                  ? 'number'
+                  : typeof value === 'boolean'
+                    ? 'boolean'
+                    : 'string',
             description: '',
             overridePolicy: 'missing',
           })
         }
-        if (staticFromApi.length > 0) setStaticRows(staticFromApi)
+        setStaticRows(staticFromApi)
+        setComputedRows(computedFromApi)
+        setEnrichmentPassthrough(passthroughFromApi)
 
-        const ev = ctx.sample.extractedEvents[0]
-        setSampleEvent(ev && typeof ev === 'object' ? (ev as Record<string, unknown>) : null)
         setSavedSnapshot(
           JSON.stringify({
-            staticRows: staticFromApi.length > 0 ? staticFromApi : DEFAULT_STATIC_FIELDS,
-            computedRows: DEFAULT_COMPUTED_FIELDS,
+            staticRows: staticFromApi,
+            computedRows: computedFromApi,
+            guidedRules: guidedParsed.rules,
             advancedRules: loadedAdvanced,
+            enrichmentEnabled: loadedEnabled,
+            enrichmentOverridePolicy: loadedPolicy,
           }),
         )
       })
@@ -143,21 +290,113 @@ export function StreamEnrichmentPage() {
   const summary = useMemo(() => {
     const staticCount = staticRows.length
     const computedCount = computedRows.length
-    const overrideAlways = staticRows.filter((r) => r.overridePolicy === 'always').length
+    const guidedCount = guidedRules.filter((rule) => rule.enabled && rule.fieldName.trim()).length
+    const advancedCount = advancedRules.filter((rule) => rule.outputField.trim()).length
     return {
       staticCount,
       computedCount,
-      total: staticCount + computedCount,
-      overrideAlways,
+      guidedCount,
+      advancedCount,
+      total: staticCount + computedCount + guidedCount + advancedCount,
     }
-  }, [staticRows, computedRows])
+  }, [staticRows, computedRows, guidedRules, advancedRules])
 
-  const previewRecord = useMemo(() => {
-    void previewTick
-    return buildEnrichedPreviewRecord(staticRows, computedRows)
-  }, [staticRows, computedRows, previewTick])
+  const runtimeEnrichmentPayload = useMemo(
+    () =>
+      buildRuntimeEnrichmentPayload(
+        staticRows,
+        computedRows,
+        guidedRules,
+        guidedPassthrough,
+        emitGuidedAsTypeArray,
+        advancedRules,
+        enrichmentPassthrough,
+      ),
+    [
+      staticRows,
+      computedRows,
+      guidedRules,
+      guidedPassthrough,
+      emitGuidedAsTypeArray,
+      advancedRules,
+      enrichmentPassthrough,
+    ],
+  )
 
+  useEffect(() => {
+    const requestId = ++runtimePreviewRequestRef.current
+    let cancelled = false
+    if (!runtimeMappingContext) {
+      setRuntimePreviewRecord(null)
+      setRuntimeMappedEvents([])
+      setRuntimePreviewError(null)
+      setRuntimePreviewLoading(false)
+      return () => {
+        cancelled = true
+      }
+    }
+
+    const timer = window.setTimeout(() => {
+      setRuntimePreviewLoading(true)
+      setRuntimePreviewError(null)
+      void runFinalEventDraftPreview({
+        payload: runtimeMappingContext.payload,
+        event_array_path: runtimeMappingContext.eventArrayPath || null,
+        event_root_path: runtimeMappingContext.eventRootPath || null,
+        field_mappings: runtimeMappingContext.fieldMappings,
+        enrichment: enrichmentEnabled ? runtimeEnrichmentPayload : {},
+        override_policy: enrichmentOverridePolicy,
+        max_events: 20,
+      })
+        .then((response) => {
+          if (cancelled || requestId !== runtimePreviewRequestRef.current) return
+          setRuntimeMappedEvents(
+            response.mapped_events.filter(
+              (event): event is Record<string, unknown> =>
+                event != null && typeof event === 'object' && !Array.isArray(event),
+            ),
+          )
+          setRuntimePreviewRecord(response.final_events[0] ?? null)
+          const fieldErrors = (response.enrichment_transform_results ?? []).filter((item) => !item.success)
+          setRuntimePreviewError(
+            fieldErrors.length > 0
+              ? fieldErrors
+                  .map((item) => `${item.output_field || item.rule_id || 'field'}: ${item.error_message || item.error_code || 'transform failed'}`)
+                  .join(' · ')
+              : null,
+          )
+        })
+        .catch((error) => {
+          if (cancelled || requestId !== runtimePreviewRequestRef.current) return
+          setRuntimePreviewRecord(null)
+          setRuntimeMappedEvents([])
+          setRuntimePreviewError(error instanceof Error ? error.message : 'Runtime Mapping → Enrichment preview failed')
+        })
+        .finally(() => {
+          if (cancelled || requestId !== runtimePreviewRequestRef.current) return
+          setRuntimePreviewLoading(false)
+        })
+    }, 300)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [
+    runtimeMappingContext,
+    runtimeEnrichmentPayload,
+    enrichmentEnabled,
+    enrichmentOverridePolicy,
+    previewTick,
+  ])
+
+  const previewRecord = runtimePreviewRecord ?? {}
   const previewJson = useMemo(() => JSON.stringify(previewRecord, null, 2), [previewRecord])
+  const runtimeMappedSample = runtimeMappedEvents[0] ?? undefined
+  const runtimeMappedKeysLower = useMemo(
+    () => new Set(Object.keys(runtimeMappedSample ?? {}).map((key) => key.toLowerCase())),
+    [runtimeMappedSample],
+  )
 
   const scrollToPreview = useCallback(() => {
     previewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
@@ -207,7 +446,15 @@ export function StreamEnrichmentPage() {
     ])
   }, [])
 
-  const hasUnsavedChanges = JSON.stringify({ staticRows, computedRows, advancedRules }) !== savedSnapshot
+  const hasUnsavedChanges =
+    JSON.stringify({
+      staticRows,
+      computedRows,
+      guidedRules,
+      advancedRules,
+      enrichmentEnabled,
+      enrichmentOverridePolicy,
+    }) !== savedSnapshot
 
   const workflowSnapshot = useMemo(
     () =>
@@ -221,55 +468,72 @@ export function StreamEnrichmentPage() {
         hasConnector: true,
         hasApiTest: true,
         hasMapping: true,
-        hasEnrichment: staticRows.length + computedRows.length > 0,
+        hasEnrichment:
+          enrichmentEnabled &&
+          (staticRows.length +
+              computedRows.length +
+              guidedRules.filter((rule) => rule.enabled && rule.fieldName.trim()).length +
+              advancedRules.filter((rule) => rule.outputField.trim()).length >
+            0 ||
+            Object.keys(guidedPassthrough).length > 0 ||
+            Object.keys(enrichmentPassthrough).length > 0),
       }),
-    [streamId, staticRows.length, computedRows.length],
+    [
+      streamId,
+      staticRows.length,
+      computedRows.length,
+      guidedRules,
+      guidedPassthrough,
+      advancedRules,
+      enrichmentPassthrough,
+      enrichmentEnabled,
+    ],
   )
 
-  async function handleSaveEnrichment() {
-    if (isSaving) return
+  async function handleSaveEnrichment(): Promise<boolean> {
+    if (isSaving) return false
     setIsSaving(true)
     setSaveError(null)
     setSaveSuccess(null)
     if (backendStreamId == null) {
-      setSavedSnapshot(JSON.stringify({ staticRows, computedRows, advancedRules }))
+      setSavedSnapshot(
+        JSON.stringify({
+          staticRows,
+          computedRows,
+          guidedRules,
+          advancedRules,
+          enrichmentEnabled,
+          enrichmentOverridePolicy,
+        }),
+      )
       setSaveSuccess('Saved locally for preview only. Save to the stream after it has been created.')
       setIsSaving(false)
-      return
+      return true
     }
     try {
-      const enrichmentDict: Record<string, unknown> = {}
-      for (const row of staticRows) {
-        if (!row.fieldName.trim()) continue
-        enrichmentDict[row.fieldName] = row.value
-      }
-      if (computedRows.length > 0) {
-        const computed: Record<string, { expression: string; type: string; description?: string }> = {}
-        for (const row of computedRows) {
-          if (!row.fieldName.trim()) continue
-          computed[row.fieldName] = {
-            expression: row.expression,
-            type: row.type,
-            description: row.description,
-          }
-        }
-        if (Object.keys(computed).length > 0) {
-          enrichmentDict.__computed = computed
-        }
-      }
-      const enrichmentPayload = buildEnrichmentWithAdvancedFields(enrichmentDict, advancedRules)
       const result = await saveStreamMappingUiConfigStrict(backendStreamId, {
         enrichment: {
-          enabled: true,
-          enrichment: enrichmentPayload,
-          override_policy: 'KEEP_EXISTING',
+          enabled: enrichmentEnabled,
+          enrichment: runtimeEnrichmentPayload,
+          override_policy: enrichmentOverridePolicy,
         },
       })
-      setSavedSnapshot(JSON.stringify({ staticRows, computedRows, advancedRules }))
+      setSavedSnapshot(
+        JSON.stringify({
+          staticRows,
+          computedRows,
+          guidedRules,
+          advancedRules,
+          enrichmentEnabled,
+          enrichmentOverridePolicy,
+        }),
+      )
       setSaveSuccess(`Saved · ${result.message}`)
+      return true
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to save transform rules.'
       setSaveError(`Unable to save changes: ${message}`)
+      return false
     } finally {
       setIsSaving(false)
     }
@@ -311,14 +575,61 @@ export function StreamEnrichmentPage() {
           </button>
           <button
             type="button"
-            onClick={() => navigate(NAV_PATH.routes)}
-            className="inline-flex h-9 items-center gap-1 rounded-md bg-violet-600 px-4 text-[12px] font-semibold text-white shadow-sm hover:bg-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500/40"
+            disabled={isSaving}
+            onClick={() => {
+              void handleSaveEnrichment().then((saved) => {
+                if (!saved) return
+                navigate(
+                  backendStreamId != null
+                    ? streamEditWizardStepPath(String(backendStreamId), 'route_processing')
+                    : '/streams',
+                )
+              })
+            }}
+            className="inline-flex h-9 items-center gap-1 rounded-md bg-violet-600 px-4 text-[12px] font-semibold text-white shadow-sm hover:bg-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500/40 disabled:opacity-60"
           >
             Save & Continue
             <ArrowRight className="h-3.5 w-3.5" aria-hidden />
           </button>
         </div>
       </div>
+
+      <section
+        className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200/80 bg-slate-50/70 px-3 py-2.5 dark:border-gdc-border dark:bg-gdc-section"
+        data-testid="enrichment-runtime-controls"
+      >
+        <label className="inline-flex items-center gap-2 text-[12px] font-semibold text-slate-800 dark:text-slate-100">
+          <input
+            type="checkbox"
+            checked={enrichmentEnabled}
+            onChange={(event) => setEnrichmentEnabled(event.target.checked)}
+            className="accent-violet-600"
+          />
+          Enrichment enabled
+        </label>
+        <label className="flex items-center gap-2 text-[11px] text-slate-600 dark:text-gdc-muted">
+          <span className="font-semibold text-slate-700 dark:text-slate-200">Existing-field policy</span>
+          <select
+            value={enrichmentOverridePolicy}
+            onChange={(event) =>
+              setEnrichmentOverridePolicy(
+                event.target.value as 'KEEP_EXISTING' | 'OVERRIDE' | 'ERROR_ON_CONFLICT',
+              )
+            }
+            className="h-8 rounded-md border border-slate-200/90 bg-white px-2 text-[11px] font-semibold text-slate-800 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
+          >
+            <option value="KEEP_EXISTING">Keep existing</option>
+            <option value="OVERRIDE">Override existing</option>
+            <option value="ERROR_ON_CONFLICT">Error on conflict</option>
+          </select>
+        </label>
+        <span className="text-[10px] text-slate-500 dark:text-gdc-muted">
+          {enrichmentEnabled
+            ? 'Preview and delivery use this exact policy.'
+            : 'Rules remain editable, but runtime delivery skips Enrichment while disabled.'}
+        </span>
+      </section>
+
       {saveError ? <p className="text-[12px] font-medium text-red-700 dark:text-red-300">{saveError}</p> : null}
       {saveSuccess ? <p className="text-[12px] font-medium text-emerald-700 dark:text-emerald-300">{saveSuccess}</p> : null}
 
@@ -355,6 +666,18 @@ export function StreamEnrichmentPage() {
                 )}
               >
                 Calculate values
+              </button>
+              <button
+                type="button"
+                onClick={() => setRulesTab('guided')}
+                className={cn(
+                  '-mb-px border-b-2 pb-2 text-[13px] font-semibold',
+                  rulesTab === 'guided'
+                    ? 'border-violet-600 text-violet-700 dark:border-violet-400 dark:text-violet-300'
+                    : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-gdc-muted',
+                )}
+              >
+                Guided rules
               </button>
               <button
                 type="button"
@@ -420,10 +743,10 @@ export function StreamEnrichmentPage() {
                         <th className={cn(opTh, 'min-w-[140px]')}>Description</th>
                         <th className={cn(opTh, 'min-w-[140px]')}>
                           <span className="inline-flex items-center gap-1">
-                            Override Policy
+                            Conflict behavior
                             <HelpTooltip
-                              content="Apply if missing keeps mapped values; Override always replaces them."
-                              ariaLabel="Override policy help"
+                              content="All enrichment fields use the global Existing-field policy shown above."
+                              ariaLabel="Enrichment conflict behavior help"
                             />
                           </span>
                         </th>
@@ -463,15 +786,13 @@ export function StreamEnrichmentPage() {
                             />
                           </td>
                           <td className={opTd}>
-                            <select
-                              value={row.overridePolicy}
-                              onChange={(e) => updateStatic(row.id, { overridePolicy: e.target.value as OverridePolicy })}
-                              className="h-8 w-full max-w-[160px] rounded-md border border-slate-200/90 bg-white px-2 text-[11px] font-medium dark:border-gdc-border dark:bg-gdc-card"
-                              aria-label={`Override policy for ${row.fieldName}`}
-                            >
-                              <option value="missing">Apply if missing</option>
-                              <option value="always">Override always</option>
-                            </select>
+                            <span className="text-[10px] font-medium text-slate-600 dark:text-gdc-muted">
+                              {enrichmentOverridePolicy === 'OVERRIDE'
+                                ? 'Override existing'
+                                : enrichmentOverridePolicy === 'ERROR_ON_CONFLICT'
+                                  ? 'Error on conflict'
+                                  : 'Keep existing'}
+                            </span>
                           </td>
                           <td className={opTd}>
                             <div className="flex items-center gap-0.5">
@@ -580,15 +901,34 @@ export function StreamEnrichmentPage() {
                   </table>
                 </div>
               </div>
+            ) : rulesTab === 'guided' ? (
+              <EnrichmentRulesEditor
+                rules={guidedRules}
+                onChange={setGuidedRules}
+                mappedKeysLower={runtimeMappedKeysLower}
+                mappedSampleEvent={runtimeMappedSample}
+                excludeRuleTypes={['lookup']}
+                sectionTitle="Guided Enrichment rules"
+                addMenuLabel="Add rule"
+                data-testid="stream-enrichment-guided-editor"
+              />
             ) : (
               <AdvancedTransformWorkspace
                 stage="enrichment"
-                sampleEvent={sampleEvent}
+                sampleEvent={runtimeMappedEvents[0] ?? null}
+                sampleEvents={runtimeMappedEvents}
                 rules={advancedRules}
                 onRulesChange={setAdvancedRules}
-                enrichmentStatic={Object.fromEntries(
-                  staticRows.filter((r) => r.fieldName.trim()).map((r) => [r.fieldName, r.value]),
+                enrichmentStatic={buildRuntimeEnrichmentPayload(
+                  staticRows,
+                  computedRows,
+                  guidedRules,
+                  guidedPassthrough,
+                  emitGuidedAsTypeArray,
+                  [],
+                  enrichmentPassthrough,
                 )}
+                overridePolicy={enrichmentOverridePolicy}
                 filterUiMode={rulesTab === 'expert' ? 'expert' : 'advanced'}
               />
             )}
@@ -601,13 +941,37 @@ export function StreamEnrichmentPage() {
             <div className="mt-3 grid grid-cols-2 gap-2">
               <SummaryTile label="Static Fields" value={summary.staticCount} />
               <SummaryTile label="Computed Fields" value={summary.computedCount} />
+              <SummaryTile label="Guided Rules" value={summary.guidedCount} />
+              <SummaryTile label="Advanced Rules" value={summary.advancedCount} />
               <SummaryTile label="Total Fields" value={summary.total} />
-              <SummaryTile label="Override (Always)" value={summary.overrideAlways} />
             </div>
           </section>
 
           <section ref={previewRef} className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-gdc-border dark:bg-gdc-card">
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Enrichment Preview</h3>
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Enrichment Preview</h3>
+              <span
+                className={cn(
+                  'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold',
+                  runtimePreviewLoading
+                    ? 'border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-300'
+                    : runtimePreviewError
+                      ? 'border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300'
+                      : runtimePreviewRecord
+                        ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                        : 'border-slate-200 bg-slate-50 text-slate-500 dark:border-gdc-border dark:bg-gdc-section dark:text-gdc-muted',
+                )}
+              >
+                {runtimePreviewLoading ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : null}
+                {runtimePreviewLoading
+                  ? 'Runtime preview'
+                  : runtimePreviewError
+                    ? 'Preview failed'
+                    : runtimePreviewRecord
+                      ? 'Runtime verified'
+                      : 'Sample required'}
+              </span>
+            </div>
             <div className="mt-2 flex gap-2 border-b border-slate-200/80 pb-2 dark:border-gdc-border">
               <button
                 type="button"
@@ -630,8 +994,22 @@ export function StreamEnrichmentPage() {
                 JSON View
               </button>
             </div>
+            {runtimePreviewError ? (
+              <p className="mt-3 rounded-md border border-red-200/80 bg-red-500/[0.06] px-2.5 py-2 text-[11px] text-red-800 dark:border-red-500/30 dark:text-red-200">
+                {runtimePreviewError}
+              </p>
+            ) : null}
             <div className="mt-3 max-h-[min(260px,40vh)] overflow-auto rounded-lg border border-slate-200/80 bg-slate-50/80 dark:border-gdc-border dark:bg-gdc-card">
-              {previewTab === 'table' ? (
+              {runtimePreviewLoading ? (
+                <div className="flex min-h-28 items-center justify-center gap-2 text-[11px] text-slate-500 dark:text-gdc-muted">
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                  Running enrichment runtime…
+                </div>
+              ) : runtimeMappedEvents.length === 0 ? (
+                <p className="px-3 py-8 text-center text-[11px] text-slate-500 dark:text-gdc-muted">
+                  No mapped sample event is available. Load or refresh the Stream source sample first.
+                </p>
+              ) : previewTab === 'table' ? (
                 <table className="w-full border-collapse text-[11px]">
                   <tbody>
                     {Object.entries(previewRecord).map(([k, v]) => (
@@ -640,6 +1018,13 @@ export function StreamEnrichmentPage() {
                         <td className="px-2 py-1.5 font-mono text-slate-600 dark:text-gdc-muted">{String(v)}</td>
                       </tr>
                     ))}
+                    {Object.keys(previewRecord).length === 0 ? (
+                      <tr>
+                        <td className="px-3 py-8 text-center text-slate-500 dark:text-gdc-muted" colSpan={2}>
+                          Runtime returned an empty event.
+                        </td>
+                      </tr>
+                    ) : null}
                   </tbody>
                 </table>
               ) : (
@@ -651,8 +1036,8 @@ export function StreamEnrichmentPage() {
               onClick={() => setPreviewTick((t) => t + 1)}
               className="mt-3 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-md border border-slate-200/90 bg-white text-[12px] font-semibold text-slate-800 shadow-sm hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-100"
             >
-              <RefreshCw className="h-3.5 w-3.5" aria-hidden />
-              Refresh Preview
+              <RefreshCw className={cn('h-3.5 w-3.5', runtimePreviewLoading && 'animate-spin')} aria-hidden />
+              Refresh Runtime Preview
             </button>
           </section>
 

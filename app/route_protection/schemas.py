@@ -65,4 +65,5 @@ class RouteProtectionEffectiveResponse(BaseModel):
     fallback_used: bool
     rule_count: int
     processing_status: RouteProtectionProcessingStatus
+    latest_rule_updated_at: datetime | None = None
     message: str

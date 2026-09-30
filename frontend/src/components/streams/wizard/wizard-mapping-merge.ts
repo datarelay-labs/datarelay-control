@@ -124,6 +124,40 @@ export function applyAutoSuggestTopLevel(
   return next
 }
 
+
+export function applySelectedMetadataSuggestions(
+  current: ReadonlyArray<WizardMappingRow>,
+  suggestions: ReadonlyArray<StellarSuggestion>,
+  newRowId: () => string,
+): WizardMappingRow[] {
+  const next = [...current]
+  const { unmapped } = analyzeStellarSuggestions(next, suggestions)
+  for (const suggestion of unmapped) {
+    next.push({
+      id: newRowId(),
+      outputField: suggestion.outputField,
+      sourceJsonPath: suggestion.sourceJsonPath,
+      origin: 'stellar',
+    })
+  }
+  return next
+}
+
+export function previewSelectedMetadataSuggestions(
+  current: ReadonlyArray<WizardMappingRow>,
+  suggestions: ReadonlyArray<StellarSuggestion>,
+  sampleEvent: Record<string, unknown> | null,
+  newRowId: () => string,
+): MetadataMappingApplyResult {
+  const rows = applySelectedMetadataSuggestions(current, suggestions, newRowId)
+  return {
+    rows,
+    stellarAdded: rows.length - current.length,
+    autoAdded: 0,
+    unmappedSourceFields: unmappedTopLevelSourcePaths(rows, sampleEvent).length,
+  }
+}
+
 export type MetadataMappingApplyResult = {
   rows: WizardMappingRow[]
   stellarAdded: number

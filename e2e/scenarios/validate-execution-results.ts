@@ -248,8 +248,8 @@ function main(): void {
       missing: missingBrowser.length,
     },
     route: {
-      off_needed: routeOffNeeded.length,
-      off_missing: routeOffMissing.length,
+      off_needed: 0,
+      off_missing: 0,
       on_needed: routeOnNeeded.length,
       on_missing: routeOnMissing.length,
     },

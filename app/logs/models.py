@@ -34,6 +34,12 @@ class DeliveryLog(Base):
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
     run_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    batch_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    policy_action: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    decision_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    delivery_disposition: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    skip_reason: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    quarantine_event_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
 
 

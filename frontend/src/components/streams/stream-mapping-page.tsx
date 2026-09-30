@@ -12,7 +12,11 @@ import { StreamWorkflowSummaryStrip } from './stream-workflow-checklist'
 import { computeStreamWorkflow } from '../../utils/streamWorkflow'
 import { saveStreamMappingUiConfigStrict } from '../../api/gdcRuntimeUi'
 import type { AdvancedTransformRuleDraft } from '../../types/advancedTransform'
-import { buildFieldMappingsWithTransformRules, parseTransformRulesFromFieldMappings } from '../../utils/advancedTransformConfig'
+import {
+  buildFieldMappingsWithTransformRules,
+  extractPreservedFieldMappingMetadata,
+  parseTransformRulesFromFieldMappings,
+} from '../../utils/advancedTransformConfig'
 import { rowsFromFieldMappings } from '../../utils/mappingFieldMappings'
 import { loadMappingWorkspaceContext } from '../../utils/mappingSourceSample'
 import { fieldMappingsFromRows } from '../../utils/mappingValidation'
@@ -21,11 +25,17 @@ import { PanelChrome } from './mapping-json-tree'
 import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
 
 function enrichmentRecordToRows(rec: Record<string, unknown>): EnrichmentRowModel[] {
-  return Object.entries(rec).map(([field, value]) => {
-    const s = typeof value === 'string' ? value : JSON.stringify(value)
-    const fn = s.includes('{{') && s.includes('}}')
-    return { field, value: s, type: fn ? ('function' as const) : ('static' as const) }
-  })
+  return Object.entries(rec)
+    .filter(([field, value]) => {
+      if (field === '__computed' || field === 'advanced_fields' || field === '__rules') return false
+      if (field.startsWith('__')) return false
+      return value === null || typeof value !== 'object'
+    })
+    .map(([field, value]) => {
+      const s = typeof value === 'string' ? value : JSON.stringify(value)
+      const fn = s.includes('{{') && s.includes('}}')
+      return { field, value: s, type: fn ? ('function' as const) : ('static' as const) }
+    })
 }
 
 type StepKey = 'source' | 'mapping' | 'enrichment' | 'preview'
@@ -96,6 +106,12 @@ export function StreamMappingPage() {
 
   const [rows, setRows] = useState<MappingRowModel[]>([])
   const [transformRules, setTransformRules] = useState<AdvancedTransformRuleDraft[]>([])
+  const [preservedFieldMappings, setPreservedFieldMappings] = useState<Record<string, unknown>>({})
+  const [rawEnrichment, setRawEnrichment] = useState<Record<string, unknown>>({})
+  const [enrichmentEnabled, setEnrichmentEnabled] = useState(true)
+  const [enrichmentOverridePolicy, setEnrichmentOverridePolicy] = useState<
+    'KEEP_EXISTING' | 'OVERRIDE' | 'ERROR_ON_CONFLICT'
+  >('KEEP_EXISTING')
   const [enrichment, setEnrichment] = useState<EnrichmentRowModel[]>([])
   const [streamTitle, setStreamTitle] = useState(emptyShell.streamName)
   const [connectorLabel, setConnectorLabel] = useState(emptyShell.connectorName)
@@ -103,6 +119,7 @@ export function StreamMappingPage() {
   const [mappingSourceType, setMappingSourceType] = useState<string | null>(null)
   const [eventArrayPath, setEventArrayPath] = useState('')
   const [eventRootPath, setEventRootPath] = useState('')
+  const [rawPayloadMode, setRawPayloadMode] = useState<string | null>(null)
   const [configLoading, setConfigLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -112,11 +129,19 @@ export function StreamMappingPage() {
 
   const baselineRowsRef = useRef<MappingRowModel[] | null>(null)
   const baselineTransformRef = useRef<AdvancedTransformRuleDraft[]>([])
+  const baselineEventArrayPathRef = useRef('')
+  const baselineEventRootPathRef = useRef('')
 
   useEffect(() => {
     let cancelled = false
     if (backendStreamId == null) {
       setRows([])
+      setTransformRules([])
+      setPreservedFieldMappings({})
+      setRawEnrichment({})
+      setRawPayloadMode(null)
+      setEnrichmentEnabled(true)
+      setEnrichmentOverridePolicy('KEEP_EXISTING')
       setEnrichment([...emptyShell.enrichment])
       setStreamTitle(emptyShell.streamName)
       setConnectorLabel('—')
@@ -133,18 +158,37 @@ export function StreamMappingPage() {
         setConnectorLabel(connectorName)
         setEventArrayPath(String(cfg.mapping?.event_array_path ?? sample.eventArrayPath ?? ''))
         setEventRootPath(String(cfg.mapping?.event_root_path ?? sample.eventRootPath ?? ''))
+        setRawPayloadMode(cfg.mapping?.raw_payload_mode ?? null)
         const fm = (cfg.mapping?.field_mappings ?? {}) as Record<string, unknown>
         const mappingRows = Object.keys(fm).length > 0 ? rowsFromFieldMappings(fm) : []
         setRows(mappingRows)
         setTransformRules(parseTransformRulesFromFieldMappings(fm))
+        setPreservedFieldMappings(extractPreservedFieldMappingMetadata(fm))
         const en = (cfg.enrichment?.enrichment ?? {}) as Record<string, unknown>
+        setRawEnrichment(en)
+        setEnrichmentEnabled(cfg.enrichment?.enabled !== false)
+        const policy = cfg.enrichment?.override_policy
+        setEnrichmentOverridePolicy(
+          policy === 'OVERRIDE' || policy === 'ERROR_ON_CONFLICT' || policy === 'KEEP_EXISTING'
+            ? policy
+            : 'KEEP_EXISTING',
+        )
         setEnrichment(
-          cfg.enrichment?.exists && Object.keys(en).length > 0 ? enrichmentRecordToRows(en) : [...emptyShell.enrichment],
+          cfg.enrichment?.exists && Object.keys(en).length > 0 ? enrichmentRecordToRows(en) : [],
         )
         const loadedRules = parseTransformRulesFromFieldMappings(fm)
         baselineRowsRef.current = mappingRows.map((r) => ({ ...r }))
         baselineTransformRef.current = loadedRules.map((r) => ({ ...r }))
-        setSavedSnapshot(JSON.stringify({ rows: mappingRows, transformRules: loadedRules }))
+        baselineEventArrayPathRef.current = String(cfg.mapping?.event_array_path ?? sample.eventArrayPath ?? '')
+        baselineEventRootPathRef.current = String(cfg.mapping?.event_root_path ?? sample.eventRootPath ?? '')
+        setSavedSnapshot(
+          JSON.stringify({
+            rows: mappingRows,
+            transformRules: loadedRules,
+            eventArrayPath: baselineEventArrayPathRef.current,
+            eventRootPath: baselineEventRootPathRef.current,
+          }),
+        )
         setSaveError(null)
         setSaveSuccess(null)
       })
@@ -156,16 +200,8 @@ export function StreamMappingPage() {
     }
   }, [streamId, backendStreamId, emptyShell.enrichment, emptyShell.streamName])
 
-  const enrichmentRecord = useMemo(() => {
-    const rec: Record<string, unknown> = {}
-    for (const e of enrichment) {
-      if (e.field.trim()) rec[e.field] = e.value
-    }
-    return rec
-  }, [enrichment])
-
   const hasUnsavedChanges =
-    JSON.stringify({ rows, transformRules }) !== savedSnapshot
+    JSON.stringify({ rows, transformRules, eventArrayPath, eventRootPath }) !== savedSnapshot
 
   const workflowSnapshot = useMemo(
     () =>
@@ -178,11 +214,19 @@ export function StreamMappingPage() {
         routesOk: 0,
         hasConnector: true,
         hasApiTest: true,
-        hasMapping: rows.length > 0,
-        hasEnrichment: enrichment.length > 0,
+        hasMapping: rows.length > 0 || transformRules.some((rule) => rule.outputField.trim()) || Object.keys(preservedFieldMappings).length > 0,
+        hasEnrichment: enrichmentEnabled && Object.keys(rawEnrichment).length > 0,
         sourceType: mappingSourceType,
       }),
-    [streamId, rows.length, enrichment.length, mappingSourceType],
+    [
+      streamId,
+      rows.length,
+      transformRules,
+      preservedFieldMappings,
+      rawEnrichment,
+      enrichmentEnabled,
+      mappingSourceType,
+    ],
   )
 
   async function handleSaveMapping() {
@@ -193,24 +237,43 @@ export function StreamMappingPage() {
     const rowsWithMapping = rows.filter((r) => r.outputField.trim() !== '' && r.sourceJsonPath.trim() !== '')
     const rulesWithOutput = transformRules.filter((r) => r.outputField.trim())
     if (backendStreamId == null) {
-      setSavedSnapshot(JSON.stringify({ rows, transformRules }))
+      setSavedSnapshot(JSON.stringify({ rows, transformRules, eventArrayPath, eventRootPath }))
+      baselineRowsRef.current = rows.map((r) => ({ ...r }))
+      baselineTransformRef.current = transformRules.map((r) => ({ ...r }))
+      baselineEventArrayPathRef.current = eventArrayPath
+      baselineEventRootPathRef.current = eventRootPath
       setSaveSuccess('Saved locally (preview only) · numeric stream id required for API-backed save.')
       setIsSaving(false)
       return
     }
-    if (rowsWithMapping.length === 0 && rulesWithOutput.length === 0) {
+    if (
+      rowsWithMapping.length === 0 &&
+      rulesWithOutput.length === 0 &&
+      Object.keys(preservedFieldMappings).length === 0
+    ) {
       setSaveError('Add at least one Basic mapping row or Advanced Transform rule before saving.')
       setIsSaving(false)
       return
     }
     try {
       const simpleMappings = fieldMappingsFromRows(rowsWithMapping)
-      const fieldMappings = buildFieldMappingsWithTransformRules(simpleMappings, transformRules)
+      const fieldMappings = {
+        ...preservedFieldMappings,
+        ...buildFieldMappingsWithTransformRules(simpleMappings, transformRules),
+      }
       const result = await saveStreamMappingUiConfigStrict(backendStreamId, {
-        mapping: { field_mappings: fieldMappings, event_array_path: eventArrayPath || null, event_root_path: eventRootPath || null },
+        mapping: {
+          field_mappings: fieldMappings,
+          event_array_path: eventArrayPath || null,
+          event_root_path: eventRootPath || null,
+          raw_payload_mode: rawPayloadMode,
+        },
       })
-      setSavedSnapshot(JSON.stringify({ rows, transformRules }))
+      setSavedSnapshot(JSON.stringify({ rows, transformRules, eventArrayPath, eventRootPath }))
       baselineRowsRef.current = rows.map((r) => ({ ...r }))
+      baselineTransformRef.current = transformRules.map((r) => ({ ...r }))
+      baselineEventArrayPathRef.current = eventArrayPath
+      baselineEventRootPathRef.current = eventRootPath
       setSaveSuccess(`API-backed · ${result.message}`)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Mapping save failed.'
@@ -227,6 +290,8 @@ export function StreamMappingPage() {
     const br = baselineRowsRef.current
     setRows(br ? [...br] : [])
     setTransformRules(baselineTransformRef.current.map((r) => ({ ...r })))
+    setEventArrayPath(baselineEventArrayPathRef.current)
+    setEventRootPath(baselineEventRootPathRef.current)
   }, [])
 
   if (configLoading && backendStreamId != null) {
@@ -283,13 +348,15 @@ export function StreamMappingPage() {
         connectorLabel={connectorLabel}
         sourceType={mappingSourceType}
         initialRows={rows}
-        enrichment={enrichmentRecord}
+        enrichment={enrichmentEnabled ? rawEnrichment : {}}
+        enrichmentOverridePolicy={enrichmentOverridePolicy}
         eventArrayPath={eventArrayPath}
         eventRootPath={eventRootPath}
         onRowsChange={setRows}
         onEventArrayPathChange={setEventArrayPath}
         transformRules={transformRules}
         onTransformRulesChange={setTransformRules}
+        preservedFieldMappings={preservedFieldMappings}
       />
 
       <div className="grid grid-cols-12 gap-3">

@@ -42,6 +42,10 @@ vi.mock('../../api/gdcDestinations', () => ({
   fetchDestinationsList: vi.fn(async () => [{ id: 5, name: 'Dest A' }]),
 }))
 
+vi.mock('../../api/gdcAudit', () => ({
+  listAuditLogs: vi.fn(async () => ({ items: [], total: 0 })),
+}))
+
 vi.mock('../../api/gdcRouteTransform', () => ({
   fetchRouteMappingUiConfig: (...args: unknown[]) => fetchRouteMappingUiConfig(...args),
   fetchRouteEnrichmentUiConfig: (...args: unknown[]) => fetchRouteEnrichmentUiConfig(...args),
@@ -338,9 +342,11 @@ describe('RouteEditPage workspace capability visibility', () => {
     })
 
     await user.click(screen.getByTestId('route-edit-tab-transform'))
-    const inherit = await screen.findByTestId('route-transform-inherit')
-    expect(inherit).toBeDisabled()
-    fireEvent.click(inherit)
+    const inheritMapping = await screen.findByTestId('route-transform-inherit-mapping')
+    const inheritEnrichment = screen.getByTestId('route-transform-inherit-enrichment')
+    expect(inheritMapping).toBeDisabled()
+    expect(inheritEnrichment).toBeDisabled()
+    fireEvent.click(inheritMapping)
     expect(screen.queryByTestId('route-transform-save')).not.toBeInTheDocument()
 
     await user.click(screen.getByTestId('route-edit-tab-protection'))
@@ -398,12 +404,14 @@ describe('RouteEditPage workspace capability visibility', () => {
     expect(within(panel).getByRole('button', { name: 'Add Regex extract rule' })).toBeDisabled()
 
     await user.click(basic)
+    const changes = within(panel).getByRole('tab', { name: /^Changes/ })
     const transformed = within(panel).getByRole('tab', { name: 'Transformed' })
-    const tableView = within(panel).getByRole('button', { name: 'Table' })
+    expect(changes).toHaveAttribute('aria-selected', 'true')
     expect(transformed).toBeEnabled()
+    await user.click(transformed)
+    const tableView = within(panel).getByRole('button', { name: 'Table' })
     expect(tableView).toBeEnabled()
     expect(within(panel).getByRole('button', { name: 'JSON' })).toBeEnabled()
-    await user.click(transformed)
     await user.click(tableView)
     expect(within(panel).getByRole('button', { name: 'Add row' })).toBeDisabled()
     for (const button of within(panel).getAllByRole('button', { name: 'Edit row' })) {
@@ -483,7 +491,8 @@ describe('RouteEditPage workspace capability visibility', () => {
     expect(await screen.findByRole('button', { name: 'Disable' })).toBeEnabled()
     await user.click(screen.getByTestId('route-edit-tab-transform'))
     expect(await screen.findByTestId('route-transform-save')).toBeInTheDocument()
-    expect(screen.getByTestId('route-transform-inherit')).toBeEnabled()
+    expect(screen.getByTestId('route-transform-inherit-mapping')).toBeEnabled()
+    expect(screen.getByTestId('route-transform-inherit-enrichment')).toBeEnabled()
 
     await user.click(screen.getByTestId('route-edit-tab-delivery'))
     fireEvent.change(screen.getByRole('textbox', { name: /Route Name/i }), { target: { value: 'Route B' } })

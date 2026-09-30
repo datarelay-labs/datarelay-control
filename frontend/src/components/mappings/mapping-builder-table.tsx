@@ -30,6 +30,8 @@ type MappingBuilderTableProps = {
   onSearchChange: (q: string) => void
   /** Hide row edits while leaving mapping search usable. */
   readOnly?: boolean
+  selectedId?: string | null
+  onSelectId?: (id: string) => void
 }
 
 function inferType(value: unknown): MappingFieldType {
@@ -64,6 +66,8 @@ export function MappingBuilderTable({
   search,
   onSearchChange,
   readOnly = false,
+  selectedId = null,
+  onSelectId,
 }: MappingBuilderTableProps) {
   return (
     <div className="flex flex-col gap-2">
@@ -124,7 +128,13 @@ export function MappingBuilderTable({
                 const issues = rowIssues.get(row.id)
                 const sample = inlineSamples.get(row.id)
                 return (
-                  <tr key={row.id} className={opTr}>
+                  <tr
+                    key={row.id}
+                    className={cn(opTr, selectedId === row.id && 'bg-violet-50/80 dark:bg-violet-500/10')}
+                    data-testid={`mapping-row-${row.id}`}
+                    aria-selected={selectedId === row.id}
+                    onClick={() => onSelectId?.(row.id)}
+                  >
                     <td className={cn(opTd, 'whitespace-nowrap')}>
                       <div className="flex items-center gap-0.5">
                         <GripVertical className="h-3 w-3 text-slate-300" aria-hidden />

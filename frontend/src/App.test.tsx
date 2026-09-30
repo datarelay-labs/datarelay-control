@@ -801,7 +801,7 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     ).toBeInTheDocument()
     expect(screen.getAllByRole('heading', { name: 'Transform rules' }).length).toBeGreaterThanOrEqual(1)
     expect(screen.getByRole('button', { name: 'Add values' })).toBeInTheDocument()
-    expect(screen.getByText('Override Policy')).toBeInTheDocument()
+    expect(screen.getByText('Existing-field policy')).toBeInTheDocument()
   }, 20000)
 
   it('renders source test page at /streams/:streamId/api-test with HTTP-aware labels for malop-api', async () => {

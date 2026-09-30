@@ -266,6 +266,9 @@ def build_route_transform_effective(
         fallback_used=fallback_used,
         mapping_count=len(resolved.field_mappings or {}),
         enrichment_count=len(resolved.enrichment or {}),
+        effective_field_mappings=dict(resolved.field_mappings or {}),
+        effective_enrichment=dict(resolved.enrichment or {}),
+        effective_override_policy=str(resolved.override_policy or "KEEP_EXISTING"),
         processing_status=processing_status,  # type: ignore[arg-type]
         message="Route transform effective config resolved successfully",
     )

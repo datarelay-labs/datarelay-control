@@ -56,3 +56,4 @@ class RoutePolicyEffectiveResponse(BaseModel):
     fallback_used: bool
     rule_count: int
     processing_status: RoutePolicyProcessingStatus
+    latest_rule_updated_at: datetime | None = None

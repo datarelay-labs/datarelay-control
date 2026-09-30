@@ -9,6 +9,7 @@ import { WizardRouteProcessingList } from '../route-processing/wizard-route-proc
 import { ROUTE_PROCESSING_COPY } from '../route-processing/route-processing-labels'
 import { StepDataProtection } from './step-data-protection'
 import { StepMappingCombined } from './step-mapping-combined'
+import type { AdvancedTransformRuleDraft } from '../../../types/advancedTransform'
 import type { WizardEnrichmentRule } from './enrichment-rules-model'
 import { WizardDataProtectionDrawer } from './wizard-data-protection-drawer'
 import { WizardMappingOutputAside } from './wizard-mapping-output-aside'
@@ -29,6 +30,7 @@ export type StepRouteProcessingProps = {
   onChangeMappingMode: (mode: WizardState['mappingMode']) => void
   onChangeFullEventJsonata: (expression: string) => void
   onChangeFullEventRegexConfigJson: (json: string) => void
+  onChangeTransformRules?: (rules: AdvancedTransformRuleDraft[]) => void
   onChangeEnrichment: (rules: WizardEnrichmentRule[]) => void
   onChangeUnmappedFieldsPolicy?: (policy: WizardState['unmappedFieldsPolicy']) => void
   onChangeDataProtection: (patch: Partial<WizardDataProtectionState>) => void
@@ -48,6 +50,12 @@ function buildRouteScopedState(global: WizardState, draft: WizardRouteDraft): Wi
     fullEventRegexConfigJson: override.fullEventRegexConfigJson,
     transformRules: override.transformRules,
     enrichment: override.enrichment,
+    enrichmentEnabled: override.enrichmentEnabled ?? global.enrichmentEnabled,
+    enrichmentOverridePolicy:
+      override.enrichmentOverridePolicy ?? global.enrichmentOverridePolicy,
+    enrichmentPassthrough:
+      override.enrichmentAdvancedPassthrough ?? global.enrichmentPassthrough,
+    mappingRawPayloadMode: override.rawPayloadMode ?? global.mappingRawPayloadMode,
     unmappedFieldsPolicy: override.unmappedFieldsPolicy,
   }
 }
@@ -58,6 +66,7 @@ export function StepRouteProcessing({
   onChangeMappingMode,
   onChangeFullEventJsonata,
   onChangeFullEventRegexConfigJson,
+  onChangeTransformRules = () => undefined,
   onChangeEnrichment,
   onChangeUnmappedFieldsPolicy,
   onChangeDataProtection,
@@ -171,6 +180,7 @@ export function StepRouteProcessing({
               onChangeMappingMode={onChangeMappingMode}
               onChangeFullEventJsonata={onChangeFullEventJsonata}
               onChangeFullEventRegexConfigJson={onChangeFullEventRegexConfigJson}
+              onChangeTransformRules={onChangeTransformRules}
               onChangeEnrichment={onChangeEnrichment}
               onChangeUnmappedFieldsPolicy={onChangeUnmappedFieldsPolicy}
               onChangeDataProtection={onChangeDataProtection}

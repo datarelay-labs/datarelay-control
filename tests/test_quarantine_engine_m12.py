@@ -344,6 +344,40 @@ def test_release_success_updates_checkpoint(db_session: Session) -> None:
     assert released_logs
 
 
+def test_route_attributed_release_delivers_only_recorded_route(db_session: Session) -> None:
+    fixture = _seed_stream_runtime(
+        db_session,
+        failure_policies=["LOG_AND_CONTINUE", "LOG_AND_CONTINUE"],
+    )
+    stream_id = fixture["stream_id"]
+    route_id = fixture["route_ids"][0]
+    row = StreamQuarantineEvent(
+        stream_id=stream_id,
+        route_id=route_id,
+        quarantine_reason="policy:route-specific",
+        quarantine_source=QUARANTINE_SOURCE_POLICY,
+        status=QUARANTINE_STATUS_QUARANTINED,
+        protected_payload_json={"events": [{"id": "e-route", "message": "ok"}]},
+        metadata_json={"event_count": 1},
+    )
+    db_session.add(row)
+    db_session.commit()
+
+    from app.destinations.adapters.registry import DestinationAdapterRegistry
+
+    sender = _QuarantineWebhookSender()
+    registry = DestinationAdapterRegistry(webhook_sender=sender)
+    result = execute_quarantine_release(
+        db_session,
+        int(row.id),
+        destination_registry=registry,
+        released_by="op",
+    )
+    assert result["outcome"] == "released"
+    assert len(sender.calls) == 1
+    assert sender.calls[0]["config"]["url"] == "https://receiver-0.example.com/events"
+
+
 def test_release_failure_keeps_quarantined(db_session: Session) -> None:
     from app.routes.models import Route
 

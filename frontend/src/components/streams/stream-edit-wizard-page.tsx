@@ -442,6 +442,10 @@ export function StreamEditWizardPage() {
     if (!canMutateWorkspaceRef.current) return
     setState((prev) => (prev ? { ...prev, fullEventRegexConfigJson } : prev))
   }, [])
+  const setTransformRules = useCallback((transformRules: WizardState['transformRules']) => {
+    if (!canMutateWorkspaceRef.current) return
+    setState((prev) => (prev ? { ...prev, transformRules } : prev))
+  }, [])
   const setEnrichment = useCallback((enrichment: WizardState['enrichment']) => {
     if (!canMutateWorkspaceRef.current) return
     setState((prev) => (prev ? { ...prev, enrichment } : prev))
@@ -1039,6 +1043,7 @@ export function StreamEditWizardPage() {
             onChangeMappingMode={setMappingMode}
             onChangeFullEventJsonata={setFullEventJsonata}
             onChangeFullEventRegexConfigJson={setFullEventRegexConfigJson}
+            onChangeTransformRules={setTransformRules}
             onChangeEnrichment={setEnrichment}
             onChangeUnmappedFieldsPolicy={setUnmappedFieldsPolicy}
             onChangeDataProtection={setDataProtection}

@@ -55,6 +55,9 @@ export type RouteTransformEffective = {
   fallback_used: boolean
   mapping_count: number
   enrichment_count: number
+  effective_field_mappings: Record<string, unknown>
+  effective_enrichment: Record<string, unknown>
+  effective_override_policy: string
   processing_status: 'Inherited' | 'Overridden' | 'Mixed'
   message: string
 }

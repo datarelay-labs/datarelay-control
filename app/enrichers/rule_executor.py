@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.enrichers.expression_evaluator import ExpressionEvaluationError, evaluate_calculated_expression
+from app.mappers.full_event_mapping import FieldTransformRuleResult, evaluate_field_transform_rule
 from app.runtime.copy_utils import copy_event_dict, copy_json_value
 from app.enrichers.field_paths import get_field_value, has_field_value, is_valid_field_path, set_field_value
 from app.enrichers.lookup_tables import lookup_value
@@ -22,9 +23,9 @@ _OVERRIDE_KEEP_EXISTING = "KEEP_EXISTING"
 _OVERRIDE_FORCE = "OVERRIDE"
 _OVERRIDE_ERROR = "ERROR_ON_CONFLICT"
 
-_RESERVED_KEYS = frozenset({"__rules", "__computed"})
+_RESERVED_KEYS = frozenset({"__rules", "__computed", "advanced_fields"})
 
-_RULE_TYPES = frozenset({"static", "calculated", "lookup", "conditional", "normalize"})
+_RULE_TYPES = frozenset({"static", "calculated", "lookup", "conditional", "normalize", "jsonata", "regex_extract"})
 
 
 @dataclass
@@ -77,6 +78,31 @@ class EnrichmentBatchResult:
 class EnrichmentExecutionResult:
     event: dict[str, Any]
     warnings: list[EnrichmentWarning] = field(default_factory=list)
+    field_errors: list[EnrichmentFieldError] = field(default_factory=list)
+    transform_results: list[FieldTransformRuleResult] = field(default_factory=list)
+    duration_ms: int = 0
+
+
+@dataclass
+class EnrichmentTraceStepResult:
+    step_index: int
+    rule_type: str
+    target_field: str
+    executed: bool = True
+    blocked: bool = False
+    before_present: bool = False
+    before_value: Any = None
+    after_present: bool = False
+    after_value: Any = None
+    changed: bool = False
+    warnings: list[EnrichmentWarning] = field(default_factory=list)
+    error_message: str | None = None
+
+
+@dataclass
+class EnrichmentTraceExecutionResult:
+    event: dict[str, Any]
+    steps: list[EnrichmentTraceStepResult] = field(default_factory=list)
     duration_ms: int = 0
 
 
@@ -134,7 +160,7 @@ def _normalize_rule_dict(
     *,
     default_target: str | None = None,
 ) -> dict[str, Any] | None:
-    rule_type = str(rule.get("type") or "").strip().lower()
+    rule_type = str(rule.get("type") or rule.get("mode") or "").strip().lower()
     if rule_type not in _RULE_TYPES:
         return None
     target = str(
@@ -192,6 +218,26 @@ def _iter_advanced_rules(enrichment: dict[str, Any]) -> list[dict[str, Any]]:
                     "enabled": True,
                 }
             )
+
+    raw_advanced = enrichment.get("advanced_fields")
+    if isinstance(raw_advanced, list):
+        for item in raw_advanced:
+            if not isinstance(item, dict):
+                continue
+            merged = dict(item)
+            mode = str(merged.get("mode") or "").strip().lower()
+            if mode not in {"jsonata", "regex_extract"}:
+                continue
+            merged["type"] = mode
+            merged["target_field"] = str(
+                merged.get("target_field")
+                or merged.get("output_field")
+                or merged.get("field")
+                or ""
+            ).strip()
+            normalized = _normalize_rule_dict(merged)
+            if normalized:
+                rules.append(normalized)
 
     return rules
 
@@ -498,8 +544,10 @@ def _apply_advanced_rule(
     rule: dict[str, Any],
     policy: str,
     warnings: list[EnrichmentWarning],
+    field_errors: list[EnrichmentFieldError] | None = None,
+    transform_results: list[FieldTransformRuleResult] | None = None,
 ) -> None:
-    rule_type = str(rule.get("type") or "")
+    rule_type = str(rule.get("type") or rule.get("mode") or "")
     if rule_type == "calculated":
         _apply_calculated(event, rule, policy, warnings)
     elif rule_type == "lookup":
@@ -508,6 +556,109 @@ def _apply_advanced_rule(
         _apply_conditional(event, rule, policy, warnings)
     elif rule_type == "normalize":
         _apply_normalize(event, rule, policy, warnings)
+    elif rule_type in {"jsonata", "regex_extract"}:
+        rule_id = str(rule.get("rule_id") or rule.get("id") or "").strip() or None
+        target = str(
+            rule.get("target_field")
+            or rule.get("output_field")
+            or rule.get("field")
+            or ""
+        ).strip()
+        if not target:
+            failure = FieldTransformRuleResult(
+                output_field="",
+                mode=rule_type,
+                rule_id=rule_id,
+                success=False,
+                error_code="TRANSFORM_OUTPUT_FIELD_REQUIRED",
+                error_message="Advanced transform output field is required.",
+            )
+            if transform_results is not None:
+                transform_results.append(failure)
+            if field_errors is not None:
+                field_errors.append(
+                    EnrichmentFieldError(
+                        rule_id=rule_id,
+                        output_field="",
+                        error_code=failure.error_code or "TRANSFORM_OUTPUT_FIELD_REQUIRED",
+                        error_message=failure.error_message or "Advanced transform output field is required.",
+                    )
+                )
+            return
+        if not _should_apply(target, event, policy):
+            if transform_results is not None:
+                existing_value = (
+                    get_field_value(event, target)
+                    if has_field_value(event, target)
+                    else None
+                )
+                transform_results.append(
+                    FieldTransformRuleResult(
+                        output_field=target,
+                        mode=rule_type,
+                        rule_id=rule_id,
+                        success=True,
+                        value=copy_json_value(existing_value),
+                        warning_message=f"{target}: existing value kept by override policy.",
+                        executed=False,
+                        blocked=True,
+                    )
+                )
+            return
+
+        result = evaluate_field_transform_rule(event, rule)
+        if not result.success:
+            if transform_results is not None:
+                transform_results.append(result)
+            if field_errors is not None:
+                field_errors.append(
+                    EnrichmentFieldError(
+                        rule_id=result.rule_id,
+                        output_field=result.output_field,
+                        error_code=result.error_code or "ADVANCED_TRANSFORM_FAILED",
+                        error_message=result.error_message or "Advanced transform failed",
+                    )
+                )
+            return
+
+        if not set_field_value(event, target, result.value):
+            write_failure = FieldTransformRuleResult(
+                output_field=target,
+                mode=result.mode,
+                rule_id=result.rule_id,
+                success=False,
+                value=copy_json_value(result.value),
+                recovered_via_default=result.recovered_via_default,
+                warning_message=result.warning_message,
+                error_code="INVALID_FIELD_PATH",
+                error_message=f"Could not write advanced transform field {target!r}",
+                executed=True,
+                blocked=False,
+            )
+            if transform_results is not None:
+                transform_results.append(write_failure)
+            if field_errors is not None:
+                field_errors.append(
+                    EnrichmentFieldError(
+                        rule_id=result.rule_id,
+                        output_field=target,
+                        error_code=write_failure.error_code or "INVALID_FIELD_PATH",
+                        error_message=write_failure.error_message or f"Could not write advanced transform field {target!r}",
+                    )
+                )
+            return
+
+        if transform_results is not None:
+            transform_results.append(result)
+        if result.recovered_via_default:
+            warnings.append(
+                EnrichmentWarning(
+                    code="transform_default_used",
+                    message=result.warning_message or f"{target}: used default value",
+                    rule_type=rule_type,
+                    target_field=target,
+                )
+            )
     else:
         warning = EnrichmentWarning(
             code="invalid_rule_definition",
@@ -516,6 +667,131 @@ def _apply_advanced_rule(
             target_field=str(rule.get("target_field") or ""),
         )
         warnings.append(warning)
+
+
+def _trace_value(
+    event: dict[str, Any],
+    target_field: str,
+) -> tuple[bool, Any]:
+    present = has_field_value(event, target_field)
+    value = get_field_value(event, target_field) if present else None
+    return present, copy_json_value(value)
+
+
+def execute_enrichment_trace(
+    event: dict[str, Any],
+    enrichment: dict[str, Any],
+    override_policy: str = _OVERRIDE_KEEP_EXISTING,
+    *,
+    through_step: int | None = None,
+) -> EnrichmentTraceExecutionResult:
+    """Trace the existing enrichment engine without changing runtime semantics.
+
+    Runtime order is preserved exactly: top-level static fields first, followed by
+    normalized advanced rules. This is a read-only preview/debug helper.
+    """
+
+    started = time.monotonic()
+    policy = _validate_policy(override_policy)
+    if not isinstance(event, dict):
+        raise EnrichmentError(f"execute_enrichment expects dict event, got {type(event).__name__}")
+
+    current = copy_event_dict(event)
+    steps: list[EnrichmentTraceStepResult] = []
+    plan: list[tuple[str, str, Any]] = []
+
+    for target, value in _split_static_fields(enrichment).items():
+        plan.append(("static", str(target), value))
+    for rule in _iter_advanced_rules(enrichment):
+        plan.append((str(rule.get("type") or ""), str(rule.get("target_field") or ""), rule))
+
+    failed = False
+    for step_index, (rule_type, target_field, payload) in enumerate(plan):
+        if through_step is not None and step_index > through_step:
+            break
+
+        if failed:
+            steps.append(
+                EnrichmentTraceStepResult(
+                    step_index=step_index,
+                    rule_type=rule_type,
+                    target_field=target_field,
+                    executed=False,
+                    blocked=True,
+                )
+            )
+            continue
+
+        before_present, before_value = _trace_value(current, target_field)
+        warnings: list[EnrichmentWarning] = []
+        field_errors: list[EnrichmentFieldError] = []
+        transform_results: list[FieldTransformRuleResult] = []
+        error_message: str | None = None
+
+        try:
+            if rule_type == "static":
+                current = _apply_static_fields(current, {target_field: payload}, policy)
+            else:
+                _apply_advanced_rule(
+                    current,
+                    payload,
+                    policy,
+                    warnings,
+                    field_errors,
+                    transform_results,
+                )
+        except EnrichmentError as exc:
+            error_message = str(exc)
+            failed = True
+        if error_message is None and field_errors:
+            error_message = field_errors[0].error_message
+            failed = True
+
+        after_present, after_value = _trace_value(current, target_field)
+        transform_result = transform_results[-1] if transform_results else None
+        inferred_keep_existing_block = (
+            transform_result is None
+            and policy == _OVERRIDE_KEEP_EXISTING
+            and before_present
+            and error_message is None
+            and not field_errors
+            and not warnings
+            and before_present == after_present
+            and before_value == after_value
+        )
+        blocked = (
+            transform_result.blocked
+            if transform_result is not None
+            else inferred_keep_existing_block
+        )
+        executed = (
+            transform_result.executed
+            if transform_result is not None
+            else not blocked
+        )
+        steps.append(
+            EnrichmentTraceStepResult(
+                step_index=step_index,
+                rule_type=rule_type,
+                target_field=target_field,
+                executed=executed,
+                blocked=blocked,
+                before_present=before_present,
+                before_value=before_value,
+                after_present=after_present,
+                after_value=after_value,
+                changed=(before_present != after_present or before_value != after_value),
+                warnings=warnings,
+                error_message=error_message,
+            )
+        )
+
+    safe_event = sanitize_delivery_event(current)
+    return EnrichmentTraceExecutionResult(
+        event=safe_event,
+        steps=steps,
+        duration_ms=max(0, int((time.monotonic() - started) * 1000)),
+    )
 
 
 def execute_enrichment(
@@ -539,6 +815,8 @@ def execute_enrichment(
         )
 
     warnings: list[EnrichmentWarning] = []
+    field_errors: list[EnrichmentFieldError] = []
+    transform_results: list[FieldTransformRuleResult] = []
     static_fields = _split_static_fields(enrichment)
     advanced_rules = _iter_advanced_rules(enrichment)
 
@@ -549,7 +827,14 @@ def execute_enrichment(
 
     for rule in advanced_rules:
         try:
-            _apply_advanced_rule(result_event, rule, policy, warnings)
+            _apply_advanced_rule(
+                result_event,
+                rule,
+                policy,
+                warnings,
+                field_errors,
+                transform_results,
+            )
         except EnrichmentError:
             raise
 
@@ -558,7 +843,13 @@ def execute_enrichment(
     if emit_logs:
         for w in warnings:
             _log_warning(w)
-    return EnrichmentExecutionResult(event=safe_event, warnings=warnings, duration_ms=duration_ms)
+    return EnrichmentExecutionResult(
+        event=safe_event,
+        warnings=warnings,
+        field_errors=field_errors,
+        transform_results=transform_results,
+        duration_ms=duration_ms,
+    )
 
 
 def execute_enrichments(
@@ -584,10 +875,12 @@ def execute_enrichments_batch(
 
     out_events: list[dict[str, Any]] = []
     all_warnings: list[EnrichmentWarning] = []
+    all_field_errors: list[EnrichmentFieldError] = []
     for ev in events:
         result = execute_enrichment(ev, enrichment, override_policy=override_policy, emit_logs=False)
         out_events.append(result.event)
         all_warnings.extend(result.warnings)
+        all_field_errors.extend(result.field_errors)
 
     deduped = _dedupe_warnings(all_warnings)
     _emit_batch_warnings(deduped)
@@ -607,6 +900,7 @@ def execute_enrichments_batch(
     return EnrichmentBatchResult(
         events=out_events,
         warnings=deduped,
+        field_errors=all_field_errors,
         duration_ms=duration_ms,
         warning_count=len(deduped),
     )

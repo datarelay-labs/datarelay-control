@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { fetchRouteFailuresForRoute, fetchRetriesSummary, type AnalyticsWindowToken } from '../../api/gdcRuntimeAnalytics'
 import { fetchRouteHealthDetail } from '../../api/gdcRuntimeHealth'
+import { searchRuntimeDeliveryLogs } from '../../api/gdcRuntime'
 import type { RouteFailuresScopedResponse, RouteHealthDetailResponse } from '../../api/types/gdcApi'
 import { logsExplorerPath, runtimeAnalyticsPath, streamRuntimePath } from '../../config/nav-paths'
 import { FailureRateIndicator } from '../runtime/operational-health/failure-rate-indicator'
@@ -24,6 +25,7 @@ export function RouteDetailHealthPanel({
   const [detail, setDetail] = useState<RouteHealthDetailResponse | null>(null)
   const [scopedFailures, setScopedFailures] = useState<RouteFailuresScopedResponse | null>(null)
   const [retries, setRetries] = useState<Awaited<ReturnType<typeof fetchRetriesSummary>>>(null)
+  const [policyDisposition, setPolicyDisposition] = useState<{ stage: string; message: string; createdAt: string } | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -31,15 +33,22 @@ export function RouteDetailHealthPanel({
     setError(null)
     ;(async () => {
       try {
-        const [h, f, r] = await Promise.all([
+        const [h, f, r, dispositions] = await Promise.all([
           fetchRouteHealthDetail(routeId, { window: DEFAULT_WINDOW }),
           fetchRouteFailuresForRoute(routeId, { window: DEFAULT_WINDOW }),
           fetchRetriesSummary({ route_id: routeId, window: DEFAULT_WINDOW }),
+          Promise.all([
+            searchRuntimeDeliveryLogs({ route_id: routeId, stage: 'policy_blocked', window: DEFAULT_WINDOW, limit: 1 }),
+            searchRuntimeDeliveryLogs({ route_id: routeId, stage: 'policy_review_required', window: DEFAULT_WINDOW, limit: 1 }),
+            searchRuntimeDeliveryLogs({ route_id: routeId, stage: 'policy_quarantine', window: DEFAULT_WINDOW, limit: 1 }),
+          ]),
         ])
         if (cancelled) return
         setDetail(h)
         setScopedFailures(f)
         setRetries(r)
+        const latestPolicy = dispositions.flatMap((response) => response?.logs ?? []).sort((a, b) => b.created_at.localeCompare(a.created_at))[0]
+        setPolicyDisposition(latestPolicy ? { stage: latestPolicy.stage, message: latestPolicy.message, createdAt: latestPolicy.created_at } : null)
         if (h == null && f == null) {
           setError('Health API unavailable for this route.')
         }
@@ -121,6 +130,14 @@ export function RouteDetailHealthPanel({
         </p>
       ) : detail?.score ? (
         <HealthScoreCard score={detail.score} dense />
+      ) : null}
+
+      {policyDisposition ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-950 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-100" data-testid="route-policy-disposition-signal">
+          <span className="font-semibold">Recent policy disposition:</span> {policyDisposition.stage.replaceAll('_', ' ')}
+          <span className="text-amber-700/80 dark:text-amber-200/70"> · {policyDisposition.createdAt.slice(0, 19).replace('T', ' ')}</span>
+          <span className="mt-0.5 block text-[10px]">{policyDisposition.message}</span>
+        </div>
       ) : null}
 
       <div className="grid gap-3 md:grid-cols-2">
