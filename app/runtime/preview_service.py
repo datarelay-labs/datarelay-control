@@ -2342,6 +2342,10 @@ def run_enrichment_trace_preview(
                 summary.executed_count += 1
             if step.changed:
                 summary.changed_count += 1
+            elif step.executed:
+                summary.unchanged_count += 1
+            if step.executed and not step.before_present:
+                summary.missing_input_count += 1
             summary.warning_count += len(step.warnings)
             if step.error_message:
                 summary.error_count += 1

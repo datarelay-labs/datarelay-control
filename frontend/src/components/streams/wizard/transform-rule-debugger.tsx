@@ -203,7 +203,8 @@ export function TransformRuleDebugger({
                     <th className="px-2.5 py-2 font-semibold">Runtime order</th>
                     <th className="px-2.5 py-2 font-semibold">Rule</th>
                     <th className="px-2.5 py-2 font-semibold">Executed</th>
-                    <th className="px-2.5 py-2 font-semibold">Changed</th>
+                    <th className="px-2.5 py-2 font-semibold">Applied</th>
+                    <th className="px-2.5 py-2 font-semibold">Missing input</th>
                     <th className="px-2.5 py-2 font-semibold">Warnings</th>
                     <th className="px-2.5 py-2 font-semibold">Errors</th>
                     <th className="px-2.5 py-2 font-semibold">Blocked</th>
@@ -219,7 +220,13 @@ export function TransformRuleDebugger({
                         <span className="block text-[10px] capitalize text-slate-500 dark:text-gdc-muted">{summary.rule_type}</span>
                       </td>
                       <td className="px-2.5 py-2 tabular-nums">{summary.executed_count}/{result.preview_event_count}</td>
-                      <td className={cn('px-2.5 py-2 font-semibold tabular-nums', statusTone(summary))}>{summary.changed_count}</td>
+                      <td className={cn('px-2.5 py-2 font-semibold tabular-nums', statusTone(summary))}>
+                        {summary.changed_count}/{result.preview_event_count}
+                        {summary.unchanged_count > 0 ? <span className="ml-1 text-[9px] font-normal text-slate-400">({summary.unchanged_count} unchanged)</span> : null}
+                      </td>
+                      <td className={cn('px-2.5 py-2 tabular-nums', summary.missing_input_count > 0 && 'text-amber-700 dark:text-amber-300')}>
+                        {summary.missing_input_count}
+                      </td>
                       <td className={cn('px-2.5 py-2 tabular-nums', summary.warning_count > 0 && 'text-amber-700 dark:text-amber-300')}>
                         {summary.warning_count}
                       </td>

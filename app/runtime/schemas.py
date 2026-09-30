@@ -2104,6 +2104,8 @@ class EnrichmentTraceRuleSummaryItem(BaseModel):
     target_field: str
     executed_count: int = 0
     changed_count: int = 0
+    unchanged_count: int = 0
+    missing_input_count: int = 0
     warning_count: int = 0
     error_count: int = 0
     blocked_count: int = 0

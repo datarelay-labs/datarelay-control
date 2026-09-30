@@ -391,6 +391,8 @@ export type EnrichmentTraceRuleSummary = {
   target_field: string
   executed_count: number
   changed_count: number
+  unchanged_count: number
+  missing_input_count: number
   warning_count: number
   error_count: number
   blocked_count: number
