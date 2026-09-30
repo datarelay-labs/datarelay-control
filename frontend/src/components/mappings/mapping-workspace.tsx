@@ -150,6 +150,7 @@ export function MappingWorkspace({
     rows,
     enrichment,
     enabled: Boolean(sample?.ok && sample.rawPayload != null),
+    maxEvents: 20,
   })
 
   const { warnings: localWarnings, rowIssues: baseRowIssues } = useMemo(() => validateMappingRowsLocal(rows), [rows])
@@ -446,11 +447,13 @@ export function MappingWorkspace({
           <FinalEventPreviewPanel
             preview={preview}
             rawSampleEvent={sampleEvent}
+            rawSampleEvents={sample?.extractedEvents ?? []}
+            rows={rows}
             eventCount={sample?.extractedEvents.length ?? preview.mapped?.preview_event_count ?? 1}
             sampleEventIndex={sampleEventIndex}
             onSampleIndexChange={setSampleEventIndex}
             onRefresh={preview.refresh}
-            localWarnings={mergedWarnings}
+            warnings={mergedWarnings}
           />
         </div>
       </div>
