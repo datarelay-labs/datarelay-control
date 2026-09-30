@@ -14,9 +14,15 @@ function deltaLabel(status: RouteProcessingStatus | null): string {
 export function RouteEffectiveProcessingSummary({
   statuses,
   pending,
+  latestChangeAt,
+  routeUpdatedAt,
+  destinationUpdatedAt,
 }: {
   statuses: EffectiveStatuses | undefined
   pending: boolean
+  latestChangeAt?: Partial<Record<'protection' | 'classification' | 'policy', string | null>>
+  routeUpdatedAt?: string | null
+  destinationUpdatedAt?: string | null
 }) {
   return (
     <section
@@ -27,7 +33,7 @@ export function RouteEffectiveProcessingSummary({
         <div>
           <p className="text-[11px] font-semibold text-slate-900 dark:text-slate-100">Effective processing</p>
           <p className="mt-0.5 text-[10px] text-slate-500 dark:text-gdc-muted">
-            Runtime-resolved shared + route processing for this route. This is effective state, not draft configuration.
+            Runtime-resolved shared + route processing for this route. Change markers help correlate configuration timing with health; they do not claim causation.
           </p>
         </div>
         <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-500 dark:border-gdc-border dark:bg-gdc-card dark:text-gdc-muted">
@@ -58,10 +64,21 @@ export function RouteEffectiveProcessingSummary({
               <p className="mt-1 text-[10px] text-slate-500 dark:text-gdc-muted">
                 {pending ? 'Resolving effective state…' : deltaLabel(status)}
               </p>
+              {concern !== 'transform' && latestChangeAt?.[concern] ? (
+                <p className="mt-1 text-[9px] text-slate-400" data-testid={`route-effective-change-${concern}`}>
+                  Rule change: {new Date(latestChangeAt[concern] as string).toLocaleString()}
+                </p>
+              ) : null}
             </div>
           )
         })}
       </div>
+      {(routeUpdatedAt || destinationUpdatedAt) ? (
+        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[9px] text-slate-400" data-testid="route-effective-config-markers">
+          {routeUpdatedAt ? <span>Route config: {new Date(routeUpdatedAt).toLocaleString()}</span> : null}
+          {destinationUpdatedAt ? <span>Destination config: {new Date(destinationUpdatedAt).toLocaleString()}</span> : null}
+        </div>
+      ) : null}
       <p className="mt-2 text-[10px] text-slate-500 dark:text-gdc-muted">
         Open Transform below to inspect the effective Final Event preview using the existing runtime preview path.
       </p>

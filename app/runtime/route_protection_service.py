@@ -51,6 +51,9 @@ def build_route_protection_effective(
         ),
     )
 
+    effective_rows = [*route_rule_rows, *stream_rule_rows]
+    latest_rule_updated_at = max((getattr(row, 'updated_at', None) for row in effective_rows if getattr(row, 'updated_at', None) is not None), default=None)
+
     return RouteProtectionEffectiveResponse(
         route_id=route_id,
         stream_id=stream_id,
@@ -58,6 +61,7 @@ def build_route_protection_effective(
         fallback_used=fallback_used,
         rule_count=len(config.rules),
         processing_status=processing_status,  # type: ignore[arg-type]
+        latest_rule_updated_at=latest_rule_updated_at,
         message="Route protection effective config resolved successfully",
     )
 
