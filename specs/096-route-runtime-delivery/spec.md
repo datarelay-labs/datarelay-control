@@ -845,30 +845,30 @@ Clients ignoring new fields continue to function. Clients parsing `stage_timelin
 
 Implementation-ready checklist:
 
-- [ ] **AC-1** `RouteDeliveryResult` typed model with all §6.1 fields (`batch_id`, `run_id`, `skip_reason`, `quarantine_event_id` included).
-- [ ] **AC-2** `DeliveryDisposition` enum with four values per §5.1.
-- [ ] **AC-3** `route_delivery_stage()` immediately after `route_policy_stage()`, before adapter send (§4.5).
-- [ ] **AC-4** Allow + Audit → adapter send attempted; `delivery_disposition=delivered`, `delivery_success=true` on ACK.
-- [ ] **AC-4b** Send failure → `delivery_disposition=delivered`, `delivery_success=false` (§7.4).
-- [ ] **AC-5** Block → disposition only; `blocked`; `delivery_disposition` audit row; no adapter call.
-- [ ] **AC-6** Quarantine → disposition only; `quarantined`; `delivery_disposition` audit row; `quarantine_event_id` when available.
-- [ ] **AC-7** Require Review → disposition only; `blocked` on route path per §20; `delivery_disposition` audit row; no adapter call.
-- [ ] **AC-8** `route_delivery_*` metrics on `RouteProcessingMetrics` per §8.1.
-- [ ] **AC-9** Batch run summary includes delivery metrics.
-- [ ] **AC-10** `delivery_logs` include `route_id`, `batch_id`, `policy_action`, `decision_reason`, `delivery_disposition`, `skip_reason` (when applicable).
-- [ ] **AC-11** Policy stage not re-run in delivery stage.
-- [ ] **AC-12** Existing fan-out send body and adapters reused via `send_fn` — no parallel send engine; no double-send.
-- [ ] **AC-12b** Policy-blocked routes never rely on `route_skip` / `no_route_payload` alone — disposition audit required (§7.3).
-- [ ] **AC-13** Checkpoint advances only on successful delivery per §11.
-- [ ] **AC-14** Policy-blocked routes do not advance checkpoint.
-- [ ] **AC-15** `runtime_route_snapshot` updater receives disposition signals (directly or via logs).
-- [ ] **AC-16** Route health distinguishes policy warning vs send failure per §9.
-- [ ] **AC-17** Operator can determine why route did not deliver per §10.2.
-- [ ] **AC-18** Feature flag OFF — zero behavior change (regression tests).
-- [ ] **AC-19** Feature flag ON — full disposition path active.
-- [ ] **AC-20** No new delivery engine, runtime, or runner class.
-- [ ] **AC-21** No API breaking changes.
-- [ ] **AC-22** No UI breaking changes (additive badges/fields only).
+- [x] **AC-1** `RouteDeliveryResult` typed model with all §6.1 fields (`batch_id`, `run_id`, `skip_reason`, `quarantine_event_id` included).
+- [x] **AC-2** `DeliveryDisposition` enum with four values per §5.1.
+- [x] **AC-3** `route_delivery_stage()` immediately after `route_policy_stage()`, before adapter send (§4.5).
+- [x] **AC-4** Allow + Audit → adapter send attempted; `delivery_disposition=delivered`, `delivery_success=true` on ACK.
+- [x] **AC-4b** Send failure → `delivery_disposition=delivered`, `delivery_success=false` (§7.4).
+- [x] **AC-5** Block → disposition only; `blocked`; `delivery_disposition` audit row; no adapter call.
+- [x] **AC-6** Quarantine → disposition only; `quarantined`; `delivery_disposition` audit row; `quarantine_event_id` when available.
+- [x] **AC-7** Require Review → disposition only; `blocked` on route path per §20; `delivery_disposition` audit row; no adapter call.
+- [x] **AC-8** `route_delivery_*` metrics on `RouteProcessingMetrics` per §8.1.
+- [x] **AC-9** Batch run summary includes delivery metrics.
+- [x] **AC-10** `delivery_logs` include `route_id`, `batch_id`, `policy_action`, `decision_reason`, `delivery_disposition`, `skip_reason` (when applicable).
+- [x] **AC-11** Policy stage not re-run in delivery stage.
+- [x] **AC-12** Existing fan-out send body and adapters reused via `send_fn` — no parallel send engine; no double-send.
+- [x] **AC-12b** Policy-blocked routes never rely on `route_skip` / `no_route_payload` alone — disposition audit required (§7.3).
+- [x] **AC-13** Checkpoint advances only on successful delivery per §11.
+- [x] **AC-14** Policy-blocked routes do not advance checkpoint.
+- [x] **AC-15** `runtime_route_snapshot` updater receives disposition signals (directly or via logs).
+- [x] **AC-16** Route health distinguishes policy warning vs send failure per §9.
+- [x] **AC-17** Operator can determine why route did not deliver per §10.2.
+- [x] **AC-18 (historical/superseded)** Feature flag OFF was retired by the current Route-ON-only product contract; explicit OFF is rejected.
+- [x] **AC-19** Feature flag ON — full disposition path active.
+- [x] **AC-20** No new delivery engine, runtime, or runner class.
+- [x] **AC-21** No API breaking changes.
+- [x] **AC-22** No UI breaking changes (additive badges/fields only).
 - [ ] **AC-23** All existing tests pass.
 - [ ] **AC-24** M13.6 test suite per §18 passes.
 
