@@ -1542,17 +1542,13 @@ async function main(): Promise<number> {
         if (dashSignal.visible) break
         await page.waitForTimeout(2500)
       }
-      await streams.openList()
-      await streams.search(primaryHttpName)
-      await streams.expandVisibleStreamGroups()
+      const openedAffectedStream = await streams.openStreamByName(primaryHttpName)
       const shortStream = primaryHttpName.length > 24 ? primaryHttpName.slice(-24) : primaryHttpName
-      const streamRow = page.locator(`[data-testid^="stream-group-child-row-"]`, { hasText: shortStream }).first()
-      await streamRow.waitFor({ timeout: TIMEOUTS.actionMs }).catch(() => null)
       const streamOnDashOrList =
-        (await streamRow.count()) > 0 ||
+        openedAffectedStream ||
         dashSignal.issuesText.includes(primaryHttpName) ||
         dashSignal.issuesText.includes(shortStream)
-      await streams.openRuntime(primaryHttp)
+      if (!openedAffectedStream) await streams.openRuntime(primaryHttp)
       const runtimeText = (await page.locator('main').first().innerText().catch(() => '')) || ''
       await connectors.openDetail(resources.connectors.HTTP)
       const connectorText = (await page.locator('h2, h3').first().innerText().catch(() => '')) || ''
