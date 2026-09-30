@@ -691,6 +691,12 @@ export type RuntimeTimelineItem = {
   route_id: number | null
   destination_id: number | null
   run_id: string | null
+  batch_id?: string | null
+  policy_action?: string | null
+  decision_reason?: string | null
+  delivery_disposition?: string | null
+  skip_reason?: string | null
+  quarantine_event_id?: number | null
   stage: string
   level: string
   status: string | null

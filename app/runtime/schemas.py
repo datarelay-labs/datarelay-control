@@ -596,6 +596,12 @@ class RuntimeLogSearchItem(BaseModel):
     route_id: int | None = None
     destination_id: int | None = None
     run_id: str | None = None
+    batch_id: str | None = None
+    policy_action: str | None = None
+    decision_reason: str | None = None
+    delivery_disposition: str | None = None
+    skip_reason: str | None = None
+    quarantine_event_id: int | None = None
     stage: str
     level: str
     status: str | None = None

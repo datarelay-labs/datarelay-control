@@ -2889,6 +2889,12 @@ class StreamRunner(BaseRunner):
             latency_ms=latency_ms,
             error_code=error_code,
             run_id=str(run_id_raw) if run_id_raw else None,
+            batch_id=str(payload.get("batch_id")) if payload.get("batch_id") is not None else None,
+            policy_action=str(payload.get("policy_action")) if payload.get("policy_action") is not None else None,
+            decision_reason=str(payload.get("decision_reason")) if payload.get("decision_reason") is not None else None,
+            delivery_disposition=str(payload.get("delivery_disposition")) if payload.get("delivery_disposition") is not None else None,
+            skip_reason=str(payload.get("skip_reason")) if payload.get("skip_reason") is not None else None,
+            quarantine_event_id=int(payload.get("quarantine_event_id")) if payload.get("quarantine_event_id") is not None else None,
         )
 
     def _persist_delivery_log(self, payload: dict[str, Any]) -> None:
