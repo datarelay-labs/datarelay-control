@@ -37,7 +37,7 @@ import {
 import {
   fetchStreamMappingUiConfig,
 } from '../../api/gdcRuntime'
-import { fetchConnectorsList } from '../../api/gdcConnectors'
+import { fetchConnectorsList, type ConnectorRead } from '../../api/gdcConnectors'
 import { fetchStreamsListResult, GDC_AUTH_REQUIRED_MESSAGE } from '../../api/gdcStreams'
 import { clearOperationalSnapshotCache, getOperationalSnapshot, type OperationalSnapshotResponse } from '../../api/operationalSnapshot'
 import { destinationLabelsByStreamIdFromSnapshot } from '../../lib/streams-console-destination-labels'
@@ -98,6 +98,8 @@ import { readStreamsConsoleSnapshot, writeStreamsConsoleSnapshot, clearStreamsCo
 import { RuntimeFixtureModeBanner } from '../runtime/runtime-fixture-mode-banner'
 import { useMountAbortController } from '../../hooks/use-mount-abort-signal'
 import { isRequestAborted } from '../../lib/request-abort'
+import { deriveStreamHealthMatrix } from '../dashboard/dashboard-charter-metrics'
+import { StreamHealthMatrix } from '../dashboard/dashboard-visual-panels'
 
 const STREAMS_CONNECTOR_ENRICH_CONCURRENCY = 12
 
@@ -132,6 +134,7 @@ async function enrichStreamConsoleRows(
   fetchOpts: { signal?: AbortSignal },
   setters: {
     setDisplayRows: Dispatch<SetStateAction<StreamConsoleRow[]>>
+    setConnectors: Dispatch<SetStateAction<ConnectorRead[]>>
   },
 ): Promise<void> {
   const isCurrent = () => !isCancelled() && loadGenRef.current === gen
@@ -149,6 +152,7 @@ async function enrichStreamConsoleRows(
     fetchConnectorsList(fetchOpts),
     getOperationalSnapshot(),
   ])
+  setters.setConnectors(connectorsList ?? [])
   for (const c of connectorsList ?? []) {
     if (!connectorIds.includes(c.id)) continue
     const nm = (c.name ?? '').trim()
@@ -192,6 +196,7 @@ export async function enrichMappingUiForStreamIds(
   fetchOpts: { signal?: AbortSignal },
   setters: {
     setDisplayRows: Dispatch<SetStateAction<StreamConsoleRow[]>>
+    setConnectors: Dispatch<SetStateAction<ConnectorRead[]>>
     setWorkflowExtrasByStreamId: Dispatch<SetStateAction<Record<string, Partial<StreamWorkflowInput>>>>
   },
 ): Promise<number[]> {
@@ -445,6 +450,7 @@ export function StreamsConsole() {
   const mappingUiFetchedRef = useRef<Set<number>>(new Set())
   const hasLoadedOnceRef = useRef((cachedSnapshot?.displayRows.length ?? 0) > 0)
   const [operationalSnapshot, setOperationalSnapshot] = useState<OperationalSnapshotResponse | null>(null)
+  const [connectors, setConnectors] = useState<ConnectorRead[]>([])
   const [selectedStreamRow, setSelectedStreamRow] = useState<StreamConsoleRow | null>(null)
   const [panelTopOffset, setPanelTopOffset] = useState(0)
   const outerContainerRef = useRef<HTMLDivElement>(null)
@@ -586,6 +592,7 @@ export function StreamsConsole() {
         mappingUiFetchedRef.current = new Set()
         void enrichStreamConsoleRows(streamList, gen, loadGenRef, () => cancelled, timeRange, snapshot_id, heavyFetchOpts, {
           setDisplayRows,
+          setConnectors,
         })
       } catch (e) {
         if (isRequestAborted(e)) return
@@ -732,6 +739,9 @@ export function StreamsConsole() {
     filtersActive,
   ])
 
+  const deliveryHealthMatrix = useMemo(() => deriveStreamHealthMatrix(operationalSnapshot, connectors), [operationalSnapshot, connectors])
+  const showDeliveryHealth = new URLSearchParams(location.search).get('view') === 'delivery-health'
+
   const initialLoading = streamsLoading && displayRows.length === 0
 
   return (
@@ -769,6 +779,19 @@ export function StreamsConsole() {
         groupCount={productGroups.length}
         loading={initialLoading}
       />
+      <details
+        open={showDeliveryHealth}
+        className="rounded-lg border border-slate-200 bg-white dark:border-gdc-border dark:bg-gdc-card"
+        data-testid="streams-delivery-health-drilldown"
+      >
+        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-800 dark:text-slate-100">
+          Delivery Health Matrix
+          <span className="ml-2 text-xs font-normal text-slate-500 dark:text-gdc-muted">Stream group × destination</span>
+        </summary>
+        <div className="border-t border-slate-200/80 p-3 dark:border-gdc-divider">
+          <StreamHealthMatrix matrix={deliveryHealthMatrix} className="border-0 shadow-none" />
+        </div>
+      </details>
 
       <StreamsOperationsToolbar
         searchQuery={searchQuery}

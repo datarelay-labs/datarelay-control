@@ -186,6 +186,13 @@ export function DashboardOverview() {
               Streams
             </Link>
             <Link
+              to={NAV_PATH.streams + '?view=delivery-health'}
+              className="font-medium text-slate-700 underline-offset-2 hover:underline dark:text-slate-200"
+              data-testid="dashboard-drilldown-delivery-health"
+            >
+              Delivery health
+            </Link>
+            <Link
               to={NAV_PATH.destinations}
               className="font-medium text-slate-700 underline-offset-2 hover:underline dark:text-slate-200"
               data-testid="dashboard-drilldown-destinations"
