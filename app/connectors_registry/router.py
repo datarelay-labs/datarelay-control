@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, status
 
+from app.connectors_registry.lifecycle_router import router as lifecycle_router
 from app.connectors_registry.schemas import (
     ConnectorRegistryDetail,
     ConnectorRegistryListResponse,
@@ -19,6 +20,8 @@ from app.connectors_registry.service import (
 )
 
 router = APIRouter()
+# Lifecycle routes (/packages/...) must be registered before /{connector_id}.
+router.include_router(lifecycle_router)
 
 
 @router.get("/", response_model=ConnectorRegistryListResponse)

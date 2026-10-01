@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.checkpoints.models import Checkpoint
 from app.connector_templates.errors import MaterializationError
 from app.connectors.models import Connector
+from app.connectors_registry.lifecycle_provenance import attach_provenance
 from app.connectors_registry.models import ConnectorManifest, ConnectorModuleEntry, ConnectorStreamRef
 from app.enrichments.models import Enrichment
 from app.mappings.models import Mapping
@@ -73,6 +74,15 @@ def _build_stream_row(
     polling_interval = int(defaults.get("polling_interval") or 60)
     enabled = bool(defaults.get("enabled", False))
     status = str(defaults.get("status") or "STOPPED")
+
+    package_id = (manifest.package_id or manifest.id or "").strip()
+    pack_version = (manifest.pack_version or manifest.version or "").strip()
+    if package_id and pack_version:
+        config_json = attach_provenance(
+            config_json,
+            package_id=package_id,
+            pack_version=pack_version,
+        )
 
     return Stream(
         name=stream_name,
