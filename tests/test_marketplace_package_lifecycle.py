@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
 import tarfile
 from pathlib import Path
@@ -18,8 +19,9 @@ from sqlalchemy.orm import Session
 
 from app.checkpoints.models import Checkpoint
 from app.connectors.models import Connector
-from app.connectors_registry.lifecycle_archive import stage_archive_bytes
+from app.connectors_registry.lifecycle_archive import read_upload_bytes, stage_archive_bytes
 from app.connectors_registry.lifecycle_errors import LifecycleError
+from app.connectors_registry.lifecycle_router import post_install_package
 from app.connectors_registry.lifecycle_models import (
     LIFECYCLE_ORIGIN_UPLOAD,
     LIFECYCLE_STATUS_INSTALLED,
@@ -247,6 +249,65 @@ def test_symlink_hardlink_escape_reject(tmp_path: Path) -> None:
     assert exc2.value.error_code == "ARCHIVE_LINK_ESCAPE"
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("schema_ref", "../outside-auth.json"),
+        ("template", "../outside-stream.yaml"),
+        ("default_mapping", "../outside-mapping.json"),
+        ("default_enrichment", "/tmp/outside-enrichment.json"),
+    ],
+)
+def test_manifest_resource_escape_rejects_before_publish(
+    tmp_path: Path, field: str, value: str
+) -> None:
+    manifest = _base_source()
+    if field == "schema_ref":
+        manifest["auth"] = {"type": "bearer", "schema_ref": value}
+    else:
+        manifest["streams"] = [{"id": "events", "name": "Events", field: value}]
+    archive = _make_tar_gz(
+        {
+            "acme/manifest.yaml": yaml.safe_dump(manifest, sort_keys=False),
+            "outside-auth.json": '{}',
+            "outside-stream.yaml": "stream_id: events\nname: Outside\nsource_path: /events\n",
+            "outside-mapping.json": '{}',
+        }
+    )
+    with pytest.raises(LifecycleError) as exc:
+        stage_archive_bytes(archive, staging_parent=tmp_path)
+    assert exc.value.error_code == "MANIFEST_RESOURCE_ESCAPE"
+
+
+def test_bounded_upload_reader_rejects_over_limit() -> None:
+    with pytest.raises(LifecycleError) as exc:
+        read_upload_bytes(io.BytesIO(b"12345"), max_bytes=4)
+    assert exc.value.error_code == "ARCHIVE_TOO_LARGE"
+
+
+def test_http_install_uses_spooled_file_not_unbounded_upload_read(
+    client: TestClient, db_session: Session
+) -> None:
+    archive = _package_archive(
+        _base_source(id="spooled", package_id="spooled"), root_dir="spooled"
+    )
+
+    class FakeUpload:
+        filename = "spooled.tar.gz"
+
+        def __init__(self) -> None:
+            self.file = io.BytesIO(archive)
+
+        async def seek(self, offset: int) -> None:
+            self.file.seek(offset)
+
+        async def read(self, *_args: Any, **_kwargs: Any) -> bytes:
+            raise AssertionError("route must not call unbounded UploadFile.read()")
+
+    row = asyncio.run(post_install_package(FakeUpload(), db_session))  # type: ignore[arg-type]
+    assert row.package_id == "spooled"
+
+
 def test_missing_manifest_reject(tmp_path: Path) -> None:
     archive = _make_tar_gz({"acme/readme.txt": "no manifest"})
     with pytest.raises(LifecycleError) as exc:
@@ -311,6 +372,35 @@ def test_builtin_shadow_install_reject(
     assert exc.value.error_code == "BUILTIN_SHADOW_FORBIDDEN"
 
 
+def test_connector_id_collision_rejects_unique_package_id(
+    db_session: Session, builtin_root: Path, installed_root: Path
+) -> None:
+    existing_dir = builtin_root / "builtin-pkg"
+    existing_dir.mkdir()
+    (existing_dir / "manifest.yaml").write_text(
+        yaml.safe_dump(
+            _base_source(id="shared-id", package_id="builtin-pkg"),
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    clear_registry_cache()
+    reload_registry(root=builtin_root, installed_root=installed_root)
+
+    with pytest.raises(LifecycleError) as exc:
+        install_package(
+            db_session,
+            _package_archive(
+                _base_source(id="shared-id", package_id="unique-package"),
+                root_dir="unique-package",
+            ),
+            builtin_root=builtin_root,
+            installed_root=installed_root,
+        )
+    assert exc.value.error_code == "CONNECTOR_ID_COLLISION"
+    assert not (installed_root / "unique-package").exists()
+
+
 def test_valid_upgrade(db_session: Session, builtin_root: Path, installed_root: Path) -> None:
     install_package(
         db_session,
@@ -332,6 +422,43 @@ def test_valid_upgrade(db_session: Session, builtin_root: Path, installed_root: 
     assert detail is not None
     assert detail.resolved.pack_version == "1.1.0"
     assert detail.resolved.name == "Acme v2"
+
+
+def test_upgrade_rejects_reverse_dependency_version_break(
+    db_session: Session, builtin_root: Path, installed_root: Path
+) -> None:
+    install_package(
+        db_session,
+        _package_archive(_base_source()),
+        builtin_root=builtin_root,
+        installed_root=installed_root,
+    )
+    install_package(
+        db_session,
+        _package_archive(
+            _base_source(
+                id="ext",
+                package_id="ext",
+                package_kind="stream_extension",
+                requires={"package_id": "acme", "version": ">=1.0.0 <2.0.0"},
+            ),
+            root_dir="ext",
+        ),
+        builtin_root=builtin_root,
+        installed_root=installed_root,
+    )
+
+    with pytest.raises(LifecycleError) as exc:
+        upgrade_package(
+            db_session,
+            "acme",
+            _package_archive(_base_source(version="2.0.0", pack_version="2.0.0")),
+            builtin_root=builtin_root,
+            installed_root=installed_root,
+        )
+    assert exc.value.error_code == "DEPENDENCY_VERSION_MISMATCH"
+    active = yaml.safe_load((installed_root / "acme" / "manifest.yaml").read_text(encoding="utf-8"))
+    assert active["pack_version"] == "1.0.0"
 
 
 def test_wrong_package_id_upgrade_reject(
@@ -397,6 +524,25 @@ def test_failed_upgrade_preserves_previous(
     detail = get_connector_manifest("acme")
     assert detail is not None
     assert detail.resolved.pack_version == "1.0.0"
+
+
+def test_upgrade_commit_failure_restores_previous_filesystem(
+    db_session: Session, builtin_root: Path, installed_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install_package(
+        db_session, _package_archive(_base_source()),
+        builtin_root=builtin_root, installed_root=installed_root,
+    )
+    monkeypatch.setattr(db_session, "commit", lambda: (_ for _ in ()).throw(RuntimeError("commit failed")))
+    with pytest.raises(LifecycleError) as exc:
+        upgrade_package(
+            db_session, "acme",
+            _package_archive(_base_source(version="2.0.0", pack_version="2.0.0")),
+            builtin_root=builtin_root, installed_root=installed_root,
+        )
+    assert exc.value.error_code == "UPGRADE_FAILED"
+    active = yaml.safe_load((installed_root / "acme" / "manifest.yaml").read_text(encoding="utf-8"))
+    assert active["pack_version"] == "1.0.0"
 
 
 def test_rollback_restores_previous(
@@ -485,6 +631,28 @@ def test_rollback_does_not_touch_checkpoint(
     assert stream.status == "RUNNING"
 
 
+def test_rollback_commit_failure_restores_current_filesystem(
+    db_session: Session, builtin_root: Path, installed_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install_package(
+        db_session, _package_archive(_base_source()),
+        builtin_root=builtin_root, installed_root=installed_root,
+    )
+    upgrade_package(
+        db_session, "acme",
+        _package_archive(_base_source(version="2.0.0", pack_version="2.0.0")),
+        builtin_root=builtin_root, installed_root=installed_root,
+    )
+    monkeypatch.setattr(db_session, "commit", lambda: (_ for _ in ()).throw(RuntimeError("commit failed")))
+    with pytest.raises(LifecycleError) as exc:
+        rollback_package(
+            db_session, "acme", builtin_root=builtin_root, installed_root=installed_root
+        )
+    assert exc.value.error_code == "ROLLBACK_FAILED"
+    active = yaml.safe_load((installed_root / "acme" / "manifest.yaml").read_text(encoding="utf-8"))
+    assert active["pack_version"] == "2.0.0"
+
+
 def test_rollback_without_previous_reject(
     db_session: Session, builtin_root: Path, installed_root: Path
 ) -> None:
@@ -522,6 +690,24 @@ def test_uninstall_installed_package(
     assert row.status == LIFECYCLE_STATUS_REMOVED
     assert not (installed_root / "acme").exists()
     assert get_connector_manifest("acme") is None
+
+
+def test_uninstall_commit_failure_restores_active_package(
+    db_session: Session, builtin_root: Path, installed_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install_package(
+        db_session, _package_archive(_base_source()),
+        builtin_root=builtin_root, installed_root=installed_root,
+    )
+    monkeypatch.setattr(db_session, "commit", lambda: (_ for _ in ()).throw(RuntimeError("commit failed")))
+    with pytest.raises(LifecycleError) as exc:
+        uninstall_package(
+            db_session, "acme", builtin_root=builtin_root, installed_root=installed_root
+        )
+    assert exc.value.error_code == "UNINSTALL_FAILED"
+    assert (installed_root / "acme" / "manifest.yaml").is_file()
+    active = yaml.safe_load((installed_root / "acme" / "manifest.yaml").read_text(encoding="utf-8"))
+    assert active["pack_version"] == "1.0.0"
 
 
 def test_builtin_uninstall_reject(

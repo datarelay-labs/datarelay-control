@@ -26,6 +26,7 @@ _UNPROCESSABLE = 422
 _ERROR_STATUS: dict[str, int] = {
     "PACKAGE_ALREADY_INSTALLED": status.HTTP_409_CONFLICT,
     "BUILTIN_SHADOW_FORBIDDEN": status.HTTP_409_CONFLICT,
+    "CONNECTOR_ID_COLLISION": status.HTTP_409_CONFLICT,
     "PACKAGE_NOT_INSTALLED": status.HTTP_404_NOT_FOUND,
     "PACKAGE_ID_MISMATCH": status.HTTP_400_BAD_REQUEST,
     "SAME_VERSION": status.HTTP_400_BAD_REQUEST,
@@ -93,8 +94,8 @@ async def post_install_package(
 
     _ensure_tar_gz_filename(file.filename)
     try:
-        data = await file.read()
-        return install_package(db, data)
+        await file.seek(0)
+        return install_package(db, file.file)
     except LifecycleError as exc:
         raise _http_for_lifecycle(exc) from exc
 
@@ -112,8 +113,8 @@ async def post_upgrade_package(
 
     _ensure_tar_gz_filename(file.filename)
     try:
-        data = await file.read()
-        return upgrade_package(db, package_id, data)
+        await file.seek(0)
+        return upgrade_package(db, package_id, file.file)
     except LifecycleError as exc:
         raise _http_for_lifecycle(exc) from exc
 

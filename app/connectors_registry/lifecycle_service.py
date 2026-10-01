@@ -14,7 +14,11 @@ from app.connectors_registry.lifecycle_archive import (
     read_upload_bytes,
     stage_archive_bytes,
 )
-from app.connectors_registry.lifecycle_dependencies import validate_stream_extension_requires
+from app.connectors_registry.lifecycle_dependencies import (
+    iter_requirements,
+    validate_stream_extension_requires,
+    version_satisfies_requirement,
+)
 from app.connectors_registry.lifecycle_errors import LifecycleError
 from app.connectors_registry.lifecycle_models import (
     LIFECYCLE_ORIGIN_UPLOAD,
@@ -37,6 +41,7 @@ from app.connectors_registry.lifecycle_schemas import (
     MarketplacePackageListResponse,
 )
 from app.connectors_registry.roots import builtin_connectors_root, installed_plugins_root
+from app.connectors_registry.loader import load_connector_modules
 from app.connectors_registry.service import list_connector_summaries, reload_registry
 from app.database import utcnow
 
@@ -147,10 +152,47 @@ def _available_package_versions(
     return versions
 
 
+def _assert_connector_id_available(
+    connector_id: str,
+    *,
+    package_id: str,
+    builtin_root: Path | None = None,
+    installed_root: Path | None = None,
+    allow_package_id: str | None = None,
+) -> None:
+    result = load_connector_modules(
+        root=builtin_root,
+        installed_root=installed_root,
+        include_installed=True,
+    )
+    existing = result.modules.get(connector_id)
+    if existing is None:
+        return
+    existing_package_id = (
+        (existing.manifest.package_id if existing.manifest is not None else None)
+        or existing.connector_id
+    ).strip()
+    if allow_package_id and existing_package_id == allow_package_id:
+        return
+    raise LifecycleError(
+        (
+            f"connector id collision: connector_id={connector_id!r} is already owned by "
+            f"package_id={existing_package_id!r}"
+        ),
+        error_code="CONNECTOR_ID_COLLISION",
+        details={
+            "connector_id": connector_id,
+            "package_id": package_id,
+            "existing_package_id": existing_package_id,
+        },
+    )
+
+
 def _assert_no_install_collision(
     db: Session,
     package_id: str,
     *,
+    connector_id: str,
     builtin_root: Path | None = None,
     installed_root: Path | None = None,
 ) -> None:
@@ -176,6 +218,45 @@ def _assert_no_install_collision(
             error_code="PACKAGE_ALREADY_INSTALLED",
             details={"package_id": package_id, "path": str(active)},
         )
+
+    _assert_connector_id_available(
+        connector_id,
+        package_id=package_id,
+        builtin_root=builtin_root,
+        installed_root=installed_root,
+    )
+
+
+def _assert_dependents_accept_candidate(
+    package_id: str,
+    candidate_version: str,
+    *,
+    builtin_root: Path | None = None,
+    installed_root: Path | None = None,
+) -> None:
+    result = load_connector_modules(
+        root=builtin_root,
+        installed_root=installed_root,
+        include_installed=True,
+    )
+    for entry in result.modules.values():
+        for requirement in iter_requirements(entry.manifest):
+            if requirement.package_id.strip() != package_id or not requirement.version:
+                continue
+            if not version_satisfies_requirement(candidate_version, requirement.version):
+                raise LifecycleError(
+                    (
+                        f"upgrade would invalidate dependent package {entry.connector_id!r}: "
+                        f"candidate={candidate_version!r} requires={requirement.version!r}"
+                    ),
+                    error_code="DEPENDENCY_VERSION_MISMATCH",
+                    details={
+                        "package_id": package_id,
+                        "candidate_version": candidate_version,
+                        "dependent_package_id": entry.connector_id,
+                        "requires": requirement.version,
+                    },
+                )
 
 
 def _stage_from_upload(
@@ -211,6 +292,7 @@ def install_package(
         _assert_no_install_collision(
             db,
             staged.package_id,
+            connector_id=staged.manifest.id,
             builtin_root=builtin_root,
             installed_root=installed_root,
         )
@@ -331,6 +413,20 @@ def upgrade_package(
                 error_code="SAME_VERSION",
             )
 
+        _assert_connector_id_available(
+            staged.manifest.id,
+            package_id=package_id,
+            builtin_root=builtin_root,
+            installed_root=installed_root,
+            allow_package_id=package_id,
+        )
+        _assert_dependents_accept_candidate(
+            package_id,
+            staged.pack_version,
+            builtin_root=builtin_root,
+            installed_root=installed_root,
+        )
+
         available = _available_package_versions(
             db,
             builtin_root=builtin_root,
@@ -382,8 +478,23 @@ def upgrade_package(
         row.previous_version = previous_version
         row.previous_digest = previous_digest
         row.updated_at = utcnow()
-        db.commit()
-        db.refresh(row)
+        try:
+            db.commit()
+            db.refresh(row)
+        except Exception:
+            try:
+                restore_generation(
+                    package_id=package_id,
+                    pack_version=previous_version,
+                    installed_root=installed_root,
+                )
+            except Exception:
+                logger.exception(
+                    "marketplace_upgrade_compensation_failed",
+                    extra={"package_id": package_id, "pack_version": previous_version},
+                )
+            db.rollback()
+            raise
 
         _reload(builtin_root=builtin_root, installed_root=installed_root)
         return _row_to_read(row)
@@ -429,6 +540,18 @@ def rollback_package(
         previous_version = row.previous_version
         previous_digest = row.previous_digest
         current_version = row.pack_version
+        current_active = active_package_path(package_id, installed_root=installed_root)
+        if not current_active.is_dir():
+            raise LifecycleError(
+                f"installed package files missing: {package_id}",
+                error_code="PACKAGE_FILES_MISSING",
+            )
+        preserve_generation(
+            package_id=package_id,
+            pack_version=current_version,
+            source_path=current_active,
+            installed_root=installed_root,
+        )
 
         published = restore_generation(
             package_id=package_id,
@@ -442,8 +565,23 @@ def rollback_package(
         row.previous_version = None
         row.previous_digest = None
         row.updated_at = utcnow()
-        db.commit()
-        db.refresh(row)
+        try:
+            db.commit()
+            db.refresh(row)
+        except Exception:
+            try:
+                restore_generation(
+                    package_id=package_id,
+                    pack_version=current_version,
+                    installed_root=installed_root,
+                )
+            except Exception:
+                logger.exception(
+                    "marketplace_rollback_compensation_failed",
+                    extra={"package_id": package_id, "pack_version": current_version},
+                )
+            db.rollback()
+            raise
 
         # Drop the rolled-away current generation copy if present.
         from app.connectors_registry.lifecycle_publish import generation_path
@@ -546,17 +684,44 @@ def uninstall_package(
                             },
                         )
 
+        current_version = row.pack_version
+        current_active = active_package_path(package_id, installed_root=installed_root)
+        preserved_for_compensation = False
+        if current_active.is_dir():
+            preserve_generation(
+                package_id=package_id,
+                pack_version=current_version,
+                source_path=current_active,
+                installed_root=installed_root,
+            )
+            preserved_for_compensation = True
         remove_active_package(package_id, installed_root=installed_root)
-        remove_generations(package_id, installed_root=installed_root)
 
         row.status = LIFECYCLE_STATUS_REMOVED
         row.installed_path = ""
         row.previous_version = None
         row.previous_digest = None
         row.updated_at = utcnow()
-        db.commit()
-        db.refresh(row)
+        try:
+            db.commit()
+            db.refresh(row)
+        except Exception:
+            if preserved_for_compensation:
+                try:
+                    restore_generation(
+                        package_id=package_id,
+                        pack_version=current_version,
+                        installed_root=installed_root,
+                    )
+                except Exception:
+                    logger.exception(
+                        "marketplace_uninstall_compensation_failed",
+                        extra={"package_id": package_id, "pack_version": current_version},
+                    )
+            db.rollback()
+            raise
 
+        remove_generations(package_id, installed_root=installed_root)
         _reload(builtin_root=builtin_root, installed_root=installed_root)
         return _row_to_read(row)
     except LifecycleError:

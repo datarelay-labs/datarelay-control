@@ -37,6 +37,12 @@ def _version_in_specifier(version: str, specifier: str) -> bool:
     return parsed in spec
 
 
+def version_satisfies_requirement(version: str, specifier: str) -> bool:
+    """Return whether a concrete package version satisfies a declared requirement."""
+
+    return _version_in_specifier(version, specifier)
+
+
 def validate_stream_extension_requires(
     manifest: ConnectorManifest,
     *,
