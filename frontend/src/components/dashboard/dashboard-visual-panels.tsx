@@ -1853,6 +1853,14 @@ export function OperationalIssuesPanel({
     },
   ]
   const totalIssues = rows.reduce((sum, row) => sum + (row.count ?? 0), 0)
+  const hasUnavailableIssueData = rows.some((row) => row.count == null)
+  const summary = hasUnavailableIssueData
+    ? totalIssues > 0
+      ? `${totalIssues} open signal${totalIssues === 1 ? '' : 's'} need attention; some issue data is unavailable.`
+      : 'No open signals are currently known; some issue data is unavailable.'
+    : totalIssues === 0
+      ? 'No open operational signals.'
+      : `${totalIssues} open signal${totalIssues === 1 ? '' : 's'} need attention.`
 
   return (
     <section
@@ -1863,9 +1871,7 @@ export function OperationalIssuesPanel({
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">Operational Issues</h2>
-          <p className="mt-1 text-sm text-slate-500 dark:text-gdc-muted">
-            {totalIssues === 0 ? 'No open operational signals.' : `${totalIssues} open signal${totalIssues === 1 ? '' : 's'} need attention.`}
-          </p>
+          <p className="mt-1 text-sm text-slate-500 dark:text-gdc-muted">{summary}</p>
         </div>
         <Link
           to={NAV_PATH.streams}

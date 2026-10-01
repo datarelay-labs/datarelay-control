@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 import { DashboardOverview } from './dashboard-overview'
+import { OperationalIssuesPanel } from './dashboard-visual-panels'
 import type {
   DashboardSummaryResponse,
   HealthOverviewResponse,
@@ -382,6 +383,45 @@ vi.mock('../../api/gdcRetention', () => ({
 function mainRegion() {
   return screen.getByRole('main')
 }
+
+describe('OperationalIssuesPanel summary truth', () => {
+  it('does not claim a clean state when one issue category is unavailable', () => {
+    render(
+      <MemoryRouter>
+        <OperationalIssuesPanel
+          issues={{
+            noDataStreams: 0,
+            lowVolumeStreams: 0,
+            schemaDriftCount: 0,
+            destinationCapacityWarnings: null,
+          }}
+        />
+      </MemoryRouter>,
+    )
+
+    const panel = screen.getByTestId('dashboard-operational-issues')
+    expect(within(panel).getByText(/No open signals are currently known; some issue data is unavailable/i)).toBeInTheDocument()
+    expect(within(panel).queryByText('No open operational signals.')).not.toBeInTheDocument()
+  })
+
+  it('keeps active signal count while disclosing partial issue data', () => {
+    render(
+      <MemoryRouter>
+        <OperationalIssuesPanel
+          issues={{
+            noDataStreams: 2,
+            lowVolumeStreams: 0,
+            schemaDriftCount: 0,
+            destinationCapacityWarnings: null,
+          }}
+        />
+      </MemoryRouter>,
+    )
+
+    const panel = screen.getByTestId('dashboard-operational-issues')
+    expect(within(panel).getByText(/2 open signals need attention; some issue data is unavailable/i)).toBeInTheDocument()
+  })
+})
 
 describe('DashboardOverview', () => {
   it('shows loading state before data resolves', async () => {
