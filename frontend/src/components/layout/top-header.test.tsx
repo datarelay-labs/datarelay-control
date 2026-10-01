@@ -46,11 +46,11 @@ describe('TopHeader SaaS shell', () => {
     expect(screen.queryByPlaceholderText(/Search streams/i)).not.toBeInTheDocument()
   })
 
-  it('routes the health affordance to validation alerts with truthful labeling', async () => {
+  it('routes the global alert affordance to the operational alerts surface', async () => {
     const user = userEvent.setup()
     renderHeader()
     const alerts = screen.getByTestId('shell-health-alerts')
-    expect(alerts).toHaveAttribute('aria-label', 'Open runtime health alerts')
+    expect(alerts).toHaveAttribute('aria-label', 'Open operational alerts')
     await user.click(alerts)
     expect(screen.getByTestId('location')).toHaveTextContent(SHELL_ALERTS_PATH)
   })
