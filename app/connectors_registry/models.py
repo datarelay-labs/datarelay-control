@@ -6,7 +6,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+PackageKind = Literal["source", "stream_extension"]
 
 
 class ConnectorAuthManifest(BaseModel):
@@ -32,8 +35,55 @@ class ConnectorStreamRef(BaseModel):
     sample: str | None = None
 
 
+class SourceEvidenceItem(BaseModel):
+    """One evidence citation for Manifest v2 / Source Pack metadata."""
+
+    model_config = ConfigDict(extra="allow")
+
+    type: str = Field(..., min_length=1)
+    ref: str = Field(..., min_length=1)
+    captured_at: str | None = None
+    notes: str | None = None
+
+
+class PackageRequirement(BaseModel):
+    """Declared package dependency (parsed only in M29.1; resolved later)."""
+
+    model_config = ConfigDict(extra="allow")
+
+    package_id: str = Field(..., min_length=1)
+    version: str | None = None
+
+
+class LicenseMetadata(BaseModel):
+    """Structured license metadata when not a plain SPDX string."""
+
+    model_config = ConfigDict(extra="allow")
+
+    spdx: str | None = None
+    name: str | None = None
+    source: str | None = None
+    notice_required: bool | None = None
+
+
+class UpstreamProvenance(BaseModel):
+    """Upstream provenance metadata (parse/validate only in M29.1)."""
+
+    model_config = ConfigDict(extra="allow")
+
+    upstream_project: str | None = None
+    upstream_url: str | None = None
+    upstream_path: str | None = None
+    upstream_commit_or_version: str | None = None
+    license_spdx_or_detected_license: str | None = None
+    license_source: str | None = None
+    notice_required: bool | None = None
+    modified_from_upstream: bool | None = None
+    import_method: str | None = None
+
+
 class ConnectorManifest(BaseModel):
-    """Parsed connector manifest (M17.5.1 minimum fields)."""
+    """Parsed connector manifest (M17.5.1 + M29.1 Manifest v2 fields)."""
 
     model_config = ConfigDict(extra="allow")
 
@@ -45,6 +95,26 @@ class ConnectorManifest(BaseModel):
     auth: ConnectorAuthManifest
     streams: list[ConnectorStreamRef] = Field(default_factory=list)
     capabilities: dict[str, Any] = Field(default_factory=dict)
+
+    # Manifest v2 (optional on disk; normalized in-memory where applicable)
+    schema_version: str | None = None
+    package_id: str | None = None
+    package_kind: PackageKind | None = None
+    pack_version: str | None = None
+    api_version: str | None = None
+    source_evidence: list[SourceEvidenceItem] | None = None
+    requires: PackageRequirement | list[PackageRequirement] | None = None
+    license: str | LicenseMetadata | None = None
+    upstream_provenance: UpstreamProvenance | None = None
+
+    @field_validator("package_kind", mode="before")
+    @classmethod
+    def _empty_package_kind_as_none(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
 
 class ConnectorResourcesSummary(BaseModel):

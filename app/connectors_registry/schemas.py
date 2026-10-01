@@ -45,6 +45,10 @@ class ConnectorRegistrySummary(BaseModel):
     error_count: int = 0
     migration_error_count: int = 0
     resources: ConnectorResourcesSummary = Field(default_factory=ConnectorResourcesSummary)
+    # Manifest v2 additive fields (backward compatible)
+    pack_version: str | None = None
+    package_id: str | None = None
+    package_kind: str | None = None
 
 
 class ResolvedConnectorRead(BaseModel):
@@ -65,6 +69,10 @@ class ResolvedConnectorRead(BaseModel):
     module_dir: str
     manifest_path: str
     manifest: ConnectorManifest | None = None
+    # Manifest v2 additive fields (backward compatible)
+    pack_version: str | None = None
+    package_id: str | None = None
+    package_kind: str | None = None
 
 
 class ConnectorRegistryDetail(BaseModel):

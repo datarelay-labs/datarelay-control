@@ -677,3 +677,64 @@ Enterprise IAM
 현재 우선순위 아님
 
 PRODUCT-CHARTER Out Of Scope
+
+==================================================
+DATA RELAY MARKETPLACE ADDENDUM v1.0
+Phase G — Connector Marketplace & Ecosystem
+==================================================
+
+Status: M29.0–M29.1 Implementation In Progress
+Authority: Additive only. Existing Product Charter and runtime/security invariants remain authoritative.
+Reference: docs/architecture/DATA-RELAY-CONNECTOR-MARKETPLACE-ARCHITECTURE-CHARTER-v1.0-DRAFT.md
+
+This workstream does not change historical Phase A–D completion percentages and is not a child of Phase F.
+
+M29
+Connector Marketplace & Ecosystem
+
+M29.0
+Marketplace / Source Pack Specification Consolidation
+
+- specs/049 Source Pack remains the canonical integration content foundation
+- Marketplace Package / Source Pack / Stream Extension Pack terminology and dependency model
+- Marketplace V1 declarative-only rule
+
+M29.0a
+License & Provenance Specification
+
+M29.0b
+External Connector Import Specification
+
+M29.1
+Manifest v2 + Backward Compatibility
+
+M29.2
+Unified Built-in / Installed Multi-root Registry
+
+M29.3
+Package Lifecycle — acquire/upload, install, upgrade, rollback, uninstall/dependency protection
+
+M29.4
+Data Relay Package Validator + registry cache/version/invalidation
+
+M29.5
+Marketplace Security — signing, trusted keys/publishers, RBAC, secret scan, SSRF/network policy, license/provenance policy
+
+M29.6
+Connector Harvester / External Import Pipeline
+
+M29.7
+AI Connector Translator / Builder Contract
+
+M29.8
+Marketplace UI
+
+M29.9
+Remote / Private Registry — remote public registry optional and OFF by default
+
+Current implementation lane:
+- M29.0 ACTIVE
+- M29.1 ACTIVE
+- M29.2–M29.9 implementation pending and must be executed as later bounded work packets
+
+M29 integration gates remain targeted regression, final Full Matrix acceptance at the agreed integration point, and human acceptance scenarios after the applicable implementation phases complete.

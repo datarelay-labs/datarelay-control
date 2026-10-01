@@ -427,3 +427,31 @@ No endpoint may commit runtime checkpoints or invoke StreamRunner.
 4. **DB-backed registry index**: When does PostgreSQL index outweigh filesystem-only discovery?
 5. **Template RBAC**: Can operators publish drafts, or only administrators?
 6. **Migration deadline**: Target date to convert built-in `templates/*.json` to directory packs?
+
+---
+
+## DATA RELAY MARKETPLACE ADDENDUM v1.0 — Relationship to Connector Marketplace
+
+Status: M29.0–M29.1 Implementation In Progress
+Authority: Additive only. Existing Source Pack materialization and runtime invariants remain authoritative.
+Reference: `docs/architecture/DATA-RELAY-CONNECTOR-MARKETPLACE-ARCHITECTURE-CHARTER-v1.0-DRAFT.md`
+
+This specification's **Source Pack** remains the canonical source-integration content model for Marketplace.
+
+Marketplace does not introduce a competing runtime entity called Connector Pack. `Connector Pack` is a UX synonym only.
+
+Marketplace adds outer-layer concerns around Source Pack:
+
+- package distribution origin: builtin / upload / git / registry
+- manifest compatibility and validation
+- signature / trusted publisher metadata
+- license / provenance metadata
+- install / upgrade / rollback / uninstall lifecycle
+- trust/support tiers
+- Stream Extension Pack dependency declarations
+- external open-source import
+- AI-assisted draft generation
+
+M29.1 evolves connector manifests additively and preserves legacy manifest compatibility. Legacy `version` remains readable while normalized in-memory `pack_version`, `package_id`, and `package_kind` are exposed without rewriting existing package files.
+
+The existing non-goals in the original body remain correct for spec 049 itself. M29 Marketplace is the approved outer workstream implementing those distribution/lifecycle concerns while preserving every Source Pack runtime/materialization invariant here.
