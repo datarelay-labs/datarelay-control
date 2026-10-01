@@ -1,9 +1,11 @@
-import { mapBackendStreamStatus } from '../../api/streamRows'
-import type { DashboardSummaryResponse, HealthOverviewResponse, StreamRead } from '../../api/types/gdcApi'
+import type { OperationalSnapshotResponse } from '../../api/operationalSnapshot'
+import type { DashboardSummaryResponse, HealthOverviewResponse } from '../../api/types/gdcApi'
+import { isLowVolumeEps } from '../../lib/low-volume-signal'
 
 export type GovernanceOperationalIssueCounts = {
   noDataStreams: number
-  lowVolumeStreams: number
+  /** null = authoritative EPS snapshot unavailable. */
+  lowVolumeStreams: number | null
   /** null = API data unavailable (not the same as 0 drift alerts). */
   schemaDriftCount: number | null
   destinationCapacityWarnings: number
@@ -19,7 +21,7 @@ function safeNonNeg(n: unknown): number {
 export function deriveGovernanceOperationalIssues(
   health: HealthOverviewResponse | null,
   dashboard: DashboardSummaryResponse | null,
-  streamsList: readonly StreamRead[] = [],
+  snapshot: OperationalSnapshotResponse | null,
 ): GovernanceOperationalIssueCounts {
   const streams = health?.streams
   const summary = dashboard?.summary
@@ -32,11 +34,11 @@ export function deriveGovernanceOperationalIssues(
         : 0
 
   const lowVolumeStreams =
-    streamsList.length > 0
-      ? streamsList.filter((s) => mapBackendStreamStatus(s.status) === 'DEGRADED').length
-      : streams?.degraded != null
-        ? safeNonNeg(streams.degraded)
-        : 0
+    snapshot == null
+      ? null
+      : snapshot.streams.filter(
+          (stream) => stream.enabled && isLowVolumeEps(stream.eps_1m, stream.eps_5m),
+        ).length
 
   const destinationCapacityWarnings =
     summary?.rate_limited_destination_streams != null

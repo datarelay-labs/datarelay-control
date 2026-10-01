@@ -27,6 +27,7 @@ import {
   type ViolationWindow,
 } from '../../api/gdcGovernanceViolations'
 import { fetchHealthOverview } from '../../api/gdcRuntimeHealth'
+import { getOperationalSnapshot } from '../../api/operationalSnapshot'
 import { NAV_PATH } from '../../config/nav-paths'
 import { isOssReleaseMode } from '../../lib/feature-flags'
 import { canEditPolicy } from '../../lib/governance-rbac'
@@ -137,12 +138,12 @@ export function GovernanceDashboardPage() {
   const [policies, setPolicies] = useState<GovernancePolicyEntry[]>([])
   const [operationalIssues, setOperationalIssues] = useState<{
     noDataStreams: number
-    lowVolumeStreams: number
+    lowVolumeStreams: number | null
     schemaDriftCount: number | null
     destinationCapacityWarnings: number
   }>({
     noDataStreams: 0,
-    lowVolumeStreams: 0,
+    lowVolumeStreams: null,
     schemaDriftCount: null,
     destinationCapacityWarnings: 0,
   })
@@ -187,12 +188,13 @@ export function GovernanceDashboardPage() {
   }, [window])
 
   const loadOperationalIssues = useCallback(async () => {
-    try {
-      const health = await fetchHealthOverview({ window: '24h' })
-      setOperationalIssues(deriveGovernanceOperationalIssues(health, null, []))
-    } catch {
-      /* optional enrichment — ignore failures */
-    }
+    const [healthResult, snapshotResult] = await Promise.allSettled([
+      fetchHealthOverview({ window: '24h' }),
+      getOperationalSnapshot(),
+    ])
+    const health = healthResult.status === 'fulfilled' ? healthResult.value : null
+    const snapshot = snapshotResult.status === 'fulfilled' ? snapshotResult.value : null
+    setOperationalIssues(deriveGovernanceOperationalIssues(health, null, snapshot))
   }, [])
 
   const refreshAll = useCallback(async () => {
@@ -520,7 +522,7 @@ export function GovernanceDashboardPage() {
             <OperationalSignalCard
               count={operationalIssues.lowVolumeStreams}
               title="Low Volume Streams"
-              description="Streams below their usual transfer volume."
+              description="Streams with observed transfer volume below the low-volume threshold."
               tone="amber"
               testId="gov-issue-low-volume"
             />

@@ -5,6 +5,7 @@ import * as gdcGovernanceDashboard from '../../api/gdcGovernanceDashboard'
 import * as gdcGovernancePolicies from '../../api/gdcGovernancePolicies'
 import * as gdcGovernanceViolations from '../../api/gdcGovernanceViolations'
 import * as gdcRuntimeHealth from '../../api/gdcRuntimeHealth'
+import * as operationalSnapshot from '../../api/operationalSnapshot'
 import { GovernanceDashboardPage } from './governance-dashboard-page'
 
 const sampleSummary: gdcGovernanceDashboard.GovernanceDashboardSummaryResponse = {
@@ -73,6 +74,7 @@ describe('GovernanceDashboardPage', () => {
       ],
     })
     vi.spyOn(gdcRuntimeHealth, 'fetchHealthOverview').mockResolvedValue(null)
+    vi.spyOn(operationalSnapshot, 'getOperationalSnapshot').mockRejectedValue(new Error('snapshot unavailable'))
   })
 
   it('renders governance overview layout sections', async () => {
