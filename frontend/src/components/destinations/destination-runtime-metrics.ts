@@ -21,6 +21,7 @@ import {
 } from '../../lib/operational-snapshot-selectors'
 import { operationalFactorTags } from '../../lib/operational-health-present'
 import { resolveDestinationListUiHealth } from '../../utils/destination-connectivity-health'
+import { extractCapacityConfig } from './destination-mini-charts'
 
 export type DestinationUiHealth = OperationalUiHealthLabel
 
@@ -34,6 +35,9 @@ export type DestinationListRuntimeMetrics = {
   connectedRoutes: number
   successRatePct: number | null
   currentEps: number | null
+  /** Snapshot 1m capacity usage used by operational capacity-warning drill-downs. */
+  capacityUsagePct?: number | null
+  capacityWarning?: boolean
   /** True when the selected window has at least one delivered or failed event. */
   hasDeliveryActivity: boolean
   health: DestinationUiHealth
@@ -229,11 +233,19 @@ export function listRuntimeMetricsForDestination(
     healthDelivery.hasDeliveryActivity
       ? healthDelivery
       : resolveDestinationDeliveryMetrics(row.id, kpi, snapshot)
+  const { limitEps, thresholds } = extractCapacityConfig(row)
+  const snapshotEps = runtime.snapshot?.inbound_eps_1m ?? null
+  const capacityUsagePct =
+    limitEps != null && limitEps > 0 && snapshotEps != null && Number.isFinite(snapshotEps)
+      ? (snapshotEps / limitEps) * 100
+      : null
   return {
     connectedStreams,
     connectedRoutes,
     successRatePct: snapshotDelivery.successRatePct,
     currentEps: snapshotDelivery.currentEps,
+    capacityUsagePct,
+    capacityWarning: capacityUsagePct != null && capacityUsagePct >= thresholds.warningPct,
     hasDeliveryActivity: snapshotDelivery.hasDeliveryActivity,
     health: destinationUiHealthForListRow(row, healthRow, runtime.snapshot, snapshotLabel),
     recentIssues: destinationIssuesForListRow(row, healthRow, kpi?.issues ?? []),

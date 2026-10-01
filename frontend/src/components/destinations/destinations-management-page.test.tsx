@@ -23,9 +23,59 @@ vi.mock('./use-destinations-overview-data', () => ({
           connectedRoutes: 1,
           successRatePct: 99,
           currentEps: 1.2,
+          capacityUsagePct: 12,
+          capacityWarning: false,
           hasDeliveryActivity: true,
           health: 'Healthy',
           recentIssues: [],
+          metricsWindowLabel: '1h',
+        },
+      },
+      {
+        id: 10,
+        name: 'Capacity Hot',
+        destination_type: 'SYSLOG_UDP',
+        config_json: { host: '10.0.0.2', port: 514 },
+        rate_limit_json: { capacity_limit_eps: 10, capacity_warning_threshold_pct: 70 },
+        enabled: true,
+        streams_using_count: 1,
+        routes: [{ route_id: 2, stream_id: 2, stream_name: 'Stream B', route_enabled: true, route_status: 'ENABLED' }],
+        created_at: null,
+        updated_at: null,
+        runtime: {
+          connectedStreams: 1,
+          connectedRoutes: 1,
+          successRatePct: 100,
+          currentEps: 8,
+          capacityUsagePct: 80,
+          capacityWarning: true,
+          hasDeliveryActivity: true,
+          health: 'Healthy',
+          recentIssues: [],
+          metricsWindowLabel: '1h',
+        },
+      },
+      {
+        id: 11,
+        name: 'Delivery Warning',
+        destination_type: 'SYSLOG_UDP',
+        config_json: { host: '10.0.0.3', port: 514 },
+        rate_limit_json: { capacity_limit_eps: 100, capacity_warning_threshold_pct: 70 },
+        enabled: true,
+        streams_using_count: 1,
+        routes: [{ route_id: 3, stream_id: 3, stream_name: 'Stream C', route_enabled: true, route_status: 'ENABLED' }],
+        created_at: null,
+        updated_at: null,
+        runtime: {
+          connectedStreams: 1,
+          connectedRoutes: 1,
+          successRatePct: 90,
+          currentEps: 10,
+          capacityUsagePct: 10,
+          capacityWarning: false,
+          hasDeliveryActivity: true,
+          health: 'Warning',
+          recentIssues: ['Delivery degraded'],
           metricsWindowLabel: '1h',
         },
       },
@@ -80,6 +130,25 @@ describe('DestinationsManagementPage', () => {
     expect(screen.getByText('EPS (Current)')).toBeInTheDocument()
     expect(screen.getAllByText(/Healthy/).length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('99%').length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('applies and clears the capacity-warning operational deep link', async () => {
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter initialEntries={['/destinations?filter=warning']}>
+        <DestinationsManagementPage />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByTestId('destinations-operational-filter-chip')).toHaveTextContent('Capacity Warning')
+    expect(screen.getByText('Capacity Hot')).toBeInTheDocument()
+    expect(screen.queryByText('MDS')).not.toBeInTheDocument()
+    expect(screen.queryByText('Delivery Warning')).not.toBeInTheDocument()
+
+    await user.click(screen.getByTestId('destinations-clear-operational-filter'))
+    expect(await screen.findByText('MDS')).toBeInTheDocument()
+    expect(screen.getByText('Capacity Hot')).toBeInTheDocument()
+    expect(screen.getByText('Delivery Warning')).toBeInTheDocument()
   })
 
   it('shows an actionable error when webhook URL is not http(s)', async () => {
