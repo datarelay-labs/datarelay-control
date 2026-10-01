@@ -280,6 +280,27 @@ def test_placeholder_secret_pass(tmp_path: Path) -> None:
     assert scan_package_secrets(root) == []
 
 
+def test_secret_boolean_metadata_flag_pass(tmp_path: Path) -> None:
+    root = tmp_path / "pkg"
+    root.mkdir()
+    (root / "auth.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "type": "api_key",
+                "fields": [
+                    {
+                        "name": "api_key",
+                        "required": True,
+                        "secret": True,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert scan_package_secrets(root) == []
+
+
 def test_authorization_env_reference_pass(tmp_path: Path) -> None:
     root = tmp_path / "pkg"
     root.mkdir()

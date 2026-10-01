@@ -1,0 +1,16 @@
+ecosystem: singer
+identity:
+  integration_name: tap-elv2-ref
+  upstream_project: tap-elv2-ref
+  vendor: Acme
+license:
+  identifier: ELv2
+proposed_source_type: HTTP_API_POLLING
+mapping_status: MAPPED
+streams:
+  - name: items
+    http_method: GET
+    path: /v1/items
+# Restricted — must not copy into distributable package
+notes:
+  - upstream includes proprietary transformation code (not harvested)

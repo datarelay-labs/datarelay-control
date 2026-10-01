@@ -1,0 +1,46 @@
+# Synthetic Singer/Meltano tap metadata — ALLOW + HTTP_API_POLLING mapping
+ecosystem: singer
+identity:
+  ecosystem: singer
+  upstream_project: tap-acme-events
+  vendor: Acme
+  product: Acme Events API
+  integration_name: tap-acme-events
+  upstream_version: "1.2.0"
+  upstream_path: taps/tap-acme-events
+  upstream_commit: abc123deadbeef
+license:
+  identifier: MIT
+  source: LICENSE
+  notice_required: true
+provenance:
+  import_method: structured_metadata_fixture
+  evidence:
+    - source_path: harvester.yaml
+      confidence: high
+auth:
+  auth_type: api_key
+  api_base_url_hint: https://api.example.com
+  required_fields:
+    - base_url
+    - api_key
+proposed_source_type: HTTP_API_POLLING
+mapping_status: MAPPED
+streams:
+  - name: events
+    http_method: GET
+    path: /v1/events
+    query_parameters:
+      limit: "100"
+    # event_array_path intentionally omitted — must not be fabricated
+    checkpoint:
+      cursor_field: updated_at
+    schema_fields:
+      - name: id
+        type: string
+      - name: updated_at
+        type: string
+runtime:
+  polling_interval_seconds: 60
+  rate_limit_max_requests: 30
+  rate_limit_per_seconds: 60

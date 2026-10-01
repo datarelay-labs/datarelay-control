@@ -1,0 +1,8 @@
+{
+  "type": "object",
+  "properties": {
+    "base_url": {"type": "string"},
+    "api_key": {"type": "string"}
+  },
+  "required": ["base_url", "api_key"]
+}
