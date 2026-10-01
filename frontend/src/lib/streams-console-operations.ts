@@ -7,8 +7,10 @@ import {
 } from './stream-operational-status'
 import type { StreamsMetricsWindow } from '../constants/streamConsoleFilters'
 import { deriveStreamIssueCauses } from './stream-console-issue-causes'
+import { isLowVolumeEps } from './low-volume-signal'
 
 export type StreamsQuickFilter = 'all' | 'healthy' | 'warning' | 'critical' | 'issues'
+export type StreamsOperationalFilter = 'no-data' | 'low-volume'
 
 export type StreamOperationsSummary = {
   healthy: number
@@ -60,6 +62,21 @@ export function matchesQuickFilter(row: StreamConsoleRow, filter: StreamsQuickFi
   return true
 }
 
+export function parseStreamsOperationalFilter(search: string): StreamsOperationalFilter | null {
+  const value = new URLSearchParams(search).get('filter')?.trim().toLowerCase()
+  return value === 'no-data' || value === 'low-volume' ? value : null
+}
+
+export function matchesOperationalFilter(
+  row: StreamConsoleRow,
+  filter: StreamsOperationalFilter | null | undefined,
+): boolean {
+  if (filter == null) return true
+  if (filter === 'no-data') return row.enabled === true && row.operationalHealthStatus === 'IDLE'
+  if (filter === 'low-volume') return row.enabled === true && isLowVolumeEps(row.eps1m, row.eps5m)
+  return true
+}
+
 export function streamMatchesSearch(
   row: StreamConsoleRow,
   query: string,
@@ -105,10 +122,11 @@ export function filterStreamRows(input: {
   quickFilter: StreamsQuickFilter
   groupFilter: string
   connectorFilter: string | null
+  operationalFilter?: StreamsOperationalFilter | null
   destinationLabelsByStreamId: ReadonlyMap<number, string[]>
 }): StreamConsoleRow[] {
-  const { rows, searchQuery, quickFilter, groupFilter, connectorFilter, destinationLabelsByStreamId } = input
-  let out = rows.filter((row) => matchesQuickFilter(row, quickFilter))
+  const { rows, searchQuery, quickFilter, groupFilter, connectorFilter, operationalFilter, destinationLabelsByStreamId } = input
+  let out = rows.filter((row) => matchesQuickFilter(row, quickFilter) && matchesOperationalFilter(row, operationalFilter))
   if (connectorFilter) {
     out = out.filter((row) => streamMatchesConnectorFilter(row, connectorFilter))
   }

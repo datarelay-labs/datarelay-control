@@ -24,6 +24,8 @@ export type StreamConsoleRow = {
   connectorProductGroup?: string | null
   sourceTypeLabel: string
   status: StreamRuntimeStatus
+  /** Snapshot-derived operational health; distinct from runtime lifecycle status. */
+  operationalHealthStatus?: OperationalStreamSnapshot['health_status'] | null
   /** Stream enabled flag from config/snapshot; false → Disabled (not Stopped/No Data). */
   enabled?: boolean
   /** False until runtime stats/health fetch completed for this row. */
@@ -260,6 +262,7 @@ function baseRowFromStreamRead(s: StreamRead): StreamConsoleRow {
     connectorName: s.connector_id != null ? `Connector #${s.connector_id}` : '—',
     sourceTypeLabel: s.source_id != null ? `Source #${s.source_id}` : '—',
     status: mapBackendStreamStatus(s.status),
+    operationalHealthStatus: null,
     enabled: s.enabled == null ? undefined : Boolean(s.enabled),
     runtimeStatsAttempted: false,
     hasRuntimeApiSnapshot: false,
@@ -351,6 +354,7 @@ export function enrichStreamRowFromOperationalSnapshot(
     ...base,
     name: (snapshot.stream_name ?? '').trim() || base.name,
     status: kpi.runtimeStatus,
+    operationalHealthStatus: snapshot.health_status,
     enabled: kpi.enabled,
     runtimeStatsAttempted: true,
     hasRuntimeApiSnapshot: true,
