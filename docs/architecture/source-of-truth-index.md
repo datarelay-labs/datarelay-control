@@ -6,12 +6,15 @@
 
 ## Current Data Relay Control product scope
 
-Data Relay Control current product scope is **Phase A–D only**:
+Data Relay Control current product scope includes:
 
 - Phase A — Foundation
 - Phase B — Data Control Runtime
 - Phase C — Governance
 - Phase D — OSS Release / closure
+- Phase G / M29 — Connector Marketplace & Ecosystem
+
+Phase G is an additive integration-ecosystem workstream and does not change historical Phase A–D completion percentages.
 
 **Outside Data Relay Control:** Phase E (AI Gateway) and Phase F (Enterprise Edition). They must not contribute to Control completion percentage, release readiness, final E2E requirements, or Control delivery backlog. Existing AI/Enterprise code may remain in-repo as separate-domain or historical material; it is not current Control scope.
 
@@ -98,3 +101,26 @@ The following are retained only for history or old-link resolution and must not 
 ## Staging policy
 
 `docs/source-of-truth/_incoming/` is local/transient staging and must not be tracked. Promote a source document only after an explicit comparison/decision, then remove or archive the incoming copy.
+
+---
+
+## Marketplace product-scope extension
+
+Phase G / M29 Connector Marketplace & Ecosystem is an approved additive Data Relay Control product workstream. It extends integration acquisition and lifecycle around the existing Source Pack and runtime model; it does not reintroduce Phase E AI Gateway or Phase F Enterprise Edition into Control scope.
+
+Current Marketplace architecture authority:
+
+- `docs/architecture/DATA-RELAY-CONNECTOR-MARKETPLACE-ARCHITECTURE-CHARTER-v1.0-DRAFT.md`
+
+Marketplace reading order:
+
+1. Product Charter, including the Marketplace addendum.
+2. This Source-of-Truth Index.
+3. Marketplace Architecture Charter.
+4. `specs/049-template-registry/spec.md` Source Pack contract.
+5. Current Connector Registry / Credential / Stream / Route runtime code and tests.
+6. Historical `feature/post-m29-development` work only as re-audited reference; it is not merge authority.
+
+Marketplace implementation must preserve Runtime Is Truth, One Stream → Many Routes → Many Destinations, current Connected Credential handling, reliability/checkpoint semantics, and the no-parallel-runtime rule.
+
+Historical Marketplace migrations are not migration authority. Any new Marketplace persistence must start from the current Alembic head.

@@ -9,10 +9,17 @@ from pydantic import ValidationError
 
 from app.connectors_registry.errors import ValidationIssue
 from app.connectors_registry.models import ConnectorManifest, ConnectorModuleResources, DocsMetadata
+from app.connectors_registry.normalize import SUPPORTED_PACKAGE_KINDS, normalize_manifest_dict
 
 
 def _is_blank(value: Any) -> bool:
     return value is None or (isinstance(value, str) and not value.strip())
+
+
+def _nonblank_str(value: Any) -> str | None:
+    if _is_blank(value):
+        return None
+    return str(value).strip()
 
 
 def _stream_id_from_dict(data: dict[str, Any]) -> str | None:
@@ -41,15 +48,163 @@ def _stream_has_endpoint(data: dict[str, Any]) -> bool:
     return False
 
 
+def _validate_source_evidence(
+    raw_evidence: Any,
+    *,
+    connector_id: str | None,
+    manifest_path: str,
+) -> list[ValidationIssue]:
+    """Validate optional source_evidence list shape (specs/049 + Charter)."""
+
+    issues: list[ValidationIssue] = []
+    if raw_evidence is None:
+        return issues
+
+    if not isinstance(raw_evidence, list):
+        issues.append(
+            ValidationIssue(
+                rule_id="MAN-009",
+                message="source_evidence must be a list of evidence objects",
+                connector_id=connector_id,
+                path=manifest_path,
+            )
+        )
+        return issues
+
+    for index, item in enumerate(raw_evidence):
+        if not isinstance(item, dict):
+            issues.append(
+                ValidationIssue(
+                    rule_id="MAN-009",
+                    message=f"source_evidence[{index}] must be an object",
+                    connector_id=connector_id,
+                    path=manifest_path,
+                )
+            )
+            continue
+        if _is_blank(item.get("type")):
+            issues.append(
+                ValidationIssue(
+                    rule_id="MAN-009",
+                    message=f"source_evidence[{index}].type is required",
+                    connector_id=connector_id,
+                    path=manifest_path,
+                )
+            )
+        if _is_blank(item.get("ref")):
+            issues.append(
+                ValidationIssue(
+                    rule_id="MAN-009",
+                    message=f"source_evidence[{index}].ref is required",
+                    connector_id=connector_id,
+                    path=manifest_path,
+                )
+            )
+    return issues
+
+
+def _validate_requires(
+    raw_requires: Any,
+    *,
+    connector_id: str | None,
+    manifest_path: str,
+) -> list[ValidationIssue]:
+    """Validate optional requires dependency declaration shape (parse only)."""
+
+    issues: list[ValidationIssue] = []
+    if raw_requires is None:
+        return issues
+
+    entries: list[Any]
+    if isinstance(raw_requires, dict):
+        entries = [raw_requires]
+    elif isinstance(raw_requires, list):
+        entries = raw_requires
+    else:
+        issues.append(
+            ValidationIssue(
+                rule_id="MAN-010",
+                message="requires must be an object or list of objects",
+                connector_id=connector_id,
+                path=manifest_path,
+            )
+        )
+        return issues
+
+    for index, item in enumerate(entries):
+        if not isinstance(item, dict):
+            issues.append(
+                ValidationIssue(
+                    rule_id="MAN-010",
+                    message=f"requires[{index}] must be an object",
+                    connector_id=connector_id,
+                    path=manifest_path,
+                )
+            )
+            continue
+        if _is_blank(item.get("package_id")):
+            issues.append(
+                ValidationIssue(
+                    rule_id="MAN-010",
+                    message=f"requires[{index}].package_id is required",
+                    connector_id=connector_id,
+                    path=manifest_path,
+                )
+            )
+    return issues
+
+
+def _validate_license_and_provenance(
+    raw: dict[str, Any],
+    *,
+    connector_id: str | None,
+    manifest_path: str,
+) -> list[ValidationIssue]:
+    """Validate optional license / upstream_provenance shapes (metadata only)."""
+
+    issues: list[ValidationIssue] = []
+    license_value = raw.get("license")
+    if license_value is not None and not isinstance(license_value, (str, dict)):
+        issues.append(
+            ValidationIssue(
+                rule_id="MAN-011",
+                message="license must be a string or object",
+                connector_id=connector_id,
+                path=manifest_path,
+            )
+        )
+    elif isinstance(license_value, str) and not license_value.strip():
+        issues.append(
+            ValidationIssue(
+                rule_id="MAN-011",
+                message="license string must not be blank",
+                connector_id=connector_id,
+                path=manifest_path,
+            )
+        )
+
+    provenance = raw.get("upstream_provenance")
+    if provenance is not None and not isinstance(provenance, dict):
+        issues.append(
+            ValidationIssue(
+                rule_id="MAN-012",
+                message="upstream_provenance must be an object",
+                connector_id=connector_id,
+                path=manifest_path,
+            )
+        )
+    return issues
+
+
 def validate_manifest_dict(
     raw: dict[str, Any],
     *,
     manifest_path: str,
 ) -> tuple[ConnectorManifest | None, list[ValidationIssue]]:
-    """Apply MAN-001..MAN-004 to a parsed manifest document."""
+    """Apply MAN-001..MAN-012 then normalize into a canonical ConnectorManifest."""
 
     issues: list[ValidationIssue] = []
-    connector_id = str(raw.get("id") or "").strip() or None
+    connector_id = _nonblank_str(raw.get("id"))
 
     if _is_blank(raw.get("id")):
         issues.append(
@@ -93,10 +248,79 @@ def validate_manifest_dict(
             )
         )
 
+    version = _nonblank_str(raw.get("version"))
+    pack_version = _nonblank_str(raw.get("pack_version"))
+    if version is None and pack_version is None:
+        issues.append(
+            ValidationIssue(
+                rule_id="MAN-006",
+                message="manifest version or pack_version is required",
+                connector_id=connector_id,
+                path=manifest_path,
+            )
+        )
+    elif version is not None and pack_version is not None and version != pack_version:
+        issues.append(
+            ValidationIssue(
+                rule_id="MAN-007",
+                message=(
+                    "manifest version and pack_version conflict: "
+                    f"version={version!r} pack_version={pack_version!r}"
+                ),
+                connector_id=connector_id,
+                path=manifest_path,
+            )
+        )
+
+    package_kind = raw.get("package_kind")
+    if package_kind is not None and not _is_blank(package_kind):
+        kind_text = str(package_kind).strip()
+        if kind_text not in SUPPORTED_PACKAGE_KINDS:
+            issues.append(
+                ValidationIssue(
+                    rule_id="MAN-008",
+                    message=(
+                        f"unsupported package_kind: {kind_text!r} "
+                        f"(supported: {', '.join(sorted(SUPPORTED_PACKAGE_KINDS))})"
+                    ),
+                    connector_id=connector_id,
+                    path=manifest_path,
+                )
+            )
+
+    issues.extend(
+        _validate_source_evidence(
+            raw.get("source_evidence"),
+            connector_id=connector_id,
+            manifest_path=manifest_path,
+        )
+    )
+    issues.extend(
+        _validate_requires(
+            raw.get("requires"),
+            connector_id=connector_id,
+            manifest_path=manifest_path,
+        )
+    )
+    issues.extend(
+        _validate_license_and_provenance(
+            raw,
+            connector_id=connector_id,
+            manifest_path=manifest_path,
+        )
+    )
+
+    # Do not normalize/parse when revision fields conflict, are missing, or v2
+    # metadata shape is invalid. Legacy MAN-001..004 still attempt pydantic parse
+    # when an id + revision is present (same as M17.5 behavior).
+    hard_block_ids = {"MAN-006", "MAN-007", "MAN-008", "MAN-009", "MAN-010", "MAN-011", "MAN-012"}
+    hard_blocked = any(issue.rule_id in hard_block_ids for issue in issues)
+
     manifest: ConnectorManifest | None = None
-    if connector_id is not None:
+    if connector_id is not None and not hard_blocked and (version is not None or pack_version is not None):
         try:
-            manifest = ConnectorManifest.model_validate(raw)
+            normalized = normalize_manifest_dict(raw)
+            manifest = ConnectorManifest.model_validate(normalized)
         except ValidationError as exc:
             for err in exc.errors():
                 issues.append(

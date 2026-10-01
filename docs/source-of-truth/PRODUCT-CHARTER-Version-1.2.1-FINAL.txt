@@ -573,3 +573,33 @@ Data Relay Control 현재 제품 범위가 아니며
 
 Control 완료도 / 릴리스 readiness /
 Control delivery backlog 에 포함되지 않는다.
+
+==================================================
+DATA RELAY MARKETPLACE ADDENDUM v1.0
+Product Scope Extension — Connector Marketplace & Integration Ecosystem
+==================================================
+
+Status: Architecture Direction / M29.0–M29.1 Implementation In Progress
+Authority: Additive only. Existing Runtime Is Truth, Stream/Route, Credential, Governance, Reliability, and Checkpoint invariants remain authoritative.
+Reference: docs/architecture/DATA-RELAY-CONNECTOR-MARKETPLACE-ARCHITECTURE-CHARTER-v1.0-DRAFT.md
+
+Data Relay Connector Marketplace is an in-scope Data Control / Data Delivery integration ecosystem capability.
+
+This addendum supersedes only the earlier statement that current Data Relay Control scope is limited to Phase A–D.
+
+Current Control scope is extended with:
+
+Phase G — Connector Marketplace & Ecosystem
+M29 — Connector Marketplace & Ecosystem
+
+Phase E AI Gateway and Phase F Enterprise Edition remain outside Data Relay Control scope and do not become Control release or completion dependencies.
+
+Marketplace extends integration acquisition, packaging, validation, provenance, trust, and lifecycle. It does not replace the Data Relay runtime.
+
+Installed packages must resolve into the existing Connector / Source / Stream / Mapping / Enrichment / Route / Destination models and existing runtime.
+
+Marketplace V1 packages are declarative. They must not execute arbitrary package-supplied Python, JavaScript, shell, native binaries, or plugins inside the Data Relay process.
+
+Packages must not store credentials, tokens, or secrets. Connected Credential and existing runtime authentication remain authoritative.
+
+Source Pack from specs/049 remains the canonical source-integration content model. Connector Pack may be used as a UX synonym only; it is not a new runtime entity.

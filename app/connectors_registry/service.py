@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any
 
 from app.connectors_registry.errors import RegistryError, ValidationIssue
 from app.connectors_registry.loader import connectors_root, load_connector_modules
@@ -73,7 +74,7 @@ def _relative_repo_path(path: Path) -> str:
     return str(path)
 
 
-def _entry_summary_fields(entry: ConnectorModuleEntry) -> dict[str, str | int]:
+def _entry_summary_fields(entry: ConnectorModuleEntry) -> dict[str, Any]:
     manifest = entry.manifest
     if manifest is not None:
         return {
@@ -84,6 +85,9 @@ def _entry_summary_fields(entry: ConnectorModuleEntry) -> dict[str, str | int]:
             "auth_type": manifest.auth.type,
             "stream_count": len(manifest.streams),
             "capabilities": dict(manifest.capabilities),
+            "pack_version": manifest.pack_version,
+            "package_id": manifest.package_id,
+            "package_kind": manifest.package_kind,
         }
     return {
         "name": entry.connector_id,
@@ -93,6 +97,9 @@ def _entry_summary_fields(entry: ConnectorModuleEntry) -> dict[str, str | int]:
         "auth_type": "—",
         "stream_count": entry.resources.summary.streams_count,
         "capabilities": {},
+        "pack_version": None,
+        "package_id": None,
+        "package_kind": None,
     }
 
 
@@ -124,6 +131,9 @@ def _entry_to_resolved(entry: ConnectorModuleEntry) -> ResolvedConnectorRead:
         module_dir=_relative_repo_path(entry.module_dir),
         manifest_path=_relative_repo_path(entry.manifest_path),
         manifest=manifest,
+        pack_version=fields.get("pack_version"),  # type: ignore[arg-type]
+        package_id=fields.get("package_id"),  # type: ignore[arg-type]
+        package_kind=fields.get("package_kind"),  # type: ignore[arg-type]
     )
 
 

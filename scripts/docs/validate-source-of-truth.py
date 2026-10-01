@@ -24,6 +24,11 @@ for name in CURRENT:
     if not p.is_file(): fail.append(f'missing current Source-of-Truth document: {p.relative_to(ROOT)}')
     if f'docs/source-of-truth/{name}' not in idx and name not in idx:
         fail.append(f'Source-of-Truth index does not reference: {name}')
+marketplace_charter=ROOT/'docs/architecture/DATA-RELAY-CONNECTOR-MARKETPLACE-ARCHITECTURE-CHARTER-v1.0-DRAFT.md'
+if not marketplace_charter.is_file():
+    fail.append(f'missing current Marketplace architecture authority: {marketplace_charter.relative_to(ROOT)}')
+if marketplace_charter.name not in idx:
+    fail.append(f'Source-of-Truth index does not reference Marketplace authority: {marketplace_charter.name}')
 tracked=subprocess.check_output(['git','-C',str(ROOT),'ls-files','docs/source-of-truth/_incoming'],text=True).splitlines()
 if tracked: fail.append('tracked _incoming staging files: '+', '.join(tracked))
 md=(ROOT/'docs/master-design.md').read_text(encoding='utf-8')[:1200]

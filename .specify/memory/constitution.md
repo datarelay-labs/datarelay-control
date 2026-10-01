@@ -45,3 +45,18 @@ A spec is subordinate to the Product Charter and the current Source-of-Truth doc
 ## Repository language
 
 New repository artifacts are English by default as defined in `AGENTS.md`. Existing designated Source-of-Truth documents may retain their original language; do not rewrite their substantive content merely to satisfy the default language rule.
+
+---
+
+## DATA RELAY MARKETPLACE ADDENDUM v1.0 — Integration Package Invariants
+
+Marketplace / Source Pack work must obey these invariants:
+
+1. Source Pack / Marketplace Package is not a runtime execution entity.
+2. Built-in and installed integrations share one package contract and the existing runtime.
+3. Package files contain no credentials or secrets.
+4. Marketplace V1 executes no arbitrary package Python, JavaScript, shell, native code, or process-loaded plugin.
+5. Package origin cannot bypass Credential, HTTP resilience, rate-limit, queue, Route, Governance, or Checkpoint rules.
+6. External imports preserve license/provenance and do not replace Data Relay runtime with foreign runtime code.
+7. Package install/upgrade does not silently enable Streams or advance checkpoints.
+8. Runtime Is Truth.
