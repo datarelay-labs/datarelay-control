@@ -16,7 +16,6 @@ from app.connectors_registry.lifecycle_archive import (
 )
 from app.connectors_registry.lifecycle_dependencies import (
     iter_requirements,
-    validate_stream_extension_requires,
     version_satisfies_requirement,
 )
 from app.connectors_registry.lifecycle_errors import LifecycleError
@@ -42,6 +41,11 @@ from app.connectors_registry.lifecycle_schemas import (
 )
 from app.connectors_registry.roots import builtin_connectors_root, installed_plugins_root
 from app.connectors_registry.loader import load_connector_modules
+from app.connectors_registry.package_validator import (
+    validate_install_package_collision,
+    validate_package_dependencies,
+)
+from app.connectors_registry.registry_generation import bump_registry_generation
 from app.connectors_registry.service import list_connector_summaries, reload_registry
 from app.database import utcnow
 
@@ -196,29 +200,16 @@ def _assert_no_install_collision(
     builtin_root: Path | None = None,
     installed_root: Path | None = None,
 ) -> None:
-    if package_id in _builtin_package_ids(builtin_root=builtin_root):
-        raise LifecycleError(
-            f"cannot install package that shadows builtin package_id={package_id!r}",
-            error_code="BUILTIN_SHADOW_FORBIDDEN",
-            details={"package_id": package_id},
-        )
-
     existing = _get_row(db, package_id)
-    if existing is not None and existing.status == LIFECYCLE_STATUS_INSTALLED:
-        raise LifecycleError(
-            f"package already installed: {package_id}",
-            error_code="PACKAGE_ALREADY_INSTALLED",
-            details={"package_id": package_id, "pack_version": existing.pack_version},
-        )
-
     active = active_package_path(package_id, installed_root=installed_root)
-    if active.is_dir():
-        raise LifecycleError(
-            f"package already present on filesystem: {package_id}",
-            error_code="PACKAGE_ALREADY_INSTALLED",
-            details={"package_id": package_id, "path": str(active)},
-        )
-
+    validate_install_package_collision(
+        package_id=package_id,
+        builtin_package_ids=_builtin_package_ids(builtin_root=builtin_root),
+        existing_installed=existing is not None and existing.status == LIFECYCLE_STATUS_INSTALLED,
+        active_path_exists=active.is_dir(),
+        active_path=str(active) if active.is_dir() else None,
+        existing_pack_version=existing.pack_version if existing is not None else None,
+    )
     _assert_connector_id_available(
         connector_id,
         package_id=package_id,
@@ -273,7 +264,17 @@ def _stage_from_upload(
 
 
 def _reload(*, builtin_root: Path | None, installed_root: Path | None) -> None:
+    """Immediate in-process reload after a successful lifecycle mutation."""
+
     reload_registry(root=builtin_root, installed_root=installed_root)
+
+
+def _commit_lifecycle_with_generation(db: Session) -> int:
+    """Bump registry generation in the same transaction as lifecycle metadata."""
+
+    generation = bump_registry_generation(db)
+    db.commit()
+    return generation
 
 
 def install_package(
@@ -302,7 +303,7 @@ def install_package(
             builtin_root=builtin_root,
             installed_root=installed_root,
         )
-        validate_stream_extension_requires(staged.manifest, available_versions=available)
+        validate_package_dependencies(staged.manifest, available_versions=available)
 
         # Filesystem publish first (no long-held DB transaction around I/O).
         published = atomic_publish_package(
@@ -340,7 +341,7 @@ def install_package(
                 row.previous_digest = None
                 row.installed_at = now
                 row.updated_at = now
-            db.commit()
+            _commit_lifecycle_with_generation(db)
             db.refresh(row)
         except Exception:
             remove_active_package(staged.package_id, installed_root=installed_root)
@@ -434,7 +435,7 @@ def upgrade_package(
         )
         # During upgrade, treat current package as still available at its current version
         # for other extensions; the package being upgraded uses the new manifest requires.
-        validate_stream_extension_requires(staged.manifest, available_versions=available)
+        validate_package_dependencies(staged.manifest, available_versions=available)
 
         previous_active = active_package_path(package_id, installed_root=installed_root)
         if not previous_active.is_dir():
@@ -479,7 +480,7 @@ def upgrade_package(
         row.previous_digest = previous_digest
         row.updated_at = utcnow()
         try:
-            db.commit()
+            _commit_lifecycle_with_generation(db)
             db.refresh(row)
         except Exception:
             try:
@@ -566,7 +567,7 @@ def rollback_package(
         row.previous_digest = None
         row.updated_at = utcnow()
         try:
-            db.commit()
+            _commit_lifecycle_with_generation(db)
             db.refresh(row)
         except Exception:
             try:
@@ -703,7 +704,7 @@ def uninstall_package(
         row.previous_digest = None
         row.updated_at = utcnow()
         try:
-            db.commit()
+            _commit_lifecycle_with_generation(db)
             db.refresh(row)
         except Exception:
             if preserved_for_compensation:

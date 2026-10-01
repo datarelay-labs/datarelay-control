@@ -933,13 +933,17 @@ def test_migration_upgrade_downgrade(reset_db_schema: None, test_db_url: str, db
 
     command.upgrade(cfg, "head")
     inspector = inspect(db_engine)
-    assert "marketplace_package_installs" in set(inspector.get_table_names())
+    tables = set(inspector.get_table_names())
+    assert "marketplace_package_installs" in tables
+    assert "connector_registry_version" in tables
 
     command.downgrade(cfg, "20260930_0063")
     inspector = inspect(db_engine)
-    assert "marketplace_package_installs" not in set(inspector.get_table_names())
+    tables = set(inspector.get_table_names())
+    assert "marketplace_package_installs" not in tables
+    assert "connector_registry_version" not in tables
 
     command.upgrade(cfg, "head")
     with db_engine.connect() as conn:
         rev = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-    assert rev == "20261001_0064"
+    assert rev == "20261001_0065"
