@@ -111,9 +111,25 @@ describe('streams-console-operations', () => {
     expect(out.map((r) => r.id)).toEqual(['4'])
   })
 
+  it('filters checkpoint lag from structured snapshot-derived stale evidence', () => {
+    const stale = row({ id: '4', name: 'Stale checkpoint', status: 'RUNNING', enabled: true, checkpointBehindDelivery: true })
+    const healthyCheckpoint = row({ id: '5', name: 'Fresh checkpoint', status: 'RUNNING', enabled: true, checkpointBehindDelivery: false })
+    const out = filterStreamRows({
+      rows: [...allRows, stale, healthyCheckpoint],
+      searchQuery: '',
+      quickFilter: 'all',
+      groupFilter: 'all',
+      connectorFilter: null,
+      operationalFilter: 'checkpoint-lag',
+      destinationLabelsByStreamId: new Map(),
+    })
+    expect(out.map((r) => r.id)).toEqual(['4'])
+  })
+
   it('parses only supported operational deep-link filters', () => {
     expect(parseStreamsOperationalFilter('?filter=no-data')).toBe('no-data')
     expect(parseStreamsOperationalFilter('?filter=LOW-VOLUME')).toBe('low-volume')
+    expect(parseStreamsOperationalFilter('?filter=checkpoint-lag')).toBe('checkpoint-lag')
     expect(parseStreamsOperationalFilter('?filter=degraded')).toBeNull()
   })
 

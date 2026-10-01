@@ -68,6 +68,8 @@ export type StreamConsoleRow = {
   checkpointValue: string
   checkpointUpdatedAt: string
   checkpointLagLabel: string
+  /** Snapshot-derived checkpoint staleness used by operational drill-downs. */
+  checkpointBehindDelivery?: boolean
   recentErrors: ReadonlyArray<{ message: string; relativeAt: string }>
 }
 
@@ -298,6 +300,7 @@ function baseRowFromStreamRead(s: StreamRead): StreamConsoleRow {
     checkpointValue: '—',
     checkpointUpdatedAt: '—',
     checkpointLagLabel: '—',
+    checkpointBehindDelivery: false,
     recentErrors: [],
   }
 }
@@ -377,6 +380,7 @@ export function enrichStreamRowFromOperationalSnapshot(
     routesError: kpi.failedRouteCount,
     runtimeIssue: issues[0] ?? null,
     checkpointLagLabel,
+    checkpointBehindDelivery,
     ...(snapshot.checkpoint_updated_at ? { checkpointUpdatedAt: snapshot.checkpoint_updated_at } : {}),
     ...(kpi.lastSuccessAt
       ? {
