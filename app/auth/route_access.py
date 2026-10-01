@@ -130,6 +130,9 @@ def build_capabilities(role: str) -> dict[str, bool]:
         "ai_audit_read": can_ai_audit_read(role),
         "ai_governance_read": can_ai_governance_read(role),
         "ai_governance_operate": can_ai_governance_operate(role),
+        "marketplace_package_lifecycle": can_operate,
+        "marketplace_trusted_key_manage": is_admin,
+        "marketplace_unsigned_install": is_admin,
     }
 
 
@@ -326,6 +329,29 @@ def evaluate_http_access(*, role: str, method: str, path: str) -> AccessDenied |
                 "AI governance mutations require Connector Operator or Administrator role.",
             )
 
+    # --- Marketplace trusted signing keys (M29.5A): Administrator write only ---
+    trusted_keys_prefix = f"{base}/connectors-registry/trusted-signing-keys"
+    if _under(trusted_keys_prefix, path) and m not in SAFE_METHODS and role != ROLE_ADMINISTRATOR:
+        return AccessDenied(
+            "ROLE_FORBIDDEN",
+            "Trusted signing key management requires the Administrator role.",
+        )
+
+    # --- Marketplace package lifecycle mutations: Viewer blocked (handled below);
+    # Operator may mutate packages but unsigned policy is enforced in lifecycle service. ---
+    packages_prefix = f"{base}/connectors-registry/packages"
+    if _under(packages_prefix, path) and m not in SAFE_METHODS:
+        if role == ROLE_VIEWER:
+            return AccessDenied(
+                "ROLE_FORBIDDEN",
+                "VIEWER role cannot perform Marketplace package lifecycle mutations.",
+            )
+        if not can_connector_operate(role) and role != ROLE_ADMINISTRATOR:
+            return AccessDenied(
+                "ROLE_FORBIDDEN",
+                "Marketplace package lifecycle requires Connector Operator or Administrator role.",
+            )
+
     # --- VIEWER: read-only monitoring; no mutating verbs except preview POSTs ---
     if role == ROLE_VIEWER and m not in SAFE_METHODS:
         if is_viewer_allowed_post(path):
@@ -343,6 +369,7 @@ def evaluate_http_access(*, role: str, method: str, path: str) -> AccessDenied |
             f"{base}/admin/https-settings",
             f"{base}/admin/retention-policy",
             f"{base}/admin/alert-settings",
+            f"{base}/connectors-registry/trusted-signing-keys",
         )
         for prefix in operator_mutation_deny:
             if _under(prefix, path):

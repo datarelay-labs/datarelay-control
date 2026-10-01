@@ -16,6 +16,7 @@ import app.checkpoints.models  # noqa: F401
 import app.connectors.models  # noqa: F401
 import app.connectors_registry.lifecycle_models  # noqa: F401
 import app.connectors_registry.registry_version_models  # noqa: F401
+import app.connectors_registry.trusted_signing_keys_models  # noqa: F401
 import app.destinations.models  # noqa: F401
 import app.enrichments.models  # noqa: F401
 import app.logs.models  # noqa: F401

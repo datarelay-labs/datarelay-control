@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import os
 import shutil
 import stat
 import tarfile
@@ -14,6 +12,12 @@ from typing import BinaryIO
 
 from app.connectors_registry.lifecycle_errors import LifecycleError
 from app.connectors_registry.models import ConnectorManifest
+from app.connectors_registry.package_digest import compute_canonical_package_digest
+from app.connectors_registry.package_secret_scan import assert_package_secrets_clean
+from app.connectors_registry.package_signature import (
+    PackageSignatureMetadata,
+    parse_signature_metadata,
+)
 from app.connectors_registry.package_validator import validate_marketplace_package
 
 _MAX_ARCHIVE_BYTES = 64 * 1024 * 1024  # 64 MiB
@@ -33,12 +37,7 @@ class StagedPackage:
     package_kind: str
     pack_version: str
     digest: str
-
-
-def compute_archive_digest(data: bytes) -> str:
-    """Return a stable sha256 digest for an uploaded archive."""
-
-    return hashlib.sha256(data).hexdigest()
+    signature_metadata: PackageSignatureMetadata | None = None
 
 
 def _is_within_directory(path: Path, directory: Path) -> bool:
@@ -106,7 +105,6 @@ def extract_tar_gz_to_staging(archive_bytes: bytes, *, staging_parent: Path | No
             for member in members:
                 name = member.name
                 target = _validate_member_name(name, staging_root=staging_root)
-                target_key = str(target.resolve()) if target.exists() else str(target)
                 # Normalize key relative to staging for duplicate detection
                 rel_key = str(Path(name).as_posix()).rstrip("/")
                 if rel_key in seen_targets:
@@ -173,10 +171,14 @@ def extract_tar_gz_to_staging(archive_bytes: bytes, *, staging_parent: Path | No
     return staging_root  # pragma: no cover
 
 
-def resolve_and_validate_staged_package(staging_root: Path, *, digest: str) -> StagedPackage:
-    """Resolve a unique package root under staging via Marketplace package validator."""
+def resolve_and_validate_staged_package(staging_root: Path) -> StagedPackage:
+    """Resolve package root, validate, secret-scan, and compute canonical digest."""
 
-    validated = validate_marketplace_package(staging_root, digest=digest)
+    # Digest placeholder until package root is known; replaced with canonical digest.
+    validated = validate_marketplace_package(staging_root, digest="")
+    assert_package_secrets_clean(validated.package_root)
+    digest = compute_canonical_package_digest(validated.package_root)
+    signature_metadata = parse_signature_metadata(validated.package_root)
     return StagedPackage(
         staging_root=staging_root,
         package_root=validated.package_root,
@@ -185,17 +187,17 @@ def resolve_and_validate_staged_package(staging_root: Path, *, digest: str) -> S
         package_id=validated.package_id,
         package_kind=validated.package_kind,
         pack_version=validated.pack_version,
-        digest=validated.digest,
+        digest=digest,
+        signature_metadata=signature_metadata,
     )
 
 
 def stage_archive_bytes(archive_bytes: bytes, *, staging_parent: Path | None = None) -> StagedPackage:
-    """Acquire → extract → validate a local ``.tar.gz`` package archive."""
+    """Acquire → extract → validate → secret-scan → digest a local ``.tar.gz`` package."""
 
-    digest = compute_archive_digest(archive_bytes)
     staging_root = extract_tar_gz_to_staging(archive_bytes, staging_parent=staging_parent)
     try:
-        return resolve_and_validate_staged_package(staging_root, digest=digest)
+        return resolve_and_validate_staged_package(staging_root)
     except Exception:
         shutil.rmtree(staging_root, ignore_errors=True)
         raise

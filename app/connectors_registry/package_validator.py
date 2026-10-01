@@ -1,4 +1,4 @@
-"""Marketplace package validation entry point (M29.4).
+"""Marketplace package validation entry point (M29.4 / M29.5A).
 
 Consolidates M29.1/M29.3 validation used during acquire/install into one path.
 
@@ -13,12 +13,12 @@ Categories covered here (behavior-preserving wrappers / orchestration):
 - installed package collision
 - platform compatibility metadata shape (parse only)
 
-Deferred to M29.5 (intentionally not implemented here):
+M29.5A security layers (secret scan, canonical digest, signature verify) run
+from the staging/lifecycle path. Remote Registry / Git / URL acquisition and
+SSRF allowlists remain deferred to M29.5B.
 
-- secret scanner
-- signature / trusted keys
-- license enforcement
-- SSRF acquisition
+Invariant (M29.5A): validators MUST NOT fetch arbitrary URLs. Manifest
+``source_evidence`` URLs are metadata only and are never auto-fetched here.
 """
 
 from __future__ import annotations
@@ -41,6 +41,10 @@ _PLATFORM_OWNED_SPOOF_KEYS = (
     "trust_tier",
     "validation_status",
     "install_status",
+    "signature_status",
+    "signing_key_id",
+    "digest",
+    "signature",
 )
 
 

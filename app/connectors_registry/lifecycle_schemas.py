@@ -16,6 +16,8 @@ class MarketplacePackageInstallRead(BaseModel):
     origin: str
     status: str
     digest: str
+    signature_status: str = "UNSIGNED"
+    signing_key_id: str | None = None
     installed_path: str
     previous_version: str | None = None
     previous_digest: str | None = None

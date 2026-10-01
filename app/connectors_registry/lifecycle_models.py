@@ -34,6 +34,11 @@ class MarketplacePackageInstall(Base):
     origin: Mapped[str] = mapped_column(String(64), nullable=False, default=LIFECYCLE_ORIGIN_UPLOAD)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default=LIFECYCLE_STATUS_INSTALLED)
     digest: Mapped[str] = mapped_column(String(128), nullable=False)
+    # Platform-derived signature evidence (M29.5A). Manifest claims are ignored.
+    signature_status: Mapped[str] = mapped_column(String(64), nullable=False, default="UNSIGNED")
+    signing_key_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    previous_signature_status: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    previous_signing_key_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     installed_path: Mapped[str] = mapped_column(Text, nullable=False)
     previous_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
     previous_digest: Mapped[str | None] = mapped_column(String(128), nullable=True)
