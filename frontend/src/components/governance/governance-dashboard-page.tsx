@@ -26,8 +26,7 @@ import {
   type GovernanceViolationEntry,
   type ViolationWindow,
 } from '../../api/gdcGovernanceViolations'
-import { fetchHealthOverview } from '../../api/gdcRuntimeHealth'
-import { getOperationalSnapshot } from '../../api/operationalSnapshot'
+import { clearOperationalSnapshotCache, getOperationalSnapshot } from '../../api/operationalSnapshot'
 import { NAV_PATH } from '../../config/nav-paths'
 import { isOssReleaseMode } from '../../lib/feature-flags'
 import { canEditPolicy } from '../../lib/governance-rbac'
@@ -137,15 +136,15 @@ export function GovernanceDashboardPage() {
   const [violations, setViolations] = useState<GovernanceViolationEntry[]>([])
   const [policies, setPolicies] = useState<GovernancePolicyEntry[]>([])
   const [operationalIssues, setOperationalIssues] = useState<{
-    noDataStreams: number
+    noDataStreams: number | null
     lowVolumeStreams: number | null
     schemaDriftCount: number | null
-    destinationCapacityWarnings: number
+    destinationCapacityWarnings: number | null
   }>({
-    noDataStreams: 0,
+    noDataStreams: null,
     lowVolumeStreams: null,
     schemaDriftCount: null,
-    destinationCapacityWarnings: 0,
+    destinationCapacityWarnings: null,
   })
   const [window, setWindow] = useState<ViolationWindow>('24h')
   const [loading, setLoading] = useState(true)
@@ -188,16 +187,16 @@ export function GovernanceDashboardPage() {
   }, [window])
 
   const loadOperationalIssues = useCallback(async () => {
-    const [healthResult, snapshotResult] = await Promise.allSettled([
-      fetchHealthOverview({ window: '24h' }),
-      getOperationalSnapshot(),
-    ])
-    const health = healthResult.status === 'fulfilled' ? healthResult.value : null
-    const snapshot = snapshotResult.status === 'fulfilled' ? snapshotResult.value : null
-    setOperationalIssues(deriveGovernanceOperationalIssues(health, null, snapshot))
+    try {
+      const snapshot = await getOperationalSnapshot()
+      setOperationalIssues(deriveGovernanceOperationalIssues(snapshot, null))
+    } catch {
+      setOperationalIssues(deriveGovernanceOperationalIssues(null, null))
+    }
   }, [])
 
   const refreshAll = useCallback(async () => {
+    clearOperationalSnapshotCache()
     await Promise.all([load(), loadSummary(), loadOperationalIssues()])
   }, [load, loadSummary, loadOperationalIssues])
 

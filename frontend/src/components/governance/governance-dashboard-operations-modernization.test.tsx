@@ -5,7 +5,7 @@ import * as gdcGovernanceDashboard from '../../api/gdcGovernanceDashboard'
 import * as gdcGovernanceOperations from '../../api/gdcGovernanceOperations'
 import * as gdcGovernancePolicies from '../../api/gdcGovernancePolicies'
 import * as gdcGovernanceViolations from '../../api/gdcGovernanceViolations'
-import * as gdcRuntimeHealth from '../../api/gdcRuntimeHealth'
+import * as operationalSnapshot from '../../api/operationalSnapshot'
 import { NAV_PATH } from '../../config/nav-paths'
 import { persistTestSession } from '../../lib/governance-rbac'
 import { GovernanceDashboardPage } from './governance-dashboard-page'
@@ -146,7 +146,7 @@ describe('Governance Dashboard modernization', () => {
         },
       ],
     })
-    vi.spyOn(gdcRuntimeHealth, 'fetchHealthOverview').mockResolvedValue(null)
+    vi.spyOn(operationalSnapshot, 'getOperationalSnapshot').mockRejectedValue(new Error('snapshot unavailable'))
   })
 
   it('uses investigation-first hierarchy with English operator path copy', async () => {
@@ -190,7 +190,7 @@ describe('Governance Dashboard modernization', () => {
     )
 
     const table = await screen.findByTestId('gov-recent-violations-table')
-    expect(within(table).getByText(/No recent open violations/i)).toBeInTheDocument()
+    expect(await within(table).findByText(/No recent open violations/i)).toBeInTheDocument()
     expect(screen.getByLabelText('Recent violations')).toBeInTheDocument()
   })
 

@@ -1,10 +1,10 @@
 import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as gdcGovernanceDashboard from '../../api/gdcGovernanceDashboard'
 import * as gdcGovernancePolicies from '../../api/gdcGovernancePolicies'
 import * as gdcGovernanceViolations from '../../api/gdcGovernanceViolations'
-import * as gdcRuntimeHealth from '../../api/gdcRuntimeHealth'
 import * as operationalSnapshot from '../../api/operationalSnapshot'
 import { GovernanceDashboardPage } from './governance-dashboard-page'
 
@@ -73,7 +73,6 @@ describe('GovernanceDashboardPage', () => {
         },
       ],
     })
-    vi.spyOn(gdcRuntimeHealth, 'fetchHealthOverview').mockResolvedValue(null)
     vi.spyOn(operationalSnapshot, 'getOperationalSnapshot').mockRejectedValue(new Error('snapshot unavailable'))
   })
 
@@ -108,6 +107,21 @@ describe('GovernanceDashboardPage', () => {
       expect(screen.getByTestId('dashboard-kpi-violations')).toHaveTextContent('7')
       expect(screen.getByTestId('dashboard-kpi-pending-approvals')).toHaveTextContent('2')
     })
+  })
+
+  it('invalidates operational snapshot cache on manual refresh', async () => {
+    const user = userEvent.setup()
+    const clearSpy = vi.spyOn(operationalSnapshot, 'clearOperationalSnapshotCache')
+
+    render(
+      <MemoryRouter>
+        <GovernanceDashboardPage />
+      </MemoryRouter>,
+    )
+
+    await screen.findByTestId('governance-dashboard-page')
+    await user.click(screen.getByRole('button', { name: 'Refresh governance dashboard' }))
+    await waitFor(() => expect(clearSpy).toHaveBeenCalledTimes(1))
   })
 
   it('renders page when summary fails but list APIs succeed', async () => {
