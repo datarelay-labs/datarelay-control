@@ -1,0 +1,20 @@
+ecosystem: singer
+identity:
+  vendor: BadCo
+  product: Denied
+  integration_name: tap-denied
+  upstream_path: taps/tap-denied
+license:
+  identifier: DENY-TEST-LICENSE
+  source: LICENSE
+auth:
+  auth_type: bearer
+proposed_source_type: HTTP_API_POLLING
+mapping_status: MAPPED
+streams:
+  - name: events
+    http_method: GET
+    path: /v1/events
+provenance:
+  evidence:
+    - source_path: x

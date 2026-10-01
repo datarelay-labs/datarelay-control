@@ -1,0 +1,20 @@
+ecosystem: singer
+identity:
+  vendor: Elasticish
+  product: Restricted
+  integration_name: tap-refonly
+  upstream_path: taps/tap-refonly
+license:
+  identifier: SSPL-1.0
+  source: LICENSE
+auth:
+  auth_type: api_key
+proposed_source_type: HTTP_API_POLLING
+mapping_status: MAPPED
+streams:
+  - name: events
+    http_method: GET
+    path: /v1/events
+provenance:
+  evidence:
+    - source_path: x

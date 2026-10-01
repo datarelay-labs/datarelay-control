@@ -1,0 +1,9 @@
+{
+  "intent": {
+    "vendor": "Acme",
+    "product": "Events API",
+    "desired_streams": ["listEvents"]
+  },
+  "openapi_path": "openapi_events.yaml",
+  "sample_path": "sample_events.json"
+}
