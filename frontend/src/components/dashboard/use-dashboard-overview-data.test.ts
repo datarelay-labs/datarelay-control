@@ -24,6 +24,10 @@ vi.mock('../../api/gdcConnectors', () => ({
   fetchConnectorsList: vi.fn(async () => []),
 }))
 
+vi.mock('../../api/gdcDestinations', () => ({
+  fetchDestinationsList: vi.fn(async () => []),
+}))
+
 vi.mock('../../api/operationalSnapshot', () => ({
   clearOperationalSnapshotCache: vi.fn(),
   getOperationalSnapshot: vi.fn(async () => ({
@@ -95,6 +99,7 @@ describe('useDashboardOverviewData', () => {
     expect(result.current.loadError).toBeNull()
     expect(result.current.bundle?.operationalSnapshot).not.toBeNull()
     expect(result.current.bundle?.operationalSnapshot?.global.running_streams).toBe(2)
+    await waitFor(() => expect(result.current.bundle?.destinations).toEqual([]))
     expect(gdcRuntime.fetchRuntimeDashboardOutcomeTimeseries).toHaveBeenCalled()
     await waitFor(() => expect(result.current.bundle?.outcomeTs).not.toBeNull())
   })

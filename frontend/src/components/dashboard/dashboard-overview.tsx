@@ -62,8 +62,13 @@ export function DashboardOverview() {
     [bundle?.operationalSnapshot],
   )
   const operationalIssues = useMemo(
-    () => deriveOperationalIssuesFromSnapshot(bundle?.operationalSnapshot ?? null, bundle?.dashboard ?? null),
-    [bundle?.operationalSnapshot, bundle?.dashboard],
+    () =>
+      deriveOperationalIssuesFromSnapshot(
+        bundle?.operationalSnapshot ?? null,
+        bundle?.dashboard ?? null,
+        bundle?.destinations ?? null,
+      ),
+    [bundle?.operationalSnapshot, bundle?.dashboard, bundle?.destinations],
   )
 
   const totalStreams = bundle?.operationalSnapshot?.global.total_streams ?? bundle?.streams.length ?? 0

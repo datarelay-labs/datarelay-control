@@ -8,6 +8,7 @@ import {
   invalidateDashboardAnalyticsCache,
 } from '../../api/gdcRuntime'
 import { fetchConnectorsList, type ConnectorRead } from '../../api/gdcConnectors'
+import { fetchDestinationsList, type DestinationListItem } from '../../api/gdcDestinations'
 import { clearOperationalSnapshotCache, getOperationalSnapshot, type OperationalSnapshotResponse } from '../../api/operationalSnapshot'
 import { canUseOperationalFixture } from '../../lib/runtime-operational-fixture-mode'
 import { fetchStreamsList } from '../../api/gdcStreams'
@@ -32,6 +33,7 @@ export type DashboardOverviewBundle = {
   outcomeTs: DashboardOutcomeTimeseriesResponse | null
   streams: StreamRead[]
   connectors: ConnectorRead[]
+  destinations: DestinationListItem[] | null
   operationalSnapshot: OperationalSnapshotResponse | null
   /** True when the operational snapshot came from a dev fixture file, not the live API. */
   isFixtureMode: boolean
@@ -45,6 +47,7 @@ const EMPTY_DASHBOARD_BUNDLE: DashboardOverviewBundle = {
   outcomeTs: null,
   streams: [],
   connectors: [],
+  destinations: null,
   operationalSnapshot: null,
   isFixtureMode: false,
 }
@@ -70,6 +73,7 @@ function mergeDeferredBundle(
     PromiseSettledResult<Awaited<ReturnType<typeof fetchRuntimeAlertSummary>>>,
     PromiseSettledResult<Awaited<ReturnType<typeof fetchStreamsList>>>,
     PromiseSettledResult<Awaited<ReturnType<typeof fetchConnectorsList>>>,
+    PromiseSettledResult<Awaited<ReturnType<typeof fetchDestinationsList>>>,
   ],
 ): DashboardOverviewBundle {
   const [
@@ -77,6 +81,7 @@ function mergeDeferredBundle(
     alertsResult,
     streamsResult,
     connectorsResult,
+    destinationsResult,
   ] = settled
 
   return {
@@ -89,6 +94,7 @@ function mergeDeferredBundle(
     outcomeTs: null,
     streams: unwrapDeferredList(streamsResult),
     connectors: unwrapDeferredList(connectorsResult),
+    destinations: unwrapDeferred(destinationsResult),
   }
 }
 
@@ -131,6 +137,7 @@ export function useDashboardOverviewData(window: ExtendedMetricsWindow, refreshM
           fetchRuntimeAlertSummary(window, 40, fetchOpts),
           fetchStreamsList(fetchOpts),
           fetchConnectorsList(fetchOpts),
+          fetchDestinationsList(fetchOpts),
         ])
 
         const operationalSnapshot = await getOperationalSnapshot()

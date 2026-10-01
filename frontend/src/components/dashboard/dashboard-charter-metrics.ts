@@ -21,6 +21,7 @@ import {
   selectGlobalKpi,
 } from '../../lib/operational-snapshot-selectors'
 import { formatCompactInt } from '../runtime/runtime-monitoring-aggregates'
+import { extractCapacityConfig } from '../destinations/destination-mini-charts'
 import {
   groupRowsBySourceProduct,
   type ProductStreamGroup,
@@ -271,6 +272,7 @@ export function deriveOperationalIssues(
 export function deriveOperationalIssuesFromSnapshot(
   snapshot: OperationalSnapshotResponse | null,
   dashboard: DashboardSummaryResponse | null,
+  destinations: readonly DestinationListItem[] | null = null,
 ): OperationalIssueCounts {
   const streams = snapshot?.streams ?? []
   const idleCount = streams.filter((s) => s.enabled && s.health_status === 'IDLE').length
@@ -281,15 +283,26 @@ export function deriveOperationalIssuesFromSnapshot(
     dashboard?.open_schema_field_drift_count != null
       ? safeNonNeg(dashboard.open_schema_field_drift_count)
       : null
-  const destinationCapacityWarnings = (snapshot?.problems ?? []).filter(
-    (p) => p.scope === 'destination' && p.severity === 'warning',
-  ).length
+
+  let destinationCapacityWarnings: number | null = null
+  if (snapshot != null && destinations != null) {
+    const runtimeById = new Map(snapshot.destinations.map((row) => [row.destination_id, row]))
+    destinationCapacityWarnings = destinations.reduce((count, row) => {
+      const runtime = runtimeById.get(row.id)
+      const { limitEps, thresholds } = extractCapacityConfig(row)
+      if (!runtime || limitEps == null || limitEps <= 0) return count
+      const currentEps = runtime.inbound_eps_1m
+      if (!Number.isFinite(currentEps)) return count
+      const usagePct = (currentEps / limitEps) * 100
+      return usagePct >= thresholds.warningPct ? count + 1 : count
+    }, 0)
+  }
 
   return {
-    noDataStreams: idleCount > 0 ? idleCount : null,
-    lowVolumeStreams: lowVolumeCount > 0 ? lowVolumeCount : null,
+    noDataStreams: snapshot == null ? null : idleCount,
+    lowVolumeStreams: snapshot == null ? null : lowVolumeCount,
     schemaDriftCount,
-    destinationCapacityWarnings: destinationCapacityWarnings > 0 ? destinationCapacityWarnings : null,
+    destinationCapacityWarnings,
   }
 }
 
