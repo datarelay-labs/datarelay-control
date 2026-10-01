@@ -1,12 +1,16 @@
-import { mapBackendStreamStatus } from '../../api/streamRows'
-import type { DashboardSummaryResponse, HealthOverviewResponse, StreamRead } from '../../api/types/gdcApi'
+import type { OperationalSnapshotResponse } from '../../api/operationalSnapshot'
+import type { DashboardSummaryResponse } from '../../api/types/gdcApi'
+import { isLowVolumeEps } from '../../lib/low-volume-signal'
 
 export type GovernanceOperationalIssueCounts = {
-  noDataStreams: number
-  lowVolumeStreams: number
+  /** null = authoritative operational snapshot unavailable. */
+  noDataStreams: number | null
+  /** null = authoritative operational snapshot unavailable. */
+  lowVolumeStreams: number | null
   /** null = API data unavailable (not the same as 0 drift alerts). */
   schemaDriftCount: number | null
-  destinationCapacityWarnings: number
+  /** null = authoritative operational snapshot unavailable. */
+  destinationCapacityWarnings: number | null
 }
 
 function safeNonNeg(n: unknown): number {
@@ -17,33 +21,27 @@ function safeNonNeg(n: unknown): number {
 
 /** Lightweight subset of dashboard operational issue derivation for Governance Overview. */
 export function deriveGovernanceOperationalIssues(
-  health: HealthOverviewResponse | null,
+  snapshot: OperationalSnapshotResponse | null,
   dashboard: DashboardSummaryResponse | null,
-  streamsList: readonly StreamRead[] = [],
 ): GovernanceOperationalIssueCounts {
-  const streams = health?.streams
-  const summary = dashboard?.summary
-
   const noDataStreams =
-    streams?.excluded_no_outcome != null
-      ? safeNonNeg(streams.excluded_no_outcome)
-      : streams?.idle != null
-        ? safeNonNeg(streams.idle)
-        : 0
+    snapshot == null
+      ? null
+      : snapshot.streams.filter((stream) => stream.enabled && stream.health_status === 'IDLE').length
 
   const lowVolumeStreams =
-    streamsList.length > 0
-      ? streamsList.filter((s) => mapBackendStreamStatus(s.status) === 'DEGRADED').length
-      : streams?.degraded != null
-        ? safeNonNeg(streams.degraded)
-        : 0
+    snapshot == null
+      ? null
+      : snapshot.streams.filter(
+          (stream) => stream.enabled && isLowVolumeEps(stream.eps_1m, stream.eps_5m),
+        ).length
 
   const destinationCapacityWarnings =
-    summary?.rate_limited_destination_streams != null
-      ? safeNonNeg(summary.rate_limited_destination_streams)
-      : health?.destinations?.degraded != null
-        ? safeNonNeg(health.destinations.degraded)
-        : 0
+    snapshot == null
+      ? null
+      : snapshot.problems.filter(
+          (problem) => problem.scope === 'destination' && problem.severity === 'warning',
+        ).length
 
   // Explicit OPEN StreamSchemaFieldDrift aggregate from dashboard/summary.
   // If that field is absent (API failed or unavailable) return null, not 0.
