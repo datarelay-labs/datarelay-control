@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 PackageKind = Literal["source", "stream_extension"]
+RegistryOrigin = Literal["builtin", "installed"]
 
 
 class ConnectorAuthManifest(BaseModel):
@@ -164,6 +165,8 @@ class ConnectorModuleEntry:
     errors: list[Any] = field(default_factory=list)
     resources: ConnectorModuleResources = field(default_factory=ConnectorModuleResources)
     connector_id: str = ""
+    # Platform-derived registry origin (never trusted from package manifest).
+    installed_from: RegistryOrigin = "builtin"
 
     def __post_init__(self) -> None:
         if not self.connector_id and self.manifest is not None:

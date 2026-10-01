@@ -49,6 +49,9 @@ class ConnectorRegistrySummary(BaseModel):
     pack_version: str | None = None
     package_id: str | None = None
     package_kind: str | None = None
+    # M29.2 platform-derived registry origin (not trusted from package files)
+    installed_from: str | None = None
+    requires: Any | None = None
 
 
 class ResolvedConnectorRead(BaseModel):
@@ -73,6 +76,9 @@ class ResolvedConnectorRead(BaseModel):
     pack_version: str | None = None
     package_id: str | None = None
     package_kind: str | None = None
+    # M29.2 platform-derived registry origin (not trusted from package files)
+    installed_from: str | None = None
+    requires: Any | None = None
 
 
 class ConnectorRegistryDetail(BaseModel):

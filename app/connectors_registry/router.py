@@ -23,7 +23,7 @@ router = APIRouter()
 
 @router.get("/", response_model=ConnectorRegistryListResponse)
 async def list_connectors_registry() -> ConnectorRegistryListResponse:
-    """List connector modules discovered from ``connectors/*/manifest.*``."""
+    """List connector modules discovered from configured registry roots."""
 
     rows = list_connector_summaries()
     return ConnectorRegistryListResponse(
@@ -35,7 +35,7 @@ async def list_connectors_registry() -> ConnectorRegistryListResponse:
 
 @router.post("/reload", response_model=ConnectorRegistryReloadResponse)
 async def post_connectors_registry_reload() -> ConnectorRegistryReloadResponse:
-    """Rescan the filesystem connector module tree and refresh the in-memory cache."""
+    """Rescan builtin and installed package roots and refresh the in-memory cache."""
 
     return reload_registry()
 

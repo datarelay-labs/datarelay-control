@@ -17,6 +17,7 @@ from app.connectors_registry.migration import (
     vendor_migration_label,
 )
 from app.connectors_registry.models import ConnectorModuleEntry, RegistryLoadResult
+from app.connectors_registry.roots import builtin_connectors_root, installed_plugins_root, repo_root
 from app.connectors_registry.schemas import (
     ConnectorRegistryDetail,
     ConnectorRegistryReloadResponse,
@@ -30,23 +31,23 @@ logger = logging.getLogger(__name__)
 
 _registry_cache: dict[str, ConnectorModuleEntry] | None = None
 _registry_issues: list[ValidationIssue] = []
-_registry_scan_root: Path | None = None
+_registry_scan_roots: list[Path] = []
 _include_legacy_catalog: bool = False
 
 
 def _canonical_connectors_root() -> Path:
     """Repository ``connectors/`` path (not monkeypatchable)."""
 
-    return Path(__file__).resolve().parent.parent.parent / "connectors"
+    return builtin_connectors_root()
 
 
 def clear_registry_cache() -> None:
     """Reset in-process registry cache (tests)."""
 
-    global _registry_cache, _registry_issues, _registry_scan_root, _include_legacy_catalog
+    global _registry_cache, _registry_issues, _registry_scan_roots, _include_legacy_catalog
     _registry_cache = None
     _registry_issues = []
-    _registry_scan_root = None
+    _registry_scan_roots = []
     _include_legacy_catalog = False
 
 
@@ -68,10 +69,23 @@ def _issue_to_read(issue: ValidationIssue) -> ConnectorValidationErrorRead:
 
 
 def _relative_repo_path(path: Path) -> str:
-    repo_root = connectors_root().parent
-    if path.is_relative_to(repo_root):
-        return str(path.relative_to(repo_root))
+    root = repo_root()
+    try:
+        resolved = path.resolve()
+    except OSError:
+        resolved = path
+    if resolved.is_relative_to(root):
+        return str(resolved.relative_to(root))
     return str(path)
+
+
+def _requires_payload(entry: ConnectorModuleEntry) -> Any | None:
+    manifest = entry.manifest
+    if manifest is None or manifest.requires is None:
+        return None
+    if isinstance(manifest.requires, list):
+        return [item.model_dump() for item in manifest.requires]
+    return manifest.requires.model_dump()
 
 
 def _entry_summary_fields(entry: ConnectorModuleEntry) -> dict[str, Any]:
@@ -88,6 +102,8 @@ def _entry_summary_fields(entry: ConnectorModuleEntry) -> dict[str, Any]:
             "pack_version": manifest.pack_version,
             "package_id": manifest.package_id,
             "package_kind": manifest.package_kind,
+            "installed_from": entry.installed_from,
+            "requires": _requires_payload(entry),
         }
     return {
         "name": entry.connector_id,
@@ -100,6 +116,8 @@ def _entry_summary_fields(entry: ConnectorModuleEntry) -> dict[str, Any]:
         "pack_version": None,
         "package_id": None,
         "package_kind": None,
+        "installed_from": entry.installed_from,
+        "requires": None,
     }
 
 
@@ -134,19 +152,21 @@ def _entry_to_resolved(entry: ConnectorModuleEntry) -> ResolvedConnectorRead:
         pack_version=fields.get("pack_version"),  # type: ignore[arg-type]
         package_id=fields.get("package_id"),  # type: ignore[arg-type]
         package_kind=fields.get("package_kind"),  # type: ignore[arg-type]
+        installed_from=fields.get("installed_from"),  # type: ignore[arg-type]
+        requires=fields.get("requires"),
     )
 
 
 def _apply_load_result(
     result: RegistryLoadResult,
     *,
-    scan_root: Path,
+    scan_roots: list[Path],
     include_legacy_catalog: bool = False,
 ) -> ConnectorRegistryReloadResponse:
-    global _registry_cache, _registry_issues, _registry_scan_root, _include_legacy_catalog
+    global _registry_cache, _registry_issues, _registry_scan_roots, _include_legacy_catalog
     _registry_cache = result.modules
     _registry_issues = list(result.issues)
-    _registry_scan_root = scan_root
+    _registry_scan_roots = list(scan_roots)
     _include_legacy_catalog = include_legacy_catalog
     connector_ids = sorted(result.modules.keys())
     logger.info(
@@ -155,6 +175,7 @@ def _apply_load_result(
             "stage": "connector_registry_loaded",
             "loaded_count": len(connector_ids),
             "issue_count": len(result.issues),
+            "scan_roots": [str(path) for path in scan_roots],
         },
     )
     return ConnectorRegistryReloadResponse(
@@ -165,24 +186,68 @@ def _apply_load_result(
     )
 
 
-def bootstrap_registry(*, root: Path | None = None) -> ConnectorRegistryReloadResponse:
-    """Load connector manifests at process start."""
-
-    base = root or connectors_root()
-    result = load_connector_modules(root=base)
+def _should_include_legacy(*, root: Path | None, builtin_scan_root: Path) -> bool:
+    if root is not None:
+        return False
     canonical = _canonical_connectors_root().resolve()
-    include_legacy = root is None and base.resolve() == canonical
-    return _apply_load_result(result, scan_root=base, include_legacy_catalog=include_legacy)
+    try:
+        return builtin_scan_root.resolve() == canonical
+    except OSError:
+        return False
 
 
-def reload_registry(*, root: Path | None = None) -> ConnectorRegistryReloadResponse:
-    """Admin-triggered filesystem rescan."""
+def bootstrap_registry(
+    *,
+    root: Path | None = None,
+    installed_root: Path | None = None,
+) -> ConnectorRegistryReloadResponse:
+    """Load connector manifests at process start (builtin + installed roots)."""
 
-    base = root or connectors_root()
-    result = load_connector_modules(root=base)
-    canonical = _canonical_connectors_root().resolve()
-    include_legacy = root is None and base.resolve() == canonical
-    return _apply_load_result(result, scan_root=base, include_legacy_catalog=include_legacy)
+    if root is None:
+        result = load_connector_modules(root=None, installed_root=installed_root)
+        builtin_scan = connectors_root()
+        scan_roots = [
+            builtin_scan,
+            installed_root if installed_root is not None else installed_plugins_root(),
+        ]
+        include_legacy = _should_include_legacy(root=None, builtin_scan_root=builtin_scan)
+    elif installed_root is not None:
+        result = load_connector_modules(
+            root=root,
+            installed_root=installed_root,
+            include_installed=True,
+        )
+        scan_roots = [root, installed_root]
+        include_legacy = False
+    else:
+        # Explicit single-root override (existing tests / tooling).
+        result = load_connector_modules(root=root, include_installed=False)
+        scan_roots = [root]
+        include_legacy = False
+
+    unique_roots: list[Path] = []
+    seen: set[str] = set()
+    for path in scan_roots:
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_roots.append(path)
+    return _apply_load_result(
+        result,
+        scan_roots=unique_roots,
+        include_legacy_catalog=include_legacy,
+    )
+
+
+def reload_registry(
+    *,
+    root: Path | None = None,
+    installed_root: Path | None = None,
+) -> ConnectorRegistryReloadResponse:
+    """Admin-triggered filesystem rescan across configured registry roots."""
+
+    return bootstrap_registry(root=root, installed_root=installed_root)
 
 
 def _require_cache() -> dict[str, ConnectorModuleEntry]:
@@ -237,6 +302,7 @@ def list_connector_summaries() -> list[ConnectorRegistrySummary]:
                     legacy_template_id=legacy.get("legacy_template_id"),
                     error_count=0,
                     migration_error_count=0,
+                    installed_from="builtin",
                 )
             )
 
@@ -299,3 +365,10 @@ def get_last_load_issues() -> list[ValidationIssue]:
 
     _require_cache()
     return list(_registry_issues)
+
+
+def get_registry_scan_roots() -> list[Path]:
+    """Return roots used by the most recent registry scan (tests/diagnostics)."""
+
+    _require_cache()
+    return list(_registry_scan_roots)

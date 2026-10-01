@@ -21,3 +21,4 @@ psutil
 paramiko>=3.4.0,<4
 scp>=0.14.0,<1
 PyYAML>=6.0,<7
+packaging>=23.0,<26

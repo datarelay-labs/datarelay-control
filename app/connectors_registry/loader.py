@@ -8,13 +8,23 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from packaging.specifiers import InvalidSpecifier, SpecifierSet
+from packaging.version import InvalidVersion, Version
 
 from app.connectors_registry.errors import ValidationIssue
 from app.connectors_registry.models import (
     ConnectorModuleEntry,
     ConnectorModuleResources,
     ConnectorManifest,
+    PackageRequirement,
     RegistryLoadResult,
+    RegistryOrigin,
+)
+from app.connectors_registry.roots import (
+    RegistryRoot,
+    builtin_connectors_root,
+    default_registry_roots,
+    is_path_within_root,
 )
 from app.connectors_registry.validator import (
     build_resources_summary,
@@ -35,7 +45,7 @@ _MANIFEST_FILENAMES = ("manifest.yaml", "manifest.yml", "manifest.json")
 def connectors_root() -> Path:
     """Return absolute path to ``connectors/`` at repository root."""
 
-    return Path(__file__).resolve().parent.parent.parent / "connectors"
+    return builtin_connectors_root()
 
 
 def _read_yaml_or_json(path: Path) -> Any:
@@ -52,20 +62,90 @@ def _read_manifest_file(path: Path) -> dict[str, Any]:
     return data
 
 
-def _discover_manifest_paths(root: Path) -> list[Path]:
+def _discover_manifest_paths(root: Path) -> list[tuple[Path, Path]]:
+    """Discover ``(module_dir, manifest_path)`` pairs constrained to ``root``."""
+
     if not root.is_dir():
         return []
 
-    found: list[Path] = []
-    for child in sorted(root.iterdir()):
+    found: list[tuple[Path, Path]] = []
+    try:
+        children = sorted(root.iterdir())
+    except OSError as exc:
+        logger.error(
+            "%s",
+            {
+                "stage": "connector_registry_root_unreadable",
+                "path": str(root),
+                "error": str(exc),
+            },
+        )
+        return []
+
+    for child in children:
         if not child.is_dir():
+            continue
+        if not is_path_within_root(child, root):
+            logger.error(
+                "%s",
+                {
+                    "stage": "connector_registry_path_escape",
+                    "path": str(child),
+                    "root": str(root),
+                },
+            )
             continue
         for name in _MANIFEST_FILENAMES:
             candidate = child / name
-            if candidate.is_file():
-                found.append(candidate)
+            if not candidate.is_file():
+                continue
+            if not is_path_within_root(candidate, root):
+                logger.error(
+                    "%s",
+                    {
+                        "stage": "connector_registry_path_escape",
+                        "path": str(candidate),
+                        "root": str(root),
+                    },
+                )
                 break
+            found.append((child, candidate))
+            break
     return found
+
+
+
+
+def _resource_path_issue(
+    module_dir: Path,
+    path: Path,
+    *,
+    connector_id: str,
+) -> ValidationIssue | None:
+    """Reject any resource read that resolves outside one package directory."""
+
+    if is_path_within_root(path, module_dir):
+        return None
+    return ValidationIssue(
+        rule_id="REG-005",
+        message=f"package resource path escapes package root: {path}",
+        connector_id=connector_id,
+        path=str(path),
+    )
+
+
+def _dependency_version_matches(version: str, requirement: str) -> bool:
+    """Compare a package version against a PEP 440-style requirement."""
+
+    parsed_version = Version(version)
+    raw = requirement.strip()
+    if not raw:
+        return True
+    if not any(raw.startswith(op) for op in ("~=", "==", "!=", "<=", ">=", "<", ">", "===")):
+        raw = f"=={raw}"
+    else:
+        raw = ",".join(part for part in raw.replace(",", " ").split() if part)
+    return parsed_version in SpecifierSet(raw)
 
 
 def _relative_module_path(module_dir: Path, path: Path) -> str:
@@ -85,8 +165,15 @@ def _load_stream_templates(
     issues: list[ValidationIssue] = []
 
     streams_dir = module_dir / "streams"
-    if streams_dir.is_dir():
+    streams_dir_issue = _resource_path_issue(module_dir, streams_dir, connector_id=connector_id)
+    if streams_dir.exists() and streams_dir_issue is not None:
+        issues.append(streams_dir_issue)
+    elif streams_dir.is_dir():
         for path in sorted(streams_dir.glob("*.yaml")) + sorted(streams_dir.glob("*.yml")):
+            path_issue = _resource_path_issue(module_dir, path, connector_id=connector_id)
+            if path_issue is not None:
+                issues.append(path_issue)
+                continue
             stream_id = path.stem
             try:
                 data = _read_yaml_or_json(path)
@@ -124,6 +211,10 @@ def _load_stream_templates(
         for stream_ref in manifest.streams:
             if stream_ref.template:
                 template_path = module_dir / stream_ref.template
+                path_issue = _resource_path_issue(module_dir, template_path, connector_id=connector_id)
+                if path_issue is not None:
+                    issues.append(path_issue)
+                    continue
                 if not template_path.is_file():
                     issues.append(
                         ValidationIssue(
@@ -173,10 +264,18 @@ def _load_json_directory(
     loaded: dict[str, dict[str, Any]] = {}
     issues: list[ValidationIssue] = []
     target = module_dir / subdir
+    target_issue = _resource_path_issue(module_dir, target, connector_id=connector_id)
+    if target.exists() and target_issue is not None:
+        issues.append(target_issue)
+        return loaded, issues
     if not target.is_dir():
         return loaded, issues
 
     for path in sorted(target.glob("*.json")):
+        path_issue = _resource_path_issue(module_dir, path, connector_id=connector_id)
+        if path_issue is not None:
+            issues.append(path_issue)
+            continue
         resource_id = path.stem
         try:
             data = _read_yaml_or_json(path)
@@ -221,6 +320,10 @@ def _load_manifest_referenced_json(
         if not rel_path:
             continue
         file_path = module_dir / rel_path
+        path_issue = _resource_path_issue(module_dir, file_path, connector_id=connector_id)
+        if path_issue is not None:
+            issues.append(path_issue)
+            continue
         if not file_path.is_file():
             issues.append(
                 ValidationIssue(
@@ -262,6 +365,10 @@ def _load_api_test(module_dir: Path, *, connector_id: str) -> tuple[dict[str, An
     issues: list[ValidationIssue] = []
     for name in ("api_test.yaml", "api_test.yml"):
         path = module_dir / name
+        path_issue = _resource_path_issue(module_dir, path, connector_id=connector_id)
+        if path_issue is not None and path.exists():
+            issues.append(path_issue)
+            continue
         if not path.is_file():
             continue
         try:
@@ -283,11 +390,18 @@ def _load_api_test(module_dir: Path, *, connector_id: str) -> tuple[dict[str, An
     return None, issues
 
 
-def _load_docs_metadata(module_dir: Path) -> Any:
+def _load_docs_metadata(
+    module_dir: Path,
+    *,
+    connector_id: str,
+) -> tuple[Any, list[ValidationIssue]]:
     docs_path = module_dir / "docs.md"
+    path_issue = _resource_path_issue(module_dir, docs_path, connector_id=connector_id)
+    if path_issue is not None and docs_path.exists():
+        return None, [path_issue]
     if not docs_path.is_file():
-        return None
-    return extract_docs_metadata(docs_path, relative_path="docs.md")
+        return None, []
+    return extract_docs_metadata(docs_path, relative_path="docs.md"), []
 
 
 def _load_auth_schema(
@@ -305,6 +419,10 @@ def _load_auth_schema(
         return None, issues
 
     schema_path = module_dir / schema_ref
+    path_issue = _resource_path_issue(module_dir, schema_path, connector_id=connector_id)
+    if path_issue is not None:
+        issues.append(path_issue)
+        return None, issues
     if not schema_path.is_file():
         issues.append(
             ValidationIssue(
@@ -406,7 +524,9 @@ def _load_module_resources(
     resources.api_test = api_test
     issues.extend(api_issues)
 
-    resources.docs = _load_docs_metadata(module_dir)
+    docs, docs_issues = _load_docs_metadata(module_dir, connector_id=connector_id)
+    resources.docs = docs
+    issues.extend(docs_issues)
 
     auth_schema, auth_schema_issues = _load_auth_schema(
         module_dir,
@@ -420,16 +540,71 @@ def _load_module_resources(
     return resources, issues
 
 
-def load_connector_modules(*, root: Path | None = None) -> RegistryLoadResult:
-    """Scan ``connectors/*/manifest.*`` and build an in-memory index with resolved resources."""
+def _package_identity(manifest: ConnectorManifest | None, connector_id: str) -> tuple[str, str | None]:
+    """Return ``(package_id, pack_version)`` for collision checks."""
 
-    base = root or connectors_root()
-    result = RegistryLoadResult()
-    parsed: list[tuple[str, ConnectorManifest | None, Path, Path, list[ValidationIssue]]] = []
+    if manifest is None:
+        return connector_id, None
+    package_id = (manifest.package_id or manifest.id or connector_id).strip() or connector_id
+    pack_version = manifest.pack_version or manifest.version
+    return package_id, pack_version
+
+
+def _iter_requires(manifest: ConnectorManifest | None) -> list[PackageRequirement]:
+    if manifest is None or manifest.requires is None:
+        return []
+    if isinstance(manifest.requires, list):
+        return list(manifest.requires)
+    return [manifest.requires]
+
+
+def _scan_single_root(
+    registry_root: RegistryRoot,
+    *,
+    result: RegistryLoadResult,
+) -> list[tuple[str, ConnectorManifest | None, Path, Path, list[ValidationIssue], RegistryOrigin]]:
+    """Parse manifests under one root. Does not yet apply cross-root merges."""
+
+    parsed: list[tuple[str, ConnectorManifest | None, Path, Path, list[ValidationIssue], RegistryOrigin]] = []
     id_paths: list[tuple[str, str]] = []
+    escape_issues: list[ValidationIssue] = []
 
-    for manifest_path in _discover_manifest_paths(base):
-        module_dir = manifest_path.parent
+    root = registry_root.path
+    if not root.exists():
+        return parsed
+    if not root.is_dir():
+        result.issues.append(
+            ValidationIssue(
+                rule_id="REG-003",
+                message=f"registry root is not a directory: {root}",
+                path=str(root),
+            )
+        )
+        return parsed
+
+    discovered = _discover_manifest_paths(root)
+    # Surface escape attempts that were skipped during discovery when a symlink
+    # child exists but was rejected by the boundary check.
+    try:
+        for child in sorted(root.iterdir()):
+            if child.is_symlink() or child.is_dir():
+                if not is_path_within_root(child, root):
+                    escape_issues.append(
+                        ValidationIssue(
+                            rule_id="REG-004",
+                            message=(
+                                f"package path escapes configured {registry_root.origin} "
+                                f"root: {child}"
+                            ),
+                            path=str(child),
+                        )
+                    )
+    except OSError:
+        pass
+    if escape_issues:
+        result.issues.extend(escape_issues)
+
+    for module_dir, manifest_path in discovered:
         connector_id: str | None = None
         manifest: ConnectorManifest | None = None
         manifest_issues: list[ValidationIssue] = []
@@ -454,6 +629,7 @@ def load_connector_modules(*, root: Path | None = None) -> RegistryLoadResult:
             )
             continue
 
+        # Manifest-declared installed_from is never registry authority.
         connector_id = str(raw.get("id") or "").strip() or None
         manifest, manifest_issues = validate_manifest_dict(raw, manifest_path=str(manifest_path))
 
@@ -472,7 +648,16 @@ def load_connector_modules(*, root: Path | None = None) -> RegistryLoadResult:
                 )
             continue
 
-        parsed.append((connector_id, manifest, module_dir, manifest_path, manifest_issues))
+        parsed.append(
+            (
+                connector_id,
+                manifest,
+                module_dir,
+                manifest_path,
+                manifest_issues,
+                registry_root.origin,
+            )
+        )
         id_paths.append((connector_id, str(manifest_path)))
 
     reject_paths, duplicate_issues = detect_duplicate_ids(id_paths)
@@ -490,10 +675,109 @@ def load_connector_modules(*, root: Path | None = None) -> RegistryLoadResult:
                 },
             )
 
-    for connector_id, manifest, module_dir, manifest_path, manifest_issues in parsed:
-        if str(manifest_path) in reject_paths:
-            continue
+    return [item for item in parsed if str(item[3]) not in reject_paths]
 
+
+def _collision_message(
+    *,
+    package_id: str,
+    existing: ConnectorModuleEntry,
+    challenger_origin: RegistryOrigin,
+    challenger_version: str | None,
+) -> str:
+    existing_version = None
+    if existing.manifest is not None:
+        existing_version = existing.manifest.pack_version or existing.manifest.version
+    if existing_version == challenger_version and existing_version is not None:
+        kind = "duplicate"
+    else:
+        kind = "ambiguous"
+    return (
+        f"{kind} package_id={package_id!r} across registry roots: "
+        f"existing_origin={existing.installed_from} existing_version={existing_version!r} "
+        f"challenger_origin={challenger_origin} challenger_version={challenger_version!r}; "
+        "automatic override is forbidden until package lifecycle (M29.3)"
+    )
+
+
+def _apply_dependency_issues(result: RegistryLoadResult) -> None:
+    """Validate dependency presence, target validity, and declared versions."""
+
+    known_packages: dict[str, ConnectorModuleEntry] = {}
+    for entry in result.modules.values():
+        package_id, _ = _package_identity(entry.manifest, entry.connector_id)
+        known_packages.setdefault(package_id, entry)
+        known_packages.setdefault(entry.connector_id, entry)
+
+    changed = True
+    while changed:
+        changed = False
+        for entry in result.modules.values():
+            if entry.status == "invalid":
+                continue
+            for requirement in _iter_requires(entry.manifest):
+                required_id = requirement.package_id.strip()
+                target = known_packages.get(required_id)
+                issue: ValidationIssue | None = None
+                if target is None:
+                    issue = ValidationIssue(
+                        rule_id="DEP-001",
+                        message=f"missing required package: {required_id}",
+                        connector_id=entry.connector_id,
+                        path=str(entry.manifest_path),
+                    )
+                elif target.status != "valid" or target.manifest is None:
+                    issue = ValidationIssue(
+                        rule_id="DEP-002",
+                        message=f"required package is invalid: {required_id}",
+                        connector_id=entry.connector_id,
+                        path=str(entry.manifest_path),
+                    )
+                elif requirement.version:
+                    _, target_version = _package_identity(target.manifest, target.connector_id)
+                    try:
+                        matches = bool(target_version) and _dependency_version_matches(
+                            str(target_version), requirement.version
+                        )
+                    except (InvalidSpecifier, InvalidVersion):
+                        issue = ValidationIssue(
+                            rule_id="DEP-004",
+                            message=(
+                                f"dependency version is not comparable for {required_id}: "
+                                f"installed={target_version!r} requires={requirement.version!r}"
+                            ),
+                            connector_id=entry.connector_id,
+                            path=str(entry.manifest_path),
+                        )
+                    else:
+                        if not matches:
+                            issue = ValidationIssue(
+                                rule_id="DEP-003",
+                                message=(
+                                    f"required package version mismatch for {required_id}: "
+                                    f"installed={target_version!r} requires={requirement.version!r}"
+                                ),
+                                connector_id=entry.connector_id,
+                                path=str(entry.manifest_path),
+                            )
+                if issue is not None:
+                    entry.errors.append(issue)
+                    entry.status = "invalid"
+                    result.issues.append(issue)
+                    changed = True
+                    break
+
+
+def _finalize_parsed_modules(
+    parsed: list[tuple[str, ConnectorManifest | None, Path, Path, list[ValidationIssue], RegistryOrigin]],
+    result: RegistryLoadResult,
+) -> None:
+    """Merge parsed modules with deterministic multi-root collision policy."""
+
+    # Index by connector_id for catalog; also track package_id owners.
+    package_owners: dict[str, ConnectorModuleEntry] = {}
+
+    for connector_id, manifest, module_dir, manifest_path, manifest_issues, origin in parsed:
         resources, resource_issues = _load_module_resources(
             module_dir,
             connector_id=connector_id,
@@ -501,6 +785,55 @@ def load_connector_modules(*, root: Path | None = None) -> RegistryLoadResult:
         )
         all_issues = list(manifest_issues) + resource_issues
         status = "valid" if not all_issues else "invalid"
+
+        entry = ConnectorModuleEntry(
+            connector_id=connector_id,
+            manifest=manifest,
+            module_dir=module_dir,
+            manifest_path=manifest_path,
+            status=status,
+            errors=all_issues,
+            resources=resources,
+            installed_from=origin,
+        )
+        package_id, pack_version = _package_identity(manifest, connector_id)
+
+        existing_by_id = result.modules.get(connector_id)
+        existing_by_package = package_owners.get(package_id)
+
+        conflict_with: ConnectorModuleEntry | None = None
+        if existing_by_id is not None:
+            conflict_with = existing_by_id
+        elif existing_by_package is not None and existing_by_package.connector_id != connector_id:
+            conflict_with = existing_by_package
+
+        if conflict_with is not None:
+            # Never silent-overwrite. Prefer keeping the first (builtin-first scan order).
+            issue = ValidationIssue(
+                rule_id="REG-001",
+                message=_collision_message(
+                    package_id=package_id,
+                    existing=conflict_with,
+                    challenger_origin=origin,
+                    challenger_version=pack_version,
+                ),
+                connector_id=connector_id,
+                path=str(manifest_path),
+            )
+            result.issues.append(issue)
+            logger.error(
+                "%s",
+                {
+                    "stage": "connector_registry_collision",
+                    "rule_id": issue.rule_id,
+                    "connector_id": connector_id,
+                    "package_id": package_id,
+                    "path": issue.path,
+                    "message": issue.message,
+                },
+            )
+            # Challenger is rejected from catalog (no shadowing).
+            continue
 
         if all_issues:
             result.issues.extend(all_issues)
@@ -516,14 +849,51 @@ def load_connector_modules(*, root: Path | None = None) -> RegistryLoadResult:
                     },
                 )
 
-        result.modules[connector_id] = ConnectorModuleEntry(
-            connector_id=connector_id,
-            manifest=manifest,
-            module_dir=module_dir,
-            manifest_path=manifest_path,
-            status=status,
-            errors=all_issues,
-            resources=resources,
+        result.modules[connector_id] = entry
+        package_owners[package_id] = entry
+
+    _apply_dependency_issues(result)
+
+
+def load_connector_modules(
+    *,
+    root: Path | None = None,
+    installed_root: Path | None = None,
+    include_installed: bool | None = None,
+) -> RegistryLoadResult:
+    """Scan configured registry roots and build a unified in-memory catalog.
+
+    Compatibility:
+    - ``root=None`` (default): scan builtin ``connectors/`` plus installed plugins root.
+    - ``root=<path>``: single-root scan (tests / overrides). Installed root is included
+      only when ``include_installed=True`` or an explicit ``installed_root`` is passed.
+    - Missing or empty installed root is valid and yields no packages from that origin.
+    """
+
+    result = RegistryLoadResult()
+
+    if root is None and include_installed is False:
+        roots = [RegistryRoot(origin="builtin", path=connectors_root())]
+    elif root is not None and include_installed is not True and installed_root is None:
+        roots = [RegistryRoot(origin="builtin", path=root)]
+    elif root is not None:
+        roots = [
+            RegistryRoot(origin="builtin", path=root),
+            RegistryRoot(
+                origin="installed",
+                path=installed_root if installed_root is not None else default_registry_roots()[1].path,
+            ),
+        ]
+    else:
+        # Use connectors_root() so tests can monkeypatch the builtin root.
+        roots = default_registry_roots(
+            builtin_root=connectors_root(),
+            installed_root=installed_root,
         )
 
+    parsed: list[tuple[str, ConnectorManifest | None, Path, Path, list[ValidationIssue], RegistryOrigin]] = []
+    for registry_root in roots:
+        parsed.extend(_scan_single_root(registry_root, result=result))
+
+    _finalize_parsed_modules(parsed, result)
     return result
