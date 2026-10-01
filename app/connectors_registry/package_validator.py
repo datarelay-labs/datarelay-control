@@ -1,4 +1,4 @@
-"""Marketplace package validation entry point (M29.4 / M29.5A).
+"""Marketplace package validation entry point (M29.4 / M29.5A / M29.5B).
 
 Consolidates M29.1/M29.3 validation used during acquire/install into one path.
 
@@ -12,13 +12,16 @@ Categories covered here (behavior-preserving wrappers / orchestration):
 - path safety / duplicate paths / special files (via staged extract caller)
 - installed package collision
 - platform compatibility metadata shape (parse only)
+- M29.5B license/provenance policy (platform-derived; no trust auto-promotion)
+- M29.5B declared external URL policy checks (no network fetch)
 
 M29.5A security layers (secret scan, canonical digest, signature verify) run
-from the staging/lifecycle path. Remote Registry / Git / URL acquisition and
-SSRF allowlists remain deferred to M29.5B.
+from the staging/lifecycle path.
 
-Invariant (M29.5A): validators MUST NOT fetch arbitrary URLs. Manifest
-``source_evidence`` URLs are metadata only and are never auto-fetched here.
+Invariant: validators MUST NOT fetch arbitrary URLs. Manifest
+``source_evidence`` URLs, auth/token endpoints, Git remotes, and remote
+registry URLs are metadata only and are never contacted here. Actual network
+acquisition belongs to M29.6 / M29.9 consumers of the shared policy modules.
 """
 
 from __future__ import annotations
@@ -27,13 +30,40 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from app.connectors_registry.acquisition_url_policy import (
+    AcquisitionUrlPolicyError,
+    NetworkAcquisitionPolicyConfig,
+    looks_like_absolute_url,
+    validate_url,
+)
 from app.connectors_registry.lifecycle_dependencies import validate_stream_extension_requires
 from app.connectors_registry.lifecycle_errors import LifecycleError
-from app.connectors_registry.loader import _MANIFEST_FILENAMES, _read_manifest_file
+from app.connectors_registry.license_policy import (
+    LicensePolicyResult,
+    evaluate_manifest_license_policy,
+    strip_spoofed_license_decision_fields,
+)
+from app.connectors_registry.loader import (
+    _MANIFEST_FILENAMES,
+    _read_manifest_file,
+    _read_yaml_or_json,
+)
 from app.connectors_registry.models import ConnectorManifest
 from app.connectors_registry.normalize import SUPPORTED_PACKAGE_KINDS
 from app.connectors_registry.roots import is_path_within_root
 from app.connectors_registry.validator import validate_manifest_dict
+
+_RUNTIME_URL_FIELD_NAMES = frozenset(
+    {
+        "base_url",
+        "token_url",
+        "oauth2_token_url",
+        "authorization_url",
+        "auth_url",
+        "endpoint_url",
+        "issuer_url",
+    }
+)
 
 _PLATFORM_OWNED_SPOOF_KEYS = (
     "installed_from",
@@ -45,6 +75,13 @@ _PLATFORM_OWNED_SPOOF_KEYS = (
     "signing_key_id",
     "digest",
     "signature",
+    # M29.5B — license decision is platform-derived only
+    "license_decision",
+    "license_decision_code",
+    "license_decision_reason",
+    "platform_license_decision",
+    "license_gate",
+    "license_gate_decision",
 )
 
 
@@ -59,6 +96,8 @@ class ValidatedMarketplacePackage:
     package_kind: str
     pack_version: str
     digest: str
+    # Platform-derived license/provenance decision (M29.5B). Never trust-tier.
+    license_policy: LicensePolicyResult | None = None
 
 
 def _reject(code: str, message: str) -> None:
@@ -161,10 +200,117 @@ def validate_manifest_resource_paths(package_root: Path, manifest: ConnectorMani
             )
 
 
+def collect_runtime_default_urls(
+    package_root: Path,
+    manifest: ConnectorManifest,
+) -> list[str]:
+    """Collect URL defaults that can become runtime HTTP/auth targets."""
+
+    schema_ref = manifest.auth.schema_ref
+    if not schema_ref:
+        return []
+    schema_path = package_root / schema_ref
+    if not schema_path.is_file():
+        return []
+    try:
+        data = _read_yaml_or_json(schema_path)
+    except Exception:
+        # Resource parse validity remains owned by the existing registry loader.
+        return []
+    if not isinstance(data, dict):
+        return []
+
+    fields = data.get("fields")
+    if not isinstance(fields, list):
+        return []
+
+    urls: list[str] = []
+    for field in fields:
+        if not isinstance(field, dict):
+            continue
+        name = str(field.get("name") or "").strip().lower().replace("-", "_")
+        default = field.get("default")
+        if (
+            (name in _RUNTIME_URL_FIELD_NAMES or name.endswith("_url"))
+            and isinstance(default, str)
+            and looks_like_absolute_url(default)
+        ):
+            urls.append(default.strip())
+    return list(dict.fromkeys(urls))
+
+
+def collect_declared_external_urls(raw: dict[str, Any], manifest: ConnectorManifest) -> list[str]:
+    """Collect absolute URLs declared in license/provenance/evidence metadata."""
+
+    urls: list[str] = []
+    provenance = raw.get("upstream_provenance")
+    if isinstance(provenance, dict):
+        upstream_url = provenance.get("upstream_url")
+        if isinstance(upstream_url, str) and looks_like_absolute_url(upstream_url):
+            urls.append(upstream_url.strip())
+        license_source = provenance.get("license_source")
+        if isinstance(license_source, str) and looks_like_absolute_url(license_source):
+            urls.append(license_source.strip())
+
+    if manifest.upstream_provenance is not None:
+        up = manifest.upstream_provenance
+        if up.upstream_url and looks_like_absolute_url(up.upstream_url):
+            urls.append(up.upstream_url.strip())
+        if up.license_source and looks_like_absolute_url(up.license_source):
+            urls.append(up.license_source.strip())
+
+    license_value = raw.get("license")
+    if isinstance(license_value, dict):
+        source = license_value.get("source")
+        if isinstance(source, str) and looks_like_absolute_url(source):
+            urls.append(source.strip())
+
+    evidence = raw.get("source_evidence")
+    if isinstance(evidence, list):
+        for item in evidence:
+            if not isinstance(item, dict):
+                continue
+            ref = item.get("ref")
+            if isinstance(ref, str) and looks_like_absolute_url(ref):
+                urls.append(ref.strip())
+
+    if manifest.source_evidence:
+        for item in manifest.source_evidence:
+            if item.ref and looks_like_absolute_url(item.ref):
+                urls.append(item.ref.strip())
+
+    seen: set[str] = set()
+    unique: list[str] = []
+    for url in urls:
+        if url not in seen:
+            seen.add(url)
+            unique.append(url)
+    return unique
+
+
+def validate_declared_external_url_policy(
+    urls: list[str],
+    *,
+    config: NetworkAcquisitionPolicyConfig | None = None,
+) -> None:
+    """Apply acquisition URL policy to declared metadata URLs (no fetch)."""
+
+    cfg = config or NetworkAcquisitionPolicyConfig()
+    for url in urls:
+        try:
+            validate_url(url, config=cfg)
+        except AcquisitionUrlPolicyError as exc:
+            _reject(
+                "DECLARED_URL_POLICY",
+                f"declared external URL failed acquisition policy ({exc.code}): {exc.message}",
+            )
+
+
 def validate_extracted_marketplace_package(
     staging_root: Path,
     *,
     digest: str,
+    network_policy: NetworkAcquisitionPolicyConfig | None = None,
 ) -> ValidatedMarketplacePackage:
     """Validate archive structure + manifest for an already-extracted staging tree.
 
@@ -197,8 +343,13 @@ def validate_extracted_marketplace_package(
         _reject("MANIFEST_INVALID", f"manifest parse failed: {exc}")
 
     # Strip spoofed platform-owned fields before validation/normalization.
+    # Track license-decision spoofs before the generic strip so policy reporting
+    # can record that a package attempted to self-declare a decision.
+    raw, license_spoof_ignored = strip_spoofed_license_decision_fields(raw)
     for spoof_key in _PLATFORM_OWNED_SPOOF_KEYS:
-        raw.pop(spoof_key, None)
+        if spoof_key in raw:
+            # Already counted via license strip when overlapping.
+            raw.pop(spoof_key, None)
 
     compat_issues = validate_platform_compatibility_metadata(
         raw,
@@ -217,6 +368,22 @@ def validate_extracted_marketplace_package(
     package_id, package_kind, pack_version = validate_package_identity(manifest)
     validate_manifest_resource_paths(package_root, manifest)
 
+    # M29.5B: policy-check declared absolute URLs; never fetch them.
+    declared_urls = collect_declared_external_urls(raw, manifest)
+    runtime_default_urls = collect_runtime_default_urls(package_root, manifest)
+    validate_declared_external_url_policy(
+        [*declared_urls, *runtime_default_urls],
+        config=network_policy,
+    )
+
+    # License decision is platform-derived metadata only; it never auto-promotes
+    # trust tiers. Local upload install does not hard-fail on REFERENCE_ONLY —
+    # import gates (M29.6+) consume this result.
+    license_policy = evaluate_manifest_license_policy(
+        manifest,
+        spoofed_fields_ignored=license_spoof_ignored,
+    )
+
     return ValidatedMarketplacePackage(
         package_root=package_root,
         manifest_path=manifest_path,
@@ -225,6 +392,7 @@ def validate_extracted_marketplace_package(
         package_kind=package_kind,
         pack_version=pack_version,
         digest=digest,
+        license_policy=license_policy,
     )
 
 
@@ -232,10 +400,15 @@ def validate_marketplace_package(
     staging_root: Path,
     *,
     digest: str,
+    network_policy: NetworkAcquisitionPolicyConfig | None = None,
 ) -> ValidatedMarketplacePackage:
-    """Marketplace package validation entry point (M29.4)."""
+    """Marketplace package validation entry point (M29.4 / M29.5B)."""
 
-    return validate_extracted_marketplace_package(staging_root, digest=digest)
+    return validate_extracted_marketplace_package(
+        staging_root,
+        digest=digest,
+        network_policy=network_policy,
+    )
 
 
 def validate_install_package_collision(
