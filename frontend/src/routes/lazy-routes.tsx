@@ -33,7 +33,6 @@ export const LazyNewStreamWizardPage = suspend(
 export const LazyDashboardOverview = suspend(
   lazyNamed(() => import('../components/dashboard/dashboard-overview'), 'DashboardOverview'),
 )
-
 // Stream runtime detail
 export const LazyStreamRuntimeDetailPage = suspend(
   lazyNamed(() => import('../components/streams/stream-runtime-detail-page'), 'StreamRuntimeDetailPage'),
@@ -42,6 +41,11 @@ export const LazyStreamRuntimeDetailPage = suspend(
 // Logs
 export const LazyLogsExplorerPage = suspend(
   lazyNamed(() => import('../components/logs/logs-explorer-page'), 'LogsExplorerPage'),
+)
+
+// Global operational alerts (shell affordance only; not a primary sidebar item)
+export const LazyOperationalAlertsPage = suspend(
+  lazyNamed(() => import('../components/alerts/operational-alerts-page'), 'OperationalAlertsPage'),
 )
 
 // Routes & destinations

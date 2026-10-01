@@ -1,12 +1,12 @@
 import type { ReactNode, Ref } from 'react'
-import { Activity, Menu, Moon, RefreshCw, Settings, Sun, X } from 'lucide-react'
+import { Bell, Menu, Moon, RefreshCw, Settings, Sun, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { NAV_PATH } from '../../config/nav-paths'
 import { cn } from '../../lib/utils'
 import { GDC_HEADER_REFRESH_EVENT } from './header-refresh-event'
 
-/** Truthful destination for shell health/alerts affordance (Validation → Alerts). */
-export const SHELL_ALERTS_PATH = `${NAV_PATH.validation}/alerts`
+/** Global operational-alert surface. Kept out of primary sidebar by UX charter. */
+export const SHELL_ALERTS_PATH = NAV_PATH.alerts
 
 type TopHeaderProps = {
   title: string
@@ -103,11 +103,11 @@ export function TopHeader({
             type="button"
             onClick={() => navigate(SHELL_ALERTS_PATH)}
             className="inline-flex h-[34px] w-[34px] items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:text-gdc-muted dark:hover:bg-gdc-rowHover"
-            aria-label="Open runtime health alerts"
-            title="Runtime health — Alerts"
+            aria-label="Open operational alerts"
+            title="Operational alerts"
             data-testid="shell-health-alerts"
           >
-            <Activity className="h-4 w-4" />
+            <Bell className="h-4 w-4" />
           </button>
           <button
             type="button"

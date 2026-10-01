@@ -6,6 +6,7 @@ export const NAV_PATH: Record<AppNavKey, string> = {
   streams: '/streams',
   monitoring: '/monitoring',
   logs: '/logs',
+  alerts: '/alerts',
   governance: '/governance',
   administration: '/admin',
   connectors: '/connectors',
@@ -226,6 +227,7 @@ export function appNavKeyFromPathname(pathname: string): AppNavKey {
   if (pathname.startsWith('/streams')) return 'streams'
   if (isDashboardPath(pathname)) return 'dashboard'
   if (pathname.startsWith('/logs')) return 'logs'
+  if (pathname.startsWith('/alerts')) return 'alerts'
   if (pathname.startsWith('/governance/data-protection')) return 'governanceDataProtection'
   if (pathname.startsWith('/governance/operations')) return 'governanceOperations'
   if (pathname.startsWith('/governance/violations')) return 'governanceViolations'

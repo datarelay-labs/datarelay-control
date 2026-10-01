@@ -28,6 +28,7 @@ import {
   LazyNotificationsPage,
   LazyOperationsBackupPage,
   LazyOperationsCenterPage,
+  LazyOperationalAlertsPage,
   LazyQuarantineCenterPage,
   LazyReplayCenterPage,
   LazyRouteEditPage,
@@ -68,6 +69,7 @@ export default function App() {
         <Route path="streams/:streamId/mapping" element={<LazyStreamMappingPage />} />
         <Route path="streams/:streamId/edit" element={<LazyStreamEditPage />} />
         <Route path="monitoring" element={<LazyDashboardOverview />} />
+        <Route path="alerts" element={<LazyOperationalAlertsPage />} />
         <Route path="monitoring/streams" element={<PreserveSearchRedirect to={NAV_PATH.streams} />} />
         <Route path="monitoring/topology" element={<PreserveSearchRedirect to={NAV_PATH.dashboard} />} />
         <Route path="monitoring/analytics" element={<PreserveSearchRedirect to={NAV_PATH.dashboard} />} />

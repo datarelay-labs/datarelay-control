@@ -18,6 +18,7 @@ export type SidebarGroupId = 'dataSources' | 'delivery' | 'governance'
 export type AppNavKey =
   | SidebarNavKey
   | 'logs'
+  | 'alerts'
   | 'mappings'
   | 'runtime'
   | 'topology'
@@ -153,6 +154,7 @@ export const PAGE_TITLE: Record<AppNavKey, string> = {
   monitoring: 'Dashboard',
   streams: 'Streams',
   logs: 'Logs',
+  alerts: 'Operational alerts',
   governance: 'Governance',
   administration: 'Administration',
   connectors: 'Connectors',
