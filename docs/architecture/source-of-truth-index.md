@@ -6,17 +6,19 @@
 
 ## Current Data Relay Control product scope
 
-Data Relay Control current product scope includes:
+Data Relay Control v1 current product scope includes:
 
 - Phase A — Foundation
 - Phase B — Data Control Runtime
 - Phase C — Governance
 - Phase D — OSS Release / closure
-- Phase G / M29 — Connector Marketplace & Ecosystem
+- approved Control-v1 core closure work recorded by the canonical roadmap
 
-Phase G is an additive integration-ecosystem workstream and does not change historical Phase A–D completion percentages.
+**Removed from Data Relay Control scope:** Phase E (AI Gateway). Existing AI code/specs may remain in-repo as separate-domain or historical material, but they are not Control product authority, completion work, release readiness, final E2E requirements, or delivery backlog.
 
-**Outside Data Relay Control:** Phase E (AI Gateway) and Phase F (Enterprise Edition). They must not contribute to Control completion percentage, release readiness, final E2E requirements, or Control delivery backlog. Existing AI/Enterprise code may remain in-repo as separate-domain or historical material; it is not current Control scope.
+**Outside Data Relay Control v1:** Phase F (Enterprise Edition).
+
+**Post-v1 deferred:** Phase G / M29 Connector Marketplace & Ecosystem. Existing Marketplace foundations may remain when runtime-safe, but M29 does not contribute to Control v1 completion percentage or block release. Further Marketplace work requires an explicitly approved future final specification.
 
 ## Authority model
 
@@ -104,11 +106,13 @@ The following are retained only for history or old-link resolution and must not 
 
 ---
 
-## Marketplace product-scope extension
+## Marketplace future product direction
 
-Phase G / M29 Connector Marketplace & Ecosystem is an approved additive Data Relay Control product workstream. It extends integration acquisition and lifecycle around the existing Source Pack and runtime model; it does not reintroduce Phase E AI Gateway or Phase F Enterprise Edition into Control scope.
+Phase G / M29 Connector Marketplace & Ecosystem is post-v1 deferred. Existing implemented foundations are preserved where they remain runtime-safe, but Marketplace is not a Data Relay Control v1 release dependency.
 
-Current Marketplace architecture authority:
+Do not resume Harvester, AI Builder, Git/remote acquisition, Marketplace UI expansion, or Remote/Public Registry work until a future final Marketplace specification is explicitly approved.
+
+Current Marketplace future-architecture reference:
 
 - `docs/architecture/DATA-RELAY-CONNECTOR-MARKETPLACE-ARCHITECTURE-CHARTER-v1.0-DRAFT.md`
 

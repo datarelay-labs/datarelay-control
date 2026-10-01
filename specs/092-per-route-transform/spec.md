@@ -53,7 +53,7 @@ Destinations
 | **Product Charter 1.2.1** | Route = Destination Specific Processing Unit; Transform route-applicable; Runtime Reuse First; No Parallel Pipeline |
 | **Master WBS 1.2.1** | M13.2 = Route Specific Mapping, Route Specific Enrichment, Route Specific Transform |
 | **UX Charter 1.2.1** | §24–27 Route model; per-destination differences via Route |
-| **Stream Wizard Charter v5.2** | Step 4 Route Processing → Transform tab per route; Transform workflow (Auto Mapping → Required Fields → … → Output Verification) |
+| **Stream Wizard Charter v5.2** | Step 4 Route Processing → Transform tab per route; Auto Mapping → optional Required Fields only when authoritative target-schema metadata exists → Metadata/Custom/Rules → Output Verification |
 | **Governance & Transform Policy v1.1** | §19 Route Transform Policy — same stream, different transform per route (Syslog raw vs XDR transform vs data lake custom) |
 | **Union Schema UX Spec v1.1** | Union Schema = shared input; Route Transform Model — Union Schema unchanged; each route applies different transform |
 | **Governance UX Charter v1.1** | Configuration Scope = Stream (defaults); Execution Scope = Route — **M13.2 applies to Transform execution only** |

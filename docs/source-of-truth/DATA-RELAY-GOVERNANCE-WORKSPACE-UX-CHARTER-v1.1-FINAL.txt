@@ -110,24 +110,25 @@ Quarantine Engine
 GOVERNANCE POSITION
 ==================================================
 
-Governance belongs:
+Governance is optional and participates in Destination-first Route Processing.
 
-After Mapping
+Canonical ownership model:
 
-Before Destinations
+Stream
+→ owns Governance defaults / intent
 
---------------------------------------------------
+Route
+→ owns destination-specific effective Governance behavior through inherit / override
 
-Reason
+Destination-specific Protection / Classification / Policy decisions therefore occur after Destinations are selected, inside Route Processing.
 
 Users must first understand:
 
 - What data exists
-- How it is mapped
+- Where it will be delivered
+- Whether each destination requires different protection or policy
 
-before deciding:
-
-- Whether it requires protection
+before confirming the effective Governance behavior.
 
 ==================================================
 GOVERNANCE ACTIVATION
@@ -559,11 +560,13 @@ Default Users should never see these options.
 DESTINATION INTERACTION
 ==================================================
 
-Governance is Stream-Level.
+Governance defaults and intent are Stream-owned.
+
+Effective destination-specific Governance behavior is Route-aware.
 
 --------------------------------------------------
 
-Destination-specific exceptions are optional.
+A Route inherits Stream defaults unless the operator explicitly configures a destination-specific override.
 
 --------------------------------------------------
 

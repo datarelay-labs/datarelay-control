@@ -232,7 +232,7 @@ Delivery Settings
 TRANSFORM WORKFLOW
 1. Auto Mapping
 
-2. Required Fields
+2. Required Fields (conditional)
 
 3. Metadata Mapping
 
@@ -267,9 +267,17 @@ User decides.
 ==================================================
 REQUIRED FIELDS
 
-Required fields appear before optional fields.
+Required Fields is conditional, not a universal Control v1 requirement.
 
-Example:
+Expose this section only when an authoritative destination/profile target schema explicitly marks fields as required (for example, `required=true` or an equivalent schema contract).
+
+Do not infer or fabricate required target fields from Union Schema occurrence, field type, sample values, mapping confidence, or AI/model output.
+
+When authoritative required metadata exists, required fields appear before optional fields.
+
+When it does not exist, omit the Required Fields section and keep Auto Mapping as confidence/evidence + explicit Apply / Review / Skip.
+
+Example when authoritative metadata exists:
 
 Required
 

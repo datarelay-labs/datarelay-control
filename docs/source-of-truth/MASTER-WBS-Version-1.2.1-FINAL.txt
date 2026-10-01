@@ -683,11 +683,11 @@ DATA RELAY MARKETPLACE ADDENDUM v1.0
 Phase G — Connector Marketplace & Ecosystem
 ==================================================
 
-Status: M29.0–M29.1 Implementation In Progress
-Authority: Additive only. Existing Product Charter and runtime/security invariants remain authoritative.
+Status: POST-V1 DEFERRED / Final Marketplace specification pending
+Authority: Future additive direction only. Existing Product Charter and runtime/security invariants remain authoritative.
 Reference: docs/architecture/DATA-RELAY-CONNECTOR-MARKETPLACE-ARCHITECTURE-CHARTER-v1.0-DRAFT.md
 
-This workstream does not change historical Phase A–D completion percentages and is not a child of Phase F.
+This workstream is not part of Data Relay Control v1 completion or release scope. Existing implemented foundations are preserved but do not block Control v1 closure. Further M29 implementation requires an explicitly approved future Marketplace specification.
 
 M29
 Connector Marketplace & Ecosystem
@@ -733,8 +733,9 @@ M29.9
 Remote / Private Registry — remote public registry optional and OFF by default
 
 Current implementation lane:
-- M29.0 ACTIVE
-- M29.1 ACTIVE
-- M29.2–M29.9 implementation pending and must be executed as later bounded work packets
+- DEFERRED_POST_V1
+- Do not schedule M29 work as a Control v1 release dependency.
+- Preserve already implemented/merged Marketplace foundations.
+- Re-audit and rebaseline all remaining M29 work against the future approved final Marketplace specification before resuming.
 
-M29 integration gates remain targeted regression, final Full Matrix acceptance at the agreed integration point, and human acceptance scenarios after the applicable implementation phases complete.
+M29 integration gates apply only when Marketplace work is explicitly resumed; they are not Control v1 release gates.
