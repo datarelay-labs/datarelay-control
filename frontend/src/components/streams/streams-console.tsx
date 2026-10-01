@@ -74,6 +74,7 @@ import { StreamsFilterChips } from './streams-filter-chips'
 import {
   computeStreamOperationsSummary,
   filterStreamRows,
+  parseStreamsOperationalFilter,
   productGroupOptions,
   sortGroupsProblemFirst,
   sortStreamsProblemFirst,
@@ -457,6 +458,7 @@ export function StreamsConsole() {
   const [quickFilter, setQuickFilter] = useState<StreamsQuickFilter>('all')
   const [groupFilter, setGroupFilter] = useState('all')
   const connectorFilter = useMemo(() => parseConnectorFilterFromSearch(location.search), [location.search])
+  const operationalFilter = useMemo(() => parseStreamsOperationalFilter(location.search), [location.search])
 
   const connectorFilterLabel = useMemo(() => {
     if (!connectorFilter) return null
@@ -471,6 +473,12 @@ export function StreamsConsole() {
   const clearConnectorFilter = useCallback(() => {
     const params = new URLSearchParams(location.search)
     params.delete('connector')
+    const qs = params.toString()
+    navigate(qs ? `/streams?${qs}` : '/streams')
+  }, [location.search, navigate])
+  const clearOperationalFilter = useCallback(() => {
+    const params = new URLSearchParams(location.search)
+    params.delete('filter')
     const qs = params.toString()
     navigate(qs ? `/streams?${qs}` : '/streams')
   }, [location.search, navigate])
@@ -622,9 +630,10 @@ export function StreamsConsole() {
         quickFilter,
         groupFilter,
         connectorFilter,
+        operationalFilter,
         destinationLabelsByStreamId,
       }),
-    [displayRows, searchQuery, quickFilter, groupFilter, connectorFilter, destinationLabelsByStreamId],
+    [displayRows, searchQuery, quickFilter, groupFilter, connectorFilter, operationalFilter, destinationLabelsByStreamId],
   )
 
   const productGroups = useMemo(() => {
@@ -642,7 +651,11 @@ export function StreamsConsole() {
   const operationsSummary = useMemo(() => computeStreamOperationsSummary(displayRows), [displayRows])
 
   const filtersActive =
-    searchQuery.trim().length > 0 || quickFilter !== 'all' || groupFilter !== 'all' || connectorFilter != null
+    searchQuery.trim().length > 0 ||
+    quickFilter !== 'all' ||
+    groupFilter !== 'all' ||
+    connectorFilter != null ||
+    operationalFilter != null
 
   useEffect(() => {
     const label = new URLSearchParams(location.search).get('expand_group')?.trim()
@@ -806,6 +819,8 @@ export function StreamsConsole() {
         connectorFilter={connectorFilter}
         connectorFilterLabel={connectorFilterLabel}
         onClearConnectorFilter={clearConnectorFilter}
+        operationalFilter={operationalFilter}
+        onClearOperationalFilter={clearOperationalFilter}
         timeRange={timeRange}
         onClearTimeRange={() => handleTimeRangeChange('1h')}
         timeRangeIsDefault={timeRange === '1h'}

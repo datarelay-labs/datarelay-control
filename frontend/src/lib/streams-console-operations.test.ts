@@ -6,6 +6,7 @@ import {
   compareStreamsProblemFirst,
   computeStreamOperationsSummary,
   filterStreamRows,
+  parseStreamsOperationalFilter,
   sortGroupsProblemFirst,
   sortStreamsProblemFirst,
   streamMatchesSearch,
@@ -78,6 +79,42 @@ describe('streams-console-operations', () => {
       destinationLabelsByStreamId: new Map(),
     })
     expect(out.map((r) => r.id)).toEqual(['3', '2'])
+  })
+
+  it('filters no-data from enabled IDLE runtime status only', () => {
+    const idle = row({ id: '4', name: 'Idle', status: 'IDLE', enabled: true })
+    const disabledIdle = row({ id: '5', name: 'Disabled idle', status: 'IDLE', enabled: false })
+    const out = filterStreamRows({
+      rows: [...allRows, idle, disabledIdle],
+      searchQuery: '',
+      quickFilter: 'all',
+      groupFilter: 'all',
+      connectorFilter: null,
+      operationalFilter: 'no-data',
+      destinationLabelsByStreamId: new Map(),
+    })
+    expect(out.map((r) => r.id)).toEqual(['4'])
+  })
+
+  it('filters low-volume from EPS evidence instead of generic DEGRADED health', () => {
+    const low = row({ id: '4', name: 'Low', status: 'RUNNING', enabled: true, eps1m: 0.01, eps5m: 0.01 })
+    const degradedHigh = row({ id: '5', name: 'Degraded high', status: 'DEGRADED', enabled: true, eps1m: 20, eps5m: 20 })
+    const out = filterStreamRows({
+      rows: [...allRows, low, degradedHigh],
+      searchQuery: '',
+      quickFilter: 'all',
+      groupFilter: 'all',
+      connectorFilter: null,
+      operationalFilter: 'low-volume',
+      destinationLabelsByStreamId: new Map(),
+    })
+    expect(out.map((r) => r.id)).toEqual(['4'])
+  })
+
+  it('parses only supported operational deep-link filters', () => {
+    expect(parseStreamsOperationalFilter('?filter=no-data')).toBe('no-data')
+    expect(parseStreamsOperationalFilter('?filter=LOW-VOLUME')).toBe('low-volume')
+    expect(parseStreamsOperationalFilter('?filter=degraded')).toBeNull()
   })
 
   it('filters by search across name, product, and destination labels', () => {

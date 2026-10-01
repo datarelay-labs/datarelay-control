@@ -267,6 +267,39 @@ describe('StreamsConsole operations UX', () => {
     })
   })
 
+  it('applies low-volume operational deep link and exposes a removable filter chip', async () => {
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter initialEntries={['/streams?filter=low-volume']}>
+        <StreamsConsole />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByTestId('streams-filter-chips')).toHaveTextContent('Low Volume')
+    await waitFor(() => {
+      expect(screen.getByTestId('streams-empty-state')).toHaveTextContent('No streams match your filters.')
+    })
+
+    await user.click(screen.getByTestId('streams-clear-operational-filter'))
+    await waitFor(() => {
+      expect(screen.getByTestId('stream-group-row-Office365')).toBeInTheDocument()
+      expect(screen.getByTestId('stream-group-row-Amazon Web Services')).toBeInTheDocument()
+    })
+  })
+
+  it('applies no-data operational deep link instead of treating it as a no-op', async () => {
+    render(
+      <MemoryRouter initialEntries={['/streams?filter=no-data']}>
+        <StreamsConsole />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByTestId('streams-filter-chips')).toHaveTextContent('No Data')
+    await waitFor(() => {
+      expect(screen.getByTestId('streams-empty-state')).toHaveTextContent('No streams match your filters.')
+    })
+  })
+
   it('shows filter empty state message', async () => {
     const user = userEvent.setup()
     render(
