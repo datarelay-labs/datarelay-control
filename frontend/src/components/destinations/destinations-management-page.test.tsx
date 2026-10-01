@@ -55,6 +55,30 @@ vi.mock('./use-destinations-overview-data', () => ({
           metricsWindowLabel: '1h',
         },
       },
+      {
+        id: 11,
+        name: 'Delivery Warning',
+        destination_type: 'SYSLOG_UDP',
+        config_json: { host: '10.0.0.3', port: 514 },
+        rate_limit_json: { capacity_limit_eps: 100, capacity_warning_threshold_pct: 70 },
+        enabled: true,
+        streams_using_count: 1,
+        routes: [{ route_id: 3, stream_id: 3, stream_name: 'Stream C', route_enabled: true, route_status: 'ENABLED' }],
+        created_at: null,
+        updated_at: null,
+        runtime: {
+          connectedStreams: 1,
+          connectedRoutes: 1,
+          successRatePct: 90,
+          currentEps: 10,
+          capacityUsagePct: 10,
+          capacityWarning: false,
+          hasDeliveryActivity: true,
+          health: 'Warning',
+          recentIssues: ['Delivery degraded'],
+          metricsWindowLabel: '1h',
+        },
+      },
     ],
     loading: false,
     runtimeLoading: false,
@@ -119,10 +143,12 @@ describe('DestinationsManagementPage', () => {
     expect(await screen.findByTestId('destinations-operational-filter-chip')).toHaveTextContent('Capacity Warning')
     expect(screen.getByText('Capacity Hot')).toBeInTheDocument()
     expect(screen.queryByText('MDS')).not.toBeInTheDocument()
+    expect(screen.queryByText('Delivery Warning')).not.toBeInTheDocument()
 
     await user.click(screen.getByTestId('destinations-clear-operational-filter'))
     expect(await screen.findByText('MDS')).toBeInTheDocument()
     expect(screen.getByText('Capacity Hot')).toBeInTheDocument()
+    expect(screen.getByText('Delivery Warning')).toBeInTheDocument()
   })
 
   it('shows an actionable error when webhook URL is not http(s)', async () => {

@@ -434,7 +434,21 @@ describe('enrichStreamRowFromOperationalSnapshot – checkpoint lag threshold', 
     expect(row.checkpointLagLabel).not.toMatch(/behind/)
   })
 
-  it('sets "behind delivery" label for active stream with lag >= 3600s and meaningful cp delta', () => {
+  it('sets "behind delivery" when active delivery has never written a checkpoint', () => {
+    const row = enrichStreamRowFromOperationalSnapshot(
+      baseRow,
+      snapshotFixture({
+        eps_1m: 1.5,
+        checkpoint_lag_seconds: 3700,
+        checkpoint_updated_at: null,
+        last_success_at: '2026-06-26T12:00:00.000Z',
+      }),
+    )
+    expect(row.checkpointBehindDelivery).toBe(true)
+    expect(row.checkpointLagLabel).toMatch(/behind delivery/)
+  })
+
+  it('sets "behind delivery" label for active stream with lag >= 3600s and older checkpoint', () => {
     const row = enrichStreamRowFromOperationalSnapshot(
       baseRow,
       snapshotFixture({

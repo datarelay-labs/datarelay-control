@@ -737,7 +737,7 @@ export function DestinationsManagementPage() {
       list = list.filter((r) => r.runtime.health === healthFilter)
     }
     if (capacityWarningFilter) {
-      list = list.filter((r) => r.runtime.capacityWarning === true || r.runtime.health === 'Warning')
+      list = list.filter((r) => r.runtime.capacityWarning === true)
     }
     return list.sort((a, b) => a.id - b.id)
   }, [rows, searchQ, healthFilter, capacityWarningFilter])

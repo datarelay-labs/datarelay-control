@@ -337,20 +337,17 @@ export function enrichStreamRowFromOperationalSnapshot(
   const successRate5m = kpi.successRatePct
   const issues = deriveStreamIssuesFromSnapshot(snapshot, problems)
   const checkpointLagSeconds = snapshot.checkpoint_lag_seconds
-  // Mirror backend should_flag_checkpoint_stale: only flag when the stream is *actively*
-  // delivering events (eps1m or eps5m > 0) AND the checkpoint lag exceeds the warning
-  // threshold (3600s) AND checkpoint is behind the last delivery.
-  // Idle streams (eps = 0) are excluded — their checkpoint simply reflects the last run.
-  // The cp_at < last_ok comparison requires a meaningful delta (> 1s) to ignore the normal
-  // sub-second transactional gap between writing the checkpoint and recording the success.
+  // Mirror backend should_flag_checkpoint_stale exactly: an enabled stream is stale when
+  // it is actively delivering, lag is at least one hour, a successful delivery exists, and
+  // the checkpoint is either missing entirely or older than the latest successful delivery.
   const activeDelivery = eps1m > 0 || eps5m > 0
   const checkpointBehindDelivery =
     activeDelivery &&
     checkpointLagSeconds != null &&
     checkpointLagSeconds >= 3600 &&
     snapshot.last_success_at != null &&
-    snapshot.checkpoint_updated_at != null &&
-    Date.parse(snapshot.last_success_at) - Date.parse(snapshot.checkpoint_updated_at) > 1_000
+    (snapshot.checkpoint_updated_at == null ||
+      Date.parse(snapshot.checkpoint_updated_at) < Date.parse(snapshot.last_success_at))
   const checkpointLagLabel = checkpointBehindDelivery ? `behind delivery · ${checkpointLagSeconds}s` : base.checkpointLagLabel
 
   return {
