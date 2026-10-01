@@ -191,7 +191,7 @@ describe('dashboard-charter-metrics', () => {
     }
     expect(deriveOperationalIssuesFromSnapshot(snapshot(), dashboard)).toEqual({
       noDataStreams: 1,
-      lowVolumeStreams: null,
+      lowVolumeStreams: 0,
       schemaDriftCount: 3,
       destinationCapacityWarnings: null,
     })
@@ -217,6 +217,101 @@ describe('dashboard-charter-metrics', () => {
 
     const issues = deriveOperationalIssuesFromSnapshot(withLowVolume, null)
     expect(issues.lowVolumeStreams).toBe(1)
+  })
+
+  it('derives destination capacity warnings only from configured limits and snapshot EPS', () => {
+    const current = snapshot()
+    const withDestinations: OperationalSnapshotResponse = {
+      ...current,
+      destinations: [
+        {
+          destination_id: 1,
+          destination_name: 'Capacity Hot',
+          destination_type: 'SYSLOG_TCP',
+          enabled: true,
+          health_status: 'HEALTHY',
+          inbound_eps_1m: 80,
+          failed_eps_1m: 0,
+          avg_latency_ms: 10,
+          route_count: 1,
+          last_success_at: null,
+          last_error_at: null,
+          last_error_message: null,
+        },
+        {
+          destination_id: 2,
+          destination_name: 'Delivery Warning Only',
+          destination_type: 'SYSLOG_TCP',
+          enabled: true,
+          health_status: 'DEGRADED',
+          inbound_eps_1m: 20,
+          failed_eps_1m: 1,
+          avg_latency_ms: 20,
+          route_count: 1,
+          last_success_at: null,
+          last_error_at: null,
+          last_error_message: 'delivery degraded',
+        },
+      ],
+      problems: [
+        {
+          severity: 'warning',
+          scope: 'destination',
+          stream_id: null,
+          route_id: null,
+          destination_id: 2,
+          title: 'Delivery warning',
+          message: 'not a capacity threshold crossing',
+          last_seen_at: null,
+        },
+      ],
+    }
+    const destinations = [
+      {
+        id: 1,
+        rate_limit_json: {
+          capacity_limit_eps: 100,
+          capacity_warning_threshold_pct: 70,
+          capacity_critical_threshold_pct: 85,
+        },
+      },
+      {
+        id: 2,
+        rate_limit_json: {
+          capacity_limit_eps: 100,
+          capacity_warning_threshold_pct: 70,
+          capacity_critical_threshold_pct: 85,
+        },
+      },
+    ] as DestinationListItem[]
+
+    expect(deriveOperationalIssuesFromSnapshot(withDestinations, null, destinations).destinationCapacityWarnings).toBe(1)
+  })
+
+  it('does not fabricate a capacity warning when no authoritative capacity limit exists', () => {
+    const current = snapshot()
+    const withDestination: OperationalSnapshotResponse = {
+      ...current,
+      destinations: [
+        {
+          destination_id: 1,
+          destination_name: 'Unlimited',
+          destination_type: 'SYSLOG_TCP',
+          enabled: true,
+          health_status: 'DEGRADED',
+          inbound_eps_1m: 9999,
+          failed_eps_1m: 1,
+          avg_latency_ms: 20,
+          route_count: 1,
+          last_success_at: null,
+          last_error_at: null,
+          last_error_message: 'warning',
+        },
+      ],
+    }
+    const destinations = [{ id: 1, rate_limit_json: {} }] as DestinationListItem[]
+
+    expect(deriveOperationalIssuesFromSnapshot(withDestination, null, destinations).destinationCapacityWarnings).toBe(0)
   })
 
   it('returns null schema drift when open_schema_field_drift_count is unavailable', () => {

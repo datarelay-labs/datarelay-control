@@ -1876,8 +1876,9 @@ export function OperationalIssuesPanel({
       </div>
       <ul className="mt-3 divide-y divide-slate-200 overflow-hidden rounded-lg border border-slate-200 dark:divide-gdc-divider dark:border-gdc-border">
         {rows.map((row) => {
+          const known = row.count != null
           const n = row.count ?? 0
-          const hot = n > 0
+          const hot = known && n > 0
           const style = ISSUE_ROW_STYLES[row.key]
           return (
             <li key={row.testId}>
@@ -1891,7 +1892,7 @@ export function OperationalIssuesPanel({
                     {row.label}
                   </span>
                   <span className={cn('block text-[11px]', hot ? 'text-violet-700 dark:text-violet-300' : 'text-slate-400 dark:text-gdc-placeholder')}>
-                    {hot ? row.action : 'No issue'}
+                    {!known ? 'Data unavailable' : hot ? row.action : 'No issue'}
                   </span>
                 </span>
                 <span
@@ -1900,7 +1901,7 @@ export function OperationalIssuesPanel({
                     hot ? `${style.count} dark:brightness-110` : 'text-slate-500',
                   )}
                 >
-                  {formatMetricCount(n)}
+                  {formatMetricCount(row.count)}
                 </span>
               </Link>
             </li>

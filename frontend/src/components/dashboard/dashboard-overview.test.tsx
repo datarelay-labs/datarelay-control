@@ -179,7 +179,40 @@ vi.mock('../../api/gdcConnectors', () => ({
 }))
 
 vi.mock('../../api/gdcDestinations', () => ({
-  fetchDestinationsList: vi.fn(async () => []),
+  fetchDestinationsList: vi.fn(async () => [
+    {
+      id: 1,
+      name: 'Splunk Capacity Hot',
+      destination_type: 'SYSLOG_TCP',
+      enabled: true,
+      config_json: {},
+      rate_limit_json: {
+        capacity_limit_eps: 100,
+        capacity_warning_threshold_pct: 70,
+        capacity_critical_threshold_pct: 85,
+      },
+      routes: [],
+      streams_using_count: 1,
+      created_at: null,
+      updated_at: null,
+    },
+    {
+      id: 2,
+      name: 'Delivery Warning Only',
+      destination_type: 'SYSLOG_TCP',
+      enabled: true,
+      config_json: {},
+      rate_limit_json: {
+        capacity_limit_eps: 100,
+        capacity_warning_threshold_pct: 70,
+        capacity_critical_threshold_pct: 85,
+      },
+      routes: [],
+      streams_using_count: 1,
+      created_at: null,
+      updated_at: null,
+    },
+  ]),
 }))
 
 vi.mock('../../api/operationalSnapshot', () => ({
@@ -291,16 +324,45 @@ vi.mock('../../api/operationalSnapshot', () => ({
       },
     ],
     routes: [],
-    destinations: [],
+    destinations: [
+      {
+        destination_id: 1,
+        destination_name: 'Splunk Capacity Hot',
+        destination_type: 'SYSLOG_TCP',
+        enabled: true,
+        health_status: 'HEALTHY',
+        inbound_eps_1m: 80,
+        failed_eps_1m: 0,
+        avg_latency_ms: 10,
+        route_count: 1,
+        last_success_at: null,
+        last_error_at: null,
+        last_error_message: null,
+      },
+      {
+        destination_id: 2,
+        destination_name: 'Delivery Warning Only',
+        destination_type: 'SYSLOG_TCP',
+        enabled: true,
+        health_status: 'DEGRADED',
+        inbound_eps_1m: 20,
+        failed_eps_1m: 1,
+        avg_latency_ms: 20,
+        route_count: 1,
+        last_success_at: null,
+        last_error_at: null,
+        last_error_message: 'Delivery degraded',
+      },
+    ],
     problems: [
       {
         severity: 'warning',
         scope: 'destination',
         stream_id: null,
         route_id: null,
-        destination_id: 1,
-        title: 'Capacity',
-        message: 'Destination capacity warning',
+        destination_id: 2,
+        title: 'Delivery warning',
+        message: 'Delivery degraded but capacity remains healthy',
         last_seen_at: null,
       },
     ],
@@ -436,6 +498,24 @@ describe('DashboardOverview', () => {
       expect(within(issues).getByTestId('dashboard-issue-destination-capacity')).toHaveTextContent('1')
       expect(within(issues).getByTestId('dashboard-issue-schema-drift')).toHaveTextContent('3')
     })
+  })
+
+  it('shows capacity evidence as unavailable instead of claiming zero when the destination catalog fails', async () => {
+    const destinationsApi = await import('../../api/gdcDestinations')
+    vi.mocked(destinationsApi.fetchDestinationsList).mockResolvedValueOnce(null)
+
+    render(
+      <MemoryRouter>
+        <main>
+          <DashboardOverview />
+        </main>
+      </MemoryRouter>,
+    )
+
+    const issues = await within(mainRegion()).findByTestId('dashboard-operational-issues')
+    const capacity = within(issues).getByTestId('dashboard-issue-destination-capacity')
+    await waitFor(() => expect(capacity).toHaveTextContent('Data unavailable'))
+    expect(capacity).toHaveTextContent('—')
   })
 
   it('exposes drill-down links to existing operational surfaces', async () => {
