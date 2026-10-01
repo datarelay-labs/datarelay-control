@@ -26,7 +26,7 @@ import {
   type GovernanceViolationEntry,
   type ViolationWindow,
 } from '../../api/gdcGovernanceViolations'
-import { fetchHealthOverview } from '../../api/gdcRuntimeHealth'
+import { clearOperationalSnapshotCache, getOperationalSnapshot } from '../../api/operationalSnapshot'
 import { NAV_PATH } from '../../config/nav-paths'
 import { isOssReleaseMode } from '../../lib/feature-flags'
 import { canEditPolicy } from '../../lib/governance-rbac'
@@ -136,15 +136,15 @@ export function GovernanceDashboardPage() {
   const [violations, setViolations] = useState<GovernanceViolationEntry[]>([])
   const [policies, setPolicies] = useState<GovernancePolicyEntry[]>([])
   const [operationalIssues, setOperationalIssues] = useState<{
-    noDataStreams: number
-    lowVolumeStreams: number
+    noDataStreams: number | null
+    lowVolumeStreams: number | null
     schemaDriftCount: number | null
-    destinationCapacityWarnings: number
+    destinationCapacityWarnings: number | null
   }>({
-    noDataStreams: 0,
-    lowVolumeStreams: 0,
+    noDataStreams: null,
+    lowVolumeStreams: null,
     schemaDriftCount: null,
-    destinationCapacityWarnings: 0,
+    destinationCapacityWarnings: null,
   })
   const [window, setWindow] = useState<ViolationWindow>('24h')
   const [loading, setLoading] = useState(true)
@@ -188,14 +188,15 @@ export function GovernanceDashboardPage() {
 
   const loadOperationalIssues = useCallback(async () => {
     try {
-      const health = await fetchHealthOverview({ window: '24h' })
-      setOperationalIssues(deriveGovernanceOperationalIssues(health, null, []))
+      const snapshot = await getOperationalSnapshot()
+      setOperationalIssues(deriveGovernanceOperationalIssues(snapshot, null))
     } catch {
-      /* optional enrichment — ignore failures */
+      setOperationalIssues(deriveGovernanceOperationalIssues(null, null))
     }
   }, [])
 
   const refreshAll = useCallback(async () => {
+    clearOperationalSnapshotCache()
     await Promise.all([load(), loadSummary(), loadOperationalIssues()])
   }, [load, loadSummary, loadOperationalIssues])
 
@@ -520,7 +521,7 @@ export function GovernanceDashboardPage() {
             <OperationalSignalCard
               count={operationalIssues.lowVolumeStreams}
               title="Low Volume Streams"
-              description="Streams below their usual transfer volume."
+              description="Streams with observed transfer volume below the low-volume threshold."
               tone="amber"
               testId="gov-issue-low-volume"
             />
