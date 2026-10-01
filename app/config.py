@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     # so other workers cannot serve pre-mutation rows. Stale last-success payload is
     # kept on refresh failure.
     GDC_CONNECTORS_LIST_CACHE_TTL_SEC: float = 30.0
+    # Marketplace installed package root (M29.2 multi-root registry). Relative paths resolve from repo root.
+    # Missing/empty directory is valid; registry scans filesystem packages only (no acquire/upload).
+    GDC_PLUGINS_DIR: str = "data/plugins"
     # Log individual statement timings over thresholds (see app/observability/slow_query.py).
     GDC_SLOW_QUERY_LOG: bool = True
     SECRET_KEY: str = "change-me-in-production"
