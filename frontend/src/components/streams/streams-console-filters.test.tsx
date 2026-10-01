@@ -287,6 +287,19 @@ describe('StreamsConsole operations UX', () => {
     })
   })
 
+  it('applies checkpoint-lag operational deep link instead of treating it as a no-op', async () => {
+    render(
+      <MemoryRouter initialEntries={['/streams?filter=checkpoint-lag']}>
+        <StreamsConsole />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByTestId('streams-filter-chips')).toHaveTextContent('Checkpoint Lag')
+    await waitFor(() => {
+      expect(screen.getByTestId('streams-empty-state')).toHaveTextContent('No streams match your filters.')
+    })
+  })
+
   it('applies no-data operational deep link instead of treating it as a no-op', async () => {
     render(
       <MemoryRouter initialEntries={['/streams?filter=no-data']}>

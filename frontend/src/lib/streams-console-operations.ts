@@ -10,7 +10,7 @@ import { deriveStreamIssueCauses } from './stream-console-issue-causes'
 import { isLowVolumeEps } from './low-volume-signal'
 
 export type StreamsQuickFilter = 'all' | 'healthy' | 'warning' | 'critical' | 'issues'
-export type StreamsOperationalFilter = 'no-data' | 'low-volume'
+export type StreamsOperationalFilter = 'no-data' | 'low-volume' | 'checkpoint-lag'
 
 export type StreamOperationsSummary = {
   healthy: number
@@ -64,7 +64,7 @@ export function matchesQuickFilter(row: StreamConsoleRow, filter: StreamsQuickFi
 
 export function parseStreamsOperationalFilter(search: string): StreamsOperationalFilter | null {
   const value = new URLSearchParams(search).get('filter')?.trim().toLowerCase()
-  return value === 'no-data' || value === 'low-volume' ? value : null
+  return value === 'no-data' || value === 'low-volume' || value === 'checkpoint-lag' ? value : null
 }
 
 export function matchesOperationalFilter(
@@ -74,6 +74,7 @@ export function matchesOperationalFilter(
   if (filter == null) return true
   if (filter === 'no-data') return row.enabled === true && row.operationalHealthStatus === 'IDLE'
   if (filter === 'low-volume') return row.enabled === true && isLowVolumeEps(row.eps1m, row.eps5m)
+  if (filter === 'checkpoint-lag') return row.enabled === true && row.checkpointBehindDelivery === true
   return true
 }
 

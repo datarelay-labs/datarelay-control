@@ -16,7 +16,7 @@ import {
   X,
 } from 'lucide-react'
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   createDestination,
   deleteDestination,
@@ -633,6 +633,8 @@ const TD = 'px-3 py-2.5'
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function DestinationsManagementPage() {
+  const location = useLocation()
+  const navigate = useNavigate()
   const [autoRefresh, setAutoRefresh] = useState<StreamsAutoRefreshOption>('Off')
   const [timeRange, setTimeRange] = useState<StreamsMetricsWindow>('1h')
   const [refreshVersion, setRefreshVersion] = useState(0)
@@ -709,6 +711,10 @@ export function DestinationsManagementPage() {
 
   const [searchQ, setSearchQ] = useState('')
   const [healthFilter, setHealthFilter] = useState<'ALL' | DestinationUiHealth>('ALL')
+  const capacityWarningFilter = useMemo(
+    () => new URLSearchParams(location.search).get('filter')?.trim().toLowerCase() === 'warning',
+    [location.search],
+  )
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState<PageSize>(10)
 
@@ -730,8 +736,11 @@ export function DestinationsManagementPage() {
     if (healthFilter !== 'ALL') {
       list = list.filter((r) => r.runtime.health === healthFilter)
     }
+    if (capacityWarningFilter) {
+      list = list.filter((r) => r.runtime.capacityWarning === true)
+    }
     return list.sort((a, b) => a.id - b.id)
-  }, [rows, searchQ, healthFilter])
+  }, [rows, searchQ, healthFilter, capacityWarningFilter])
 
   const pagedRows = useMemo(() => {
     const start = (page - 1) * pageSize
@@ -739,7 +748,14 @@ export function DestinationsManagementPage() {
   }, [filteredRows, page, pageSize])
 
   // Reset to page 1 on filter change
-  useEffect(() => { setPage(1) }, [searchQ, healthFilter])
+  useEffect(() => { setPage(1) }, [searchQ, healthFilter, capacityWarningFilter])
+
+  const clearCapacityWarningFilter = useCallback(() => {
+    const params = new URLSearchParams(location.search)
+    params.delete('filter')
+    const qs = params.toString()
+    navigate(qs ? `/destinations?${qs}` : '/destinations')
+  }, [location.search, navigate])
 
   // ─── Toast helpers ─────────────────────────────────────────────────────────
 
@@ -1118,6 +1134,24 @@ export function DestinationsManagementPage() {
       )}
 
       <DestinationsHealthOverview kpi={kpi} loading={isRefreshing && rows.length === 0} />
+
+      {capacityWarningFilter ? (
+        <div className="flex flex-wrap gap-2" data-testid="destinations-operational-filter-chip">
+          <span className="inline-flex items-center gap-1 rounded-full border border-amber-200/80 bg-amber-50/80 py-0.5 pl-2.5 pr-1 text-[11px] font-medium text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
+            <span className="text-amber-700/80 dark:text-amber-200/80">Operational</span>
+            <span className="font-semibold">Capacity Warning</span>
+            <button
+              type="button"
+              onClick={clearCapacityWarningFilter}
+              className="inline-flex h-5 w-5 items-center justify-center rounded-full hover:bg-amber-200/60 dark:hover:bg-amber-500/20"
+              aria-label="Clear capacity warning filter"
+              data-testid="destinations-clear-operational-filter"
+            >
+              <X className="h-3 w-3" aria-hidden />
+            </button>
+          </span>
+        </div>
+      ) : null}
 
       {/* Table / Card toolbar */}
       <div className="flex flex-wrap items-center gap-2" data-testid="destinations-list-toolbar">

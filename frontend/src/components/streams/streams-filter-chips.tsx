@@ -54,7 +54,13 @@ export function StreamsFilterChips({
       {showOperational ? (
         <span className="inline-flex items-center gap-1 rounded-full border border-amber-200/80 bg-amber-50/80 py-0.5 pl-2.5 pr-1 text-[11px] font-medium text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
           <span className="text-amber-700/80 dark:text-amber-200/80">Operational</span>
-          <span className="font-semibold">{operationalFilter === 'no-data' ? 'No Data' : 'Low Volume'}</span>
+          <span className="font-semibold">
+            {operationalFilter === 'no-data'
+              ? 'No Data'
+              : operationalFilter === 'low-volume'
+                ? 'Low Volume'
+                : 'Checkpoint Lag'}
+          </span>
           <button
             type="button"
             onClick={onClearOperationalFilter}

@@ -110,12 +110,22 @@ describe('destination-runtime-metrics', () => {
       updated_at: '2026-06-22T00:00:00Z',
     }
     const lookup = buildDestinationRuntimeLookup(snapshot)
-    const metrics = listRuntimeMetricsForDestination(catalogRow(7), lookup, snapshot, healthRow(), '1h')
+    const row = {
+      ...catalogRow(7),
+      rate_limit_json: {
+        capacity_limit_eps: 5,
+        capacity_warning_threshold_pct: 70,
+        capacity_critical_threshold_pct: 85,
+      },
+    }
+    const metrics = listRuntimeMetricsForDestination(row, lookup, snapshot, healthRow(), '1h')
     expect(metrics.connectedStreams).toBe(2)
     expect(metrics.connectedRoutes).toBe(2)
     expect(metrics.currentEps).toBeCloseTo(100 / 3600, 4)
     expect(metrics.successRatePct).toBe(90)
     expect(metrics.hasDeliveryActivity).toBe(true)
+    expect(metrics.capacityUsagePct).toBeCloseTo(84, 4)
+    expect(metrics.capacityWarning).toBe(true)
     expect(metrics.health).toBe('Critical')
     expect(metrics.recentIssues.length).toBeGreaterThan(0)
   })
