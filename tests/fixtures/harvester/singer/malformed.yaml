@@ -1,0 +1,3 @@
+# Malformed on purpose — missing identity/streams shape for adapter error paths
+not_a_valid_harvest: true
+streams: "should-be-list"

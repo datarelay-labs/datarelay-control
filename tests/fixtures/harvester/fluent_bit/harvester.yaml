@@ -1,0 +1,12 @@
+ecosystem: fluent_bit
+identity:
+  integration_name: fluent-bit-http
+  upstream_project: fluent-bit
+license:
+  identifier: Apache-2.0
+proposed_source_type: HTTP_API_POLLING
+mapping_status: MAPPED
+streams:
+  - name: http_input
+    http_method: GET
+    path: /api/v1/logs

@@ -1,0 +1,16 @@
+# Singer catalog without REST endpoint evidence → unsupported mapping
+ecosystem: singer
+identity:
+  upstream_project: tap-schema-only
+  integration_name: tap-schema-only
+  vendor: Acme
+license:
+  identifier: MIT
+proposed_source_type: null
+mapping_status: UNSUPPORTED
+mapping_reason: catalog schema only; no REST path/method
+streams:
+  - name: accounts
+    schema_fields:
+      - name: id
+        type: string

@@ -1,0 +1,13 @@
+ecosystem: singer
+identity:
+  integration_name: tap-deny-me
+  upstream_project: tap-deny-me
+  vendor: Acme
+license:
+  identifier: MIT
+proposed_source_type: HTTP_API_POLLING
+mapping_status: MAPPED
+streams:
+  - name: items
+    http_method: GET
+    path: /v1/items

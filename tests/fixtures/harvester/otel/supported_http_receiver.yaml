@@ -1,0 +1,18 @@
+# OTel receiver with explicit HTTP poll mapping — ALLOW
+name: acmehttp
+type: receiver
+version: "0.98.0"
+path: receiver/acmehttpreceiver
+license: Apache-2.0
+license_source: LICENSE
+github_project: open-telemetry/opentelemetry-collector-contrib
+transport: http
+auth:
+  type: bearer
+  required_fields:
+    - base_url
+    - token
+endpoints:
+  - name: metrics
+    http_method: GET
+    path: /v1/metrics

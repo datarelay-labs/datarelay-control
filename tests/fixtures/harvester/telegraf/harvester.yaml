@@ -1,0 +1,9 @@
+ecosystem: telegraf
+identity:
+  integration_name: telegraf-http
+  upstream_project: telegraf
+license:
+  identifier: MIT
+mapping_status: UNSUPPORTED
+mapping_reason: telegraf plugin format not mapped in V1 beyond fixture knowledge
+streams: []

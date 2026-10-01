@@ -1,0 +1,13 @@
+ecosystem: singer
+identity:
+  integration_name: tap-review-mpl
+  upstream_project: tap-review-mpl
+  vendor: Acme
+license:
+  identifier: MPL-2.0
+proposed_source_type: HTTP_API_POLLING
+mapping_status: MAPPED
+streams:
+  - name: items
+    http_method: GET
+    path: /v1/items

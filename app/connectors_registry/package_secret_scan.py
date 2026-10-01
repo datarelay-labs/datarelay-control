@@ -208,6 +208,10 @@ def _scan_mapping(obj: Any, *, rel: str, findings: list[SecretFinding], path: st
             text = str(value)
             if _CREDENTIAL_REF_KEY.search(key_s):
                 continue
+            # Connector auth schemas use `secret: true` as a UI metadata flag;
+            # the boolean flag is not credential material.
+            if key_s.strip().lower() == "secret" and isinstance(value, bool):
+                continue
             if _SECRET_KEY_PATTERN.match(key_s.strip()):
                 if _looks_like_literal_secret(text, field_context=True):
                     findings.append(_finding(rel, f"secret_field:{key_s.strip().lower()}"))
@@ -248,6 +252,10 @@ def _scan_text_content(content: str, *, rel: str, findings: list[SecretFinding])
         if _CREDENTIAL_REF_KEY.search(key):
             continue
         val = raw_val.strip().strip(",").strip("'\"")
+        # Connector auth schemas use `secret: true|false` as metadata, not
+        # credential material. Keep literal string secrets fail-closed.
+        if key.strip().lower() == "secret" and val.strip().lower() in {"true", "false"}:
+            continue
         if _SECRET_KEY_PATTERN.match(key) and _looks_like_literal_secret(val, field_context=True):
             findings.append(_finding(rel, f"secret_field:{key.lower()}"))
 

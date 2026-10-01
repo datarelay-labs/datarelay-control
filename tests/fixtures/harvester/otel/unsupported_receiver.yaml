@@ -1,0 +1,8 @@
+# OTel receiver without Data Relay mapping evidence
+name: hostmetrics
+type: receiver
+version: "0.98.0"
+path: receiver/hostmetricsreceiver
+license: Apache-2.0
+transport: scrape
+# no endpoints / http_method — must remain unsupported
