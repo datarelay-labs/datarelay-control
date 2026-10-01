@@ -81,9 +81,9 @@ describe('streams-console-operations', () => {
     expect(out.map((r) => r.id)).toEqual(['3', '2'])
   })
 
-  it('filters no-data from enabled IDLE runtime status only', () => {
-    const idle = row({ id: '4', name: 'Idle', status: 'IDLE', enabled: true })
-    const disabledIdle = row({ id: '5', name: 'Disabled idle', status: 'IDLE', enabled: false })
+  it('filters no-data from snapshot IDLE health even when runtime lifecycle is RUNNING', () => {
+    const idle = row({ id: '4', name: 'Idle', status: 'RUNNING', operationalHealthStatus: 'IDLE', enabled: true })
+    const disabledIdle = row({ id: '5', name: 'Disabled idle', status: 'RUNNING', operationalHealthStatus: 'IDLE', enabled: false })
     const out = filterStreamRows({
       rows: [...allRows, idle, disabledIdle],
       searchQuery: '',

@@ -72,7 +72,7 @@ export function matchesOperationalFilter(
   filter: StreamsOperationalFilter | null | undefined,
 ): boolean {
   if (filter == null) return true
-  if (filter === 'no-data') return row.enabled === true && row.status === 'IDLE'
+  if (filter === 'no-data') return row.enabled === true && row.operationalHealthStatus === 'IDLE'
   if (filter === 'low-volume') return row.enabled === true && isLowVolumeEps(row.eps1m, row.eps5m)
   return true
 }
