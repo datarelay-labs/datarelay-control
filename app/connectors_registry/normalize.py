@@ -11,13 +11,16 @@ DEFAULT_PACKAGE_KIND = "source"
 
 
 def _nonblank_str(value: Any) -> str | None:
-    if value is None:
+    if not isinstance(value, str):
         return None
-    if isinstance(value, str):
-        stripped = value.strip()
-        return stripped or None
-    text = str(value).strip()
-    return text or None
+    stripped = value.strip()
+    return stripped or None
+
+
+def _missing_or_blank(data: dict[str, Any], key: str) -> bool:
+    if key not in data or data[key] is None:
+        return True
+    return isinstance(data[key], str) and not data[key].strip()
 
 
 def normalize_manifest_dict(raw: dict[str, Any]) -> dict[str, Any]:
@@ -38,11 +41,13 @@ def normalize_manifest_dict(raw: dict[str, Any]) -> dict[str, Any]:
 
     version = _nonblank_str(data.get("version"))
     pack_version = _nonblank_str(data.get("pack_version"))
+    version_missing = _missing_or_blank(data, "version")
+    pack_version_missing = _missing_or_blank(data, "pack_version")
 
-    if version is not None and pack_version is None:
+    if version is not None and pack_version_missing:
         data["version"] = version
         data["pack_version"] = version
-    elif pack_version is not None and version is None:
+    elif pack_version is not None and version_missing:
         data["pack_version"] = pack_version
         data["version"] = pack_version
     elif version is not None and pack_version is not None:
@@ -51,15 +56,15 @@ def normalize_manifest_dict(raw: dict[str, Any]) -> dict[str, Any]:
 
     connector_id = _nonblank_str(data.get("id"))
     package_id = _nonblank_str(data.get("package_id"))
-    if package_id is None and connector_id is not None:
+    if _missing_or_blank(data, "package_id") and connector_id is not None:
         data["package_id"] = connector_id
     elif package_id is not None:
         data["package_id"] = package_id
 
     package_kind = _nonblank_str(data.get("package_kind"))
-    if package_kind is None:
+    if _missing_or_blank(data, "package_kind"):
         data["package_kind"] = DEFAULT_PACKAGE_KIND
-    else:
+    elif package_kind is not None:
         data["package_kind"] = package_kind
 
     return data

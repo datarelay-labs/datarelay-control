@@ -97,6 +97,38 @@ def test_version_equals_pack_version_pass() -> None:
     assert manifest.pack_version == "1.2.3"
 
 
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("version", {"major": 1}),
+        ("pack_version", [1, 2]),
+        ("package_id", {"id": "acme"}),
+    ],
+)
+def test_manifest_identity_metadata_rejects_non_strings(field: str, value: Any) -> None:
+    raw = _base_legacy()
+    raw[field] = value
+    manifest, issues = validate_manifest_dict(raw, manifest_path="/tmp/m.yaml")
+    assert manifest is None
+    assert any(i.rule_id == "MAN-013" and field in i.message for i in issues)
+
+
+def test_normalize_preserves_invalid_metadata_for_validation() -> None:
+    raw = _base_legacy(
+        version={"major": 1},
+        pack_version="2.0.0",
+        package_id={"id": "bad"},
+        package_kind=["source"],
+    )
+    normalized = normalize_manifest_dict(raw)
+    assert normalized["version"] == {"major": 1}
+    assert normalized["pack_version"] == "2.0.0"
+    assert normalized["package_id"] == {"id": "bad"}
+    assert normalized["package_kind"] == ["source"]
+
+
 def test_version_pack_version_conflict_fail() -> None:
     raw = _base_legacy(version="1.0.0", pack_version="2.0.0")
     manifest, issues = validate_manifest_dict(raw, manifest_path="/tmp/m.yaml")

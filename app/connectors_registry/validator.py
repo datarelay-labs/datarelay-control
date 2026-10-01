@@ -17,9 +17,31 @@ def _is_blank(value: Any) -> bool:
 
 
 def _nonblank_str(value: Any) -> str | None:
-    if _is_blank(value):
+    if not isinstance(value, str):
         return None
-    return str(value).strip()
+    stripped = value.strip()
+    return stripped or None
+
+
+def _validate_string_metadata(
+    raw: dict[str, Any],
+    *,
+    connector_id: str | None,
+    manifest_path: str,
+) -> list[ValidationIssue]:
+    issues: list[ValidationIssue] = []
+    for field in ("version", "pack_version", "package_id"):
+        value = raw.get(field)
+        if value is not None and not isinstance(value, str):
+            issues.append(
+                ValidationIssue(
+                    rule_id="MAN-013",
+                    message=f"{field} must be a string when provided",
+                    connector_id=connector_id,
+                    path=manifest_path,
+                )
+            )
+    return issues
 
 
 def _stream_id_from_dict(data: dict[str, Any]) -> str | None:
@@ -201,7 +223,7 @@ def validate_manifest_dict(
     *,
     manifest_path: str,
 ) -> tuple[ConnectorManifest | None, list[ValidationIssue]]:
-    """Apply MAN-001..MAN-012 then normalize into a canonical ConnectorManifest."""
+    """Apply MAN-001..MAN-013 then normalize into a canonical ConnectorManifest."""
 
     issues: list[ValidationIssue] = []
     connector_id = _nonblank_str(raw.get("id"))
@@ -247,6 +269,14 @@ def validate_manifest_dict(
                 path=manifest_path,
             )
         )
+
+    issues.extend(
+        _validate_string_metadata(
+            raw,
+            connector_id=connector_id,
+            manifest_path=manifest_path,
+        )
+    )
 
     version = _nonblank_str(raw.get("version"))
     pack_version = _nonblank_str(raw.get("pack_version"))
@@ -313,7 +343,7 @@ def validate_manifest_dict(
     # Do not normalize/parse when revision fields conflict, are missing, or v2
     # metadata shape is invalid. Legacy MAN-001..004 still attempt pydantic parse
     # when an id + revision is present (same as M17.5 behavior).
-    hard_block_ids = {"MAN-006", "MAN-007", "MAN-008", "MAN-009", "MAN-010", "MAN-011", "MAN-012"}
+    hard_block_ids = {"MAN-006", "MAN-007", "MAN-008", "MAN-009", "MAN-010", "MAN-011", "MAN-012", "MAN-013"}
     hard_blocked = any(issue.rule_id in hard_block_ids for issue in issues)
 
     manifest: ConnectorManifest | None = None
