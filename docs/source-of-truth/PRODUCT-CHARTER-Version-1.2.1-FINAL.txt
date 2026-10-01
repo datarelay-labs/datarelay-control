@@ -576,23 +576,22 @@ Control delivery backlog 에 포함되지 않는다.
 
 ==================================================
 DATA RELAY MARKETPLACE ADDENDUM v1.0
-Product Scope Extension — Connector Marketplace & Integration Ecosystem
+Post-v1 Product Direction — Connector Marketplace & Integration Ecosystem
 ==================================================
 
-Status: Architecture Direction / M29.0–M29.1 Implementation In Progress
-Authority: Additive only. Existing Runtime Is Truth, Stream/Route, Credential, Governance, Reliability, and Checkpoint invariants remain authoritative.
+Status: POST-V1 DEFERRED / Final Marketplace specification pending
+Authority: Future additive direction only. Existing Runtime Is Truth, Stream/Route, Credential, Governance, Reliability, and Checkpoint invariants remain authoritative.
 Reference: docs/architecture/DATA-RELAY-CONNECTOR-MARKETPLACE-ARCHITECTURE-CHARTER-v1.0-DRAFT.md
 
-Data Relay Connector Marketplace is an in-scope Data Control / Data Delivery integration ecosystem capability.
+Data Relay Connector Marketplace is a future Data Control / Data Delivery integration ecosystem capability.
 
-This addendum supersedes only the earlier statement that current Data Relay Control scope is limited to Phase A–D.
+Marketplace is NOT part of the Data Relay Control v1 completion or release scope.
 
-Current Control scope is extended with:
+Existing Marketplace foundations already present in the repository may remain when they preserve current runtime/security invariants, but they do not extend Control v1 completion accounting and must not block Control v1 Browser E2E, release qualification, or owner acceptance.
 
-Phase G — Connector Marketplace & Ecosystem
-M29 — Connector Marketplace & Ecosystem
+Phase G / M29, including Connector Harvester, AI Builder, Git/remote acquisition, and Remote/Public Registry, remains deferred until a future final Marketplace specification is explicitly approved.
 
-Phase E AI Gateway and Phase F Enterprise Edition remain outside Data Relay Control scope and do not become Control release or completion dependencies.
+AI Gateway is removed from Data Relay Control scope. Phase F Enterprise Edition also remains outside Data Relay Control scope.
 
 Marketplace extends integration acquisition, packaging, validation, provenance, trust, and lifecycle. It does not replace the Data Relay runtime.
 

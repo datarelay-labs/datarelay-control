@@ -126,7 +126,7 @@ Product Charter Phase A–D Data Collection is unchanged:
 
 S3 Object Polling and Remote File Polling are **supported, release-qualified extensions**. Their runtime adapters and deterministic release tests stay enabled. They are not Product Charter Data Collection scope, and this limitation note does not promote them into the Charter.
 
-AI Proxy / AI Gateway remains outside Data Relay Control Phase A–D.
+AI Proxy / AI Gateway is removed from the Data Relay Control product scope. Any future AI Gateway work requires a separate approved product/workstream.
 
 ---
 
@@ -186,7 +186,8 @@ GDC_ROUTE_PROCESSING_ENABLED: bool = True  # app/config.py
 | **Governance Workspace** | Read-only MVP — no inline edit or approval from Workspace |
 | **Regex replace** | Not in Advanced Transform MVP — `regex_extract` only in Expert mode |
 | **SMTP email notifications** | `SMTP_ENABLED=false` until real SMTP backend configured |
-| **AI Gateway** | Out of OSS v1 scope — routes guarded in OSS build |
+| **AI Gateway** | Removed from Data Relay Control product scope; historical/separate-domain code does not define Control v1 |
+| **Marketplace foundation** | Registry/package-lifecycle backend foundations may exist in the repository, but Marketplace/M29 is post-v1 deferred. API presence is not a Control v1 Marketplace support or UI commitment. |
 | **Wizard onboarding** | Connector created outside wizard; Destinations before Transform in step order |
 | **Main bundle size** | ~991 KB entry + async chunks — first load on slow networks may be noticeable |
 

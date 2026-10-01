@@ -2,8 +2,10 @@
 
 Version 1.0 Draft
 
-Status: Proposed Source-of-Truth Addendum — M29.0/M29.1 Implementation In Progress
+Status: Post-v1 Deferred Architecture Reference — Final Marketplace specification pending
 Baseline: `wave2-marketplace-baseline` @ `362a57dec43d321138fa8aafc848fbfc80303807`
+
+Owner scope decision (2026-10-01): Marketplace is not part of Data Relay Control v1 completion/release scope. Existing implemented foundations may be preserved, but remaining M29 work — including Harvester, AI Builder, Git/remote acquisition, Marketplace UI expansion, and Remote/Public Registry — must not resume until a future final Marketplace specification is explicitly approved.
 
 ---
 
@@ -749,7 +751,7 @@ Credential OAuth/token persistence remains a separate domain.
 
 ## 26. WBS — Marketplace Workstream
 
-Marketplace is a new in-scope post-baseline workstream. It does not change historical completion percentages in the existing WBS.
+Marketplace is a post-v1 deferred workstream. Existing foundations do not change historical Phase A–D completion percentages and do not contribute to Data Relay Control v1 completion or release readiness.
 
 Recommended milestone:
 
@@ -862,4 +864,4 @@ Until implementation is complete:
 4. Marketplace definitions are additive and implementation-pending.
 5. Documentation MUST NOT claim Marketplace features are available before code, tests, and migration readiness prove them.
 
-When implementation begins, detailed Marketplace implementation specs MUST reference this charter and preserve all existing runtime/security boundaries.
+When Marketplace implementation is explicitly resumed under a future approved final specification, detailed implementation specs MUST preserve all existing runtime/security boundaries and re-audit this draft before treating it as implementation authority.
