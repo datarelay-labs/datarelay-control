@@ -8,6 +8,7 @@ from typing import BinaryIO
 
 from sqlalchemy.orm import Session
 
+from app.auth.role_guard import ROLE_ADMINISTRATOR
 from app.connectors_registry.lifecycle_archive import (
     StagedPackage,
     cleanup_staging,
@@ -39,6 +40,11 @@ from app.connectors_registry.lifecycle_schemas import (
     MarketplacePackageInstallRead,
     MarketplacePackageListResponse,
 )
+from app.connectors_registry.package_signature import (
+    PackageSignatureResult,
+    assert_signature_install_allowed,
+    verify_package_signature,
+)
 from app.connectors_registry.roots import builtin_connectors_root, installed_plugins_root
 from app.connectors_registry.loader import load_connector_modules
 from app.connectors_registry.package_validator import (
@@ -60,12 +66,29 @@ def _row_to_read(row: MarketplacePackageInstall) -> MarketplacePackageInstallRea
         origin=row.origin,
         status=row.status,
         digest=row.digest,
+        signature_status=getattr(row, "signature_status", None) or "UNSIGNED",
+        signing_key_id=getattr(row, "signing_key_id", None),
         installed_path=row.installed_path,
         previous_version=row.previous_version,
         previous_digest=row.previous_digest,
         installed_at=row.installed_at,
         updated_at=row.updated_at,
     )
+
+
+def _verify_staged_signature(
+    db: Session,
+    staged: StagedPackage,
+    *,
+    actor_role: str,
+) -> PackageSignatureResult:
+    result = verify_package_signature(
+        db,
+        canonical_digest=staged.digest,
+        metadata=staged.signature_metadata,
+    )
+    assert_signature_install_allowed(result, actor_role=actor_role)
+    return result
 
 
 def list_installed_packages(db: Session) -> MarketplacePackageListResponse:
@@ -281,6 +304,7 @@ def install_package(
     db: Session,
     archive: bytes | BinaryIO,
     *,
+    actor_role: str = ROLE_ADMINISTRATOR,
     builtin_root: Path | None = None,
     installed_root: Path | None = None,
 ) -> MarketplacePackageInstallRead:
@@ -290,6 +314,7 @@ def install_package(
     staged: StagedPackage | None = None
     try:
         staged = _stage_from_upload(archive, installed_root=installed_root)
+        sig = _verify_staged_signature(db, staged, actor_role=actor_role)
         _assert_no_install_collision(
             db,
             staged.package_id,
@@ -323,6 +348,10 @@ def install_package(
                     origin=LIFECYCLE_ORIGIN_UPLOAD,
                     status=LIFECYCLE_STATUS_INSTALLED,
                     digest=staged.digest,
+                    signature_status=sig.status,
+                    signing_key_id=sig.signing_key_id,
+                    previous_signature_status=None,
+                    previous_signing_key_id=None,
                     installed_path=str(published),
                     previous_version=None,
                     previous_digest=None,
@@ -336,6 +365,10 @@ def install_package(
                 row.origin = LIFECYCLE_ORIGIN_UPLOAD
                 row.status = LIFECYCLE_STATUS_INSTALLED
                 row.digest = staged.digest
+                row.signature_status = sig.status
+                row.signing_key_id = sig.signing_key_id
+                row.previous_signature_status = None
+                row.previous_signing_key_id = None
                 row.installed_path = str(published)
                 row.previous_version = None
                 row.previous_digest = None
@@ -358,6 +391,8 @@ def install_package(
                 "pack_version": row.pack_version,
                 "origin": row.origin,
                 "digest": row.digest,
+                "signature_status": row.signature_status,
+                "signing_key_id": row.signing_key_id,
             },
         )
         return _row_to_read(row)
@@ -380,6 +415,7 @@ def upgrade_package(
     package_id: str,
     archive: bytes | BinaryIO,
     *,
+    actor_role: str = ROLE_ADMINISTRATOR,
     builtin_root: Path | None = None,
     installed_root: Path | None = None,
 ) -> MarketplacePackageInstallRead:
@@ -414,6 +450,8 @@ def upgrade_package(
                 error_code="SAME_VERSION",
             )
 
+        sig = _verify_staged_signature(db, staged, actor_role=actor_role)
+
         _assert_connector_id_available(
             staged.manifest.id,
             package_id=package_id,
@@ -446,6 +484,8 @@ def upgrade_package(
 
         previous_version = row.pack_version
         previous_digest = row.digest
+        previous_signature_status = row.signature_status
+        previous_signing_key_id = row.signing_key_id
         preserve_generation(
             package_id=package_id,
             pack_version=previous_version,
@@ -475,9 +515,13 @@ def upgrade_package(
         row.origin = LIFECYCLE_ORIGIN_UPLOAD
         row.status = LIFECYCLE_STATUS_INSTALLED
         row.digest = staged.digest
+        row.signature_status = sig.status
+        row.signing_key_id = sig.signing_key_id
         row.installed_path = str(published)
         row.previous_version = previous_version
         row.previous_digest = previous_digest
+        row.previous_signature_status = previous_signature_status
+        row.previous_signing_key_id = previous_signing_key_id
         row.updated_at = utcnow()
         try:
             _commit_lifecycle_with_generation(db)
@@ -540,6 +584,8 @@ def rollback_package(
 
         previous_version = row.previous_version
         previous_digest = row.previous_digest
+        previous_signature_status = row.previous_signature_status
+        previous_signing_key_id = row.previous_signing_key_id
         current_version = row.pack_version
         current_active = active_package_path(package_id, installed_root=installed_root)
         if not current_active.is_dir():
@@ -562,9 +608,13 @@ def rollback_package(
 
         row.pack_version = previous_version
         row.digest = previous_digest
+        row.signature_status = previous_signature_status or "UNSIGNED"
+        row.signing_key_id = previous_signing_key_id
         row.installed_path = str(published)
         row.previous_version = None
         row.previous_digest = None
+        row.previous_signature_status = None
+        row.previous_signing_key_id = None
         row.updated_at = utcnow()
         try:
             _commit_lifecycle_with_generation(db)
@@ -702,6 +752,8 @@ def uninstall_package(
         row.installed_path = ""
         row.previous_version = None
         row.previous_digest = None
+        row.previous_signature_status = None
+        row.previous_signing_key_id = None
         row.updated_at = utcnow()
         try:
             _commit_lifecycle_with_generation(db)

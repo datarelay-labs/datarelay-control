@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, status
 
 from app.connectors_registry.lifecycle_router import router as lifecycle_router
+from app.connectors_registry.trusted_signing_keys_router import router as trusted_keys_router
 from app.connectors_registry.schemas import (
     ConnectorRegistryDetail,
     ConnectorRegistryListResponse,
@@ -20,8 +21,9 @@ from app.connectors_registry.service import (
 )
 
 router = APIRouter()
-# Lifecycle routes (/packages/...) must be registered before /{connector_id}.
+# Lifecycle + trusted-key routes must be registered before /{connector_id}.
 router.include_router(lifecycle_router)
+router.include_router(trusted_keys_router)
 
 
 @router.get("/", response_model=ConnectorRegistryListResponse)

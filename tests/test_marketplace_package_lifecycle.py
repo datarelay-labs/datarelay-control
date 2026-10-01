@@ -12,6 +12,7 @@ import pytest
 import yaml
 from alembic import command
 from alembic.config import Config
+from fastapi import Request
 from fastapi.testclient import TestClient
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
@@ -304,7 +305,15 @@ def test_http_install_uses_spooled_file_not_unbounded_upload_read(
         async def read(self, *_args: Any, **_kwargs: Any) -> bytes:
             raise AssertionError("route must not call unbounded UploadFile.read()")
 
-    row = asyncio.run(post_install_package(FakeUpload(), db_session))  # type: ignore[arg-type]
+    request = Request({
+        "type": "http",
+        "method": "POST",
+        "path": "/api/v1/connectors-registry/packages/install",
+        "headers": [],
+    })
+    row = asyncio.run(
+        post_install_package(request, FakeUpload(), db_session)  # type: ignore[arg-type]
+    )
     assert row.package_id == "spooled"
 
 
@@ -946,4 +955,4 @@ def test_migration_upgrade_downgrade(reset_db_schema: None, test_db_url: str, db
     command.upgrade(cfg, "head")
     with db_engine.connect() as conn:
         rev = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-    assert rev == "20261001_0065"
+    assert rev == "20261001_0066"
