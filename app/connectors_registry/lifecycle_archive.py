@@ -13,10 +13,8 @@ from pathlib import Path
 from typing import BinaryIO
 
 from app.connectors_registry.lifecycle_errors import LifecycleError
-from app.connectors_registry.loader import _MANIFEST_FILENAMES, _read_manifest_file
 from app.connectors_registry.models import ConnectorManifest
-from app.connectors_registry.roots import is_path_within_root
-from app.connectors_registry.validator import validate_manifest_dict
+from app.connectors_registry.package_validator import validate_marketplace_package
 
 _MAX_ARCHIVE_BYTES = 64 * 1024 * 1024  # 64 MiB
 _MAX_MEMBER_COUNT = 10_000
@@ -175,119 +173,19 @@ def extract_tar_gz_to_staging(archive_bytes: bytes, *, staging_parent: Path | No
     return staging_root  # pragma: no cover
 
 
-def _find_package_roots(staging_root: Path) -> list[Path]:
-    """Locate package roots that contain a manifest (top-level or single nested dir)."""
-
-    roots: list[Path] = []
-
-    def has_manifest(directory: Path) -> Path | None:
-        for name in _MANIFEST_FILENAMES:
-            candidate = directory / name
-            if candidate.is_file():
-                return candidate
-        return None
-
-    if has_manifest(staging_root) is not None:
-        roots.append(staging_root)
-
-    try:
-        children = sorted(p for p in staging_root.iterdir() if p.is_dir() and not p.name.startswith("."))
-    except OSError:
-        children = []
-
-    for child in children:
-        if has_manifest(child) is not None:
-            roots.append(child)
-
-    return roots
-
-
-def _validate_manifest_resource_paths(package_root: Path, manifest: ConnectorManifest) -> None:
-    """Reject manifest references that resolve outside the extracted package root."""
-
-    refs: list[tuple[str, str]] = []
-    if manifest.auth.schema_ref:
-        refs.append(("auth.schema_ref", manifest.auth.schema_ref))
-    for index, stream_ref in enumerate(manifest.streams):
-        for attr in ("template", "default_mapping", "default_enrichment"):
-            value = getattr(stream_ref, attr, None)
-            if value:
-                refs.append((f"streams[{index}].{attr}", value))
-
-    for field, raw_ref in refs:
-        ref = Path(raw_ref)
-        candidate = package_root / ref
-        if ref.is_absolute() or not is_path_within_root(candidate, package_root):
-            _reject(
-                "MANIFEST_RESOURCE_ESCAPE",
-                f"{field} must resolve inside the package root: {raw_ref!r}",
-            )
-
-
 def resolve_and_validate_staged_package(staging_root: Path, *, digest: str) -> StagedPackage:
-    """Resolve a unique package root under staging and validate with Manifest v2 loader."""
+    """Resolve a unique package root under staging via Marketplace package validator."""
 
-    roots = _find_package_roots(staging_root)
-    if not roots:
-        _reject("MANIFEST_MISSING", "archive does not contain a package manifest")
-    if len(roots) > 1:
-        _reject(
-            "PACKAGE_ROOT_AMBIGUOUS",
-            "archive contains multiple package roots with manifests",
-        )
-
-    package_root = roots[0]
-    manifest_path: Path | None = None
-    for name in _MANIFEST_FILENAMES:
-        candidate = package_root / name
-        if candidate.is_file():
-            manifest_path = candidate
-            break
-    if manifest_path is None:
-        _reject("MANIFEST_MISSING", "archive does not contain a package manifest")
-
-    try:
-        raw = _read_manifest_file(manifest_path)
-    except (OSError, ValueError) as exc:
-        _reject("MANIFEST_INVALID", f"manifest parse failed: {exc}")
-
-    # Strip spoofed platform-owned fields before validation/normalization.
-    for spoof_key in (
-        "installed_from",
-        "origin",
-        "trust_tier",
-        "validation_status",
-        "install_status",
-    ):
-        raw.pop(spoof_key, None)
-
-    manifest, issues = validate_manifest_dict(raw, manifest_path=str(manifest_path))
-    if issues or manifest is None:
-        messages = "; ".join(f"{i.rule_id}: {i.message}" for i in issues) or "manifest invalid"
-        _reject("MANIFEST_INVALID", messages)
-
-    assert manifest is not None
-    package_id = (manifest.package_id or manifest.id or "").strip()
-    pack_version = (manifest.pack_version or manifest.version or "").strip()
-    package_kind = (manifest.package_kind or "source").strip()
-    if not package_id:
-        _reject("MANIFEST_INVALID", "package_id is required after normalization")
-    if not pack_version:
-        _reject("MANIFEST_INVALID", "pack_version is required after normalization")
-    if package_kind not in {"source", "stream_extension"}:
-        _reject("MANIFEST_INVALID", f"unsupported package_kind: {package_kind!r}")
-
-    _validate_manifest_resource_paths(package_root, manifest)
-
+    validated = validate_marketplace_package(staging_root, digest=digest)
     return StagedPackage(
         staging_root=staging_root,
-        package_root=package_root,
-        manifest_path=manifest_path,
-        manifest=manifest,
-        package_id=package_id,
-        package_kind=package_kind,
-        pack_version=pack_version,
-        digest=digest,
+        package_root=validated.package_root,
+        manifest_path=validated.manifest_path,
+        manifest=validated.manifest,
+        package_id=validated.package_id,
+        package_kind=validated.package_kind,
+        pack_version=validated.pack_version,
+        digest=validated.digest,
     )
 
 

@@ -15,6 +15,7 @@ from app.database_url_resolution import apply_resolved_database_url_env
 import app.checkpoints.models  # noqa: F401
 import app.connectors.models  # noqa: F401
 import app.connectors_registry.lifecycle_models  # noqa: F401
+import app.connectors_registry.registry_version_models  # noqa: F401
 import app.destinations.models  # noqa: F401
 import app.enrichments.models  # noqa: F401
 import app.logs.models  # noqa: F401
