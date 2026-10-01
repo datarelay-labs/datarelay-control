@@ -308,6 +308,93 @@ def test_missing_dependency_flagged(builtin_root: Path, installed_root: Path) ->
     assert any(issue.rule_id == "DEP-001" for issue in result.issues)
 
 
+
+
+def test_installed_manifest_resource_paths_cannot_escape_package_root(
+    builtin_root: Path, installed_root: Path, tmp_path: Path
+) -> None:
+    builtin_root.mkdir(parents=True, exist_ok=True)
+    package = installed_root / "evil"
+    outside_stream = installed_root / "outside-stream.yaml"
+    outside_mapping = installed_root / "outside-mapping.json"
+    outside_enrichment = installed_root / "outside-enrichment.json"
+    outside_auth = installed_root / "outside-auth.json"
+    outside_stream.parent.mkdir(parents=True, exist_ok=True)
+    outside_stream.write_text("stream_id: events\nname: Outside\nsource_path: /events\n", encoding="utf-8")
+    outside_mapping.write_text('{"leaked": true}', encoding="utf-8")
+    outside_enrichment.write_text('{"leaked": true}', encoding="utf-8")
+    outside_auth.write_text('{"type": "object", "secret": "should-not-load"}', encoding="utf-8")
+    _write_manifest(
+        package,
+        _base_source(
+            id="evil",
+            auth={"type": "bearer", "schema_ref": "../outside-auth.json"},
+            streams=[{
+                "id": "events",
+                "name": "Events",
+                "template": "../outside-stream.yaml",
+                "default_mapping": "../outside-mapping.json",
+                "default_enrichment": "../outside-enrichment.json",
+            }],
+        ),
+    )
+
+    result = load_connector_modules(
+        root=builtin_root,
+        installed_root=installed_root,
+        include_installed=True,
+    )
+    entry = result.modules["evil"]
+    assert entry.status == "invalid"
+    assert entry.resources.streams == {}
+    assert entry.resources.mappings == {}
+    assert entry.resources.enrichments == {}
+    assert entry.resources.auth_schema is None
+    assert sum(issue.rule_id == "REG-005" for issue in entry.errors) >= 4
+
+
+def test_dependency_version_mismatch_invalidates_extension(
+    builtin_root: Path, installed_root: Path
+) -> None:
+    _write_manifest(builtin_root / "base", _base_source(id="base", version="1.0.0"))
+    _write_manifest(
+        installed_root / "ext",
+        _base_source(
+            id="ext",
+            package_kind="stream_extension",
+            requires={"package_id": "base", "version": ">=2.0.0"},
+        ),
+    )
+    result = load_connector_modules(
+        root=builtin_root, installed_root=installed_root, include_installed=True
+    )
+    assert result.modules["ext"].status == "invalid"
+    assert any(issue.rule_id == "DEP-003" for issue in result.modules["ext"].errors)
+
+
+def test_invalid_dependency_target_invalidates_extension(
+    builtin_root: Path, installed_root: Path
+) -> None:
+    _write_manifest(
+        builtin_root / "base",
+        _base_source(id="base", auth={}),
+    )
+    _write_manifest(
+        installed_root / "ext",
+        _base_source(
+            id="ext",
+            package_kind="stream_extension",
+            requires={"package_id": "base"},
+        ),
+    )
+    result = load_connector_modules(
+        root=builtin_root, installed_root=installed_root, include_installed=True
+    )
+    assert result.modules["base"].status == "invalid"
+    assert result.modules["ext"].status == "invalid"
+    assert any(issue.rule_id == "DEP-002" for issue in result.modules["ext"].errors)
+
+
 def test_reload_picks_up_installed_package(
     builtin_root: Path,
     installed_root: Path,

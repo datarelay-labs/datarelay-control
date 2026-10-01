@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from packaging.specifiers import InvalidSpecifier, SpecifierSet
+from packaging.version import InvalidVersion, Version
 
 from app.connectors_registry.errors import ValidationIssue
 from app.connectors_registry.models import (
@@ -112,6 +114,40 @@ def _discover_manifest_paths(root: Path) -> list[tuple[Path, Path]]:
     return found
 
 
+
+
+def _resource_path_issue(
+    module_dir: Path,
+    path: Path,
+    *,
+    connector_id: str,
+) -> ValidationIssue | None:
+    """Reject any resource read that resolves outside one package directory."""
+
+    if is_path_within_root(path, module_dir):
+        return None
+    return ValidationIssue(
+        rule_id="REG-005",
+        message=f"package resource path escapes package root: {path}",
+        connector_id=connector_id,
+        path=str(path),
+    )
+
+
+def _dependency_version_matches(version: str, requirement: str) -> bool:
+    """Compare a package version against a PEP 440-style requirement."""
+
+    parsed_version = Version(version)
+    raw = requirement.strip()
+    if not raw:
+        return True
+    if not any(raw.startswith(op) for op in ("~=", "==", "!=", "<=", ">=", "<", ">", "===")):
+        raw = f"=={raw}"
+    else:
+        raw = ",".join(part for part in raw.replace(",", " ").split() if part)
+    return parsed_version in SpecifierSet(raw)
+
+
 def _relative_module_path(module_dir: Path, path: Path) -> str:
     try:
         return str(path.relative_to(module_dir))
@@ -129,8 +165,15 @@ def _load_stream_templates(
     issues: list[ValidationIssue] = []
 
     streams_dir = module_dir / "streams"
-    if streams_dir.is_dir():
+    streams_dir_issue = _resource_path_issue(module_dir, streams_dir, connector_id=connector_id)
+    if streams_dir.exists() and streams_dir_issue is not None:
+        issues.append(streams_dir_issue)
+    elif streams_dir.is_dir():
         for path in sorted(streams_dir.glob("*.yaml")) + sorted(streams_dir.glob("*.yml")):
+            path_issue = _resource_path_issue(module_dir, path, connector_id=connector_id)
+            if path_issue is not None:
+                issues.append(path_issue)
+                continue
             stream_id = path.stem
             try:
                 data = _read_yaml_or_json(path)
@@ -168,6 +211,10 @@ def _load_stream_templates(
         for stream_ref in manifest.streams:
             if stream_ref.template:
                 template_path = module_dir / stream_ref.template
+                path_issue = _resource_path_issue(module_dir, template_path, connector_id=connector_id)
+                if path_issue is not None:
+                    issues.append(path_issue)
+                    continue
                 if not template_path.is_file():
                     issues.append(
                         ValidationIssue(
@@ -217,10 +264,18 @@ def _load_json_directory(
     loaded: dict[str, dict[str, Any]] = {}
     issues: list[ValidationIssue] = []
     target = module_dir / subdir
+    target_issue = _resource_path_issue(module_dir, target, connector_id=connector_id)
+    if target.exists() and target_issue is not None:
+        issues.append(target_issue)
+        return loaded, issues
     if not target.is_dir():
         return loaded, issues
 
     for path in sorted(target.glob("*.json")):
+        path_issue = _resource_path_issue(module_dir, path, connector_id=connector_id)
+        if path_issue is not None:
+            issues.append(path_issue)
+            continue
         resource_id = path.stem
         try:
             data = _read_yaml_or_json(path)
@@ -265,6 +320,10 @@ def _load_manifest_referenced_json(
         if not rel_path:
             continue
         file_path = module_dir / rel_path
+        path_issue = _resource_path_issue(module_dir, file_path, connector_id=connector_id)
+        if path_issue is not None:
+            issues.append(path_issue)
+            continue
         if not file_path.is_file():
             issues.append(
                 ValidationIssue(
@@ -306,6 +365,10 @@ def _load_api_test(module_dir: Path, *, connector_id: str) -> tuple[dict[str, An
     issues: list[ValidationIssue] = []
     for name in ("api_test.yaml", "api_test.yml"):
         path = module_dir / name
+        path_issue = _resource_path_issue(module_dir, path, connector_id=connector_id)
+        if path_issue is not None and path.exists():
+            issues.append(path_issue)
+            continue
         if not path.is_file():
             continue
         try:
@@ -327,11 +390,18 @@ def _load_api_test(module_dir: Path, *, connector_id: str) -> tuple[dict[str, An
     return None, issues
 
 
-def _load_docs_metadata(module_dir: Path) -> Any:
+def _load_docs_metadata(
+    module_dir: Path,
+    *,
+    connector_id: str,
+) -> tuple[Any, list[ValidationIssue]]:
     docs_path = module_dir / "docs.md"
+    path_issue = _resource_path_issue(module_dir, docs_path, connector_id=connector_id)
+    if path_issue is not None and docs_path.exists():
+        return None, [path_issue]
     if not docs_path.is_file():
-        return None
-    return extract_docs_metadata(docs_path, relative_path="docs.md")
+        return None, []
+    return extract_docs_metadata(docs_path, relative_path="docs.md"), []
 
 
 def _load_auth_schema(
@@ -349,6 +419,10 @@ def _load_auth_schema(
         return None, issues
 
     schema_path = module_dir / schema_ref
+    path_issue = _resource_path_issue(module_dir, schema_path, connector_id=connector_id)
+    if path_issue is not None:
+        issues.append(path_issue)
+        return None, issues
     if not schema_path.is_file():
         issues.append(
             ValidationIssue(
@@ -450,7 +524,9 @@ def _load_module_resources(
     resources.api_test = api_test
     issues.extend(api_issues)
 
-    resources.docs = _load_docs_metadata(module_dir)
+    docs, docs_issues = _load_docs_metadata(module_dir, connector_id=connector_id)
+    resources.docs = docs
+    issues.extend(docs_issues)
 
     auth_schema, auth_schema_issues = _load_auth_schema(
         module_dir,
@@ -625,28 +701,71 @@ def _collision_message(
 
 
 def _apply_dependency_issues(result: RegistryLoadResult) -> None:
-    """Flag missing ``requires`` targets in the unified catalog (no install)."""
+    """Validate dependency presence, target validity, and declared versions."""
 
-    known_package_ids: set[str] = set()
+    known_packages: dict[str, ConnectorModuleEntry] = {}
     for entry in result.modules.values():
         package_id, _ = _package_identity(entry.manifest, entry.connector_id)
-        known_package_ids.add(package_id)
-        known_package_ids.add(entry.connector_id)
+        known_packages.setdefault(package_id, entry)
+        known_packages.setdefault(entry.connector_id, entry)
 
-    for entry in result.modules.values():
-        for requirement in _iter_requires(entry.manifest):
-            required_id = requirement.package_id.strip()
-            if required_id in known_package_ids:
+    changed = True
+    while changed:
+        changed = False
+        for entry in result.modules.values():
+            if entry.status == "invalid":
                 continue
-            issue = ValidationIssue(
-                rule_id="DEP-001",
-                message=f"missing required package: {required_id}",
-                connector_id=entry.connector_id,
-                path=str(entry.manifest_path),
-            )
-            entry.errors.append(issue)
-            entry.status = "invalid"
-            result.issues.append(issue)
+            for requirement in _iter_requires(entry.manifest):
+                required_id = requirement.package_id.strip()
+                target = known_packages.get(required_id)
+                issue: ValidationIssue | None = None
+                if target is None:
+                    issue = ValidationIssue(
+                        rule_id="DEP-001",
+                        message=f"missing required package: {required_id}",
+                        connector_id=entry.connector_id,
+                        path=str(entry.manifest_path),
+                    )
+                elif target.status != "valid" or target.manifest is None:
+                    issue = ValidationIssue(
+                        rule_id="DEP-002",
+                        message=f"required package is invalid: {required_id}",
+                        connector_id=entry.connector_id,
+                        path=str(entry.manifest_path),
+                    )
+                elif requirement.version:
+                    _, target_version = _package_identity(target.manifest, target.connector_id)
+                    try:
+                        matches = bool(target_version) and _dependency_version_matches(
+                            str(target_version), requirement.version
+                        )
+                    except (InvalidSpecifier, InvalidVersion):
+                        issue = ValidationIssue(
+                            rule_id="DEP-004",
+                            message=(
+                                f"dependency version is not comparable for {required_id}: "
+                                f"installed={target_version!r} requires={requirement.version!r}"
+                            ),
+                            connector_id=entry.connector_id,
+                            path=str(entry.manifest_path),
+                        )
+                    else:
+                        if not matches:
+                            issue = ValidationIssue(
+                                rule_id="DEP-003",
+                                message=(
+                                    f"required package version mismatch for {required_id}: "
+                                    f"installed={target_version!r} requires={requirement.version!r}"
+                                ),
+                                connector_id=entry.connector_id,
+                                path=str(entry.manifest_path),
+                            )
+                if issue is not None:
+                    entry.errors.append(issue)
+                    entry.status = "invalid"
+                    result.issues.append(issue)
+                    changed = True
+                    break
 
 
 def _finalize_parsed_modules(
