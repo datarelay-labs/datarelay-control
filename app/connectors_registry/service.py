@@ -113,40 +113,13 @@ class RegistryService:
             issues=[_issue_to_dict(i) for i in result.issues],
         )
 
-    def _sync_local_generation(self, *, force: bool = False) -> None:
-        """Best-effort sync of local_generation from DB after an explicit reload."""
-
-        now = time.monotonic()
-        if (
-            not force
-            and self._local_generation is not None
-            and (now - self._last_generation_check_monotonic) < self._generation_check_interval_sec
-        ):
-            return
-        try:
-            self._local_generation = fetch_registry_generation(session_factory=self._session_factory)
-            self._last_generation_check_monotonic = now
-        except Exception:
-            logger.warning(
-                "%s",
-                {
-                    "stage": "connector_registry_generation_sync_failed",
-                    "local_generation": self._local_generation,
-                    "has_cache": self._cache is not None,
-                },
-                exc_info=True,
-            )
-
-    def bootstrap(
+    def _scan_filesystem(
         self,
         *,
-        root: Path | None = None,
-        installed_root: Path | None = None,
-    ) -> ConnectorRegistryReloadResponse:
-        """Load connector manifests (builtin + installed roots)."""
-
-        self._bootstrap_root = root
-        self._bootstrap_installed_root = installed_root
+        root: Path | None,
+        installed_root: Path | None,
+    ) -> tuple[RegistryLoadResult, list[Path], bool]:
+        """Read one filesystem snapshot without assigning a DB generation to it."""
 
         if root is None:
             result = load_connector_modules(root=None, installed_root=installed_root)
@@ -165,7 +138,6 @@ class RegistryService:
             scan_roots = [root, installed_root]
             include_legacy = False
         else:
-            # Explicit single-root override (existing tests / tooling).
             result = load_connector_modules(root=root, include_installed=False)
             scan_roots = [root]
             include_legacy = False
@@ -178,13 +150,91 @@ class RegistryService:
                 continue
             seen.add(key)
             unique_roots.append(path)
-        response = self._apply_load_result(
+        return result, unique_roots, include_legacy
+
+    def bootstrap(
+        self,
+        *,
+        root: Path | None = None,
+        installed_root: Path | None = None,
+    ) -> ConnectorRegistryReloadResponse:
+        """Load a filesystem snapshot bound to one stable registry generation."""
+
+        self._bootstrap_root = root
+        self._bootstrap_installed_root = installed_root
+
+        try:
+            generation_before: int | None = fetch_registry_generation(
+                session_factory=self._session_factory
+            )
+        except Exception:
+            generation_before = None
+            logger.warning(
+                "%s",
+                {
+                    "stage": "connector_registry_generation_pre_scan_failed",
+                    "has_cache": self._cache is not None,
+                },
+                exc_info=True,
+            )
+
+        result: RegistryLoadResult | None = None
+        scan_roots: list[Path] = []
+        include_legacy = False
+        stable_generation: int | None = None
+
+        for attempt in range(3):
+            result, scan_roots, include_legacy = self._scan_filesystem(
+                root=root,
+                installed_root=installed_root,
+            )
+
+            if generation_before is None:
+                break
+
+            try:
+                generation_after = fetch_registry_generation(
+                    session_factory=self._session_factory
+                )
+            except Exception:
+                logger.warning(
+                    "%s",
+                    {
+                        "stage": "connector_registry_generation_post_scan_failed",
+                        "attempt": attempt + 1,
+                    },
+                    exc_info=True,
+                )
+                generation_before = None
+                break
+
+            if generation_after == generation_before:
+                stable_generation = generation_after
+                break
+
+            logger.info(
+                "%s",
+                {
+                    "stage": "connector_registry_generation_changed_during_scan",
+                    "attempt": attempt + 1,
+                    "generation_before": generation_before,
+                    "generation_after": generation_after,
+                },
+            )
+            generation_before = generation_after
+
+        assert result is not None
+        self._local_generation = stable_generation
+        # When generation binding could not be proven, force the next catalog read
+        # to check DB immediately instead of labeling this scan with a newer value.
+        self._last_generation_check_monotonic = (
+            time.monotonic() if stable_generation is not None else 0.0
+        )
+        return self._apply_load_result(
             result,
-            scan_roots=unique_roots,
+            scan_roots=scan_roots,
             include_legacy_catalog=include_legacy,
         )
-        self._sync_local_generation(force=True)
-        return response
 
     def reload(
         self,

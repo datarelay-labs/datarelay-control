@@ -17,6 +17,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.connectors_registry.lifecycle_errors import LifecycleError
+from app.connectors_registry.loader import load_connector_modules as real_load_connector_modules
 from app.connectors_registry.lifecycle_service import (
     install_package,
     rollback_package,
@@ -121,6 +122,41 @@ def test_existing_registry_cache_regression(
     # Unchanged generation must not force another filesystem reload.
     svc.list_connector_summaries()
     assert svc.reload_count == first
+
+
+def test_bootstrap_retries_when_generation_changes_during_scan(
+    builtin_root: Path, installed_root: Path, session_factory
+) -> None:
+    svc = RegistryService(session_factory=session_factory, generation_check_interval_sec=0.0)
+    with (
+        patch(
+            "app.connectors_registry.service.fetch_registry_generation",
+            side_effect=[7, 8, 8],
+        ) as generation_read,
+        patch(
+            "app.connectors_registry.service.load_connector_modules",
+            wraps=real_load_connector_modules,
+        ) as filesystem_scan,
+    ):
+        svc.bootstrap(root=builtin_root, installed_root=installed_root)
+
+    assert generation_read.call_count == 3
+    assert filesystem_scan.call_count == 2
+    assert svc.local_generation == 8
+    assert svc.reload_count == 1
+
+
+def test_bootstrap_does_not_label_scan_when_post_scan_generation_read_fails(
+    builtin_root: Path, installed_root: Path, session_factory
+) -> None:
+    svc = RegistryService(session_factory=session_factory, generation_check_interval_sec=0.0)
+    with patch(
+        "app.connectors_registry.service.fetch_registry_generation",
+        side_effect=[3, RuntimeError("db read failed")],
+    ):
+        svc.bootstrap(root=builtin_root, installed_root=installed_root)
+    assert svc.local_generation is None
+    assert svc._last_generation_check_monotonic == 0.0
 
 
 def test_generation_increment_on_install(
@@ -376,6 +412,34 @@ def test_platform_compatibility_metadata_shape() -> None:
     )
     assert not validate_platform_compatibility_metadata(
         {"platform_compatibility": {"min_platform_version": "1.0"}},
+        connector_id="acme",
+        manifest_path="manifest.yaml",
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("min_platform_version", []),
+        ("min_platform_version", ""),
+        ("max_platform_version", {"version": "2.0"}),
+        ("max_platform_version", "   "),
+    ],
+)
+def test_top_level_platform_compatibility_fields_validate_shape(
+    field: str, value: Any
+) -> None:
+    issues = validate_platform_compatibility_metadata(
+        {field: value},
+        connector_id="acme",
+        manifest_path="manifest.yaml",
+    )
+    assert any(field in issue for issue in issues)
+
+
+def test_top_level_platform_compatibility_fields_accept_nonblank_strings() -> None:
+    assert not validate_platform_compatibility_metadata(
+        {"min_platform_version": "1.0", "max_platform_version": "2.0"},
         connector_id="acme",
         manifest_path="manifest.yaml",
     )

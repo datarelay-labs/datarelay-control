@@ -97,6 +97,11 @@ def validate_platform_compatibility_metadata(
     """
 
     issues: list[str] = []
+    for key in ("min_platform_version", "max_platform_version"):
+        hint = raw.get(key)
+        if hint is not None and (not isinstance(hint, str) or not hint.strip()):
+            issues.append(f"{key} must be a non-blank string when set")
+
     value = raw.get("platform_compatibility")
     if value is None:
         return issues
