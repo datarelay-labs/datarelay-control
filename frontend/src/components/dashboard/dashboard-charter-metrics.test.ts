@@ -191,10 +191,32 @@ describe('dashboard-charter-metrics', () => {
     }
     expect(deriveOperationalIssuesFromSnapshot(snapshot(), dashboard)).toEqual({
       noDataStreams: 1,
-      lowVolumeStreams: 1,
+      lowVolumeStreams: null,
       schemaDriftCount: 3,
       destinationCapacityWarnings: null,
     })
+  })
+
+  it('derives Low Volume from observed EPS instead of generic DEGRADED health', () => {
+    const current = snapshot()
+    const lowVolume = {
+      ...current.streams[0],
+      stream_id: 99,
+      stream_name: 'Low volume but healthy',
+      status: 'RUNNING',
+      health_status: 'HEALTHY' as const,
+      eps_1m: 0.01,
+      eps_5m: 0.01,
+      failure_rate_5m: 0,
+      success_rate_5m: 100,
+    }
+    const withLowVolume = {
+      ...current,
+      streams: [...current.streams, lowVolume],
+    }
+
+    const issues = deriveOperationalIssuesFromSnapshot(withLowVolume, null)
+    expect(issues.lowVolumeStreams).toBe(1)
   })
 
   it('returns null schema drift when open_schema_field_drift_count is unavailable', () => {

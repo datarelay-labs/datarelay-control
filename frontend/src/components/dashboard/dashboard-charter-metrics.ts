@@ -11,6 +11,7 @@ import type {
   StreamRead,
 } from '../../api/types/gdcApi'
 import { formatThroughputEps } from '../../lib/observability-format'
+import { isLowVolumeEps } from '../../lib/low-volume-signal'
 import {
   aggregateDeliverySuccessRateFromSnapshot,
   countHealthFromRows,
@@ -231,7 +232,7 @@ export function deriveTrafficOverviewFromSnapshot(
 export function deriveOperationalIssues(
   health: HealthOverviewResponse | null,
   dashboard: DashboardSummaryResponse | null,
-  streamsList: readonly StreamRead[] = [],
+  _streamsList: readonly StreamRead[] = [],
 ): OperationalIssueCounts {
   const streams = health?.streams
   const summary = dashboard?.summary
@@ -243,12 +244,9 @@ export function deriveOperationalIssues(
         ? safeNonNeg(streams.idle)
         : null
 
-  const lowVolumeStreams =
-    streams?.degraded != null
-      ? safeNonNeg(streams.degraded)
-      : streamsList.length > 0
-        ? streamsList.filter((s) => mapBackendStreamStatus(s.status) === 'DEGRADED').length
-        : null
+  // This legacy read path has no authoritative volume fact. Do not relabel
+  // generic DEGRADED health as Low Volume; the snapshot path below owns that signal.
+  const lowVolumeStreams = null
 
   const schemaDriftCount =
     dashboard?.open_schema_field_drift_count != null
@@ -276,7 +274,9 @@ export function deriveOperationalIssuesFromSnapshot(
 ): OperationalIssueCounts {
   const streams = snapshot?.streams ?? []
   const idleCount = streams.filter((s) => s.enabled && s.health_status === 'IDLE').length
-  const degradedCount = streams.filter((s) => s.enabled && s.health_status === 'DEGRADED').length
+  const lowVolumeCount = streams.filter(
+    (s) => s.enabled && isLowVolumeEps(s.eps_1m, s.eps_5m),
+  ).length
   const schemaDriftCount =
     dashboard?.open_schema_field_drift_count != null
       ? safeNonNeg(dashboard.open_schema_field_drift_count)
@@ -287,7 +287,7 @@ export function deriveOperationalIssuesFromSnapshot(
 
   return {
     noDataStreams: idleCount > 0 ? idleCount : null,
-    lowVolumeStreams: degradedCount > 0 ? degradedCount : null,
+    lowVolumeStreams: lowVolumeCount > 0 ? lowVolumeCount : null,
     schemaDriftCount,
     destinationCapacityWarnings: destinationCapacityWarnings > 0 ? destinationCapacityWarnings : null,
   }
