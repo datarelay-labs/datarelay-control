@@ -148,7 +148,7 @@ export function OperationalAlertsPage() {
   const noDataCount = (bundle.snapshot?.streams ?? []).filter(
     (stream) => stream.enabled && stream.health_status === 'IDLE',
   ).length
-  const lowVolumeCount = (bundle.snapshot?.streams ?? []).filter(
+  const degradedStreamCount = (bundle.snapshot?.streams ?? []).filter(
     (stream) => stream.enabled && stream.health_status === 'DEGRADED',
   ).length
   const schemaDriftCount = bundle.dashboard?.open_schema_field_drift_count ?? null
@@ -159,7 +159,7 @@ export function OperationalAlertsPage() {
     problems.length === 0 &&
     capacity.length === 0 &&
     noDataCount === 0 &&
-    lowVolumeCount === 0 &&
+    degradedStreamCount === 0 &&
     (schemaDriftCount ?? 0) === 0 &&
     runtimeRows.length === 0 &&
     validationRows.length === 0
@@ -202,7 +202,7 @@ export function OperationalAlertsPage() {
         data-testid="operational-alerts-summary"
       >
         <SummaryCard label="No data streams" value={noDataCount} href="/streams?filter=no-data" />
-        <SummaryCard label="Low volume streams" value={lowVolumeCount} href="/streams?filter=low-volume" />
+        <SummaryCard label="Degraded streams" value={degradedStreamCount} href={NAV_PATH.streams} />
         <SummaryCard label="Schema drift" value={schemaDriftCount} href={NAV_PATH.governance} unknownLabel="—" />
         <SummaryCard label="Capacity warnings" value={capacity.length} href="/destinations?filter=warning" />
       </section>

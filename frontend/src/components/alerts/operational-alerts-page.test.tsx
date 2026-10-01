@@ -180,6 +180,8 @@ describe('OperationalAlertsPage', () => {
     renderPage()
 
     expect(await screen.findByText('Operational alerts')).toBeInTheDocument()
+    expect(screen.getByText('Degraded streams').parentElement).toHaveTextContent('1')
+    expect(screen.queryByText('Low volume streams')).not.toBeInTheDocument()
     expect(screen.getByText('Schema drift').parentElement).toHaveTextContent('2')
     expect(screen.getByText('Capacity warnings').parentElement).toHaveTextContent('1')
     expect(screen.getByRole('link', { name: /Splunk capacity at 80%/ })).toHaveAttribute('href', '/destinations/3')
@@ -189,6 +191,72 @@ describe('OperationalAlertsPage', () => {
       '/validation/runs?validation_id=4',
     )
   })
+  it('does not fabricate a capacity alert when the destination has no configured limit', async () => {
+    getOperationalSnapshotMock.mockResolvedValue({
+      global: {
+        health_status: 'HEALTHY',
+        total_streams: 0,
+        enabled_streams: 0,
+        running_streams: 0,
+        error_streams: 0,
+        total_routes: 1,
+        enabled_routes: 1,
+        total_destinations: 1,
+        enabled_destinations: 1,
+        total_eps_1m: 80,
+        total_eps_5m: 80,
+        avg_latency_ms: 5,
+        last_activity_at: '2026-10-01T12:00:00Z',
+      },
+      streams: [],
+      routes: [],
+      destinations: [{
+        destination_id: 9,
+        destination_name: 'Splunk',
+        destination_type: 'SYSLOG_TCP',
+        enabled: true,
+        health_status: 'HEALTHY',
+        inbound_eps_1m: 80,
+        failed_eps_1m: 0,
+        avg_latency_ms: 5,
+        route_count: 1,
+        last_success_at: '2026-10-01T12:00:00Z',
+        last_error_at: null,
+        last_error_message: null,
+      }],
+      problems: [],
+      updated_at: '2026-10-01T12:00:00Z',
+    })
+    fetchRuntimeAlertSummaryMock.mockResolvedValue({ metrics_window_seconds: 3600, items: [] })
+    fetchRuntimeDashboardSummaryMock.mockResolvedValue({
+      summary: {},
+      recent_problem_routes: [],
+      recent_rate_limited_routes: [],
+      recent_unhealthy_streams: [],
+      open_schema_field_drift_count: 0,
+    })
+    fetchValidationAlertsMock.mockResolvedValue([])
+    fetchDestinationsListMock.mockResolvedValue([
+      {
+        id: 9,
+        name: 'Splunk',
+        destination_type: 'SYSLOG_TCP',
+        config_json: { host: '127.0.0.1', port: 514 },
+        rate_limit_json: {},
+        enabled: true,
+        created_at: null,
+        updated_at: null,
+        streams_using_count: 1,
+        routes: [],
+      },
+    ])
+
+    renderPage()
+
+    expect(await screen.findByRole('heading', { name: 'Operational alerts' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Splunk capacity at/i })).not.toBeInTheDocument()
+  })
+
   it('shows a truthful empty state when all sources are available and report no issues', async () => {
     getOperationalSnapshotMock.mockResolvedValue({
       global: {
