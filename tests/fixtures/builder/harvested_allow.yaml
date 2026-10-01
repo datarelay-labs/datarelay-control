@@ -1,0 +1,31 @@
+ecosystem: singer
+identity:
+  upstream_project: tap-acme-events
+  vendor: Acme
+  product: Acme Events API
+  integration_name: tap-acme-events
+  upstream_version: "1.2.0"
+  upstream_path: taps/tap-acme-events
+license:
+  identifier: MIT
+  source: LICENSE
+  notice_required: true
+provenance:
+  import_method: structured_metadata_fixture
+  evidence:
+    - source_path: harvester.yaml
+      confidence: high
+auth:
+  auth_type: api_key
+  api_base_url_hint: https://api.example.com
+  required_fields:
+    - base_url
+    - api_key
+proposed_source_type: HTTP_API_POLLING
+mapping_status: MAPPED
+streams:
+  - name: events
+    http_method: GET
+    path: /v1/events
+    checkpoint:
+      cursor_field: updated_at

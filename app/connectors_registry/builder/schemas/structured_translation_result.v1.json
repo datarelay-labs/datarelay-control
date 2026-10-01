@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "datarelay://schemas/builder/structured_translation_result.v1.json",
+  "title": "StructuredTranslationResult",
+  "description": "Machine-readable authoring contract for external agents (Cursor/ChatGPT/Claude). Produce this JSON, then run local Builder validation to obtain a Local Draft Source Pack. Do not call production AI APIs.",
+  "type": "object",
+  "required": ["identity", "auth", "streams"],
+  "additionalProperties": false,
+  "properties": {
+    "identity": {
+      "type": "object",
+      "properties": {
+        "vendor": { "$ref": "#/$defs/evidencedValue" },
+        "product": { "$ref": "#/$defs/evidencedValue" },
+        "api_family_version": { "$ref": "#/$defs/evidencedValue" }
+      }
+    },
+    "auth": {
+      "type": "object",
+      "properties": {
+        "auth_type": { "$ref": "#/$defs/evidencedValue" },
+        "required_fields": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Non-secret field names only"
+        },
+        "scopes": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "streams": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "method", "path"],
+        "properties": {
+          "name": { "type": "string" },
+          "source_type": {
+            "type": "string",
+            "enum": [
+              "HTTP_API_POLLING",
+              "WEBHOOK_RECEIVER",
+              "S3_OBJECT_POLLING",
+              "DATABASE_QUERY",
+              "REMOTE_FILE_POLLING",
+              "UNKNOWN"
+            ]
+          },
+          "method": { "$ref": "#/$defs/evidencedValue" },
+          "path": { "$ref": "#/$defs/evidencedValue" },
+          "params": { "type": "object" },
+          "body_template": {},
+          "event_array_path": { "$ref": "#/$defs/evidencedValue" },
+          "pagination": { "type": "object" },
+          "checkpoint": { "$ref": "#/$defs/evidencedValue" },
+          "mapping": { "type": "object" },
+          "open_questions": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/openQuestion" }
+          }
+        }
+      }
+    },
+    "runtime_hints": {
+      "type": "object",
+      "properties": {
+        "rate_limit": {},
+        "polling_interval_seconds": { "type": ["integer", "null"] },
+        "timeout_seconds": { "type": ["integer", "null"] }
+      }
+    },
+    "open_questions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/openQuestion" }
+    }
+  },
+  "$defs": {
+    "evidencedValue": {
+      "type": "object",
+      "required": ["value", "evidence_source", "confidence"],
+      "properties": {
+        "value": {},
+        "evidence_source": {
+          "type": "string",
+          "enum": [
+            "sample",
+            "openapi",
+            "harvested",
+            "documentation",
+            "script",
+            "ai_inference"
+          ]
+        },
+        "confidence": {
+          "type": "string",
+          "enum": ["HIGH", "MEDIUM", "LOW", "UNKNOWN"]
+        },
+        "inferred": { "type": "boolean" },
+        "source_ref": { "type": ["string", "null"] },
+        "notes": { "type": ["string", "null"] }
+      }
+    },
+    "openQuestion": {
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" },
+        "field": { "type": ["string", "null"] },
+        "severity": { "type": "string", "enum": ["error", "warning", "info"] }
+      }
+    }
+  },
+  "examples": [
+    {
+      "identity": {
+        "vendor": {
+          "value": "Acme",
+          "evidence_source": "openapi",
+          "confidence": "HIGH",
+          "inferred": false
+        },
+        "product": {
+          "value": "Events API",
+          "evidence_source": "openapi",
+          "confidence": "HIGH",
+          "inferred": false
+        },
+        "api_family_version": {
+          "value": "1.0.0",
+          "evidence_source": "openapi",
+          "confidence": "HIGH",
+          "inferred": false
+        }
+      },
+      "auth": {
+        "auth_type": {
+          "value": "api_key",
+          "evidence_source": "openapi",
+          "confidence": "HIGH",
+          "inferred": false
+        },
+        "required_fields": ["base_url", "api_key"],
+        "scopes": []
+      },
+      "streams": [
+        {
+          "name": "events",
+          "source_type": "HTTP_API_POLLING",
+          "method": {
+            "value": "GET",
+            "evidence_source": "openapi",
+            "confidence": "HIGH",
+            "inferred": false
+          },
+          "path": {
+            "value": "/v1/events",
+            "evidence_source": "openapi",
+            "confidence": "HIGH",
+            "inferred": false
+          },
+          "event_array_path": {
+            "value": "$.items",
+            "evidence_source": "sample",
+            "confidence": "HIGH",
+            "inferred": false
+          },
+          "checkpoint": {
+            "value": "UNKNOWN",
+            "evidence_source": "ai_inference",
+            "confidence": "UNKNOWN",
+            "inferred": true
+          }
+        }
+      ],
+      "runtime_hints": {},
+      "open_questions": [
+        {
+          "code": "MISSING_CHECKPOINT",
+          "message": "No checkpoint field evidenced",
+          "field": "streams.events.checkpoint",
+          "severity": "warning"
+        }
+      ]
+    }
+  ]
+}

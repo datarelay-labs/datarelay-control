@@ -1,0 +1,3 @@
+Acme product documentation.
+Authentication is required.
+Endpoint details are not fully published yet.

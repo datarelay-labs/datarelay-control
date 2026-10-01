@@ -1,0 +1,22 @@
+ecosystem: singer
+identity:
+  vendor: CopyleftCo
+  product: MPL Product
+  integration_name: tap-mpl
+  upstream_path: taps/tap-mpl
+license:
+  identifier: MPL-2.0
+  source: LICENSE
+auth:
+  auth_type: bearer
+proposed_source_type: HTTP_API_POLLING
+mapping_status: MAPPED
+streams:
+  - name: events
+    http_method: GET
+    path: /v1/events
+    checkpoint:
+      cursor_field: updated_at
+provenance:
+  evidence:
+    - source_path: x

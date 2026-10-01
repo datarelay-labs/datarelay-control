@@ -1,0 +1,29 @@
+openapi: "3.0.0"
+info:
+  title: Acme Events API
+  version: "1.0.0"
+servers:
+  - url: https://api.example.com
+paths:
+  /v1/events:
+    get:
+      operationId: listEvents
+      parameters:
+        - name: limit
+          in: query
+          required: false
+      responses:
+        "200":
+          description: ok
+  /v1/users:
+    get:
+      operationId: listUsers
+      responses:
+        "200":
+          description: ok
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
