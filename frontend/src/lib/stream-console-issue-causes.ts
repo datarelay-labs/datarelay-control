@@ -5,6 +5,7 @@ import {
   normalizeSeverityInput,
   type StreamOperationalSeverity,
 } from './stream-operational-status'
+import { isLowVolumeHourlyEvents } from './low-volume-signal'
 
 /** Operator-facing issue cause labels shown in the Streams console Issues column. */
 export type StreamIssueCauseLabel =
@@ -26,8 +27,6 @@ const ISSUE_CAUSE_RANK: readonly { match: (cause: string) => boolean; rank: numb
   { match: (c) => c === 'Schema Drift', rank: 5 },
   { match: (c) => c === 'Low Volume', rank: 6 },
 ]
-
-const LOW_VOLUME_EVENT_THRESHOLD = 50
 
 export function issueCauseRank(cause: string): number {
   for (const entry of ISSUE_CAUSE_RANK) {
@@ -135,7 +134,7 @@ export function deriveStreamIssueCauses(
       // Explicit runtime/scheduler stop — do not mislabel as No Data.
     } else if (row.status === 'IDLE' && row.enabled !== false) {
       causes.push(`No Data (${windowChip})`)
-    } else if (row.events1h > 0 && row.events1h < LOW_VOLUME_EVENT_THRESHOLD) {
+    } else if (isLowVolumeHourlyEvents(row.events1h)) {
       causes.push('Low Volume')
     }
   } else {

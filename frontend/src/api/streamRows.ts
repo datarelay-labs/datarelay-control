@@ -9,6 +9,7 @@ import type {
 } from './types/gdcApi'
 import { normalizeGdcStreamSourceType } from '../utils/sourceTypePresentation'
 import { deriveStreamIssuesFromSnapshot, operationalStreamSuccessRatePct, selectStreamKpi } from '../lib/operational-snapshot-selectors'
+import { estimatedHourlyEventsFromEps } from '../lib/low-volume-signal'
 
 /** Maps to Stream.status / runtime-derived operational badge. */
 export type StreamRuntimeStatus = 'RUNNING' | 'DEGRADED' | 'ERROR' | 'STOPPED' | 'IDLE' | 'UNKNOWN'
@@ -357,7 +358,7 @@ export function enrichStreamRowFromOperationalSnapshot(
     eps5m: eps5m > 0 ? eps5m : base.eps5m,
     successRate5m,
     ingestEps: ingestEps > 0 ? ingestEps : base.ingestEps,
-    events1h: ingestEps > 0 ? Math.round(ingestEps * 3600) : base.events1h,
+    events1h: ingestEps > 0 ? estimatedHourlyEventsFromEps(eps1m, eps5m) : base.events1h,
     eventsTrend: ingestTrendFromEps(eps5m, eps1m, ingestEps),
     deliveryPct: successRate5m ?? base.deliveryPct,
     deliveryPctKnown:
