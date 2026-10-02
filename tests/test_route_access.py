@@ -35,6 +35,8 @@ def _p(suffix: str) -> str:
         (ROLE_VIEWER, "GET", _p("/runtime/dashboard/summary"), False),
         (ROLE_VIEWER, "POST", _p("/runtime/streams/1/start"), True),
         (ROLE_VIEWER, "POST", _p("/runtime/preview/mapping"), False),
+        (ROLE_VIEWER, "POST", _p("/auth/change-password"), False),
+        (ROLE_OPERATOR, "POST", _p("/auth/change-password"), False),
         (ROLE_OPERATOR, "PUT", _p("/admin/https-settings"), True),
         (ROLE_OPERATOR, "GET", _p("/admin/https-settings"), False),
         (ROLE_OPERATOR, "POST", _p("/backup/import/apply"), True),
