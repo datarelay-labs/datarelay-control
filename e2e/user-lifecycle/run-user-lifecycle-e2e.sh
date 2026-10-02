@@ -76,6 +76,69 @@ fi
 # Prevent child processes (API/UI) from inheriting the lock FD.
 python3 -c 'import fcntl, os; fcntl.fcntl(9, fcntl.F_SETFD, fcntl.FD_CLOEXEC)'
 
+port_in_use() {
+  python3 - "$1" <<'PY'
+import socket
+import sys
+
+port = int(sys.argv[1])
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.settimeout(0.25)
+try:
+    rc = sock.connect_ex(("127.0.0.1", port))
+finally:
+    sock.close()
+raise SystemExit(0 if rc == 0 else 1)
+PY
+}
+
+tracked_process_matches() {
+  local pid_file="$1" expected_cwd="$2"
+  [[ -f "$pid_file" ]] || return 1
+  local pid actual_cwd
+  pid="$(tr -d '[:space:]' <"$pid_file" 2>/dev/null || true)"
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  kill -0 "$pid" 2>/dev/null || return 1
+  actual_cwd="$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)"
+  [[ "$actual_cwd" == "$expected_cwd" ]]
+}
+
+terminate_tracked_process_group() {
+  local pid_file="$1" expected_cwd="$2"
+  [[ -f "$pid_file" ]] || return 0
+  local pid
+  pid="$(tr -d '[:space:]' <"$pid_file" 2>/dev/null || true)"
+  [[ "$pid" =~ ^[0-9]+$ ]] || { rm -f "$pid_file"; return 0; }
+  if ! tracked_process_matches "$pid_file" "$expected_cwd"; then
+    echo "WARN: refusing to terminate unowned/stale tracked PID $pid from $pid_file" >&2
+    rm -f "$pid_file"
+    return 0
+  fi
+  kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+  for _ in $(seq 1 20); do
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.1
+  done
+  kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+  rm -f "$pid_file"
+}
+
+require_free_untracked_port() {
+  local name="$1" port="$2" tracked_alive="$3"
+  if [[ "$tracked_alive" -eq 0 ]] && port_in_use "$port"; then
+    echo "ERROR: $name port 127.0.0.1:$port is already in use, but this harness has no live owned process for it." >&2
+    echo "       Refusing to reuse or terminate an unowned listener; choose an isolated port." >&2
+    return 1
+  fi
+}
+
+preflight_api_tracked=0
+preflight_ui_tracked=0
+tracked_process_matches "$GDC_E2E_PID_DIR/api.pid" "$ROOT" && preflight_api_tracked=1
+tracked_process_matches "$GDC_E2E_PID_DIR/ui.pid" "$ROOT/frontend" && preflight_ui_tracked=1
+require_free_untracked_port "API" "$GDC_E2E_API_PORT" "$preflight_api_tracked"
+require_free_untracked_port "UI" "$GDC_E2E_UI_PORT" "$preflight_ui_tracked"
+
 ensure_fixtures() {
   for c in gdc-postgres-test gdc-wiremock-test gdc-webhook-receiver-test gdc-minio-test gdc-postgres-query-test gdc-sftp-test; do
     if docker inspect "$c" >/dev/null 2>&1; then
@@ -99,7 +162,7 @@ ensure_db() {
   if [[ "$exists" != "1" ]]; then
     psql -h 127.0.0.1 -p 55441 -U gdc -d postgres -c "CREATE DATABASE \"${DB_NAME}\" OWNER gdc" >/dev/null
   fi
-  alembic upgrade 20260804_0062 >"$GDC_E2E_LOG_DIR/alembic_${RUN_ID}.log" 2>&1
+  alembic upgrade head >"$GDC_E2E_LOG_DIR/alembic_${RUN_ID}.log" 2>&1
   unset GDC_SEED_ADMIN_PASSWORD || true
   python3 -m app.db.seed --platform-admin-only --reset-platform-admin-password \
     >"$GDC_E2E_LOG_DIR/admin_seed_${RUN_ID}.log" 2>&1 || true
@@ -120,7 +183,7 @@ launch_api() {
     exec 9>&-
     cd "$ROOT"
     export GDC_ENABLE_IN_PROCESS_SCHEDULER=false
-    nohup python3 -m uvicorn app.main:app --host 127.0.0.1 --port "$GDC_E2E_API_PORT" --workers "${GDC_E2E_API_WORKERS:-2}" \
+    nohup setsid python3 -m uvicorn app.main:app --host 127.0.0.1 --port "$GDC_E2E_API_PORT" --workers "${GDC_E2E_API_WORKERS:-2}" \
       >"$GDC_E2E_LOG_DIR/api_${RUN_ID}.log" 2>&1 &
     echo $! >"$GDC_E2E_PID_DIR/api.pid"
   )
@@ -134,7 +197,7 @@ start_api() {
     have_db="$(tr -d '[:space:]' <"$GDC_E2E_PID_DIR/api-database-url.txt")"
   fi
   local running=0
-  if [[ -f "$GDC_E2E_PID_DIR/api.pid" ]] && kill -0 "$(cat "$GDC_E2E_PID_DIR/api.pid")" 2>/dev/null; then
+  if tracked_process_matches "$GDC_E2E_PID_DIR/api.pid" "$ROOT"; then
     running=1
   fi
   if [[ $running -eq 1 && "$have_db" == "$want_db" && "${GDC_E2E_FORCE_API_RESTART:-0}" != "1" ]]; then
@@ -142,11 +205,9 @@ start_api() {
   else
     if [[ $running -eq 1 ]]; then
       echo "Restarting API for disposable DB bind"
-      kill "$(cat "$GDC_E2E_PID_DIR/api.pid")" 2>/dev/null || true
-      sleep 1
+      terminate_tracked_process_group "$GDC_E2E_PID_DIR/api.pid" "$ROOT"
     fi
-    fuser -k "${GDC_E2E_API_PORT}/tcp" >/dev/null 2>&1 || true
-    sleep 1
+    require_free_untracked_port "API" "$GDC_E2E_API_PORT" 0
     launch_api
   fi
   for _ in $(seq 1 60); do
@@ -167,7 +228,7 @@ start_scheduler() {
     have_db="$(tr -d '[:space:]' <"$GDC_E2E_PID_DIR/scheduler-database-url.txt")"
   fi
   local running=0
-  if [[ -f "$GDC_E2E_PID_DIR/lab-scheduler.pid" ]] && kill -0 "$(cat "$GDC_E2E_PID_DIR/lab-scheduler.pid")" 2>/dev/null; then
+  if tracked_process_matches "$GDC_E2E_PID_DIR/lab-scheduler.pid" "$ROOT"; then
     running=1
   fi
   if [[ $running -eq 1 && "$have_db" == "$want_db" && "${GDC_E2E_FORCE_API_RESTART:-0}" != "1" ]]; then
@@ -175,14 +236,13 @@ start_scheduler() {
     return 0
   fi
   if [[ $running -eq 1 ]]; then
-    kill "$(cat "$GDC_E2E_PID_DIR/lab-scheduler.pid")" 2>/dev/null || true
-    sleep 1
+    terminate_tracked_process_group "$GDC_E2E_PID_DIR/lab-scheduler.pid" "$ROOT"
   fi
   (
     exec 9>&-
     cd "$ROOT"
     export GDC_ENABLE_IN_PROCESS_SCHEDULER=false
-    nohup python3 -m app.scheduler.standalone >"$GDC_E2E_LOG_DIR/scheduler_${RUN_ID}.log" 2>&1 &
+    nohup setsid python3 -m app.scheduler.standalone >"$GDC_E2E_LOG_DIR/scheduler_${RUN_ID}.log" 2>&1 &
     echo $! >"$GDC_E2E_PID_DIR/lab-scheduler.pid"
   )
   echo "$want_db" >"$GDC_E2E_PID_DIR/scheduler-database-url.txt"
@@ -196,7 +256,7 @@ start_ui() {
     have="$(tr -d '[:space:]' <"$GDC_E2E_PID_DIR/ui-api-proxy.txt")"
   fi
   local running=0
-  if [[ -f "$GDC_E2E_PID_DIR/ui.pid" ]] && kill -0 "$(cat "$GDC_E2E_PID_DIR/ui.pid")" 2>/dev/null; then
+  if tracked_process_matches "$GDC_E2E_PID_DIR/ui.pid" "$ROOT/frontend"; then
     running=1
   fi
   local candidate_head
@@ -213,19 +273,21 @@ start_ui() {
     echo "UI already running exact candidate=$candidate_head proxy=$have"
   else
     if [[ $running -eq 1 ]]; then
-      kill "$(cat "$GDC_E2E_PID_DIR/ui.pid")" 2>/dev/null || true
-      sleep 1
+      terminate_tracked_process_group "$GDC_E2E_PID_DIR/ui.pid" "$ROOT/frontend"
     fi
-    fuser -k "${GDC_E2E_UI_PORT}/tcp" >/dev/null 2>&1 || true
+    require_free_untracked_port "UI" "$GDC_E2E_UI_PORT" 0
     (
       exec 9>&-
       cd "$ROOT/frontend"
+      if [[ ! -x node_modules/.bin/tsc || ! -x node_modules/.bin/vite ]]; then
+        npm ci >"$GDC_E2E_LOG_DIR/frontend_npm_ci_${RUN_ID}.log" 2>&1
+      fi
       if [[ "${ULC_REUSE_UI_DIST:-0}" != "1" || ! -d dist || "$recorded_build_head" != "$candidate_head" ]]; then
         npm run build >"$GDC_E2E_LOG_DIR/ui_build_${RUN_ID}.log" 2>&1
         printf '%s\n' "$candidate_head" >"$GDC_E2E_PID_DIR/ui-build-head.txt"
       fi
       export VITE_DEV_API_PROXY_TARGET="$proxy"
-      nohup npx --yes vite preview --host 127.0.0.1 --port "$GDC_E2E_UI_PORT" \
+      nohup setsid npx --yes vite preview --host 127.0.0.1 --port "$GDC_E2E_UI_PORT" --strictPort \
         >"$GDC_E2E_LOG_DIR/ui_${RUN_ID}.log" 2>&1 &
       echo $! >"$GDC_E2E_PID_DIR/ui.pid"
     )
