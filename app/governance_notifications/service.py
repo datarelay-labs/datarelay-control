@@ -73,7 +73,11 @@ class NotificationService:
 
     @staticmethod
     def get_config(db: Session) -> GovernanceNotificationConfigResponse:
-        row = NotificationService.get_or_create_config(db)
+        row = db.execute(
+            select(GovernanceNotificationConfig).order_by(GovernanceNotificationConfig.id.asc()).limit(1)
+        ).scalar_one_or_none()
+        if row is None:
+            return GovernanceNotificationConfigResponse()
         recipients = row.email_recipients_json if isinstance(row.email_recipients_json, list) else []
         return GovernanceNotificationConfigResponse(
             approval_events=bool(row.approval_events),
