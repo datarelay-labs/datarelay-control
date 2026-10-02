@@ -380,6 +380,34 @@ describe('StepMappingCombined v3 Transform (206f0f7 mapping UI)', () => {
     )
   })
 
+  it('invalidates cached runtime mapping preview when mapping input changes', async () => {
+    const state = readyTransformState()
+    state.mapping = [{ id: 'm1', sourceJsonPath: '$.id', outputField: 'event_id', origin: 'manual' }]
+    mockedMappingDraftPreview.mockResolvedValue({
+      input_event_count: 1,
+      preview_event_count: 1,
+      mapped_events: [{ event_id: 'e1' }],
+      missing_fields: [],
+      message: 'ok',
+    })
+
+    const { rerender } = render(<StepMappingCombined {...combinedProps(state)} />)
+    await waitFor(() => expect(mockedMappingDraftPreview).toHaveBeenCalledTimes(1))
+
+    const changedState = {
+      ...state,
+      mapping: [{ id: 'm1', sourceJsonPath: '$.message', outputField: 'event_id', origin: 'manual' as const }],
+    }
+    rerender(<StepMappingCombined {...combinedProps(changedState)} />)
+
+    await waitFor(() => expect(mockedMappingDraftPreview).toHaveBeenCalledTimes(2))
+    expect(mockedMappingDraftPreview).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        field_mappings: expect.objectContaining({ event_id: '$.message' }),
+      }),
+    )
+  })
+
   it('uses runtime full-event JSONata preview before guided rule debugging', async () => {
     const user = userEvent.setup()
     const state = readyTransformState()

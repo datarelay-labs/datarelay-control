@@ -63,6 +63,11 @@ export function StepMappingCombined({
     return 'basic'
   })
   const [runtimeMappedSample, setRuntimeMappedSample] = useState<Record<string, unknown> | null>(null)
+  const debuggerMappedEventsCacheRef = useRef<{
+    key: string
+    events?: Array<Record<string, unknown>>
+    promise?: Promise<Array<Record<string, unknown>>>
+  } | null>(null)
 
   const mappingModeRef = useRef(state.mappingMode)
   useEffect(() => {
@@ -142,36 +147,71 @@ export function StepMappingCombined({
     const sample = buildWizardTransformSample(state)
     if (!sample) return []
 
+    const cacheKey = JSON.stringify([
+      state.mappingMode,
+      sample,
+      state.mapping,
+      state.transformRules,
+      state.unmappedFieldsPolicy,
+      state.fullEventJsonataExpression,
+      state.fullEventRegexConfigJson,
+    ])
+    const cached = debuggerMappedEventsCacheRef.current
+    if (cached?.key === cacheKey) {
+      if (cached.events !== undefined) return cached.events
+      if (cached.promise) return cached.promise
+    }
+
+    const remember = async (request: Promise<Array<Record<string, unknown>>>) => {
+      debuggerMappedEventsCacheRef.current = { key: cacheKey, promise: request }
+      try {
+        const events = await request
+        if (debuggerMappedEventsCacheRef.current?.key === cacheKey) {
+          debuggerMappedEventsCacheRef.current = { key: cacheKey, events }
+        }
+        return events
+      } catch (error) {
+        if (debuggerMappedEventsCacheRef.current?.key === cacheKey) {
+          debuggerMappedEventsCacheRef.current = null
+        }
+        throw error
+      }
+    }
+
     if (state.mappingMode === 'full_event_jsonata') {
       const expression = state.fullEventJsonataExpression.trim()
       if (!expression) throw new Error('Enter and validate a JSONata expression before previewing Guided rules.')
-      return mapWithConcurrency(sample.extractedEvents.slice(0, 20), 4, async (event) => {
-        const preview = await runTransformPreview({
-          stage: 'mapping',
-          sample_event: event,
-          field_mappings: buildWizardJsonataPreviewFieldMappings(expression),
-        })
-        if (preview.save_blocked || preview.errors.length > 0) {
-          throw new Error(preview.errors[0]?.message ?? 'JSONata mapping preview failed.')
-        }
-        return preview.transformed_result
-      })
+      return remember(
+        mapWithConcurrency(sample.extractedEvents.slice(0, 20), 4, async (event) => {
+          const preview = await runTransformPreview({
+            stage: 'mapping',
+            sample_event: event,
+            field_mappings: buildWizardJsonataPreviewFieldMappings(expression),
+          })
+          if (preview.save_blocked || preview.errors.length > 0) {
+            throw new Error(preview.errors[0]?.message ?? 'JSONata mapping preview failed.')
+          }
+          return preview.transformed_result
+        }),
+      )
     }
 
     if (state.mappingMode === 'full_event_regex') {
       const built = buildFieldMappingsFromFullEventRegexConfigJson(state.fullEventRegexConfigJson)
       if (built.ok === false) throw new Error(built.error)
-      return mapWithConcurrency(sample.extractedEvents.slice(0, 20), 4, async (event) => {
-        const preview = await runTransformPreview({
-          stage: 'mapping',
-          sample_event: event,
-          field_mappings: built.fieldMappings,
-        })
-        if (preview.save_blocked || preview.errors.length > 0) {
-          throw new Error(preview.errors[0]?.message ?? 'Regex mapping preview failed.')
-        }
-        return preview.transformed_result
-      })
+      return remember(
+        mapWithConcurrency(sample.extractedEvents.slice(0, 20), 4, async (event) => {
+          const preview = await runTransformPreview({
+            stage: 'mapping',
+            sample_event: event,
+            field_mappings: built.fieldMappings,
+          })
+          if (preview.save_blocked || preview.errors.length > 0) {
+            throw new Error(preview.errors[0]?.message ?? 'Regex mapping preview failed.')
+          }
+          return preview.transformed_result
+        }),
+      )
     }
 
     const fieldMappings = buildFieldMappingsWithTransformRules(
@@ -180,15 +220,16 @@ export function StepMappingCombined({
       state.unmappedFieldsPolicy,
     )
 
-    const preview = await runMappingDraftPreview({
-      payload: sample.rawPayload,
-      event_array_path: sample.eventArrayPath || null,
-      event_root_path: sample.eventRootPath || null,
-      field_mappings: fieldMappings,
-      max_events: 20,
-    })
-    return preview.mapped_events
-  }, [state])
+    return remember(
+      runMappingDraftPreview({
+        payload: sample.rawPayload,
+        event_array_path: sample.eventArrayPath || null,
+        event_root_path: sample.eventRootPath || null,
+        field_mappings: fieldMappings,
+        max_events: 20,
+      }).then((preview) => preview.mapped_events),
+    )
+  }, [simpleFieldMappings, state])
 
   useEffect(() => {
     let cancelled = false
