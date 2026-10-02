@@ -535,3 +535,55 @@ def test_change_password_self_service_then_relogin(
     login2 = client.post("/api/v1/auth/login", json={"username": "self-pw-user", "password": "FreshStrong1!"})
     assert login2.status_code == 200
     assert login2.json()["user"]["must_change_password"] is False
+
+
+@pytest.mark.parametrize("role", ["VIEWER", "OPERATOR"])
+def test_non_admin_forced_password_change_then_relogin(
+    role: str,
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REQUIRE_AUTH", True)
+    from app.auth.security import get_password_hash
+
+    username = f"forced-{role.lower()}"
+    current_password = "StartStrong1!"
+    new_password = "FreshStrong2!"
+    user = PlatformUser(
+        username=username,
+        password_hash=get_password_hash(current_password),
+        role=role,
+        status="ACTIVE",
+        must_change_password=True,
+    )
+    db_session.add(user)
+    db_session.commit()
+
+    login = client.post("/api/v1/auth/login", json={"username": username, "password": current_password})
+    assert login.status_code == 200, login.text
+    token = login.json()["access_token"]
+    assert login.json()["user"]["must_change_password"] is True
+
+    changed = client.post(
+        "/api/v1/auth/change-password",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "current_password": current_password,
+            "new_password": new_password,
+            "confirm_new_password": new_password,
+        },
+    )
+    assert changed.status_code == 200, changed.text
+
+    relogin = client.post("/api/v1/auth/login", json={"username": username, "password": new_password})
+    assert relogin.status_code == 200, relogin.text
+    assert relogin.json()["user"]["must_change_password"] is False
+
+    forbidden = client.put(
+        "/api/v1/admin/https-settings",
+        headers={"Authorization": f"Bearer {relogin.json()['access_token']}"},
+        json={},
+    )
+    assert forbidden.status_code == 403
+    assert forbidden.json()["detail"]["error_code"] == "ROLE_FORBIDDEN"

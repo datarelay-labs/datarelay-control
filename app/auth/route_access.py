@@ -326,6 +326,11 @@ def evaluate_http_access(*, role: str, method: str, path: str) -> AccessDenied |
                 "AI governance mutations require Connector Operator or Administrator role.",
             )
 
+    # Self-service password rotation is authenticated in the route handler and
+    # must remain reachable even when the principal is otherwise read-only.
+    if m == "POST" and path == f"{base}/auth/change-password":
+        return None
+
     # --- VIEWER: read-only monitoring; no mutating verbs except preview POSTs ---
     if role == ROLE_VIEWER and m not in SAFE_METHODS:
         if is_viewer_allowed_post(path):
