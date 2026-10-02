@@ -7,7 +7,8 @@ from datetime import datetime, timezone
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy.orm import Session
+from sqlalchemy import text
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.database import get_db, get_db_read_bounded
 from app.governance_approval.service import submit_policy_approval
@@ -18,6 +19,7 @@ from app.governance_notifications.models import (
     NOTIFICATION_STATUS_FAILED,
     NOTIFICATION_STATUS_PENDING,
     NOTIFICATION_STATUS_SENT,
+    GovernanceNotificationConfig,
     GovernanceNotificationEvent,
 )
 from app.governance_notifications.schemas import GovernanceNotificationConfigUpdateRequest
@@ -115,6 +117,31 @@ def test_notification_config_crud(db_session: Session, governance_client: TestCl
     assert updated["email_recipients"] == ["admin@example.com"]
     assert updated["webhook_enabled"] is True
     assert updated["replay_events"] is False
+
+
+def test_notification_config_get_is_read_only_on_empty_database(db_session: Session) -> None:
+    app = _governance_app()
+    bind = db_session.get_bind()
+
+    def _override_read_db():
+        read_session = sessionmaker(bind=bind, autocommit=False, autoflush=False, expire_on_commit=False)()
+        try:
+            read_session.execute(text("SET TRANSACTION READ ONLY"))
+            yield read_session
+        finally:
+            read_session.rollback()
+            read_session.close()
+
+    app.dependency_overrides[get_db_read_bounded] = _override_read_db
+    client = TestClient(app)
+
+    resp = client.get("/api/v1/governance/notifications/config")
+
+    assert resp.status_code == 200
+    assert resp.json()["approval_events"] is True
+    assert resp.json()["email_enabled"] is False
+    db_session.rollback()
+    assert db_session.query(GovernanceNotificationConfig).count() == 0
 
 
 def test_record_event_persists_pending(db_session: Session) -> None:
