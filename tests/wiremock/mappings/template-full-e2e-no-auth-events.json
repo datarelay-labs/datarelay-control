@@ -1,0 +1,26 @@
+{
+  "priority": 1,
+  "request": {
+    "method": "GET",
+    "urlPath": "/no-auth/events"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "data": [
+        {
+          "id": "full-e2e-noauth-1",
+          "e2e_correlation_id": "full-e2e-corr-noauth-1",
+          "message": "no-auth event",
+          "severity": "INFO",
+          "timestamp": "2026-07-16T00:00:00Z",
+          "email_like": "operator@example.com",
+          "rare_field": null
+        }
+      ]
+    }
+  }
+}

@@ -303,7 +303,14 @@ start_ui() {
   echo "WARN: UI not ready" >&2
 }
 
+cleanup_owned_services() {
+  terminate_tracked_process_group "$GDC_E2E_PID_DIR/ui.pid" "$ROOT/frontend"
+  terminate_tracked_process_group "$GDC_E2E_PID_DIR/lab-scheduler.pid" "$ROOT"
+  terminate_tracked_process_group "$GDC_E2E_PID_DIR/api.pid" "$ROOT"
+}
+
 if [[ "$SKIP_UP" != "1" ]]; then
+  trap cleanup_owned_services EXIT
   ensure_fixtures
   ensure_db
   start_api

@@ -43,6 +43,32 @@ export class DestinationsPage {
     await url.fill(opts.url, { timeout: SHORT })
   }
 
+  async fillSyslogDestination(opts: {
+    name: string
+    type: 'SYSLOG_UDP' | 'SYSLOG_TCP' | 'SYSLOG_TLS'
+    host: string
+    port: number
+    insecureTls?: boolean
+  }): Promise<void> {
+    this.session.artifacts.action('fill-destination', '/destinations', `${opts.name}:${opts.type}`)
+    await this.page.getByLabel(/^Name/i).first().fill(opts.name, { timeout: SHORT })
+    await this.page.locator('form#dest-form select').first().selectOption(opts.type, { timeout: SHORT })
+    await this.page.getByLabel(/^Host/i).first().fill(opts.host, { timeout: SHORT })
+    await this.page.getByLabel(/^Port/i).first().fill(String(opts.port), { timeout: SHORT })
+    if (opts.type === 'SYSLOG_TLS' && opts.insecureTls) {
+      await this.page.getByLabel(/Verification Mode/i).selectOption('insecure_skip_verify', { timeout: SHORT })
+    }
+  }
+
+  async testCurrentConnection(): Promise<{ success: boolean; message: string }> {
+    const button = this.page.getByRole('button', { name: /Test Connection/i }).last()
+    await button.click({ timeout: ACTION })
+    const card = this.page.getByText('Test Connection', { exact: true }).last().locator('..')
+    await this.page.getByText(/✓ Success|✗ Failed/).last().waitFor({ timeout: ACTION }).catch(() => null)
+    const text = (await card.innerText().catch(() => '')) || (await this.page.locator('body').innerText())
+    return { success: /✓ Success|Connection test.*Success/i.test(text), message: text.slice(0, 600) }
+  }
+
   async save(): Promise<void> {
     this.session.artifacts.action('save-destination', '/destinations', 'Save')
     const btn = this.page.locator('form#dest-form').getByRole('button', { name: /Save|Create|Add Destination/i }).last()
@@ -416,6 +442,59 @@ export class StreamsPage {
     const titleAttr = (await title.getAttribute('title').catch(() => '')) || ''
     const body = await this.visibleStatusText()
     return `${titleAttr}\n${body}`.slice(0, 2000)
+  }
+
+  async exerciseDedupApiTestControl(streamId: number): Promise<{
+    fieldPresent: boolean
+    requestIncludesDedup: boolean
+    reloadReadback: boolean
+    requestBody: string
+  }> {
+    await this.session.goto(`/streams/${streamId}/api-test`, 'stream-api-test-dedup')
+    const field = this.page
+      .locator('label')
+      .filter({ hasText: /Event Deduplication Key/i })
+      .locator('..')
+      .locator('input')
+      .first()
+    await field.waitFor({ state: 'visible', timeout: ACTION }).catch(() => null)
+    const fieldPresent = (await field.count()) > 0
+    if (!fieldPresent) {
+      return { fieldPresent: false, requestIncludesDedup: false, reloadReadback: false, requestBody: '' }
+    }
+
+    await field.fill('id')
+    const requestPromise = this.page
+      .waitForRequest(
+        (request) =>
+          request.method() === 'POST' &&
+          request.url().includes('/api/v1/runtime/api-test/http'),
+        { timeout: ACTION },
+      )
+      .catch(() => null)
+    await this.page.getByRole('button', { name: /Refresh Preview/i }).click({ timeout: ACTION })
+    const request = await requestPromise
+    const requestBody = request?.postData() || ''
+    const requestIncludesDedup = /dedup|dedupe/i.test(requestBody) && /"?id"?/i.test(requestBody)
+
+    await this.page.reload({ waitUntil: 'domcontentloaded' })
+    const reloadedField = this.page
+      .locator('label')
+      .filter({ hasText: /Event Deduplication Key/i })
+      .locator('..')
+      .locator('input')
+      .first()
+    await reloadedField.waitFor({ state: 'visible', timeout: ACTION }).catch(() => null)
+    const reloadReadback =
+      (await reloadedField.count()) > 0 &&
+      (await reloadedField.inputValue().catch(() => '')) === 'id'
+
+    return {
+      fieldPresent,
+      requestIncludesDedup,
+      reloadReadback,
+      requestBody: requestBody.slice(0, 2000),
+    }
   }
 
   async checkpointVisible(): Promise<{ visible: boolean; text: string }> {
