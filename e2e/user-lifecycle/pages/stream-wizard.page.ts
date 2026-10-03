@@ -347,6 +347,23 @@ export class StreamWizardOperator {
     const rareVisible = /Rare fields:\s*[1-9]\d*/i.test(unionText)
     const sensitiveVisible = /Sensitive fields:\s*[1-9]\d*/i.test(unionText)
 
+    const incrementalPattern = this.page.getByTestId('incremental-pattern-select')
+    const incrementalPatternValue = (await incrementalPattern.inputValue().catch(() => '')) || ''
+    let incrementalDraft = ''
+    const openPreview = this.page.getByTestId('open-request-preview-button')
+    if (await openPreview.isVisible().catch(() => false)) {
+      await openPreview.click({ timeout: ACTION })
+      const draft = this.page.getByTestId('request-preview-draft')
+      await draft.waitFor({ state: 'visible', timeout: ACTION }).catch(() => null)
+      incrementalDraft = (await draft.inputValue().catch(() => '')) || ''
+      await this.page.getByTestId('request-preview-drawer-close').click().catch(() => null)
+    }
+    const incrementalRequestText = `${incrementalPatternValue}\n${incrementalDraft}`
+    const incrementalRequestReadback =
+      incrementalPatternValue === 'query_params' &&
+      /id_(?:gt|gte|after)/i.test(incrementalDraft) &&
+      /checkpoint|last_(?:timestamp|id)/i.test(incrementalDraft)
+
     await this.session.goto(`/streams/${streamId}/edit?step=connect`, 'stream-edit-connect')
     await this.page.getByTestId('wizard-step-connect').waitFor({ timeout: ACTION })
     await this.page.waitForLoadState('networkidle', { timeout: 3_000 }).catch(() => null)
@@ -362,22 +379,6 @@ export class StreamWizardOperator {
     const checkpointReadback =
       /(?:^|\.)id$/i.test(checkpointValue.trim()) ||
       /Persisted path:\s*\$?\.?(?:items\[\*\]\.)?id\b/i.test(checkpointText)
-
-    const requestTab = this.page.getByTestId('wizard-connect-tab-request')
-    if (await requestTab.count()) await requestTab.click()
-    const requestPanel = this.page.getByTestId('wizard-connect-request')
-    await requestPanel.waitFor({ state: 'visible', timeout: ACTION }).catch(() => null)
-    const requestText = (await requestPanel.innerText().catch(() => '')) || ''
-    const requestValues = await requestPanel.locator('input, textarea, select').evaluateAll((nodes) =>
-      nodes.map((node) => {
-        const input = node as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
-        return String(input.value || '')
-      }),
-    ).catch(() => [])
-    const incrementalRequestText = `${requestText}\n${requestValues.join('\n')}`
-    const incrementalRequestReadback =
-      /id_(?:gt|gte|after)/i.test(incrementalRequestText) &&
-      /checkpoint|last_(?:timestamp|id)/i.test(incrementalRequestText)
 
     return {
       unionReady,
