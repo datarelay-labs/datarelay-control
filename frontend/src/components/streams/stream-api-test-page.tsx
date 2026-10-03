@@ -1150,8 +1150,9 @@ export function StreamApiTestPage() {
                 <input
                   value={dedupeKey}
                   onChange={(e) => setDedupeKey(e.target.value)}
+                  disabled={configLoading || numericId == null}
                   placeholder="e.g. id"
-                  className="mt-1 h-8 w-full rounded-md border border-slate-200/90 px-2 text-[12px] dark:border-gdc-border dark:bg-gdc-card"
+                  className="mt-1 h-8 w-full rounded-md border border-slate-200/90 px-2 text-[12px] disabled:cursor-not-allowed disabled:opacity-60 dark:border-gdc-border dark:bg-gdc-card"
                 />
               </div>
               <button
