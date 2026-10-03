@@ -132,8 +132,19 @@ export async function runFirstLoginAndRbacLifecycle(opts: {
       await forcedPage.locator('#platform-login-username').fill(users.forced.username)
       await forcedPage.locator('#platform-login-password').fill(changed)
       await forcedPage.getByRole('button', { name: 'Sign In' }).click()
-      await forcedPage.locator('#platform-login-username').waitFor({ state: 'hidden', timeout: 10_000 }).catch(() => null)
-      forcedPass = !(await gate.isVisible().catch(() => false))
+      const loginHidden = await forcedPage
+        .locator('#platform-login-username')
+        .waitFor({ state: 'hidden', timeout: 10_000 })
+        .then(() => true)
+        .catch(() => false)
+      const appShellVisible =
+        loginHidden &&
+        (await forcedPage
+          .locator('#main-content')
+          .waitFor({ state: 'visible', timeout: 20_000 })
+          .then(() => true)
+          .catch(() => false))
+      forcedPass = loginHidden && appShellVisible && !(await gate.isVisible().catch(() => false))
     }
     store.rec(
       'BFS001_FIRST_LOGIN_PASSWORD_CHANGE',

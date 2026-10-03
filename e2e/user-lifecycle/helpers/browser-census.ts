@@ -143,17 +143,36 @@ export async function runBaselinePublicCensus(page: Page, store: ArtifactStore, 
     '/operations/backup',
   ]
   let controls = 0
+  let verifiedPages = 0
+  const failures: string[] = []
   for (const route of paths) {
     await page.goto(`${uiBase}${route}`, { waitUntil: 'domcontentloaded', timeout: 15_000 })
     await page.waitForTimeout(350)
-    controls += await captureBrowserCensus(page, store, route, 'EMPTY')
+    const visibleControls = await captureBrowserCensus(page, store, route, 'EMPTY')
+    controls += visibleControls
+    const currentPath = new URL(page.url()).pathname.replace(/\/+$/, '') || '/'
+    const expectedPath = route.replace(/\/+$/, '') || '/'
+    const shellVisible = await page.locator('#main-content').isVisible().catch(() => false)
+    if (currentPath === expectedPath && shellVisible && visibleControls > 0) {
+      verifiedPages += 1
+    } else {
+      failures.push(`${route}:path=${currentPath} shell=${shellVisible} controls=${visibleControls}`)
+    }
   }
-  store.setFlag('PUBLIC_PAGE_COUNT_BASELINE', String(paths.length))
+  store.setFlag('PUBLIC_PAGE_COUNT_BASELINE', String(verifiedPages))
+  store.setFlag('PUBLIC_PAGE_COUNT_EXPECTED', String(paths.length))
   store.setFlag('PUBLIC_ACTION_CONTROL_COUNT_BASELINE', String(controls))
+  store.writeJson('browser-census-baseline-validation.json', {
+    expectedPages: paths.length,
+    verifiedPages,
+    visibleControls: controls,
+    failures,
+  })
+  const pass = verifiedPages === paths.length && failures.length === 0
   store.rec(
     'BFS_CONTROL_CENSUS_BASELINE',
-    controls > 0 ? 'PASS' : 'FAIL',
-    `pages=${paths.length} visibleControls=${controls}`,
+    pass ? 'PASS' : 'FAIL',
+    `verifiedPages=${verifiedPages}/${paths.length} visibleControls=${controls}${failures.length ? ` failures=${failures.join('; ')}` : ''}`,
     ['BROWSER_E2E'],
   )
 }

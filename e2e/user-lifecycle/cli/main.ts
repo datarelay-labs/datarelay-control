@@ -319,6 +319,35 @@ async function cleanupRun(api: ApiClient, store: ArtifactStore, runId: string): 
     const st = await api.deleteDestination(Number(d.id))
     store.markCleanup('DESTINATION', d.id, st < 300 || st === 404 ? 'DELETED' : `HTTP_${st}`)
   }
+
+  let orphanPolicies = 0
+  const governanceCleanup = spawnSync(
+    'python3',
+    [path.join(PKG, 'fixtures/seed_fixtures.py'), 'cleanup-governance-ops', '--run-id', runId],
+    { env: process.env, encoding: 'utf8' },
+  )
+  let governanceCleanupEvidence: Record<string, unknown> = {
+    ok: false,
+    status: governanceCleanup.status,
+    stderr: String(governanceCleanup.stderr || '').trim().slice(0, 500),
+  }
+  if (governanceCleanup.status === 0) {
+    const line = String(governanceCleanup.stdout || '')
+      .split('\n')
+      .map((row) => row.trim())
+      .filter(Boolean)
+      .at(-1)
+    try {
+      governanceCleanupEvidence = line ? (JSON.parse(line) as Record<string, unknown>) : governanceCleanupEvidence
+      orphanPolicies = Number(governanceCleanupEvidence.remaining_policies || 0)
+    } catch {
+      orphanPolicies = 1
+    }
+  } else {
+    orphanPolicies = 1
+  }
+  store.writeJson('governance-cleanup.json', governanceCleanupEvidence)
+
   let left = await api.findByNamePrefix(runId)
   for (let attempt = 0; attempt < 3 && left.connectors.length + left.streams.length + left.destinations.length + (left.routes || []).length > 0; attempt++) {
     await new Promise((r) => setTimeout(r, 400))
@@ -345,11 +374,13 @@ async function cleanupRun(api: ApiClient, store: ArtifactStore, runId: string): 
   store.setFlag('ORPHAN_STREAMS', String(orphanS))
   store.setFlag('ORPHAN_DESTINATIONS', String(orphanD))
   store.setFlag('ORPHAN_ROUTES', String(orphanR))
-  store.setFlag('CLEANUP', orphanC + orphanS + orphanD + orphanR === 0 ? 'PASS' : 'FAIL')
+  store.setFlag('ORPHAN_GOVERNANCE_POLICIES', String(orphanPolicies))
+  const cleanupPass = orphanC + orphanS + orphanD + orphanR + orphanPolicies === 0
+  store.setFlag('CLEANUP', cleanupPass ? 'PASS' : 'FAIL')
   store.rec(
     '13_CLEANUP_ORPHANS',
-    orphanC + orphanS + orphanD + orphanR === 0 ? 'PASS' : 'FAIL',
-    `c=${orphanC} s=${orphanS} d=${orphanD} r=${orphanR}`,
+    cleanupPass ? 'PASS' : 'FAIL',
+    `c=${orphanC} s=${orphanS} d=${orphanD} r=${orphanR} p=${orphanPolicies}`,
     ['API_INTEGRATION'],
   )
 }

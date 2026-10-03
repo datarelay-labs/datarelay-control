@@ -140,19 +140,45 @@ require_free_untracked_port "API" "$GDC_E2E_API_PORT" "$preflight_api_tracked"
 require_free_untracked_port "UI" "$GDC_E2E_UI_PORT" "$preflight_ui_tracked"
 
 ensure_fixtures() {
-  for c in gdc-postgres-test gdc-wiremock-test gdc-webhook-receiver-test gdc-minio-test gdc-postgres-query-test gdc-sftp-test; do
+  local syslog_fixture_present=0
+  for c in gdc-postgres-test gdc-wiremock-test gdc-webhook-receiver-test gdc-minio-test gdc-postgres-query-test gdc-sftp-test gdc-syslog-test; do
     if docker inspect "$c" >/dev/null 2>&1; then
       docker start "$c" >/dev/null 2>&1 || true
+      [[ "$c" == "gdc-syslog-test" ]] && syslog_fixture_present=1
     else
-      echo "WARN: missing fixture container $c" >&2
+      if [[ "$c" == "gdc-syslog-test" ]]; then
+        echo "Starting missing Syslog fixture from docker-compose.test.yml" >&2
+        docker compose -f "$ROOT/docker-compose.test.yml" --profile e2e up -d syslog-test >/dev/null
+        docker inspect "$c" >/dev/null 2>&1 || {
+          echo "ERROR: unable to create Syslog fixture $c" >&2
+          return 1
+        }
+        syslog_fixture_present=1
+      else
+        echo "WARN: missing fixture container $c" >&2
+      fi
     fi
   done
+  local syslog_plain_port="${GDC_TEST_SYSLOG_HOST_PORT:-15514}"
+  local syslog_tls_port="${GDC_TEST_SYSLOG_TLS_HOST_PORT:-16514}"
   for _ in $(seq 1 60); do
-    if curl -sf "$WIREMOCK_BASE_URL/__admin/mappings" >/dev/null; then
+    local wiremock_ready=0 syslog_ready=1
+    curl -sf "$WIREMOCK_BASE_URL/__admin/mappings" >/dev/null && wiremock_ready=1 || true
+    if [[ "$syslog_fixture_present" -eq 1 ]]; then
+      python3 - "$syslog_plain_port" "$syslog_tls_port" <<'PY' >/dev/null 2>&1 || syslog_ready=0
+import socket, sys
+for raw in sys.argv[1:]:
+    with socket.create_connection(("127.0.0.1", int(raw)), timeout=1.0):
+        pass
+PY
+    fi
+    if [[ "$wiremock_ready" -eq 1 && "$syslog_ready" -eq 1 ]]; then
       return 0
     fi
     sleep 1
   done
+  echo "ERROR: required browser E2E fixtures did not become ready" >&2
+  return 1
 }
 
 ensure_db() {

@@ -550,6 +550,41 @@ def cmd_seed_governance_ops(args: argparse.Namespace) -> int:
     finally:
         db.close()
 
+
+def cmd_cleanup_governance_ops(args: argparse.Namespace) -> int:
+    from app.database import SessionLocal
+    from app.db.orm_bootstrap import ensure_orm_models_registered
+
+    ensure_orm_models_registered()
+    from app.governance_policies.models import GovernancePolicy
+
+    db = SessionLocal()
+    try:
+        marker = str(args.run_id).strip()
+        rows = (
+            db.query(GovernancePolicy)
+            .filter(GovernancePolicy.name.contains(marker))
+            .all()
+        )
+        deleted_ids = [int(row.id) for row in rows]
+        for row in rows:
+            db.delete(row)
+        db.commit()
+        remaining = (
+            db.query(GovernancePolicy)
+            .filter(GovernancePolicy.name.contains(marker))
+            .count()
+        )
+        print(json.dumps({
+            "ok": remaining == 0,
+            "deleted_policy_ids": deleted_ids,
+            "remaining_policies": int(remaining),
+        }))
+        return 0 if remaining == 0 else 1
+    finally:
+        db.close()
+
+
 def main() -> int:
     p = argparse.ArgumentParser()
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -590,6 +625,9 @@ def main() -> int:
     s.add_argument("--destination-id", required=True, type=int)
     s.add_argument("--route-id", required=True, type=int)
     s.set_defaults(func=cmd_seed_governance_ops)
+    s = sub.add_parser("cleanup-governance-ops")
+    s.add_argument("--run-id", required=True)
+    s.set_defaults(func=cmd_cleanup_governance_ops)
     args = p.parse_args()
     return int(args.func(args) or 0)
 
