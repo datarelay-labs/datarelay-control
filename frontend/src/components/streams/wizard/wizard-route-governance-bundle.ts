@@ -421,7 +421,14 @@ async function adjustPolicyExpectedStatus(
     return { error: `route ${routeId} policy: rules read-back returned no result` }
   }
   const hasRouteRules = rules.rules.some((rule) => rule.enabled !== false)
-  if (expected === 'Overridden' && hasRouteRules) return { expected: 'Mixed' }
+  if (expected === 'Overridden') {
+    // Policy delivery overrides are persisted in Governance route_overrides, while
+    // existing stream policy rules may remain inherited. Effective status is then
+    // Mixed; with no inherited stream rule it is Overridden. Both prove that the
+    // route-level delivery override was applied, while Inherited still fails closed.
+    if (hasRouteRules) return { expected: 'Mixed' }
+    return { expected: 'governance_retained' }
+  }
   if (expected === 'Inherited' && hasRouteRules) return { expected: 'Overridden' }
   return { expected }
 }
