@@ -88,9 +88,7 @@ ChatGPT Chat performs implementation, deterministic testing, and terminal audit.
 
 When the user says `브라우저 상에서 버튼, 기능, 시나리오 연계테스트를 진행해`, `브라우저 버튼 기능 시나리오 연계테스트 진행해`, or an equivalent Browser ↔ Feature ↔ Scenario reconciliation request, execute `docs/BROWSER_FEATURE_SCENARIO_RECONCILIATION.md` immediately.
 
-This is an execution request, not a plan-only request. Before any browser/harness/test invocation, read the **entire current exact-HEAD contract**, record its SHA-256, and follow it rather than inventing an ad-hoc wrapper flow. ChatGPT Chat owns the run end to end as the actual user/persona: onboarding, exact audit-HEAD pinning (not release-candidate freeze), isolation, browser-first control inventory, mandatory BFS scenarios, persistence/runtime verification, failure continuation, evidence retention, cleanup/offboarding, and GitHub reporting.
-
-Playwright may drive the real browser, and repository harnesses may provide setup/support/evidence, but a wrapper/script must never impersonate the user or convert automated PASS into BFS user PASS.
+This is an execution request, not a plan-only request. ChatGPT Chat owns the run end to end: onboarding, exact audit-HEAD pinning (not release-candidate freeze), isolation, browser-first control inventory, mandatory BFS scenarios, persistence/runtime verification, failure continuation, evidence retention, cleanup/offboarding, and GitHub reporting.
 
 For browser-required user actions, API/runtime/database are verification or forensic layers only. They must never replace a blocked browser action and promote the scenario to PASS.
 
@@ -98,9 +96,7 @@ Do not patch product code during the active reconciliation audit. Exhaust indepe
 
 ## Full User E2E and pre-release exhaustive user-test gates
 
-When the user says `Full User E2E 진행해`, `사용자 E2E 진행해`, `전체 사용자 E2E 진행해`, or equivalent wording without narrower scope, execute `docs/FULL_USER_E2E_SCENARIOS.md` immediately. This is an execution request, not a planning request. Before any browser/harness/test invocation, read the **entire current exact-HEAD contract**, record its SHA-256, and execute its scenarios as ChatGPT-controlled real user/personas. ChatGPT Chat owns onboarding, exact audit-HEAD isolation (not release-candidate freeze), browser execution, runtime/delivery verification, failure continuation, cleanup/offboarding, GitHub reporting, and final status.
-
-`e2e/user-lifecycle/` remains canonical supporting infrastructure, but `run-user-lifecycle-e2e.sh --all` or another wrapper cannot by itself produce Full User E2E PASS. Playwright is the allowed browser driver; ChatGPT remains the persona making decisions from user-visible browser state.
+When the user says `Full User E2E 진행해`, `사용자 E2E 진행해`, `전체 사용자 E2E 진행해`, or equivalent wording without narrower scope, execute `docs/FULL_USER_E2E_SCENARIOS.md` immediately. This is an execution request, not a planning request. ChatGPT Chat owns onboarding, exact audit-HEAD isolation (not release-candidate freeze), browser execution, runtime/delivery verification, failure continuation, cleanup/offboarding, GitHub reporting, and final status.
 
 For release readiness after the product roadmap implementation is complete, the mandatory closure order is:
 

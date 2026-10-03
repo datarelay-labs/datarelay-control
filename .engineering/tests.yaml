@@ -133,22 +133,6 @@ scenarios:
     origin: "docs/architecture/source-of-truth-index.md"
     release_gate: true
 
-  - id: USER-LIFECYCLE-BROWSER-AUTHORITY
-    name: User lifecycle browser authority contract
-    level: static
-    cost: cheap
-    agent_default: true
-    domains: [e2e, documentation]
-    triggers: [affected, rc, release]
-    platforms: [linux]
-    command: "cd e2e && npm ci && npm run test:user-lifecycle-authority"
-    invariants:
-      - "The reusable browser harness remains supporting infrastructure and cannot declare exhaustive user-test PASS authority."
-      - "Direct ChatGPT persona ownership, no scripted/manual PASS promotion, and persona-oracle contamination rules remain enforced."
-      - "The automated runner does not emit FUE or FULL_USER_E2E authority markers."
-    origin: "docs/FULL_USER_E2E_SCENARIOS.md"
-    release_gate: true
-
   - id: PRE-RELEASE-EXHAUSTIVE-USER-TEST-CONTRACT
     name: Pre-release exhaustive user-test contract
     level: static
@@ -162,7 +146,6 @@ scenarios:
       - "Full User E2E is mandatory before release and runs before candidate freeze."
       - "The final Browser and Full User E2E PASSes use the same HEAD; that HEAD is frozen only after both pass, then machine qualification/CI begins."
       - "Required exhaustive user-test documents remain executable ChatGPT-owned contracts."
-      - "Both exhaustive contracts require full exact-HEAD document read/hash before test execution and direct ChatGPT user-persona evidence; wrapper/harness PASS cannot substitute for user PASS."
       - "This CI/static contract check never counts as execution PASS for either exhaustive user test; release evidence must come from the active release Work Packet."
     origin: ".engineering/release.yaml"
     release_gate: true

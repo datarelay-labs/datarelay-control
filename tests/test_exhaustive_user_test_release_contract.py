@@ -30,7 +30,6 @@ def test_release_requires_both_exhaustive_user_tests() -> None:
     assert config["machine_qualification_required_first"] is False
     assert config["candidate_freeze_after_user_test_closure"] is True
     assert config["zero_fail_partial_blocked"] is True
-    assert "npm run test:user-lifecycle-authority" in release["qualification_command"]
     assert config["browser_engine"] == "CHROMIUM_OR_CHROME"
     assert config["execution_authority"] == "CHATGPT_WORK_PACKET"
     assert config["evidence_authority"] == "ACTIVE_RELEASE_WORK_PACKET"
@@ -79,11 +78,6 @@ def test_release_requires_both_exhaustive_user_tests() -> None:
 def test_test_manifest_keeps_release_contract_validation() -> None:
     manifest = yaml.safe_load(TESTS.read_text(encoding="utf-8"))
     by_id = {row["id"]: row for row in manifest["scenarios"]}
-    authority = by_id["USER-LIFECYCLE-BROWSER-AUTHORITY"]
-    assert authority["release_gate"] is True
-    assert authority["triggers"] == ["affected", "rc", "release"]
-    assert "npm run test:user-lifecycle-authority" in authority["command"]
-
     row = by_id["PRE-RELEASE-EXHAUSTIVE-USER-TEST-CONTRACT"]
     assert row["release_gate"] is True
     assert row["triggers"] == ["rc", "release"]

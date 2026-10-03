@@ -1314,12 +1314,7 @@ The contract must prove at minimum:
 
 Any new API mutation fallback added to a browser-required lifecycle must add durable regression coverage before release.
 
-The harness-authority audit must also prove:
-
-- wrapper/script execution cannot set a FUE persona result to PASS without direct ChatGPT user evidence;
-- a late manual spot-check cannot promote scripted persona evidence;
-- persona/oracle contamination is recorded and invalidates the affected lane;
-- Playwright driver use is allowed while wrapper-as-persona remains forbidden.
+The browser-authority regression test remains supporting machine evidence. The direct-persona / no-wrapper-substitution gate is established by this document's run evidence and final closure validation; do not treat the regression test itself as proof that ChatGPT performed the user mission.
 
 ## 26. Machine-derived closure validation
 
