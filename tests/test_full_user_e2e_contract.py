@@ -16,6 +16,17 @@ def test_full_user_e2e_contract_is_executable_and_release_grade() -> None:
     assert "Full User E2E 진행해" in agents
     assert "**Executor:** ChatGPT Chat" in doc
     assert "FIRST_ACTION=ONBOARD_AND_EXECUTE" in doc
+    assert "CONTRACT_FULL_READ_REQUIRED=YES" in doc
+    assert "CANONICAL_PATH=docs/FULL_USER_E2E_SCENARIOS.md" in doc
+    assert "CONTRACT_SHA256=" in doc
+    assert "PRIMARY_PERSONA_EXECUTOR=CHATGPT_CHAT" in doc
+    assert "SCRIPTED_USER_SCENARIO_EXECUTION=FORBIDDEN" in doc
+    assert "WRAPPER_SCRIPT_AS_PERSONA=FORBIDDEN" in doc
+    assert "AUTOMATED_HARNESS_ROLE=SUPPLEMENTAL_ONLY" in doc
+    assert "WRAPPER_SCRIPT_PASS_IS_USER_PASS=NO" in doc
+    assert "A one-shot wrapper such as `run-user-lifecycle-e2e.sh --all` MUST NOT" in doc
+    assert "A late manual spot-check" in doc
+    assert "SERIAL_IDLE_WITH_RUNNABLE_WORK=FORBIDDEN" in doc
     assert "CURSOR_EXECUTION=FORBIDDEN" in doc
     assert "BROWSER_FIRST=YES" in doc
     assert "ACTUAL_BROWSER_PROCESS_REQUIRED=YES" in doc
@@ -27,6 +38,7 @@ def test_full_user_e2e_contract_is_executable_and_release_grade() -> None:
     assert "run-scoped GDC_E2E_PID_DIR" in doc
     assert "## 11. Mandatory first-login/password-change proof" in doc
     assert "## 15. Mandatory repetition and sequence variation" in doc
+    assert "## 10. Supporting harness and exact-build requirement" in doc
     assert "## 25. Harness authority and fallback audit" in doc
     assert "## 26. Machine-derived closure validation" in doc
     assert "## 28. Release qualification — mandatory two-test order" in doc

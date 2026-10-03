@@ -146,6 +146,7 @@ scenarios:
       - "Full User E2E is mandatory before release and runs before candidate freeze."
       - "The final Browser and Full User E2E PASSes use the same HEAD; that HEAD is frozen only after both pass, then machine qualification/CI begins."
       - "Required exhaustive user-test documents remain executable ChatGPT-owned contracts."
+      - "Both exhaustive contracts require full exact-HEAD document read/hash before test execution and direct ChatGPT user-persona evidence; wrapper/harness PASS cannot substitute for user PASS."
       - "This CI/static contract check never counts as execution PASS for either exhaustive user test; release evidence must come from the active release Work Packet."
     origin: ".engineering/release.yaml"
     release_gate: true
