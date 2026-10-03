@@ -138,6 +138,7 @@ export function AdminSettingsPage() {
 
   const readOnly = isAdminUiReadOnly() || backendRole === 'VIEWER'
   const isOperator = (backendRole ?? readAdminUiRole()) === 'OPERATOR'
+  const accountMutationReadOnly = readOnly || isOperator
 
   useEffect(() => {
     const hash = location.hash.replace(/^#/, '').trim()
@@ -282,18 +283,21 @@ export function AdminSettingsPage() {
   }
 
   const openCreateUser = () => {
+    if (accountMutationReadOnly) return
     setUserForm({ username: '', password: '', role: 'VIEWER', status: 'ACTIVE' })
     setEditingUser(null)
     setUserModal('create')
   }
 
   const openEditUser = (u: PlatformUserDto) => {
+    if (accountMutationReadOnly) return
     setEditingUser(u)
     setUserForm({ username: u.username, password: '', role: u.role, status: u.status })
     setUserModal('edit')
   }
 
   const onSaveUser = async () => {
+    if (accountMutationReadOnly) return
     setPageErr(null)
     setPageMsg(null)
     setBusy(true)
@@ -339,6 +343,7 @@ export function AdminSettingsPage() {
   }
 
   const onDeleteUser = async (u: PlatformUserDto) => {
+    if (accountMutationReadOnly) return
     if (!window.confirm(`Delete user ${u.username}?`)) return
     setPageErr(null)
     setPageMsg(null)
@@ -883,7 +888,7 @@ export function AdminSettingsPage() {
             type="button"
             data-testid="admin-users-create"
             onClick={openCreateUser}
-            disabled={readOnly}
+            disabled={accountMutationReadOnly}
             className={cn(
               'rounded-lg border border-gdc-primary/50 px-3.5 py-2 text-sm font-semibold text-gdc-primary hover:bg-gdc-primary/10 disabled:cursor-not-allowed disabled:opacity-50 dark:text-violet-200',
               focusRing,
@@ -993,9 +998,9 @@ export function AdminSettingsPage() {
                             {formatTs(u.last_login_at)}
                           </td>
                           <td className="px-3 py-3 text-right">
-                            {hideActions || readOnly ? (
+                            {hideActions || accountMutationReadOnly ? (
                               <span className="text-xs text-slate-400">
-                                {readOnly ? 'Read-only' : lastOnlyAdmin ? 'Protected' : '—'}
+                                {readOnly ? 'Read-only' : isOperator ? 'Administrator only' : lastOnlyAdmin ? 'Protected' : '—'}
                               </span>
                             ) : (
                               <span className="inline-flex justify-end gap-1">
