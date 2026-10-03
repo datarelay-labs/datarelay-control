@@ -954,6 +954,7 @@ export function buildRouteTransformOverrideFromGlobal(
     | 'fullEventRegexConfigJson'
     | 'transformRules'
     | 'enrichment'
+    | 'enrichmentEnabled'
     | 'unmappedFieldsPolicy'
   >,
 ): WizardRouteTransformOverride {
@@ -964,6 +965,7 @@ export function buildRouteTransformOverrideFromGlobal(
     fullEventRegexConfigJson: state.fullEventRegexConfigJson,
     transformRules: state.transformRules.map((rule) => ({ ...rule })),
     enrichment: state.enrichment.map((rule) => ({ ...rule })),
+    enrichmentEnabled: state.enrichmentEnabled,
     unmappedFieldsPolicy: state.unmappedFieldsPolicy,
   }
 }

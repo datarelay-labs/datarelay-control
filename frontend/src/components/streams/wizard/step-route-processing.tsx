@@ -32,6 +32,7 @@ export type StepRouteProcessingProps = {
   onChangeFullEventRegexConfigJson: (json: string) => void
   onChangeTransformRules?: (rules: AdvancedTransformRuleDraft[]) => void
   onChangeEnrichment: (rules: WizardEnrichmentRule[]) => void
+  onEnableEnrichment?: () => void
   onChangeUnmappedFieldsPolicy?: (policy: WizardState['unmappedFieldsPolicy']) => void
   onChangeDataProtection: (patch: Partial<WizardDataProtectionState>) => void
   onChangeDestinations: (patch: Partial<WizardDestinationsState>) => void
@@ -68,6 +69,7 @@ export function StepRouteProcessing({
   onChangeFullEventRegexConfigJson,
   onChangeTransformRules = () => undefined,
   onChangeEnrichment,
+  onEnableEnrichment,
   onChangeUnmappedFieldsPolicy,
   onChangeDataProtection,
   onChangeDestinations,
@@ -182,6 +184,7 @@ export function StepRouteProcessing({
               onChangeFullEventRegexConfigJson={onChangeFullEventRegexConfigJson}
               onChangeTransformRules={onChangeTransformRules}
               onChangeEnrichment={onChangeEnrichment}
+              onEnableEnrichment={onEnableEnrichment}
               onChangeUnmappedFieldsPolicy={onChangeUnmappedFieldsPolicy}
               onChangeDataProtection={onChangeDataProtection}
               dataProtectionDrawerOpen={drawerOpen}

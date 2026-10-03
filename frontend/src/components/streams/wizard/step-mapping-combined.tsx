@@ -27,6 +27,7 @@ export type StepMappingCombinedProps = {
   onChangeFullEventRegexConfigJson: (json: string) => void
   onChangeTransformRules?: (rules: AdvancedTransformRuleDraft[]) => void
   onChangeEnrichment: (rules: WizardEnrichmentRule[]) => void
+  onEnableEnrichment?: () => void
   onChangeUnmappedFieldsPolicy?: (policy: WizardState['unmappedFieldsPolicy']) => void
   onChangeDataProtection: (patch: Partial<WizardDataProtectionState>) => void
   dataProtectionDrawerOpen?: boolean
@@ -51,6 +52,7 @@ export function StepMappingCombined({
   onChangeFullEventRegexConfigJson,
   onChangeTransformRules = () => undefined,
   onChangeEnrichment,
+  onEnableEnrichment,
   onChangeUnmappedFieldsPolicy,
   onChangeDataProtection,
   dataProtectionDrawerOpen,
@@ -312,10 +314,12 @@ export function StepMappingCombined({
             : action === 'normalize'
               ? 'normalize'
               : 'conditional'
+      onEnableEnrichment?.()
       onChangeEnrichment([...state.enrichment, defaultRuleForType(type, state.enrichment.length)])
     },
     [
       onChangeEnrichment,
+      onEnableEnrichment,
       onChangeMapping,
       onChangeMappingMode,
       onChangeTransformRules,

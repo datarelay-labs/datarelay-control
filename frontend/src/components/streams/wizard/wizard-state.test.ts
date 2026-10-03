@@ -13,10 +13,12 @@ import {
   fieldMappingsFromRows,
   wizardFieldMappingsReady,
   buildRouteTransformPersistPlans,
+  buildRouteTransformOverrideFromGlobal,
   expectedRouteTransformProcessingStatus,
   DEFAULT_ROUTE_PROCESSING_INHERIT,
   normalizeWizardRouteDraft,
 } from './wizard-state'
+import { defaultRuleForType } from './enrichment-rules-model'
 
 describe('normalizeWizardRouteDraft', () => {
   it('preserves the hydrated route concurrency token', () => {
@@ -935,5 +937,16 @@ describe('wizard-state buildRouteCreatePayloads', () => {
         rate_limit_json: {},
       },
     ])
+  })
+})
+
+
+describe('wizard-state guided Transform runtime enablement', () => {
+  it('preserves disabled enrichment state when building a route Transform override', () => {
+    const state = buildInitialState()
+    state.enrichmentEnabled = false
+    state.enrichment = [defaultRuleForType('static', 0)]
+
+    expect(buildRouteTransformOverrideFromGlobal(state).enrichmentEnabled).toBe(false)
   })
 })

@@ -450,6 +450,10 @@ export function StreamEditWizardPage() {
     if (!canMutateWorkspaceRef.current) return
     setState((prev) => (prev ? { ...prev, enrichment } : prev))
   }, [])
+  const enableEnrichment = useCallback(() => {
+    if (!canMutateWorkspaceRef.current) return
+    setState((prev) => (prev ? { ...prev, enrichmentEnabled: true } : prev))
+  }, [])
   const setUnmappedFieldsPolicy = useCallback((unmappedFieldsPolicy: WizardState['unmappedFieldsPolicy']) => {
     if (!canMutateWorkspaceRef.current) return
     setState((prev) => (prev ? { ...prev, unmappedFieldsPolicy } : prev))
@@ -1045,6 +1049,7 @@ export function StreamEditWizardPage() {
             onChangeFullEventRegexConfigJson={setFullEventRegexConfigJson}
             onChangeTransformRules={setTransformRules}
             onChangeEnrichment={setEnrichment}
+            onEnableEnrichment={enableEnrichment}
             onChangeUnmappedFieldsPolicy={setUnmappedFieldsPolicy}
             onChangeDataProtection={setDataProtection}
             onChangeDestinations={setDestinations}

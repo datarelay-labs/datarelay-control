@@ -233,6 +233,30 @@ describe('StepMappingCombined v3 Transform (206f0f7 mapping UI)', () => {
     },
   )
 
+  it('requests runtime enablement only when a guided Transform rule is added', async () => {
+    const user = userEvent.setup()
+    const state = readyTransformState()
+    state.enrichmentEnabled = false
+    state.enrichment = [defaultRuleForType('static', 0)]
+    const onEnableEnrichment = vi.fn()
+    const props = { ...combinedProps(state), onEnableEnrichment }
+
+    render(<StepMappingCombined {...props} />)
+
+    await user.click(screen.getByRole('button', { name: 'Expand rule' }))
+    const displayName = screen.getByLabelText('Display name')
+    await user.clear(displayName)
+    await user.type(displayName, 'Edited Static')
+
+    expect(props.onChangeEnrichment).toHaveBeenCalled()
+    expect(onEnableEnrichment).not.toHaveBeenCalled()
+
+    await user.click(screen.getByTestId('transform-rule-launcher-trigger'))
+    await user.click(screen.getByTestId('transform-launcher-static'))
+
+    expect(onEnableEnrichment).toHaveBeenCalledTimes(1)
+  })
+
   it('JSONata and Regex tasks create persisted per-field transform rules', async () => {
     const user = userEvent.setup()
     const jsonataProps = combinedProps(readyTransformState())

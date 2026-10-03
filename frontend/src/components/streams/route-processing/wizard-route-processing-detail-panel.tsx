@@ -150,6 +150,7 @@ export function WizardRouteProcessingDetailPanel({
       fullEventRegexConfigJson: patch.fullEventRegexConfigJson ?? current.fullEventRegexConfigJson,
       transformRules: patch.transformRules ?? current.transformRules,
       enrichment: patch.enrichment ?? current.enrichment,
+      enrichmentEnabled: patch.enrichmentEnabled ?? current.enrichmentEnabled,
       unmappedFieldsPolicy: patch.unmappedFieldsPolicy ?? current.unmappedFieldsPolicy,
     }
     patchRoute({ overrides: { ...draft.overrides, transform: next } })
@@ -234,6 +235,7 @@ export function WizardRouteProcessingDetailPanel({
               onChangeFullEventRegexConfigJson={(json) => patchRouteTransform({ fullEventRegexConfigJson: json })}
               onChangeTransformRules={(rules) => patchRouteTransform({ transformRules: rules })}
               onChangeEnrichment={(rules) => patchRouteTransform({ enrichment: rules })}
+              onEnableEnrichment={() => patchRouteTransform({ enrichmentEnabled: true })}
               onChangeUnmappedFieldsPolicy={(policy) => patchRouteTransform({ unmappedFieldsPolicy: policy })}
               onChangeDataProtection={() => {}}
               showOutputAside={showOutputAside}

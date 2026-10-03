@@ -365,6 +365,9 @@ export function NewStreamWizardPage() {
   const setEnrichment = useCallback((enrichment: WizardState['enrichment']) => {
     setState((s) => ({ ...s, enrichment }))
   }, [])
+  const enableEnrichment = useCallback(() => {
+    setState((s) => ({ ...s, enrichmentEnabled: true }))
+  }, [])
   const setUnmappedFieldsPolicy = useCallback((unmappedFieldsPolicy: WizardState['unmappedFieldsPolicy']) => {
     setState((s) => ({ ...s, unmappedFieldsPolicy }))
   }, [])
@@ -922,6 +925,7 @@ export function NewStreamWizardPage() {
             onChangeFullEventRegexConfigJson={setFullEventRegexConfigJson}
             onChangeTransformRules={setTransformRules}
             onChangeEnrichment={setEnrichment}
+            onEnableEnrichment={enableEnrichment}
             onChangeUnmappedFieldsPolicy={setUnmappedFieldsPolicy}
             onChangeDataProtection={setDataProtection}
             onChangeDestinations={setDestinations}
