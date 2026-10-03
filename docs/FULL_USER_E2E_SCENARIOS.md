@@ -64,7 +64,7 @@ CURSOR_MAY_EXECUTE_FULL_USER_E2E=NO
 CURSOR_MAY_DECLARE_FULL_USER_E2E_PASS=NO
 ~~~
 
-ChatGPT owns onboarding and exact-candidate pinning, isolated environment setup, browser execution, evidence collection, failure continuation, cleanup/offboarding, final determination, and GitHub reporting.
+ChatGPT owns onboarding and exact audit-HEAD pinning, isolated environment setup, browser execution, evidence collection, failure continuation, cleanup/offboarding, final determination, and GitHub reporting. Exact audit-HEAD pinning during this loop is not release-candidate freeze.
 
 Implementation changes are forbidden during the active run.
 
@@ -77,7 +77,8 @@ freeze evidence
 → close the audit run with FAIL/BLOCKED
 → create a bounded remediation Work Packet
 → implement and validate separately
-→ pin a new exact candidate
+→ pin the new exact audit HEAD
+→ re-establish required Browser reconciliation if affected
 → start a fresh RUN_ID
 ~~~
 
@@ -163,9 +164,12 @@ For release readiness:
 
 ~~~text
 PROFILE=RELEASE_QUALIFICATION
-MACHINE_QUALIFICATION_PASS_REQUIRED_FIRST=YES
+MACHINE_QUALIFICATION_PASS_REQUIRED_FIRST=NO
+CANDIDATE_FREEZE_REQUIRED_FIRST=NO
 BROWSER_FEATURE_SCENARIO_RECONCILIATION_PASS_REQUIRED_FIRST=YES
 FULL_USER_E2E_PASS_REQUIRED=YES
+FINAL_BROWSER_AND_FULL_USER_HEAD_MUST_MATCH=YES
+FINAL_USER_TEST_HEAD_BECOMES_RELEASE_CANDIDATE=YES
 SAME_EXACT_CANDIDATE_REQUIRED=YES
 ZERO_FAIL_PARTIAL_BLOCKED=YES
 ~~~
@@ -180,9 +184,9 @@ On an execution trigger:
 2. read AGENTS.md;
 3. read .engineering/project.yaml;
 4. load exactly one active matching Full User E2E Work Packet;
-5. determine exact candidate branch/HEAD/worktree;
-6. read this document from that candidate;
-7. verify candidate worktree clean;
+5. determine exact audit branch/HEAD/worktree;
+6. read this document from that exact audit HEAD;
+7. verify the audit worktree clean;
 8. inspect concurrent E2E/qualification/audit ownership;
 9. allocate unique RUN_ID and evidence root;
 10. proceed without asking the user for values already discoverable.
@@ -191,7 +195,7 @@ If no matching Work Packet exists, create one before mutable test activity.
 
 Do not reinterpret the request as implementation work.
 
-## 7. Exact-candidate preflight
+## 7. Exact audit-HEAD preflight
 
 Record:
 
@@ -200,7 +204,7 @@ RUN_ID=
 START_UTC=
 REPOSITORY=
 BRANCH=
-CANDIDATE_HEAD=
+AUDIT_HEAD=
 ORIGIN_MAIN_V2_HEAD=
 WORKTREE=
 WORKTREE_CLEAN=
@@ -215,9 +219,9 @@ BROWSER_RECONCILIATION_RUN_ID=
 BROWSER_RECONCILIATION_HEAD=
 ~~~
 
-Release PASS requires the candidate HEAD to match the release candidate used by the immediately preceding mandatory gates.
+Release-grade Full User E2E PASS requires AUDIT_HEAD to match the final Browser Feature Scenario Reconciliation HEAD. When both final user-test gates PASS on that HEAD, that HEAD becomes eligible for release-candidate freeze.
 
-Different-HEAD evidence is diagnostic only.
+Different-HEAD evidence is diagnostic only. Machine qualification begins after this user-test closure, not before it.
 
 ## 8. Clean-room and collision gate
 
@@ -1306,25 +1310,26 @@ A Full User E2E run can be a completed audit with FINAL_STATUS=FAIL; that does n
 
 ## 28. Release qualification — mandatory two-test order
 
-The exhaustive pre-release user-test order is:
+After the product roadmap implementation is complete, the exhaustive pre-release user-test order is:
 
 ~~~text
-exact-head machine qualification baseline
-→ Browser Feature Scenario Reconciliation PASS1
+Browser Feature Scenario Reconciliation PASS1
 → batch remediation
-→ exact-head machine requalification
 → Browser Feature Scenario Reconciliation PASS2
 → Full User E2E PASS1
 → batch remediation
-→ exact-head machine requalification
 → re-establish Browser Feature Scenario Reconciliation on the remediated HEAD
 → Full User E2E PASS2
+→ candidate freeze
+→ exact-head machine qualification
 → release-specific gates
 → final exact-head CI
 → release audit
 → owner/manual acceptance
 → release authorization/publication
 ~~~
+
+The browser/user remediation loop is intentionally before candidate freeze and full qualification. The final Browser Feature Scenario Reconciliation PASS and final Full User E2E PASS must share the same exact HEAD; only then may that HEAD be frozen as the release candidate. A product change made to remediate Full User E2E must re-establish affected Browser reconciliation before the next Full User E2E pass.
 
 Mandatory contracts:
 
