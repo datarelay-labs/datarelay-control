@@ -77,7 +77,7 @@ Only repository/worktree resolution, mandatory Engineering System onboarding, Wo
 
 Before execution, record in the evidence root that the executor has read and reconciled at least these contract dimensions: browser-first authority, black-box-before-source boundary, isolation/lock ownership, BFS-001..BFS-020 catalog, failure continuation, evidence/cleanup, PASS/FAIL rules, and release-order relationship.
 
-If this document changes after the recorded hash, the prior comprehension gate is stale. Re-read the full new contract and record the new SHA-256 before continuing under it.
+If the contract hash or audit HEAD changes after any evidence-producing execution, the current RUN_ID is no longer PASS-eligible. Freeze its evidence, complete safe offboarding, then start a fresh RUN_ID on the new exact HEAD after reading the full current contract and recording its SHA-256. Only when the change occurs before any product-test or evidence-producing action may the same not-yet-started run record be updated before execution begins.
 
 Do not start by running `e2e/user-lifecycle/**`, a generic Playwright wrapper, Full Matrix, CI, or an ad-hoc script and then infer this contract afterward.
 

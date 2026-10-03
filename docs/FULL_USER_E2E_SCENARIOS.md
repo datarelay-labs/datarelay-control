@@ -89,7 +89,7 @@ Only repository/worktree resolution, mandatory Engineering System onboarding, Wo
 
 Before user execution, evidence must confirm that ChatGPT reconciled the test profile, browser-first authority, persona rules, FUE-001..FUE-024 coverage, deliberate-mistake/repetition rules, harness boundary, failure continuation, cleanup, final PASS/FAIL contract, and release-order relationship.
 
-If the contract SHA changes, stop using the stale interpretation, re-read the full document, and record the new hash before continuing.
+If the contract hash or audit HEAD changes after any evidence-producing execution, the current RUN_ID is no longer PASS-eligible. Freeze its evidence, complete safe offboarding, then start a fresh RUN_ID on the new exact HEAD after reading the full current contract and recording its SHA-256. Only when the change occurs before any product-test or evidence-producing action may the same not-yet-started run record be updated before execution begins.
 
 ### 2.2 Direct user-persona execution and harness boundary
 

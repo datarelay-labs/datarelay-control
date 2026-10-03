@@ -18,6 +18,7 @@ def test_browser_reconciliation_contract_is_executable_and_discoverable() -> Non
     assert "CONTRACT_FULL_READ_REQUIRED=YES" in doc
     assert "CANONICAL_PATH=docs/BROWSER_FEATURE_SCENARIO_RECONCILIATION.md" in doc
     assert "CONTRACT_SHA256=" in doc
+    assert "current RUN_ID is no longer PASS-eligible" in doc
     assert "PRIMARY_PERSONA_EXECUTOR=CHATGPT_CHAT" in doc
     assert "SCRIPTED_USER_SCENARIO_EXECUTION=FORBIDDEN" in doc
     assert "WRAPPER_SCRIPT_AS_PERSONA=FORBIDDEN" in doc

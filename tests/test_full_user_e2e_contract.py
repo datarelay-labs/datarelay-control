@@ -19,6 +19,7 @@ def test_full_user_e2e_contract_is_executable_and_release_grade() -> None:
     assert "CONTRACT_FULL_READ_REQUIRED=YES" in doc
     assert "CANONICAL_PATH=docs/FULL_USER_E2E_SCENARIOS.md" in doc
     assert "CONTRACT_SHA256=" in doc
+    assert "current RUN_ID is no longer PASS-eligible" in doc
     assert "PRIMARY_PERSONA_EXECUTOR=CHATGPT_CHAT" in doc
     assert "SCRIPTED_USER_SCENARIO_EXECUTION=FORBIDDEN" in doc
     assert "WRAPPER_SCRIPT_AS_PERSONA=FORBIDDEN" in doc
