@@ -78,6 +78,11 @@ def test_release_requires_both_exhaustive_user_tests() -> None:
 def test_test_manifest_keeps_release_contract_validation() -> None:
     manifest = yaml.safe_load(TESTS.read_text(encoding="utf-8"))
     by_id = {row["id"]: row for row in manifest["scenarios"]}
+    authority = by_id["USER-LIFECYCLE-BROWSER-AUTHORITY"]
+    assert authority["release_gate"] is True
+    assert authority["triggers"] == ["affected", "rc", "release"]
+    assert "npm run test:user-lifecycle-authority" in authority["command"]
+
     row = by_id["PRE-RELEASE-EXHAUSTIVE-USER-TEST-CONTRACT"]
     assert row["release_gate"] is True
     assert row["triggers"] == ["rc", "release"]

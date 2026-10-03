@@ -133,6 +133,22 @@ scenarios:
     origin: "docs/architecture/source-of-truth-index.md"
     release_gate: true
 
+  - id: USER-LIFECYCLE-BROWSER-AUTHORITY
+    name: User lifecycle browser authority contract
+    level: static
+    cost: cheap
+    agent_default: true
+    domains: [e2e, documentation]
+    triggers: [affected, rc, release]
+    platforms: [linux]
+    command: "cd e2e && npm ci && npm run test:user-lifecycle-authority"
+    invariants:
+      - "The reusable browser harness remains supporting infrastructure and cannot declare exhaustive user-test PASS authority."
+      - "Direct ChatGPT persona ownership, no scripted/manual PASS promotion, and persona-oracle contamination rules remain enforced."
+      - "The automated runner does not emit FUE or FULL_USER_E2E authority markers."
+    origin: "docs/FULL_USER_E2E_SCENARIOS.md"
+    release_gate: true
+
   - id: PRE-RELEASE-EXHAUSTIVE-USER-TEST-CONTRACT
     name: Pre-release exhaustive user-test contract
     level: static
