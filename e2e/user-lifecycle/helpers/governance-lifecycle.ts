@@ -245,8 +245,11 @@ export async function runGovernanceLifecycle(opts: {
     // the Stream scheduler is stopped. Reproduce that state explicitly so this
     // browser scenario protects the regression that previously surfaced as HTTP 500.
     const stopResponse = await api.stopStream(streamId)
-    const stopped = stopResponse.status < 300 && (await api.getStream(streamId))?.enabled === false
-    releaseRestoreRequired = stopped
+    const stopAccepted = stopResponse.status < 300
+    releaseRestoreRequired = stopAccepted
+    const stopped =
+      stopAccepted &&
+      (await api.getStream(streamId).catch(() => null))?.enabled === false
     const released = await runQuarantineAction(page, api, uiBase, fixture.release_quarantine_id, 'release')
     const restartResponse = await api.startStream(streamId).catch(() => null)
     const restarted =
