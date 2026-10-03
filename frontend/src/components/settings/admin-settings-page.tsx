@@ -138,6 +138,7 @@ export function AdminSettingsPage() {
 
   const readOnly = isAdminUiReadOnly() || backendRole === 'VIEWER'
   const isOperator = (backendRole ?? readAdminUiRole()) === 'OPERATOR'
+  const userManagementReadOnly = readOnly || isOperator
 
   useEffect(() => {
     const hash = location.hash.replace(/^#/, '').trim()
@@ -883,7 +884,7 @@ export function AdminSettingsPage() {
             type="button"
             data-testid="admin-users-create"
             onClick={openCreateUser}
-            disabled={readOnly}
+            disabled={userManagementReadOnly}
             className={cn(
               'rounded-lg border border-gdc-primary/50 px-3.5 py-2 text-sm font-semibold text-gdc-primary hover:bg-gdc-primary/10 disabled:cursor-not-allowed disabled:opacity-50 dark:text-violet-200',
               focusRing,
@@ -993,9 +994,9 @@ export function AdminSettingsPage() {
                             {formatTs(u.last_login_at)}
                           </td>
                           <td className="px-3 py-3 text-right">
-                            {hideActions || readOnly ? (
+                            {hideActions || userManagementReadOnly ? (
                               <span className="text-xs text-slate-400">
-                                {readOnly ? 'Read-only' : lastOnlyAdmin ? 'Protected' : '—'}
+                                {userManagementReadOnly ? 'Read-only' : lastOnlyAdmin ? 'Protected' : '—'}
                               </span>
                             ) : (
                               <span className="inline-flex justify-end gap-1">
@@ -1310,7 +1311,7 @@ export function AdminSettingsPage() {
               </button>
               <button
                 type="button"
-                disabled={readOnly || busy}
+                disabled={userManagementReadOnly || busy}
                 className={cn('rounded-lg bg-gdc-primary px-3 py-1.5 text-sm font-semibold text-white hover:opacity-95 disabled:opacity-50', focusRing)}
                 onClick={() => void onSaveUser()}
               >
