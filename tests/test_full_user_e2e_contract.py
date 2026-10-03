@@ -33,7 +33,13 @@ def test_full_user_e2e_contract_is_executable_and_release_grade() -> None:
     assert "## 31. Mandatory offboarding" in doc
     assert "BROWSER_FEATURE_SCENARIO_RECONCILIATION_REQUIRED=YES" in doc
     assert "FULL_USER_E2E_REQUIRED=YES" in doc
+    assert "MACHINE_QUALIFICATION_PASS_REQUIRED_FIRST=NO" in doc
+    assert "CANDIDATE_FREEZE_REQUIRED_FIRST=NO" in doc
+    assert "FINAL_USER_TEST_HEAD_BECOMES_RELEASE_CANDIDATE=YES" in doc
     assert "SAME_EXACT_CANDIDATE=YES" in doc
+    assert "CANDIDATE_HEAD=" in doc
+    assert "technical field names the exact audit HEAD under test" in doc
+    assert "AUDIT_HEAD=" not in doc
 
     for number in range(1, 25):
         assert f"FUE-{number:03d}" in doc

@@ -17,22 +17,23 @@ human_equivalent_user_tests:
   same_candidate_required: true
   ci_contract_validation_only: true
   exact_head_required: true
-  machine_qualification_required_first: true
+  machine_qualification_required_first: false
+  candidate_freeze_after_user_test_closure: true
   zero_fail_partial_blocked: true
   browser_engine: CHROMIUM_OR_CHROME
   execution_authority: CHATGPT_WORK_PACKET
   evidence_authority: ACTIVE_RELEASE_WORK_PACKET
   order:
-  - EXACT_HEAD_MACHINE_QUALIFICATION_BASELINE
+  - PRODUCT_ROADMAP_IMPLEMENTATION_COMPLETE
   - SURFACE_RECONCILIATION_PASS1
   - SURFACE_RECONCILIATION_BATCH_REMEDIATION
-  - EXACT_HEAD_MACHINE_REQUALIFICATION_AFTER_BROWSER_REMEDIATION
   - SURFACE_RECONCILIATION_PASS2
   - FULL_USER_E2E_PASS1
   - FULL_USER_E2E_BATCH_REMEDIATION
-  - EXACT_HEAD_MACHINE_REQUALIFICATION_AFTER_FULL_USER_REMEDIATION
   - SURFACE_RECONCILIATION_REESTABLISH_AFTER_FULL_USER_REMEDIATION
   - FULL_USER_E2E_PASS2
+  - CANDIDATE_FREEZE
+  - EXACT_HEAD_MACHINE_QUALIFICATION
   - RELEASE_SPECIFIC_GATES
   - FINAL_EXACT_HEAD_CI
   - RELEASE_AUDIT

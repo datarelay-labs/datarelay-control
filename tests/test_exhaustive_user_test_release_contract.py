@@ -20,29 +20,30 @@ def test_release_requires_both_exhaustive_user_tests() -> None:
     assert project["project"]["user_facing"] is True
     assert project["project"]["primary_user_surface"] == "browser"
     assert release["human_equivalent_user_tests_required"] is True
-    assert config["executor"] == "CHATGPT_CHAT"
+    assert config["executor"] == "EXECUTION_PROFILE"
     assert config["actual_user_surface_required"] is True
     assert config["primary_user_surface"] == "browser"
     assert config["actual_browser_process_required"] is True
     assert config["same_candidate_required"] is True
     assert config["ci_contract_validation_only"] is True
     assert config["exact_head_required"] is True
-    assert config["machine_qualification_required_first"] is True
+    assert config["machine_qualification_required_first"] is False
+    assert config["candidate_freeze_after_user_test_closure"] is True
     assert config["zero_fail_partial_blocked"] is True
     assert config["browser_engine"] == "CHROMIUM_OR_CHROME"
     assert config["execution_authority"] == "CHATGPT_WORK_PACKET"
     assert config["evidence_authority"] == "ACTIVE_RELEASE_WORK_PACKET"
     assert config["order"] == [
-        "EXACT_HEAD_MACHINE_QUALIFICATION_BASELINE",
+        "PRODUCT_ROADMAP_IMPLEMENTATION_COMPLETE",
         "SURFACE_RECONCILIATION_PASS1",
         "SURFACE_RECONCILIATION_BATCH_REMEDIATION",
-        "EXACT_HEAD_MACHINE_REQUALIFICATION_AFTER_BROWSER_REMEDIATION",
         "SURFACE_RECONCILIATION_PASS2",
         "FULL_USER_E2E_PASS1",
         "FULL_USER_E2E_BATCH_REMEDIATION",
-        "EXACT_HEAD_MACHINE_REQUALIFICATION_AFTER_FULL_USER_REMEDIATION",
         "SURFACE_RECONCILIATION_REESTABLISH_AFTER_FULL_USER_REMEDIATION",
         "FULL_USER_E2E_PASS2",
+        "CANDIDATE_FREEZE",
+        "EXACT_HEAD_MACHINE_QUALIFICATION",
         "RELEASE_SPECIFIC_GATES",
         "FINAL_EXACT_HEAD_CI",
         "RELEASE_AUDIT",
