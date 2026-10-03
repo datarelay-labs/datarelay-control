@@ -27,6 +27,7 @@ def test_full_user_e2e_contract_is_executable_and_release_grade() -> None:
     assert "A one-shot wrapper such as `run-user-lifecycle-e2e.sh --all` MUST NOT" in doc
     assert "A late manual spot-check" in doc
     assert "SERIAL_IDLE_WITH_RUNNABLE_WORK=FORBIDDEN" in doc
+    assert "PERSONA_ORACLE_CONTAMINATION_COUNT=0" in doc
     assert "CURSOR_EXECUTION=FORBIDDEN" in doc
     assert "BROWSER_FIRST=YES" in doc
     assert "ACTUAL_BROWSER_PROCESS_REQUIRED=YES" in doc
@@ -38,6 +39,7 @@ def test_full_user_e2e_contract_is_executable_and_release_grade() -> None:
     assert "run-scoped GDC_E2E_PID_DIR" in doc
     assert "## 11. Mandatory first-login/password-change proof" in doc
     assert "## 15. Mandatory repetition and sequence variation" in doc
+    assert "**Supporting harness:** e2e/user-lifecycle/" in doc
     assert "## 10. Supporting harness and exact-build requirement" in doc
     assert "## 25. Harness authority and fallback audit" in doc
     assert "## 26. Machine-derived closure validation" in doc

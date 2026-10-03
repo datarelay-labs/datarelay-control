@@ -5,7 +5,7 @@
 > **Product scope:** Phase A-D only
 > **Primary user surface:** Browser/UI
 > **Verification layers:** API / runtime / database / actual destination, after browser action
-> **Canonical harness:** e2e/user-lifecycle/
+> **Supporting harness:** e2e/user-lifecycle/
 > **Release role:** Mandatory independent pre-release exhaustive gate; does not replace machine qualification or Browser ↔ Feature ↔ Scenario Reconciliation
 > **Status:** Normative living execution document
 
@@ -406,7 +406,7 @@ GDC_E2E_LOG_DIR=/tmp/datarelay-control-full-user-e2e/<RUN_ID>/logs \
 
 That command is supporting regression evidence only. Its PASS does not set any FUE scenario to PASS until ChatGPT directly performs and evaluates the corresponding user-persona mission in the real browser.
 
-If a mandatory FUE mission is not yet represented by the canonical harness, ChatGPT may drive additional Playwright browser actions from an ephemeral run-scoped script outside the repository. Record the script and SHA-256 in evidence. Do not dirty the exact-candidate worktree merely to finish an active audit.
+If a mandatory FUE mission is not yet represented by the repository supporting harness, ChatGPT may drive additional Playwright browser actions from an ephemeral run-scoped script outside the repository. Record the script and SHA-256 in evidence. Do not dirty the exact-candidate worktree merely to finish an active audit.
 
 Missing reusable harness coverage should become a follow-up test-harness improvement after the active run; it must not be hidden by API substitution.
 
@@ -1222,7 +1222,7 @@ Canonical root:
 /tmp/datarelay-control-full-user-e2e/<RUN_ID>/
 ~~~
 
-The canonical harness may continue using:
+The repository supporting harness may continue using:
 
 ~~~text
 /tmp/data-relay-real-browser-e2e/<RUN_ID>/

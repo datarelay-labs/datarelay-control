@@ -24,6 +24,7 @@ def test_browser_reconciliation_contract_is_executable_and_discoverable() -> Non
     assert "AUTOMATED_HARNESS_ROLE=SUPPLEMENTAL_ONLY" in doc
     assert "a late manual spot-check" in doc
     assert "SERIAL_IDLE_WITH_RUNNABLE_WORK=FORBIDDEN" in doc
+    assert "PERSONA_ORACLE_CONTAMINATION_COUNT=0" in doc
     assert "BROWSER_FIRST=YES" in doc
     assert "ACTUAL_BROWSER_PROCESS_REQUIRED=YES" in doc
     assert "BROWSER_ENGINE=CHROMIUM_OR_CHROME" in doc
