@@ -37,7 +37,6 @@ import { applyCreatedRouteIdentity, applyPersistedRevisions, persistWizardStream
 import {
   WIZARD_STEPS,
   computeStepCompletion,
-  applyWizardEnrichmentRules,
   legacySubstepToWizardStep,
   type WizardLegacySubstepKey,
   type WizardConfigState,
@@ -449,7 +448,11 @@ export function StreamEditWizardPage() {
   }, [])
   const setEnrichment = useCallback((enrichment: WizardState['enrichment']) => {
     if (!canMutateWorkspaceRef.current) return
-    setState((prev) => (prev ? applyWizardEnrichmentRules(prev, enrichment) : prev))
+    setState((prev) => (prev ? { ...prev, enrichment } : prev))
+  }, [])
+  const enableEnrichment = useCallback(() => {
+    if (!canMutateWorkspaceRef.current) return
+    setState((prev) => (prev ? { ...prev, enrichmentEnabled: true } : prev))
   }, [])
   const setUnmappedFieldsPolicy = useCallback((unmappedFieldsPolicy: WizardState['unmappedFieldsPolicy']) => {
     if (!canMutateWorkspaceRef.current) return
@@ -1046,6 +1049,7 @@ export function StreamEditWizardPage() {
             onChangeFullEventRegexConfigJson={setFullEventRegexConfigJson}
             onChangeTransformRules={setTransformRules}
             onChangeEnrichment={setEnrichment}
+            onEnableEnrichment={enableEnrichment}
             onChangeUnmappedFieldsPolicy={setUnmappedFieldsPolicy}
             onChangeDataProtection={setDataProtection}
             onChangeDestinations={setDestinations}

@@ -945,17 +945,6 @@ export function normalizeWizardRouteProcessingInherit(
   }
 }
 
-export function applyWizardEnrichmentRules(
-  state: WizardState,
-  enrichment: WizardEnrichmentRule[],
-): WizardState {
-  return {
-    ...state,
-    enrichment,
-    enrichmentEnabled: enrichment.length > 0 ? true : state.enrichmentEnabled,
-  }
-}
-
 export function buildRouteTransformOverrideFromGlobal(
   state: Pick<
     WizardState,

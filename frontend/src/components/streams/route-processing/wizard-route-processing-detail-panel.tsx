@@ -234,12 +234,8 @@ export function WizardRouteProcessingDetailPanel({
               onChangeFullEventJsonata={(expr) => patchRouteTransform({ fullEventJsonataExpression: expr })}
               onChangeFullEventRegexConfigJson={(json) => patchRouteTransform({ fullEventRegexConfigJson: json })}
               onChangeTransformRules={(rules) => patchRouteTransform({ transformRules: rules })}
-              onChangeEnrichment={(rules) =>
-                patchRouteTransform({
-                  enrichment: rules,
-                  enrichmentEnabled: rules.length > 0 ? true : routeTransformState.enrichmentEnabled,
-                })
-              }
+              onChangeEnrichment={(rules) => patchRouteTransform({ enrichment: rules })}
+              onEnableEnrichment={() => patchRouteTransform({ enrichmentEnabled: true })}
               onChangeUnmappedFieldsPolicy={(policy) => patchRouteTransform({ unmappedFieldsPolicy: policy })}
               onChangeDataProtection={() => {}}
               showOutputAside={showOutputAside}
