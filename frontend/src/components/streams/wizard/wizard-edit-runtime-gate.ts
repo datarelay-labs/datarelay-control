@@ -38,6 +38,8 @@ const PERSISTED_STREAM_FIELDS = [
   'sqlQuery',
   'dbCheckpointColumn',
   'dbCheckpointMode',
+  'incrementalRequestPattern',
+  'incrementalRequestDraft',
   'recordSelectionMode',
 ] as const satisfies readonly (keyof WizardConfigState)[]
 

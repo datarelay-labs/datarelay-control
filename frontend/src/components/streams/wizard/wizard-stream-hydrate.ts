@@ -11,6 +11,7 @@ import { fetchStreamMappingUiConfig } from '../../../api/gdcRuntime'
 import { fetchStreamById } from '../../../api/gdcStreams'
 import type { MappingUIConfigResponse, MappingUIConfigRouteItem, StreamRead } from '../../../api/types/gdcApi'
 import { resolveStreamEndpointPath } from '../../../utils/streamHttpConfigFromStreamRead'
+import { unionSchemaFromStreamConfig } from '../../../utils/unionSchema'
 import {
   parseTransformRulesFromFieldMappings,
   UNMAPPED_FIELDS_POLICY_KEY,
@@ -27,6 +28,10 @@ import {
   readAdvancedStreamConfigFromPersisted,
 } from './wizard-stream-config-sync'
 import { hydrateRouteGovernanceDrafts } from './wizard-route-governance-bundle'
+import {
+  inferIncrementalRequestPattern,
+  type IncrementalRequestPattern,
+} from './wizard-incremental-request'
 import {
   buildInitialState,
   DEFAULT_ROUTE_PROCESSING_INHERIT,
@@ -494,6 +499,83 @@ export async function refreshWizardDestinationsFromStream(streamId: number): Pro
   return { destinations: merged, routeIds }
 }
 
+const INCREMENTAL_REQUEST_PATTERNS = new Set<IncrementalRequestPattern>([
+  'none',
+  'custom',
+  'query_params',
+  'json_body',
+  'elasticsearch',
+  'visualsearch_query',
+])
+
+function normalizedHttpMethod(value: unknown, fallback: string): WizardState['stream']['httpMethod'] {
+  const raw = String(value ?? fallback).trim().toUpperCase()
+  return raw === 'POST' || raw === 'PUT' || raw === 'PATCH' || raw === 'DELETE' ? raw : 'GET'
+}
+
+function incrementalRequestPatchFromPersisted(
+  cfg: Record<string, unknown>,
+  endpoint: string,
+  httpMethod: string,
+  requestBody: string,
+): Partial<WizardState['stream']> {
+  const params =
+    cfg.params && typeof cfg.params === 'object' && !Array.isArray(cfg.params)
+      ? (cfg.params as Record<string, unknown>)
+      : {}
+  const runtimeUi =
+    cfg.runtime_ui && typeof cfg.runtime_ui === 'object' && !Array.isArray(cfg.runtime_ui)
+      ? (cfg.runtime_ui as Record<string, unknown>)
+      : {}
+  const metadata =
+    runtimeUi.incremental_request &&
+    typeof runtimeUi.incremental_request === 'object' &&
+    !Array.isArray(runtimeUi.incremental_request)
+      ? (runtimeUi.incremental_request as Record<string, unknown>)
+      : null
+
+  if (metadata) {
+    const rawPattern = String(metadata.pattern ?? '').trim() as IncrementalRequestPattern
+    if (INCREMENTAL_REQUEST_PATTERNS.has(rawPattern)) {
+      const baseParams =
+        metadata.base_params && typeof metadata.base_params === 'object' && !Array.isArray(metadata.base_params)
+          ? (metadata.base_params as Record<string, unknown>)
+          : {}
+      const baseBody = typeof metadata.base_body === 'string' ? metadata.base_body : ''
+      return {
+        httpMethod: normalizedHttpMethod(metadata.base_method, httpMethod),
+        params: kvRowsFromRecord(baseParams, 'prm'),
+        requestBody: baseBody,
+        incrementalRequestPattern: rawPattern,
+        incrementalRequestDraft: typeof metadata.draft === 'string' ? metadata.draft : '',
+      }
+    }
+  }
+
+  const queryRows = Object.entries(params).filter(([, value]) =>
+    /\{\{(?:checkpoint\.|runtime\.|now\}\})/i.test(String(value ?? '')),
+  )
+  if (queryRows.some(([, value]) => /\{\{checkpoint\./i.test(String(value ?? '')))) {
+    const generatedKeys = new Set(queryRows.map(([key]) => key))
+    const baseParams = Object.fromEntries(Object.entries(params).filter(([key]) => !generatedKeys.has(key)))
+    return {
+      params: kvRowsFromRecord(baseParams, 'prm'),
+      incrementalRequestPattern: 'query_params',
+      incrementalRequestDraft: queryRows.map(([key, value]) => `${key}=${String(value ?? '')}`).join('\n'),
+    }
+  }
+
+  if (/\{\{checkpoint\./i.test(requestBody)) {
+    return {
+      requestBody: '',
+      incrementalRequestPattern:
+        inferIncrementalRequestPattern({ endpoint, requestBody, httpMethod }) ?? 'json_body',
+      incrementalRequestDraft: requestBody,
+    }
+  }
+  return {}
+}
+
 function streamConfigPatchFromRead(
   found: StreamRead,
   mapping: MappingUIConfigResponse | null,
@@ -540,6 +622,7 @@ function streamConfigPatchFromRead(
     headers: kvRowsFromRecord((cfg.headers ?? {}) as Record<string, unknown>, 'hdr'),
     params: kvRowsFromRecord((cfg.params ?? {}) as Record<string, unknown>, 'prm'),
     requestBody,
+    ...incrementalRequestPatchFromPersisted(cfg, endpoint, httpMethod, requestBody),
     pollingIntervalSec:
       typeof found.polling_interval === 'number' && found.polling_interval > 0 ? found.polling_interval : 60,
     timeoutSec:
@@ -644,6 +727,10 @@ export async function hydrateWizardStateFromStream(streamId: number): Promise<Wi
     stream: {
       ...base.stream,
       ...streamConfigPatchFromRead(found, mapping),
+    },
+    apiTest: {
+      ...base.apiTest,
+      unionSchema: unionSchemaFromStreamConfig((found.config_json ?? {}) as Record<string, unknown>),
     },
     mapping: mappingRowsFromFieldMappings(fieldMappings),
     mappingMode,

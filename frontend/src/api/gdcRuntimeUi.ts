@@ -79,6 +79,63 @@ export async function saveStreamMappingUiConfig(
   )
 }
 
+export type StreamDeduplicationConfig = {
+  enabled: boolean
+  key_field: string
+  custom_jsonpath: string | null
+  duplicate_handling: 'skip_duplicate' | 'keep_latest' | 'keep_first'
+  scope: 'current_run' | 'checkpoint_window' | 'last_n_hours'
+  window_hours: number | null
+}
+
+export const DEFAULT_STREAM_DEDUPLICATION_CONFIG: StreamDeduplicationConfig = {
+  enabled: false,
+  key_field: 'event_id',
+  custom_jsonpath: null,
+  duplicate_handling: 'skip_duplicate',
+  scope: 'current_run',
+  window_hours: null,
+}
+
+export function streamDeduplicationConfigWithKey(
+  current: StreamDeduplicationConfig | null | undefined,
+  rawKey: string,
+): StreamDeduplicationConfig {
+  const key = rawKey.trim()
+  const custom = key.startsWith('$')
+  const base = current ?? DEFAULT_STREAM_DEDUPLICATION_CONFIG
+  return {
+    enabled: key.length > 0,
+    key_field: custom ? 'custom_jsonpath' : key || base.key_field || 'event_id',
+    custom_jsonpath: custom ? key : null,
+    duplicate_handling: base.duplicate_handling,
+    scope: base.scope,
+    window_hours: base.window_hours,
+  }
+}
+
+export type StreamDedupRuntimeStatus = StreamDeduplicationConfig & {
+  last_runtime_duplicate_count: number
+  last_runtime_dedup_summary: Record<string, unknown> | null
+  last_runtime_stats_degraded: boolean
+}
+
+export async function fetchStreamDeduplication(
+  streamId: number,
+): Promise<StreamDedupRuntimeStatus | null> {
+  return safeRequestJson<StreamDedupRuntimeStatus>(`${RT}/streams/${streamId}/deduplication`)
+}
+
+export async function saveStreamDeduplication(
+  streamId: number,
+  payload: StreamDeduplicationConfig,
+): Promise<StreamDeduplicationConfig> {
+  return requestJson<StreamDeduplicationConfig>(`${RT}/streams/${streamId}/deduplication`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
 export type StreamUiSaveRequest = {
   name: string
   enabled: boolean

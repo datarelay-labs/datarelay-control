@@ -464,6 +464,8 @@ export class StreamsPage {
     }
 
     await field.fill('id')
+    await field.press('Tab').catch(() => null)
+    await this.page.waitForTimeout(100)
     const requestPromise = this.page
       .waitForRequest(
         (request) =>
@@ -475,7 +477,15 @@ export class StreamsPage {
     await this.page.getByRole('button', { name: /Refresh Preview/i }).click({ timeout: ACTION })
     const request = await requestPromise
     const requestBody = request?.postData() || ''
-    const requestIncludesDedup = /dedup|dedupe/i.test(requestBody) && /"?id"?/i.test(requestBody)
+    let requestIncludesDedup = false
+    try {
+      const payload = JSON.parse(requestBody) as Record<string, unknown>
+      const streamConfig = (payload.stream_config ?? {}) as Record<string, unknown>
+      const dedup = (streamConfig.deduplication ?? {}) as Record<string, unknown>
+      requestIncludesDedup = dedup.enabled === true && dedup.key_field === 'id'
+    } catch {
+      requestIncludesDedup = false
+    }
 
     await this.page.reload({ waitUntil: 'domcontentloaded' })
     const reloadedField = this.page

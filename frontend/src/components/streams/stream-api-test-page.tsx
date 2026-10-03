@@ -20,6 +20,13 @@ import { computeStreamWorkflow } from '../../utils/streamWorkflow'
 import { resolveStreamSourceTestPageIntro, resolveStreamSourceTestShellTitle } from '../../utils/sourceTypePresentation'
 import { fetchStreamById } from '../../api/gdcStreams'
 import { fetchStreamMappingUiConfig } from '../../api/gdcRuntime'
+import {
+  DEFAULT_STREAM_DEDUPLICATION_CONFIG,
+  fetchStreamDeduplication,
+  saveStreamDeduplication,
+  streamDeduplicationConfigWithKey,
+  type StreamDeduplicationConfig,
+} from '../../api/gdcRuntimeUi'
 import { fetchConnectorById } from '../../api/gdcConnectors'
 import {
   runExtractionValidate,
@@ -346,6 +353,7 @@ export function StreamApiTestPage() {
   const [rootIsArray, setRootIsArray] = useState(false)
   const [maxPreview, setMaxPreview] = useState('500')
   const [dedupeKey, setDedupeKey] = useState('')
+  const [dedupPolicy, setDedupPolicy] = useState<StreamDeduplicationConfig>(DEFAULT_STREAM_DEDUPLICATION_CONFIG)
 
   useEffect(() => {
     if (numericId == null) {
@@ -358,9 +366,10 @@ export function StreamApiTestPage() {
       setConfigLoading(true)
       setLoadError(null)
       try {
-        const [stream, cfg] = await Promise.all([
+        const [stream, cfg, dedup] = await Promise.all([
           fetchStreamById(numericId),
           fetchStreamMappingUiConfig(numericId),
+          fetchStreamDeduplication(numericId),
         ])
         if (cancelled) return
         if (!stream || !cfg) {
@@ -412,6 +421,12 @@ export function StreamApiTestPage() {
         setMappingEventRootPath(erp)
         setEventPath(eap)
         setEventRootPathInput(erp)
+        const loadedDedupKey = dedup?.enabled
+          ? String(dedup.key_field === 'custom_jsonpath' ? dedup.custom_jsonpath ?? '' : dedup.key_field ?? '')
+          : ''
+        const dedupConfig = streamDeduplicationConfigWithKey(dedup, loadedDedupKey)
+        setDedupPolicy(dedupConfig)
+        setDedupeKey(loadedDedupKey)
 
         const cid = typeof stream.connector_id === 'number' ? stream.connector_id : null
         setConnectorId(cid)
@@ -575,11 +590,15 @@ export function StreamApiTestPage() {
         const k = h.k.trim()
         if (k) headersObj[k] = h.v
       }
+      const dedupConfig = streamDeduplicationConfigWithKey(dedupPolicy, dedupeKey)
+      const savedDedupConfig = await saveStreamDeduplication(numericId, dedupConfig)
+      setDedupPolicy(savedDedupConfig)
       const streamCfg: Record<string, unknown> = {
         method,
         endpoint: endpointPath.trim(),
         timeout_seconds: Number.parseInt(timeoutSec, 10) || 30,
         params,
+        deduplication: dedupConfig,
       }
       if (Object.keys(headersObj).length) streamCfg.headers = headersObj
       if (jsonBody !== undefined) streamCfg.body = jsonBody
@@ -611,6 +630,8 @@ export function StreamApiTestPage() {
     headerChips,
     method,
     timeoutSec,
+    dedupeKey,
+    dedupPolicy,
   ])
 
   const addQueryRow = useCallback(() => {
@@ -1122,8 +1143,9 @@ export function StreamApiTestPage() {
                 <input
                   value={dedupeKey}
                   onChange={(e) => setDedupeKey(e.target.value)}
+                  disabled={configLoading || numericId == null}
                   placeholder="e.g. id"
-                  className="mt-1 h-8 w-full rounded-md border border-slate-200/90 px-2 text-[12px] dark:border-gdc-border dark:bg-gdc-card"
+                  className="mt-1 h-8 w-full rounded-md border border-slate-200/90 px-2 text-[12px] disabled:cursor-not-allowed disabled:opacity-60 dark:border-gdc-border dark:bg-gdc-card"
                 />
               </div>
               <button

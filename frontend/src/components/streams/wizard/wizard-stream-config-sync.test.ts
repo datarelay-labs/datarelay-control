@@ -91,6 +91,29 @@ describe('wizard-stream-config-sync', () => {
     expect(merged.checkpoint).not.toHaveProperty('secondary_cursor_path')
   })
 
+  it('deep-merges runtime_ui so incremental metadata does not erase existing UI metadata', () => {
+    const merged = mergeStreamConfigJson(
+      { runtime_ui: { existing_flag: true, record_selection_mode: 'basic' } },
+      {
+        runtime_ui: {
+          incremental_request: {
+            pattern: 'query_params',
+            draft: 'cursor={{checkpoint.last_timestamp}}',
+            base_method: 'GET',
+            base_params: { tenant: 'acme' },
+            base_body: null,
+          },
+        },
+      },
+      { runtime_ui: { record_selection_mode: 'advanced' } },
+    )
+    expect(merged.runtime_ui).toEqual({
+      existing_flag: true,
+      record_selection_mode: 'advanced',
+      incremental_request: expect.objectContaining({ pattern: 'query_params' }),
+    })
+  })
+
   it('removes a cleared event array or root path and leaves an untouched path in place', () => {
     const cleared = applyExplicitEventPathClear(
       { event_array_path: '$.items', event_root_path: '$.meta', vendor: true },

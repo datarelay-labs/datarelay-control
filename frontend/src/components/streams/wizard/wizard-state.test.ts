@@ -403,6 +403,41 @@ describe('wizard-state buildStreamCreatePayload', () => {
     })
     expect(payload?.config_json).not.toHaveProperty('endpoint')
   })
+
+  it('persists the tested incremental query template into the runtime request config', () => {
+    const state = buildInitialState()
+    state.connector.connectorId = 11
+    state.connector.sourceId = 22
+    state.connector.sourceType = 'HTTP_API_POLLING'
+    state.stream.httpMethod = 'GET'
+    state.stream.endpoint = '/events'
+    state.stream.checkpointSourcePath = '$.id'
+    state.stream.incrementalRequestPattern = 'query_params'
+    state.stream.incrementalRequestDraft = [
+      'id_gt={{checkpoint.last_timestamp}}',
+      'id_lte={{now}}',
+      'limit=100',
+    ].join('\n')
+
+    const payload = buildStreamCreatePayload(state)
+    expect(payload?.config_json).toMatchObject({
+      method: 'GET',
+      params: {
+        id_gt: '{{checkpoint.last_timestamp}}',
+        id_lte: '{{now}}',
+        limit: '100',
+      },
+      runtime_ui: {
+        incremental_request: {
+          pattern: 'query_params',
+          draft: 'id_gt={{checkpoint.last_timestamp}}\nid_lte={{now}}\nlimit=100',
+          base_method: 'GET',
+          base_params: {},
+          base_body: null,
+        },
+      },
+    })
+  })
 })
 
 describe('wizard-state buildSourceConfig', () => {

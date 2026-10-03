@@ -309,7 +309,22 @@ export function mergeStreamConfigJson(
   streamPayload: Record<string, unknown>,
   advancedPatch: Record<string, unknown>,
 ): Record<string, unknown> {
-  const base = { ...(existing ?? {}), ...streamPayload }
+  const prior = existing ?? {}
+  const priorRuntimeUi =
+    prior.runtime_ui && typeof prior.runtime_ui === 'object' && !Array.isArray(prior.runtime_ui)
+      ? (prior.runtime_ui as Record<string, unknown>)
+      : {}
+  const streamRuntimeUi =
+    streamPayload.runtime_ui &&
+    typeof streamPayload.runtime_ui === 'object' &&
+    !Array.isArray(streamPayload.runtime_ui)
+      ? (streamPayload.runtime_ui as Record<string, unknown>)
+      : {}
+  const base: Record<string, unknown> = {
+    ...prior,
+    ...streamPayload,
+    runtime_ui: { ...priorRuntimeUi, ...streamRuntimeUi },
+  }
   const existingCheckpoint = (base.checkpoint ?? {}) as Record<string, unknown>
   const existingSchema = (base.schema ?? {}) as Record<string, unknown>
   const existingPagination = (base.pagination ?? {}) as Record<string, unknown>
