@@ -273,6 +273,23 @@ describe('AdminSettingsPage Access & security modernization', () => {
     expect(screen.getByLabelText('Username')).toBeDisabled()
   })
 
+  it('keeps local User Management mutations Administrator-only for Operator sessions', async () => {
+    localStorage.setItem('gdc_platform_ui_role', 'OPERATOR')
+    vi.mocked(getAuthWhoAmI).mockResolvedValue({ role: 'OPERATOR', username: 'ops' } as never)
+
+    renderPage()
+    await screen.findByTestId('admin-settings-operator-banner')
+
+    expect(screen.getByTestId('admin-users-create')).toBeDisabled()
+    const opsRow = screen.getByTestId('admin-user-row-ops')
+    expect(within(opsRow).getByText('Read-only')).toBeInTheDocument()
+    expect(within(opsRow).queryByRole('button', { name: /Edit user ops/i })).not.toBeInTheDocument()
+    expect(within(opsRow).queryByRole('button', { name: /Delete user ops/i })).not.toBeInTheDocument()
+    expect(createAdminUser).not.toHaveBeenCalled()
+    expect(updateAdminUser).not.toHaveBeenCalled()
+    expect(deleteAdminUser).not.toHaveBeenCalled()
+  })
+
   it('disables Access & security mutations for Viewer sessions', async () => {
     localStorage.setItem('gdc_platform_ui_role', 'VIEWER')
     vi.mocked(getAuthWhoAmI).mockResolvedValue({ role: 'VIEWER', username: 'viewer' } as never)
