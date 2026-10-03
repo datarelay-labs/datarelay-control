@@ -139,6 +139,59 @@ tracked_process_matches "$GDC_E2E_PID_DIR/ui.pid" "$ROOT/frontend" && preflight_
 require_free_untracked_port "API" "$GDC_E2E_API_PORT" "$preflight_api_tracked"
 require_free_untracked_port "UI" "$GDC_E2E_UI_PORT" "$preflight_ui_tracked"
 
+ensure_python_runtime() {
+  local system_python requirements_hash python_tag cache_root runtime_dir lock_file tmp_dir marker
+  system_python="$(command -v python3)"
+  requirements_hash="$(sha256sum "$ROOT/requirements.txt" | awk '{print $1}')"
+  python_tag="$($system_python -c 'import sys; print(f"py{sys.version_info.major}{sys.version_info.minor}")')"
+  cache_root="${GDC_E2E_PYTHON_CACHE_DIR:-/tmp/datarelay-control-e2e-python}"
+  runtime_dir="${GDC_E2E_PYTHON_VENV:-$cache_root/${python_tag}-${requirements_hash:0:16}}"
+  lock_file="${runtime_dir}.lock"
+  marker="$runtime_dir/.requirements-sha256"
+  mkdir -p "$cache_root"
+
+  # A requirements-hash keyed virtualenv gives the disposable browser runtime the
+  # same declared Python dependencies as the shipped API image without mutating
+  # the host/user Python installation. Creation is serialized; completed envs are
+  # immutable/reused by concurrent runs that share the same requirements hash.
+  exec 8>"$lock_file"
+  flock 8
+  if [[ ! -x "$runtime_dir/bin/python" ]]; then
+    tmp_dir="${runtime_dir}.tmp.$$"
+    rm -rf "$tmp_dir"
+    "$system_python" -m venv "$tmp_dir"
+    if ! "$tmp_dir/bin/python" -m pip install --disable-pip-version-check --no-input -r "$ROOT/requirements.txt" \
+      >"$GDC_E2E_LOG_DIR/python_runtime_${RUN_ID}.log" 2>&1; then
+      rm -rf "$tmp_dir"
+      echo "ERROR: failed to install isolated browser-runtime dependencies; see $GDC_E2E_LOG_DIR/python_runtime_${RUN_ID}.log" >&2
+      flock -u 8
+      exec 8>&-
+      return 1
+    fi
+    printf '%s\n' "$requirements_hash" >"$tmp_dir/.requirements-sha256"
+    mv "$tmp_dir" "$runtime_dir"
+  fi
+  if [[ ! -f "$marker" || "$(tr -d '[:space:]' <"$marker")" != "$requirements_hash" ]]; then
+    echo "ERROR: cached browser-runtime dependency identity mismatch: $runtime_dir" >&2
+    flock -u 8
+    exec 8>&-
+    return 1
+  fi
+  if ! "$runtime_dir/bin/python" -c 'import fastapi, jsonata, psycopg2, sqlalchemy' >/dev/null 2>&1; then
+    echo "ERROR: cached browser-runtime dependencies are incomplete: $runtime_dir" >&2
+    flock -u 8
+    exec 8>&-
+    return 1
+  fi
+  flock -u 8
+  exec 8>&-
+
+  export VIRTUAL_ENV="$runtime_dir"
+  export PATH="$runtime_dir/bin:$PATH"
+  export GDC_E2E_PYTHON_RUNTIME="$runtime_dir"
+  echo "PYTHON_RUNTIME=$runtime_dir REQUIREMENTS_SHA256=$requirements_hash"
+}
+
 ensure_fixtures() {
   local syslog_fixture_present=0
   for c in gdc-postgres-test gdc-wiremock-test gdc-webhook-receiver-test gdc-minio-test gdc-postgres-query-test gdc-sftp-test gdc-syslog-test; do
@@ -188,7 +241,7 @@ ensure_db() {
   if [[ "$exists" != "1" ]]; then
     psql -h 127.0.0.1 -p 55441 -U gdc -d postgres -c "CREATE DATABASE \"${DB_NAME}\" OWNER gdc" >/dev/null
   fi
-  alembic upgrade head >"$GDC_E2E_LOG_DIR/alembic_${RUN_ID}.log" 2>&1
+  python3 -m alembic upgrade head >"$GDC_E2E_LOG_DIR/alembic_${RUN_ID}.log" 2>&1
   unset GDC_SEED_ADMIN_PASSWORD || true
   python3 -m app.db.seed --platform-admin-only --reset-platform-admin-password \
     >"$GDC_E2E_LOG_DIR/admin_seed_${RUN_ID}.log" 2>&1 || true
@@ -337,6 +390,7 @@ cleanup_owned_services() {
 
 if [[ "$SKIP_UP" != "1" ]]; then
   trap cleanup_owned_services EXIT
+  ensure_python_runtime
   ensure_fixtures
   ensure_db
   start_api

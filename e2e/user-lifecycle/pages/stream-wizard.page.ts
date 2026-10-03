@@ -53,6 +53,8 @@ export class StreamWizardOperator {
       if (await openReq.count()) await openReq.click()
     }
     await this.page.getByTestId('wizard-connect-request').waitFor({ timeout: SHORT }).catch(() => null)
+    const method = this.page.getByLabel(/HTTP method/i).first()
+    if (await method.count()) await method.selectOption('GET')
     if (streamName) {
       const named = await this.fillLabeledInput('Stream name', streamName)
       if (!named) {

@@ -8,6 +8,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 RUNNER = ROOT / "e2e" / "user-lifecycle" / "run-user-lifecycle-e2e.sh"
 DEFAULTS = ROOT / "e2e" / "user-lifecycle" / "config" / "defaults.env"
+REQUIREMENTS = ROOT / "requirements.txt"
+STREAM_WIZARD_PAGE = ROOT / "e2e" / "user-lifecycle" / "pages" / "stream-wizard.page.ts"
 
 
 def _free_port() -> int:
@@ -59,6 +61,28 @@ def test_runner_uses_owned_process_contract_and_current_schema() -> None:
     assert "alembic upgrade 20260804_0062" not in script
     assert "npm ci" in script
     assert "frontend_npm_ci_" in script
+
+
+def test_runner_uses_requirements_hash_keyed_isolated_python_runtime() -> None:
+    script = RUNNER.read_text(encoding="utf-8")
+    requirements = REQUIREMENTS.read_text(encoding="utf-8")
+
+    assert "jsonata-python>=0.6.0,<1" in requirements
+    assert "ensure_python_runtime()" in script
+    assert "sha256sum \"$ROOT/requirements.txt\"" in script
+    assert '"$system_python" -m venv "$tmp_dir"' in script
+    assert '"$tmp_dir/bin/python" -m pip install' in script
+    assert '.requirements-sha256' in script
+    assert "import fastapi, jsonata, psycopg2, sqlalchemy" in script
+    assert 'export VIRTUAL_ENV="$runtime_dir"' in script
+    assert 'export GDC_E2E_PYTHON_RUNTIME="$runtime_dir"' in script
+
+
+def test_http_stream_journey_explicitly_uses_get_fixture_contract() -> None:
+    page = STREAM_WIZARD_PAGE.read_text(encoding="utf-8")
+
+    assert "getByLabel(/HTTP method/i).first()" in page
+    assert "await method.selectOption('GET')" in page
 
 
 def test_runner_fails_closed_on_unowned_api_port(tmp_path: Path) -> None:
