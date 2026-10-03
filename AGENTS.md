@@ -3,7 +3,7 @@
 This repository follows the canonical Data Relay Labs Engineering System:
 https://github.com/datarelay-labs/engineering-system
 
-Adoption baseline: Engineering System version 1.7.0 at immutable commit `fb431381ef4c49851fc40b683e8bad22607e7e0c`.
+Adoption baseline: Engineering System version 1.7.0 at immutable commit `9a4fbbd25b95d3f2270febe84f835877784e1507`.
 
 ## Minimum context first
 
