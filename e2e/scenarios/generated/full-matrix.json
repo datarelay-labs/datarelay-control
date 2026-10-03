@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-27T04:47:16.289Z",
+  "generated_at": "2026-10-03T10:50:06.515Z",
   "manifest_commit": "9d5b6a652973e9580959561315f17820ef0d9bcf",
   "scenarios": [
     {
@@ -2951,66 +2951,23 @@
       "id": "processing__processing-enrichment-timestamp-conversion__api_seeded__route-on"
     },
     {
-      "idStem": "processing__processing-enrichment-type-conversion__browser",
-      "suite": "processing",
-      "executionMode": "browser",
-      "routeProcessing": "on",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "processing.enrichment.type_conversion",
-        "source.http_api_polling",
-        "destination.webhook_post",
-        "processing.mapping.field_jsonpath"
-      ],
-      "fixture": "processing/processing-enrichment-type-conversion",
-      "expectedStatus": "PASS",
-      "tags": [
-        "processing",
-        "preview-runtime",
-        "shard:processing",
-        "browser",
-        "route-on"
-      ],
-      "shard": "processing",
-      "transform": "processing.enrichment.type_conversion",
-      "id": "processing__processing-enrichment-type-conversion__browser__route-on"
-    },
-    {
-      "idStem": "processing__processing-enrichment-type-conversion__api_seeded",
+      "id": "processing__processing-enrichment-type-conversion__partial",
       "suite": "processing",
       "executionMode": "api_seeded",
       "routeProcessing": "on",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
       "capabilities": [
-        "processing.enrichment.type_conversion",
-        "source.http_api_polling",
-        "destination.webhook_post",
-        "processing.mapping.field_jsonpath"
+        "processing.enrichment.type_conversion"
       ],
       "fixture": "processing/processing-enrichment-type-conversion",
-      "expectedStatus": "PASS",
+      "expectedStatus": "NOT_IMPLEMENTED",
+      "reason": "Manifest status=PARTIAL",
       "tags": [
         "processing",
-        "preview-runtime",
-        "shard:processing",
-        "api_seeded",
-        "route-on"
+        "partial",
+        "shard:processing"
       ],
       "shard": "processing",
-      "transform": "processing.enrichment.type_conversion",
-      "id": "processing__processing-enrichment-type-conversion__api_seeded__route-on"
+      "transform": "processing.enrichment.type_conversion"
     },
     {
       "idStem": "processing__processing-enrichment-jsonata__browser",
@@ -3073,6 +3030,68 @@
       "shard": "processing",
       "transform": "processing.enrichment.jsonata",
       "id": "processing__processing-enrichment-jsonata__api_seeded__route-on"
+    },
+    {
+      "idStem": "processing__processing-enrichment-regex-extract__browser",
+      "suite": "processing",
+      "executionMode": "browser",
+      "routeProcessing": "on",
+      "source": {
+        "type": "HTTP_API_POLLING",
+        "authentication": "no_auth"
+      },
+      "destination": {
+        "type": "WEBHOOK_POST"
+      },
+      "capabilities": [
+        "processing.enrichment.regex_extract",
+        "source.http_api_polling",
+        "destination.webhook_post",
+        "processing.mapping.field_jsonpath"
+      ],
+      "fixture": "processing/processing-enrichment-regex-extract",
+      "expectedStatus": "PASS",
+      "tags": [
+        "processing",
+        "preview-runtime",
+        "shard:processing",
+        "browser",
+        "route-on"
+      ],
+      "shard": "processing",
+      "transform": "processing.enrichment.regex_extract",
+      "id": "processing__processing-enrichment-regex-extract__browser__route-on"
+    },
+    {
+      "idStem": "processing__processing-enrichment-regex-extract__api_seeded",
+      "suite": "processing",
+      "executionMode": "api_seeded",
+      "routeProcessing": "on",
+      "source": {
+        "type": "HTTP_API_POLLING",
+        "authentication": "no_auth"
+      },
+      "destination": {
+        "type": "WEBHOOK_POST"
+      },
+      "capabilities": [
+        "processing.enrichment.regex_extract",
+        "source.http_api_polling",
+        "destination.webhook_post",
+        "processing.mapping.field_jsonpath"
+      ],
+      "fixture": "processing/processing-enrichment-regex-extract",
+      "expectedStatus": "PASS",
+      "tags": [
+        "processing",
+        "preview-runtime",
+        "shard:processing",
+        "api_seeded",
+        "route-on"
+      ],
+      "shard": "processing",
+      "transform": "processing.enrichment.regex_extract",
+      "id": "processing__processing-enrichment-regex-extract__api_seeded__route-on"
     },
     {
       "idStem": "processing__processing-mapping-field-jsonpath__browser",
@@ -4659,6 +4678,31 @@
       "shard": "governance"
     },
     {
+      "id": "governance__governance-approval-workflow__api__route-on",
+      "suite": "governance",
+      "executionMode": "api_seeded",
+      "routeProcessing": "on",
+      "source": {
+        "type": "HTTP_API_POLLING",
+        "authentication": "no_auth"
+      },
+      "destination": {
+        "type": "WEBHOOK_POST"
+      },
+      "capabilities": [
+        "governance.approval_workflow",
+        "source.http_api_polling",
+        "destination.webhook_post"
+      ],
+      "fixture": "governance/governance-approval-workflow",
+      "expectedStatus": "PASS",
+      "tags": [
+        "governance",
+        "shard:governance"
+      ],
+      "shard": "governance"
+    },
+    {
       "id": "runtime__runtime-retry-backoff__api__route-on",
       "suite": "runtime",
       "executionMode": "api_seeded",
@@ -5426,26 +5470,26 @@
     }
   ],
   "counts": {
-    "total": 181,
+    "total": 183,
     "browser": 61,
-    "api_seeded": 120,
+    "api_seeded": 122,
     "route_off": 0,
-    "route_on": 181,
+    "route_on": 183,
     "route_both": 0,
     "by_suite": {
       "authentication": 38,
       "source": 10,
       "destination": 28,
       "runtime": 26,
-      "processing": 23,
+      "processing": 24,
       "wizard": 6,
       "route": 9,
-      "governance": 26,
+      "governance": 27,
       "fault": 15
     },
     "by_expected_status": {
-      "PASS": 171,
-      "NOT_IMPLEMENTED": 10
+      "PASS": 172,
+      "NOT_IMPLEMENTED": 11
     }
   }
 }

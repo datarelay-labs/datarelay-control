@@ -119,10 +119,18 @@ export class StreamWizardOperator {
 
   async clickNext(expectedLabel?: RegExp): Promise<void> {
     this.session.artifacts.action('wizard-next', '/streams/new', expectedLabel?.source || 'Next')
-    const named = expectedLabel
-      ? this.page.getByRole('button', { name: expectedLabel }).last()
-      : this.page.getByRole('button', { name: /^Next/i }).last()
+    const canonical = this.page.getByTestId('wizard-next')
+    const named =
+      (await canonical.count()) > 0
+        ? canonical
+        : expectedLabel
+          ? this.page.getByRole('button', { name: expectedLabel }).last()
+          : this.page.getByRole('button', { name: /^Next/i }).last()
     await named.waitFor({ state: 'visible', timeout: ACTION })
+    if (expectedLabel) {
+      const label = (await named.innerText()).trim()
+      if (!expectedLabel.test(label)) throw new Error(`unexpected wizard next action: ${label}`)
+    }
     for (let i = 0; i < 12; i++) {
       if (!(await named.isDisabled().catch(() => false))) break
       await this.page.waitForTimeout(400)
@@ -143,11 +151,34 @@ export class StreamWizardOperator {
     return ''
   }
 
-  async runSampleTest(opts?: { allowConnectivitySample?: boolean }): Promise<boolean> {
+  async runSampleTest(opts?: { allowConnectivitySample?: boolean; requireFreshApiTest?: boolean }): Promise<boolean> {
     this.session.artifacts.action('wizard-run-test', '/streams/new', 'Run Test')
     await this.page.getByTestId('wizard-step-sample').waitFor({ timeout: ACTION }).catch(() => null)
+    const runTab = this.page.getByTestId('wizard-sample-tab-run_test')
+    if (await runTab.count()) {
+      await runTab.click().catch(() => null)
+      await this.page.waitForTimeout(150)
+    }
     const runBtn = this.page.getByRole('button', { name: /Run Test/i }).first()
+    const freshApiTest = opts?.requireFreshApiTest
+      ? this.page
+          .waitForResponse(
+            (response) =>
+              response.request().method() === 'POST' &&
+              response.url().includes('/runtime/api-test/'),
+            { timeout: ACTION },
+          )
+          .catch(() => null)
+      : null
     await runBtn.click({ timeout: ACTION })
+    if (freshApiTest && !(await freshApiTest)) {
+      this.session.artifacts.action(
+        'wizard-run-test-no-fresh-response',
+        '/streams/new',
+        'fresh API Test response missing',
+      )
+      return false
+    }
     const ok = await this.page
       .getByTestId('wizard-run-test-success')
       .waitFor({ timeout: ACTION })
@@ -190,16 +221,32 @@ export class StreamWizardOperator {
     const cpInput = this.page.locator('label').filter({ hasText: /Sync position path/i }).locator('input')
     if (await cpInput.count()) await cpInput.fill(cp)
     const validate = this.page.getByRole('button', { name: /Validate & Preview/i }).first()
-    if (await validate.isVisible().catch(() => false)) {
-      await validate.click().catch(() => null)
-      await this.page.waitForTimeout(800)
-    }
     const nextAfterAdvanced = this.page.getByRole('button', { name: /Next: Destinations/i }).last()
-    if (
-      !(await this.page.getByText(/Next is blocked/i).isVisible().catch(() => false)) &&
-      (await nextAfterAdvanced.isEnabled().catch(() => false))
-    ) {
-      return
+    if (await validate.isVisible().catch(() => false)) {
+      const validationResponse = this.page
+        .waitForResponse(
+          (response) =>
+            response.request().method() === 'POST' &&
+            response.url().includes('/runtime/preview/extraction-validate'),
+          { timeout: ACTION },
+        )
+        .catch(() => null)
+      await validate.click({ timeout: ACTION })
+      const response = await validationResponse
+      const validated = await this.page
+        .getByText(/^Validated:\s+\d+\s+events extracted/i)
+        .waitFor({ state: 'visible', timeout: ACTION })
+        .then(() => true)
+        .catch(() => false)
+      if (response && response.status() < 300 && validated) {
+        for (let i = 0; i < 12; i++) {
+          const blocked = await this.page.getByText(/Next is blocked/i).isVisible().catch(() => false)
+          const enabled = await nextAfterAdvanced.isEnabled().catch(() => false)
+          if (!blocked && enabled) return
+          await this.page.waitForTimeout(250)
+        }
+        throw new Error('advanced record selection validated but Next remained blocked')
+      }
     }
 
     const basic = this.page.getByRole('button', { name: 'Basic (Tree)' })
@@ -237,6 +284,110 @@ export class StreamWizardOperator {
       if (await useRoot.isVisible().catch(() => false)) await useRoot.click().catch(() => null)
       if (await validate.isVisible().catch(() => false)) await validate.click().catch(() => null)
       await this.page.waitForTimeout(500)
+    }
+  }
+
+  async configureIncrementalQueryParamsAndTest(): Promise<boolean> {
+    const pattern = this.page.getByTestId('incremental-pattern-select')
+    if (!(await pattern.count())) return false
+    await pattern.selectOption('query_params')
+    await this.page.waitForTimeout(250)
+    const openPreview = this.page.getByTestId('open-request-preview-button')
+    if (!(await openPreview.isVisible().catch(() => false))) return false
+    await openPreview.click({ timeout: ACTION })
+    const test = this.page.getByTestId('incremental-request-test-button')
+    await test.waitFor({ state: 'visible', timeout: ACTION })
+    for (let i = 0; i < 20; i++) {
+      if (!(await test.isDisabled().catch(() => true))) break
+      await this.page.waitForTimeout(150)
+    }
+    if (await test.isDisabled().catch(() => true)) {
+      await this.page.getByTestId('request-preview-drawer-close').click().catch(() => null)
+      return false
+    }
+    await test.click()
+    await this.page
+      .getByTestId('incremental-request-test-result')
+      .waitFor({ state: 'visible', timeout: ACTION })
+      .catch(() => null)
+    const status =
+      (await this.page.getByTestId('incremental-last-test-status').innerText().catch(() => '')) || ''
+    await this.page.getByTestId('request-preview-drawer-close').click().catch(() => null)
+    this.session.artifacts.action('wizard-incremental-test', '/streams/new', status.replace(/\s+/g, ' ').trim())
+    return /^Success\b/i.test(status)
+  }
+
+  async exerciseSampleUnionIncremental(streamId: number): Promise<{
+    unionReady: boolean
+    rareVisible: boolean
+    sensitiveVisible: boolean
+    checkpointReadback: boolean
+    incrementalRequestReadback: boolean
+    unionText: string
+    checkpointText: string
+    incrementalRequestText: string
+  }> {
+    this.session.artifacts.action('wizard-sample-reconciliation', `/streams/${streamId}/edit?step=sample`, `stream=${streamId}`)
+    await this.session.goto(`/streams/${streamId}/edit?step=sample`, 'stream-edit-sample')
+    await this.page.getByTestId('wizard-step-sample').waitFor({ timeout: ACTION })
+
+    await this.page.waitForLoadState('networkidle', { timeout: 3_000 }).catch(() => null)
+    await this.page.waitForTimeout(400)
+    const recordTab = this.page.getByTestId('wizard-sample-tab-record_selection')
+    if (await recordTab.count()) await recordTab.click()
+    await this.page.waitForTimeout(300)
+
+    const unionReady = await this.page
+      .getByTestId('union-schema-status-ready')
+      .waitFor({ state: 'visible', timeout: ACTION })
+      .then(() => true)
+      .catch(() => false)
+
+    const unionText = (await this.page.getByTestId('union-schema-status-ready').innerText().catch(() => '')) || ''
+    const rareVisible = /Rare fields:\s*[1-9]\d*/i.test(unionText)
+    const sensitiveVisible = /Sensitive fields:\s*[1-9]\d*/i.test(unionText)
+
+    await this.session.goto(`/streams/${streamId}/edit?step=connect`, 'stream-edit-connect')
+    await this.page.getByTestId('wizard-step-connect').waitFor({ timeout: ACTION })
+    await this.page.waitForLoadState('networkidle', { timeout: 3_000 }).catch(() => null)
+    await this.page.waitForTimeout(300)
+
+    const advancedTab = this.page.getByTestId('wizard-connect-tab-advanced')
+    if (await advancedTab.count()) await advancedTab.click()
+    const checkpointPanel = this.page.getByTestId('stream-config-checkpoint-panel')
+    await checkpointPanel.waitFor({ state: 'visible', timeout: ACTION }).catch(() => null)
+    const checkpointPrimary = checkpointPanel.locator('input').first()
+    const checkpointValue = (await checkpointPrimary.inputValue().catch(() => '')) || ''
+    const checkpointText = (await checkpointPanel.innerText().catch(() => '')) || ''
+    const checkpointReadback =
+      /(?:^|\.)id$/i.test(checkpointValue.trim()) ||
+      /Persisted path:\s*\$?\.?(?:items\[\*\]\.)?id\b/i.test(checkpointText)
+
+    const requestTab = this.page.getByTestId('wizard-connect-tab-request')
+    if (await requestTab.count()) await requestTab.click()
+    const requestPanel = this.page.getByTestId('wizard-connect-request')
+    await requestPanel.waitFor({ state: 'visible', timeout: ACTION }).catch(() => null)
+    const requestText = (await requestPanel.innerText().catch(() => '')) || ''
+    const requestValues = await requestPanel.locator('input, textarea, select').evaluateAll((nodes) =>
+      nodes.map((node) => {
+        const input = node as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+        return String(input.value || '')
+      }),
+    ).catch(() => [])
+    const incrementalRequestText = `${requestText}\n${requestValues.join('\n')}`
+    const incrementalRequestReadback =
+      /id_(?:gt|gte|after)/i.test(incrementalRequestText) &&
+      /checkpoint|last_(?:timestamp|id)/i.test(incrementalRequestText)
+
+    return {
+      unionReady,
+      rareVisible,
+      sensitiveVisible,
+      checkpointReadback,
+      incrementalRequestReadback,
+      unionText: unionText.replace(/\s+/g, ' ').trim().slice(0, 500),
+      checkpointText: `${checkpointValue} ${checkpointText}`.replace(/\s+/g, ' ').trim().slice(0, 500),
+      incrementalRequestText: incrementalRequestText.replace(/\s+/g, ' ').trim().slice(0, 800),
     }
   }
 
@@ -397,7 +548,9 @@ export class StreamWizardOperator {
     withBackReload?: boolean
     withProtection?: boolean
     withTransform?: boolean
-  }): Promise<{ ok: boolean; note: string }> {
+    withIncremental?: boolean
+  }): Promise<{ ok: boolean; note: string; incrementalTestPass: boolean | null }> {
+    let incrementalTestPass: boolean | null = null
     try {
       await this.openFresh()
       await this.selectSavedConnector(opts.connectorName)
@@ -425,8 +578,11 @@ export class StreamWizardOperator {
       }
       await this.clickNext(/Sample/i)
       const sampleOk = await this.runSampleTest()
-      if (!sampleOk) return { ok: false, note: 'sample test did not show success' }
+      if (!sampleOk) return { ok: false, note: 'sample test did not show success', incrementalTestPass }
       await this.confirmRecordSelectionBestEffort(opts.eventArrayPath || '$.items', 'id')
+      if (opts.withIncremental) {
+        incrementalTestPass = await this.configureIncrementalQueryParamsAndTest()
+      }
       await this.clickNext(/Destination/i)
       await this.addDestinationRoutes(opts.destinationNames)
       await this.clickNext(/Route Processing/i)
@@ -436,10 +592,24 @@ export class StreamWizardOperator {
       if (opts.withTransform) await this.configureRouteBTransformRename()
       await this.clickNext(/Deploy/i)
       await this.deploy()
-      return { ok: true, note: 'deploy clicked' }
+      const createdPanel = this.page.getByTestId('deploy-created-panel')
+      const createdText = (await createdPanel.innerText().catch(() => '')).replace(/\s+/g, ' ').trim()
+      const startBlocked = /Start Blocked|Start blocked:/i.test(createdText)
+      if (startBlocked) {
+        return {
+          ok: false,
+          note: `stream persisted but start blocked: ${createdText.slice(0, 500)}`,
+          incrementalTestPass,
+        }
+      }
+      return {
+        ok: true,
+        note: `deploy clicked${createdText ? ` · ${createdText.slice(0, 240)}` : ''}`,
+        incrementalTestPass,
+      }
     } catch (e) {
       await this.session.screenshotOnFail(`wizard-fail-${Date.now()}`)
-      return { ok: false, note: String(e).slice(0, 400) }
+      return { ok: false, note: String(e).slice(0, 400), incrementalTestPass }
     }
   }
 
@@ -466,6 +636,225 @@ export class StreamWizardOperator {
         await adv.click()
         await this.fillLabeledInput('Polling interval', String(opts.pollingSec))
       }
+    }
+  }
+
+  async openEditProcessing(streamId: number, eventArrayPath = '$.items'): Promise<void> {
+    await this.session.goto(`/streams/${streamId}/edit?step=route_processing`, 'stream-edit-processing')
+    await this.page.getByTestId('wizard-step-transform').waitFor({ timeout: ACTION })
+    // Edit state hydrates after the route-processing shell first renders.  Wait
+    // for that read to settle before deciding whether the persisted sample is
+    // available; otherwise a stale optimistic render can skip the refresh.
+    await this.page.waitForLoadState('networkidle', { timeout: 3_000 }).catch(() => null)
+    await this.page.waitForTimeout(250)
+
+    const sampleWarning = this.page.getByTestId('wizard-transform-sample-warning')
+    const sampleMissing = await sampleWarning.isVisible().catch(() => false)
+    console.log(`PROCESSING_CHECKPOINT open-edit stream=${streamId} sampleMissing=${sampleMissing}`)
+    if (!sampleMissing) return
+
+    await this.clickBack()
+    await this.clickBack()
+    console.log(`PROCESSING_CHECKPOINT sample-refresh-start stream=${streamId}`)
+    const sampleOk = await this.runSampleTest({ requireFreshApiTest: true })
+    if (!sampleOk) throw new Error('edit processing sample refresh did not complete a fresh API Test')
+    console.log(`PROCESSING_CHECKPOINT sample-refresh-pass stream=${streamId}`)
+    const nextDest = this.page.getByTestId('wizard-next')
+    const nextReady = await nextDest.isEnabled().catch(() => false)
+    if (!nextReady) await this.confirmRecordSelectionBestEffort(eventArrayPath, 'id')
+    console.log(`PROCESSING_CHECKPOINT sample-selection-ready stream=${streamId} reused=${nextReady}`)
+    await this.clickNext(/Destination/i)
+    console.log(`PROCESSING_CHECKPOINT destinations-entered stream=${streamId}`)
+    await this.clickNext(/Route Processing/i)
+    console.log(`PROCESSING_CHECKPOINT processing-returned stream=${streamId}`)
+    await this.page.getByTestId('wizard-step-transform').waitFor({ timeout: ACTION })
+    await this.page.waitForLoadState('networkidle', { timeout: 3_000 }).catch(() => null)
+    if (await sampleWarning.isVisible().catch(() => false)) {
+      throw new Error('edit processing sample refresh did not hydrate the Transform workspace')
+    }
+  }
+
+  private async launchTransform(action: string): Promise<void> {
+    const guided = ['static', 'calculated', 'normalize', 'conditional'].includes(action)
+    const editor = this.page.getByTestId('wizard-transform-enrichment-editor')
+    const before = guided ? await editor.locator('article').count() : 0
+    console.log(`PROCESSING_CHECKPOINT launch=${action} before=${before}`)
+    await this.page.getByTestId('transform-rule-launcher-trigger').click({ timeout: ACTION })
+    await this.page.getByTestId(`transform-launcher-${action}`).click({ timeout: ACTION })
+    if (guided) {
+      for (let i = 0; i < 20; i++) {
+        if ((await editor.locator('article').count()) > before) return
+        await this.page.waitForTimeout(100)
+      }
+      throw new Error(`transform launcher did not add ${action} rule`)
+    }
+    await this.page.waitForTimeout(250)
+  }
+
+  private async expandRuleCard(label: string) {
+    const cards = this.page.getByTestId('wizard-transform-enrichment-editor').locator('article')
+    const count = await cards.count()
+    let matchIndex = -1
+    for (let i = 0; i < count; i++) {
+      const text = await cards.nth(i).innerText().catch(() => '')
+      if (text.includes(label)) matchIndex = i
+    }
+    if (matchIndex < 0) throw new Error(`transform rule card missing: ${label}`)
+    const card = cards.nth(matchIndex)
+    await card.waitFor({ timeout: ACTION })
+    const expand = card.getByRole('button', { name: /Expand rule/i })
+    if (await expand.count()) await expand.click()
+    return card
+  }
+
+  async configureExhaustiveProcessing(streamId: number): Promise<{ ok: boolean; note: string }> {
+    try {
+      await this.openEditProcessing(streamId)
+
+      const setCardField = async (card: ReturnType<Page['locator']>, label: RegExp, value: string) => {
+        let field = card.getByLabel(label).first()
+        if (!(await field.count())) {
+          field = card.locator('label').filter({ hasText: label }).locator('input, textarea, select').first()
+        }
+        if (!(await field.count())) {
+          const cardText = (await card.innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 240)
+          throw new Error(`processing field missing: ${label}; card=${cardText}`)
+        }
+        await field.waitFor({ state: 'visible', timeout: ACTION })
+        if ((await field.evaluate((el) => el.tagName)) === 'SELECT') await field.selectOption(value)
+        else await field.fill(value)
+      }
+
+      await this.launchTransform('static')
+      let card = await this.expandRuleCard('New Static')
+      await setCardField(card, /Target field/i, 'e2e_static')
+      await setCardField(card, /^Value$/i, 'full-e2e-static')
+
+      await this.launchTransform('calculated')
+      card = await this.expandRuleCard('New Calculated')
+      await setCardField(card, /Target field/i, 'e2e_calc')
+      await setCardField(card, /Expression|Value/i, "concat('calc-', {{message}})")
+
+      await this.launchTransform('normalize')
+      card = await this.expandRuleCard('Timestamp ISO')
+      // Keep the text-filtered card locator stable until all other fields are
+      // populated; renaming the card first would make the locator stop matching.
+      await setCardField(card, /Target field/i, 'message_norm')
+      await setCardField(card, /Source field/i, 'message')
+      await setCardField(card, /Format/i, 'uppercase')
+      await setCardField(card, /Display name/i, 'Message Upper')
+
+      await this.launchTransform('normalize')
+      card = await this.expandRuleCard('Timestamp ISO')
+      await setCardField(card, /Target field/i, 'ts_utc')
+      await setCardField(card, /Source field/i, 'timestamp')
+      await setCardField(card, /Format/i, 'iso8601')
+
+      await this.launchTransform('conditional')
+      card = await this.expandRuleCard('Outcome Status')
+      await setCardField(card, /Target field/i, 'e2e_cond')
+      await setCardField(card, /Default/i, 'other')
+
+      await this.launchTransform('jsonata')
+      const advanced = this.page.locator('div.rounded-lg').filter({ hasText: 'Advanced · JSONata' }).last()
+      await setCardField(advanced, /Output field/i, 'e2e_jsonata')
+      await setCardField(advanced, /JSONata expression/i, 'message')
+      const jsonataToolbar = this.page
+        .getByText(/Per-field JSONata · Safe Expression Engine/i)
+        .locator('..')
+      await jsonataToolbar.getByRole('button', { name: /^Preview$/i }).click({ timeout: ACTION })
+      await this.page.getByText('Transform Preview', { exact: true }).last().waitFor({ timeout: ACTION })
+
+      await this.launchTransform('regex')
+      const regex = this.page.locator('div.rounded-lg').filter({ hasText: 'Expert · Regex' }).last()
+      await setCardField(regex, /Output field/i, 'e2e_regex')
+      const source = regex.locator('label').filter({ hasText: /Source field/i }).locator('select').first()
+      if (await source.count()) await source.selectOption({ label: '$.message' }).catch(() => source.selectOption('$.message'))
+      await setCardField(regex, /Pattern/i, 'marker-(.*)')
+      const regexToolbar = this.page
+        .getByText(/Per-field Regex · Safe Expression Engine/i)
+        .locator('..')
+      await regexToolbar.getByRole('button', { name: /^Preview$/i }).click({ timeout: ACTION })
+      await this.page.getByText('Transform Preview', { exact: true }).last().waitFor({ timeout: ACTION })
+
+      const save = this.page.getByTestId('wizard-save-now')
+      await save.click({ timeout: ACTION })
+      await this.page.getByText(/Saved now and applied|Changes saved/i).waitFor({ timeout: ACTION }).catch(() => null)
+      return { ok: true, note: 'guided+jsonata+regex authored, previewed, and saved in browser' }
+    } catch (e) {
+      await this.session.screenshotOnFail(`processing-exhaustive-${Date.now()}`)
+      return { ok: false, note: String(e).slice(0, 500) }
+    }
+  }
+
+  async configureFullEventProcessing(
+    streamId: number,
+    mode: 'jsonata' | 'regex',
+    eventArrayPath = '$.items',
+  ): Promise<{ ok: boolean; note: string }> {
+    try {
+      await this.openEditProcessing(streamId, eventArrayPath)
+      const tab =
+        mode === 'jsonata'
+          ? this.page.getByRole('tab', { name: /JSONata · Advanced/i })
+          : this.page.getByRole('tab', { name: /Regex · Expert/i })
+      await tab.click({ timeout: ACTION })
+      await this.page.getByRole('button', { name: 'Full-event mode' }).click({ timeout: ACTION })
+
+      if (mode === 'jsonata') {
+        const expression = [
+          '{',
+          '  "message": message,',
+          '  "jsonata_marker": "full-event-jsonata",',
+          '  "sequence": sequence',
+          '}',
+        ].join('\n')
+        await this.page.getByLabel('Full event JSONata expression').fill(expression)
+      } else {
+        const config = {
+          preserve_source: true,
+          rules: [
+            {
+              output_field: 'regex_message',
+              source_path: '$.message',
+              pattern: '^(.*)$',
+              group: 1,
+              default: 'unknown',
+            },
+          ],
+        }
+        await this.page.getByLabel('Full event regex transform JSON config').fill(JSON.stringify(config, null, 2))
+      }
+
+      const previewHeader = this.page.getByText('Preview Result', { exact: true }).last().locator('..')
+      const previewPanel = previewHeader.locator('..')
+      const preview = previewHeader.getByRole('button', { name: /^Preview$/i })
+      const previewOk = previewHeader.getByText('Preview OK', { exact: true })
+
+      // Full-event editors auto-preview 400ms after a valid edit.  Prefer that
+      // result instead of racing it with a manual click.  A manual preview is
+      // only a fallback when auto-preview produced neither success nor error.
+      let manualPreviewStarted = false
+      for (let i = 0; i < 24; i++) {
+        if (await previewOk.isVisible().catch(() => false)) break
+        const panelText = (await previewPanel.innerText().catch(() => '')).replace(/\s+/g, ' ')
+        const errorMatch = panelText.match(
+          /(JSONata engine is not installed[^.]*\.?|Preview request failed[^.]*\.?|Could not build field mappings[^.]*\.?|must return a JSON object[^.]*\.?)/i,
+        )
+        if (errorMatch) throw new Error(`full-event ${mode} preview failed: ${errorMatch[1]}`)
+        if (!manualPreviewStarted && i >= 6 && (await preview.isVisible().catch(() => false)) && (await preview.isEnabled().catch(() => false))) {
+          await preview.click({ timeout: ACTION })
+          manualPreviewStarted = true
+        }
+        await this.page.waitForTimeout(250)
+      }
+      await previewOk.waitFor({ timeout: ACTION })
+      await this.page.getByTestId('wizard-save-now').click({ timeout: ACTION })
+      await this.page.getByText(/Saved now and applied|Changes saved/i).waitFor({ timeout: ACTION }).catch(() => null)
+      return { ok: true, note: 'full-event ' + mode + ' previewed and saved' }
+    } catch (e) {
+      await this.session.screenshotOnFail('full-event-' + mode + '-' + Date.now())
+      return { ok: false, note: String(e).slice(0, 500) }
     }
   }
 

@@ -1412,8 +1412,8 @@ processing:
 
   - id: processing.enrichment.type_conversion
     display_name: Enrichment — Type Conversion
-    status: SUPPORTED
-    ui_supported: true
+    status: PARTIAL
+    ui_supported: false
     api_supported: true
     runtime_supported: true
     connection_test_supported: false
@@ -1422,15 +1422,19 @@ processing:
     existing_tests:
       - tests/test_replay_engine_m11.py
     required_e2e:
-      - playwright_type_conversion_preview_save_restore
+      - api_type_conversion_preview_runtime
     evidence:
       - file: app/enrichers/expression_evaluator.py
         symbol: convert_type
         note: Runtime type conversion
       - file: app/enrichers/rule_executor.py
         symbol: previewTypeConversion
-        note: Client preview
-    limitations: []
+        note: Runtime preview helper
+      - file: docs/source-of-truth/DATA-RELAY-STREAM-WIZARD-UX-CHARTER-v5.2-FINAL.txt
+        symbol: Supported Transform Types
+        note: Current browser contract lists Static, Calculated, Conditional, Normalization, JSONata, and Regex
+    limitations:
+      - Runtime/API behavior exists, but the current authoritative Wizard contract has no standalone Type Conversion authoring control
 
   - id: processing.enrichment.jsonata
     display_name: Enrichment — JSONata Template
@@ -1455,6 +1459,33 @@ processing:
         note: Template library UI metadata
     limitations:
       - Runtime evaluates expression; template/params are UI metadata
+
+  - id: processing.enrichment.regex_extract
+    display_name: Enrichment — Regex Extract
+    status: SUPPORTED
+    ui_supported: true
+    api_supported: true
+    runtime_supported: true
+    connection_test_supported: false
+    applicable_to: [global_processing, route_override]
+    feature_flag: null
+    existing_tests:
+      - tests/test_per_field_advanced_transform.py
+      - tests/test_runtime_enrichment_exec_preview_endpoint.py
+      - frontend/src/components/transform/advanced-transform-workspace.tsx
+    required_e2e:
+      - playwright_regex_extract_preview_save_runtime
+    evidence:
+      - file: app/enrichers/rule_executor.py
+        symbol: _RULE_TYPES
+        note: regex_extract is an executable enrichment rule type
+      - file: app/enrichers/rule_validation.py
+        symbol: validate_enrichment_rules
+        note: Validates regex_extract rules before execution
+      - file: frontend/src/components/transform/advanced-transform-workspace.tsx
+        symbol: AdvancedTransformWorkspace
+        note: Browser authoring exposes Regex extract rules
+    limitations: []
 
   - id: processing.mapping.field_jsonpath
     display_name: Field Mapping (JSONPath)
@@ -1946,6 +1977,29 @@ governance:
       - file: frontend/src/components/governance/policy-editor-drawer.tsx
         symbol: PolicyEditorDrawer
         note: Ops UI
+    limitations: []
+
+  - id: governance.approval_workflow
+    display_name: Approval Workflow
+    status: SUPPORTED
+    ui_supported: true
+    api_supported: true
+    runtime_supported: true
+    connection_test_supported: false
+    applicable_to: [governance]
+    feature_flag: null
+    existing_tests:
+      - tests/test_governance_approvals_m19_5.py
+      - frontend/src/components/governance/approval-workflow-page.test.tsx
+    required_e2e:
+      - playwright_governance_approval_submit_approve_reject_activate
+    evidence:
+      - file: app/governance_approval
+        symbol: governance_approval package
+        note: Submit, approve, reject, and activate workflow APIs
+      - file: frontend/src/components/governance/approval-workflow-page.tsx
+        symbol: ApprovalWorkflowPage
+        note: Operator approval workflow UI
     limitations: []
 
   - id: governance.replay

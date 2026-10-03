@@ -40,6 +40,19 @@ export class ConnectorsPage {
     basicPass?: string
     apiKeyName?: string
     apiKeyValue?: string
+    apiKeyLocation?: 'headers' | 'query_params'
+    oauthClientId?: string
+    oauthClientSecret?: string
+    oauthTokenUrl?: string
+    sessionLoginUrl?: string
+    sessionLoginPath?: string
+    sessionUsername?: string
+    sessionPassword?: string
+    refreshToken?: string
+    tokenUrl?: string
+    vendorUserId?: string
+    vendorApiKey?: string
+    vendorTokenUrl?: string
   }): Promise<void> {
     this.session.artifacts.action('fill-http-connector', '/connectors/new', opts.name)
     await this.selectSourceType(/HTTP API Polling/i)
@@ -64,7 +77,22 @@ export class ConnectorsPage {
       const name = this.page.getByLabel(/API Key Name/i)
       if (await name.count()) await name.fill(opts.apiKeyName || 'X-API-Key')
       await this.page.getByLabel(/API Key Value/i).fill(opts.apiKeyValue)
+      if (opts.apiKeyLocation) {
+        await this.page.getByLabel(/API Key Location/i).selectOption(opts.apiKeyLocation)
+      }
     }
+    if (opts.oauthClientId) await this.page.getByLabel(/OAuth2 Client ID/i).fill(opts.oauthClientId)
+    if (opts.oauthClientSecret) await this.page.getByLabel(/OAuth2 Client Secret/i).fill(opts.oauthClientSecret)
+    if (opts.oauthTokenUrl) await this.page.getByLabel(/OAuth2 Token URL/i).fill(opts.oauthTokenUrl)
+    if (opts.sessionLoginUrl) await this.page.getByLabel(/Login Base URL/i).fill(opts.sessionLoginUrl)
+    if (opts.sessionLoginPath) await this.page.getByLabel(/Login Endpoint Path/i).fill(opts.sessionLoginPath)
+    if (opts.sessionUsername) await this.page.getByLabel(/Login Username/i).fill(opts.sessionUsername)
+    if (opts.sessionPassword) await this.page.getByLabel(/Login Password/i).fill(opts.sessionPassword)
+    if (opts.refreshToken) await this.page.getByLabel(/Refresh Token/i).fill(opts.refreshToken)
+    if (opts.tokenUrl) await this.page.getByLabel(/^Token URL$/i).fill(opts.tokenUrl)
+    if (opts.vendorUserId) await this.page.getByLabel(/User ID/i).fill(opts.vendorUserId)
+    if (opts.vendorApiKey) await this.page.getByLabel(/^API Key$/i).fill(opts.vendorApiKey)
+    if (opts.vendorTokenUrl) await this.page.getByLabel(/Token exchange URL/i).fill(opts.vendorTokenUrl)
   }
 
   async fillDatabaseConnector(opts: {

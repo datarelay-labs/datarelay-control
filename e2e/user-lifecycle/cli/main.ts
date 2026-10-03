@@ -12,6 +12,10 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ArtifactStore } from '../helpers/artifacts.js'
 import { ApiClient, stubWiremock } from '../helpers/api.js'
+import { runExhaustiveHttpAuthLifecycle } from '../helpers/http-auth-lifecycle.js'
+import { runFirstLoginAndRbacLifecycle } from '../helpers/rbac-lifecycle.js'
+import { captureBrowserCensus, runBaselinePublicCensus } from '../helpers/browser-census.js'
+import { runGovernanceLifecycle } from '../helpers/governance-lifecycle.js'
 import { waitForDelivery, echoLogsTail, countMarkerInEcho, extractEchoBlock, deliveredInEcho } from '../helpers/echo.js'
 import { createRunId, TIMEOUTS } from '../helpers/types.js'
 import { OperatorSession } from '../pages/session.js'
@@ -315,6 +319,35 @@ async function cleanupRun(api: ApiClient, store: ArtifactStore, runId: string): 
     const st = await api.deleteDestination(Number(d.id))
     store.markCleanup('DESTINATION', d.id, st < 300 || st === 404 ? 'DELETED' : `HTTP_${st}`)
   }
+
+  let orphanPolicies = 0
+  const governanceCleanup = spawnSync(
+    'python3',
+    [path.join(PKG, 'fixtures/seed_fixtures.py'), 'cleanup-governance-ops', '--run-id', runId],
+    { env: process.env, encoding: 'utf8' },
+  )
+  let governanceCleanupEvidence: Record<string, unknown> = {
+    ok: false,
+    status: governanceCleanup.status,
+    stderr: String(governanceCleanup.stderr || '').trim().slice(0, 500),
+  }
+  if (governanceCleanup.status === 0) {
+    const line = String(governanceCleanup.stdout || '')
+      .split('\n')
+      .map((row) => row.trim())
+      .filter(Boolean)
+      .at(-1)
+    try {
+      governanceCleanupEvidence = line ? (JSON.parse(line) as Record<string, unknown>) : governanceCleanupEvidence
+      orphanPolicies = Number(governanceCleanupEvidence.remaining_policies || 0)
+    } catch {
+      orphanPolicies = 1
+    }
+  } else {
+    orphanPolicies = 1
+  }
+  store.writeJson('governance-cleanup.json', governanceCleanupEvidence)
+
   let left = await api.findByNamePrefix(runId)
   for (let attempt = 0; attempt < 3 && left.connectors.length + left.streams.length + left.destinations.length + (left.routes || []).length > 0; attempt++) {
     await new Promise((r) => setTimeout(r, 400))
@@ -341,11 +374,13 @@ async function cleanupRun(api: ApiClient, store: ArtifactStore, runId: string): 
   store.setFlag('ORPHAN_STREAMS', String(orphanS))
   store.setFlag('ORPHAN_DESTINATIONS', String(orphanD))
   store.setFlag('ORPHAN_ROUTES', String(orphanR))
-  store.setFlag('CLEANUP', orphanC + orphanS + orphanD + orphanR === 0 ? 'PASS' : 'FAIL')
+  store.setFlag('ORPHAN_GOVERNANCE_POLICIES', String(orphanPolicies))
+  const cleanupPass = orphanC + orphanS + orphanD + orphanR + orphanPolicies === 0
+  store.setFlag('CLEANUP', cleanupPass ? 'PASS' : 'FAIL')
   store.rec(
     '13_CLEANUP_ORPHANS',
-    orphanC + orphanS + orphanD + orphanR === 0 ? 'PASS' : 'FAIL',
-    `c=${orphanC} s=${orphanS} d=${orphanD} r=${orphanR}`,
+    cleanupPass ? 'PASS' : 'FAIL',
+    `c=${orphanC} s=${orphanS} d=${orphanD} r=${orphanR} p=${orphanPolicies}`,
     ['API_INTEGRATION'],
   )
 }
@@ -497,6 +532,26 @@ async function main(): Promise<number> {
           '06_PROTECTION_OUTPUT',
           '06_TRANSFORM_OUTPUT',
         ].includes(id),
+      'processing-exhaustive': (id) =>
+        [
+          '00_SMOKE_BROWSER',
+          '05_DEST_CREATE',
+          '01_HTTP_CONNECTOR',
+          '03_STREAM_WIZARD_HTTP',
+          '03_HTTP_STREAM_H2',
+          '03_HTTP_STREAM_H3',
+          'BFS004_PROCESSING_EXHAUSTIVE',
+          'BFS004_FULL_EVENT_JSONATA',
+          'BFS004_FULL_EVENT_REGEX',
+          '07_START_STREAMS',
+          '07_DELIVERY',
+        ].includes(id),
+      governance: (id) =>
+        ['00_SMOKE_BROWSER', '05_DEST_CREATE', '01_HTTP_CONNECTOR', '03_STREAM_WIZARD_HTTP', 'BFS015_GOVERNANCE_EXHAUSTIVE'].includes(id),
+      'sample-reconciliation': (id) =>
+        ['00_SMOKE_BROWSER', '05_DEST_CREATE', '01_HTTP_CONNECTOR', '03_STREAM_WIZARD_HTTP', 'BFS005_SAMPLE_RECONCILIATION'].includes(id),
+      rbac: (id) => ['00_SMOKE_BROWSER', 'BFS016_RBAC_EXHAUSTIVE'].includes(id),
+      census: (id) => ['00_SMOKE_BROWSER', 'BFS_CONTROL_CENSUS_BASELINE'].includes(id),
       'auth-ui': (id) =>
         ['00_SMOKE_BROWSER', '01_HTTP_CONNECTOR', '02_HTTP_AUTH', '17_R3_002_ROOT_VS_RESOURCE'].includes(id),
       reload: (id) => ['00_SMOKE_BROWSER', '01_HTTP_CONNECTOR', '28_HTTP_RELOAD_PERSISTENCE'].includes(id),
@@ -628,6 +683,36 @@ async function main(): Promise<number> {
 
     await session.login()
 
+    // ---- Browser page/control census for machine-derived closure ----
+    if (want('BFS_CONTROL_CENSUS_BASELINE', ['browser', 'census'])) {
+      await runBaselinePublicCensus(page, store, uiBase)
+    }
+
+    // ---- BFS-001/BFS-016 first-login and local RBAC lifecycle ----
+    if (want('BFS016_RBAC_EXHAUSTIVE', ['browser', 'rbac'])) {
+      await runFirstLoginAndRbacLifecycle({
+        browser,
+        adminPage: page,
+        api,
+        store,
+        runId,
+        uiBase,
+        fixtureScript: path.join(PKG, 'fixtures/seed_fixtures.py'),
+      })
+    }
+
+    // ---- BFS-003 exhaustive browser authentication lifecycle ----
+    if (want('BFS003_AUTH_EXHAUSTIVE', ['browser', 'connector', 'auth-exhaustive'])) {
+      await runExhaustiveHttpAuthLifecycle({
+        page,
+        connectors,
+        api,
+        store,
+        runId,
+        wiremockBase: wm,
+      })
+    }
+
     // ---- destinations (browser) ----
     const destAName = `e2e-${runId}-dest-a`
     const destBName = `e2e-${runId}-dest-b`
@@ -710,6 +795,39 @@ async function main(): Promise<number> {
           }
         }
         store.rec('05_DEST_CREATE', 'FAIL', String(e).slice(0, 200), ['BROWSER_E2E'])
+      }
+    }
+
+    if (want('BFS006_DESTINATION_FAMILIES', ['browser', 'delivery', 'destination-families'])) {
+      const familySpecs = [
+        { key: 'WEBHOOK_POST', fill: async (name: string) => destinations.fillWebhookDestination({ name, url: `${echo}/bfs006-${runId}` }) },
+        { key: 'SYSLOG_UDP', fill: async (name: string) => destinations.fillSyslogDestination({ name, type: 'SYSLOG_UDP', host: '127.0.0.1', port: Number(env('GDC_TEST_SYSLOG_HOST_PORT', '15514')) }) },
+        { key: 'SYSLOG_TCP', fill: async (name: string) => destinations.fillSyslogDestination({ name, type: 'SYSLOG_TCP', host: '127.0.0.1', port: Number(env('GDC_TEST_SYSLOG_HOST_PORT', '15514')) }) },
+        { key: 'SYSLOG_TLS', fill: async (name: string) => destinations.fillSyslogDestination({ name, type: 'SYSLOG_TLS', host: '127.0.0.1', port: Number(env('GDC_TEST_SYSLOG_TLS_HOST_PORT', '16514')), insecureTls: true }) },
+      ] as const
+
+      for (const spec of familySpecs) {
+        const scenarioId = `BFS006_DEST_${spec.key}`
+        if (skipIfResume(scenarioId)) continue
+        const name = `e2e-${runId}-family-${spec.key.toLowerCase()}`
+        try {
+          await destinations.openCreate()
+          await spec.fill(name)
+          const probe = await destinations.testCurrentConnection()
+          await destinations.save()
+          const id = await findDestinationId(api, name)
+          const persisted = id ? (await api.listDestinations()).find((row) => Number(row.id) === id) : null
+          const typeOk = String(persisted?.destination_type || '') === spec.key
+          if (id) trackBrowser(store, 'DESTINATION', id, name, `family:${spec.key}`)
+          store.rec(
+            scenarioId,
+            probe.success && Boolean(id) && typeOk ? 'PASS' : 'FAIL',
+            `probe=${probe.success} id=${id ?? 'none'} type=${String(persisted?.destination_type || 'missing')}`,
+            ['BROWSER_E2E', 'API_INTEGRATION'],
+          )
+        } catch (error) {
+          store.rec(scenarioId, 'FAIL', String(error).slice(0, 220), ['BROWSER_E2E'])
+        }
       }
     }
 
@@ -955,6 +1073,7 @@ async function main(): Promise<number> {
     store.setFlag('CONNECTOR_FAMILIES_PASSED', familiesPassed.join(','))
 
     // ---- representative browser wizard stream (full journey) ----
+    let h1IncrementalTestPass: boolean | null = null
     if (
       resources.connectors.HTTP &&
       resources.destinations.A &&
@@ -972,8 +1091,12 @@ async function main(): Promise<number> {
         pollingSec: 15,
         withBackReload: true,
         withProtection: true,
-        withTransform: true,
+        withTransform:
+          want('06_TRANSFORM_OUTPUT', ['delivery']) ||
+          want('BFS004_PROCESSING_EXHAUSTIVE', ['browser', 'processing-exhaustive']),
+        withIncremental: want('BFS005_SAMPLE_RECONCILIATION', ['browser', 'sample-reconciliation']),
       })
+      h1IncrementalTestPass = result.incrementalTestPass
       const sid = await findStreamId(api, streamName)
       if (sid) {
         trackBrowser(store, 'STREAM', sid, streamName, `connector:${resources.connectors.HTTP}`)
@@ -989,6 +1112,205 @@ async function main(): Promise<number> {
         '03_STREAM_WIZARD_HTTP',
         wizardPass ? 'PASS' : result.ok ? 'PARTIAL' : 'FAIL',
         result.note + (sid ? ` id=${sid}` : ''),
+        ['BROWSER_E2E', 'API_INTEGRATION'],
+      )
+      if (sid) {
+        await streams.openList()
+        await captureBrowserCensus(page, store, '/streams', 'POPULATED')
+        if (result.ok) {
+          await streams.openRuntime(sid)
+          await captureBrowserCensus(page, store, '/streams/:id/runtime', 'RUNNING')
+        }
+      }
+    }
+
+    // ---- BFS-005 Sample / Union Schema / checkpoint / incremental / dedup reconciliation ----
+    if (
+      resources.streams.H1 &&
+      want('BFS005_SAMPLE_RECONCILIATION', ['browser', 'sample-reconciliation']) &&
+      !skipIfResume('BFS005_SAMPLE_RECONCILIATION')
+    ) {
+      const streamId = Number(resources.streams.H1)
+      const browserEvidence = await wizard.exerciseSampleUnionIncremental(streamId)
+      await captureBrowserCensus(page, store, '/streams/:id/edit?step=sample', 'EDITING')
+      const streamRead = await api.getStream(streamId)
+      const cfg =
+        streamRead?.config_json && typeof streamRead.config_json === 'object'
+          ? (streamRead.config_json as Record<string, unknown>)
+          : {}
+      const union =
+        cfg.union_schema && typeof cfg.union_schema === 'object'
+          ? (cfg.union_schema as Record<string, unknown>)
+          : null
+      const checkpoint =
+        cfg.checkpoint && typeof cfg.checkpoint === 'object'
+          ? (cfg.checkpoint as Record<string, unknown>)
+          : null
+      const params =
+        cfg.params && typeof cfg.params === 'object'
+          ? (cfg.params as Record<string, unknown>)
+          : {}
+      const checkpointPersisted = Boolean(
+        checkpoint &&
+          JSON.stringify(checkpoint).includes('id'),
+      )
+      const unionPersisted = Boolean(
+        union &&
+          (Number(union.total_events || 0) > 0 || Array.isArray(union.fields)),
+      )
+      const incrementalPersisted =
+        Object.entries(params).some(
+          ([key, value]) =>
+            /id_(?:gt|gte|after)/i.test(key) &&
+            /checkpoint|last_(?:timestamp|id)/i.test(String(value)),
+        ) ||
+        /checkpoint\.last_(?:timestamp|id)/i.test(
+          typeof cfg.body === 'string' ? cfg.body : JSON.stringify(cfg.body ?? ''),
+        )
+
+      const dedupBrowser = await streams.exerciseDedupApiTestControl(streamId)
+      const dedupApi = await api.request('GET', `/api/v1/runtime/streams/${streamId}/deduplication`)
+      const dedupJson =
+        dedupApi.json && typeof dedupApi.json === 'object'
+          ? (dedupApi.json as Record<string, unknown>)
+          : {}
+      const dedupConfigured =
+        dedupApi.status < 300 &&
+        dedupJson.enabled === true &&
+        String(dedupJson.key_field || dedupJson.custom_jsonpath || '').includes('id')
+
+      const unionPass =
+        browserEvidence.unionReady &&
+        browserEvidence.rareVisible &&
+        browserEvidence.sensitiveVisible &&
+        unionPersisted
+      const checkpointPass = browserEvidence.checkpointReadback && checkpointPersisted
+      const incrementalPass =
+        h1IncrementalTestPass === true &&
+        browserEvidence.incrementalRequestReadback &&
+        incrementalPersisted
+      const dedupPass =
+        dedupBrowser.fieldPresent &&
+        dedupBrowser.requestIncludesDedup &&
+        dedupBrowser.reloadReadback &&
+        dedupConfigured
+
+      store.writeJson('bfs005-sample-reconciliation.json', {
+        streamId,
+        h1IncrementalTestPass,
+        browserEvidence,
+        unionPersisted,
+        checkpointPersisted,
+        incrementalPersisted,
+        persistedConfig: api.safeJson(cfg),
+        dedupBrowser,
+        dedupApiStatus: dedupApi.status,
+        dedupApi: api.safeJson(dedupApi.json),
+        dedupConfigured,
+      })
+      store.rec(
+        'BFS005_UNION_SCHEMA',
+        unionPass ? 'PASS' : 'FAIL',
+        `ready=${browserEvidence.unionReady} rare=${browserEvidence.rareVisible} sensitive=${browserEvidence.sensitiveVisible} persisted=${unionPersisted}`,
+        ['BROWSER_E2E', 'API_INTEGRATION'],
+      )
+      store.rec(
+        'BFS005_CHECKPOINT',
+        checkpointPass ? 'PASS' : 'FAIL',
+        `browser=${browserEvidence.checkpointReadback} persisted=${checkpointPersisted}`,
+        ['BROWSER_E2E', 'API_INTEGRATION'],
+      )
+      store.rec(
+        'BFS005_INCREMENTAL_FETCH',
+        incrementalPass ? 'PASS' : 'FAIL',
+        `test=${h1IncrementalTestPass} browserReadback=${browserEvidence.incrementalRequestReadback} persisted=${incrementalPersisted}`,
+        ['BROWSER_E2E', 'API_INTEGRATION'],
+      )
+      store.rec(
+        'BFS005_DEDUP',
+        dedupPass ? 'PASS' : 'FAIL',
+        `field=${dedupBrowser.fieldPresent} request=${dedupBrowser.requestIncludesDedup} reload=${dedupBrowser.reloadReadback} apiConfigured=${dedupConfigured}`,
+        ['BROWSER_E2E', 'API_INTEGRATION'],
+      )
+      store.rec(
+        'BFS005_SAMPLE_RECONCILIATION',
+        unionPass && checkpointPass && incrementalPass && dedupPass ? 'PASS' : 'FAIL',
+        `union=${unionPass} checkpoint=${checkpointPass} incremental=${incrementalPass} dedup=${dedupPass}`,
+        ['BROWSER_E2E', 'API_INTEGRATION'],
+      )
+    }
+
+    // ---- BFS-015 Governance lifecycle (browser mutation authority, API verification only) ----
+    if (
+      resources.streams.H1 &&
+      resources.destinations.A &&
+      resources.routes.H1A &&
+      want('BFS015_GOVERNANCE_EXHAUSTIVE', ['browser', 'governance']) &&
+      !skipIfResume('BFS015_GOVERNANCE_EXHAUSTIVE')
+    ) {
+      await runGovernanceLifecycle({
+        page,
+        api,
+        store,
+        runId,
+        uiBase,
+        fixtureScript: path.join(PKG, 'fixtures/seed_fixtures.py'),
+        streamId: resources.streams.H1,
+        destinationId: resources.destinations.A,
+        routeId: resources.routes.H1A,
+      })
+    }
+
+    // ---- exhaustive browser processing author → preview → save → reload/read-back ----
+    if (
+      resources.streams.H1 &&
+      want('BFS004_PROCESSING_EXHAUSTIVE', ['browser', 'processing-exhaustive']) &&
+      !skipIfResume('BFS004_PROCESSING_EXHAUSTIVE')
+    ) {
+      const result = await wizard.configureExhaustiveProcessing(resources.streams.H1)
+      let browserReadback = false
+      let apiReadback = false
+      if (result.ok) {
+        await wizard.openEditProcessing(resources.streams.H1)
+        const guidedBody = await page.getByTestId('wizard-transform-enrichment-editor').innerText()
+        const guidedReadback = ['e2e_static', 'e2e_calc', 'message_norm', 'ts_utc', 'e2e_cond'].every((field) =>
+          guidedBody.includes(field),
+        )
+
+        await page.getByRole('tab', { name: /JSONata · Advanced/i }).click()
+        const jsonataCard = page.locator('div.rounded-lg').filter({ hasText: 'Advanced · JSONata' }).last()
+        const jsonataReadback =
+          (await jsonataCard.getByLabel(/Output field/i).first().inputValue().catch(() => '')) === 'e2e_jsonata'
+
+        await page.getByRole('tab', { name: /Regex · Expert/i }).click()
+        const regexCard = page.locator('div.rounded-lg').filter({ hasText: 'Expert · Regex' }).last()
+        const regexReadback =
+          (await regexCard.getByLabel(/Output field/i).first().inputValue().catch(() => '')) === 'e2e_regex'
+
+        browserReadback = guidedReadback && jsonataReadback && regexReadback
+        const cfg = await api.request('GET', `/api/v1/runtime/streams/${resources.streams.H1}/mapping-ui/config`)
+        const configText = JSON.stringify(cfg.json)
+        apiReadback =
+          cfg.status < 300 &&
+          ['e2e_static', 'e2e_calc', 'message_norm', 'ts_utc', 'e2e_cond', 'e2e_jsonata', 'e2e_regex'].every((field) =>
+            configText.includes(field),
+          )
+        store.writeJson('processing-exhaustive-readback.json', {
+          browserReadback,
+          guidedReadback,
+          jsonataReadback,
+          regexReadback,
+          apiStatus: cfg.status,
+          apiReadback,
+          config: api.safeJson(cfg.json),
+        })
+      }
+      const pass = result.ok && browserReadback && apiReadback
+      store.setFlag('BFS004_PROCESSING_CONFIG', pass ? 'PASS' : 'FAIL')
+      store.rec(
+        'BFS004_PROCESSING_EXHAUSTIVE',
+        pass ? 'PASS' : 'FAIL',
+        `${result.note} browserReadback=${browserReadback} apiReadback=${apiReadback}`,
         ['BROWSER_E2E', 'API_INTEGRATION'],
       )
     }
@@ -1029,6 +1351,55 @@ async function main(): Promise<number> {
         resources.routes[`${key}B`] = routeIds[1]
       }
       store.rec(sidName, result.ok && sid ? 'PASS' : 'FAIL', result.note, ['BROWSER_E2E'])
+    }
+
+    for (const [recId, key, mode, expected] of [
+      ['BFS004_FULL_EVENT_JSONATA', 'H2', 'jsonata', 'full-event-jsonata'],
+      ['BFS004_FULL_EVENT_REGEX', 'H3', 'regex', 'regex_message'],
+    ] as const) {
+      const streamId = resources.streams[key]
+      if (!streamId || !want(recId, ['browser', 'processing-exhaustive']) || skipIfResume(recId)) continue
+      const result = await wizard.configureFullEventProcessing(
+        streamId,
+        mode,
+        key === 'H2' ? '$.data.records' : '$.items',
+      )
+      let browserReadback = false
+      let apiReadback = false
+      if (result.ok) {
+        await wizard.openEditProcessing(streamId, key === 'H2' ? '$.data.records' : '$.items')
+        const tab =
+          mode === 'jsonata'
+            ? page.getByRole('tab', { name: /JSONata · Advanced/i })
+            : page.getByRole('tab', { name: /Regex · Expert/i })
+        await tab.click()
+        await page.getByRole('button', { name: 'Full-event mode' }).click()
+        const editor =
+          mode === 'jsonata'
+            ? page.getByLabel('Full event JSONata expression')
+            : page.getByLabel('Full event regex transform JSON config')
+        browserReadback = (await editor.inputValue()).includes(expected)
+
+        const cfg = await api.request('GET', `/api/v1/runtime/streams/${streamId}/mapping-ui/config`)
+        const text = JSON.stringify(cfg.json)
+        apiReadback =
+          cfg.status < 300 &&
+          text.includes(mode === 'jsonata' ? 'full_event_jsonata' : 'full_event_regex') &&
+          text.includes(expected)
+        store.writeJson(`${recId.toLowerCase()}-readback.json`, {
+          browserReadback,
+          apiStatus: cfg.status,
+          apiReadback,
+          config: api.safeJson(cfg.json),
+        })
+      }
+      const pass = result.ok && browserReadback && apiReadback
+      store.rec(
+        recId,
+        pass ? 'PASS' : 'FAIL',
+        `${result.note} browserReadback=${browserReadback} apiReadback=${apiReadback}`,
+        ['BROWSER_E2E', 'API_INTEGRATION', 'RUNTIME_PREVIEW'],
+      )
     }
 
     const familyStreamSpecs: Array<{
@@ -1219,7 +1590,7 @@ async function main(): Promise<number> {
     const primaryHttpPath = resources.streams.H1 ? `/ulc/${runId}/h1` : resources.streams.H2 ? `/ulc/${runId}/h2` : `/ulc/${runId}/h3`
 
     const wrapHttpItem = (item: Record<string, unknown>) =>
-      primaryHttpPath.includes('/h2') ? { data: { records: [item] } } : { items: [item] }
+      primaryHttpPath.endsWith('/h2') ? { data: { records: [item] } } : { items: [item] }
 
     let deliveryPass = 0
     let deliveryTests = 0
@@ -1238,6 +1609,7 @@ async function main(): Promise<number> {
           route: 'A',
           sequence: 10001,
           message: m,
+          timestamp: '2026-10-02T10:45:00Z',
           email: 'test@example.invalid',
           api_key: `FAKE_API_KEY_${runId}`,
         }),
@@ -1262,6 +1634,20 @@ async function main(): Promise<number> {
       const blockB = extractEchoBlock(logs, m, `/ulc-${runId}-b`)
       const aHasPlain = blockA.includes('test@example.invalid')
       const bHasPlain = blockB.includes('test@example.invalid')
+
+      if (store.flags.BFS004_PROCESSING_CONFIG === 'PASS') {
+        const runtimeFields = ['e2e_static', 'e2e_calc', 'message_norm', 'ts_utc', 'e2e_cond', 'e2e_jsonata', 'e2e_regex']
+        const runtimeHits = runtimeFields.filter((field) => blockA.includes(field))
+        const runtimePass = runtimeHits.length === runtimeFields.length
+        store.setFlag('BFS004_PROCESSING_RUNTIME', runtimePass ? 'PASS' : 'FAIL')
+        store.rec(
+          'BFS004_PROCESSING_RUNTIME',
+          runtimePass ? 'PASS' : 'FAIL',
+          `fields=${runtimeHits.join(',')} expected=${runtimeFields.length}`,
+          ['ACTUAL_DELIVERY', 'RUNTIME_E2E'],
+        )
+      }
+
       const transformB =
         (blockB.includes('event_message') || blockB.includes('transformed_message')) &&
         !blockA.includes('event_message') &&
@@ -1291,6 +1677,41 @@ async function main(): Promise<number> {
         'ACTUAL_DELIVERY',
       ])
       store.rec('06_TRANSFORM_OUTPUT', transformB ? 'PASS' : 'PARTIAL', `transformB=${transformB}`, ['ACTUAL_DELIVERY'])
+    }
+
+    // ---- exhaustive full-event processing delivery proof ----
+    if (want('07_DELIVERY', ['delivery'])) {
+      for (const [recId, key, endpoint, markerField, nested] of [
+        ['BFS004_FULL_EVENT_JSONATA_RUNTIME', 'H2', `/ulc/${runId}/h2`, 'jsonata_marker', true],
+        ['BFS004_FULL_EVENT_REGEX_RUNTIME', 'H3', `/ulc/${runId}/h3`, 'regex_message', false],
+      ] as const) {
+        const streamId = resources.streams[key]
+        const configRec = key === 'H2' ? 'BFS004_FULL_EVENT_JSONATA' : 'BFS004_FULL_EVENT_REGEX'
+        if (!streamId || !store.scenarios.some((row) => row.id === configRec && row.status === 'PASS')) continue
+        const marker = `marker-${runId}-${key.toLowerCase()}-full-event`
+        const item = {
+          id: key === 'H2' ? 20002 : 20003,
+          run_id: runId,
+          stream: key,
+          sequence: key === 'H2' ? 20002 : 20003,
+          message: marker,
+          timestamp: '2026-10-02T10:50:00Z',
+        }
+        await stubWiremock(wm, endpoint, nested ? { data: { records: [item] } } : { items: [item] }, { bearer: token })
+        let delivered = await waitForDelivery(marker, `/ulc-${runId}-a`, 25_000)
+        if (!delivered) {
+          await api.runOnce(streamId)
+          delivered = await waitForDelivery(marker, `/ulc-${runId}-a`, 25_000)
+        }
+        const block = extractEchoBlock(echoLogsTail(), marker, `/ulc-${runId}-a`)
+        const runtimePass = delivered && block.includes(markerField)
+        store.rec(
+          recId,
+          runtimePass ? 'PASS' : 'FAIL',
+          `delivered=${delivered} field=${markerField} present=${block.includes(markerField)}`,
+          ['ACTUAL_DELIVERY', 'RUNTIME_E2E'],
+        )
+      }
     }
 
     // ---- family actual delivery (SFTP file, DB rows, webhook inbound POST) ----
@@ -1473,7 +1894,9 @@ async function main(): Promise<number> {
       } else {
         store.rec('08_DEST_FAIL_UI_NAV', 'PASS', 'stream opened from list', ['BROWSER_E2E'])
       }
+      await captureBrowserCensus(page, store, '/streams/:id/runtime', 'PARTIAL_FAILURE')
       const diag = await streams.diagnoseFailureJourney()
+      await captureBrowserCensus(page, store, '/monitoring', 'ERROR')
       store.writeJson('dest-failure-diagnosis.json', diag)
       store.setFlag('DESTINATION_FAILURE_DIAGNOSIS_PROVEN', diag.ERROR_VISIBLE)
       store.setFlag('FAILED_ROUTE_IDENTIFIABLE', diag.AFFECTED_RESOURCE_IDENTIFIABLE)
@@ -1739,6 +2162,7 @@ async function main(): Promise<number> {
       })
       let txt = await streamsPg.visibleStatusText()
       const stoppedUi = /stopped/i.test(txt)
+      await captureBrowserCensus(page, store, '/streams/:id/runtime', 'STOPPED')
       const marker = `STOPTEST-${runId}-001`
       await stubWiremock(
         wm,

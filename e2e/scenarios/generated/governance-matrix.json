@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-27T04:47:16.287Z",
+  "generated_at": "2026-10-03T10:50:06.514Z",
   "manifest_commit": "9d5b6a652973e9580959561315f17820ef0d9bcf",
   "scenarios": [
     {
@@ -879,22 +879,47 @@
         "shard:governance"
       ],
       "shard": "governance"
+    },
+    {
+      "id": "governance__governance-approval-workflow__api__route-on",
+      "suite": "governance",
+      "executionMode": "api_seeded",
+      "routeProcessing": "on",
+      "source": {
+        "type": "HTTP_API_POLLING",
+        "authentication": "no_auth"
+      },
+      "destination": {
+        "type": "WEBHOOK_POST"
+      },
+      "capabilities": [
+        "governance.approval_workflow",
+        "source.http_api_polling",
+        "destination.webhook_post"
+      ],
+      "fixture": "governance/governance-approval-workflow",
+      "expectedStatus": "PASS",
+      "tags": [
+        "governance",
+        "shard:governance"
+      ],
+      "shard": "governance"
     }
   ],
   "not_applicable": [],
   "counts": {
-    "total": 26,
+    "total": 27,
     "browser": 2,
-    "api_seeded": 24,
+    "api_seeded": 25,
     "route_off": 0,
-    "route_on": 26,
+    "route_on": 27,
     "route_both": 0,
     "by_suite": {
-      "governance": 26
+      "governance": 27
     },
     "by_expected_status": {
       "NOT_IMPLEMENTED": 6,
-      "PASS": 20
+      "PASS": 21
     }
   }
 }
