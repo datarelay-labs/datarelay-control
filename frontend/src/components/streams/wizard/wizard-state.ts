@@ -945,6 +945,17 @@ export function normalizeWizardRouteProcessingInherit(
   }
 }
 
+export function applyWizardEnrichmentRules(
+  state: WizardState,
+  enrichment: WizardEnrichmentRule[],
+): WizardState {
+  return {
+    ...state,
+    enrichment,
+    enrichmentEnabled: enrichment.length > 0 ? true : state.enrichmentEnabled,
+  }
+}
+
 export function buildRouteTransformOverrideFromGlobal(
   state: Pick<
     WizardState,
@@ -954,6 +965,7 @@ export function buildRouteTransformOverrideFromGlobal(
     | 'fullEventRegexConfigJson'
     | 'transformRules'
     | 'enrichment'
+    | 'enrichmentEnabled'
     | 'unmappedFieldsPolicy'
   >,
 ): WizardRouteTransformOverride {
@@ -964,6 +976,7 @@ export function buildRouteTransformOverrideFromGlobal(
     fullEventRegexConfigJson: state.fullEventRegexConfigJson,
     transformRules: state.transformRules.map((rule) => ({ ...rule })),
     enrichment: state.enrichment.map((rule) => ({ ...rule })),
+    enrichmentEnabled: state.enrichmentEnabled,
     unmappedFieldsPolicy: state.unmappedFieldsPolicy,
   }
 }

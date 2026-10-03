@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 import { StepRouteProcessing } from './step-route-processing'
-import { buildInitialState, DEFAULT_ROUTE_PROCESSING_INHERIT } from './wizard-state'
+import { buildInitialState, buildRouteTransformOverrideFromGlobal, DEFAULT_ROUTE_PROCESSING_INHERIT } from './wizard-state'
 import { ROUTE_PROCESSING_COPY } from '../route-processing/route-processing-labels'
 
 vi.mock('../../../api/gdcDestinations', () => ({
@@ -344,5 +344,42 @@ describe('StepRouteProcessing', () => {
 
     expect(screen.getByTestId('route-processing-empty')).toHaveTextContent(ROUTE_PROCESSING_COPY.noRoutes)
     expect(screen.getByTestId('route-processing-empty')).toHaveTextContent(ROUTE_PROCESSING_COPY.noRoutesHint)
+  })
+})
+
+
+describe('StepRouteProcessing guided Transform runtime enablement', () => {
+  it('enables route enrichment when a guided override rule is added', async () => {
+    const state = readyState()
+    state.enrichmentEnabled = false
+    const route = state.destinations.routeDrafts[0]!
+    route.inherit = { ...DEFAULT_ROUTE_PROCESSING_INHERIT, transform: false }
+    route.overrides = { transform: buildRouteTransformOverrideFromGlobal(state) }
+    const onChangeDestinations = vi.fn()
+
+    render(
+      <MemoryRouter>
+        <StepRouteProcessing
+          state={state}
+          onChangeMapping={() => {}}
+          onChangeMappingMode={() => {}}
+          onChangeFullEventJsonata={() => {}}
+          onChangeFullEventRegexConfigJson={() => {}}
+          onChangeEnrichment={() => {}}
+          onChangeDataProtection={() => {}}
+          onChangeDestinations={onChangeDestinations}
+        />
+      </MemoryRouter>,
+    )
+    const panel = screen.getByTestId('route-detail-transform')
+    fireEvent.click(within(panel).getByTestId('transform-rule-launcher-trigger'))
+    fireEvent.click(within(panel).getByTestId('transform-launcher-static'))
+
+    await waitFor(() => {
+      const patches = onChangeDestinations.mock.calls.map(([patch]) => patch)
+      expect(
+        patches.some((patch) => patch.routeDrafts?.[0]?.overrides?.transform?.enrichmentEnabled === true),
+      ).toBe(true)
+    })
   })
 })

@@ -34,6 +34,7 @@ import {
   buildRouteCreatePayloads,
   computeStepCompletion,
   enrichmentDictFromRows,
+  applyWizardEnrichmentRules,
   buildWizardFieldMappingsPayload,
   wizardFieldMappingsReady,
   legacySubstepToWizardStep,
@@ -363,7 +364,7 @@ export function NewStreamWizardPage() {
     setState((s) => ({ ...s, transformRules }))
   }, [])
   const setEnrichment = useCallback((enrichment: WizardState['enrichment']) => {
-    setState((s) => ({ ...s, enrichment }))
+    setState((s) => applyWizardEnrichmentRules(s, enrichment))
   }, [])
   const setUnmappedFieldsPolicy = useCallback((unmappedFieldsPolicy: WizardState['unmappedFieldsPolicy']) => {
     setState((s) => ({ ...s, unmappedFieldsPolicy }))

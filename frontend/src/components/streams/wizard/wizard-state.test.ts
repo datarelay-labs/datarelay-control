@@ -13,10 +13,13 @@ import {
   fieldMappingsFromRows,
   wizardFieldMappingsReady,
   buildRouteTransformPersistPlans,
+  buildRouteTransformOverrideFromGlobal,
+  applyWizardEnrichmentRules,
   expectedRouteTransformProcessingStatus,
   DEFAULT_ROUTE_PROCESSING_INHERIT,
   normalizeWizardRouteDraft,
 } from './wizard-state'
+import { defaultRuleForType } from './enrichment-rules-model'
 
 describe('normalizeWizardRouteDraft', () => {
   it('preserves the hydrated route concurrency token', () => {
@@ -935,5 +938,37 @@ describe('wizard-state buildRouteCreatePayloads', () => {
         rate_limit_json: {},
       },
     ])
+  })
+})
+
+
+describe('wizard-state guided Transform runtime enablement', () => {
+  it('enables enrichment when a guided Transform rule is added', () => {
+    const state = buildInitialState()
+    state.enrichmentEnabled = false
+    const rule = defaultRuleForType('static', 0)
+
+    const next = applyWizardEnrichmentRules(state, [rule])
+
+    expect(next.enrichment).toEqual([rule])
+    expect(next.enrichmentEnabled).toBe(true)
+  })
+
+  it('does not invent an automatic disable policy when rules are cleared', () => {
+    const enabled = buildInitialState()
+    enabled.enrichmentEnabled = true
+    expect(applyWizardEnrichmentRules(enabled, []).enrichmentEnabled).toBe(true)
+
+    const disabled = buildInitialState()
+    disabled.enrichmentEnabled = false
+    expect(applyWizardEnrichmentRules(disabled, []).enrichmentEnabled).toBe(false)
+  })
+
+  it('copies the enrichment enabled state into a route Transform override', () => {
+    const state = buildInitialState()
+    state.enrichmentEnabled = false
+    state.enrichment = [defaultRuleForType('static', 0)]
+
+    expect(buildRouteTransformOverrideFromGlobal(state).enrichmentEnabled).toBe(false)
   })
 })
