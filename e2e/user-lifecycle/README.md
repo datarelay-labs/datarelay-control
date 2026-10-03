@@ -14,6 +14,8 @@ Exercise the full operator lifecycle before release: create connectors and strea
 
 The canonical execution contract is `docs/FULL_USER_E2E_SCENARIOS.md`. This package is the reusable browser harness; the document owns release-grade onboarding, mandatory FUE scenarios, evidence acceptance, first-login proof, failure continuation, and offboarding.
 
+**Harness PASS is supporting evidence only.** This package may report regression scenario PASS/FAIL rows, but it does not act as the user persona and cannot declare Browser Feature Scenario Reconciliation or Full User E2E PASS. ChatGPT must execute and evaluate the required real-user/persona missions under the canonical contracts.
+
 For release readiness, `docs/BROWSER_FEATURE_SCENARIO_RECONCILIATION.md` must PASS first on the same exact candidate. Neither exhaustive user test substitutes for the other.
 
 ## Architecture
