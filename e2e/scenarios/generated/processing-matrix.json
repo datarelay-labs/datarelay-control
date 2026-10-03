@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-27T04:47:16.286Z",
+  "generated_at": "2026-10-03T10:50:06.513Z",
   "manifest_commit": "9d5b6a652973e9580959561315f17820ef0d9bcf",
   "scenarios": [
     {
@@ -332,66 +332,23 @@
       "id": "processing__processing-enrichment-timestamp-conversion__api_seeded__route-on"
     },
     {
-      "idStem": "processing__processing-enrichment-type-conversion__browser",
-      "suite": "processing",
-      "executionMode": "browser",
-      "routeProcessing": "on",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
-      "capabilities": [
-        "processing.enrichment.type_conversion",
-        "source.http_api_polling",
-        "destination.webhook_post",
-        "processing.mapping.field_jsonpath"
-      ],
-      "fixture": "processing/processing-enrichment-type-conversion",
-      "expectedStatus": "PASS",
-      "tags": [
-        "processing",
-        "preview-runtime",
-        "shard:processing",
-        "browser",
-        "route-on"
-      ],
-      "shard": "processing",
-      "transform": "processing.enrichment.type_conversion",
-      "id": "processing__processing-enrichment-type-conversion__browser__route-on"
-    },
-    {
-      "idStem": "processing__processing-enrichment-type-conversion__api_seeded",
+      "id": "processing__processing-enrichment-type-conversion__partial",
       "suite": "processing",
       "executionMode": "api_seeded",
       "routeProcessing": "on",
-      "source": {
-        "type": "HTTP_API_POLLING",
-        "authentication": "no_auth"
-      },
-      "destination": {
-        "type": "WEBHOOK_POST"
-      },
       "capabilities": [
-        "processing.enrichment.type_conversion",
-        "source.http_api_polling",
-        "destination.webhook_post",
-        "processing.mapping.field_jsonpath"
+        "processing.enrichment.type_conversion"
       ],
       "fixture": "processing/processing-enrichment-type-conversion",
-      "expectedStatus": "PASS",
+      "expectedStatus": "NOT_IMPLEMENTED",
+      "reason": "Manifest status=PARTIAL",
       "tags": [
         "processing",
-        "preview-runtime",
-        "shard:processing",
-        "api_seeded",
-        "route-on"
+        "partial",
+        "shard:processing"
       ],
       "shard": "processing",
-      "transform": "processing.enrichment.type_conversion",
-      "id": "processing__processing-enrichment-type-conversion__api_seeded__route-on"
+      "transform": "processing.enrichment.type_conversion"
     },
     {
       "idStem": "processing__processing-enrichment-jsonata__browser",
@@ -454,6 +411,68 @@
       "shard": "processing",
       "transform": "processing.enrichment.jsonata",
       "id": "processing__processing-enrichment-jsonata__api_seeded__route-on"
+    },
+    {
+      "idStem": "processing__processing-enrichment-regex-extract__browser",
+      "suite": "processing",
+      "executionMode": "browser",
+      "routeProcessing": "on",
+      "source": {
+        "type": "HTTP_API_POLLING",
+        "authentication": "no_auth"
+      },
+      "destination": {
+        "type": "WEBHOOK_POST"
+      },
+      "capabilities": [
+        "processing.enrichment.regex_extract",
+        "source.http_api_polling",
+        "destination.webhook_post",
+        "processing.mapping.field_jsonpath"
+      ],
+      "fixture": "processing/processing-enrichment-regex-extract",
+      "expectedStatus": "PASS",
+      "tags": [
+        "processing",
+        "preview-runtime",
+        "shard:processing",
+        "browser",
+        "route-on"
+      ],
+      "shard": "processing",
+      "transform": "processing.enrichment.regex_extract",
+      "id": "processing__processing-enrichment-regex-extract__browser__route-on"
+    },
+    {
+      "idStem": "processing__processing-enrichment-regex-extract__api_seeded",
+      "suite": "processing",
+      "executionMode": "api_seeded",
+      "routeProcessing": "on",
+      "source": {
+        "type": "HTTP_API_POLLING",
+        "authentication": "no_auth"
+      },
+      "destination": {
+        "type": "WEBHOOK_POST"
+      },
+      "capabilities": [
+        "processing.enrichment.regex_extract",
+        "source.http_api_polling",
+        "destination.webhook_post",
+        "processing.mapping.field_jsonpath"
+      ],
+      "fixture": "processing/processing-enrichment-regex-extract",
+      "expectedStatus": "PASS",
+      "tags": [
+        "processing",
+        "preview-runtime",
+        "shard:processing",
+        "api_seeded",
+        "route-on"
+      ],
+      "shard": "processing",
+      "transform": "processing.enrichment.regex_extract",
+      "id": "processing__processing-enrichment-regex-extract__api_seeded__route-on"
     },
     {
       "idStem": "processing__processing-mapping-field-jsonpath__browser",
@@ -880,19 +899,19 @@
     }
   ],
   "counts": {
-    "total": 29,
+    "total": 30,
     "browser": 17,
-    "api_seeded": 12,
+    "api_seeded": 13,
     "route_off": 0,
-    "route_on": 29,
+    "route_on": 30,
     "route_both": 0,
     "by_suite": {
-      "processing": 23,
+      "processing": 24,
       "wizard": 6
     },
     "by_expected_status": {
       "PASS": 28,
-      "NOT_IMPLEMENTED": 1
+      "NOT_IMPLEMENTED": 2
     }
   }
 }
