@@ -244,9 +244,16 @@ export async function runGovernanceLifecycle(opts: {
     // Release is an explicit operator action and must remain available even when
     // the Stream scheduler is stopped. Reproduce that state explicitly so this
     // browser scenario protects the regression that previously surfaced as HTTP 500.
+    const streamBeforeStop = await api.getStream(streamId).catch(() => null)
+    if (streamBeforeStop?.enabled !== true) {
+      throw new Error(`Quarantine Release setup requires a running Stream before stop: stream=${streamId}`)
+    }
+    // Arm restoration before the mutating request. If the stop reaches the server but
+    // its response is lost, finally still reconciles the Stream back to its original
+    // running state instead of leaving later scenarios contaminated.
+    releaseRestoreRequired = true
     const stopResponse = await api.stopStream(streamId)
     const stopAccepted = stopResponse.status < 300
-    releaseRestoreRequired = stopAccepted
     const stopped =
       stopAccepted &&
       (await api.getStream(streamId).catch(() => null))?.enabled === false

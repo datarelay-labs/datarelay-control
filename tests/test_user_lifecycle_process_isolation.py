@@ -67,10 +67,11 @@ def test_governance_release_restores_stream_after_exception() -> None:
     helper = GOVERNANCE_LIFECYCLE.read_text(encoding="utf-8")
 
     assert "let releaseRestoreRequired = false" in helper
-    stop_accepted = helper.index("const stopAccepted = stopResponse.status < 300")
-    restore_armed = helper.index("releaseRestoreRequired = stopAccepted")
+    original_readback = helper.index("const streamBeforeStop =")
+    restore_armed = helper.index("releaseRestoreRequired = true")
+    stop_request = helper.index("const stopResponse = await api.stopStream(streamId)")
     stopped_readback = helper.index("const stopped =")
-    assert stop_accepted < restore_armed < stopped_readback
+    assert original_readback < restore_armed < stop_request < stopped_readback
     assert "} finally {" in helper
     assert "BFS015_QUARANTINE_RELEASE_RESTORE" in helper
     assert "await api.startStream(streamId).catch(() => null)" in helper
