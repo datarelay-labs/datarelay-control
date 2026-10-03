@@ -204,7 +204,7 @@ RUN_ID=
 START_UTC=
 REPOSITORY=
 BRANCH=
-AUDIT_HEAD=
+CANDIDATE_HEAD=
 ORIGIN_MAIN_V2_HEAD=
 WORKTREE=
 WORKTREE_CLEAN=
@@ -219,7 +219,7 @@ BROWSER_RECONCILIATION_RUN_ID=
 BROWSER_RECONCILIATION_HEAD=
 ~~~
 
-Release-grade Full User E2E PASS requires AUDIT_HEAD to match the final Browser Feature Scenario Reconciliation HEAD. When both final user-test gates PASS on that HEAD, that HEAD becomes eligible for release-candidate freeze.
+Release-grade Full User E2E PASS requires `CANDIDATE_HEAD` to match the final Browser Feature Scenario Reconciliation HEAD. Before freeze, this technical field names the exact audit HEAD under test; when both final user-test gates PASS on that HEAD, the same HEAD becomes eligible for release-candidate freeze.
 
 Different-HEAD evidence is diagnostic only. Machine qualification begins after this user-test closure, not before it.
 
