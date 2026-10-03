@@ -21,7 +21,7 @@ permissions:
 
 jobs:
   release-contract:
-    uses: datarelay-labs/engineering-system/.github/workflows/release-contract.yml@1d483c95474a57a1082109c2f393306af64bd576
+    uses: datarelay-labs/engineering-system/.github/workflows/release-contract.yml@f2ecbeec1686b925f64dac925333dace2f969466
     with:
       expected_sha: ${{ inputs.expected_sha }}
       phase: ${{ inputs.phase }}
