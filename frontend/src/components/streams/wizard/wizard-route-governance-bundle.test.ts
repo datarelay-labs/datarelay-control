@@ -198,6 +198,19 @@ describe('wizard route governance bundles', () => {
     expect(verifyErrors).toEqual([])
   })
 
+  it('accepts Mixed when a saved policy delivery override coexists with inherited stream policy rules', async () => {
+    fetchRoutePolicyRules.mockImplementation(async (routeId: number) => emptyRules(routeId))
+    fetchRoutePolicyEffective.mockImplementation(async (routeId: number) => effective(routeId, 'Mixed'))
+
+    const errors = await verifyWizardRouteGovernanceEffective(
+      [policyBundleDraft('wr-b', 'block')],
+      { 'wr-b': 22 },
+      buildInitialState().dataProtection,
+    )
+
+    expect(errors).toEqual([])
+  })
+
   it('expects Mixed when governance policy override coexists with route policy rules', async () => {
     fetchRoutePolicyRules.mockImplementation(async (routeId: number) => ({
       ...emptyRules(routeId),
@@ -281,7 +294,9 @@ describe('wizard route governance bundles', () => {
       { 'wr-b': 22 },
       buildInitialState().dataProtection,
     )
-    expect(mismatch).toEqual(['route 22 policy: expected Overridden after save, Effective API returned Inherited'])
+    expect(mismatch).toEqual([
+      'route 22 policy: expected Mixed or Overridden after save, Effective API returned Inherited',
+    ])
 
     fetchRoutePolicyEffective.mockResolvedValue(null)
     const missing = await verifyWizardRouteGovernanceEffective(
@@ -289,7 +304,9 @@ describe('wizard route governance bundles', () => {
       { 'wr-b': 22 },
       buildInitialState().dataProtection,
     )
-    expect(missing).toEqual(['route 22 policy: Effective API returned no result (expected Overridden)'])
+    expect(missing).toEqual([
+      'route 22 policy: Effective API returned no result (expected Mixed or Overridden)',
+    ])
   })
 
   it('binds bundles to draft keys when an earlier route create failed', async () => {
