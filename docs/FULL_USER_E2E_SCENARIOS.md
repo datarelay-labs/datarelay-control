@@ -5,7 +5,7 @@
 > **Product scope:** Phase A-D only
 > **Primary user surface:** Browser/UI
 > **Verification layers:** API / runtime / database / actual destination, after browser action
-> **Canonical harness:** e2e/user-lifecycle/
+> **Supporting harness:** e2e/user-lifecycle/
 > **Release role:** Mandatory independent pre-release exhaustive gate; does not replace machine qualification or Browser ↔ Feature ↔ Scenario Reconciliation
 > **Status:** Normative living execution document
 
@@ -47,6 +47,13 @@ CLEANUP_REQUIRED=YES
 EXACT_CANDIDATE_REQUIRED=YES
 RETAIN_EVIDENCE=YES
 PHASE_E_F_EXCLUDED=YES
+CONTRACT_FULL_READ_REQUIRED=YES
+PRIMARY_PERSONA_EXECUTOR=CHATGPT_CHAT
+SCRIPTED_USER_SCENARIO_EXECUTION=FORBIDDEN
+WRAPPER_SCRIPT_AS_PERSONA=FORBIDDEN
+AUTOMATED_HARNESS_ROLE=SUPPLEMENTAL_ONLY
+PARALLEL_EXECUTION=MAXIMUM_SAFE
+SERIAL_IDLE_WITH_RUNNABLE_WORK=FORBIDDEN
 ~~~
 
 Do not substitute unit/component tests, Full Matrix, backend Full E2E regression, Browser Feature Scenario Reconciliation, historical browser evidence, API-only workflow tests, or a plan-only response.
@@ -65,6 +72,62 @@ CURSOR_MAY_DECLARE_FULL_USER_E2E_PASS=NO
 ~~~
 
 ChatGPT owns onboarding and exact audit-HEAD pinning, isolated environment setup, browser execution, evidence collection, failure continuation, cleanup/offboarding, final determination, and GitHub reporting. Exact audit-HEAD pinning during this loop is not release-candidate freeze.
+
+### 2.1 Deterministic contract resolution and full-read gate
+
+Before starting Chromium, Playwright, `e2e/user-lifecycle/**`, a scenario runner, API/runtime probes, or any product test action, ChatGPT MUST resolve and read this exact canonical document **from first line to last line** on the audit HEAD.
+
+~~~text
+CANONICAL_REPO=datarelay-labs/datarelay-control
+CANONICAL_PATH=docs/FULL_USER_E2E_SCENARIOS.md
+CONTRACT_FULL_READ=YES
+CONTRACT_SHA256=<sha256 of exact audit-HEAD document>
+CONTRACT_GATES_ACKNOWLEDGED=PASS
+~~~
+
+Only repository/worktree resolution, mandatory Engineering System onboarding, Work Packet validation, and reading this contract are allowed before the full-read gate completes. A summary, remembered prior run, selected section, existing harness defaults, or scenario wrapper is not a substitute for reading the current contract.
+
+Before user execution, evidence must confirm that ChatGPT reconciled the test profile, browser-first authority, persona rules, FUE-001..FUE-024 coverage, deliberate-mistake/repetition rules, harness boundary, failure continuation, cleanup, final PASS/FAIL contract, and release-order relationship.
+
+If the contract hash or audit HEAD changes after any evidence-producing execution, the current RUN_ID is no longer PASS-eligible. Freeze its evidence, complete safe offboarding, then start a fresh RUN_ID on the new exact HEAD after reading the full current contract and recording its SHA-256. Only when the change occurs before any product-test or evidence-producing action may the same not-yet-started run record be updated before execution begins.
+
+### 2.2 Direct user-persona execution and harness boundary
+
+Full User E2E is a **ChatGPT-performed user test**, not a generic automated regression run.
+
+For every FUE scenario, ChatGPT assigns and acts as the specified realistic persona and pursues the mission through the rendered browser. The persona chooses actions from the user goal and browser-visible product state, feedback, errors, labels, navigation, and normal product knowledge. It does not use source code, test code, hidden routes/selectors, direct database state, API request bodies, or a pre-scripted answer sequence to decide the next user action.
+
+Playwright is allowed as the physical browser driver. Existing repository page objects/helpers may be reused as interaction primitives. The user-lifecycle shell runner and automated suites may perform setup, fixture orchestration, supporting regression, metrics, evidence collection, cleanup, or independently prove machine contracts, but they are **supplemental only** for Full User E2E persona evidence.
+
+A one-shot wrapper such as `run-user-lifecycle-e2e.sh --all` MUST NOT, by itself, produce FUE user PASS evidence. A wrapper may support or shadow the active run, but ChatGPT must still directly execute and evaluate the browser persona mission.
+
+A late manual spot-check does not retroactively convert an earlier scripted/wrapper scenario into user-persona evidence. If a FUE lane was driven from a preloaded scripted sequence or contaminated by source/oracle knowledge, invalidate that lane and rerun it from a clean persona context; run-wide contamination requires a fresh RUN_ID.
+
+~~~text
+USER_ROLE_EXECUTION=REQUIRED
+PRIMARY_PERSONA_EXECUTOR=CHATGPT_CHAT
+SCRIPTED_USER_SCENARIO_EXECUTION_COUNT=0
+AUTOMATED_HARNESS_USER_SUBSTITUTION_COUNT=0
+PERSONA_ORACLE_CONTAMINATION_COUNT=0
+WRAPPER_SCRIPT_PASS_IS_USER_PASS=NO
+~~~
+
+### 2.3 Maximum-safe execution scheduling
+
+Do not idle on a slow independent check while other safe work is runnable.
+
+Full User E2E preserves realistic mission sequencing, but independent supporting lanes may run concurrently: fixture health checks, destination listeners, metrics capture, documentation/authority comparison, evidence classification, and isolated deterministic suites. Separate persona lanes may run in parallel only when they have fully isolated browser contexts, test data/resources, ports, databases, locks, and evidence paths.
+
+Never parallelize shared mutable state merely to increase speed. Never reinterpret one wrapper running many scripted scenarios as parallel persona execution.
+
+Record logical lanes and derive:
+
+~~~text
+PARALLEL_LANES_STARTED=
+MAX_SIMULTANEOUS_ACTIVE_LANES=
+SERIAL_IDLE_WITH_RUNNABLE_WORK=NO
+AVOIDABLE_SERIAL_WAIT_COUNT=0
+~~~
 
 Implementation changes are forbidden during the active run.
 
@@ -185,11 +248,12 @@ On an execution trigger:
 3. read .engineering/project.yaml;
 4. load exactly one active matching Full User E2E Work Packet;
 5. determine exact audit branch/HEAD/worktree;
-6. read this document from that exact audit HEAD;
-7. verify the audit worktree clean;
-8. inspect concurrent E2E/qualification/audit ownership;
-9. allocate unique RUN_ID and evidence root;
-10. proceed without asking the user for values already discoverable.
+6. read this document in full from that exact audit HEAD and record its SHA-256;
+7. verify `CONTRACT_FULL_READ=YES` and `CONTRACT_GATES_ACKNOWLEDGED=PASS` before any product-test or harness invocation;
+8. verify the audit worktree clean;
+9. inspect concurrent E2E/qualification/audit ownership;
+10. allocate unique RUN_ID and evidence root;
+11. proceed without asking the user for values already discoverable.
 
 If no matching Work Packet exists, create one before mutable test activity.
 
@@ -217,6 +281,13 @@ DATABASE_URL_REDACTED=
 EVIDENCE_ROOT=
 BROWSER_RECONCILIATION_RUN_ID=
 BROWSER_RECONCILIATION_HEAD=
+CONTRACT_FULL_READ=YES|NO
+CONTRACT_SHA256=
+CONTRACT_GATES_ACKNOWLEDGED=PASS|FAIL
+USER_ROLE_EXECUTION=PASS|FAIL
+SCRIPTED_USER_SCENARIO_EXECUTION_COUNT=
+AUTOMATED_HARNESS_USER_SUBSTITUTION_COUNT=
+PERSONA_ORACLE_CONTAMINATION_COUNT=
 ~~~
 
 Release-grade Full User E2E PASS requires `CANDIDATE_HEAD` to match the final Browser Feature Scenario Reconciliation HEAD. Before freeze, this technical field names the exact audit HEAD under test; when both final user-test gates PASS on that HEAD, the same HEAD becomes eligible for release-candidate freeze.
@@ -276,7 +347,9 @@ API_CONTINUATION=FORENSIC_ONLY
 PASS_PROMOTION=NO
 ~~~
 
-## 10. Canonical harness and exact-build requirement
+## 10. Supporting harness and exact-build requirement
+
+The repository harness is canonical **supporting infrastructure**, not the Full User E2E persona.
 
 Reuse:
 
@@ -289,6 +362,8 @@ e2e/framework/**
 ~~~
 
 Do not build a second lifecycle framework.
+
+However, do not equate a harness run with user execution. `run-user-lifecycle-e2e.sh --all`, its child scenario scripts, and automated Playwright suites can support environment setup, regression evidence, fixture creation, listeners, cleanup, or machine verification; they cannot substitute for ChatGPT's persona-led browser actions and judgment required by Section 2.2.
 
 Before a release PASS-eligible run:
 
@@ -316,7 +391,7 @@ run-scoped GDC_E2E_PID_DIR
 run-scoped GDC_E2E_LOG_DIR
 ~~~
 
-A canonical invocation is equivalent to:
+A supporting broad-regression invocation may be equivalent to:
 
 ~~~bash
 REQUIRE_AUTH=true \
@@ -329,7 +404,9 @@ GDC_E2E_LOG_DIR=/tmp/datarelay-control-full-user-e2e/<RUN_ID>/logs \
 ./e2e/user-lifecycle/run-user-lifecycle-e2e.sh --all
 ~~~
 
-If a mandatory FUE mission is not yet represented by the canonical harness, ChatGPT may drive additional Playwright browser actions from an ephemeral run-scoped script outside the repository. Record the script and SHA-256 in evidence. Do not dirty the exact-candidate worktree merely to finish an active audit.
+That command is supporting regression evidence only. Its PASS does not set any FUE scenario to PASS until ChatGPT directly performs and evaluates the corresponding user-persona mission in the real browser.
+
+If a mandatory FUE mission is not yet represented by the repository supporting harness, ChatGPT may drive additional Playwright browser actions from an ephemeral run-scoped script outside the repository. Record the script and SHA-256 in evidence. Do not dirty the exact-candidate worktree merely to finish an active audit.
 
 Missing reusable harness coverage should become a follow-up test-harness improvement after the active run; it must not be hidden by API substitution.
 
@@ -1145,7 +1222,7 @@ Canonical root:
 /tmp/datarelay-control-full-user-e2e/<RUN_ID>/
 ~~~
 
-The canonical harness may continue using:
+The repository supporting harness may continue using:
 
 ~~~text
 /tmp/data-relay-real-browser-e2e/<RUN_ID>/
@@ -1237,6 +1314,7 @@ The contract must prove at minimum:
 
 Any new API mutation fallback added to a browser-required lifecycle must add durable regression coverage before release.
 
+The browser-authority regression test remains supporting machine evidence. The direct-persona / no-wrapper-substitution gate is established by this document's run evidence and final closure validation; do not treat the regression test itself as proof that ChatGPT performed the user mission.
 
 ## 26. Machine-derived closure validation
 
@@ -1263,6 +1341,12 @@ Stop/Start repeat minimum satisfied
 zero audit-owned resource residue
 candidate HEAD consistent across evidence
 worktree was clean for PASS-eligible execution
+contract full-read/hash gate passed
+USER_ROLE_EXECUTION=PASS
+SCRIPTED_USER_SCENARIO_EXECUTION_COUNT=0
+AUTOMATED_HARNESS_USER_SUBSTITUTION_COUNT=0
+PERSONA_ORACLE_CONTAMINATION_COUNT=0
+SERIAL_IDLE_WITH_RUNNABLE_WORK=NO unless serialization was required by a recorded safety/state dependency
 summary counts equal ledger-derived counts
 ~~~
 
@@ -1302,7 +1386,13 @@ Release Full User E2E PASS requires:
 19. function-under-load and observation requirements pass;
 20. cleanup/orphan checks pass;
 21. unresolved P0/P1/user-blocking P2 = 0;
-22. CLOSURE_VALIDATION=PASS.
+22. CLOSURE_VALIDATION=PASS;
+23. `CONTRACT_FULL_READ=YES` and the recorded `CONTRACT_SHA256` matches the executed exact-HEAD contract;
+24. `USER_ROLE_EXECUTION=PASS`;
+25. `SCRIPTED_USER_SCENARIO_EXECUTION_COUNT=0`;
+26. `AUTOMATED_HARNESS_USER_SUBSTITUTION_COUNT=0`;
+27. `PERSONA_ORACLE_CONTAMINATION_COUNT=0`;
+28. `SERIAL_IDLE_WITH_RUNNABLE_WORK=NO` and `AVOIDABLE_SERIAL_WAIT_COUNT=0` unless a recorded safety/state dependency required serialization.
 
 Anything else is FAIL or BLOCKED.
 

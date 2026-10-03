@@ -52,6 +52,82 @@ UPDATE_ACTIVE_AI_WORK_ISSUE=YES
 FULL_MATRIX_SUBSTITUTE=NO
 FULL_USER_E2E_SUBSTITUTE=NO
 PHASE_E_F_EXCLUDED=YES
+CONTRACT_FULL_READ_REQUIRED=YES
+PRIMARY_PERSONA_EXECUTOR=CHATGPT_CHAT
+SCRIPTED_USER_SCENARIO_EXECUTION=FORBIDDEN
+WRAPPER_SCRIPT_AS_PERSONA=FORBIDDEN
+AUTOMATED_HARNESS_ROLE=SUPPLEMENTAL_ONLY
+PARALLEL_EXECUTION=MAXIMUM_SAFE
+SERIAL_IDLE_WITH_RUNNABLE_WORK=FORBIDDEN
+~~~
+
+### 1.1 Deterministic contract resolution and full-read gate
+
+Before any browser, Playwright, lifecycle harness, scenario runner, API probe, or product test is started, ChatGPT MUST resolve and read this canonical contract **in full** from the exact audit HEAD.
+
+~~~text
+CANONICAL_REPO=datarelay-labs/datarelay-control
+CANONICAL_PATH=docs/BROWSER_FEATURE_SCENARIO_RECONCILIATION.md
+CONTRACT_FULL_READ=YES
+CONTRACT_SHA256=<sha256 of exact audit-HEAD document>
+CONTRACT_GATES_ACKNOWLEDGED=PASS
+~~~
+
+Only repository/worktree resolution, mandatory Engineering System onboarding, Work Packet validation, and reading the contract are allowed before this gate completes. A headings-only read, excerpt read, remembered prior version, summary, wrapper default, or historical copy is insufficient.
+
+Before execution, record in the evidence root that the executor has read and reconciled at least these contract dimensions: browser-first authority, black-box-before-source boundary, isolation/lock ownership, BFS-001..BFS-020 catalog, failure continuation, evidence/cleanup, PASS/FAIL rules, and release-order relationship.
+
+If the contract hash or audit HEAD changes after any evidence-producing execution, the current RUN_ID is no longer PASS-eligible. Freeze its evidence, complete safe offboarding, then start a fresh RUN_ID on the new exact HEAD after reading the full current contract and recording its SHA-256. Only when the change occurs before any product-test or evidence-producing action may the same not-yet-started run record be updated before execution begins.
+
+Do not start by running `e2e/user-lifecycle/**`, a generic Playwright wrapper, Full Matrix, CI, or an ad-hoc script and then infer this contract afterward.
+
+### 1.2 Direct user-persona execution hard gate
+
+The primary BFS executor is a realistic operator persona controlled by **ChatGPT itself**, not a shell/Python/Node wrapper and not a pre-scripted scenario replay.
+
+ChatGPT may use Playwright as the browser driver to click, type, navigate, and read an actual rendered Chromium/Chrome process. The tool/driver is instrumentation; **ChatGPT remains the user making decisions from browser-visible state**.
+
+For each applicable BFS scenario:
+
+1. assign the scenario's realistic user/operator/admin mission;
+2. start from public browser navigation and user-visible state, not source routes, hidden selectors, expected API calls, or a preloaded answer sequence;
+3. let ChatGPT choose the next user action from the mission and visible product feedback;
+4. use API/runtime/database only after browser action for verification or bounded forensic continuation;
+5. freeze the black-box result before post-hoc source/route enumeration for that surface.
+
+Repository harnesses, page objects, scanners, and deterministic suites may provide environment setup, browser primitives, static inventory, supporting evidence, metrics, cleanup, and regression checks. They MUST NOT:
+
+- impersonate the acting persona;
+- replay BFS steps as the primary user evidence;
+- preload hidden expected controls/routes into the persona;
+- turn a wrapper/harness PASS into a BFS user PASS;
+- retroactively validate scripted evidence with a late manual spot-check.
+
+If primary persona evidence was produced by a wrapper/script replay or contaminated by source/oracle knowledge, mark that scenario evidence invalid and rerun it from a clean persona context. Run-wide contamination requires a fresh RUN_ID.
+
+~~~text
+USER_ROLE_EXECUTION=REQUIRED
+PRIMARY_PERSONA_EXECUTOR=CHATGPT_CHAT
+SCRIPTED_USER_SCENARIO_EXECUTION_COUNT=0
+AUTOMATED_HARNESS_USER_SUBSTITUTION_COUNT=0
+PERSONA_ORACLE_CONTAMINATION_COUNT=0
+~~~
+
+### 1.3 Maximum-safe execution scheduling
+
+Independent work MUST proceed in parallel when it does not violate browser-first evidence ordering or share unsafe mutable state.
+
+Parallelize supporting lanes such as capability-authority inventory, documentation scans, isolated deterministic contract tests, evidence classification, and post-hoc source/route enumeration after the corresponding black-box evidence is frozen. Mutable browser persona lanes may run concurrently only when each owns isolated browser context, database/resources, ports, evidence paths, and locks; otherwise serialize them.
+
+A slow supporting lane must not cause avoidable idle time while another eligible independent lane is runnable. A wrapper that serially replays all personas is not valid parallel user execution.
+
+Record logical lane scheduling in evidence and derive, rather than estimate:
+
+~~~text
+PARALLEL_LANES_STARTED=
+MAX_SIMULTANEOUS_ACTIVE_LANES=
+SERIAL_IDLE_WITH_RUNNABLE_WORK=NO
+AVOIDABLE_SERIAL_WAIT_COUNT=0
 ~~~
 
 ## 2. What this test proves
@@ -156,6 +232,13 @@ UI_BASE_URL=
 ARTIFACT_ROOT=
 BROWSER_ENGINE=
 RELEASE_SCOPE=PHASE_A_D
+CONTRACT_FULL_READ=YES|NO
+CONTRACT_SHA256=
+CONTRACT_GATES_ACKNOWLEDGED=PASS|FAIL
+USER_ROLE_EXECUTION=PASS|FAIL
+SCRIPTED_USER_SCENARIO_EXECUTION_COUNT=
+AUTOMATED_HARNESS_USER_SUBSTITUTION_COUNT=
+PERSONA_ORACLE_CONTAMINATION_COUNT=
 ~~~
 
 If installed/running content differs from `REPO_HEAD`, record both identities.
@@ -1258,7 +1341,13 @@ PASS requires all of the following:
 16. unresolved P0/P1/user-blocking P2 are zero;
 17. `SCENARIO_PARTIAL_COUNT=0` for mandatory in-scope coverage;
 18. `SCENARIO_BLOCKED_COUNT=0` for mandatory in-scope coverage;
-19. machine-derived `CLOSURE_VALIDATION=PASS`.
+19. machine-derived `CLOSURE_VALIDATION=PASS`;
+20. `CONTRACT_FULL_READ=YES` and the recorded `CONTRACT_SHA256` matches the executed exact-HEAD contract;
+21. `USER_ROLE_EXECUTION=PASS`;
+22. `SCRIPTED_USER_SCENARIO_EXECUTION_COUNT=0`;
+23. `AUTOMATED_HARNESS_USER_SUBSTITUTION_COUNT=0`;
+24. `PERSONA_ORACLE_CONTAMINATION_COUNT=0`;
+25. `SERIAL_IDLE_WITH_RUNNABLE_WORK=NO` and `AVOIDABLE_SERIAL_WAIT_COUNT=0` unless a recorded safety/state dependency required serialization.
 
 Anything else is FAIL or explicitly BLOCKED with evidence.
 
