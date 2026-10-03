@@ -136,9 +136,10 @@ export function AdminSettingsPage() {
   const [opReload, setOpReload] = useState(0)
   const [backendRole, setBackendRole] = useState<import('../../auth/session').SessionRole | null>(readAdminUiRole())
 
+  const effectiveRole = backendRole ?? readAdminUiRole()
   const readOnly = isAdminUiReadOnly() || backendRole === 'VIEWER'
-  const isOperator = (backendRole ?? readAdminUiRole()) === 'OPERATOR'
-  const accountMutationReadOnly = readOnly || isOperator
+  const isOperator = effectiveRole === 'OPERATOR'
+  const accountMutationReadOnly = effectiveRole !== 'ADMINISTRATOR'
 
   useEffect(() => {
     const hash = location.hash.replace(/^#/, '').trim()
@@ -252,6 +253,7 @@ export function AdminSettingsPage() {
   }
 
   const onChangePassword = async () => {
+    if (accountMutationReadOnly) return
     setPageErr(null)
     setPageMsg(null)
     const v = validateNewPassword(pwNew)
@@ -782,7 +784,7 @@ export function AdminSettingsPage() {
                 id="pw-user"
                 className={cn('mt-1.5 w-full', gdcUi.input)}
                 value={pwUser}
-                disabled={readOnly}
+                disabled={accountMutationReadOnly}
                 onChange={(e) => setPwUser(e.target.value)}
                 autoComplete="username"
               />
@@ -797,7 +799,7 @@ export function AdminSettingsPage() {
                   type={showPw ? 'text' : 'password'}
                   className={cn('w-full py-2 pl-3 pr-10', gdcUi.input)}
                   value={pwCurrent}
-                  disabled={readOnly}
+                  disabled={accountMutationReadOnly}
                   onChange={(e) => setPwCurrent(e.target.value)}
                   autoComplete="current-password"
                 />
@@ -824,7 +826,7 @@ export function AdminSettingsPage() {
                 type={showPw ? 'text' : 'password'}
                 className={cn('mt-1.5 w-full', gdcUi.input)}
                 value={pwNew}
-                disabled={readOnly}
+                disabled={accountMutationReadOnly}
                 onChange={(e) => setPwNew(e.target.value)}
                 autoComplete="new-password"
                 aria-describedby="pw-new-hint"
@@ -842,7 +844,7 @@ export function AdminSettingsPage() {
                 type={showPw ? 'text' : 'password'}
                 className={cn('mt-1.5 w-full', gdcUi.input)}
                 value={pwConfirm}
-                disabled={readOnly}
+                disabled={accountMutationReadOnly}
                 onChange={(e) => setPwConfirm(e.target.value)}
                 autoComplete="new-password"
               />
@@ -852,7 +854,7 @@ export function AdminSettingsPage() {
             <button
               type="submit"
               data-testid="admin-password-submit"
-              disabled={readOnly || busy}
+              disabled={accountMutationReadOnly || busy}
               className={cn(
                 'rounded-lg border border-gdc-primary/40 bg-gdc-primary px-4 py-2 text-sm font-semibold text-white hover:opacity-95 disabled:opacity-50',
                 focusRing,
@@ -1315,7 +1317,7 @@ export function AdminSettingsPage() {
               </button>
               <button
                 type="button"
-                disabled={readOnly || busy}
+                disabled={accountMutationReadOnly || busy}
                 className={cn('rounded-lg bg-gdc-primary px-3 py-1.5 text-sm font-semibold text-white hover:opacity-95 disabled:opacity-50', focusRing)}
                 onClick={() => void onSaveUser()}
               >

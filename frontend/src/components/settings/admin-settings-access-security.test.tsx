@@ -12,6 +12,7 @@ import {
   putAdminHttpsSettings,
   updateAdminUser,
 } from '../../api/gdcAdmin'
+import { persistSession, type SessionRole } from '../../auth/session'
 import { clearAdminSettingsSnapshot } from './admin-settings-session-cache'
 import { AdminSettingsPage } from './admin-settings-page'
 
@@ -282,10 +283,36 @@ describe('AdminSettingsPage Access & security modernization', () => {
     await screen.findByTestId('admin-users-table')
 
     expect(screen.getByTestId('admin-users-create')).toBeDisabled()
+    expect(screen.getByTestId('admin-password-submit')).toBeDisabled()
     const opsRow = screen.getByTestId('admin-user-row-ops')
     expect(within(opsRow).queryByRole('button', { name: /Edit user ops/i })).not.toBeInTheDocument()
     expect(within(opsRow).queryByRole('button', { name: /Delete user ops/i })).not.toBeInTheDocument()
     expect(within(opsRow).getByText('Administrator only')).toBeInTheDocument()
+  })
+
+  it.each([
+    'CONNECTOR_OPERATOR',
+    'GOVERNANCE_OPERATOR',
+    'GOVERNANCE_REVIEWER',
+    'GOVERNANCE_APPROVER',
+    'GOVERNANCE_AUDITOR',
+  ] as SessionRole[])('blocks account-admin mutations for %s sessions', async (role) => {
+    persistSession({
+      access_token: 'test-token',
+      refresh_token: 'test-refresh',
+      expires_at: new Date(Date.now() + 60_000).toISOString(),
+      user: { username: 'specialized-user', role, status: 'ACTIVE' },
+    })
+    vi.mocked(getAuthWhoAmI).mockResolvedValue({ role, username: 'specialized-user' } as never)
+
+    renderPage()
+    await screen.findByTestId('admin-users-table')
+
+    expect(screen.getByTestId('admin-users-create')).toBeDisabled()
+    expect(screen.getByTestId('admin-password-submit')).toBeDisabled()
+    const opsRow = screen.getByTestId('admin-user-row-ops')
+    expect(within(opsRow).queryByRole('button', { name: /Edit user ops/i })).not.toBeInTheDocument()
+    expect(within(opsRow).queryByRole('button', { name: /Delete user ops/i })).not.toBeInTheDocument()
   })
 
   it('disables Access & security mutations for Viewer sessions', async () => {
