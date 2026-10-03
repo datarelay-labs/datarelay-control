@@ -142,19 +142,18 @@
 
 ## 8. 릴리스 전 전수 사용자 테스트 — 필수
 
-릴리스 후보는 아래 순서를 **동일 exact candidate HEAD**에서 모두 만족해야 합니다.
+기능 로드맵 구현이 끝나면 candidate freeze나 full CI보다 사용자 테스트 closure를 먼저 수행합니다. 최종 Browser PASS와 Full User E2E PASS는 **동일 exact candidate HEAD**에서 성립해야 하며, 그 HEAD를 그 다음에 release candidate로 freeze합니다.
 
 ~~~text
-exact-head machine qualification baseline
-→ Browser Feature Scenario Reconciliation PASS1
+Browser Feature Scenario Reconciliation PASS1
 → batch remediation
-→ exact-head machine requalification
 → Browser Feature Scenario Reconciliation PASS2
 → Full User E2E PASS1
 → batch remediation
-→ exact-head machine requalification
 → re-establish Browser Feature Scenario Reconciliation on the remediated HEAD
 → Full User E2E PASS2
+→ candidate freeze
+→ exact-head machine qualification
 → release-specific gates
 → final exact-head CI
 → release audit
@@ -162,12 +161,15 @@ exact-head machine qualification baseline
 → release authorization/publication
 ~~~
 
-- [ ] `docs/BROWSER_FEATURE_SCENARIO_RECONCILIATION.md` — ChatGPT Chat 직접 실행, PASS.
-- [ ] `docs/FULL_USER_E2E_SCENARIOS.md` — ChatGPT Chat 직접 실행, PASS.
+- [ ] `docs/BROWSER_FEATURE_SCENARIO_RECONCILIATION.md` — ChatGPT Chat 직접 실행, 수정/재감사 루프 후 최종 PASS.
+- [ ] `docs/FULL_USER_E2E_SCENARIOS.md` — ChatGPT Chat 직접 실행, 수정/재실행 루프 후 최종 PASS.
 - [ ] 두 테스트 모두 required FAIL / PARTIAL / BLOCKED = 0.
+- [ ] 두 테스트의 최종 PASS가 같은 HEAD이며 그 후에만 candidate freeze.
+- [ ] freeze된 candidate에서 exact-head machine qualification / final CI PASS.
 - [ ] 실제 delivery와 장애/복구 증거 보존.
 - [ ] destructive lifecycle / cleanup / zero-orphan PASS.
 - [ ] unresolved P0 / P1 / user-blocking P2 = 0.
+- [ ] qualification 중 제품 수정이 필요해지면 candidate를 unfreeze하고 해당 Browser/Full User E2E gate를 다시 성립시킨 뒤 새 candidate를 freeze.
 - [ ] 두 실행의 RUN_ID / evidence root / exact HEAD를 릴리스 결정에 기록.
 
 Machine Full Regression 또는 operational E2E PASS는 위 두 전수 사용자 테스트를 대체하지 않습니다. CI/static contract 검증은 두 gate가 설정되어 있음을 확인할 뿐 실제 실행 PASS가 아닙니다. 실제 PASS 증거는 동일 exact candidate의 active release Work Packet과 evidence root에 남아 있어야 합니다.

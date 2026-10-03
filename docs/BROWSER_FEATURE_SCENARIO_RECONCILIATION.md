@@ -182,7 +182,7 @@ Recommended lock:
 /tmp/datarelay-control-browser-reconciliation.lock
 ~~~
 
-The lock owner record must include RUN_ID, candidate HEAD, PID, start time, and evidence root.
+The lock owner record must include RUN_ID, exact audit HEAD, PID, start time, and evidence root.
 
 If the lock is held by a live reconciliation run, do not start a second mutable run. Resume/observe the existing owned run when appropriate, or mark mutable scenarios `BLOCKED_CONCURRENT_RECONCILIATION` and continue only non-mutating independent checks.
 
@@ -197,24 +197,24 @@ SAFE_INDEPENDENT_CHECKS_CONTINUE=YES
 
 Continue independent checks instead of blocking the whole audit.
 
-### 6.1 Exact-candidate browser lab bring-up
+### 6.1 Exact audit-HEAD browser lab bring-up
 
 Prefer the existing `e2e/user-lifecycle/` isolation model instead of inventing another lab.
 
 For a fresh reconciliation run:
 
-1. use the exact candidate source tree;
+1. use the exact audit-HEAD source tree; this does not freeze a release candidate;
 2. allocate a unique disposable database name;
 3. allocate unique API/UI ports;
 4. allocate unique PID/log directories;
 5. reuse canonical external fixtures only after ownership/health verification;
-6. build/serve the frontend from the exact candidate;
+6. build/serve the frontend from the exact audit HEAD;
 7. start API/scheduler processes bound to the disposable audit database;
 8. start Chromium through the repository Playwright dependencies;
 9. seed/use a disposable audit administrator/session according to the existing test harness without writing raw credentials to durable evidence;
 10. verify API `/health` and browser login before scenario execution;
-11. verify the served frontend/backend build identity belongs to the exact candidate when the product exposes build identity;
-12. write candidate/build identity into evidence before the first mutable user action.
+11. verify the served frontend/backend build identity belongs to the exact audit HEAD when the product exposes build identity;
+12. write audit-HEAD/build identity into evidence before the first mutable user action.
 
 Useful existing assets include:
 
@@ -227,7 +227,7 @@ e2e/framework/**
 scripts/testing/start-test-stack.sh
 ~~~
 
-The active exact-candidate repository MUST remain clean for the entire evidence-producing run.
+The active exact audit-HEAD repository MUST remain clean for the entire evidence-producing run.
 
 Do not create or edit repository files, page objects, tests, fixtures, or generated assets during the active audit.
 
@@ -1475,25 +1475,24 @@ It does not replace Full User E2E in `docs/FULL_USER_E2E_SCENARIOS.md`.
 
 ### Full User E2E
 
-Full User E2E is the depth-first real-user mission gate. It consumes the same exact candidate after this reconciliation passes and proves complete real workflows, actual delivery, failure/recovery, repetition, concurrent edits/load, destructive lifecycle, and zero-orphan cleanup.
+Full User E2E is the depth-first real-user mission gate. It consumes the same exact audit HEAD after this reconciliation passes and proves complete real workflows, actual delivery, failure/recovery, repetition, concurrent edits/load, destructive lifecycle, and zero-orphan cleanup. That HEAD is not a frozen release candidate until both user-test gates reach their final PASS.
 
 This reconciliation is breadth-first; Full User E2E is depth-first. Neither substitutes for the other.
 
 ### Mandatory pre-release order
 
-For release qualification:
+After the product roadmap implementation is complete, release closure runs user-facing truth first:
 
 ~~~text
-exact-head machine qualification baseline
-→ Browser Feature Scenario Reconciliation PASS1
+Browser Feature Scenario Reconciliation PASS1
 → batch remediation
-→ exact-head machine requalification
 → Browser Feature Scenario Reconciliation PASS2
 → Full User E2E PASS1
 → batch remediation
-→ exact-head machine requalification
 → re-establish Browser Feature Scenario Reconciliation on the remediated HEAD
 → Full User E2E PASS2
+→ candidate freeze
+→ exact-head machine qualification
 → release-specific gates
 → final exact-head CI
 → release audit
@@ -1501,13 +1500,13 @@ exact-head machine qualification baseline
 → release authorization/publication
 ~~~
 
-Both exhaustive user tests MUST use the same exact candidate HEAD. Any relevant candidate change invalidates affected evidence and requires the required gates to be re-established.
+PASS1 is an audit/remediation input, not a frozen-candidate qualification result. The final Browser Feature Scenario Reconciliation PASS and final Full User E2E PASS MUST be on the same exact HEAD; that HEAD becomes the release candidate only after both user-test gates are clean. Any browser-visible/product change after either final PASS invalidates the affected evidence and returns execution to the appropriate user-test loop before a new freeze.
 
 ### Exact-head qualification
 
-If this contract is designated as a release gate for a candidate, any relevant browser/product/test-contract change after PASS invalidates that PASS.
+Exact-head machine qualification begins only after the user-test closure HEAD is frozen as the release candidate. It remains a mandatory release gate, but it must not be used as the next default action while Browser reconciliation or Full User E2E remediation is still open.
 
-Do not merge this document or future reconciliation fixes into a candidate currently under exact-head qualification without intentionally restarting qualification.
+If machine qualification finds a defect that requires a product change, unfreeze the candidate, fix it, and re-establish the affected Browser/Full User E2E gates before freezing a new candidate.
 
 ## 34. Execution strategy
 

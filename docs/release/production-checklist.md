@@ -83,30 +83,30 @@ Required production env (HTTPS / offline compose interpolation):
 
 ## Pre-release exhaustive user gates — mandatory
 
-A release candidate is not ready for owner sign-off until all of the following are complete on the **same exact candidate HEAD**:
+The final release candidate is selected only after the two exhaustive user gates are clean on the **same exact candidate HEAD**:
 
-- [ ] Exact-head machine qualification is PASS.
-- [ ] `docs/BROWSER_FEATURE_SCENARIO_RECONCILIATION.md` is executed by ChatGPT Chat and is PASS.
-- [ ] `docs/FULL_USER_E2E_SCENARIOS.md` is executed by ChatGPT Chat and is PASS.
+- [ ] `docs/BROWSER_FEATURE_SCENARIO_RECONCILIATION.md` is executed by ChatGPT Chat and reaches its final PASS after any bounded remediation/re-audit loop.
+- [ ] `docs/FULL_USER_E2E_SCENARIOS.md` is executed by ChatGPT Chat and reaches its final PASS after any bounded remediation/re-run loop.
 - [ ] Neither exhaustive user test contains required FAIL, PARTIAL, or BLOCKED scenarios.
 - [ ] Actual delivery and failure/recovery evidence are retained.
 - [ ] Destructive lifecycle and zero-orphan cleanup gates are PASS.
 - [ ] Unresolved P0 / P1 / user-blocking P2 findings are zero.
+- [ ] The final Browser and Full User E2E PASSes are on the same HEAD; only then is that HEAD frozen as the release candidate.
+- [ ] Exact-head machine qualification is PASS on the frozen candidate.
 - [ ] Evidence roots and Work Packet/run IDs for both exhaustive tests are recorded in the release decision.
 
-Mandatory order:
+Mandatory order after feature-roadmap implementation closure:
 
 ~~~text
-exact-head machine qualification baseline
-→ Browser Feature Scenario Reconciliation PASS1
+Browser Feature Scenario Reconciliation PASS1
 → batch remediation
-→ exact-head machine requalification
 → Browser Feature Scenario Reconciliation PASS2
 → Full User E2E PASS1
 → batch remediation
-→ exact-head machine requalification
 → re-establish Browser Feature Scenario Reconciliation on the remediated HEAD
 → Full User E2E PASS2
+→ candidate freeze
+→ exact-head machine qualification
 → release-specific gates
 → final exact-head CI
 → release audit
@@ -116,7 +116,7 @@ exact-head machine qualification baseline
 
 Machine Full Regression/operational E2E passes do not substitute for either exhaustive ChatGPT-executed user test. CI/static contract validation only proves the gates are configured; it does not count as execution PASS. Actual PASS evidence must be retained in the active release Work Packet for the exact candidate.
 
-Any relevant candidate change after either exhaustive user-test PASS invalidates affected evidence and requires the required same-head gates to be re-established.
+Any relevant product change after either final user-test PASS invalidates affected evidence and returns execution to the appropriate user-test loop before a new candidate freeze. If machine qualification finds a defect requiring product changes, unfreeze the candidate and re-establish affected Browser/Full User E2E evidence before qualifying a new candidate.
 
 ---
 

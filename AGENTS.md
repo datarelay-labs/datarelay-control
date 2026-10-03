@@ -88,7 +88,7 @@ ChatGPT Chat performs implementation, deterministic testing, and terminal audit.
 
 When the user says `브라우저 상에서 버튼, 기능, 시나리오 연계테스트를 진행해`, `브라우저 버튼 기능 시나리오 연계테스트 진행해`, or an equivalent Browser ↔ Feature ↔ Scenario reconciliation request, execute `docs/BROWSER_FEATURE_SCENARIO_RECONCILIATION.md` immediately.
 
-This is an execution request, not a plan-only request. ChatGPT Chat owns the run end to end: onboarding, exact-candidate pinning, isolation, browser-first control inventory, mandatory BFS scenarios, persistence/runtime verification, failure continuation, evidence retention, cleanup/offboarding, and GitHub reporting.
+This is an execution request, not a plan-only request. ChatGPT Chat owns the run end to end: onboarding, exact audit-HEAD pinning (not release-candidate freeze), isolation, browser-first control inventory, mandatory BFS scenarios, persistence/runtime verification, failure continuation, evidence retention, cleanup/offboarding, and GitHub reporting.
 
 For browser-required user actions, API/runtime/database are verification or forensic layers only. They must never replace a blocked browser action and promote the scenario to PASS.
 
@@ -96,12 +96,16 @@ Do not patch product code during the active reconciliation audit. Exhaust indepe
 
 ## Full User E2E and pre-release exhaustive user-test gates
 
-When the user says `Full User E2E 진행해`, `사용자 E2E 진행해`, `전체 사용자 E2E 진행해`, or equivalent wording without narrower scope, execute `docs/FULL_USER_E2E_SCENARIOS.md` immediately. This is an execution request, not a planning request. ChatGPT Chat owns onboarding, exact-candidate isolation, browser execution, runtime/delivery verification, failure continuation, cleanup/offboarding, GitHub reporting, and final status.
+When the user says `Full User E2E 진행해`, `사용자 E2E 진행해`, `전체 사용자 E2E 진행해`, or equivalent wording without narrower scope, execute `docs/FULL_USER_E2E_SCENARIOS.md` immediately. This is an execution request, not a planning request. ChatGPT Chat owns onboarding, exact audit-HEAD isolation (not release-candidate freeze), browser execution, runtime/delivery verification, failure continuation, cleanup/offboarding, GitHub reporting, and final status.
 
-For release readiness, the exhaustive user-test order is mandatory:
+For release readiness after the product roadmap implementation is complete, the mandatory closure order is:
 
-`exact-head machine qualification → Browser Feature Scenario Reconciliation → Full User E2E → owner/manual acceptance → release authorization`.
+`Browser Feature Scenario Reconciliation ↔ bounded remediation/re-audit until clean → Full User E2E ↔ bounded remediation/re-run until clean → candidate freeze → exact-head machine qualification/final CI → owner/manual acceptance → release authorization`.
 
-Both exhaustive tests must PASS on the same exact candidate HEAD using an actual Chromium/Chrome browser process driven by ChatGPT (Playwright is allowed as the driver; headless Chromium still counts as a real browser). jsdom/component tests, API-only flows, static DOM inspection, and CI contract checks do not count as execution PASS. Neither exhaustive test substitutes for the other, and machine Full Regression / operational E2E passes do not substitute for either ChatGPT-executed exhaustive user test. CI/static contract validation only proves the gates are wired; actual PASS authority is the active release Work Packet plus retained exact-HEAD browser run evidence.
+A repository-level `DR Control 계속` / continue-resume after feature implementation closure must enter or continue the Browser reconciliation/remediation loop first. It must not select candidate freeze, full machine qualification, release CI, hashes/provenance, or public smoke while required Browser or Full User E2E closure is still incomplete.
 
-Do not declare a candidate release-ready while either required exhaustive test is missing, PARTIAL, BLOCKED, from another HEAD, or has unresolved P0/P1/user-blocking P2 findings.
+The final Browser Feature Scenario Reconciliation PASS and final Full User E2E PASS must be established on the same exact HEAD; that HEAD becomes the release candidate only after both gates are clean. If Full User E2E remediation changes browser-visible/product behavior, re-establish the affected Browser reconciliation gate before rerunning Full User E2E. If later machine qualification finds a defect that requires a product change, unfreeze the candidate and return to the appropriate user-test loop before freezing a new candidate.
+
+Both exhaustive tests must use an actual Chromium/Chrome browser process driven by ChatGPT (Playwright is allowed as the driver; headless Chromium still counts as a real browser). jsdom/component tests, API-only flows, static DOM inspection, and CI contract checks do not count as execution PASS. Neither exhaustive test substitutes for the other, and machine Full Regression / operational E2E passes do not substitute for either ChatGPT-executed exhaustive user test. CI/static contract validation only proves the gates are wired; actual PASS authority is the active release Work Packet plus retained exact-HEAD browser run evidence.
+
+Do not freeze or declare a release candidate ready while either required exhaustive test is missing, PARTIAL, BLOCKED, from another final HEAD, or has unresolved P0/P1/user-blocking P2 findings.

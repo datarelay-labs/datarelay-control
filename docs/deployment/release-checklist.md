@@ -2,6 +2,19 @@
 
 Use this list before tagging a release candidate or promoting a build to staging/production.
 
+## Pre-candidate user closure
+
+After the product feature roadmap is complete, do **not** freeze a candidate or start full release qualification first. Execute the user-facing closure loop on an exact audit HEAD:
+
+1. Browser Feature Scenario Reconciliation.
+2. Batch bounded findings into fixes, merge them, and rerun Browser reconciliation until final PASS.
+3. Full User E2E.
+4. Batch bounded findings into fixes and rerun Full User E2E; if a fix changes browser-visible/product behavior, re-establish the affected Browser reconciliation gate first.
+5. Require the final Browser PASS and final Full User E2E PASS on the same HEAD.
+6. Only then freeze that HEAD as the release candidate and run the build/test/release qualification below.
+
+A qualification failure that requires product changes unfreezes the candidate and returns execution to the affected user-test loop before a new candidate can be frozen.
+
 ## Build and tests
 
 - [ ] Full backend CI entrypoint (matches GitHub Actions):  
