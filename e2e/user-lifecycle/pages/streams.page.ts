@@ -485,9 +485,14 @@ export class StreamsPage {
       .locator('input')
       .first()
     await reloadedField.waitFor({ state: 'visible', timeout: ACTION }).catch(() => null)
-    const reloadReadback =
-      (await reloadedField.count()) > 0 &&
-      (await reloadedField.inputValue().catch(() => '')) === 'id'
+    let reloadReadback = false
+    for (let i = 0; i < 20; i++) {
+      if ((await reloadedField.inputValue().catch(() => '')) === 'id') {
+        reloadReadback = true
+        break
+      }
+      await this.page.waitForTimeout(250)
+    }
 
     return {
       fieldPresent,
