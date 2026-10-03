@@ -224,6 +224,7 @@ export async function runGovernanceLifecycle(opts: {
   routeId: number
 }): Promise<void> {
   const { page, api, store, runId, uiBase, fixtureScript, streamId, destinationId, routeId } = opts
+  let releaseRestoreRequired = false
   try {
     const fixture = seedGovernanceFixture(fixtureScript, runId, streamId, destinationId, routeId)
     store.writeJson('governance-fixture-ids.json', fixture)
@@ -245,9 +246,14 @@ export async function runGovernanceLifecycle(opts: {
     // browser scenario protects the regression that previously surfaced as HTTP 500.
     const stopResponse = await api.stopStream(streamId)
     const stopped = stopResponse.status < 300 && (await api.getStream(streamId))?.enabled === false
+    releaseRestoreRequired = stopped
     const released = await runQuarantineAction(page, api, uiBase, fixture.release_quarantine_id, 'release')
     const restartResponse = await api.startStream(streamId).catch(() => null)
-    const restarted = restartResponse != null && restartResponse.status < 300
+    const restarted =
+      restartResponse != null &&
+      restartResponse.status < 300 &&
+      (await api.getStream(streamId).catch(() => null))?.enabled === true
+    if (restarted) releaseRestoreRequired = false
     const releasePass = stopped && released && restarted
     store.rec(
       'BFS015_QUARANTINE_RELEASE',
@@ -287,5 +293,19 @@ export async function runGovernanceLifecycle(opts: {
   } catch (error) {
     await page.screenshot({ path: `${store.screenshots}/governance-${Date.now()}.png`, fullPage: true }).catch(() => null)
     store.rec('BFS015_GOVERNANCE_EXHAUSTIVE', 'FAIL', String(error).slice(0, 500), ['BROWSER_E2E'])
+  } finally {
+    if (releaseRestoreRequired) {
+      const restoreResponse = await api.startStream(streamId).catch(() => null)
+      const restored =
+        restoreResponse != null &&
+        restoreResponse.status < 300 &&
+        (await api.getStream(streamId).catch(() => null))?.enabled === true
+      store.rec(
+        'BFS015_QUARANTINE_RELEASE_RESTORE',
+        restored ? 'PASS' : 'FAIL',
+        `stream=${streamId} restored=${restored}`,
+        ['API_INTEGRATION'],
+      )
+    }
   }
 }
