@@ -224,6 +224,7 @@ export async function runGovernanceLifecycle(opts: {
   routeId: number
 }): Promise<void> {
   const { page, api, store, runId, uiBase, fixtureScript, streamId, destinationId, routeId } = opts
+  let releaseRestoreRequired = false
   try {
     const fixture = seedGovernanceFixture(fixtureScript, runId, streamId, destinationId, routeId)
     store.writeJson('governance-fixture-ids.json', fixture)
@@ -240,11 +241,36 @@ export async function runGovernanceLifecycle(opts: {
       'API_INTEGRATION',
     ])
 
+    // Release is an explicit operator action and must remain available even when
+    // the Stream scheduler is stopped. Reproduce that state explicitly so this
+    // browser scenario protects the regression that previously surfaced as HTTP 500.
+    const streamBeforeStop = await api.getStream(streamId).catch(() => null)
+    if (streamBeforeStop?.enabled !== true) {
+      throw new Error(`Quarantine Release setup requires a running Stream before stop: stream=${streamId}`)
+    }
+    // Arm restoration before the mutating request. If the stop reaches the server but
+    // its response is lost, finally still reconciles the Stream back to its original
+    // running state instead of leaving later scenarios contaminated.
+    releaseRestoreRequired = true
+    const stopResponse = await api.stopStream(streamId)
+    const stopAccepted = stopResponse.status < 300
+    const stopped =
+      stopAccepted &&
+      (await api.getStream(streamId).catch(() => null))?.enabled === false
     const released = await runQuarantineAction(page, api, uiBase, fixture.release_quarantine_id, 'release')
-    store.rec('BFS015_QUARANTINE_RELEASE', released ? 'PASS' : 'FAIL', `id=${fixture.release_quarantine_id}`, [
-      'BROWSER_E2E',
-      'API_INTEGRATION',
-    ])
+    const restartResponse = await api.startStream(streamId).catch(() => null)
+    const restarted =
+      restartResponse != null &&
+      restartResponse.status < 300 &&
+      (await api.getStream(streamId).catch(() => null))?.enabled === true
+    if (restarted) releaseRestoreRequired = false
+    const releasePass = stopped && released && restarted
+    store.rec(
+      'BFS015_QUARANTINE_RELEASE',
+      releasePass ? 'PASS' : 'FAIL',
+      `id=${fixture.release_quarantine_id} stopped=${stopped} released=${released} restarted=${restarted}`,
+      ['BROWSER_E2E', 'API_INTEGRATION'],
+    )
     const replayed = await runQuarantineAction(page, api, uiBase, fixture.replay_quarantine_id, 'replay')
     store.rec('BFS015_QUARANTINE_REPLAY', replayed ? 'PASS' : 'FAIL', `id=${fixture.replay_quarantine_id}`, [
       'BROWSER_E2E',
@@ -267,15 +293,29 @@ export async function runGovernanceLifecycle(opts: {
       ['BROWSER_E2E'],
     )
 
-    const overall = activated && rejected && released && replayed && standaloneReplay && surfacesPass
+    const overall = activated && rejected && releasePass && replayed && standaloneReplay && surfacesPass
     store.rec(
       'BFS015_GOVERNANCE_EXHAUSTIVE',
       overall ? 'PASS' : 'FAIL',
-      `activate=${activated} reject=${rejected} release=${released} quarantineReplay=${replayed} replay=${standaloneReplay} surfaces=${surfacesPass}`,
+      `activate=${activated} reject=${rejected} release=${releasePass} stopped=${stopped} quarantineReplay=${replayed} replay=${standaloneReplay} surfaces=${surfacesPass}`,
       ['BROWSER_E2E', 'API_INTEGRATION'],
     )
   } catch (error) {
     await page.screenshot({ path: `${store.screenshots}/governance-${Date.now()}.png`, fullPage: true }).catch(() => null)
     store.rec('BFS015_GOVERNANCE_EXHAUSTIVE', 'FAIL', String(error).slice(0, 500), ['BROWSER_E2E'])
+  } finally {
+    if (releaseRestoreRequired) {
+      const restoreResponse = await api.startStream(streamId).catch(() => null)
+      const restored =
+        restoreResponse != null &&
+        restoreResponse.status < 300 &&
+        (await api.getStream(streamId).catch(() => null))?.enabled === true
+      store.rec(
+        'BFS015_QUARANTINE_RELEASE_RESTORE',
+        restored ? 'PASS' : 'FAIL',
+        `stream=${streamId} restored=${restored}`,
+        ['API_INTEGRATION'],
+      )
+    }
   }
 }
