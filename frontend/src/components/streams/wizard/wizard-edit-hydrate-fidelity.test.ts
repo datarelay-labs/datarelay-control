@@ -131,6 +131,44 @@ describe('edit hydrate fidelity', () => {
     expect(state?.mapping.some((row) => row.outputField === 'message')).toBe(true)
   })
 
+  it('hydrates persisted Union Schema and incremental query request state for browser read-back', async () => {
+    fetchStreamMappingUiConfig.mockResolvedValue(mappingConfig({ source_type: 'HTTP_API_POLLING' }))
+    fetchStreamById.mockResolvedValue({
+      id: 9,
+      name: 'Incremental HTTP',
+      connector_id: null,
+      polling_interval: 60,
+      rate_limit_json: {},
+      config_json: {
+        method: 'GET',
+        endpoint: '/events',
+        params: {
+          id_gt: '{{checkpoint.last_timestamp}}',
+          id_lte: '{{now}}',
+          limit: '100',
+        },
+        union_schema: {
+          total_events: 12,
+          fields: [
+            { field_path: '$.id', field_type: 'integer', occurrence_count: 12, sample_values: [1, 2] },
+            { field_path: '$.rare_field', field_type: 'string', occurrence_count: 1, sample_values: ['rare'] },
+          ],
+        },
+      },
+    })
+    const { hydrateWizardStateFromStream } = await import('./wizard-stream-hydrate')
+    const state = await hydrateWizardStateFromStream(9)
+    expect(state?.apiTest.unionSchema).toMatchObject({ total_events: 12 })
+    expect(state?.apiTest.unionSchema?.fields).toEqual(
+      expect.arrayContaining([expect.objectContaining({ field_path: '$.rare_field', occurrence_count: 1 })]),
+    )
+    expect(state?.stream.incrementalRequestPattern).toBe('query_params')
+    expect(state?.stream.incrementalRequestDraft).toContain('id_gt={{checkpoint.last_timestamp}}')
+    expect(state?.stream.params).toEqual(
+      expect.arrayContaining([expect.objectContaining({ key: 'id_gt', value: '{{checkpoint.last_timestamp}}' })]),
+    )
+  })
+
   it('hydrates the database query timeout from the runtime key', async () => {
     fetchStreamMappingUiConfig.mockResolvedValue(mappingConfig({ source_type: 'DATABASE_QUERY' }))
     fetchStreamById.mockResolvedValue({

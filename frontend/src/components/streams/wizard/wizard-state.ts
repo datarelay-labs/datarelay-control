@@ -498,8 +498,8 @@ export type WizardConfigState = {
   dbCheckpointMode: string
   /**
    * Incremental request template selected on the JSON Preview step.
-   * This is used for incremental-request test previews only and must never
-   * overwrite the operator's saved Connect-step request body.
+   * After validation this is persisted into the effective stream request so
+   * browser Test, edit read-back, and runtime execution use the same request.
    */
   incrementalRequestPattern: IncrementalRequestPattern
   /** Editable preview text for the selected incremental pattern (JSON body or `key=value` lines). */
@@ -1685,11 +1685,12 @@ export function buildStreamConfigPayload(state: WizardState): Record<string, unk
 }
 
 /**
- * Build stream_config for incremental-request Test only.
- * This applies incremental templates at request time without mutating persisted
- * Connect-step request body/params.
+ * Build the effective persisted/runtime stream config.
+ * Incremental request templates are operator-authored request configuration, so
+ * a successful Wizard test must use the same method/params/body that create/edit
+ * persists and the runtime later executes.
  */
-export function buildIncrementalTestStreamConfigPayload(state: WizardState): Record<string, unknown> {
+export function buildPersistedStreamConfigPayload(state: WizardState): Record<string, unknown> {
   const isRemote = state.connector.sourceType === 'REMOTE_FILE_POLLING'
   const isWebhook = state.connector.sourceType === 'WEBHOOK_RECEIVER'
   const isDatabase = state.connector.sourceType === 'DATABASE_QUERY'
@@ -1712,6 +1713,10 @@ export function buildIncrementalTestStreamConfigPayload(state: WizardState): Rec
     params: merged.params,
     body: merged.body,
   }
+}
+
+export function buildIncrementalTestStreamConfigPayload(state: WizardState): Record<string, unknown> {
+  return buildPersistedStreamConfigPayload(state)
 }
 
 /** Runtime SourceRateLimiter reads max_events and per_seconds. UI per-minute maps to a 60-second window. */
@@ -1758,7 +1763,7 @@ export function buildStreamCreatePayload(state: WizardState): {
     ? { max_objects_per_run: maxOb }
     : mergeStreamConfigJson(
         {},
-        buildStreamConfigPayload(state),
+        buildPersistedStreamConfigPayload(state),
         isDatabase ? {} : buildAdvancedStreamConfigJsonPatch(state.stream),
       )
   return {

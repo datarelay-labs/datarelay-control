@@ -418,6 +418,19 @@ export function RecordSelectionWorkspace({
     : null
 
   if (rawPayload == null || (t.status !== 'success' && t.status !== 'error' && t.status !== 'running')) {
+    if (t.unionSchema) {
+      return (
+        <section className="space-y-3 rounded-xl border border-slate-200/90 bg-slate-50/40 p-4 dark:border-gdc-border dark:bg-gdc-card">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Record Selection</h3>
+            <p className="mt-1 text-[12px] leading-relaxed text-slate-600 dark:text-gdc-muted">
+              Persisted Union Schema from the last confirmed sample is available for review. Run Fetch Sample Data only when you need to refresh the sample.
+            </p>
+          </div>
+          <UnionSchemaStatusCard state={state} extractedEventCount={t.unionSchema.total_events} />
+        </section>
+      )
+    }
     return (
       <section className="rounded-xl border border-dashed border-slate-300/90 bg-slate-50/40 p-6 text-center dark:border-gdc-border dark:bg-gdc-card">
         <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Record Selection</h3>

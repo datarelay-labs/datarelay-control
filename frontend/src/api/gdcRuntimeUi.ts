@@ -79,6 +79,37 @@ export async function saveStreamMappingUiConfig(
   )
 }
 
+export type StreamDeduplicationConfig = {
+  enabled: boolean
+  key_field: string
+  custom_jsonpath: string | null
+  duplicate_handling: 'skip_duplicate' | 'keep_latest' | 'keep_first'
+  scope: 'current_run' | 'checkpoint_window' | 'last_n_hours'
+  window_hours: number | null
+}
+
+export type StreamDedupRuntimeStatus = StreamDeduplicationConfig & {
+  last_runtime_duplicate_count: number
+  last_runtime_dedup_summary: Record<string, unknown> | null
+  last_runtime_stats_degraded: boolean
+}
+
+export async function fetchStreamDeduplication(
+  streamId: number,
+): Promise<StreamDedupRuntimeStatus | null> {
+  return safeRequestJson<StreamDedupRuntimeStatus>(`${RT}/streams/${streamId}/deduplication`)
+}
+
+export async function saveStreamDeduplication(
+  streamId: number,
+  payload: StreamDeduplicationConfig,
+): Promise<StreamDeduplicationConfig> {
+  return requestJson<StreamDeduplicationConfig>(`${RT}/streams/${streamId}/deduplication`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
 export type StreamUiSaveRequest = {
   name: string
   enabled: boolean

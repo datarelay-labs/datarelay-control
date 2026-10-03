@@ -85,9 +85,20 @@ describe('edit runtime save baselines', () => {
     edited.stream = { ...edited.stream, name: 'Edited stream' }
     expect(shouldScheduleEditAutosave(persistedWizardConfigSnapshot(edited), persistedWizardConfigSnapshot(saved), null)).toBe(true)
 
-    const previewOnly = buildInitialState()
-    previewOnly.stream = { ...previewOnly.stream, incrementalRequestPattern: 'query_params', incrementalRequestDraft: 'cursor=1' }
-    expect(persistedWizardConfigSnapshot(previewOnly)).toBe(persistedWizardConfigSnapshot(saved))
+    const incrementalEdit = buildInitialState()
+    incrementalEdit.stream = {
+      ...incrementalEdit.stream,
+      incrementalRequestPattern: 'query_params',
+      incrementalRequestDraft: 'cursor={{checkpoint.next_cursor}}',
+    }
+    expect(persistedWizardConfigSnapshot(incrementalEdit)).not.toBe(persistedWizardConfigSnapshot(saved))
+    expect(
+      shouldScheduleEditAutosave(
+        persistedWizardConfigSnapshot(incrementalEdit),
+        persistedWizardConfigSnapshot(saved),
+        null,
+      ),
+    ).toBe(true)
   })
 })
 

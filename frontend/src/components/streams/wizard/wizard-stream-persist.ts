@@ -19,7 +19,7 @@ import {
 import {
   buildRouteCreatePayloads,
   buildRouteTransformPersistPlans,
-  buildStreamConfigPayload,
+  buildPersistedStreamConfigPayload,
   buildStreamCreatePayload,
   buildWizardFieldMappingsPayload,
   enrichmentDictFromRows,
@@ -338,7 +338,7 @@ export async function persistWizardStreamEdits(
           ? (existing.config_json as Record<string, unknown>)
           : {}
       const sourcePayload =
-        state.connector.sourceType === 'S3_OBJECT_POLLING' ? payload.config_json : buildStreamConfigPayload(state)
+        state.connector.sourceType === 'S3_OBJECT_POLLING' ? payload.config_json : buildPersistedStreamConfigPayload(state)
       const mergedConfig = mergeStreamConfigJson(
         existingConfig,
         sourcePayload,
