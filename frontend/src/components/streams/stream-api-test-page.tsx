@@ -21,8 +21,10 @@ import { resolveStreamSourceTestPageIntro, resolveStreamSourceTestShellTitle } f
 import { fetchStreamById } from '../../api/gdcStreams'
 import { fetchStreamMappingUiConfig } from '../../api/gdcRuntime'
 import {
+  DEFAULT_STREAM_DEDUPLICATION_CONFIG,
   fetchStreamDeduplication,
   saveStreamDeduplication,
+  streamDeduplicationConfigWithKey,
   type StreamDeduplicationConfig,
 } from '../../api/gdcRuntimeUi'
 import { fetchConnectorById } from '../../api/gdcConnectors'
@@ -45,19 +47,6 @@ const ACTIVE_WIZARD_STEP = 3
 
 type ResponseTab = 'json' | 'raw' | 'headers'
 type ExtractionMode = 'basic' | 'advanced'
-
-function dedupConfigFromKey(rawKey: string): StreamDeduplicationConfig {
-  const key = rawKey.trim()
-  const custom = key.startsWith('$')
-  return {
-    enabled: key.length > 0,
-    key_field: custom ? 'custom_jsonpath' : key || 'event_id',
-    custom_jsonpath: custom ? key : null,
-    duplicate_handling: 'skip_duplicate',
-    scope: 'current_run',
-    window_hours: null,
-  }
-}
 
 const MAX_SYNTAX_HIGHLIGHT_CHARS = 48_000
 
@@ -364,6 +353,7 @@ export function StreamApiTestPage() {
   const [rootIsArray, setRootIsArray] = useState(false)
   const [maxPreview, setMaxPreview] = useState('500')
   const [dedupeKey, setDedupeKey] = useState('')
+  const [dedupPolicy, setDedupPolicy] = useState<StreamDeduplicationConfig>(DEFAULT_STREAM_DEDUPLICATION_CONFIG)
 
   useEffect(() => {
     if (numericId == null) {
@@ -431,11 +421,12 @@ export function StreamApiTestPage() {
         setMappingEventRootPath(erp)
         setEventPath(eap)
         setEventRootPathInput(erp)
-        setDedupeKey(
-          dedup?.enabled
-            ? String(dedup.key_field === 'custom_jsonpath' ? dedup.custom_jsonpath ?? '' : dedup.key_field ?? '')
-            : '',
-        )
+        const loadedDedupKey = dedup?.enabled
+          ? String(dedup.key_field === 'custom_jsonpath' ? dedup.custom_jsonpath ?? '' : dedup.key_field ?? '')
+          : ''
+        const dedupConfig = streamDeduplicationConfigWithKey(dedup, loadedDedupKey)
+        setDedupPolicy(dedupConfig)
+        setDedupeKey(loadedDedupKey)
 
         const cid = typeof stream.connector_id === 'number' ? stream.connector_id : null
         setConnectorId(cid)
@@ -599,8 +590,9 @@ export function StreamApiTestPage() {
         const k = h.k.trim()
         if (k) headersObj[k] = h.v
       }
-      const dedupConfig = dedupConfigFromKey(dedupeKey)
-      await saveStreamDeduplication(numericId, dedupConfig)
+      const dedupConfig = streamDeduplicationConfigWithKey(dedupPolicy, dedupeKey)
+      const savedDedupConfig = await saveStreamDeduplication(numericId, dedupConfig)
+      setDedupPolicy(savedDedupConfig)
       const streamCfg: Record<string, unknown> = {
         method,
         endpoint: endpointPath.trim(),
@@ -639,6 +631,7 @@ export function StreamApiTestPage() {
     method,
     timeoutSec,
     dedupeKey,
+    dedupPolicy,
   ])
 
   const addQueryRow = useCallback(() => {

@@ -1698,20 +1698,37 @@ export function buildPersistedStreamConfigPayload(state: WizardState): Record<st
     return buildStreamConfigPayload(state)
   }
   const base = buildStreamConfigPayload(state)
+  const baseMethod = String(base.method ?? state.stream.httpMethod)
+  const baseParams = ((base.params as Record<string, string> | undefined) ?? {}) as Record<string, string>
+  const baseBody = typeof base.body === 'string' ? base.body : undefined
   const merged = applyIncrementalRequestTemplate(
     {
-      method: String(base.method ?? state.stream.httpMethod),
-      params: ((base.params as Record<string, string> | undefined) ?? {}) as Record<string, string>,
-      body: typeof base.body === 'string' ? base.body : undefined,
+      method: baseMethod,
+      params: baseParams,
+      body: baseBody,
     },
     state.stream.incrementalRequestPattern,
     state.stream.incrementalRequestDraft,
   )
+  const runtimeUi =
+    base.runtime_ui && typeof base.runtime_ui === 'object' && !Array.isArray(base.runtime_ui)
+      ? (base.runtime_ui as Record<string, unknown>)
+      : {}
   return {
     ...base,
     method: merged.method,
     params: merged.params,
     body: merged.body,
+    runtime_ui: {
+      ...runtimeUi,
+      incremental_request: {
+        pattern: state.stream.incrementalRequestPattern,
+        draft: state.stream.incrementalRequestDraft,
+        base_method: baseMethod,
+        base_params: baseParams,
+        base_body: baseBody ?? null,
+      },
+    },
   }
 }
 

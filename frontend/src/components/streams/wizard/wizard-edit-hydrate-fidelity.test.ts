@@ -143,9 +143,19 @@ describe('edit hydrate fidelity', () => {
         method: 'GET',
         endpoint: '/events',
         params: {
+          tenant: 'acme',
           id_gt: '{{checkpoint.last_timestamp}}',
           id_lte: '{{now}}',
           limit: '100',
+        },
+        runtime_ui: {
+          incremental_request: {
+            pattern: 'query_params',
+            draft: 'id_gt={{checkpoint.last_timestamp}}\nid_lte={{now}}\nlimit=100',
+            base_method: 'GET',
+            base_params: { tenant: 'acme' },
+            base_body: null,
+          },
         },
         union_schema: {
           total_events: 12,
@@ -164,9 +174,64 @@ describe('edit hydrate fidelity', () => {
     )
     expect(state?.stream.incrementalRequestPattern).toBe('query_params')
     expect(state?.stream.incrementalRequestDraft).toContain('id_gt={{checkpoint.last_timestamp}}')
-    expect(state?.stream.params).toEqual(
-      expect.arrayContaining([expect.objectContaining({ key: 'id_gt', value: '{{checkpoint.last_timestamp}}' })]),
-    )
+    expect(state?.stream.params).toEqual([
+      expect.objectContaining({ key: 'tenant', value: 'acme' }),
+    ])
+
+    expect(state).not.toBeNull()
+    if (!state) return
+    state.connector.connectorId = 11
+    state.connector.sourceId = 1
+    state.connector.sourceType = 'HTTP_API_POLLING'
+    state.stream.incrementalRequestPattern = 'none'
+    state.stream.incrementalRequestDraft = ''
+    const { buildStreamCreatePayload } = await import('./wizard-state')
+    const cleared = buildStreamCreatePayload(state)
+    expect(cleared?.config_json).toMatchObject({
+      params: { tenant: 'acme' },
+      runtime_ui: {
+        incremental_request: {
+          pattern: 'none',
+          draft: '',
+          base_params: { tenant: 'acme' },
+        },
+      },
+    })
+    expect((cleared?.config_json.params as Record<string, unknown>) ?? {}).not.toHaveProperty('id_gt')
+  })
+
+  it('round-trips an explicit Elasticsearch incremental pattern without leaking the effective body into the base request', async () => {
+    fetchStreamMappingUiConfig.mockResolvedValue(mappingConfig({ source_type: 'HTTP_API_POLLING' }))
+    fetchStreamById.mockResolvedValue({
+      id: 9,
+      name: 'Search stream',
+      connector_id: null,
+      polling_interval: 60,
+      rate_limit_json: {},
+      config_json: {
+        method: 'POST',
+        endpoint: '/_search',
+        params: { tenant: 'acme' },
+        body: '{"query":{"range":{"@timestamp":{"gt":"{{checkpoint.last_timestamp}}"}}}}',
+        runtime_ui: {
+          incremental_request: {
+            pattern: 'elasticsearch',
+            draft: '{"query":{"range":{"@timestamp":{"gt":"{{checkpoint.last_timestamp}}"}}}}',
+            base_method: 'POST',
+            base_params: { tenant: 'acme' },
+            base_body: '{"query":{"term":{"environment":"prod"}}}',
+          },
+        },
+      },
+    })
+    const { hydrateWizardStateFromStream } = await import('./wizard-stream-hydrate')
+    const state = await hydrateWizardStateFromStream(9)
+    expect(state?.stream.incrementalRequestPattern).toBe('elasticsearch')
+    expect(state?.stream.incrementalRequestDraft).toContain('{{checkpoint.last_timestamp}}')
+    expect(state?.stream.requestBody).toBe('{"query":{"term":{"environment":"prod"}}}')
+    expect(state?.stream.params).toEqual([
+      expect.objectContaining({ key: 'tenant', value: 'acme' }),
+    ])
   })
 
   it('hydrates the database query timeout from the runtime key', async () => {

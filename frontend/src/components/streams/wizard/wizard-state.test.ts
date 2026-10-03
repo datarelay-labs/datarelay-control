@@ -427,6 +427,15 @@ describe('wizard-state buildStreamCreatePayload', () => {
         id_lte: '{{now}}',
         limit: '100',
       },
+      runtime_ui: {
+        incremental_request: {
+          pattern: 'query_params',
+          draft: 'id_gt={{checkpoint.last_timestamp}}\nid_lte={{now}}\nlimit=100',
+          base_method: 'GET',
+          base_params: {},
+          base_body: null,
+        },
+      },
     })
   })
 })
