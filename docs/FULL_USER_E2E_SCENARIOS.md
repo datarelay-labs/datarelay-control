@@ -1,7 +1,7 @@
 # Data Relay Control — Full User E2E Test Scenarios
 
 > **Document role:** Single canonical final real-user E2E execution contract for Data Relay Control
-> **Executor:** ChatGPT Chat
+> **Executor / final auditor:** **ChatGPT itself**, directly acting as the applicable real User/Operator/Admin persona through the actual browser surface
 > **Product scope:** Phase A-D only
 > **Primary user surface:** Browser/UI
 > **Verification layers:** API / runtime / database / actual destination, after browser action
@@ -55,7 +55,7 @@ A targeted request may execute a subset only when the user explicitly names that
 
 ## 2. Execution ownership
 
-FULL_USER_E2E is executed and finally evaluated by ChatGPT Chat.
+FULL_USER_E2E is executed and finally evaluated by **ChatGPT itself**. ChatGPT directly performs the real persona mission through the public browser surface. A coding agent, alternate model, wrapper, scripted replay, CI job, or automated harness may provide supporting evidence only and MUST NOT execute the user role or declare this gate PASS.
 
 ~~~text
 FULL_USER_E2E_EXECUTOR=CHATGPT_CHAT

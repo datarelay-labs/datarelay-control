@@ -1,7 +1,7 @@
 # Data Relay Control — Browser ↔ Feature ↔ Scenario Reconciliation
 
 > **Document role:** Canonical executable browser test contract for product capability ↔ visible UI control ↔ real operator scenario reconciliation
-> **Executor:** ChatGPT Chat
+> **Executor / final auditor:** **ChatGPT itself**, directly acting as the applicable real User/Operator/Admin persona through the actual browser surface
 > **Scope:** Phase A-D browser surface completeness, buttons/actions, discoverability, terminology, procedure, persistence, runtime truth, safety, recovery, evidence, and cleanup
 > **Target:** current Data Relay Control exact candidate until superseded
 > **Release relationship:** mandatory independent pre-release exhaustive gate; separate from Full Matrix and Full User E2E, and neither may substitute for another
@@ -26,7 +26,7 @@ Browser feature scenario reconciliation
 Browser button feature scenario audit
 ~~~
 
-When triggered, ChatGPT MUST resolve this file from the active Data Relay Control repository and execute it immediately.
+When triggered, ChatGPT MUST resolve this file from the active Data Relay Control repository and execute it immediately. A coding agent, alternate model, wrapper, scripted replay, CI job, or automated harness is supporting evidence only and MUST NOT impersonate the acting persona or declare this gate PASS.
 
 Do not substitute a generic Playwright smoke test, Full Matrix, unit tests, static source review, prior evidence, or a plan-only response.
 
