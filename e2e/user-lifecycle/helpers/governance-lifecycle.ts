@@ -240,11 +240,21 @@ export async function runGovernanceLifecycle(opts: {
       'API_INTEGRATION',
     ])
 
+    // Release is an explicit operator action and must remain available even when
+    // the Stream scheduler is stopped. Reproduce that state explicitly so this
+    // browser scenario protects the regression that previously surfaced as HTTP 500.
+    const stopResponse = await api.stopStream(streamId)
+    const stopped = stopResponse.status < 300 && (await api.getStream(streamId))?.enabled === false
     const released = await runQuarantineAction(page, api, uiBase, fixture.release_quarantine_id, 'release')
-    store.rec('BFS015_QUARANTINE_RELEASE', released ? 'PASS' : 'FAIL', `id=${fixture.release_quarantine_id}`, [
-      'BROWSER_E2E',
-      'API_INTEGRATION',
-    ])
+    const restartResponse = await api.startStream(streamId).catch(() => null)
+    const restarted = restartResponse != null && restartResponse.status < 300
+    const releasePass = stopped && released && restarted
+    store.rec(
+      'BFS015_QUARANTINE_RELEASE',
+      releasePass ? 'PASS' : 'FAIL',
+      `id=${fixture.release_quarantine_id} stopped=${stopped} released=${released} restarted=${restarted}`,
+      ['BROWSER_E2E', 'API_INTEGRATION'],
+    )
     const replayed = await runQuarantineAction(page, api, uiBase, fixture.replay_quarantine_id, 'replay')
     store.rec('BFS015_QUARANTINE_REPLAY', replayed ? 'PASS' : 'FAIL', `id=${fixture.replay_quarantine_id}`, [
       'BROWSER_E2E',
@@ -267,11 +277,11 @@ export async function runGovernanceLifecycle(opts: {
       ['BROWSER_E2E'],
     )
 
-    const overall = activated && rejected && released && replayed && standaloneReplay && surfacesPass
+    const overall = activated && rejected && releasePass && replayed && standaloneReplay && surfacesPass
     store.rec(
       'BFS015_GOVERNANCE_EXHAUSTIVE',
       overall ? 'PASS' : 'FAIL',
-      `activate=${activated} reject=${rejected} release=${released} quarantineReplay=${replayed} replay=${standaloneReplay} surfaces=${surfacesPass}`,
+      `activate=${activated} reject=${rejected} release=${releasePass} stopped=${stopped} quarantineReplay=${replayed} replay=${standaloneReplay} surfaces=${surfacesPass}`,
       ['BROWSER_E2E', 'API_INTEGRATION'],
     )
   } catch (error) {
