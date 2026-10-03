@@ -428,6 +428,25 @@ export function RecordSelectionWorkspace({
             </p>
           </div>
           <UnionSchemaStatusCard state={state} extractedEventCount={t.unionSchema.total_events} />
+          <div className="grid min-h-0 grid-cols-1 gap-3 lg:grid-cols-2">
+            <div className="rounded-lg border border-slate-200/80 bg-white p-3 text-[11px] leading-relaxed text-slate-600 dark:border-gdc-border dark:bg-gdc-card dark:text-gdc-mutedStrong">
+              The saved record-selection and Union Schema state is available without a fresh sample. Re-run Fetch Sample Data only when you need to refresh record examples or re-test the incremental request against source data.
+            </div>
+            <IncrementalRequestPanel
+              state={state}
+              checkpointTestRecords={checkpointTestRecords}
+              previewRecord={extractedPreview}
+              eventArrayPath={paths.eventArrayPath}
+              eventRootPath={paths.eventRootPath}
+              checkpointSourcePath={paths.checkpointSourcePath}
+              checkpointFieldType={state.stream.checkpointFieldType}
+              pattern={state.stream.incrementalRequestPattern}
+              draft={state.stream.incrementalRequestDraft}
+              onChange={(patch) => onStreamPatch?.(patch)}
+              onClearCheckpoint={() => onSetCheckpoint({ checkpointSourcePath: '', checkpointFieldType: '' })}
+              onCopy={(text) => void copyValue(text, 'Request template copied')}
+            />
+          </div>
         </section>
       )
     }

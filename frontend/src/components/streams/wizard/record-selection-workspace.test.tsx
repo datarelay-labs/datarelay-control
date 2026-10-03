@@ -155,6 +155,44 @@ describe('RecordSelectionWorkspace', () => {
     expect(screen.getByTestId('incremental-request-test-button')).toBeInTheDocument()
   })
 
+  it('shows persisted incremental settings without requiring a fresh sample', async () => {
+    const user = userEvent.setup()
+    const state = buildInitialState()
+    state.apiTest.status = 'idle'
+    state.apiTest.ok = false
+    state.apiTest.parsedJson = null
+    state.apiTest.rawResponse = null
+    state.apiTest.unionSchema = {
+      total_events: 12,
+      fields: [
+        { field_path: '$.id', field_type: 'integer', occurrence_count: 12, sample_values: [1, 2] },
+      ],
+    }
+    state.stream.httpMethod = 'GET'
+    state.stream.eventArrayPath = '$.items'
+    state.stream.checkpointSourcePath = '$.id'
+    state.stream.checkpointFieldType = 'EVENT_ID'
+    state.stream.incrementalRequestPattern = 'query_params'
+    state.stream.incrementalRequestDraft = 'id_gt={{checkpoint.last_timestamp}}\nlimit=100'
+
+    render(
+      <RecordSelectionWorkspace
+        state={state}
+        onSetEventArrayPath={vi.fn()}
+        onSetEventRootPath={vi.fn()}
+        onSetCheckpoint={vi.fn()}
+        onStreamPatch={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByTestId('union-schema-status-ready')).toBeInTheDocument()
+    expect(screen.getByTestId('incremental-pattern-select')).toHaveValue('query_params')
+    await user.click(screen.getByTestId('open-request-preview-button'))
+    expect(screen.getByTestId('request-preview-draft')).toHaveValue(
+      'id_gt={{checkpoint.last_timestamp}}\nlimit=100',
+    )
+  })
+
   it('offers query parameters pattern for GET streams', () => {
     const state = buildInitialState()
     state.apiTest.status = 'success'
