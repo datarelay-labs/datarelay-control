@@ -56,6 +56,183 @@ def test_connector_auth_test_get_custom_path(monkeypatch: pytest.MonkeyPatch) ->
     assert res.request_headers_masked.get("Authorization") == "********"
 
 
+def test_connector_auth_test_saved_connector_uses_visible_bearer_draft(monkeypatch: pytest.MonkeyPatch) -> None:
+    auth_headers: list[str] = []
+
+    class _Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def request(self, method: str, url: str, **kwargs):  # noqa: ANN003
+            headers = kwargs.get("headers") or {}
+            auth_headers.append(str(headers.get("Authorization") or ""))
+            req = httpx.Request(method, url)
+            return httpx.Response(401, request=req, text="Unauthorized")
+
+    monkeypatch.setattr("app.runtime.preview_service.httpx.Client", lambda *a, **k: _Client())
+    monkeypatch.setattr(
+        "app.runtime.preview_service._load_source_config_for_connector",
+        lambda db, cid: {
+            "base_url": "https://draft.test",
+            "verify_ssl": True,
+            "headers": {},
+            "auth_type": "bearer",
+            "bearer_token": "saved-token",
+        },
+    )
+
+    res = run_connector_auth_test(
+        ConnectorAuthTestRequest(
+            connector_id=1,
+            inline_flat_source={
+                "base_url": "https://draft.test",
+                "verify_ssl": True,
+                "headers": {},
+                "auth_type": "bearer",
+                "bearer_token": "visible-invalid-draft",
+            },
+            method="GET",
+            test_path="/",
+        ),
+        MagicMock(),
+    )
+
+    assert auth_headers == ["Bearer visible-invalid-draft"]
+    assert res.ok is False
+    assert res.response_status_code == 401
+
+
+def test_connector_auth_test_saved_connector_resolves_masked_secret_server_side(monkeypatch: pytest.MonkeyPatch) -> None:
+    auth_headers: list[str] = []
+
+    class _Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def request(self, method: str, url: str, **kwargs):  # noqa: ANN003
+            headers = kwargs.get("headers") or {}
+            auth_headers.append(str(headers.get("Authorization") or ""))
+            req = httpx.Request(method, url)
+            return httpx.Response(200, request=req, json={"ok": True})
+
+    monkeypatch.setattr("app.runtime.preview_service.httpx.Client", lambda *a, **k: _Client())
+    monkeypatch.setattr(
+        "app.runtime.preview_service._load_source_config_for_connector",
+        lambda db, cid: {
+            "base_url": "https://draft.test",
+            "verify_ssl": True,
+            "headers": {},
+            "auth_type": "bearer",
+            "bearer_token": "saved-token",
+        },
+    )
+
+    res = run_connector_auth_test(
+        ConnectorAuthTestRequest(
+            connector_id=1,
+            inline_flat_source={
+                "base_url": "https://draft.test",
+                "verify_ssl": True,
+                "headers": {},
+                "auth_type": "bearer",
+                "bearer_token": "********",
+            },
+            method="GET",
+            test_path="/",
+        ),
+        MagicMock(),
+    )
+
+    assert auth_headers == ["Bearer saved-token"]
+    assert res.ok is True
+
+
+def test_connector_auth_test_does_not_reuse_saved_secret_across_draft_origin_change(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[tuple[str, str]] = []
+
+    class _Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def request(self, method: str, url: str, **kwargs):  # noqa: ANN003
+            headers = kwargs.get("headers") or {}
+            seen.append((url, str(headers.get("Authorization") or "")))
+            req = httpx.Request(method, url)
+            return httpx.Response(401, request=req, text="Unauthorized")
+
+    monkeypatch.setattr("app.runtime.preview_service.httpx.Client", lambda *a, **k: _Client())
+    monkeypatch.setattr(
+        "app.runtime.preview_service._load_source_config_for_connector",
+        lambda db, cid: {
+            "base_url": "https://saved.example/api",
+            "verify_ssl": True,
+            "headers": {},
+            "auth_type": "bearer",
+            "bearer_token": "saved-token",
+        },
+    )
+
+    res = run_connector_auth_test(
+        ConnectorAuthTestRequest(
+            connector_id=1,
+            inline_flat_source={
+                "base_url": "https://draft.example/api",
+                "verify_ssl": True,
+                "headers": {},
+                "auth_type": "bearer",
+                "bearer_token": "********",
+            },
+            method="GET",
+            test_path="/probe",
+        ),
+        MagicMock(),
+    )
+
+    assert seen == [("https://draft.example/api/probe", "")]
+    assert res.ok is False
+    assert "saved-token" not in str(res)
+
+
+def test_connector_auth_test_rejects_saved_non_http_draft_overlay(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "app.runtime.preview_service._load_source_config_for_connector",
+        lambda db, cid: {
+            "source_type": "S3_OBJECT_POLLING",
+            "endpoint_url": "https://saved-s3.example",
+            "bucket": "saved",
+            "access_key": "configured-access",
+            "secret_key": "configured-value",
+            "auth_type": "no_auth",
+        },
+    )
+
+    with pytest.raises(PreviewRequestError) as exc:
+        run_connector_auth_test(
+            ConnectorAuthTestRequest(
+                connector_id=1,
+                inline_flat_source={
+                    "base_url": "https://draft-http.example",
+                    "auth_type": "no_auth",
+                },
+                method="GET",
+                test_path="/",
+            ),
+            MagicMock(),
+        )
+
+    assert exc.value.status_code == 400
+    assert exc.value.detail["error_type"] == "inline_draft_overlay_not_supported"
+
+
 def test_connector_auth_test_rejects_foreign_test_url_host(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "app.runtime.preview_service._load_source_config_for_connector",
@@ -487,7 +664,7 @@ def test_connector_auth_test_session_login_form_urlencoded_probe(monkeypatch: py
     assert "********" in (res.session_login_body_preview or "")
 
 
-def test_connector_auth_test_request_xor_source() -> None:
+def test_connector_auth_test_request_requires_saved_or_valid_inline_source() -> None:
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError):
@@ -495,7 +672,16 @@ def test_connector_auth_test_request_xor_source() -> None:
     with pytest.raises(ValidationError):
         ConnectorAuthTestRequest(
             connector_id=1,
-            inline_flat_source={"base_url": "https://both.test"},
+            inline_flat_source={},
             method="GET",
             test_path="/",
         )
+
+    payload = ConnectorAuthTestRequest(
+        connector_id=1,
+        inline_flat_source={"base_url": "https://draft.test", "auth_type": "bearer", "bearer_token": "draft"},
+        method="GET",
+        test_path="/",
+    )
+    assert payload.connector_id == 1
+    assert payload.inline_flat_source is not None
