@@ -1650,7 +1650,12 @@ async function main(): Promise<number> {
 
     let deliveryPass = 0
     let deliveryTests = 0
-    if (primaryHttp && want('07_DELIVERY', ['delivery']) && !skipIfResume('07_TWO_ROUTE_DELIVERY')) {
+    const deliveryBundleAlreadyPassed =
+      skipIfResume('07_TWO_ROUTE_DELIVERY') &&
+      skipIfResume('06_PROTECTION_OUTPUT') &&
+      (!transformEvidenceExpected || skipIfResume('06_TRANSFORM_OUTPUT')) &&
+      (store.flags.BFS004_PROCESSING_CONFIG !== 'PASS' || skipIfResume('BFS004_PROCESSING_RUNTIME'))
+    if (primaryHttp && want('07_DELIVERY', ['delivery']) && !deliveryBundleAlreadyPassed) {
       deliveryTests += 2
       const m = `marker-${runId}-deliv-1`
       // Seed fixtures already used ids 1-12; reuse would be skipped by incremental checkpoint.
