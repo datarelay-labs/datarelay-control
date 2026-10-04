@@ -196,6 +196,41 @@ ensure_python_runtime() {
   echo "PYTHON_RUNTIME=$runtime_dir REQUIREMENTS_SHA256=$requirements_hash RESOLUTION=fresh-per-run"
 }
 
+ensure_cleanup_python_runtime() {
+  local system_python requirements_hash python_tag cache_root runtime_key runtime_dir have_db
+  system_python="$(command -v python3)"
+  requirements_hash="$(sha256sum "$ROOT/requirements.txt" | awk '{print $1}')"
+  python_tag="$($system_python -c 'import sys; print(f"py{sys.version_info.major}{sys.version_info.minor}")')"
+  cache_root="${GDC_E2E_PYTHON_CACHE_DIR:-/tmp/datarelay-control-e2e-python}"
+  runtime_key="$(printf '%s' "$RUN_ID" | tr -c 'A-Za-z0-9._-' '_')"
+  runtime_dir="$cache_root/${python_tag}-${requirements_hash:0:16}-${runtime_key}"
+  have_db="$(tr -d '[:space:]' <"$GDC_E2E_PID_DIR/api-database-url.txt" 2>/dev/null || true)"
+
+  # Cleanup-only is a recovery path and must not depend on package-index access.
+  # Prefer a surviving owned API, then an already-resolved run-scoped venv, then
+  # the local interpreter only if it already has the required modules.
+  if tracked_process_matches "$GDC_E2E_PID_DIR/api.pid" "$ROOT" && [[ "$have_db" == "$DATABASE_URL" ]]; then
+    [[ -d "$runtime_dir" ]] && export GDC_E2E_PYTHON_RUNTIME_OWNED="$runtime_dir"
+    echo "CLEANUP_RUNTIME=surviving-api"
+    return 0
+  fi
+  if [[ -x "$runtime_dir/bin/python" ]] && \
+     "$runtime_dir/bin/python" -c 'import fastapi, jsonata, psycopg2, sqlalchemy' >/dev/null 2>&1; then
+    export VIRTUAL_ENV="$runtime_dir"
+    export PATH="$runtime_dir/bin:$PATH"
+    export GDC_E2E_PYTHON_RUNTIME="$runtime_dir"
+    export GDC_E2E_PYTHON_RUNTIME_OWNED="$runtime_dir"
+    echo "CLEANUP_RUNTIME=$runtime_dir RESOLUTION=reuse-existing"
+    return 0
+  fi
+  if "$system_python" -c 'import fastapi, jsonata, psycopg2, sqlalchemy' >/dev/null 2>&1; then
+    echo "CLEANUP_RUNTIME=$system_python RESOLUTION=local-existing"
+    return 0
+  fi
+  echo "ERROR: cleanup-only requires a surviving owned API or an already-installed local runtime; refusing network dependency resolution" >&2
+  return 1
+}
+
 ensure_fixtures() {
   local syslog_fixture_present=0
   for c in gdc-postgres-test gdc-wiremock-test gdc-webhook-receiver-test gdc-minio-test gdc-postgres-query-test gdc-sftp-test gdc-syslog-test; do
@@ -398,11 +433,14 @@ cleanup_owned_services() {
 
 if [[ "$SKIP_UP" != "1" ]]; then
   trap cleanup_owned_services EXIT
-  ensure_python_runtime
-  ensure_fixtures
-  ensure_db
-  start_api
-  if [[ "$MODE" != "cleanup" ]]; then
+  if [[ "$MODE" == "cleanup" ]]; then
+    ensure_cleanup_python_runtime
+    start_api
+  else
+    ensure_python_runtime
+    ensure_fixtures
+    ensure_db
+    start_api
     start_scheduler
     start_ui
   fi

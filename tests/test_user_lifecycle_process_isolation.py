@@ -91,6 +91,23 @@ def test_runner_uses_requirements_hash_keyed_isolated_python_runtime() -> None:
     assert 'rm -f -- "${GDC_E2E_PYTHON_RUNTIME_OWNED}.lock"' in script
 
 
+
+def test_cleanup_only_does_not_require_fresh_dependency_resolution() -> None:
+    script = RUNNER.read_text(encoding="utf-8")
+
+    helper_start = script.index("ensure_cleanup_python_runtime()")
+    helper_end = script.index("\nensure_fixtures()", helper_start)
+    cleanup_helper = script[helper_start:helper_end]
+    assert "pip install" not in cleanup_helper
+    assert "surviving owned API" in cleanup_helper
+    assert "reuse-existing" in cleanup_helper
+    assert "local-existing" in cleanup_helper
+    startup = script.index('if [[ "$MODE" == "cleanup" ]]; then')
+    cleanup_call = script.index("ensure_cleanup_python_runtime", startup)
+    normal_call = script.index("ensure_python_runtime", cleanup_call)
+    assert startup < cleanup_call < normal_call
+
+
 def test_dynamic_wiremock_stubs_use_persisted_stream_http_method() -> None:
     helper = API_HELPER.read_text(encoding="utf-8")
     main = USER_LIFECYCLE_MAIN.read_text(encoding="utf-8")
