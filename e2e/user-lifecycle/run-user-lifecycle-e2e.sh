@@ -196,6 +196,7 @@ validated_python_runtime_path() {
   case "$canonical" in
     "$run_root/"*)
       [[ -x "$canonical/bin/python" ]] || return 1
+      [[ -s "$canonical/.requirements-sha256" ]] || return 1
       printf '%s\n' "$canonical"
       ;;
     *) return 1 ;;
@@ -218,7 +219,14 @@ import sys
 from pathlib import Path
 root = Path(sys.argv[1])
 try:
-    candidates = [p for p in root.iterdir() if p.is_dir() and (p / 'bin' / 'python').is_file()]
+    candidates = [
+        p
+        for p in root.iterdir()
+        if p.is_dir()
+        and (p / 'bin' / 'python').is_file()
+        and (p / '.requirements-sha256').is_file()
+        and (p / '.requirements-sha256').stat().st_size > 0
+    ]
 except OSError:
     raise SystemExit(1)
 candidates.sort(key=lambda p: p.stat().st_mtime_ns, reverse=True)

@@ -147,6 +147,13 @@ def test_cleanup_only_does_not_require_fresh_dependency_resolution() -> None:
     validation = script[validation_start:validation_end]
     assert 'case "$canonical" in' in validation
     assert '"$run_root/"*' in validation
+    assert '[[ -s "$canonical/.requirements-sha256" ]]' in validation
+
+    discovery_start = script.index("discover_python_runtime()")
+    discovery_end = script.index("\nactivate_python_runtime()", discovery_start)
+    discovery = script[discovery_start:discovery_end]
+    assert "(p / '.requirements-sha256').is_file()" in discovery
+    assert "(p / '.requirements-sha256').stat().st_size > 0" in discovery
 
     startup = script.index('if [[ "$MODE" == "cleanup" ]]; then')
     db_start = script.index("ensure_cleanup_database_fixture", startup)
