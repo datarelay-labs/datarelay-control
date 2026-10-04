@@ -198,9 +198,10 @@ const DestinationRouteCardMemo = memo(DestinationRouteCard)
 type StepDeliveryProps = {
   state: WizardState
   onChange: (patch: Partial<WizardDestinationsState>) => void
+  onOpenDestinationPrerequisite?: () => boolean | void
 }
 
-export function StepDelivery({ state, onChange }: StepDeliveryProps) {
+export function StepDelivery({ state, onChange, onOpenDestinationPrerequisite }: StepDeliveryProps) {
   const [loading, setLoading] = useState(true)
   const [destinations, setDestinations] = useState<DestinationListItem[]>([])
   /** True when fetchDestinationsList returned null (failure), not a valid empty catalog. */
@@ -475,7 +476,13 @@ export function StepDelivery({ state, onChange }: StepDeliveryProps) {
       ) : destinations.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-300 bg-white p-4 dark:border-gdc-border dark:bg-gdc-card">
           <p className="text-[12px] text-slate-600 dark:text-gdc-muted">No destinations configured yet. Create a destination first.</p>
-          <Link to={NAV_PATH.destinations} className="mt-2 inline-flex h-9 items-center rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white">
+          <Link
+            to={NAV_PATH.destinations}
+            onClick={(event) => {
+              if (onOpenDestinationPrerequisite?.() === false) event.preventDefault()
+            }}
+            className="mt-2 inline-flex h-9 items-center rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white"
+          >
             Go to Destinations
           </Link>
         </div>
