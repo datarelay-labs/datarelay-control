@@ -461,7 +461,18 @@ async function main(): Promise<number> {
       return 2
     }
     restoreResumeState(store, st)
-    if (store.scenarios.some((row) => row.id === 'FATAL' && row.status === 'FAIL')) {
+    const priorFatalIndex = store.scenarios.findLastIndex((row) => row.id === 'FATAL' && row.status === 'FAIL')
+    if (priorFatalIndex >= 0) {
+      const cleanupRecordedAfterFatal = store.scenarios
+        .slice(priorFatalIndex + 1)
+        .some((row) => row.id === '13_CLEANUP_ORPHANS')
+      const cleanupMutationRecorded = store.ledger.some(
+        (row) => row.CLEANUP_STATUS && row.CLEANUP_STATUS !== 'OPEN',
+      )
+      if (cleanupRecordedAfterFatal || cleanupMutationRecorded || store.flags.CLEANUP) {
+        console.error('Resume cannot recover a prior FATAL after cleanup started; start a fresh RUN_ID')
+        return 2
+      }
       store.setFlag('RESUME_RECOVERING_PRIOR_FATAL', 'YES')
     }
   }
