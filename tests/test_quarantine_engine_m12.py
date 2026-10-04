@@ -44,6 +44,7 @@ from app.runtime.schemas import (
     StreamQuarantineEventsResponse,
     StreamQuarantineSummaryResponse,
 )
+from app.streams.models import Stream
 from app.mappings.models import Mapping
 from tests.test_stream_runner_e2e import _FakePoller, _FakeWebhookSender, _build_runner, _seed_stream_runtime
 from app.runners.stream_loader import load_stream_context
@@ -342,6 +343,41 @@ def test_release_success_updates_checkpoint(db_session: Session) -> None:
         .all()
     )
     assert released_logs
+
+
+def test_release_allows_explicit_delivery_when_stream_is_disabled(db_session: Session) -> None:
+    fixture = _seed_stream_runtime(db_session)
+    stream_id = fixture["stream_id"]
+    stream = db_session.get(Stream, stream_id)
+    assert stream is not None
+    stream.enabled = False
+    db_session.commit()
+
+    row = StreamQuarantineEvent(
+        stream_id=stream_id,
+        quarantine_reason="policy:disabled-stream-release",
+        quarantine_source=QUARANTINE_SOURCE_POLICY,
+        status=QUARANTINE_STATUS_QUARANTINED,
+        protected_payload_json={"events": [{"id": "e-disabled", "message": "ok"}]},
+        metadata_json={"event_count": 1},
+    )
+    db_session.add(row)
+    db_session.commit()
+
+    from app.destinations.adapters.registry import DestinationAdapterRegistry
+
+    sender = _QuarantineWebhookSender()
+    registry = DestinationAdapterRegistry(webhook_sender=sender)
+    result = execute_quarantine_release(
+        db_session,
+        int(row.id),
+        destination_registry=registry,
+        released_by="operator",
+    )
+
+    assert result["outcome"] == "released"
+    assert result["status"] == QUARANTINE_STATUS_RELEASED
+    assert sender.calls
 
 
 def test_route_attributed_release_delivers_only_recorded_route(db_session: Session) -> None:

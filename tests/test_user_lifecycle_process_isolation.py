@@ -11,6 +11,7 @@ DEFAULTS = ROOT / "e2e" / "user-lifecycle" / "config" / "defaults.env"
 REQUIREMENTS = ROOT / "requirements.txt"
 API_HELPER = ROOT / "e2e" / "user-lifecycle" / "helpers" / "api.ts"
 USER_LIFECYCLE_MAIN = ROOT / "e2e" / "user-lifecycle" / "cli" / "main.ts"
+GOVERNANCE_LIFECYCLE = ROOT / "e2e" / "user-lifecycle" / "helpers" / "governance-lifecycle.ts"
 
 
 def _free_port() -> int:
@@ -91,6 +92,20 @@ def test_dynamic_wiremock_stubs_use_persisted_stream_http_method() -> None:
     assert "method: primaryHttpMethod!" in main
     assert "method: streamMethod" in main
     assert "method: checkpointHttpMethod" in main
+
+
+def test_governance_release_restores_stream_after_exception() -> None:
+    helper = GOVERNANCE_LIFECYCLE.read_text(encoding="utf-8")
+
+    assert "let releaseRestoreRequired = false" in helper
+    original_readback = helper.index("const streamBeforeStop =")
+    restore_armed = helper.index("releaseRestoreRequired = true")
+    stop_request = helper.index("const stopResponse = await api.stopStream(streamId)")
+    stopped_readback = helper.index("const stopped =")
+    assert original_readback < restore_armed < stop_request < stopped_readback
+    assert "} finally {" in helper
+    assert "BFS015_QUARANTINE_RELEASE_RESTORE" in helper
+    assert "await api.startStream(streamId).catch(() => null)" in helper
 
 
 def test_runner_fails_closed_on_unowned_api_port(tmp_path: Path) -> None:
