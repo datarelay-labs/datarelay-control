@@ -37,7 +37,11 @@ def deliver_protected_events_to_routes(
     destination send fails the release is unsuccessful (must not become RELEASED).
     """
 
-    ctx = load_stream_context(db, stream_id)
+    # Quarantine Release is an explicit operator delivery action, like Run Once
+    # and operational replay. A stopped/disabled stream must not turn a valid
+    # quarantine Release into an unhandled 500; persisted route/destination
+    # configuration remains authoritative for this one-shot delivery.
+    ctx = load_stream_context(db, stream_id, require_enabled_stream=False)
     if ctx is None:
         return False, "stream not found"
 
