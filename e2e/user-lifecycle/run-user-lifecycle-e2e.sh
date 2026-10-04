@@ -237,7 +237,7 @@ candidates.sort(key=lambda p: p.stat().st_mtime_ns, reverse=True)
 for candidate in candidates:
     try:
         rc = subprocess.run(
-            [str(candidate / 'bin' / 'python'), '-c', 'import fastapi, jsonata, psycopg2, sqlalchemy'],
+            [str(candidate / 'bin' / 'python'), '-c', 'import uvicorn; import app.main; import app.database; import app.governance_policies.models'],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             timeout=10,
@@ -261,6 +261,11 @@ activate_python_runtime() {
   export PATH="$runtime_dir/bin:$PATH"
   export GDC_E2E_PYTHON_RUNTIME="$runtime_dir"
   export GDC_E2E_PYTHON_RUNTIME_OWNED="$runtime_dir"
+}
+
+cleanup_python_runtime_usable() {
+  local python_bin="$1"
+  "$python_bin" -c 'import uvicorn; import app.main; import app.database; import app.governance_policies.models' >/dev/null 2>&1
 }
 
 ensure_python_runtime() {
@@ -372,35 +377,44 @@ ensure_cleanup_python_runtime() {
   runtime_token="$(python_runtime_token)"
   run_root="$cache_root/runs/$runtime_token"
   runtime_path_file="$(python_runtime_path_file)"
+  have_db="$(tr -d '[:space:]' <"$GDC_E2E_PID_DIR/api-database-url.txt" 2>/dev/null || true)"
+
+  # Acquire the shared lifetime lease before consulting any generation path. This
+  # prevents a concurrent cleanup from deleting run_root between lookup/validation
+  # and activation.
+  if ! acquire_python_runtime_shared_lease; then
+    echo "ERROR: cleanup runtime is being deleted by another invocation for RUN_ID=$RUN_ID" >&2
+    return 1
+  fi
+
   runtime_dir="$(recorded_python_runtime "$run_root" "$runtime_path_file" 2>/dev/null || true)"
+  if [[ -n "$runtime_dir" ]] && ! cleanup_python_runtime_usable "$runtime_dir/bin/python"; then
+    runtime_dir=""
+  fi
   if [[ -z "$runtime_dir" ]]; then
     runtime_dir="$(discover_python_runtime "$system_python" "$run_root" 2>/dev/null || true)"
   fi
-  have_db="$(tr -d '[:space:]' <"$GDC_E2E_PID_DIR/api-database-url.txt" 2>/dev/null || true)"
 
-  if tracked_process_matches "$GDC_E2E_PID_DIR/api.pid" "$ROOT" && [[ "$have_db" == "$DATABASE_URL" ]]; then
-    if [[ -n "$runtime_dir" ]] && acquire_python_runtime_shared_lease && activate_python_runtime "$runtime_dir"; then
+  if [[ -n "$runtime_dir" ]] && cleanup_python_runtime_usable "$runtime_dir/bin/python" && activate_python_runtime "$runtime_dir"; then
+    if tracked_process_matches "$GDC_E2E_PID_DIR/api.pid" "$ROOT" && [[ "$have_db" == "$DATABASE_URL" ]]; then
       echo "CLEANUP_RUNTIME=$runtime_dir RESOLUTION=surviving-api-reuse-existing"
-      return 0
+    else
+      echo "CLEANUP_RUNTIME=$runtime_dir RESOLUTION=reuse-existing"
     fi
-    release_python_runtime_lifetime_lease
-    if "$system_python" -c 'import fastapi, jsonata, psycopg2, sqlalchemy' >/dev/null 2>&1; then
-      echo "CLEANUP_RUNTIME=$system_python RESOLUTION=surviving-api-local-existing"
-      return 0
-    fi
-    echo "ERROR: surviving cleanup API exists but no offline-capable Python runtime is available for cleanup helpers" >&2
-    return 1
-  fi
-  if [[ -n "$runtime_dir" ]] && acquire_python_runtime_shared_lease && activate_python_runtime "$runtime_dir"; then
-    echo "CLEANUP_RUNTIME=$runtime_dir RESOLUTION=reuse-existing"
     return 0
   fi
+
   release_python_runtime_lifetime_lease
-  if "$system_python" -c 'import fastapi, jsonata, psycopg2, sqlalchemy' >/dev/null 2>&1; then
-    echo "CLEANUP_RUNTIME=$system_python RESOLUTION=local-existing"
+  if cleanup_python_runtime_usable "$system_python"; then
+    if tracked_process_matches "$GDC_E2E_PID_DIR/api.pid" "$ROOT" && [[ "$have_db" == "$DATABASE_URL" ]]; then
+      echo "CLEANUP_RUNTIME=$system_python RESOLUTION=surviving-api-local-existing"
+    else
+      echo "CLEANUP_RUNTIME=$system_python RESOLUTION=local-existing"
+    fi
     return 0
   fi
-  echo "ERROR: cleanup-only requires a preserved run runtime or an already-installed local runtime; refusing network dependency resolution" >&2
+
+  echo "ERROR: cleanup-only requires a preserved run runtime or a fully cleanup-capable local interpreter; refusing network dependency resolution" >&2
   return 1
 }
 

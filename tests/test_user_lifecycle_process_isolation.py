@@ -141,10 +141,13 @@ def test_cleanup_only_does_not_require_fresh_dependency_resolution() -> None:
     helper_end = script.index("\nensure_fixtures()", helper_start)
     cleanup_helper = script[helper_start:helper_end]
     assert "pip install" not in cleanup_helper
-    assert 'recorded_python_runtime "$run_root" "$runtime_path_file"' in cleanup_helper
-    assert 'discover_python_runtime "$system_python" "$run_root"' in cleanup_helper
-    assert 'acquire_python_runtime_shared_lease' in cleanup_helper
+    lease_before_lookup = cleanup_helper.index('if ! acquire_python_runtime_shared_lease; then')
+    recorded_lookup = cleanup_helper.index('recorded_python_runtime "$run_root" "$runtime_path_file"', lease_before_lookup)
+    discovery_lookup = cleanup_helper.index('discover_python_runtime "$system_python" "$run_root"', recorded_lookup)
+    assert lease_before_lookup < recorded_lookup < discovery_lookup
     assert 'activate_python_runtime "$runtime_dir"' in cleanup_helper
+    assert 'cleanup_python_runtime_usable "$runtime_dir/bin/python"' in cleanup_helper
+    assert 'cleanup_python_runtime_usable "$system_python"' in cleanup_helper
     assert 'RESOLUTION=surviving-api-reuse-existing' in cleanup_helper
     assert 'RESOLUTION=reuse-existing' in cleanup_helper
     assert 'RESOLUTION=local-existing' in cleanup_helper
@@ -165,6 +168,12 @@ def test_cleanup_only_does_not_require_fresh_dependency_resolution() -> None:
     discovery = script[discovery_start:discovery_end]
     assert "(p / '.requirements-sha256').is_file()" in discovery
     assert "(p / '.requirements-sha256').stat().st_size > 0" in discovery
+    assert "import uvicorn; import app.main; import app.database; import app.governance_policies.models" in discovery
+
+    cleanup_probe_start = script.index("cleanup_python_runtime_usable()")
+    cleanup_probe_end = script.index("\nensure_python_runtime()", cleanup_probe_start)
+    cleanup_probe = script[cleanup_probe_start:cleanup_probe_end]
+    assert "import uvicorn; import app.main; import app.database; import app.governance_policies.models" in cleanup_probe
 
     startup = script.index('if [[ "$MODE" == "cleanup" ]]; then')
     db_start = script.index("ensure_cleanup_database_fixture", startup)
