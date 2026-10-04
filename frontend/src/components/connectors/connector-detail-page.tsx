@@ -9,6 +9,7 @@ import { deleteConnector, fetchConnectorById, updateConnector, type ConnectorWri
 import { gdcUi } from '../../lib/gdc-ui-tokens'
 import { cn } from '../../lib/utils'
 import { ConnectorAuthTestPanel, type AuthTestHttpMethod } from './connector-auth-test-panel'
+import { connectorWritePayloadToInlineFlatSource } from './connector-write-to-inline-flat'
 import { GenericHttpAuthFields, type AuthType } from './generic-http-auth-fields'
 import { GenericHttpCommonHeadersEditor } from './generic-http-common-headers-editor'
 import { S3ConnectorFields } from './s3-connector-fields'
@@ -181,13 +182,20 @@ export function ConnectorDetailPage() {
 
   /** Must stay above conditional returns — hooks cannot run only after loading completes. */
   const buildAuthTestPayload = useCallback(
-    (ctx: { method: AuthTestHttpMethod; testPath: string; jsonBody: unknown | undefined }) => ({
-      connector_id: Number(connectorId),
-      method: ctx.method,
-      test_path: ctx.testPath,
-      json_body: ctx.jsonBody,
-    }),
-    [connectorId],
+    (ctx: { method: AuthTestHttpMethod; testPath: string; jsonBody: unknown | undefined }) => {
+      if (!form) throw new Error('Connector configuration is still loading.')
+      const sourceType = String(form.source_type ?? 'HTTP_API_POLLING').toUpperCase()
+      return {
+        connector_id: Number(connectorId),
+        ...(sourceType === 'HTTP_API_POLLING'
+          ? { inline_flat_source: connectorWritePayloadToInlineFlatSource(form) }
+          : {}),
+        method: ctx.method,
+        test_path: ctx.testPath,
+        json_body: ctx.jsonBody,
+      }
+    },
+    [connectorId, form],
   )
 
   function set<K extends keyof ConnectorWritePayload>(key: K, value: ConnectorWritePayload[K]) {

@@ -173,7 +173,7 @@ export type ConnectorAuthTestResponse = {
 
 export type ConnectorAuthTestRequestPayload = {
   connector_id?: number | null
-  /** Unsaved connector: same shape as merged Source row (`inline_flat_source` on API). */
+  /** Unsaved connector, or visible edit-form draft over connector_id; same flattened Source shape. */
   inline_flat_source?: Record<string, unknown> | null
   method?: string
   test_path?: string | null

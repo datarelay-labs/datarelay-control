@@ -507,9 +507,60 @@ def _connector_auth_response_from_probe(
     )
 
 
-def _source_config_for_connector_auth_test(payload: ConnectorAuthTestRequest, db: Session | None) -> dict[str, Any]:
-    """Load merged Source config from DB or use unsaved inline payload (same shape as _flatten_source_row)."""
+_AUTH_TEST_MASK = "********"
+_AUTH_TEST_SECRET_KEYS = frozenset(
+    {
+        "basic_password",
+        "bearer_token",
+        "api_key_value",
+        "oauth2_client_secret",
+        "login_password",
+        "refresh_token",
+        "api_key",
+    }
+)
 
+
+def _connector_auth_test_http_origin(value: Any) -> tuple[str, str, int] | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    if "://" not in raw:
+        raw = f"https://{raw}"
+    parsed = urlparse(raw)
+    scheme = parsed.scheme.lower()
+    host = (parsed.hostname or "").lower()
+    if scheme not in {"http", "https"} or not host:
+        return None
+    try:
+        port = parsed.port
+    except ValueError:
+        return None
+    return scheme, host, int(port or (443 if scheme == "https" else 80))
+
+
+def _overlay_connector_auth_test_draft(saved: dict[str, Any], draft: dict[str, Any]) -> dict[str, Any]:
+    """Overlay a visible HTTP edit draft without forwarding saved secrets to a new origin."""
+
+    saved_origin = _connector_auth_test_http_origin(saved.get("base_url"))
+    draft_origin = _connector_auth_test_http_origin(draft.get("base_url"))
+    can_reuse_saved_secret = saved_origin is not None and saved_origin == draft_origin
+
+    out = dict(saved)
+    for key, value in draft.items():
+        if key in _AUTH_TEST_SECRET_KEYS and value in (None, "", _AUTH_TEST_MASK):
+            if can_reuse_saved_secret and saved.get(key) not in (None, ""):
+                continue
+            out[key] = ""
+            continue
+        out[key] = value
+    return out
+
+
+def _source_config_for_connector_auth_test(payload: ConnectorAuthTestRequest, db: Session | None) -> dict[str, Any]:
+    """Resolve saved config, unsaved inline config, or saved config plus a visible draft overlay."""
+
+    loaded: dict[str, Any] | None = None
     if payload.connector_id is not None:
         loaded = _load_source_config_for_connector(db, int(payload.connector_id))
         if loaded is None:
@@ -521,10 +572,31 @@ def _source_config_for_connector_auth_test(payload: ConnectorAuthTestRequest, db
                     "message": f"No Source row found for connector_id={payload.connector_id}",
                 },
             )
-        return loaded
+
     inl = dict(payload.inline_flat_source or {})
     if "headers" not in inl and "common_headers" in inl:
         inl = {**inl, "headers": dict(inl.get("common_headers") or {})}
+    if loaded is not None and inl:
+        loaded_is_http = (
+            bool(str(loaded.get("base_url") or "").strip())
+            and not _is_s3_connector_auth_config(loaded)
+            and not _is_database_query_connector_auth_config(loaded)
+            and not _is_remote_file_connector_auth_config(loaded)
+        )
+        draft_source_type = str(inl.get("source_type") or "HTTP_API_POLLING").strip().upper()
+        draft_is_http = bool(str(inl.get("base_url") or "").strip()) and draft_source_type == "HTTP_API_POLLING"
+        if not loaded_is_http or not draft_is_http:
+            raise PreviewRequestError(
+                400,
+                {
+                    "ok": False,
+                    "error_type": "inline_draft_overlay_not_supported",
+                    "message": "Saved connector draft overlays are supported only for HTTP API connectors.",
+                },
+            )
+        return _overlay_connector_auth_test_draft(loaded, inl)
+    if loaded is not None:
+        return loaded
     return inl
 
 
