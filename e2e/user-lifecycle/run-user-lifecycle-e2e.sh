@@ -140,7 +140,7 @@ require_free_untracked_port "API" "$GDC_E2E_API_PORT" "$preflight_api_tracked"
 require_free_untracked_port "UI" "$GDC_E2E_UI_PORT" "$preflight_ui_tracked"
 
 ensure_python_runtime() {
-  local system_python requirements_hash python_tag cache_root runtime_key runtime_dir lock_file tmp_dir marker
+  local system_python requirements_hash python_tag cache_root runtime_key runtime_dir lock_file tmp_dir marker runtime_path_file recorded_runtime
   system_python="$(command -v python3)"
   requirements_hash="$(sha256sum "$ROOT/requirements.txt" | awk '{print $1}')"
   python_tag="$($system_python -c 'import sys; print(f"py{sys.version_info.major}{sys.version_info.minor}")')"
@@ -150,6 +150,7 @@ ensure_python_runtime() {
   lock_file="${runtime_dir}.lock"
   marker="$runtime_dir/.requirements-sha256"
   tmp_dir="${runtime_dir}.tmp.$$"
+  runtime_path_file="$GDC_E2E_PID_DIR/python-runtime-path.txt"
   mkdir -p "$cache_root"
 
   # Resolve/install dependencies fresh for every browser run. requirements.txt has
@@ -161,6 +162,15 @@ ensure_python_runtime() {
   flock 8
   terminate_tracked_process_group "$GDC_E2E_PID_DIR/lab-scheduler.pid" "$ROOT"
   terminate_tracked_process_group "$GDC_E2E_PID_DIR/api.pid" "$ROOT"
+  recorded_runtime="$(tr -d '[:space:]' <"$runtime_path_file" 2>/dev/null || true)"
+  if [[ -n "$recorded_runtime" ]]; then
+    recorded_runtime="$(readlink -m "$recorded_runtime")"
+    case "$recorded_runtime" in
+      "$cache_root/"*"-$runtime_key") rm -rf -- "$recorded_runtime" ;;
+      *) echo "WARN: ignoring unsafe recorded browser-runtime path: $recorded_runtime" >&2 ;;
+    esac
+  fi
+  rm -f -- "$runtime_path_file"
   rm -rf "$runtime_dir" "$tmp_dir"
   "$system_python" -m venv "$tmp_dir"
   if ! "$tmp_dir/bin/python" -m pip install --disable-pip-version-check --no-input -r "$ROOT/requirements.txt" \
@@ -189,6 +199,7 @@ ensure_python_runtime() {
   flock -u 8
   exec 8>&-
 
+  printf '%s\n' "$runtime_dir" >"$runtime_path_file"
   export VIRTUAL_ENV="$runtime_dir"
   export PATH="$runtime_dir/bin:$PATH"
   export GDC_E2E_PYTHON_RUNTIME="$runtime_dir"
@@ -215,13 +226,26 @@ ensure_cleanup_database_fixture() {
 }
 
 ensure_cleanup_python_runtime() {
-  local system_python requirements_hash python_tag cache_root runtime_key runtime_dir have_db
+  local system_python requirements_hash python_tag cache_root runtime_key runtime_dir have_db runtime_path_file recorded_runtime
   system_python="$(command -v python3)"
   requirements_hash="$(sha256sum "$ROOT/requirements.txt" | awk '{print $1}')"
   python_tag="$($system_python -c 'import sys; print(f"py{sys.version_info.major}{sys.version_info.minor}")')"
   cache_root="${GDC_E2E_PYTHON_CACHE_DIR:-/tmp/datarelay-control-e2e-python}"
   runtime_key="$(printf '%s' "$RUN_ID" | tr -c 'A-Za-z0-9._-' '_')"
   runtime_dir="$cache_root/${python_tag}-${requirements_hash:0:16}-${runtime_key}"
+  runtime_path_file="$GDC_E2E_PID_DIR/python-runtime-path.txt"
+  recorded_runtime="$(tr -d '[:space:]' <"$runtime_path_file" 2>/dev/null || true)"
+  if [[ -n "$recorded_runtime" ]]; then
+    recorded_runtime="$(readlink -m "$recorded_runtime")"
+    case "$recorded_runtime" in
+      "$cache_root/"*"-$runtime_key")
+        if [[ -x "$recorded_runtime/bin/python" ]]; then
+          runtime_dir="$recorded_runtime"
+        fi
+        ;;
+      *) echo "WARN: ignoring unsafe recorded cleanup runtime path: $recorded_runtime" >&2 ;;
+    esac
+  fi
   have_db="$(tr -d '[:space:]' <"$GDC_E2E_PID_DIR/api-database-url.txt" 2>/dev/null || true)"
 
   # Cleanup-only is a recovery path and must not depend on package-index access.
@@ -462,6 +486,7 @@ cleanup_python_runtime() {
     rm -rf -- "$GDC_E2E_PYTHON_RUNTIME_OWNED"
     rm -f -- "${GDC_E2E_PYTHON_RUNTIME_OWNED}.lock"
   fi
+  rm -f -- "$GDC_E2E_PID_DIR/python-runtime-path.txt"
 }
 
 if [[ "$SKIP_UP" != "1" ]]; then
