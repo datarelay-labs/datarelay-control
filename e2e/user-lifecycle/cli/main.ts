@@ -686,7 +686,7 @@ async function main(): Promise<number> {
       }
     }
 
-    if (args.mode === 'smoke') {
+    if (effectiveMode === 'smoke') {
       // minimal create/delete
       if (!skipIfResume('00_SMOKE_CONNECTOR_CRUD')) {
         const name = `e2e-${runId}-smoke-http`
@@ -715,9 +715,13 @@ async function main(): Promise<number> {
           store.rec('00_SMOKE_CONNECTOR_CRUD', 'FAIL', 'connector not persisted', ['BROWSER_E2E'])
         }
       }
+      refreshTerminalScenarioCounts(
+        store,
+        args.mode === 'resume' && store.flags.RESUME_RECOVERING_PRIOR_FATAL === 'YES',
+      )
       store.flush()
-      writeFinalSummary(store, { MODE: 'smoke' })
-      return (store.counts.FAIL || 0) > 0 ? 1 : 0
+      writeFinalSummary(store, { MODE: args.mode === 'resume' ? 'resume' : 'smoke' })
+      return finalAcceptanceBlocked(store) ? 1 : 0
     }
 
     // ---- fixtures ----
@@ -1648,13 +1652,13 @@ async function main(): Promise<number> {
     const wrapHttpItem = (item: Record<string, unknown>) =>
       primaryHttpPath.endsWith('/h2') ? { data: { records: [item] } } : { items: [item] }
 
-    let deliveryPass = 0
-    let deliveryTests = 0
     const deliveryBundleAlreadyPassed =
       skipIfResume('07_TWO_ROUTE_DELIVERY') &&
       skipIfResume('06_PROTECTION_OUTPUT') &&
       (!transformEvidenceExpected || skipIfResume('06_TRANSFORM_OUTPUT')) &&
       (store.flags.BFS004_PROCESSING_CONFIG !== 'PASS' || skipIfResume('BFS004_PROCESSING_RUNTIME'))
+    let deliveryPass = deliveryBundleAlreadyPassed ? 2 : 0
+    let deliveryTests = deliveryBundleAlreadyPassed ? 2 : 0
     if (primaryHttp && want('07_DELIVERY', ['delivery']) && !deliveryBundleAlreadyPassed) {
       deliveryTests += 2
       const m = `marker-${runId}-deliv-1`
@@ -1865,11 +1869,27 @@ async function main(): Promise<number> {
     }
 
     // ---- destination failure isolation (UI diagnosis first) ----
+    const destinationFailureBundleAlreadyPassed =
+      skipIfResume('08_DEST_FAIL_BROWSER_EDIT') &&
+      skipIfResume('08_DEST_FAIL_API_READBACK') &&
+      skipIfResume('08_DEST_FAIL_ROUTE_REF') &&
+      skipIfResume('08_DEST_FAIL_UI_NAV') &&
+      skipIfResume('08_DEST_FAIL_ISOLATION') &&
+      skipIfResume('09_DEST_RECOVERY')
     if (
       resources.destinations.B &&
       primaryHttp &&
       want('08_DEST_FAIL', ['failure', 'browser']) &&
-      !(skipIfResume('08_DEST_FAIL_ISOLATION') && skipIfResume('09_DEST_RECOVERY'))
+      destinationFailureBundleAlreadyPassed
+    ) {
+      deliveryTests += 3
+      deliveryPass += 3
+    }
+    if (
+      resources.destinations.B &&
+      primaryHttp &&
+      want('08_DEST_FAIL', ['failure', 'browser']) &&
+      !destinationFailureBundleAlreadyPassed
     ) {
       const downUrl = 'http://127.0.0.1:9/down'
       const marker = `DSTFAIL-${runId}-001`
