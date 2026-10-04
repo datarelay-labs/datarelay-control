@@ -52,7 +52,7 @@ function parseArgs(argv: string[]): Args {
     else if (a === '--scenario') {
       args.mode = 'scenario'
       args.scenario = argv[++i]
-    } else if (a === '--tag') args.tags.push(...argv[++i].split(','))
+    } else if (a === '--tag') args.tags.push(...argv[++i].split(',').map((tag) => tag.trim()))
     else if (a === '--cleanup-only') {
       args.mode = 'cleanup'
       args.runId = argv[++i]
@@ -67,6 +67,16 @@ function parseArgs(argv: string[]): Args {
 
 function env(name: string, fallback: string): string {
   return (process.env[name] || fallback).replace(/\/$/, '')
+}
+
+function persistedScopeTags(raw: string | undefined): string[] | null {
+  if (raw == null) return null
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    return Array.isArray(parsed) && parsed.every((tag) => typeof tag === 'string') ? parsed : null
+  } catch {
+    return null
+  }
 }
 
 function alreadyPassed(store: ArtifactStore, id: string): boolean {
@@ -438,14 +448,15 @@ async function main(): Promise<number> {
   }
   if (args.mode === 'resume') {
     const scopeMode = String(store.flags.RUN_SCOPE_MODE || '')
-    if (!['smoke', 'all', 'scenario'].includes(scopeMode)) {
+    const scopeTags = persistedScopeTags(store.flags.RUN_SCOPE_TAGS_JSON)
+    if (!['smoke', 'all', 'scenario'].includes(scopeMode) || scopeTags == null) {
       console.error('Resume state is missing a safe original run scope; refusing to broaden targeted coverage')
       return 2
     }
   } else if (args.mode !== 'cleanup') {
     store.setFlag('RUN_SCOPE_MODE', args.mode)
     store.setFlag('RUN_SCOPE_SCENARIO', args.scenario || '')
-    store.setFlag('RUN_SCOPE_TAGS', args.tags.join(','))
+    store.setFlag('RUN_SCOPE_TAGS_JSON', JSON.stringify(args.tags))
   }
 
   store.setFlag('CANDIDATE_HEAD', candidateHead)
@@ -499,12 +510,7 @@ async function main(): Promise<number> {
     const effectiveScenario =
       args.mode === 'resume' ? store.flags.RUN_SCOPE_SCENARIO || undefined : args.scenario
     const effectiveTags =
-      args.mode === 'resume'
-        ? String(store.flags.RUN_SCOPE_TAGS || '')
-            .split(',')
-            .map((tag) => tag.trim())
-            .filter(Boolean)
-        : args.tags
+      args.mode === 'resume' ? persistedScopeTags(store.flags.RUN_SCOPE_TAGS_JSON)! : args.tags
 
     const scenarioSets: Record<string, (id: string) => boolean> = {
       'dest-isolation': (id) =>
