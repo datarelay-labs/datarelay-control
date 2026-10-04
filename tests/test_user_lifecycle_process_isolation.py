@@ -71,34 +71,36 @@ def test_runner_uses_requirements_hash_keyed_isolated_python_runtime() -> None:
 
     assert "jsonata-python>=0.6.0,<1" in requirements
     assert "ensure_python_runtime()" in script
+    assert 'readlink -m "${GDC_E2E_PYTHON_CACHE_DIR:-/tmp/datarelay-control-e2e-python}"' in script
     assert "sha256sum \"$ROOT/requirements.txt\"" in script
+    assert "sha256sum | awk '{print substr($1, 1, 12)}'" in script
     assert "tr -c 'A-Za-z0-9._-' '_'" in script
-    assert '${python_tag}-${requirements_hash:0:16}-${runtime_key}' in script
+    assert 'run_root="$cache_root/runs/$runtime_token"' in script
+    assert 'python-runtime-%s.path' in script
+    assert 'mktemp -d "$run_root/${python_tag}-${requirements_hash:0:16}-gen-XXXXXXXX"' in script
+    assert 'python_runtime_${RUN_ID}.freeze.txt' in script
+    assert '.requirements-sha256' in script
+    assert "import fastapi, jsonata, psycopg2, sqlalchemy" in script
+
     ensure_start = script.index("ensure_python_runtime()")
     stop_scheduler = script.index('terminate_tracked_process_group "$GDC_E2E_PID_DIR/lab-scheduler.pid" "$ROOT"', ensure_start)
     stop_api = script.index('terminate_tracked_process_group "$GDC_E2E_PID_DIR/api.pid" "$ROOT"', ensure_start)
-    stage_runtime = script.index('"$system_python" -m venv "$tmp_dir"', ensure_start)
-    remove_runtime = script.index('rm -rf "$runtime_dir"', stage_runtime)
-    swap_runtime = script.index('mv "$tmp_dir" "$runtime_dir"', remove_runtime)
-    persist_runtime = script.index("printf '%s\\n' \"$runtime_dir\" >\"$runtime_path_file\"", swap_runtime)
-    assert ensure_start < stop_scheduler < stop_api < stage_runtime < remove_runtime < swap_runtime < persist_runtime
-    assert '"$system_python" -m venv "$tmp_dir"' in script
-    assert '"$tmp_dir/bin/python" -m pip install' in script
+    create_generation = script.index('mktemp -d "$run_root/', stop_api)
+    install = script.index('"$runtime_dir/bin/python" -m pip install', create_generation)
+    validate = script.index("staged browser-runtime validation failed", install)
+    write_record = script.index("printf '%s\\n' \"$runtime_dir\" >\"$record_tmp\"", validate)
+    commit_record = script.index('mv -f -- "$record_tmp" "$runtime_path_file"', write_record)
+    delete_old = script.index('rm -rf -- "$recorded_runtime"', commit_record)
+    assert ensure_start < stop_scheduler < stop_api < create_generation < install < validate < write_record < commit_record < delete_old
+
     assert 'preserved runtime remains available for cleanup' in script
-    assert 'python_runtime_${RUN_ID}.freeze.txt' in script
-    assert '.requirements-sha256' in script
-    assert 'runtime_path_file="$GDC_E2E_PID_DIR/python-runtime-path.txt"' in script
-    assert 'if [[ -f "$runtime_path_file" ]]' in script
-    assert "printf '%s\\n' \"$runtime_dir\" >\"$runtime_path_file\"" in script
-    assert "import fastapi, jsonata, psycopg2, sqlalchemy" in script
+    assert 'activate_python_runtime "$runtime_dir"' in script
     assert 'export VIRTUAL_ENV="$runtime_dir"' in script
     assert 'export GDC_E2E_PYTHON_RUNTIME="$runtime_dir"' in script
     assert 'export GDC_E2E_PYTHON_RUNTIME_OWNED="$runtime_dir"' in script
     assert "cleanup_python_runtime()" in script
     assert "grep -qx 'CLEANUP=PASS'" in script
     assert 'PYTHON_RUNTIME_PRESERVED=$GDC_E2E_PYTHON_RUNTIME_OWNED REASON=cleanup-not-proven' in script
-
-
 
 
 def test_cleanup_only_starts_local_postgres_fixture_without_remote_provisioning() -> None:
@@ -124,30 +126,37 @@ def test_cleanup_only_does_not_require_fresh_dependency_resolution() -> None:
     helper_end = script.index("\nensure_fixtures()", helper_start)
     cleanup_helper = script[helper_start:helper_end]
     assert "pip install" not in cleanup_helper
-    assert "surviving owned API" in cleanup_helper
-    recorded_read = cleanup_helper.index('if [[ -f "$runtime_path_file" ]]')
-    recorded_value = cleanup_helper.index('recorded_runtime="$(tr -d', recorded_read)
-    recorded_select = cleanup_helper.index('runtime_dir="$recorded_runtime"')
-    surviving = cleanup_helper.index('tracked_process_matches "$GDC_E2E_PID_DIR/api.pid"')
-    assert recorded_read < recorded_value < recorded_select < surviving
-    assert '"$cache_root/"*"-$runtime_key"' in cleanup_helper
-    surviving_activate = cleanup_helper.index('export VIRTUAL_ENV="$runtime_dir"', surviving)
-    surviving_path = cleanup_helper.index('export PATH="$runtime_dir/bin:$PATH"', surviving)
-    surviving_return = cleanup_helper.index('RESOLUTION=surviving-api-reuse-existing', surviving)
-    assert surviving < surviving_activate < surviving_path < surviving_return
-    assert "reuse-existing" in cleanup_helper
-    assert "local-existing" in cleanup_helper
+    assert 'recorded_python_runtime "$run_root" "$runtime_path_file"' in cleanup_helper
+    assert 'discover_python_runtime "$system_python" "$run_root"' in cleanup_helper
+    assert 'activate_python_runtime "$runtime_dir"' in cleanup_helper
+    assert 'RESOLUTION=surviving-api-reuse-existing' in cleanup_helper
+    assert 'RESOLUTION=reuse-existing' in cleanup_helper
+    assert 'RESOLUTION=local-existing' in cleanup_helper
+    assert 'refusing network dependency resolution' in cleanup_helper
+
+    # Identity/cache isolation must be per RUN_ID, not shared across runs.
+    assert 'python-runtime-%s.path' in script
+    assert 'run_root="$cache_root/runs/$runtime_token"' in script
+    assert 'readlink -m "${GDC_E2E_PYTHON_CACHE_DIR:-/tmp/datarelay-control-e2e-python}"' in script
+    validation_start = script.index("validated_python_runtime_path()")
+    validation_end = script.index("\nrecorded_python_runtime()", validation_start)
+    validation = script[validation_start:validation_end]
+    assert 'case "$canonical" in' in validation
+    assert '"$run_root/"*' in validation
+
     startup = script.index('if [[ "$MODE" == "cleanup" ]]; then')
-    cleanup_call = script.index("ensure_cleanup_python_runtime", startup)
-    normal_call = script.index("ensure_python_runtime", cleanup_call)
-    assert startup < cleanup_call < normal_call
+    db_start = script.index("ensure_cleanup_database_fixture", startup)
+    runtime_setup = script.index("ensure_cleanup_python_runtime", db_start)
+    api_start = script.index("start_api", runtime_setup)
+    assert startup < db_start < runtime_setup < api_start
+
     service_cleanup_start = script.index("cleanup_owned_services()")
-    runtime_cleanup_start = script.index("cleanup_python_runtime()")
+    runtime_cleanup_start = script.index("\ncleanup_python_runtime()", service_cleanup_start)
     service_cleanup = script[service_cleanup_start:runtime_cleanup_start]
-    assert 'rm -rf -- "$GDC_E2E_PYTHON_RUNTIME_OWNED"' not in service_cleanup
+    assert 'rm -rf -- "$run_root"' not in service_cleanup
     runtime_cleanup = script[runtime_cleanup_start:]
-    assert 'rm -rf -- "$GDC_E2E_PYTHON_RUNTIME_OWNED"' in runtime_cleanup
-    assert 'rm -f -- "$GDC_E2E_PID_DIR/python-runtime-path.txt"' in runtime_cleanup
+    assert 'rm -rf -- "$run_root"' in runtime_cleanup
+    assert 'rm -f -- "$runtime_path_file" "$lock_file"' in runtime_cleanup
 
 
 def test_dynamic_wiremock_stubs_use_persisted_stream_http_method() -> None:

@@ -139,94 +139,142 @@ tracked_process_matches "$GDC_E2E_PID_DIR/ui.pid" "$ROOT/frontend" && preflight_
 require_free_untracked_port "API" "$GDC_E2E_API_PORT" "$preflight_api_tracked"
 require_free_untracked_port "UI" "$GDC_E2E_UI_PORT" "$preflight_ui_tracked"
 
+python_runtime_cache_root() {
+  readlink -m "${GDC_E2E_PYTHON_CACHE_DIR:-/tmp/datarelay-control-e2e-python}"
+}
+
+python_runtime_token() {
+  local safe digest
+  safe="$(printf '%s' "$RUN_ID" | tr -c 'A-Za-z0-9._-' '_')"
+  digest="$(printf '%s' "$RUN_ID" | sha256sum | awk '{print substr($1, 1, 12)}')"
+  printf '%s-%s\n' "$safe" "$digest"
+}
+
+python_runtime_run_root() {
+  printf '%s/runs/%s\n' "$(python_runtime_cache_root)" "$(python_runtime_token)"
+}
+
+python_runtime_path_file() {
+  printf '%s/python-runtime-%s.path\n' "$GDC_E2E_PID_DIR" "$(python_runtime_token)"
+}
+
+validated_python_runtime_path() {
+  local candidate="$1" run_root="$2" canonical
+  [[ -n "$candidate" ]] || return 1
+  canonical="$(readlink -m "$candidate")"
+  case "$canonical" in
+    "$run_root/"*)
+      [[ -x "$canonical/bin/python" ]] || return 1
+      printf '%s\n' "$canonical"
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+recorded_python_runtime() {
+  local run_root="$1" path_file="$2" raw
+  [[ -f "$path_file" ]] || return 1
+  raw="$(tr -d '[:space:]' <"$path_file")"
+  validated_python_runtime_path "$raw" "$run_root"
+}
+
+discover_python_runtime() {
+  local system_python="$1" run_root="$2" candidate
+  [[ -d "$run_root" ]] || return 1
+  candidate="$($system_python - "$run_root" <<'PY2'
+import sys
+from pathlib import Path
+root = Path(sys.argv[1])
+try:
+    candidates = [p for p in root.iterdir() if p.is_dir() and (p / 'bin' / 'python').is_file()]
+except OSError:
+    raise SystemExit(1)
+if not candidates:
+    raise SystemExit(1)
+candidates.sort(key=lambda p: p.stat().st_mtime_ns, reverse=True)
+print(candidates[0])
+PY2
+  )" || return 1
+  validated_python_runtime_path "$candidate" "$run_root"
+}
+
+activate_python_runtime() {
+  local runtime_dir="$1"
+  "$runtime_dir/bin/python" -c 'import fastapi, jsonata, psycopg2, sqlalchemy' >/dev/null 2>&1 || return 1
+  export VIRTUAL_ENV="$runtime_dir"
+  export PATH="$runtime_dir/bin:$PATH"
+  export GDC_E2E_PYTHON_RUNTIME="$runtime_dir"
+  export GDC_E2E_PYTHON_RUNTIME_OWNED="$runtime_dir"
+}
+
 ensure_python_runtime() {
-  local system_python requirements_hash python_tag cache_root runtime_key runtime_dir lock_file tmp_dir marker runtime_path_file recorded_runtime
+  local system_python requirements_hash python_tag cache_root runtime_token run_root runtime_dir lock_file marker
+  local runtime_path_file record_tmp recorded_runtime
   system_python="$(command -v python3)"
   requirements_hash="$(sha256sum "$ROOT/requirements.txt" | awk '{print $1}')"
   python_tag="$($system_python -c 'import sys; print(f"py{sys.version_info.major}{sys.version_info.minor}")')"
-  cache_root="${GDC_E2E_PYTHON_CACHE_DIR:-/tmp/datarelay-control-e2e-python}"
-  runtime_key="$(printf '%s' "$RUN_ID" | tr -c 'A-Za-z0-9._-' '_')"
-  runtime_dir="$cache_root/${python_tag}-${requirements_hash:0:16}-${runtime_key}"
-  lock_file="${runtime_dir}.lock"
-  marker="$runtime_dir/.requirements-sha256"
-  tmp_dir="${runtime_dir}.tmp.$$"
-  runtime_path_file="$GDC_E2E_PID_DIR/python-runtime-path.txt"
-  mkdir -p "$cache_root"
+  cache_root="$(python_runtime_cache_root)"
+  runtime_token="$(python_runtime_token)"
+  run_root="$cache_root/runs/$runtime_token"
+  runtime_path_file="$(python_runtime_path_file)"
+  lock_file="$cache_root/locks/${runtime_token}.lock"
+  mkdir -p "$run_root" "$cache_root/locks"
 
-  # Resolve/install dependencies fresh for every browser run. requirements.txt has
-  # ranged dependencies, so a requirements-only cache key can silently retain an
-  # older resolved package set after upstream releases. Before replacing the venv,
-  # terminate surviving Python services owned by this same run/PID directory so no
-  # process can continue executing the previous resolution after the path changes.
   exec 8>"$lock_file"
   flock 8
   terminate_tracked_process_group "$GDC_E2E_PID_DIR/lab-scheduler.pid" "$ROOT"
   terminate_tracked_process_group "$GDC_E2E_PID_DIR/api.pid" "$ROOT"
-  recorded_runtime=""
-  if [[ -f "$runtime_path_file" ]]; then
-    recorded_runtime="$(tr -d '[:space:]' <"$runtime_path_file")"
-  fi
-  if [[ -n "$recorded_runtime" ]]; then
-    recorded_runtime="$(readlink -m "$recorded_runtime")"
-    case "$recorded_runtime" in
-      "$cache_root/"*"-$runtime_key") ;;
-      *)
-        echo "WARN: ignoring unsafe recorded browser-runtime path: $recorded_runtime" >&2
-        recorded_runtime=""
-        ;;
-    esac
-  fi
 
-  # Provision transactionally: keep the prior run-scoped runtime and its identity
-  # record intact until the replacement has fully installed and validated. This
-  # preserves offline cleanup/recovery if dependency resolution fails during resume.
-  rm -rf "$tmp_dir"
-  "$system_python" -m venv "$tmp_dir"
-  if ! "$tmp_dir/bin/python" -m pip install --disable-pip-version-check --no-input -r "$ROOT/requirements.txt" \
+  recorded_runtime="$(recorded_python_runtime "$run_root" "$runtime_path_file" 2>/dev/null || true)"
+  runtime_dir="$(mktemp -d "$run_root/${python_tag}-${requirements_hash:0:16}-gen-XXXXXXXX")"
+  marker="$runtime_dir/.requirements-sha256"
+
+  # Each generation is immutable and unique. The prior recorded generation remains
+  # valid until the new generation is fully installed/validated and the run-scoped
+  # identity file is atomically renamed. A crash on either side of that rename leaves
+  # at least one usable cleanup runtime. Cleanup removes every generation under this
+  # RUN_ID-specific cache root only after resource cleanup is proven.
+  if ! "$system_python" -m venv "$runtime_dir"; then
+    rm -rf -- "$runtime_dir"
+    flock -u 8
+    exec 8>&-
+    return 1
+  fi
+  if ! "$runtime_dir/bin/python" -m pip install --disable-pip-version-check --no-input -r "$ROOT/requirements.txt" \
     >"$GDC_E2E_LOG_DIR/python_runtime_${RUN_ID}.log" 2>&1; then
-    rm -rf "$tmp_dir"
+    rm -rf -- "$runtime_dir"
     echo "ERROR: failed to install isolated browser-runtime dependencies; preserved runtime remains available for cleanup: ${recorded_runtime:-<none>}" >&2
     flock -u 8
     exec 8>&-
     return 1
   fi
-  printf '%s\n' "$requirements_hash" >"$tmp_dir/.requirements-sha256"
-  "$tmp_dir/bin/python" -m pip freeze >"$GDC_E2E_LOG_DIR/python_runtime_${RUN_ID}.freeze.txt"
-  if [[ ! -f "$tmp_dir/.requirements-sha256" || "$(tr -d '[:space:]' <"$tmp_dir/.requirements-sha256")" != "$requirements_hash" ]]; then
-    rm -rf "$tmp_dir"
-    echo "ERROR: staged browser-runtime dependency identity mismatch; preserved runtime remains available" >&2
+  printf '%s\n' "$requirements_hash" >"$marker"
+  "$runtime_dir/bin/python" -m pip freeze >"$GDC_E2E_LOG_DIR/python_runtime_${RUN_ID}.freeze.txt"
+  if [[ "$(tr -d '[:space:]' <"$marker")" != "$requirements_hash" ]] || \
+     ! "$runtime_dir/bin/python" -c 'import fastapi, jsonata, psycopg2, sqlalchemy' >/dev/null 2>&1; then
+    rm -rf -- "$runtime_dir"
+    echo "ERROR: staged browser-runtime validation failed; preserved runtime remains available for cleanup" >&2
     flock -u 8
     exec 8>&-
     return 1
   fi
-  if ! "$tmp_dir/bin/python" -c 'import fastapi, jsonata, psycopg2, sqlalchemy' >/dev/null 2>&1; then
-    rm -rf "$tmp_dir"
-    echo "ERROR: staged browser-runtime dependencies are incomplete; preserved runtime remains available" >&2
-    flock -u 8
-    exec 8>&-
-    return 1
-  fi
+
+  record_tmp="${runtime_path_file}.tmp.$$"
+  printf '%s\n' "$runtime_dir" >"$record_tmp"
+  mv -f -- "$record_tmp" "$runtime_path_file"
 
   if [[ -n "$recorded_runtime" && "$recorded_runtime" != "$runtime_dir" ]]; then
     rm -rf -- "$recorded_runtime"
-    rm -f -- "${recorded_runtime}.lock"
   fi
-  rm -rf "$runtime_dir"
-  mv "$tmp_dir" "$runtime_dir"
-  printf '%s\n' "$runtime_dir" >"$runtime_path_file"
-  if [[ ! -f "$marker" || "$(tr -d '[:space:]' <"$marker")" != "$requirements_hash" ]]; then
-    echo "ERROR: browser-runtime dependency identity mismatch after transactional swap: $runtime_dir" >&2
-    flock -u 8
-    exec 8>&-
-    return 1
-  fi
+  find "$run_root" -mindepth 1 -maxdepth 1 -type d ! -path "$runtime_dir" -exec rm -rf -- {} +
+
   flock -u 8
   exec 8>&-
 
-  export VIRTUAL_ENV="$runtime_dir"
-  export PATH="$runtime_dir/bin:$PATH"
-  export GDC_E2E_PYTHON_RUNTIME="$runtime_dir"
-  export GDC_E2E_PYTHON_RUNTIME_OWNED="$runtime_dir"
+  activate_python_runtime "$runtime_dir" || {
+    echo "ERROR: committed browser-runtime activation failed: $runtime_dir" >&2
+    return 1
+  }
   echo "PYTHON_RUNTIME=$runtime_dir REQUIREMENTS_SHA256=$requirements_hash RESOLUTION=fresh-per-run"
 }
 
@@ -249,41 +297,20 @@ ensure_cleanup_database_fixture() {
 }
 
 ensure_cleanup_python_runtime() {
-  local system_python requirements_hash python_tag cache_root runtime_key runtime_dir have_db runtime_path_file recorded_runtime
+  local system_python cache_root runtime_token run_root runtime_path_file runtime_dir have_db
   system_python="$(command -v python3)"
-  requirements_hash="$(sha256sum "$ROOT/requirements.txt" | awk '{print $1}')"
-  python_tag="$($system_python -c 'import sys; print(f"py{sys.version_info.major}{sys.version_info.minor}")')"
-  cache_root="${GDC_E2E_PYTHON_CACHE_DIR:-/tmp/datarelay-control-e2e-python}"
-  runtime_key="$(printf '%s' "$RUN_ID" | tr -c 'A-Za-z0-9._-' '_')"
-  runtime_dir="$cache_root/${python_tag}-${requirements_hash:0:16}-${runtime_key}"
-  runtime_path_file="$GDC_E2E_PID_DIR/python-runtime-path.txt"
-  recorded_runtime=""
-  if [[ -f "$runtime_path_file" ]]; then
-    recorded_runtime="$(tr -d '[:space:]' <"$runtime_path_file")"
-  fi
-  if [[ -n "$recorded_runtime" ]]; then
-    recorded_runtime="$(readlink -m "$recorded_runtime")"
-    case "$recorded_runtime" in
-      "$cache_root/"*"-$runtime_key")
-        if [[ -x "$recorded_runtime/bin/python" ]]; then
-          runtime_dir="$recorded_runtime"
-        fi
-        ;;
-      *) echo "WARN: ignoring unsafe recorded cleanup runtime path: $recorded_runtime" >&2 ;;
-    esac
+  cache_root="$(python_runtime_cache_root)"
+  runtime_token="$(python_runtime_token)"
+  run_root="$cache_root/runs/$runtime_token"
+  runtime_path_file="$(python_runtime_path_file)"
+  runtime_dir="$(recorded_python_runtime "$run_root" "$runtime_path_file" 2>/dev/null || true)"
+  if [[ -z "$runtime_dir" ]]; then
+    runtime_dir="$(discover_python_runtime "$system_python" "$run_root" 2>/dev/null || true)"
   fi
   have_db="$(tr -d '[:space:]' <"$GDC_E2E_PID_DIR/api-database-url.txt" 2>/dev/null || true)"
 
-  # Cleanup-only is a recovery path and must not depend on package-index access.
-  # Prefer a surviving owned API, then an already-resolved run-scoped venv, then
-  # the local interpreter only if it already has the required modules.
   if tracked_process_matches "$GDC_E2E_PID_DIR/api.pid" "$ROOT" && [[ "$have_db" == "$DATABASE_URL" ]]; then
-    if [[ -x "$runtime_dir/bin/python" ]] && \
-       "$runtime_dir/bin/python" -c 'import fastapi, jsonata, psycopg2, sqlalchemy' >/dev/null 2>&1; then
-      export VIRTUAL_ENV="$runtime_dir"
-      export PATH="$runtime_dir/bin:$PATH"
-      export GDC_E2E_PYTHON_RUNTIME="$runtime_dir"
-      export GDC_E2E_PYTHON_RUNTIME_OWNED="$runtime_dir"
+    if [[ -n "$runtime_dir" ]] && activate_python_runtime "$runtime_dir"; then
       echo "CLEANUP_RUNTIME=$runtime_dir RESOLUTION=surviving-api-reuse-existing"
       return 0
     fi
@@ -294,12 +321,7 @@ ensure_cleanup_python_runtime() {
     echo "ERROR: surviving cleanup API exists but no offline-capable Python runtime is available for cleanup helpers" >&2
     return 1
   fi
-  if [[ -x "$runtime_dir/bin/python" ]] && \
-     "$runtime_dir/bin/python" -c 'import fastapi, jsonata, psycopg2, sqlalchemy' >/dev/null 2>&1; then
-    export VIRTUAL_ENV="$runtime_dir"
-    export PATH="$runtime_dir/bin:$PATH"
-    export GDC_E2E_PYTHON_RUNTIME="$runtime_dir"
-    export GDC_E2E_PYTHON_RUNTIME_OWNED="$runtime_dir"
+  if [[ -n "$runtime_dir" ]] && activate_python_runtime "$runtime_dir"; then
     echo "CLEANUP_RUNTIME=$runtime_dir RESOLUTION=reuse-existing"
     return 0
   fi
@@ -307,7 +329,7 @@ ensure_cleanup_python_runtime() {
     echo "CLEANUP_RUNTIME=$system_python RESOLUTION=local-existing"
     return 0
   fi
-  echo "ERROR: cleanup-only requires a surviving owned API or an already-installed local runtime; refusing network dependency resolution" >&2
+  echo "ERROR: cleanup-only requires a preserved run runtime or an already-installed local runtime; refusing network dependency resolution" >&2
   return 1
 }
 
@@ -508,11 +530,14 @@ cleanup_owned_services() {
 }
 
 cleanup_python_runtime() {
-  if [[ -n "${GDC_E2E_PYTHON_RUNTIME_OWNED:-}" ]]; then
-    rm -rf -- "$GDC_E2E_PYTHON_RUNTIME_OWNED"
-    rm -f -- "${GDC_E2E_PYTHON_RUNTIME_OWNED}.lock"
-  fi
-  rm -f -- "$GDC_E2E_PID_DIR/python-runtime-path.txt"
+  local cache_root runtime_token run_root runtime_path_file lock_file
+  cache_root="$(python_runtime_cache_root)"
+  runtime_token="$(python_runtime_token)"
+  run_root="$cache_root/runs/$runtime_token"
+  runtime_path_file="$(python_runtime_path_file)"
+  lock_file="$cache_root/locks/${runtime_token}.lock"
+  rm -rf -- "$run_root"
+  rm -f -- "$runtime_path_file" "$lock_file"
 }
 
 if [[ "$SKIP_UP" != "1" ]]; then
