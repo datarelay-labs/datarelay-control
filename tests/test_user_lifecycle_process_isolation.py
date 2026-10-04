@@ -156,7 +156,14 @@ def test_cleanup_only_does_not_require_fresh_dependency_resolution() -> None:
     assert 'rm -rf -- "$run_root"' not in service_cleanup
     runtime_cleanup = script[runtime_cleanup_start:]
     assert 'rm -rf -- "$run_root"' in runtime_cleanup
-    assert 'rm -f -- "$runtime_path_file" "$lock_file"' in runtime_cleanup
+    assert 'rm -f -- "$runtime_path_file"' in runtime_cleanup
+    assert 'rm -f -- "$runtime_path_file" "$lock_file"' not in runtime_cleanup
+    assert 'python-runtime-${runtime_token}.path.tmp.*' in runtime_cleanup
+
+    cleanup_pass = script.index("grep -qx 'CLEANUP=PASS'")
+    stop_services = script.index("cleanup_owned_services", cleanup_pass)
+    remove_runtime = script.index("cleanup_python_runtime", stop_services)
+    assert cleanup_pass < stop_services < remove_runtime
 
 
 def test_dynamic_wiremock_stubs_use_persisted_stream_http_method() -> None:

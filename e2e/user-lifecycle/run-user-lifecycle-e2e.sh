@@ -146,6 +146,7 @@ python_runtime_cache_root() {
 python_runtime_token() {
   local safe digest
   safe="$(printf '%s' "$RUN_ID" | tr -c 'A-Za-z0-9._-' '_')"
+  safe="${safe:0:40}"
   digest="$(printf '%s' "$RUN_ID" | sha256sum | awk '{print substr($1, 1, 12)}')"
   printf '%s-%s\n' "$safe" "$digest"
 }
@@ -182,6 +183,7 @@ discover_python_runtime() {
   local system_python="$1" run_root="$2" candidate
   [[ -d "$run_root" ]] || return 1
   candidate="$($system_python - "$run_root" <<'PY2'
+import subprocess
 import sys
 from pathlib import Path
 root = Path(sys.argv[1])
@@ -189,10 +191,22 @@ try:
     candidates = [p for p in root.iterdir() if p.is_dir() and (p / 'bin' / 'python').is_file()]
 except OSError:
     raise SystemExit(1)
-if not candidates:
-    raise SystemExit(1)
 candidates.sort(key=lambda p: p.stat().st_mtime_ns, reverse=True)
-print(candidates[0])
+for candidate in candidates:
+    try:
+        rc = subprocess.run(
+            [str(candidate / 'bin' / 'python'), '-c', 'import fastapi, jsonata, psycopg2, sqlalchemy'],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+            check=False,
+        ).returncode
+    except (OSError, subprocess.TimeoutExpired):
+        continue
+    if rc == 0:
+        print(candidate)
+        raise SystemExit(0)
+raise SystemExit(1)
 PY2
   )" || return 1
   validated_python_runtime_path "$candidate" "$run_root"
@@ -266,7 +280,6 @@ ensure_python_runtime() {
   if [[ -n "$recorded_runtime" && "$recorded_runtime" != "$runtime_dir" ]]; then
     rm -rf -- "$recorded_runtime"
   fi
-  find "$run_root" -mindepth 1 -maxdepth 1 -type d ! -path "$runtime_dir" -exec rm -rf -- {} +
 
   flock -u 8
   exec 8>&-
@@ -536,8 +549,14 @@ cleanup_python_runtime() {
   run_root="$cache_root/runs/$runtime_token"
   runtime_path_file="$(python_runtime_path_file)"
   lock_file="$cache_root/locks/${runtime_token}.lock"
+  mkdir -p "$cache_root/locks"
+  exec 8>"$lock_file"
+  flock 8
   rm -rf -- "$run_root"
-  rm -f -- "$runtime_path_file" "$lock_file"
+  rm -f -- "$runtime_path_file"
+  find "$GDC_E2E_PID_DIR" -maxdepth 1 -type f -name "python-runtime-${runtime_token}.path.tmp.*" -delete
+  flock -u 8
+  exec 8>&-
 }
 
 if [[ "$SKIP_UP" != "1" ]]; then
@@ -574,6 +593,7 @@ else
   echo "SUMMARY=missing"
 fi
 if [[ -f "$ARTIFACT/final-summary.txt" ]] && grep -qx 'CLEANUP=PASS' "$ARTIFACT/final-summary.txt"; then
+  cleanup_owned_services
   cleanup_python_runtime
 else
   if [[ -n "${GDC_E2E_PYTHON_RUNTIME_OWNED:-}" ]]; then
