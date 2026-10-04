@@ -196,6 +196,24 @@ ensure_python_runtime() {
   echo "PYTHON_RUNTIME=$runtime_dir REQUIREMENTS_SHA256=$requirements_hash RESOLUTION=fresh-per-run"
 }
 
+ensure_cleanup_database_fixture() {
+  local container="gdc-postgres-test"
+  if ! docker inspect "$container" >/dev/null 2>&1; then
+    echo "ERROR: local PostgreSQL fixture is missing: $container" >&2
+    return 1
+  fi
+  docker start "$container" >/dev/null
+  for _ in $(seq 1 60); do
+    if pg_isready -h 127.0.0.1 -p 55441 -U gdc >/dev/null 2>&1; then
+      echo "CLEANUP_DB_FIXTURE=$container READY=YES"
+      return 0
+    fi
+    sleep 1
+  done
+  echo "ERROR: cleanup PostgreSQL fixture did not become ready: $container" >&2
+  return 1
+}
+
 ensure_cleanup_python_runtime() {
   local system_python requirements_hash python_tag cache_root runtime_key runtime_dir have_db
   system_python="$(command -v python3)"
@@ -449,6 +467,7 @@ cleanup_python_runtime() {
 if [[ "$SKIP_UP" != "1" ]]; then
   trap cleanup_owned_services EXIT
   if [[ "$MODE" == "cleanup" ]]; then
+    ensure_cleanup_database_fixture
     ensure_cleanup_python_runtime
     start_api
   else

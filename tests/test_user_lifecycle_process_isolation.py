@@ -93,6 +93,23 @@ def test_runner_uses_requirements_hash_keyed_isolated_python_runtime() -> None:
 
 
 
+
+def test_cleanup_only_starts_local_postgres_fixture_without_remote_provisioning() -> None:
+    script = RUNNER.read_text(encoding="utf-8")
+
+    helper_start = script.index("ensure_cleanup_database_fixture()")
+    helper_end = script.index("\nensure_cleanup_python_runtime()", helper_start)
+    helper = script[helper_start:helper_end]
+    assert 'docker inspect "$container"' in helper
+    assert 'docker start "$container"' in helper
+    assert "pg_isready -h 127.0.0.1 -p 55441 -U gdc" in helper
+    assert "docker compose" not in helper
+    cleanup_branch = script.index('if [[ "$MODE" == "cleanup" ]]; then')
+    db_start = script.index("ensure_cleanup_database_fixture", cleanup_branch)
+    runtime_setup = script.index("ensure_cleanup_python_runtime", cleanup_branch)
+    api_start = script.index("start_api", cleanup_branch)
+    assert cleanup_branch < db_start < runtime_setup < api_start
+
 def test_cleanup_only_does_not_require_fresh_dependency_resolution() -> None:
     script = RUNNER.read_text(encoding="utf-8")
 
