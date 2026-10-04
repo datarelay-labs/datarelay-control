@@ -85,13 +85,16 @@ def test_runner_uses_requirements_hash_keyed_isolated_python_runtime() -> None:
     ensure_start = script.index("ensure_python_runtime()")
     stop_scheduler = script.index('terminate_tracked_process_group "$GDC_E2E_PID_DIR/lab-scheduler.pid" "$ROOT"', ensure_start)
     stop_api = script.index('terminate_tracked_process_group "$GDC_E2E_PID_DIR/api.pid" "$ROOT"', ensure_start)
-    create_generation = script.index('mktemp -d "$run_root/', stop_api)
+    exclusive_lock = script.index('if ! flock -n 8; then', stop_api)
+    create_generation = script.index('mktemp -d "$run_root/', exclusive_lock)
     install = script.index('"$runtime_dir/bin/python" -m pip install', create_generation)
     validate = script.index("staged browser-runtime validation failed", install)
     write_record = script.index("printf '%s\\n' \"$runtime_dir\" >\"$record_tmp\"", validate)
     commit_record = script.index('mv -f -- "$record_tmp" "$runtime_path_file"', write_record)
     delete_old = script.index('rm -rf -- "$recorded_runtime"', commit_record)
-    assert ensure_start < stop_scheduler < stop_api < create_generation < install < validate < write_record < commit_record < delete_old
+    downgrade_shared = script.index('if ! flock -s 8; then', delete_old)
+    assert ensure_start < stop_scheduler < stop_api < exclusive_lock < create_generation < install < validate < write_record < commit_record < delete_old < downgrade_shared
+    assert 'PYTHON_RUNTIME_LEASE_ACTIVE=1' in script[downgrade_shared:]
 
     assert 'preserved runtime remains available for cleanup' in script
     assert 'activate_python_runtime "$runtime_dir"' in script
@@ -128,6 +131,7 @@ def test_cleanup_only_does_not_require_fresh_dependency_resolution() -> None:
     assert "pip install" not in cleanup_helper
     assert 'recorded_python_runtime "$run_root" "$runtime_path_file"' in cleanup_helper
     assert 'discover_python_runtime "$system_python" "$run_root"' in cleanup_helper
+    assert 'acquire_python_runtime_shared_lease' in cleanup_helper
     assert 'activate_python_runtime "$runtime_dir"' in cleanup_helper
     assert 'RESOLUTION=surviving-api-reuse-existing' in cleanup_helper
     assert 'RESOLUTION=reuse-existing' in cleanup_helper
@@ -155,6 +159,9 @@ def test_cleanup_only_does_not_require_fresh_dependency_resolution() -> None:
     service_cleanup = script[service_cleanup_start:runtime_cleanup_start]
     assert 'rm -rf -- "$run_root"' not in service_cleanup
     runtime_cleanup = script[runtime_cleanup_start:]
+    assert 'release_python_runtime_lifetime_lease' in runtime_cleanup
+    assert 'if ! flock -n 8; then' in runtime_cleanup
+    assert 'REASON=runtime-leased-by-another-invocation' in runtime_cleanup
     assert 'rm -rf -- "$run_root"' in runtime_cleanup
     assert 'rm -f -- "$runtime_path_file"' in runtime_cleanup
     assert 'rm -f -- "$runtime_path_file" "$lock_file"' not in runtime_cleanup
@@ -164,6 +171,21 @@ def test_cleanup_only_does_not_require_fresh_dependency_resolution() -> None:
     stop_services = script.index("cleanup_owned_services", cleanup_pass)
     remove_runtime = script.index("cleanup_python_runtime", stop_services)
     assert cleanup_pass < stop_services < remove_runtime
+
+
+
+def test_browser_python_runtime_holds_shared_lifetime_lease() -> None:
+    script = RUNNER.read_text(encoding="utf-8")
+
+    assert "python_runtime_lock_file()" in script
+    assert "acquire_python_runtime_shared_lease()" in script
+    assert "release_python_runtime_lifetime_lease()" in script
+    assert "flock -n -s 8" in script
+    assert "flock -s 8" in script
+    assert "runtime-leased-by-another-invocation" in script
+    ui_start = script.index("start_ui()")
+    ui_end = script.index("\ncleanup_owned_services()", ui_start)
+    assert "exec 8>&-" in script[ui_start:ui_end]
 
 
 def test_dynamic_wiremock_stubs_use_persisted_stream_http_method() -> None:

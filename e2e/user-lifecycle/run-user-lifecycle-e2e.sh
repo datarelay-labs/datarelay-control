@@ -159,6 +159,36 @@ python_runtime_path_file() {
   printf '%s/python-runtime-%s.path\n' "$GDC_E2E_PID_DIR" "$(python_runtime_token)"
 }
 
+python_runtime_lock_file() {
+  printf '%s/locks/%s.lock\n' "$(python_runtime_cache_root)" "$(python_runtime_token)"
+}
+
+PYTHON_RUNTIME_LEASE_ACTIVE=0
+
+acquire_python_runtime_shared_lease() {
+  local lock_file
+  if [[ "$PYTHON_RUNTIME_LEASE_ACTIVE" == "1" ]]; then
+    return 0
+  fi
+  lock_file="$(python_runtime_lock_file)"
+  mkdir -p "$(dirname "$lock_file")"
+  exec 8>"$lock_file"
+  if ! flock -n -s 8; then
+    echo "ERROR: browser runtime is in exclusive use by another invocation for RUN_ID=$RUN_ID" >&2
+    exec 8>&-
+    return 1
+  fi
+  PYTHON_RUNTIME_LEASE_ACTIVE=1
+}
+
+release_python_runtime_lifetime_lease() {
+  if [[ "$PYTHON_RUNTIME_LEASE_ACTIVE" == "1" ]]; then
+    flock -u 8 2>/dev/null || true
+    exec 8>&-
+    PYTHON_RUNTIME_LEASE_ACTIVE=0
+  fi
+}
+
 validated_python_runtime_path() {
   local candidate="$1" run_root="$2" canonical
   [[ -n "$candidate" ]] || return 1
@@ -231,13 +261,20 @@ ensure_python_runtime() {
   runtime_token="$(python_runtime_token)"
   run_root="$cache_root/runs/$runtime_token"
   runtime_path_file="$(python_runtime_path_file)"
-  lock_file="$cache_root/locks/${runtime_token}.lock"
+  lock_file="$(python_runtime_lock_file)"
   mkdir -p "$run_root" "$cache_root/locks"
 
-  exec 8>"$lock_file"
-  flock 8
+  # Stop consumers owned by this PID directory before asking for the RUN_ID-wide
+  # exclusive provisioning lock. Foreign invocations keep a shared lifetime lease
+  # and make this fail closed instead of allowing their runtime to be replaced.
   terminate_tracked_process_group "$GDC_E2E_PID_DIR/lab-scheduler.pid" "$ROOT"
   terminate_tracked_process_group "$GDC_E2E_PID_DIR/api.pid" "$ROOT"
+  exec 8>"$lock_file"
+  if ! flock -n 8; then
+    echo "ERROR: browser runtime is actively leased by another invocation for RUN_ID=$RUN_ID" >&2
+    exec 8>&-
+    return 1
+  fi
 
   recorded_runtime="$(recorded_python_runtime "$run_root" "$runtime_path_file" 2>/dev/null || true)"
   runtime_dir="$(mktemp -d "$run_root/${python_tag}-${requirements_hash:0:16}-gen-XXXXXXXX")"
@@ -281,11 +318,17 @@ ensure_python_runtime() {
     rm -rf -- "$recorded_runtime"
   fi
 
-  flock -u 8
-  exec 8>&-
+  if ! flock -s 8; then
+    echo "ERROR: failed to retain shared browser-runtime lifetime lease for RUN_ID=$RUN_ID" >&2
+    flock -u 8 2>/dev/null || true
+    exec 8>&-
+    return 1
+  fi
+  PYTHON_RUNTIME_LEASE_ACTIVE=1
 
   activate_python_runtime "$runtime_dir" || {
     echo "ERROR: committed browser-runtime activation failed: $runtime_dir" >&2
+    release_python_runtime_lifetime_lease
     return 1
   }
   echo "PYTHON_RUNTIME=$runtime_dir REQUIREMENTS_SHA256=$requirements_hash RESOLUTION=fresh-per-run"
@@ -323,10 +366,11 @@ ensure_cleanup_python_runtime() {
   have_db="$(tr -d '[:space:]' <"$GDC_E2E_PID_DIR/api-database-url.txt" 2>/dev/null || true)"
 
   if tracked_process_matches "$GDC_E2E_PID_DIR/api.pid" "$ROOT" && [[ "$have_db" == "$DATABASE_URL" ]]; then
-    if [[ -n "$runtime_dir" ]] && activate_python_runtime "$runtime_dir"; then
+    if [[ -n "$runtime_dir" ]] && acquire_python_runtime_shared_lease && activate_python_runtime "$runtime_dir"; then
       echo "CLEANUP_RUNTIME=$runtime_dir RESOLUTION=surviving-api-reuse-existing"
       return 0
     fi
+    release_python_runtime_lifetime_lease
     if "$system_python" -c 'import fastapi, jsonata, psycopg2, sqlalchemy' >/dev/null 2>&1; then
       echo "CLEANUP_RUNTIME=$system_python RESOLUTION=surviving-api-local-existing"
       return 0
@@ -334,10 +378,11 @@ ensure_cleanup_python_runtime() {
     echo "ERROR: surviving cleanup API exists but no offline-capable Python runtime is available for cleanup helpers" >&2
     return 1
   fi
-  if [[ -n "$runtime_dir" ]] && activate_python_runtime "$runtime_dir"; then
+  if [[ -n "$runtime_dir" ]] && acquire_python_runtime_shared_lease && activate_python_runtime "$runtime_dir"; then
     echo "CLEANUP_RUNTIME=$runtime_dir RESOLUTION=reuse-existing"
     return 0
   fi
+  release_python_runtime_lifetime_lease
   if "$system_python" -c 'import fastapi, jsonata, psycopg2, sqlalchemy' >/dev/null 2>&1; then
     echo "CLEANUP_RUNTIME=$system_python RESOLUTION=local-existing"
     return 0
@@ -511,6 +556,7 @@ start_ui() {
     require_free_untracked_port "UI" "$GDC_E2E_UI_PORT" 0
     (
       exec 9>&-
+      exec 8>&-
       cd "$ROOT/frontend"
       if [[ ! -x node_modules/.bin/tsc || ! -x node_modules/.bin/vite ]]; then
         npm ci >"$GDC_E2E_LOG_DIR/frontend_npm_ci_${RUN_ID}.log" 2>&1
@@ -548,10 +594,19 @@ cleanup_python_runtime() {
   runtime_token="$(python_runtime_token)"
   run_root="$cache_root/runs/$runtime_token"
   runtime_path_file="$(python_runtime_path_file)"
-  lock_file="$cache_root/locks/${runtime_token}.lock"
+  lock_file="$(python_runtime_lock_file)"
   mkdir -p "$cache_root/locks"
+
+  # Drop this runner's shared lifetime lease only after its Python consumers have
+  # been stopped. If another PID directory still has live consumers, its shared
+  # lease keeps the RUN_ID root intact and cleanup preserves the runtime safely.
+  release_python_runtime_lifetime_lease
   exec 8>"$lock_file"
-  flock 8
+  if ! flock -n 8; then
+    echo "PYTHON_RUNTIME_PRESERVED=$run_root REASON=runtime-leased-by-another-invocation"
+    exec 8>&-
+    return 0
+  fi
   rm -rf -- "$run_root"
   rm -f -- "$runtime_path_file"
   find "$GDC_E2E_PID_DIR" -maxdepth 1 -type f -name "python-runtime-${runtime_token}.path.tmp.*" -delete
