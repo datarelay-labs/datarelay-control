@@ -52,7 +52,7 @@ function parseArgs(argv: string[]): Args {
     else if (a === '--scenario') {
       args.mode = 'scenario'
       args.scenario = argv[++i]
-    } else if (a === '--tag') args.tags.push(...argv[++i].split(','))
+    } else if (a === '--tag') args.tags.push(...argv[++i].split(',').map((tag) => tag.trim()))
     else if (a === '--cleanup-only') {
       args.mode = 'cleanup'
       args.runId = argv[++i]
@@ -69,8 +69,22 @@ function env(name: string, fallback: string): string {
   return (process.env[name] || fallback).replace(/\/$/, '')
 }
 
+function persistedScopeTags(raw: string | undefined): string[] | null {
+  if (raw == null) return null
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    return Array.isArray(parsed) && parsed.every((tag) => typeof tag === 'string') ? parsed : null
+  } catch {
+    return null
+  }
+}
+
 function alreadyPassed(store: ArtifactStore, id: string): boolean {
-  return store.scenarios.some((s) => s.id === id && s.status === 'PASS')
+  for (let i = store.scenarios.length - 1; i >= 0; i--) {
+    const row = store.scenarios[i]
+    if (row.id === id) return row.status === 'PASS'
+  }
+  return false
 }
 
 function currentGitHead(): string {
@@ -84,6 +98,18 @@ function restoreResumeState(store: ArtifactStore, state: Record<string, unknown>
   if (Array.isArray(state.ledger)) store.ledger = state.ledger as ArtifactStore['ledger']
   if (state.flags && typeof state.flags === 'object') store.flags = state.flags as Record<string, string>
   if (state.counts && typeof state.counts === 'object') store.counts = state.counts as Record<string, number>
+}
+
+function refreshTerminalScenarioCounts(store: ArtifactStore, ignoreRecoveredFatal = false): void {
+  const latest = new Map<string, string>()
+  for (const row of store.scenarios) {
+    if (ignoreRecoveredFatal && row.id === 'FATAL') continue
+    latest.set(row.id, row.status)
+  }
+  store.counts = {}
+  for (const status of latest.values()) {
+    store.counts[status] = (store.counts[status] || 0) + 1
+  }
 }
 
 function finalAcceptanceBlocked(store: ArtifactStore): boolean {
@@ -435,7 +461,34 @@ async function main(): Promise<number> {
       return 2
     }
     restoreResumeState(store, st)
+    const priorFatalIndex = store.scenarios.findLastIndex((row) => row.id === 'FATAL' && row.status === 'FAIL')
+    if (priorFatalIndex >= 0) {
+      const cleanupCompletedAfterFatal = store.scenarios
+        .slice(priorFatalIndex + 1)
+        .some((row) => row.id === '13_CLEANUP_ORPHANS' && row.status === 'PASS')
+      const cleanupMutationRecorded = store.ledger.some(
+        (row) => row.CLEANUP_STATUS && row.CLEANUP_STATUS !== 'OPEN',
+      )
+      if (cleanupCompletedAfterFatal || cleanupMutationRecorded || store.flags.CLEANUP === 'PASS') {
+        console.error('Resume cannot recover a prior FATAL after cleanup started; start a fresh RUN_ID')
+        return 2
+      }
+      store.setFlag('RESUME_RECOVERING_PRIOR_FATAL', 'YES')
+    }
   }
+  if (args.mode === 'resume') {
+    const scopeMode = String(store.flags.RUN_SCOPE_MODE || '')
+    const scopeTags = persistedScopeTags(store.flags.RUN_SCOPE_TAGS_JSON)
+    if (!['smoke', 'all', 'scenario'].includes(scopeMode) || scopeTags == null) {
+      console.error('Resume state is missing a safe original run scope; refusing to broaden targeted coverage')
+      return 2
+    }
+  } else if (args.mode !== 'cleanup') {
+    store.setFlag('RUN_SCOPE_MODE', args.mode)
+    store.setFlag('RUN_SCOPE_SCENARIO', args.scenario || '')
+    store.setFlag('RUN_SCOPE_TAGS_JSON', JSON.stringify(args.tags))
+  }
+
   store.setFlag('CANDIDATE_HEAD', candidateHead)
   store.setFlag('CANDIDATE_WORKTREE_CLEAN', candidateClean ? 'YES' : 'NO')
 
@@ -482,6 +535,12 @@ async function main(): Promise<number> {
     let connectorsPg = connectors
     let streamsPg = streams
     let destinationsPg = destinations
+
+    const effectiveMode = args.mode === 'resume' ? store.flags.RUN_SCOPE_MODE : args.mode
+    const effectiveScenario =
+      args.mode === 'resume' ? store.flags.RUN_SCOPE_SCENARIO || undefined : args.scenario
+    const effectiveTags =
+      args.mode === 'resume' ? persistedScopeTags(store.flags.RUN_SCOPE_TAGS_JSON)! : args.tags
 
     const scenarioSets: Record<string, (id: string) => boolean> = {
       'dest-isolation': (id) =>
@@ -592,16 +651,19 @@ async function main(): Promise<number> {
         ].includes(id) || id.startsWith('38_CHECKPOINT') || id.startsWith('08_DEST_') || id.startsWith('09_DEST_'),
     }
     const want = (id: string, tags: string[]) => {
-      if (args.mode === 'smoke') return tags.includes('smoke')
-      if (args.mode === 'scenario') {
-        const setFn = args.scenario ? scenarioSets[args.scenario] : undefined
+      if (effectiveMode === 'smoke') return tags.includes('smoke')
+      if (effectiveMode === 'scenario') {
+        const setFn = effectiveScenario ? scenarioSets[effectiveScenario] : undefined
         if (setFn) return setFn(id)
-        return id === args.scenario || tags.includes(args.scenario || '')
+        return id === effectiveScenario || tags.includes(effectiveScenario || '')
       }
-      if (args.tags.length) return args.tags.some((t) => tags.includes(t))
+      if (effectiveTags.length) return effectiveTags.some((t) => tags.includes(t))
       return true
     }
     const skipIfResume = (id: string) => args.mode === 'resume' && alreadyPassed(store, id)
+    const transformEvidenceExpected =
+      want('06_TRANSFORM_OUTPUT', ['delivery']) ||
+      want('BFS004_PROCESSING_EXHAUSTIVE', ['browser', 'processing-exhaustive'])
 
     // ---- 00 smoke ----
     if (want('00_SMOKE_BROWSER', ['smoke', 'browser']) && !skipIfResume('00_SMOKE_BROWSER')) {
@@ -639,7 +701,7 @@ async function main(): Promise<number> {
       }
     }
 
-    if (args.mode === 'smoke') {
+    if (effectiveMode === 'smoke') {
       // minimal create/delete
       if (!skipIfResume('00_SMOKE_CONNECTOR_CRUD')) {
         const name = `e2e-${runId}-smoke-http`
@@ -668,9 +730,13 @@ async function main(): Promise<number> {
           store.rec('00_SMOKE_CONNECTOR_CRUD', 'FAIL', 'connector not persisted', ['BROWSER_E2E'])
         }
       }
+      refreshTerminalScenarioCounts(
+        store,
+        args.mode === 'resume' && store.flags.RESUME_RECOVERING_PRIOR_FATAL === 'YES',
+      )
       store.flush()
-      writeFinalSummary(store, { MODE: 'smoke' })
-      return (store.counts.FAIL || 0) > 0 ? 1 : 0
+      writeFinalSummary(store, { MODE: args.mode === 'resume' ? 'resume' : 'smoke' })
+      return finalAcceptanceBlocked(store) ? 1 : 0
     }
 
     // ---- fixtures ----
@@ -1101,9 +1167,7 @@ async function main(): Promise<number> {
         pollingSec: 15,
         withBackReload: true,
         withProtection: true,
-        withTransform:
-          want('06_TRANSFORM_OUTPUT', ['delivery']) ||
-          want('BFS004_PROCESSING_EXHAUSTIVE', ['browser', 'processing-exhaustive']),
+        withTransform: transformEvidenceExpected,
         withIncremental: want('BFS005_SAMPLE_RECONCILIATION', ['browser', 'sample-reconciliation']),
       })
       h1IncrementalTestPass = result.incrementalTestPass
@@ -1603,9 +1667,16 @@ async function main(): Promise<number> {
     const wrapHttpItem = (item: Record<string, unknown>) =>
       primaryHttpPath.endsWith('/h2') ? { data: { records: [item] } } : { items: [item] }
 
-    let deliveryPass = 0
-    let deliveryTests = 0
-    if (primaryHttp && want('07_DELIVERY', ['delivery'])) {
+    const deliveryBundleAlreadyPassed =
+      store.flags.DELIVERY_BUNDLE_COMPLETE === 'YES' &&
+      skipIfResume('07_TWO_ROUTE_DELIVERY') &&
+      skipIfResume('06_PROTECTION_OUTPUT') &&
+      (!transformEvidenceExpected || skipIfResume('06_TRANSFORM_OUTPUT')) &&
+      (store.flags.BFS004_PROCESSING_CONFIG !== 'PASS' || skipIfResume('BFS004_PROCESSING_RUNTIME'))
+    let deliveryPass = deliveryBundleAlreadyPassed ? 2 : 0
+    let deliveryTests = deliveryBundleAlreadyPassed ? 2 : 0
+    if (primaryHttp && want('07_DELIVERY', ['delivery']) && !deliveryBundleAlreadyPassed) {
+      store.setFlag('DELIVERY_BUNDLE_COMPLETE', 'NO')
       deliveryTests += 2
       const m = `marker-${runId}-deliv-1`
       // Seed fixtures already used ids 1-12; reuse would be skipped by incremental checkpoint.
@@ -1666,30 +1737,38 @@ async function main(): Promise<number> {
       const protOk = (!aHasPlain || /\*/.test(blockA)) && (!bHasPlain || /\*/.test(blockB) || blockB.includes('[masked]'))
       store.setFlag('PROTECTION_OUTPUT_PROVEN', protOk && a && b ? 'YES' : a && b ? 'PARTIAL' : 'NO')
       store.setFlag('PROTECTION_ROUTE_ISOLATION', aHasPlain !== bHasPlain || protOk ? 'YES' : 'NO')
-      store.setFlag('TRANSFORM_OUTPUT_PROVEN', transformB ? 'YES' : 'NO')
-      store.setFlag('TRANSFORM_ROUTE_ISOLATION', transformB ? 'YES' : 'NO')
-      const xfDump: unknown[] = []
-      for (const rid of [resources.routes.H1A, resources.routes.H1B].filter(Boolean)) {
-        const cfg = await api.request('GET', `/api/v1/runtime/routes/${rid}/mapping-ui/config`)
-        const eff = await api.request('GET', `/api/v1/runtime/routes/${rid}/transform/effective`)
-        xfDump.push({ routeId: rid, mapping: cfg.json, effective: eff.json })
+      if (transformEvidenceExpected) {
+        store.setFlag('TRANSFORM_OUTPUT_PROVEN', transformB ? 'YES' : 'NO')
+        store.setFlag('TRANSFORM_ROUTE_ISOLATION', transformB ? 'YES' : 'NO')
+        const xfDump: unknown[] = []
+        for (const rid of [resources.routes.H1A, resources.routes.H1B].filter(Boolean)) {
+          const cfg = await api.request('GET', `/api/v1/runtime/routes/${rid}/mapping-ui/config`)
+          const eff = await api.request('GET', `/api/v1/runtime/routes/${rid}/transform/effective`)
+          xfDump.push({ routeId: rid, mapping: cfg.json, effective: eff.json })
+        }
+        store.writeJson('transform-route-config.json', {
+          transformB,
+          echoAHasEventMessage: blockA.includes('event_message'),
+          echoBHasEventMessage: blockB.includes('event_message'),
+          echoAHasTransformed: blockA.includes('transformed_message'),
+          echoBHasTransformed: blockB.includes('transformed_message'),
+          routes: xfDump,
+          blockA: blockA.slice(0, 4000),
+          blockB: blockB.slice(0, 4000),
+        })
+        store.rec('06_TRANSFORM_OUTPUT', transformB ? 'PASS' : 'PARTIAL', `transformB=${transformB}`, ['ACTUAL_DELIVERY'])
       }
-      store.writeJson('transform-route-config.json', {
-        transformB,
-        echoAHasEventMessage: blockA.includes('event_message'),
-        echoBHasEventMessage: blockB.includes('event_message'),
-        echoAHasTransformed: blockA.includes('transformed_message'),
-        echoBHasTransformed: blockB.includes('transformed_message'),
-        routes: xfDump,
-        blockA: blockA.slice(0, 4000),
-        blockB: blockB.slice(0, 4000),
-      })
       store.rec('06_PROTECTION_OUTPUT', protOk ? 'PASS' : 'PARTIAL', `aPlain=${aHasPlain} bPlain=${bHasPlain}`, [
         'ACTUAL_DELIVERY',
       ])
-      store.rec('06_TRANSFORM_OUTPUT', transformB ? 'PASS' : 'PARTIAL', `transformB=${transformB}`, ['ACTUAL_DELIVERY'])
     }
 
+      const deliveryBundleComplete =
+        alreadyPassed(store, '07_TWO_ROUTE_DELIVERY') &&
+        alreadyPassed(store, '06_PROTECTION_OUTPUT') &&
+        (!transformEvidenceExpected || alreadyPassed(store, '06_TRANSFORM_OUTPUT')) &&
+        (store.flags.BFS004_PROCESSING_CONFIG !== 'PASS' || alreadyPassed(store, 'BFS004_PROCESSING_RUNTIME'))
+      store.setFlag('DELIVERY_BUNDLE_COMPLETE', deliveryBundleComplete ? 'YES' : 'NO')
     // ---- exhaustive full-event processing delivery proof ----
     if (want('07_DELIVERY', ['delivery'])) {
       for (const [recId, key, endpoint, markerField, nested] of [
@@ -1813,7 +1892,30 @@ async function main(): Promise<number> {
     }
 
     // ---- destination failure isolation (UI diagnosis first) ----
-    if (resources.destinations.B && primaryHttp && want('08_DEST_FAIL', ['failure', 'browser'])) {
+    const destinationFailureBundleAlreadyPassed =
+      store.flags.DESTINATION_FAILURE_BUNDLE_COMPLETE === 'YES' &&
+      skipIfResume('08_DEST_FAIL_BROWSER_EDIT') &&
+      skipIfResume('08_DEST_FAIL_API_READBACK') &&
+      skipIfResume('08_DEST_FAIL_ROUTE_REF') &&
+      skipIfResume('08_DEST_FAIL_UI_NAV') &&
+      skipIfResume('08_DEST_FAIL_ISOLATION') &&
+      skipIfResume('09_DEST_RECOVERY')
+    if (
+      resources.destinations.B &&
+      primaryHttp &&
+      want('08_DEST_FAIL', ['failure', 'browser']) &&
+      destinationFailureBundleAlreadyPassed
+    ) {
+      deliveryTests += 3
+      deliveryPass += 3
+    }
+    if (
+      resources.destinations.B &&
+      primaryHttp &&
+      want('08_DEST_FAIL', ['failure', 'browser']) &&
+      !destinationFailureBundleAlreadyPassed
+    ) {
+      store.setFlag('DESTINATION_FAILURE_BUNDLE_COMPLETE', 'NO')
       const downUrl = 'http://127.0.0.1:9/down'
       const marker = `DSTFAIL-${runId}-001`
       const pathA = `/ulc-${runId}-a`
@@ -1963,6 +2065,14 @@ async function main(): Promise<number> {
       )
     }
 
+      const destinationFailureBundleComplete =
+        alreadyPassed(store, '08_DEST_FAIL_BROWSER_EDIT') &&
+        alreadyPassed(store, '08_DEST_FAIL_API_READBACK') &&
+        alreadyPassed(store, '08_DEST_FAIL_ROUTE_REF') &&
+        alreadyPassed(store, '08_DEST_FAIL_UI_NAV') &&
+        alreadyPassed(store, '08_DEST_FAIL_ISOLATION') &&
+        alreadyPassed(store, '09_DEST_RECOVERY')
+      store.setFlag('DESTINATION_FAILURE_BUNDLE_COMPLETE', destinationFailureBundleComplete ? 'YES' : 'NO')
     // ---- source failure diagnosis (UI first) ----
     if (resources.connectors.HTTP && primaryHttp && want('08_SOURCE_FAIL', ['failure', 'browser'])) {
       try {
@@ -2304,10 +2414,12 @@ async function main(): Promise<number> {
 
     store.setFlag('ACTUAL_DELIVERY_TESTS', String(deliveryTests))
     store.setFlag('ACTUAL_DELIVERY_PASS', String(deliveryPass))
-    store.setFlag(
-      'TRANSFORM_OUTPUT_PROVEN',
-      store.flags.TRANSFORM_OUTPUT_PROVEN || 'NO',
-    )
+    if (transformEvidenceExpected) {
+      store.setFlag(
+        'TRANSFORM_OUTPUT_PROVEN',
+        store.flags.TRANSFORM_OUTPUT_PROVEN || 'NO',
+      )
+    }
     if (!store.flags.AUTH_FAILURE_RECOVERY_BROWSER_JOURNEY) {
       store.setFlag('AUTH_FAILURE_RECOVERY_BROWSER_JOURNEY', 'FAIL')
     }
@@ -2337,6 +2449,11 @@ async function main(): Promise<number> {
     store.setFlag('RESUME_SUPPORT', 'YES')
     store.setFlag('CLEANUP_ONLY_SUPPORT', 'YES')
 
+    // A successful resume supersedes attempt-level FATAL/cleanup failures from the
+    // interrupted invocation, while preserving those rows as historical evidence.
+    // Counts are terminal-by-scenario so a later PASS also supersedes an earlier
+    // failure for the same scenario id.
+    refreshTerminalScenarioCounts(store, args.mode === 'resume' && store.flags.RESUME_RECOVERING_PRIOR_FATAL === 'YES')
     store.flush()
     writeFinalSummary(store, {
       MODE: args.mode,
