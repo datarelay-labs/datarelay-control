@@ -436,6 +436,18 @@ async function main(): Promise<number> {
     }
     restoreResumeState(store, st)
   }
+  if (args.mode === 'resume') {
+    const scopeMode = String(store.flags.RUN_SCOPE_MODE || '')
+    if (!['smoke', 'all', 'scenario'].includes(scopeMode)) {
+      console.error('Resume state is missing a safe original run scope; refusing to broaden targeted coverage')
+      return 2
+    }
+  } else if (args.mode !== 'cleanup') {
+    store.setFlag('RUN_SCOPE_MODE', args.mode)
+    store.setFlag('RUN_SCOPE_SCENARIO', args.scenario || '')
+    store.setFlag('RUN_SCOPE_TAGS', args.tags.join(','))
+  }
+
   store.setFlag('CANDIDATE_HEAD', candidateHead)
   store.setFlag('CANDIDATE_WORKTREE_CLEAN', candidateClean ? 'YES' : 'NO')
 
@@ -482,6 +494,17 @@ async function main(): Promise<number> {
     let connectorsPg = connectors
     let streamsPg = streams
     let destinationsPg = destinations
+
+    const effectiveMode = args.mode === 'resume' ? store.flags.RUN_SCOPE_MODE : args.mode
+    const effectiveScenario =
+      args.mode === 'resume' ? store.flags.RUN_SCOPE_SCENARIO || undefined : args.scenario
+    const effectiveTags =
+      args.mode === 'resume'
+        ? String(store.flags.RUN_SCOPE_TAGS || '')
+            .split(',')
+            .map((tag) => tag.trim())
+            .filter(Boolean)
+        : args.tags
 
     const scenarioSets: Record<string, (id: string) => boolean> = {
       'dest-isolation': (id) =>
@@ -592,13 +615,13 @@ async function main(): Promise<number> {
         ].includes(id) || id.startsWith('38_CHECKPOINT') || id.startsWith('08_DEST_') || id.startsWith('09_DEST_'),
     }
     const want = (id: string, tags: string[]) => {
-      if (args.mode === 'smoke') return tags.includes('smoke')
-      if (args.mode === 'scenario') {
-        const setFn = args.scenario ? scenarioSets[args.scenario] : undefined
+      if (effectiveMode === 'smoke') return tags.includes('smoke')
+      if (effectiveMode === 'scenario') {
+        const setFn = effectiveScenario ? scenarioSets[effectiveScenario] : undefined
         if (setFn) return setFn(id)
-        return id === args.scenario || tags.includes(args.scenario || '')
+        return id === effectiveScenario || tags.includes(effectiveScenario || '')
       }
-      if (args.tags.length) return args.tags.some((t) => tags.includes(t))
+      if (effectiveTags.length) return effectiveTags.some((t) => tags.includes(t))
       return true
     }
     const skipIfResume = (id: string) => args.mode === 'resume' && alreadyPassed(store, id)
