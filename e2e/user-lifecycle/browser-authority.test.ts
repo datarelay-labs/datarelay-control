@@ -51,6 +51,20 @@ assert.match(main, /const ok = failVisible && passVisible/)
 assert.match(main, /const isolationOk = browserEditOk && persistOk && aOk && !bOk/)
 assert.match(main, /browserRecoveryOk \? 'PASS' : recA && recB && recoveryApiFallback \? 'PARTIAL' : 'FAIL'/)
 
+const transformEvidence = section(main, 'const transformB =', '// ---- exhaustive full-event processing delivery proof ----')
+assert.match(main, /const transformEvidenceExpected =/)
+assert.match(main, /withTransform: transformEvidenceExpected/)
+assert.match(transformEvidence, /if \(transformEvidenceExpected\) \{/)
+assert.match(transformEvidence, /store\.rec\('06_TRANSFORM_OUTPUT'/)
+assert.match(transformEvidence, /store\.rec\('06_PROTECTION_OUTPUT'/)
+assert.ok(
+  transformEvidence.indexOf('if (transformEvidenceExpected) {') <
+    transformEvidence.indexOf("store.rec('06_TRANSFORM_OUTPUT'"),
+)
+const finalTransformDefault = section(main, "store.setFlag('ACTUAL_DELIVERY_TESTS'", '// console errors summary')
+assert.match(finalTransformDefault, /if \(transformEvidenceExpected\) \{/)
+assert.match(finalTransformDefault, /store\.flags\.TRANSFORM_OUTPUT_PROVEN \|\| 'NO'/)
+
 const sourceFailure = section(main, '// ---- source failure diagnosis (UI first) ----', '// ---- checkpoint invariant')
 assert.match(sourceFailure, /const openedAffectedStream = await streams\.openStreamByName\(primaryHttpName\)/)
 assert.match(sourceFailure, /openedAffectedStream \|\|/)

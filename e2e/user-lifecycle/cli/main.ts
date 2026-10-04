@@ -602,6 +602,9 @@ async function main(): Promise<number> {
       return true
     }
     const skipIfResume = (id: string) => args.mode === 'resume' && alreadyPassed(store, id)
+    const transformEvidenceExpected =
+      want('06_TRANSFORM_OUTPUT', ['delivery']) ||
+      want('BFS004_PROCESSING_EXHAUSTIVE', ['browser', 'processing-exhaustive'])
 
     // ---- 00 smoke ----
     if (want('00_SMOKE_BROWSER', ['smoke', 'browser']) && !skipIfResume('00_SMOKE_BROWSER')) {
@@ -1101,9 +1104,7 @@ async function main(): Promise<number> {
         pollingSec: 15,
         withBackReload: true,
         withProtection: true,
-        withTransform:
-          want('06_TRANSFORM_OUTPUT', ['delivery']) ||
-          want('BFS004_PROCESSING_EXHAUSTIVE', ['browser', 'processing-exhaustive']),
+        withTransform: transformEvidenceExpected,
         withIncremental: want('BFS005_SAMPLE_RECONCILIATION', ['browser', 'sample-reconciliation']),
       })
       h1IncrementalTestPass = result.incrementalTestPass
@@ -1666,28 +1667,30 @@ async function main(): Promise<number> {
       const protOk = (!aHasPlain || /\*/.test(blockA)) && (!bHasPlain || /\*/.test(blockB) || blockB.includes('[masked]'))
       store.setFlag('PROTECTION_OUTPUT_PROVEN', protOk && a && b ? 'YES' : a && b ? 'PARTIAL' : 'NO')
       store.setFlag('PROTECTION_ROUTE_ISOLATION', aHasPlain !== bHasPlain || protOk ? 'YES' : 'NO')
-      store.setFlag('TRANSFORM_OUTPUT_PROVEN', transformB ? 'YES' : 'NO')
-      store.setFlag('TRANSFORM_ROUTE_ISOLATION', transformB ? 'YES' : 'NO')
-      const xfDump: unknown[] = []
-      for (const rid of [resources.routes.H1A, resources.routes.H1B].filter(Boolean)) {
-        const cfg = await api.request('GET', `/api/v1/runtime/routes/${rid}/mapping-ui/config`)
-        const eff = await api.request('GET', `/api/v1/runtime/routes/${rid}/transform/effective`)
-        xfDump.push({ routeId: rid, mapping: cfg.json, effective: eff.json })
+      if (transformEvidenceExpected) {
+        store.setFlag('TRANSFORM_OUTPUT_PROVEN', transformB ? 'YES' : 'NO')
+        store.setFlag('TRANSFORM_ROUTE_ISOLATION', transformB ? 'YES' : 'NO')
+        const xfDump: unknown[] = []
+        for (const rid of [resources.routes.H1A, resources.routes.H1B].filter(Boolean)) {
+          const cfg = await api.request('GET', `/api/v1/runtime/routes/${rid}/mapping-ui/config`)
+          const eff = await api.request('GET', `/api/v1/runtime/routes/${rid}/transform/effective`)
+          xfDump.push({ routeId: rid, mapping: cfg.json, effective: eff.json })
+        }
+        store.writeJson('transform-route-config.json', {
+          transformB,
+          echoAHasEventMessage: blockA.includes('event_message'),
+          echoBHasEventMessage: blockB.includes('event_message'),
+          echoAHasTransformed: blockA.includes('transformed_message'),
+          echoBHasTransformed: blockB.includes('transformed_message'),
+          routes: xfDump,
+          blockA: blockA.slice(0, 4000),
+          blockB: blockB.slice(0, 4000),
+        })
+        store.rec('06_TRANSFORM_OUTPUT', transformB ? 'PASS' : 'PARTIAL', `transformB=${transformB}`, ['ACTUAL_DELIVERY'])
       }
-      store.writeJson('transform-route-config.json', {
-        transformB,
-        echoAHasEventMessage: blockA.includes('event_message'),
-        echoBHasEventMessage: blockB.includes('event_message'),
-        echoAHasTransformed: blockA.includes('transformed_message'),
-        echoBHasTransformed: blockB.includes('transformed_message'),
-        routes: xfDump,
-        blockA: blockA.slice(0, 4000),
-        blockB: blockB.slice(0, 4000),
-      })
       store.rec('06_PROTECTION_OUTPUT', protOk ? 'PASS' : 'PARTIAL', `aPlain=${aHasPlain} bPlain=${bHasPlain}`, [
         'ACTUAL_DELIVERY',
       ])
-      store.rec('06_TRANSFORM_OUTPUT', transformB ? 'PASS' : 'PARTIAL', `transformB=${transformB}`, ['ACTUAL_DELIVERY'])
     }
 
     // ---- exhaustive full-event processing delivery proof ----
@@ -2304,10 +2307,12 @@ async function main(): Promise<number> {
 
     store.setFlag('ACTUAL_DELIVERY_TESTS', String(deliveryTests))
     store.setFlag('ACTUAL_DELIVERY_PASS', String(deliveryPass))
-    store.setFlag(
-      'TRANSFORM_OUTPUT_PROVEN',
-      store.flags.TRANSFORM_OUTPUT_PROVEN || 'NO',
-    )
+    if (transformEvidenceExpected) {
+      store.setFlag(
+        'TRANSFORM_OUTPUT_PROVEN',
+        store.flags.TRANSFORM_OUTPUT_PROVEN || 'NO',
+      )
+    }
     if (!store.flags.AUTH_FAILURE_RECOVERY_BROWSER_JOURNEY) {
       store.setFlag('AUTH_FAILURE_RECOVERY_BROWSER_JOURNEY', 'FAIL')
     }
