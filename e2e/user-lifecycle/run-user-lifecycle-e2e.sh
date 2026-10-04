@@ -162,7 +162,10 @@ ensure_python_runtime() {
   flock 8
   terminate_tracked_process_group "$GDC_E2E_PID_DIR/lab-scheduler.pid" "$ROOT"
   terminate_tracked_process_group "$GDC_E2E_PID_DIR/api.pid" "$ROOT"
-  recorded_runtime="$(tr -d '[:space:]' <"$runtime_path_file" 2>/dev/null || true)"
+  recorded_runtime=""
+  if [[ -f "$runtime_path_file" ]]; then
+    recorded_runtime="$(tr -d '[:space:]' <"$runtime_path_file")"
+  fi
   if [[ -n "$recorded_runtime" ]]; then
     recorded_runtime="$(readlink -m "$recorded_runtime")"
     case "$recorded_runtime" in
@@ -234,7 +237,10 @@ ensure_cleanup_python_runtime() {
   runtime_key="$(printf '%s' "$RUN_ID" | tr -c 'A-Za-z0-9._-' '_')"
   runtime_dir="$cache_root/${python_tag}-${requirements_hash:0:16}-${runtime_key}"
   runtime_path_file="$GDC_E2E_PID_DIR/python-runtime-path.txt"
-  recorded_runtime="$(tr -d '[:space:]' <"$runtime_path_file" 2>/dev/null || true)"
+  recorded_runtime=""
+  if [[ -f "$runtime_path_file" ]]; then
+    recorded_runtime="$(tr -d '[:space:]' <"$runtime_path_file")"
+  fi
   if [[ -n "$recorded_runtime" ]]; then
     recorded_runtime="$(readlink -m "$recorded_runtime")"
     case "$recorded_runtime" in

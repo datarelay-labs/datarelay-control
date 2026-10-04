@@ -84,6 +84,7 @@ def test_runner_uses_requirements_hash_keyed_isolated_python_runtime() -> None:
     assert 'python_runtime_${RUN_ID}.freeze.txt' in script
     assert '.requirements-sha256' in script
     assert 'runtime_path_file="$GDC_E2E_PID_DIR/python-runtime-path.txt"' in script
+    assert 'if [[ -f "$runtime_path_file" ]]' in script
     assert "printf '%s\\n' \"$runtime_dir\" >\"$runtime_path_file\"" in script
     assert "import fastapi, jsonata, psycopg2, sqlalchemy" in script
     assert 'export VIRTUAL_ENV="$runtime_dir"' in script
@@ -120,10 +121,11 @@ def test_cleanup_only_does_not_require_fresh_dependency_resolution() -> None:
     cleanup_helper = script[helper_start:helper_end]
     assert "pip install" not in cleanup_helper
     assert "surviving owned API" in cleanup_helper
-    recorded_read = cleanup_helper.index('recorded_runtime="$(tr -d')
+    recorded_read = cleanup_helper.index('if [[ -f "$runtime_path_file" ]]')
+    recorded_value = cleanup_helper.index('recorded_runtime="$(tr -d', recorded_read)
     recorded_select = cleanup_helper.index('runtime_dir="$recorded_runtime"')
     surviving = cleanup_helper.index('tracked_process_matches "$GDC_E2E_PID_DIR/api.pid"')
-    assert recorded_read < recorded_select < surviving
+    assert recorded_read < recorded_value < recorded_select < surviving
     assert '"$cache_root/"*"-$runtime_key"' in cleanup_helper
     surviving_activate = cleanup_helper.index('export VIRTUAL_ENV="$runtime_dir"', surviving)
     surviving_path = cleanup_helper.index('export PATH="$runtime_dir/bin:$PATH"', surviving)
