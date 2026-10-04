@@ -74,7 +74,11 @@ def test_runner_uses_requirements_hash_keyed_isolated_python_runtime() -> None:
     assert "sha256sum \"$ROOT/requirements.txt\"" in script
     assert "tr -c 'A-Za-z0-9._-' '_'" in script
     assert '${python_tag}-${requirements_hash:0:16}-${runtime_key}' in script
-    assert 'rm -rf "$runtime_dir" "$tmp_dir"' in script
+    ensure_start = script.index("ensure_python_runtime()")
+    stop_scheduler = script.index('terminate_tracked_process_group "$GDC_E2E_PID_DIR/lab-scheduler.pid" "$ROOT"', ensure_start)
+    stop_api = script.index('terminate_tracked_process_group "$GDC_E2E_PID_DIR/api.pid" "$ROOT"', ensure_start)
+    replace_runtime = script.index('rm -rf "$runtime_dir" "$tmp_dir"', ensure_start)
+    assert ensure_start < stop_scheduler < stop_api < replace_runtime
     assert '"$system_python" -m venv "$tmp_dir"' in script
     assert '"$tmp_dir/bin/python" -m pip install' in script
     assert 'python_runtime_${RUN_ID}.freeze.txt' in script

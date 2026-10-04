@@ -154,10 +154,13 @@ ensure_python_runtime() {
 
   # Resolve/install dependencies fresh for every browser run. requirements.txt has
   # ranged dependencies, so a requirements-only cache key can silently retain an
-  # older resolved package set after upstream releases. The run-scoped venv keeps
-  # host Python untouched while preventing stale dependency reuse.
+  # older resolved package set after upstream releases. Before replacing the venv,
+  # terminate surviving Python services owned by this same run/PID directory so no
+  # process can continue executing the previous resolution after the path changes.
   exec 8>"$lock_file"
   flock 8
+  terminate_tracked_process_group "$GDC_E2E_PID_DIR/lab-scheduler.pid" "$ROOT"
+  terminate_tracked_process_group "$GDC_E2E_PID_DIR/api.pid" "$ROOT"
   rm -rf "$runtime_dir" "$tmp_dir"
   "$system_python" -m venv "$tmp_dir"
   if ! "$tmp_dir/bin/python" -m pip install --disable-pip-version-check --no-input -r "$ROOT/requirements.txt" \
