@@ -169,32 +169,53 @@ ensure_python_runtime() {
   if [[ -n "$recorded_runtime" ]]; then
     recorded_runtime="$(readlink -m "$recorded_runtime")"
     case "$recorded_runtime" in
-      "$cache_root/"*"-$runtime_key") rm -rf -- "$recorded_runtime" ;;
-      *) echo "WARN: ignoring unsafe recorded browser-runtime path: $recorded_runtime" >&2 ;;
+      "$cache_root/"*"-$runtime_key") ;;
+      *)
+        echo "WARN: ignoring unsafe recorded browser-runtime path: $recorded_runtime" >&2
+        recorded_runtime=""
+        ;;
     esac
   fi
-  rm -f -- "$runtime_path_file"
-  rm -rf "$runtime_dir" "$tmp_dir"
+
+  # Provision transactionally: keep the prior run-scoped runtime and its identity
+  # record intact until the replacement has fully installed and validated. This
+  # preserves offline cleanup/recovery if dependency resolution fails during resume.
+  rm -rf "$tmp_dir"
   "$system_python" -m venv "$tmp_dir"
   if ! "$tmp_dir/bin/python" -m pip install --disable-pip-version-check --no-input -r "$ROOT/requirements.txt" \
     >"$GDC_E2E_LOG_DIR/python_runtime_${RUN_ID}.log" 2>&1; then
     rm -rf "$tmp_dir"
-    echo "ERROR: failed to install isolated browser-runtime dependencies; see $GDC_E2E_LOG_DIR/python_runtime_${RUN_ID}.log" >&2
+    echo "ERROR: failed to install isolated browser-runtime dependencies; preserved runtime remains available for cleanup: ${recorded_runtime:-<none>}" >&2
     flock -u 8
     exec 8>&-
     return 1
   fi
   printf '%s\n' "$requirements_hash" >"$tmp_dir/.requirements-sha256"
   "$tmp_dir/bin/python" -m pip freeze >"$GDC_E2E_LOG_DIR/python_runtime_${RUN_ID}.freeze.txt"
-  mv "$tmp_dir" "$runtime_dir"
-  if [[ ! -f "$marker" || "$(tr -d '[:space:]' <"$marker")" != "$requirements_hash" ]]; then
-    echo "ERROR: browser-runtime dependency identity mismatch: $runtime_dir" >&2
+  if [[ ! -f "$tmp_dir/.requirements-sha256" || "$(tr -d '[:space:]' <"$tmp_dir/.requirements-sha256")" != "$requirements_hash" ]]; then
+    rm -rf "$tmp_dir"
+    echo "ERROR: staged browser-runtime dependency identity mismatch; preserved runtime remains available" >&2
     flock -u 8
     exec 8>&-
     return 1
   fi
-  if ! "$runtime_dir/bin/python" -c 'import fastapi, jsonata, psycopg2, sqlalchemy' >/dev/null 2>&1; then
-    echo "ERROR: cached browser-runtime dependencies are incomplete: $runtime_dir" >&2
+  if ! "$tmp_dir/bin/python" -c 'import fastapi, jsonata, psycopg2, sqlalchemy' >/dev/null 2>&1; then
+    rm -rf "$tmp_dir"
+    echo "ERROR: staged browser-runtime dependencies are incomplete; preserved runtime remains available" >&2
+    flock -u 8
+    exec 8>&-
+    return 1
+  fi
+
+  if [[ -n "$recorded_runtime" && "$recorded_runtime" != "$runtime_dir" ]]; then
+    rm -rf -- "$recorded_runtime"
+    rm -f -- "${recorded_runtime}.lock"
+  fi
+  rm -rf "$runtime_dir"
+  mv "$tmp_dir" "$runtime_dir"
+  printf '%s\n' "$runtime_dir" >"$runtime_path_file"
+  if [[ ! -f "$marker" || "$(tr -d '[:space:]' <"$marker")" != "$requirements_hash" ]]; then
+    echo "ERROR: browser-runtime dependency identity mismatch after transactional swap: $runtime_dir" >&2
     flock -u 8
     exec 8>&-
     return 1
@@ -202,7 +223,6 @@ ensure_python_runtime() {
   flock -u 8
   exec 8>&-
 
-  printf '%s\n' "$runtime_dir" >"$runtime_path_file"
   export VIRTUAL_ENV="$runtime_dir"
   export PATH="$runtime_dir/bin:$PATH"
   export GDC_E2E_PYTHON_RUNTIME="$runtime_dir"

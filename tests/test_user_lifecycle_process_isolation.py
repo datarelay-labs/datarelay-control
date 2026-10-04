@@ -77,10 +77,14 @@ def test_runner_uses_requirements_hash_keyed_isolated_python_runtime() -> None:
     ensure_start = script.index("ensure_python_runtime()")
     stop_scheduler = script.index('terminate_tracked_process_group "$GDC_E2E_PID_DIR/lab-scheduler.pid" "$ROOT"', ensure_start)
     stop_api = script.index('terminate_tracked_process_group "$GDC_E2E_PID_DIR/api.pid" "$ROOT"', ensure_start)
-    replace_runtime = script.index('rm -rf "$runtime_dir" "$tmp_dir"', ensure_start)
-    assert ensure_start < stop_scheduler < stop_api < replace_runtime
+    stage_runtime = script.index('"$system_python" -m venv "$tmp_dir"', ensure_start)
+    remove_runtime = script.index('rm -rf "$runtime_dir"', stage_runtime)
+    swap_runtime = script.index('mv "$tmp_dir" "$runtime_dir"', remove_runtime)
+    persist_runtime = script.index("printf '%s\\n' \"$runtime_dir\" >\"$runtime_path_file\"", swap_runtime)
+    assert ensure_start < stop_scheduler < stop_api < stage_runtime < remove_runtime < swap_runtime < persist_runtime
     assert '"$system_python" -m venv "$tmp_dir"' in script
     assert '"$tmp_dir/bin/python" -m pip install' in script
+    assert 'preserved runtime remains available for cleanup' in script
     assert 'python_runtime_${RUN_ID}.freeze.txt' in script
     assert '.requirements-sha256' in script
     assert 'runtime_path_file="$GDC_E2E_PID_DIR/python-runtime-path.txt"' in script
