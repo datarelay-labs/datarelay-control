@@ -80,7 +80,11 @@ function persistedScopeTags(raw: string | undefined): string[] | null {
 }
 
 function alreadyPassed(store: ArtifactStore, id: string): boolean {
-  return store.scenarios.some((s) => s.id === id && s.status === 'PASS')
+  for (let i = store.scenarios.length - 1; i >= 0; i--) {
+    const row = store.scenarios[i]
+    if (row.id === id) return row.status === 'PASS'
+  }
+  return false
 }
 
 function currentGitHead(): string {
