@@ -160,22 +160,26 @@ python_runtime_path_file() {
 }
 
 python_runtime_lock_file() {
-  printf '%s/locks/%s.lock\n' "$(python_runtime_cache_root)" "$(python_runtime_token)"
+  printf '%s/locks/%s.mutation.lock\n' "$(python_runtime_cache_root)" "$(python_runtime_token)"
+}
+
+python_runtime_lease_file() {
+  printf '%s/locks/%s.lease.lock\n' "$(python_runtime_cache_root)" "$(python_runtime_token)"
 }
 
 PYTHON_RUNTIME_LEASE_ACTIVE=0
 
 acquire_python_runtime_shared_lease() {
-  local lock_file
+  local lease_file
   if [[ "$PYTHON_RUNTIME_LEASE_ACTIVE" == "1" ]]; then
     return 0
   fi
-  lock_file="$(python_runtime_lock_file)"
-  mkdir -p "$(dirname "$lock_file")"
-  exec 8>"$lock_file"
-  if ! flock -n -s 8; then
-    echo "ERROR: browser runtime is in exclusive use by another invocation for RUN_ID=$RUN_ID" >&2
-    exec 8>&-
+  lease_file="$(python_runtime_lease_file)"
+  mkdir -p "$(dirname "$lease_file")"
+  exec 7>"$lease_file"
+  if ! flock -n -s 7; then
+    echo "ERROR: browser runtime lease is exclusively held by cleanup for RUN_ID=$RUN_ID" >&2
+    exec 7>&-
     return 1
   fi
   PYTHON_RUNTIME_LEASE_ACTIVE=1
@@ -183,8 +187,8 @@ acquire_python_runtime_shared_lease() {
 
 release_python_runtime_lifetime_lease() {
   if [[ "$PYTHON_RUNTIME_LEASE_ACTIVE" == "1" ]]; then
-    flock -u 8 2>/dev/null || true
-    exec 8>&-
+    flock -u 7 2>/dev/null || true
+    exec 7>&-
     PYTHON_RUNTIME_LEASE_ACTIVE=0
   fi
 }
@@ -272,14 +276,14 @@ ensure_python_runtime() {
   lock_file="$(python_runtime_lock_file)"
   mkdir -p "$run_root" "$cache_root/locks"
 
-  # Stop consumers owned by this PID directory before asking for the RUN_ID-wide
-  # exclusive provisioning lock. Foreign invocations keep a shared lifetime lease
-  # and make this fail closed instead of allowing their runtime to be replaced.
+  # Stop consumers owned by this PID directory, then serialize generation changes
+  # with a RUN_ID-wide mutation lock. Lifetime protection uses a distinct lease
+  # lock so provisioning can take a shared lease before mutation is released.
   terminate_tracked_process_group "$GDC_E2E_PID_DIR/lab-scheduler.pid" "$ROOT"
   terminate_tracked_process_group "$GDC_E2E_PID_DIR/api.pid" "$ROOT"
   exec 8>"$lock_file"
   if ! flock -n 8; then
-    echo "ERROR: browser runtime is actively leased by another invocation for RUN_ID=$RUN_ID" >&2
+    echo "ERROR: browser runtime mutation is active in another invocation for RUN_ID=$RUN_ID" >&2
     exec 8>&-
     return 1
   fi
@@ -322,17 +326,18 @@ ensure_python_runtime() {
   printf '%s\n' "$runtime_dir" >"$record_tmp"
   mv -f -- "$record_tmp" "$runtime_path_file"
 
-  if [[ -n "$recorded_runtime" && "$recorded_runtime" != "$runtime_dir" ]]; then
-    rm -rf -- "$recorded_runtime"
-  fi
-
-  if ! flock -s 8; then
+  # Older immutable generations may still be in use by a foreign PID directory.
+  # Keep them until terminal cleanup. While mutation is still exclusive, acquire
+  # a separate shared lifetime lease; cleanup requires mutation exclusive and then
+  # lease exclusive, so no unlocked conversion window exists.
+  if ! acquire_python_runtime_shared_lease; then
     echo "ERROR: failed to retain shared browser-runtime lifetime lease for RUN_ID=$RUN_ID" >&2
     flock -u 8 2>/dev/null || true
     exec 8>&-
     return 1
   fi
-  PYTHON_RUNTIME_LEASE_ACTIVE=1
+  flock -u 8
+  exec 8>&-
 
   activate_python_runtime "$runtime_dir" || {
     echo "ERROR: committed browser-runtime activation failed: $runtime_dir" >&2
@@ -565,6 +570,7 @@ start_ui() {
     (
       exec 9>&-
       exec 8>&-
+      exec 7>&-
       cd "$ROOT/frontend"
       if [[ ! -x node_modules/.bin/tsc || ! -x node_modules/.bin/vite ]]; then
         npm ci >"$GDC_E2E_LOG_DIR/frontend_npm_ci_${RUN_ID}.log" 2>&1
@@ -597,27 +603,40 @@ cleanup_owned_services() {
 }
 
 cleanup_python_runtime() {
-  local cache_root runtime_token run_root runtime_path_file lock_file
+  local cache_root runtime_token run_root runtime_path_file mutation_lock_file lease_file
   cache_root="$(python_runtime_cache_root)"
   runtime_token="$(python_runtime_token)"
   run_root="$cache_root/runs/$runtime_token"
   runtime_path_file="$(python_runtime_path_file)"
-  lock_file="$(python_runtime_lock_file)"
+  mutation_lock_file="$(python_runtime_lock_file)"
+  lease_file="$(python_runtime_lease_file)"
   mkdir -p "$cache_root/locks"
 
-  # Drop this runner's shared lifetime lease only after its Python consumers have
-  # been stopped. If another PID directory still has live consumers, its shared
-  # lease keeps the RUN_ID root intact and cleanup preserves the runtime safely.
+  # Owned services are stopped before this function. Release this invocation's
+  # shared lease, serialize deletion with the mutation lock, then require an
+  # exclusive lifetime lease. A foreign live consumer keeps that lease shared,
+  # so cleanup preserves the run root instead of racing deletion.
   release_python_runtime_lifetime_lease
-  exec 8>"$lock_file"
+  exec 8>"$mutation_lock_file"
   if ! flock -n 8; then
-    echo "PYTHON_RUNTIME_PRESERVED=$run_root REASON=runtime-leased-by-another-invocation"
+    echo "PYTHON_RUNTIME_PRESERVED=$run_root REASON=runtime-mutation-active"
     exec 8>&-
     return 0
   fi
+  exec 7>"$lease_file"
+  if ! flock -n 7; then
+    echo "PYTHON_RUNTIME_PRESERVED=$run_root REASON=runtime-leased-by-another-invocation"
+    exec 7>&-
+    flock -u 8
+    exec 8>&-
+    return 0
+  fi
+
   rm -rf -- "$run_root"
   rm -f -- "$runtime_path_file"
   find "$GDC_E2E_PID_DIR" -maxdepth 1 -type f -name "python-runtime-${runtime_token}.path.tmp.*" -delete
+  flock -u 7
+  exec 7>&-
   flock -u 8
   exec 8>&-
 }

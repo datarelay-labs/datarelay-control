@@ -85,16 +85,29 @@ def test_runner_uses_requirements_hash_keyed_isolated_python_runtime() -> None:
     ensure_start = script.index("ensure_python_runtime()")
     stop_scheduler = script.index('terminate_tracked_process_group "$GDC_E2E_PID_DIR/lab-scheduler.pid" "$ROOT"', ensure_start)
     stop_api = script.index('terminate_tracked_process_group "$GDC_E2E_PID_DIR/api.pid" "$ROOT"', ensure_start)
-    exclusive_lock = script.index('if ! flock -n 8; then', stop_api)
-    create_generation = script.index('mktemp -d "$run_root/', exclusive_lock)
+    mutation_lock = script.index('if ! flock -n 8; then', stop_api)
+    create_generation = script.index('mktemp -d "$run_root/', mutation_lock)
     install = script.index('"$runtime_dir/bin/python" -m pip install', create_generation)
     validate = script.index("staged browser-runtime validation failed", install)
     write_record = script.index("printf '%s\\n' \"$runtime_dir\" >\"$record_tmp\"", validate)
     commit_record = script.index('mv -f -- "$record_tmp" "$runtime_path_file"', write_record)
-    delete_old = script.index('rm -rf -- "$recorded_runtime"', commit_record)
-    downgrade_shared = script.index('if ! flock -s 8; then', delete_old)
-    assert ensure_start < stop_scheduler < stop_api < exclusive_lock < create_generation < install < validate < write_record < commit_record < delete_old < downgrade_shared
-    assert 'PYTHON_RUNTIME_LEASE_ACTIVE=1' in script[downgrade_shared:]
+    acquire_shared = script.index("acquire_python_runtime_shared_lease", commit_record)
+    release_mutation = script.index("flock -u 8", acquire_shared)
+    assert (
+        ensure_start
+        < stop_scheduler
+        < stop_api
+        < mutation_lock
+        < create_generation
+        < install
+        < validate
+        < write_record
+        < commit_record
+        < acquire_shared
+        < release_mutation
+    )
+    assert "flock -s 8" not in script[ensure_start:release_mutation + 80]
+    assert 'rm -rf -- "$recorded_runtime"' not in script[commit_record:release_mutation]
 
     assert 'preserved runtime remains available for cleanup' in script
     assert 'activate_python_runtime "$runtime_dir"' in script
@@ -104,7 +117,6 @@ def test_runner_uses_requirements_hash_keyed_isolated_python_runtime() -> None:
     assert "cleanup_python_runtime()" in script
     assert "grep -qx 'CLEANUP=PASS'" in script
     assert 'PYTHON_RUNTIME_PRESERVED=$GDC_E2E_PYTHON_RUNTIME_OWNED REASON=cleanup-not-proven' in script
-
 
 def test_cleanup_only_starts_local_postgres_fixture_without_remote_provisioning() -> None:
     script = RUNNER.read_text(encoding="utf-8")
@@ -138,7 +150,6 @@ def test_cleanup_only_does_not_require_fresh_dependency_resolution() -> None:
     assert 'RESOLUTION=local-existing' in cleanup_helper
     assert 'refusing network dependency resolution' in cleanup_helper
 
-    # Identity/cache isolation must be per RUN_ID, not shared across runs.
     assert 'python-runtime-%s.path' in script
     assert 'run_root="$cache_root/runs/$runtime_token"' in script
     assert 'readlink -m "${GDC_E2E_PYTHON_CACHE_DIR:-/tmp/datarelay-control-e2e-python}"' in script
@@ -167,33 +178,45 @@ def test_cleanup_only_does_not_require_fresh_dependency_resolution() -> None:
     assert 'rm -rf -- "$run_root"' not in service_cleanup
     runtime_cleanup = script[runtime_cleanup_start:]
     assert 'release_python_runtime_lifetime_lease' in runtime_cleanup
-    assert 'if ! flock -n 8; then' in runtime_cleanup
+    assert 'mutation_lock_file="$(python_runtime_lock_file)"' in runtime_cleanup
+    assert 'lease_file="$(python_runtime_lease_file)"' in runtime_cleanup
+    mutation_lock = runtime_cleanup.index('if ! flock -n 8; then')
+    lease_lock = runtime_cleanup.index('if ! flock -n 7; then', mutation_lock)
+    delete_root = runtime_cleanup.index('rm -rf -- "$run_root"', lease_lock)
+    assert mutation_lock < lease_lock < delete_root
+    assert 'REASON=runtime-mutation-active' in runtime_cleanup
     assert 'REASON=runtime-leased-by-another-invocation' in runtime_cleanup
-    assert 'rm -rf -- "$run_root"' in runtime_cleanup
     assert 'rm -f -- "$runtime_path_file"' in runtime_cleanup
-    assert 'rm -f -- "$runtime_path_file" "$lock_file"' not in runtime_cleanup
-    assert 'python-runtime-${runtime_token}.path.tmp.*' in runtime_cleanup
+    assert 'python-runtime-' in runtime_cleanup and '.path.tmp.*' in runtime_cleanup
 
     cleanup_pass = script.index("grep -qx 'CLEANUP=PASS'")
     stop_services = script.index("cleanup_owned_services", cleanup_pass)
     remove_runtime = script.index("cleanup_python_runtime", stop_services)
     assert cleanup_pass < stop_services < remove_runtime
 
-
-
 def test_browser_python_runtime_holds_shared_lifetime_lease() -> None:
     script = RUNNER.read_text(encoding="utf-8")
 
     assert "python_runtime_lock_file()" in script
+    assert "python_runtime_lease_file()" in script
+    assert "%s.mutation.lock" in script
+    assert "%s.lease.lock" in script
     assert "acquire_python_runtime_shared_lease()" in script
     assert "release_python_runtime_lifetime_lease()" in script
-    assert "flock -n -s 8" in script
-    assert "flock -s 8" in script
+    assert "flock -n -s 7" in script
+    assert "flock -s 8" not in script
     assert "runtime-leased-by-another-invocation" in script
+
+    ensure_start = script.index("ensure_python_runtime()")
+    acquire_shared = script.index("acquire_python_runtime_shared_lease", ensure_start)
+    release_mutation = script.index("flock -u 8", acquire_shared)
+    assert acquire_shared < release_mutation
+
     ui_start = script.index("start_ui()")
     ui_end = script.index("\ncleanup_owned_services()", ui_start)
-    assert "exec 8>&-" in script[ui_start:ui_end]
-
+    ui = script[ui_start:ui_end]
+    assert "exec 8>&-" in ui
+    assert "exec 7>&-" in ui
 
 def test_dynamic_wiremock_stubs_use_persisted_stream_http_method() -> None:
     helper = API_HELPER.read_text(encoding="utf-8")
