@@ -463,13 +463,13 @@ async function main(): Promise<number> {
     restoreResumeState(store, st)
     const priorFatalIndex = store.scenarios.findLastIndex((row) => row.id === 'FATAL' && row.status === 'FAIL')
     if (priorFatalIndex >= 0) {
-      const cleanupRecordedAfterFatal = store.scenarios
+      const cleanupCompletedAfterFatal = store.scenarios
         .slice(priorFatalIndex + 1)
-        .some((row) => row.id === '13_CLEANUP_ORPHANS')
+        .some((row) => row.id === '13_CLEANUP_ORPHANS' && row.status === 'PASS')
       const cleanupMutationRecorded = store.ledger.some(
         (row) => row.CLEANUP_STATUS && row.CLEANUP_STATUS !== 'OPEN',
       )
-      if (cleanupRecordedAfterFatal || cleanupMutationRecorded || store.flags.CLEANUP) {
+      if (cleanupCompletedAfterFatal || cleanupMutationRecorded || store.flags.CLEANUP === 'PASS') {
         console.error('Resume cannot recover a prior FATAL after cleanup started; start a fresh RUN_ID')
         return 2
       }
