@@ -10,7 +10,7 @@ engineering_system:
   - .github/workflows/frontend-focused.yml
   - .github/workflows/e2e-smoke.yml
   merge_gate_status: advisory
-  policy_epoch: 10
+  policy_epoch: 11
 project:
   name: data-relay-control
   type: enterprise-data-control-gateway
