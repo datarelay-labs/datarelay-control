@@ -87,8 +87,9 @@ def test_runner_uses_requirements_hash_keyed_isolated_python_runtime() -> None:
     assert 'export VIRTUAL_ENV="$runtime_dir"' in script
     assert 'export GDC_E2E_PYTHON_RUNTIME="$runtime_dir"' in script
     assert 'export GDC_E2E_PYTHON_RUNTIME_OWNED="$runtime_dir"' in script
-    assert 'rm -rf -- "$GDC_E2E_PYTHON_RUNTIME_OWNED"' in script
-    assert 'rm -f -- "${GDC_E2E_PYTHON_RUNTIME_OWNED}.lock"' in script
+    assert "cleanup_python_runtime()" in script
+    assert "grep -qx 'CLEANUP=PASS'" in script
+    assert 'PYTHON_RUNTIME_PRESERVED=$GDC_E2E_PYTHON_RUNTIME_OWNED REASON=cleanup-not-proven' in script
 
 
 
@@ -106,6 +107,11 @@ def test_cleanup_only_does_not_require_fresh_dependency_resolution() -> None:
     cleanup_call = script.index("ensure_cleanup_python_runtime", startup)
     normal_call = script.index("ensure_python_runtime", cleanup_call)
     assert startup < cleanup_call < normal_call
+    service_cleanup_start = script.index("cleanup_owned_services()")
+    runtime_cleanup_start = script.index("cleanup_python_runtime()")
+    service_cleanup = script[service_cleanup_start:runtime_cleanup_start]
+    assert 'rm -rf -- "$GDC_E2E_PYTHON_RUNTIME_OWNED"' not in service_cleanup
+    assert 'rm -rf -- "$GDC_E2E_PYTHON_RUNTIME_OWNED"' in script[runtime_cleanup_start:]
 
 
 def test_dynamic_wiremock_stubs_use_persisted_stream_http_method() -> None:

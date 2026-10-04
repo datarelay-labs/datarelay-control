@@ -425,6 +425,9 @@ cleanup_owned_services() {
   terminate_tracked_process_group "$GDC_E2E_PID_DIR/ui.pid" "$ROOT/frontend"
   terminate_tracked_process_group "$GDC_E2E_PID_DIR/lab-scheduler.pid" "$ROOT"
   terminate_tracked_process_group "$GDC_E2E_PID_DIR/api.pid" "$ROOT"
+}
+
+cleanup_python_runtime() {
   if [[ -n "${GDC_E2E_PYTHON_RUNTIME_OWNED:-}" ]]; then
     rm -rf -- "$GDC_E2E_PYTHON_RUNTIME_OWNED"
     rm -f -- "${GDC_E2E_PYTHON_RUNTIME_OWNED}.lock"
@@ -462,5 +465,12 @@ if [[ -f "$ARTIFACT/final-summary.txt" ]]; then
   echo "SUMMARY=ok"
 else
   echo "SUMMARY=missing"
+fi
+if [[ -f "$ARTIFACT/final-summary.txt" ]] && grep -qx 'CLEANUP=PASS' "$ARTIFACT/final-summary.txt"; then
+  cleanup_python_runtime
+else
+  if [[ -n "${GDC_E2E_PYTHON_RUNTIME_OWNED:-}" ]]; then
+    echo "PYTHON_RUNTIME_PRESERVED=$GDC_E2E_PYTHON_RUNTIME_OWNED REASON=cleanup-not-proven"
+  fi
 fi
 exit "$EC"
