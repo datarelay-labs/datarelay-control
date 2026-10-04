@@ -213,9 +213,10 @@ export async function stubWiremock(
   wiremockBase: string,
   pathName: string,
   body: unknown,
-  opts: { status?: number; bearer?: string; method?: string } = {},
+  opts: { status?: number; bearer?: string; method: string },
 ): Promise<void> {
-  const method = opts.method || 'GET'
+  const method = opts.method.trim().toUpperCase()
+  if (!method) throw new Error(`WireMock stub method is required for ${pathName}`)
   // Replace prior mappings for this path; otherwise seed stubs (ids 1-12) keep matching first.
   try {
     const listed = await fetch(`${wiremockBase}/__admin/mappings`)

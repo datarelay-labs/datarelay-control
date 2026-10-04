@@ -168,6 +168,16 @@ async function findConnectorId(api: ApiClient, name: string): Promise<number | n
   return null
 }
 
+async function persistedStreamHttpMethod(api: ApiClient, streamId: number): Promise<string> {
+  const stream = await api.getStream(streamId)
+  const config = stream?.config_json && typeof stream.config_json === 'object' ? stream.config_json : {}
+  const method = String(config.method ?? config.http_method ?? '').trim().toUpperCase()
+  if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+    throw new Error(`stream ${streamId} has no supported persisted HTTP method: ${method || '<empty>'}`)
+  }
+  return method
+}
+
 async function waitForStreamEnabled(api: ApiClient, id: number, enabled: boolean, tries = 20): Promise<boolean> {
   for (let i = 0; i < tries; i++) {
     const stream = await api.getStream(id).catch(() => null)
@@ -1588,6 +1598,7 @@ async function main(): Promise<number> {
         ? `e2e-${runId}-http-stream-H2`
         : `e2e-${runId}-http-stream-H3`
     const primaryHttpPath = resources.streams.H1 ? `/ulc/${runId}/h1` : resources.streams.H2 ? `/ulc/${runId}/h2` : `/ulc/${runId}/h3`
+    const primaryHttpMethod = primaryHttp ? await persistedStreamHttpMethod(api, primaryHttp) : null
 
     const wrapHttpItem = (item: Record<string, unknown>) =>
       primaryHttpPath.endsWith('/h2') ? { data: { records: [item] } } : { items: [item] }
@@ -1613,7 +1624,7 @@ async function main(): Promise<number> {
           email: 'test@example.invalid',
           api_key: `FAKE_API_KEY_${runId}`,
         }),
-        { bearer: token },
+        { bearer: token, method: primaryHttpMethod! },
       )
       let a = await waitForDelivery(m, `/ulc-${runId}-a`, TIMEOUTS.schedulerPollMs)
       let b = await waitForDelivery(m, `/ulc-${runId}-b`, 20_000)
@@ -1697,7 +1708,13 @@ async function main(): Promise<number> {
           message: marker,
           timestamp: '2026-10-02T10:50:00Z',
         }
-        await stubWiremock(wm, endpoint, nested ? { data: { records: [item] } } : { items: [item] }, { bearer: token })
+        const streamMethod = await persistedStreamHttpMethod(api, streamId)
+        await stubWiremock(
+          wm,
+          endpoint,
+          nested ? { data: { records: [item] } } : { items: [item] },
+          { bearer: token, method: streamMethod },
+        )
         let delivered = await waitForDelivery(marker, `/ulc-${runId}-a`, 25_000)
         if (!delivered) {
           await api.runOnce(streamId)
@@ -1873,7 +1890,7 @@ async function main(): Promise<number> {
           message: marker,
           email: 'x@y.z',
         }),
-        { bearer: token },
+        { bearer: token, method: primaryHttpMethod! },
       )
       const runOnceIso = await api.runOnce(primaryHttp)
       let aOk = await waitForDelivery(marker, pathA)
@@ -1928,7 +1945,7 @@ async function main(): Promise<number> {
         wm,
         primaryHttpPath,
         wrapHttpItem({ id: 10003, run_id: runId, sequence: 10003, message: marker2 }),
-        { bearer: token },
+        { bearer: token, method: primaryHttpMethod! },
       )
       await api.runOnce(primaryHttp)
       const recA = await waitForDelivery(marker2, pathA)
@@ -1949,7 +1966,7 @@ async function main(): Promise<number> {
     // ---- source failure diagnosis (UI first) ----
     if (resources.connectors.HTTP && primaryHttp && want('08_SOURCE_FAIL', ['failure', 'browser'])) {
       try {
-      await stubWiremock(wm, primaryHttpPath, { error: 'down' }, { status: 500, bearer: token })
+      await stubWiremock(wm, primaryHttpPath, { error: 'down' }, { status: 500, bearer: token, method: primaryHttpMethod! })
       const runFail = await api.request('POST', `/api/v1/runtime/streams/${primaryHttp}/run-once`, {}, 45_000).catch(
         (e) => ({ status: 0, json: { error: String(e) }, text: String(e) }),
       )
@@ -2015,7 +2032,7 @@ async function main(): Promise<number> {
         wm,
         primaryHttpPath,
         wrapHttpItem({ id: 10013, run_id: runId, message: `SRC-RECOVER-${runId}` }),
-        { bearer: token },
+        { bearer: token, method: primaryHttpMethod! },
       )
       await connectors.openDetail(resources.connectors.HTTP)
       await connectors.setAuthTestPath(primaryHttpPath)
@@ -2040,12 +2057,13 @@ async function main(): Promise<number> {
 
     // ---- checkpoint invariant (API verify; UI visible if present) ----
     if (resources.streams.H3 && want('38_CHECKPOINT', ['checkpoint', 'delivery'])) {
+      const checkpointHttpMethod = await persistedStreamHttpMethod(api, resources.streams.H3)
       const before = await api.getCheckpoint(resources.streams.H3).catch(() => null)
       await stubWiremock(
         wm,
         `/ulc/${runId}/h3`,
         { items: [{ id: 1, run_id: runId, checkpoint: 'cp-1', message: `marker-${runId}-cp1` }] },
-        { bearer: token },
+        { bearer: token, method: checkpointHttpMethod },
       )
       await api.startStream(resources.streams.H3)
       await api.runOnce(resources.streams.H3)
@@ -2062,7 +2080,7 @@ async function main(): Promise<number> {
         wm,
         `/ulc/${runId}/h3`,
         { items: [{ id: 2, run_id: runId, checkpoint: 'cp-2', message: `marker-${runId}-cp2` }] },
-        { bearer: token },
+        { bearer: token, method: checkpointHttpMethod },
       )
       await api.runOnce(resources.streams.H3)
       const mid2 = await api.getCheckpoint(resources.streams.H3).catch(() => null)
@@ -2168,7 +2186,7 @@ async function main(): Promise<number> {
         wm,
         primaryHttpPath,
         wrapHttpItem({ id: 10020, sequence: 10020, message: marker }),
-        { bearer: token },
+        { bearer: token, method: primaryHttpMethod! },
       )
       // Do NOT call runOnce here — that is intentional manual execution.
       // Wait at least two scheduler poll periods (stream polling_interval=15s).
@@ -2187,7 +2205,7 @@ async function main(): Promise<number> {
         wm,
         primaryHttpPath,
         wrapHttpItem({ id: 10021, sequence: 10021, message: marker2 }),
-        { bearer: token },
+        { bearer: token, method: primaryHttpMethod! },
       )
       await api.runOnce(primaryHttp)
       const afterStart = await waitForDelivery(marker2, `/ulc-${runId}-a`)

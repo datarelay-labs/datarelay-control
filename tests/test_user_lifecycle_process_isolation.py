@@ -9,7 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 RUNNER = ROOT / "e2e" / "user-lifecycle" / "run-user-lifecycle-e2e.sh"
 DEFAULTS = ROOT / "e2e" / "user-lifecycle" / "config" / "defaults.env"
 REQUIREMENTS = ROOT / "requirements.txt"
-STREAM_WIZARD_PAGE = ROOT / "e2e" / "user-lifecycle" / "pages" / "stream-wizard.page.ts"
+API_HELPER = ROOT / "e2e" / "user-lifecycle" / "helpers" / "api.ts"
+USER_LIFECYCLE_MAIN = ROOT / "e2e" / "user-lifecycle" / "cli" / "main.ts"
 
 
 def _free_port() -> int:
@@ -78,11 +79,18 @@ def test_runner_uses_requirements_hash_keyed_isolated_python_runtime() -> None:
     assert 'export GDC_E2E_PYTHON_RUNTIME="$runtime_dir"' in script
 
 
-def test_http_stream_journey_explicitly_uses_get_fixture_contract() -> None:
-    page = STREAM_WIZARD_PAGE.read_text(encoding="utf-8")
+def test_dynamic_wiremock_stubs_use_persisted_stream_http_method() -> None:
+    helper = API_HELPER.read_text(encoding="utf-8")
+    main = USER_LIFECYCLE_MAIN.read_text(encoding="utf-8")
 
-    assert "getByLabel(/HTTP method/i).first()" in page
-    assert "await method.selectOption('GET')" in page
+    assert "method: string" in helper
+    assert "const method = opts.method.trim().toUpperCase()" in helper
+    assert "WireMock stub method is required" in helper
+    assert "async function persistedStreamHttpMethod" in main
+    assert "config.method ?? config.http_method" in main
+    assert "method: primaryHttpMethod!" in main
+    assert "method: streamMethod" in main
+    assert "method: checkpointHttpMethod" in main
 
 
 def test_runner_fails_closed_on_unowned_api_port(tmp_path: Path) -> None:
