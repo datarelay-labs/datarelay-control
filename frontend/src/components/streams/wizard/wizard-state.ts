@@ -851,7 +851,7 @@ export const INITIAL_CONFIG: WizardConfigState = {
   sqlQuery: '',
   dbCheckpointColumn: '',
   dbCheckpointMode: 'NONE',
-  incrementalRequestPattern: 'json_body',
+  incrementalRequestPattern: 'none',
   incrementalRequestDraft: '',
   incrementalRequestTestSignature: null,
   incrementalRequestTestedAt: null,

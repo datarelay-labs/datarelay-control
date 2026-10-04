@@ -404,6 +404,34 @@ describe('wizard-state buildStreamCreatePayload', () => {
     expect(payload?.config_json).not.toHaveProperty('endpoint')
   })
 
+  it('keeps a default GET stream as GET when checkpoint is selected without an incremental template', () => {
+    const state = buildInitialState()
+    state.connector.connectorId = 11
+    state.connector.sourceId = 22
+    state.connector.sourceType = 'HTTP_API_POLLING'
+    state.stream.httpMethod = 'GET'
+    state.stream.endpoint = '/events'
+    state.stream.checkpointSourcePath = '$.id'
+
+    expect(state.stream.incrementalRequestPattern).toBe('none')
+    expect(state.stream.incrementalRequestDraft).toBe('')
+
+    const payload = buildStreamCreatePayload(state)
+    expect(payload?.config_json).toMatchObject({
+      method: 'GET',
+      endpoint: '/events',
+      runtime_ui: {
+        incremental_request: {
+          pattern: 'none',
+          draft: '',
+          base_method: 'GET',
+          base_body: null,
+        },
+      },
+    })
+    expect(payload?.config_json.body).toBeUndefined()
+  })
+
   it('persists the tested incremental query template into the runtime request config', () => {
     const state = buildInitialState()
     state.connector.connectorId = 11

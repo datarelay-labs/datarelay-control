@@ -139,6 +139,285 @@ tracked_process_matches "$GDC_E2E_PID_DIR/ui.pid" "$ROOT/frontend" && preflight_
 require_free_untracked_port "API" "$GDC_E2E_API_PORT" "$preflight_api_tracked"
 require_free_untracked_port "UI" "$GDC_E2E_UI_PORT" "$preflight_ui_tracked"
 
+python_runtime_cache_root() {
+  readlink -m "${GDC_E2E_PYTHON_CACHE_DIR:-/tmp/datarelay-control-e2e-python}"
+}
+
+python_runtime_token() {
+  local safe digest
+  safe="$(printf '%s' "$RUN_ID" | tr -c 'A-Za-z0-9._-' '_')"
+  safe="${safe:0:40}"
+  digest="$(printf '%s' "$RUN_ID" | sha256sum | awk '{print substr($1, 1, 12)}')"
+  printf '%s-%s\n' "$safe" "$digest"
+}
+
+python_runtime_run_root() {
+  printf '%s/runs/%s\n' "$(python_runtime_cache_root)" "$(python_runtime_token)"
+}
+
+python_runtime_path_file() {
+  printf '%s/python-runtime-%s.path\n' "$GDC_E2E_PID_DIR" "$(python_runtime_token)"
+}
+
+python_runtime_lock_file() {
+  printf '%s/locks/%s.mutation.lock\n' "$(python_runtime_cache_root)" "$(python_runtime_token)"
+}
+
+python_runtime_lease_file() {
+  printf '%s/locks/%s.lease.lock\n' "$(python_runtime_cache_root)" "$(python_runtime_token)"
+}
+
+PYTHON_RUNTIME_LEASE_ACTIVE=0
+
+acquire_python_runtime_shared_lease() {
+  local lease_file
+  if [[ "$PYTHON_RUNTIME_LEASE_ACTIVE" == "1" ]]; then
+    return 0
+  fi
+  lease_file="$(python_runtime_lease_file)"
+  mkdir -p "$(dirname "$lease_file")"
+  exec 7>"$lease_file"
+  if ! flock -n -s 7; then
+    echo "ERROR: browser runtime lease is exclusively held by cleanup for RUN_ID=$RUN_ID" >&2
+    exec 7>&-
+    return 1
+  fi
+  PYTHON_RUNTIME_LEASE_ACTIVE=1
+}
+
+release_python_runtime_lifetime_lease() {
+  if [[ "$PYTHON_RUNTIME_LEASE_ACTIVE" == "1" ]]; then
+    flock -u 7 2>/dev/null || true
+    exec 7>&-
+    PYTHON_RUNTIME_LEASE_ACTIVE=0
+  fi
+}
+
+validated_python_runtime_path() {
+  local candidate="$1" run_root="$2" canonical
+  [[ -n "$candidate" ]] || return 1
+  canonical="$(readlink -m "$candidate")"
+  case "$canonical" in
+    "$run_root/"*)
+      [[ -x "$canonical/bin/python" ]] || return 1
+      [[ -s "$canonical/.requirements-sha256" ]] || return 1
+      printf '%s\n' "$canonical"
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+recorded_python_runtime() {
+  local run_root="$1" path_file="$2" raw
+  [[ -f "$path_file" ]] || return 1
+  raw="$(tr -d '[:space:]' <"$path_file")"
+  validated_python_runtime_path "$raw" "$run_root"
+}
+
+discover_python_runtime() {
+  local system_python="$1" run_root="$2" candidate
+  [[ -d "$run_root" ]] || return 1
+  candidate="$($system_python - "$run_root" <<'PY2'
+import subprocess
+import sys
+from pathlib import Path
+root = Path(sys.argv[1])
+try:
+    candidates = [
+        p
+        for p in root.iterdir()
+        if p.is_dir()
+        and (p / 'bin' / 'python').is_file()
+        and (p / '.requirements-sha256').is_file()
+        and (p / '.requirements-sha256').stat().st_size > 0
+    ]
+except OSError:
+    raise SystemExit(1)
+candidates.sort(key=lambda p: p.stat().st_mtime_ns, reverse=True)
+for candidate in candidates:
+    try:
+        rc = subprocess.run(
+            [str(candidate / 'bin' / 'python'), '-c', 'import uvicorn; import app.main; import app.database; import app.governance_policies.models'],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+            check=False,
+        ).returncode
+    except (OSError, subprocess.TimeoutExpired):
+        continue
+    if rc == 0:
+        print(candidate)
+        raise SystemExit(0)
+raise SystemExit(1)
+PY2
+  )" || return 1
+  validated_python_runtime_path "$candidate" "$run_root"
+}
+
+activate_python_runtime() {
+  local runtime_dir="$1"
+  "$runtime_dir/bin/python" -c 'import fastapi, jsonata, psycopg2, sqlalchemy' >/dev/null 2>&1 || return 1
+  export VIRTUAL_ENV="$runtime_dir"
+  export PATH="$runtime_dir/bin:$PATH"
+  export GDC_E2E_PYTHON_RUNTIME="$runtime_dir"
+  export GDC_E2E_PYTHON_RUNTIME_OWNED="$runtime_dir"
+}
+
+cleanup_python_runtime_usable() {
+  local python_bin="$1"
+  "$python_bin" -c 'import uvicorn; import app.main; import app.database; import app.governance_policies.models' >/dev/null 2>&1
+}
+
+ensure_python_runtime() {
+  local system_python requirements_hash python_tag cache_root runtime_token run_root runtime_dir lock_file marker
+  local runtime_path_file record_tmp recorded_runtime
+  system_python="$(command -v python3)"
+  requirements_hash="$(sha256sum "$ROOT/requirements.txt" | awk '{print $1}')"
+  python_tag="$($system_python -c 'import sys; print(f"py{sys.version_info.major}{sys.version_info.minor}")')"
+  cache_root="$(python_runtime_cache_root)"
+  runtime_token="$(python_runtime_token)"
+  run_root="$cache_root/runs/$runtime_token"
+  runtime_path_file="$(python_runtime_path_file)"
+  lock_file="$(python_runtime_lock_file)"
+  mkdir -p "$run_root" "$cache_root/locks"
+
+  # Stop consumers owned by this PID directory, then serialize generation changes
+  # with a RUN_ID-wide mutation lock. Lifetime protection uses a distinct lease
+  # lock so provisioning can take a shared lease before mutation is released.
+  terminate_tracked_process_group "$GDC_E2E_PID_DIR/lab-scheduler.pid" "$ROOT"
+  terminate_tracked_process_group "$GDC_E2E_PID_DIR/api.pid" "$ROOT"
+  exec 8>"$lock_file"
+  if ! flock -n 8; then
+    echo "ERROR: browser runtime mutation is active in another invocation for RUN_ID=$RUN_ID" >&2
+    exec 8>&-
+    return 1
+  fi
+
+  recorded_runtime="$(recorded_python_runtime "$run_root" "$runtime_path_file" 2>/dev/null || true)"
+  runtime_dir="$(mktemp -d "$run_root/${python_tag}-${requirements_hash:0:16}-gen-XXXXXXXX")"
+  marker="$runtime_dir/.requirements-sha256"
+
+  # Each generation is immutable and unique. The prior recorded generation remains
+  # valid until the new generation is fully installed/validated and the run-scoped
+  # identity file is atomically renamed. A crash on either side of that rename leaves
+  # at least one usable cleanup runtime. Cleanup removes every generation under this
+  # RUN_ID-specific cache root only after resource cleanup is proven.
+  if ! "$system_python" -m venv "$runtime_dir"; then
+    rm -rf -- "$runtime_dir"
+    flock -u 8
+    exec 8>&-
+    return 1
+  fi
+  if ! "$runtime_dir/bin/python" -m pip install --disable-pip-version-check --no-input -r "$ROOT/requirements.txt" \
+    >"$GDC_E2E_LOG_DIR/python_runtime_${RUN_ID}.log" 2>&1; then
+    rm -rf -- "$runtime_dir"
+    echo "ERROR: failed to install isolated browser-runtime dependencies; preserved runtime remains available for cleanup: ${recorded_runtime:-<none>}" >&2
+    flock -u 8
+    exec 8>&-
+    return 1
+  fi
+  printf '%s\n' "$requirements_hash" >"$marker"
+  "$runtime_dir/bin/python" -m pip freeze >"$GDC_E2E_LOG_DIR/python_runtime_${RUN_ID}.freeze.txt"
+  if [[ "$(tr -d '[:space:]' <"$marker")" != "$requirements_hash" ]] || \
+     ! "$runtime_dir/bin/python" -c 'import fastapi, jsonata, psycopg2, sqlalchemy' >/dev/null 2>&1; then
+    rm -rf -- "$runtime_dir"
+    echo "ERROR: staged browser-runtime validation failed; preserved runtime remains available for cleanup" >&2
+    flock -u 8
+    exec 8>&-
+    return 1
+  fi
+
+  record_tmp="${runtime_path_file}.tmp.$$"
+  printf '%s\n' "$runtime_dir" >"$record_tmp"
+  mv -f -- "$record_tmp" "$runtime_path_file"
+
+  # Older immutable generations may still be in use by a foreign PID directory.
+  # Keep them until terminal cleanup. While mutation is still exclusive, acquire
+  # a separate shared lifetime lease; cleanup requires mutation exclusive and then
+  # lease exclusive, so no unlocked conversion window exists.
+  if ! acquire_python_runtime_shared_lease; then
+    echo "ERROR: failed to retain shared browser-runtime lifetime lease for RUN_ID=$RUN_ID" >&2
+    flock -u 8 2>/dev/null || true
+    exec 8>&-
+    return 1
+  fi
+  flock -u 8
+  exec 8>&-
+
+  activate_python_runtime "$runtime_dir" || {
+    echo "ERROR: committed browser-runtime activation failed: $runtime_dir" >&2
+    release_python_runtime_lifetime_lease
+    return 1
+  }
+  echo "PYTHON_RUNTIME=$runtime_dir REQUIREMENTS_SHA256=$requirements_hash RESOLUTION=fresh-per-run"
+}
+
+ensure_cleanup_database_fixture() {
+  local container="gdc-postgres-test"
+  if ! docker inspect "$container" >/dev/null 2>&1; then
+    echo "ERROR: local PostgreSQL fixture is missing: $container" >&2
+    return 1
+  fi
+  docker start "$container" >/dev/null
+  for _ in $(seq 1 60); do
+    if pg_isready -h 127.0.0.1 -p 55441 -U gdc >/dev/null 2>&1; then
+      echo "CLEANUP_DB_FIXTURE=$container READY=YES"
+      return 0
+    fi
+    sleep 1
+  done
+  echo "ERROR: cleanup PostgreSQL fixture did not become ready: $container" >&2
+  return 1
+}
+
+ensure_cleanup_python_runtime() {
+  local system_python cache_root runtime_token run_root runtime_path_file runtime_dir have_db
+  system_python="$(command -v python3)"
+  cache_root="$(python_runtime_cache_root)"
+  runtime_token="$(python_runtime_token)"
+  run_root="$cache_root/runs/$runtime_token"
+  runtime_path_file="$(python_runtime_path_file)"
+  have_db="$(tr -d '[:space:]' <"$GDC_E2E_PID_DIR/api-database-url.txt" 2>/dev/null || true)"
+
+  # Acquire the shared lifetime lease before consulting any generation path. This
+  # prevents a concurrent cleanup from deleting run_root between lookup/validation
+  # and activation.
+  if ! acquire_python_runtime_shared_lease; then
+    echo "ERROR: cleanup runtime is being deleted by another invocation for RUN_ID=$RUN_ID" >&2
+    return 1
+  fi
+
+  runtime_dir="$(recorded_python_runtime "$run_root" "$runtime_path_file" 2>/dev/null || true)"
+  if [[ -n "$runtime_dir" ]] && ! cleanup_python_runtime_usable "$runtime_dir/bin/python"; then
+    runtime_dir=""
+  fi
+  if [[ -z "$runtime_dir" ]]; then
+    runtime_dir="$(discover_python_runtime "$system_python" "$run_root" 2>/dev/null || true)"
+  fi
+
+  if [[ -n "$runtime_dir" ]] && cleanup_python_runtime_usable "$runtime_dir/bin/python" && activate_python_runtime "$runtime_dir"; then
+    if tracked_process_matches "$GDC_E2E_PID_DIR/api.pid" "$ROOT" && [[ "$have_db" == "$DATABASE_URL" ]]; then
+      echo "CLEANUP_RUNTIME=$runtime_dir RESOLUTION=surviving-api-reuse-existing"
+    else
+      echo "CLEANUP_RUNTIME=$runtime_dir RESOLUTION=reuse-existing"
+    fi
+    return 0
+  fi
+
+  release_python_runtime_lifetime_lease
+  if cleanup_python_runtime_usable "$system_python"; then
+    if tracked_process_matches "$GDC_E2E_PID_DIR/api.pid" "$ROOT" && [[ "$have_db" == "$DATABASE_URL" ]]; then
+      echo "CLEANUP_RUNTIME=$system_python RESOLUTION=surviving-api-local-existing"
+    else
+      echo "CLEANUP_RUNTIME=$system_python RESOLUTION=local-existing"
+    fi
+    return 0
+  fi
+
+  echo "ERROR: cleanup-only requires a preserved run runtime or a fully cleanup-capable local interpreter; refusing network dependency resolution" >&2
+  return 1
+}
+
 ensure_fixtures() {
   local syslog_fixture_present=0
   for c in gdc-postgres-test gdc-wiremock-test gdc-webhook-receiver-test gdc-minio-test gdc-postgres-query-test gdc-sftp-test gdc-syslog-test; do
@@ -188,7 +467,7 @@ ensure_db() {
   if [[ "$exists" != "1" ]]; then
     psql -h 127.0.0.1 -p 55441 -U gdc -d postgres -c "CREATE DATABASE \"${DB_NAME}\" OWNER gdc" >/dev/null
   fi
-  alembic upgrade head >"$GDC_E2E_LOG_DIR/alembic_${RUN_ID}.log" 2>&1
+  python3 -m alembic upgrade head >"$GDC_E2E_LOG_DIR/alembic_${RUN_ID}.log" 2>&1
   unset GDC_SEED_ADMIN_PASSWORD || true
   python3 -m app.db.seed --platform-admin-only --reset-platform-admin-password \
     >"$GDC_E2E_LOG_DIR/admin_seed_${RUN_ID}.log" 2>&1 || true
@@ -304,6 +583,8 @@ start_ui() {
     require_free_untracked_port "UI" "$GDC_E2E_UI_PORT" 0
     (
       exec 9>&-
+      exec 8>&-
+      exec 7>&-
       cd "$ROOT/frontend"
       if [[ ! -x node_modules/.bin/tsc || ! -x node_modules/.bin/vite ]]; then
         npm ci >"$GDC_E2E_LOG_DIR/frontend_npm_ci_${RUN_ID}.log" 2>&1
@@ -335,12 +616,56 @@ cleanup_owned_services() {
   terminate_tracked_process_group "$GDC_E2E_PID_DIR/api.pid" "$ROOT"
 }
 
+cleanup_python_runtime() {
+  local cache_root runtime_token run_root runtime_path_file mutation_lock_file lease_file
+  cache_root="$(python_runtime_cache_root)"
+  runtime_token="$(python_runtime_token)"
+  run_root="$cache_root/runs/$runtime_token"
+  runtime_path_file="$(python_runtime_path_file)"
+  mutation_lock_file="$(python_runtime_lock_file)"
+  lease_file="$(python_runtime_lease_file)"
+  mkdir -p "$cache_root/locks"
+
+  # Owned services are stopped before this function. Release this invocation's
+  # shared lease, serialize deletion with the mutation lock, then require an
+  # exclusive lifetime lease. A foreign live consumer keeps that lease shared,
+  # so cleanup preserves the run root instead of racing deletion.
+  release_python_runtime_lifetime_lease
+  exec 8>"$mutation_lock_file"
+  if ! flock -n 8; then
+    echo "PYTHON_RUNTIME_PRESERVED=$run_root REASON=runtime-mutation-active"
+    exec 8>&-
+    return 0
+  fi
+  exec 7>"$lease_file"
+  if ! flock -n 7; then
+    echo "PYTHON_RUNTIME_PRESERVED=$run_root REASON=runtime-leased-by-another-invocation"
+    exec 7>&-
+    flock -u 8
+    exec 8>&-
+    return 0
+  fi
+
+  rm -rf -- "$run_root"
+  rm -f -- "$runtime_path_file"
+  find "$GDC_E2E_PID_DIR" -maxdepth 1 -type f -name "python-runtime-${runtime_token}.path.tmp.*" -delete
+  flock -u 7
+  exec 7>&-
+  flock -u 8
+  exec 8>&-
+}
+
 if [[ "$SKIP_UP" != "1" ]]; then
   trap cleanup_owned_services EXIT
-  ensure_fixtures
-  ensure_db
-  start_api
-  if [[ "$MODE" != "cleanup" ]]; then
+  if [[ "$MODE" == "cleanup" ]]; then
+    ensure_cleanup_database_fixture
+    ensure_cleanup_python_runtime
+    start_api
+  else
+    ensure_python_runtime
+    ensure_fixtures
+    ensure_db
+    start_api
     start_scheduler
     start_ui
   fi
@@ -362,5 +687,13 @@ if [[ -f "$ARTIFACT/final-summary.txt" ]]; then
   echo "SUMMARY=ok"
 else
   echo "SUMMARY=missing"
+fi
+if [[ -f "$ARTIFACT/final-summary.txt" ]] && grep -qx 'CLEANUP=PASS' "$ARTIFACT/final-summary.txt"; then
+  cleanup_owned_services
+  cleanup_python_runtime
+else
+  if [[ -n "${GDC_E2E_PYTHON_RUNTIME_OWNED:-}" ]]; then
+    echo "PYTHON_RUNTIME_PRESERVED=$GDC_E2E_PYTHON_RUNTIME_OWNED REASON=cleanup-not-proven"
+  fi
 fi
 exit "$EC"
