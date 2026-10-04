@@ -96,6 +96,18 @@ function restoreResumeState(store: ArtifactStore, state: Record<string, unknown>
   if (state.counts && typeof state.counts === 'object') store.counts = state.counts as Record<string, number>
 }
 
+function refreshTerminalScenarioCounts(store: ArtifactStore, ignoreRecoveredFatal = false): void {
+  const latest = new Map<string, string>()
+  for (const row of store.scenarios) {
+    if (ignoreRecoveredFatal && row.id === 'FATAL') continue
+    latest.set(row.id, row.status)
+  }
+  store.counts = {}
+  for (const status of latest.values()) {
+    store.counts[status] = (store.counts[status] || 0) + 1
+  }
+}
+
 function finalAcceptanceBlocked(store: ArtifactStore): boolean {
   return (store.counts.FAIL || 0) > 0 || (store.counts.PARTIAL || 0) > 0 || (store.counts.BLOCKED || 0) > 0
 }
@@ -445,6 +457,9 @@ async function main(): Promise<number> {
       return 2
     }
     restoreResumeState(store, st)
+    if (store.scenarios.some((row) => row.id === 'FATAL' && row.status === 'FAIL')) {
+      store.setFlag('RESUME_RECOVERING_PRIOR_FATAL', 'YES')
+    }
   }
   if (args.mode === 'resume') {
     const scopeMode = String(store.flags.RUN_SCOPE_MODE || '')
@@ -1635,7 +1650,7 @@ async function main(): Promise<number> {
 
     let deliveryPass = 0
     let deliveryTests = 0
-    if (primaryHttp && want('07_DELIVERY', ['delivery'])) {
+    if (primaryHttp && want('07_DELIVERY', ['delivery']) && !skipIfResume('07_TWO_ROUTE_DELIVERY')) {
       deliveryTests += 2
       const m = `marker-${runId}-deliv-1`
       // Seed fixtures already used ids 1-12; reuse would be skipped by incremental checkpoint.
@@ -1845,7 +1860,12 @@ async function main(): Promise<number> {
     }
 
     // ---- destination failure isolation (UI diagnosis first) ----
-    if (resources.destinations.B && primaryHttp && want('08_DEST_FAIL', ['failure', 'browser'])) {
+    if (
+      resources.destinations.B &&
+      primaryHttp &&
+      want('08_DEST_FAIL', ['failure', 'browser']) &&
+      !(skipIfResume('08_DEST_FAIL_ISOLATION') && skipIfResume('09_DEST_RECOVERY'))
+    ) {
       const downUrl = 'http://127.0.0.1:9/down'
       const marker = `DSTFAIL-${runId}-001`
       const pathA = `/ulc-${runId}-a`
@@ -2371,6 +2391,11 @@ async function main(): Promise<number> {
     store.setFlag('RESUME_SUPPORT', 'YES')
     store.setFlag('CLEANUP_ONLY_SUPPORT', 'YES')
 
+    // A successful resume supersedes attempt-level FATAL/cleanup failures from the
+    // interrupted invocation, while preserving those rows as historical evidence.
+    // Counts are terminal-by-scenario so a later PASS also supersedes an earlier
+    // failure for the same scenario id.
+    refreshTerminalScenarioCounts(store, args.mode === 'resume' && store.flags.RESUME_RECOVERING_PRIOR_FATAL === 'YES')
     store.flush()
     writeFinalSummary(store, {
       MODE: args.mode,
