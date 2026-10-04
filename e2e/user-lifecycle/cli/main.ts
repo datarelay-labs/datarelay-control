@@ -1657,6 +1657,7 @@ async function main(): Promise<number> {
       primaryHttpPath.endsWith('/h2') ? { data: { records: [item] } } : { items: [item] }
 
     const deliveryBundleAlreadyPassed =
+      store.flags.DELIVERY_BUNDLE_COMPLETE === 'YES' &&
       skipIfResume('07_TWO_ROUTE_DELIVERY') &&
       skipIfResume('06_PROTECTION_OUTPUT') &&
       (!transformEvidenceExpected || skipIfResume('06_TRANSFORM_OUTPUT')) &&
@@ -1664,6 +1665,7 @@ async function main(): Promise<number> {
     let deliveryPass = deliveryBundleAlreadyPassed ? 2 : 0
     let deliveryTests = deliveryBundleAlreadyPassed ? 2 : 0
     if (primaryHttp && want('07_DELIVERY', ['delivery']) && !deliveryBundleAlreadyPassed) {
+      store.setFlag('DELIVERY_BUNDLE_COMPLETE', 'NO')
       deliveryTests += 2
       const m = `marker-${runId}-deliv-1`
       // Seed fixtures already used ids 1-12; reuse would be skipped by incremental checkpoint.
@@ -1750,6 +1752,12 @@ async function main(): Promise<number> {
       ])
     }
 
+      const deliveryBundleComplete =
+        alreadyPassed(store, '07_TWO_ROUTE_DELIVERY') &&
+        alreadyPassed(store, '06_PROTECTION_OUTPUT') &&
+        (!transformEvidenceExpected || alreadyPassed(store, '06_TRANSFORM_OUTPUT')) &&
+        (store.flags.BFS004_PROCESSING_CONFIG !== 'PASS' || alreadyPassed(store, 'BFS004_PROCESSING_RUNTIME'))
+      store.setFlag('DELIVERY_BUNDLE_COMPLETE', deliveryBundleComplete ? 'YES' : 'NO')
     // ---- exhaustive full-event processing delivery proof ----
     if (want('07_DELIVERY', ['delivery'])) {
       for (const [recId, key, endpoint, markerField, nested] of [
@@ -1874,6 +1882,7 @@ async function main(): Promise<number> {
 
     // ---- destination failure isolation (UI diagnosis first) ----
     const destinationFailureBundleAlreadyPassed =
+      store.flags.DESTINATION_FAILURE_BUNDLE_COMPLETE === 'YES' &&
       skipIfResume('08_DEST_FAIL_BROWSER_EDIT') &&
       skipIfResume('08_DEST_FAIL_API_READBACK') &&
       skipIfResume('08_DEST_FAIL_ROUTE_REF') &&
@@ -1895,6 +1904,7 @@ async function main(): Promise<number> {
       want('08_DEST_FAIL', ['failure', 'browser']) &&
       !destinationFailureBundleAlreadyPassed
     ) {
+      store.setFlag('DESTINATION_FAILURE_BUNDLE_COMPLETE', 'NO')
       const downUrl = 'http://127.0.0.1:9/down'
       const marker = `DSTFAIL-${runId}-001`
       const pathA = `/ulc-${runId}-a`
@@ -2044,6 +2054,14 @@ async function main(): Promise<number> {
       )
     }
 
+      const destinationFailureBundleComplete =
+        alreadyPassed(store, '08_DEST_FAIL_BROWSER_EDIT') &&
+        alreadyPassed(store, '08_DEST_FAIL_API_READBACK') &&
+        alreadyPassed(store, '08_DEST_FAIL_ROUTE_REF') &&
+        alreadyPassed(store, '08_DEST_FAIL_UI_NAV') &&
+        alreadyPassed(store, '08_DEST_FAIL_ISOLATION') &&
+        alreadyPassed(store, '09_DEST_RECOVERY')
+      store.setFlag('DESTINATION_FAILURE_BUNDLE_COMPLETE', destinationFailureBundleComplete ? 'YES' : 'NO')
     // ---- source failure diagnosis (UI first) ----
     if (resources.connectors.HTTP && primaryHttp && want('08_SOURCE_FAIL', ['failure', 'browser'])) {
       try {
