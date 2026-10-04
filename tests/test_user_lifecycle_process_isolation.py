@@ -101,6 +101,11 @@ def test_cleanup_only_does_not_require_fresh_dependency_resolution() -> None:
     cleanup_helper = script[helper_start:helper_end]
     assert "pip install" not in cleanup_helper
     assert "surviving owned API" in cleanup_helper
+    surviving = cleanup_helper.index('tracked_process_matches "$GDC_E2E_PID_DIR/api.pid"')
+    surviving_activate = cleanup_helper.index('export VIRTUAL_ENV="$runtime_dir"', surviving)
+    surviving_path = cleanup_helper.index('export PATH="$runtime_dir/bin:$PATH"', surviving)
+    surviving_return = cleanup_helper.index('RESOLUTION=surviving-api-reuse-existing', surviving)
+    assert surviving < surviving_activate < surviving_path < surviving_return
     assert "reuse-existing" in cleanup_helper
     assert "local-existing" in cleanup_helper
     startup = script.index('if [[ "$MODE" == "cleanup" ]]; then')

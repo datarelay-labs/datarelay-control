@@ -210,9 +210,21 @@ ensure_cleanup_python_runtime() {
   # Prefer a surviving owned API, then an already-resolved run-scoped venv, then
   # the local interpreter only if it already has the required modules.
   if tracked_process_matches "$GDC_E2E_PID_DIR/api.pid" "$ROOT" && [[ "$have_db" == "$DATABASE_URL" ]]; then
-    [[ -d "$runtime_dir" ]] && export GDC_E2E_PYTHON_RUNTIME_OWNED="$runtime_dir"
-    echo "CLEANUP_RUNTIME=surviving-api"
-    return 0
+    if [[ -x "$runtime_dir/bin/python" ]] && \
+       "$runtime_dir/bin/python" -c 'import fastapi, jsonata, psycopg2, sqlalchemy' >/dev/null 2>&1; then
+      export VIRTUAL_ENV="$runtime_dir"
+      export PATH="$runtime_dir/bin:$PATH"
+      export GDC_E2E_PYTHON_RUNTIME="$runtime_dir"
+      export GDC_E2E_PYTHON_RUNTIME_OWNED="$runtime_dir"
+      echo "CLEANUP_RUNTIME=$runtime_dir RESOLUTION=surviving-api-reuse-existing"
+      return 0
+    fi
+    if "$system_python" -c 'import fastapi, jsonata, psycopg2, sqlalchemy' >/dev/null 2>&1; then
+      echo "CLEANUP_RUNTIME=$system_python RESOLUTION=surviving-api-local-existing"
+      return 0
+    fi
+    echo "ERROR: surviving cleanup API exists but no offline-capable Python runtime is available for cleanup helpers" >&2
+    return 1
   fi
   if [[ -x "$runtime_dir/bin/python" ]] && \
      "$runtime_dir/bin/python" -c 'import fastapi, jsonata, psycopg2, sqlalchemy' >/dev/null 2>&1; then
