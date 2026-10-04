@@ -140,39 +140,39 @@ require_free_untracked_port "API" "$GDC_E2E_API_PORT" "$preflight_api_tracked"
 require_free_untracked_port "UI" "$GDC_E2E_UI_PORT" "$preflight_ui_tracked"
 
 ensure_python_runtime() {
-  local system_python requirements_hash python_tag cache_root runtime_dir lock_file tmp_dir marker
+  local system_python requirements_hash python_tag cache_root runtime_key runtime_dir lock_file tmp_dir marker
   system_python="$(command -v python3)"
   requirements_hash="$(sha256sum "$ROOT/requirements.txt" | awk '{print $1}')"
   python_tag="$($system_python -c 'import sys; print(f"py{sys.version_info.major}{sys.version_info.minor}")')"
   cache_root="${GDC_E2E_PYTHON_CACHE_DIR:-/tmp/datarelay-control-e2e-python}"
-  runtime_dir="${GDC_E2E_PYTHON_VENV:-$cache_root/${python_tag}-${requirements_hash:0:16}}"
+  runtime_key="$(printf '%s' "$RUN_ID" | tr -c 'A-Za-z0-9._-' '_')"
+  runtime_dir="$cache_root/${python_tag}-${requirements_hash:0:16}-${runtime_key}"
   lock_file="${runtime_dir}.lock"
   marker="$runtime_dir/.requirements-sha256"
+  tmp_dir="${runtime_dir}.tmp.$$"
   mkdir -p "$cache_root"
 
-  # A requirements-hash keyed virtualenv gives the disposable browser runtime the
-  # same declared Python dependencies as the shipped API image without mutating
-  # the host/user Python installation. Creation is serialized; completed envs are
-  # immutable/reused by concurrent runs that share the same requirements hash.
+  # Resolve/install dependencies fresh for every browser run. requirements.txt has
+  # ranged dependencies, so a requirements-only cache key can silently retain an
+  # older resolved package set after upstream releases. The run-scoped venv keeps
+  # host Python untouched while preventing stale dependency reuse.
   exec 8>"$lock_file"
   flock 8
-  if [[ ! -x "$runtime_dir/bin/python" ]]; then
-    tmp_dir="${runtime_dir}.tmp.$$"
+  rm -rf "$runtime_dir" "$tmp_dir"
+  "$system_python" -m venv "$tmp_dir"
+  if ! "$tmp_dir/bin/python" -m pip install --disable-pip-version-check --no-input -r "$ROOT/requirements.txt" \
+    >"$GDC_E2E_LOG_DIR/python_runtime_${RUN_ID}.log" 2>&1; then
     rm -rf "$tmp_dir"
-    "$system_python" -m venv "$tmp_dir"
-    if ! "$tmp_dir/bin/python" -m pip install --disable-pip-version-check --no-input -r "$ROOT/requirements.txt" \
-      >"$GDC_E2E_LOG_DIR/python_runtime_${RUN_ID}.log" 2>&1; then
-      rm -rf "$tmp_dir"
-      echo "ERROR: failed to install isolated browser-runtime dependencies; see $GDC_E2E_LOG_DIR/python_runtime_${RUN_ID}.log" >&2
-      flock -u 8
-      exec 8>&-
-      return 1
-    fi
-    printf '%s\n' "$requirements_hash" >"$tmp_dir/.requirements-sha256"
-    mv "$tmp_dir" "$runtime_dir"
+    echo "ERROR: failed to install isolated browser-runtime dependencies; see $GDC_E2E_LOG_DIR/python_runtime_${RUN_ID}.log" >&2
+    flock -u 8
+    exec 8>&-
+    return 1
   fi
+  printf '%s\n' "$requirements_hash" >"$tmp_dir/.requirements-sha256"
+  "$tmp_dir/bin/python" -m pip freeze >"$GDC_E2E_LOG_DIR/python_runtime_${RUN_ID}.freeze.txt"
+  mv "$tmp_dir" "$runtime_dir"
   if [[ ! -f "$marker" || "$(tr -d '[:space:]' <"$marker")" != "$requirements_hash" ]]; then
-    echo "ERROR: cached browser-runtime dependency identity mismatch: $runtime_dir" >&2
+    echo "ERROR: browser-runtime dependency identity mismatch: $runtime_dir" >&2
     flock -u 8
     exec 8>&-
     return 1
@@ -189,7 +189,8 @@ ensure_python_runtime() {
   export VIRTUAL_ENV="$runtime_dir"
   export PATH="$runtime_dir/bin:$PATH"
   export GDC_E2E_PYTHON_RUNTIME="$runtime_dir"
-  echo "PYTHON_RUNTIME=$runtime_dir REQUIREMENTS_SHA256=$requirements_hash"
+  export GDC_E2E_PYTHON_RUNTIME_OWNED="$runtime_dir"
+  echo "PYTHON_RUNTIME=$runtime_dir REQUIREMENTS_SHA256=$requirements_hash RESOLUTION=fresh-per-run"
 }
 
 ensure_fixtures() {
@@ -386,6 +387,10 @@ cleanup_owned_services() {
   terminate_tracked_process_group "$GDC_E2E_PID_DIR/ui.pid" "$ROOT/frontend"
   terminate_tracked_process_group "$GDC_E2E_PID_DIR/lab-scheduler.pid" "$ROOT"
   terminate_tracked_process_group "$GDC_E2E_PID_DIR/api.pid" "$ROOT"
+  if [[ -n "${GDC_E2E_PYTHON_RUNTIME_OWNED:-}" ]]; then
+    rm -rf -- "$GDC_E2E_PYTHON_RUNTIME_OWNED"
+    rm -f -- "${GDC_E2E_PYTHON_RUNTIME_OWNED}.lock"
+  fi
 }
 
 if [[ "$SKIP_UP" != "1" ]]; then

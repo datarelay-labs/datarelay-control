@@ -72,12 +72,19 @@ def test_runner_uses_requirements_hash_keyed_isolated_python_runtime() -> None:
     assert "jsonata-python>=0.6.0,<1" in requirements
     assert "ensure_python_runtime()" in script
     assert "sha256sum \"$ROOT/requirements.txt\"" in script
+    assert "tr -c 'A-Za-z0-9._-' '_'" in script
+    assert '${python_tag}-${requirements_hash:0:16}-${runtime_key}' in script
+    assert 'rm -rf "$runtime_dir" "$tmp_dir"' in script
     assert '"$system_python" -m venv "$tmp_dir"' in script
     assert '"$tmp_dir/bin/python" -m pip install' in script
+    assert 'python_runtime_${RUN_ID}.freeze.txt' in script
     assert '.requirements-sha256' in script
     assert "import fastapi, jsonata, psycopg2, sqlalchemy" in script
     assert 'export VIRTUAL_ENV="$runtime_dir"' in script
     assert 'export GDC_E2E_PYTHON_RUNTIME="$runtime_dir"' in script
+    assert 'export GDC_E2E_PYTHON_RUNTIME_OWNED="$runtime_dir"' in script
+    assert 'rm -rf -- "$GDC_E2E_PYTHON_RUNTIME_OWNED"' in script
+    assert 'rm -f -- "${GDC_E2E_PYTHON_RUNTIME_OWNED}.lock"' in script
 
 
 def test_dynamic_wiremock_stubs_use_persisted_stream_http_method() -> None:
