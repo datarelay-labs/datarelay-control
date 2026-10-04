@@ -183,11 +183,31 @@ export function NewStreamWizardPage() {
   }, [])
   const updateApiTest = useCallback(
     (next: WizardState['apiTest']) => {
-      setState((s) => ({
-        ...s,
-        apiTest: next,
-        stream: mergeStreamSampleConfirmations(s.stream, next),
-      }))
+      setState((s) => {
+        const hadConfirmedSelection =
+          s.stream.recordPathConfirmedForApiTestAt != null &&
+          s.stream.checkpointConfirmedForApiTestAt != null
+        let stream = mergeStreamSampleConfirmations(s.stream, next)
+
+        if (hadConfirmedSelection && next.status === 'success' && next.ok && next.finishedAt != null) {
+          if (s.stream.eventRootConfirmedForApiTestAt != null) {
+            stream = { ...stream, eventRootConfirmedForApiTestAt: next.finishedAt }
+          }
+
+          const raw = next.parsedJson ?? next.rawResponse
+          if (raw !== null && typeof raw === 'object') {
+            const arrayPath = stream.useWholeResponseAsEvent ? '' : stream.eventArrayPath.trim()
+            const extracted = wizardExtractEvents(raw, arrayPath, stream.eventRootPath)
+            const apiTest = {
+              ...next,
+              ...buildApiTestExtractedEventsPatch(extracted, next.analysis, { stream, apiTest: next }),
+            }
+            return { ...s, apiTest, stream }
+          }
+        }
+
+        return { ...s, apiTest: next, stream }
+      })
     },
     [],
   )
@@ -792,6 +812,17 @@ export function NewStreamWizardPage() {
     }
   }, [currentStepKey, state])
 
+  const preserveDraftBeforeDestinationPrerequisite = useCallback(() => {
+    try {
+      saveWizardDraft(state, 'destinations')
+      return true
+    } catch {
+      setDraftNotice('Unable to save draft. Stay in the wizard and try again.')
+      window.setTimeout(() => setDraftNotice(null), 4000)
+      return false
+    }
+  }, [state])
+
   const handleCreateAnother = useCallback(() => {
     clearWizardDraft()
     setState(buildInitialState())
@@ -915,7 +946,13 @@ export function NewStreamWizardPage() {
             activeOperationalSampleId={operationalSampleId}
           />
         ) : null}
-        {currentStepKey === 'destinations' ? <StepDelivery state={state} onChange={setDestinations} /> : null}
+        {currentStepKey === 'destinations' ? (
+          <StepDelivery
+            state={state}
+            onChange={setDestinations}
+            onOpenDestinationPrerequisite={preserveDraftBeforeDestinationPrerequisite}
+          />
+        ) : null}
         {currentStepKey === 'route_processing' ? (
           <StepRouteProcessing
             state={state}

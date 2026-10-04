@@ -9,6 +9,7 @@ import { FinalEventPreviewPanel } from '../mappings/final-event-preview-panel'
 import { buildInitialState } from './wizard/wizard-state'
 import { WIZARD_DRAFT_KEY_V2 } from './wizard/wizard-draft-migration'
 import { computeDeployReadiness } from './wizard/wizard-deploy-readiness'
+import * as gdcRuntimePreview from '../../api/gdcRuntimePreview'
 
 vi.mock('../../api/gdcStreams', () => ({
   createStream: vi.fn(),
@@ -242,22 +243,94 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
     expect(screen.queryByTestId('wizard-draft-banner')).not.toBeInTheDocument()
   })
 
-  it('keeps Next disabled after draft resume because scrubbed drafts drop API samples', async () => {
+  it('saves the current wizard draft before leaving to create a required destination', async () => {
     localStorage.setItem('gdc-platform-persona', 'connector')
 
     const state = buildInitialState()
-    const finishedAt = Date.now()
+    state.connector.connectorId = 42
+    state.connector.sourceId = 7
+    state.stream.name = 'Destination prerequisite draft'
+    state.stream.endpoint = '/events'
+    state.stream.eventArrayPath = '$.data'
+    state.stream.checkpointSourcePath = '$.timestamp'
+    state.apiTest.unionSchema = {
+      total_events: 1,
+      fields: [
+        { field_path: '$.timestamp', field_type: 'string', occurrence_count: 1, sample_values: ['2026-10-05T00:00:00Z'] },
+      ],
+    }
+    localStorage.setItem(
+      WIZARD_DRAFT_KEY_V2,
+      JSON.stringify({ version: 2, savedAt: Date.now(), stepKey: 'destinations', state }),
+    )
+
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter initialEntries={['/streams/new']}>
+        <NewStreamWizardPage />
+      </MemoryRouter>,
+    )
+
+    await user.click(screen.getByTestId('wizard-draft-resume'))
+    localStorage.removeItem(WIZARD_DRAFT_KEY_V2)
+    const prerequisite = await screen.findByRole('link', { name: 'Go to Destinations' })
+    await user.click(prerequisite)
+
+    const saved = JSON.parse(localStorage.getItem(WIZARD_DRAFT_KEY_V2) ?? '{}')
+    expect(saved.stepKey).toBe('destinations')
+    expect(saved.state.connector.connectorId).toBe(42)
+    expect(saved.state.stream.eventArrayPath).toBe('$.data')
+    expect(saved.state.stream.checkpointSourcePath).toBe('$.timestamp')
+    expect(saved.state.apiTest.unionSchema.total_events).toBe(1)
+  })
+
+  it('re-hydrates saved record selections after a successful sample refresh', async () => {
+    localStorage.setItem('gdc-platform-persona', 'connector')
+
+    const state = buildInitialState()
+    const finishedAt = Date.now() - 1000
+    state.connector.connectorId = 42
+    state.connector.sourceId = 7
+    state.stream.name = 'Resumed stream'
+    state.stream.endpoint = '/events'
+    state.stream.eventArrayPath = '$.data'
+    state.stream.eventRootPath = ''
+    state.stream.checkpointSourcePath = '$.timestamp'
+    state.stream.checkpointFieldType = 'datetime'
+    state.stream.recordPathConfirmedForApiTestAt = finishedAt
+    state.stream.eventRootConfirmedForApiTestAt = finishedAt
+    state.stream.checkpointConfirmedForApiTestAt = finishedAt
     state.apiTest.status = 'success'
     state.apiTest.ok = true
-    state.apiTest.parsedJson = { events: [{ id: '1' }] }
+    state.apiTest.parsedJson = { data: [{ id: 'old', timestamp: '2026-10-04T00:00:00Z' }] }
     state.apiTest.finishedAt = finishedAt
     state.apiTest.eventCount = 1
-    state.stream.eventArrayPath = '$.events'
-    state.stream.checkpointSourcePath = '$.ts'
+    state.apiTest.unionSchema = {
+      total_events: 1,
+      fields: [
+        { field_path: '$.id', field_type: 'string', occurrence_count: 1, sample_values: ['old'] },
+        { field_path: '$.timestamp', field_type: 'string', occurrence_count: 1, sample_values: ['2026-10-04T00:00:00Z'] },
+      ],
+    }
     localStorage.setItem(
       WIZARD_DRAFT_KEY_V2,
       JSON.stringify({ version: 2, savedAt: Date.now(), stepKey: 'sample', state }),
     )
+
+    const runSpy = vi.spyOn(gdcRuntimePreview, 'runHttpApiTest').mockResolvedValueOnce({
+      ok: true,
+      request: { method: 'GET', url: 'https://source.test/events', headers_masked: {} },
+      response: {
+        status_code: 200,
+        latency_ms: 5,
+        headers: { 'content-type': 'application/json' },
+        raw_body: '{"data":[{"id":"new","timestamp":"2026-10-05T00:00:00Z"}]}',
+        parsed_json: { data: [{ id: 'new', timestamp: '2026-10-05T00:00:00Z' }] },
+        content_type: 'application/json',
+      },
+      steps: [],
+      analysis: null,
+    })
 
     const user = userEvent.setup()
     render(
@@ -269,7 +342,16 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
     await user.click(screen.getByTestId('wizard-draft-resume'))
     const next = screen.getByRole('button', { name: /Next: Destinations/i })
     expect(next).toBeDisabled()
-    expect(next).toHaveAttribute('title', expect.stringMatching(/API Test/i))
+
+    await user.click(screen.getByRole('button', { name: 'Run Test' }))
+    await screen.findByTestId('wizard-run-test-success')
+    await waitFor(() => expect(next).toBeEnabled())
+
+    await user.click(screen.getByTestId('wizard-run-test-open-record-selection'))
+    expect(await screen.findByTestId('wizard-record-selection-json-tree')).toBeInTheDocument()
+    expect(screen.getByTestId('union-schema-status-ready')).toBeInTheDocument()
+
+    runSpy.mockRestore()
   })
 
   it('keeps Next disabled on sample step when checkpoint is missing', async () => {
