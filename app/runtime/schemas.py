@@ -1756,11 +1756,11 @@ class ConnectorAuthTestRequest(BaseModel):
     connector_id: int | None = Field(
         default=None,
         ge=1,
-        description="Saved Generic HTTP connector Source row. Omit when sending inline_flat_source.",
+        description="Saved connector Source row. For HTTP_API_POLLING, may be combined with inline_flat_source as a visible edit-form draft overlay.",
     )
     inline_flat_source: dict[str, Any] | None = Field(
         default=None,
-        description="Unsaved connector: flattened Source config+auth (base_url, verify_ssl, http_proxy, headers, auth_type, secrets…).",
+        description="Flattened visible connector draft. Without connector_id it is an unsaved connector; with an HTTP_API_POLLING connector_id it overlays saved config while masked same-origin secrets remain server-resolved.",
     )
     method: str = Field(default="GET", description="HTTP method for the auth probe request.")
     test_path: str | None = Field(
@@ -1780,7 +1780,7 @@ class ConnectorAuthTestRequest(BaseModel):
     )
 
     @model_validator(mode="after")
-    def _connector_id_xor_inline(self) -> ConnectorAuthTestRequest:
+    def _connector_id_or_inline_draft(self) -> ConnectorAuthTestRequest:
         has_id = self.connector_id is not None
         inl = self.inline_flat_source
         has_inline_http = isinstance(inl, dict) and str(inl.get("base_url") or "").strip() != ""
@@ -1800,8 +1800,11 @@ class ConnectorAuthTestRequest(BaseModel):
             or str(inl.get("connector_type") or "").strip().lower() == "remote_file"
         )
         has_inline = has_inline_http or has_inline_s3 or has_inline_db or has_inline_rf
-        if has_id and has_inline:
-            raise ValueError("Specify only one of connector_id or inline_flat_source")
+        if inl is not None and not has_inline:
+            raise ValueError(
+                "inline_flat_source requires base_url (HTTP), endpoint_url+bucket (S3), "
+                "DATABASE_QUERY (host+database+db_type), or REMOTE_FILE_POLLING (host)"
+            )
         if not has_id and not has_inline:
             raise ValueError(
                 "connector_id or inline_flat_source with base_url (HTTP), endpoint_url+bucket (S3), "

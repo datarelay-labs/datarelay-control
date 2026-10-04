@@ -60,7 +60,7 @@ function S3ProbeSummary({ res }: { res: ConnectorAuthTestResponse }) {
 }
 
 export type ConnectorAuthTestPanelProps = {
-  /** Build API payload (connector_id XOR inline_flat_source) plus shared test fields are merged in panel. */
+  /** Build API payload from saved connector, unsaved inline source, or saved connector + visible draft overlay. */
   buildAuthTestPayload: (ctx: { method: AuthTestHttpMethod; testPath: string; jsonBody: unknown | undefined }) => ConnectorAuthTestRequestPayload
   /** Optional: clear parent error banner when starting a test */
   onTestStart?: () => void
