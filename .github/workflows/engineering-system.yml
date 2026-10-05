@@ -10,15 +10,15 @@ permissions:
 jobs:
   governance-floor:
     if: github.event_name == 'pull_request_target'
-    uses: datarelay-labs/engineering-system/.github/workflows/governance-floor.yml@603542dd9c24855a25c0c699c576f54663073cf4
+    uses: datarelay-labs/engineering-system/.github/workflows/governance-floor.yml@5d9db9ff0bfec846fb11c64b99b8207cf434fc51
     with:
       base_sha: ${{ github.event.pull_request.base.sha }}
       head_sha: ${{ github.event.pull_request.head.sha }}
 
   adoption-compliance:
     if: github.event_name == 'pull_request'
-    uses: datarelay-labs/engineering-system/.github/workflows/adoption-compliance.yml@603542dd9c24855a25c0c699c576f54663073cf4
+    uses: datarelay-labs/engineering-system/.github/workflows/adoption-compliance.yml@5d9db9ff0bfec846fb11c64b99b8207cf434fc51
 
   enforcement-reconcile:
     if: github.event_name == 'pull_request'
-    uses: datarelay-labs/engineering-system/.github/workflows/enforcement-check.yml@603542dd9c24855a25c0c699c576f54663073cf4
+    uses: datarelay-labs/engineering-system/.github/workflows/enforcement-check.yml@5d9db9ff0bfec846fb11c64b99b8207cf434fc51
