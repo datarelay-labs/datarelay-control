@@ -1,11 +1,12 @@
 contract_version: 1
-base_sha: 911253bfab4959215be7f37217ca80d75c70ceef
-from_policy_epoch: 13
-to_policy_epoch: 14
+base_sha: dcbbe0c07e8d3250f3e6982f40a697f03563711a
+from_policy_epoch: 14
+to_policy_epoch: 15
 requires_exact_head_validate: true
 automation_eligible: false
-rationale: Managed adoption upgrade 5d9db9ff0bfec846fb11c64b99b8207cf434fc51 -> 72abaec3ffa4f2e7519ee8067f4b8795acd506ad
-  changes canonical governance root surfaces.
+rationale: Managed adoption from 72abaec3ffa4f2e7519ee8067f4b8795acd506ad to 1e4fc5c58edc79630b223347b82aef9879f1e966
+  restores autonomous continuation, truthful handoffs and observed execution-state
+  binding; preserves evaluator and high-risk authority.
 changed_surfaces:
 - path: tools/handoff_contract.py
-  head_blob_sha: 4d28c621229feb6fc5212b76021bd7cf95a6d870
+  head_blob_sha: 7bac12af518693b6eef958148c44873354df162f

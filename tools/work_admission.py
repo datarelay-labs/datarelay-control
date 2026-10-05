@@ -6,6 +6,7 @@ pure functions over packet/claim/worktree/resource facts. This tool never
 stops, kills, attaches to, or otherwise mutates existing worker sessions.
 
 Commands:
+  eligible ALLOW/DENY runnable packet selection from fresh packet and observed facts
   admit   ALLOW/DENY starting a proposed worker claim
   size    BATCH/KEEP/SPLIT handoff sizing from structured signals
   release ALLOW/DENY claim release or worktree cleanup reconciliation
@@ -549,6 +550,58 @@ def evaluate_release(request: dict[str, Any]) -> dict[str, str]:
     )
 
 
+def evaluate_eligible(payload: dict[str, Any]) -> dict[str, str]:
+    """Evaluate fresh repository-bound packet facts; never mutate or launch work."""
+    from context_epoch import analyze_packet, parse_packet
+
+    data = _require_mapping(payload, "request")
+    body = _require_str(data.get("body"), "body")
+    target = _require_str(data.get("expected_target_repo"), "expected_target_repo")
+    root = _require_str(data.get("profile_root"), "profile_root")
+    observed_head = _require_str(data.get("observed_head"), "observed_head").lower()
+    observed_branch = _require_str(data.get("observed_branch"), "observed_branch")
+    worktree = _require_str(data.get("observed_worktree"), "observed_worktree")
+    if len(observed_head) != 40 or any(c not in "0123456789abcdef" for c in observed_head):
+        raise AdmissionFactsError("observed_head must be a full Git SHA")
+    if not Path(root).is_absolute() or not Path(worktree).is_absolute():
+        raise AdmissionFactsError("profile_root and observed_worktree must be absolute paths")
+    issue_state = _require_str(data.get("issue_state"), "issue_state").upper()
+    if issue_state not in {"OPEN", "CLOSED"}:
+        raise AdmissionFactsError("issue_state must be OPEN or CLOSED")
+    ready = _require_bool(data.get("dependencies_ready"), "dependencies_ready")
+    waits = _require_list(data.get("waiting_for"), "waiting_for")
+    waits = [_require_str(value, "waiting_for item") for value in waits]
+    packet = parse_packet(body)
+    audit = analyze_packet(packet, profile_root=root, expected_target_repo=target)
+    if audit["blocking"]:
+        return deny("packet lint: " + ",".join(audit["blocking"]), "INVALID_PACKET")
+    if issue_state != "OPEN":
+        return deny("closed Issue is not runnable", "CLOSED_ISSUE")
+    if packet.metadata.get("STATUS") != "ACTIVE":
+        return deny("packet is not ACTIVE", "NOT_ACTIVE")
+    if Path(root).resolve() != Path(worktree).resolve():
+        return deny("profile root is not the observed worktree", "WORKTREE_MISMATCH")
+    if packet.metadata.get("BRANCH") != observed_branch:
+        return deny("packet branch differs from observed checkout", "BRANCH_MISMATCH")
+    if packet.metadata.get("LAST_VERIFIED_HEAD", "").lower() != observed_head:
+        return deny("packet HEAD is stale; reconcile from current evidence", "STALE_HEAD")
+    if not ready or waits:
+        return deny("observed dependencies or external condition are pending", "WAITING")
+    blockers = packet.sections.get("Blockers", "").strip()
+    if blockers.upper() not in {"NONE", "- NONE", "NONE."}:
+        return deny("ACTIVE packet still records a blocker", "PACKET_BLOCKER")
+    # Legacy auxiliary metadata cannot make work runnable. Explicit wait facts
+    # exclude it, while a harmless IMPLEMENTATION label is not a new blocker.
+    for key in ("QUEUE_STATE", "WAITING_FOR", "DEPENDENCY_STATUS"):
+        value = packet.metadata.get(key, "").upper()
+        if value and ("WAIT" in value or value in {"BLOCKED", "DEFERRED", "HUMAN_REQUIRED", "PENDING"}):
+            return deny("packet records a pending condition in " + key, "WAITING")
+    action = packet.sections.get("Next Action", "").strip()
+    if not action or action.upper() in {"NONE", "NONE.", "N/A"}:
+        return deny("packet has no executable next outcome", "NO_NEXT_ACTION")
+    return allow("repository-bound current-profile packet is runnable now")
+
+
 def format_report(fields: dict[str, str], keys: tuple[str, ...]) -> str:
     lines = []
     for key in keys:
@@ -578,6 +631,9 @@ def failure_report(reason: str, deny_class: str = "AMBIGUOUS_FACTS") -> tuple[st
 
 
 def run_command(command: str, payload: dict[str, Any]) -> tuple[str, int]:
+    if command == "eligible":
+        report = evaluate_eligible(payload)
+        return format_report(report, REPORT_KEYS_ADMIT), int(report["EXIT_CODE"])
     if command == "admit":
         report = evaluate_admit(payload)
         return format_report(report, REPORT_KEYS_ADMIT), int(report["EXIT_CODE"])
@@ -594,7 +650,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "command",
-        choices=("admit", "size", "release"),
+        choices=("eligible", "admit", "size", "release"),
         help="Admission decision, handoff sizing, or claim release/cleanup",
     )
     parser.add_argument(
