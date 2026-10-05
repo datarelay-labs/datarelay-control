@@ -114,6 +114,7 @@ import type {
   StreamRead,
   StreamRuntimeMetricsResponse,
   StreamRuntimeStatsResponse,
+  RuntimeTimelineItem,
 } from '../../api/types/gdcApi'
 import type { StreamRuntimeStatus } from '../../api/streamRows'
 
@@ -143,6 +144,26 @@ function currentSourceRunFailureMessage(message: string | null): string | null {
   return /\[(?:SOURCE_[A-Z0-9_]+|RESOURCE_HTTP_ERROR)\]/i.test(message) ? message : null
 }
 
+function runtimeAuthorityRevision(
+  timelineLast: RuntimeTimelineItem | null,
+  stats: StreamRuntimeStatsResponse | null,
+  health: StreamHealthResponse | null,
+): string {
+  return [
+    timelineLast?.id ?? '',
+    timelineLast?.created_at ?? '',
+    timelineLast?.run_id ?? '',
+    timelineLast?.stage ?? '',
+    timelineLast?.status ?? '',
+    timelineLast?.error_code ?? '',
+    stats?.stream_status ?? health?.stream_status ?? '',
+    stats?.last_seen.success_at ?? '',
+    stats?.last_seen.failure_at ?? '',
+    stats?.last_seen.rate_limited_at ?? '',
+    health?.health ?? '',
+  ].join('|')
+}
+
 export function StreamRuntimeDetailPage() {
   const { streamId = '' } = useParams<{ streamId: string }>()
   const activeTab = useStreamDetailTab()
@@ -162,6 +183,8 @@ export function StreamRuntimeDetailPage() {
   const [runOnceStatus, setRunOnceStatus] = useState<string | null>(null)
   const [runOnceRunId, setRunOnceRunId] = useState<string | null>(null)
   const [runOnceError, setRunOnceError] = useState<string | null>(null)
+  const runtimeAuthorityRevisionRef = useRef<string | null>(null)
+  const sourceFailureAuthorityRevisionRef = useRef<string | null>(null)
   const priorDeliveryProofRef = useRef<PriorDeliveryProof | null>(null)
   const [streamEntity, setStreamEntity] = useState<StreamRead | null>(null)
   const [streamMetaReady, setStreamMetaReady] = useState(false)
@@ -223,6 +246,8 @@ export function StreamRuntimeDetailPage() {
     setRunOnceStatus(null)
     setRunOnceRunId(null)
     setRunOnceError(null)
+    runtimeAuthorityRevisionRef.current = null
+    sourceFailureAuthorityRevisionRef.current = null
   }, [backendStreamId])
 
   const logsExplorerDrilldown = useMemo(() => {
@@ -411,6 +436,18 @@ export function StreamRuntimeDetailPage() {
         fetchStreamRuntimeStatsHealth(backendStreamId, 120, metricsWindow, { snapshot_id }, fetchOpts),
       ])
       if (!isCurrent()) return false
+      const timelineLast = res?.items?.length ? res.items[res.items.length - 1] : null
+      const nextAuthorityRevision = runtimeAuthorityRevision(
+        timelineLast,
+        statsHealth?.stats ?? null,
+        statsHealth?.health ?? null,
+      )
+      const failureAnchor = sourceFailureAuthorityRevisionRef.current
+      runtimeAuthorityRevisionRef.current = nextAuthorityRevision
+      if (failureAnchor != null && failureAnchor !== nextAuthorityRevision) {
+        sourceFailureAuthorityRevisionRef.current = null
+        setRunOnceError((current) => (currentSourceRunFailureMessage(current) ? null : current))
+      }
       if (res?.items?.length) {
         const items = res.items
         const last = items[items.length - 1]
@@ -549,6 +586,7 @@ export function StreamRuntimeDetailPage() {
     setRunOnceStatus(null)
     setRunOnceRunId(null)
     setRunOnceError(null)
+    sourceFailureAuthorityRevisionRef.current = null
     setControlMessage(null)
     try {
       const proof = await proveStreamRunOnce(backendStreamId, priorDeliveryProofRef.current)
@@ -567,13 +605,19 @@ export function StreamRuntimeDetailPage() {
       window.dispatchEvent(new CustomEvent('gdc-runtime-run-once', { detail: { streamId: backendStreamId, proof } }))
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
+      const sourceFailure = currentSourceRunFailureMessage(message)
       if (mountedRef.current) setRunOnceError(message)
+      if (sourceFailure) sourceFailureAuthorityRevisionRef.current = null
       try {
         await refreshAfterMutation()
         if (activeTab === 'audit') void loadCheckpointHistory()
       } catch (refreshError) {
         if (!isRequestAborted(refreshError) && import.meta.env.DEV) {
           console.error('[stream runtime] failed-run refresh failed', refreshError)
+        }
+      } finally {
+        if (sourceFailure && mountedRef.current) {
+          sourceFailureAuthorityRevisionRef.current = runtimeAuthorityRevisionRef.current
         }
       }
     } finally {
@@ -734,7 +778,7 @@ export function StreamRuntimeDetailPage() {
     () =>
       computeStreamWorkflow({
         streamId,
-        status: diagnosticDisplayStatus,
+        status: displayStatus,
         events1h: events1h ?? 0,
         deliveryPct: deliveryPct ?? 0,
         routesTotal: routesTotal ?? 0,
@@ -743,7 +787,7 @@ export function StreamRuntimeDetailPage() {
         hasConnector: true,
         sourceType: streamEntity?.stream_type ?? null,
       }),
-    [streamId, diagnosticDisplayStatus, events1h, deliveryPct, routesTotal, routesOk, routesErr, streamEntity?.stream_type],
+    [streamId, displayStatus, events1h, deliveryPct, routesTotal, routesOk, routesErr, streamEntity?.stream_type],
   )
 
   const donutTotal = useMemo(() => eventsBreakdownData.reduce((s, x) => s + x.value, 0), [eventsBreakdownData])
@@ -777,7 +821,7 @@ export function StreamRuntimeDetailPage() {
     () =>
       buildFlowTimelineStages({
         streamId,
-        displayStatus: diagnosticDisplayStatus,
+        displayStatus,
         workflow: runtimeWorkflow,
         deliveryPct,
         deliveredLastHour: runtimeMetrics?.kpis.delivered_last_hour ?? null,
@@ -786,7 +830,7 @@ export function StreamRuntimeDetailPage() {
         usesPushIngest: runtimeSourceUi.runtime.usesPushIngest,
         governance: governanceSnapshot,
       }),
-    [streamId, diagnosticDisplayStatus, runtimeWorkflow, deliveryPct, runtimeMetrics, routesErr, runtimeSourceUi.runtime.usesPushIngest, governanceSnapshot],
+    [streamId, displayStatus, runtimeWorkflow, deliveryPct, runtimeMetrics, routesErr, runtimeSourceUi.runtime.usesPushIngest, governanceSnapshot],
   )
 
   const lastRunLabel = useMemo(() => {
