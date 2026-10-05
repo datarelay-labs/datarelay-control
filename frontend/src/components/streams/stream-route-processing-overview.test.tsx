@@ -298,9 +298,11 @@ describe('StreamRouteProcessingOverview', () => {
       </MemoryRouter>,
     )
 
-    // Wait for status hydration — a later effect resets detailTab when statusesLoading clears.
+    // Wait for effective-status hydration before changing tabs. The transform workspace
+    // is visible during the initial load and is not a readiness signal.
     await waitFor(() => {
-      expect(screen.getByTestId('route-processing-transform-section')).toBeInTheDocument()
+      expect(screen.getByTestId('route-header-row-classification')).toHaveTextContent('Classification: Override')
+      expect(screen.getByTestId('route-header-row-policy')).toHaveTextContent('Policy: Mixed')
     })
     fireEvent.click(screen.getByTestId('stream-route-detail-tab-data_protection'))
     expect(await screen.findByTestId('route-processing-data-protection-section')).toBeInTheDocument()
