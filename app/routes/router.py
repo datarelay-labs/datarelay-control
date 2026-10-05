@@ -38,6 +38,31 @@ def _canonicalize_route_enabled_status(update: dict) -> None:
         update["status"] = "ENABLED" if bool(update["enabled"]) else "DISABLED"
 
 
+def _duplicate_route(db: Session, stream_id: int, destination_id: int, *, exclude_route_id: int | None = None) -> Route | None:
+    query = db.query(Route).filter(
+        Route.stream_id == int(stream_id),
+        Route.destination_id == int(destination_id),
+    )
+    if exclude_route_id is not None:
+        query = query.filter(Route.id != int(exclude_route_id))
+    return query.order_by(Route.id.asc()).first()
+
+
+def _raise_duplicate_route(stream_id: int, destination_id: int) -> None:
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "error_code": "ROUTE_DUPLICATE",
+            "message": (
+                f"Route already exists for stream_id={stream_id} and destination_id={destination_id}. "
+                "Use the existing route or choose a different destination."
+            ),
+            "stream_id": int(stream_id),
+            "destination_id": int(destination_id),
+        },
+    )
+
+
 @router.get("/", response_model=list[RouteRead])
 async def list_routes(db: Session = Depends(get_db)) -> list[RouteRead]:
     rows = db.query(Route).order_by(Route.id.asc()).all()
@@ -58,6 +83,8 @@ async def create_route(payload: RouteCreate, request: Request, db: Session = Dep
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"error_code": "DESTINATION_NOT_FOUND", "message": f"destination not found: {payload.destination_id}"},
         )
+    if _duplicate_route(db, payload.stream_id, payload.destination_id) is not None:
+        _raise_duplicate_route(payload.stream_id, payload.destination_id)
 
     enabled = True if payload.enabled is None else bool(payload.enabled)
     if payload.status is not None and payload.enabled is None:
@@ -76,7 +103,19 @@ async def create_route(payload: RouteCreate, request: Request, db: Session = Dep
         status=route_status,
     )
     db.add(row)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        if _duplicate_route(db, payload.stream_id, payload.destination_id) is not None:
+            _raise_duplicate_route(payload.stream_id, payload.destination_id)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error_code": "ROUTE_CREATE_CONFLICT",
+                "message": "Route could not be created because the requested configuration conflicts with current state.",
+            },
+        ) from exc
     db.refresh(row)
     stream_name = str(stream.name)
     journal.record_audit_event(
@@ -159,6 +198,11 @@ async def update_route(route_id: int, payload: RouteUpdate, request: Request, db
                 detail={"error_code": "DESTINATION_NOT_FOUND", "message": f"destination not found: {update['destination_id']}"},
             )
 
+    next_stream_id = int(update.get("stream_id", row.stream_id))
+    next_destination_id = int(update.get("destination_id", row.destination_id))
+    if _duplicate_route(db, next_stream_id, next_destination_id, exclude_route_id=route_id) is not None:
+        _raise_duplicate_route(next_stream_id, next_destination_id)
+
     prev_enabled = bool(row.enabled)
     route_before = serialize_route_config(row)
     _canonicalize_route_enabled_status(update)
@@ -206,7 +250,19 @@ async def update_route(route_id: int, payload: RouteUpdate, request: Request, db
         snapshot_before=route_before,
         snapshot_after=serialize_route_config(row),
     )
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        if _duplicate_route(db, next_stream_id, next_destination_id, exclude_route_id=route_id) is not None:
+            _raise_duplicate_route(next_stream_id, next_destination_id)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error_code": "ROUTE_UPDATE_CONFLICT",
+                "message": "Route could not be updated because the requested configuration conflicts with current state.",
+            },
+        ) from exc
     db.refresh(row)
     return RouteRead.model_validate(row)
 

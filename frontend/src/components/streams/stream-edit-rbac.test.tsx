@@ -212,7 +212,7 @@ describe('StreamEditWizardPage workspace capability visibility', () => {
     expect(page.getByTestId('wizard-run-test-panel')).toBeInTheDocument()
 
     await user.click(page.getByTestId('wizard-stepper-destinations'))
-    expect(await page.findByText(/Route create, remove, toggle, failure policy, and prefix save are unavailable/i)).toBeInTheDocument()
+    expect(await page.findByText(/Route remove, toggle, failure policy, and prefix save are unavailable/i)).toBeInTheDocument()
     expect(page.queryByRole('button', { name: 'Add Route' })).not.toBeInTheDocument()
     expect(page.queryByRole('button', { name: /Remove route/i })).not.toBeInTheDocument()
 

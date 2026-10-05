@@ -277,3 +277,82 @@ def test_route_create_rejects_invalid_failure_policy(client: TestClient, db_sess
         },
     )
     assert res.status_code == 422
+
+
+def test_route_create_duplicate_returns_actionable_conflict(client: TestClient, db_session: Session) -> None:
+    stream, destination = _seed_stream_destination(db_session)
+    payload = {
+        "stream_id": stream.id,
+        "destination_id": destination.id,
+        "enabled": True,
+        "failure_policy": "LOG_AND_CONTINUE",
+        "status": "ENABLED",
+    }
+    first = client.post("/api/v1/routes/", json=payload)
+    assert first.status_code == 201
+
+    duplicate = client.post("/api/v1/routes/", json=payload)
+
+    assert duplicate.status_code == 409
+    detail = duplicate.json()["detail"]
+    assert detail["error_code"] == "ROUTE_DUPLICATE"
+    assert detail["stream_id"] == stream.id
+    assert detail["destination_id"] == destination.id
+    assert "already exists" in detail["message"]
+    assert db_session.query(Route).filter(
+        Route.stream_id == stream.id,
+        Route.destination_id == destination.id,
+    ).count() == 1
+
+
+def test_route_update_duplicate_destination_returns_actionable_conflict(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    stream, destination = _seed_stream_destination(db_session)
+    second_destination = Destination(
+        name="routes-crud-destination-2",
+        destination_type="WEBHOOK_POST",
+        config_json={"url": "https://receiver.example.com/routes-crud-2"},
+        rate_limit_json={},
+        enabled=True,
+    )
+    db_session.add(second_destination)
+    db_session.commit()
+    db_session.refresh(second_destination)
+
+    first = client.post(
+        "/api/v1/routes/",
+        json={
+            "stream_id": stream.id,
+            "destination_id": destination.id,
+            "enabled": True,
+            "failure_policy": "LOG_AND_CONTINUE",
+            "status": "ENABLED",
+        },
+    )
+    second = client.post(
+        "/api/v1/routes/",
+        json={
+            "stream_id": stream.id,
+            "destination_id": second_destination.id,
+            "enabled": True,
+            "failure_policy": "LOG_AND_CONTINUE",
+            "status": "ENABLED",
+        },
+    )
+    assert first.status_code == 201
+    assert second.status_code == 201
+    second_route_id = int(second.json()["id"])
+
+    conflict = _put_route(
+        client,
+        second_route_id,
+        {"destination_id": destination.id, "stream_id": stream.id},
+    )
+
+    assert conflict.status_code == 409
+    detail = conflict.json()["detail"]
+    assert detail["error_code"] == "ROUTE_DUPLICATE"
+    row = db_session.query(Route).filter(Route.id == second_route_id).one()
+    assert int(row.destination_id) == second_destination.id

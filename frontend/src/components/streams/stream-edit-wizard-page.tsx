@@ -165,6 +165,7 @@ export function StreamEditWizardPage() {
   const [streamDeleteConfirm, setStreamDeleteConfirm] = useState('')
   const [streamDeleteBusy, setStreamDeleteBusy] = useState(false)
   const [streamDeleteError, setStreamDeleteError] = useState<string | null>(null)
+  const [deliveryProjectionRevision, setDeliveryProjectionRevision] = useState(0)
   const confirmedSavedSnapshotRef = useRef<string>('')
   const confirmedStateRef = useRef<WizardState | null>(null)
   const failedAttemptSnapshotRef = useRef<string | null>(null)
@@ -660,6 +661,7 @@ export function StreamEditWizardPage() {
             })
           }
         }
+        setDeliveryProjectionRevision((revision) => revision + 1)
         await refreshRuntimeSnapshot()
         setSaveSuccess(manual ? 'Saved now and applied.' : 'Changes saved.')
         window.setTimeout(() => setSaveSuccess(null), 3000)
@@ -1067,6 +1069,7 @@ export function StreamEditWizardPage() {
               <StreamEditDeliveryPanel
                 streamId={backendStreamId}
                 readOnly={!canMutateWorkspace}
+                refreshVersion={deliveryProjectionRevision}
                 onSaved={() => void refreshDestinationsFromApi()}
               />
             ) : null}
