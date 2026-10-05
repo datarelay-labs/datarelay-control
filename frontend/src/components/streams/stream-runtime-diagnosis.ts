@@ -40,6 +40,8 @@ export type BuildStreamDiagnosisInput = {
   deliveryPctKnown: boolean
   deliveryPct: number
   recentErrorMessage: string | null
+  /** Exact current Run Now source failure. Overrides stale healthy-window projections until a newer run starts. */
+  currentRunFailureMessage?: string | null
   canMutateWorkspace: boolean
   canRuntimeControl: boolean
   canBackfill: boolean
@@ -68,6 +70,13 @@ function runtimeTab(streamId: string, tab: string): string {
 }
 
 function buildSourceCause(input: BuildStreamDiagnosisInput): DiagnosisCause {
+  if (input.currentRunFailureMessage) {
+    return cause(
+      'source',
+      'critical',
+      `Latest Run Now failed at the source: ${input.currentRunFailureMessage.replace(/\.$/, '')}.`,
+    )
+  }
   if (!input.hasRuntimeEvidence) {
     return cause('source', 'unknown', 'Runtime status has not loaded, so the source cannot be confirmed.')
   }
@@ -224,8 +233,13 @@ function buildNextSteps(input: BuildStreamDiagnosisInput, causes: readonly Diagn
     steps.push({ id: 'edit-mapping', label: 'Edit mapping', kind: 'link', href: streamMappingPath(input.streamId) })
     steps.push({ id: 'edit-stream', label: 'Edit stream', kind: 'link', href: streamEditPath(input.streamId) })
   }
-  if (source?.tone === 'critical' && input.canRuntimeControl) {
-    steps.unshift({ id: 'run-once', label: 'Run Now', kind: 'run-once' })
+  if (source?.tone === 'critical') {
+    if (input.canMutateWorkspace && !steps.some((step) => step.id === 'edit-stream')) {
+      steps.push({ id: 'edit-stream', label: 'Edit stream', kind: 'link', href: streamEditPath(input.streamId) })
+    }
+    if (input.canRuntimeControl) {
+      steps.push({ id: 'run-once', label: 'Run Now', kind: 'run-once' })
+    }
   }
   return steps
 }

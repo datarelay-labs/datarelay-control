@@ -100,6 +100,34 @@ describe('buildStreamDiagnosis', () => {
     )
   })
 
+  it('lets an exact current Run Now source failure override a healthy window without discarding checkpoint history', () => {
+    const diagnosis = buildStreamDiagnosis(
+      input({
+        displayStatus: 'ERROR',
+        currentRunFailureMessage: '502: [SOURCE_HTTP_ERROR] HTTP 404 from /known-missing-path',
+        checkpointLabel: 'cursor-42',
+        deliveryPctKnown: true,
+        deliveryPct: 100,
+      }),
+    )
+
+    expect(diagnosis.causes.find((cause) => cause.key === 'source')).toMatchObject({
+      tone: 'critical',
+      detail: expect.stringContaining('[SOURCE_HTTP_ERROR] HTTP 404'),
+    })
+    expect(diagnosis.causes.find((cause) => cause.key === 'checkpoint')).toMatchObject({
+      tone: 'clear',
+      detail: 'Latest checkpoint is cursor-42.',
+    })
+    expect(diagnosis.whatHappened).toContain('Latest Run Now failed at the source')
+    expect(diagnosis.nextSteps.map((step) => step.label)).toEqual(
+      expect.arrayContaining(['Edit stream', 'Run Now']),
+    )
+    expect(diagnosis.causes.find((cause) => cause.key === 'source')?.detail).not.toContain(
+      'No source failure is indicated',
+    )
+  })
+
   it('marks checkpoint not applicable for push ingest', () => {
     const diagnosis = buildStreamDiagnosis(
       input({ showCheckpointObservability: false, checkpointLabel: null }),

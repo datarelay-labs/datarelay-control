@@ -146,6 +146,7 @@ vi.mock('../../api/gdcRuntime', () => ({
   fetchStreamRuntimeStats: vi.fn(async () => null),
   fetchStreamRuntimeHealth: vi.fn(async () => null),
   fetchStreamRuntimeStatsHealth: vi.fn(async () => ({ stats: null, health: null })),
+  invalidateStreamRuntimeReadCache: vi.fn(),
   fetchStreamCheckpointHistory: vi.fn(async () => null),
   fetchStreamWebhookIngestObservability: vi.fn(async () => null),
   metricsWindowSeconds: (window: string) => {
@@ -1030,6 +1031,60 @@ describe('StreamRuntimeDetailPage exact-run proof', () => {
     vi.spyOn(streamGovernanceSnapshot, 'fetchStreamGovernanceSnapshot').mockResolvedValue(emptyGovernanceSnapshot())
     vi.mocked(gdcRuntime.fetchRuntimeRunTrace).mockReset()
     vi.mocked(gdcRuntime.runStreamOnce).mockReset()
+  })
+
+  it('projects an exact source failure into current health and diagnosis, then clears it after recovery', async () => {
+    const user = userEvent.setup()
+    vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mockClear()
+    vi.mocked(gdcRuntime.runStreamOnce)
+      .mockRejectedValueOnce(new Error('502: [SOURCE_HTTP_ERROR] HTTP 404 from /known-missing-path'))
+      .mockResolvedValueOnce({
+        stream_id: 42,
+        outcome: 'completed',
+        message: null,
+        extracted_event_count: 1,
+        mapped_event_count: 1,
+        enriched_event_count: 1,
+        delivered_batch_event_count: 1,
+        checkpoint_updated: true,
+        transaction_committed: true,
+        runtime_run_id: 'run-recovered-source',
+        ...provenCounts,
+      })
+    vi.mocked(gdcRuntime.fetchRuntimeRunTrace).mockResolvedValueOnce(
+      traceFor('run-recovered-source', [successTimeline()]),
+    )
+
+    renderRuntimePage('42')
+    const source = await screen.findByTestId('stream-diagnosis-cause-source')
+    await waitFor(() => expect(source).toHaveAttribute('data-tone', 'clear'))
+    const metricsCallsBeforeFailure = vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mock.calls.length
+
+    await user.click(screen.getByRole('button', { name: 'Run Now' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '502: [SOURCE_HTTP_ERROR] HTTP 404 from /known-missing-path',
+    )
+    await waitFor(() => expect(source).toHaveAttribute('data-tone', 'critical'))
+    expect(source).toHaveTextContent('Latest Run Now failed at the source')
+    expect(source).not.toHaveTextContent('No source failure is indicated')
+    expect(screen.getByTestId('stream-diagnosis-summary')).toHaveTextContent('[SOURCE_HTTP_ERROR] HTTP 404')
+    expect(screen.getByTestId('stream-diagnosis-step-edit-stream')).toHaveTextContent('Edit stream')
+    expect(screen.getByTestId('stream-diagnosis-step-run-once')).toHaveTextContent('Run Now')
+    expect(screen.getAllByText('ERROR', { exact: true }).length).toBeGreaterThan(0)
+    await waitFor(() =>
+      expect(vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mock.calls.length).toBeGreaterThan(
+        metricsCallsBeforeFailure,
+      ),
+    )
+
+    await user.click(screen.getByTestId('stream-diagnosis-step-run-once'))
+
+    const recovered = await screen.findByTestId('stream-runtime-run-once-proof')
+    expect(recovered).toHaveAttribute('data-status', 'proven')
+    await waitFor(() => expect(source).toHaveAttribute('data-tone', 'clear'))
+    expect(source).toHaveTextContent('No source failure is indicated by the current runtime status.')
+    expect(screen.queryByText('502: [SOURCE_HTTP_ERROR] HTTP 404 from /known-missing-path')).not.toBeInTheDocument()
   })
 
   it('shows proven, failed, partial, and unverified tones with the exact run id', async () => {
