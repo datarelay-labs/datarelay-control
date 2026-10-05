@@ -257,6 +257,20 @@ def test_case_f_refresh_failure_fail_open_on_wait_check() -> None:
         sched_mod.enabled_state_cache = previous
 
 
+def test_dev_validation_lab_startup_is_independent_of_in_process_scheduler(monkeypatch: pytest.MonkeyPatch) -> None:
+    import app.dev_validation_lab.runtime as lab_runtime
+    import app.main as main_mod
+
+    calls: list[str] = []
+    monkeypatch.setattr(lab_runtime, "run_dev_validation_lab_startup", lambda: calls.append("started"))
+
+    main_mod._run_dev_validation_lab_startup_if_ready(scheduler_active=False)
+    assert calls == []
+
+    main_mod._run_dev_validation_lab_startup_if_ready(scheduler_active=True)
+    assert calls == ["started"]
+
+
 def test_case_g_standalone_module_imports_without_app_main() -> None:
     import importlib
 

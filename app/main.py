@@ -67,6 +67,26 @@ from app.platform_admin.delivery_logs_index_probe import probe_delivery_logs_ind
 logger = logging.getLogger(__name__)
 
 
+def _run_dev_validation_lab_startup_if_ready(*, scheduler_active: bool) -> None:
+    """Restore development-lab fixtures independently of scheduler topology."""
+
+    if not scheduler_active:
+        return
+    try:
+        from app.dev_validation_lab.runtime import run_dev_validation_lab_startup
+
+        run_dev_validation_lab_startup()
+    except Exception as exc:  # pragma: no cover - fail-open boot guard
+        logger.warning(
+            "%s",
+            {
+                "stage": "dev_validation_lab_startup_failed",
+                "error_type": type(exc).__name__,
+                "message": str(exc),
+            },
+        )
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     ensure_production_security_settings(settings)
@@ -159,20 +179,9 @@ async def lifespan(_: FastAPI):
                         "message": str(exc),
                     },
                 )
-        if startup_snapshot.scheduler_active and bool(settings.GDC_ENABLE_IN_PROCESS_SCHEDULER):
-            try:
-                from app.dev_validation_lab.runtime import run_dev_validation_lab_startup
+        _run_dev_validation_lab_startup_if_ready(scheduler_active=bool(startup_snapshot.scheduler_active))
 
-                run_dev_validation_lab_startup()
-            except Exception as exc:  # pragma: no cover - fail-open boot guard
-                logger.warning(
-                    "%s",
-                    {
-                        "stage": "dev_validation_lab_startup_failed",
-                        "error_type": type(exc).__name__,
-                        "message": str(exc),
-                    },
-                )
+        if startup_snapshot.scheduler_active and bool(settings.GDC_ENABLE_IN_PROCESS_SCHEDULER):
             scheduler.start()
             validation_scheduler.start()
             operational_retention_scheduler.start()
