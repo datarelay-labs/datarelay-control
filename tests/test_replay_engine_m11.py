@@ -207,6 +207,7 @@ def test_replay_success_checkpoint_unchanged(db_session: Session) -> None:
         r.stage
         for r in db_session.query(DeliveryLog).filter(DeliveryLog.stream_id == int(seeded["stream_id"])).all()
     ]
+    assert "replay_event_replay_started" in stages
     assert "replay_event_replayed" in stages
 
 

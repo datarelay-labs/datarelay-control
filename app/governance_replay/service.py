@@ -223,7 +223,10 @@ def _correlation_id_for_replay(
 ) -> str | None:
     if quarantine is None:
         quarantine = _find_quarantine_for_replay(db, row)
-    return _correlation_id_from_quarantine(quarantine)
+    correlated = _correlation_id_from_quarantine(quarantine)
+    if correlated is not None:
+        return correlated
+    return f"r-{int(row.id)}"
 
 
 def _replay_origin(
@@ -274,7 +277,7 @@ def _row_to_entry(
         completed_at=_completed_at(row),
         outcome=_outcome_for_row(row),
         event_count=int(row.event_count or 0),
-        correlation_id=_correlation_id_from_quarantine(quarantine),
+        correlation_id=_correlation_id_for_replay(db, row, quarantine=quarantine),
     )
 
 

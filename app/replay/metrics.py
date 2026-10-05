@@ -10,6 +10,7 @@ from app.logs.models import DeliveryLog
 
 REPLAY_EVENT_RECORDED_STAGE = "replay_event_recorded"
 REPLAY_EVENT_RECORD_FAILED_STAGE = "replay_event_record_failed"
+REPLAY_EVENT_REPLAY_STARTED_STAGE = "replay_event_replay_started"
 REPLAY_EVENT_REPLAYED_STAGE = "replay_event_replayed"
 REPLAY_EVENT_REPLAY_FAILED_STAGE = "replay_event_replay_failed"
 REPLAY_EVENT_DISCARDED_STAGE = "replay_event_discarded"

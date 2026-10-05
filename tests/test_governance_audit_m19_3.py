@@ -10,6 +10,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.database import get_db_read_bounded
+from app.destinations.adapters.registry import DestinationAdapterRegistry
+from app.destinations.models import Destination
 from app.governance_policies.models import (
     POLICY_STATUS_ACTIVE,
     GovernancePolicy,
@@ -23,6 +25,8 @@ from app.quarantine.models import (
     StreamQuarantineEvent,
 )
 from app.replay.models import REPLAY_STATUS_FAILED, REPLAY_STATUS_REPLAYED, StreamReplayEvent
+from app.replay.service import checkpoint_unchanged, execute_replay_event
+from tests.test_replay_engine_m11 import _ReplayWebhookSender, _checkpoint_value, _insert_replay_row
 from tests.test_stream_runner_e2e import _seed_stream_runtime
 
 
@@ -187,6 +191,120 @@ def test_list_audit_policy_activated(governance_client: TestClient, db_session: 
     assert row["event_type"] == "POLICY_ACTIVATED"
     assert row["correlation_id"] == f"p-{policy.id}"
     assert row["status"] == "ACTIVE"
+
+
+
+def test_delivery_failure_replay_success_lifecycle_without_quarantine(
+    governance_client: TestClient,
+    db_session: Session,
+) -> None:
+    seeded = _seed_stream_runtime(db_session)
+    stream_id = int(seeded["stream_id"])
+    policy = _create_policy(db_session, name="Replay Delivery Policy", stream_id=stream_id)
+    replay_row = _insert_replay_row(
+        db_session,
+        seeded=seeded,
+        events=[{"event_id": "audit-replay-success"}],
+    )
+    before = _checkpoint_value(db_session, stream_id)
+
+    result = execute_replay_event(
+        db_session,
+        int(replay_row.id),
+        destination_registry=DestinationAdapterRegistry(webhook_sender=_ReplayWebhookSender()),
+    )
+    db_session.commit()
+
+    assert result["outcome"] == "replayed"
+    assert checkpoint_unchanged(db_session, stream_id, before)
+
+    correlation_id = f"r-{replay_row.id}"
+    resp = governance_client.get(f"/api/v1/governance/audit?stream_id={stream_id}&window=24h")
+    assert resp.status_code == 200
+    lifecycle = [
+        event
+        for event in resp.json()["events"]
+        if event["correlation_id"] == correlation_id
+    ]
+    assert [event["event_type"] for event in reversed(lifecycle)] == [
+        "REPLAY_STARTED",
+        "REPLAY_COMPLETED",
+    ]
+    assert all(event["policy_id"] == policy.id for event in lifecycle)
+
+    detail = governance_client.get(f"/api/v1/governance/audit/{correlation_id}?window=24h")
+    assert detail.status_code == 200
+    body = detail.json()
+    assert body["correlation_id"] == correlation_id
+    assert body["policy_id"] == policy.id
+    assert body["stream_id"] == stream_id
+    assert body["current_status"] == "DELIVERED"
+    assert body["outcome"] == "DELIVERED"
+    assert body["related_violation"] is None
+    assert body["related_quarantine"] is None
+    assert body["related_replay"]["replay_event_id"] == replay_row.id
+    assert [step["event_type"] for step in body["timeline"]] == [
+        "REPLAY_STARTED",
+        "REPLAY_COMPLETED",
+    ]
+
+
+def test_delivery_failure_replay_failed_lifecycle_without_quarantine(
+    governance_client: TestClient,
+    db_session: Session,
+) -> None:
+    seeded = _seed_stream_runtime(db_session)
+    stream_id = int(seeded["stream_id"])
+    policy = _create_policy(db_session, name="Replay Failure Policy", stream_id=stream_id)
+    replay_row = _insert_replay_row(
+        db_session,
+        seeded=seeded,
+        events=[{"event_id": "audit-replay-failed"}],
+    )
+    before = _checkpoint_value(db_session, stream_id)
+    destination = (
+        db_session.query(Destination)
+        .filter(Destination.id == int(seeded["destination_ids"][0]))
+        .first()
+    )
+    assert destination is not None
+    url = str((destination.config_json or {}).get("url"))
+
+    result = execute_replay_event(
+        db_session,
+        int(replay_row.id),
+        destination_registry=DestinationAdapterRegistry(
+            webhook_sender=_ReplayWebhookSender(fail_urls={url})
+        ),
+    )
+    db_session.commit()
+
+    assert result["outcome"] == "failed"
+    assert checkpoint_unchanged(db_session, stream_id, before)
+
+    correlation_id = f"r-{replay_row.id}"
+    resp = governance_client.get(
+        f"/api/v1/governance/audit?event_type=REPLAY_FAILED&stream_id={stream_id}&window=24h"
+    )
+    assert resp.status_code == 200
+    lifecycle = [
+        event
+        for event in resp.json()["events"]
+        if event["correlation_id"] == correlation_id
+    ]
+    assert len(lifecycle) == 1
+    assert lifecycle[0]["event_type"] == "REPLAY_FAILED"
+    assert lifecycle[0]["policy_id"] == policy.id
+
+    detail = governance_client.get(f"/api/v1/governance/audit/{correlation_id}?window=24h")
+    assert detail.status_code == 200
+    body = detail.json()
+    assert body["current_status"] == "FAILED"
+    assert body["outcome"] == "FAILED"
+    assert [step["event_type"] for step in body["timeline"]] == [
+        "REPLAY_STARTED",
+        "REPLAY_FAILED",
+    ]
 
 
 def test_audit_detail_full_timeline(governance_client: TestClient, db_session: Session) -> None:

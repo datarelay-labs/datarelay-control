@@ -171,6 +171,7 @@ def test_list_replay_events(governance_read_client: TestClient, db_session: Sess
     assert row["policy_name"] == "Customer PII Policy"
     assert row["policy_id"] == policy.id
     assert row["status"] == "PENDING"
+    assert row["correlation_id"] == f"r-{replay_row.id}"
     assert body["queue_count"] == 1
 
 
