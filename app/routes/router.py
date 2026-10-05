@@ -206,51 +206,53 @@ async def update_route(route_id: int, payload: RouteUpdate, request: Request, db
     prev_enabled = bool(row.enabled)
     route_before = serialize_route_config(row)
     _canonicalize_route_enabled_status(update)
-    for key, value in update.items():
-        setattr(row, key, value)
-    # Ensure concurrency token advances even when SQLAlchemy onupdate is skipped in tests.
-    row.updated_at = utcnow()
-    stream = db.query(Stream).filter(Stream.id == int(row.stream_id)).first()
-    stream_name = str(stream.name) if stream is not None else None
-    if prev_enabled and not bool(row.enabled):
-        journal.record_audit_event(
-            db,
-            action="ROUTE_DISABLED",
-            entity_type="ROUTE",
-            entity_id=route_id,
-            entity_name=stream_name,
-            details={"stream_id": int(row.stream_id), "destination_id": int(row.destination_id)},
-            request=request,
-        )
-    elif not prev_enabled and bool(row.enabled):
-        journal.record_audit_event(
-            db,
-            action="ROUTE_ENABLED",
-            entity_type="ROUTE",
-            entity_id=route_id,
-            entity_name=stream_name,
-            details={"stream_id": int(row.stream_id), "destination_id": int(row.destination_id)},
-            request=request,
-        )
-    journal.record_audit_event(
-        db,
-        action="ROUTE_UPDATED",
-        entity_type="ROUTE",
-        entity_id=route_id,
-        entity_name=stream_name,
-        details={"updated_fields": sorted(update.keys())},
-        request=request,
-    )
-    journal.record_config_version(
-        db,
-        entity_type="ROUTE_CONFIG",
-        entity_id=route_id,
-        entity_name=stream_name,
-        summary=f"Route updated ({','.join(sorted(update.keys()))})",
-        snapshot_before=route_before,
-        snapshot_after=serialize_route_config(row),
-    )
     try:
+        for key, value in update.items():
+            setattr(row, key, value)
+        # Ensure concurrency token advances even when SQLAlchemy onupdate is skipped in tests.
+        row.updated_at = utcnow()
+        # Queries and journal helpers may autoflush the mutated Route; keep the whole
+        # post-mutation section inside the conflict handler so uniqueness races never 500.
+        stream = db.query(Stream).filter(Stream.id == int(row.stream_id)).first()
+        stream_name = str(stream.name) if stream is not None else None
+        if prev_enabled and not bool(row.enabled):
+            journal.record_audit_event(
+                db,
+                action="ROUTE_DISABLED",
+                entity_type="ROUTE",
+                entity_id=route_id,
+                entity_name=stream_name,
+                details={"stream_id": int(row.stream_id), "destination_id": int(row.destination_id)},
+                request=request,
+            )
+        elif not prev_enabled and bool(row.enabled):
+            journal.record_audit_event(
+                db,
+                action="ROUTE_ENABLED",
+                entity_type="ROUTE",
+                entity_id=route_id,
+                entity_name=stream_name,
+                details={"stream_id": int(row.stream_id), "destination_id": int(row.destination_id)},
+                request=request,
+            )
+        journal.record_audit_event(
+            db,
+            action="ROUTE_UPDATED",
+            entity_type="ROUTE",
+            entity_id=route_id,
+            entity_name=stream_name,
+            details={"updated_fields": sorted(update.keys())},
+            request=request,
+        )
+        journal.record_config_version(
+            db,
+            entity_type="ROUTE_CONFIG",
+            entity_id=route_id,
+            entity_name=stream_name,
+            summary=f"Route updated ({','.join(sorted(update.keys()))})",
+            snapshot_before=route_before,
+            snapshot_after=serialize_route_config(row),
+        )
         db.commit()
     except IntegrityError as exc:
         db.rollback()

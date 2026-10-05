@@ -94,6 +94,7 @@ export function StreamEditDeliveryPanel({ streamId, readOnly = false, refreshVer
   const [destinations, setDestinations] = useState<DestinationRead[]>([])
   const [mappingCfg, setMappingCfg] = useState<MappingUIConfigResponse | null>(null)
   const [routeBusyId, setRouteBusyId] = useState<number | null>(null)
+  const loadGenerationRef = useRef(0)
   const [prefixDraft, setPrefixDraft] = useState<Record<number, MessagePrefixDraft>>({})
   const [prefixBaseline, setPrefixBaseline] = useState<Record<number, MessagePrefixDraft>>({})
   const prefixDraftRef = useRef(prefixDraft)
@@ -107,6 +108,8 @@ export function StreamEditDeliveryPanel({ streamId, readOnly = false, refreshVer
   } | null>(null)
 
   const load = useCallback(async () => {
+    const generation = ++loadGenerationRef.current
+    const isCurrent = () => generation === loadGenerationRef.current
     setLoadError(null)
     setBusy(true)
     try {
@@ -114,6 +117,7 @@ export function StreamEditDeliveryPanel({ streamId, readOnly = false, refreshVer
         fetchStreamMappingUiConfig(streamId, { fresh: true }),
         fetchDestinationsList(),
       ])
+      if (!isCurrent()) return
       if (!cfg) {
         setLoadError('Could not load stream delivery configuration.')
         setMappingCfg(null)
@@ -127,15 +131,19 @@ export function StreamEditDeliveryPanel({ streamId, readOnly = false, refreshVer
       }
       setDestinations(dests)
     } catch (e) {
+      if (!isCurrent()) return
       setLoadError(formatDeliveryPanelApiError(e, 'Load delivery configuration'))
       setMappingCfg(null)
     } finally {
-      setBusy(false)
+      if (isCurrent()) setBusy(false)
     }
   }, [streamId])
 
   useEffect(() => {
     void load()
+    return () => {
+      loadGenerationRef.current += 1
+    }
   }, [load, refreshVersion])
 
   useEffect(() => {

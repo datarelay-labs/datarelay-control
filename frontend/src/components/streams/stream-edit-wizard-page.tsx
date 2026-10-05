@@ -565,6 +565,9 @@ export function StreamEditWizardPage() {
       const result = await persistWizardStreamEdits(backendStreamId, stateToSave, {
         confirmedState: confirmedStateRef.current,
       })
+      // Route synchronization can persist before a later mapping/governance concern makes
+      // the overall save partial. Always reload the server projection after the sync attempt.
+      setDeliveryProjectionRevision((revision) => revision + 1)
       const draftMovedDuringSave = !draftStillMatches()
       const routeIdsByDraftKey = result.routeIdsByDraftKey ?? {}
       const withIdentity = (current: WizardState) =>
@@ -661,7 +664,6 @@ export function StreamEditWizardPage() {
             })
           }
         }
-        setDeliveryProjectionRevision((revision) => revision + 1)
         await refreshRuntimeSnapshot()
         setSaveSuccess(manual ? 'Saved now and applied.' : 'Changes saved.')
         window.setTimeout(() => setSaveSuccess(null), 3000)
