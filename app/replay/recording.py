@@ -14,6 +14,8 @@ from app.replay.eligibility import is_replay_record_eligible
 from app.replay.metrics import log_replay_event_record_failed, log_replay_event_recorded
 from app.replay.models import (
     DELIVERY_KINDS,
+    REPLAY_CONTEXT_ORIGIN_DELIVERY_FAILURE,
+    REPLAY_CONTEXT_ORIGIN_KEY,
     REPLAY_STATUS_PENDING,
     StreamReplayEvent,
 )
@@ -53,6 +55,7 @@ def build_delivery_context_json(
         "destination_type": str(destination_type or "").strip().upper(),
         "formatter_override": dict(formatter_override) if isinstance(formatter_override, dict) and formatter_override else None,
         "prefix_context": _prefix_context_dict(prefix_context),
+        REPLAY_CONTEXT_ORIGIN_KEY: REPLAY_CONTEXT_ORIGIN_DELIVERY_FAILURE,
     }
 
 

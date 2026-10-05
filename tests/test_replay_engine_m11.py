@@ -16,7 +16,15 @@ from app.database import get_db, get_db_read_bounded
 from app.destinations.adapters.registry import DestinationAdapterRegistry
 from app.destinations.models import Destination
 from app.logs.models import DeliveryLog
-from app.replay.models import REPLAY_STATUS_DISCARDED, REPLAY_STATUS_FAILED, REPLAY_STATUS_PENDING, REPLAY_STATUS_REPLAYED, StreamReplayEvent
+from app.replay.models import (
+    REPLAY_CONTEXT_ORIGIN_DELIVERY_FAILURE,
+    REPLAY_CONTEXT_ORIGIN_KEY,
+    REPLAY_STATUS_DISCARDED,
+    REPLAY_STATUS_FAILED,
+    REPLAY_STATUS_PENDING,
+    REPLAY_STATUS_REPLAYED,
+    StreamReplayEvent,
+)
 from app.replay.recording import record_stream_replay_event
 from app.replay.service import checkpoint_unchanged, discard_replay_event, execute_replay_event
 from app.routes.models import Route
@@ -207,6 +215,7 @@ def test_replay_success_checkpoint_unchanged(db_session: Session) -> None:
         r.stage
         for r in db_session.query(DeliveryLog).filter(DeliveryLog.stream_id == int(seeded["stream_id"])).all()
     ]
+    assert "replay_event_replay_started" in stages
     assert "replay_event_replayed" in stages
 
 
@@ -301,6 +310,7 @@ def test_runner_records_on_route_failure(db_session: Session) -> None:
     assert len(rows) >= 1
     assert rows[0].status == REPLAY_STATUS_PENDING
     assert isinstance(rows[0].protected_payload_json, dict)
+    assert rows[0].delivery_context_json[REPLAY_CONTEXT_ORIGIN_KEY] == REPLAY_CONTEXT_ORIGIN_DELIVERY_FAILURE
 
 
 def test_replayed_cannot_replay_again(db_session: Session) -> None:

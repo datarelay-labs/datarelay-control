@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import Integer, cast, select
 from sqlalchemy.orm import Session
 
 from app.governance_audit.models import (
@@ -68,11 +68,22 @@ from app.quarantine.models import (
     StreamQuarantineEvent,
 )
 from app.replay.metrics import (
-    REPLAY_EVENT_RECORDED_STAGE,
+    REPLAY_EVENT_REPLAY_STARTED_STAGE,
     REPLAY_EVENT_REPLAYED_STAGE,
     REPLAY_EVENT_REPLAY_FAILED_STAGE,
 )
-from app.replay.models import REPLAY_STATUS_FAILED, REPLAY_STATUS_REPLAYED, StreamReplayEvent
+from app.replay.models import (
+    DELIVERY_ATTEMPT_CONTEXT_KEY,
+    REPLAY_CONTEXT_ORIGIN_KEY,
+    REPLAY_CONTEXT_ORIGIN_QUARANTINE,
+    REPLAY_CONTEXT_QUARANTINE_EVENT_ID_KEY,
+    REPLAY_STATUS_FAILED,
+    REPLAY_STATUS_PENDING,
+    REPLAY_STATUS_REPLAYED,
+    REPLAY_STATUS_REPLAYING,
+    StreamReplayEvent,
+    replay_quarantine_event_id,
+)
 
 _DEFAULT_LIMIT = 100
 _MAX_LIMIT = 200
@@ -153,6 +164,10 @@ def _correlation_id_for_policy(policy_id: int) -> str:
     return f"p-{int(policy_id)}"
 
 
+def _correlation_id_for_replay(replay_event_id: int) -> str:
+    return f"r-{int(replay_event_id)}"
+
+
 def _parse_correlation_id(correlation_id: str) -> tuple[str, int | None]:
     raw = str(correlation_id).strip()
     if raw.startswith("q-"):
@@ -163,6 +178,11 @@ def _parse_correlation_id(correlation_id: str) -> tuple[str, int | None]:
     if raw.startswith("p-"):
         try:
             return "policy", int(raw[2:])
+        except ValueError:
+            return "unknown", None
+    if raw.startswith("r-"):
+        try:
+            return "replay", int(raw[2:])
         except ValueError:
             return "unknown", None
     return "unknown", None
@@ -197,15 +217,13 @@ def _policy_context_for_quarantine(
 
 
 def _find_quarantine_for_replay(db: Session, replay_row: StreamReplayEvent) -> StreamQuarantineEvent | None:
-    return db.execute(
-        select(StreamQuarantineEvent)
-        .where(
-            StreamQuarantineEvent.stream_id == int(replay_row.stream_id),
-            StreamQuarantineEvent.created_at <= replay_row.created_at,
-        )
-        .order_by(StreamQuarantineEvent.created_at.desc(), StreamQuarantineEvent.id.desc())
-        .limit(1)
-    ).scalar_one_or_none()
+    quarantine_id = replay_quarantine_event_id(replay_row)
+    if quarantine_id is None:
+        return None
+    row = db.get(StreamQuarantineEvent, int(quarantine_id))
+    if row is None or int(row.stream_id) != int(replay_row.stream_id):
+        return None
+    return row
 
 
 def _events_from_quarantine_row(
@@ -291,6 +309,23 @@ def _events_from_quarantine_row(
     return events
 
 
+def _replay_started_at(row: StreamReplayEvent) -> datetime | None:
+    ctx = row.delivery_context_json if isinstance(row.delivery_context_json, dict) else {}
+    attempt = ctx.get(DELIVERY_ATTEMPT_CONTEXT_KEY)
+    raw = attempt.get("claimed_at") if isinstance(attempt, dict) else None
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                return parsed.replace(tzinfo=timezone.utc)
+            return parsed
+        except ValueError:
+            pass
+    if str(row.status) in {REPLAY_STATUS_REPLAYED, REPLAY_STATUS_FAILED}:
+        return row.created_at
+    return None
+
+
 def _events_from_replay_row(
     db: Session,
     row: StreamReplayEvent,
@@ -308,22 +343,24 @@ def _events_from_replay_row(
     correlation_id = _correlation_id_for_quarantine(int(quarantine_row.id))
     events: list[_InternalAuditEvent] = []
 
-    events.append(
-        _InternalAuditEvent(
-            correlation_id=correlation_id,
-            event_time=row.created_at,
-            event_type=AUDIT_EVENT_REPLAY_STARTED,
-            status=AUDIT_STATUS_IN_PROGRESS,
-            policy_id=policy_id,
-            policy_name=policy_name,
-            stream_id=stream_id,
-            stream_name=stream_name,
-            summary=_summary_for_event(AUDIT_EVENT_REPLAY_STARTED),
-            actor=quarantine_row.released_by or "Operator",
-            quarantine_event_id=int(quarantine_row.id),
-            replay_event_id=int(row.id),
+    started_at = _replay_started_at(row)
+    if started_at is not None:
+        events.append(
+            _InternalAuditEvent(
+                correlation_id=correlation_id,
+                event_time=started_at,
+                event_type=AUDIT_EVENT_REPLAY_STARTED,
+                status=AUDIT_STATUS_IN_PROGRESS,
+                policy_id=policy_id,
+                policy_name=policy_name,
+                stream_id=stream_id,
+                stream_name=stream_name,
+                summary=_summary_for_event(AUDIT_EVENT_REPLAY_STARTED),
+                actor=quarantine_row.released_by or "Operator",
+                quarantine_event_id=int(quarantine_row.id),
+                replay_event_id=int(row.id),
+            )
         )
-    )
 
     if str(row.status) == REPLAY_STATUS_REPLAYED and row.last_replay_at is not None:
         events.append(
@@ -500,27 +537,30 @@ def _events_from_delivery_logs(
     stream_names: dict[int, str],
     stream_policies: dict[int, list[GovernancePolicy]],
     known_keys: set[tuple[str, datetime]],
+    replay_event_id: int | None = None,
 ) -> list[_InternalAuditEvent]:
     stage_map = {
         QUARANTINE_EVENT_CREATED_STAGE: AUDIT_EVENT_QUARANTINE_CREATED,
         QUARANTINE_EVENT_RELEASED_STAGE: AUDIT_EVENT_QUARANTINE_RELEASED,
         QUARANTINE_EVENT_DISCARDED_STAGE: AUDIT_EVENT_QUARANTINE_DISCARDED,
-        REPLAY_EVENT_RECORDED_STAGE: AUDIT_EVENT_REPLAY_STARTED,
+        REPLAY_EVENT_REPLAY_STARTED_STAGE: AUDIT_EVENT_REPLAY_STARTED,
         REPLAY_EVENT_REPLAYED_STAGE: AUDIT_EVENT_REPLAY_COMPLETED,
         REPLAY_EVENT_REPLAY_FAILED_STAGE: AUDIT_EVENT_REPLAY_FAILED,
     }
+    stmt = select(DeliveryLog).where(
+        DeliveryLog.created_at >= since,
+        DeliveryLog.created_at < until,
+        DeliveryLog.stage.in_(tuple(stage_map.keys())),
+    )
+    if replay_event_id is not None:
+        stmt = stmt.where(
+            cast(DeliveryLog.payload_sample.op("->>")("replay_event_id"), Integer)
+            == int(replay_event_id)
+        )
     rows = list(
         db.execute(
-            select(DeliveryLog)
-            .where(
-                DeliveryLog.created_at >= since,
-                DeliveryLog.created_at < until,
-                DeliveryLog.stage.in_(tuple(stage_map.keys())),
-            )
-            .order_by(DeliveryLog.created_at.desc())
-            .limit(_MAX_LIMIT * 2)
-        )
-        .scalars()
+            stmt.order_by(DeliveryLog.created_at.desc()).limit(_MAX_LIMIT * 2)
+        ).scalars()
     )
 
     events: list[_InternalAuditEvent] = []
@@ -546,12 +586,20 @@ def _events_from_delivery_logs(
             if replay_row is None:
                 continue
             q_row = _find_quarantine_for_replay(db, replay_row)
-            if q_row is None:
+            if q_row is not None:
+                # Quarantine-correlated replay lifecycle is reconstructed from the replay
+                # row so it remains on the existing q-* correlation without duplicates.
                 continue
-            correlation_id = _correlation_id_for_quarantine(int(q_row.id))
-            policy_id, policy_name = _policy_context_for_quarantine(db, q_row, stream_policies=stream_policies)
-            stream_id = int(q_row.stream_id)
-            quarantine_id = int(q_row.id)
+            stream_id = int(replay_row.stream_id)
+            correlation_id = _correlation_id_for_replay(int(replay_row.id))
+            ctx = _resolve_policy_context(
+                db,
+                stream_id=stream_id,
+                stream_policies=stream_policies,
+                runtime_policy_names=[],
+            )
+            policy_id, policy_name = ctx.policy_id, ctx.policy_name
+            quarantine_id = None
         else:
             continue
 
@@ -850,6 +898,28 @@ def list_governance_dashboard_recent_activity(
     return [_internal_to_entry(event) for event in filtered]
 
 
+def _current_status_for_replay_row(row: StreamReplayEvent) -> str:
+    status = str(row.status or "")
+    if status == REPLAY_STATUS_REPLAYED:
+        return AUDIT_STATUS_DELIVERED
+    if status == REPLAY_STATUS_FAILED:
+        return AUDIT_STATUS_FAILED
+    if status == REPLAY_STATUS_REPLAYING:
+        return AUDIT_STATUS_IN_PROGRESS
+    if status == REPLAY_STATUS_PENDING:
+        return AUDIT_STATUS_OPEN
+    return AUDIT_STATUS_OPEN
+
+
+def _outcome_for_replay_row(row: StreamReplayEvent) -> str | None:
+    status = str(row.status or "")
+    if status == REPLAY_STATUS_REPLAYED:
+        return AUDIT_OUTCOME_DELIVERED
+    if status == REPLAY_STATUS_FAILED:
+        return AUDIT_OUTCOME_FAILED
+    return None
+
+
 def _derive_current_status(events: list[_InternalAuditEvent]) -> str:
     priority = [
         AUDIT_STATUS_FAILED,
@@ -928,6 +998,10 @@ def get_governance_audit_detail(
                     StreamReplayEvent.stream_id == int(q_row.stream_id),
                     StreamReplayEvent.created_at >= q_row.created_at,
                     StreamReplayEvent.created_at < until,
+                    StreamReplayEvent.delivery_context_json.op("->>")(REPLAY_CONTEXT_ORIGIN_KEY)
+                    == REPLAY_CONTEXT_ORIGIN_QUARANTINE,
+                    StreamReplayEvent.delivery_context_json.op("->>")(REPLAY_CONTEXT_QUARANTINE_EVENT_ID_KEY)
+                    == str(int(q_row.id)),
                 )
                 .order_by(StreamReplayEvent.created_at.asc())
             )
@@ -1009,6 +1083,64 @@ def get_governance_audit_detail(
             timeline=_build_timeline(events),
             related_violation=related_violation,
             related_quarantine=related_quarantine,
+            related_replay=related_replay,
+        )
+
+    if kind == "replay":
+        replay_row = db.get(StreamReplayEvent, int(resource_id))
+        if replay_row is None:
+            raise GovernanceAuditNotFoundError(correlation_id)
+
+        quarantine_row = _find_quarantine_for_replay(db, replay_row)
+        if quarantine_row is not None:
+            return get_governance_audit_detail(
+                db,
+                _correlation_id_for_quarantine(int(quarantine_row.id)),
+                window=window,
+            )
+
+        stream_id = int(replay_row.stream_id)
+        stream_ids = {stream_id}
+        stream_names = _load_stream_names(db, stream_ids)
+        stream_policies = _load_stream_policy_map(db, stream_ids)
+        ctx = _resolve_policy_context(
+            db,
+            stream_id=stream_id,
+            stream_policies=stream_policies,
+            runtime_policy_names=[],
+        )
+        policy_id, policy_name = ctx.policy_id, ctx.policy_name
+        stream_name = stream_names.get(stream_id, f"Stream {stream_id}")
+        events = [
+            event
+            for event in _events_from_delivery_logs(
+                db,
+                since=since,
+                until=until,
+                stream_names=stream_names,
+                stream_policies=stream_policies,
+                known_keys=set(),
+                replay_event_id=int(replay_row.id),
+            )
+            if event.replay_event_id == int(replay_row.id)
+            and event.correlation_id == correlation_id
+        ]
+        related_replay = GovernanceAuditReplayRef(
+            replay_event_id=int(replay_row.id),
+            status=str(replay_row.status),
+            event_count=int(replay_row.event_count or 0),
+        )
+        return GovernanceAuditDetailResponse(
+            correlation_id=correlation_id,
+            policy_id=policy_id,
+            policy_name=policy_name,
+            stream_id=stream_id,
+            stream_name=stream_name,
+            current_status=_current_status_for_replay_row(replay_row),  # type: ignore[arg-type]
+            outcome=_outcome_for_replay_row(replay_row),  # type: ignore[arg-type]
+            timeline=_build_timeline(events),
+            related_violation=None,
+            related_quarantine=None,
             related_replay=related_replay,
         )
 

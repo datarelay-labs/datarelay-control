@@ -35,6 +35,7 @@ from app.rate_limit.process_destination_limiter import get_process_destination_r
 from app.replay.metrics import (
     REPLAY_EVENT_DISCARDED_STAGE,
     REPLAY_EVENT_REPLAY_FAILED_STAGE,
+    REPLAY_EVENT_REPLAY_STARTED_STAGE,
     REPLAY_EVENT_REPLAYED_STAGE,
     persist_replay_observability_log,
 )
@@ -355,6 +356,23 @@ def _commit_replay_claim(
     row.last_replay_at = now
     row.error_type = None
     row.error_message = None
+    persist_replay_observability_log(
+        db,
+        stage=REPLAY_EVENT_REPLAY_STARTED_STAGE,
+        stream_id=int(row.stream_id),
+        destination_id=int(row.destination_id),
+        replay_event_id=int(row.id),
+        status=REPLAY_STATUS_REPLAYING,
+        retry_count=int(row.retry_count or 0),
+        route_id=row.route_id,
+        message="replay delivery started",
+        extra={
+            "attempt_id": attempt.get("attempt_id"),
+            "idempotency_key": attempt.get("idempotency_key"),
+            "delivery_guarantee": attempt.get("delivery_guarantee"),
+            "prior_delivery_uncertain": bool(attempt.get("prior_delivery_uncertain")),
+        },
+    )
     db.flush()
     db.commit()
     return attempt

@@ -16,7 +16,13 @@ from app.quarantine.models import (
     QUARANTINE_STATUS_QUARANTINED,
     StreamQuarantineEvent,
 )
-from app.replay.models import REPLAY_STATUS_PENDING, StreamReplayEvent
+from app.replay.models import (
+    REPLAY_CONTEXT_ORIGIN_KEY,
+    REPLAY_CONTEXT_ORIGIN_QUARANTINE,
+    REPLAY_CONTEXT_QUARANTINE_EVENT_ID_KEY,
+    REPLAY_STATUS_PENDING,
+    StreamReplayEvent,
+)
 from tests.test_stream_runner_e2e import _seed_stream_runtime
 
 
@@ -47,20 +53,21 @@ def _seed_many_replays(
     route_id = int(seeded["route_ids"][0])
     now = datetime.now(timezone.utc)
 
+    quarantine_id: int | None = None
     if with_quarantine:
-        db_session.add(
-            StreamQuarantineEvent(
-                stream_id=stream_id,
-                quarantine_reason="policy_match",
-                quarantine_source=QUARANTINE_SOURCE_POLICY,
-                status=QUARANTINE_STATUS_QUARANTINED,
-                protected_payload_json={"events": []},
-                metadata_json={},
-                created_at=now - timedelta(hours=2),
-                updated_at=now - timedelta(hours=2),
-            )
+        quarantine = StreamQuarantineEvent(
+            stream_id=stream_id,
+            quarantine_reason="policy_match",
+            quarantine_source=QUARANTINE_SOURCE_POLICY,
+            status=QUARANTINE_STATUS_QUARANTINED,
+            protected_payload_json={"events": []},
+            metadata_json={},
+            created_at=now - timedelta(hours=2),
+            updated_at=now - timedelta(hours=2),
         )
+        db_session.add(quarantine)
         db_session.flush()
+        quarantine_id = int(quarantine.id)
 
     for idx in range(count):
         created_at = now - timedelta(minutes=count - idx)
@@ -72,7 +79,15 @@ def _seed_many_replays(
                 delivery_kind="base_route",
                 status=REPLAY_STATUS_PENDING,
                 protected_payload_json={"events": [{"id": idx}]},
-                delivery_context_json={"destination_type": "WEBHOOK"},
+                delivery_context_json=(
+                    {
+                        "destination_type": "WEBHOOK",
+                        REPLAY_CONTEXT_ORIGIN_KEY: REPLAY_CONTEXT_ORIGIN_QUARANTINE,
+                        REPLAY_CONTEXT_QUARANTINE_EVENT_ID_KEY: quarantine_id,
+                    }
+                    if quarantine_id is not None
+                    else {"destination_type": "WEBHOOK"}
+                ),
                 event_count=1,
                 created_at=created_at,
                 updated_at=created_at,
@@ -98,7 +113,7 @@ def test_replay_list_query_count_does_not_scale_with_quarantine_lookups(db_sessi
     assert query_count <= 12
 
 
-def test_replay_list_correlation_id_unchanged_with_batch_lookup(db_session: Session) -> None:
+def test_replay_list_explicit_quarantine_correlation_preserved_with_batch_lookup(db_session: Session) -> None:
     ids = _seed_many_replays(db_session, count=3, with_quarantine=True)
     stream_id = ids["stream_id"]
 

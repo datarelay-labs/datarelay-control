@@ -22,7 +22,14 @@ from app.quarantine.models import (
     QUARANTINE_STATUS_RELEASED,
     StreamQuarantineEvent,
 )
-from app.replay.models import REPLAY_STATUS_PENDING, REPLAY_STATUS_REPLAYED, StreamReplayEvent
+from app.replay.models import (
+    REPLAY_CONTEXT_ORIGIN_KEY,
+    REPLAY_CONTEXT_ORIGIN_QUARANTINE,
+    REPLAY_CONTEXT_QUARANTINE_EVENT_ID_KEY,
+    REPLAY_STATUS_PENDING,
+    REPLAY_STATUS_REPLAYED,
+    StreamReplayEvent,
+)
 from app.sensitive_detection.models import (
     FINDING_STATUS_OPEN,
     SENSITIVITY_CLASS_PII,
@@ -256,7 +263,7 @@ def test_bulk_replay_quarantine(governance_write_client: TestClient, db_session:
         delivery_kind="base_route",
         status=REPLAY_STATUS_PENDING,
         protected_payload_json={"events": [{"id": 1}]},
-        delivery_context_json={},
+        delivery_context_json={"destination_type": "WEBHOOK"},
         event_count=1,
         created_at=now - timedelta(hours=1),
         updated_at=now,
@@ -275,3 +282,5 @@ def test_bulk_replay_quarantine(governance_write_client: TestClient, db_session:
 
     db_session.refresh(replay_row)
     assert replay_row.status in (REPLAY_STATUS_REPLAYED, REPLAY_STATUS_PENDING, "failed")
+    assert replay_row.delivery_context_json[REPLAY_CONTEXT_ORIGIN_KEY] == REPLAY_CONTEXT_ORIGIN_QUARANTINE
+    assert replay_row.delivery_context_json[REPLAY_CONTEXT_QUARANTINE_EVENT_ID_KEY] == q_row.id
