@@ -4,8 +4,9 @@ from_policy_epoch: 14
 to_policy_epoch: 15
 requires_exact_head_validate: true
 automation_eligible: false
-rationale: Managed adoption upgrade 72abaec3ffa4f2e7519ee8067f4b8795acd506ad -> 2309ed327899d704d7acbbfdc7bfe07e048f46de
-  changes canonical governance root surfaces.
+rationale: Managed adoption upgrade from 72abaec3ffa4f2e7519ee8067f4b8795acd506ad
+  to 08fdceca62fd69c081241ceb85d4198d821107b6 restores autonomous continuation and
+  truthful handoffs; preserves evaluator and high-risk authority.
 changed_surfaces:
 - path: tools/handoff_contract.py
   head_blob_sha: 7bac12af518693b6eef958148c44873354df162f
