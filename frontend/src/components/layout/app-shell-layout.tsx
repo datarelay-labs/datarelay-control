@@ -615,7 +615,7 @@ export function AppShellLayout() {
   )
 
   return (
-    <div className={rootClassName}>
+    <div className={rootClassName} data-dr-theme={isDark ? 'dark' : 'light'}>
       <a
         href={`#${MAIN_CONTENT_ID}`}
         className="gdc-skip-link"

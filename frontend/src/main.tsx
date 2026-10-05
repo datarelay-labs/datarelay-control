@@ -1,6 +1,7 @@
 import { StrictMode, useEffect, useReducer } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
+import './foundation-semantic-tokens.css'
 import './index.css'
 import App from './App.tsx'
 import { clearChunkReloadGuard } from './lib/lazy-with-chunk-retry'
@@ -83,7 +84,7 @@ function PlatformSessionRoot() {
 
   if (!hasValidSession()) {
     return (
-      <div className="dark">
+      <div className="dark" data-dr-theme="dark">
         <PlatformLoginPage onAuthenticated={bump} />
       </div>
     )
@@ -91,7 +92,7 @@ function PlatformSessionRoot() {
 
   if (needsPasswordChangeGate) {
     return (
-      <div className="dark">
+      <div className="dark" data-dr-theme="dark">
         <ForceDefaultPasswordChangePage onCompleted={bump} />
       </div>
     )

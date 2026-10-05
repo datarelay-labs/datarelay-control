@@ -1,0 +1,94 @@
+/*
+ * Product Foundation compatibility slice: control-semantic-token-parity.
+ *
+ * These variables expose Foundation semantic token names while preserving the
+ * existing Control visual system. Existing Tailwind/Control classes remain the
+ * rendering authority in this slice, so adding/removing this file is a clean
+ * no-data rollback boundary.
+ */
+:root,
+[data-dr-theme="light"] {
+  --dr-font-family-ui: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --dr-font-size-xs: 12px;
+  --dr-font-size-sm: 13px;
+  --dr-font-size-base: 14px;
+  --dr-font-size-lg: 16px;
+  --dr-font-size-xl: 20px;
+  --dr-font-size-2xl: 24px;
+  --dr-font-weight-regular: 400;
+  --dr-font-weight-medium: 500;
+  --dr-font-weight-strong: 600;
+  --dr-radius-control: 8px;
+  --dr-radius-card: 8px;
+  --dr-radius-pill: 9999px;
+  --dr-space-1: 4px;
+  --dr-space-2: 8px;
+  --dr-space-3: 12px;
+  --dr-space-4: 16px;
+  --dr-space-5: 20px;
+  --dr-space-6: 24px;
+  --dr-space-8: 32px;
+  --dr-layout-sidebar-expanded: 260px;
+  --dr-layout-sidebar-collapsed: 57px;
+  --dr-layout-content-max: 1440px;
+  --dr-brand-mark: #00d084;
+  --dr-brand-relay: #007e4f;
+  --dr-brand-data: oklch(21% 0.006 285.885);
+  --dr-surface-page: oklch(98.75% 0 0);
+  --dr-surface-panel: #ffffff;
+  --dr-surface-section: oklch(97% 0 0);
+  --dr-surface-card: #ffffff;
+  --dr-surface-elevated: #ffffff;
+  --dr-surface-overlay: rgba(0, 0, 0, 0.42);
+  --dr-surface-input: #ffffff;
+  --dr-surface-hover: oklch(97% 0 0);
+  --dr-border-default: oklch(92.2% 0 0);
+  --dr-border-strong: oklch(87% 0 0);
+  --dr-border-divider: oklch(92.2% 0 0);
+  --dr-border-input: oklch(87% 0 0);
+  --dr-text-primary: oklch(21% 0.006 285.885);
+  --dr-text-secondary: oklch(37.1% 0 0);
+  --dr-text-muted: oklch(55.6% 0 0);
+  --dr-text-placeholder: oklch(55.6% 0 0);
+  --dr-text-inverse: #ffffff;
+  --dr-action-primary: oklch(54.6% 0.245 262.881);
+  --dr-action-primary-hover: oklch(48.8% 0.243 264.376);
+  --dr-action-secondary: #ffffff;
+  --dr-action-secondary-hover: oklch(97% 0 0);
+  --dr-status-info: oklch(48.8% 0.243 264.376);
+  --dr-status-success: #047857;
+  --dr-status-warning: #92400e;
+  --dr-status-critical: #b42318;
+  --dr-focus-ring: #1473e6;
+}
+
+[data-dr-theme="dark"] {
+  --dr-brand-relay: #00d084;
+  --dr-brand-data: oklch(97% 0 0);
+  --dr-surface-page: oklch(10% 0 0);
+  --dr-surface-panel: oklch(17% 0 0);
+  --dr-surface-section: oklch(15% 0 0);
+  --dr-surface-card: oklch(17% 0 0);
+  --dr-surface-elevated: oklch(12% 0 0);
+  --dr-surface-overlay: rgba(0, 0, 0, 0.42);
+  --dr-surface-input: oklch(21% 0.006 285.885);
+  --dr-surface-hover: oklch(26.9% 0 0);
+  --dr-border-default: oklch(32% 0 0);
+  --dr-border-strong: oklch(37.1% 0 0);
+  --dr-border-divider: oklch(26.9% 0 0);
+  --dr-border-input: oklch(32% 0 0);
+  --dr-text-primary: oklch(97% 0 0);
+  --dr-text-secondary: oklch(92.2% 0 0);
+  --dr-text-muted: oklch(70.8% 0 0);
+  --dr-text-placeholder: oklch(55.6% 0 0);
+  --dr-text-inverse: #111827;
+  --dr-action-primary: oklch(52% 0.209 260);
+  --dr-action-primary-hover: oklch(62.3% 0.214 259.815);
+  --dr-action-secondary: oklch(17% 0 0);
+  --dr-action-secondary-hover: oklch(26.9% 0 0);
+  --dr-status-info: #60a5fa;
+  --dr-status-success: #34d399;
+  --dr-status-warning: #f59e0b;
+  --dr-status-critical: #f87171;
+  --dr-focus-ring: #1473e6;
+}
