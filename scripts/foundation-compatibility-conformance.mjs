@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { requireSemanticTokenNames } from "./foundation-semantic-token-contract.mjs";
 
 function fail(reason) {
   console.error(`CONTROL_FOUNDATION_CONFORMANCE=FAIL REASON=${reason}`);
@@ -39,7 +40,12 @@ if (!generatedTokenSource.includes("export const dataRelayTokens")) fail("tokens
 
 const candidateCss = fs.readFileSync(path.join(foundationRoot, "packages/tokens/src/generated.css"), "utf8");
 const controlCss = fs.readFileSync(path.join(root, "frontend/src/foundation-semantic-tokens.css"), "utf8");
-const expectedNames = [...new Set(candidateCss.match(/--dr-[a-z0-9-]+(?=\s*:)/g) ?? [])];
+let expectedNames;
+try {
+  expectedNames = requireSemanticTokenNames(candidateCss);
+} catch (error) {
+  fail(error instanceof Error ? error.message : "foundation-semantic-token-discovery");
+}
 const actualNames = new Set(controlCss.match(/--dr-[a-z0-9-]+(?=\s*:)/g) ?? []);
 const missing = expectedNames.filter((name) => !actualNames.has(name));
 if (missing.length) fail(`semantic-token-missing:${missing.join(",")}`);

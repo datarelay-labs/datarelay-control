@@ -75,6 +75,20 @@ export function AppShellLayout() {
   }, [])
 
   useEffect(() => {
+    const documentRoot = document.documentElement
+    const previousTheme = documentRoot.getAttribute('data-dr-theme')
+    documentRoot.setAttribute('data-dr-theme', isDark ? 'dark' : 'light')
+
+    return () => {
+      if (previousTheme == null) {
+        documentRoot.removeAttribute('data-dr-theme')
+      } else {
+        documentRoot.setAttribute('data-dr-theme', previousTheme)
+      }
+    }
+  }, [isDark])
+
+  useEffect(() => {
     if (isMdUp) setMobileNavOpen(false)
   }, [isMdUp])
 
