@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ThemeRoot } from '@datarelay-labs/ui'
 import { Link, Outlet, useLocation, useMatch, useNavigate } from 'react-router-dom'
 import { AppShell, MAIN_CONTENT_ID } from '../shell/app-shell'
 import { Sidebar } from './sidebar'
@@ -629,7 +630,7 @@ export function AppShellLayout() {
   )
 
   return (
-    <div className={rootClassName} data-dr-theme={isDark ? 'dark' : 'light'}>
+    <ThemeRoot theme={isDark ? 'dark' : 'light'} className={rootClassName}>
       <a
         href={`#${MAIN_CONTENT_ID}`}
         className="gdc-skip-link"
@@ -676,7 +677,7 @@ export function AppShellLayout() {
           </RouteErrorBoundary>
         </div>
       </AppShell>
-    </div>
+    </ThemeRoot>
   )
 }
 
