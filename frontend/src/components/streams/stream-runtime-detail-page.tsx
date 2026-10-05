@@ -114,6 +114,7 @@ import type {
   StreamRead,
   StreamRuntimeMetricsResponse,
   StreamRuntimeStatsResponse,
+  RuntimeTimelineItem,
 } from '../../api/types/gdcApi'
 import type { StreamRuntimeStatus } from '../../api/streamRows'
 
@@ -138,6 +139,31 @@ function statusTone(s: StreamRuntimeStatus) {
   }
 }
 
+function currentSourceRunFailureMessage(message: string | null): string | null {
+  if (!message) return null
+  return /\[(?:SOURCE_[A-Z0-9_]+|RESOURCE_HTTP_ERROR)\]/i.test(message) ? message : null
+}
+
+function runtimeAuthorityRevision(
+  timelineLast: RuntimeTimelineItem | null,
+  stats: StreamRuntimeStatsResponse | null,
+  health: StreamHealthResponse | null,
+): string {
+  return [
+    timelineLast?.id ?? '',
+    timelineLast?.created_at ?? '',
+    timelineLast?.run_id ?? '',
+    timelineLast?.stage ?? '',
+    timelineLast?.status ?? '',
+    timelineLast?.error_code ?? '',
+    stats?.stream_status ?? health?.stream_status ?? '',
+    stats?.last_seen.success_at ?? '',
+    stats?.last_seen.failure_at ?? '',
+    stats?.last_seen.rate_limited_at ?? '',
+    health?.health ?? '',
+  ].join('|')
+}
+
 export function StreamRuntimeDetailPage() {
   const { streamId = '' } = useParams<{ streamId: string }>()
   const activeTab = useStreamDetailTab()
@@ -157,6 +183,8 @@ export function StreamRuntimeDetailPage() {
   const [runOnceStatus, setRunOnceStatus] = useState<string | null>(null)
   const [runOnceRunId, setRunOnceRunId] = useState<string | null>(null)
   const [runOnceError, setRunOnceError] = useState<string | null>(null)
+  const runtimeAuthorityRevisionRef = useRef<string | null>(null)
+  const sourceFailureAuthorityRevisionRef = useRef<string | null>(null)
   const priorDeliveryProofRef = useRef<PriorDeliveryProof | null>(null)
   const [streamEntity, setStreamEntity] = useState<StreamRead | null>(null)
   const [streamMetaReady, setStreamMetaReady] = useState(false)
@@ -218,6 +246,8 @@ export function StreamRuntimeDetailPage() {
     setRunOnceStatus(null)
     setRunOnceRunId(null)
     setRunOnceError(null)
+    runtimeAuthorityRevisionRef.current = null
+    sourceFailureAuthorityRevisionRef.current = null
   }, [backendStreamId])
 
   const logsExplorerDrilldown = useMemo(() => {
@@ -406,6 +436,18 @@ export function StreamRuntimeDetailPage() {
         fetchStreamRuntimeStatsHealth(backendStreamId, 120, metricsWindow, { snapshot_id }, fetchOpts),
       ])
       if (!isCurrent()) return false
+      const timelineLast = res?.items?.length ? res.items[res.items.length - 1] : null
+      const nextAuthorityRevision = runtimeAuthorityRevision(
+        timelineLast,
+        statsHealth?.stats ?? null,
+        statsHealth?.health ?? null,
+      )
+      const failureAnchor = sourceFailureAuthorityRevisionRef.current
+      runtimeAuthorityRevisionRef.current = nextAuthorityRevision
+      if (failureAnchor != null && failureAnchor !== nextAuthorityRevision) {
+        sourceFailureAuthorityRevisionRef.current = null
+        setRunOnceError((current) => (currentSourceRunFailureMessage(current) ? null : current))
+      }
       if (res?.items?.length) {
         const items = res.items
         const last = items[items.length - 1]
@@ -544,6 +586,7 @@ export function StreamRuntimeDetailPage() {
     setRunOnceStatus(null)
     setRunOnceRunId(null)
     setRunOnceError(null)
+    sourceFailureAuthorityRevisionRef.current = null
     setControlMessage(null)
     try {
       const proof = await proveStreamRunOnce(backendStreamId, priorDeliveryProofRef.current)
@@ -561,7 +604,22 @@ export function StreamRuntimeDetailPage() {
       if (!mountedRef.current) return
       window.dispatchEvent(new CustomEvent('gdc-runtime-run-once', { detail: { streamId: backendStreamId, proof } }))
     } catch (e) {
-      if (mountedRef.current) setRunOnceError(e instanceof Error ? e.message : String(e))
+      const message = e instanceof Error ? e.message : String(e)
+      const sourceFailure = currentSourceRunFailureMessage(message)
+      if (mountedRef.current) setRunOnceError(message)
+      if (sourceFailure) sourceFailureAuthorityRevisionRef.current = null
+      try {
+        await refreshAfterMutation()
+        if (activeTab === 'audit') void loadCheckpointHistory()
+      } catch (refreshError) {
+        if (!isRequestAborted(refreshError) && import.meta.env.DEV) {
+          console.error('[stream runtime] failed-run refresh failed', refreshError)
+        }
+      } finally {
+        if (sourceFailure && mountedRef.current) {
+          sourceFailureAuthorityRevisionRef.current = runtimeAuthorityRevisionRef.current
+        }
+      }
     } finally {
       if (mountedRef.current) setRunOnceBusy(false)
     }
@@ -664,6 +722,12 @@ export function StreamRuntimeDetailPage() {
     if (runtimeHealth) return mapBackendStreamStatus(runtimeHealth.stream_status)
     return 'UNKNOWN'
   }, [runtimeMetrics, runtimeStats, runtimeHealth])
+
+  const currentRunSourceFailure = useMemo(
+    () => currentSourceRunFailureMessage(runOnceError),
+    [runOnceError],
+  )
+  const diagnosticDisplayStatus: StreamRuntimeStatus = currentRunSourceFailure ? 'ERROR' : displayStatus
 
   const numericOverlay = useMemo(
     () => buildRuntimeDetailNumericOverlay(runtimeStats, runtimeHealth, runtimeMetrics),
@@ -788,9 +852,12 @@ export function StreamRuntimeDetailPage() {
   )
 
   const issueCtx = useMemo((): StreamIssueContext => {
-    const recentErrors = (runtimeMetrics?.recent_route_errors ?? [])
-      .slice(0, 3)
-      .map((e) => ({ message: e.message ?? 'Delivery path error' }))
+    const recentErrors = [
+      ...(currentRunSourceFailure ? [{ message: currentRunSourceFailure }] : []),
+      ...(runtimeMetrics?.recent_route_errors ?? [])
+        .slice(0, 3)
+        .map((e) => ({ message: e.message ?? 'Delivery path error' })),
+    ].slice(0, 3)
     const lastAt =
       runtimeMetrics?.stream.last_run_at ??
       runtimeMetrics?.stream.last_success_at ??
@@ -810,6 +877,8 @@ export function StreamRuntimeDetailPage() {
     }
     return {
       id: streamId,
+      // Keep delivery issue classification on runtime window truth; the exact source
+      // failure is a separate current-run override handled by StreamDiagnosis.
       status: displayStatus,
       connectorName: connectorDisplayName ?? data.connectorName,
       connectorProductGroup,
@@ -824,6 +893,7 @@ export function StreamRuntimeDetailPage() {
     runtimeStats,
     streamId,
     displayStatus,
+    currentRunSourceFailure,
     connectorDisplayName,
     connectorProductGroup,
     data.connectorName,
@@ -888,8 +958,8 @@ export function StreamRuntimeDetailPage() {
     () =>
       buildStreamDiagnosis({
         streamId,
-        displayStatus,
-        hasRuntimeEvidence: hasRuntimeObsApi,
+        displayStatus: diagnosticDisplayStatus,
+        hasRuntimeEvidence: hasRuntimeObsApi || currentRunSourceFailure != null,
         governance: governanceSnapshot,
         issues: operationalIssues,
         showCheckpointObservability,
@@ -897,6 +967,7 @@ export function StreamRuntimeDetailPage() {
         deliveryPctKnown: deliveryPct != null,
         deliveryPct: deliveryPct ?? 0,
         recentErrorMessage: issueCtx.recentErrors[0]?.message ?? null,
+        currentRunFailureMessage: currentRunSourceFailure,
         canMutateWorkspace,
         canRuntimeControl,
         canBackfill,
@@ -904,8 +975,9 @@ export function StreamRuntimeDetailPage() {
       }),
     [
       streamId,
-      displayStatus,
+      diagnosticDisplayStatus,
       hasRuntimeObsApi,
+      currentRunSourceFailure,
       governanceSnapshot,
       operationalIssues,
       showCheckpointObservability,
@@ -999,8 +1071,8 @@ export function StreamRuntimeDetailPage() {
             </Link>
           ) : null}
         </div>
-        <StatusBadge tone={statusTone(displayStatus)} className="w-fit px-2.5 py-1 text-sm font-semibold uppercase tracking-wide">
-          {displayStatus}
+        <StatusBadge tone={statusTone(diagnosticDisplayStatus)} className="w-fit px-2.5 py-1 text-sm font-semibold uppercase tracking-wide">
+          {diagnosticDisplayStatus}
         </StatusBadge>
       </div>
 
@@ -1221,7 +1293,7 @@ export function StreamRuntimeDetailPage() {
         evidence={
       <>
       <StreamMonitoringStatusStrip
-        displayStatus={displayStatus}
+        displayStatus={diagnosticDisplayStatus}
         backendStreamId={backendStreamId}
         hasRuntimeObsApi={hasRuntimeObsApi}
         backendStatusLabel={runtimeStats?.stream_status ?? runtimeHealth?.stream_status}
@@ -1268,7 +1340,7 @@ export function StreamRuntimeDetailPage() {
           <StreamInformationPanel
             streamName={streamDisplayName}
             streamGroup={connectorProductGroup ?? connectorDisplayName}
-            status={displayStatus}
+            status={diagnosticDisplayStatus}
             createdAt={streamEntity?.created_at ? streamEntity.created_at.slice(0, 19).replace('T', ' ') : null}
             lastRun={lastRunDisplay}
             nextRun={nextRunDisplay}
