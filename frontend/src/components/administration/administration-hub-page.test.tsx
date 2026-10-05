@@ -28,6 +28,7 @@ describe('AdministrationHubPage modernization', () => {
     expect(screen.getByTestId('administration-hub-page')).toBeInTheDocument()
     expect(screen.getByTestId('admin-hub-purpose')).toHaveTextContent(/What needs configuring/i)
     expect(screen.getByTestId('admin-hub-access-context')).toBeInTheDocument()
+    expect(screen.getByTestId('foundation-admin-task-catalog')).toBeInTheDocument()
     expect(screen.getByTestId('admin-hub-task-groups')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Access & security' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Platform & network' })).toBeInTheDocument()
