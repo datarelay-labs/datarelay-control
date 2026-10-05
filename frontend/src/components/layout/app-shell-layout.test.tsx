@@ -57,6 +57,31 @@ describe('AppShellLayout responsive accessibility', () => {
   afterEach(() => {
     cleanup()
     clearTestSession()
+    localStorage.removeItem('gdc.colorScheme')
+  })
+
+  it('keeps the Foundation theme attribute aligned with the existing Control theme toggle', async () => {
+    localStorage.setItem('gdc.colorScheme', 'dark')
+    const user = userEvent.setup()
+    renderShell()
+
+    const documentRoot = document.documentElement
+    const shell = document.querySelector('div[data-dr-theme]')
+    const portalProbe = document.createElement('div')
+    document.body.appendChild(portalProbe)
+
+    expect(documentRoot).toHaveAttribute('data-dr-theme', 'dark')
+    expect(portalProbe.closest('[data-dr-theme]')).toBe(documentRoot)
+    expect(shell).toHaveAttribute('data-dr-theme', 'dark')
+    expect(shell).toHaveClass('dark')
+
+    await user.click(screen.getByRole('button', { name: 'Toggle color theme' }))
+
+    expect(documentRoot).toHaveAttribute('data-dr-theme', 'light')
+    expect(portalProbe.closest('[data-dr-theme]')).toBe(documentRoot)
+    expect(shell).toHaveAttribute('data-dr-theme', 'light')
+    expect(shell).not.toHaveClass('dark')
+    portalProbe.remove()
   })
 
   it('exposes a skip link that targets the main landmark', () => {

@@ -1,0 +1,13 @@
+{
+  "contract_version": 1,
+  "product": {
+    "id": "control",
+    "name": "Data Relay Control",
+    "short_name": "Control",
+    "version": "0.1.0",
+    "home_route": "/monitoring",
+    "subtitle": "Data Delivery + Data Control"
+  },
+  "navigation": [],
+  "capabilities": []
+}

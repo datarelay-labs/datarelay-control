@@ -1,0 +1,11 @@
+{
+  "name": "datarelay-control-foundation-compatibility",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "foundation:static": "npm --prefix frontend ci --ignore-scripts --no-audit --no-fund && npm --prefix frontend run build",
+    "foundation:conformance": "node scripts/foundation-compatibility-conformance.mjs",
+    "foundation:regression": "node --test scripts/foundation-semantic-token-contract.test.mjs && npm --prefix frontend run test -- --run src/foundation-semantic-tokens.test.ts src/components/layout/app-shell-layout.test.tsx src/components/layout/sidebar.test.tsx src/components/layout/top-header.test.tsx"
+  }
+}
