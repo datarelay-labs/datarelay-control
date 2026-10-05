@@ -1,7 +1,7 @@
 engineering_system:
   version: 1.7.0
   mode: adopted
-  baseline: 72abaec3ffa4f2e7519ee8067f4b8795acd506ad
+  baseline: b942bffe71248457e542c34e4e7beb386f82704f
   ci_mode: native
   native_ci_workflows:
   - .github/workflows/backend-tests.yml
@@ -10,7 +10,7 @@ engineering_system:
   - .github/workflows/frontend-focused.yml
   - .github/workflows/e2e-smoke.yml
   merge_gate_status: advisory
-  policy_epoch: 14
+  policy_epoch: 15
 project:
   name: data-relay-control
   type: enterprise-data-control-gateway
