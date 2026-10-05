@@ -15,6 +15,15 @@ describe('PlatformLoginPage', () => {
     expect(logo).toHaveClass('h-12', 'w-auto')
   })
 
+  it('preserves the password visibility control during Foundation auth presentation migration', async () => {
+    render(<PlatformLoginPage onAuthenticated={vi.fn()} />)
+    const password = screen.getByLabelText('Password')
+    expect(password).toHaveAttribute('type', 'password')
+    await userEvent.click(screen.getByRole('button', { name: 'Show password' }))
+    expect(password).toHaveAttribute('type', 'text')
+    expect(screen.getByRole('button', { name: 'Hide password' })).toBeInTheDocument()
+  })
+
   it('stores must_change_password and advances to the password-change gate after bootstrap login', async () => {
     const onAuthenticated = vi.fn()
     vi.stubGlobal(

@@ -8,7 +8,8 @@ import {
   Shield,
   Users,
 } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
+import { AdminTaskCatalog, type AdminTask } from '@datarelay-labs/system-admin-ui'
 import { NAV_PATH, SETTINGS_SECTION_PATH } from '../../config/nav-paths'
 import { isAdminUiOperator, isAdminUiReadOnly, readAdminUiRole } from '../../lib/gdc-ui-tokens'
 import { cn } from '../../lib/utils'
@@ -127,6 +128,21 @@ const TASK_GROUPS: readonly HubTaskGroup[] = [
   },
 ] as const
 
+const FOUNDATION_ADMIN_TASKS: readonly AdminTask[] = TASK_GROUPS.flatMap((group) =>
+  group.destinations.map((destination) => ({
+    id: destination.testId,
+    label: destination.title,
+    description: destination.description,
+    group: group.title,
+    availability: 'supported' as const,
+    notes: destination.path,
+  })),
+)
+
+const FOUNDATION_ADMIN_PATH = new Map(
+  TASK_GROUPS.flatMap((group) => group.destinations.map((destination) => [destination.testId, destination.path] as const)),
+)
+
 function roleLabel(role: string | null): string {
   if (role === 'ADMINISTRATOR') return 'Administrator'
   if (role === 'OPERATOR') return 'Operator'
@@ -187,6 +203,8 @@ function AccessContextBanner() {
 }
 
 export function AdministrationHubPage() {
+  const navigate = useNavigate()
+
   return (
     <div className="flex w-full min-w-0 flex-col gap-6" data-testid="administration-hub-page">
       <header className="space-y-3 border-b border-slate-200/80 pb-5 dark:border-gdc-divider">
@@ -206,6 +224,16 @@ export function AdministrationHubPage() {
       </header>
 
       <AccessContextBanner />
+
+      <section aria-label="Foundation administration task catalog" data-testid="foundation-admin-task-catalog">
+        <AdminTaskCatalog
+          tasks={FOUNDATION_ADMIN_TASKS}
+          onOpen={(task) => {
+            const path = FOUNDATION_ADMIN_PATH.get(task.id)
+            if (path) navigate(path)
+          }}
+        />
+      </section>
 
       <div className="flex flex-col gap-8" data-testid="admin-hub-task-groups">
         {TASK_GROUPS.map((group) => (

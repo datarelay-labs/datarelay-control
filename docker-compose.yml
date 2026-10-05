@@ -49,3 +49,7 @@ networks:
     name: gdc-platform_default
   gdc-dev-validation:
     external: true
+
+secrets:
+  npmrc:
+    file: ${GDC_NPMRC_SECRET_FILE:-${HOME}/.npmrc}
