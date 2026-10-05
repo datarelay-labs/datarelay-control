@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
@@ -52,6 +51,7 @@ from app.replay.models import (
     REPLAY_STATUS_PENDING,
     REPLAY_STATUS_REPLAYED,
     StreamReplayEvent,
+    replay_quarantine_event_id,
 )
 
 _DEFAULT_LIMIT = 100
@@ -170,36 +170,36 @@ def _load_quarantine_for_replays(
     db: Session,
     rows: list[StreamReplayEvent],
 ) -> dict[int, StreamQuarantineEvent | None]:
-    """Batch-resolve latest quarantine row at or before each replay's created_at."""
+    """Resolve only explicitly persisted quarantine provenance.
+
+    Replay rows without an explicit quarantine origin are delivery-failure
+    recovery events, even when the same Stream has older quarantine history.
+    """
 
     if not rows:
         return {}
 
-    stream_ids = {int(row.stream_id) for row in rows}
-    quarantine_rows = list(
-        db.execute(
-            select(StreamQuarantineEvent)
-            .where(StreamQuarantineEvent.stream_id.in_(stream_ids))
-            .order_by(
-                StreamQuarantineEvent.stream_id,
-                StreamQuarantineEvent.created_at.desc(),
-                StreamQuarantineEvent.id.desc(),
-            )
-        ).scalars()
-    )
-
-    by_stream: dict[int, list[StreamQuarantineEvent]] = defaultdict(list)
-    for quarantine in quarantine_rows:
-        by_stream[int(quarantine.stream_id)].append(quarantine)
+    quarantine_ids = {
+        quarantine_id
+        for row in rows
+        if (quarantine_id := replay_quarantine_event_id(row)) is not None
+    }
+    quarantine_by_id: dict[int, StreamQuarantineEvent] = {}
+    if quarantine_ids:
+        quarantine_by_id = {
+            int(row.id): row
+            for row in db.execute(
+                select(StreamQuarantineEvent).where(StreamQuarantineEvent.id.in_(quarantine_ids))
+            ).scalars()
+        }
 
     out: dict[int, StreamQuarantineEvent | None] = {}
     for row in rows:
-        matched: StreamQuarantineEvent | None = None
-        for candidate in by_stream.get(int(row.stream_id), []):
-            if candidate.created_at <= row.created_at:
-                matched = candidate
-                break
-        out[int(row.id)] = matched
+        quarantine_id = replay_quarantine_event_id(row)
+        quarantine = quarantine_by_id.get(int(quarantine_id)) if quarantine_id is not None else None
+        if quarantine is not None and int(quarantine.stream_id) != int(row.stream_id):
+            quarantine = None
+        out[int(row.id)] = quarantine
     return out
 
 

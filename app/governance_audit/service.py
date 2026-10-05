@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import Integer, cast, select
 from sqlalchemy.orm import Session
 
 from app.governance_audit.models import (
@@ -74,9 +74,15 @@ from app.replay.metrics import (
 )
 from app.replay.models import (
     DELIVERY_ATTEMPT_CONTEXT_KEY,
+    REPLAY_CONTEXT_ORIGIN_KEY,
+    REPLAY_CONTEXT_ORIGIN_QUARANTINE,
+    REPLAY_CONTEXT_QUARANTINE_EVENT_ID_KEY,
     REPLAY_STATUS_FAILED,
+    REPLAY_STATUS_PENDING,
     REPLAY_STATUS_REPLAYED,
+    REPLAY_STATUS_REPLAYING,
     StreamReplayEvent,
+    replay_quarantine_event_id,
 )
 
 _DEFAULT_LIMIT = 100
@@ -211,15 +217,13 @@ def _policy_context_for_quarantine(
 
 
 def _find_quarantine_for_replay(db: Session, replay_row: StreamReplayEvent) -> StreamQuarantineEvent | None:
-    return db.execute(
-        select(StreamQuarantineEvent)
-        .where(
-            StreamQuarantineEvent.stream_id == int(replay_row.stream_id),
-            StreamQuarantineEvent.created_at <= replay_row.created_at,
-        )
-        .order_by(StreamQuarantineEvent.created_at.desc(), StreamQuarantineEvent.id.desc())
-        .limit(1)
-    ).scalar_one_or_none()
+    quarantine_id = replay_quarantine_event_id(replay_row)
+    if quarantine_id is None:
+        return None
+    row = db.get(StreamQuarantineEvent, int(quarantine_id))
+    if row is None or int(row.stream_id) != int(replay_row.stream_id):
+        return None
+    return row
 
 
 def _events_from_quarantine_row(
@@ -533,6 +537,7 @@ def _events_from_delivery_logs(
     stream_names: dict[int, str],
     stream_policies: dict[int, list[GovernancePolicy]],
     known_keys: set[tuple[str, datetime]],
+    replay_event_id: int | None = None,
 ) -> list[_InternalAuditEvent]:
     stage_map = {
         QUARANTINE_EVENT_CREATED_STAGE: AUDIT_EVENT_QUARANTINE_CREATED,
@@ -542,18 +547,20 @@ def _events_from_delivery_logs(
         REPLAY_EVENT_REPLAYED_STAGE: AUDIT_EVENT_REPLAY_COMPLETED,
         REPLAY_EVENT_REPLAY_FAILED_STAGE: AUDIT_EVENT_REPLAY_FAILED,
     }
+    stmt = select(DeliveryLog).where(
+        DeliveryLog.created_at >= since,
+        DeliveryLog.created_at < until,
+        DeliveryLog.stage.in_(tuple(stage_map.keys())),
+    )
+    if replay_event_id is not None:
+        stmt = stmt.where(
+            cast(DeliveryLog.payload_sample.op("->>")("replay_event_id"), Integer)
+            == int(replay_event_id)
+        )
     rows = list(
         db.execute(
-            select(DeliveryLog)
-            .where(
-                DeliveryLog.created_at >= since,
-                DeliveryLog.created_at < until,
-                DeliveryLog.stage.in_(tuple(stage_map.keys())),
-            )
-            .order_by(DeliveryLog.created_at.desc())
-            .limit(_MAX_LIMIT * 2)
-        )
-        .scalars()
+            stmt.order_by(DeliveryLog.created_at.desc()).limit(_MAX_LIMIT * 2)
+        ).scalars()
     )
 
     events: list[_InternalAuditEvent] = []
@@ -891,6 +898,28 @@ def list_governance_dashboard_recent_activity(
     return [_internal_to_entry(event) for event in filtered]
 
 
+def _current_status_for_replay_row(row: StreamReplayEvent) -> str:
+    status = str(row.status or "")
+    if status == REPLAY_STATUS_REPLAYED:
+        return AUDIT_STATUS_DELIVERED
+    if status == REPLAY_STATUS_FAILED:
+        return AUDIT_STATUS_FAILED
+    if status == REPLAY_STATUS_REPLAYING:
+        return AUDIT_STATUS_IN_PROGRESS
+    if status == REPLAY_STATUS_PENDING:
+        return AUDIT_STATUS_OPEN
+    return AUDIT_STATUS_OPEN
+
+
+def _outcome_for_replay_row(row: StreamReplayEvent) -> str | None:
+    status = str(row.status or "")
+    if status == REPLAY_STATUS_REPLAYED:
+        return AUDIT_OUTCOME_DELIVERED
+    if status == REPLAY_STATUS_FAILED:
+        return AUDIT_OUTCOME_FAILED
+    return None
+
+
 def _derive_current_status(events: list[_InternalAuditEvent]) -> str:
     priority = [
         AUDIT_STATUS_FAILED,
@@ -969,6 +998,10 @@ def get_governance_audit_detail(
                     StreamReplayEvent.stream_id == int(q_row.stream_id),
                     StreamReplayEvent.created_at >= q_row.created_at,
                     StreamReplayEvent.created_at < until,
+                    StreamReplayEvent.delivery_context_json.op("->>")(REPLAY_CONTEXT_ORIGIN_KEY)
+                    == REPLAY_CONTEXT_ORIGIN_QUARANTINE,
+                    StreamReplayEvent.delivery_context_json.op("->>")(REPLAY_CONTEXT_QUARANTINE_EVENT_ID_KEY)
+                    == str(int(q_row.id)),
                 )
                 .order_by(StreamReplayEvent.created_at.asc())
             )
@@ -1087,6 +1120,7 @@ def get_governance_audit_detail(
                 stream_names=stream_names,
                 stream_policies=stream_policies,
                 known_keys=set(),
+                replay_event_id=int(replay_row.id),
             )
             if event.replay_event_id == int(replay_row.id)
             and event.correlation_id == correlation_id
@@ -1102,10 +1136,8 @@ def get_governance_audit_detail(
             policy_name=policy_name,
             stream_id=stream_id,
             stream_name=stream_name,
-            current_status=(
-                _derive_current_status(events) if events else AUDIT_STATUS_OPEN
-            ),  # type: ignore[arg-type]
-            outcome=_derive_outcome(events) if events else None,  # type: ignore[arg-type]
+            current_status=_current_status_for_replay_row(replay_row),  # type: ignore[arg-type]
+            outcome=_outcome_for_replay_row(replay_row),  # type: ignore[arg-type]
             timeline=_build_timeline(events),
             related_violation=None,
             related_quarantine=None,

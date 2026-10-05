@@ -22,7 +22,15 @@ from app.quarantine.models import (
     QUARANTINE_STATUS_QUARANTINED,
     StreamQuarantineEvent,
 )
-from app.replay.models import REPLAY_STATUS_FAILED, REPLAY_STATUS_PENDING, REPLAY_STATUS_REPLAYED, StreamReplayEvent
+from app.replay.models import (
+    REPLAY_CONTEXT_ORIGIN_KEY,
+    REPLAY_CONTEXT_ORIGIN_QUARANTINE,
+    REPLAY_CONTEXT_QUARANTINE_EVENT_ID_KEY,
+    REPLAY_STATUS_FAILED,
+    REPLAY_STATUS_PENDING,
+    REPLAY_STATUS_REPLAYED,
+    StreamReplayEvent,
+)
 from tests.test_stream_runner_e2e import _seed_stream_runtime
 
 
@@ -106,8 +114,17 @@ def _create_replay_event(
     destination_id: int,
     status: str = REPLAY_STATUS_PENDING,
     route_id: int | None = None,
+    quarantine_event_id: int | None = None,
 ) -> StreamReplayEvent:
     now = datetime.now(timezone.utc)
+    delivery_context: dict[str, object] = {"destination_type": "WEBHOOK"}
+    if quarantine_event_id is not None:
+        delivery_context.update(
+            {
+                REPLAY_CONTEXT_ORIGIN_KEY: REPLAY_CONTEXT_ORIGIN_QUARANTINE,
+                REPLAY_CONTEXT_QUARANTINE_EVENT_ID_KEY: int(quarantine_event_id),
+            }
+        )
     row = StreamReplayEvent(
         stream_id=int(stream_id),
         destination_id=int(destination_id),
@@ -115,7 +132,7 @@ def _create_replay_event(
         delivery_kind="base_route",
         status=status,
         protected_payload_json={"events": [{"id": 1, "message": "test"}]},
-        delivery_context_json={"destination_type": "WEBHOOK"},
+        delivery_context_json=delivery_context,
         error_type="delivery_error" if status == REPLAY_STATUS_FAILED else None,
         error_message="destination unreachable" if status == REPLAY_STATUS_FAILED else None,
         retry_count=1 if status == REPLAY_STATUS_FAILED else 0,
@@ -200,7 +217,12 @@ def test_replay_detail(governance_read_client: TestClient, db_session: Session) 
     destination_id = int(seeded["destination_ids"][0])
     policy = _create_policy(db_session, name="Customer PII Policy", stream_id=stream_id)
     q_row = _create_quarantine(db_session, stream_id=stream_id)
-    replay_row = _create_replay_event(db_session, stream_id=stream_id, destination_id=destination_id)
+    replay_row = _create_replay_event(
+        db_session,
+        stream_id=stream_id,
+        destination_id=destination_id,
+        quarantine_event_id=int(q_row.id),
+    )
 
     resp = governance_read_client.get(f"/api/v1/governance/replay/{replay_row.id}")
     assert resp.status_code == 200
@@ -211,6 +233,33 @@ def test_replay_detail(governance_read_client: TestClient, db_session: Session) 
     assert body["source"]["violation"]["violation_id"] == f"q-{q_row.id}"
     assert body["can_execute"] is True
     assert len(body["timeline"]) >= 1
+
+
+
+
+def test_delivery_failure_replay_does_not_inherit_older_quarantine(
+    governance_read_client: TestClient,
+    db_session: Session,
+) -> None:
+    seeded = _seed_stream_runtime(db_session)
+    stream_id = int(seeded["stream_id"])
+    destination_id = int(seeded["destination_ids"][0])
+    _create_policy(db_session, name="Customer PII Policy", stream_id=stream_id)
+    q_row = _create_quarantine(db_session, stream_id=stream_id)
+    replay_row = _create_replay_event(
+        db_session,
+        stream_id=stream_id,
+        destination_id=destination_id,
+    )
+
+    resp = governance_read_client.get(f"/api/v1/governance/replay/{replay_row.id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["correlation_id"] == f"r-{replay_row.id}"
+    assert body["source"]["origin"] == "Delivery failure recovery"
+    assert body["source"]["violation"] is None
+    assert body["source"]["quarantine"] is None
+    assert body["correlation_id"] != f"q-{q_row.id}"
 
 
 def test_execute_replay(governance_write_client: TestClient, db_session: Session) -> None:

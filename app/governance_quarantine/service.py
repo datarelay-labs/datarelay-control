@@ -55,7 +55,13 @@ from app.quarantine.models import (
     QUARANTINE_STATUS_RELEASED,
     StreamQuarantineEvent,
 )
-from app.replay.models import REPLAY_STATUS_PENDING, StreamReplayEvent
+from app.replay.models import (
+    REPLAY_CONTEXT_ORIGIN_KEY,
+    REPLAY_CONTEXT_ORIGIN_QUARANTINE,
+    REPLAY_CONTEXT_QUARANTINE_EVENT_ID_KEY,
+    REPLAY_STATUS_PENDING,
+    StreamReplayEvent,
+)
 from app.sensitive_detection.models import StreamSensitiveFinding
 from app.sensitive_detection.operator_workflow import is_api_visible
 
@@ -496,6 +502,13 @@ def get_governance_quarantine_detail(
 
 
 def _find_pending_replay_for_quarantine(db: Session, row: StreamQuarantineEvent) -> StreamReplayEvent | None:
+    """Find the pending replay the operator is explicitly associating to this quarantine.
+
+    Replay list/audit correlation never infers quarantine provenance from time alone.
+    This legacy-compatible selector is used only inside the explicit Quarantine
+    "Replay" action; the selected replay is stamped with durable provenance before
+    execution.
+    """
     return db.execute(
         select(StreamReplayEvent)
         .where(
@@ -654,6 +667,18 @@ def bulk_replay_quarantine_events(db: Session, ids: list[int]) -> GovernanceQuar
             continue
 
         try:
+            # The Quarantine Replay action is the authoritative association point.
+            # Persist explicit provenance so Replay/Audit surfaces never have to
+            # infer correlation from "same stream + earlier quarantine" timing.
+            replay_context = (
+                dict(replay_row.delivery_context_json)
+                if isinstance(replay_row.delivery_context_json, dict)
+                else {}
+            )
+            replay_context[REPLAY_CONTEXT_ORIGIN_KEY] = REPLAY_CONTEXT_ORIGIN_QUARANTINE
+            replay_context[REPLAY_CONTEXT_QUARANTINE_EVENT_ID_KEY] = int(row.id)
+            replay_row.delivery_context_json = replay_context
+            db.flush()
             result = replay_service.execute_replay_event(db, int(replay_row.id))
             outcome = str(result.get("outcome") or "unknown")
             if outcome == "replayed":

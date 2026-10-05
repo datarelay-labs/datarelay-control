@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db_read_bounded
 from app.destinations.adapters.registry import DestinationAdapterRegistry
 from app.destinations.models import Destination
+from app.logs.models import DeliveryLog
 from app.governance_policies.models import (
     POLICY_STATUS_ACTIVE,
     GovernancePolicy,
@@ -24,7 +25,14 @@ from app.quarantine.models import (
     QUARANTINE_STATUS_RELEASED,
     StreamQuarantineEvent,
 )
-from app.replay.models import REPLAY_STATUS_FAILED, REPLAY_STATUS_REPLAYED, StreamReplayEvent
+from app.replay.models import (
+    REPLAY_CONTEXT_ORIGIN_KEY,
+    REPLAY_CONTEXT_ORIGIN_QUARANTINE,
+    REPLAY_CONTEXT_QUARANTINE_EVENT_ID_KEY,
+    REPLAY_STATUS_FAILED,
+    REPLAY_STATUS_REPLAYED,
+    StreamReplayEvent,
+)
 from app.replay.service import checkpoint_unchanged, execute_replay_event
 from tests.test_replay_engine_m11 import _ReplayWebhookSender, _checkpoint_value, _insert_replay_row
 from tests.test_stream_runner_e2e import _seed_stream_runtime
@@ -307,6 +315,195 @@ def test_delivery_failure_replay_failed_lifecycle_without_quarantine(
     ]
 
 
+
+
+
+
+def test_delivery_failure_replay_stays_out_of_older_quarantine_audit(
+    governance_client: TestClient,
+    db_session: Session,
+) -> None:
+    seeded = _seed_stream_runtime(db_session)
+    stream_id = int(seeded["stream_id"])
+    _create_policy(db_session, name="Independent Replay Policy", stream_id=stream_id)
+    q_row = _create_quarantine(
+        db_session,
+        stream_id=stream_id,
+        status=QUARANTINE_STATUS_QUARANTINED,
+        created_at=datetime.now(timezone.utc) - timedelta(hours=1),
+    )
+    replay_row = _insert_replay_row(
+        db_session,
+        seeded=seeded,
+        events=[{"event_id": "independent-delivery-replay"}],
+    )
+    result = execute_replay_event(
+        db_session,
+        int(replay_row.id),
+        destination_registry=DestinationAdapterRegistry(webhook_sender=_ReplayWebhookSender()),
+    )
+    db_session.commit()
+    assert result["outcome"] == "replayed"
+
+    quarantine_detail = governance_client.get(
+        f"/api/v1/governance/audit/q-{q_row.id}?window=24h"
+    )
+    assert quarantine_detail.status_code == 200
+    quarantine_body = quarantine_detail.json()
+    assert quarantine_body["related_replay"] is None
+    assert not any(
+        step["event_type"].startswith("REPLAY_")
+        for step in quarantine_body["timeline"]
+    )
+
+    replay_detail = governance_client.get(
+        f"/api/v1/governance/audit/r-{replay_row.id}?window=24h"
+    )
+    assert replay_detail.status_code == 200
+    replay_body = replay_detail.json()
+    assert replay_body["correlation_id"] == f"r-{replay_row.id}"
+    assert replay_body["current_status"] == "DELIVERED"
+    assert replay_body["outcome"] == "DELIVERED"
+
+
+def test_delivery_failure_replay_retry_success_uses_latest_terminal_status(
+    governance_client: TestClient,
+    db_session: Session,
+) -> None:
+    seeded = _seed_stream_runtime(db_session)
+    stream_id = int(seeded["stream_id"])
+    _create_policy(db_session, name="Replay Retry Policy", stream_id=stream_id)
+    replay_row = _insert_replay_row(
+        db_session,
+        seeded=seeded,
+        events=[{"event_id": "audit-replay-retry"}],
+    )
+    destination = db_session.get(Destination, int(seeded["destination_ids"][0]))
+    assert destination is not None
+    url = str((destination.config_json or {}).get("url"))
+
+    failed = execute_replay_event(
+        db_session,
+        int(replay_row.id),
+        destination_registry=DestinationAdapterRegistry(
+            webhook_sender=_ReplayWebhookSender(fail_urls={url})
+        ),
+    )
+    db_session.commit()
+    assert failed["outcome"] == "failed"
+
+    replayed = execute_replay_event(
+        db_session,
+        int(replay_row.id),
+        destination_registry=DestinationAdapterRegistry(webhook_sender=_ReplayWebhookSender()),
+    )
+    db_session.commit()
+    assert replayed["outcome"] == "replayed"
+
+    correlation_id = f"r-{replay_row.id}"
+    detail = governance_client.get(f"/api/v1/governance/audit/{correlation_id}?window=24h")
+    assert detail.status_code == 200
+    body = detail.json()
+    assert body["current_status"] == "DELIVERED"
+    assert body["outcome"] == "DELIVERED"
+    timeline_types = [step["event_type"] for step in body["timeline"]]
+    assert "REPLAY_FAILED" in timeline_types
+    assert timeline_types[-1] == "REPLAY_COMPLETED"
+
+
+def test_replay_detail_filters_replay_logs_before_global_cap(
+    governance_client: TestClient,
+    db_session: Session,
+) -> None:
+    seeded = _seed_stream_runtime(db_session)
+    stream_id = int(seeded["stream_id"])
+    destination_id = int(seeded["destination_ids"][0])
+    _create_policy(db_session, name="Replay Cap Policy", stream_id=stream_id)
+    replay_row = _insert_replay_row(
+        db_session,
+        seeded=seeded,
+        events=[{"event_id": "audit-replay-cap"}],
+        status=REPLAY_STATUS_REPLAYED,
+    )
+    now = datetime.now(timezone.utc)
+
+    db_session.add_all(
+        [
+            DeliveryLog(
+                stream_id=stream_id,
+                destination_id=destination_id,
+                stage="replay_event_replay_started",
+                level="INFO",
+                status="OK",
+                message="target replay started",
+                payload_sample={
+                    "stream_id": stream_id,
+                    "destination_id": destination_id,
+                    "replay_event_id": int(replay_row.id),
+                    "status": "replaying",
+                    "retry_count": 1,
+                },
+                retry_count=1,
+                created_at=now - timedelta(minutes=2),
+            ),
+            DeliveryLog(
+                stream_id=stream_id,
+                destination_id=destination_id,
+                stage="replay_event_replayed",
+                level="INFO",
+                status="OK",
+                message="target replay completed",
+                payload_sample={
+                    "stream_id": stream_id,
+                    "destination_id": destination_id,
+                    "replay_event_id": int(replay_row.id),
+                    "status": "replayed",
+                    "retry_count": 1,
+                },
+                retry_count=1,
+                created_at=now - timedelta(minutes=2) + timedelta(seconds=1),
+            ),
+        ]
+    )
+    db_session.flush()
+    db_session.add_all(
+        [
+            DeliveryLog(
+                stream_id=stream_id,
+                destination_id=destination_id,
+                stage="replay_event_replayed",
+                level="INFO",
+                status="OK",
+                message=f"unrelated replay {idx}",
+                payload_sample={
+                    "stream_id": stream_id,
+                    "destination_id": destination_id,
+                    "replay_event_id": 10000 + idx,
+                    "status": "replayed",
+                    "retry_count": 1,
+                },
+                retry_count=1,
+                created_at=now - timedelta(minutes=1) + timedelta(microseconds=idx),
+            )
+            for idx in range(401)
+        ]
+    )
+    replay_row.last_replay_at = now - timedelta(minutes=2) + timedelta(seconds=1)
+    replay_row.updated_at = replay_row.last_replay_at
+    db_session.commit()
+
+    correlation_id = f"r-{replay_row.id}"
+    detail = governance_client.get(f"/api/v1/governance/audit/{correlation_id}?window=24h")
+    assert detail.status_code == 200
+    body = detail.json()
+    assert body["current_status"] == "DELIVERED"
+    assert body["outcome"] == "DELIVERED"
+    assert [step["event_type"] for step in body["timeline"]] == [
+        "REPLAY_STARTED",
+        "REPLAY_COMPLETED",
+    ]
+
+
 def test_audit_detail_full_timeline(governance_client: TestClient, db_session: Session) -> None:
     seeded = _seed_stream_runtime(db_session)
     stream_id = int(seeded["stream_id"])
@@ -336,7 +533,10 @@ def test_audit_detail_full_timeline(governance_client: TestClient, db_session: S
             delivery_kind="base_route",
             status=REPLAY_STATUS_REPLAYED,
             protected_payload_json={"events": []},
-            delivery_context_json={},
+            delivery_context_json={
+                REPLAY_CONTEXT_ORIGIN_KEY: REPLAY_CONTEXT_ORIGIN_QUARANTINE,
+                REPLAY_CONTEXT_QUARANTINE_EVENT_ID_KEY: int(q_row.id),
+            },
             event_count=2,
             created_at=now - timedelta(hours=2),
             updated_at=now,
@@ -409,7 +609,10 @@ def test_audit_detail_replay_failed(governance_client: TestClient, db_session: S
             delivery_kind="base_route",
             status=REPLAY_STATUS_FAILED,
             protected_payload_json={"events": []},
-            delivery_context_json={},
+            delivery_context_json={
+                REPLAY_CONTEXT_ORIGIN_KEY: REPLAY_CONTEXT_ORIGIN_QUARANTINE,
+                REPLAY_CONTEXT_QUARANTINE_EVENT_ID_KEY: int(q_row.id),
+            },
             event_count=1,
             created_at=now - timedelta(minutes=45),
             updated_at=now - timedelta(minutes=30),

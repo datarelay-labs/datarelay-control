@@ -16,9 +16,11 @@ SSO/SAML/OIDC, Enterprise IAM, Fan-out parallelization, multi-node, OpenTelemetr
 ## S4-12 Replay Queue N+1 Removal
 
 - `app/governance_replay/service.py`:
-  - `_load_quarantine_for_replays`: single SELECT for all stream_ids in list batch.
-  - In-memory match: latest quarantine with `created_at <= replay.created_at`.
-  - `list_governance_replay_events` passes preloaded map to `_row_to_entry`.
+  - `_load_quarantine_for_replays`: one bounded SELECT for the explicit quarantine IDs referenced by the replay batch.
+  - Replay/quarantine correlation is provenance-based, never inferred from "same Stream + earlier quarantine" timing.
+  - Delivery-failure replays remain independent even when older quarantine history exists on the Stream.
+  - The explicit Quarantine Replay action stamps the selected replay with `replay_origin=quarantine` and `quarantine_event_id` before execution.
+  - `list_governance_replay_events` passes the preloaded explicit map to `_row_to_entry`.
 
 ## S4-13 Replay Index Optimization
 
