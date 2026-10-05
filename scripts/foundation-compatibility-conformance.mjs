@@ -21,22 +21,25 @@ if (manifest.product.home_route !== "/monitoring") fail("manifest-home-route");
 if (!Array.isArray(manifest.navigation) || manifest.navigation.length !== 0) fail("initial-slice-navigation-must-remain-product-owned");
 if (!Array.isArray(manifest.capabilities) || manifest.capabilities.length !== 0) fail("initial-slice-capabilities-must-remain-product-owned");
 
-let resolved;
-try {
-  resolved = import.meta.resolve(FOUNDATION_TOKENS_ENTRY);
-} catch (error) {
-  fail(`umbrella-sdk-unavailable:${error instanceof Error ? error.message : String(error)}`);
-}
-const resolvedFile = fileURLToPath(resolved);
-const foundationPackageRoot = path.resolve(path.dirname(resolvedFile), "..");
-const installedManifest = JSON.parse(fs.readFileSync(path.join(foundationPackageRoot, "package.json"), "utf8"));
+const frontendRoot = path.join(root, "frontend");
+const foundationPackageRoot = path.join(frontendRoot, "node_modules", "@datarelay-labs", "foundation");
+const foundationManifestPath = path.join(foundationPackageRoot, "package.json");
+if (!fs.existsSync(foundationManifestPath)) fail("umbrella-sdk-unavailable:frontend-package-root");
+const installedManifest = JSON.parse(fs.readFileSync(foundationManifestPath, "utf8"));
 if (installedManifest.version !== expectedVersion) fail(`umbrella-version:${installedManifest.version}`);
+const tokenExport = installedManifest.exports?.["./tokens"]?.import;
+if (typeof tokenExport !== "string") fail("umbrella-token-export-target");
+const resolvedFile = path.join(foundationPackageRoot, tokenExport.replace(/^\.\//, ""));
 const umbrellaTokenSource = fs.readFileSync(resolvedFile, "utf8");
 if (!umbrellaTokenSource.includes(`export * from "${FOUNDATION_TOKENS_PACKAGE}"`)) fail("umbrella-token-export");
-const tokenPackageRoot = path.resolve(foundationPackageRoot, "..", "tokens");
+const tokenPackageRoot = path.join(frontendRoot, "node_modules", "@datarelay-labs", "tokens");
 const installedTokenManifest = JSON.parse(fs.readFileSync(path.join(tokenPackageRoot, "package.json"), "utf8"));
 if (installedTokenManifest.version !== expectedVersion) fail(`tokens-version:${installedTokenManifest.version}`);
-const generatedTokenSource = fs.readFileSync(path.join(tokenPackageRoot, "src/generated.ts"), "utf8");
+const tokenIndexTarget = installedTokenManifest.exports?.["."]?.import;
+if (typeof tokenIndexTarget !== "string") fail("tokens-index-export-target");
+const tokenIndexSource = fs.readFileSync(path.join(tokenPackageRoot, tokenIndexTarget.replace(/^\.\//, "")), "utf8");
+if (!tokenIndexSource.includes('from "./generated.js"')) fail("tokens-generated-link");
+const generatedTokenSource = fs.readFileSync(path.join(tokenPackageRoot, "generated.js"), "utf8");
 if (!generatedTokenSource.includes("export const dataRelayTokens")) fail("tokens-generated-export");
 
 const candidateCss = fs.readFileSync(path.join(foundationRoot, "packages/tokens/src/generated.css"), "utf8");

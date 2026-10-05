@@ -11,7 +11,8 @@ import {
 } from "./foundation-package-scope.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const expectedNpmrc = `${FOUNDATION_PACKAGE_SCOPE}:registry=${FOUNDATION_REGISTRY_URL}\n`;
+const expectedRootNpmrc = `${FOUNDATION_PACKAGE_SCOPE}:registry=${FOUNDATION_REGISTRY_URL}\n`;
+const expectedFrontendNpmrc = `${FOUNDATION_PACKAGE_SCOPE}:registry=${FOUNDATION_REGISTRY_URL}\n//npm.pkg.github.com/:_authToken=\${NODE_AUTH_TOKEN}\nalways-auth=true\n`;
 
 test("uses the repository-owned Foundation package namespace", () => {
   assert.equal(FOUNDATION_PACKAGE_SCOPE, "@datarelay-labs");
@@ -20,9 +21,10 @@ test("uses the repository-owned Foundation package namespace", () => {
 });
 
 test("maps Foundation scope to GitHub Packages without committed credentials", () => {
-  for (const file of [".npmrc", "frontend/.npmrc"]) {
-    const content = fs.readFileSync(path.join(root, file), "utf8");
-    assert.equal(content, expectedNpmrc);
-    assert.doesNotMatch(content, /(?:_authToken|password|token)\s*=/i);
-  }
+  const rootContent = fs.readFileSync(path.join(root, ".npmrc"), "utf8");
+  const frontendContent = fs.readFileSync(path.join(root, "frontend/.npmrc"), "utf8");
+  assert.equal(rootContent, expectedRootNpmrc);
+  assert.equal(frontendContent, expectedFrontendNpmrc);
+  assert.doesNotMatch(rootContent, /ghp_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+/);
+  assert.doesNotMatch(frontendContent, /ghp_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+/);
 });
