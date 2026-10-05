@@ -46,10 +46,15 @@ export function RuntimeFixtureModeBanner({ surface }: { surface: 'runtime' | 'ro
   }, [])
 
   useEffect(() => {
+    let cancelled = false
     void (async () => {
       await syncRuntimeFixtureModeFromSearchParams(searchParams)
+      if (cancelled) return
       await refreshState()
     })()
+    return () => {
+      cancelled = true
+    }
   }, [searchParams, refreshState])
 
   if (!policyGranted) return null

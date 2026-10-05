@@ -17,6 +17,10 @@
     "validate": "npm run test -- --run && npm run build && npm run lint"
   },
   "dependencies": {
+    "@datarelay-labs/auth-ui": "0.1.0-rc.2",
+    "@datarelay-labs/product-shell": "0.1.0-rc.2",
+    "@datarelay-labs/system-admin-ui": "0.1.0-rc.2",
+    "@datarelay-labs/ui": "0.1.0-rc.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.14.0",
