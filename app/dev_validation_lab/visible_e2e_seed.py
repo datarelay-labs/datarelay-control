@@ -203,8 +203,9 @@ def assert_safe_database_url(*, local_dev_mode: bool, allow_compose_catalog_host
     allowed = {"gdc", "gdc_e2e_test", "gdc_pytest"}
     if local_dev_mode:
         allowed = allowed | {"datarelay"}
+    is_local_dev_catalog = bool(local_dev_mode and re.fullmatch(r"gdc_dev_[a-z0-9_]+", db_name))
 
-    if db_name not in allowed:
+    if db_name not in allowed and not is_local_dev_catalog:
         raise SystemExit(
             f"DATABASE_URL database must be one of {sorted(allowed)} (got {db_name!r}). "
             "Use --local-dev-mode only for legacy disposable local catalogs."
@@ -223,6 +224,11 @@ def assert_safe_database_url(*, local_dev_mode: bool, allow_compose_catalog_host
     elif db_name == "gdc_e2e_test":
         if port != 55432:
             raise SystemExit(f"DATABASE_URL port must be 55432 for gdc_e2e_test (got {port!r}).")
+    elif is_local_dev_catalog:
+        if port not in (5432, 55432):
+            raise SystemExit(
+                f"Local development catalog {db_name!r} requires --local-dev-mode on port 5432 or 55432 (got {port!r})."
+            )
     elif db_name == "datarelay":
         if port != 55432 or not local_dev_mode:
             raise SystemExit("Legacy database name 'datarelay' requires --local-dev-mode on port 55432.")
@@ -980,7 +986,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument(
         "--local-dev-mode",
         action="store_true",
-        help="Allow DATABASE_URL database name 'gdc' on loopback (explicit local disposable catalog only).",
+        help="Allow explicitly local disposable catalogs, including gdc_dev_* and legacy datarelay, on loopback only.",
     )
     args = p.parse_args(argv)
 

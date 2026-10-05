@@ -28,6 +28,19 @@ def test_assert_safe_database_url_rejects_compose_postgres_without_flag(
         assert_safe_database_url(local_dev_mode=False, allow_compose_catalog_host=False)
 
 
+def test_assert_safe_database_url_allows_local_dev_catalog_with_explicit_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql://gdc:gdc@127.0.0.1:55432/gdc_dev_browser")
+    monkeypatch.setenv("APP_ENV", "development")
+    assert_safe_database_url(local_dev_mode=True)
+
+
+def test_assert_safe_database_url_rejects_local_dev_catalog_without_explicit_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql://gdc:gdc@127.0.0.1:55432/gdc_dev_browser")
+    monkeypatch.setenv("APP_ENV", "development")
+    with pytest.raises(SystemExit, match="database must be one of"):
+        assert_safe_database_url(local_dev_mode=False)
+
+
 def test_seed_visible_e2e_fixtures_idempotent(db_session, monkeypatch: pytest.MonkeyPatch) -> None:
     """Uses the pytest catalog; does not touch operator platform DB."""
 

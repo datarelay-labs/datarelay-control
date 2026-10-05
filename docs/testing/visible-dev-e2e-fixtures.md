@@ -76,11 +76,17 @@ Run (idempotent — safe to run twice):
 
 ### Local disposable catalog named `gdc`
 
-When you intentionally use a **local** PostgreSQL database named `gdc` on
-loopback outside the canonical lab ports, opt in explicitly:
+When you intentionally use a **local** PostgreSQL development catalog (`gdc`, or a disposable `gdc_dev_*` catalog created for browser/dev work) on loopback, opt in explicitly:
 
 ```bash
 DATABASE_URL=postgresql://gdc:gdc@127.0.0.1:5432/gdc \
+  ./scripts/dev-validation/seed-visible-e2e-fixtures.sh --local-dev-mode
+```
+
+For a disposable browser/dev catalog on the platform PostgreSQL port:
+
+```bash
+DATABASE_URL=postgresql://gdc:gdc@127.0.0.1:55432/gdc_dev_example \
   ./scripts/dev-validation/seed-visible-e2e-fixtures.sh --local-dev-mode
 ```
 
