@@ -11,6 +11,7 @@ from app.database import get_db
 from app.destinations.models import Destination
 from app.main import app
 from app.routes.models import Route
+from app.routes import router as routes_router
 from app.sources.models import Source
 from app.streams.models import Stream
 
@@ -277,3 +278,156 @@ def test_route_create_rejects_invalid_failure_policy(client: TestClient, db_sess
         },
     )
     assert res.status_code == 422
+
+
+def test_route_create_duplicate_returns_actionable_conflict(client: TestClient, db_session: Session) -> None:
+    stream, destination = _seed_stream_destination(db_session)
+    payload = {
+        "stream_id": stream.id,
+        "destination_id": destination.id,
+        "enabled": True,
+        "failure_policy": "LOG_AND_CONTINUE",
+        "status": "ENABLED",
+    }
+    first = client.post("/api/v1/routes/", json=payload)
+    assert first.status_code == 201
+
+    duplicate = client.post("/api/v1/routes/", json=payload)
+
+    assert duplicate.status_code == 409
+    detail = duplicate.json()["detail"]
+    assert detail["error_code"] == "ROUTE_DUPLICATE"
+    assert detail["stream_id"] == stream.id
+    assert detail["destination_id"] == destination.id
+    assert "already exists" in detail["message"]
+    assert db_session.query(Route).filter(
+        Route.stream_id == stream.id,
+        Route.destination_id == destination.id,
+    ).count() == 1
+
+
+def test_route_update_duplicate_destination_returns_actionable_conflict(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    stream, destination = _seed_stream_destination(db_session)
+    second_destination = Destination(
+        name="routes-crud-destination-2",
+        destination_type="WEBHOOK_POST",
+        config_json={"url": "https://receiver.example.com/routes-crud-2"},
+        rate_limit_json={},
+        enabled=True,
+    )
+    db_session.add(second_destination)
+    db_session.commit()
+    db_session.refresh(second_destination)
+
+    first = client.post(
+        "/api/v1/routes/",
+        json={
+            "stream_id": stream.id,
+            "destination_id": destination.id,
+            "enabled": True,
+            "failure_policy": "LOG_AND_CONTINUE",
+            "status": "ENABLED",
+        },
+    )
+    second = client.post(
+        "/api/v1/routes/",
+        json={
+            "stream_id": stream.id,
+            "destination_id": second_destination.id,
+            "enabled": True,
+            "failure_policy": "LOG_AND_CONTINUE",
+            "status": "ENABLED",
+        },
+    )
+    assert first.status_code == 201
+    assert second.status_code == 201
+    second_route_id = int(second.json()["id"])
+
+    conflict = _put_route(
+        client,
+        second_route_id,
+        {"destination_id": destination.id, "stream_id": stream.id},
+    )
+
+    assert conflict.status_code == 409
+    detail = conflict.json()["detail"]
+    assert detail["error_code"] == "ROUTE_DUPLICATE"
+    row = db_session.query(Route).filter(Route.id == second_route_id).one()
+    assert int(row.destination_id) == second_destination.id
+
+
+def test_route_update_duplicate_race_during_autoflush_returns_conflict(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stream, destination = _seed_stream_destination(db_session)
+    second_destination = Destination(
+        name="routes-crud-race-destination-2",
+        destination_type="WEBHOOK_POST",
+        config_json={"url": "https://receiver.example.com/routes-crud-race-2"},
+        rate_limit_json={},
+        enabled=True,
+    )
+    db_session.add(second_destination)
+    db_session.commit()
+    db_session.refresh(second_destination)
+
+    first = client.post(
+        "/api/v1/routes/",
+        json={
+            "stream_id": stream.id,
+            "destination_id": destination.id,
+            "enabled": True,
+            "failure_policy": "LOG_AND_CONTINUE",
+            "status": "ENABLED",
+        },
+    )
+    second = client.post(
+        "/api/v1/routes/",
+        json={
+            "stream_id": stream.id,
+            "destination_id": second_destination.id,
+            "enabled": True,
+            "failure_policy": "LOG_AND_CONTINUE",
+            "status": "ENABLED",
+        },
+    )
+    assert first.status_code == 201
+    assert second.status_code == 201
+    second_route_id = int(second.json()["id"])
+
+    real_duplicate_route = routes_router._duplicate_route
+    calls = 0
+
+    def race_duplicate_route(db: Session, stream_id: int, destination_id: int, *, exclude_route_id: int | None = None):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            # Simulate a competing writer landing after the precheck. The Route mutation
+            # will then hit the real unique constraint during the next autoflush.
+            return None
+        return real_duplicate_route(
+            db,
+            stream_id,
+            destination_id,
+            exclude_route_id=exclude_route_id,
+        )
+
+    monkeypatch.setattr(routes_router, "_duplicate_route", race_duplicate_route)
+
+    conflict = _put_route(
+        client,
+        second_route_id,
+        {"destination_id": destination.id, "stream_id": stream.id},
+    )
+
+    assert conflict.status_code == 409
+    detail = conflict.json()["detail"]
+    assert detail["error_code"] == "ROUTE_DUPLICATE"
+    assert calls >= 2
+    row = db_session.query(Route).filter(Route.id == second_route_id).one()
+    assert int(row.destination_id) == second_destination.id

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MappingUIConfigResponse } from '../../api/types/gdcApi'
 import { StreamEditDeliveryPanel } from './stream-edit-delivery-panel'
@@ -252,8 +252,97 @@ describe('StreamEditDeliveryPanel route removal', () => {
       expect(screen.getByText(/Failed to load destinations/i)).toBeInTheDocument()
     })
     expect(screen.queryByText(/Could not load stream delivery configuration/i)).not.toBeInTheDocument()
-    // Mapping still loads; destination picker must not pretend the catalog is empty-success.
     expect(screen.getByText(/Routes \(0\)/)).toBeInTheDocument()
+  })
+
+  it('reloads authoritative route projection after wizard autosave and never exposes redundant Add Route', async () => {
+    const routeOne = {
+      route_id: 22,
+      destination_id: 150,
+      destination_name: 'AS4 SYNC',
+      destination_type: 'SYSLOG_TCP',
+      route_enabled: true,
+      destination_enabled: true,
+      formatter_config: {},
+      route_rate_limit: {},
+      failure_policy: 'RETRY_AND_BACKOFF',
+    }
+    const routeTwo = {
+      route_id: 23,
+      destination_id: 151,
+      destination_name: 'JSON VALIDATION Webhook',
+      destination_type: 'WEBHOOK_POST',
+      route_enabled: true,
+      destination_enabled: true,
+      formatter_config: {},
+      route_rate_limit: {},
+      failure_policy: 'LOG_AND_CONTINUE',
+    }
+    fetchStreamMappingUiConfig
+      .mockResolvedValueOnce(mappingConfig([routeOne]))
+      .mockResolvedValueOnce(mappingConfig([routeOne, routeTwo]))
+
+    const { rerender } = render(<StreamEditDeliveryPanel streamId={10} refreshVersion={0} />)
+
+    await waitFor(() => expect(screen.getByText('Routes (1)')).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: 'Add Route' })).not.toBeInTheDocument()
+
+    rerender(<StreamEditDeliveryPanel streamId={10} refreshVersion={1} />)
+
+    await waitFor(() => expect(screen.getByText('Routes (2)')).toBeInTheDocument())
+    expect(fetchStreamMappingUiConfig).toHaveBeenLastCalledWith(10, { fresh: true })
+    expect(screen.getAllByText('JSON VALIDATION Webhook').length).toBeGreaterThan(0)
+    expect(screen.queryByRole('button', { name: 'Add Route' })).not.toBeInTheDocument()
+  })
+
+  it('ignores an older projection response that resolves after a refresh', async () => {
+    const routeOne = {
+      route_id: 22,
+      destination_id: 150,
+      destination_name: 'AS4 SYNC',
+      destination_type: 'SYSLOG_TCP',
+      route_enabled: true,
+      destination_enabled: true,
+      formatter_config: {},
+      route_rate_limit: {},
+      failure_policy: 'RETRY_AND_BACKOFF',
+    }
+    const routeTwo = {
+      route_id: 23,
+      destination_id: 151,
+      destination_name: 'JSON VALIDATION Webhook',
+      destination_type: 'WEBHOOK_POST',
+      route_enabled: true,
+      destination_enabled: true,
+      formatter_config: {},
+      route_rate_limit: {},
+      failure_policy: 'LOG_AND_CONTINUE',
+    }
+    const callsBefore = fetchStreamMappingUiConfig.mock.calls.length
+    let resolveOld: (value: MappingUIConfigResponse) => void = () => {}
+    fetchStreamMappingUiConfig
+      .mockImplementationOnce(
+        () =>
+          new Promise<MappingUIConfigResponse>((resolve) => {
+            resolveOld = resolve
+          }),
+      )
+      .mockResolvedValueOnce(mappingConfig([routeOne, routeTwo]))
+
+    const { rerender } = render(<StreamEditDeliveryPanel streamId={10} refreshVersion={0} />)
+    await waitFor(() => expect(fetchStreamMappingUiConfig.mock.calls.length).toBe(callsBefore + 1))
+
+    rerender(<StreamEditDeliveryPanel streamId={10} refreshVersion={1} />)
+    await waitFor(() => expect(fetchStreamMappingUiConfig.mock.calls.length).toBe(callsBefore + 2))
+    await waitFor(() => expect(screen.getByText('Routes (2)')).toBeInTheDocument())
+
+    await act(async () => {
+      resolveOld(mappingConfig([routeOne]))
+      await Promise.resolve()
+    })
+
+    expect(screen.getByText('Routes (2)')).toBeInTheDocument()
+    expect(screen.queryByText('Routes (1)')).not.toBeInTheDocument()
   })
 
 })
