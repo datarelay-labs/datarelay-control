@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fetchStreamById } from '../../api/gdcStreams'
+import { fetchStreamMappingUiConfig } from '../../api/gdcRuntime'
 import { clearSession, persistSession, type SessionRole } from '../../auth/session'
 import { StreamEditWizardPage } from './stream-edit-wizard-page'
 import { buildInitialState } from './wizard/wizard-state'
@@ -212,7 +213,7 @@ describe('StreamEditWizardPage workspace capability visibility', () => {
     expect(page.getByTestId('wizard-run-test-panel')).toBeInTheDocument()
 
     await user.click(page.getByTestId('wizard-stepper-destinations'))
-    expect(await page.findByText(/Route create, remove, toggle, failure policy, and prefix save are unavailable/i)).toBeInTheDocument()
+    expect(await page.findByText(/Route remove, toggle, failure policy, and prefix save are unavailable/i)).toBeInTheDocument()
     expect(page.queryByRole('button', { name: 'Add Route' })).not.toBeInTheDocument()
     expect(page.queryByRole('button', { name: /Remove route/i })).not.toBeInTheDocument()
 
@@ -260,6 +261,29 @@ describe('StreamEditWizardPage workspace capability visibility', () => {
     await user.click(page.getByTestId('wizard-stepper-deploy'))
     expect(await page.findByRole('button', { name: 'Start Stream' })).toBeInTheDocument()
     expect(page.getByRole('button', { name: 'Run Once' })).toBeInTheDocument()
+  })
+
+  it('refreshes the route projection after a partial save that may have persisted routes', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    persistWizardStreamEdits.mockResolvedValue({
+      ok: false,
+      errors: ['governance verification failed after route sync'],
+      routeIdsByDraftKey: {},
+    })
+    renderStreamEdit()
+
+    await screen.findByTestId('edit-stream-wizard')
+    const page = wizard()
+    await user.click(page.getByTestId('wizard-stepper-destinations'))
+    await page.findByText('Routes (1)')
+    const callsBefore = vi.mocked(fetchStreamMappingUiConfig).mock.calls.length
+
+    await user.click(page.getByTestId('wizard-save-now'))
+    expect(await page.findByText(/governance verification failed after route sync/i)).toBeInTheDocument()
+    await waitFor(() =>
+      expect(vi.mocked(fetchStreamMappingUiConfig).mock.calls.length).toBeGreaterThan(callsBefore),
+    )
   })
 
   it('keeps stream edit mutations available for an administrator', async () => {

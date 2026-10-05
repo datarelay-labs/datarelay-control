@@ -1,4 +1,4 @@
-import { Loader2, Plus, Save, Trash2 } from 'lucide-react'
+import { Loader2, Save, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { fetchDestinationsList, type DestinationRead } from '../../api/gdcDestinations'
 import {
@@ -7,7 +7,7 @@ import {
   saveRuntimeRouteFailurePolicy,
 } from '../../api/gdcRuntime'
 import type { MappingUIConfigResponse } from '../../api/types/gdcApi'
-import { createRoute, deleteRoute, updateRouteWithFreshToken } from '../../api/gdcRoutes'
+import { deleteRoute, updateRouteWithFreshToken } from '../../api/gdcRoutes'
 import { ROUTE_DELETE_REVERSIBILITY, routeDeleteImpactBullets } from './destructive-lifecycle-copy'
 import { cn } from '../../lib/utils'
 import { DEFAULT_MESSAGE_PREFIX_TEMPLATE, defaultMessagePrefixEnabled } from '../../utils/messagePrefixDefaults'
@@ -80,20 +80,21 @@ function RoutePrefixPreviewBlock({
 
 type Props = {
   streamId: number
-  /** When true, route create/update/delete/toggle/prefix/failure-policy actions stay unavailable. */
+  /** When true, route update/delete/toggle/prefix/failure-policy actions stay unavailable. */
   readOnly?: boolean
+  /** Bump after Wizard autosave materializes/removes routes so this projection reloads from server truth. */
+  refreshVersion?: number
   onSaved?: () => void
 }
 
-export function StreamEditDeliveryPanel({ streamId, readOnly = false, onSaved }: Props) {
+export function StreamEditDeliveryPanel({ streamId, readOnly = false, refreshVersion = 0, onSaved }: Props) {
   const [busy, setBusy] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [destinations, setDestinations] = useState<DestinationRead[]>([])
   const [mappingCfg, setMappingCfg] = useState<MappingUIConfigResponse | null>(null)
   const [routeBusyId, setRouteBusyId] = useState<number | null>(null)
-  const [newRouteDestinationId, setNewRouteDestinationId] = useState('')
-  const [newRouteFailurePolicy, setNewRouteFailurePolicy] = useState<(typeof FAILURE_POLICIES)[number]>('LOG_AND_CONTINUE')
+  const loadGenerationRef = useRef(0)
   const [prefixDraft, setPrefixDraft] = useState<Record<number, MessagePrefixDraft>>({})
   const [prefixBaseline, setPrefixBaseline] = useState<Record<number, MessagePrefixDraft>>({})
   const prefixDraftRef = useRef(prefixDraft)
@@ -107,6 +108,8 @@ export function StreamEditDeliveryPanel({ streamId, readOnly = false, onSaved }:
   } | null>(null)
 
   const load = useCallback(async () => {
+    const generation = ++loadGenerationRef.current
+    const isCurrent = () => generation === loadGenerationRef.current
     setLoadError(null)
     setBusy(true)
     try {
@@ -114,6 +117,7 @@ export function StreamEditDeliveryPanel({ streamId, readOnly = false, onSaved }:
         fetchStreamMappingUiConfig(streamId, { fresh: true }),
         fetchDestinationsList(),
       ])
+      if (!isCurrent()) return
       if (!cfg) {
         setLoadError('Could not load stream delivery configuration.')
         setMappingCfg(null)
@@ -126,18 +130,21 @@ export function StreamEditDeliveryPanel({ streamId, readOnly = false, onSaved }:
         return
       }
       setDestinations(dests)
-      setNewRouteDestinationId((prev) => prev || (dests[0]?.id != null ? String(dests[0].id) : ''))
     } catch (e) {
+      if (!isCurrent()) return
       setLoadError(formatDeliveryPanelApiError(e, 'Load delivery configuration'))
       setMappingCfg(null)
     } finally {
-      setBusy(false)
+      if (isCurrent()) setBusy(false)
     }
   }, [streamId])
 
   useEffect(() => {
     void load()
-  }, [load])
+    return () => {
+      loadGenerationRef.current += 1
+    }
+  }, [load, refreshVersion])
 
   useEffect(() => {
     const rows = mappingCfg?.routes
@@ -183,36 +190,6 @@ export function StreamEditDeliveryPanel({ streamId, readOnly = false, onSaved }:
       return next
     })
   }, [])
-  async function onAddRoute() {
-    if (readOnly) return
-    const destinationId = Number(newRouteDestinationId)
-    if (!Number.isFinite(destinationId)) return
-    setRouteBusyId(-1)
-    setNotice(null)
-    try {
-      const destRow = destinations.find((d) => d.id === destinationId)
-      await createRoute({
-        name: `${mappingCfg?.stream_name ?? `Stream ${streamId}`} delivery`,
-        stream_id: streamId,
-        destination_id: destinationId,
-        enabled: true,
-        status: 'ENABLED',
-        failure_policy: newRouteFailurePolicy,
-        formatter_config_json: {
-          message_prefix_enabled: defaultMessagePrefixEnabled(destRow?.destination_type ?? ''),
-          message_prefix_template: DEFAULT_MESSAGE_PREFIX_TEMPLATE,
-        },
-      })
-      setNotice('Route added to this stream.')
-      await load()
-      onSaved?.()
-    } catch (e) {
-      setLoadError(formatDeliveryPanelApiError(e, 'Add route'))
-    } finally {
-      setRouteBusyId(null)
-    }
-  }
-
   async function onDestinationChange(routeId: number, destinationId: number) {
     if (readOnly) return
     setRouteBusyId(routeId)
@@ -345,8 +322,8 @@ export function StreamEditDeliveryPanel({ streamId, readOnly = false, onSaved }:
           <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Delivery</h3>
           <p className="mt-1 text-[12px] text-slate-600 dark:text-gdc-muted">
             {readOnly
-              ? 'Read-only session. Route create, remove, toggle, failure policy, and prefix save are unavailable. Prefix preview remains available.'
-              : 'Configure routes and destinations for this stream. Route changes are saved through the API immediately.'}
+              ? 'Read-only session. Route remove, toggle, failure policy, and prefix save are unavailable. Prefix preview remains available.'
+              : 'Route projection is loaded from server truth. Add delivery paths in the Destinations workspace above; route changes are saved through the API immediately.'}
           </p>
         </div>
         <div className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-500/[0.08] px-2.5 py-1 text-[11px] font-semibold text-emerald-800 dark:border-emerald-500/30 dark:text-emerald-200">
@@ -357,50 +334,6 @@ export function StreamEditDeliveryPanel({ streamId, readOnly = false, onSaved }:
       {notice ? <p className="mt-2 text-[12px] font-medium text-emerald-700 dark:text-emerald-300">{notice}</p> : null}
       {loadError ? <p className="mt-2 text-[12px] font-medium text-red-700 dark:text-red-300">{loadError}</p> : null}
 
-      {readOnly ? null : (
-      <div className="mt-4 rounded-lg border border-slate-200/80 bg-slate-50/60 p-3 dark:border-gdc-border dark:bg-gdc-section">
-        <div className="grid gap-2 md:grid-cols-[1fr_220px_auto]">
-          <select
-            value={newRouteDestinationId}
-            onChange={(e) => setNewRouteDestinationId(e.target.value)}
-            disabled={routeBusyId === -1 || destinations.length === 0}
-            className="h-9 rounded-md border border-slate-200/90 bg-white px-2 text-[12px] text-slate-900 disabled:opacity-60 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
-          >
-            {destinations.length === 0 ? (
-              <option value="">No destinations available</option>
-            ) : (
-              destinations.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name} · {d.destination_type}
-                </option>
-              ))
-            )}
-          </select>
-          <select
-            value={newRouteFailurePolicy}
-            onChange={(e) => setNewRouteFailurePolicy(e.target.value as (typeof FAILURE_POLICIES)[number])}
-            disabled={routeBusyId === -1 || destinations.length === 0}
-            className="h-9 rounded-md border border-slate-200/90 bg-white px-2 text-[12px] text-slate-900 disabled:opacity-60 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
-          >
-            {FAILURE_POLICIES.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={() => void onAddRoute()}
-            disabled={routeBusyId === -1 || destinations.length === 0 || !newRouteDestinationId}
-            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white shadow-sm hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {routeBusyId === -1 ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Plus className="h-3.5 w-3.5" aria-hidden />}
-            Add Route
-          </button>
-        </div>
-      </div>
-      )}
-
       {busy && routes.length === 0 ? (
         <p className="mt-4 inline-flex items-center gap-2 text-[12px] text-slate-600 dark:text-gdc-muted">
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -410,7 +343,7 @@ export function StreamEditDeliveryPanel({ streamId, readOnly = false, onSaved }:
         <p className="mt-4 text-[12px] text-slate-600 dark:text-gdc-muted">
           {readOnly
             ? 'No routes are linked to this stream.'
-            : 'No routes are linked to this stream yet. Select an existing destination above to attach delivery without leaving this page.'}
+            : 'No routes are linked to this stream yet. Add a delivery path in the Destinations workspace above.'}
         </p>
       ) : (
         <div className="mt-4 overflow-x-auto">

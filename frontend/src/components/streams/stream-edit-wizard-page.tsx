@@ -165,6 +165,7 @@ export function StreamEditWizardPage() {
   const [streamDeleteConfirm, setStreamDeleteConfirm] = useState('')
   const [streamDeleteBusy, setStreamDeleteBusy] = useState(false)
   const [streamDeleteError, setStreamDeleteError] = useState<string | null>(null)
+  const [deliveryProjectionRevision, setDeliveryProjectionRevision] = useState(0)
   const confirmedSavedSnapshotRef = useRef<string>('')
   const confirmedStateRef = useRef<WizardState | null>(null)
   const failedAttemptSnapshotRef = useRef<string | null>(null)
@@ -564,6 +565,9 @@ export function StreamEditWizardPage() {
       const result = await persistWizardStreamEdits(backendStreamId, stateToSave, {
         confirmedState: confirmedStateRef.current,
       })
+      // Route synchronization can persist before a later mapping/governance concern makes
+      // the overall save partial. Always reload the server projection after the sync attempt.
+      setDeliveryProjectionRevision((revision) => revision + 1)
       const draftMovedDuringSave = !draftStillMatches()
       const routeIdsByDraftKey = result.routeIdsByDraftKey ?? {}
       const withIdentity = (current: WizardState) =>
@@ -1067,6 +1071,7 @@ export function StreamEditWizardPage() {
               <StreamEditDeliveryPanel
                 streamId={backendStreamId}
                 readOnly={!canMutateWorkspace}
+                refreshVersion={deliveryProjectionRevision}
                 onSaved={() => void refreshDestinationsFromApi()}
               />
             ) : null}
