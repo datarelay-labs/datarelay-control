@@ -48,7 +48,10 @@ export class ApiClient {
     }
   }
 
-  async login(username = 'admin', password = 'admin'): Promise<void> {
+  async login(
+    username = process.env.GDC_E2E_UI_USERNAME || 'admin',
+    password = process.env.GDC_E2E_UI_PASSWORD || 'admin',
+  ): Promise<void> {
     if ((process.env.REQUIRE_AUTH || 'false').toLowerCase() !== 'true') {
       this.token = null
       return

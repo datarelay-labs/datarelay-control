@@ -4,7 +4,12 @@ import type { Page } from '@playwright/test'
 
 const SHORT = 5_000
 
-export async function uiLogin(page: Page, uiBase: string, username = 'admin', password = 'admin'): Promise<void> {
+export async function uiLogin(
+  page: Page,
+  uiBase: string,
+  username = process.env.GDC_E2E_UI_USERNAME || 'admin',
+  password = process.env.GDC_E2E_UI_PASSWORD || 'admin',
+): Promise<void> {
   await page.goto(uiBase, { timeout: 15_000, waitUntil: 'domcontentloaded' })
   const user = page.locator('#platform-login-username')
   try {

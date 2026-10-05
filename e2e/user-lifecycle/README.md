@@ -53,6 +53,7 @@ Disposable platform DB: `postgresql://gdc:gdc@127.0.0.1:55441/<run_db>` (never l
 The runner rebuilds the frontend from the current candidate by default and records the build HEAD. `ULC_REUSE_UI_DIST=1` may reuse `frontend/dist` only when the recorded build HEAD matches the current repository HEAD.
 
 For release Full User E2E, use `REQUIRE_AUTH=true`, unique API/UI ports and run-scoped PID/log directories, and follow the separate first-login/password-change proof in the canonical document.
+When the target platform already has a non-default administrator credential, set `GDC_E2E_UI_USERNAME` and `GDC_E2E_UI_PASSWORD`; both API and browser login paths consume the same values. Do not commit those values.
 
 ```bash
 # Smoke (package self-test)
