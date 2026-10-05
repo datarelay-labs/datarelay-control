@@ -1,6 +1,7 @@
 import { LogOut, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import type { ComponentType } from 'react'
 import { Link } from 'react-router-dom'
+import { DataRelayWordmark } from '@datarelay-labs/product-shell'
 import { cn } from '../../lib/utils'
 import { postAuthLogout } from '../../api/gdcAdmin'
 import { clearSession, readSession } from '../../auth/session'
@@ -165,10 +166,7 @@ export function Sidebar({
           </div>
           {!collapsed ? (
             <div className="min-w-0 leading-tight">
-              <p className="truncate text-sm font-semibold tracking-tight">
-                <span className="text-slate-900 dark:text-white">Data</span>
-                <span className="text-[#00D084]">Relay</span>
-              </p>
+              <DataRelayWordmark />
               <p className="truncate text-xs text-slate-500 dark:text-gdc-muted">{getDatarelayInstanceLabel()}</p>
             </div>
           ) : null}
