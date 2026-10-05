@@ -4,9 +4,9 @@ from_policy_epoch: 14
 to_policy_epoch: 15
 requires_exact_head_validate: true
 automation_eligible: false
-rationale: Managed adoption upgrade from 72abaec3ffa4f2e7519ee8067f4b8795acd506ad
-  to 08fdceca62fd69c081241ceb85d4198d821107b6 restores autonomous continuation and
-  truthful handoffs; preserves evaluator and high-risk authority.
+rationale: Managed adoption from 72abaec3ffa4f2e7519ee8067f4b8795acd506ad to 1e4fc5c58edc79630b223347b82aef9879f1e966
+  restores autonomous continuation, truthful handoffs and observed execution-state
+  binding; preserves evaluator and high-risk authority.
 changed_surfaces:
 - path: tools/handoff_contract.py
   head_blob_sha: 7bac12af518693b6eef958148c44873354df162f
