@@ -17,10 +17,12 @@ def test_frontend_builds_use_ephemeral_npmrc_secret() -> None:
 
 
 def test_compose_builds_wire_npmrc_secret_without_committed_credential() -> None:
+    default = _read("docker-compose.yml")
     platform = _read("docker-compose.platform.yml")
     https = _read("deploy/docker-compose.https.yml")
 
     secret_source = "file: ${GDC_NPMRC_SECRET_FILE:-${HOME}/.npmrc}"
+    assert secret_source in default
     assert secret_source in platform
     assert secret_source in https
     assert platform.count("- npmrc") >= 3
