@@ -285,7 +285,7 @@ services:
       - gdc_platform_tls:/var/gdc/tls
       - gdc_platform_nginx:/etc/nginx/conf.d
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/health"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/health >/dev/null || wget --no-check-certificate -qO- https://127.0.0.1/health >/dev/null"]
       interval: 15s
       timeout: 5s
       retries: 8
