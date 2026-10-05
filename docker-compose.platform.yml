@@ -65,6 +65,8 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.api
+      secrets:
+        - npmrc
       args:
         GDC_BUILD_GIT_SHA: ${GDC_BUILD_GIT_SHA:-unknown}
         GDC_BUILD_GIT_DIRTY: ${GDC_BUILD_GIT_DIRTY:-unknown}
@@ -172,6 +174,8 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.api
+      secrets:
+        - npmrc
       args:
         GDC_BUILD_GIT_SHA: ${GDC_BUILD_GIT_SHA:-unknown}
         GDC_BUILD_GIT_DIRTY: ${GDC_BUILD_GIT_DIRTY:-unknown}
@@ -248,6 +252,8 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.frontend
+      secrets:
+        - npmrc
       args:
         VITE_OSS_RELEASE_MODE: ${VITE_OSS_RELEASE_MODE:-true}
     container_name: ${GDC_PLATFORM_CONTAINER_PREFIX:-gdc-platform}-frontend
@@ -297,3 +303,7 @@ networks:
   gdc-dev-validation:
     name: ${GDC_DEV_VALIDATION_NETWORK_NAME:-gdc-dev-validation}
     external: true
+
+secrets:
+  npmrc:
+    file: ${GDC_NPMRC_SECRET_FILE:-${HOME}/.npmrc}

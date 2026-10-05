@@ -54,6 +54,8 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.api
+      secrets:
+        - npmrc
       args:
         GDC_BUILD_GIT_SHA: ${GDC_BUILD_GIT_SHA:-unknown}
         GDC_BUILD_GIT_DIRTY: ${GDC_BUILD_GIT_DIRTY:-unknown}
@@ -103,6 +105,8 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.frontend
+      secrets:
+        - npmrc
     container_name: gdc-platform-https-frontend
     expose:
       - "80"
@@ -147,3 +151,7 @@ services:
 volumes:
   gdc_https_pg:
   gdc_https_nginx:
+
+secrets:
+  npmrc:
+    file: ${GDC_NPMRC_SECRET_FILE:-${HOME}/.npmrc}
