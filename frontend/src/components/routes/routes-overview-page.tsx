@@ -53,6 +53,7 @@ import { RoutesProblemRoutesPanel } from './routes-problem-routes-panel'
 import { RuntimeFixtureModeBanner } from '../runtime/runtime-fixture-mode-banner'
 import { ROUTES_TABLE_ROW_HEIGHT, ROUTES_VIRTUAL_SCROLL_THRESHOLD, RoutesTableRow } from './routes-table-row'
 import { PagePurposeHeader, type PageHelpContent } from '../ui/page-purpose-header'
+import { StreamFlowMap } from '../flow/stream-flow-map'
 
 const WINDOW_OPTIONS: { value: MetricsWindow; label: string }[] = [
   { value: '15m', label: 'Last 15 minutes' },
@@ -516,6 +517,19 @@ export function RoutesOverviewPage() {
           One Stream can fan out through many Routes to many Destinations. Use each Route for destination-specific processing and delivery behavior instead of duplicating the Stream.
         </p>
       </section>
+
+      {operationalSnapshot ? (
+        <section aria-label="Stream delivery flow maps" className="space-y-3" data-testid="routes-flow-maps">
+          {operationalSnapshot.streams.map((stream) => (
+            <StreamFlowMap
+              key={stream.stream_id}
+              streamId={stream.stream_id}
+              streamName={stream.stream_name || `Stream #${stream.stream_id}`}
+              routes={consoleRows.filter((row) => row.route.stream_id === stream.stream_id && row.metrics != null).map((row) => row.metrics!)}
+            />
+          ))}
+        </section>
+      ) : null}
 
       <section aria-label="Route KPI summary" className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6 xl:gap-3">
         <div className="rounded-lg border border-slate-200/70 bg-white/90 px-3 py-2 dark:border-gdc-border/90 dark:bg-gdc-card">
