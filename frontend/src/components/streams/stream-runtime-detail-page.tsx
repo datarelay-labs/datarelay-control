@@ -78,7 +78,8 @@ import { resolveSourceTypePresentation } from '../../utils/sourceTypePresentatio
 import { operationalRunControlTooltipSupplement } from '../../utils/streamOperationalBadges'
 import { deliveryProofLines, nextDeliveryProofPrior, type PriorDeliveryProof } from './wizard/deploy-delivery-proof'
 import { proveStreamRunOnce } from './wizard/prove-stream-run-once'
-import { RecentRouteErrorsPanel, RouteOperationalPanel } from './route-operational-panel'
+import { RecentRouteErrorsPanel, RouteOperationalPanel, resolveRouteRuntimeRows } from './route-operational-panel'
+import { StreamFlowMap } from '../flow/stream-flow-map'
 import { PipelineDebuggerPanel } from './pipeline-debugger-panel'
 import { StreamRuntimeHealthExtension } from './stream-runtime-health-extension'
 import { WebhookReceiverRuntimePanel } from './webhook-receiver-runtime-panel'
@@ -1559,6 +1560,10 @@ export function StreamRuntimeDetailPage() {
           </div>
         </div>
       </section>
+      ) : null}
+
+      {backendStreamId != null ? (
+        <StreamFlowMap streamId={backendStreamId} streamName={runtimeMetrics?.stream.name || streamEntity?.name || `Stream #${backendStreamId}`} routes={resolveRouteRuntimeRows(runtimeMetrics)} loading={metricsLoading && !runtimeMetrics} />
       ) : null}
 
       <section aria-label="Delivery path operational panel">
