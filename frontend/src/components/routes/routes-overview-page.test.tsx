@@ -170,10 +170,60 @@ describe('RoutesOverviewPage snapshot loading', () => {
       </MemoryRouter>,
     )
     await screen.findByText('Route Flow')
-    expect(await screen.findByTestId('routes-flow-maps')).toBeInTheDocument()
-    expect(screen.getByTestId('stream-flow-map-1')).toHaveTextContent('S1')
     await user.click(screen.getByRole('button', { name: 'Help' }))
     expect(screen.getByRole('dialog')).toHaveTextContent('The core model')
     expect(screen.getByRole('dialog')).toHaveTextContent(/Each Route targets one Destination/i)
+  })
+
+  it('keeps duplicate-name streams independently selectable by stream ID', async () => {
+    const user = userEvent.setup()
+    const snap = await import('../../api/operationalSnapshot')
+    const duplicateNameSnapshot: OperationalSnapshotResponse = {
+      ...operationalSnapshot,
+      global: {
+        ...operationalSnapshot.global,
+        total_streams: 2,
+        enabled_streams: 2,
+        running_streams: 2,
+        total_routes: 2,
+        enabled_routes: 2,
+      },
+      streams: [
+        operationalSnapshot.streams[0]!,
+        {
+          ...operationalSnapshot.streams[0]!,
+          stream_id: 2,
+          stream_name: 'S1',
+        },
+      ],
+      routes: [
+        operationalSnapshot.routes[0]!,
+        {
+          ...operationalSnapshot.routes[0]!,
+          route_id: 6,
+          stream_id: 2,
+          stream_name: 'S1',
+        },
+      ],
+    }
+    vi.mocked(snap.getOperationalSnapshot).mockResolvedValue(duplicateNameSnapshot)
+
+    render(
+      <MemoryRouter>
+        <RoutesOverviewPage />
+      </MemoryRouter>,
+    )
+
+    await screen.findByText('All Routes (2)')
+    await user.click(screen.getByRole('button', { name: /All Routes \(2\)/i }))
+
+    const streamSelect = screen.getByLabelText('Stream filter')
+    expect(screen.getByRole('option', { name: 'S1 · #1' })).toHaveValue('1')
+    expect(screen.getByRole('option', { name: 'S1 · #2' })).toHaveValue('2')
+
+    await user.selectOptions(streamSelect, '2')
+
+    expect(await screen.findByTestId('stream-flow-map-2')).toBeInTheDocument()
+    expect(screen.queryByTestId('stream-flow-map-1')).not.toBeInTheDocument()
   })
 })

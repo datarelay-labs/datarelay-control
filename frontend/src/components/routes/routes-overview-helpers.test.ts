@@ -204,4 +204,34 @@ describe('buildRouteRowsFromOperationalSnapshot', () => {
       }),
     ).toHaveLength(0)
   })
+
+  it('filters duplicate-name streams by stable stream ID', () => {
+    const duplicateNameSnapshot: OperationalSnapshotResponse = {
+      ...snapshot,
+      routes: [
+        snapshot.routes[0]!,
+        {
+          ...snapshot.routes[0]!,
+          route_id: 43,
+          stream_id: 8,
+          stream_name: 'Ops stream',
+        },
+      ],
+    }
+    const rows = buildRouteRowsFromOperationalSnapshot(duplicateNameSnapshot, [])
+    const selected = filterRouteConsoleRows(rows, {
+      searchQuery: '',
+      streamFilter: '8',
+      destinationFilter: '__all__',
+      statusFilter: '__all__',
+      policyFilter: '__all__',
+      quickFilter: 'all',
+      highErr: false,
+      highLat: false,
+    })
+
+    expect(selected).toHaveLength(1)
+    expect(selected[0]?.route.id).toBe(43)
+    expect(selected[0]?.route.stream_id).toBe(8)
+  })
 })

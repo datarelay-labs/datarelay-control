@@ -74,6 +74,7 @@ export function getRouteProblemSummary(route: OperationalRouteSnapshot): string 
 function connectivityFromOperationalHealth(health: OperationalHealthStatus): RouteRuntimeMetricsRow['connectivity_state'] {
   if (health === 'ERROR') return 'ERROR'
   if (health === 'DEGRADED') return 'DEGRADED'
+  if (health === 'IDLE') return 'IDLE'
   return 'HEALTHY'
 }
 
@@ -507,9 +508,10 @@ export function filterRouteConsoleRows(rows: readonly RouteConsoleRow[], filters
   return rows.filter((row) => {
     const destName = (row.destination?.name ?? '').trim()
     const streamName = (row.stream?.name ?? '').trim()
+    const streamId = row.stream?.id ?? row.route.stream_id
     const hay = `${row.routeLabel} ${routePublicId(row.route.id)} ${streamName} ${destName}`.toLowerCase()
     if (q && !hay.includes(q)) return false
-    if (filters.streamFilter !== '__all__' && streamName !== filters.streamFilter) return false
+    if (filters.streamFilter !== '__all__' && String(streamId) !== filters.streamFilter) return false
     if (filters.destinationFilter !== '__all__' && destName !== filters.destinationFilter) return false
     if (filters.policyFilter !== '__all__' && (row.route.failure_policy ?? '') !== filters.policyFilter) return false
     if (filters.statusFilter !== '__all__') {

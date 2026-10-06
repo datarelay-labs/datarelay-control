@@ -288,12 +288,27 @@ export function RoutesOverviewPage() {
   }, [operationalSnapshot, routesRaw, streamsRaw, destinationsRaw])
 
   const streamOptions = useMemo(() => {
-    const names = new Set<string>()
-    for (const r of consoleRows) {
-      const n = (r.stream?.name ?? '').trim()
-      if (n) names.add(n)
+    const streamsById = new Map<number, string>()
+    for (const row of consoleRows) {
+      const streamId = row.stream?.id ?? row.route.stream_id
+      const streamName = (row.stream?.name ?? '').trim() || `Stream #${streamId}`
+      streamsById.set(streamId, streamName)
     }
-    return ['__all__', ...[...names].sort()]
+
+    const nameCounts = new Map<string, number>()
+    for (const streamName of streamsById.values()) {
+      nameCounts.set(streamName, (nameCounts.get(streamName) ?? 0) + 1)
+    }
+
+    return [
+      { value: '__all__', label: 'All Streams' },
+      ...[...streamsById.entries()]
+        .sort((a, b) => a[1].localeCompare(b[1]) || a[0] - b[0])
+        .map(([streamId, streamName]) => ({
+          value: String(streamId),
+          label: (nameCounts.get(streamName) ?? 0) > 1 ? `${streamName} · #${streamId}` : streamName,
+        })),
+    ]
   }, [consoleRows])
 
   const destinationOptions = useMemo(() => {
@@ -518,9 +533,9 @@ export function RoutesOverviewPage() {
         </p>
       </section>
 
-      {operationalSnapshot ? (
-        <section aria-label="Stream delivery flow maps" className="space-y-3" data-testid="routes-flow-maps">
-          {operationalSnapshot.streams.map((stream) => (
+      {operationalSnapshot && streamFilter !== '__all__' ? (
+        <section aria-label="Selected Stream delivery flow" className="space-y-3" data-testid="routes-flow-maps">
+          {operationalSnapshot.streams.filter((stream) => String(stream.stream_id) === streamFilter).map((stream) => (
             <StreamFlowMap
               key={stream.stream_id}
               streamId={stream.stream_id}
@@ -625,7 +640,7 @@ export function RoutesOverviewPage() {
                   id="routes-filter-stream"
                   label="Stream filter"
                   value={streamFilter}
-                  options={streamOptions.map((v) => ({ value: v, label: v === '__all__' ? 'All Streams' : v }))}
+                  options={streamOptions}
                   onChange={setStreamFilter}
                 />
                 <SelectField
