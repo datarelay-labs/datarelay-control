@@ -18,5 +18,7 @@ describe('wizard intent templates', () => {
     const protectedState = applyWizardIntentTemplate('protect-sensitive')
     expect(protectedState.dataPolicy.preset).toBe('strict')
     expect(protectedState.dataProtection.unknownSensitiveFieldPolicy).toBe('require_review')
+    expect(protectedState.dataProtection.intents).toEqual([])
+    expect(WIZARD_INTENT_TEMPLATES.find((item) => item.id === 'protect-sensitive')?.description).toContain('add field-level protection rules')
   })
 })
