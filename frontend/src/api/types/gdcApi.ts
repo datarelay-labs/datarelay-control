@@ -601,7 +601,7 @@ export type StreamMetricsRecentRun = {
   failed: number
 }
 
-export type RouteRuntimeConnectivityState = 'HEALTHY' | 'DEGRADED' | 'ERROR' | 'DISABLED'
+export type RouteRuntimeConnectivityState = 'HEALTHY' | 'DEGRADED' | 'ERROR' | 'DISABLED' | 'IDLE'
 
 export type RouteRuntimeLatencyTrendPoint = {
   timestamp: string
