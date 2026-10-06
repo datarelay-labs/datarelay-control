@@ -170,6 +170,27 @@ describe('StreamsConsole SaaS modernization', () => {
     expect(screen.queryByRole('columnheader', { name: 'EPS (5m Avg)' })).not.toBeInTheDocument()
   })
 
+  it('teaches the Stream mental model and exposes contextual help', async () => {
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <StreamsConsole />
+      </MemoryRouter>,
+    )
+
+    await screen.findByTestId('streams-health-overview')
+    expect(screen.getByTestId('streams-purpose-header')).toHaveTextContent(/Which data flow needs attention/i)
+    const guidance = screen.getByTestId('streams-group-guidance')
+    expect(guidance).toHaveTextContent(/Source Product/i)
+    expect(guidance).toHaveTextContent(/Attention/i)
+    expect(guidance).toHaveTextContent(/Runtime/i)
+
+    await user.click(screen.getByRole('button', { name: 'Help' }))
+    const dialog = screen.getByRole('dialog', { name: 'Streams' })
+    expect(dialog).toHaveTextContent(/Connector vs Stream/i)
+    expect(dialog).toHaveTextContent(/Each destination path is a Route/i)
+  })
+
   it('expands a group to reveal affected streams for problem identification', async () => {
     const user = userEvent.setup()
     render(

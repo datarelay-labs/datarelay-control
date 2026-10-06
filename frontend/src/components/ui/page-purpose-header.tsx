@@ -20,6 +20,7 @@ export type PagePurposeHeaderProps = {
   help: PageHelpContent
   actions?: ReactNode
   testId?: string
+  showTitle?: boolean
 }
 
 export function PagePurposeHeader({
@@ -28,6 +29,7 @@ export function PagePurposeHeader({
   help,
   actions,
   testId = 'page-purpose-header',
+  showTitle = true,
 }: PagePurposeHeaderProps) {
   const [helpOpen, setHelpOpen] = useState(false)
   const titleId = useId()
@@ -86,9 +88,11 @@ export function PagePurposeHeader({
         data-testid={testId}
       >
         <div className="space-y-2">
-          <h1 id={titleId} className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-50">
-            {title}
-          </h1>
+          {showTitle ? (
+            <h1 id={titleId} className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-50">
+              {title}
+            </h1>
+          ) : null}
           <p className="max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-gdc-muted">{purpose}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
