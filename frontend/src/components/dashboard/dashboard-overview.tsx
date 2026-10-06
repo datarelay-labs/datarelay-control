@@ -100,12 +100,17 @@ export function DashboardOverview() {
   const attentionItems = useMemo(
     () =>
       [
+        {
+          count: overallHealth.warning + overallHealth.critical,
+          label: 'Streams needing health review',
+          to: NAV_PATH.streams,
+        },
         { count: operationalIssues.noDataStreams, label: 'Streams with no data', to: NAV_PATH.streams + '?filter=no-data' },
         { count: operationalIssues.lowVolumeStreams, label: 'Low-volume streams', to: NAV_PATH.streams + '?filter=low-volume' },
         { count: operationalIssues.schemaDriftCount, label: 'Schema changes to review', to: NAV_PATH.governance },
         { count: operationalIssues.destinationCapacityWarnings, label: 'Destination warnings', to: NAV_PATH.destinations + '?filter=warning' },
       ].filter((item) => item.count != null && item.count > 0),
-    [operationalIssues],
+    [operationalIssues, overallHealth.warning, overallHealth.critical],
   )
   const attentionDataPartial = Object.values(operationalIssues).some((value) => value == null)
 

@@ -469,6 +469,10 @@ describe('DashboardOverview', () => {
     expect(screen.getByTestId('dashboard-purpose-header')).toHaveTextContent(/What needs attention right now/i)
     const actionNeeded = within(firstLevel).getByTestId('dashboard-action-needed')
     expect(within(actionNeeded).getByRole('heading', { name: 'Action needed' })).toBeInTheDocument()
+    expect(within(actionNeeded).getByRole('link', { name: /Streams needing health review/i })).toHaveAttribute(
+      'href',
+      '/streams',
+    )
     expect(within(actionNeeded).getByRole('link', { name: /Streams with no data/i })).toHaveAttribute(
       'href',
       '/streams?filter=no-data',
