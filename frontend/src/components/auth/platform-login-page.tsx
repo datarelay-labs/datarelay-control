@@ -78,7 +78,8 @@ export function PlatformLoginPage({ onAuthenticated }: PlatformLoginPageProps) {
   }
 
   return (
-    <AuthLayout
+    <div className="gdc-login-centered" data-testid="gdc-login-centered">
+      <AuthLayout
       productName="DataRelay"
       productSubtitle="Operational Data Connector Platform"
       description="Collect. Transform. Deliver. Connect to any source, transform and enrich your data, then deliver it to multiple destinations reliably and securely."
@@ -167,6 +168,7 @@ export function PlatformLoginPage({ onAuthenticated }: PlatformLoginPageProps) {
           Accounts are created by an administrator. Self-service registration is not available.
         </p>
       </form>
-    </AuthLayout>
+      </AuthLayout>
+    </div>
   )
 }

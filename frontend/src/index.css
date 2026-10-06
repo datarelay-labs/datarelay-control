@@ -140,3 +140,50 @@ a {
   background-color: oklch(10% 0 0);
   background-image: none;
 }
+
+/* Keep the sign-in experience centered rather than using Foundation's default split layout. */
+.gdc-login-centered .dr-auth-layout {
+  grid-template-columns: minmax(320px, 420px);
+  justify-content: center;
+  align-content: center;
+  justify-items: stretch;
+  gap: var(--dr-space-5);
+  padding-block: clamp(var(--dr-space-5), 5vh, 56px);
+  text-align: center;
+}
+
+.gdc-login-centered .dr-auth-layout__identity,
+.gdc-login-centered .dr-auth-card {
+  width: 100%;
+  max-width: 420px;
+  justify-self: center;
+}
+
+.gdc-login-centered .dr-auth-layout__identity {
+  justify-items: center;
+}
+
+.gdc-login-centered .dr-auth-layout__mark,
+.gdc-login-centered .dr-auth-layout__wordmark {
+  margin-inline: auto;
+}
+
+.gdc-login-centered .dr-auth-layout__description {
+  max-width: 420px;
+}
+
+.gdc-login-centered .dr-auth-layout__resources {
+  width: 100%;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  text-align: left;
+}
+
+.gdc-login-centered .dr-auth-layout__resources a {
+  width: 100%;
+}
+
+@media (max-width: 640px) {
+  .gdc-login-centered .dr-auth-layout__resources {
+    grid-template-columns: 1fr;
+  }
+}
