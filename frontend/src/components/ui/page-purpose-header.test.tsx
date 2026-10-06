@@ -40,6 +40,27 @@ describe('PagePurposeHeader', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
+  it('traps keyboard focus inside the modal help drawer', async () => {
+    const user = userEvent.setup()
+    render(
+      <PagePurposeHeader
+        title="Governance Dashboard"
+        purpose="See what needs attention and where to investigate."
+        help={{ ...help, docsHref: 'https://example.com/docs/governance' }}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Help' }))
+    const close = screen.getByRole('button', { name: 'Close help' })
+    const docs = screen.getByRole('link', { name: /read full documentation/i })
+    expect(close).toHaveFocus()
+
+    await user.tab({ shift: true })
+    expect(docs).toHaveFocus()
+    await user.tab()
+    expect(close).toHaveFocus()
+  })
+
   it('closes the drawer with Escape', async () => {
     const user = userEvent.setup()
     render(

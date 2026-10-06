@@ -1,12 +1,14 @@
 # Task-Oriented UX and Guided Operations
 
-Status: Accepted implementation direction for roadmap #354 / packet #355.
+Status: Derived, non-normative implementation guidance for roadmap #354 / packet #355.
+
+Authority remains with `docs/architecture/source-of-truth-index.md` and the current documents it designates, especially the Product Charter, Data Relay UX Charter, Stream Wizard UX Charter, Governance UX Charter, and Governance Workspace contracts. This note summarizes the accepted implementation direction and must not override those authorities; any conflict fails closed and is resolved in the authoritative sources first.
 
 ## Product intent
 
 DataRelay Control is a Data Delivery Gateway with optional Data Protection.
 
-The authoritative user flow is:
+The current authority-derived user flow used by this implementation is:
 
 ```text
 Collect Data

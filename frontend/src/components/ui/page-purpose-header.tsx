@@ -33,6 +33,7 @@ export function PagePurposeHeader({
   const titleId = useId()
   const helpButtonRef = useRef<HTMLButtonElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
+  const dialogRef = useRef<HTMLElement>(null)
 
   const closeHelp = useCallback(() => {
     setHelpOpen(false)
@@ -43,7 +44,36 @@ export function PagePurposeHeader({
     if (!helpOpen) return
     closeButtonRef.current?.focus()
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') closeHelp()
+      if (event.key === 'Escape') {
+        closeHelp()
+        return
+      }
+      if (event.key !== 'Tab') return
+
+      const dialog = dialogRef.current
+      if (!dialog) return
+      const focusable = Array.from(
+        dialog.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((node) => !node.hasAttribute('hidden') && node.getAttribute('aria-hidden') !== 'true')
+      if (focusable.length === 0) {
+        event.preventDefault()
+        return
+      }
+
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      const active = document.activeElement
+      if (event.shiftKey) {
+        if (active === first || !dialog.contains(active)) {
+          event.preventDefault()
+          last.focus()
+        }
+      } else if (active === last || !dialog.contains(active)) {
+        event.preventDefault()
+        first.focus()
+      }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
@@ -82,11 +112,13 @@ export function PagePurposeHeader({
         <>
           <button
             type="button"
+            tabIndex={-1}
+            aria-hidden="true"
             className="fixed inset-0 z-[70] bg-slate-950/35 backdrop-blur-[1px]"
-            aria-label="Close page help"
             onClick={closeHelp}
           />
           <aside
+            ref={dialogRef}
             role="dialog"
             aria-modal="true"
             aria-labelledby={titleId + '-help'}
