@@ -51,7 +51,31 @@ import { RoutesDestinationMetricsPanel } from './routes-destination-metrics-pane
 import { RoutesFlowTreeTable } from './routes-flow-tree-table'
 import { RoutesProblemRoutesPanel } from './routes-problem-routes-panel'
 import { RuntimeFixtureModeBanner } from '../runtime/runtime-fixture-mode-banner'
+import { PagePurposeHeader, type PageHelpContent } from '../ui/page-purpose-header'
 import { ROUTES_TABLE_ROW_HEIGHT, ROUTES_VIRTUAL_SCROLL_THRESHOLD, RoutesTableRow } from './routes-table-row'
+
+const ROUTES_HELP: PageHelpContent = {
+  title: 'Routes',
+  intro: 'A Route is one delivery path from a Stream to a Destination. It owns the processing and delivery behavior that is specific to that destination.',
+  sections: [
+    {
+      title: 'The delivery model',
+      bullets: [
+        'Stream: the collected data flow and shared execution/configuration unit.',
+        'Route Processing: destination-specific Transform, Protection, Classification, Policy, formatting, retry, and rate-limit behavior.',
+        'Destination: the reusable receiving endpoint where the Route delivers data.',
+      ],
+    },
+    {
+      title: 'Why can one Stream have many Routes?',
+      body: 'Fan-out lets the same Stream deliver to multiple Destinations while each Route applies the processing required by that receiver.',
+    },
+    {
+      title: 'What should I do here?',
+      body: 'Start with Route Flow and problem Routes. Open a Route when one delivery path needs different processing or recovery behavior.',
+    },
+  ],
+}
 
 const WINDOW_OPTIONS: { value: MetricsWindow; label: string }[] = [
   { value: '15m', label: 'Last 15 minutes' },
@@ -416,60 +440,84 @@ export function RoutesOverviewPage() {
         </div>
       ) : null}
       <RuntimeFixtureModeBanner surface="routes" />
-      {/* Purpose only — App Shell owns the page title */}
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <p className="max-w-2xl text-sm text-slate-600 dark:text-gdc-muted">
-          End-to-end delivery flow across streams, routes, and destinations
-        </p>
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
-          {operationalSnapshot ? (
-            <div
-              className={cn(
-                'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold',
-                'border-emerald-500/30 bg-emerald-500/10 text-emerald-900 dark:text-emerald-100',
-              )}
-            >
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden />
-              SNAPSHOT
-              <span className="font-normal opacity-80">
-                Updated {relativeShort(operationalSnapshot.updated_at)}
+      <PagePurposeHeader
+        title="Routes"
+        showTitle={false}
+        purpose="How does each Stream reach each Destination? A Route is the destination-specific delivery path where processing and delivery behavior are applied."
+        help={ROUTES_HELP}
+        testId="routes-purpose-header"
+        actions={
+          <>
+            {operationalSnapshot ? (
+              <div
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold',
+                  'border-emerald-500/30 bg-emerald-500/10 text-emerald-900 dark:text-emerald-100',
+                )}
+              >
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden />
+                SNAPSHOT
+                <span className="font-normal opacity-80">
+                  Updated {relativeShort(operationalSnapshot.updated_at)}
+                </span>
+              </div>
+            ) : loading ? (
+              <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                Status…
               </span>
-            </div>
-          ) : loading ? (
-            <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-              Status…
-            </span>
-          ) : (
-            <span className="text-[11px] text-slate-500">Runtime status unavailable</span>
-          )}
-          <SelectField
-            id="routes-window"
-            label="Metrics window"
-            value={metricsWindow}
-            options={WINDOW_OPTIONS}
-            onChange={(v) => setMetricsWindow(v as MetricsWindow)}
-          />
-          <button
-            type="button"
-            onClick={() => {
-              clearOperationalSnapshotCache()
-              setRefreshTick((x) => x + 1)
-            }}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200/90 bg-white text-slate-700 shadow-sm hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200 dark:hover:bg-gdc-rowHover"
-            aria-label="Refresh"
-          >
-            <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} aria-hidden />
-          </button>
-          <Link
-            to={routeEditPath('new')}
-            className="inline-flex h-9 items-center gap-1.5 rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white shadow-sm hover:bg-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500/40"
-          >
-            <Plus className="h-3.5 w-3.5" aria-hidden />
-            Create Route
-          </Link>
+            ) : (
+              <span className="text-[11px] text-slate-500">Runtime status unavailable</span>
+            )}
+            <SelectField
+              id="routes-window"
+              label="Metrics window"
+              value={metricsWindow}
+              options={WINDOW_OPTIONS}
+              onChange={(v) => setMetricsWindow(v as MetricsWindow)}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                clearOperationalSnapshotCache()
+                setRefreshTick((x) => x + 1)
+              }}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200/90 bg-white text-slate-700 shadow-sm hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200 dark:hover:bg-gdc-rowHover"
+              aria-label="Refresh"
+            >
+              <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} aria-hidden />
+            </button>
+            <Link
+              to={routeEditPath('new')}
+              className="inline-flex h-9 items-center gap-1.5 rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white shadow-sm hover:bg-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500/40"
+            >
+              <Plus className="h-3.5 w-3.5" aria-hidden />
+              Create Route
+            </Link>
+          </>
+        }
+      />
+
+      <section
+        className="grid gap-2 rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 text-center dark:border-gdc-border dark:bg-gdc-section/40 sm:grid-cols-[1fr_auto_1fr_auto_1fr]"
+        aria-label="DataRelay delivery model"
+        data-testid="routes-mental-model"
+      >
+        <div className="rounded-lg bg-white px-3 py-2 dark:bg-gdc-card">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted">Stream</p>
+          <p className="mt-1 text-xs font-medium text-slate-800 dark:text-slate-100">Collected data flow</p>
         </div>
-      </div>
+        <ChevronRight className="mx-auto hidden h-4 w-4 self-center text-slate-400 sm:block" aria-hidden />
+        <div className="rounded-lg border border-violet-200/80 bg-violet-50/70 px-3 py-2 dark:border-violet-500/30 dark:bg-violet-500/10">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-300">Route Processing</p>
+          <p className="mt-1 text-xs font-medium text-slate-800 dark:text-slate-100">Destination-specific behavior</p>
+        </div>
+        <ChevronRight className="mx-auto hidden h-4 w-4 self-center text-slate-400 sm:block" aria-hidden />
+        <div className="rounded-lg bg-white px-3 py-2 dark:bg-gdc-card">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted">Destination</p>
+          <p className="mt-1 text-xs font-medium text-slate-800 dark:text-slate-100">Receiving endpoint</p>
+        </div>
+      </section>
 
       <section aria-label="Route KPI summary" className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6 xl:gap-3">
         <div className="rounded-lg border border-slate-200/70 bg-white/90 px-3 py-2 dark:border-gdc-border/90 dark:bg-gdc-card">

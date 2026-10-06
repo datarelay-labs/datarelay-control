@@ -56,6 +56,10 @@ function fakeConnector(id: number, name: string, extras: Partial<Record<string, 
   }
 }
 
+afterEach(() => {
+  vi.unstubAllEnvs()
+})
+
 function resetConnectorMocks() {
   fetchConnectorsListResultMock.mockReset()
   fetchStreamsListMock.mockReset()
@@ -96,6 +100,40 @@ describe('ConnectorsOverviewPage — Dev Validation Lab visibility', () => {
     expect(badges.length).toBe(2)
   })
 
+  it('explains Connector vs Stream and exposes contextual page help', async () => {
+    fetchConnectorsListResultMock.mockResolvedValueOnce({ ok: true, status: 200, data: [] })
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <ConnectorsOverviewPage />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByTestId('connectors-purpose-header')).toHaveTextContent(/Connector owns endpoint and authentication details/i)
+    await user.click(screen.getByRole('button', { name: 'Help' }))
+    const dialog = screen.getByRole('dialog', { name: 'Connectors' })
+    expect(dialog).toHaveTextContent(/Connector vs Stream/i)
+    expect(dialog).toHaveTextContent(/reusable endpoint, authentication/i)
+    expect(dialog).toHaveTextContent(/one collected data flow/i)
+  })
+
+  it('hides Dev Validation controls and wording in OSS release mode', async () => {
+    vi.stubEnv('VITE_OSS_RELEASE_MODE', 'true')
+    fetchConnectorsListResultMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      data: [fakeConnector(1, '[DEV VALIDATION] Generic REST'), fakeConnector(2, 'Production Okta')],
+    })
+    render(
+      <MemoryRouter>
+        <ConnectorsOverviewPage />
+      </MemoryRouter>,
+    )
+    expect(await screen.findByText('Production Okta')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Dev validation lab only filter')).not.toBeInTheDocument()
+    expect(screen.getByTestId('connectors-overview-page')).not.toHaveTextContent(/2 Dev validation lab/i)
+  })
+
   it('shows import from cURL / Postman entry', async () => {
     fetchConnectorsListResultMock.mockResolvedValueOnce({ ok: true, status: 200, data: [] })
     const user = userEvent.setup()
@@ -111,7 +149,8 @@ describe('ConnectorsOverviewPage — Dev Validation Lab visibility', () => {
     expect(screen.getByRole('button', { name: 'Parse collection' })).toBeInTheDocument()
   })
 
-  it('"Dev validation lab only" filter hides non-lab connectors', async () => {
+  it('"Dev validation lab only" filter hides non-lab connectors when dev tooling is enabled', async () => {
+    vi.stubEnv('VITE_ENABLE_DEV_VALIDATION_LAB', 'true')
     const user = userEvent.setup()
     fetchConnectorsListResultMock.mockResolvedValueOnce({
       ok: true,

@@ -107,11 +107,26 @@ describe('DestinationsManagementPage modernization', () => {
       </MemoryRouter>,
     )
     expect(screen.getByTestId('destinations-management-page')).toBeInTheDocument()
-    expect(screen.getByText(/Which destination needs attention/i)).toBeInTheDocument()
+    expect(screen.getByTestId('destinations-purpose-header')).toHaveTextContent(/Where should processed data go/i)
+    expect(screen.getByTestId('destinations-purpose-header')).toHaveTextContent(/Routes connect each Stream to a Destination/i)
     expect(screen.getByTestId('destinations-new')).toBeInTheDocument()
     expect(await screen.findByTestId('destinations-health-overview')).toBeInTheDocument()
     expect(screen.getByTestId('destinations-search')).toBeInTheDocument()
     expect(screen.getByTestId('destinations-status-filter')).toBeInTheDocument()
+  })
+
+  it('explains Destination vs Route in contextual help', async () => {
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <DestinationsManagementPage />
+      </MemoryRouter>,
+    )
+    await user.click(screen.getByRole('button', { name: 'Help' }))
+    const dialog = screen.getByRole('dialog', { name: 'Destinations' })
+    expect(dialog).toHaveTextContent(/Destination vs Route/i)
+    expect(dialog).toHaveTextContent(/reusable receiving endpoint/i)
+    expect(dialog).toHaveTextContent(/Stream-to-Destination delivery path/i)
   })
 
   it('filters destinations by search without losing the row structure', async () => {
