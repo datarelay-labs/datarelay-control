@@ -97,6 +97,17 @@ export function DashboardOverview() {
 
   const totalStreams = bundle?.operationalSnapshot?.global.total_streams ?? bundle?.streams.length ?? 0
   const isFreshInstall = !initialLoading && totalStreams === 0
+  const runtimeHealthAttention = useMemo(() => {
+    const snapshot = bundle?.operationalSnapshot
+    if (!snapshot) return { routes: 0, destinations: 0 }
+    const needsReview = (status: string) => status === 'DEGRADED' || status === 'ERROR'
+    return {
+      routes: (snapshot.routes ?? []).filter((route) => route.enabled && needsReview(route.health_status)).length,
+      destinations: (snapshot.destinations ?? []).filter(
+        (destination) => destination.enabled && needsReview(destination.health_status),
+      ).length,
+    }
+  }, [bundle?.operationalSnapshot])
   const attentionItems = useMemo(
     () =>
       [
@@ -107,10 +118,12 @@ export function DashboardOverview() {
         },
         { count: operationalIssues.noDataStreams, label: 'Streams with no data', to: NAV_PATH.streams + '?filter=no-data' },
         { count: operationalIssues.lowVolumeStreams, label: 'Low-volume streams', to: NAV_PATH.streams + '?filter=low-volume' },
+        { count: runtimeHealthAttention.routes, label: 'Routes needing health review', to: NAV_PATH.routes },
+        { count: runtimeHealthAttention.destinations, label: 'Destinations needing health review', to: NAV_PATH.destinations },
         { count: operationalIssues.schemaDriftCount, label: 'Schema changes to review', to: NAV_PATH.governance },
-        { count: operationalIssues.destinationCapacityWarnings, label: 'Destination warnings', to: NAV_PATH.destinations + '?filter=warning' },
+        { count: operationalIssues.destinationCapacityWarnings, label: 'Destination capacity warnings', to: NAV_PATH.destinations + '?filter=warning' },
       ].filter((item) => item.count != null && item.count > 0),
-    [operationalIssues, overallHealth.warning, overallHealth.critical],
+    [operationalIssues, overallHealth.warning, overallHealth.critical, runtimeHealthAttention],
   )
   const attentionDataPartial = Object.values(operationalIssues).some((value) => value == null)
 

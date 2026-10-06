@@ -650,7 +650,7 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     renderApp()
     await user.click(screen.getByRole('button', { name: 'Streams' }))
     expect(
-      await screen.findByText(/Which stream group needs attention/i, {}, { timeout: 15000 }),
+      await screen.findByText(/Which data flow needs attention/i, {}, { timeout: 15000 }),
     ).toBeInTheDocument()
     expect(screen.getAllByRole('heading', { name: /^Streams$/ }).length).toBeGreaterThanOrEqual(1)
     expect(await screen.findByRole('region', { name: 'Streams health overview' })).toBeInTheDocument()

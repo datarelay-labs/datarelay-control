@@ -477,6 +477,10 @@ describe('DashboardOverview', () => {
       'href',
       '/streams?filter=no-data',
     )
+    expect(within(actionNeeded).getByRole('link', { name: /Destinations needing health review/i })).toHaveAttribute(
+      'href',
+      '/destinations',
+    )
 
     await user.click(screen.getByRole('button', { name: 'Help' }))
     const dialog = screen.getByRole('dialog', { name: 'Dashboard' })
