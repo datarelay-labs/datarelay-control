@@ -247,5 +247,8 @@ describe('StreamsConsole SaaS modernization', () => {
     expect(empty).not.toHaveTextContent(/scripts\/seed\.py/)
     expect(empty).not.toHaveTextContent(/dev-validation-lab/)
     expect(screen.getByTestId('streams-create-first')).toBeInTheDocument()
+    expect(screen.getByTestId('streams-learning-path')).toHaveTextContent('Optional demo learning path')
+    expect(screen.getByTestId('streams-learning-path')).toHaveTextContent('Sample Alerts Stream')
+    expect(screen.getByTestId('streams-learning-path')).toHaveTextContent('never overwrite operator data')
   })
 })
