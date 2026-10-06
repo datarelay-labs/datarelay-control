@@ -5,6 +5,11 @@ import { readSession } from '../../auth/session'
 import { PlatformLoginPage } from './platform-login-page'
 
 describe('PlatformLoginPage', () => {
+  it('centers the Foundation sign-in layout in the viewport', () => {
+    render(<PlatformLoginPage onAuthenticated={vi.fn()} />)
+    expect(screen.getByTestId('gdc-login-centered')).toHaveClass('gdc-login-centered')
+  })
+
   it('uses the shared DataRelay master logo asset', () => {
     render(<PlatformLoginPage onAuthenticated={vi.fn()} />)
 
