@@ -35,6 +35,7 @@ import { EnrichmentRulesEditor } from '../streams/wizard/enrichment-rules-editor
 import { AdvancedTransformWorkspace } from '../transform/advanced-transform-workspace'
 import { MappingWorkspace } from '../mappings/mapping-workspace'
 import { PanelChrome } from '../streams/mapping-json-tree'
+import { ProcessingPreviewDock } from '../preview/processing-preview-dock'
 import { isRouteTransformDirty, routeTransformFormFingerprint } from './route-delivery-dirty'
 
 type Props = {
@@ -714,6 +715,14 @@ export function RouteEditTransformPanel({
           {saveSuccess ? <p className="text-[12px] text-emerald-700 dark:text-emerald-300">{saveSuccess}</p> : null}
         </div>
       </PanelChrome>
+
+      <ProcessingPreviewDock stages={[
+        { id: 'input', label: 'Input', truth: 'Preview', status: sourceSample == null ? 'No source sample' : 'Sample loaded', before: sourceSample, after: sourceSample },
+        { id: 'mapping', label: 'Mapping', truth: hasUnsavedChanges ? 'Preview' : 'Saved configuration', status: inheritMapping ? 'Inherited from Stream' : 'Route-specific', before: sourceExtractedEvents[0] ?? sourceSample, after: routeMappedSample },
+        { id: 'transform', label: 'Enrichment / Transform', truth: hasUnsavedChanges ? 'Preview' : 'Saved configuration', status: routeEnrichmentDraftError ? 'Preview has errors' : inheritEnrichment ? 'Inherited from Stream' : 'Route-specific', before: routeMappedSample, after: routeEnrichmentDraftPreview ?? routeMappedSample, message: routeEnrichmentDraftError },
+        { id: 'policy', label: 'Protection / Policy', truth: 'Preview', status: routePolicyAction ? `Policy: ${routePolicyAction}` : 'No policy action reported', before: routeEnrichmentDraftPreview ?? routeMappedSample, after: effectivePreview[0] ?? null },
+        { id: 'destination', label: 'Destination Payload', truth: 'Preview', status: effectivePreviewMessage || 'No-send preview only', before: effectivePreview[0] ?? null, after: effectivePreview[0] ?? null },
+      ]} />
 
       <div>
         <section className="rounded-lg border border-violet-200/80 bg-violet-50/40 p-3 dark:border-violet-500/30 dark:bg-violet-500/[0.06]" data-testid="route-effective-final-event-preview">
