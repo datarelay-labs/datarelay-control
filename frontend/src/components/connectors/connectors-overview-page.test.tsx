@@ -13,6 +13,11 @@ const fetchConnectorsListResultMock = vi.fn()
 const fetchStreamsListMock = vi.fn()
 const fetchConnectorOperationsSummaryMock = vi.fn()
 const deleteConnectorMock = vi.fn()
+const devValidationUi = vi.hoisted(() => ({ enabled: true }))
+
+vi.mock('../../lib/feature-flags', () => ({
+  isDevValidationLabUiEnabled: () => devValidationUi.enabled,
+}))
 
 vi.mock('../../api/gdcConnectors', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../api/gdcConnectors')>()
@@ -69,6 +74,7 @@ function resetConnectorMocks() {
 
 describe('ConnectorsOverviewPage — Dev Validation Lab visibility', () => {
   beforeEach(() => {
+    devValidationUi.enabled = true
     resetConnectorMocks()
   })
 
@@ -105,6 +111,7 @@ describe('ConnectorsOverviewPage — Dev Validation Lab visibility', () => {
       </MemoryRouter>,
     )
     expect(await screen.findByTestId('connectors-empty-state')).toBeInTheDocument()
+    await user.click(screen.getByText('Advanced setup & validation'))
     expect(screen.getByRole('button', { name: 'Import from cURL / Postman' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Import from cURL / Postman' }))
     expect(screen.getByRole('button', { name: 'Parse cURL' })).toBeInTheDocument()
@@ -126,11 +133,47 @@ describe('ConnectorsOverviewPage — Dev Validation Lab visibility', () => {
     )
 
     expect(await screen.findByText('Production Okta')).toBeInTheDocument()
+    await user.click(screen.getByText('Advanced setup & validation'))
     const toggle = screen.getByLabelText('Dev validation lab only filter')
     await user.click(toggle)
 
     expect(screen.getByText('[DEV VALIDATION] Generic REST')).toBeInTheDocument()
     expect(screen.queryByText('Production Okta')).not.toBeInTheDocument()
+  })
+
+  it('teaches Connector vs Stream through contextual page help', async () => {
+    const user = userEvent.setup()
+    fetchConnectorsListResultMock.mockResolvedValueOnce({ ok: true, status: 200, data: [] })
+
+    render(
+      <MemoryRouter>
+        <ConnectorsOverviewPage />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByTestId('connectors-purpose-header')).toHaveTextContent(/reusable source access/i)
+    await user.click(screen.getByRole('button', { name: 'Help' }))
+    expect(screen.getByRole('dialog')).toHaveTextContent('Connector vs Stream')
+    expect(screen.getByRole('dialog')).toHaveTextContent(/One Connector can support multiple Streams/i)
+  })
+
+  it('keeps dev validation controls out of release-mode primary UX', async () => {
+    devValidationUi.enabled = false
+    fetchConnectorsListResultMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      data: [fakeConnector(1, '[DEV VALIDATION] Generic REST')],
+    })
+
+    render(
+      <MemoryRouter>
+        <ConnectorsOverviewPage />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByText('[DEV VALIDATION] Generic REST')).toBeInTheDocument()
+    await userEvent.setup().click(screen.getByText('Advanced setup & validation'))
+    expect(screen.queryByLabelText('Dev validation lab only filter')).not.toBeInTheDocument()
   })
 })
 

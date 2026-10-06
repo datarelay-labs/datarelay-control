@@ -47,6 +47,7 @@ import { cn } from '../../lib/utils'
 import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
 import { HelpTooltip } from '../ui/help-tooltip'
 import { HELP_COPY } from '../ui/help-tooltip-copy'
+import { PagePurposeHeader, type PageHelpContent } from '../ui/page-purpose-header'
 import { computeDestinationsKpi } from './destination-kpi-strip'
 import { DestinationsHealthOverview } from './destinations-health-overview'
 import { DestinationDetailDrawer, type LastTestResult } from './destination-detail-drawer'
@@ -59,6 +60,30 @@ import {
   QueueDepthCell,
   extractCapacityConfig,
 } from './destination-mini-charts'
+
+const DESTINATIONS_HELP: PageHelpContent = {
+  title: 'Destinations',
+  intro:
+    'Destinations are reusable delivery endpoints. Routes connect a Stream to a Destination and own destination-specific delivery and processing behavior.',
+  sections: [
+    {
+      title: 'Destination vs Route',
+      bullets: [
+        'Destination: where DataRelay sends data, such as a SIEM, syslog receiver, webhook, or archive endpoint.',
+        'Route: the path from one Stream to one Destination, including destination-specific processing and failure behavior.',
+        'One Destination can receive data from multiple Streams through separate Routes.',
+      ],
+    },
+    {
+      title: 'What should I watch?',
+      body: 'Start with health, current EPS, configured capacity when available, delivery success, and connected Routes. Open a Destination when capacity or delivery posture needs diagnosis.',
+    },
+    {
+      title: 'What should I do next?',
+      body: 'Create a Destination when you need a new delivery endpoint. Then attach it to a Stream through a Route rather than creating a duplicate Stream for destination-specific behavior.',
+    },
+  ],
+}
 
 // ─── Form state ───────────────────────────────────────────────────────────────
 
@@ -1054,12 +1079,13 @@ export function DestinationsManagementPage() {
   return (
     <div className="flex w-full min-w-0 flex-col gap-5" data-testid="destinations-management-page">
 
-      {/* Toolbar — App Shell owns the page title */}
-      <div className="flex flex-col gap-3 border-b border-slate-200/80 pb-4 dark:border-gdc-divider sm:flex-row sm:items-start sm:justify-between">
-        <p className="max-w-2xl text-sm text-slate-600 dark:text-gdc-muted">
-          Which destination needs attention? Scan delivery posture, open a destination for capacity and route impact, then edit or test without leaving the workspace.
-        </p>
-        <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
+      <PagePurposeHeader
+        title="Destinations"
+        showTitle={false}
+        purpose="Where is DataRelay sending data, and can each endpoint accept the current load? Review destination health and capacity, then inspect the Routes that deliver to it."
+        help={DESTINATIONS_HELP}
+        testId="destinations-purpose-header"
+        actions={
           <button
             type="button"
             data-testid="destinations-new"
@@ -1069,52 +1095,53 @@ export function DestinationsManagementPage() {
             <Plus className="h-4 w-4" aria-hidden />
             New Destination
           </button>
-          <div
-            className="flex flex-wrap items-center justify-end gap-2"
-            data-testid="destinations-console-controls"
-            aria-label="Destinations refresh and time range"
+        }
+      />
+
+      <div
+        className="flex flex-wrap items-center justify-end gap-2"
+        data-testid="destinations-console-controls"
+        aria-label="Destinations refresh and time range"
+      >
+        <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-gdc-muted">
+          <span className="shrink-0">Time range</span>
+          <select
+            value={timeRange}
+            onChange={(e) => handleTimeRangeChange(e.target.value as StreamsMetricsWindow)}
+            className="rounded-lg border border-slate-200/90 bg-white px-2.5 py-1.5 text-sm font-medium text-slate-800 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
+            aria-label="Metrics time range"
+            data-testid="destinations-time-range"
           >
-            <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-gdc-muted">
-              <span className="shrink-0">Time range</span>
-              <select
-                value={timeRange}
-                onChange={(e) => handleTimeRangeChange(e.target.value as StreamsMetricsWindow)}
-                className="rounded-lg border border-slate-200/90 bg-white px-2.5 py-1.5 text-sm font-medium text-slate-800 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
-                aria-label="Metrics time range"
-                data-testid="destinations-time-range"
-              >
-                {(['15m', '1h', '24h', '7d', '30d'] as const).map((w) => (
-                  <option key={w} value={w}>{streamsTimeRangeLabel(w)}</option>
-                ))}
-              </select>
-            </label>
-            <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-gdc-muted">
-              <span className="shrink-0">Auto refresh</span>
-              <select
-                value={autoRefresh}
-                onChange={(e) => handleAutoRefreshChange(e.target.value as StreamsAutoRefreshOption)}
-                className="rounded-lg border border-slate-200/90 bg-white px-2.5 py-1.5 text-sm font-medium text-slate-800 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
-                aria-label="Auto refresh interval"
-                data-testid="destinations-auto-refresh"
-              >
-                {(['Off', '15s', '30s', '1m', '5m'] as const).map((opt) => (
-                  <option key={opt} value={opt}>{opt === 'Off' ? 'Off' : opt}</option>
-                ))}
-              </select>
-            </label>
-            <button
-              type="button"
-              onClick={() => { void refresh() }}
-              disabled={isRefreshing}
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200/90 px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 dark:border-gdc-border dark:text-slate-200 dark:hover:bg-gdc-elevated"
-              aria-label="Refresh destinations now"
-              data-testid="destinations-manual-refresh"
-            >
-              <RefreshCw className={cn('h-3.5 w-3.5', isRefreshing && 'animate-spin')} aria-hidden />
-              Refresh
-            </button>
-          </div>
-        </div>
+            {(['15m', '1h', '24h', '7d', '30d'] as const).map((w) => (
+              <option key={w} value={w}>{streamsTimeRangeLabel(w)}</option>
+            ))}
+          </select>
+        </label>
+        <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-gdc-muted">
+          <span className="shrink-0">Auto refresh</span>
+          <select
+            value={autoRefresh}
+            onChange={(e) => handleAutoRefreshChange(e.target.value as StreamsAutoRefreshOption)}
+            className="rounded-lg border border-slate-200/90 bg-white px-2.5 py-1.5 text-sm font-medium text-slate-800 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
+            aria-label="Auto refresh interval"
+            data-testid="destinations-auto-refresh"
+          >
+            {(['Off', '15s', '30s', '1m', '5m'] as const).map((opt) => (
+              <option key={opt} value={opt}>{opt === 'Off' ? 'Off' : opt}</option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          onClick={() => { void refresh() }}
+          disabled={isRefreshing}
+          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200/90 px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 dark:border-gdc-border dark:text-slate-200 dark:hover:bg-gdc-elevated"
+          aria-label="Refresh destinations now"
+          data-testid="destinations-manual-refresh"
+        >
+          <RefreshCw className={cn('h-3.5 w-3.5', isRefreshing && 'animate-spin')} aria-hidden />
+          Refresh
+        </button>
       </div>
 
       {/* Error banners */}

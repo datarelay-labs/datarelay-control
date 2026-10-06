@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { RoutesOverviewPage } from './routes-overview-page'
@@ -150,9 +151,27 @@ describe('RoutesOverviewPage snapshot loading', () => {
     await waitFor(() => {
       expect(snap.getOperationalSnapshot).toHaveBeenCalled()
     })
+    expect(screen.getByTestId('routes-purpose-header')).toHaveTextContent(/destination-specific path/i)
+    expect(screen.getByTestId('routes-mental-model')).toHaveTextContent('Stream')
+    expect(screen.getByTestId('routes-mental-model')).toHaveTextContent('Route Processing')
+    expect(screen.getByTestId('routes-mental-model')).toHaveTextContent('Destination')
+    expect(screen.getByTestId('routes-mental-model')).toHaveTextContent(/fan out through many Routes/i)
     expect(screen.getByText('Route Flow')).toBeInTheDocument()
     expect(screen.getByText('All Routes (1)')).toBeInTheDocument()
     expect(screen.getAllByText('S1').length).toBeGreaterThan(0)
     expect(runtime.fetchStreamRuntimeMetrics).not.toHaveBeenCalled()
+  })
+
+  it('explains the Stream to Route to Destination mental model in page help', async () => {
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <RoutesOverviewPage />
+      </MemoryRouter>,
+    )
+    await screen.findByText('Route Flow')
+    await user.click(screen.getByRole('button', { name: 'Help' }))
+    expect(screen.getByRole('dialog')).toHaveTextContent('The core model')
+    expect(screen.getByRole('dialog')).toHaveTextContent(/Each Route targets one Destination/i)
   })
 })

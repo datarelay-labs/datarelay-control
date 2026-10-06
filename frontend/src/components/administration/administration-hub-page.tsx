@@ -1,24 +1,13 @@
-import {
-  Activity,
-  ClipboardList,
-  Clock,
-  HardDrive,
-  Lock,
-  Network,
-  Shield,
-  Users,
-} from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { AdminTaskCatalog, type AdminTask } from '@datarelay-labs/system-admin-ui'
 import { NAV_PATH, SETTINGS_SECTION_PATH } from '../../config/nav-paths'
 import { isAdminUiOperator, isAdminUiReadOnly, readAdminUiRole } from '../../lib/gdc-ui-tokens'
-import { cn } from '../../lib/utils'
+import { PagePurposeHeader, type PageHelpContent } from '../ui/page-purpose-header'
 
 type HubDestination = {
   title: string
   description: string
   path: string
-  icon: typeof Shield
   testId: string
 }
 
@@ -41,21 +30,18 @@ const TASK_GROUPS: readonly HubTaskGroup[] = [
         title: 'HTTPS',
         description: 'TLS listener, certificate SANs, and HTTP-to-HTTPS redirect.',
         path: SETTINGS_SECTION_PATH.https,
-        icon: Shield,
         testId: 'admin-hub-https',
       },
       {
         title: 'User Management',
         description: 'Platform accounts, roles, and access status.',
         path: SETTINGS_SECTION_PATH.userManagement,
-        icon: Users,
         testId: 'admin-hub-user-management',
       },
       {
         title: 'Password Management',
         description: 'Change operator passwords and credential policy.',
         path: SETTINGS_SECTION_PATH.passwordManagement,
-        icon: Lock,
         testId: 'admin-hub-password-management',
       },
     ],
@@ -70,14 +56,12 @@ const TASK_GROUPS: readonly HubTaskGroup[] = [
         title: 'Display timezone',
         description: 'Effective display timezone, personal override, and platform default.',
         path: SETTINGS_SECTION_PATH.displayTimezone,
-        icon: Clock,
         testId: 'admin-hub-display-timezone',
       },
       {
         title: 'Network',
         description: 'Published HTTP/HTTPS ports and reverse-proxy apply workflow.',
         path: SETTINGS_SECTION_PATH.network,
-        icon: Network,
         testId: 'admin-hub-network',
       },
     ],
@@ -92,14 +76,12 @@ const TASK_GROUPS: readonly HubTaskGroup[] = [
         title: 'Retention',
         description: 'Cleanup scheduler and per-category retention policy.',
         path: SETTINGS_SECTION_PATH.retention,
-        icon: HardDrive,
         testId: 'admin-hub-retention',
       },
       {
         title: 'Backup & Import',
         description: 'Export and import portable workspace configuration snapshots.',
         path: NAV_PATH.backup,
-        icon: HardDrive,
         testId: 'admin-hub-backup',
       },
     ],
@@ -114,34 +96,55 @@ const TASK_GROUPS: readonly HubTaskGroup[] = [
         title: 'Audit',
         description: 'Platform audit trail and configuration change history.',
         path: SETTINGS_SECTION_PATH.audit,
-        icon: ClipboardList,
         testId: 'admin-hub-audit',
       },
       {
         title: 'System Health',
         description: 'Operational health signals, maintenance readiness, and alerts.',
         path: SETTINGS_SECTION_PATH.systemHealth,
-        icon: Activity,
         testId: 'admin-hub-system-health',
       },
     ],
   },
 ] as const
 
-const FOUNDATION_ADMIN_TASKS: readonly AdminTask[] = TASK_GROUPS.flatMap((group) =>
-  group.destinations.map((destination) => ({
+const FOUNDATION_ADMIN_PATH = new Map(
+  TASK_GROUPS.flatMap((group) => group.destinations.map((destination) => [destination.testId, destination.path] as const)),
+)
+
+const ADMINISTRATION_HELP: PageHelpContent = {
+  title: 'Administration',
+  intro: 'Administration is for platform access, security, network, lifecycle, recovery, and audit settings. Data-flow configuration stays with Connectors, Streams, Routes, and Destinations.',
+  sections: [
+    {
+      title: 'What belongs here?',
+      bullets: [
+        'Access & security: HTTPS, platform users, and passwords.',
+        'Platform & network: display timezone and published network settings.',
+        'Lifecycle & recovery: retention and portable backup/import.',
+        'Operations & audit: platform audit history and system health.',
+      ],
+    },
+    {
+      title: 'What does not belong here?',
+      body: 'Do not configure source collection, Stream logic, Route Processing, or Destination delivery here. Those remain in the data-flow workspaces.',
+    },
+    {
+      title: 'Before a high-risk change',
+      body: 'Check the access-context banner first. Individual settings pages keep their existing confirmation, RBAC, and apply workflows.',
+    },
+  ],
+}
+
+function foundationTasksForGroup(group: HubTaskGroup): readonly AdminTask[] {
+  return group.destinations.map((destination) => ({
     id: destination.testId,
     label: destination.title,
     description: destination.description,
     group: group.title,
     availability: 'supported' as const,
-    notes: destination.path,
-  })),
-)
-
-const FOUNDATION_ADMIN_PATH = new Map(
-  TASK_GROUPS.flatMap((group) => group.destinations.map((destination) => [destination.testId, destination.path] as const)),
-)
+  }))
+}
 
 function roleLabel(role: string | null): string {
   if (role === 'ADMINISTRATOR') return 'Administrator'
@@ -207,12 +210,13 @@ export function AdministrationHubPage() {
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-6" data-testid="administration-hub-page">
-      <header className="space-y-3 border-b border-slate-200/80 pb-5 dark:border-gdc-divider">
-        <p className="max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-gdc-muted" data-testid="admin-hub-purpose">
-          What needs configuring on this platform? Start from a task group, open the matching Settings destination, then
-          review access context before high-risk changes. Stream and delivery setup stays under Data Sources and Delivery.
-        </p>
-        <div className="flex flex-wrap items-center gap-2">
+      <PagePurposeHeader
+        title="Administration"
+        showTitle={false}
+        purpose="What needs configuring on this platform? Choose an Administration task for access, security, network, lifecycle, recovery, or audit; data-flow setup stays in its operational workspace."
+        help={ADMINISTRATION_HELP}
+        testId="administration-purpose-header"
+        actions={
           <Link
             to={NAV_PATH.settings}
             data-testid="admin-hub-open-all-settings"
@@ -220,20 +224,10 @@ export function AdministrationHubPage() {
           >
             Browse all settings
           </Link>
-        </div>
-      </header>
+        }
+      />
 
       <AccessContextBanner />
-
-      <section aria-label="Foundation administration task catalog" data-testid="foundation-admin-task-catalog">
-        <AdminTaskCatalog
-          tasks={FOUNDATION_ADMIN_TASKS}
-          onOpen={(task) => {
-            const path = FOUNDATION_ADMIN_PATH.get(task.id)
-            if (path) navigate(path)
-          }}
-        />
-      </section>
 
       <div className="flex flex-col gap-8" data-testid="admin-hub-task-groups">
         {TASK_GROUPS.map((group) => (
@@ -252,41 +246,15 @@ export function AdministrationHubPage() {
               </h2>
               <p className="max-w-2xl text-sm text-slate-600 dark:text-gdc-muted">{group.description}</p>
             </div>
-            <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              {group.destinations.map((destination) => {
-                const Icon = destination.icon
-                return (
-                  <li key={destination.testId} className="min-w-0">
-                    <Link
-                      to={destination.path}
-                      data-testid={destination.testId}
-                      aria-label={`Open ${destination.title}`}
-                      className={cn(
-                        'group flex h-full flex-col rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm transition',
-                        'hover:border-slate-300 hover:bg-slate-50/80',
-                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40',
-                        'dark:border-gdc-border dark:bg-gdc-card dark:hover:border-gdc-borderStrong dark:hover:bg-gdc-cardHover',
-                      )}
-                    >
-                      <div className="flex items-start gap-3">
-                        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200/90 bg-slate-50 text-slate-700 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-200">
-                          <Icon className="h-4 w-4" aria-hidden />
-                        </span>
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{destination.title}</p>
-                          <p className="mt-1 text-sm leading-relaxed text-slate-600 dark:text-gdc-muted">
-                            {destination.description}
-                          </p>
-                        </div>
-                      </div>
-                      <span className="mt-3 text-sm font-semibold text-slate-700 group-hover:text-slate-900 dark:text-slate-300 dark:group-hover:text-slate-100">
-                        Open →
-                      </span>
-                    </Link>
-                  </li>
-                )
-              })}
-            </ul>
+            <div data-testid={`${group.testId}-catalog`}>
+              <AdminTaskCatalog
+                tasks={foundationTasksForGroup(group)}
+                onOpen={(task) => {
+                  const path = FOUNDATION_ADMIN_PATH.get(task.id)
+                  if (path) navigate(path)
+                }}
+              />
+            </div>
           </section>
         ))}
       </div>

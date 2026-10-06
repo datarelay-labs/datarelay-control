@@ -52,6 +52,7 @@ import { RoutesFlowTreeTable } from './routes-flow-tree-table'
 import { RoutesProblemRoutesPanel } from './routes-problem-routes-panel'
 import { RuntimeFixtureModeBanner } from '../runtime/runtime-fixture-mode-banner'
 import { ROUTES_TABLE_ROW_HEIGHT, ROUTES_VIRTUAL_SCROLL_THRESHOLD, RoutesTableRow } from './routes-table-row'
+import { PagePurposeHeader, type PageHelpContent } from '../ui/page-purpose-header'
 
 const WINDOW_OPTIONS: { value: MetricsWindow; label: string }[] = [
   { value: '15m', label: 'Last 15 minutes' },
@@ -59,6 +60,29 @@ const WINDOW_OPTIONS: { value: MetricsWindow; label: string }[] = [
   { value: '6h', label: 'Last 6 hours' },
   { value: '24h', label: 'Last 24 hours' },
 ]
+
+const ROUTES_HELP: PageHelpContent = {
+  title: 'Routes',
+  intro: 'A Route is the destination-specific delivery path from one Stream to one Destination. Use Routes when the same Stream needs different processing or delivery behavior for different destinations.',
+  sections: [
+    {
+      title: 'The core model',
+      bullets: [
+        'One Stream collects a data flow once.',
+        'That Stream can fan out through many Routes.',
+        'Each Route targets one Destination and owns destination-specific processing and failure behavior.',
+      ],
+    },
+    {
+      title: 'What am I looking at?',
+      body: 'The flow view shows how Streams fan out to Destinations. KPI and route tables show runtime-backed throughput, delivery success, errors, latency, and route configuration.',
+    },
+    {
+      title: 'What should I do next?',
+      body: 'Investigate unhealthy Routes first. Create a Route only when an existing Stream needs another Destination or different destination-specific processing.',
+    },
+  ],
+}
 
 function MiniSparkline({ values, className }: { values: readonly number[]; className?: string }) {
   const w = 52
@@ -416,51 +440,13 @@ export function RoutesOverviewPage() {
         </div>
       ) : null}
       <RuntimeFixtureModeBanner surface="routes" />
-      {/* Purpose only — App Shell owns the page title */}
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <p className="max-w-2xl text-sm text-slate-600 dark:text-gdc-muted">
-          End-to-end delivery flow across streams, routes, and destinations
-        </p>
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
-          {operationalSnapshot ? (
-            <div
-              className={cn(
-                'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold',
-                'border-emerald-500/30 bg-emerald-500/10 text-emerald-900 dark:text-emerald-100',
-              )}
-            >
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden />
-              SNAPSHOT
-              <span className="font-normal opacity-80">
-                Updated {relativeShort(operationalSnapshot.updated_at)}
-              </span>
-            </div>
-          ) : loading ? (
-            <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-              Status…
-            </span>
-          ) : (
-            <span className="text-[11px] text-slate-500">Runtime status unavailable</span>
-          )}
-          <SelectField
-            id="routes-window"
-            label="Metrics window"
-            value={metricsWindow}
-            options={WINDOW_OPTIONS}
-            onChange={(v) => setMetricsWindow(v as MetricsWindow)}
-          />
-          <button
-            type="button"
-            onClick={() => {
-              clearOperationalSnapshotCache()
-              setRefreshTick((x) => x + 1)
-            }}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200/90 bg-white text-slate-700 shadow-sm hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200 dark:hover:bg-gdc-rowHover"
-            aria-label="Refresh"
-          >
-            <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} aria-hidden />
-          </button>
+      <PagePurposeHeader
+        title="Routes"
+        showTitle={false}
+        purpose="How does each Stream reach each Destination? A Route is the destination-specific path that applies processing, delivery, retry, and rate-limit behavior before data is sent."
+        help={ROUTES_HELP}
+        testId="routes-purpose-header"
+        actions={
           <Link
             to={routeEditPath('new')}
             className="inline-flex h-9 items-center gap-1.5 rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white shadow-sm hover:bg-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500/40"
@@ -468,8 +454,68 @@ export function RoutesOverviewPage() {
             <Plus className="h-3.5 w-3.5" aria-hidden />
             Create Route
           </Link>
-        </div>
+        }
+      />
+
+      <div className="flex flex-wrap items-center justify-end gap-2" aria-label="Route runtime controls">
+        {operationalSnapshot ? (
+          <div
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold',
+              'border-emerald-500/30 bg-emerald-500/10 text-emerald-900 dark:text-emerald-100',
+            )}
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden />
+            SNAPSHOT
+            <span className="font-normal opacity-80">
+              Updated {relativeShort(operationalSnapshot.updated_at)}
+            </span>
+          </div>
+        ) : loading ? (
+          <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+            Status…
+          </span>
+        ) : (
+          <span className="text-[11px] text-slate-500">Runtime status unavailable</span>
+        )}
+        <SelectField
+          id="routes-window"
+          label="Metrics window"
+          value={metricsWindow}
+          options={WINDOW_OPTIONS}
+          onChange={(v) => setMetricsWindow(v as MetricsWindow)}
+        />
+        <button
+          type="button"
+          onClick={() => {
+            clearOperationalSnapshotCache()
+            setRefreshTick((x) => x + 1)
+          }}
+          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200/90 bg-white text-slate-700 shadow-sm hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200 dark:hover:bg-gdc-rowHover"
+          aria-label="Refresh"
+        >
+          <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} aria-hidden />
+        </button>
       </div>
+
+      <section
+        className="rounded-xl border border-violet-200/70 bg-violet-50/40 px-4 py-3 dark:border-violet-500/20 dark:bg-violet-500/[0.06]"
+        data-testid="routes-mental-model"
+        aria-label="DataRelay delivery model"
+      >
+        <p className="text-xs font-semibold uppercase tracking-wide text-violet-800 dark:text-violet-200">How delivery works</p>
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
+          <span className="rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-gdc-border dark:bg-gdc-card">Stream</span>
+          <ChevronRight className="h-4 w-4 text-slate-400" aria-hidden />
+          <span className="rounded-lg border border-violet-200 bg-white px-3 py-2 dark:border-violet-500/30 dark:bg-gdc-card">Route Processing</span>
+          <ChevronRight className="h-4 w-4 text-slate-400" aria-hidden />
+          <span className="rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-gdc-border dark:bg-gdc-card">Destination</span>
+        </div>
+        <p className="mt-2 text-xs leading-relaxed text-slate-600 dark:text-gdc-muted">
+          One Stream can fan out through many Routes to many Destinations. Use each Route for destination-specific processing and delivery behavior instead of duplicating the Stream.
+        </p>
+      </section>
 
       <section aria-label="Route KPI summary" className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6 xl:gap-3">
         <div className="rounded-lg border border-slate-200/70 bg-white/90 px-3 py-2 dark:border-gdc-border/90 dark:bg-gdc-card">

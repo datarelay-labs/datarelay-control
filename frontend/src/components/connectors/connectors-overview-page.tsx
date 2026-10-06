@@ -23,6 +23,8 @@ import { ConnectorStreamsPopover } from './connector-streams-popover'
 import { CurlImportPanel, PostmanImportPanel } from './http-import-panel'
 import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
 import { formatOperationalCount, formatThroughputEps } from '../../lib/observability-format'
+import { isDevValidationLabUiEnabled } from '../../lib/feature-flags'
+import { PagePurposeHeader, type PageHelpContent } from '../ui/page-purpose-header'
 
 function formatEventsToday(n: number): string {
   return formatOperationalCount(n, { compact: true })
@@ -32,6 +34,30 @@ function formatEps(eps: number): string {
   if (!Number.isFinite(eps)) return '0'
   if (eps >= 1000) return `${(eps / 1000).toFixed(1)}K`
   return formatThroughputEps(eps)
+}
+
+const CONNECTORS_HELP: PageHelpContent = {
+  title: 'Connectors',
+  intro:
+    'Connectors hold reusable source access and authentication. Streams use a Connector to collect a specific data flow, then Routes deliver that Stream to Destinations.',
+  sections: [
+    {
+      title: 'Connector vs Stream',
+      bullets: [
+        'Connector: reusable source connection, authentication, and source product identity.',
+        'Stream: the data flow that collects records through a Connector and owns its delivery workflow.',
+        'One Connector can support multiple Streams when the source exposes multiple data sets or APIs.',
+      ],
+    },
+    {
+      title: 'What should I do here?',
+      body: 'Check unhealthy authentication or freshness first. Create a Connector when DataRelay needs access to a new source system; create Streams afterward to collect its data.',
+    },
+    {
+      title: 'Advanced setup',
+      body: 'cURL/Postman import and development-validation filters are secondary setup tools. They do not change the Connector → Stream → Route → Destination runtime model.',
+    },
+  ],
 }
 
 export function ConnectorsOverviewPage() {
@@ -59,10 +85,11 @@ export function ConnectorsOverviewPage() {
   const [authTestingId, setAuthTestingId] = useState<number | null>(null)
   const [deleteDialogRow, setDeleteDialogRow] = useState<ConnectorDashboardRow | null>(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
+  const devValidationUiEnabled = isDevValidationLabUiEnabled()
 
   const visibleRows = useMemo(
-    () => (labFilterOnly ? rows.filter((r) => isDevValidationLabEntityName(r.name)) : rows),
-    [rows, labFilterOnly],
+    () => (devValidationUiEnabled && labFilterOnly ? rows.filter((r) => isDevValidationLabEntityName(r.name)) : rows),
+    [rows, labFilterOnly, devValidationUiEnabled],
   )
   const hasRows = useMemo(() => visibleRows.length > 0, [visibleRows.length])
   const labCount = useMemo(() => rows.filter((r) => isDevValidationLabEntityName(r.name)).length, [rows])
@@ -98,34 +125,52 @@ export function ConnectorsOverviewPage() {
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-4" data-testid="connectors-overview-page">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight text-slate-900 dark:text-gdc-foreground">Connectors</h2>
-          <p className="text-[13px] text-slate-600 dark:text-gdc-muted">
-            Operational dashboard — auth, data freshness, stream health, and delivery impact.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="inline-flex h-9 cursor-pointer select-none items-center gap-1.5 rounded-md border border-amber-200/80 bg-amber-50/80 px-2 text-[11px] font-medium text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-50">
-            <input
-              type="checkbox"
-              className="rounded border-amber-400 text-amber-700 focus:ring-amber-500"
-              checked={labFilterOnly}
-              onChange={(e) => setLabFilterOnly(e.target.checked)}
-              aria-label="Dev validation lab only filter"
-            />
-            Dev validation lab only
-            <span className="ml-1 rounded bg-amber-100 px-1 font-mono text-[10px] text-amber-900 dark:bg-amber-900/60 dark:text-amber-50">{labCount}</span>
-          </label>
-          <button
-            type="button"
-            onClick={() => reload({ bustCache: true })}
-            className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 text-[12px] font-semibold text-slate-800 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
-            aria-busy={refreshing}
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} aria-hidden />
-            Refresh
-          </button>
+      <PagePurposeHeader
+        title="Connectors"
+        showTitle={false}
+        purpose="Which source connection needs attention? Connectors manage reusable source access; Streams use them to collect data before Routes deliver it to Destinations."
+        help={CONNECTORS_HELP}
+        testId="connectors-purpose-header"
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={() => reload({ bustCache: true })}
+              className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 text-[12px] font-semibold text-slate-800 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
+              aria-busy={refreshing}
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} aria-hidden />
+              Refresh
+            </button>
+            <Link to="/connectors/new" className="inline-flex h-9 items-center gap-1.5 rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white hover:bg-violet-700">
+              <Plus className="h-3.5 w-3.5" />
+              Create Connector
+            </Link>
+          </>
+        }
+      />
+
+      <details
+        className="rounded-lg border border-slate-200/80 bg-white dark:border-gdc-border dark:bg-gdc-card"
+        data-testid="connectors-advanced-setup"
+      >
+        <summary className="cursor-pointer px-3 py-2 text-[12px] font-semibold text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-gdc-rowHover">
+          Advanced setup & validation
+        </summary>
+        <div className="flex flex-wrap items-center gap-2 border-t border-slate-200/80 px-3 py-3 dark:border-gdc-divider">
+          {devValidationUiEnabled ? (
+            <label className="inline-flex h-9 cursor-pointer select-none items-center gap-1.5 rounded-md border border-amber-200/80 bg-amber-50/80 px-2 text-[11px] font-medium text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-50">
+              <input
+                type="checkbox"
+                className="rounded border-amber-400 text-amber-700 focus:ring-amber-500"
+                checked={labFilterOnly}
+                onChange={(e) => setLabFilterOnly(e.target.checked)}
+                aria-label="Dev validation lab only filter"
+              />
+              Dev validation lab only
+              <span className="ml-1 rounded bg-amber-100 px-1 font-mono text-[10px] text-amber-900 dark:bg-amber-900/60 dark:text-amber-50">{labCount}</span>
+            </label>
+          ) : null}
           <button
             type="button"
             onClick={() => setShowImport((v) => !v)}
@@ -133,12 +178,8 @@ export function ConnectorsOverviewPage() {
           >
             {showImport ? 'Hide import' : 'Import from cURL / Postman'}
           </button>
-          <Link to="/connectors/new" className="inline-flex h-9 items-center gap-1.5 rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white hover:bg-violet-700">
-            <Plus className="h-3.5 w-3.5" />
-            Create Connector
-          </Link>
         </div>
-      </div>
+      </details>
 
       {showImport ? (
         <div className="grid gap-4 lg:grid-cols-2">
@@ -163,7 +204,7 @@ export function ConnectorsOverviewPage() {
           </span>
         ) : null}
         <span className="ml-2 text-[11px] text-slate-500 dark:text-gdc-muted">
-          {rows.length} total · {labCount} Dev validation lab · sorted by health
+          {rows.length} total{devValidationUiEnabled ? ` · ${labCount} Dev validation lab` : ''} · sorted by health
         </span>
       </div>
 

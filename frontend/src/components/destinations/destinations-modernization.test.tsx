@@ -107,11 +107,23 @@ describe('DestinationsManagementPage modernization', () => {
       </MemoryRouter>,
     )
     expect(screen.getByTestId('destinations-management-page')).toBeInTheDocument()
-    expect(screen.getByText(/Which destination needs attention/i)).toBeInTheDocument()
+    expect(screen.getByText(/Where is DataRelay sending data/i)).toBeInTheDocument()
     expect(screen.getByTestId('destinations-new')).toBeInTheDocument()
     expect(await screen.findByTestId('destinations-health-overview')).toBeInTheDocument()
     expect(screen.getByTestId('destinations-search')).toBeInTheDocument()
     expect(screen.getByTestId('destinations-status-filter')).toBeInTheDocument()
+  })
+
+  it('explains Destination vs Route in contextual help', async () => {
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <DestinationsManagementPage />
+      </MemoryRouter>,
+    )
+    await user.click(screen.getByRole('button', { name: 'Help' }))
+    expect(screen.getByRole('dialog')).toHaveTextContent('Destination vs Route')
+    expect(screen.getByRole('dialog')).toHaveTextContent(/One Destination can receive data from multiple Streams/i)
   })
 
   it('filters destinations by search without losing the row structure', async () => {
