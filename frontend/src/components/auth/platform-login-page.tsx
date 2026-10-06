@@ -5,7 +5,7 @@ import { postAuthLogin } from '../../api/gdcAdmin'
 import { accessTokenRequiresPasswordChange } from '../../auth/jwt-session-hints'
 import { markSessionRequiresPasswordChange } from '../../auth/password-change-gate'
 import { persistSession } from '../../auth/session'
-import { DataRelayLogoMark, DataRelayWordmark } from './datarelay-logo'
+import { DataRelayLogoMark } from './datarelay-logo'
 
 const RESOURCES: readonly {
   title: string
@@ -85,12 +85,7 @@ export function PlatformLoginPage({ onAuthenticated }: PlatformLoginPageProps) {
       description="Collect. Transform. Deliver. Connect to any source, transform and enrich your data, then deliver it to multiple destinations reliably and securely."
       title="Welcome to DataRelay"
       subtitle="Please sign in to continue."
-      brandMark={
-        <>
-          <DataRelayLogoMark className="h-12 w-auto" aria-label="DataRelay logo" />
-          <DataRelayWordmark />
-        </>
-      }
+      brandMark={<DataRelayLogoMark className="h-12 w-auto" aria-label="DataRelay logo" />}
       resources={RESOURCES.map(({ title, subtitle, href }) => ({
         title,
         description: subtitle,
