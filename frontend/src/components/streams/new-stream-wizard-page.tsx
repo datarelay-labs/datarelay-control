@@ -67,6 +67,8 @@ import {
   type OperationalSampleId,
 } from './wizard/wizard-operational-samples'
 import { applyHttpImportToWizardState, type HttpImportWizardLocationState } from '../../utils/httpImportDraft'
+import { IntentTemplatePicker } from './wizard/intent-template-picker'
+import { applyWizardIntentTemplate, type WizardIntentTemplateId } from './wizard/intent-templates'
 import { persistWizardDataProtectionIntents } from './wizard/wizard-data-protection-persist'
 import { persistWizardRouteTransformOverrides, verifyWizardRouteTransformEffective } from './wizard/wizard-stream-persist'
 import { persistWizardStreamGovernance } from './wizard/wizard-governance-persist'
@@ -100,6 +102,7 @@ export function NewStreamWizardPage() {
   const importHydratedRef = useRef(false)
   const draftHydratedRef = useRef(false)
   const [stepIndex, setStepIndex] = useState(0)
+  const [intentSelected, setIntentSelected] = useState(false)
   const [state, setState] = useState<WizardState>(() => buildInitialState())
   const [pendingDraft, setPendingDraft] = useState<WizardDraftEnvelopeV2 | null>(null)
   const [draftBannerVisible, setDraftBannerVisible] = useState(false)
@@ -109,6 +112,16 @@ export function NewStreamWizardPage() {
   const [draftNotice, setDraftNotice] = useState<string | null>(null)
   const [operationalSampleId, setOperationalSampleId] = useState<OperationalSampleId | null>(null)
   const [dataProtectionDrawerOpen, setDataProtectionDrawerOpen] = useState(false)
+
+  const handleIntentSelect = useCallback((id: WizardIntentTemplateId) => {
+    clearWizardDraft()
+    setState(applyWizardIntentTemplate(id))
+    setStepIndex(0)
+    setPendingDraft(null)
+    setDraftBannerVisible(false)
+    setOperationalSampleId(null)
+    setIntentSelected(true)
+  }, [])
 
   const wizardSteps = useMemo(
     () => wizardStepsWithSourcePresentation(WIZARD_STEPS, state.connector.sourceType),
@@ -133,6 +146,7 @@ export function NewStreamWizardPage() {
     setStepIndex(wizardStepIndexForKey(wizardSteps, pendingDraft.stepKey))
     setPendingDraft(null)
     setDraftBannerVisible(false)
+    setIntentSelected(true)
     setDraftNotice('Draft restored from local storage.')
     window.setTimeout(() => setDraftNotice(null), 4000)
   }, [pendingDraft, wizardSteps])
@@ -144,6 +158,7 @@ export function NewStreamWizardPage() {
     setPendingDraft(null)
     setDraftBannerVisible(false)
     setOperationalSampleId(null)
+    setIntentSelected(true)
   }, [])
 
   useEffect(() => {
@@ -154,6 +169,7 @@ export function NewStreamWizardPage() {
     importHydratedRef.current = true
     setState((prev) => applyHttpImportToWizardState(prev, { connectorId, streamDraft: routeState.streamDraft }))
     setDraftNotice('Stream fields prefilled from import. Review polling and mapping before creating.')
+    setIntentSelected(true)
     setStepIndex(wizardStepIndexForKey(wizardSteps, 'connect'))
   }, [location.state, wizardSteps])
 
@@ -831,6 +847,7 @@ export function NewStreamWizardPage() {
     setOperationalSampleId(null)
     setPendingDraft(null)
     setDraftBannerVisible(false)
+    setIntentSelected(false)
   }, [])
 
   const isDeployStep = currentStepKey === 'deploy'
@@ -883,19 +900,23 @@ export function NewStreamWizardPage() {
         </div>
       </div>
 
+      {!intentSelected && !draftBannerVisible ? (
+        <IntentTemplatePicker onSelect={handleIntentSelect} />
+      ) : null}
+
       {creationError ? (
         <p className="rounded-md border border-red-200/80 bg-red-500/[0.06] p-3 text-[12px] font-medium text-red-700 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-300">
           Unable to create the stream: {creationError}
         </p>
       ) : null}
 
-      <WizardStepper
+      {intentSelected || draftBannerVisible ? <WizardStepper
         wizardSteps={wizardSteps}
         stepIndex={stepIndex}
         setStepIndex={setStepIndex}
         completion={completion}
         state={state}
-      />
+      /> : null}
 
       {draftBannerVisible && pendingDraft ? (
         <div
@@ -930,7 +951,7 @@ export function NewStreamWizardPage() {
         </p>
       ) : null}
 
-      <div>
+      {intentSelected || draftBannerVisible ? <div>
         {currentStepKey === 'connect' ? (
           <StepConnect state={state} onConnectorChange={updateConnector} onStreamChange={updateStream} />
         ) : null}
@@ -979,9 +1000,9 @@ export function NewStreamWizardPage() {
             onNavigateToLegacySubstep={navigateToLegacySubstep}
           />
         ) : null}
-      </div>
+      </div> : null}
 
-      <nav
+      {intentSelected || draftBannerVisible ? <nav
         className="sticky bottom-0 z-20 mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 dark:border-gdc-border dark:bg-gdc-panel"
         aria-label="Wizard navigation"
         data-testid="wizard-action-bar"
@@ -1080,7 +1101,7 @@ export function NewStreamWizardPage() {
             </>
           )}
         </div>
-      </nav>
+      </nav> : null}
     </div>
   )
 }

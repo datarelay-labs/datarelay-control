@@ -45,7 +45,20 @@ vi.mock('../../api/gdcDestinations', () => ({
 }))
 
 describe('NewStreamWizardPage v5.2 5-step', () => {
-  it('renders 5-step stepper labels with Route Processing', () => {
+  it('starts fresh creation with intent choices and applies a selected template before the existing wizard', async () => {
+    localStorage.setItem('gdc-platform-persona', 'connector')
+    localStorage.removeItem('gdc-stream-wizard-draft-v2')
+    const user = userEvent.setup()
+    render(<MemoryRouter initialEntries={['/streams/new']}><NewStreamWizardPage /></MemoryRouter>)
+    expect(screen.getByTestId('wizard-intent-picker')).toBeInTheDocument()
+    expect(screen.queryByTestId('wizard-stepper')).not.toBeInTheDocument()
+    await user.click(screen.getByTestId('wizard-intent-database-collection'))
+    expect(screen.queryByTestId('wizard-intent-picker')).not.toBeInTheDocument()
+    expect(screen.getByTestId('wizard-step-connect')).toBeInTheDocument()
+    expect(screen.getByTestId('wizard-stepper')).toBeInTheDocument()
+  })
+
+  it('renders 5-step stepper labels with Route Processing', async () => {
     localStorage.setItem('gdc-platform-persona', 'connector')
     localStorage.removeItem('gdc-stream-wizard-draft-v2')
     localStorage.removeItem('gdc-stream-wizard-draft-v1')
@@ -56,6 +69,7 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
       </MemoryRouter>,
     )
 
+    await userEvent.click(screen.getByTestId('wizard-intent-scratch'))
     const stepper = screen.getByTestId('wizard-stepper')
     expect(stepper.textContent).toContain('Connect')
     expect(stepper.textContent).toContain('Sample & Record Selection')
@@ -67,7 +81,7 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
     expect(stepper.textContent).not.toContain('Review & Create')
   })
 
-  it('shows connect step with Charter v3 connect tabs', () => {
+  it('shows connect step with Charter v3 connect tabs', async () => {
     localStorage.setItem('gdc-platform-persona', 'connector')
     localStorage.removeItem('gdc-stream-wizard-draft-v2')
 
@@ -77,6 +91,7 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
       </MemoryRouter>,
     )
 
+    await userEvent.click(screen.getByTestId('wizard-intent-scratch'))
     expect(screen.getByTestId('wizard-step-connect')).toBeInTheDocument()
     expect(screen.getByTestId('wizard-connect-tabs')).toBeInTheDocument()
     expect(screen.getByTestId('wizard-connect-tab-connector')).toBeInTheDocument()
