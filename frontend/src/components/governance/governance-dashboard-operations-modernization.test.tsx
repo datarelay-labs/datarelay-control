@@ -3,7 +3,6 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as gdcGovernanceDashboard from '../../api/gdcGovernanceDashboard'
 import * as gdcGovernanceOperations from '../../api/gdcGovernanceOperations'
-import * as gdcGovernancePolicies from '../../api/gdcGovernancePolicies'
 import * as gdcGovernanceViolations from '../../api/gdcGovernanceViolations'
 import * as operationalSnapshot from '../../api/operationalSnapshot'
 import { NAV_PATH } from '../../config/nav-paths'
@@ -129,23 +128,6 @@ describe('Governance Dashboard modernization', () => {
         },
       ],
     })
-    vi.spyOn(gdcGovernancePolicies, 'fetchGovernancePolicies').mockResolvedValue({
-      policies: [
-        {
-          id: 1,
-          name: 'PII Detection Policy',
-          description: null,
-          category: 'DATA_PROTECTION',
-          status: 'ACTIVE',
-          policy_json: { conditions: [], actions: [] },
-          version: 1,
-          assigned_stream_count: 5,
-          assigned_stream_ids: [1],
-          created_at: '2026-06-01T10:30:00Z',
-          updated_at: '2026-06-01T14:30:00Z',
-        },
-      ],
-    })
     vi.spyOn(operationalSnapshot, 'getOperationalSnapshot').mockRejectedValue(new Error('snapshot unavailable'))
   })
 
@@ -157,12 +139,14 @@ describe('Governance Dashboard modernization', () => {
     )
 
     expect(await screen.findByTestId('governance-dashboard-page')).toBeInTheDocument()
-    expect(screen.getByText(/What needs attention, and where do I investigate/i)).toBeInTheDocument()
+    expect(screen.getByText(/Is governance healthy, and what needs attention now/i)).toBeInTheDocument()
     expect(screen.getByTestId('governance-posture-overview')).toBeInTheDocument()
     expect(screen.getByTestId('governance-recommended-actions')).toBeInTheDocument()
     expect(screen.getByTestId('gov-action-critical-violations')).toHaveTextContent(/Review 3 critical violations/i)
     expect(screen.queryByText(/위반을 검토하세요/)).not.toBeInTheDocument()
     expect(screen.queryByText(/\(요약\)/)).not.toBeInTheDocument()
+    expect(screen.queryByText('Policy Builder')).not.toBeInTheDocument()
+    expect(screen.queryByText('New Policy')).not.toBeInTheDocument()
   })
 
   it('preserves violation deep-link continuity on Investigate', async () => {
