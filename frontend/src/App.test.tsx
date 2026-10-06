@@ -595,7 +595,7 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     await user.click(screen.getByRole('button', { name: 'Destinations' }))
     expect(
       await screen.findByText(
-        /Which destination needs attention\? Scan delivery posture, open a destination for capacity and route impact/i,
+        /Where is DataRelay sending data, and can each endpoint accept the current load/i,
         {},
         { timeout: 15000 },
       ),
@@ -637,7 +637,7 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     renderApp()
     await user.click(screen.getByRole('button', { name: 'Connectors' }))
     expect(
-      await screen.findByText(/Operational dashboard — auth, data freshness/i, {}, { timeout: 15000 }),
+      await screen.findByText(/Which source connection needs attention\? Connectors manage reusable source access/i, {}, { timeout: 15000 }),
     ).toBeInTheDocument()
     expect(screen.getAllByRole('heading', { name: /^Connectors$/ }).length).toBeGreaterThanOrEqual(1)
     expect(screen.getByRole('link', { name: 'Create Connector' })).toBeInTheDocument()
@@ -741,10 +741,11 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     expect(screen.getAllByRole('heading', { name: 'Administration' })).toHaveLength(1)
     expect(screen.queryByRole('navigation', { name: 'Breadcrumb' })).not.toBeInTheDocument()
     expect(within(screen.getByRole('main')).queryByRole('heading', { name: /^Administration$/ })).not.toBeInTheDocument()
-    expect(screen.getByTestId('admin-hub-purpose')).toHaveTextContent(/What needs configuring/i)
+    expect(screen.getByTestId('administration-purpose-header')).toHaveTextContent(/What needs configuring/i)
     expect(screen.getByRole('heading', { name: 'Access & security' })).toBeInTheDocument()
-    expect(screen.getByTestId('admin-hub-https')).toHaveAttribute('href', '/settings#admin-https-heading')
-    expect(screen.getByTestId('admin-hub-backup')).toHaveAttribute('href', '/operations/backup')
+    expect(screen.getByText('HTTPS')).toBeInTheDocument()
+    expect(screen.getByText('Backup & Import')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Manage' })).toHaveLength(9)
     expect(screen.queryByRole('heading', { name: 'Admin settings' })).not.toBeInTheDocument()
   }, 20000)
 
@@ -862,7 +863,7 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     expect(screen.getAllByRole('heading', { name: 'Routes' })).toHaveLength(1)
     expect(screen.queryByRole('heading', { level: 2, name: 'Routes' })).not.toBeInTheDocument()
     expect(within(screen.getByRole('main')).queryByRole('heading', { name: 'Routes' })).not.toBeInTheDocument()
-    expect(screen.getByText(/End-to-end delivery flow across streams, routes, and destinations/i)).toBeInTheDocument()
+    expect(screen.getByText(/How does each Stream reach each Destination\? A Route is the destination-specific path/i)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Create Route' })).toBeInTheDocument()
   }, 20000)
 
