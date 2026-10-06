@@ -53,10 +53,11 @@ describe('Stream Wizard SaaS modernization', () => {
     expect(screen.getByTestId('new-stream-wizard')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Stream Onboarding Wizard' })).not.toBeInTheDocument()
     expect(screen.queryByText(/Connect → Sample/)).not.toBeInTheDocument()
+    expect(screen.getByTestId('wizard-intent-picker')).toBeInTheDocument()
     expect(screen.getByTestId('wizard-stage-purpose')).toHaveTextContent(WIZARD_STAGE_PURPOSE.connect)
   })
 
-  it('renders a readable five-stage stepper with primary Next action hierarchy', () => {
+  it('renders a readable five-stage stepper with primary Next action hierarchy', async () => {
     localStorage.setItem('gdc-platform-persona', 'connector')
     localStorage.removeItem('gdc-stream-wizard-draft-v2')
 
@@ -66,6 +67,7 @@ describe('Stream Wizard SaaS modernization', () => {
       </MemoryRouter>,
     )
 
+    await userEvent.click(screen.getByTestId('wizard-intent-scratch'))
     const stepper = screen.getByTestId('wizard-stepper')
     expect(stepper.textContent).toContain('Connect')
     expect(stepper.textContent).toContain('Sample & Record Selection')
@@ -88,6 +90,7 @@ describe('Stream Wizard SaaS modernization', () => {
       </MemoryRouter>,
     )
 
+    await user.click(screen.getByTestId('wizard-intent-scratch'))
     expect(screen.getByTestId('wizard-connect-tab-connector')).toBeInTheDocument()
     expect(screen.getByTestId('wizard-connect-tab-request')).toBeInTheDocument()
     expect(screen.getByTestId('wizard-connect-tab-advanced')).toBeInTheDocument()
