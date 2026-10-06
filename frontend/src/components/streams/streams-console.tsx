@@ -97,6 +97,7 @@ import {
 import type { StreamRead } from '../../api/types/gdcApi'
 import { readStreamsConsoleSnapshot, writeStreamsConsoleSnapshot, clearStreamsConsoleSnapshot } from './streams-console-cache'
 import { RuntimeFixtureModeBanner } from '../runtime/runtime-fixture-mode-banner'
+import { PagePurposeHeader, type PageHelpContent } from '../ui/page-purpose-header'
 import { useMountAbortController } from '../../hooks/use-mount-abort-signal'
 import { isRequestAborted } from '../../lib/request-abort'
 import { deriveStreamHealthMatrix } from '../dashboard/dashboard-charter-metrics'
@@ -417,6 +418,29 @@ function childEpsLabel(row: StreamConsoleRow): string | null {
   const currentEps = row.eps5m != null && row.eps5m > 0 ? row.eps5m : row.ingestEps
   if (!Number.isFinite(currentEps) || currentEps <= 0) return null
   return `${formatThroughputEps(currentEps)} EPS`
+}
+
+const STREAMS_HELP: PageHelpContent = {
+  title: 'Streams',
+  intro: 'A Stream owns how one collected data flow is configured and executed. Start from the Source Product group, find the Stream that needs attention, then open Runtime for diagnosis.',
+  sections: [
+    {
+      title: 'Connector vs Stream',
+      body: 'A Connector describes how DataRelay connects to a source system. A Stream is the configured collection/execution unit created from that source connection.',
+    },
+    {
+      title: 'How delivery fits',
+      body: 'A Stream can deliver to many Destinations. Each destination path is a Route, and Route Processing controls destination-specific transformation and protection.',
+    },
+    {
+      title: 'What should I do here?',
+      bullets: [
+        'Start with a Source Product group that shows Attention.',
+        'Expand the group to find the affected Stream.',
+        'Open Runtime to diagnose delivery, checkpoint, or route health.',
+      ],
+    },
+  ],
 }
 
 export function StreamsConsole() {
@@ -759,29 +783,32 @@ export function StreamsConsole() {
   return (
     <div ref={outerContainerRef} className="flex w-full min-w-0 items-start gap-0" data-testid="streams-console">
     <div className={cn('flex min-w-0 flex-col gap-5', selectedStreamRow ? 'flex-1' : 'w-full')}>
-      {/* Toolbar only — App Shell owns the page title */}
-      <div className="flex flex-col gap-3 border-b border-slate-200/80 pb-4 dark:border-gdc-divider sm:flex-row sm:items-start sm:justify-between">
-        <p className="max-w-2xl text-sm text-slate-600 dark:text-gdc-muted">
-          Which stream group needs attention? Expand a Source Product group to find the affected stream, then open Runtime for cause analysis.
-        </p>
-        <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
-          <Link
-            to={newStreamPath()}
-            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-gdc-primary px-4 text-sm font-semibold text-white hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/60"
-          >
-            <Plus className="h-4 w-4" aria-hidden />
-            New Stream
-          </Link>
-          <StreamsConsoleControls
-            autoRefresh={autoRefresh}
-            onAutoRefreshChange={handleAutoRefreshChange}
-            timeRange={timeRange}
-            onTimeRangeChange={handleTimeRangeChange}
-            onManualRefresh={() => { clearOperationalSnapshotCache(); setRefreshVersion((v) => v + 1) }}
-            refreshing={streamsLoading}
-          />
-        </div>
-      </div>
+      <PagePurposeHeader
+        title="Streams"
+        showTitle={false}
+        purpose="Which data flow needs attention? Start from a Source Product group, expand it to the affected Stream, then open Runtime to diagnose the path."
+        help={STREAMS_HELP}
+        testId="streams-purpose-header"
+        actions={
+          <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
+            <Link
+              to={newStreamPath()}
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-gdc-primary px-4 text-sm font-semibold text-white hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/60"
+            >
+              <Plus className="h-4 w-4" aria-hidden />
+              New Stream
+            </Link>
+            <StreamsConsoleControls
+              autoRefresh={autoRefresh}
+              onAutoRefreshChange={handleAutoRefreshChange}
+              timeRange={timeRange}
+              onTimeRangeChange={handleTimeRangeChange}
+              onManualRefresh={() => { clearOperationalSnapshotCache(); setRefreshVersion((v) => v + 1) }}
+              refreshing={streamsLoading}
+            />
+          </div>
+        }
+      />
 
       <RuntimeFixtureModeBanner surface="streams" />
 
@@ -791,6 +818,15 @@ export function StreamsConsole() {
         groupCount={productGroups.length}
         loading={initialLoading}
       />
+      <section
+        className="grid gap-2 rounded-lg border border-slate-200/80 bg-slate-50/70 p-3 text-xs text-slate-600 dark:border-gdc-border dark:bg-gdc-section/40 dark:text-gdc-muted sm:grid-cols-3"
+        data-testid="streams-group-guidance"
+        aria-label="How to use Streams"
+      >
+        <p><span className="font-semibold text-slate-800 dark:text-slate-100">1. Source Product</span> groups related Streams from the same source product.</p>
+        <p><span className="font-semibold text-slate-800 dark:text-slate-100">2. Attention</span> shows which group needs investigation first.</p>
+        <p><span className="font-semibold text-slate-800 dark:text-slate-100">3. Runtime</span> shows why a specific Stream or delivery path is unhealthy.</p>
+      </section>
       <details
         open={showDeliveryHealth}
         className="rounded-lg border border-slate-200 bg-white dark:border-gdc-border dark:bg-gdc-card"

@@ -455,6 +455,39 @@ describe('DashboardOverview', () => {
     expect(screen.queryByText(/All times shown in UTC/i)).not.toBeInTheDocument()
   })
 
+  it('makes page purpose, action-needed priority, and contextual help explicit', async () => {
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <main>
+          <DashboardOverview />
+        </main>
+      </MemoryRouter>,
+    )
+
+    const firstLevel = await within(mainRegion()).findByTestId('dashboard-first-level')
+    expect(screen.getByTestId('dashboard-purpose-header')).toHaveTextContent(/What needs attention right now/i)
+    const actionNeeded = within(firstLevel).getByTestId('dashboard-action-needed')
+    expect(within(actionNeeded).getByRole('heading', { name: 'Action needed' })).toBeInTheDocument()
+    expect(within(actionNeeded).getByRole('link', { name: /Streams needing health review/i })).toHaveAttribute(
+      'href',
+      '/streams',
+    )
+    expect(within(actionNeeded).getByRole('link', { name: /Streams with no data/i })).toHaveAttribute(
+      'href',
+      '/streams?filter=no-data',
+    )
+    expect(within(actionNeeded).getByRole('link', { name: /Destinations needing health review/i })).toHaveAttribute(
+      'href',
+      '/destinations',
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Help' }))
+    const dialog = screen.getByRole('dialog', { name: 'Dashboard' })
+    expect(dialog).toHaveTextContent(/Create or edit Streams for collection/i)
+    expect(dialog).toHaveTextContent(/Route Processing/i)
+  })
+
   it('renders exact first-level charter sections only', async () => {
     render(
       <MemoryRouter>
@@ -464,6 +497,7 @@ describe('DashboardOverview', () => {
       </MemoryRouter>,
     )
     const firstLevel = await within(mainRegion()).findByTestId('dashboard-first-level')
+    expect(within(firstLevel).getByTestId('dashboard-action-needed')).toBeInTheDocument()
     expect(within(firstLevel).getByTestId('dashboard-overall-health-hero')).toBeInTheDocument()
     expect(within(firstLevel).getByTestId('dashboard-traffic-overview')).toBeInTheDocument()
     expect(within(firstLevel).getByTestId('dashboard-operational-issues')).toBeInTheDocument()
