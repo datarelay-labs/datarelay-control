@@ -3,7 +3,6 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as gdcGovernanceDashboard from '../../api/gdcGovernanceDashboard'
-import * as gdcGovernancePolicies from '../../api/gdcGovernancePolicies'
 import * as gdcGovernanceViolations from '../../api/gdcGovernanceViolations'
 import * as operationalSnapshot from '../../api/operationalSnapshot'
 import { GovernanceDashboardPage } from './governance-dashboard-page'
@@ -56,23 +55,6 @@ describe('GovernanceDashboardPage', () => {
         },
       ],
     })
-    vi.spyOn(gdcGovernancePolicies, 'fetchGovernancePolicies').mockResolvedValue({
-      policies: [
-        {
-          id: 1,
-          name: 'PII Detection Policy',
-          description: null,
-          category: 'DATA_PROTECTION',
-          status: 'ACTIVE',
-          policy_json: { conditions: [], actions: [] },
-          version: 1,
-          assigned_stream_count: 5,
-          assigned_stream_ids: [1],
-          created_at: '2026-06-01T10:30:00Z',
-          updated_at: '2026-06-01T14:30:00Z',
-        },
-      ],
-    })
     vi.spyOn(operationalSnapshot, 'getOperationalSnapshot').mockRejectedValue(new Error('snapshot unavailable'))
   })
 
@@ -84,16 +66,36 @@ describe('GovernanceDashboardPage', () => {
     )
 
     expect(await screen.findByTestId('governance-dashboard-page')).toBeInTheDocument()
-    expect(screen.getByText('Governance Overview')).toBeInTheDocument()
+    expect(screen.getByText('Governance Dashboard')).toBeInTheDocument()
     expect(screen.getByTestId('governance-posture-overview')).toBeInTheDocument()
     expect(screen.getByTestId('dashboard-kpi-strip')).toBeInTheDocument()
     expect(screen.getByTestId('governance-what-happened')).toBeInTheDocument()
     expect(screen.getByTestId('dashboard-recent-activity')).toBeInTheDocument()
     expect(screen.getByTestId('governance-recommended-actions')).toBeInTheDocument()
-    expect(screen.getByTestId('dashboard-policy-health')).toBeInTheDocument()
+    expect(screen.queryByTestId('dashboard-policy-health')).not.toBeInTheDocument()
+    expect(screen.queryByText('New Policy')).not.toBeInTheDocument()
+    expect(screen.queryByText('Policy Builder')).not.toBeInTheDocument()
     expect(screen.getByTestId('governance-quick-actions')).toBeInTheDocument()
     expect(screen.queryByText('Approve')).not.toBeInTheDocument()
     expect(screen.queryByText('Reject')).not.toBeInTheDocument()
+  })
+
+  it('explains the page purpose and keeps configuration out of the dashboard', async () => {
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <GovernanceDashboardPage />
+      </MemoryRouter>,
+    )
+
+    await screen.findByTestId('governance-dashboard-page')
+    await user.click(screen.getByRole('button', { name: 'Help' }))
+
+    expect(screen.getByRole('dialog', { name: 'Governance Dashboard' })).toBeInTheDocument()
+    expect(screen.getByText(/Configuration belongs to the owning Stream or Route context/i)).toBeInTheDocument()
+    expect(screen.getByText(/does not create or edit policy configuration/i)).toBeInTheDocument()
+    expect(screen.queryByText('New Policy')).not.toBeInTheDocument()
+    expect(screen.queryByText('Policy Builder')).not.toBeInTheDocument()
   })
 
   it('shows KPI values from dashboard summary API', async () => {
@@ -139,7 +141,6 @@ describe('GovernanceDashboardPage', () => {
     expect(await screen.findByTestId('governance-dashboard-summary-error')).toHaveTextContent(/timed out/i)
     expect(screen.queryByTestId('governance-dashboard-error')).not.toBeInTheDocument()
     expect(await screen.findByTestId('gov-violation-row-v-1')).toBeInTheDocument()
-    expect(await screen.findByTestId('gov-policy-row-1')).toBeInTheDocument()
   })
 
   it('does not block page layout while summary is still loading', async () => {

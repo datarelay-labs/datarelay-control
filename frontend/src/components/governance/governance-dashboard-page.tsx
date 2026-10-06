@@ -3,15 +3,10 @@ import {
   Bell,
   ChevronRight,
   ClipboardCheck,
-  Copy,
-  Edit2,
   FileSearch,
   Loader2,
   Lock,
-  MoreHorizontal,
-  Plus,
   RefreshCw,
-  Shield,
   ShieldAlert,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -20,7 +15,6 @@ import {
   fetchGovernanceDashboardSummary,
   type GovernanceDashboardSummaryResponse,
 } from '../../api/gdcGovernanceDashboard'
-import { fetchGovernancePolicies, type GovernancePolicyEntry } from '../../api/gdcGovernancePolicies'
 import {
   fetchGovernanceViolations,
   type GovernanceViolationEntry,
@@ -28,22 +22,60 @@ import {
 } from '../../api/gdcGovernanceViolations'
 import { clearOperationalSnapshotCache, getOperationalSnapshot } from '../../api/operationalSnapshot'
 import { NAV_PATH } from '../../config/nav-paths'
-import { isOssReleaseMode } from '../../lib/feature-flags'
-import { canEditPolicy } from '../../lib/governance-rbac'
 import { cn } from '../../lib/utils'
 import { deriveGovernanceOperationalIssues } from './governance-operational-issues'
-import { formatPlatformRelative, formatTimestampWithResolvedTimezone } from '../../lib/platform-timestamps'
+import { formatPlatformRelative } from '../../lib/platform-timestamps'
 import { gdcUi } from '../../lib/gdc-ui-tokens'
 import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
-import { policyStatusBadgeClass, policyStatusLabel } from './policy-lifecycle'
 import {
   deriveGovernancePosture,
   GovernanceDashboardPostureOverview,
 } from './governance-dashboard-posture-overview'
+import { PagePurposeHeader, type PageHelpContent } from '../ui/page-purpose-header'
 
 const governanceCardClass = gdcUi.cardShell + ' px-4 py-3'
 
 const WINDOW_OPTIONS: ViolationWindow[] = ['24h', '7d', '30d']
+
+const GOVERNANCE_HELP: PageHelpContent = {
+  title: 'Governance Dashboard',
+  intro:
+    'Use this page to answer two questions first: Is governance healthy, and what needs attention now? Configuration belongs to the owning Stream or Route context; this dashboard is for operations and investigation.',
+  sections: [
+    {
+      title: 'What to look at first',
+      bullets: [
+        'Overall posture tells you whether there is an active governance problem.',
+        'Prioritized next steps points to the highest-value action.',
+        'Recent open violations gives you concrete investigation targets.',
+      ],
+    },
+    {
+      title: 'Typical workflow',
+      bullets: [
+        'Check posture and the highest-priority open count.',
+        'Open the linked violation, quarantine, or approval workspace.',
+        'Investigate the affected Stream / Route context.',
+        'Take the corrective action in the owning workspace.',
+        'Return here to verify the operational state changed.',
+      ],
+    },
+    {
+      title: 'Where configuration happens',
+      body:
+        'Governance intent is owned by Stream defaults and destination-specific Route Processing. This dashboard intentionally does not create or edit policy configuration.',
+    },
+    {
+      title: 'Key concepts',
+      bullets: [
+        'Violation: observed data or delivery behavior that conflicts with governance intent.',
+        'Quarantine: events held for review instead of normal delivery.',
+        'Approval: a pending governance decision that requires an authorized operator.',
+        'Audit / Replay: evidence and recovery paths after an investigation.',
+      ],
+    },
+  ],
+}
 
 function formatCount(value: number): string {
   if (!Number.isFinite(value) || value < 0) return '0'
@@ -52,10 +84,6 @@ function formatCount(value: number): string {
 
 function formatRelativeTime(iso: string): string {
   return formatPlatformRelative(iso)
-}
-
-function formatUpdatedAt(iso: string): string {
-  return formatTimestampWithResolvedTimezone(iso)
 }
 
 function severityBadgeClass(severity: string): string {
@@ -76,21 +104,6 @@ function severityDisplayLabel(severity: string): string {
   if (s === 'LOW') return 'Low'
   if (s === 'CRITICAL') return 'Critical'
   return severity
-}
-
-function policyTypeLabel(category: string): string {
-  switch (category) {
-    case 'DATA_PROTECTION':
-      return 'Protection'
-    case 'AI_GOVERNANCE':
-      return 'Detection'
-    case 'COMPLIANCE':
-      return 'Prevention'
-    case 'CUSTOM':
-      return 'Classification'
-    default:
-      return category.replace(/_/g, ' ')
-  }
 }
 
 function violationTitle(v: GovernanceViolationEntry): string {
@@ -134,7 +147,6 @@ function OperationalSignalCard({
 export function GovernanceDashboardPage() {
   const [summary, setSummary] = useState<GovernanceDashboardSummaryResponse | null>(null)
   const [violations, setViolations] = useState<GovernanceViolationEntry[]>([])
-  const [policies, setPolicies] = useState<GovernancePolicyEntry[]>([])
   const [operationalIssues, setOperationalIssues] = useState<{
     noDataStreams: number | null
     lowVolumeStreams: number | null
@@ -151,9 +163,6 @@ export function GovernanceDashboardPage() {
   const [summaryLoading, setSummaryLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [summaryError, setSummaryError] = useState<string | null>(null)
-
-  const policiesLink = isOssReleaseMode() ? NAV_PATH.governanceApprovals : NAV_PATH.governanceDataProtection
-  const canEdit = canEditPolicy()
 
   const loadSummary = useCallback(async () => {
     setSummaryLoading(true)
@@ -173,12 +182,8 @@ export function GovernanceDashboardPage() {
     setLoading(true)
     setError(null)
     try {
-      const [violationsResp, policiesResp] = await Promise.all([
-        fetchGovernanceViolations({ window, limit: 5, status: 'OPEN' }),
-        fetchGovernancePolicies(),
-      ])
+      const violationsResp = await fetchGovernanceViolations({ window, limit: 5, status: 'OPEN' })
       setViolations(violationsResp?.violations ?? [])
-      setPolicies((policiesResp?.policies ?? []).slice(0, 5))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load governance dashboard')
     } finally {
@@ -256,13 +261,6 @@ export function GovernanceDashboardPage() {
 
   const quickActions = [
     {
-      title: 'Policy Builder',
-      description: 'Create and manage policies',
-      to: policiesLink,
-      icon: Shield,
-      testId: 'gov-quick-policy-builder',
-    },
-    {
       title: 'Violation Center',
       description: 'Review and triage violations',
       to: NAV_PATH.governanceViolations,
@@ -283,6 +281,13 @@ export function GovernanceDashboardPage() {
       icon: ClipboardCheck,
       testId: 'gov-quick-approvals',
     },
+    {
+      title: 'Audit Trail',
+      description: 'Review governance decisions and evidence',
+      to: NAV_PATH.governanceAudit,
+      icon: FileSearch,
+      testId: 'gov-quick-audit',
+    },
   ] as const
 
   const notificationCount = summary?.notification_failures ?? 0
@@ -290,57 +295,53 @@ export function GovernanceDashboardPage() {
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-5 pb-4" data-testid="governance-dashboard-page">
-      <header className="flex flex-col gap-3 border-b border-slate-200/80 pb-4 dark:border-gdc-divider sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-2">
-          <h1 className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-50">
-            Governance Overview
-          </h1>
-          <p className="max-w-2xl text-sm text-slate-600 dark:text-gdc-muted">
-            What needs attention, and where do I investigate? Scan policy posture, prioritize the next issue, then open
-            Violations, Quarantine, or Approvals with context preserved.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Link
-            to={NAV_PATH.governanceNotifications}
-            className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200/90 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-300 dark:hover:bg-gdc-rowHover"
-            aria-label="Governance notifications"
-            data-testid="gov-dashboard-notifications"
-          >
-            <Bell className="h-4 w-4" />
-            {notificationCount > 0 ? (
-              <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
-                {notificationCount > 9 ? '9+' : notificationCount}
-              </span>
-            ) : null}
-          </Link>
-          <label className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200/90 bg-white px-2.5 text-sm shadow-sm dark:border-gdc-border dark:bg-gdc-card">
-            <span className="sr-only">Time window</span>
-            <select
-              value={window}
-              onChange={(e) => setWindow(e.target.value as ViolationWindow)}
-              className="cursor-pointer bg-transparent text-slate-700 outline-none dark:text-slate-200"
-              data-testid="gov-dashboard-window"
+      <PagePurposeHeader
+        title="Governance Dashboard"
+        purpose="Is governance healthy, and what needs attention now? Start with posture and the highest-priority next step, then investigate the affected Stream or Route context."
+        help={GOVERNANCE_HELP}
+        actions={
+          <>
+            <Link
+              to={NAV_PATH.governanceNotifications}
+              className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200/90 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-300 dark:hover:bg-gdc-rowHover"
+              aria-label="Governance notifications"
+              data-testid="gov-dashboard-notifications"
             >
-              {WINDOW_OPTIONS.map((w) => (
-                <option key={w} value={w}>
-                  {w === '24h' ? 'Last 24 Hours' : w === '7d' ? 'Last 7 Days' : 'Last 30 Days'}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            type="button"
-            onClick={() => void refreshAll()}
-            disabled={loading || summaryLoading}
-            data-testid="dashboard-refresh"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200/90 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 disabled:opacity-60 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-300 dark:hover:bg-gdc-rowHover"
-            aria-label="Refresh governance dashboard"
-          >
-            {loading || summaryLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-          </button>
-        </div>
-      </header>
+              <Bell className="h-4 w-4" />
+              {notificationCount > 0 ? (
+                <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
+                  {notificationCount > 9 ? '9+' : notificationCount}
+                </span>
+              ) : null}
+            </Link>
+            <label className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200/90 bg-white px-2.5 text-sm shadow-sm dark:border-gdc-border dark:bg-gdc-card">
+              <span className="sr-only">Time window</span>
+              <select
+                value={window}
+                onChange={(e) => setWindow(e.target.value as ViolationWindow)}
+                className="cursor-pointer bg-transparent text-slate-700 outline-none dark:text-slate-200"
+                data-testid="gov-dashboard-window"
+              >
+                {WINDOW_OPTIONS.map((w) => (
+                  <option key={w} value={w}>
+                    {w === '24h' ? 'Last 24 Hours' : w === '7d' ? 'Last 7 Days' : 'Last 30 Days'}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={() => void refreshAll()}
+              disabled={loading || summaryLoading}
+              data-testid="dashboard-refresh"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200/90 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 disabled:opacity-60 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-300 dark:hover:bg-gdc-rowHover"
+              aria-label="Refresh governance dashboard"
+            >
+              {loading || summaryLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            </button>
+          </>
+        }
+      />
 
       {error ? (
         <p
@@ -497,9 +498,9 @@ export function GovernanceDashboardPage() {
       <section aria-label="Secondary governance evidence" className="space-y-4 border-t border-slate-200/70 pt-4 dark:border-gdc-divider">
         <div>
           <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-gdc-muted">Evidence</p>
-          <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Operational signals, policies, and links</h2>
+          <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Operational signals and investigation shortcuts</h2>
           <p className="mt-0.5 text-xs text-slate-500 dark:text-gdc-muted">
-            Supporting detail stays available after posture and investigation targets — not removed for cosmetic simplicity.
+            Supporting runtime evidence stays below the primary posture and investigation path. Use the shortcuts only when you need to investigate or act.
           </p>
         </div>
 
@@ -542,142 +543,35 @@ export function GovernanceDashboardPage() {
           </div>
         </section>
 
-        <div className="grid gap-4 lg:grid-cols-12">
-          <section className={cn(governanceCardClass, 'lg:col-span-8')} data-testid="dashboard-policy-health" aria-label="Policy list">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Policy list</h3>
-                <p className="text-xs text-slate-500 dark:text-gdc-muted">Recent policies for quick navigation into the catalog.</p>
-              </div>
-              {canEdit ? (
-                <Link
-                  to={policiesLink}
-                  className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-800 shadow-sm hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 dark:border-gdc-border dark:bg-gdc-elevated dark:text-slate-100"
-                  data-testid="gov-new-policy"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  New Policy
-                </Link>
-              ) : null}
-            </div>
-            <div className="overflow-x-auto">
-              <table className={opTable} data-testid="gov-policy-list-table">
-                <thead>
-                  <tr className={opThRow}>
-                    <th className={opTh} scope="col">
-                      Policy Name
-                    </th>
-                    <th className={opTh} scope="col">
-                      Type
-                    </th>
-                    <th className={opTh} scope="col">
-                      Applies To
-                    </th>
-                    <th className={opTh} scope="col">
-                      Status
-                    </th>
-                    <th className={opTh} scope="col">
-                      Last Updated
-                    </th>
-                    <th className={opTh} scope="col">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {policies.length === 0 && !loading ? (
-                    <tr className={opTr}>
-                      <td className={opTd} colSpan={6}>
-                        No policies configured yet.
-                      </td>
-                    </tr>
-                  ) : (
-                    policies.map((policy) => (
-                      <tr key={policy.id} className={opTr} data-testid={`gov-policy-row-${policy.id}`}>
-                        <td className={cn(opTd, 'font-semibold text-slate-900 dark:text-slate-100')}>{policy.name}</td>
-                        <td className={opTd}>{policyTypeLabel(policy.category)}</td>
-                        <td className={opTd}>
-                          {policy.assigned_stream_count} Stream{policy.assigned_stream_count === 1 ? '' : 's'}
-                        </td>
-                        <td className={opTd}>
-                          <span
-                            className={cn('rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase', policyStatusBadgeClass(policy.status))}
-                          >
-                            {policyStatusLabel(policy.status)}
-                          </span>
-                        </td>
-                        <td className={cn(opTd, 'whitespace-nowrap text-slate-500 dark:text-gdc-muted')}>
-                          {formatUpdatedAt(policy.updated_at)}
-                        </td>
-                        <td className={opTd}>
-                          <div className="flex items-center gap-1">
-                            <Link
-                              to={policiesLink}
-                              className="inline-flex rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 dark:hover:bg-gdc-rowHover dark:hover:text-slate-200"
-                              aria-label={`Edit ${policy.name}`}
-                            >
-                              <Edit2 className="h-3.5 w-3.5" />
-                            </Link>
-                            <button
-                              type="button"
-                              className="inline-flex rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 dark:hover:bg-gdc-rowHover dark:hover:text-slate-200"
-                              aria-label={`Copy ${policy.name}`}
-                            >
-                              <Copy className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              className="inline-flex rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 dark:hover:bg-gdc-rowHover dark:hover:text-slate-200"
-                              aria-label={`More actions for ${policy.name}`}
-                            >
-                              <MoreHorizontal className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <div className="mt-3 border-t border-slate-200/70 pt-2 dark:border-gdc-border">
-              <Link
-                to={policiesLink}
-                className="text-xs font-semibold text-slate-700 underline-offset-2 hover:underline dark:text-slate-200"
-              >
-                View all policies →
-              </Link>
-            </div>
-          </section>
-
-          <section className={cn(governanceCardClass, 'lg:col-span-4')} data-testid="governance-quick-actions">
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Quick links</h3>
-            <p className="mt-0.5 text-xs text-slate-500 dark:text-gdc-muted">Jump to existing governance workspaces.</p>
-            <ul className="mt-3 space-y-2">
-              {quickActions.map((action) => {
-                const Icon = action.icon
-                return (
-                  <li key={action.testId}>
-                    <Link
-                      to={action.to}
-                      data-testid={action.testId}
-                      className="group flex items-center gap-3 rounded-lg border border-slate-200/70 px-3 py-2.5 transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 dark:border-gdc-border dark:hover:bg-gdc-rowHover"
-                    >
-                      <span className="inline-flex rounded-lg bg-slate-100 p-2 text-slate-600 dark:bg-gdc-section dark:text-slate-300" aria-hidden>
-                        <Icon className="h-4 w-4" />
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-sm font-semibold text-slate-900 dark:text-slate-100">{action.title}</span>
-                        <span className="block text-xs text-slate-500 dark:text-gdc-muted">{action.description}</span>
-                      </span>
-                      <ChevronRight className="h-4 w-4 shrink-0 text-slate-400 transition group-hover:text-slate-600" />
-                    </Link>
-                  </li>
-                )
-              })}
-            </ul>
-          </section>
-        </div>
+        <section className={governanceCardClass} data-testid="governance-quick-actions">
+          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Investigation shortcuts</h3>
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-gdc-muted">
+            Open the workspace that matches the issue you are investigating. Configuration stays with the owning Stream or Route.
+          </p>
+          <ul className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            {quickActions.map((action) => {
+              const Icon = action.icon
+              return (
+                <li key={action.testId}>
+                  <Link
+                    to={action.to}
+                    data-testid={action.testId}
+                    className="group flex h-full items-center gap-3 rounded-lg border border-slate-200/70 px-3 py-2.5 transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 dark:border-gdc-border dark:hover:bg-gdc-rowHover"
+                  >
+                    <span className="inline-flex rounded-lg bg-slate-100 p-2 text-slate-600 dark:bg-gdc-section dark:text-slate-300" aria-hidden>
+                      <Icon className="h-4 w-4" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-semibold text-slate-900 dark:text-slate-100">{action.title}</span>
+                      <span className="block text-xs text-slate-500 dark:text-gdc-muted">{action.description}</span>
+                    </span>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-slate-400 transition group-hover:text-slate-600" />
+                  </Link>
+                </li>
+              )
+            })}
+          </ul>
+        </section>
       </section>
 
       <div className="hidden" aria-hidden data-testid="dashboard-risk-overview">
