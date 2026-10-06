@@ -167,6 +167,13 @@ a {
   justify-self: end;
 }
 
+/* The supplied logo asset already contains the DataRelay wordmark. Hide the
+   Foundation-generated wordmark and repeated product-name line on this screen. */
+.gdc-login-centered .dr-auth-layout__wordmark,
+.gdc-login-centered .dr-auth-layout__product {
+  display: none;
+}
+
 .gdc-login-centered .dr-auth-card {
   width: 100%;
   max-width: 420px;
