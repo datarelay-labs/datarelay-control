@@ -13,6 +13,7 @@ import type { AdvancedTransformRuleDraft } from '../../../types/advancedTransfor
 import type { WizardEnrichmentRule } from './enrichment-rules-model'
 import { WizardDataProtectionDrawer } from './wizard-data-protection-drawer'
 import { WizardMappingOutputAside } from './wizard-mapping-output-aside'
+import { ProcessingPreviewDock } from '../../preview/processing-preview-dock'
 import { computeRouteDeployReadiness } from './wizard-deploy-readiness'
 import { wizardTransformSampleReady } from './wizard-transform-sample'
 import type {
@@ -167,6 +168,14 @@ export function StepRouteProcessing({
           destination needs different processing.
         </p>
       </header>
+
+      <ProcessingPreviewDock title="Route Processing Preview" stages={[
+        { id: 'input', label: 'Input', truth: 'Preview', status: state.apiTest.analysis?.sampleEvent ? 'Sample loaded' : 'No sample loaded', before: state.apiTest.analysis?.sampleEvent ?? null, after: state.apiTest.analysis?.sampleEvent ?? null },
+        { id: 'mapping', label: 'Mapping', truth: 'Preview', status: selectedDraft?.inherit.transform === false ? 'Route-specific draft' : 'Stream draft', before: state.apiTest.analysis?.sampleEvent ?? null, after: null, message: 'Use the mapping preview workspace below for field-level before/after evidence.' },
+        { id: 'transform', label: 'Enrichment / Transform', truth: 'Preview', status: selectedDraft?.inherit.transform === false ? 'Route-specific draft' : 'Stream draft', message: 'Draft processing is not persisted until the wizard deploy step succeeds.' },
+        { id: 'policy', label: 'Protection / Policy', truth: 'Preview', status: selectedRouteDeploy?.statusLabel ?? 'Draft', message: 'Protection and policy preview are planning evidence, not runtime enforcement proof.' },
+        { id: 'destination', label: 'Destination Payload', truth: 'Preview', status: selectedDraft ? (destById.get(selectedDraft.destinationId)?.name ?? `Destination #${selectedDraft.destinationId}`) : 'Select a Route', message: 'Delivery remains no-send until Deploy.' },
+      ]} />
 
       <WizardSharedProcessingSection
         state={state}
