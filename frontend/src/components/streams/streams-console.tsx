@@ -880,14 +880,20 @@ export function StreamsConsole() {
               {streamsEmptyMessage}
             </p>
             {!streamsAuthRequired && displayRows.length === 0 ? (
-              <Link
+              <div className="mt-4 flex flex-col items-center gap-3" data-testid="streams-learning-path">
+                <Link
                 to={newStreamPath()}
                 data-testid="streams-create-first"
                 className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-gdc-primary px-3.5 py-2 text-sm font-semibold text-white hover:bg-violet-700"
               >
                 <Plus className="h-4 w-4" aria-hidden />
                 Create First Stream
-              </Link>
+                </Link>
+                <div className="max-w-xl rounded-lg border border-amber-200/80 bg-amber-50/70 px-3 py-2 text-left text-xs text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
+                  <p className="font-semibold">Optional demo learning path</p>
+                  <p className="mt-1">Development installs can load the bundled <span className="font-semibold">Sample Alerts Stream</span> with the documented seed command. Demo rows are create-only, explicitly labeled <span className="font-semibold">Demo seed</span>, and never overwrite operator data. Production UI never creates demo data automatically.</p>
+                </div>
+              </div>
             ) : null}
           </div>
         ) : (
