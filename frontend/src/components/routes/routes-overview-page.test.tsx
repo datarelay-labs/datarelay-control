@@ -170,6 +170,8 @@ describe('RoutesOverviewPage snapshot loading', () => {
       </MemoryRouter>,
     )
     await screen.findByText('Route Flow')
+    expect(await screen.findByTestId('routes-flow-maps')).toBeInTheDocument()
+    expect(screen.getByTestId('stream-flow-map-1')).toHaveTextContent('Stream 1')
     await user.click(screen.getByRole('button', { name: 'Help' }))
     expect(screen.getByRole('dialog')).toHaveTextContent('The core model')
     expect(screen.getByRole('dialog')).toHaveTextContent(/Each Route targets one Destination/i)
