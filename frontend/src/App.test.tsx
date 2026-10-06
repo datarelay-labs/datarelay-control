@@ -780,18 +780,14 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     renderApp('/streams/new')
     expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 1, name: 'Stream Creation Wizard' })).toBeInTheDocument()
-    const stepper = await screen.findByTestId('wizard-stepper', {}, { timeout: 15000 })
+    expect(await screen.findByTestId('wizard-intent-picker', {}, { timeout: 15000 })).toBeInTheDocument()
+    expect(screen.getByTestId('wizard-intent-scratch')).toBeInTheDocument()
+    expect(screen.getByTestId('wizard-intent-api-logs-siem')).toBeInTheDocument()
+    expect(screen.queryByTestId('wizard-stepper')).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { level: 2, name: 'Stream Onboarding Wizard' })).not.toBeInTheDocument()
     expect(await screen.findByTestId('wizard-stage-purpose', {}, { timeout: 15000 })).toHaveTextContent(
       'Can I connect to the source?',
     )
-    expect(stepper.textContent).toContain('Connect')
-    expect(stepper.textContent).toContain('Route Processing')
-    expect(stepper.textContent).toContain('Destinations')
-    // Catalog fetch can resolve before paint under CI parallelism; accept loading or settled UI.
-    expect(
-      await screen.findByText(/Loading connector catalog|No connectors available/i, {}, { timeout: 15000 }),
-    ).toBeInTheDocument()
   }, 25000)
 
   it('renders enrichment configuration at /streams/:streamId/enrichment', async () => {
