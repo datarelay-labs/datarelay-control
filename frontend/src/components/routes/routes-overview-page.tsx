@@ -518,9 +518,9 @@ export function RoutesOverviewPage() {
         </p>
       </section>
 
-      {operationalSnapshot ? (
-        <section aria-label="Stream delivery flow maps" className="space-y-3" data-testid="routes-flow-maps">
-          {operationalSnapshot.streams.map((stream) => (
+      {operationalSnapshot && streamFilter !== '__all__' ? (
+        <section aria-label="Selected Stream delivery flow" className="space-y-3" data-testid="routes-flow-maps">
+          {operationalSnapshot.streams.filter((stream) => stream.stream_name === streamFilter).map((stream) => (
             <StreamFlowMap
               key={stream.stream_id}
               streamId={stream.stream_id}
