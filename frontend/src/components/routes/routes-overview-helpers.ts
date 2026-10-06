@@ -74,6 +74,7 @@ export function getRouteProblemSummary(route: OperationalRouteSnapshot): string 
 function connectivityFromOperationalHealth(health: OperationalHealthStatus): RouteRuntimeMetricsRow['connectivity_state'] {
   if (health === 'ERROR') return 'ERROR'
   if (health === 'DEGRADED') return 'DEGRADED'
+  if (health === 'IDLE') return 'IDLE'
   return 'HEALTHY'
 }
 
