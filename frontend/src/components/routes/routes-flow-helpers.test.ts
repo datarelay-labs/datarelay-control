@@ -203,6 +203,20 @@ describe('routes-flow-helpers', () => {
     expect(tree[1]?.routes).toHaveLength(1)
   })
 
+  it('does not substitute delivered route EPS when stream ingest EPS is unavailable', () => {
+    const snapshotWithoutStreamEps: OperationalSnapshotResponse = {
+      ...snapshot,
+      streams: snapshot.streams.map((stream) =>
+        stream.stream_id === 1 ? { ...stream, eps_1m: null } : stream,
+      ),
+    }
+    const rows = buildRouteRowsFromOperationalSnapshot(snapshotWithoutStreamEps, routesMeta)
+    const tree = buildRouteFlowTree(snapshotWithoutStreamEps, rows)
+    const office365 = tree.find((group) => group.streamId === 1)
+    expect(office365?.totalEps).toBeNull()
+    expect(office365?.routes.map((route) => route.eps)).toEqual(expect.arrayContaining([3.2, 2.4]))
+  })
+
   it('flags warning routes in problem panel', () => {
     const problems = buildProblemRoutes(consoleRows)
     expect(problems.some((p) => p.routeId === 2 && p.issue === 'Warning')).toBe(true)

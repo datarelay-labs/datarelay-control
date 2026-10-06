@@ -117,11 +117,8 @@ export function buildRouteFlowTree(
   return [...byStream.values()]
     .map((g) => ({
       ...g,
-      totalEps:
-        g.totalEps ??
-        (g.routes.reduce((sum, r) => sum + (r.eps ?? 0), 0) > 0
-          ? g.routes.reduce((sum, r) => sum + (r.eps ?? 0), 0)
-          : null),
+      // Stream EPS is ingest truth. Never substitute the sum of per-route
+      // delivered EPS because fan-out can make those values incomparable.
       routes: [...g.routes].sort((a, b) => (b.eps ?? 0) - (a.eps ?? 0)),
     }))
     .sort((a, b) => (b.totalEps ?? 0) - (a.totalEps ?? 0))

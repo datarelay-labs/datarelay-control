@@ -179,14 +179,13 @@ export function ConnectorsOverviewPage() {
             {showImport ? 'Hide import' : 'Import from cURL / Postman'}
           </button>
         </div>
+        {showImport ? (
+          <div className="grid gap-4 border-t border-slate-200/80 p-3 dark:border-gdc-divider lg:grid-cols-2">
+            <CurlImportPanel onApprove={onApproveImport} />
+            <PostmanImportPanel onApprove={onApproveImport} />
+          </div>
+        ) : null}
       </details>
-
-      {showImport ? (
-        <div className="grid gap-4 lg:grid-cols-2">
-          <CurlImportPanel onApprove={onApproveImport} />
-          <PostmanImportPanel onApprove={onApproveImport} />
-        </div>
-      ) : null}
 
       <div className="rounded-lg border border-slate-200/80 bg-white px-3 py-2 text-[12px] dark:border-gdc-border dark:bg-gdc-card dark:text-gdc-mutedStrong">
         <span

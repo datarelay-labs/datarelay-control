@@ -111,11 +111,17 @@ describe('ConnectorsOverviewPage — Dev Validation Lab visibility', () => {
       </MemoryRouter>,
     )
     expect(await screen.findByTestId('connectors-empty-state')).toBeInTheDocument()
+    const advanced = screen.getByTestId('connectors-advanced-setup')
     await user.click(screen.getByText('Advanced setup & validation'))
+    expect(advanced).toHaveAttribute('open')
     expect(screen.getByRole('button', { name: 'Import from cURL / Postman' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Import from cURL / Postman' }))
-    expect(screen.getByRole('button', { name: 'Parse cURL' })).toBeInTheDocument()
+    const parseCurl = screen.getByRole('button', { name: 'Parse cURL' })
+    expect(parseCurl).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Parse collection' })).toBeInTheDocument()
+    expect(advanced).toContainElement(parseCurl)
+    await user.click(screen.getByText('Advanced setup & validation'))
+    expect(advanced).not.toHaveAttribute('open')
   })
 
   it('"Dev validation lab only" filter hides non-lab connectors', async () => {
