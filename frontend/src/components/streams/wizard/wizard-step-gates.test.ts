@@ -65,6 +65,22 @@ describe('wizard-step-gates', () => {
     expect(wizardSampleStepGateReady(state)).toBe(false)
   })
 
+  it('allows a scrubbed saved draft to use its persisted confirmed Union Schema without raw sample payload', () => {
+    const state = sampleReadyState()
+    state.apiTest.parsedJson = null
+    state.apiTest.rawResponse = null
+    state.apiTest.extractedEvents = []
+    state.apiTest.eventCount = 12
+    state.apiTest.unionSchema = { total_events: 12, fields: [] }
+
+    expect(wizardApiTestReady(state)).toBe(true)
+    expect(wizardSampleStepGateReady(state)).toBe(true)
+
+    state.apiTest.unionSchema = null
+    expect(wizardApiTestReady(state)).toBe(false)
+    expect(wizardSampleStepGateReady(state)).toBe(false)
+  })
+
   it('blocks sample gate when API test fails', () => {
     const state = sampleReadyState()
     state.apiTest.status = 'error'

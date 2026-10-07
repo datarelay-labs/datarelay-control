@@ -104,7 +104,16 @@ export function wizardApiTestReady(
   if (sourceType === 'WEBHOOK_RECEIVER') {
     return wizardApiTestHttpStatusOk(state)
   }
-  if (!wizardApiTestHasResponsePayload(state)) return false
+  if (!wizardApiTestHasResponsePayload(state)) {
+    // Saved drafts intentionally scrub raw sample payloads. A previously successful
+    // sample remains trusted when its persisted Union Schema/event count survived
+    // the scrub; record/checkpoint confirmation gates below still have to match.
+    const persistedSampleReady =
+      t.finishedAt != null &&
+      t.unionSchema != null &&
+      t.eventCount > 0
+    if (!persistedSampleReady) return false
+  }
   return wizardApiTestHttpStatusOk(state)
 }
 

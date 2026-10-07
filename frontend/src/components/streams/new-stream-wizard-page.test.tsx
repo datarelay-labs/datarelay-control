@@ -356,7 +356,7 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
 
     await user.click(screen.getByTestId('wizard-draft-resume'))
     const next = screen.getByRole('button', { name: /Next: Destinations/i })
-    expect(next).toBeDisabled()
+    expect(next).toBeEnabled()
 
     await user.click(screen.getByRole('button', { name: 'Run Test' }))
     await screen.findByTestId('wizard-run-test-success')

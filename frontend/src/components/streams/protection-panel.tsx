@@ -73,6 +73,7 @@ export function ProtectionPanel({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [summary, setSummary] = useState<StreamProtectionSummaryResponse | null>(preload ?? null)
+  const [routeEffective, setRouteEffective] = useState<RouteProtectionEffective | null>(effectivePreload ?? null)
   const [rules, setRules] = useState<Array<ProtectionRule | RouteProtectionRule>>([])
   const [autoProtectActivity, setAutoProtectActivity] = useState<AutoProtectActivityEntry[]>([])
   const [actionBusy, setActionBusy] = useState(false)
@@ -100,6 +101,7 @@ export function ProtectionPanel({
           }),
         ])
         onEffectiveChange?.(effective)
+        setRouteEffective(effective)
         const routeRules = r?.rules ?? []
         setRules(routeRules)
         const enabled = routeRules.filter((rule) => rule.enabled)
@@ -369,7 +371,7 @@ export function ProtectionPanel({
                   className={cn(opTd, 'text-slate-500 dark:text-gdc-muted')}
                   colSpan={canOperate ? 6 : 5}
                 >
-                  {loading ? 'Loading…' : 'No protection rules.'}
+                  {loading ? 'Loading…' : routeEffective && routeEffective.rule_count > 0 ? 'No route-local protection rules. Effective ' + routeEffective.processing_status + ' configuration applies from ' + routeEffective.persisted_source + ' scope (' + routeEffective.rule_count + ' rule(s)).' : 'No protection rules.'}
                 </td>
               </tr>
             ) : (

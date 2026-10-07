@@ -244,7 +244,10 @@ def list_timeline_delivery_logs_for_stream(
     if status is not None:
         q = q.filter(DeliveryLog.status == status)
 
-    return q.order_by(DeliveryLog.created_at.asc(), DeliveryLog.id.asc()).limit(limit).all()
+    # Select the newest bounded window first, then preserve the timeline API's
+    # chronological (oldest-to-newest) response contract inside that window.
+    rows = q.order_by(DeliveryLog.created_at.desc(), DeliveryLog.id.desc()).limit(limit).all()
+    return list(reversed(rows))
 
 
 def aggregate_failure_trend_buckets(

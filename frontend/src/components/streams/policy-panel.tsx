@@ -58,6 +58,7 @@ export function PolicyPanel({
   const [message, setMessage] = useState<string | null>(null)
   const [actionBusy, setActionBusy] = useState(false)
   const [summary, setSummary] = useState<StreamPolicySummaryResponse | null>(preload ?? null)
+  const [routeEffective, setRouteEffective] = useState<RoutePolicyEffective | null>(effectivePreload ?? null)
   const [rules, setRules] = useState<Array<PolicyRule | RoutePolicyRule>>([])
 
   useEffect(() => {
@@ -75,6 +76,7 @@ export function PolicyPanel({
           skipEffective ? Promise.resolve(effectivePreloadRef.current) : fetchRoutePolicyEffective(routeId),
         ])
         onEffectiveChange?.(effective)
+        setRouteEffective(effective)
         const routeRules = r?.rules ?? []
         setRules(routeRules)
         const counts = countPolicyMetrics(routeRules)
@@ -207,7 +209,7 @@ export function PolicyPanel({
                   className={cn(opTd, 'text-slate-500 dark:text-gdc-muted')}
                   colSpan={canOperate && isRouteScope ? 5 : 4}
                 >
-                  {loading ? 'Loading…' : 'No policy rules.'}
+                  {loading ? 'Loading…' : routeEffective && routeEffective.rule_count > 0 ? 'No route-local policy rules. Effective ' + routeEffective.processing_status + ' configuration applies from ' + routeEffective.persisted_source + ' scope (' + routeEffective.rule_count + ' rule(s)).' : 'No policy rules.'}
                 </td>
               </tr>
             ) : (
