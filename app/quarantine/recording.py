@@ -129,7 +129,8 @@ def record_route_policy_quarantine_event(
     """Route-scoped quarantine from per-route policy stage (M13.5)."""
 
     matched = matched_quarantine_evaluations(policy_result)
-    if not matched and not drift_quarantine:
+    explicit_override_quarantine = str(override_delivery_behavior or "").strip().lower() == "quarantine"
+    if not matched and not drift_quarantine and not explicit_override_quarantine:
         return None
 
     payload = _snapshot_events(delivery_events)
@@ -138,8 +139,10 @@ def record_route_policy_quarantine_event(
 
     if matched:
         reason = build_quarantine_reason(policy_result)
-    else:
+    elif drift_quarantine:
         reason = f"policy:drift_quarantine:{decision_reason}"[:256]
+    else:
+        reason = f"policy:delivery_behavior_quarantine:{decision_reason}"[:256]
 
     now = datetime.now(timezone.utc)
     cls_level = getattr(classification_result, "effective_level", None) if classification_result else None

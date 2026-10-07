@@ -15,6 +15,8 @@ from app.route_policy.config import PolicyDecision, RoutePolicyConfig, RoutePoli
 from app.route_policy.decision import delivery_allowed_for_decision, merge_route_policy_decision
 from app.route_policy.resolver import resolve_route_policy_config
 from app.runners.route_context import RouteRuntimeContext, SharedBatchContext
+from app.runners.stream_runner_db import stage_persistence_session
+from app.runtime.errors import QuarantinePersistenceError
 from app.sensitive_detection.context import findings_from_context
 
 
@@ -82,7 +84,7 @@ def route_policy_stage(
     quarantine_recorded = False
     quarantine_event_id: int | None = None
 
-    if decision == "quarantine" and db is not None and input_events:
+    if decision == "quarantine" and input_events:
         drift_only = (
             not should_quarantine_batch(policy_batch_result)
             and config.resolution.drift_quarantine_required
@@ -108,21 +110,30 @@ def route_policy_stage(
                 policy_type=policy_type,
                 field_paths=[p for p in field_paths if p],
             )
-        row = record_route_policy_quarantine_event(
-            db,
-            stream_id=route_ctx.stream_id,
-            route_id=route_ctx.route_id,
-            destination_id=route_ctx.destination_id,
-            delivery_events=input_events,
-            policy_result=policy_batch_result,
-            decision_reason=decision_reason,
-            classification_result=route_ctx.processing_state.classification_result,
-            override_delivery_behavior=config.override_delivery_behavior,
-            drift_quarantine=drift_only,
-        )
-        quarantine_recorded = row is not None
-        if row is not None:
-            quarantine_event_id = int(row.id)
+        try:
+            with stage_persistence_session(db, required=True) as quarantine_db:
+                if quarantine_db is None:  # pragma: no cover - required=True guarantees a session
+                    raise QuarantinePersistenceError(route_id=route_ctx.route_id)
+                row = record_route_policy_quarantine_event(
+                    quarantine_db,
+                    stream_id=route_ctx.stream_id,
+                    route_id=route_ctx.route_id,
+                    destination_id=route_ctx.destination_id,
+                    delivery_events=input_events,
+                    policy_result=policy_batch_result,
+                    decision_reason=decision_reason,
+                    classification_result=route_ctx.processing_state.classification_result,
+                    override_delivery_behavior=config.override_delivery_behavior,
+                    drift_quarantine=drift_only,
+                )
+                if row is None:
+                    raise QuarantinePersistenceError(route_id=route_ctx.route_id)
+                quarantine_recorded = True
+                quarantine_event_id = int(row.id)
+        except QuarantinePersistenceError:
+            raise
+        except Exception as exc:
+            raise QuarantinePersistenceError(route_id=route_ctx.route_id) from exc
 
     duration_ms = max(0, int((time.monotonic() - started) * 1000))
     output_events = input_events if delivery_allowed else []

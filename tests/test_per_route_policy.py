@@ -14,6 +14,7 @@ from app.protection.policy_engine import PolicyBatchResult, evaluate_injected_po
 from app.quarantine.models import StreamQuarantineEvent
 from app.route_policy.config import RoutePolicyConfig
 from app.route_policy.decision import delivery_allowed_for_decision, merge_route_policy_decision
+from app.runtime.errors import QuarantinePersistenceError
 from app.route_policy.models import RoutePolicyRule
 from app.route_policy.resolver import resolve_route_policy_config
 from app.route_protection.resolver import resolve_route_protection_config
@@ -247,17 +248,19 @@ def test_route_policy_require_review_prevents_delivery(classification_enabled: N
     assert result.policy_result.decision == "require_review"
 
 
-def test_route_policy_quarantine_prevents_delivery(classification_enabled: None) -> None:
+def test_route_policy_quarantine_persistence_failure_fails_closed(
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    classification_enabled: None,
+) -> None:
     shared = _minimal_shared(findings=[{"sensitivity_class": SENSITIVITY_CLASS_PII}])
     shared.shared_runtime_data["stream_policy_rules"] = [
         _stream_rule(10, "q", SENSITIVITY_CLASS_PII, POLICY_ACTION_QUARANTINE)
     ]
     route_ctx = _minimal_route_ctx()
-    result = process_route_pipeline(route_ctx, shared, db=None)
-    assert result.delivery_allowed is False
-    assert result.policy_result is not None
-    assert result.policy_result.decision == "quarantine"
-    assert result.events == []
+    monkeypatch.setattr("app.route_policy.stage.record_route_policy_quarantine_event", lambda *args, **kwargs: None)
+    with pytest.raises(QuarantinePersistenceError):
+        process_route_pipeline(route_ctx, shared, db=db_session)
 
 
 def test_route_quarantine_records_route_id(
