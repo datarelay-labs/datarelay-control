@@ -34,7 +34,7 @@ from app.schema_drift_policy.delivery_log_stages import (
 from app.http.shared_request_builder import build_runtime_checkpoint_template_context
 from app.runtime.copy_utils import copy_event_dict, copy_events, copy_json_value, slim_checkpoint_for_log
 from app.routes.repository import disable_route
-from app.runtime.errors import MappingError, ProtectionApplicationError, QuarantinePersistenceError
+from app.runtime.errors import MappingError, ProtectionApplicationError, QuarantinePersistenceError, SourceFetchError
 from app.runtime.stream_context import StreamContext
 from app.streams.repository import update_stream_status
 from app.runners.base import BaseRunner
@@ -628,7 +628,9 @@ class StreamRunner(BaseRunner):
             self._pending_delivery_log_rows.clear()
             should_commit = False
             error_code = "RUNTIME_INTERNAL_ERROR"
-            if isinstance(exc, ProtectionApplicationError):
+            if isinstance(exc, SourceFetchError):
+                error_code = "SOURCE_FETCH_FAILED"
+            elif isinstance(exc, ProtectionApplicationError):
                 error_code = "PROTECTION_APPLICATION_FAILED"
             elif isinstance(exc, QuarantinePersistenceError):
                 error_code = "QUARANTINE_PERSISTENCE_FAILED"

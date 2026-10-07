@@ -86,6 +86,7 @@ export function timelineItemsToRecentLogLines(items: readonly RuntimeTimelineIte
       level: normalizeRecentLevel(t.level),
       message: operatorMsg,
       rawMessage: raw.length > 140 ? `${raw.slice(0, 137)}…` : raw,
+      errorCode: t.error_code,
       stage: t.stage,
       duration: formatLatencyMs(t.latency_ms),
     }

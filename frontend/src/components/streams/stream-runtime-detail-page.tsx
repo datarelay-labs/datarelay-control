@@ -250,6 +250,7 @@ export function StreamRuntimeDetailPage() {
     setRunOnceError(null)
     runtimeAuthorityRevisionRef.current = null
     sourceFailureAuthorityRevisionRef.current = null
+    setRunOnceProof(null)
   }, [backendStreamId])
 
   const logsExplorerDrilldown = useMemo(() => {
@@ -445,7 +446,11 @@ export function StreamRuntimeDetailPage() {
         statsHealth?.health ?? null,
       )
       const failureAnchor = sourceFailureAuthorityRevisionRef.current
+      const previousAuthorityRevision = runtimeAuthorityRevisionRef.current
       runtimeAuthorityRevisionRef.current = nextAuthorityRevision
+      if (previousAuthorityRevision != null && previousAuthorityRevision !== nextAuthorityRevision) {
+        setRunOnceProof(null)
+      }
       if (failureAnchor != null && failureAnchor !== nextAuthorityRevision) {
         sourceFailureAuthorityRevisionRef.current = null
         setRunOnceError((current) => (currentSourceRunFailureMessage(current) ? null : current))
@@ -735,6 +740,7 @@ export function StreamRuntimeDetailPage() {
     if (currentRunSourceFailure) return currentRunSourceFailure
     const newest = timelineRecentLogs?.[0]
     if (!newest || newest.level !== 'ERROR') return null
+    if (newest.errorCode === 'SOURCE_FETCH_FAILED') return `Source fetch failed: ${newest.rawMessage ?? newest.message}`
     return currentSourceRunFailureMessage(newest.rawMessage)
   }, [currentRunSourceFailure, timelineRecentLogs])
   const diagnosticDisplayStatus: StreamRuntimeStatus = durableSourceFailure ? 'ERROR' : displayStatus
