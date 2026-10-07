@@ -38,3 +38,25 @@ def run_with_db(fn: Callable[[Session], T], *, commit: bool = False) -> T:
 
     with short_db_session(commit=commit) as db:
         return fn(db)
+
+
+@contextmanager
+def stage_persistence_session(
+    existing_db: Session | None,
+    *,
+    required: bool,
+) -> Generator[Session | None, None, None]:
+    """Yield caller DB when present, otherwise a bounded committing session only when required.
+
+    Route stages use this to persist protection/token-vault or quarantine state without
+    holding a scheduler-owned transaction across source or destination network I/O.
+    """
+
+    if existing_db is not None:
+        yield existing_db
+        return
+    if not required:
+        yield None
+        return
+    with short_db_session(commit=True) as db:
+        yield db

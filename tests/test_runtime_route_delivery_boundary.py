@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -198,6 +199,39 @@ def test_multi_route_one_absorbed_one_success_keeps_events(runner: StreamRunner)
     outcome = runner._fan_out(stream, [{"id": "e1"}])
     assert len(outcome.successful_events) == 1
     assert outcome.log_continue_failed_route_ids == (1,)
+
+
+def test_route_pipeline_fan_out_marks_policy_withheld_route_as_partial(runner: StreamRunner) -> None:
+    delivered = SimpleNamespace(
+        route_id=1,
+        delivery_result=SimpleNamespace(
+            delivery_allowed=True,
+            skip_reason=None,
+            delivery_success=True,
+            failover_attempted=False,
+            failover_succeeded=False,
+        ),
+    )
+    quarantined = SimpleNamespace(
+        route_id=2,
+        delivery_result=SimpleNamespace(
+            delivery_allowed=False,
+            skip_reason="policy_quarantine",
+            delivery_success=None,
+            failover_attempted=False,
+            failover_succeeded=False,
+        ),
+    )
+    pipeline = SimpleNamespace(
+        stage_results=[delivered, quarantined],
+        metrics=SimpleNamespace(route_delivery_duration_ms=3),
+    )
+
+    outcome = runner._route_delivery_fan_out_outcome(pipeline, [{"id": "evt-1"}])
+
+    assert outcome.successful_events == [{"id": "evt-1"}]
+    assert outcome.log_continue_failed_route_ids == ()
+    assert outcome.policy_withheld_route_ids == (2,)
 
 
 def test_send_route_events_does_not_invoke_source_or_checkpoint_owners(runner: StreamRunner) -> None:

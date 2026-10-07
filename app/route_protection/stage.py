@@ -8,14 +8,17 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.protection.engine import ProtectBatchResult, protect_batch
+from app.protection.engine import ProtectBatchResult, collect_tokenization_targets, protect_batch
 from app.protection.metrics import build_protection_complete_payload, load_cumulative_protection_totals
+from app.protection.models import PROTECTION_MODE_TOKENIZATION
 from app.route_protection.cache_key import protection_execution_cache_key
 from app.route_protection.config import RouteProtectionConfig
 from app.route_protection.resolver import merge_ephemeral_for_route, resolve_route_protection_config
 from app.runners.route_context import RouteRuntimeContext, SharedBatchContext
 from app.runners.route_transform_config import transform_config_cache_key
+from app.runners.stream_runner_db import stage_persistence_session
 from app.runtime.copy_utils import copy_events
+from app.runtime.errors import ProtectionApplicationError
 
 
 LogFn = Callable[[dict[str, Any]], None]
@@ -55,6 +58,26 @@ def _canonical_protect_result(result: ProtectBatchResult) -> ProtectBatchResult:
         tokenization_cache_hits=result.tokenization_cache_hits,
         tokenization_created=result.tokenization_created,
     )
+
+
+def _requires_protection_persistence(
+    events: list[dict[str, Any]],
+    rules: list[Any],
+) -> bool:
+    tokenization_rules = [
+        rule
+        for rule in rules
+        if bool(getattr(rule, "enabled", True))
+        and str(getattr(rule, "protection_mode", "")) == PROTECTION_MODE_TOKENIZATION
+    ]
+    return bool(collect_tokenization_targets(events, tokenization_rules))
+
+
+def _raise_on_protection_warnings(result: ProtectBatchResult) -> None:
+    if not result.warnings:
+        return
+    first = result.warnings[0]
+    raise ProtectionApplicationError(field_path=str(first.field_path), rule_id=first.rule_id)
 
 
 def _route_local_protect_result(canonical: ProtectBatchResult) -> ProtectBatchResult:
@@ -111,19 +134,45 @@ def route_protection_stage(
 
     reused = False
     cached = shared_batch.protection_result_cache.get(cache_key)
+    cumulative = {"total_protected_events": 0, "total_protected_fields": 0}
     if cached is not None:
         result = _route_local_protect_result(cached)
         reused = True
         duration_ms = 0
+        if db is not None:
+            cumulative = load_cumulative_protection_totals(db, route_ctx.stream_id)
     else:
         started = time.monotonic()
-        result = protect_batch(
-            input_events,
-            list(protection_config.rules),
-            stream_id=route_ctx.stream_id,
-            db=db,
-            ephemeral_rules=merged_ephemeral or None,
-        )
+        all_rules = [*list(protection_config.rules), *(merged_ephemeral or [])]
+        requires_persistence = _requires_protection_persistence(input_events, all_rules)
+        try:
+            with stage_persistence_session(db, required=requires_persistence) as protection_db:
+                result = protect_batch(
+                    input_events,
+                    list(protection_config.rules),
+                    stream_id=route_ctx.stream_id,
+                    db=protection_db,
+                    ephemeral_rules=merged_ephemeral or None,
+                )
+                _raise_on_protection_warnings(result)
+                if protection_db is not None:
+                    cumulative = load_cumulative_protection_totals(protection_db, route_ctx.stream_id)
+        except ProtectionApplicationError:
+            raise
+        except Exception as exc:
+            failing_rule = next(
+                (
+                    rule
+                    for rule in all_rules
+                    if bool(getattr(rule, "enabled", True))
+                    and str(getattr(rule, "protection_mode", "")) == PROTECTION_MODE_TOKENIZATION
+                ),
+                None,
+            )
+            raise ProtectionApplicationError(
+                field_path=str(getattr(failing_rule, "field_path", "configured protection")),
+                rule_id=int(getattr(failing_rule, "id", 0) or 0) or None,
+            ) from exc
         duration_ms = max(0, int((time.monotonic() - started) * 1000))
         result.duration_ms = duration_ms
         shared_batch.protection_result_cache[cache_key] = _canonical_protect_result(result)
@@ -162,10 +211,6 @@ def route_protection_stage(
                     "reused": reused,
                 }
             )
-
-    cumulative = {"total_protected_events": 0, "total_protected_fields": 0}
-    if db is not None:
-        cumulative = load_cumulative_protection_totals(db, route_ctx.stream_id)
 
     complete_payload = build_protection_complete_payload(
         stream_id=route_ctx.stream_id,

@@ -34,7 +34,7 @@ from app.schema_drift_policy.delivery_log_stages import (
 from app.http.shared_request_builder import build_runtime_checkpoint_template_context
 from app.runtime.copy_utils import copy_event_dict, copy_events, copy_json_value, slim_checkpoint_for_log
 from app.routes.repository import disable_route
-from app.runtime.errors import MappingError
+from app.runtime.errors import MappingError, ProtectionApplicationError, QuarantinePersistenceError
 from app.runtime.stream_context import StreamContext
 from app.streams.repository import update_stream_status
 from app.runners.base import BaseRunner
@@ -106,6 +106,7 @@ class FanOutOutcome:
 
     successful_events: list[dict[str, Any]]
     log_continue_failed_route_ids: tuple[int, ...] = field(default_factory=tuple)
+    policy_withheld_route_ids: tuple[int, ...] = field(default_factory=tuple)
     dynamic_deliveries_sent: int = 0
     failover_attempt_count: int = 0
     failover_success_count: int = 0
@@ -520,9 +521,19 @@ class StreamRunner(BaseRunner):
                     processed_events = len(events)
                     delivered_events = len(successful_events)
                     failed_events = max(0, processed_events - delivered_events)
+                    policy_withheld_route_ids = fan_out.policy_withheld_route_ids
+                    summary["policy_withheld_route_ids"] = list(policy_withheld_route_ids)
+                    summary["policy_withheld_route_count"] = len(policy_withheld_route_ids)
                     partial_success = bool(successful_events) and (
-                        len(fan_out.log_continue_failed_route_ids) > 0 or delivered_events < processed_events
+                        len(fan_out.log_continue_failed_route_ids) > 0
+                        or len(policy_withheld_route_ids) > 0
+                        or delivered_events < processed_events
                     )
+                    summary["partial_success"] = partial_success if successful_events else False
+                    if successful_events and policy_withheld_route_ids and not summary.get("message"):
+                        summary["message"] = (
+                            f"Partial route processing: {len(policy_withheld_route_ids)} route(s) withheld by policy"
+                        )
 
                     checkpoint_after_snapshot = None
                     if successful_events:
@@ -541,7 +552,7 @@ class StreamRunner(BaseRunner):
                             with PhaseTimer(self._run_timing, "checkpoint"):
                                 update_reason = (
                                     "partial_delivery_success"
-                                    if fan_out.log_continue_failed_route_ids
+                                    if fan_out.log_continue_failed_route_ids or policy_withheld_route_ids
                                     else "full_delivery_success"
                                 )
                                 checkpoint_after_snapshot = self._update_checkpoint_after_success(
@@ -555,6 +566,7 @@ class StreamRunner(BaseRunner):
                                     partial_success=partial_success,
                                     update_reason=update_reason,
                                     log_continue_failed_route_ids=fan_out.log_continue_failed_route_ids,
+                                    policy_withheld_route_ids=policy_withheld_route_ids,
                                 )
                             self._emit_obs(
                                 {
@@ -615,11 +627,16 @@ class StreamRunner(BaseRunner):
             self._pending_disabled_routes.clear()
             self._pending_delivery_log_rows.clear()
             should_commit = False
+            error_code = "RUNTIME_INTERNAL_ERROR"
+            if isinstance(exc, ProtectionApplicationError):
+                error_code = "PROTECTION_APPLICATION_FAILED"
+            elif isinstance(exc, QuarantinePersistenceError):
+                error_code = "QUARANTINE_PERSISTENCE_FAILED"
             failure_payload = {
                 "stage": "run_failed",
                 "stream_id": stream_id,
                 "error_type": type(exc).__name__,
-                "error_code": "RUNTIME_INTERNAL_ERROR",
+                "error_code": error_code,
                 "message": str(exc),
                 "run_id": self._run_id,
             }
@@ -633,7 +650,7 @@ class StreamRunner(BaseRunner):
                     self._run_id,
                 )
             summary["outcome"] = "exception"
-            summary["error_code"] = "RUNTIME_INTERNAL_ERROR"
+            summary["error_code"] = error_code
             summary["message"] = str(exc)
             raise
         finally:
@@ -811,6 +828,7 @@ class StreamRunner(BaseRunner):
         """
 
         log_continue_failed: list[int] = []
+        policy_withheld: list[int] = []
         all_required_routes_succeeded = True
         any_delivery_success = False
         saw_send_route = False
@@ -828,6 +846,7 @@ class StreamRunner(BaseRunner):
                 else:
                     failover_failure_count += 1
             if not delivery.delivery_allowed:
+                policy_withheld.append(int(result.route_id))
                 continue
             if delivery.skip_reason in ("no_events", "rate_limited", "destination_disabled"):
                 if delivery.skip_reason == "rate_limited":
@@ -850,6 +869,7 @@ class StreamRunner(BaseRunner):
         if not saw_send_route:
             return FanOutOutcome(
                 successful_events=[],
+                policy_withheld_route_ids=tuple(policy_withheld),
                 failover_attempt_count=failover_attempt_count,
                 failover_success_count=failover_success_count,
                 failover_failure_count=failover_failure_count,
@@ -860,6 +880,7 @@ class StreamRunner(BaseRunner):
             return FanOutOutcome(
                 successful_events=copy_events(reference_events),
                 log_continue_failed_route_ids=tuple(log_continue_failed),
+                policy_withheld_route_ids=tuple(policy_withheld),
                 failover_attempt_count=failover_attempt_count,
                 failover_success_count=failover_success_count,
                 failover_failure_count=failover_failure_count,
@@ -868,6 +889,7 @@ class StreamRunner(BaseRunner):
         return FanOutOutcome(
             successful_events=[],
             log_continue_failed_route_ids=tuple(log_continue_failed),
+            policy_withheld_route_ids=tuple(policy_withheld),
             failover_attempt_count=failover_attempt_count,
             failover_success_count=failover_success_count,
             failover_failure_count=failover_failure_count,
@@ -1239,6 +1261,7 @@ class StreamRunner(BaseRunner):
             return FanOutOutcome(
                 successful_events=outcome.successful_events,
                 log_continue_failed_route_ids=outcome.log_continue_failed_route_ids,
+                policy_withheld_route_ids=outcome.policy_withheld_route_ids,
                 dynamic_deliveries_sent=dynamic_deliveries_sent,
                 failover_attempt_count=outcome.failover_attempt_count,
                 failover_success_count=outcome.failover_success_count,
@@ -2464,9 +2487,13 @@ class StreamRunner(BaseRunner):
         partial_success: bool,
         update_reason: str,
         log_continue_failed_route_ids: tuple[int, ...],
+        policy_withheld_route_ids: tuple[int, ...],
     ) -> dict[str, Any] | None:
         correlated = [
             {"route_id": int(rid), "failure_kind": "log_and_continue_absorbed"} for rid in log_continue_failed_route_ids
+        ]
+        policy_withheld = [
+            {"route_id": int(rid), "outcome_kind": "policy_withheld"} for rid in policy_withheld_route_ids
         ]
         last_ev = copy_event_dict(successful_events[-1])
         checkpoint_value: dict[str, Any] = {"last_success_event": last_ev}
@@ -2532,6 +2559,7 @@ class StreamRunner(BaseRunner):
                 "partial_success": partial_success,
                 "update_reason": update_reason,
                 "correlated_route_failures": correlated,
+                "correlated_policy_withheld_routes": policy_withheld,
             }
         )
         return after_preview if isinstance(after_preview, dict) else None

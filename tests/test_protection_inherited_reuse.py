@@ -207,8 +207,10 @@ def test_distinct_effective_configs_execute_separately() -> None:
         _make_route(1),
         _make_route(2),
         _make_route(3, route_protection_rules=[_route_rule(mode=PROTECTION_MODE_FULL_MASK)]),
-        _make_route(4, route_protection_rules=[_route_rule(mode=PROTECTION_MODE_TOKENIZATION)]),
+        _make_route(4, route_protection_rules=[_route_rule(field_path="$.absent", mode=PROTECTION_MODE_TOKENIZATION)]),
     ]
+    # Use an absent tokenization path so this cache-key unit remains DB-free;
+    # persistence-backed string tokenization is covered by scheduler integration tests.
     shared = _shared(
         batch_id="distinct",
         route_overrides=[
