@@ -756,7 +756,7 @@ export async function hydrateWizardStateFromStream(streamId: number): Promise<Wi
     dataProtection: {
       ...base.dataProtection,
       ...(schemaDrift.policy ?? {}),
-      intents: (protectionRules?.rules ?? []).map((rule) => ({
+      intents: (protectionRules?.rules ?? []).filter((rule) => rule.enabled).map((rule) => ({
         key: 'persisted-protection-' + rule.id,
         detectedField: rule.field_path,
         protectionAction: protectionModeToWizardAction(rule.protection_mode),
