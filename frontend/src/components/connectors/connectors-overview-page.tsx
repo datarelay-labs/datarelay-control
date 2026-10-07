@@ -195,11 +195,11 @@ export function ConnectorsOverviewPage() {
               : 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-100'
           }`}
         >
-          {apiBacked ? 'API-backed' : 'Local preview'}
+          {apiBacked ? 'Live connector data' : usingStaleData ? 'Cached connector data' : 'Connector data unavailable'}
         </span>
         {operationsBacked ? (
           <span className="ml-2 inline-flex rounded bg-violet-100 px-2 py-0.5 font-semibold text-violet-800 dark:bg-violet-500/15 dark:text-violet-100">
-            Runtime metrics
+            Runtime health available
           </span>
         ) : null}
         <span className="ml-2 text-[11px] text-slate-500 dark:text-gdc-muted">
