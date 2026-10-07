@@ -6,6 +6,7 @@ import {
   normalizeWizardDestinations,
   normalizeWizardProtectionAction,
   normalizeWizardRouteProtectionOverride,
+  normalizeWizardRouteClassificationOverride,
   WIZARD_STEP_KEYS,
   type WizardLegacySubstepKey,
   type WizardState,
@@ -172,6 +173,9 @@ export function scrubWizardDraftState(state: WizardState): WizardState {
       routeOverrides: Array.isArray(state.dataProtection?.routeOverrides)
         ? state.dataProtection.routeOverrides.map((override) => normalizeWizardRouteProtectionOverride(override))
         : base.dataProtection.routeOverrides,
+      routeClassificationOverrides: Array.isArray(state.dataProtection?.routeClassificationOverrides)
+        ? state.dataProtection.routeClassificationOverrides.map((override) => normalizeWizardRouteClassificationOverride(override))
+        : base.dataProtection.routeClassificationOverrides,
     },
     mapping: Array.isArray(state.mapping) ? state.mapping : base.mapping,
     enrichment: Array.isArray(state.enrichment) ? state.enrichment : base.enrichment,

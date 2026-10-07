@@ -11,6 +11,7 @@ import {
 import { NAV_PATH } from '../../config/nav-paths'
 import { governanceReadOnlyReason } from '../../lib/governance-rbac'
 import { cn } from '../../lib/utils'
+import { readSession } from '../../auth/session'
 import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
 import { GovernanceInvestigationDrawer } from './governance-investigation-drawer'
 import { Link } from 'react-router-dom'
@@ -23,14 +24,9 @@ function formatTime(iso: string | null | undefined): string {
 }
 
 function canManageNotificationRules(): boolean {
-  try {
-    const raw = localStorage.getItem('gdc_session')
-    if (!raw) return false
-    const parsed = JSON.parse(raw) as { user?: { role?: string } }
-    return String(parsed.user?.role || '').toUpperCase() === 'ADMINISTRATOR'
-  } catch {
-    return false
-  }
+  const session = readSession()
+  if (!session) return false
+  return String(session.user.role || '').toUpperCase() === 'ADMINISTRATOR'
 }
 
 function ToggleRow({

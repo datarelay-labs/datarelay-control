@@ -155,7 +155,7 @@ let refreshInFlight: Promise<boolean> | null = null
  * concurrent callers so we never fire multiple refresh requests when several
  * API calls race a 401 at the same time.
  */
-async function tryRefreshSession(): Promise<boolean> {
+export async function tryRefreshSession(): Promise<boolean> {
   if (refreshInFlight) return refreshInFlight
   const refresh = getRefreshToken()
   if (!refresh) return false

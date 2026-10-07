@@ -40,6 +40,7 @@ function parseNumericId(raw: string | undefined): number | null {
 }
 
 export function useShellRouteLabels(input: ShellRouteLabelInput): ShellRouteLabels {
+  const [revision, setRevision] = useState(0)
   const [state, setState] = useState<ShellRouteLabels>({
     stream: null,
     connector: null,
@@ -48,6 +49,15 @@ export function useShellRouteLabels(input: ShellRouteLabelInput): ShellRouteLabe
     mappingEdit: null,
     loading: false,
   })
+
+  useEffect(() => {
+    const onRuntimeControlUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<{ streamId?: number }>).detail
+      if (input.streamId && detail?.streamId === Number(input.streamId)) setRevision((value) => value + 1)
+    }
+    window.addEventListener('gdc-runtime-control-updated', onRuntimeControlUpdated)
+    return () => window.removeEventListener('gdc-runtime-control-updated', onRuntimeControlUpdated)
+  }, [input.streamId])
 
   useEffect(() => {
     const streamNum = parseNumericId(input.streamId)
@@ -178,7 +188,7 @@ export function useShellRouteLabels(input: ShellRouteLabelInput): ShellRouteLabe
     return () => {
       cancelled = true
     }
-  }, [input.streamId, input.connectorId, input.destinationId, input.routeId, input.mappingEditId])
+  }, [input.streamId, input.connectorId, input.destinationId, input.routeId, input.mappingEditId, revision])
 
   return state
 }

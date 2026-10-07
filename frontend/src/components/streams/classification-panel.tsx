@@ -68,6 +68,7 @@ export function ClassificationPanel({
   const [message, setMessage] = useState<string | null>(null)
   const [actionBusy, setActionBusy] = useState(false)
   const [summary, setSummary] = useState<StreamClassificationSummaryResponse | null>(null)
+  const [routeEffective, setRouteEffective] = useState<RouteClassificationEffective | null>(effectivePreload ?? null)
   const [rules, setRules] = useState<Array<ClassificationRule | RouteClassificationRule>>([])
 
   const load = useCallback(async (opts?: { skipEffective?: boolean }) => {
@@ -81,6 +82,7 @@ export function ClassificationPanel({
           skipEffective ? Promise.resolve(effectivePreloadRef.current) : fetchRouteClassificationEffective(routeId),
         ])
         onEffectiveChange?.(effective)
+        setRouteEffective(effective)
         const routeRules = r?.rules ?? []
         setRules(routeRules)
         const counts = countByLevel(routeRules)
@@ -227,7 +229,9 @@ export function ClassificationPanel({
                 >
                   {loading
                     ? 'Loading…'
-                    : 'No explicit classification rules (defaults apply from sensitive findings).'}
+                    : routeEffective && routeEffective.rule_count > 0
+                      ? 'No route-local classification rules. Effective ' + routeEffective.processing_status + ' configuration applies from ' + routeEffective.persisted_source + ' scope (' + routeEffective.rule_count + ' rule(s)).'
+                      : 'No explicit classification rules (defaults apply from sensitive findings).'}
                 </td>
               </tr>
             ) : (

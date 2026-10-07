@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useReducer } from 'react'
+import { StrictMode, useEffect, useReducer, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import './foundation-semantic-tokens.css'
@@ -12,13 +12,14 @@ import { clearChunkReloadGuard } from './lib/lazy-with-chunk-retry'
 import { PlatformLoginPage } from './components/auth/platform-login-page'
 import { ForceDefaultPasswordChangePage } from './components/auth/force-default-password-change-page'
 import { getAuthMe } from './api/gdcAdmin'
+import { tryRefreshSession } from './api'
 import { accessTokenRequiresPasswordChange } from './auth/jwt-session-hints'
 import {
   errorIndicatesPasswordChangeRequired,
   markSessionRequiresPasswordChange,
   syncSessionFromWhoAmI,
 } from './auth/password-change-gate'
-import { clearSession, isSessionExpired, onSessionChange, readSession } from './auth/session'
+import { clearSession, getRefreshToken, isSessionExpired, onSessionChange, readSession } from './auth/session'
 import { migrateAutoRefreshPreferences } from './localPreferences'
 
 migrateAutoRefreshPreferences()
@@ -39,9 +40,32 @@ function sessionRequiresPasswordChange(): boolean {
 
 function PlatformSessionRoot() {
   const [, bump] = useReducer((c: number) => c + 1, 0)
+  const [bootstrapRefreshing, setBootstrapRefreshing] = useState(() => {
+    const session = readSession()
+    return Boolean(session && isSessionExpired() && getRefreshToken())
+  })
   const accessTokenFingerprint = readSession()?.access_token ?? ''
 
   const needsPasswordChangeGate = sessionRequiresPasswordChange()
+
+  useEffect(() => {
+    const session = readSession()
+    if (!session || !isSessionExpired() || !getRefreshToken()) {
+      setBootstrapRefreshing(false)
+      return
+    }
+    let cancelled = false
+    setBootstrapRefreshing(true)
+    void tryRefreshSession().then((ok) => {
+      if (cancelled) return
+      if (!ok) clearSession()
+      setBootstrapRefreshing(false)
+      bump()
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [accessTokenFingerprint])
 
   useEffect(() => {
     if (!accessTokenFingerprint || isSessionExpired() || needsPasswordChangeGate) {
@@ -85,6 +109,14 @@ function PlatformSessionRoot() {
     }, 60_000)
     return () => window.clearInterval(id)
   }, [bump])
+
+  if (bootstrapRefreshing) {
+    return (
+      <div className="dark flex min-h-screen items-center justify-center text-sm text-slate-300" data-dr-theme="dark">
+        Restoring session…
+      </div>
+    )
+  }
 
   if (!hasValidSession()) {
     return (

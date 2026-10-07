@@ -74,10 +74,10 @@ export function timelineItemsToRunHistoryRows(items: readonly RuntimeTimelineIte
   })
 }
 
-/** Sidebar recent log lines derived from the same timeline payload (newest-first preserved). */
+/** Sidebar recent log lines derived from the ASC timeline payload, newest first. */
 export function timelineItemsToRecentLogLines(items: readonly RuntimeTimelineItem[] | null | undefined, max = 12): RecentLogLine[] {
   if (!items?.length) return []
-  const slice = items.slice(0, max)
+  const slice = items.slice(-max).reverse()
   return slice.map((t) => {
     const raw = String(t.message ?? '')
     const operatorMsg = toOperatorEventLabel(raw, t.stage)

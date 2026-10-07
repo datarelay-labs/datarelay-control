@@ -9,6 +9,7 @@ import {
 } from '../../../api/gdcRouteTransform'
 import { fetchStreamMappingUiConfig } from '../../../api/gdcRuntime'
 import { fetchStreamById } from '../../../api/gdcStreams'
+import { fetchStreamProtectionRules, type ProtectionMode } from '../../../api/gdcProtection'
 import type { MappingUIConfigResponse, MappingUIConfigRouteItem, StreamRead } from '../../../api/types/gdcApi'
 import { resolveStreamEndpointPath } from '../../../utils/streamHttpConfigFromStreamRead'
 import { unionSchemaFromStreamConfig } from '../../../utils/unionSchema'
@@ -45,6 +46,14 @@ import {
   type WizardRouteTransformOverride,
   type WizardState,
 } from './wizard-state'
+
+function protectionModeToWizardAction(mode: ProtectionMode): WizardState['dataProtection']['intents'][number]['protectionAction'] {
+  if (mode === 'partial_mask') return 'mask_partial'
+  if (mode === 'full_mask') return 'mask_full'
+  if (mode === 'tokenization') return 'tokenize'
+  if (mode === 'hash') return 'hash'
+  return 'drop_field'
+}
 
 function kvRowsFromRecord(raw: Record<string, unknown> | undefined, prefix: string): StreamConfigHeaderRow[] {
   if (!raw || typeof raw !== 'object') return []
@@ -706,6 +715,8 @@ export async function hydrateWizardStateFromStream(streamId: number): Promise<Wi
     }
   }
 
+  const protectionRules = await fetchStreamProtectionRules(streamId, true)
+
   const fieldMappings = (mapping?.mapping?.field_mappings ?? {}) as Record<string, unknown>
   const mappingMode = mappingModeFromFieldMappings(fieldMappings)
   const fullEventJsonataExpression = fullEventJsonataExpressionFromFieldMappings(fieldMappings)
@@ -742,9 +753,16 @@ export async function hydrateWizardStateFromStream(streamId: number): Promise<Wi
     mappingRawPayloadMode: mapping.mapping?.raw_payload_mode ?? null,
     streamUpdatedAt: found.updated_at ?? null,
     destinations: hydratedDestinations,
-    dataProtection: schemaDrift.policy
-      ? { ...base.dataProtection, ...schemaDrift.policy }
-      : base.dataProtection,
+    dataProtection: {
+      ...base.dataProtection,
+      ...(schemaDrift.policy ?? {}),
+      intents: (protectionRules?.rules ?? []).map((rule) => ({
+        key: 'persisted-protection-' + rule.id,
+        detectedField: rule.field_path,
+        protectionAction: protectionModeToWizardAction(rule.protection_mode),
+        deliveryBehavior: 'continue' as const,
+      })),
+    },
     outcome: {
       streamId: found.id,
       routeId: hydratedRouteIds[0] ?? null,

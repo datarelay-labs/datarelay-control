@@ -5,6 +5,7 @@ const fetchStreamById = vi.fn()
 const fetchStreamMappingUiConfig = vi.fn()
 const fetchRoutesList = vi.fn()
 const fetchDestinationsList = vi.fn()
+const fetchStreamProtectionRules = vi.fn()
 
 vi.mock('../../../api/gdcStreams', () => ({
   fetchStreamById: (...args: unknown[]) => fetchStreamById(...args),
@@ -20,6 +21,10 @@ vi.mock('../../../api/gdcRoutes', () => ({
 
 vi.mock('../../../api/gdcDestinations', () => ({
   fetchDestinationsList: (...args: unknown[]) => fetchDestinationsList(...args),
+}))
+
+vi.mock('../../../api/gdcProtection', () => ({
+  fetchStreamProtectionRules: (...args: unknown[]) => fetchStreamProtectionRules(...args),
 }))
 
 vi.mock('../../../api/gdcConnectors', () => ({
@@ -59,6 +64,8 @@ describe('edit hydrate fidelity', () => {
     fetchStreamMappingUiConfig.mockReset()
     fetchRoutesList.mockReset()
     fetchDestinationsList.mockReset()
+    fetchStreamProtectionRules.mockReset()
+    fetchStreamProtectionRules.mockResolvedValue({ stream_id: 9, protection_enabled: true, rules: [], rule_count: 0 })
     fetchRoutesList.mockResolvedValue([])
     fetchDestinationsList.mockResolvedValue([])
     fetchStreamById.mockResolvedValue({
@@ -129,6 +136,37 @@ describe('edit hydrate fidelity', () => {
     expect(state?.transformRules).toHaveLength(1)
     expect(state?.enrichment.some((rule) => rule.fieldName === 'vendor')).toBe(true)
     expect(state?.mapping.some((row) => row.outputField === 'message')).toBe(true)
+  })
+
+  it('hydrates persisted stream protection rules into the active editor read-back state', async () => {
+    fetchStreamMappingUiConfig.mockResolvedValue(mappingConfig({ source_type: 'HTTP_API_POLLING' }))
+    fetchStreamProtectionRules.mockResolvedValue({
+      stream_id: 9,
+      protection_enabled: true,
+      rule_count: 1,
+      rules: [{
+        id: 41,
+        stream_id: 9,
+        field_path: '$.message',
+        sensitivity_class: 'pii',
+        protection_mode: 'partial_mask',
+        enabled: true,
+        source_finding_id: null,
+        created_by: 'admin',
+        created_at: '2026-10-07T00:00:00Z',
+        updated_at: '2026-10-07T00:00:00Z',
+      }],
+    })
+    const { hydrateWizardStateFromStream } = await import('./wizard-stream-hydrate')
+    const state = await hydrateWizardStateFromStream(9)
+    expect(fetchStreamProtectionRules).toHaveBeenCalledWith(9, true)
+    expect(state?.dataProtection.intents).toEqual([
+      expect.objectContaining({
+        detectedField: '$.message',
+        protectionAction: 'mask_partial',
+        deliveryBehavior: 'continue',
+      }),
+    ])
   })
 
   it('hydrates persisted Union Schema and incremental query request state for browser read-back', async () => {

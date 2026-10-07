@@ -263,7 +263,7 @@ def test_timeline_limit_applied(timeline_client: TestClient, db_session: Session
     ).json()
     assert body["total"] == 2
     assert len(body["items"]) == 2
-    assert [row["message"] for row in body["items"]] == ["m0", "m1"]
+    assert [row["message"] for row in body["items"]] == ["m3", "m4"]
 
 
 def test_timeline_filter_stage(timeline_client: TestClient, db_session: Session) -> None:

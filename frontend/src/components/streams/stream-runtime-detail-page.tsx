@@ -76,7 +76,7 @@ import { useGovernanceCapabilities } from '../../lib/governance-rbac'
 import { computeStreamWorkflow } from '../../utils/streamWorkflow'
 import { resolveSourceTypePresentation } from '../../utils/sourceTypePresentation'
 import { operationalRunControlTooltipSupplement } from '../../utils/streamOperationalBadges'
-import { deliveryProofLines, nextDeliveryProofPrior, type PriorDeliveryProof } from './wizard/deploy-delivery-proof'
+import { deliveryProofLines, nextDeliveryProofPrior, type ExactRunDeliveryProof, type PriorDeliveryProof } from './wizard/deploy-delivery-proof'
 import { proveStreamRunOnce } from './wizard/prove-stream-run-once'
 import { RecentRouteErrorsPanel, RouteOperationalPanel, resolveRouteRuntimeRows } from './route-operational-panel'
 import { StreamFlowMap } from '../flow/stream-flow-map'
@@ -184,6 +184,7 @@ export function StreamRuntimeDetailPage() {
   const [runOnceStatus, setRunOnceStatus] = useState<string | null>(null)
   const [runOnceRunId, setRunOnceRunId] = useState<string | null>(null)
   const [runOnceError, setRunOnceError] = useState<string | null>(null)
+  const [runOnceProof, setRunOnceProof] = useState<ExactRunDeliveryProof | null>(null)
   const runtimeAuthorityRevisionRef = useRef<string | null>(null)
   const sourceFailureAuthorityRevisionRef = useRef<string | null>(null)
   const priorDeliveryProofRef = useRef<PriorDeliveryProof | null>(null)
@@ -587,6 +588,7 @@ export function StreamRuntimeDetailPage() {
     setRunOnceStatus(null)
     setRunOnceRunId(null)
     setRunOnceError(null)
+    setRunOnceProof(null)
     sourceFailureAuthorityRevisionRef.current = null
     setControlMessage(null)
     try {
@@ -598,6 +600,7 @@ export function StreamRuntimeDetailPage() {
         proof,
       )
       setRunOnceStatus(proof.status)
+      setRunOnceProof(proof)
       setRunOnceRunId(proof.runtimeRunId)
       setRunOnceLines(deliveryProofLines(proof))
       await refreshAfterMutation()
@@ -728,7 +731,13 @@ export function StreamRuntimeDetailPage() {
     () => currentSourceRunFailureMessage(runOnceError),
     [runOnceError],
   )
-  const diagnosticDisplayStatus: StreamRuntimeStatus = currentRunSourceFailure ? 'ERROR' : displayStatus
+  const durableSourceFailure = useMemo(() => {
+    if (currentRunSourceFailure) return currentRunSourceFailure
+    const newest = timelineRecentLogs?.[0]
+    if (!newest || newest.level !== 'ERROR') return null
+    return currentSourceRunFailureMessage(newest.rawMessage)
+  }, [currentRunSourceFailure, timelineRecentLogs])
+  const diagnosticDisplayStatus: StreamRuntimeStatus = durableSourceFailure ? 'ERROR' : displayStatus
 
   const numericOverlay = useMemo(
     () => buildRuntimeDetailNumericOverlay(runtimeStats, runtimeHealth, runtimeMetrics),
@@ -853,8 +862,14 @@ export function StreamRuntimeDetailPage() {
   )
 
   const issueCtx = useMemo((): StreamIssueContext => {
+    const exactRunRouteFailures = (runOnceProof?.routes ?? [])
+      .filter((route) => route.status === 'failed')
+      .map((route) => ({
+        message: 'Current Run Now failed Route ' + (route.routeId ?? '—') + ' / ' + route.destinationLabel,
+      }))
     const recentErrors = [
-      ...(currentRunSourceFailure ? [{ message: currentRunSourceFailure }] : []),
+      ...(durableSourceFailure ? [{ message: durableSourceFailure }] : []),
+      ...exactRunRouteFailures,
       ...(runtimeMetrics?.recent_route_errors ?? [])
         .slice(0, 3)
         .map((e) => ({ message: e.message ?? 'Delivery path error' })),
@@ -885,7 +900,7 @@ export function StreamRuntimeDetailPage() {
       connectorProductGroup,
       deliveryPctKnown: deliveryPct != null,
       deliveryPct: deliveryPct ?? 0,
-      routesError: routesErr ?? 0,
+      routesError: Math.max(routesErr ?? 0, exactRunRouteFailures.length),
       lastActivityRelative,
       recentErrors,
     }
@@ -894,7 +909,8 @@ export function StreamRuntimeDetailPage() {
     runtimeStats,
     streamId,
     displayStatus,
-    currentRunSourceFailure,
+    durableSourceFailure,
+    runOnceProof,
     connectorDisplayName,
     connectorProductGroup,
     data.connectorName,
@@ -960,7 +976,7 @@ export function StreamRuntimeDetailPage() {
       buildStreamDiagnosis({
         streamId,
         displayStatus: diagnosticDisplayStatus,
-        hasRuntimeEvidence: hasRuntimeObsApi || currentRunSourceFailure != null,
+        hasRuntimeEvidence: hasRuntimeObsApi || durableSourceFailure != null,
         governance: governanceSnapshot,
         issues: operationalIssues,
         showCheckpointObservability,
@@ -968,7 +984,7 @@ export function StreamRuntimeDetailPage() {
         deliveryPctKnown: deliveryPct != null,
         deliveryPct: deliveryPct ?? 0,
         recentErrorMessage: issueCtx.recentErrors[0]?.message ?? null,
-        currentRunFailureMessage: currentRunSourceFailure,
+        currentRunFailureMessage: durableSourceFailure,
         canMutateWorkspace,
         canRuntimeControl,
         canBackfill,
@@ -978,7 +994,7 @@ export function StreamRuntimeDetailPage() {
       streamId,
       diagnosticDisplayStatus,
       hasRuntimeObsApi,
-      currentRunSourceFailure,
+      durableSourceFailure,
       governanceSnapshot,
       operationalIssues,
       showCheckpointObservability,
