@@ -1,5 +1,7 @@
 # Real Browser Operator E2E (User Lifecycle)
 
+> Canonical full-product qualification matrix: [`FULL-USER-E2E-SCENARIOS.md`](FULL-USER-E2E-SCENARIOS.md). Current Control qualification is Phase A-D only; AI Gateway/AI Proxy/Phase E and Phase F are outside scope and are excluded from coverage/readiness denominators.
+
 Reusable package for **browser-first** Data Relay operator journeys.
 
 ```text
