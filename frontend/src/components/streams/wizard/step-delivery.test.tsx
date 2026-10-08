@@ -214,4 +214,23 @@ describe('StepDelivery', () => {
     expect(await screen.findByText('New Syslog UDP')).toBeInTheDocument()
   })
 
+
+  it('preserves already configured delivery paths if refreshed catalog is temporarily empty', async () => {
+    const state = buildInitialState()
+    state.destinations.routeDrafts = [{
+      key: 'existing-path', destinationId: 1, enabled: true,
+      failurePolicy: 'RETRY_AND_BACKOFF', rateLimitJson: {},
+    }]
+    const onChange = vi.fn()
+    render(
+      <MemoryRouter><StepDelivery state={state} onChange={onChange} /></MemoryRouter>,
+    )
+    expect(await screen.findByTestId('destination-route-card-existing-path')).toBeInTheDocument()
+    fetchDestinationsList.mockResolvedValueOnce([])
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Refresh destinations' }))
+    expect(await screen.findByText(/No destinations configured yet/i)).toBeInTheDocument()
+    expect(onChange).not.toHaveBeenCalledWith(expect.objectContaining({ routeDrafts: [] }))
+    expect(state.destinations.routeDrafts).toHaveLength(1)
+  })
+
 })
