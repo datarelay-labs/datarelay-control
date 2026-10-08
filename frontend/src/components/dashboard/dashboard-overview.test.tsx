@@ -468,16 +468,18 @@ describe('DashboardOverview', () => {
     const firstLevel = await within(mainRegion()).findByTestId('dashboard-first-level')
     expect(screen.getByTestId('dashboard-purpose-header')).toHaveTextContent(/What needs attention right now/i)
     const actionNeeded = within(firstLevel).getByTestId('dashboard-action-needed')
-    expect(within(actionNeeded).getByRole('heading', { name: 'Action needed' })).toBeInTheDocument()
-    expect(within(actionNeeded).getByRole('link', { name: /Streams needing health review/i })).toHaveAttribute(
+    // The first-level shell can render before the deferred operational evidence arrives.
+    // Assert the real warning state and all destinations after its async readback.
+    expect(await within(actionNeeded).findByRole('heading', { name: 'Action needed' }, { timeout: 5000 })).toBeInTheDocument()
+    expect(await within(actionNeeded).findByRole('link', { name: /Streams needing health review/i })).toHaveAttribute(
       'href',
       '/streams',
     )
-    expect(within(actionNeeded).getByRole('link', { name: /Streams with no data/i })).toHaveAttribute(
+    expect(await within(actionNeeded).findByRole('link', { name: /Streams with no data/i })).toHaveAttribute(
       'href',
       '/streams?filter=no-data',
     )
-    expect(within(actionNeeded).getByRole('link', { name: /Destinations needing health review/i })).toHaveAttribute(
+    expect(await within(actionNeeded).findByRole('link', { name: /Destinations needing health review/i })).toHaveAttribute(
       'href',
       '/destinations',
     )
