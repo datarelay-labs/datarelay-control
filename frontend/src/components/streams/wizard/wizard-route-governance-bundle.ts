@@ -157,7 +157,16 @@ export function routeGovernanceConcernDisposition(
   concern: RouteGovernanceConcern,
 ): RouteGovernancePersistDisposition {
   const load = concernLoad(draft, concern)
-  if (load === 'unloaded' || load === 'unavailable' || load === 'passthrough') return 'skip'
+  if (load === 'unloaded' || load === 'unavailable' || load === 'passthrough') {
+    // An explicit Route Protection edit must be verified or rejected, never silently
+    // omitted from a successful Save. The persist layer re-reads uncertain rows.
+    if (
+      concern === 'protection' &&
+      draft.inherit.protection === false &&
+      routeProtectionOverridePersistPayload(draft) != null
+    ) return 'replace'
+    return 'skip'
+  }
   if (concern === 'policy') {
     if (draft.inherit?.policy !== false) return 'clear'
     return routePolicyDeliveryBehavior(draft) == null ? 'skip' : 'replace'
@@ -353,8 +362,38 @@ export async function persistWizardRouteGovernanceBundles(
     const protectionDisposition = routeGovernanceConcernDisposition(draft, 'protection')
     if (protectionDisposition !== 'skip') {
       const protection = routeProtectionOverridePersistPayload(draft)
-      const message = await replaceProtectionRules(routeId, protection ?? [])
-      if (message) errors.push(message)
+      const load = draft.governanceLoad?.protection
+      if (protection && load === 'passthrough') {
+        errors.push(`route ${routeId} protection: unmanaged rules must be reviewed before replacing this bundle`)
+      } else {
+        let safeToReplace = true
+        if (protection && (load === 'unavailable' || load === 'unloaded')) {
+          // The initial edit hydration was not authoritative. Do not treat an
+          // unreadable/foreign bundle as empty, and do not report false success.
+          let existing: Awaited<ReturnType<typeof fetchRouteProtectionRules>> = null
+          try {
+            existing = await fetchRouteProtectionRules(routeId)
+          } catch {
+            // Strict read gate below handles both rejected and null responses.
+          }
+          if (existing == null) {
+            errors.push(`route ${routeId} protection: cannot read existing rules before saving override`)
+            safeToReplace = false
+          } else if (protectionRulesReconstruct(existing.rules).kind === 'passthrough') {
+            errors.push(`route ${routeId} protection: unmanaged rules must be reviewed before replacing this bundle`)
+            safeToReplace = false
+          } else if (existing.rules.length > 0 && !protectionReadBackMatches(protection, existing.rules)) {
+            // An unreadable initial load provides no safe replacement baseline.
+            // An explicit new draft must not erase a previously unseen rule set.
+            errors.push(`route ${routeId} protection: existing rules differ from this unreadable draft; reload before replacing`)
+            safeToReplace = false
+          }
+        }
+        if (safeToReplace) {
+          const message = await replaceProtectionRules(routeId, protection ?? [])
+          if (message) errors.push(message)
+        }
+      }
     }
 
     const classificationDisposition = routeGovernanceConcernDisposition(draft, 'classification')
