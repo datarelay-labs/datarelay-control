@@ -167,6 +167,7 @@ export function RouteEditPage() {
   const [backendStreamId, setBackendStreamId] = useState<number | null>(null)
   const [streamOptions, setStreamOptions] = useState<Array<{ id: number; label: string }>>([])
   const [streamCatalogLoading, setStreamCatalogLoading] = useState(isCreateMode)
+  const [streamCatalogEmpty, setStreamCatalogEmpty] = useState(false)
   const [streamCatalogError, setStreamCatalogError] = useState<string | null>(null)
   const [backendDestinationId, setBackendDestinationId] = useState<number | null>(null)
   const [destinationOptions, setDestinationOptions] = useState<Array<{ id: number; label: string }>>([])
@@ -399,6 +400,9 @@ export function RouteEditPage() {
   useEffect(() => {
     if (!isCreateMode) return
     let cancelled = false
+    // A reused RouteEditPage must never POST a Stream selected for an older URL context.
+    setBackendStreamId(null)
+    setStreamCatalogEmpty(false)
     setStreamCatalogLoading(true)
     void (async () => {
       try {
@@ -406,6 +410,7 @@ export function RouteEditPage() {
         if (cancelled) return
         if (result.ok === false) {
           setStreamOptions([])
+          setStreamCatalogEmpty(false)
           setStreamCatalogError(`Unable to load Streams: ${result.message}. Retry after the connection is restored.`)
           return
         }
@@ -413,6 +418,7 @@ export function RouteEditPage() {
           .filter((stream) => Number.isSafeInteger(stream.id) && stream.id > 0)
           .map((stream) => ({ id: stream.id, label: stream.name?.trim() || `Stream #${stream.id}` }))
         setStreamOptions(options)
+        setStreamCatalogEmpty(options.length === 0)
         if (options.length === 0) {
           setStreamCatalogError('No Streams are available. Create a Stream before adding a Route.')
         } else if (requestedStreamId != null) {
@@ -428,6 +434,7 @@ export function RouteEditPage() {
       } catch {
         if (!cancelled) {
           setStreamOptions([])
+          setStreamCatalogEmpty(false)
           setStreamCatalogError('Unable to load Streams. Check the connection and reopen Create Route.')
         }
       } finally {
@@ -970,7 +977,7 @@ export function RouteEditPage() {
                   </Field>
                   {streamCatalogLoading ? <p role="status" className="text-[11px] text-slate-500">Loading Streams…</p> : null}
                   {streamCatalogError ? <p role="alert" className="text-[11px] text-amber-700 dark:text-amber-300">{streamCatalogError}</p> : null}
-                  {!streamCatalogLoading && streamOptions.length === 0 ? (
+                  {!streamCatalogLoading && streamCatalogEmpty ? (
                     <Link to="/streams/new" className="text-[11px] font-semibold text-violet-700 hover:underline dark:text-violet-300">
                       Create a Stream first
                     </Link>

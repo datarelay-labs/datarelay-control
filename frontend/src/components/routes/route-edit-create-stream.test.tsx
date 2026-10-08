@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { Link, MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearSession, persistSession } from '../../auth/session'
 import { RouteEditPage } from './route-edit-page'
@@ -42,6 +42,7 @@ const streams = [
 function mount(path = '/routes/new/edit') {
   return render(
     <MemoryRouter initialEntries={[path]}>
+      <Link to="/routes/new/edit?stream_id=999">Switch to unavailable Stream</Link>
       <Routes>
         <Route path="/routes/:routeId/edit" element={<RouteEditPage />} />
         <Route path="/streams/:streamId/runtime" element={<div>Stream runtime opened</div>} />
@@ -131,6 +132,20 @@ describe('Route catalog creation requires an explicit Stream', () => {
     expect(screen.queryByText('Stream #999 is not available')).not.toBeInTheDocument()
   })
 
+  it('clears a previous Stream when URL context changes without component remount', async () => {
+    const user = userEvent.setup()
+    mount('/routes/new/edit?stream_id=11')
+    const select = await screen.findByTestId('route-edit-stream-select')
+    await waitFor(() => expect(select).toHaveValue('11'))
+    await user.click(screen.getByRole('link', { name: 'Switch to unavailable Stream' }))
+    await waitFor(() => {
+      expect(select).toHaveValue('')
+      expect(screen.getByText('Stream #999 is not available. Choose an existing Stream.')).toBeInTheDocument()
+    })
+    await user.click(screen.getByRole('button', { name: 'Create Route' }))
+    expect(createRoute).not.toHaveBeenCalled()
+  })
+
   it('shows create-first guidance for an empty Stream catalog instead of POST', async () => {
     const user = userEvent.setup()
     fetchStreamsListResult.mockResolvedValue({ ok: true, status: 200, data: [] })
@@ -146,6 +161,7 @@ describe('Route catalog creation requires an explicit Stream', () => {
     fetchStreamsListResult.mockResolvedValue({ ok: false, status: 503, message: 'Stream service unavailable', authRequired: false })
     mount()
     await waitFor(() => expect(screen.getByText(/Unable to load Streams: Stream service unavailable/)).toBeInTheDocument())
+    expect(screen.queryByRole('link', { name: 'Create a Stream first' })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Create Route' }))
     expect(createRoute).not.toHaveBeenCalled()
   })
