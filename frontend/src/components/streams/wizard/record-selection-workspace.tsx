@@ -62,13 +62,14 @@ import {
 import { RequestPreviewCopyButton, RequestPreviewDrawer } from './request-preview-drawer'
 import { resolveJsonPath } from '../stream-api-test-json-utils'
 import { UnionSchemaStatusCard } from './union-schema-status-card'
+import { checkpointModeFromFieldType } from './wizard-stream-config-sync'
 import type { WizardCheckpointFieldType, WizardConfigState, WizardState } from './wizard-state'
 
 type RecordSelectionWorkspaceProps = {
   state: WizardState
   onSetEventArrayPath: (path: string) => void
   onSetEventRootPath: (path: string) => void
-  onSetCheckpoint: (patch: Partial<Pick<WizardConfigState, 'checkpointFieldType' | 'checkpointSourcePath'>>) => void
+  onSetCheckpoint: (patch: Partial<Pick<WizardConfigState, 'checkpointFieldType' | 'checkpointSourcePath' | 'checkpointMode'>>) => void
   onStreamPatch?: (patch: Partial<WizardConfigState>) => void
   onLoadOperationalSample?: (id: OperationalSampleId) => void
   activeOperationalSampleId?: OperationalSampleId | null
@@ -268,7 +269,7 @@ export function RecordSelectionWorkspace({
       setPaths(nextPaths)
       onSetCheckpoint({
         checkpointSourcePath: rel,
-        ...(type ? { checkpointFieldType: type } : {}),
+        ...(type ? { checkpointFieldType: type, checkpointMode: checkpointModeFromFieldType(type) } : {}),
       })
       if (selectionMode === 'advanced') clearCustomValidation()
       notifyCopy(`Sync position → ${rel || '(cleared)'}`)
@@ -313,6 +314,7 @@ export function RecordSelectionWorkspace({
       onSetCheckpoint({
         checkpointSourcePath: rel,
         checkpointFieldType: patch.checkpointType,
+        checkpointMode: checkpointModeFromFieldType(patch.checkpointType),
       })
       if (selectionMode === 'advanced') clearCustomValidation()
       notifyCopy(`Sync position → ${rel || '(cleared)'}`)
