@@ -22,7 +22,7 @@
     "lucide-react": "^1.14.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-router-dom": "^7.15.0",
+    "react-router-dom": "^7.18.4",
     "recharts": "^3.8.1",
     "tailwind-merge": "^3.5.0",
     "@datarelay-labs/auth-ui": "file:.foundation/packs/datarelay-labs-auth-ui-0.1.0-pf5b.1.tgz",
