@@ -427,7 +427,11 @@ export function ConnectorDetailPage() {
               aria-label="Host / Base URL *"
               placeholder="Host / Base URL *"
               value={form.base_url ?? ''}
-              onChange={(e) => set('base_url', e.target.value)}
+              onChange={(e) =>
+                setForm((prev) =>
+                  prev ? { ...prev, base_url: e.target.value, host: e.target.value } : prev,
+                )
+              }
               className={cn('h-9 w-full min-w-0', gdcUi.input)}
             />
           ) : (
