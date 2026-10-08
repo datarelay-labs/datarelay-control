@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
@@ -382,4 +383,69 @@ describe('StepRouteProcessing guided Transform runtime enablement', () => {
       ).toBe(true)
     })
   })
+
+  it('keeps Webhook Route #2 full email mask in the edit draft without modifying Route #1', async () => {
+    const initial = readyState()
+    initial.apiTest.analysis = {
+      sampleEvent: { email: 'person@example.test' },
+      flatPreviewFields: ['$.email'],
+      detectedArrays: [],
+      detectedCheckpointCandidates: [],
+      previewError: null,
+    }
+    initial.apiTest.extractedEvents = [{ email: 'person@example.test' }]
+    initial.destinations.routeDrafts = [
+      { ...initial.destinations.routeDrafts[0]!, key: 'route-1' },
+      {
+        ...initial.destinations.routeDrafts[0]!,
+        key: 'route-2',
+        governanceLoad: {
+          protection: 'unavailable', classification: 'inherited', policy: 'inherited',
+        },
+      },
+    ]
+    function Fixture() {
+      const [value, setValue] = useState(initial)
+      return (
+        <MemoryRouter>
+          <StepRouteProcessing
+            state={value}
+            onChangeMapping={() => {}}
+            onChangeMappingMode={() => {}}
+            onChangeFullEventJsonata={() => {}}
+            onChangeFullEventRegexConfigJson={() => {}}
+            onChangeEnrichment={() => {}}
+            onChangeDataProtection={(patch) =>
+              setValue((prior) => ({ ...prior, dataProtection: { ...prior.dataProtection, ...patch } }))
+            }
+            onChangeDestinations={(patch) =>
+              setValue((prior) => ({ ...prior, destinations: { ...prior.destinations, ...patch } }))
+            }
+          />
+          <output data-testid="route-one-draft">{JSON.stringify(value.destinations.routeDrafts[0])}</output>
+          <output data-testid="route-two-draft">{JSON.stringify(value.destinations.routeDrafts[1])}</output>
+        </MemoryRouter>
+      )
+    }
+    render(<Fixture />)
+    fireEvent.click(await screen.findByTestId('route-processing-list-card-route-2'))
+    fireEvent.click(screen.getByTestId('route-processing-mode-override'))
+    fireEvent.click(await screen.findByTestId('route-detail-tab-data_protection'))
+    const protection = screen.getByTestId('route-detail-data-protection')
+    fireEvent.click(within(protection).getByTestId('data-protection-add-row'))
+    fireEvent.change(within(protection).getByPlaceholderText('$.email'), { target: { value: '$.email' } })
+    fireEvent.change(within(protection).getByDisplayValue('Mask (partial)'), { target: { value: 'mask_full' } })
+
+    await waitFor(() => {
+      const route2 = JSON.parse(screen.getByTestId('route-two-draft').textContent ?? '{}')
+      expect(route2.overrides.protection.intents).toEqual([
+        expect.objectContaining({ detectedField: '$.email', protectionAction: 'mask_full' }),
+      ])
+      expect(route2.governanceLoad.protection).toBe('unavailable')
+      const route1 = JSON.parse(screen.getByTestId('route-one-draft').textContent ?? '{}')
+      expect(route1.inherit.protection).toBe(true)
+      expect(route1.overrides?.protection).toBeUndefined()
+    })
+  })
+
 })

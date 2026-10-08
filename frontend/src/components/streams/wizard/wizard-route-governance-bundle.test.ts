@@ -575,4 +575,77 @@ describe('wizard route governance bundles', () => {
     expect(hydrated.governanceLoad?.protection).toBe('passthrough')
     expect(routeGovernanceConcernDisposition(hydrated, 'protection')).toBe('skip')
   })
+
+  it('saves an explicitly authored Webhook Route #2 full email mask after an initially unavailable governance read', async () => {
+    const webhook = protectionBundleDraft('route-2')
+    webhook.overrides!.protection!.intents = [{
+      ...emailIntent, protectionAction: 'mask_full', deliveryBehavior: 'continue',
+    }]
+    webhook.governanceLoad = { protection: 'unavailable', classification: 'inherited', policy: 'inherited' }
+    const other = draft({
+      key: 'route-1',
+      governanceLoad: { protection: 'inherited', classification: 'inherited', policy: 'inherited' },
+    })
+    expect(routeGovernanceConcernDisposition(webhook, 'protection')).toBe('replace')
+    const errors = await persistWizardRouteGovernanceBundles(
+      [other, webhook],
+      { 'route-1': 1, 'route-2': 2 },
+    )
+    expect(errors).toEqual([])
+    expect(replaceRouteProtectionRules).toHaveBeenCalledWith(2, [{
+      field_path: '$.email',
+      sensitivity_class: 'pii',
+      protection_mode: 'full_mask',
+      enabled: true,
+    }])
+    expect(replaceRouteProtectionRules).not.toHaveBeenCalledWith(
+      1, expect.arrayContaining([expect.objectContaining({ field_path: '$.email' })]),
+    )
+    fetchRouteProtectionEffective.mockImplementation(async (routeId: number) =>
+      effective(routeId, routeId === 2 ? 'Overridden' : 'Inherited'),
+    )
+    expect(await verifyWizardRouteGovernanceEffective(
+      [other, webhook],
+      { 'route-1': 1, 'route-2': 2 },
+      buildInitialState().dataProtection,
+    )).toEqual([])
+  })
+
+  it('rejects a route protection save when existing rules still cannot be read', async () => {
+    const webhook = protectionBundleDraft('route-2')
+    webhook.governanceLoad = { protection: 'unavailable', classification: 'inherited', policy: 'inherited' }
+    fetchRouteProtectionRules.mockResolvedValue(null)
+    const errors = await persistWizardRouteGovernanceBundles([webhook], { 'route-2': 2 })
+    expect(errors.some((error) => error.includes('route 2 protection') && error.includes('read'))).toBe(true)
+    expect(replaceRouteProtectionRules).not.toHaveBeenCalled()
+  })
+
+  it('rejects overwriting route protection rules that cannot be reconstructed', async () => {
+    const webhook = protectionBundleDraft('route-2')
+    webhook.governanceLoad = { protection: 'passthrough', classification: 'inherited', policy: 'inherited' }
+    const errors = await persistWizardRouteGovernanceBundles([webhook], { 'route-2': 2 })
+    expect(errors.some((error) => error.includes('route 2 protection') && error.includes('unmanaged'))).toBe(true)
+    expect(replaceRouteProtectionRules).not.toHaveBeenCalled()
+  })
+
+
+  it('does not overwrite previously unseen route rules after a failed initial read', async () => {
+    const webhook = protectionBundleDraft('route-2')
+    webhook.overrides!.protection!.intents = [{
+      ...emailIntent, protectionAction: 'mask_full',
+    }]
+    webhook.governanceLoad = { protection: 'unavailable', classification: 'inherited', policy: 'inherited' }
+    fetchRouteProtectionRules.mockResolvedValue({
+      ...emptyRules(2),
+      rules: [{
+        id: 17, field_path: '$.email', sensitivity_class: 'pii',
+        protection_mode: 'partial_mask', enabled: true, source_finding_id: null,
+      }],
+      rule_count: 1,
+    })
+    const errors = await persistWizardRouteGovernanceBundles([webhook], { 'route-2': 2 })
+    expect(errors.some((error) => error.includes('existing rules differ'))).toBe(true)
+    expect(replaceRouteProtectionRules).not.toHaveBeenCalled()
+  })
+
 })
