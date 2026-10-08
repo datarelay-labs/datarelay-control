@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { fetchDestinationsList, testDestination, type DestinationListItem } from '../../../api/gdcDestinations'
+import { fetchDestinationsList, invalidateDestinationsListCache, testDestination, type DestinationListItem } from '../../../api/gdcDestinations'
 import { runFinalEventDraftPreview } from '../../../api/gdcRuntimePreview'
 import { NAV_PATH, destinationDetailPath } from '../../../config/nav-paths'
 import { cn } from '../../../lib/utils'
@@ -211,6 +211,9 @@ export function StepDelivery({ state, onChange, onOpenDestinationPrerequisite }:
   const [tab, setTab] = useState<DestinationLibraryTab>('all')
   const [menuKey, setMenuKey] = useState<string | null>(null)
   const [testBusyId, setTestBusyId] = useState<number | null>(null)
+  const onChangeRef = useRef(onChange)
+  const fetchVersionRef = useRef(0)
+  useEffect(() => { onChangeRef.current = onChange }, [onChange])
 
   const fallbackSampleEvent = useMemo(() => {
     const payload = state.apiTest.parsedJson
@@ -271,37 +274,49 @@ export function StepDelivery({ state, onChange, onOpenDestinationPrerequisite }:
     state.enrichmentOverridePolicy,
   ])
 
-  useEffect(() => {
-    let cancelled = false
-    void (async () => {
-      const rows = await fetchDestinationsList()
-      if (cancelled) return
-      if (rows === null) {
-        // Failure != empty catalog: keep route drafts; do not crash on null.
-        setCatalogLoadFailed(true)
-        setDestinations([])
-        onChange({ destinationApiBacked: false })
-        setLoading(false)
-        return
-      }
+  const refreshDestinations = useCallback(async (force = false) => {
+    const version = ++fetchVersionRef.current
+    setLoading(true)
+    // Destinations may have been added from another tab; bypass the in-memory TTL.
+    if (force) invalidateDestinationsListCache()
+    let rows: DestinationListItem[] | null = null
+    try {
+      rows = await fetchDestinationsList()
+    } catch {
+      // Transport and authentication errors must not masquerade as an empty catalog.
+    }
+    if (version !== fetchVersionRef.current) return
+    if (rows === null) {
+      setCatalogLoadFailed(true)
+      onChangeRef.current({ destinationApiBacked: false })
+    } else {
       setCatalogLoadFailed(false)
       setDestinations(rows)
       if (rows.length > 0) {
-        onChange({
+        onChangeRef.current({
           destinationApiBacked: true,
           destinationKindsById: Object.fromEntries(rows.map((r) => [r.id, r.destination_type])),
         })
+      } else if (!force) {
+        // Preserve the initial empty-catalog contract. A later refresh must not
+        // destroy routes the operator may have configured while another tab ran.
+        onChangeRef.current({ destinationApiBacked: true, routeDrafts: [] })
       } else {
-        // Valid empty list from API.
-        onChange({ destinationApiBacked: true, routeDrafts: [] })
+        onChangeRef.current({ destinationApiBacked: true })
       }
-      setLoading(false)
-    })()
-    return () => {
-      cancelled = true
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setLoading(false)
   }, [])
+
+  useEffect(() => {
+    void refreshDestinations()
+    const onFocus = () => { void refreshDestinations(true) }
+    window.addEventListener('focus', onFocus)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      fetchVersionRef.current += 1
+    }
+  }, [refreshDestinations])
 
   const destById = useMemo(() => new Map(destinations.map((d) => [d.id, d])), [destinations])
 
@@ -452,6 +467,14 @@ export function StepDelivery({ state, onChange, onOpenDestinationPrerequisite }:
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className={btnGhost}
+            onClick={() => void refreshDestinations(true)}
+            disabled={loading}
+          >
+            Refresh destinations
+          </button>
           <button type="button" className={btnPrimarySm} onClick={scrollToLibrary}>
             <Plus className="h-3.5 w-3.5" aria-hidden />
             {WIZARD_LABEL.addDeliveryPath}

@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { StepDelivery } from './step-delivery'
@@ -29,13 +30,17 @@ const fetchDestinationsList = vi.hoisted(() =>
   ]),
 )
 
+const invalidateDestinationsListCache = vi.hoisted(() => vi.fn())
+
 vi.mock('../../../api/gdcDestinations', () => ({
   fetchDestinationsList: (...args: unknown[]) => fetchDestinationsList(...args),
+  invalidateDestinationsListCache: () => invalidateDestinationsListCache(),
 }))
 
 describe('StepDelivery', () => {
 
   beforeEach(() => {
+    invalidateDestinationsListCache.mockClear()
     fetchDestinationsList.mockReset()
     fetchDestinationsList.mockResolvedValue([
       {
@@ -164,4 +169,49 @@ describe('StepDelivery', () => {
     expect(screen.queryByTestId('route-processing-enabled-r1')).not.toBeInTheDocument()
     expect(screen.queryByTestId('route-processing-failure-policy-r1')).not.toBeInTheDocument()
   })
+
+  it('refreshes destination choices after an integration is created in another tab', async () => {
+    const state = buildInitialState()
+    const onChange = vi.fn()
+    fetchDestinationsList.mockResolvedValueOnce([])
+    render(
+      <MemoryRouter>
+        <StepDelivery state={state} onChange={onChange} />
+      </MemoryRouter>,
+    )
+    expect(await screen.findByText(/No destinations configured yet/i)).toBeInTheDocument()
+
+    fetchDestinationsList.mockResolvedValueOnce([{
+      id: 21, name: 'New Webhook', destination_type: 'WEBHOOK_POST',
+      config_json: { url: 'https://new.example.test/webhook' },
+      rate_limit_json: {}, enabled: true, streams_using_count: 0, routes: [],
+    }])
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Refresh destinations' }))
+
+    expect(await screen.findByText('New Webhook')).toBeInTheDocument()
+    expect(fetchDestinationsList).toHaveBeenCalledTimes(2)
+    expect(invalidateDestinationsListCache).toHaveBeenCalled()
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+      destinationApiBacked: true,
+      destinationKindsById: { 21: 'WEBHOOK_POST' },
+    }))
+  })
+
+  it('checks for new destinations when the wizard tab regains focus', async () => {
+    fetchDestinationsList.mockResolvedValueOnce([])
+    render(
+      <MemoryRouter>
+        <StepDelivery state={buildInitialState()} onChange={vi.fn()} />
+      </MemoryRouter>,
+    )
+    expect(await screen.findByText(/No destinations configured yet/i)).toBeInTheDocument()
+    fetchDestinationsList.mockResolvedValueOnce([{
+      id: 22, name: 'New Syslog UDP', destination_type: 'SYSLOG_UDP',
+      config_json: { host: '127.0.0.1', port: 1514 },
+      rate_limit_json: {}, enabled: true, streams_using_count: 0, routes: [],
+    }])
+    window.dispatchEvent(new Event('focus'))
+    expect(await screen.findByText('New Syslog UDP')).toBeInTheDocument()
+  })
+
 })
