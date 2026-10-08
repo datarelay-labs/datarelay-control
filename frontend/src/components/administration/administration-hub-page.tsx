@@ -1,13 +1,13 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { AdministrationHub, createStandardAdministrationTasks, type StandardAdministrationTaskBindings } from '@datarelay-labs/foundation'
 import { NAV_PATH, SETTINGS_SECTION_PATH } from '../../config/nav-paths'
-import { isAdminUiOperator, isAdminUiReadOnly, readAdminUiRole } from '../../lib/gdc-ui-tokens'
+import { getSessionRole } from '../../auth/session'
 import { PagePurposeHeader, type PageHelpContent } from '../ui/page-purpose-header'
 
 // Only Control's real destination paths and authenticated capabilities are product-owned.
 // Foundation owns the common task labels, descriptions, ordering and four-group layout.
 function controlAdministrationBindings(): StandardAdministrationTaskBindings {
-  const role = readAdminUiRole()
+  const role = getSessionRole()
   const authenticated = role === 'ADMINISTRATOR' || role === 'OPERATOR' || role === 'VIEWER' || role === 'CONNECTOR_OPERATOR'
   const administrator = role === 'ADMINISTRATOR'
   const access = administrator ? 'manage' : authenticated ? 'view' : 'none'
@@ -95,9 +95,9 @@ function roleLabel(role: string | null): string {
 }
 
 function AccessContextBanner() {
-  const role = readAdminUiRole()
-  const readOnly = isAdminUiReadOnly()
-  const operator = isAdminUiOperator() || role === 'CONNECTOR_OPERATOR'
+  const role = getSessionRole()
+  const readOnly = role === 'VIEWER'
+  const operator = role === 'OPERATOR' || role === 'CONNECTOR_OPERATOR'
 
   if (readOnly) {
     return (

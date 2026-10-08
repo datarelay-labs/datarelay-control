@@ -3,8 +3,17 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { NAV_PATH, SETTINGS_SECTION_PATH } from '../../config/nav-paths'
-import { persistSession } from '../../auth/session'
+import { persistSession, type SessionRole } from '../../auth/session'
 import { AdministrationHubPage } from './administration-hub-page'
+
+function signInAs(role: SessionRole) {
+  persistSession({
+    access_token: 'pf5b-unit-test',
+    refresh_token: 'pf5b-unit-test',
+    expires_at: new Date(Date.now() + 60_000).toISOString(),
+    user: { username: 'pf5b-test-user', role, status: 'ACTIVE' },
+  })
+}
 
 function LocationProbe() {
   const location = useLocation()
@@ -28,7 +37,7 @@ function renderHub(initialPath = '/admin') {
 describe('AdministrationHubPage modernization', () => {
   beforeEach(() => {
     localStorage.clear()
-    localStorage.setItem('gdc_platform_ui_role', 'ADMINISTRATOR')
+    signInAs('ADMINISTRATOR')
   })
 
   it('shows SaaS hierarchy: purpose, access context, and task groups', () => {
@@ -81,28 +90,30 @@ describe('AdministrationHubPage modernization', () => {
   })
 
   it('frames Viewer sessions as read-only without inventing extra capabilities', () => {
-    localStorage.setItem('gdc_platform_ui_role', 'VIEWER')
+    signInAs('VIEWER')
     renderHub()
     expect(screen.getByTestId('admin-hub-access-context')).toHaveTextContent(/Viewer session — read-only/i)
     expect(screen.getByTestId('admin-hub-access-context')).toHaveTextContent(/backend role guard/i)
   })
 
   it('does not advertise mutation controls to the Viewer and keeps supported view destinations', () => {
-    localStorage.setItem('gdc_platform_ui_role', 'VIEWER')
+    signInAs('VIEWER')
     renderHub()
     expect(screen.queryByRole('button', { name: /^Manage / })).not.toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: /^View / })).toHaveLength(9)
   })
 
-  it('fails closed without an authenticated role instead of inventing Admin access', () => {
+  it('ignores an Administrator legacy role hint when no authenticated session exists', () => {
     localStorage.clear()
+    localStorage.setItem('gdc_platform_ui_role', 'ADMINISTRATOR')
     renderHub()
+    expect(screen.getByTestId('admin-hub-access-context')).toHaveTextContent(/Unknown session/i)
     expect(screen.queryByRole('button', { name: /^Manage / })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^View / })).not.toBeInTheDocument()
   })
 
   it('retains Connector Operator read-only Administration navigation', () => {
-    localStorage.setItem('gdc_platform_ui_role', 'CONNECTOR_OPERATOR')
+    signInAs('CONNECTOR_OPERATOR')
     renderHub()
     expect(screen.getByTestId('admin-hub-access-context')).toHaveTextContent(/Operator session/i)
     expect(screen.queryByRole('button', { name: /^Manage / })).not.toBeInTheDocument()
@@ -110,7 +121,7 @@ describe('AdministrationHubPage modernization', () => {
   })
 
   it('frames Operator sessions with Administrator-restricted security settings truth', () => {
-    localStorage.setItem('gdc_platform_ui_role', 'OPERATOR')
+    signInAs('OPERATOR')
     renderHub()
     expect(screen.getByTestId('admin-hub-access-context')).toHaveTextContent(/Operator session/i)
     expect(screen.getByTestId('admin-hub-access-context')).toHaveTextContent(/restricted to Administrators/i)
@@ -122,12 +133,7 @@ describe('AdministrationHubPage modernization', () => {
     ['VIEWER', 0, 9],
     ['CONNECTOR_OPERATOR', 0, 9],
   ] as const)('uses the authenticated %s role rather than a stale local role hint', (role, manageCount, viewCount) => {
-    persistSession({
-      access_token: 'pf5b-role-test',
-      refresh_token: 'pf5b-role-test',
-      expires_at: new Date(Date.now() + 60_000).toISOString(),
-      user: { username: 'role-test-user', role, status: 'ACTIVE' },
-    })
+    signInAs(role)
     localStorage.setItem('gdc_platform_ui_role', role === 'ADMINISTRATOR' ? 'VIEWER' : 'ADMINISTRATOR')
     renderHub()
     expect(screen.getAllByRole('button', { name: /^(Manage|View) / })).toHaveLength(9)
