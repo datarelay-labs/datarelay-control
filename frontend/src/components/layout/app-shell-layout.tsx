@@ -660,6 +660,7 @@ export function AppShellLayout() {
         header={
           <TopHeader
             title={headerTitle}
+            titleAsText={location.pathname === NAV_PATH.administration}
             breadcrumb={breadcrumb}
             runtimeSummary={runtimeSummary}
             runtimeHealthy={runtimeHealthy}

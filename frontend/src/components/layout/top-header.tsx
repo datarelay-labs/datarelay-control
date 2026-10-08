@@ -10,6 +10,8 @@ export const SHELL_ALERTS_PATH = NAV_PATH.alerts
 
 type TopHeaderProps = {
   title: string
+  /** Page may own its h1 (for example, the shared Foundation AdministrationHub). */
+  titleAsText?: boolean
   /** Optional breadcrumb row above the title (e.g. Streams / … / Runtime). */
   breadcrumb?: ReactNode
   runtimeSummary?: string
@@ -26,6 +28,7 @@ type TopHeaderProps = {
 
 export function TopHeader({
   title,
+  titleAsText = false,
   breadcrumb,
   runtimeSummary = '24 streams active · delivery path nominal',
   runtimeHealthy = true,
@@ -72,9 +75,11 @@ export function TopHeader({
               {breadcrumb ? (
                 <div className="min-w-0 text-xs leading-snug text-slate-500 dark:text-gdc-muted">{breadcrumb}</div>
               ) : null}
-              <h1 className="shrink-0 text-lg font-semibold text-slate-900 dark:text-gdc-foreground">
-                {title}
-              </h1>
+              {titleAsText ? (
+                <span className="shrink-0 text-lg font-semibold text-slate-900 dark:text-gdc-foreground">{title}</span>
+              ) : (
+                <h1 className="shrink-0 text-lg font-semibold text-slate-900 dark:text-gdc-foreground">{title}</h1>
+              )}
             </div>
             <div className="hidden h-4 w-px shrink-0 bg-slate-200 dark:bg-gdc-border sm:block" aria-hidden />
             <div className="flex min-w-0 flex-wrap items-center gap-2">

@@ -100,6 +100,14 @@ describe('AdministrationHubPage modernization', () => {
     expect(screen.queryByRole('button', { name: /^View / })).not.toBeInTheDocument()
   })
 
+  it('retains Connector Operator read-only Administration navigation', () => {
+    localStorage.setItem('gdc_platform_ui_role', 'CONNECTOR_OPERATOR')
+    renderHub()
+    expect(screen.getByTestId('admin-hub-access-context')).toHaveTextContent(/Operator session/i)
+    expect(screen.queryByRole('button', { name: /^Manage / })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /^View / })).toHaveLength(9)
+  })
+
   it('frames Operator sessions with Administrator-restricted security settings truth', () => {
     localStorage.setItem('gdc_platform_ui_role', 'OPERATOR')
     renderHub()

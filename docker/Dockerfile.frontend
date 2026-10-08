@@ -6,6 +6,7 @@ ARG VITE_AI_GATEWAY_FOUNDATION=false
 ENV VITE_OSS_RELEASE_MODE=${VITE_OSS_RELEASE_MODE}
 ENV VITE_AI_GATEWAY_FOUNDATION=${VITE_AI_GATEWAY_FOUNDATION}
 COPY frontend/package.json frontend/package-lock.json ./
+COPY frontend/.foundation/packs ./.foundation/packs
 RUN --mount=type=secret,id=npmrc,target=/root/.npmrc,required=true npm ci
 COPY frontend .
 RUN npm run build

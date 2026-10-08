@@ -533,6 +533,7 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     clearWizardCatalogSnapshot()
     localStorage.removeItem('gdc-platform-persona')
     localStorage.removeItem('gdc-platform-governance-mode')
+    localStorage.removeItem('gdc_platform_ui_role')
   })
 
   it('renders core nav for CONNECTOR_OPERATOR (M20 RBAC)', () => {
@@ -736,16 +737,20 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
   })
 
   it('renders Administration hub at /admin with task groups', async () => {
+    // The shell's governance session fixture does not populate the platform UI role fallback.
+    persistTestSession('ADMINISTRATOR')
+    localStorage.setItem('gdc_platform_ui_role', 'ADMINISTRATOR')
     renderApp('/admin')
     expect(await screen.findByTestId('administration-hub-page', {}, { timeout: 8000 })).toBeInTheDocument()
     expect(screen.getAllByRole('heading', { name: 'Administration' })).toHaveLength(1)
     expect(screen.queryByRole('navigation', { name: 'Breadcrumb' })).not.toBeInTheDocument()
-    expect(within(screen.getByRole('main')).queryByRole('heading', { name: /^Administration$/ })).not.toBeInTheDocument()
+    expect(within(screen.getByRole('main')).getByRole('heading', { name: /^Administration$/, level: 1 })).toBeInTheDocument()
     expect(screen.getByTestId('administration-purpose-header')).toHaveTextContent(/What needs configuring/i)
     expect(screen.getByRole('heading', { name: 'Access & security' })).toBeInTheDocument()
     expect(screen.getByText('HTTPS')).toBeInTheDocument()
     expect(screen.getByText('Backup & Import')).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: 'Manage' })).toHaveLength(9)
+    expect(screen.getAllByRole('button', { name: /^Manage / })).toHaveLength(7)
+    expect(screen.getAllByRole('button', { name: /^View / })).toHaveLength(2)
     expect(screen.queryByRole('heading', { name: 'Admin settings' })).not.toBeInTheDocument()
   }, 20000)
 

@@ -8,7 +8,7 @@ import { PagePurposeHeader, type PageHelpContent } from '../ui/page-purpose-head
 // Foundation owns the common task labels, descriptions, ordering and four-group layout.
 function controlAdministrationBindings(): StandardAdministrationTaskBindings {
   const role = readAdminUiRole()
-  const authenticated = role === 'ADMINISTRATOR' || role === 'OPERATOR' || role === 'VIEWER'
+  const authenticated = role === 'ADMINISTRATOR' || role === 'OPERATOR' || role === 'VIEWER' || role === 'CONNECTOR_OPERATOR'
   const administrator = role === 'ADMINISTRATOR'
   const access = administrator ? 'manage' : authenticated ? 'view' : 'none'
   const readAccess = authenticated ? 'view' : 'none'
@@ -89,6 +89,7 @@ const ADMINISTRATION_HELP: PageHelpContent = {
 function roleLabel(role: string | null): string {
   if (role === 'ADMINISTRATOR') return 'Administrator'
   if (role === 'OPERATOR') return 'Operator'
+  if (role === 'CONNECTOR_OPERATOR') return 'Connector Operator'
   if (role === 'VIEWER') return 'Viewer'
   return 'Unknown session'
 }
@@ -96,7 +97,7 @@ function roleLabel(role: string | null): string {
 function AccessContextBanner() {
   const role = readAdminUiRole()
   const readOnly = isAdminUiReadOnly()
-  const operator = isAdminUiOperator()
+  const operator = isAdminUiOperator() || role === 'CONNECTOR_OPERATOR'
 
   if (readOnly) {
     return (
