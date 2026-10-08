@@ -481,6 +481,12 @@ describe('DashboardOverview', () => {
       'href',
       '/destinations',
     )
+    expect(within(actionNeeded).getByTestId('dashboard-next-action')).toHaveAttribute('href', '/streams')
+    expect(within(actionNeeded).getByTestId('dashboard-next-action')).toHaveTextContent('Review issue')
+    expect(within(actionNeeded).getByTestId('dashboard-create-stream')).toHaveAttribute('href', '/streams/new')
+    expect(within(actionNeeded).getByTestId('dashboard-next-step-description')).toHaveTextContent(
+      'Investigate streams needing health review.',
+    )
 
     await user.click(screen.getByRole('button', { name: 'Help' }))
     const dialog = screen.getByRole('dialog', { name: 'Dashboard' })

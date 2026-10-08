@@ -1,8 +1,9 @@
-import { LogOut, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { LogOut, PanelLeftClose, PanelLeftOpen, Plus } from 'lucide-react'
 import { useEffect, useState, type ComponentType } from 'react'
 import { Link } from 'react-router-dom'
 import { DataRelayWordmark } from '@datarelay-labs/product-shell'
 import { cn } from '../../lib/utils'
+import { newStreamPath } from '../../config/nav-paths'
 import { getAdminSystemInfo, postAuthLogout } from '../../api/gdcAdmin'
 import { clearSession, readSession } from '../../auth/session'
 import type { SidebarNavEntry, SidebarTopItem } from '../../config/app-navigation'
@@ -94,9 +95,9 @@ function NavButton({
       title={collapsed ? item.label : undefined}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'flex min-h-[34px] w-full items-center gap-2.5 rounded-lg py-1.5 text-left text-sm font-medium',
+        'relative flex min-h-10 w-full items-center gap-2.5 rounded-lg py-2 text-left text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400',
         active
-          ? 'bg-slate-100 text-slate-900 dark:bg-gdc-rowHover dark:text-gdc-foreground'
+          ? 'bg-violet-50 font-semibold text-violet-800 shadow-sm ring-1 ring-violet-100 dark:bg-violet-500/10 dark:text-violet-200 dark:ring-violet-400/20'
           : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-gdc-muted dark:hover:bg-gdc-rowHover dark:hover:text-gdc-foreground',
         collapsed ? 'justify-center px-0' : nested ? 'pl-8 pr-3' : 'px-3',
       )}
@@ -105,7 +106,7 @@ function NavButton({
         <ItemIcon
           className={cn(
             'h-4 w-4 shrink-0 opacity-50',
-            active ? 'text-slate-900 dark:text-gdc-foreground' : 'text-slate-600 dark:text-gdc-muted',
+            active ? 'text-violet-700 dark:text-violet-300' : 'text-slate-600 dark:text-gdc-muted',
           )}
           aria-hidden
         />
@@ -130,6 +131,7 @@ export function Sidebar({
   offCanvas = false,
 }: SidebarProps) {
   const [environment, setEnvironment] = useState('Unknown')
+  const canCreateStream = ['ADMINISTRATOR', 'OPERATOR', 'CONNECTOR_OPERATOR'].includes(readSession()?.user.role ?? '')
 
   useEffect(() => {
     let active = true
@@ -206,6 +208,25 @@ export function Sidebar({
         </button>
       </div>
 
+      {canCreateStream ? (
+        <div className={cn('border-b border-slate-100 py-3 dark:border-gdc-border', collapsed ? 'px-1.5' : 'px-3')}>
+          <button
+            type="button"
+            onClick={() => handleNavigate(newStreamPath())}
+            title="Create stream"
+            aria-label="Create stream"
+            className={cn(
+              'flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-gdc-primary text-sm font-semibold text-white shadow-sm transition hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2',
+              collapsed ? 'px-0' : 'px-3',
+            )}
+            data-testid="sidebar-create-stream"
+          >
+            <Plus className="h-4 w-4 shrink-0" aria-hidden />
+            {!collapsed ? <span>Create stream</span> : null}
+          </button>
+        </div>
+      ) : null}
+
       <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-3" role="navigation">
         {structure.map((entry) => {
           if (entry.type === 'item') {
@@ -226,7 +247,7 @@ export function Sidebar({
               {!collapsed ? (
                 <p
                   className={cn(
-                    'mb-2 mt-4 px-3 text-sm font-medium first:mt-2',
+                    'mb-2 mt-4 px-3 text-[10px] font-bold uppercase tracking-[0.12em] first:mt-2',
                     groupActive ? 'text-slate-700 dark:text-gdc-foreground' : 'text-slate-400 dark:text-gdc-muted',
                   )}
                 >

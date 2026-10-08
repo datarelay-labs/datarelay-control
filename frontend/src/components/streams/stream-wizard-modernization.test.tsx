@@ -54,6 +54,9 @@ describe('Stream Wizard SaaS modernization', () => {
     expect(screen.queryByRole('heading', { name: 'Stream Onboarding Wizard' })).not.toBeInTheDocument()
     expect(screen.queryByText(/Connect → Sample/)).not.toBeInTheDocument()
     expect(screen.getByTestId('wizard-intent-picker')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'What would you like to deliver?' })).toBeInTheDocument()
+    expect(screen.getByTestId('wizard-intent-multi-destination')).toHaveTextContent('Start this setup')
+    expect(screen.getByTestId('wizard-intent-scratch')).toHaveTextContent('Start from scratch')
     expect(screen.getByTestId('wizard-stage-purpose')).toHaveTextContent(WIZARD_STAGE_PURPOSE.connect)
   })
 
@@ -75,6 +78,8 @@ describe('Stream Wizard SaaS modernization', () => {
     expect(stepper.textContent).toContain('Route Processing')
     expect(stepper.textContent).toContain('Deploy')
     expect(screen.getByTestId('wizard-stepper-connect')).toHaveAttribute('data-active', 'true')
+    expect(screen.getByTestId('wizard-progress-label')).toHaveTextContent('Step 1 of 5')
+    expect(screen.getByRole('progressbar', { name: 'Stream setup progress' })).toHaveAttribute('aria-valuenow', '1')
     expect(screen.getByTestId('wizard-action-bar')).toBeInTheDocument()
     expect(screen.getByTestId('wizard-next')).toHaveTextContent('Next: Sample & Record Selection')
   })

@@ -51,6 +51,21 @@ describe('Sidebar SaaS shell', () => {
     expect(within(nav).getByRole('button', { name: 'Routes' })).toBeInTheDocument()
   })
 
+  it('provides a prominent create action for authorized Stream operators, including mobile', async () => {
+    persistTestSession('CONNECTOR_OPERATOR')
+    const user = userEvent.setup()
+    const { onNavigate, onMobileClose } = renderSidebar({ mobileOpen: true })
+    await user.click(screen.getByTestId('sidebar-create-stream'))
+    expect(onNavigate).toHaveBeenCalledWith('/streams/new')
+    expect(onMobileClose).toHaveBeenCalled()
+  })
+
+  it('does not advertise a create action to read-only and governance-only roles', () => {
+    persistTestSession('VIEWER')
+    renderSidebar()
+    expect(screen.queryByTestId('sidebar-create-stream')).not.toBeInTheDocument()
+  })
+
   it('marks the active leaf with aria-current=page', () => {
     renderSidebar({ pathname: '/destinations' })
     expect(screen.getByRole('button', { name: 'Destinations' })).toHaveAttribute('aria-current', 'page')
