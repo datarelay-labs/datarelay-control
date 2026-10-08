@@ -313,6 +313,7 @@ describe('RecordSelectionWorkspace', () => {
     expect(onSetCheckpoint).toHaveBeenCalledWith(
       expect.objectContaining({
         checkpointFieldType: 'TIMESTAMP',
+        checkpointMode: 'Timestamp',
         checkpointSourcePath: expect.stringContaining('timestamp'),
       }),
     )

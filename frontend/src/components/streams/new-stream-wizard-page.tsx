@@ -306,7 +306,7 @@ export function NewStreamWizardPage() {
       }
     })
   }, [])
-  const setCheckpoint = useCallback((patch: Partial<Pick<WizardConfigState, 'checkpointFieldType' | 'checkpointSourcePath'>>) => {
+  const setCheckpoint = useCallback((patch: Partial<Pick<WizardConfigState, 'checkpointFieldType' | 'checkpointSourcePath' | 'checkpointMode'>>) => {
     setState((s) => {
       let checkpointSourcePath = patch.checkpointSourcePath ?? s.stream.checkpointSourcePath
       if (patch.checkpointSourcePath !== undefined && checkpointSourcePath.trim()) {
