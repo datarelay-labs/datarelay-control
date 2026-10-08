@@ -1,9 +1,9 @@
 import { LogOut, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
-import type { ComponentType } from 'react'
+import { useEffect, useState, type ComponentType } from 'react'
 import { Link } from 'react-router-dom'
 import { DataRelayWordmark } from '@datarelay-labs/product-shell'
 import { cn } from '../../lib/utils'
-import { postAuthLogout } from '../../api/gdcAdmin'
+import { getAdminSystemInfo, postAuthLogout } from '../../api/gdcAdmin'
 import { clearSession, readSession } from '../../auth/session'
 import type { SidebarNavEntry, SidebarTopItem } from '../../config/app-navigation'
 import { getDatarelayInstanceLabel } from '../../config/datarelay-instance-label'
@@ -63,6 +63,15 @@ function isGroupActive(pathname: string, items: readonly SidebarTopItem[]): bool
   return items.some((item) => isNavKeyActive(pathname, item.key))
 }
 
+function environmentLabel(value: string | null | undefined): string {
+  const mode = (value ?? '').trim().toLowerCase()
+  if (mode === 'production' || mode === 'prod') return 'Production'
+  if (mode === 'development' || mode === 'dev') return 'Development'
+  if (mode === 'test' || mode === 'testing') return 'Test'
+  if (mode === 'staging' || mode === 'stage') return 'Staging'
+  return 'Unknown'
+}
+
 function NavButton({
   item,
   collapsed,
@@ -120,6 +129,22 @@ export function Sidebar({
   onMobileClose,
   offCanvas = false,
 }: SidebarProps) {
+  const [environment, setEnvironment] = useState('Unknown')
+
+  useEffect(() => {
+    let active = true
+    getAdminSystemInfo()
+      .then((info) => {
+        if (active) setEnvironment(environmentLabel(info.app_env))
+      })
+      .catch(() => {
+        if (active) setEnvironment('Unknown')
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+
   function handleNavigate(path: string) {
     onNavigate(path)
     onMobileClose?.()
@@ -244,29 +269,29 @@ export function Sidebar({
           </p>
         ) : null}
 
-        {/* Static environment status — not a selector (no switching exists). */}
+        {/* Runtime-reported environment status — never assume this instance is Production. */}
         {!collapsed ? (
           <div
             className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 dark:bg-gdc-section"
             role="status"
-            aria-label="Environment: Production"
+            aria-label={`Environment: ${environment}`}
             data-testid="shell-environment-status"
           >
-            <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" aria-hidden />
+            <span className={cn('h-2 w-2 shrink-0 rounded-full', environment === 'Production' ? 'bg-emerald-500' : 'bg-slate-400')} aria-hidden />
             <span className="min-w-0">
               <span className="block text-[11px] text-slate-500 dark:text-gdc-muted">Environment</span>
-              <span className="block text-sm font-medium text-slate-800 dark:text-gdc-foreground">Production</span>
+              <span className="block text-sm font-medium text-slate-800 dark:text-gdc-foreground">{environment}</span>
             </span>
           </div>
         ) : (
           <div
             className="flex justify-center py-1"
-            title="Environment: Production"
+            title={`Environment: ${environment}`}
             role="status"
-            aria-label="Environment: Production"
+            aria-label={`Environment: ${environment}`}
             data-testid="shell-environment-status"
           >
-            <span className="h-2 w-2 rounded-full bg-emerald-500" aria-hidden />
+            <span className={cn('h-2 w-2 rounded-full', environment === 'Production' ? 'bg-emerald-500' : 'bg-slate-400')} aria-hidden />
           </div>
         )}
 

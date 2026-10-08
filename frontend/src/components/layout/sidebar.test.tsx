@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -8,6 +8,7 @@ import { Sidebar } from './sidebar'
 
 vi.mock('../../api/gdcAdmin', () => ({
   postAuthLogout: vi.fn(() => Promise.resolve(undefined)),
+  getAdminSystemInfo: vi.fn(async () => ({ app_env: 'development' })),
 }))
 
 function renderSidebar(opts?: { pathname?: string; mobileOpen?: boolean; collapsed?: boolean }) {
@@ -56,13 +57,16 @@ describe('Sidebar SaaS shell', () => {
     expect(screen.getByRole('button', { name: 'Streams' })).not.toHaveAttribute('aria-current')
   })
 
-  it('exposes Environment as a status indicator, not a selector control', () => {
+  it('exposes the runtime environment as an informational status, not a selector', async () => {
     renderSidebar()
     const status = screen.getByTestId('shell-environment-status')
     expect(status).toHaveAttribute('role', 'status')
     expect(status.tagName).toBe('DIV')
     expect(within(status).queryByRole('button')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Environment/i })).not.toBeInTheDocument()
+    await waitFor(() => expect(status).toHaveAttribute('aria-label', 'Environment: Development'))
+    expect(within(status).getByText('Development')).toBeInTheDocument()
+    expect(within(status).queryByText('Production')).not.toBeInTheDocument()
   })
 
   it('closes the mobile drawer after navigation', async () => {
