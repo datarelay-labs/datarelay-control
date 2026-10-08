@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { NAV_PATH, SETTINGS_SECTION_PATH } from '../../config/nav-paths'
+import { persistSession } from '../../auth/session'
 import { AdministrationHubPage } from './administration-hub-page'
 
 function LocationProbe() {
@@ -113,6 +114,26 @@ describe('AdministrationHubPage modernization', () => {
     renderHub()
     expect(screen.getByTestId('admin-hub-access-context')).toHaveTextContent(/Operator session/i)
     expect(screen.getByTestId('admin-hub-access-context')).toHaveTextContent(/restricted to Administrators/i)
+  })
+
+  it.each([
+    ['ADMINISTRATOR', 7, 2],
+    ['OPERATOR', 0, 9],
+    ['VIEWER', 0, 9],
+    ['CONNECTOR_OPERATOR', 0, 9],
+  ] as const)('uses the authenticated %s role rather than a stale local role hint', (role, manageCount, viewCount) => {
+    persistSession({
+      access_token: 'pf5b-role-test',
+      refresh_token: 'pf5b-role-test',
+      expires_at: new Date(Date.now() + 60_000).toISOString(),
+      user: { username: 'role-test-user', role, status: 'ACTIVE' },
+    })
+    localStorage.setItem('gdc_platform_ui_role', role === 'ADMINISTRATOR' ? 'VIEWER' : 'ADMINISTRATOR')
+    renderHub()
+    expect(screen.getAllByRole('button', { name: /^(Manage|View) / })).toHaveLength(9)
+    expect(screen.queryAllByRole('button', { name: /^Manage / })).toHaveLength(manageCount)
+    expect(screen.queryAllByRole('button', { name: /^View / })).toHaveLength(viewCount)
+    expect(screen.getByTestId('foundation-administration-hub')).toBeInTheDocument()
   })
 
   it('supports keyboard-accessible navigation to all settings', async () => {
