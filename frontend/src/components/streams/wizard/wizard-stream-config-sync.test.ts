@@ -62,6 +62,32 @@ describe('wizard-stream-config-sync', () => {
     expect(patch.runtime_ui).toMatchObject({ record_selection_mode: 'advanced' })
   })
 
+  it('persists explicitly selected Timestamp mode with sort recommendation tie-breaker', () => {
+    const patch = buildAdvancedStreamConfigJsonPatch({
+      checkpointMode: 'Timestamp',
+      checkpointSourcePath: '$.timestamp',
+      checkpointSecondaryPath: '$.id',
+      checkpointFieldType: 'TIMESTAMP',
+      eventArrayPath: '$.events',
+      recordSelectionMode: 'basic',
+      schemaRootPath: '',
+      initialDelaySec: 0,
+      paginationType: 'None',
+      paginationCursorParam: '',
+      paginationPageSize: 0,
+      paginationMaxPages: 0,
+    })
+    expect(patch.checkpoint).toMatchObject({
+      mode: 'Timestamp',
+      cursor_path: '$.events[*].timestamp',
+      secondary_cursor_path: '$.events[*].id',
+      comparator: 'lexicographical',
+    })
+    const reloaded = readAdvancedStreamConfigFromPersisted(patch)
+    expect(reloaded.checkpointMode).toBe('Timestamp')
+    expect(reloaded.checkpointFieldType).toBe('TIMESTAMP')
+  })
+
   it('removes a cleared secondary cursor and keeps the primary checkpoint', () => {
     const patch = buildAdvancedStreamConfigJsonPatch({
       checkpointMode: 'Cursor',

@@ -341,7 +341,7 @@ export function StreamEditWizardPage() {
   }, [])
 
   const setCheckpoint = useCallback(
-    (patch: Partial<Pick<WizardConfigState, 'checkpointFieldType' | 'checkpointSourcePath'>>) => {
+    (patch: Partial<Pick<WizardConfigState, 'checkpointFieldType' | 'checkpointSourcePath' | 'checkpointMode'>>) => {
       if (!canMutateWorkspaceRef.current) return
       setState((prev) => {
         if (!prev) return prev
