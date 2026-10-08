@@ -1,116 +1,66 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { AdminTaskCatalog, type AdminTask } from '@datarelay-labs/system-admin-ui'
+import { AdministrationHub, createStandardAdministrationTasks, type StandardAdministrationTaskBindings } from '@datarelay-labs/foundation'
 import { NAV_PATH, SETTINGS_SECTION_PATH } from '../../config/nav-paths'
 import { isAdminUiOperator, isAdminUiReadOnly, readAdminUiRole } from '../../lib/gdc-ui-tokens'
 import { PagePurposeHeader, type PageHelpContent } from '../ui/page-purpose-header'
 
-type HubDestination = {
-  title: string
-  description: string
-  path: string
-  testId: string
+// Only Control's real destination paths and authenticated capabilities are product-owned.
+// Foundation owns the common task labels, descriptions, ordering and four-group layout.
+function controlAdministrationBindings(): StandardAdministrationTaskBindings {
+  const role = readAdminUiRole()
+  const authenticated = role === 'ADMINISTRATOR' || role === 'OPERATOR' || role === 'VIEWER'
+  const administrator = role === 'ADMINISTRATOR'
+  const access = administrator ? 'manage' : authenticated ? 'view' : 'none'
+  const readAccess = authenticated ? 'view' : 'none'
+  return {
+    'core.https': {
+      availability: 'supported',
+      access,
+      target: { kind: 'path', path: SETTINGS_SECTION_PATH.https },
+    },
+    'core.users': {
+      availability: 'supported',
+      access,
+      target: { kind: 'path', path: SETTINGS_SECTION_PATH.userManagement },
+    },
+    'core.password': {
+      availability: 'supported',
+      access,
+      target: { kind: 'path', path: SETTINGS_SECTION_PATH.passwordManagement },
+    },
+    'core.timezone': {
+      availability: 'supported',
+      access,
+      target: { kind: 'path', path: SETTINGS_SECTION_PATH.displayTimezone },
+    },
+    'core.network': {
+      availability: 'supported',
+      access,
+      target: { kind: 'path', path: SETTINGS_SECTION_PATH.network },
+      effects: ['reconnect_required'],
+    },
+    'core.retention': {
+      availability: 'supported',
+      access,
+      target: { kind: 'path', path: SETTINGS_SECTION_PATH.retention },
+    },
+    'core.backup-import': {
+      availability: 'supported',
+      access,
+      target: { kind: 'path', path: NAV_PATH.backup },
+    },
+    'core.audit': {
+      availability: 'read_only',
+      access: readAccess,
+      target: { kind: 'path', path: SETTINGS_SECTION_PATH.audit },
+    },
+    'core.health': {
+      availability: 'read_only',
+      access: readAccess,
+      target: { kind: 'path', path: SETTINGS_SECTION_PATH.systemHealth },
+    },
+  }
 }
-
-type HubTaskGroup = {
-  id: string
-  title: string
-  description: string
-  testId: string
-  destinations: readonly HubDestination[]
-}
-
-const TASK_GROUPS: readonly HubTaskGroup[] = [
-  {
-    id: 'access-security',
-    title: 'Access & security',
-    description: 'TLS, platform accounts, and credential changes.',
-    testId: 'admin-hub-group-access-security',
-    destinations: [
-      {
-        title: 'HTTPS',
-        description: 'TLS listener, certificate SANs, and HTTP-to-HTTPS redirect.',
-        path: SETTINGS_SECTION_PATH.https,
-        testId: 'admin-hub-https',
-      },
-      {
-        title: 'User Management',
-        description: 'Platform accounts, roles, and access status.',
-        path: SETTINGS_SECTION_PATH.userManagement,
-        testId: 'admin-hub-user-management',
-      },
-      {
-        title: 'Password Management',
-        description: 'Change operator passwords and credential policy.',
-        path: SETTINGS_SECTION_PATH.passwordManagement,
-        testId: 'admin-hub-password-management',
-      },
-    ],
-  },
-  {
-    id: 'platform-network',
-    title: 'Platform & network',
-    description: 'Display timezone, published ports, and reverse-proxy apply workflow.',
-    testId: 'admin-hub-group-platform-network',
-    destinations: [
-      {
-        title: 'Display timezone',
-        description: 'Effective display timezone, personal override, and platform default.',
-        path: SETTINGS_SECTION_PATH.displayTimezone,
-        testId: 'admin-hub-display-timezone',
-      },
-      {
-        title: 'Network',
-        description: 'Published HTTP/HTTPS ports and reverse-proxy apply workflow.',
-        path: SETTINGS_SECTION_PATH.network,
-        testId: 'admin-hub-network',
-      },
-    ],
-  },
-  {
-    id: 'lifecycle-recovery',
-    title: 'Lifecycle & recovery',
-    description: 'Retention policy and portable workspace snapshots.',
-    testId: 'admin-hub-group-lifecycle-recovery',
-    destinations: [
-      {
-        title: 'Retention',
-        description: 'Cleanup scheduler and per-category retention policy.',
-        path: SETTINGS_SECTION_PATH.retention,
-        testId: 'admin-hub-retention',
-      },
-      {
-        title: 'Backup & Import',
-        description: 'Export and import portable workspace configuration snapshots.',
-        path: NAV_PATH.backup,
-        testId: 'admin-hub-backup',
-      },
-    ],
-  },
-  {
-    id: 'operations-audit',
-    title: 'Operations & audit',
-    description: 'Configuration history and operational health evidence.',
-    testId: 'admin-hub-group-operations-audit',
-    destinations: [
-      {
-        title: 'Audit',
-        description: 'Platform audit trail and configuration change history.',
-        path: SETTINGS_SECTION_PATH.audit,
-        testId: 'admin-hub-audit',
-      },
-      {
-        title: 'System Health',
-        description: 'Operational health signals, maintenance readiness, and alerts.',
-        path: SETTINGS_SECTION_PATH.systemHealth,
-        testId: 'admin-hub-system-health',
-      },
-    ],
-  },
-] as const
-
-const FOUNDATION_ADMIN_PATH = new Map(
-  TASK_GROUPS.flatMap((group) => group.destinations.map((destination) => [destination.testId, destination.path] as const)),
-)
 
 const ADMINISTRATION_HELP: PageHelpContent = {
   title: 'Administration',
@@ -134,16 +84,6 @@ const ADMINISTRATION_HELP: PageHelpContent = {
       body: 'Check the access-context banner first. Individual settings pages keep their existing confirmation, RBAC, and apply workflows.',
     },
   ],
-}
-
-function foundationTasksForGroup(group: HubTaskGroup): readonly AdminTask[] {
-  return group.destinations.map((destination) => ({
-    id: destination.testId,
-    label: destination.title,
-    description: destination.description,
-    group: group.title,
-    availability: 'supported' as const,
-  }))
 }
 
 function roleLabel(role: string | null): string {
@@ -229,34 +169,14 @@ export function AdministrationHubPage() {
 
       <AccessContextBanner />
 
-      <div className="flex flex-col gap-8" data-testid="admin-hub-task-groups">
-        {TASK_GROUPS.map((group) => (
-          <section
-            key={group.id}
-            aria-labelledby={`${group.id}-heading`}
-            data-testid={group.testId}
-            className="space-y-3"
-          >
-            <div className="space-y-1">
-              <h2
-                id={`${group.id}-heading`}
-                className="text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50"
-              >
-                {group.title}
-              </h2>
-              <p className="max-w-2xl text-sm text-slate-600 dark:text-gdc-muted">{group.description}</p>
-            </div>
-            <div data-testid={`${group.testId}-catalog`}>
-              <AdminTaskCatalog
-                tasks={foundationTasksForGroup(group)}
-                onOpen={(task) => {
-                  const path = FOUNDATION_ADMIN_PATH.get(task.id)
-                  if (path) navigate(path)
-                }}
-              />
-            </div>
-          </section>
-        ))}
+      <div data-testid="admin-hub-task-groups">
+        <AdministrationHub
+          productId="control"
+          tasks={createStandardAdministrationTasks(controlAdministrationBindings())}
+          onOpen={(task) => {
+            if (task.target?.kind === 'path') navigate(task.target.path)
+          }}
+        />
       </div>
     </div>
   )

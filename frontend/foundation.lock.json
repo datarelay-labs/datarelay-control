@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "version": "0.1.0-pf5b.1",
+  "registry": {
+    "scope": "@datarelay-labs",
+    "url": "https://npm.pkg.github.com",
+    "repository": "https://github.com/datarelay-labs/datarelay-product-foundation.git"
+  },
+  "packages": [
+    {
+      "name": "@datarelay-labs/tokens",
+      "path": "tokens",
+      "sha256": "d7522296070f76bc21437e9b1e00fc872fa69c2abde45737b54739487efa0d9d"
+    },
+    {
+      "name": "@datarelay-labs/icons",
+      "path": "icons",
+      "sha256": "13fd24a4bfc8e81ef19c9bf432c6bc75fe5b4b0c0fad078f4a43b8a123933ade"
+    },
+    {
+      "name": "@datarelay-labs/ui",
+      "path": "ui",
+      "sha256": "d98b700c78638dc7ebc22d41bef834b97cbe37195195ee9cae69299727e5fc23"
+    },
+    {
+      "name": "@datarelay-labs/product-shell",
+      "path": "product-shell",
+      "sha256": "50cc6c0dc775830e31eaa9359466d62f7c3ef406c5e7f09db649e1a273efb604"
+    },
+    {
+      "name": "@datarelay-labs/auth-ui",
+      "path": "auth-ui",
+      "sha256": "6eb6f418ab44ae032ea748acde2185358d79fadae058bf084a84cb694a4ee780"
+    },
+    {
+      "name": "@datarelay-labs/system-contracts",
+      "path": "system-contracts",
+      "sha256": "ce693274b5229255429ad05f6b902464ff9ac29fcc44615b88533f6f29d486a0"
+    },
+    {
+      "name": "@datarelay-labs/system-admin-ui",
+      "path": "system-admin-ui",
+      "sha256": "e28963e84e4636d3eb8d93efd358fca011b5bf2722965904fe7f3128e6ebf5d8"
+    },
+    {
+      "name": "@datarelay-labs/testkit",
+      "path": "testkit",
+      "sha256": "ea263d5cc1ff4d00067397713da21da3ba8b1f66042bad115c65b788294434dc"
+    },
+    {
+      "name": "@datarelay-labs/foundation",
+      "path": "foundation",
+      "sha256": "44e5a6d4b3c0574215326d920e6ed8a4d289f4d949c9e0c2acf56bc005e3eda9"
+    },
+    {
+      "name": "@datarelay-labs/foundation-cli",
+      "path": "foundation-cli",
+      "sha256": "279fe1026a1090f7e9254c33bfaf8be9f04933f87a4b36ba25e7cb8b87e4c843"
+    }
+  ],
+  "commit": "010ee18426a8f5b1959e39ea45e469d6ffc30e05",
+  "source_head": "010ee18426a8f5b1959e39ea45e469d6ffc30e05"
+}

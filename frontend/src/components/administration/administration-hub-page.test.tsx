@@ -27,6 +27,7 @@ function renderHub(initialPath = '/admin') {
 describe('AdministrationHubPage modernization', () => {
   beforeEach(() => {
     localStorage.clear()
+    localStorage.setItem('gdc_platform_ui_role', 'ADMINISTRATOR')
   })
 
   it('shows SaaS hierarchy: purpose, access context, and task groups', () => {
@@ -35,7 +36,9 @@ describe('AdministrationHubPage modernization', () => {
     expect(screen.getByTestId('administration-purpose-header')).toHaveTextContent(/What needs configuring/i)
     expect(screen.getByTestId('admin-hub-access-context')).toBeInTheDocument()
     expect(screen.getByTestId('admin-hub-task-groups')).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: 'Manage' })).toHaveLength(9)
+    expect(screen.getByTestId('foundation-administration-hub')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /^Manage / })).toHaveLength(7)
+    expect(screen.getAllByRole('button', { name: /^View / })).toHaveLength(2)
     expect(screen.getByRole('heading', { name: 'Access & security' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Platform & network' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Lifecycle & recovery' })).toBeInTheDocument()
@@ -60,7 +63,9 @@ describe('AdministrationHubPage modernization', () => {
       const view = renderHub()
       const card = screen.getByText(item.title).closest('.dr-card')
       expect(card).toBeTruthy()
-      await user.click(within(card as HTMLElement).getByRole('button', { name: 'Manage' }))
+      await user.click(within(card as HTMLElement).getByRole('button', {
+        name: /^(Manage|View) /,
+      }))
       expect(screen.getByTestId('location-probe')).toHaveTextContent(item.path)
       view.unmount()
     }
@@ -79,6 +84,20 @@ describe('AdministrationHubPage modernization', () => {
     renderHub()
     expect(screen.getByTestId('admin-hub-access-context')).toHaveTextContent(/Viewer session — read-only/i)
     expect(screen.getByTestId('admin-hub-access-context')).toHaveTextContent(/backend role guard/i)
+  })
+
+  it('does not advertise mutation controls to the Viewer and keeps supported view destinations', () => {
+    localStorage.setItem('gdc_platform_ui_role', 'VIEWER')
+    renderHub()
+    expect(screen.queryByRole('button', { name: /^Manage / })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /^View / })).toHaveLength(9)
+  })
+
+  it('fails closed without an authenticated role instead of inventing Admin access', () => {
+    localStorage.clear()
+    renderHub()
+    expect(screen.queryByRole('button', { name: /^Manage / })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^View / })).not.toBeInTheDocument()
   })
 
   it('frames Operator sessions with Administrator-restricted security settings truth', () => {
