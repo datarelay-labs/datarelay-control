@@ -30,6 +30,7 @@ vi.mock('../../hooks/use-stream-source-type-for-api-test-shell', () => ({
 
 vi.mock('../../api/gdcAdmin', () => ({
   postAuthLogout: vi.fn(() => Promise.resolve(undefined)),
+  getAdminSystemInfo: vi.fn(async () => ({ app_env: 'development' })),
 }))
 
 function renderShell(initialPath = '/streams') {
