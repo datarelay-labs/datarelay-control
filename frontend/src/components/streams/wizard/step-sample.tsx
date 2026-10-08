@@ -15,7 +15,7 @@ export type StepSampleProps = {
   onStreamPatch: (patch: Partial<WizardConfigState>) => void
   onSetEventArrayPath: (path: string) => void
   onSetEventRootPath: (path: string) => void
-  onSetCheckpoint: (patch: Partial<Pick<WizardConfigState, 'checkpointFieldType' | 'checkpointSourcePath'>>) => void
+  onSetCheckpoint: (patch: Partial<Pick<WizardConfigState, 'checkpointFieldType' | 'checkpointSourcePath' | 'checkpointMode'>>) => void
   onLoadOperationalSample?: (id: OperationalSampleId) => void
   activeOperationalSampleId?: OperationalSampleId | null
 }
