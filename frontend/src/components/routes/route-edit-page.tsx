@@ -1,12 +1,12 @@
 import { ArrowRight, HelpCircle, Loader2, Play, Save, ShieldCheck } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { cn } from '../../lib/utils'
 import { StatusBadge } from '../shell/status-badge'
 import { PanelChrome } from '../streams/mapping-json-tree'
 import { createRoute, fetchRouteById, fetchRouteByIdFresh, isRouteStaleWriteError, updateRoute } from '../../api/gdcRoutes'
-import { fetchStreamById } from '../../api/gdcStreams'
+import { fetchStreamById, fetchStreamsListResult } from '../../api/gdcStreams'
 import { fetchConnectorById } from '../../api/gdcConnectors'
 import { fetchRouteTransformEffective, type RouteTransformEffective } from '../../api/gdcRouteTransform'
 import { fetchRouteProtectionEffective, type RouteProtectionEffective } from '../../api/gdcRouteProtection'
@@ -131,6 +131,13 @@ export function RouteEditPage() {
   const canMutateWorkspace = caps.workspace_mutations === true
   const canOpenGovernanceWorkspace = useGovernanceCapabilities().governance_read === true
   const navigate = useNavigate()
+  const location = useLocation()
+  const requestedStreamId = useMemo(() => {
+    const raw = new URLSearchParams(location.search).get('stream_id')
+    if (!raw || !/^[1-9]\d*$/.test(raw)) return null
+    const parsed = Number(raw)
+    return Number.isSafeInteger(parsed) ? parsed : null
+  }, [location.search])
   const d = ROUTE_EDIT_DEFAULTS
 
   const [routeName, setRouteName] = useState(d.routeName)
@@ -158,6 +165,9 @@ export function RouteEditPage() {
   const classificationStatus = classificationEffective?.processing_status ?? null
   const policyStatus = policyEffective?.processing_status ?? null
   const [backendStreamId, setBackendStreamId] = useState<number | null>(null)
+  const [streamOptions, setStreamOptions] = useState<Array<{ id: number; label: string }>>([])
+  const [streamCatalogLoading, setStreamCatalogLoading] = useState(isCreateMode)
+  const [streamCatalogError, setStreamCatalogError] = useState<string | null>(null)
   const [backendDestinationId, setBackendDestinationId] = useState<number | null>(null)
   const [destinationOptions, setDestinationOptions] = useState<Array<{ id: number; label: string }>>([])
   const [destinationSource, setDestinationSource] = useState<'api' | 'empty'>('empty')
@@ -387,6 +397,47 @@ export function RouteEditPage() {
   }, [applyServerRoute, backendRouteId, refreshProcessingStatus])
 
   useEffect(() => {
+    if (!isCreateMode) return
+    let cancelled = false
+    setStreamCatalogLoading(true)
+    void (async () => {
+      try {
+        const result = await fetchStreamsListResult()
+        if (cancelled) return
+        if (result.ok === false) {
+          setStreamOptions([])
+          setStreamCatalogError(`Unable to load Streams: ${result.message}. Retry after the connection is restored.`)
+          return
+        }
+        const options = result.data
+          .filter((stream) => Number.isSafeInteger(stream.id) && stream.id > 0)
+          .map((stream) => ({ id: stream.id, label: stream.name?.trim() || `Stream #${stream.id}` }))
+        setStreamOptions(options)
+        if (options.length === 0) {
+          setStreamCatalogError('No Streams are available. Create a Stream before adding a Route.')
+        } else if (requestedStreamId != null) {
+          if (options.some((option) => option.id === requestedStreamId)) {
+            setBackendStreamId(requestedStreamId)
+            setStreamCatalogError(null)
+          } else {
+            setStreamCatalogError(`Stream #${requestedStreamId} is not available. Choose an existing Stream.`)
+          }
+        } else {
+          setStreamCatalogError(null)
+        }
+      } catch {
+        if (!cancelled) {
+          setStreamOptions([])
+          setStreamCatalogError('Unable to load Streams. Check the connection and reopen Create Route.')
+        }
+      } finally {
+        if (!cancelled) setStreamCatalogLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [isCreateMode, requestedStreamId])
+
+  useEffect(() => {
     let cancelled = false
     if (backendStreamId == null) {
       setStreamLabel('—')
@@ -471,6 +522,21 @@ export function RouteEditPage() {
 
   async function handleSaveRoute() {
     if (!canMutateWorkspace || isSaving || (!isCreateMode && !deliveryDirty)) return
+    if (isCreateMode && (backendStreamId == null || !streamOptions.some((option) => option.id === backendStreamId))) {
+      setSaveError(streamCatalogError ?? 'Select an existing Stream before creating this Route.')
+      setSaveSuccess(null)
+      return
+    }
+    if (isCreateMode && (backendDestinationId == null || !destinationOptions.some((option) => option.id === backendDestinationId))) {
+      setSaveError('Select an existing Destination before creating this Route.')
+      setSaveSuccess(null)
+      return
+    }
+    if (!routeName.trim()) {
+      setSaveError('Route name is required.')
+      setSaveSuccess(null)
+      return
+    }
     setIsSaving(true)
     setSaveError(null)
     setSaveSuccess(null)
@@ -690,7 +756,7 @@ export function RouteEditPage() {
           {canMutateWorkspace ? (
             <button
               type="button"
-              disabled={isSaving || (!isCreateMode && !deliveryDirty) || (isCreateMode && !deliveryDirty && backendDestinationId == null)}
+              disabled={isSaving || (!isCreateMode && !deliveryDirty) || (isCreateMode && streamCatalogLoading)}
               onClick={() => void handleSaveRoute()}
               data-testid="route-edit-save"
               className="inline-flex h-8 items-center gap-1 rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
@@ -755,7 +821,7 @@ export function RouteEditPage() {
         </div>
       ) : null}
       {saveError && !staleConflict ? (
-        <p className="text-[12px] font-medium text-red-700 dark:text-red-300" data-testid="route-edit-save-error">
+        <p className="text-[12px] font-medium text-red-700 dark:text-red-300" data-testid="route-edit-save-error" role="alert">
           {saveError}
         </p>
       ) : null}
@@ -881,6 +947,36 @@ export function RouteEditPage() {
               <Field label="Description" >
                 <input value={description} onChange={(e) => setDescription(e.target.value)} className={cn(inputCls, 'md:col-span-2')} />
               </Field>
+              {isCreateMode ? (
+                <div className="space-y-1">
+                  <Field label="Stream *" hint="Select the existing Stream this Route delivers from.">
+                    <select
+                      aria-label="Stream"
+                      data-testid="route-edit-stream-select"
+                      value={backendStreamId ?? ''}
+                      disabled={streamCatalogLoading || streamOptions.length === 0}
+                      onChange={(e) => {
+                        setBackendStreamId(e.target.value ? Number(e.target.value) : null)
+                        setSaveError(null)
+                        setStreamCatalogError(null)
+                      }}
+                      className={inputCls}
+                    >
+                      <option value="">Select a Stream</option>
+                      {streamOptions.map((option) => (
+                        <option key={option.id} value={option.id}>{option.label}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  {streamCatalogLoading ? <p role="status" className="text-[11px] text-slate-500">Loading Streams…</p> : null}
+                  {streamCatalogError ? <p role="alert" className="text-[11px] text-amber-700 dark:text-amber-300">{streamCatalogError}</p> : null}
+                  {!streamCatalogLoading && streamOptions.length === 0 ? (
+                    <Link to="/streams/new" className="text-[11px] font-semibold text-violet-700 hover:underline dark:text-violet-300">
+                      Create a Stream first
+                    </Link>
+                  ) : null}
+                </div>
+              ) : null}
               <Field label="Status" help={{ content: HELP_COPY.routeEnabled.content }}>
                 <button
                   type="button"
