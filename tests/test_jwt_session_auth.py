@@ -222,6 +222,42 @@ def test_whoami_returns_principal_after_login(client: TestClient, db_session: Se
     assert body["token_expires_at"]
 
 
+
+def test_profile_timezone_clear_null_persists_and_does_not_require_platform_admin(
+    client: TestClient, db_session: Session
+) -> None:
+    """User PATCH with explicit null must clear the personal timezone override."""
+    user = _seed_user(db_session, username="timezone-operator", role="OPERATOR")
+    headers = _bearer("OPERATOR", username=user.username, user_id=user.id)
+
+    initial = client.patch("/api/v1/auth/profile", headers=headers, json={"timezone": "Asia/Seoul"})
+    assert initial.status_code == 200, initial.text
+    assert initial.json()["timezone"] == "Asia/Seoul"
+
+    cleared = client.patch("/api/v1/auth/profile", headers=headers, json={"timezone": None})
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["timezone"] is None
+
+    db_session.expire_all()
+    assert db_session.get(PlatformUser, user.id).timezone is None
+    reloaded = client.get("/api/v1/auth/whoami", headers=headers)
+    assert reloaded.status_code == 200, reloaded.text
+    assert reloaded.json()["timezone"] is None
+
+
+def test_profile_timezone_omitted_does_not_clear_existing_override(
+    client: TestClient, db_session: Session
+) -> None:
+    user = _seed_user(db_session, username="timezone-keep", role="OPERATOR")
+    headers = _bearer("OPERATOR", username=user.username, user_id=user.id)
+    set_timezone = client.patch("/api/v1/auth/profile", headers=headers, json={"timezone": "Asia/Seoul"})
+    assert set_timezone.status_code == 200, set_timezone.text
+
+    omitted = client.patch("/api/v1/auth/profile", headers=headers, json={})
+    assert omitted.status_code == 200, omitted.text
+    assert omitted.json()["timezone"] == "Asia/Seoul"
+
+
 def test_refresh_rejects_after_token_version_bumped_in_database(
     client: TestClient, db_session: Session
 ) -> None:

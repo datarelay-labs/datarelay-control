@@ -372,7 +372,8 @@ def update_profile(
     user = get_user_by_id(db, int(ctx.user_id or 0))
     if user is None or user.status != "ACTIVE":
         raise _auth_error("AUTH_USER_INACTIVE", "Account is inactive or removed.")
-    if payload.timezone is not None:
+    if "timezone" in payload.model_fields_set:
+        # An explicitly supplied null clears the override; an omitted field is a no-op.
         user.timezone = payload.timezone
         journal.record_audit_event(
             db,
