@@ -191,10 +191,10 @@ describe('AppShellLayout responsive accessibility', () => {
     expect(within(screen.getByRole('main')).queryByText(/^Dashboard$/)).not.toBeInTheDocument()
   })
 
-  it('gives Administration a single shell title without a repeated breadcrumb', () => {
+  it('delegates the Administration heading to the Foundation hub without a duplicate shell heading', () => {
     renderShell('/admin')
-    expect(screen.getAllByRole('heading', { name: 'Administration' })).toHaveLength(1)
-    expect(screen.getByRole('heading', { level: 1, name: 'Administration' })).toBeInTheDocument()
+    expect(within(screen.getByRole('banner')).getByText('Administration')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Administration' })).not.toBeInTheDocument()
     expect(screen.queryByRole('navigation', { name: 'Breadcrumb' })).not.toBeInTheDocument()
     expect(within(screen.getByRole('main')).queryByText(/^Administration$/)).not.toBeInTheDocument()
   })
