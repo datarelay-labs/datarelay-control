@@ -128,6 +128,15 @@ export function persistSession(s: StoredSession): void {
   const store = safeStorage()
   if (!store) return
   try {
+    const previous = readSession()
+    if (
+      previous &&
+      (previous.user.username !== s.user.username || previous.user.role !== s.user.role)
+    ) {
+      // A direct account/role switch can happen without a full page reload.
+      // Never let the new identity inherit admin-only UI snapshots.
+      clearFrontendDataCaches()
+    }
     store.setItem(STORAGE_KEY, JSON.stringify(s))
     // Keep the legacy keys in sync so any not-yet-migrated UI logic that still
     // reads `gdc_platform_ui_role` continues to render correctly (read-only).

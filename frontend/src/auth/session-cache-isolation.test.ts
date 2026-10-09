@@ -3,6 +3,7 @@ import { clearSharedRequestCache, cachedRequest } from '../api/requestCache'
 import { writeDestinationsListSnapshot, readDestinationsListSnapshot } from '../components/destinations/destinations-list-cache'
 import { writeConnectorsOverviewSnapshot, readConnectorsOverviewSnapshot } from '../components/connectors/connectors-overview-cache'
 import { writeStreamsConsoleSnapshot, readStreamsConsoleSnapshot } from '../components/streams/streams-console-cache'
+import { readAdminSettingsSnapshot, writeAdminSettingsSnapshot } from '../components/settings/admin-settings-session-cache'
 import { clearSession, persistSession } from './session'
 
 describe('auth cache isolation', () => {
@@ -61,5 +62,51 @@ describe('auth cache isolation', () => {
     await cachedRequest('catalog-route-by-id', '42', routeByIdLoader)
     expect(destByIdLoader).toHaveBeenCalledTimes(1)
     expect(routeByIdLoader).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('administration cache isolation across account changes', () => {
+  it('clears privileged user and system snapshots when a session ends', () => {
+    const adminData = {
+      https: null,
+      httpsDraft: null,
+      users: [{ id: 7, username: 'admin-confidential' } as never],
+      systemFooter: null,
+    }
+    writeAdminSettingsSnapshot(adminData)
+    expect(readAdminSettingsSnapshot()).toEqual(adminData)
+
+    // Authentication rejection also uses clearSession() without a full page
+    // reload, so the next login must never inherit privileged admin data.
+    clearSession()
+    expect(readAdminSettingsSnapshot()).toBeNull()
+  })
+})
+
+describe('account transition cache isolation', () => {
+  it('drops previous account administration data on direct signed-in identity switch', () => {
+    clearSession()
+    persistSession({
+      access_token: 'admin-access',
+      refresh_token: 'admin-refresh',
+      expires_at: new Date(Date.now() + 60_000).toISOString(),
+      user: { username: 'admin-one', role: 'ADMINISTRATOR', status: 'ACTIVE' },
+    })
+    writeAdminSettingsSnapshot({
+      https: null,
+      httpsDraft: null,
+      users: [{ id: 8, username: 'private-admin-user' } as never],
+      systemFooter: null,
+    })
+    expect(readAdminSettingsSnapshot()).not.toBeNull()
+
+    // Session refresh does not switch identities; a separate user/role does.
+    persistSession({
+      access_token: 'viewer-access',
+      refresh_token: 'viewer-refresh',
+      expires_at: new Date(Date.now() + 60_000).toISOString(),
+      user: { username: 'viewer-two', role: 'VIEWER', status: 'ACTIVE' },
+    })
+    expect(readAdminSettingsSnapshot()).toBeNull()
   })
 })

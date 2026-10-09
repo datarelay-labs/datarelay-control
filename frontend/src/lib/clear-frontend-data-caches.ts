@@ -1,6 +1,7 @@
 import { clearSharedRequestCache } from '../api/requestCache'
 import { resetRefreshCycleSnapshotId } from '../api/runtimeSnapshotSync'
 import { clearConnectorsOverviewSnapshot } from '../components/connectors/connectors-overview-cache'
+import { clearAdminSettingsSnapshot } from '../components/settings/admin-settings-session-cache'
 import { clearDestinationsListSnapshot } from '../components/destinations/destinations-list-cache'
 import { clearStreamsConsoleSnapshot } from '../components/streams/streams-console-cache'
 
@@ -18,4 +19,5 @@ export function clearFrontendDataCaches(): void {
   clearDestinationsListSnapshot()
   clearConnectorsOverviewSnapshot()
   clearStreamsConsoleSnapshot()
+  clearAdminSettingsSnapshot()
 }
