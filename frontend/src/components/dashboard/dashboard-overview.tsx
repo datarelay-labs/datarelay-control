@@ -126,6 +126,7 @@ export function DashboardOverview() {
     [operationalIssues, overallHealth.warning, overallHealth.critical, runtimeHealthAttention],
   )
   const attentionDataPartial = Object.values(operationalIssues).some((value) => value == null)
+  const attentionUnknown = attentionItems.length === 0 && attentionDataPartial
 
   return (
     <div className="w-full min-w-0 space-y-5" data-testid="dashboard-overview">
@@ -268,18 +269,18 @@ export function DashboardOverview() {
               <span
                 className={cn(
                   'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
-                  attentionItems.length > 0
+                  attentionItems.length > 0 || attentionUnknown
                     ? 'bg-amber-500/10 text-amber-600 dark:text-amber-300'
                     : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300',
                 )}
                 aria-hidden
               >
-                {attentionItems.length > 0 ? <AlertTriangle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+                {attentionItems.length > 0 || attentionUnknown ? <AlertTriangle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
               </span>
               <div className="min-w-0 flex-1">
                 <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.15em] text-violet-600 dark:text-violet-300">Live operations</p>
                 <h2 className="text-xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
-                  {attentionItems.length > 0 ? 'Action needed' : 'No action needed'}
+                  {attentionItems.length > 0 ? 'Action needed' : attentionUnknown ? 'Status partially available' : 'No action needed'}
                 </h2>
                 <p className="mt-0.5 text-xs leading-relaxed text-slate-500 dark:text-gdc-muted">
                   {attentionItems.length > 0

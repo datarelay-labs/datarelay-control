@@ -598,6 +598,54 @@ describe('DashboardOverview', () => {
     expect(capacity).toHaveTextContent('—')
   })
 
+  it('does not claim no action is needed when the only missing evidence is a destination catalog', async () => {
+    const snapshotApi = await import('../../api/operationalSnapshot')
+    const baseline = await snapshotApi.getOperationalSnapshot()
+    const healthyStream = baseline?.streams.find((stream) => stream.health_status === 'HEALTHY')
+    if (!baseline || !healthyStream) throw new Error('Missing healthy Stream test fixture')
+
+    vi.mocked(snapshotApi.getOperationalSnapshot).mockResolvedValueOnce({
+      ...baseline,
+      global: {
+        ...baseline.global,
+        health_status: 'HEALTHY',
+        total_streams: 1,
+        enabled_streams: 1,
+        running_streams: 1,
+        error_streams: 0,
+      },
+      streams: [healthyStream],
+      routes: [],
+      destinations: [],
+      problems: [],
+    })
+    const runtimeApi = await import('../../api/gdcRuntime')
+    vi.mocked(runtimeApi.fetchRuntimeDashboardSummary).mockResolvedValueOnce({
+      ...sampleDashboard(),
+      open_schema_field_drift_count: 0,
+    })
+    const destinationApi = await import('../../api/gdcDestinations')
+    vi.mocked(destinationApi.fetchDestinationsList).mockResolvedValueOnce(null)
+
+    render(
+      <MemoryRouter>
+        <main>
+          <DashboardOverview />
+        </main>
+      </MemoryRouter>,
+    )
+
+    const firstLevel = await within(mainRegion()).findByTestId('dashboard-first-level')
+    const issues = within(firstLevel).getByTestId('dashboard-operational-issues')
+    await waitFor(() =>
+      expect(within(issues).getByTestId('dashboard-issue-destination-capacity')).toHaveTextContent('Data unavailable'),
+    )
+    const attention = within(firstLevel).getByTestId('dashboard-action-needed')
+    expect(within(attention).getByRole('heading', { name: 'Status partially available' })).toBeInTheDocument()
+    expect(within(attention).queryByRole('heading', { name: 'No action needed' })).not.toBeInTheDocument()
+    expect(within(attention).getByTestId('dashboard-next-action')).toHaveTextContent('Open Streams')
+  })
+
   it('exposes drill-down links to existing operational surfaces', async () => {
     render(
       <MemoryRouter>
