@@ -44,9 +44,9 @@ def reset_login_throttle_for_tests() -> None:
 def client_ip_from_request(request: Request | None) -> str:
     if request is None:
         return "unknown"
-    forwarded = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
-    if forwarded:
-        return forwarded[:128]
+    # The HTTP header is attacker-controlled unless a deployment has explicitly
+    # configured a trusted reverse proxy. The ASGI client address already
+    # reflects that trust decision; never re-parse X-Forwarded-For here.
     if request.client and request.client.host:
         return str(request.client.host)[:128]
     return "unknown"

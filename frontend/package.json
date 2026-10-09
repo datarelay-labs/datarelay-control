@@ -17,14 +17,6 @@
     "validate": "npm run test -- --run && npm run build && npm run lint"
   },
   "dependencies": {
-    "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
-    "lucide-react": "^1.14.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "react-router-dom": "^7.18.4",
-    "recharts": "^3.8.1",
-    "tailwind-merge": "^3.5.0",
     "@datarelay-labs/auth-ui": "file:.foundation/packs/datarelay-labs-auth-ui-0.1.0-pf5b.1.tgz",
     "@datarelay-labs/foundation": "file:.foundation/packs/datarelay-labs-foundation-0.1.0-pf5b.1.tgz",
     "@datarelay-labs/foundation-cli": "file:.foundation/packs/datarelay-labs-foundation-cli-0.1.0-pf5b.1.tgz",
@@ -34,7 +26,16 @@
     "@datarelay-labs/system-contracts": "file:.foundation/packs/datarelay-labs-system-contracts-0.1.0-pf5b.1.tgz",
     "@datarelay-labs/testkit": "file:.foundation/packs/datarelay-labs-testkit-0.1.0-pf5b.1.tgz",
     "@datarelay-labs/tokens": "file:.foundation/packs/datarelay-labs-tokens-0.1.0-pf5b.1.tgz",
-    "@datarelay-labs/ui": "file:.foundation/packs/datarelay-labs-ui-0.1.0-pf5b.1.tgz"
+    "@datarelay-labs/ui": "file:.foundation/packs/datarelay-labs-ui-0.1.0-pf5b.1.tgz",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.14.0",
+    "qrcode": "1.5.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router-dom": "^7.18.4",
+    "recharts": "^3.8.1",
+    "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.15.0",
@@ -43,6 +44,7 @@
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
     "@types/node": "^22.10.0",
+    "@types/qrcode": "1.5.5",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",

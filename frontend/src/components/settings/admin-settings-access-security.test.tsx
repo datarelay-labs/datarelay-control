@@ -8,6 +8,7 @@ import {
   getAdminHttpsSettings,
   getAuthWhoAmI,
   listAdminUsers,
+  postAdminUserMfaReset,
   postAdminPasswordChange,
   putAdminHttpsSettings,
   updateAdminUser,
@@ -33,9 +34,11 @@ vi.mock('../../api/gdcAdmin', () => ({
     server_time_utc: '2026-01-01T00:00:00Z',
   })),
   getAuthWhoAmI: vi.fn(async () => ({ role: 'ADMINISTRATOR', username: 'admin' })),
+  getAuthMfaStatus: vi.fn(async () => ({ enabled: false })),
   createAdminUser: vi.fn(),
   deleteAdminUser: vi.fn(),
   updateAdminUser: vi.fn(),
+  postAdminUserMfaReset: vi.fn(),
   postAdminPasswordChange: vi.fn(),
   putAdminHttpsSettings: vi.fn(),
   downloadAdminSupportBundle: vi.fn(),
@@ -152,6 +155,8 @@ describe('AdminSettingsPage Access & security modernization', () => {
       proxy_fallback_to_http: false,
     })
     vi.mocked(postAdminPasswordChange).mockResolvedValue(undefined)
+    vi.mocked(postAdminUserMfaReset).mockReset()
+    vi.mocked(postAdminUserMfaReset).mockResolvedValue(undefined)
     vi.mocked(createAdminUser).mockResolvedValue({
       id: 3,
       username: 'viewer1',
@@ -230,7 +235,7 @@ describe('AdminSettingsPage Access & security modernization', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/do not match/i)
     expect(postAdminPasswordChange).not.toHaveBeenCalled()
 
-    await user.type(screen.getByLabelText('Current password'), 'old-secret')
+    await user.type(within(screen.getByTestId('admin-password-panel')).getByLabelText('Current password'), 'old-secret')
     await user.clear(screen.getByLabelText('New password'))
     await user.type(screen.getByLabelText('New password'), 'long-enough')
     await user.clear(screen.getByLabelText('Confirm new password'))
@@ -272,6 +277,54 @@ describe('AdminSettingsPage Access & security modernization', () => {
     await user.click(within(opsRow).getByRole('button', { name: /Edit user ops/i }))
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
     expect(screen.getByLabelText('Username')).toBeDisabled()
+  })
+
+  it('protects an enrolled account MFA reset with typed target and administrator password', async () => {
+    const user = userEvent.setup()
+    vi.mocked(listAdminUsers).mockResolvedValue([
+      usersFixture[0], { ...usersFixture[1], mfa_enabled: true },
+    ])
+    renderPage()
+    const row = await screen.findByTestId('admin-user-row-ops')
+    await user.click(within(row).getByRole('button', { name: 'Reset MFA for ops' }))
+    const dialog = await screen.findByTestId('admin-mfa-reset-dialog')
+    expect(dialog).toHaveTextContent('invalidates its existing sessions and recovery codes')
+    const submit = within(dialog).getByRole('button', { name: 'Reset MFA and revoke sessions' })
+    expect(submit).toBeDisabled()
+    await user.type(within(dialog).getByLabelText('Current Administrator password'), 'actual-admin-password')
+    expect(submit).toBeDisabled()
+    await user.type(within(dialog).getByLabelText('Type the exact username to confirm'), 'ops')
+    expect(submit).toBeEnabled()
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByTestId('admin-mfa-reset-dialog')).not.toBeInTheDocument()
+    expect(postAdminUserMfaReset).not.toHaveBeenCalled()
+
+    await user.click(within(row).getByRole('button', { name: 'Reset MFA for ops' }))
+    const confirmed = screen.getByTestId('admin-mfa-reset-dialog')
+    await user.type(within(confirmed).getByLabelText('Type the exact username to confirm'), 'ops')
+    await user.type(within(confirmed).getByLabelText('Current Administrator password'), 'actual-admin-password')
+    await user.click(within(confirmed).getByRole('button', { name: 'Reset MFA and revoke sessions' }))
+    await waitFor(() => {
+      expect(postAdminUserMfaReset).toHaveBeenCalledWith(2, {
+        confirm_username: 'ops',
+        current_password: 'actual-admin-password',
+      })
+    })
+    await waitFor(() => {
+      expect(screen.queryByTestId('admin-mfa-reset-dialog')).not.toBeInTheDocument()
+    })
+  })
+
+  it('does not expose MFA reset to an Operator even when another account has MFA enabled', async () => {
+    vi.mocked(listAdminUsers).mockResolvedValue([
+      usersFixture[0], { ...usersFixture[1], mfa_enabled: true },
+    ])
+    localStorage.setItem('gdc_platform_ui_role', 'OPERATOR')
+    vi.mocked(getAuthWhoAmI).mockResolvedValue({ role: 'OPERATOR', username: 'ops' } as never)
+    renderPage()
+    const row = await screen.findByTestId('admin-user-row-ops')
+    expect(within(row).queryByRole('button', { name: 'Reset MFA for ops' })).not.toBeInTheDocument()
+    expect(postAdminUserMfaReset).not.toHaveBeenCalled()
   })
 
   it('blocks local account mutations for Operator sessions', async () => {

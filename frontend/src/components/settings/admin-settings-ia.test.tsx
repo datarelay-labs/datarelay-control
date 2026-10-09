@@ -23,6 +23,7 @@ vi.mock('../../api/gdcAdmin', () => ({
     server_time_utc: '2026-01-01T00:00:00Z',
   })),
   getAuthWhoAmI: vi.fn(async () => ({ role: 'ADMINISTRATOR', username: 'admin' })),
+  getAuthMfaStatus: vi.fn(async () => ({ enabled: false })),
   createAdminUser: vi.fn(),
   deleteAdminUser: vi.fn(),
   updateAdminUser: vi.fn(),

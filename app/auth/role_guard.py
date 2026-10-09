@@ -25,6 +25,7 @@ import logging
 from dataclasses import dataclass
 
 from fastapi import HTTPException, Request, status
+from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse
 
 from app.auth.jwt_service import (
@@ -69,6 +70,7 @@ _API = settings.API_PREFIX.rstrip("/")
 # and health checks always pass through.
 _BYPASS_PREFIXES: tuple[str, ...] = (
     f"{_API}/auth/login",
+    f"{_API}/auth/mfa/verify",
     f"{_API}/auth/refresh",
     f"{_API}/auth/logout",
     f"{_API}/ingest/webhook",
@@ -92,6 +94,7 @@ class AuthContext:
     token_version: int | None = None
     claims: TokenClaims | None = None
     must_change_password: bool = False
+    mfa_verified: bool = False
 
 
 def _normalize_role(raw: str | None) -> str:
@@ -134,10 +137,9 @@ def resolve_auth_context(request: Request) -> AuthContext:
 
     The result is also cached on ``request.state.auth`` so route handlers can
     read it without re-decoding the JWT.  This function validates signature,
-    issuer, expiry, and token type only.  Live ``token_version`` checks against
-    ``platform_users`` happen in selected auth routes (``/auth/refresh``,
-    ``/auth/whoami``, ``/auth/change-password``); other API routes trust the
-    JWT until it expires (bounded by ``ACCESS_TOKEN_EXPIRE_MINUTES``).
+    issuer, expiry, and token type only. The authenticated middleware separately
+    confirms current DB token epoch, role, account status and MFA factor for
+    guarded product access. A cached context is never itself a DB check.
     """
 
     cached = getattr(request.state, "auth", None)
@@ -167,6 +169,7 @@ def resolve_auth_context(request: Request) -> AuthContext:
             token_version=claims.token_version,
             claims=claims,
             must_change_password=bool(getattr(claims, "must_change_password", False)),
+            mfa_verified=bool(getattr(claims, "mfa_verified", False)),
         )
         request.state.auth = ctx
         return ctx
@@ -198,6 +201,39 @@ def resolve_request_role(request: Request) -> str:
 
 def resolve_request_username(request: Request) -> str:
     return resolve_auth_context(request).username
+
+
+def _verify_live_jwt_authority(ctx: AuthContext) -> bool:
+    """Current product DB epoch, role and MFA factor must match signed JWT.
+
+    Run off the event loop. A DB error fails CLOSED instead of trusting a
+    once-valid token after an admin enables MFA or changes a user's role.
+    """
+    from app.database import SessionLocal
+    from app.platform_admin.models import PlatformUser, PlatformUserMfa
+
+    if ctx.user_id is None or ctx.token_version is None:
+        return False
+    try:
+        with SessionLocal() as db:
+            user = db.query(PlatformUser).filter(
+                PlatformUser.id == int(ctx.user_id),
+            ).one_or_none()
+            # Reject malformed persisted roles outright. Converting an
+            # unknown DB role to Viewer is unsafe even when the JWT says
+            # Viewer; no role should be inferred for a real account.
+            if (user is None or user.status != "ACTIVE"
+                    or (user.role or "").strip().upper() not in KNOWN_ROLES
+                    or int(user.token_version or 1) != ctx.token_version
+                    or _normalize_role(user.role) != ctx.role):
+                return False
+            row = db.query(PlatformUserMfa).filter(
+                PlatformUserMfa.user_id == int(ctx.user_id),
+            ).one_or_none()
+            return not (row and row.required and not ctx.mfa_verified)
+    except Exception:
+        logger.warning("JWT current security state unavailable; refusing request")
+        return False
 
 
 async def role_guard_middleware(request: Request, call_next):
@@ -246,6 +282,18 @@ async def role_guard_middleware(request: Request, call_next):
             },
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    if ctx.source == "jwt" and (
+        settings.REQUIRE_AUTH or bool(settings.GDC_MFA_ENCRYPTION_KEY_HEX)
+    ):
+        if not await run_in_threadpool(_verify_live_jwt_authority, ctx):
+            return JSONResponse(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                content={"detail": {
+                    "error_code": "AUTH_TOKEN_REVOKED",
+                    "message": "Reauthenticate before accessing this resource.",
+                }},
+            )
 
     if ctx.source == "jwt" and ctx.must_change_password and not _must_change_password_bypass(path):
         return JSONResponse(

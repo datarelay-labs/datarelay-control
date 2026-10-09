@@ -100,8 +100,16 @@ class PlatformUserRead(BaseModel):
     created_at: datetime
     last_login_at: datetime | None = None
     timezone: str | None = None
+    mfa_enabled: bool = False
 
     model_config = {"from_attributes": True}
+
+
+class PlatformUserMfaResetRequest(BaseModel):
+    """Explicitly acknowledge the target and reauthenticate the administrator."""
+
+    confirm_username: str = Field(min_length=1, max_length=128)
+    current_password: str = Field(min_length=1, max_length=256)
 
 
 class PlatformUserCreate(BaseModel):

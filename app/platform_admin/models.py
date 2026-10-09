@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import BigInteger, Boolean, Column, DateTime, Integer, String
+from sqlalchemy import BigInteger, Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 
 from app.database import Base, utcnow
@@ -25,6 +25,40 @@ class PlatformUser(Base):
     token_version = Column(Integer, nullable=False, default=1, server_default="1")
     must_change_password = Column(Boolean, nullable=False, default=False, server_default="false")
     timezone = Column(String(64), nullable=True)
+
+
+class PlatformUserMfa(Base):
+    """Product-owned per-user optional Web MFA; disabled unless enrolled."""
+
+    __tablename__ = "platform_user_mfa"
+
+    user_id = Column(Integer, ForeignKey("platform_users.id", ondelete="CASCADE"), primary_key=True)
+    required = Column(Boolean, nullable=False, default=False, server_default="false")
+    secret_ciphertext = Column(Text, nullable=True)
+    pending_secret_ciphertext = Column(Text, nullable=True)
+    pending_expires_at = Column(DateTime(timezone=True), nullable=True)
+    last_counter = Column(BigInteger, nullable=False, default=-1, server_default="-1")
+    recovery_hashes_json = Column(JSONB, nullable=False, default=list, server_default="[]")
+    # DB-backed multi-worker OTP failure window (separate from soft password throttle).
+    failed_attempts = Column(Integer, nullable=False, default=0, server_default="0")
+    failure_window_started_at = Column(DateTime(timezone=True), nullable=True)
+    locked_until = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+
+
+class PlatformMfaChallenge(Base):
+    """Single-use password-verified proof, NEVER an authenticated JWT."""
+
+    __tablename__ = "platform_mfa_challenges"
+
+    token_hash = Column(String(64), primary_key=True)
+    user_id = Column(Integer, ForeignKey("platform_users.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_version = Column(Integer, nullable=False)
+    role = Column(String(32), nullable=False)
+    source_hash = Column(String(64), nullable=False)
+    user_agent_hash = Column(String(64), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
 
 
 class PlatformDisplaySettings(Base):
