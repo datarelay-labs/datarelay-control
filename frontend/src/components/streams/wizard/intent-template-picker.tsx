@@ -32,6 +32,18 @@ export function IntentTemplatePicker({ onSelect }: { onSelect: (id: WizardIntent
         <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-gdc-mutedStrong">
           Choose a common goal to start with helpful defaults. You can review every setting before deploying, and no template activates a Stream automatically.
         </p>
+        <p className="mt-5 text-xs font-semibold text-slate-700 dark:text-gdc-mutedStrong">What happens after you choose a goal</p>
+        <ol
+          aria-label="Stream setup journey"
+          className="mt-2 flex flex-wrap gap-2 text-xs font-medium text-slate-700 dark:text-slate-200"
+        >
+          {['Connect a source', 'Test a sample', 'Choose destinations', 'Tailor each route', 'Deploy & verify'].map((step, index) => (
+            <li key={step} className="inline-flex items-center gap-1.5 rounded-lg border border-violet-100 bg-white/90 px-2.5 py-2 dark:border-gdc-border dark:bg-gdc-card">
+              <span className="font-bold text-violet-700 dark:text-violet-300">{index + 1}.</span>
+              {step}
+            </li>
+          ))}
+        </ol>
       </div>
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3" aria-label="Guided setup options">

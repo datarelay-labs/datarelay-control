@@ -146,3 +146,22 @@ Templates remain existing `applyWizardIntentTemplate` state setters; they do not
 - [ ] Owner decision #362 on Governance placement (independent product question).
 
 Protect #410's Chromium test run, locked ports/session/DB, #411/PR #412 and PF-5B preview; do not merge or release before owner approval and user-E2E gates.
+
+## 2026-10-09 follow-up — explain the complete flow while configuring
+
+**Research used (official documentation, not competitor live tenant parity):**
+
+- [Datadog Set Up Pipelines](https://docs.datadoghq.com/observability_pipelines/configuration/set_up_pipelines/) and [Explore Templates](https://docs.datadoghq.com/observability_pipelines/configuration/explore_templates/): start with the operator's use case, then source/destination configuration and processor simulation.
+- [Cribl Routes](https://docs.cribl.io/stream/routes/): make the relationship between a source, processing, and multiple delivery paths explicit; quick configuration and detailed routes serve different needs.
+- [Mezmo Demo Pipeline](https://docs.mezmo.com/telemetry-pipelines/demo-pipeline-guide): show a realistic source-to-processing-to-destination narrative with examples before asking users to understand low-level settings.
+
+**Accepted Control design / scope:** Show the five user-oriented setup actions *before* a template is selected, then retain an always-visible, read-only Source → Per-route Processing → Destinations outline alongside the existing five-step configuration controls. Show one short, stage-specific next action. The outline is **configuration evidence, never live delivery evidence**. It may display a selected connector name, route-enabled counts, and inherit/override counts but MUST NOT expose credentials or sample event contents. Destinations are still **selected before route-specific processing is configured**, even though the data-plane outline orders processing before delivery.
+
+**Implementation:**
+- `frontend/src/components/streams/wizard/intent-template-picker.tsx`: compact 5-action onboarding path; no new wizard step or forced selection.
+- `frontend/src/components/streams/wizard/wizard-flow-overview.tsx`: source selection (not connection success), processing inheritance/customization, and configured/enabled delivery paths, updated from the existing wizard state. A selected-but-unmaterialized Connector Module is explicitly a draft.
+- `frontend/src/components/streams/wizard/wizard-stepper.tsx`: shared read-only explanation for both New Stream and Stream Edit, with operator-oriented current-step instructions. Use "available" rather than incorrectly implying only completed steps are navigable.
+- `frontend/src/components/streams/wizard/step-route-processing.tsx`: explain the default shared path and the exact exception action (select a Route and turn off Inherit) without hiding existing expert controls or changing processing behavior.
+- Tests verify default/unconfigured vs configured/disabled/customized routes, no credential/sample payload disclosure, and current five-step UX and expert path remain unchanged.
+
+**Boundaries:** No API, schema, runtime, auth, persistence, policy, sample-selection, checkpoint, route ordering, Step gate, actual Stream enablement, or delivery-proving changes. This is a visual orientation layer above existing canonical state. The pre-existing `#410` live browser reconciliation lab is exclusive; 1440/375/320 authenticated browser comparison and Full User E2E remain **NOT VERIFIED**, regardless of unit test/build/CI outcomes.

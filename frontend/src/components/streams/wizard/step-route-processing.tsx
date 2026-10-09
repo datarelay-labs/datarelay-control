@@ -163,9 +163,10 @@ export function StepRouteProcessing({
     <div className="space-y-5" data-testid="wizard-step-route-processing">
       <header className="space-y-1">
         <h3 className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-50">Route Processing</h3>
-        <p className="max-w-3xl text-sm leading-relaxed text-slate-600 dark:text-gdc-muted">
-          Set shared defaults first, then override Transform, Protection, Classification, or Policy only where a
-          destination needs different processing.
+        <p className="max-w-3xl text-sm leading-relaxed text-slate-600 dark:text-gdc-muted" data-testid="route-processing-simple-guidance">
+          <strong className="font-semibold text-slate-800 dark:text-slate-200">Start with one set of rules.</strong>{' '}
+          Shared Processing applies to every destination unless you change it.
+          To treat one destination differently, select its Route below and turn off Inherit only for the setting you want to customize.
         </p>
       </header>
 

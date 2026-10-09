@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { cn } from '../../../lib/utils'
+import { WizardFlowOverview } from './wizard-flow-overview'
 import { wizardStepReachable, type WizardStepReachableOptions } from './wizard-step-gates'
 import type { WizardState, WizardStepCompletion, WizardStepDef } from './wizard-state'
 
@@ -42,7 +43,7 @@ export function WizardStepper({
           </span>
         </p>
         <span className="text-xs font-medium text-slate-500 dark:text-gdc-muted">
-          Choose a completed step to review it
+          Choose an available step to review its settings
         </span>
       </div>
       <div
@@ -120,6 +121,7 @@ export function WizardStepper({
           )
         })}
       </ol>
+      <WizardFlowOverview state={state} activeStep={activeStep?.key ?? 'connect'} />
     </div>
   )
 }

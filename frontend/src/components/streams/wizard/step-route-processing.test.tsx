@@ -60,6 +60,8 @@ describe('StepRouteProcessing', () => {
     )
 
     expect(screen.getByTestId('wizard-step-route-processing')).toBeInTheDocument()
+    expect(screen.getByTestId('route-processing-simple-guidance')).toHaveTextContent('Start with one set of rules.')
+    expect(screen.getByTestId('route-processing-simple-guidance')).toHaveTextContent('select its Route below and turn off Inherit')
     expect(screen.getByTestId('shared-processing-section')).toBeInTheDocument()
     expect(screen.queryByText('Global Processing')).not.toBeInTheDocument()
     expect(screen.getByText('Shared Processing')).toBeInTheDocument()
