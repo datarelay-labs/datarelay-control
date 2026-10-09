@@ -179,6 +179,32 @@ describe('StreamEditWizardPage workspace capability visibility', () => {
     clearSession()
   })
 
+  it('preserves existing protection settings after Add field in Stream Edit', async () => {
+    signIn('OPERATOR')
+    hydrateHolder.factory = () => {
+      const result = hydratedStream()
+      result.destinations.routeDrafts = [{
+        key: 'route-1',
+        destinationId: 5,
+        enabled: true,
+        failurePolicy: 'LOG_AND_CONTINUE',
+        rateLimitJson: {},
+        inherit: { transform: true, protection: true, classification: true, policy: true },
+      }]
+      return result
+    }
+    renderStreamEdit()
+    const page = await screen.findByTestId('edit-stream-wizard')
+    fireEvent.click(within(page).getByTestId('wizard-stepper-route_processing'))
+    fireEvent.click(await within(page).findByTestId('shared-processing-tab-data_protection'))
+    const add = await within(page).findByTestId('data-protection-add-row')
+    fireEvent.click(add)
+    expect(within(page).getByPlaceholderText('$.email')).toBeInTheDocument()
+    expect(within(page).getByTestId('wizard-save-now')).toBeEnabled()
+    fireEvent.click(within(page).getByTestId('wizard-stepper-deploy'))
+    expect(within(page).getByTestId('deploy-created-panel')).toBeInTheDocument()
+  })
+
   it('lets a viewer inspect stream edit sections without mutation requests', async () => {
     const user = userEvent.setup()
     signIn('VIEWER')

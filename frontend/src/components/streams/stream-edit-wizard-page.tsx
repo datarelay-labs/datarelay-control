@@ -459,9 +459,11 @@ export function StreamEditWizardPage() {
     if (!canMutateWorkspaceRef.current) return
     setState((prev) => (prev ? { ...prev, unmappedFieldsPolicy } : prev))
   }, [])
-  const setDataProtection = useCallback((dataProtection: WizardState['dataProtection']) => {
+  const setDataProtection = useCallback((patch: Partial<WizardState['dataProtection']>) => {
     if (!canMutateWorkspaceRef.current) return
-    setState((prev) => (prev ? { ...prev, dataProtection } : prev))
+    setState((prev) => (
+      prev ? { ...prev, dataProtection: { ...prev.dataProtection, ...patch } } : prev
+    ))
   }, [])
   const setDestinations = useCallback((patch: Partial<WizardState['destinations']>) => {
     if (!canMutateWorkspaceRef.current) return
