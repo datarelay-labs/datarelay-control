@@ -92,6 +92,13 @@ describe('Sidebar SaaS shell', () => {
     expect(onMobileClose).toHaveBeenCalled()
   })
 
+  it('keeps the mobile drawer full width when desktop sidebar is collapsed', () => {
+    renderSidebar({ mobileOpen: true, collapsed: true })
+    const nav = screen.getByRole('complementary', { name: 'Primary navigation' })
+    expect(nav).toHaveClass('w-[260px]')
+    expect(nav).toHaveClass('md:w-[57px]')
+  })
+
   it('records mobile open state for the drawer', () => {
     renderSidebar({ mobileOpen: true })
     expect(screen.getByRole('complementary', { name: 'Primary navigation' })).toHaveAttribute(

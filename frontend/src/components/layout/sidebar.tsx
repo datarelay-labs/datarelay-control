@@ -163,7 +163,7 @@ export function Sidebar({
         'fixed inset-y-0 left-0 z-50 flex h-screen shrink-0 flex-col border-r border-slate-200 bg-white outline-none transition-[width,transform] duration-200 ease-out focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-violet-400 dark:border-gdc-border dark:bg-gdc-panel dark:focus:outline-violet-300',
         'md:sticky md:translate-x-0',
         mobileOpen ? 'translate-x-0 shadow-xl' : '-translate-x-full md:shadow-none',
-        collapsed ? 'w-[57px] md:w-[57px]' : 'w-[260px] md:w-[260px]',
+        collapsed ? 'w-[260px] md:w-[57px]' : 'w-[260px] md:w-[260px]',
       )}
     >
       <div
