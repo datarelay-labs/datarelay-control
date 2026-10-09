@@ -704,3 +704,46 @@ def test_enrollment_confirmation_locks_live_user_epoch_before_mutation(
                 other_session.commit()
             assert future.result(timeout=10) == 401
     assert not confirm_called.is_set()
+
+
+def test_expired_challenge_cleanup_skips_inflight_verification_lock(
+    client: TestClient, db_session: Session,
+) -> None:
+    """Pruning cannot block/deadlock when OTP verification owns a challenge."""
+    from sqlalchemy import text
+    from app.auth.mfa import begin_password_challenge
+
+    user, _, _, _ = begin_enrollment(client, db_session)
+    user_id = int(user.id)
+    previous = client.post("/api/v1/auth/login", json={
+        "username": USERNAME, "password": PASSWORD,
+    })
+    assert previous.status_code == 200, previous.text
+    stale = db_session.query(PlatformMfaChallenge).one()
+    stale_hash = str(stale.token_hash)
+    stale.expires_at = datetime.now(timezone.utc) - timedelta(seconds=2)
+    db_session.commit()
+
+    with SessionLocal() as verifying:
+        held = verifying.query(PlatformMfaChallenge).filter_by(
+            token_hash=stale_hash,
+        ).with_for_update().one()
+        assert held.token_hash == stale_hash
+
+        with SessionLocal() as login:
+            login.execute(text("SET LOCAL lock_timeout = '1000ms'"))
+            account = login.get(PlatformUser, user_id)
+            assert account is not None
+            proof = begin_password_challenge(login, account, _request_from("testclient"))
+            assert proof["mfa_required"] is True
+
+        # The other transaction still owns this expired proof, so skip it,
+        # rather than waiting for and deadlocking against its row lock.
+        verifying.rollback()
+
+    with SessionLocal() as next_login:
+        account = next_login.get(PlatformUser, user_id)
+        assert account is not None
+        begin_password_challenge(next_login, account, _request_from("testclient"))
+    db_session.expire_all()
+    assert db_session.query(PlatformMfaChallenge).filter_by(token_hash=stale_hash).count() == 0

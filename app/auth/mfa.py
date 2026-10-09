@@ -156,10 +156,20 @@ def begin_password_challenge(
     _key()
     # The MFA row is locked above: multiple workers cannot bypass this
     # per-user pending challenge cap by starting at the same instant.
-    db.query(PlatformMfaChallenge).filter(
-        PlatformMfaChallenge.user_id == int(user.id),
-        PlatformMfaChallenge.expires_at <= now,
-    ).delete(synchronize_session=False)
+    # Factor verification locks its proof before the account MFA row. If
+    # pruning tried to DELETE that same proof while holding the MFA row lock,
+    # the two transactions could deadlock. Skip proofs being verified; the
+    # next login will prune them after their lock is released.
+    expired_hashes = [
+        token_hash for (token_hash,) in db.query(PlatformMfaChallenge.token_hash).filter(
+            PlatformMfaChallenge.user_id == int(user.id),
+            PlatformMfaChallenge.expires_at <= now,
+        ).with_for_update(skip_locked=True).all()
+    ]
+    if expired_hashes:
+        db.query(PlatformMfaChallenge).filter(
+            PlatformMfaChallenge.token_hash.in_(expired_hashes),
+        ).delete(synchronize_session=False)
     pending = db.query(PlatformMfaChallenge.expires_at).filter(
         PlatformMfaChallenge.user_id == int(user.id),
         PlatformMfaChallenge.expires_at > now,
