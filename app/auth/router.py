@@ -36,7 +36,6 @@ from app.auth.login_throttle import (
 from app.auth.route_access import build_capabilities
 from app.auth.role_guard import (
     KNOWN_ROLES,
-    ROLE_ADMINISTRATOR,
     resolve_auth_context,
 )
 from app.auth.token_bundle import TokenBundle, build_token_bundle
@@ -142,8 +141,18 @@ def _utcnow() -> datetime:
 
 
 def _normalize_role(raw: str | None) -> str:
+    """Only a persisted, currently supported role may create a session.
+
+    Never escalate an unknown or malformed DB role to Administrator. Legacy
+    implicit development identities are handled separately by role_guard.
+    """
     v = (raw or "").strip().upper()
-    return v if v in KNOWN_ROLES else ROLE_ADMINISTRATOR
+    if v not in KNOWN_ROLES:
+        raise HTTPException(status_code=403, detail={
+            "error_code": "AUTH_ROLE_INVALID",
+            "message": "Account role is not recognized. Contact an administrator.",
+        })
+    return v
 
 
 def _auth_error(code: str, message: str, http_status: int = status.HTTP_401_UNAUTHORIZED) -> HTTPException:
@@ -370,21 +379,35 @@ def logout(
     ctx = resolve_auth_context(request)
     revoke_all = bool(payload.revoke_all) if payload else False
     if ctx.source == "jwt" and ctx.user_id is not None:
-        user = get_user_by_id(db, ctx.user_id)
-        if user is not None:
-            details = {"revoke_all": revoke_all, "role": ctx.role}
-            if revoke_all:
-                user.token_version = int(getattr(user, "token_version", 1) or 1) + 1
-            journal.record_audit_event(
-                db,
-                action="USER_LOGOUT",
-                actor_username=str(user.username),
-                entity_type="PLATFORM_USER",
-                entity_id=int(user.id),
-                entity_name=str(user.username),
-                details=details,
-            )
-            db.commit()
+        query = db.query(PlatformUser).filter(PlatformUser.id == int(ctx.user_id))
+        # Logout is an unguarded /auth endpoint by design. When revoke_all
+        # mutates the live epoch, protect against stale-JWT replay and races
+        # with concurrent refresh/password/MFA epoch rotations.
+        user = (query.with_for_update() if revoke_all else query).one_or_none()
+        stored_role = (user.role or "").strip().upper() if user else ""
+        if (
+            user is None or user.status != "ACTIVE"
+            or stored_role not in KNOWN_ROLES
+            or ctx.role != stored_role
+            or ctx.token_version is None
+            or int(user.token_version or 1) != int(ctx.token_version)
+            or (state_for_user(db, user).required and not ctx.mfa_verified)
+        ):
+            db.rollback()
+            return None  # Idempotent response; never mutate from a stale JWT.
+        details = {"revoke_all": revoke_all, "role": ctx.role}
+        if revoke_all:
+            user.token_version = int(user.token_version or 1) + 1
+        journal.record_audit_event(
+            db,
+            action="USER_LOGOUT",
+            actor_username=str(user.username),
+            entity_type="PLATFORM_USER",
+            entity_id=int(user.id),
+            entity_name=str(user.username),
+            details=details,
+        )
+        db.commit()
     return None
 
 

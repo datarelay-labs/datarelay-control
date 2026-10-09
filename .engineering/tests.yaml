@@ -90,6 +90,8 @@ scenarios:
       - "Expired challenge pruning skips verification-locked rows rather than causing lock timeout/deadlock."
       - "MFA enrollment password guesses and setup OTP guesses are rate-limited."
       - "Enrollment confirmation locks current JWT epoch before rotating credentials."
+      - "Unrecognized persisted roles cannot mint JWTs or revive sessions as Administrator/Viewer."
+      - "A revoked or stale JWT cannot repeat revoke_all logout or invalidate a newer session."
       - "IP throttle rejects spoofed forwarding headers; OTP failures survive API worker restarts."
       - "Read-only and governance-only users may enroll their own MFA without administrator privileges."
       - "MFA schema migration and rollback run in the guarded pytest catalog only."

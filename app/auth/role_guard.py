@@ -219,7 +219,11 @@ def _verify_live_jwt_authority(ctx: AuthContext) -> bool:
             user = db.query(PlatformUser).filter(
                 PlatformUser.id == int(ctx.user_id),
             ).one_or_none()
+            # Reject malformed persisted roles outright. Converting an
+            # unknown DB role to Viewer is unsafe even when the JWT says
+            # Viewer; no role should be inferred for a real account.
             if (user is None or user.status != "ACTIVE"
+                    or (user.role or "").strip().upper() not in KNOWN_ROLES
                     or int(user.token_version or 1) != ctx.token_version
                     or _normalize_role(user.role) != ctx.role):
                 return False

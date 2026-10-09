@@ -747,3 +747,119 @@ def test_expired_challenge_cleanup_skips_inflight_verification_lock(
         begin_password_challenge(next_login, account, _request_from("testclient"))
     db_session.expire_all()
     assert db_session.query(PlatformMfaChallenge).filter_by(token_hash=stale_hash).count() == 0
+
+
+@pytest.mark.parametrize("invalid_role", ["UNRECOGNIZED_ROLE", "admin", ""])
+def test_unknown_stored_role_never_issues_password_or_refresh_jwt(
+    client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch,
+    invalid_role: str,
+) -> None:
+    """An invalid stored identity role is never silently upgraded to admin."""
+    from app.auth.token_bundle import build_token_bundle
+    monkeypatch.setattr(settings, "REQUIRE_AUTH", True)
+    user = create_user(db_session, role=invalid_role)
+    username = str(user.username)
+    user_id = int(user.id)
+
+    first = client.post("/api/v1/auth/login", json={
+        "username": username, "password": PASSWORD,
+    })
+    assert first.status_code in (400, 401, 403), first.text
+    assert "access_token" not in first.text
+    assert "refresh_token" not in first.text
+    assert "challenge_token" not in first.text
+
+    # A still-valid signed Viewer token must not resurrect an account whose
+    # database role is outside the known persistent role vocabulary.
+    signed = build_token_bundle(
+        user_id=user_id, username=username,
+        role="VIEWER", token_version=1,
+        user_status="ACTIVE",
+    )
+    denied = client.get("/api/v1/auth/whoami", headers={
+        "Authorization": "Bearer " + signed.access_token,
+    })
+    assert denied.status_code == 401, denied.text
+    assert denied.json()["detail"]["error_code"] == "AUTH_TOKEN_REVOKED"
+
+    rotated = client.post("/api/v1/auth/refresh", json={
+        "refresh_token": signed.refresh_token,
+    })
+    assert rotated.status_code in (400, 401, 403), rotated.text
+    assert "access_token" not in rotated.text
+    assert "refresh_token" not in rotated.text
+
+
+def test_revoked_access_token_cannot_revoke_new_sessions_twice(
+    client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Revoked bearer tokens are not allowed to mutate any live login epoch."""
+    monkeypatch.setattr(settings, "REQUIRE_AUTH", True)
+    user = create_user(db_session)
+    user_id = int(user.id)
+    first = client.post("/api/v1/auth/login", json={
+        "username": USERNAME, "password": PASSWORD,
+    })
+    assert first.status_code == 200, first.text
+    stale = {"Authorization": "Bearer " + first.json()["access_token"]}
+    first_logout = client.post("/api/v1/auth/logout", headers=stale, json={
+        "revoke_all": True,
+    })
+    assert first_logout.status_code == 204, first_logout.text
+    db_session.expire_all()
+    initial_revocation_epoch = db_session.get(PlatformUser, user_id).token_version
+    assert initial_revocation_epoch == 2
+
+    next_session = client.post("/api/v1/auth/login", json={
+        "username": USERNAME, "password": PASSWORD,
+    })
+    assert next_session.status_code == 200
+    live_access = next_session.json()["access_token"]
+    # An old JWT can still have a valid signature and unexpired iat/exp,
+    # but it must not force-log-out newly established sessions.
+    for _ in range(2):
+        expired_logout = client.post("/api/v1/auth/logout", headers=stale, json={
+            "revoke_all": True,
+        })
+        assert expired_logout.status_code == 204, expired_logout.text
+    db_session.expire_all()
+    assert db_session.get(PlatformUser, user_id).token_version == initial_revocation_epoch
+    still_current = client.get("/api/v1/auth/whoami", headers={
+        "Authorization": "Bearer " + live_access,
+    })
+    assert still_current.status_code == 200, still_current.text
+
+
+def test_parallel_revoke_all_calls_advance_epoch_only_once(
+    client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Two API workers must not use one valid access JWT to revoke twice."""
+    from app.auth.router import LogoutRequest, logout
+
+    monkeypatch.setattr(settings, "REQUIRE_AUTH", True)
+    user = create_user(db_session)
+    user_id = int(user.id)
+    login = client.post("/api/v1/auth/login", json={
+        "username": USERNAME, "password": PASSWORD,
+    })
+    assert login.status_code == 200, login.text
+    jwt = login.json()["access_token"]
+    db_session.commit()
+    barrier = threading.Barrier(2)
+
+    def revoke(_: int) -> None:
+        # Do not share a SQLAlchemy Session or Request among threads.
+        barrier.wait(timeout=10)
+        req = Request({
+            "type": "http", "method": "POST", "path": "/api/v1/auth/logout",
+            "headers": [(b"authorization", ("Bearer " + jwt).encode())],
+            "client": ("testclient", 12345), "server": ("testserver", 80),
+        })
+        with SessionLocal() as session:
+            result = logout(req, LogoutRequest(revoke_all=True), db=session)
+            assert result is None
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        list(pool.map(revoke, (1, 2)))
+    db_session.expire_all()
+    assert db_session.get(PlatformUser, user_id).token_version == 2
