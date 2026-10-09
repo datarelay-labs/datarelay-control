@@ -584,21 +584,10 @@ export function AppShellLayout() {
   }, [headerTitle])
 
   const entityStatus = shellLabels.stream?.status ?? shellLabels.connector?.status
-  const runtimeHealthy = (
-    location.pathname.startsWith('/validation') ||
-    newStreamMatch ||
-    streamEditMatch ||
-    apiTestMatch ||
-    enrichmentMatch ||
-    routeEditMatch ||
-    mappingEditMatch ||
-    logsStreamMatch ||
-    destinationMatch
-  )
-    ? true
-    : entityStatus
-      ? entityStatus.toUpperCase() === 'RUNNING'
-      : activeNav !== 'logs'
+  // A scheduler RUNNING flag (or an open configuration page) does not prove
+  // runtime health, delivery success, or receiver ingestion. Until an observed
+  // runtime KPI is available in this shell, render an explicit unknown status.
+  const runtimeHealthy: boolean | null = null
   const runtimeSummary = location.pathname.startsWith('/help')
     ? 'In-product workflow guidance. Preview and configuration do not replace runtime verification.'
     : location.pathname.startsWith('/validation')

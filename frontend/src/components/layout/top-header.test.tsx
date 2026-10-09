@@ -9,7 +9,7 @@ function LocationProbe() {
   return <div data-testid="location">{location.pathname}</div>
 }
 
-function renderHeader(opts?: { mobileNavOpen?: boolean; onMobileNavToggle?: () => void }) {
+function renderHeader(opts?: { mobileNavOpen?: boolean; onMobileNavToggle?: () => void; runtimeHealthy?: boolean | null }) {
   const onToggleTheme = vi.fn()
   render(
     <MemoryRouter initialEntries={['/monitoring']}>
@@ -22,6 +22,7 @@ function renderHeader(opts?: { mobileNavOpen?: boolean; onMobileNavToggle?: () =
                 title="Dashboard"
                 isDark={false}
                 onToggleTheme={onToggleTheme}
+                runtimeHealthy={opts?.runtimeHealthy ?? null}
                 mobileNavOpen={opts?.mobileNavOpen}
                 onMobileNavToggle={opts?.onMobileNavToggle}
               />
@@ -94,9 +95,18 @@ describe('TopHeader SaaS shell', () => {
     )
   })
 
-  it('shows a calmer healthy runtime status label', () => {
+  it('does not invent Healthy, active-stream counts, or delivery state without evidence', () => {
     renderHeader()
+    expect(screen.getByLabelText('Runtime status')).toHaveTextContent('Not verified')
+    expect(screen.queryByText('Healthy')).not.toBeInTheDocument()
+    expect(screen.queryByText('24 streams active · delivery path nominal')).not.toBeInTheDocument()
+  })
+
+  it('uses green health only for explicitly supplied measurements', () => {
+    renderHeader({ runtimeHealthy: true })
     expect(screen.getByLabelText('Runtime status')).toHaveTextContent('Healthy')
-    expect(screen.queryByText('RUN')).not.toBeInTheDocument()
+    cleanup()
+    renderHeader({ runtimeHealthy: false })
+    expect(screen.getByLabelText('Runtime status')).toHaveTextContent('Attention')
   })
 })

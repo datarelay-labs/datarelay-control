@@ -895,7 +895,7 @@ export function NewStreamWizardPage() {
 
   const persistenceLabel = state.connector.apiBacked
     ? 'Changes will be saved to Data Relay Control when you create the stream.'
-    : 'Offline mode · this wizard is using a local draft until the Control API is available.'
+    : 'Local draft · Connector and Source availability are not yet verified. No runtime changes have been applied.'
 
   const nextLabel = NEXT_STEP_LABEL[currentStepKey]
 

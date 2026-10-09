@@ -13,7 +13,8 @@ type TopHeaderProps = {
   /** Optional breadcrumb row above the title (e.g. Streams / … / Runtime). */
   breadcrumb?: ReactNode
   runtimeSummary?: string
-  runtimeHealthy?: boolean
+  /** Only explicitly measured health may be green; null means not verified. */
+  runtimeHealthy?: boolean | null
   showRuntimeStatus?: boolean
   isDark: boolean
   onToggleTheme: () => void
@@ -28,8 +29,8 @@ type TopHeaderProps = {
 export function TopHeader({
   title,
   breadcrumb,
-  runtimeSummary = '24 streams active · delivery path nominal',
-  runtimeHealthy = true,
+  runtimeSummary = 'Runtime state has not been verified.',
+  runtimeHealthy = null,
   showRuntimeStatus = true,
   isDark,
   onToggleTheme,
@@ -83,17 +84,19 @@ export function TopHeader({
               {showRuntimeStatus ? <span
                 className={cn(
                   'inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium',
-                  runtimeHealthy
+                  runtimeHealthy === true
                     ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-100/90'
-                    : 'bg-amber-50 text-amber-900 dark:bg-amber-500/15 dark:text-amber-100/90',
+                    : runtimeHealthy === false
+                      ? 'bg-amber-50 text-amber-900 dark:bg-amber-500/15 dark:text-amber-100/90'
+                      : 'bg-slate-100 text-slate-600 dark:bg-gdc-elevated dark:text-gdc-mutedStrong',
                 )}
                 aria-label="Runtime status"
               >
                 <span
-                  className={cn('h-1.5 w-1.5 rounded-full', runtimeHealthy ? 'bg-emerald-500' : 'bg-amber-500')}
+                  className={cn('h-1.5 w-1.5 rounded-full', runtimeHealthy === true ? 'bg-emerald-500' : runtimeHealthy === false ? 'bg-amber-500' : 'bg-slate-400')}
                   aria-hidden
                 />
-                {runtimeHealthy ? 'Healthy' : 'Attention'}
+                {runtimeHealthy === true ? 'Healthy' : runtimeHealthy === false ? 'Attention' : 'Not verified'}
               </span> : null}
               <span className="min-w-0 text-xs leading-snug text-slate-600 dark:text-gdc-muted">{runtimeSummary}</span>
             </div>

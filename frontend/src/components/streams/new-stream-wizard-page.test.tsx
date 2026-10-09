@@ -57,6 +57,8 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
     expect(screen.queryByTestId('wizard-intent-picker')).not.toBeInTheDocument()
     expect(screen.getByTestId('wizard-step-connect')).toBeInTheDocument()
     expect(screen.getByTestId('wizard-stepper')).toBeInTheDocument()
+    expect(screen.getByText(/Connector and Source availability are not yet verified/i)).toBeInTheDocument()
+    expect(screen.queryByText(/Offline mode/i)).not.toBeInTheDocument()
   })
 
   it('keeps the original Wizard mounted after contextual Connector cancel', async () => {
