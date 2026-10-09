@@ -15,6 +15,7 @@ import { formatStreamLabel } from '../../utils/entityLabels'
 import { resolveStreamSourceTestShellTitle } from '../../utils/sourceTypePresentation'
 import { loadColorScheme, persistColorScheme, STORAGE_KEYS } from '../../localPreferences'
 import { RouteErrorBoundary } from './route-error-boundary'
+import { useShellRuntimeStatus } from '../../hooks/use-shell-runtime-status'
 
 function PlaceholderPage({ title }: { title: string }) {
   return (
@@ -584,10 +585,7 @@ export function AppShellLayout() {
   }, [headerTitle])
 
   const entityStatus = shellLabels.stream?.status ?? shellLabels.connector?.status
-  // A scheduler RUNNING flag (or an open configuration page) does not prove
-  // runtime health, delivery success, or receiver ingestion. Until an observed
-  // runtime KPI is available in this shell, render an explicit unknown status.
-  const runtimeHealthy: boolean | null = null
+  const operationalHeader = useShellRuntimeStatus(!location.pathname.startsWith('/help'))
   const runtimeSummary = location.pathname.startsWith('/help')
     ? 'In-product workflow guidance. Preview and configuration do not replace runtime verification.'
     : location.pathname.startsWith('/validation')
@@ -669,7 +667,9 @@ export function AppShellLayout() {
             showRuntimeStatus={!location.pathname.startsWith('/help')}
             breadcrumb={breadcrumb}
             runtimeSummary={runtimeSummary}
-            runtimeHealthy={runtimeHealthy}
+            runtimeHealthy={operationalHeader.healthy}
+            runtimeStatusLabel={operationalHeader.label}
+            runtimeStatusEvidence={operationalHeader.evidence}
             isDark={isDark}
             onToggleTheme={toggleTheme}
             mobileNavOpen={mobileNavOpen}

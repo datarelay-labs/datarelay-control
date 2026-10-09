@@ -15,6 +15,8 @@ type TopHeaderProps = {
   runtimeSummary?: string
   /** Only explicitly measured health may be green; null means not verified. */
   runtimeHealthy?: boolean | null
+  runtimeStatusLabel?: string
+  runtimeStatusEvidence?: string
   showRuntimeStatus?: boolean
   isDark: boolean
   onToggleTheme: () => void
@@ -31,6 +33,8 @@ export function TopHeader({
   breadcrumb,
   runtimeSummary = 'Runtime state has not been verified.',
   runtimeHealthy = null,
+  runtimeStatusLabel,
+  runtimeStatusEvidence,
   showRuntimeStatus = true,
   isDark,
   onToggleTheme,
@@ -96,9 +100,16 @@ export function TopHeader({
                   className={cn('h-1.5 w-1.5 rounded-full', runtimeHealthy === true ? 'bg-emerald-500' : runtimeHealthy === false ? 'bg-amber-500' : 'bg-slate-400')}
                   aria-hidden
                 />
-                {runtimeHealthy === true ? 'Healthy' : runtimeHealthy === false ? 'Attention' : 'Not verified'}
+                {runtimeStatusLabel ?? (runtimeHealthy === true ? 'Healthy' : runtimeHealthy === false ? 'Attention' : 'Not verified')}
               </span> : null}
-              <span className="min-w-0 text-xs leading-snug text-slate-600 dark:text-gdc-muted">{runtimeSummary}</span>
+              <div className="min-w-0 space-y-0.5">
+                <p className="text-xs leading-snug text-slate-600 dark:text-gdc-muted">{runtimeSummary}</p>
+                {showRuntimeStatus && runtimeStatusEvidence ? (
+                  <p data-testid="shell-runtime-evidence" className="text-[11px] leading-snug text-slate-500 dark:text-gdc-muted">
+                    {runtimeStatusEvidence}
+                  </p>
+                ) : null}
+              </div>
             </div>
           </div>
         </div>
