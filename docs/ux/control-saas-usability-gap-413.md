@@ -35,7 +35,7 @@ Evidence tiers used here:
 | [Elastic Kibana Interface](https://www.elastic.co/docs/explore-analyze/find-and-organize/kibana-interface) | Stable navigation, global context, page actions, and contextual flyouts | Keep current shell and contextual help; emphasize primary tasks and the active location |
 | [Mezmo Demo Pipeline](https://docs.mezmo.com/telemetry-pipelines/demo-pipeline-guide) | A working guided example presents Sources, Processors, Destinations | Surface practical onboarding instructions; preserve the already-merged optional demo/sample path |
 
-The table supports UI patterns, not competitor parity claims or a conclusion that each vendor currently implements every roadmap feature.
+The table supports UI patterns, not competitor parity claims or a conclusion that each vendor currently implements every roadmap feature. Official Cribl and Datadog pages were cross-checked again on 2026-10-09: Cribl separately presents drag-and-drop QuickConnect and condition-based Routes; Datadog's current setup documentation starts with use-case templates and explicitly guides source → destination → processor simulation. These approaches are references only; DataRelay continues to use its approved five-step Destination First Wizard, not the competitors' product model.
 
 ## Baseline vs implemented UX gap
 
@@ -129,10 +129,14 @@ Templates remain existing `applyWizardIntentTemplate` state setters; they do not
 ## Verification and remaining checkpoints
 
 - [x] Independent worktree and branch based on `main-v2` `b45ad9d`.
-- [x] Affected unit/component tests: 42/42 PASS (4 test files).
+- [x] Initial affected Dashboard/Sidebar/Wizard tests: 42/42 PASS (4 test files).
+- [x] CI race remediation: Route Processing preserves the operator-selected Data Protection tab during late effective-status hydration; a deterministic deferred-response regression test covers this.
+- [x] Affected UI + Route Processing tests after remediation: 49/49 PASS (5 test files).
 - [x] `npm run build`: PASS.
 - [x] `npm run lint`: PASS with 74 preexisting warnings and zero errors.
-- [ ] Documentation integrity test and wider affected regression suite.
+- [x] Documentation Source-of-Truth integrity test: PASS (9 current documents / 89 specs).
+- [x] Initial source revision full frontend suite (7b73c0d): 1,740/1,740 PASS locally across 298 test files.
+- [ ] Updated source revision complete CI test/build after the route-status race fix: check exact new HEAD; do not treat the previous full suite as new-HEAD evidence.
 - [ ] Authenticated 1440/375/320 Chromium before/after comparison on exact UX branch HEAD: **NOT VERIFIED** (#410 exclusive browser audit lock).
 - [ ] Browser Feature Scenario Reconciliation: **NOT PASS**.
 - [ ] Full User E2E and owner acceptance: **NOT PASS**.

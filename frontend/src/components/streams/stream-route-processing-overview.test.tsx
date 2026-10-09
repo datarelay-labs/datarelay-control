@@ -312,6 +312,39 @@ describe('StreamRouteProcessingOverview', () => {
     expect(screen.queryByTestId('stream-route-inherit-classification')).not.toBeInTheDocument()
   })
 
+  it('retains a selected protection tab after late route-effective hydration', async () => {
+    let finishPolicy: () => void = () => {}
+    const pendingPolicy = new Promise<void>((resolve) => { finishPolicy = resolve })
+    fetchRoutePolicyEffective.mockImplementation(async (id: number) => {
+      await pendingPolicy
+      return {
+        route_id: id,
+        stream_id: 10,
+        persisted_source: id === 42 ? 'mixed' : 'stream',
+        fallback_used: true,
+        rule_count: 0,
+        processing_status: id === 42 ? 'Mixed' : 'Inherited',
+      }
+    })
+
+    render(
+      <MemoryRouter>
+        <StreamRouteProcessingOverview streamId={10} />
+      </MemoryRouter>,
+    )
+
+    fireEvent.click(await screen.findByTestId('stream-route-detail-tab-data_protection'))
+    expect(await screen.findByTestId('route-processing-data-protection-section')).toBeInTheDocument()
+    expect(screen.getByTestId('stream-route-detail-tab-data_protection')).toHaveAttribute('aria-selected', 'true')
+
+    finishPolicy()
+    await waitFor(() => {
+      expect(screen.getByTestId('route-header-row-policy')).toHaveTextContent('Policy: Mixed')
+      expect(screen.getByTestId('stream-route-detail-tab-data_protection')).toHaveAttribute('aria-selected', 'true')
+      expect(screen.getByTestId('route-processing-data-protection-section')).toBeInTheDocument()
+    })
+  })
+
   it('switches to shared mode workspace when selecting an all-inherited route', async () => {
     render(
       <MemoryRouter>
