@@ -154,6 +154,7 @@ def evaluate_http_access(*, role: str, method: str, path: str) -> AccessDenied |
         f"{base}/admin/dev-validation/status",
         f"{base}/admin/support-bundle",
         f"{base}/admin/network-settings",
+        f"{base}/admin/management-access",
         f"{base}/admin/users",
     )
     for prefix in admin_exclusive:
