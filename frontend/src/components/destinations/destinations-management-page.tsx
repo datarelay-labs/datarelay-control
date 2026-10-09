@@ -62,6 +62,7 @@ import {
 } from './destination-mini-charts'
 
 const DESTINATIONS_HELP: PageHelpContent = {
+  docsHref: '/help/delivery',
   title: 'Destinations',
   intro:
     'Destinations are reusable delivery endpoints. Routes connect a Stream to a Destination and own destination-specific delivery and processing behavior.',

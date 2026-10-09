@@ -55,6 +55,14 @@ describe('TopHeader SaaS shell', () => {
     expect(screen.getByTestId('location')).toHaveTextContent(SHELL_ALERTS_PATH)
   })
 
+  it('keeps step-by-step help available from every workspace without abandoning edits', () => {
+    renderHeader()
+    const help = screen.getByRole('link', { name: 'Open Help Center' })
+    expect(help).toHaveAttribute('href', '/help')
+    expect(help).toHaveAttribute('target', '_blank')
+    expect(help).toHaveAttribute('rel', 'noopener noreferrer')
+  })
+
   it('preserves theme toggle and refresh actions', () => {
     const { onToggleTheme } = renderHeader()
     expect(screen.getByRole('button', { name: 'Toggle color theme' })).toBeInTheDocument()

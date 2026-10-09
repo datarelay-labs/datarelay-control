@@ -113,6 +113,7 @@ const FOUNDATION_ADMIN_PATH = new Map(
 )
 
 const ADMINISTRATION_HELP: PageHelpContent = {
+  docsHref: '/help/administration',
   title: 'Administration',
   intro: 'Administration is for platform access, security, network, lifecycle, recovery, and audit settings. Data-flow configuration stays with Connectors, Streams, Routes, and Destinations.',
   sections: [

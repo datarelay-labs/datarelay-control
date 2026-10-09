@@ -38,6 +38,7 @@ const governanceCardClass = gdcUi.cardShell + ' px-4 py-3'
 const WINDOW_OPTIONS: ViolationWindow[] = ['24h', '7d', '30d']
 
 const GOVERNANCE_HELP: PageHelpContent = {
+  docsHref: '/help/governance',
   title: 'Governance Dashboard',
   intro:
     'Use this page to answer two questions first: Is governance healthy, and what needs attention now? Configuration belongs to the owning Stream or Route context; this dashboard is for operations and investigation.',

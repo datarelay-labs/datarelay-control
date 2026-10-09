@@ -45,6 +45,7 @@ const selectClass = cn(
 )
 
 const DASHBOARD_HELP: PageHelpContent = {
+  docsHref: '/help/operations',
   title: 'Dashboard',
   intro: 'Start here to see whether DataRelay needs your attention. This page summarizes operational truth; use the linked workspaces to investigate or change configuration.',
   sections: [

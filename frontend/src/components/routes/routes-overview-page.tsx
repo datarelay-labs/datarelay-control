@@ -63,6 +63,7 @@ const WINDOW_OPTIONS: { value: MetricsWindow; label: string }[] = [
 ]
 
 const ROUTES_HELP: PageHelpContent = {
+  docsHref: '/help/delivery',
   title: 'Routes',
   intro: 'A Route is the destination-specific delivery path from one Stream to one Destination. Use Routes when the same Stream needs different processing or delivery behavior for different destinations.',
   sections: [

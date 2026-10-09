@@ -1,6 +1,6 @@
 import type { ReactNode, Ref } from 'react'
-import { Bell, Menu, Moon, RefreshCw, Settings, Sun, X } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { Bell, CircleHelp, Menu, Moon, RefreshCw, Settings, Sun, X } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
 import { NAV_PATH } from '../../config/nav-paths'
 import { cn } from '../../lib/utils'
 import { GDC_HEADER_REFRESH_EVENT } from './header-refresh-event'
@@ -14,6 +14,7 @@ type TopHeaderProps = {
   breadcrumb?: ReactNode
   runtimeSummary?: string
   runtimeHealthy?: boolean
+  showRuntimeStatus?: boolean
   isDark: boolean
   onToggleTheme: () => void
   onRefresh?: () => void
@@ -29,6 +30,7 @@ export function TopHeader({
   breadcrumb,
   runtimeSummary = '24 streams active · delivery path nominal',
   runtimeHealthy = true,
+  showRuntimeStatus = true,
   isDark,
   onToggleTheme,
   onRefresh,
@@ -78,7 +80,7 @@ export function TopHeader({
             </div>
             <div className="hidden h-4 w-px shrink-0 bg-slate-200 dark:bg-gdc-border sm:block" aria-hidden />
             <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <span
+              {showRuntimeStatus ? <span
                 className={cn(
                   'inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium',
                   runtimeHealthy
@@ -92,13 +94,24 @@ export function TopHeader({
                   aria-hidden
                 />
                 {runtimeHealthy ? 'Healthy' : 'Attention'}
-              </span>
+              </span> : null}
               <span className="min-w-0 text-xs leading-snug text-slate-600 dark:text-gdc-muted">{runtimeSummary}</span>
             </div>
           </div>
         </div>
 
         <div className="flex shrink-0 items-center gap-1" {...(mobileNavOpen ? { inert: true } : {})}>
+          <Link
+            to="/help"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex h-[34px] w-[34px] items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500 dark:text-gdc-muted dark:hover:bg-gdc-rowHover"
+            aria-label="Open Help Center"
+            title="Help Center"
+            data-testid="shell-help-center"
+          >
+            <CircleHelp className="h-4 w-4" aria-hidden />
+          </Link>
           <button
             type="button"
             onClick={() => navigate(SHELL_ALERTS_PATH)}

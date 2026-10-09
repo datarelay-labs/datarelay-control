@@ -14,6 +14,7 @@ import {
   LazyConnectorDetailPage,
   LazyConnectorsOverviewPage,
   LazyDashboardOverview,
+  LazyHelpCenterPage,
   LazyDestinationDetailPage,
   LazyDestinationsManagementPage,
   LazyGovernanceDashboardPage,
@@ -69,6 +70,8 @@ export default function App() {
         <Route path="streams/:streamId/mapping" element={<LazyStreamMappingPage />} />
         <Route path="streams/:streamId/edit" element={<LazyStreamEditPage />} />
         <Route path="monitoring" element={<LazyDashboardOverview />} />
+        <Route path="help" element={<LazyHelpCenterPage />} />
+        <Route path="help/:topic" element={<LazyHelpCenterPage />} />
         <Route path="alerts" element={<LazyOperationalAlertsPage />} />
         <Route path="monitoring/streams" element={<PreserveSearchRedirect to={NAV_PATH.streams} />} />
         <Route path="monitoring/topology" element={<PreserveSearchRedirect to={NAV_PATH.dashboard} />} />
