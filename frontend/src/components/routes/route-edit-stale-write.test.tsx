@@ -174,6 +174,34 @@ describe('RouteEditPage stale-write conflict', () => {
     })
   })
 
+  it('names the persisted existing Route in discard confirmation, not a new or unsaved Route', async () => {
+    renderRouteEdit()
+    fireEvent.change(await screen.findByDisplayValue('50'), { target: { value: '77' } })
+    fireEvent.click(screen.getByTestId('route-edit-cancel'))
+    const dialog = await screen.findByTestId('route-edit-discard-dialog')
+    expect(dialog).toHaveTextContent('Target: Route #42 — Route A')
+    expect(dialog).not.toHaveTextContent('Target: New Route')
+    fireEvent.click(screen.getByTestId('route-edit-discard-dialog-cancel'))
+    expect(screen.queryByTestId('route-edit-discard-dialog')).not.toBeInTheDocument()
+    expect(screen.getByDisplayValue('77')).toBeInTheDocument()
+  })
+
+  it('never labels an existing Route as New Route when its saved name is unavailable', async () => {
+    fetchRouteById.mockResolvedValue({
+      id: 42, name: '', description: 'desc', enabled: true,
+      stream_id: 10, destination_id: 5,
+      failure_policy: 'RETRY_AND_BACKOFF',
+      formatter_config_json: { delivery_mode: 'Reliable' },
+      rate_limit_json: { enabled: true, per_second: 50, burst_size: 100 },
+      updated_at: '2026-01-01T00:00:00Z',
+    })
+    renderRouteEdit()
+    fireEvent.change(await screen.findByDisplayValue('50'), { target: { value: '77' } })
+    fireEvent.click(screen.getByTestId('route-edit-cancel'))
+    expect(await screen.findByTestId('route-edit-discard-dialog')).toHaveTextContent('Target: Route #42')
+    expect(screen.getByTestId('route-edit-discard-dialog')).not.toHaveTextContent('Target: New Route')
+  })
+
   it('refresh latest requires discard confirmation while dirty, then reloads server baseline', async () => {
     updateRoute.mockRejectedValue(new Error('409: [ROUTE_STALE_WRITE] stale'))
     fetchRouteById

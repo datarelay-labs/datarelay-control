@@ -631,6 +631,12 @@ export function RouteEditPage() {
     }
   }
 
+  // Confirmation identifies the persisted Route, not a draft name or the create-form placeholder.
+  const persistedRouteLabel = deliveryBaseline?.routeName?.trim() ?? ''
+  const confirmationTargetName = isCreateMode
+    ? routeName.trim() || 'New Route'
+    : `Route #${backendRouteId}${persistedRouteLabel && persistedRouteLabel !== ROUTE_EDIT_DEFAULTS.routeName ? ` — ${persistedRouteLabel}` : ''}`
+
   const saveStatusLabel = !canMutateWorkspace
     ? 'Read-only'
     : isSaving
@@ -1193,7 +1199,7 @@ export function RouteEditPage() {
             if (!open) setDiscardOpen(false)
           }}
           title="Discard unsaved route changes?"
-          targetName={routeName.trim() || (isCreateMode ? 'New Route' : `Route #${backendRouteId}`)}
+          targetName={confirmationTargetName}
           risk="medium"
           impactBullets={[
             'Local delivery and transform edits that were not saved will be discarded.',
@@ -1217,7 +1223,7 @@ export function RouteEditPage() {
             if (!open) setRefreshConfirmOpen(false)
           }}
           title="Refresh and discard unsaved route changes?"
-          targetName={routeName.trim() || `Route #${backendRouteId}`}
+          targetName={confirmationTargetName}
           risk="medium"
           impactBullets={[
             'Your unsaved local edits will be discarded.',
