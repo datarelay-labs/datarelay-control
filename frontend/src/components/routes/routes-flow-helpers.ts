@@ -36,6 +36,41 @@ export type RouteFlowStreamGroup = {
   routes: RouteFlowRouteRow[]
 }
 
+/**
+ * Operator-facing attention is based on the existing route snapshot health,
+ * not configured status alone and never on summed fan-out throughput.
+ */
+export type RouteFlowAttentionItem = {
+  streamId: number
+  streamName: string
+  routeId: number
+  destinationName: string
+  status: 'Error' | 'Warning'
+}
+
+export function listRouteFlowAttention(groups: readonly RouteFlowStreamGroup[]): RouteFlowAttentionItem[] {
+  const items: RouteFlowAttentionItem[] = []
+  for (const group of groups) {
+    for (const route of group.routes) {
+      if (!route.enabled || (route.health !== 'Error' && route.health !== 'Warning')) continue
+      items.push({
+        streamId: group.streamId,
+        streamName: group.streamName,
+        routeId: route.routeId,
+        destinationName: route.destinationName,
+        status: route.health,
+      })
+    }
+  }
+  // Errors first, then warnings. Use stable numeric identities for equal-severity
+  // items so duplicate names cannot hijack Route selection.
+  return items.sort((a, b) =>
+    (a.status === 'Error' ? 0 : 1) - (b.status === 'Error' ? 0 : 1) ||
+    a.streamId - b.streamId ||
+    a.routeId - b.routeId,
+  )
+}
+
 export type ProblemRouteRow = {
   routeId: number
   routeLabel: string

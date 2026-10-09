@@ -13,6 +13,7 @@ import {
   buildRouteFlowTree,
   formatFlowEps,
   isRouteSnapshotStale,
+  listRouteFlowAttention,
   formatFlowSuccessRate,
   routeHealthBadgeClass,
   routePublicId,
@@ -53,6 +54,26 @@ export function RoutesArchitectureWorkspace({
   const inspectedMetric = snapshot?.routes.find((route) =>
     route.route_id === selectedRoute?.routeId && route.stream_id === selectedGroup?.streamId)
   const evidenceStale = requestFailed || isRouteSnapshotStale(snapshot?.updated_at)
+  const attention = useMemo(() => listRouteFlowAttention(groups), [groups])
+  const [allAttentionVisible, setAllAttentionVisible] = useState(false)
+  const [allPathsVisible, setAllPathsVisible] = useState(false)
+  const attentionVisible = allAttentionVisible ? attention : attention.slice(0, 4)
+  // Keep the selected Route visible without forcing hundreds of unrelated
+  // paths into the DOM when an operator reviews a deep/low-throughput issue.
+  const firstPaths = selectedGroup?.routes.slice(0, 12) ?? []
+  const visiblePaths = selectedGroup && allPathsVisible
+    ? selectedGroup.routes
+    : selectedRoute && !firstPaths.some((route) => route.routeId === selectedRoute.routeId)
+      ? [...firstPaths, selectedRoute]
+      : firstPaths
+  const disabledPaths = groups.reduce((total, group) => total + group.routes.filter((route) => !route.enabled).length, 0)
+
+  function reviewAttention(item: (typeof attention)[number]) {
+    // Numeric Route and Stream IDs prevent same-name entities from leaking into each other's inspector.
+    setInspectedRouteId(item.routeId)
+    setAllPathsVisible(false)
+    onSelectStream(item.streamId)
+  }
 
   return (
     <section
@@ -60,17 +81,17 @@ export function RoutesArchitectureWorkspace({
       aria-label="Delivery architecture"
       className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gdc-border dark:bg-gdc-card"
     >
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200/80 bg-gradient-to-r from-slate-50 via-white to-violet-50/50 px-5 py-5 dark:border-gdc-border dark:from-gdc-panel dark:via-gdc-card dark:to-gdc-card sm:px-6">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200/80 bg-gradient-to-r from-slate-50 via-white to-violet-50/50 px-4 py-3.5 dark:border-gdc-border dark:from-gdc-panel dark:via-gdc-card dark:to-gdc-card sm:px-6">
         <div className="space-y-2">
           <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.1em] text-violet-700 dark:text-violet-300">
             <Network className="h-4 w-4" aria-hidden /> Delivery workspace
           </p>
-          <h2 className="text-xl font-semibold tracking-tight text-slate-900 dark:text-slate-50 sm:text-2xl">
+          <h2 className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-50 sm:text-xl">
             Delivery architecture
           </h2>
           <p className="max-w-3xl text-sm leading-6 text-slate-600 dark:text-gdc-mutedStrong">
-            Choose a Stream to see where its events go. Select a Route to inspect its delivery status,
-            processing ownership, and destination. Configure collection on Streams; configure delivery here.
+            Follow a Stream through its Routes to the receiving Destinations. Review paths that need
+            attention, or select any Route for details; collection setup stays in Streams.
           </p>
         </div>
         <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-200">
@@ -86,6 +107,70 @@ export function RoutesArchitectureWorkspace({
           One Stream can fan out through many Routes to many Destinations without collecting the same source twice.
         </p>
       </div>
+
+      {snapshot && groups.length > 0 ? (
+        <section
+          aria-label="Route delivery attention"
+          data-testid="routes-architecture-attention"
+          className="space-y-2 border-b border-slate-200/80 bg-white px-4 py-3 dark:border-gdc-border dark:bg-gdc-card sm:px-6"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Delivery attention</h3>
+              <p className="mt-0.5 text-xs text-slate-600 dark:text-gdc-mutedStrong">
+                {evidenceStale ? 'Last reported Route conditions · snapshot stale or fetch failed' : 'Route warnings and errors from the current snapshot'}
+                {' · '}{attention.length} need attention
+                {' · '}{disabledPaths} disabled
+              </p>
+            </div>
+            {attention.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => reviewAttention(attention[0]!)}
+                data-testid="routes-architecture-review-first"
+                className="inline-flex min-h-9 items-center gap-1 rounded-lg bg-violet-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-violet-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500"
+              >
+                Review highest priority <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+              </button>
+            ) : (
+              <span className="text-xs text-slate-500 dark:text-gdc-muted">
+                No Route errors or warnings reported; receiver ingestion is not thereby verified.
+              </span>
+            )}
+          </div>
+          {attention.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-2" data-testid="routes-architecture-issue-list">
+              {attentionVisible.map((item) => (
+                <button
+                  key={item.routeId}
+                  type="button"
+                  onClick={() => reviewAttention(item)}
+                  aria-label={`Inspect ${item.status} Route ${routePublicId(item.routeId)} in Stream #${item.streamId}`}
+                  className={cn(
+                    'inline-flex min-h-9 min-w-0 max-w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500',
+                    item.status === 'Error'
+                      ? 'border-red-300 bg-red-50 text-red-900 hover:bg-red-100 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-200'
+                      : 'border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200',
+                  )}
+                >
+                  <span>{evidenceStale ? 'Last reported ' : ''}{item.status}</span>
+                  <span className="truncate font-medium">{item.streamName} #{item.streamId} · {routePublicId(item.routeId)} → {item.destinationName}</span>
+                </button>
+              ))}
+              {attention.length > 4 ? (
+                <button
+                  type="button"
+                  aria-expanded={allAttentionVisible}
+                  onClick={() => setAllAttentionVisible((value) => !value)}
+                  className="min-h-9 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-violet-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:border-gdc-border dark:text-violet-300"
+                >
+                  {allAttentionVisible ? 'Show fewer issues' : `Show all ${attention.length} issues`}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       {!snapshot ? (
         <div className="px-6 py-12 text-center text-sm text-slate-600 dark:text-gdc-muted" role="status">
@@ -118,7 +203,7 @@ export function RoutesArchitectureWorkspace({
                     aria-pressed={selected}
                     aria-label={`Inspect delivery for ${group.streamName} (Stream #${group.streamId})`}
                     data-testid={`routes-architecture-stream-${group.streamId}`}
-                    onClick={() => { setInspectedRouteId(null); onSelectStream(group.streamId) }}
+                    onClick={() => { setInspectedRouteId(null); setAllPathsVisible(false); onSelectStream(group.streamId) }}
                     className={cn(
                       'flex min-w-[160px] flex-1 items-center justify-between gap-3 rounded-lg border px-3 py-3 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 xl:min-w-0 xl:flex-none',
                       selected
@@ -181,8 +266,8 @@ export function RoutesArchitectureWorkspace({
                     <p>02 · Route Processing</p>
                     <p>03 · Destination</p>
                   </div>
-                  <ol aria-label={`Delivery paths from ${selectedGroup.streamName}`} className="max-h-[540px] space-y-2 overflow-y-auto pr-1">
-                    {selectedGroup.routes.map((route) => {
+                  <ol id="routes-architecture-delivery-paths" aria-label={`Delivery paths from ${selectedGroup.streamName} (Stream #${selectedGroup.streamId})`} className="max-h-[540px] space-y-2 overflow-y-auto pr-1">
+                    {visiblePaths.map((route) => {
                       const selected = route.routeId === selectedRoute?.routeId
                       const hasDestination = validId(route.destinationId)
                       return (
@@ -191,6 +276,7 @@ export function RoutesArchitectureWorkspace({
                             <button
                               type="button"
                               aria-pressed={selected}
+                              aria-controls="routes-architecture-inspector-panel"
                               onClick={() => setInspectedRouteId(route.routeId)}
                               data-testid={`routes-architecture-route-${route.routeId}`}
                               className={cn(
@@ -234,16 +320,31 @@ export function RoutesArchitectureWorkspace({
                       )
                     })}
                   </ol>
+                  {selectedGroup.routes.length > 12 ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAllPathsVisible((current) => !current)
+                        if (allPathsVisible) setInspectedRouteId(null)
+                      }}
+                      aria-expanded={allPathsVisible}
+                      aria-controls="routes-architecture-delivery-paths"
+                      data-testid="routes-architecture-show-paths"
+                      className="mt-2 w-full min-h-9 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-violet-700 hover:bg-violet-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:border-gdc-border dark:text-violet-300 dark:hover:bg-gdc-rowHover"
+                    >
+                      {allPathsVisible ? 'Show fewer delivery paths' : `Show all ${selectedGroup.routes.length} delivery paths (${visiblePaths.length} shown)`}
+                    </button>
+                  ) : null}
                 </div>
               </div>
 
               {selectedRoute ? (
-                <section data-testid="routes-architecture-inspector" aria-label="Selected Route details" className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 dark:border-gdc-border dark:bg-gdc-section/60">
+                <section id="routes-architecture-inspector-panel" data-testid="routes-architecture-inspector" aria-label="Selected Route details" className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 dark:border-gdc-border dark:bg-gdc-section/60">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500 dark:text-gdc-muted">Selected delivery path</p>
-                      <h4 className="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
-                        Route {routePublicId(selectedRoute.routeId)} · {selectedRoute.destinationName}
+                      <h4 aria-live="polite" className="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                        Stream #{selectedGroup.streamId} · Route {routePublicId(selectedRoute.routeId)} · {selectedRoute.destinationName}
                       </h4>
                       <p className="mt-1 text-xs text-slate-500 dark:text-gdc-muted">
                         This Route owns destination-specific Transform, Protection, Policy and delivery settings.
@@ -271,7 +372,7 @@ export function RoutesArchitectureWorkspace({
                       </dd>
                     </div>
                     <div>
-                      <dt className="text-[11px] text-slate-500 dark:text-gdc-muted">Delivered throughput</dt>
+                      <dt className="text-[11px] text-slate-500 dark:text-gdc-muted">Route output (1m, gateway-reported)</dt>
                       <dd className="mt-1 text-xs font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatFlowEps(selectedRoute.eps)}</dd>
                     </div>
                     <div>

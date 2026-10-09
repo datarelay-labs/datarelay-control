@@ -5,6 +5,7 @@ import {
   buildDestinationRouteMetrics,
   buildProblemRoutes,
   buildRouteFlowTree,
+  listRouteFlowAttention,
   isRouteSnapshotStale,
   aggregateGlobalErrorRateFromRoutes,
 } from './routes-flow-helpers'
@@ -202,6 +203,20 @@ describe('routes-flow-helpers', () => {
     )
     expect(tree[1]?.streamName).toBe('AWS CloudTrail')
     expect(tree[1]?.routes).toHaveLength(1)
+  })
+
+  it('orders cross-Stream attention by snapshot-backed severity and stable ID, excluding disabled paths', () => {
+    const routes = [
+      { ...snapshot.routes[0]!, route_id: 41, health_status: 'DEGRADED' as const },
+      { ...snapshot.routes[1]!, route_id: 42, health_status: 'ERROR' as const },
+      { ...snapshot.routes[2]!, route_id: 43, health_status: 'ERROR' as const, enabled: false },
+    ]
+    const changed = { ...snapshot, routes }
+    const items = listRouteFlowAttention(buildRouteFlowTree(changed, buildRouteRowsFromOperationalSnapshot(changed)))
+    expect(items.map((item) => [item.status, item.streamId, item.routeId])).toEqual([
+      ['Error', 1, 42],
+      ['Warning', 1, 41],
+    ])
   })
 
   it('does not substitute delivered route EPS when stream ingest EPS is unavailable', () => {
