@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -31,16 +31,20 @@ const fetchDestinationsList = vi.hoisted(() =>
 )
 
 const invalidateDestinationsListCache = vi.hoisted(() => vi.fn())
+const testDestination = vi.hoisted(() => vi.fn())
 
 vi.mock('../../../api/gdcDestinations', () => ({
   fetchDestinationsList: (...args: unknown[]) => fetchDestinationsList(...args),
   invalidateDestinationsListCache: () => invalidateDestinationsListCache(),
+  testDestination: (...args: unknown[]) => testDestination(...args),
 }))
 
 describe('StepDelivery', () => {
 
   beforeEach(() => {
     invalidateDestinationsListCache.mockClear()
+    testDestination.mockReset()
+    testDestination.mockResolvedValue({ success: true, message: 'Endpoint responded', latency_ms: 12.4, tested_at: '2026-10-09T07:00:00Z' })
     fetchDestinationsList.mockReset()
     fetchDestinationsList.mockResolvedValue([
       {
@@ -170,6 +174,107 @@ describe('StepDelivery', () => {
         }),
       )
     })
+  })
+
+  it('shows the destination connectivity check result without claiming Stream delivery', async () => {
+    const user = userEvent.setup()
+    const state = buildInitialState()
+    state.destinations.routeDrafts = [{
+      key: 'probe-route',
+      destinationId: 1,
+      enabled: true,
+      failurePolicy: 'RETRY_AND_BACKOFF',
+      rateLimitJson: {},
+    }]
+    const onChange = vi.fn()
+    render(<MemoryRouter><StepDelivery state={state} onChange={onChange} /></MemoryRouter>)
+    const card = await screen.findByTestId('destination-route-card-probe-route')
+    await user.click(within(card).getByRole('button', { name: 'Actions for Stellar Syslog' }))
+    await user.click(within(card).getByRole('menuitem', { name: 'Test destination' }))
+
+    expect(testDestination).toHaveBeenCalledWith(1)
+    const result = await within(card).findByRole('status')
+    expect(result).toHaveTextContent('Connection check passed')
+    expect(result).toHaveTextContent('Endpoint responded')
+    expect(result).toHaveTextContent('not end-to-end Stream delivery')
+    expect(card).not.toHaveTextContent('Delivery proven')
+    expect(onChange).not.toHaveBeenCalledWith(expect.objectContaining({ routeDrafts: expect.anything() }))
+  })
+
+  it('surfaces an API-confirmed failed connectivity check as actionable failure, not success', async () => {
+    const user = userEvent.setup()
+    testDestination.mockResolvedValueOnce({
+      success: false, message: 'Connection refused', latency_ms: 3.2, tested_at: '2026-10-09T07:00:00Z',
+    })
+    const state = buildInitialState()
+    state.destinations.routeDrafts = [{
+      key: 'failed-probe',
+      destinationId: 2,
+      enabled: true,
+      failurePolicy: 'RETRY_AND_BACKOFF',
+      rateLimitJson: {},
+    }]
+    render(<MemoryRouter><StepDelivery state={state} onChange={vi.fn()} /></MemoryRouter>)
+    const card = await screen.findByTestId('destination-route-card-failed-probe')
+    await user.click(within(card).getByRole('button', { name: 'Actions for Backup Webhook' }))
+    await user.click(within(card).getByRole('menuitem', { name: 'Test destination' }))
+    const result = await within(card).findByRole('alert')
+    expect(result).toHaveTextContent('Connection check failed')
+    expect(result).toHaveTextContent('Connection refused')
+    expect(result).toHaveTextContent('Open destination')
+    expect(result).not.toHaveTextContent('Connection check passed')
+  })
+
+  it('distinguishes test request failure from a failed endpoint check', async () => {
+    const user = userEvent.setup()
+    testDestination.mockRejectedValueOnce(new Error('private-secret-value'))
+    const state = buildInitialState()
+    state.destinations.routeDrafts = [{
+      key: 'unavailable-probe',
+      destinationId: 1,
+      enabled: true,
+      failurePolicy: 'RETRY_AND_BACKOFF',
+      rateLimitJson: {},
+    }]
+    render(<MemoryRouter><StepDelivery state={state} onChange={vi.fn()} /></MemoryRouter>)
+    const card = await screen.findByTestId('destination-route-card-unavailable-probe')
+    await user.click(within(card).getByRole('button', { name: 'Actions for Stellar Syslog' }))
+    await user.click(within(card).getByRole('menuitem', { name: 'Test destination' }))
+    const result = await within(card).findByRole('alert')
+    expect(result).toHaveTextContent('Connection check unavailable')
+    expect(result).toHaveTextContent('Check authentication and API connectivity')
+    expect(result).not.toHaveTextContent('private-secret-value')
+    expect(result).not.toHaveTextContent('Connection check passed')
+  })
+
+  it('replaces stale positive probe feedback during a new test and shows the new failed result', async () => {
+    const user = userEvent.setup()
+    let releaseTest: (result: { success: boolean; message: string; latency_ms: number; tested_at: string }) => void = () => {}
+    testDestination.mockResolvedValueOnce({
+      success: true, message: 'Probe passed', latency_ms: 8, tested_at: '2026-10-09T07:00:00Z',
+    }).mockImplementationOnce(() => new Promise((resolve) => { releaseTest = resolve }))
+    const state = buildInitialState()
+    state.destinations.routeDrafts = [{
+      key: 'repeated-probe',
+      destinationId: 1,
+      enabled: true,
+      failurePolicy: 'RETRY_AND_BACKOFF',
+      rateLimitJson: {},
+    }]
+    render(<MemoryRouter><StepDelivery state={state} onChange={vi.fn()} /></MemoryRouter>)
+    const card = await screen.findByTestId('destination-route-card-repeated-probe')
+    await user.click(within(card).getByRole('button', { name: 'Actions for Stellar Syslog' }))
+    await user.click(within(card).getByRole('menuitem', { name: 'Test destination' }))
+    expect(await within(card).findByText(/Connection check passed/)).toBeInTheDocument()
+
+    await user.click(within(card).getByRole('button', { name: 'Actions for Stellar Syslog' }))
+    await user.click(within(card).getByRole('menuitem', { name: 'Test destination' }))
+    expect(within(card).getByTestId('destination-connectivity-loading-repeated-probe')).toHaveTextContent('Checking destination connectivity')
+    expect(within(card).queryByText(/Connection check passed/)).not.toBeInTheDocument()
+    releaseTest({ success: false, message: 'Connection timed out', latency_ms: 45, tested_at: '2026-10-09T07:01:00Z' })
+    expect(await within(card).findByRole('alert')).toHaveTextContent('Connection timed out')
+    expect(within(card).queryByTestId('destination-connectivity-loading-repeated-probe')).not.toBeInTheDocument()
+    expect(testDestination).toHaveBeenCalledTimes(2)
   })
 
   it('does not expose route delivery tuning controls', async () => {

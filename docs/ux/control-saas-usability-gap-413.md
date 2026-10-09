@@ -186,4 +186,14 @@ Protect #410's Chromium test run, locked ports/session/DB, #411/PR #412 and PF-5
 
 **Evidence:** `stream-edit-rbac.test.tsx` covers operator unsaved/in-flight/failed-save guards, confirmed-save navigation, read-only navigation, and both explicit monitoring exits. `step-delivery.test.tsx` plus New Stream tests verify the distinct draft-resume guidance. Regressions intentionally failed before the missing guards were implemented. Focused unit/integration tests and build are required but are **not** Browser BFS or 2-user E2E evidence. Preserve the #410 exclusive lab and do not promote CI to browser PASS.
 
+## 2026-10-09 continuation — make destination checks understandable
+
+**Verified usability defect:** `StepDelivery` already exposed **Test destination** in each selected Route card's overflow menu, but its handler discarded the destination-test API result and swallowed request errors. The user could not tell success, actual endpoint rejection, or inability to call the API apart.
+
+**Bounded UI correction:** Read the existing `DestinationTestResult.success` and `message` from `POST /destinations/{id}/test`. The selected card now shows an accessible per-destination **Checking destination connectivity…** state, then **Connection check passed**, **Connection check failed** with backend-confirmed reason and an Open destination next action, or **Connection check unavailable** with safe authentication/API retry guidance. On a new attempt, clear the previous status so a stale success never remains visible. Exceptions are not echoed because they could contain credentials or internal network details. The overflow menu receives an accessible `Actions for <destination>` name. Duplicate Route cards referencing a destination may show the same endpoint test result; the result is not Route delivery evidence.
+
+**Truth boundary:** A destination connectivity check is not proof of a running Stream, per-Route processing, persisted delivery, receiver acknowledgment, or checkpoint success. It never shows **Delivery proven**. No Stream/Route draft mutation, deployment, API contract, credential change, or remote test environment mutation occurs. Existing Destinations management remains the owner of full connectivity history/details.
+
+**Validation:** Red/green component tests cover positive, negative, exception, and an in-flight retry that replaces a former success with a newer failure; regression/TypeScript build and document integrity required. Authenticated Browser BFS and two-user Full User E2E remain separate, incomplete release gates; protect #410's exclusive browser lab.
+
 **Protected boundaries:** no route/destination persistence semantics, API, credentials, runtime, policy, user rights, shared DB, or #410 browser process modified. Final authenticated UX/BFS and 2-user Full User E2E remain NOT VERIFIED.

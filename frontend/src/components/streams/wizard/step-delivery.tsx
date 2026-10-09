@@ -89,6 +89,8 @@ function destinationEndpointLine(dest: DestinationListItem): string {
   return `${formatWizardSyslogLabel(dest.destination_type)} · ${host}:${port} (${proto})`
 }
 
+type DestinationProbeFeedback = { kind: 'success' | 'failed' | 'unavailable'; message: string }
+
 function DestinationRouteCard({
   routeIndex,
   draft,
@@ -97,6 +99,7 @@ function DestinationRouteCard({
   onDuplicate,
   onTest,
   testBusy,
+  testFeedback,
   menuOpen,
   onMenuOpenChange,
 }: {
@@ -107,6 +110,7 @@ function DestinationRouteCard({
   onDuplicate: () => void
   onTest: () => void
   testBusy: boolean
+  testFeedback?: DestinationProbeFeedback
   menuOpen: boolean
   onMenuOpenChange: (open: boolean) => void
 }) {
@@ -150,6 +154,7 @@ function DestinationRouteCard({
         <div className="relative shrink-0" ref={menuRef}>
           <button
             type="button"
+            aria-label={`Actions for ${destLabel}`}
             aria-expanded={menuOpen}
             aria-haspopup="menu"
             className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-transparent text-slate-500 hover:bg-slate-100 dark:hover:bg-gdc-rowHover"
@@ -175,7 +180,7 @@ function DestinationRouteCard({
               </button>
               <hr className="my-1 border-slate-100 dark:border-gdc-border" />
               <button type="button" role="menuitem" className={routeMenuItemCls} onClick={() => { void onTest(); onMenuOpenChange(false) }} disabled={testBusy}>
-                Test destination
+                {testBusy ? 'Testing destination…' : 'Test destination'}
               </button>
               <Link
                 role="menuitem"
@@ -189,6 +194,29 @@ function DestinationRouteCard({
           ) : null}
         </div>
       </div>
+      {testBusy ? (
+        <p
+          role="status"
+          data-testid={`destination-connectivity-loading-${draft.key}`}
+          className="mx-3 mb-3 inline-flex items-center gap-2 text-xs text-slate-600 dark:text-gdc-mutedStrong"
+        >
+          <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+          Checking destination connectivity…
+        </p>
+      ) : testFeedback ? (
+        <p
+          role={testFeedback.kind === 'success' ? 'status' : 'alert'}
+          data-testid={`destination-connectivity-feedback-${draft.key}`}
+          className={cn(
+            'mx-3 mb-3 rounded-md border px-3 py-2 text-xs leading-5',
+            testFeedback.kind === 'success'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-100'
+              : 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100',
+          )}
+        >
+          {testFeedback.message}
+        </p>
+      ) : null}
     </article>
   )
 }
@@ -218,6 +246,7 @@ export function StepDelivery({
   const [tab, setTab] = useState<DestinationLibraryTab>('all')
   const [menuKey, setMenuKey] = useState<string | null>(null)
   const [testBusyId, setTestBusyId] = useState<number | null>(null)
+  const [testFeedbackByDestinationId, setTestFeedbackByDestinationId] = useState<Record<number, DestinationProbeFeedback>>({})
   const onChangeRef = useRef(onChange)
   const fetchVersionRef = useRef(0)
   useEffect(() => { onChangeRef.current = onChange }, [onChange])
@@ -453,15 +482,42 @@ export function StepDelivery({
   }, [])
 
   const handleTestDestination = useCallback(async (destinationId: number) => {
+    if (testBusyId != null) return
     setTestBusyId(destinationId)
+    // Do not leave an old success visible while a new test is in flight.
+    setTestFeedbackByDestinationId((prev) => {
+      const next = { ...prev }
+      delete next[destinationId]
+      return next
+    })
     try {
-      await testDestination(destinationId)
+      const result = await testDestination(destinationId)
+      const detail = typeof result?.message === 'string' ? result.message.trim() : ''
+      setTestFeedbackByDestinationId((prev) => ({
+        ...prev,
+        [destinationId]: result?.success === true
+          ? {
+              kind: 'success',
+              message: `Connection check passed.${detail ? ` ${detail}.` : ''} This tests connectivity, not end-to-end Stream delivery.`,
+            }
+          : {
+              kind: 'failed',
+              message: `Connection check failed.${detail ? ` ${detail}.` : ''} Open destination to review its settings and retry.`,
+            },
+      }))
     } catch {
-      /* surfaced via connectivity columns when available */
+      // Avoid rendering raw exception text; it can contain private network or auth data.
+      setTestFeedbackByDestinationId((prev) => ({
+        ...prev,
+        [destinationId]: {
+          kind: 'unavailable',
+          message: 'Connection check unavailable. Check authentication and API connectivity, then retry.',
+        },
+      }))
     } finally {
       setTestBusyId(null)
     }
-  }, [])
+  }, [testBusyId])
 
   return (
     <section className="space-y-4">
@@ -549,6 +605,7 @@ export function StepDelivery({
                     onDuplicate={() => onChange({ routeDrafts: duplicateRouteDraft(drafts, draft.key) })}
                     onTest={() => handleTestDestination(draft.destinationId)}
                     testBusy={testBusyId === draft.destinationId}
+                    testFeedback={testFeedbackByDestinationId[draft.destinationId]}
                     menuOpen={menuKey === draft.key}
                     onMenuOpenChange={(open) => setMenuKey(open ? draft.key : null)}
                   />
