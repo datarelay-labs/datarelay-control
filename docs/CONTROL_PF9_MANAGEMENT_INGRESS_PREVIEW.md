@@ -35,6 +35,15 @@ The read-only administrator diagnostic endpoint is
   request headers as authorization evidence. When behind the reverse proxy,
   the observed API peer is **not independently proven** to equal the public
   Web/SSH client; this API alone cannot validate an entire management ingress.
+- Hardens optional `GDC_TRUST_PROXY_HEADERS=true`: `GDC_PROXY_FORWARD_TRUSTED_HOSTS`
+  must contain explicit canonical IP/CIDRs. An empty value, wildcard `*`,
+  unrestricted `/0`, duplicate peers or malformed address now fail at app
+  startup rather than silently falling back to trusting everyone. The
+  default remains forwarded-header trust **disabled**. This config parser
+  uses the same pinned Foundation CIDR engine. Deployment operators must also
+  separately validate the ASGI server's own forwarded-header settings (for
+  example, Uvicorn `--forwarded-allow-ips`), not merely the Control-added
+  middleware. Never configure that independent trust boundary as `*`.
 - Always reports `mode=PREVIEW_ONLY`, `apply_available=false`,
   `ssh_enforcement_available=false`, and
   `web_enforcement_available=false`. The permanent blockers include
@@ -75,6 +84,9 @@ authorization to apply a policy.
 ## Source-only validation
 
 `PYTHONPATH=vendor/onprem-security/datarelay_onprem_security-0.10.0.dev0-py3-none-any.whl:. python3 -m pytest -q tests/test_management_acl_preview.py`
+
+Trusted-proxy security:
+`PYTHONPATH=vendor/onprem-security/datarelay_onprem_security-0.10.0.dev0-py3-none-any.whl:. python3 -m pytest -q tests/test_trusted_proxy_host_security.py`
 
 Web companion:
 `cd frontend && npm run test -- --run src/components/settings/admin-management-acl-preview.test.tsx`

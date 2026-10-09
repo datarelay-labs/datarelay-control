@@ -236,13 +236,14 @@ app = FastAPI(
 
 if settings.GDC_TRUST_PROXY_HEADERS:
     from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+    from app.auth.trusted_proxy import trusted_proxy_peer_networks
 
-    _th = (settings.GDC_PROXY_FORWARD_TRUSTED_HOSTS or "*").strip()
-    if "," in _th:
-        _hosts = [h.strip() for h in _th.split(",") if h.strip()]
-        app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=_hosts)
-    else:
-        app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=_th)
+    # The old empty-string fallback to "*" silently trusted arbitrary XFF.
+    # Validate every peer CIDR when proxy trust is explicitly enabled; reject
+    # missing/wildcard sources instead of upgrading untrusted headers to client
+    # IP authority on startup.
+    _hosts = trusted_proxy_peer_networks(settings.GDC_PROXY_FORWARD_TRUSTED_HOSTS)
+    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=_hosts)
 
 app.add_middleware(
     CORSMiddleware,

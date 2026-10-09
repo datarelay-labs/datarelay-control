@@ -114,6 +114,18 @@ scenarios:
       - "Only currently authenticated Administrators can read policy preview; other roles fail closed."
     release_gate: false
 
+  - id: BACKEND-PF9-TRUSTED-PROXY-PEER-STRICT
+    name: Strict fail-closed proxy-peer selection for login IP and ACL source
+    level: unit
+    domains: [backend]
+    triggers: [affected, pr]
+    platforms: [linux]
+    command: "PYTHONPATH=vendor/onprem-security/datarelay_onprem_security-0.10.0.dev0-py3-none-any.whl:. python3 -m pytest -q tests/test_trusted_proxy_host_security.py"
+    invariants:
+      - "With forwarded-header trust explicitly enabled, missing or wildcard trusted peers are rejected at app startup."
+      - "Only canonical explicit trusted proxy CIDRs/IPs are passed to Uvicorn; unrestricted /0 and ambiguous mapped networks rejected."
+    release_gate: true
+
   - id: FRONTEND-PF9-MANAGEMENT-ACL-PREVIEW
     name: Administrator draft-only management CIDR proposal UI
     level: component
