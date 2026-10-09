@@ -51,6 +51,22 @@ describe('Wizard flow overview (configuration, not live delivery)', () => {
     expect(screen.getByTestId('wizard-flow-overview')).toHaveTextContent('not confirmed deliveries')
   })
 
+  it('does not present an enabled route without a destination as configured delivery', () => {
+    const state = buildInitialState()
+    state.destinations.routeDrafts = [{
+      key: 'unresolved-route',
+      destinationId: 0,
+      enabled: true,
+      failurePolicy: 'RETRY_AND_BACKOFF',
+      rateLimitJson: {},
+      inherit: { ...DEFAULT_ROUTE_PROCESSING_INHERIT },
+    }]
+    render(<WizardFlowOverview state={state} activeStep="destinations" />)
+    const delivery = screen.getByTestId('wizard-flow-delivery')
+    expect(delivery).toHaveTextContent('Select a valid destination')
+    expect(delivery).not.toHaveTextContent('1 of 1 delivery path enabled')
+  })
+
   it('identifies connector-module drafts without claiming saved source records', () => {
     const state = buildInitialState()
     state.connector.registryModuleId = 'example-module'

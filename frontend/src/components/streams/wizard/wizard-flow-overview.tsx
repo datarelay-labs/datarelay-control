@@ -16,6 +16,9 @@ function deriveWizardFlowOutline(state: WizardState) {
   const sampleConfirmed = wizardSampleStepGateReady(state)
   const routes = state.destinations.routeDrafts
   const enabled = routes.filter((route) => route.enabled).length
+  const destinationMissing = routes.some(
+    (route) => route.enabled && (!Number.isSafeInteger(route.destinationId) || route.destinationId <= 0),
+  )
   const customized = routes.filter((route) =>
     Object.values(route.inherit).some((isInherited) => isInherited === false),
   ).length
@@ -40,8 +43,12 @@ function deriveWizardFlowOutline(state: WizardState) {
     delivery: {
       value: routes.length === 0
         ? 'Choose destinations'
-        : `${enabled} of ${routes.length} delivery ${routes.length === 1 ? 'path' : 'paths'} enabled`,
-      detail: 'Configured destinations, not confirmed deliveries',
+        : destinationMissing
+          ? 'Select a valid destination for each enabled delivery path'
+          : `${enabled} of ${routes.length} delivery ${routes.length === 1 ? 'path' : 'paths'} enabled`,
+      detail: destinationMissing
+        ? 'An enabled route has no usable destination; delivery is not configured'
+        : 'Configured destinations, not confirmed deliveries',
     },
   }
 }
