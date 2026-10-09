@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { NAV_PATH, runtimeOverviewPath } from '../../config/nav-paths'
 import { WIZARD_LABEL } from '../../lib/operator-vocabulary'
+import { useSessionCapabilities } from '../../lib/rbac'
 import { createStream } from '../../api/gdcStreams'
 import { materializeConnectorTemplates } from '../../api/gdcConnectorTemplates'
 import { saveStreamMappingUiConfigStrict } from '../../api/gdcRuntimeUi'
@@ -101,6 +102,8 @@ const NEXT_STEP_LABEL: Partial<Record<WizardStepKey, string>> = {
 
 export function NewStreamWizardPage() {
   const navigate = useNavigate()
+  const capabilities = useSessionCapabilities()
+  const canCreateStream = capabilities.workspace_mutations === true
   const location = useLocation()
   const importHydratedRef = useRef(false)
   const draftHydratedRef = useRef(false)
@@ -139,13 +142,15 @@ export function NewStreamWizardPage() {
   const completion = useMemo(() => computeStepCompletion(state), [state])
 
   useEffect(() => {
-    if (draftHydratedRef.current) return
+    // Do not show persisted configuration from another user's browser draft
+    // to a role without the server-provided workspace mutation capability.
+    if (!canCreateStream || draftHydratedRef.current) return
     draftHydratedRef.current = true
     const draft = loadWizardDraft()
     if (!draft) return
     setPendingDraft(draft)
     setDraftBannerVisible(true)
-  }, [])
+  }, [canCreateStream])
 
   const handleResumeDraft = useCallback(() => {
     if (!pendingDraft) return
@@ -169,7 +174,7 @@ export function NewStreamWizardPage() {
   }, [])
 
   useEffect(() => {
-    if (importHydratedRef.current) return
+    if (!canCreateStream || importHydratedRef.current) return
     const routeState = (location.state ?? {}) as HttpImportWizardLocationState
     const connectorId = routeState.connectorId
     if (connectorId == null) return
@@ -178,7 +183,7 @@ export function NewStreamWizardPage() {
     setDraftNotice('Stream fields prefilled from import. Review polling and mapping before creating.')
     setIntentSelected(true)
     setStepIndex(wizardStepIndexForKey(wizardSteps, 'connect'))
-  }, [location.state, wizardSteps])
+  }, [canCreateStream, location.state, wizardSteps])
 
   const navigateToWizardStep = useCallback(
     (key: WizardStepKey) => {
@@ -948,6 +953,30 @@ export function NewStreamWizardPage() {
   const nextLabel = NEXT_STEP_LABEL[currentStepKey]
 
   const stagePurpose = wizardStagePurpose(currentStepKey)
+
+  if (!canCreateStream) {
+    return (
+      <section
+        data-testid="wizard-create-readonly"
+        role="status"
+        className="rounded-xl border border-amber-200 bg-amber-50/60 p-6 dark:border-amber-500/30 dark:bg-amber-500/10"
+      >
+        <h2 className="text-lg font-semibold text-amber-950 dark:text-amber-100">
+          Creating Data Flows requires workspace write access
+        </h2>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-amber-900 dark:text-amber-200">
+          Your current session does not allow Connector or Stream creation. Review existing Streams,
+          or ask an administrator for workspace write access. The server still enforces every permission.
+        </p>
+        <Link
+          to={NAV_PATH.streams}
+          className="mt-4 inline-flex min-h-10 items-center rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700"
+        >
+          View existing Streams
+        </Link>
+      </section>
+    )
+  }
 
   return (
     <div className="flex h-fit w-full min-w-0 grow-0 flex-col gap-5 pb-8" data-testid="new-stream-wizard">

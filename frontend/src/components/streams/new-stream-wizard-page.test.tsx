@@ -1,8 +1,9 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NewStreamWizardPage } from './new-stream-wizard-page'
+import { clearSession, persistSession, type SessionRole } from '../../auth/session'
 import { StepMappingCombined } from './wizard/step-mapping-combined'
 import { EnrichmentRulesEditor } from './wizard/enrichment-rules-editor'
 import { FinalEventPreviewPanel } from '../mappings/final-event-preview-panel'
@@ -688,5 +689,99 @@ describe('New Data Flow draft-safe exit', () => {
     } finally {
       storage.mockRestore()
     }
+  })
+})
+
+// The server remains the ultimate authorization gate. The Wizard must still
+// avoid presenting a dead-end creation path to read-only signed-in personas.
+describe('New Data Flow creation permission guidance', () => {
+  const baseSession = {
+    access_token: 'ui-test-token',
+    refresh_token: 'ui-test-refresh',
+    expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+  }
+
+  beforeEach(() => {
+    localStorage.removeItem(WIZARD_DRAFT_KEY_V2)
+    clearWizardCatalogSnapshot()
+    vi.mocked(fetchCatalogSnapshot).mockClear()
+    localStorage.removeItem('gdc_platform_session_v1')
+  })
+
+  afterEach(() => {
+    clearSession()
+    localStorage.removeItem(WIZARD_DRAFT_KEY_V2)
+  })
+
+  function asRole(
+    role: SessionRole,
+    capabilities?: Record<string, boolean>,
+  ) {
+    persistSession({
+      ...baseSession,
+      user: { username: 'role-check', role, status: 'ACTIVE', capabilities },
+    })
+  }
+
+  it.each(['VIEWER', 'GOVERNANCE_OPERATOR', 'GOVERNANCE_AUDITOR'] as const)(
+    'blocks new Stream creation for %s with clear read-only guidance but no hidden API request',
+    (role) => {
+      asRole(role)
+      render(
+        <MemoryRouter>
+          <NewStreamWizardPage />
+        </MemoryRouter>,
+      )
+      expect(screen.getByTestId('wizard-create-readonly')).toHaveTextContent('requires workspace write access')
+      expect(screen.getByRole('link', { name: 'View existing Streams' })).toHaveAttribute('href', '/streams')
+      expect(screen.queryByTestId('wizard-intent-picker')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('wizard-save-draft')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('wizard-add-connector')).not.toBeInTheDocument()
+      expect(fetchCatalogSnapshot).not.toHaveBeenCalled()
+    },
+  )
+
+  it('honors a server-declared workspace mutation denial even for OPERATOR', () => {
+    asRole('OPERATOR', { workspace_mutations: false })
+    render(<MemoryRouter><NewStreamWizardPage /></MemoryRouter>)
+    expect(screen.getByTestId('wizard-create-readonly')).toBeInTheDocument()
+    expect(screen.queryByTestId('wizard-intent-scratch')).not.toBeInTheDocument()
+  })
+
+  it.each(['ADMINISTRATOR', 'OPERATOR', 'CONNECTOR_OPERATOR'] as const)(
+    'keeps the ordinary Stream creation workflow for authorized %s',
+    async (role) => {
+      asRole(role, { workspace_mutations: true })
+      const user = userEvent.setup()
+      render(<MemoryRouter><NewStreamWizardPage /></MemoryRouter>)
+      expect(screen.queryByTestId('wizard-create-readonly')).not.toBeInTheDocument()
+      await user.click(screen.getByTestId('wizard-intent-scratch'))
+      expect(screen.getByTestId('wizard-step-connect')).toBeInTheDocument()
+    },
+  )
+
+  it('does not display saved draft configuration to a read-only viewer on a deep link', () => {
+    const stored = buildInitialState()
+    stored.stream.name = 'Previous account private stream draft'
+    localStorage.setItem(WIZARD_DRAFT_KEY_V2, JSON.stringify({
+      version: 2, savedAt: Date.now(), stepKey: 'connect', state: stored,
+    }))
+    asRole('VIEWER')
+    render(<MemoryRouter><NewStreamWizardPage /></MemoryRouter>)
+    expect(screen.getByTestId('wizard-create-readonly')).toBeInTheDocument()
+    expect(screen.queryByTestId('wizard-draft-banner')).not.toBeInTheDocument()
+    expect(screen.queryByText('Previous account private stream draft')).not.toBeInTheDocument()
+    expect(localStorage.getItem(WIZARD_DRAFT_KEY_V2)).toContain('Previous account private stream draft')
+  })
+
+  it('switches to read-only guidance immediately after a server capability downgrade', async () => {
+    asRole('OPERATOR', { workspace_mutations: true })
+    const user = userEvent.setup()
+    render(<MemoryRouter><NewStreamWizardPage /></MemoryRouter>)
+    await user.click(screen.getByTestId('wizard-intent-scratch'))
+    expect(screen.getByTestId('wizard-step-connect')).toBeInTheDocument()
+    asRole('OPERATOR', { workspace_mutations: false })
+    await waitFor(() => expect(screen.getByTestId('wizard-create-readonly')).toBeInTheDocument())
+    expect(screen.queryByTestId('wizard-step-connect')).not.toBeInTheDocument()
   })
 })
