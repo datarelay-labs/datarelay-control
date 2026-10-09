@@ -5,6 +5,7 @@ import {
   buildDestinationRouteMetrics,
   buildProblemRoutes,
   buildRouteFlowTree,
+  isRouteSnapshotStale,
   aggregateGlobalErrorRateFromRoutes,
 } from './routes-flow-helpers'
 
@@ -215,6 +216,34 @@ describe('routes-flow-helpers', () => {
     const office365 = tree.find((group) => group.streamId === 1)
     expect(office365?.totalEps).toBeNull()
     expect(office365?.routes.map((route) => route.eps)).toEqual(expect.arrayContaining([3.2, 2.4]))
+  })
+
+  it('only connects positive, unique Route and Stream identities', () => {
+    const withMalformedIds: OperationalSnapshotResponse = {
+      ...snapshot,
+      routes: [
+        { ...snapshot.routes[0]!, route_id: -9 },
+        { ...snapshot.routes[0]!, route_id: 1, stream_id: 0 },
+        { ...snapshot.routes[0]!, destination_id: -5 },
+        { ...snapshot.routes[0]!, route_id: 1, destination_id: 13 },
+      ],
+    }
+    const rows = buildRouteRowsFromOperationalSnapshot(withMalformedIds)
+    const tree = buildRouteFlowTree(withMalformedIds, rows)
+    expect(tree).toHaveLength(1)
+    expect(tree[0]?.routes).toHaveLength(1)
+    expect(tree[0]?.routes[0]?.destinationId).toBeNull()
+    expect(tree[0]?.connectorId).toBe(1)
+    expect(tree[0]?.sourceId).toBe(1)
+  })
+
+  it('never treats an absent, future or aged snapshot as current health proof', () => {
+    const now = Date.parse('2026-10-09T12:00:00Z')
+    expect(isRouteSnapshotStale(null, now)).toBe(true)
+    expect(isRouteSnapshotStale('invalid', now)).toBe(true)
+    expect(isRouteSnapshotStale('2026-10-09T12:00:30Z', now)).toBe(false)
+    expect(isRouteSnapshotStale('2026-10-09T11:57:59Z', now)).toBe(true)
+    expect(isRouteSnapshotStale('2026-10-09T12:05:00Z', now)).toBe(true)
   })
 
   it('flags warning routes in problem panel', () => {

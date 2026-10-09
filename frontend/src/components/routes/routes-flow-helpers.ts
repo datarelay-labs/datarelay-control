@@ -30,6 +30,8 @@ export type RouteFlowRouteRow = {
 export type RouteFlowStreamGroup = {
   streamId: number
   streamName: string
+  connectorId: number | null
+  sourceId: number | null
   totalEps: number | null
   routes: RouteFlowRouteRow[]
 }
@@ -72,7 +74,9 @@ function routeFlowRowFromConsole(row: RouteConsoleRow): RouteFlowRouteRow {
   return {
     routeId: row.route.id,
     routeLabel: row.routeLabel,
-    destinationId: row.destination?.id ?? row.route.destination_id ?? null,
+    destinationId: Number.isSafeInteger(row.route.destination_id) && (row.route.destination_id ?? 0) > 0
+      ? row.route.destination_id
+      : null,
     destinationName: (row.destination?.name ?? '').trim() || `Destination #${row.route.destination_id ?? '—'}`,
     eps: delivered,
     successRatePct,
@@ -89,24 +93,27 @@ export function buildRouteFlowTree(
 ): RouteFlowStreamGroup[] {
   if (snapshot == null || consoleRows.length === 0) return []
 
-  const streamEps = new Map<number, number>()
-  for (const s of snapshot.streams ?? []) {
-    if (typeof s.stream_id === 'number' && Number.isFinite(s.eps_1m)) {
-      streamEps.set(s.stream_id, s.eps_1m)
-    }
-  }
-
+  const validId = (id: unknown): id is number =>
+    typeof id === 'number' && Number.isSafeInteger(id) && id > 0
+  const streamsById = new Map((snapshot.streams ?? [])
+    .filter((s) => validId(s.stream_id))
+    .map((s) => [s.stream_id, s]))
   const byStream = new Map<number, RouteFlowStreamGroup>()
+  const seenRoutes = new Set<number>()
   for (const row of consoleRows) {
+    // The graph must not manufacture edges for invalid or duplicate identifiers.
     const sid = row.stream?.id ?? row.route.stream_id
-    if (typeof sid !== 'number') continue
+    if (!validId(sid) || !validId(row.route.id) || seenRoutes.has(row.route.id)) continue
+    seenRoutes.add(row.route.id)
     const streamName = (row.stream?.name ?? '').trim() || `Stream #${sid}`
     let group = byStream.get(sid)
     if (group == null) {
       group = {
         streamId: sid,
         streamName,
-        totalEps: streamEps.get(sid) ?? null,
+        connectorId: validId(streamsById.get(sid)?.connector_id) ? streamsById.get(sid)!.connector_id : null,
+        sourceId: validId(streamsById.get(sid)?.source_id) ? streamsById.get(sid)!.source_id : null,
+        totalEps: Number.isFinite(streamsById.get(sid)?.eps_1m) ? streamsById.get(sid)!.eps_1m : null,
         routes: [],
       }
       byStream.set(sid, group)
@@ -204,6 +211,13 @@ export function buildDestinationRouteMetrics(
   return rows
     .filter((r) => r.connectedRoutes > 0 || (r.throughputEps ?? 0) > 0)
     .sort((a, b) => (b.throughputEps ?? 0) - (a.throughputEps ?? 0))
+}
+
+/** A snapshot is evidence only while its origin timestamp is recent and parseable. */
+export function isRouteSnapshotStale(updatedAt: string | null | undefined, nowMs = Date.now()): boolean {
+  if (!updatedAt) return true
+  const ms = Date.parse(updatedAt)
+  return !Number.isFinite(ms) || ms > nowMs + 60_000 || nowMs - ms > 90_000
 }
 
 export function formatFlowEps(eps: number | null | undefined): string {

@@ -1,0 +1,326 @@
+import { ArrowRight, GitBranch, Layers3, Network, Settings2 } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
+import type { OperationalSnapshotResponse } from '../../api/operationalSnapshot'
+import {
+  destinationDetailPath,
+  logsExplorerPath,
+  routeEditPath,
+  streamRuntimePath,
+} from '../../config/nav-paths'
+import { cn } from '../../lib/utils'
+import {
+  buildRouteFlowTree,
+  formatFlowEps,
+  isRouteSnapshotStale,
+  formatFlowSuccessRate,
+  routeHealthBadgeClass,
+  routePublicId,
+} from './routes-flow-helpers'
+import { formatFailurePolicy, type RouteConsoleRow } from './routes-overview-helpers'
+
+export type RoutesArchitectureWorkspaceProps = {
+  snapshot: OperationalSnapshotResponse | null
+  consoleRows: readonly RouteConsoleRow[]
+  loading?: boolean
+  requestFailed?: boolean
+  selectedStreamId: number | null
+  onSelectStream: (id: number) => void
+}
+
+const validId = (value: number | null | undefined): value is number =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value > 0
+
+/**
+ * Route ownership, not another Stream creation flow:
+ * Streams collect; each route processes and delivers to one Destination.
+ * Read-only topology from the existing operational snapshot. No invented edges.
+ */
+export function RoutesArchitectureWorkspace({
+  snapshot,
+  consoleRows,
+  loading = false,
+  requestFailed = false,
+  selectedStreamId,
+  onSelectStream,
+}: RoutesArchitectureWorkspaceProps) {
+  const groups = useMemo(() => buildRouteFlowTree(snapshot, consoleRows), [snapshot, consoleRows])
+  const selectedGroup = groups.find((group) => group.streamId === selectedStreamId) ?? groups[0]
+  const [inspectedRouteId, setInspectedRouteId] = useState<number | null>(null)
+  const selectedRoute = selectedGroup?.routes.find((route) => route.routeId === inspectedRouteId) ??
+    selectedGroup?.routes[0]
+  const selectedRow = consoleRows.find((row) => row.route.id === selectedRoute?.routeId)
+  const inspectedMetric = snapshot?.routes.find((route) =>
+    route.route_id === selectedRoute?.routeId && route.stream_id === selectedGroup?.streamId)
+  const evidenceStale = requestFailed || isRouteSnapshotStale(snapshot?.updated_at)
+
+  return (
+    <section
+      data-testid="routes-architecture-workspace"
+      aria-label="Delivery architecture"
+      className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gdc-border dark:bg-gdc-card"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200/80 bg-gradient-to-r from-slate-50 via-white to-violet-50/50 px-5 py-5 dark:border-gdc-border dark:from-gdc-panel dark:via-gdc-card dark:to-gdc-card sm:px-6">
+        <div className="space-y-2">
+          <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.1em] text-violet-700 dark:text-violet-300">
+            <Network className="h-4 w-4" aria-hidden /> Delivery workspace
+          </p>
+          <h2 className="text-xl font-semibold tracking-tight text-slate-900 dark:text-slate-50 sm:text-2xl">
+            Delivery architecture
+          </h2>
+          <p className="max-w-3xl text-sm leading-6 text-slate-600 dark:text-gdc-mutedStrong">
+            Choose a Stream to see where its events go. Select a Route to inspect its delivery status,
+            processing ownership, and destination. Configure collection on Streams; configure delivery here.
+          </p>
+        </div>
+        <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-200">
+          {snapshot ? `${groups.length} Streams · ${consoleRows.length} Routes · ${evidenceStale ? 'Stale snapshot' : 'Snapshot received'}` : 'Runtime snapshot unavailable'}
+        </span>
+      </div>
+
+      <div className="border-b border-slate-200/80 px-5 py-3 dark:border-gdc-border sm:px-6" data-testid="routes-mental-model">
+        <p className="text-xs leading-5 text-slate-600 dark:text-gdc-mutedStrong">
+          <strong className="text-slate-800 dark:text-slate-100">Stream</strong> collects data →
+          <strong className="text-slate-800 dark:text-slate-100"> Route Processing</strong> applies destination-specific rules →
+          <strong className="text-slate-800 dark:text-slate-100"> Destination</strong> receives the result.
+          One Stream can fan out through many Routes to many Destinations without collecting the same source twice.
+        </p>
+      </div>
+
+      {!snapshot ? (
+        <div className="px-6 py-12 text-center text-sm text-slate-600 dark:text-gdc-muted" role="status">
+          {loading ? 'Loading current delivery connections…' : 'The operational snapshot is unavailable. Refresh before trusting Route status or topology.'}
+        </div>
+      ) : groups.length === 0 ? (
+        <div className="flex flex-col items-center gap-3 px-6 py-12 text-center">
+          <GitBranch className="h-8 w-8 text-slate-400" aria-hidden />
+          <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">No Route connections in this snapshot</h3>
+          <p className="max-w-lg text-sm text-slate-600 dark:text-gdc-muted">
+            Create a Route for an existing Stream to connect it to a Destination. The source and its collection settings stay in Streams.
+          </p>
+          <Link to={routeEditPath('new')} className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700">
+            Create Route <ArrowRight className="h-4 w-4" aria-hidden />
+          </Link>
+        </div>
+      ) : (
+        <div className="grid min-w-0 xl:grid-cols-[220px_minmax(0,1fr)]">
+          <nav aria-label="Choose a Stream for delivery" className="border-b border-slate-200/80 bg-slate-50/60 p-3 dark:border-gdc-border dark:bg-gdc-section/40 xl:border-b-0 xl:border-r">
+            <p className="px-2 pb-3 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-gdc-muted">
+              Streams with Routes
+            </p>
+            <div className="flex gap-2 overflow-x-auto pb-1 xl:max-h-[420px] xl:flex-col xl:overflow-x-hidden xl:overflow-y-auto">
+              {groups.map((group) => {
+                const selected = selectedGroup?.streamId === group.streamId
+                return (
+                  <button
+                    key={group.streamId}
+                    type="button"
+                    aria-pressed={selected}
+                    aria-label={`Inspect delivery for ${group.streamName} (Stream #${group.streamId})`}
+                    data-testid={`routes-architecture-stream-${group.streamId}`}
+                    onClick={() => { setInspectedRouteId(null); onSelectStream(group.streamId) }}
+                    className={cn(
+                      'flex min-w-[160px] flex-1 items-center justify-between gap-3 rounded-lg border px-3 py-3 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 xl:min-w-0 xl:flex-none',
+                      selected
+                        ? 'border-violet-400 bg-white shadow-sm dark:border-violet-500/60 dark:bg-violet-500/10'
+                        : 'border-transparent bg-transparent hover:border-slate-200 hover:bg-white/80 dark:hover:border-gdc-border dark:hover:bg-gdc-card',
+                    )}
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-xs font-semibold text-slate-900 dark:text-slate-100" title={group.streamName}>
+                        {group.streamName}
+                      </span>
+                      <span className="mt-1 block text-[11px] text-slate-500 dark:text-gdc-muted">
+                        #{group.streamId} · {group.routes.length} route{group.routes.length === 1 ? '' : 's'}
+                      </span>
+                    </span>
+                    <ChevronIndicator selected={selected} />
+                  </button>
+                )
+              })}
+            </div>
+          </nav>
+
+          {selectedGroup ? (
+            <div className="min-w-0 space-y-5 p-4 sm:p-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">{selectedGroup.streamName}</h3>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-gdc-muted">One collection path · {selectedGroup.routes.length} delivery connection{selectedGroup.routes.length === 1 ? '' : 's'}</p>
+                </div>
+                <Link to={streamRuntimePath(String(selectedGroup.streamId))} className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-violet-300 hover:text-violet-700 dark:border-gdc-border dark:text-slate-200 dark:hover:text-violet-300">
+                  View Stream runtime <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+                </Link>
+              </div>
+
+              <div className="grid min-w-0 items-start gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(250px,1fr)]">
+              <div className="grid min-w-0 items-start gap-4 sm:grid-cols-[minmax(120px,0.75fr)_minmax(0,2fr)]" data-testid="routes-architecture-graph">
+                <div className="relative rounded-xl border border-violet-200 bg-violet-50/40 p-4 dark:border-violet-500/30 dark:bg-violet-500/5">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-violet-700 dark:text-violet-300">
+                    01 · Collection
+                  </p>
+                  <p className="mt-3 text-[11px] leading-5 text-slate-600 dark:text-gdc-mutedStrong">
+                    Source access: {selectedGroup.connectorId != null ? `Connector #${selectedGroup.connectorId}` : 'Connector not resolved'}
+                    {selectedGroup.sourceId != null ? ` · Source #${selectedGroup.sourceId}` : ''}
+                  </p>
+                  <Layers3 className="mt-3 h-6 w-6 text-violet-600 dark:text-violet-300" aria-hidden />
+                  <p className="mt-3 break-words text-sm font-semibold text-slate-900 dark:text-slate-100">
+                    {selectedGroup.streamName}
+                  </p>
+                  <p className="mt-1 text-[11px] text-slate-600 dark:text-gdc-mutedStrong">Stream #{selectedGroup.streamId}</p>
+                  <p className="mt-4 text-xs text-slate-600 dark:text-gdc-mutedStrong">
+                    Source ingest: <strong className="font-semibold text-slate-800 dark:text-slate-200">{formatFlowEps(selectedGroup.totalEps)}</strong>
+                  </p>
+                  <p className="mt-2 text-[11px] leading-5 text-slate-500 dark:text-gdc-muted">
+                    Source setup, schedules, and checkpoints belong to Streams.
+                  </p>
+                </div>
+
+                <div className="min-w-0">
+                  <div className="grid grid-cols-2 gap-3 px-1 pb-2 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500 dark:text-gdc-muted">
+                    <p>02 · Route Processing</p>
+                    <p>03 · Destination</p>
+                  </div>
+                  <ol aria-label={`Delivery paths from ${selectedGroup.streamName}`} className="max-h-[540px] space-y-2 overflow-y-auto pr-1">
+                    {selectedGroup.routes.map((route) => {
+                      const selected = route.routeId === selectedRoute?.routeId
+                      const hasDestination = validId(route.destinationId)
+                      return (
+                        <li key={route.routeId} className={cn('min-w-0', !route.enabled && 'opacity-65')}>
+                          <div className="grid min-w-0 grid-cols-1 items-center gap-1.5 sm:grid-cols-[minmax(0,1fr)_24px_minmax(0,1fr)]">
+                            <button
+                              type="button"
+                              aria-pressed={selected}
+                              onClick={() => setInspectedRouteId(route.routeId)}
+                              data-testid={`routes-architecture-route-${route.routeId}`}
+                              className={cn(
+                                'min-w-0 rounded-xl border px-3 py-3 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500',
+                                selected
+                                  ? 'border-violet-400 bg-violet-50 shadow-sm dark:border-violet-500/60 dark:bg-violet-500/10'
+                                  : 'border-slate-200 bg-slate-50/60 hover:border-violet-300 dark:border-gdc-border dark:bg-gdc-section dark:hover:border-violet-500/40',
+                              )}
+                            >
+                              <span className="flex flex-wrap items-center justify-between gap-1.5">
+                                <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">
+                                  Route {routePublicId(route.routeId)}
+                                </span>
+                                <span className={cn('rounded-md border px-1.5 py-0.5 text-[10px] font-semibold', evidenceStale ? 'border-amber-400/70 bg-amber-50 text-amber-900 dark:bg-amber-500/10 dark:text-amber-200' : routeHealthBadgeClass(route.health))}>
+                                  {evidenceStale ? 'Stale' : route.health}
+                                </span>
+                              </span>
+                              <span className="mt-1.5 block text-[11px] text-slate-500 dark:text-gdc-mutedStrong">
+                                {route.enabled ? 'Delivery path enabled' : 'Delivery path disabled'} · {formatFlowEps(route.eps)}
+                              </span>
+                            </button>
+                            <span className="flex h-6 items-center justify-center text-slate-400 dark:text-gdc-muted" aria-hidden>
+                              <ArrowRight className="h-4 w-4 rotate-90 sm:rotate-0" />
+                            </span>
+                            {hasDestination ? (
+                              <Link
+                                to={destinationDetailPath(String(route.destinationId))}
+                                data-testid={`routes-architecture-destination-${route.destinationId}`}
+                                className="flex min-h-[76px] min-w-0 flex-col justify-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2.5 transition hover:border-violet-400 hover:bg-violet-50/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:border-gdc-border dark:bg-gdc-card dark:hover:border-violet-500/50"
+                              >
+                                <span className="break-words text-xs font-semibold text-slate-900 dark:text-slate-100">{route.destinationName}</span>
+                                <span className="text-[11px] text-slate-500 dark:text-gdc-muted">Destination #{route.destinationId} · Open details</span>
+                              </Link>
+                            ) : (
+                              <div className="flex min-h-[76px] items-center rounded-xl border border-dashed border-amber-400/60 bg-amber-50/50 px-3 text-xs font-medium text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">
+                                Destination not resolved
+                              </div>
+                            )}
+                          </div>
+                        </li>
+                      )
+                    })}
+                  </ol>
+                </div>
+              </div>
+
+              {selectedRoute ? (
+                <section data-testid="routes-architecture-inspector" aria-label="Selected Route details" className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 dark:border-gdc-border dark:bg-gdc-section/60">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500 dark:text-gdc-muted">Selected delivery path</p>
+                      <h4 className="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                        Route {routePublicId(selectedRoute.routeId)} · {selectedRoute.destinationName}
+                      </h4>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-gdc-muted">
+                        This Route owns destination-specific Transform, Protection, Policy and delivery settings.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Link to={routeEditPath(String(selectedRoute.routeId))} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-700">
+                        <Settings2 className="h-3.5 w-3.5" aria-hidden /> Route settings
+                      </Link>
+                      <Link to={logsExplorerPath({ route_id: selectedRoute.routeId })} className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-violet-300 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100">
+                        Delivery logs <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+                      </Link>
+                    </div>
+                  </div>
+                  {evidenceStale ? (
+                    <p role="status" className="mt-3 rounded-lg border border-amber-400/50 bg-amber-50 p-2 text-xs font-medium text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">
+                      Stale or unavailable snapshot. Values below are last reported, not confirmed current health.
+                    </p>
+                  ) : null}
+                  <dl className="mt-4 grid gap-3 border-t border-slate-200/80 pt-4 sm:grid-cols-2 dark:border-gdc-border">
+                    <div>
+                      <dt className="text-[11px] text-slate-500 dark:text-gdc-muted">Route health</dt>
+                      <dd className="mt-1 text-xs font-semibold text-slate-800 dark:text-slate-100">
+                        {evidenceStale ? `Stale · last reported ${selectedRoute.health}` : selectedRoute.health}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-[11px] text-slate-500 dark:text-gdc-muted">Delivered throughput</dt>
+                      <dd className="mt-1 text-xs font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatFlowEps(selectedRoute.eps)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-[11px] text-slate-500 dark:text-gdc-muted">Delivery success (5m)</dt>
+                      <dd className="mt-1 text-xs font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatFlowSuccessRate(selectedRoute.successRatePct)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-[11px] text-slate-500 dark:text-gdc-muted">Failed output (1m)</dt>
+                      <dd className="mt-1 text-xs font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatFlowEps(inspectedMetric?.failed_eps_1m)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-[11px] text-slate-500 dark:text-gdc-muted">Retry rate (5m)</dt>
+                      <dd className="mt-1 text-xs font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatFlowSuccessRate(inspectedMetric?.retry_rate_5m)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-[11px] text-slate-500 dark:text-gdc-muted">Average latency</dt>
+                      <dd className="mt-1 text-xs font-semibold tabular-nums text-slate-800 dark:text-slate-100">{Number.isFinite(inspectedMetric?.avg_latency_ms) ? `${inspectedMetric!.avg_latency_ms} ms` : 'Not available'}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-[11px] text-slate-500 dark:text-gdc-muted">Receiver-confirmed ingestion</dt>
+                      <dd className="mt-1 text-xs font-semibold text-slate-800 dark:text-slate-100">Not verified by this snapshot</dd>
+                    </div>
+                    <div>
+                      <dt className="text-[11px] text-slate-500 dark:text-gdc-muted">Destination capacity</dt>
+                      <dd className="mt-1 text-xs font-semibold text-slate-800 dark:text-slate-100">Not available in snapshot</dd>
+                    </div>
+                    <div>
+                      <dt className="text-[11px] text-slate-500 dark:text-gdc-muted">Failure policy</dt>
+                      <dd className="mt-1 text-xs font-semibold text-slate-800 dark:text-slate-100">
+                        {selectedRow?.route.failure_policy ? formatFailurePolicy(selectedRow.route.failure_policy) : 'Not available'}
+                      </dd>
+                    </div>
+                  </dl>
+                  <p className="mt-3 text-[11px] leading-5 text-slate-500 dark:text-gdc-muted">
+                    Health and rates reflect the latest operational snapshot, not receiver acknowledgment. Use the Route editor for configuration and delivery logs for observed outcomes.
+                  </p>
+                </section>
+              ) : null}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function ChevronIndicator({ selected }: { selected: boolean }) {
+  return (
+    <ArrowRight className={cn('h-3.5 w-3.5 shrink-0', selected ? 'text-violet-700 dark:text-violet-300' : 'text-slate-400')} aria-hidden />
+  )
+}
