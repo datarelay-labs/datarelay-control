@@ -252,3 +252,10 @@ Protect #410's Chromium test run, locked ports/session/DB, #411/PR #412 and PF-5
 - Verify complete Stream Wizard Source → Sample → Destinations → Route Processing → Deploy → first actual delivery with the current contract and same final HEAD.
 - Validate screen-specific full documentation destinations only after a trustworthy operator-accessible docs host/path is established; never synthesize a link.
 - Complete prescribed BFS-001..020 / capability-control census and two-user Full User E2E on final integrated HEAD. Keep PR Draft and release gates NOT PASS until the full contract is satisfied.
+### P0 continuation: evidence-backed Mapping and Enrichment stages
+
+**Previously missing:** the five-stage Route Processing UI did not populate verified Mapping or Enrichment output, even though its existing selected-Route Final Event workspace already called `POST /runtime/preview/final-event-draft`.
+
+**Implemented:** the existing WizardMappingOutputAside passes its completed no-send API response upward with the selected Route draft key. The preview dock now displays the returned `mapped_events[0]` for Mapping and `final_events[0]` for Enrichment / Transform, retaining visible input/output comparisons. It clears stale previews on edits/failure, never displays another Route's results after selection changes, and adds **zero new API requests**. The Response contract has no Route Protection/Policy evaluation or formatted destination payload; these stages therefore display an explicit **not verified** state rather than invented output. The original detailed sample preview and refresh UI remain in place.
+
+**Regression:** a newly added StepRouteProcessing rendered-component test initially failed because Mapping had no API output; it now passes and distinguishes available Mapping/Enrichment evidence from unavailable Route Policy proof. Focused Route Processing/Preview tests: **17/17 PASS**. This is component-level evidence, **not Browser BFS**, and all final user-test/release gates remain outstanding.
