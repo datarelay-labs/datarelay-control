@@ -163,6 +163,7 @@ function renderStreamEdit() {
       <Routes>
         <Route path="/streams/:streamId/edit" element={<StreamEditWizardPage />} />
         <Route path="/destinations" element={<p>Destination management workspace</p>} />
+        <Route path="/streams/:streamId/runtime" element={<p>Stream monitoring workspace</p>} />
       </Routes>
     </MemoryRouter>,
   )
@@ -275,10 +276,11 @@ describe('StreamEditWizardPage workspace capability visibility', () => {
     await user.type(name, 'Edited stream awaiting save')
     await user.click(within(page).getByTestId('wizard-stepper-destinations'))
     const manage = await within(page).findByRole('link', { name: 'Create new destination' })
+    expect(within(page).queryByTestId('wizard-destination-resume-guidance')).not.toBeInTheDocument()
     await user.click(manage)
     expect(screen.getByTestId('edit-stream-wizard')).toBeInTheDocument()
     expect(screen.queryByText('Destination management workspace')).not.toBeInTheDocument()
-    expect(within(page).getByTestId('edit-destination-navigation-notice')).toHaveTextContent(/Save now/)
+    expect(within(page).getByTestId('edit-navigation-notice')).toHaveTextContent(/Save now/)
     expect(persistWizardStreamEdits).not.toHaveBeenCalled()
 
     await user.click(within(page).getByTestId('wizard-save-now'))
@@ -308,13 +310,48 @@ describe('StreamEditWizardPage workspace capability visibility', () => {
     await user.click(within(page).getByTestId('wizard-stepper-destinations'))
     await user.click(await within(page).findByRole('link', { name: 'Create new destination' }))
     expect(screen.getByTestId('edit-stream-wizard')).toBeInTheDocument()
-    expect(within(page).getByTestId('edit-destination-navigation-notice')).toHaveTextContent('still saving')
+    expect(within(page).getByTestId('edit-navigation-notice')).toHaveTextContent('still saving')
     expect(screen.queryByText('Destination management workspace')).not.toBeInTheDocument()
 
     resolveSave({ ok: true, errors: [] })
     await waitFor(() => expect(within(page).getByText('Changes saved')).toBeInTheDocument())
     await user.click(within(page).getByRole('link', { name: 'Create new destination' }))
     expect(await screen.findByText('Destination management workspace')).toBeInTheDocument()
+  })
+
+  it('blocks Back to monitoring until an edited Stream is confirmed saved', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    renderStreamEdit()
+    const page = await screen.findByTestId('edit-stream-wizard')
+    await user.click(within(page).getByTestId('wizard-connect-tab-request'))
+    await user.type(within(page).getByPlaceholderText('e.g. Cybereason Malop Stream'), ' unsaved')
+    await user.click(within(page).getByRole('button', { name: 'Back to monitoring' }))
+    expect(screen.getByTestId('edit-stream-wizard')).toBeInTheDocument()
+    expect(within(page).getByTestId('edit-navigation-notice')).toHaveTextContent(/Save now/)
+    expect(screen.queryByText('Stream monitoring workspace')).not.toBeInTheDocument()
+    await user.click(within(page).getByTestId('wizard-save-now'))
+    await waitFor(() => expect(within(page).getByText('Changes saved')).toBeInTheDocument())
+    await user.click(within(page).getByRole('button', { name: 'Back to monitoring' }))
+    expect(await screen.findByText('Stream monitoring workspace')).toBeInTheDocument()
+  })
+
+  it('blocks Review Open monitoring navigation while changes are unconfirmed', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    renderStreamEdit()
+    const page = await screen.findByTestId('edit-stream-wizard')
+    await user.click(within(page).getByTestId('wizard-connect-tab-request'))
+    await user.type(within(page).getByPlaceholderText('e.g. Cybereason Malop Stream'), ' unsaved')
+    await user.click(within(page).getByTestId('wizard-stepper-deploy'))
+    await user.click(within(page).getByTestId('wizard-open-monitoring'))
+    expect(screen.getByTestId('edit-stream-wizard')).toBeInTheDocument()
+    expect(within(page).getByTestId('edit-navigation-notice')).toHaveTextContent(/Save now/)
+    expect(screen.queryByText('Stream monitoring workspace')).not.toBeInTheDocument()
+    await user.click(within(page).getByTestId('wizard-save-now'))
+    await waitFor(() => expect(within(page).getByText('Changes saved')).toBeInTheDocument())
+    await user.click(within(page).getByTestId('wizard-open-monitoring'))
+    expect(await screen.findByText('Stream monitoring workspace')).toBeInTheDocument()
   })
 
   it('allows read-only Stream inspection to navigate to destination management without a write', async () => {
@@ -343,7 +380,7 @@ describe('StreamEditWizardPage workspace capability visibility', () => {
     await user.click(within(page).getByTestId('wizard-stepper-destinations'))
     await user.click(await within(page).findByRole('link', { name: 'Create new destination' }))
     expect(screen.getByTestId('edit-stream-wizard')).toBeInTheDocument()
-    expect(within(page).getByTestId('edit-destination-navigation-notice')).toHaveTextContent(/save failed/i)
+    expect(within(page).getByTestId('edit-navigation-notice')).toHaveTextContent(/save failed/i)
     expect(screen.queryByText('Destination management workspace')).not.toBeInTheDocument()
   })
 

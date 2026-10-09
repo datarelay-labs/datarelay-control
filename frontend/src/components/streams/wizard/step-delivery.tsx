@@ -199,9 +199,16 @@ type StepDeliveryProps = {
   state: WizardState
   onChange: (patch: Partial<WizardDestinationsState>) => void
   onOpenDestinationPrerequisite?: () => boolean | void
+  /** Only the New Stream wizard has a local Create Stream / Resume draft journey. */
+  showCreateDraftReturnGuidance?: boolean
 }
 
-export function StepDelivery({ state, onChange, onOpenDestinationPrerequisite }: StepDeliveryProps) {
+export function StepDelivery({
+  state,
+  onChange,
+  onOpenDestinationPrerequisite,
+  showCreateDraftReturnGuidance = false,
+}: StepDeliveryProps) {
   const [loading, setLoading] = useState(true)
   const [destinations, setDestinations] = useState<DestinationListItem[]>([])
   /** True when fetchDestinationsList returned null (failure), not a valid empty catalog. */
@@ -709,9 +716,9 @@ export function StepDelivery({ state, onChange, onOpenDestinationPrerequisite }:
                 <Plus className="h-3.5 w-3.5" aria-hidden />
                 Create new destination
               </Link>
-              {onOpenDestinationPrerequisite ? (
+              {showCreateDraftReturnGuidance && onOpenDestinationPrerequisite ? (
                 <p className="mt-1 text-center text-[11px] leading-4 text-slate-500 dark:text-gdc-muted" data-testid="wizard-destination-resume-guidance">
-                  Your Stream draft is saved before leaving. Return to Create Stream and choose Resume draft to continue.
+                  Opening Destinations saves this Stream draft first. Return to Create Stream and choose Resume draft to continue.
                 </p>
               ) : null}
             </div>

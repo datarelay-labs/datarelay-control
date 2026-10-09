@@ -264,7 +264,7 @@ describe('StepDelivery', () => {
       <MemoryRouter initialEntries={['/streams/new']}>
         <Routes>
           <Route path="/streams/new" element={
-            <StepDelivery state={buildInitialState()} onChange={vi.fn()} onOpenDestinationPrerequisite={onOpenDestinationPrerequisite} />
+            <StepDelivery state={buildInitialState()} onChange={vi.fn()} onOpenDestinationPrerequisite={onOpenDestinationPrerequisite} showCreateDraftReturnGuidance />
           } />
           <Route path="/destinations" element={<p>Destination management workspace</p>} />
         </Routes>
@@ -318,7 +318,7 @@ describe('StepDelivery', () => {
       <MemoryRouter initialEntries={['/streams/new']}>
         <Routes>
           <Route path="/streams/new" element={
-            <StepDelivery state={buildInitialState()} onChange={vi.fn()} onOpenDestinationPrerequisite={onOpenDestinationPrerequisite} />
+            <StepDelivery state={buildInitialState()} onChange={vi.fn()} onOpenDestinationPrerequisite={onOpenDestinationPrerequisite} showCreateDraftReturnGuidance />
           } />
           <Route path="/destinations" element={<p>Destination management workspace</p>} />
         </Routes>
@@ -326,6 +326,7 @@ describe('StepDelivery', () => {
     )
 
     await screen.findByText('Stellar Syslog')
+    expect(screen.getByTestId('wizard-destination-resume-guidance')).toHaveTextContent('Opening Destinations saves this Stream draft first')
     expect(screen.getByTestId('wizard-destination-resume-guidance')).toHaveTextContent('Resume draft')
     await userEvent.setup().click(screen.getByRole('link', { name: 'Create new destination' }))
     expect(onOpenDestinationPrerequisite).toHaveBeenCalledTimes(1)
@@ -338,7 +339,7 @@ describe('StepDelivery', () => {
       <MemoryRouter initialEntries={['/streams/new']}>
         <Routes>
           <Route path="/streams/new" element={
-            <StepDelivery state={buildInitialState()} onChange={vi.fn()} onOpenDestinationPrerequisite={onOpenDestinationPrerequisite} />
+            <StepDelivery state={buildInitialState()} onChange={vi.fn()} onOpenDestinationPrerequisite={onOpenDestinationPrerequisite} showCreateDraftReturnGuidance />
           } />
           <Route path="/destinations" element={<p>Destination management workspace</p>} />
         </Routes>

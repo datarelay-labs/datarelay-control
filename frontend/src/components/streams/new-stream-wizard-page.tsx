@@ -972,6 +972,7 @@ export function NewStreamWizardPage() {
             state={state}
             onChange={setDestinations}
             onOpenDestinationPrerequisite={preserveDraftBeforeDestinationPrerequisite}
+            showCreateDraftReturnGuidance
           />
         ) : null}
         {currentStepKey === 'route_processing' ? (
