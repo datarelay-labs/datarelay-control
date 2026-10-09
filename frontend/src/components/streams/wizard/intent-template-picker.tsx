@@ -9,6 +9,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { WIZARD_INTENT_TEMPLATES, type WizardIntentTemplateId } from './intent-templates'
+import { WizardResourceReadiness } from './wizard-resource-readiness'
 
 const TEMPLATE_ICONS: Record<Exclude<WizardIntentTemplateId, 'scratch'>, LucideIcon> = {
   'api-logs-siem': Globe2,
@@ -45,6 +46,8 @@ export function IntentTemplatePicker({ onSelect }: { onSelect: (id: WizardIntent
           ))}
         </ol>
       </div>
+
+      <WizardResourceReadiness />
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3" aria-label="Guided setup options">
         {guided.map((template) => {

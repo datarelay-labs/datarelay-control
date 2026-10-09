@@ -70,6 +70,7 @@ import {
 } from './wizard/wizard-operational-samples'
 import { applyHttpImportToWizardState, type HttpImportWizardLocationState } from '../../utils/httpImportDraft'
 import { IntentTemplatePicker } from './wizard/intent-template-picker'
+import { WizardExitConfirmation } from './wizard/wizard-exit-confirmation'
 import { applyWizardIntentTemplate, type WizardIntentTemplateId } from './wizard/intent-templates'
 import { persistWizardDataProtectionIntents } from './wizard/wizard-data-protection-persist'
 import { persistWizardRouteTransformOverrides, verifyWizardRouteTransformEffective } from './wizard/wizard-stream-persist'
@@ -103,6 +104,8 @@ export function NewStreamWizardPage() {
   const location = useLocation()
   const importHydratedRef = useRef(false)
   const draftHydratedRef = useRef(false)
+  const cancelButtonRef = useRef<HTMLButtonElement>(null)
+  const [exitConfirmationOpen, setExitConfirmationOpen] = useState(false)
   const [stepIndex, setStepIndex] = useState(0)
   const [intentSelected, setIntentSelected] = useState(false)
   const [state, setState] = useState<WizardState>(() => buildInitialState())
@@ -874,6 +877,51 @@ export function NewStreamWizardPage() {
 
   const isDeployStep = currentStepKey === 'deploy'
   const streamCreated = state.outcome?.streamId != null
+
+  // Never navigate away from an in-progress wizard without an explicit choice.
+  // The draft serializer already strips secrets and raw samples; do not autosave.
+  const requestCancel = () => {
+    if (!intentSelected || streamCreated) {
+      navigate(NAV_PATH.streams)
+    } else {
+      setExitConfirmationOpen(true)
+    }
+  }
+  const keepEditing = () => {
+    setExitConfirmationOpen(false)
+    queueMicrotask(() => cancelButtonRef.current?.focus())
+  }
+  const saveAndExit = () => {
+    try {
+      saveWizardDraft(state, currentStepKey)
+      setExitConfirmationOpen(false)
+      navigate(NAV_PATH.streams)
+    } catch {
+      setExitConfirmationOpen(false)
+      setDraftNotice('Unable to save the local draft. You are still in the wizard; review browser storage and try again.')
+    }
+  }
+  const discardAndExit = () => {
+    try {
+      clearWizardDraft()
+      setExitConfirmationOpen(false)
+      navigate(NAV_PATH.streams)
+    } catch {
+      setExitConfirmationOpen(false)
+      setDraftNotice('Unable to clear the saved draft. You are still in the wizard.')
+    }
+  }
+  useEffect(() => {
+    if (!intentSelected || streamCreated) return
+    // Reload/close cannot use our in-app dialog; the browser owns this prompt.
+    const guard = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', guard)
+    return () => window.removeEventListener('beforeunload', guard)
+  }, [intentSelected, streamCreated])
+
   const stepGateOpen = canAdvanceFromWizardStep(currentStepKey, state)
   const canAdvance = (!isDeployStep || !streamCreated) && stepGateOpen
   const nextStepBlockReason = useMemo(() => {
@@ -913,15 +961,24 @@ export function NewStreamWizardPage() {
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <button
+            ref={cancelButtonRef}
             type="button"
-            onClick={() => navigate(NAV_PATH.streams)}
-            className="inline-flex h-9 items-center rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-200 dark:hover:bg-gdc-rowHover"
+            onClick={requestCancel}
+            disabled={busy || isStarting}
+            className="inline-flex h-9 items-center rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-200 dark:hover:bg-gdc-rowHover"
           >
             Cancel
           </button>
         </div>
       </div>
 
+      {exitConfirmationOpen ? (
+        <WizardExitConfirmation
+          onKeepEditing={keepEditing}
+          onSaveDraftAndLeave={saveAndExit}
+          onDiscardAndLeave={discardAndExit}
+        />
+      ) : null}
       {connectorCreateOpen ? (
         <div role="presentation" className="fixed inset-0 z-[150] overflow-y-auto bg-slate-950/60 p-2 sm:p-6">
           <section role="dialog" aria-modal="true" aria-label="Add Connector to Data Flow" className="mx-auto max-w-5xl rounded-xl bg-white p-4 shadow-2xl dark:bg-gdc-panel sm:p-6">

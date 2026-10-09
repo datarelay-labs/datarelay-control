@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NewStreamWizardPage } from './new-stream-wizard-page'
 import { StepMappingCombined } from './wizard/step-mapping-combined'
@@ -573,5 +573,120 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
     expect(screen.getByText('Validation by field')).toBeInTheDocument()
     expect(screen.queryByText(/^Mapped event$/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/Enriched final event/i)).not.toBeInTheDocument()
+  })
+})
+
+
+function renderWizardWithStreamsExit() {
+  return render(
+    <MemoryRouter initialEntries={['/streams/new']}>
+      <Routes>
+        <Route path="/streams/new" element={<NewStreamWizardPage />} />
+        <Route path="/streams" element={<p data-testid="wizard-left-for-streams">Streams workspace</p>} />
+      </Routes>
+    </MemoryRouter>,
+  )
+}
+
+describe('New Data Flow draft-safe exit', () => {
+  beforeEach(() => {
+    localStorage.removeItem(WIZARD_DRAFT_KEY_V2)
+    clearWizardCatalogSnapshot()
+    vi.mocked(fetchCatalogSnapshot).mockReset().mockResolvedValue({
+      connectors: [], sources: [], apiBacked: true,
+    })
+  })
+
+  it('does not interrupt users before they start a goal', async () => {
+    const user = userEvent.setup()
+    renderWizardWithStreamsExit()
+    const before = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(before)
+    expect(before.defaultPrevented).toBe(false)
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.getByTestId('wizard-left-for-streams')).toBeInTheDocument()
+    expect(screen.queryByTestId('wizard-unsaved-exit-dialog')).not.toBeInTheDocument()
+  })
+
+  it('prevents accidental Cancel and browser reload, restores focus and current setup on Escape', async () => {
+    const user = userEvent.setup()
+    renderWizardWithStreamsExit()
+    await user.click(screen.getByTestId('wizard-intent-scratch'))
+    const before = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(before)
+    expect(before.defaultPrevented).toBe(true)
+
+    const cancel = screen.getByRole('button', { name: 'Cancel' })
+    await user.click(cancel)
+    expect(screen.getByRole('dialog', { name: 'Leave this Data Flow setup?' })).toBeInTheDocument()
+    expect(screen.queryByTestId('wizard-left-for-streams')).not.toBeInTheDocument()
+    expect(screen.getByTestId('wizard-exit-keep')).toHaveFocus()
+
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(cancel).toHaveFocus())
+    expect(screen.queryByTestId('wizard-unsaved-exit-dialog')).not.toBeInTheDocument()
+    expect(screen.getByTestId('wizard-step-connect')).toBeInTheDocument()
+    expect(localStorage.getItem(WIZARD_DRAFT_KEY_V2)).toBeNull()
+  })
+
+  it('saves a sanitized local draft at the exact current Wizard step before leaving', async () => {
+    const state = buildInitialState()
+    state.stream.name = 'Unfinished finance pipeline'
+    state.connector.bearerToken = 'NEVER_PERSIST_TOKEN'
+    state.apiTest.rawResponse = 'NEVER_PERSIST_RAW_SAMPLE'
+    localStorage.setItem(WIZARD_DRAFT_KEY_V2, JSON.stringify({
+      version: 2, savedAt: Date.now(), stepKey: 'connect', state,
+    }))
+    const user = userEvent.setup()
+    renderWizardWithStreamsExit()
+    await user.click(screen.getByTestId('wizard-draft-resume'))
+    localStorage.removeItem(WIZARD_DRAFT_KEY_V2)
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    await user.click(screen.getByTestId('wizard-exit-save'))
+
+    expect(screen.getByTestId('wizard-left-for-streams')).toBeInTheDocument()
+    const rawDraft = localStorage.getItem(WIZARD_DRAFT_KEY_V2)
+    expect(rawDraft).toBeTruthy()
+    expect(rawDraft).not.toContain('NEVER_PERSIST_TOKEN')
+    expect(rawDraft).not.toContain('NEVER_PERSIST_RAW_SAMPLE')
+    const saved = JSON.parse(rawDraft!)
+    expect(saved.stepKey).toBe('connect')
+    expect(saved.state.stream.name).toBe('Unfinished finance pipeline')
+    expect(saved.state.connector.bearerToken).toBe('')
+    expect(saved.state.apiTest.rawResponse).toBeNull()
+  })
+
+  it('requires an explicit discard before clearing an existing draft', async () => {
+    const state = buildInitialState()
+    state.stream.name = 'Discard only by choice'
+    localStorage.setItem(WIZARD_DRAFT_KEY_V2, JSON.stringify({
+      version: 2, savedAt: Date.now(), stepKey: 'connect', state,
+    }))
+    const user = userEvent.setup()
+    renderWizardWithStreamsExit()
+    await user.click(screen.getByTestId('wizard-draft-resume'))
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(localStorage.getItem(WIZARD_DRAFT_KEY_V2)).not.toBeNull()
+    await user.click(screen.getByTestId('wizard-exit-discard'))
+    expect(screen.getByTestId('wizard-left-for-streams')).toBeInTheDocument()
+    expect(localStorage.getItem(WIZARD_DRAFT_KEY_V2)).toBeNull()
+  })
+
+  it('does not navigate if draft persistence fails', async () => {
+    const user = userEvent.setup()
+    renderWizardWithStreamsExit()
+    await user.click(screen.getByTestId('wizard-intent-scratch'))
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    const storage = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('quota')
+    })
+    try {
+      await user.click(screen.getByTestId('wizard-exit-save'))
+      expect(screen.getByTestId('wizard-step-connect')).toBeInTheDocument()
+      expect(screen.queryByTestId('wizard-left-for-streams')).not.toBeInTheDocument()
+      expect(screen.getByText(/Unable to save the local draft/i)).toBeInTheDocument()
+    } finally {
+      storage.mockRestore()
+    }
   })
 })
