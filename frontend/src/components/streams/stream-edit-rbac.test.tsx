@@ -162,6 +162,7 @@ function renderStreamEdit() {
     <MemoryRouter initialEntries={['/streams/10/edit']}>
       <Routes>
         <Route path="/streams/:streamId/edit" element={<StreamEditWizardPage />} />
+        <Route path="/destinations" element={<p>Destination management workspace</p>} />
       </Routes>
     </MemoryRouter>,
   )
@@ -261,6 +262,89 @@ describe('StreamEditWizardPage workspace capability visibility', () => {
     await user.click(page.getByTestId('wizard-stepper-deploy'))
     expect(await page.findByRole('button', { name: 'Start Stream' })).toBeInTheDocument()
     expect(page.getByRole('button', { name: 'Run Once' })).toBeInTheDocument()
+  })
+
+  it('guards leaving the Stream editor for a new destination until unsaved edits are confirmed', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    renderStreamEdit()
+    const page = await screen.findByTestId('edit-stream-wizard')
+    await user.click(within(page).getByTestId('wizard-connect-tab-request'))
+    const name = within(page).getByPlaceholderText('e.g. Cybereason Malop Stream')
+    await user.clear(name)
+    await user.type(name, 'Edited stream awaiting save')
+    await user.click(within(page).getByTestId('wizard-stepper-destinations'))
+    const manage = await within(page).findByRole('link', { name: 'Create new destination' })
+    await user.click(manage)
+    expect(screen.getByTestId('edit-stream-wizard')).toBeInTheDocument()
+    expect(screen.queryByText('Destination management workspace')).not.toBeInTheDocument()
+    expect(within(page).getByTestId('edit-destination-navigation-notice')).toHaveTextContent(/Save now/)
+    expect(persistWizardStreamEdits).not.toHaveBeenCalled()
+
+    await user.click(within(page).getByTestId('wizard-save-now'))
+    await waitFor(() => expect(persistWizardStreamEdits).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(within(page).getByText('Changes saved')).toBeInTheDocument())
+    await user.click(within(page).getByRole('link', { name: 'Create new destination' }))
+    expect(await screen.findByText('Destination management workspace')).toBeInTheDocument()
+  })
+
+  it('keeps the editor open while an explicit save request is still in flight', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    let resolveSave: (value: { ok: boolean; errors: string[] }) => void = () => {}
+    persistWizardStreamEdits.mockImplementationOnce(() =>
+      new Promise((resolve) => {
+        resolveSave = resolve
+      }),
+    )
+    renderStreamEdit()
+    const page = await screen.findByTestId('edit-stream-wizard')
+    await user.click(within(page).getByTestId('wizard-connect-tab-request'))
+    const name = within(page).getByPlaceholderText('e.g. Cybereason Malop Stream')
+    await user.clear(name)
+    await user.type(name, 'Saving stream edits')
+    await user.click(within(page).getByTestId('wizard-save-now'))
+    await waitFor(() => expect(persistWizardStreamEdits).toHaveBeenCalledTimes(1))
+    await user.click(within(page).getByTestId('wizard-stepper-destinations'))
+    await user.click(await within(page).findByRole('link', { name: 'Create new destination' }))
+    expect(screen.getByTestId('edit-stream-wizard')).toBeInTheDocument()
+    expect(within(page).getByTestId('edit-destination-navigation-notice')).toHaveTextContent('still saving')
+    expect(screen.queryByText('Destination management workspace')).not.toBeInTheDocument()
+
+    resolveSave({ ok: true, errors: [] })
+    await waitFor(() => expect(within(page).getByText('Changes saved')).toBeInTheDocument())
+    await user.click(within(page).getByRole('link', { name: 'Create new destination' }))
+    expect(await screen.findByText('Destination management workspace')).toBeInTheDocument()
+  })
+
+  it('allows read-only Stream inspection to navigate to destination management without a write', async () => {
+    const user = userEvent.setup()
+    signIn('VIEWER')
+    renderStreamEdit()
+    const page = await screen.findByTestId('edit-stream-wizard')
+    await user.click(within(page).getByTestId('wizard-stepper-destinations'))
+    await user.click(await within(page).findByRole('link', { name: 'Create new destination' }))
+    expect(await screen.findByText('Destination management workspace')).toBeInTheDocument()
+    expect(persistWizardStreamEdits).not.toHaveBeenCalled()
+  })
+
+  it('retains the editor after a failed explicit save instead of navigating away', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    persistWizardStreamEdits.mockResolvedValue({ ok: false, errors: ['destination configuration was not saved'] })
+    renderStreamEdit()
+    const page = await screen.findByTestId('edit-stream-wizard')
+    await user.click(within(page).getByTestId('wizard-connect-tab-request'))
+    const name = within(page).getByPlaceholderText('e.g. Cybereason Malop Stream')
+    await user.clear(name)
+    await user.type(name, 'Unconfirmed destination edit')
+    await user.click(within(page).getByTestId('wizard-save-now'))
+    expect(await within(page).findByText(/destination configuration was not saved/i)).toBeInTheDocument()
+    await user.click(within(page).getByTestId('wizard-stepper-destinations'))
+    await user.click(await within(page).findByRole('link', { name: 'Create new destination' }))
+    expect(screen.getByTestId('edit-stream-wizard')).toBeInTheDocument()
+    expect(within(page).getByTestId('edit-destination-navigation-notice')).toHaveTextContent(/save failed/i)
+    expect(screen.queryByText('Destination management workspace')).not.toBeInTheDocument()
   })
 
   it('refreshes the route projection after a partial save that may have persisted routes', async () => {

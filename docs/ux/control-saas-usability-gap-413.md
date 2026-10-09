@@ -176,4 +176,12 @@ Protect #410's Chromium test run, locked ports/session/DB, #411/PR #412 and PF-5
 
 **Additional empty-state recovery:** The destination library previously rendered a blank list when a search/category filter matched nothing, or when every configured destination was disabled. It now presents distinct messages: **No destinations match this search or filter** with **Clear destination filters**, or **No enabled destinations are available** with **Manage destinations** (using the same guarded pre-navigation draft-save callback when provided). Search/filter reset is local UI state only; it does not change Route drafts or enable a destination. Component regressions cover both states.
 
+## 2026-10-09 continuation — Stream Edit destination navigation safety
+
+**Observed source-level risk:** The existing Stream Edit page debounces autosave by 1.2 seconds and attempts an asynchronous last-chance save on unmount. Unlike New Stream, its `StepDelivery` destination-management links had no pre-navigation guard. A user could leave while edits were unconfirmed, saving, or already known to have failed. An unmount save attempt is not proof of a persisted change; this was observed in code and component tests, not yet confirmed in an authenticated browser.
+
+**Minimal UI decision:** Reuse the page's existing confirmed-snapshot and save-failure logic. For mutating users, destination-management navigation is blocked until save is confirmed, with an in-context explanation: wait for the pending save or choose **Save now** and resolve any failure, then retry. Read-only inspectors retain navigation without any save requests. This does not introduce a second autosave/persistence flow, API endpoint, storage format, or elevated permission. Other editor exit controls retain their original behavior and require independent UX review.
+
+**Evidence:** `stream-edit-rbac.test.tsx` exercises the operator's unsaved, in-flight and failed-save paths, confirmed-save navigation, and read-only navigation. Tests intentionally failed before implementation on the unguarded destination link; focused unit/integration tests and build are required, but are not Browser BFS or 2-user E2E evidence. Preserve the #410 exclusive lab and do not promote CI to browser PASS.
+
 **Protected boundaries:** no route/destination persistence semantics, API, credentials, runtime, policy, user rights, shared DB, or #410 browser process modified. Final authenticated UX/BFS and 2-user Full User E2E remain NOT VERIFIED.

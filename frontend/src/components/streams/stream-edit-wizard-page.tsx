@@ -151,6 +151,7 @@ export function StreamEditWizardPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null)
+  const [destinationNavigationBlocked, setDestinationNavigationBlocked] = useState(false)
   const [runtimeStatus, setRuntimeStatus] = useState<StreamRuntimeStatus>('UNKNOWN')
   const [controlBusy, setControlBusy] = useState(false)
   const [runOnceBusy, setRunOnceBusy] = useState(false)
@@ -879,6 +880,17 @@ export function StreamEditWizardPage() {
         confirmedSavedSnapshot: confirmedSavedSnapshotRef.current,
       })
 
+  const confirmDestinationNavigation = () => {
+    // The leave-flush is asynchronous and cannot prove persistence. Require an
+    // authoritative saved snapshot before navigating to destination management.
+    if (canMutateWorkspace && runtimeVerificationBlocked) {
+      setDestinationNavigationBlocked(true)
+      return false
+    }
+    setDestinationNavigationBlocked(false)
+    return true
+  }
+
   const saveStateLabel = !canMutateWorkspace
     ? 'Read-only'
     : isSaving
@@ -1064,8 +1076,25 @@ export function StreamEditWizardPage() {
         </ReadonlyInspectionFrame>
         {currentStepKey === 'destinations' ? (
           <div className="space-y-6" data-testid="edit-stream-destinations">
+            {destinationNavigationBlocked && runtimeVerificationBlocked ? (
+              <p
+                role="status"
+                data-testid="edit-destination-navigation-notice"
+                className="rounded-lg border border-amber-300/80 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100"
+              >
+                {saveError
+                  ? 'The last save failed. Correct the error and choose Save now before opening Destinations.'
+                  : isSaving
+                    ? 'Your changes are still saving. Open Destinations after Changes saved appears.'
+                    : 'This Stream has unsaved changes. Choose Save now below, then open Destinations after Changes saved appears.'}
+              </p>
+            ) : null}
             <ReadonlyInspectionFrame readOnly={!canMutateWorkspace}>
-              <StepDelivery state={state} onChange={setDestinations} />
+              <StepDelivery
+                state={state}
+                onChange={setDestinations}
+                onOpenDestinationPrerequisite={confirmDestinationNavigation}
+              />
             </ReadonlyInspectionFrame>
             {backendStreamId != null ? (
               <StreamEditDeliveryPanel
