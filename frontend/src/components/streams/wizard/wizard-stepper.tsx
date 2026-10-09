@@ -1,7 +1,14 @@
 import { useEffect, useRef } from 'react'
 import { cn } from '../../../lib/utils'
 import { WizardFlowOverview } from './wizard-flow-overview'
-import { wizardStepReachable, type WizardStepReachableOptions } from './wizard-step-gates'
+import {
+  wizardDestinationGateReady,
+  wizardRouteProcessingStepBlockReason,
+  wizardSampleStepBlockReason,
+  wizardSampleStepGateReady,
+  wizardStepReachable,
+  type WizardStepReachableOptions,
+} from './wizard-step-gates'
 import type { WizardState, WizardStepCompletion, WizardStepDef } from './wizard-state'
 
 export type WizardStepperProps = {
@@ -25,6 +32,21 @@ export function WizardStepper({
 }: WizardStepperProps) {
   const railRef = useRef<HTMLOListElement>(null)
   const activeStep = wizardSteps[stepIndex]
+  // Position in the wizard is not the same as a completed configuration.
+  const completedStages = wizardSteps.filter((step) => completion[step.key] === 'complete').length
+  const sampleBlocked = !wizardSampleStepGateReady(state)
+  const unlockGuidance = reachability?.editMode
+    ? null
+    : sampleBlocked
+      ? {
+          target: 'Destinations',
+          reason: state.connector.connectorId == null || state.connector.sourceId == null
+            ? 'Choose a source in Connect, then run a successful source test.'
+            : wizardSampleStepBlockReason(state),
+        }
+      : !wizardDestinationGateReady(state)
+        ? { target: 'Deploy', reason: wizardRouteProcessingStepBlockReason(state) }
+        : null
 
   useEffect(() => {
     const rail = railRef.current
@@ -42,21 +64,30 @@ export function WizardStepper({
             {activeStep?.title ?? 'Stream setup'}
           </span>
         </p>
-        <span className="text-xs font-medium text-slate-500 dark:text-gdc-muted">
-          Choose an available step to review its settings
-        </span>
+        <div className="flex flex-col items-start gap-0.5 sm:items-end">
+          <span
+            className="text-xs font-medium text-slate-700 dark:text-gdc-mutedStrong"
+            data-testid="wizard-completed-stage-count"
+          >
+            {completedStages} of {wizardSteps.length} setup stages marked complete
+          </span>
+          <span className="text-[11px] text-slate-500 dark:text-gdc-muted">
+            Choose an available step to review its settings
+          </span>
+        </div>
       </div>
       <div
         role="progressbar"
-        aria-label="Stream setup progress"
+        aria-label="Setup stages marked complete"
         aria-valuemin={0}
         aria-valuemax={wizardSteps.length}
-        aria-valuenow={stepIndex + 1}
+        aria-valuenow={completedStages}
+        aria-valuetext={`${completedStages} of ${wizardSteps.length} setup stages marked complete`}
         className="h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-gdc-border"
       >
         <div
           className="h-full rounded-full bg-violet-600 transition-[width] duration-200 dark:bg-violet-400"
-          style={{ width: `${((stepIndex + 1) / Math.max(1, wizardSteps.length)) * 100}%` }}
+          style={{ width: `${(completedStages / Math.max(1, wizardSteps.length)) * 100}%` }}
         />
       </div>
       <ol
@@ -87,7 +118,7 @@ export function WizardStepper({
                   setStepIndex(index)
                 }}
                 disabled={!reachable}
-                title={!reachable ? 'Complete required steps before opening this section.' : undefined}
+                title={!reachable ? unlockGuidance?.reason ?? 'Complete required steps before opening this section.' : undefined}
                 className={cn(
                   'h-full w-full rounded-lg border px-3 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400',
                   active
@@ -121,6 +152,15 @@ export function WizardStepper({
           )
         })}
       </ol>
+      {unlockGuidance ? (
+        <p
+          className="text-xs leading-5 text-slate-600 dark:text-gdc-mutedStrong"
+          data-testid="wizard-unlock-guidance"
+          role="status"
+        >
+          <span className="font-semibold">To open {unlockGuidance.target}:</span> {unlockGuidance.reason}
+        </p>
+      ) : null}
       <WizardFlowOverview state={state} activeStep={activeStep?.key ?? 'connect'} />
     </div>
   )

@@ -198,4 +198,14 @@ Protect #410's Chromium test run, locked ports/session/DB, #411/PR #412 and PF-5
 
 **Validation:** Red/green component tests cover positive, negative, exception, and an in-flight retry that replaces a former success with a newer failure; regression/TypeScript build and document integrity required. The menu also disables another destination's **Test destination** while one connectivity request is active, rather than accepting and silently ignoring the second click; a dedicated red/green test verifies it becomes available when the first request completes. Authenticated Browser BFS and two-user Full User E2E remain separate, incomplete release gates; protect #410's exclusive browser lab.
 
+## 2026-10-09 continuation — position is not completion
+
+**Observed UX problem:** The five-step Wizard displayed `Step 5 of 5` and a **100% filled "Stream setup progress" bar** solely because the operator navigated to Review/Deploy. That represented navigation position, not configuration readiness; in Stream Edit, an operator can open Review without actually saving configuration. This risks the same misleading, NOC-like status that the SaaS usability work intends to avoid.
+
+**User-first correction:** Keep **Step N of 5** for position. The single compact completion bar now counts only sections that the existing `computeStepCompletion` signal marks `complete`, with an explicit "N of 5 setup stages marked complete" label and accessible progressbar value. No new gate, invented readiness result, or live delivery proof. The existing Deploy Decision Center remains the authority for current readiness, persistence and actual delivery.
+
+**Actionable next step:** New Stream operators see one plain-language instruction beneath the five-stage rail while Destinations or Deploy is gated. When no source is chosen: select a source and test it; when a source exists but sample confirmation is missing: the existing source-type-aware sample gate reason; once sample is confirmed but no delivery path is enabled: enable a delivery path. This uses canonical `wizardSampleStepGateReady`, `wizardDestinationGateReady` and their existing blocker reasons; **does not relax navigation gates**. Read-only/Edit mode has unrestricted stages and does not get a misleading locked-step instruction.
+
+**Evidence:** Dedicated `wizard-stepper.test.tsx` red/green regressions cover Review open while zero stages are complete, partial progress, actionable source/sample/Route requirements, and Edit mode nonblocking navigation. Existing Stream Wizard modernization checks updated to distinguish location from completion. Real browser comparison and two-user E2E still pending under #410's exclusive test boundary.
+
 **Protected boundaries:** no route/destination persistence semantics, API, credentials, runtime, policy, user rights, shared DB, or #410 browser process modified. Final authenticated UX/BFS and 2-user Full User E2E remain NOT VERIFIED.
