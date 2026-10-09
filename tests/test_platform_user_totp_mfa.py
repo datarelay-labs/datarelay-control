@@ -507,3 +507,200 @@ def test_read_only_members_can_enroll_only_own_mfa(
     # Newly enrolled account's original JWT is revoked for all roles.
     revoked = client.get("/api/v1/auth/mfa/status", headers=auth)
     assert revoked.status_code == 401
+
+
+def test_mfa_challenge_creation_is_bounded_per_account_and_cleans_expired_proofs(
+    client: TestClient, db_session: Session,
+) -> None:
+    user, _, codes, _ = begin_enrollment(client, db_session)
+    created = []
+    for _ in range(5):
+        result = client.post("/api/v1/auth/login", json={
+            "username": USERNAME, "password": PASSWORD,
+        })
+        assert result.status_code == 200
+        created.append(result.json()["challenge_token"])
+        assert "access_token" not in result.text
+
+    blocked = client.post("/api/v1/auth/login", json={
+        "username": USERNAME, "password": PASSWORD,
+    })
+    assert blocked.status_code == 429
+    assert blocked.json()["detail"]["error_code"] == "MFA_CHALLENGE_LIMIT"
+    assert blocked.headers.get("retry-after")
+    assert db_session.query(PlatformMfaChallenge).filter_by(user_id=user.id).count() == 5
+
+    # Valid completion frees one slot without resetting other pending proofs.
+    verified = client.post("/api/v1/auth/mfa/verify", json={
+        "challenge_token": created[0], "recovery_code": codes[0],
+    })
+    assert verified.status_code == 200
+    allowed = client.post("/api/v1/auth/login", json={
+        "username": USERNAME, "password": PASSWORD,
+    })
+    assert allowed.status_code == 200
+    db_session.query(PlatformMfaChallenge).filter(
+        PlatformMfaChallenge.user_id == user.id,
+    ).update({"expires_at": datetime.now(timezone.utc) - timedelta(seconds=5)})
+    db_session.commit()
+    expired_replaced = client.post("/api/v1/auth/login", json={
+        "username": USERNAME, "password": PASSWORD,
+    })
+    assert expired_replaced.status_code == 200
+    assert db_session.query(PlatformMfaChallenge).filter_by(user_id=user.id).count() == 1
+
+
+def test_mfa_enrollment_password_guesses_share_login_throttle(
+    client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.auth import login_throttle
+    monkeypatch.setattr(login_throttle, "_DEFAULT", login_throttle.LoginThrottleConfig(
+        max_failures_per_username=3, max_failures_per_ip=30,
+    ))
+    user = create_user(db_session)
+    first = client.post("/api/v1/auth/login", json={
+        "username": user.username, "password": PASSWORD,
+    })
+    auth = {"Authorization": "Bearer " + first.json()["access_token"]}
+    for i in range(3):
+        invalid = client.post("/api/v1/auth/mfa/enroll/start", headers=auth, json={
+            "current_password": "guessed-password-" + str(i),
+        })
+        assert invalid.status_code == 400
+        assert "secret" not in invalid.text
+    blocked = client.post("/api/v1/auth/mfa/enroll/start", headers=auth, json={
+        "current_password": PASSWORD,
+    })
+    assert blocked.status_code == 429
+    assert blocked.json()["detail"]["error_code"] == "LOGIN_RATE_LIMITED"
+    assert db_session.query(PlatformUserMfa).filter_by(user_id=user.id).count() == 0
+
+
+def test_enrollment_totp_guessing_locks_out_across_restart_and_restart_setup(
+    client: TestClient, db_session: Session,
+) -> None:
+    user = create_user(db_session)
+    first = client.post("/api/v1/auth/login", json={
+        "username": user.username, "password": PASSWORD,
+    })
+    auth = {"Authorization": "Bearer " + first.json()["access_token"]}
+    started = client.post("/api/v1/auth/mfa/enroll/start", headers=auth, json={
+        "current_password": PASSWORD,
+    })
+    assert started.status_code == 200
+    for _ in range(8):
+        invalid = client.post("/api/v1/auth/mfa/enroll/confirm", headers=auth, json={
+            "totp": "aaaaaa",
+        })
+        assert invalid.status_code == 400, invalid.text
+    db_session.expire_all()
+    row = db_session.get(PlatformUserMfa, user.id)
+    assert row.failed_attempts == 8
+    assert row.locked_until > datetime.now(timezone.utc)
+    reset_login_throttle_for_tests()
+    correct = code_at(started.json()["secret"], datetime.now(timezone.utc).timestamp())
+    refused = client.post("/api/v1/auth/mfa/enroll/confirm", headers=auth, json={
+        "totp": correct,
+    })
+    assert refused.status_code == 429
+    assert refused.json()["detail"]["error_code"] == "MFA_RATE_LIMITED"
+    restart = client.post("/api/v1/auth/mfa/enroll/start", headers=auth, json={
+        "current_password": PASSWORD,
+    })
+    assert restart.status_code == 429
+    assert db_session.get(PlatformUserMfa, user.id).required is False
+
+
+def test_concurrent_password_verified_challenges_share_account_cap(
+    client: TestClient, db_session: Session,
+) -> None:
+    from app.auth.mfa import begin_password_challenge
+    user, _, _, _ = begin_enrollment(client, db_session)
+    user_id = int(user.id)
+    db_session.commit()
+    barrier = threading.Barrier(6)
+
+    def start_proof(_: int) -> int:
+        # Release all workers before they acquire DB connections; the guarded
+        # test engine has a bounded connection pool, not six idle slots.
+        barrier.wait(timeout=20)
+        with SessionLocal() as db:
+            account = db.get(PlatformUser, user_id)
+            assert account is not None
+            try:
+                result = begin_password_challenge(db, account, _request_from("testclient"))
+                assert result["mfa_required"] is True
+                return 200
+            except HTTPException as exc:
+                return exc.status_code
+
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        codes = list(pool.map(start_proof, range(6)))
+    assert sorted(codes) == [200, 200, 200, 200, 200, 429], codes
+    db_session.expire_all()
+    assert db_session.query(PlatformMfaChallenge).filter_by(user_id=user_id).count() == 5
+
+
+def test_enrollment_confirmation_locks_live_user_epoch_before_mutation(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A refresh transaction cannot race enrollment into reusing a JWT epoch."""
+    from app.auth import router as auth_router
+    from app.auth.jwt_service import issue_access_token
+
+    user = create_user(db_session)
+    user_id = int(user.id)
+    access, _ = issue_access_token(
+        username=user.username, user_id=user_id,
+        role=user.role, token_version=1,
+    )
+    request = Request({
+        "type": "http", "method": "POST", "path": "/api/v1/auth/mfa/enroll/confirm",
+        "headers": [(b"authorization", ("Bearer " + access).encode())],
+        "client": ("testclient", 12345), "server": ("testserver", 80),
+    })
+
+    actor_entered = threading.Event()
+    confirm_called = threading.Event()
+    original_resolve = auth_router.resolve_auth_context
+
+    def signal_before_user_lookup(req: Request):
+        actor_entered.set()
+        return original_resolve(req)
+
+    def fake_confirm(db, account, code):
+        confirm_called.set()
+        return ("test-recovery-code",)
+
+    monkeypatch.setattr(auth_router, "resolve_auth_context", signal_before_user_lookup)
+    monkeypatch.setattr(auth_router, "confirm_enrollment", fake_confirm)
+
+    with SessionLocal() as other_session:
+        locked = other_session.query(PlatformUser).filter(
+            PlatformUser.id == user_id,
+        ).with_for_update().one()
+        locked.token_version = 2
+        other_session.flush()  # Uncommitted refresh epoch while holding the row lock.
+
+        def confirm_using_old_jwt() -> int:
+            with SessionLocal() as session:
+                try:
+                    auth_router.mfa_enroll_confirm(
+                        auth_router.MfaEnrollConfirmRequest(totp="123456"),
+                        request, db=session,
+                    )
+                    return 200
+                except HTTPException as exc:
+                    return exc.status_code
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(confirm_using_old_jwt)
+            assert actor_entered.wait(timeout=5)
+            try:
+                # Under the old non-locking actor this callback ran while
+                # refresh still held a newer, uncommitted token epoch.
+                assert not confirm_called.wait(timeout=1), "stale JWT bypassed user row lock"
+            finally:
+                other_session.commit()
+            assert future.result(timeout=10) == 401
+    assert not confirm_called.is_set()

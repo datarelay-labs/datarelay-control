@@ -245,11 +245,19 @@ def verify_mfa_login(
     )
 
 
-def _current_mfa_actor(request: Request, db: Session):
+def _current_mfa_actor(request: Request, db: Session, *, lock_user: bool = False):
     ctx = resolve_auth_context(request)
     if ctx.source != "jwt" or ctx.user_id is None:
         raise _auth_error("AUTH_REQUIRED", "Sign in to manage your MFA.")
-    user = get_user_by_id(db, int(ctx.user_id))
+    if lock_user:
+        # Serialize enrollment epoch rotation with refresh/password updates.
+        # populate_existing avoids accepting a stale identity-map user after
+        # a concurrent transaction has advanced the token version.
+        user = db.query(PlatformUser).filter(
+            PlatformUser.id == int(ctx.user_id),
+        ).with_for_update().populate_existing().one_or_none()
+    else:
+        user = get_user_by_id(db, int(ctx.user_id))
     if (user is None or user.status != "ACTIVE"
             or _normalize_role(user.role) != ctx.role
             or int(user.token_version or 1) != int(ctx.token_version or 0)):
@@ -271,7 +279,12 @@ def mfa_enroll_start(
     payload: MfaEnrollStartRequest, request: Request, db: Session = Depends(get_db),
 ) -> dict[str, object]:
     user = _current_mfa_actor(request, db)
+    ip = client_ip_from_request(request)
+    # A stolen pre-MFA bearer token must not enable unlimited password guesses
+    # through the setup endpoint. Share the normal login failure budget.
+    check_login_allowed(username=str(user.username), ip=ip)
     if not verify_password(payload.current_password, user.password_hash):
+        record_login_failure(username=str(user.username), ip=ip)
         raise HTTPException(status_code=400, detail={
             "error_code": "MFA_SETUP_DENIED",
             "message": "Current password is incorrect.",
@@ -283,7 +296,7 @@ def mfa_enroll_start(
 def mfa_enroll_confirm(
     payload: MfaEnrollConfirmRequest, request: Request, db: Session = Depends(get_db),
 ) -> MfaEnrollConfirmResponse:
-    user = _current_mfa_actor(request, db)
+    user = _current_mfa_actor(request, db, lock_user=True)
     codes = confirm_enrollment(db, user, payload.totp)
     return MfaEnrollConfirmResponse(recovery_codes=list(codes))
 

@@ -27,6 +27,7 @@ from app.auth.login_throttle import (
 )
 
 MFA_CHALLENGE_SECONDS = 180
+MFA_MAX_PENDING_CHALLENGES = 5
 MFA_ENROLLMENT_SECONDS = 300
 MFA_FACTOR_MAX_FAILURES = 8
 MFA_FACTOR_WINDOW_SECONDS = 15 * 60
@@ -101,6 +102,37 @@ def _generic_failure() -> HTTPException:
     })
 
 
+def _check_factor_window(
+    db: Session, row: PlatformUserMfa, now: datetime, *, consume_challenge: bool = False,
+) -> None:
+    """One durable per-account factor budget for login and setup verification."""
+    if row.locked_until and now < row.locked_until:
+        wait = max(1, int((row.locked_until - now).total_seconds()))
+        if consume_challenge:
+            db.commit()
+        raise HTTPException(status_code=429, detail={
+            "error_code": "MFA_RATE_LIMITED",
+            "message": "Too many MFA failures. Try again later.",
+        }, headers={"Retry-After": str(wait)})
+    if row.locked_until or (row.failure_window_started_at and
+                             now - row.failure_window_started_at >= timedelta(seconds=MFA_FACTOR_WINDOW_SECONDS)):
+        _clear_factor_failures(row)
+
+
+def _record_factor_failure(row: PlatformUserMfa, now: datetime) -> None:
+    if row.failure_window_started_at is None:
+        row.failure_window_started_at = now
+    row.failed_attempts = int(row.failed_attempts or 0) + 1
+    if row.failed_attempts >= MFA_FACTOR_MAX_FAILURES:
+        row.locked_until = now + timedelta(seconds=MFA_FACTOR_LOCK_SECONDS)
+
+
+def _clear_factor_failures(row: PlatformUserMfa) -> None:
+    row.failed_attempts = 0
+    row.failure_window_started_at = None
+    row.locked_until = None
+
+
 def state_for_user(db: Session, user: PlatformUser) -> UserMfaState:
     row = _user_mfa(db, int(user.id))
     return UserMfaState(
@@ -122,6 +154,23 @@ def begin_password_challenge(
         raise HTTPException(503, detail={"error_code": "MFA_ENROLLMENT_REQUIRED",
                                          "message": "MFA enrollment needs administrator recovery."})
     _key()
+    # The MFA row is locked above: multiple workers cannot bypass this
+    # per-user pending challenge cap by starting at the same instant.
+    db.query(PlatformMfaChallenge).filter(
+        PlatformMfaChallenge.user_id == int(user.id),
+        PlatformMfaChallenge.expires_at <= now,
+    ).delete(synchronize_session=False)
+    pending = db.query(PlatformMfaChallenge.expires_at).filter(
+        PlatformMfaChallenge.user_id == int(user.id),
+        PlatformMfaChallenge.expires_at > now,
+    ).order_by(PlatformMfaChallenge.expires_at).all()
+    if len(pending) >= MFA_MAX_PENDING_CHALLENGES:
+        wait = max(1, int((pending[0][0] - now).total_seconds()))
+        db.commit()  # Persist expiry cleanup before rejecting the request.
+        raise HTTPException(status_code=429, detail={
+            "error_code": "MFA_CHALLENGE_LIMIT",
+            "message": "Too many pending MFA sign-ins. Complete an existing challenge or retry later.",
+        }, headers={"Retry-After": str(wait)})
     token = secrets.token_urlsafe(32)
     src, agent = _binding(request)
     db.add(PlatformMfaChallenge(
@@ -172,18 +221,7 @@ def verify_password_challenge(
         db.commit()
         raise _generic_failure()
     username = str(user.username)
-    if mfa.locked_until and now < mfa.locked_until:
-        wait = max(1, int((mfa.locked_until - now).total_seconds()))
-        db.commit()  # Also consumes this single-use challenge.
-        raise HTTPException(status_code=429, detail={
-            "error_code": "MFA_RATE_LIMITED",
-            "message": "Too many MFA failures. Try again later.",
-        }, headers={"Retry-After": str(wait)})
-    if mfa.locked_until or (mfa.failure_window_started_at and
-                            now - mfa.failure_window_started_at >= timedelta(seconds=MFA_FACTOR_WINDOW_SECONDS)):
-        mfa.failed_attempts = 0
-        mfa.failure_window_started_at = None
-        mfa.locked_until = None
+    _check_factor_window(db, mfa, now, consume_challenge=True)
     # The same per-account and per-source guard remains in force across
     # repeated password-first challenges; success only clears it after MFA.
     try:
@@ -209,11 +247,7 @@ def verify_password_challenge(
         except ValueError:
             pass
     if matching is None and consumed_digest is None:
-        if mfa.failure_window_started_at is None:
-            mfa.failure_window_started_at = now
-        mfa.failed_attempts = int(mfa.failed_attempts or 0) + 1
-        if mfa.failed_attempts >= MFA_FACTOR_MAX_FAILURES:
-            mfa.locked_until = now + timedelta(seconds=MFA_FACTOR_LOCK_SECONDS)
+        _record_factor_failure(mfa, now)
         journal.record_audit_event(
             db, action="USER_LOGIN_MFA_FAILED", actor_username=username,
             actor_user_id=int(user.id), entity_type="PLATFORM_USER", entity_id=int(user.id),
@@ -222,9 +256,7 @@ def verify_password_challenge(
         db.commit()
         record_login_failure(username=username, ip=str(request.client.host if request.client else "unknown"))
         raise _generic_failure()
-    mfa.failed_attempts = 0
-    mfa.failure_window_started_at = None
-    mfa.locked_until = None
+    _clear_factor_failures(mfa)
     if matching is not None:
         mfa.last_counter = matching
     else:
@@ -254,6 +286,7 @@ def start_enrollment(
     if row.required or row.secret_ciphertext:
         raise HTTPException(409, detail={"error_code": "MFA_ALREADY_ENABLED",
                                          "message": "MFA is already enabled."})
+    _check_factor_window(db, row, now)
     secret = new_totp_secret()
     row.pending_secret_ciphertext = _seal(int(user.id), secret)
     row.pending_expires_at = now + timedelta(seconds=MFA_ENROLLMENT_SECONDS)
@@ -276,6 +309,7 @@ def confirm_enrollment(
     if not row or row.required or not row.pending_secret_ciphertext or not row.pending_expires_at:
         raise HTTPException(409, detail={"error_code": "MFA_SETUP_MISSING",
                                          "message": "Start MFA enrollment again."})
+    _check_factor_window(db, row, now)
     if now >= row.pending_expires_at:
         row.pending_secret_ciphertext = None
         row.pending_expires_at = None
@@ -285,8 +319,11 @@ def confirm_enrollment(
     secret = _unseal(int(user.id), str(row.pending_secret_ciphertext))
     counter = verify_totp(secret, code, now=now.timestamp())
     if counter is None:
+        _record_factor_failure(row, now)
+        db.commit()
         raise HTTPException(400, detail={"error_code": "MFA_CODE_INVALID",
                                          "message": "Invalid authenticator code."})
+    _clear_factor_failures(row)
     codes = new_recovery_codes(8)
     row.secret_ciphertext = row.pending_secret_ciphertext
     row.pending_secret_ciphertext = None
