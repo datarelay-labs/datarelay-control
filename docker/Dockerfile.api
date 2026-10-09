@@ -23,7 +23,10 @@ RUN apt-get update \
     && chmod +x /usr/local/lib/docker/cli-plugins/docker-compose \
     && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Reviewed PF-9 shared Python wheel: no mutable VCS reference or runtime fetch.
+COPY vendor/onprem-security ./vendor/onprem-security
+RUN (cd vendor/onprem-security && sha256sum -c SHA256SUMS) \
+    && pip install --no-cache-dir -r requirements.txt
 COPY app ./app
 COPY alembic ./alembic
 COPY alembic.ini .
