@@ -61,12 +61,18 @@ authorization to apply a policy.
 
 ## Additional authentication-path hardening
 
-The Control role guard now matches trusted authentication bypasses with
-**path-segment boundaries**, not string prefixes. Example lookalike paths such
-as `/api/v1/auth/loginAgain`, `/api/v1/ingest/webhookExtra`,
-`/healthcheck` and `/docs-malicious` do not inherit exemptions for their
-similarly named legitimate endpoints. The mandatory-password-change escape
-set also contains only exact permitted endpoints.
+The Control role guard now matches trusted authentication exceptions against
+**explicit endpoint shapes and HTTP methods**, not arbitrary descendants or
+string prefixes. Login/MFA/refresh/logout require their exact public `POST`
+paths; health and documentation exceptions are restricted to public `GET`
+(and `HEAD`) paths, including the Swagger OAuth redirect. The two
+credential-validated ingest `POST` routes match only their actual one-segment
+receiver/stream parameter shapes. Example lookalike or descendant paths such
+as `/api/v1/auth/loginAgain`, `/api/v1/auth/login/admin`,
+`/api/v1/ingest/webhook/key/extra`, `/healthcheck` and
+`/docs-malicious` do not inherit any JWT exception. The
+mandatory-password-change escape set contains only exact permitted endpoints.
+The guard requires an explicit HTTP verb for every exception decision.
 
 This change reduces potential exposure from future route additions; it does
 not establish that a registered route previously allowed an unauthorized

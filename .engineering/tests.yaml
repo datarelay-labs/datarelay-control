@@ -123,7 +123,7 @@ scenarios:
     platforms: [linux]
     command: "PYTHONPATH=vendor/onprem-security/datarelay_onprem_security-0.10.0.dev0-py3-none-any.whl:. python3 -m pytest -q tests/test_role_guard_bypass_boundary.py"
     invariants:
-      - "Only explicit auth/docs/ingest path and descendants bypass JWT role enforcement; lexical prefix collisions do not."
+      - "Only registered public auth/docs/ingest endpoint shapes and permitted HTTP methods bypass JWT role enforcement; path descendants and lookalikes do not."
       - "Mandatory password change exemptions apply only to exact refresh, logout, whoami, and change-password endpoints."
       - "Anonymous malformed-lookalike URL requests are rejected by actual HTTP middleware before touching product DB."
     release_gate: true
