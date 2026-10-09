@@ -10,6 +10,7 @@ import {
   Pencil,
   RefreshCw,
   Server,
+  ShieldAlert,
   Trash2,
   UserRound,
   Users,
@@ -24,6 +25,7 @@ import {
   getAdminSystemInfo,
   getAuthWhoAmI,
   listAdminUsers,
+  postAdminUserMfaReset,
   postAdminPasswordChange,
   putAdminHttpsSettings,
   updateAdminUser,
@@ -32,6 +34,7 @@ import {
   type SystemInfoDto,
 } from '../../api/gdcAdmin'
 import { NAV_PATH } from '../../config/nav-paths'
+import { clearSession, getSessionUsername } from '../../auth/session'
 import { formatTimestampWithResolvedTimezone } from '../../lib/platform-timestamps'
 import { isDevValidationLabUiEnabled } from '../../lib/feature-flags'
 import { gdcUi, isAdminUiReadOnly, readAdminUiRole } from '../../lib/gdc-ui-tokens'
@@ -131,6 +134,10 @@ export function AdminSettingsPage() {
   const [userModal, setUserModal] = useState<'create' | 'edit' | null>(null)
   const [editingUser, setEditingUser] = useState<PlatformUserDto | null>(null)
   const [userForm, setUserForm] = useState<UserFormState>({ username: '', password: '', role: 'VIEWER', status: 'ACTIVE' })
+  const [mfaResetUser, setMfaResetUser] = useState<PlatformUserDto | null>(null)
+  const [mfaResetConfirm, setMfaResetConfirm] = useState('')
+  const [mfaResetPassword, setMfaResetPassword] = useState('')
+  const [mfaResetError, setMfaResetError] = useState<string | null>(null)
 
   const [systemOpen, setSystemOpen] = useState(false)
   const [systemInfo, setSystemInfo] = useState<SystemInfoDto | null>(null)
@@ -358,6 +365,39 @@ export function AdminSettingsPage() {
       await refreshAll()
     } catch (e) {
       setPageErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const onResetUserMfa = async () => {
+    if (
+      accountMutationReadOnly || busy || !mfaResetUser
+      || mfaResetConfirm !== mfaResetUser.username || !mfaResetPassword
+    ) return
+    setMfaResetError(null)
+    setPageErr(null)
+    setPageMsg(null)
+    setBusy(true)
+    try {
+      const name = mfaResetUser.username
+      const ownAccount = (getSessionUsername() || '').toLowerCase() === name.toLowerCase()
+      await postAdminUserMfaReset(mfaResetUser.id, {
+        confirm_username: mfaResetConfirm,
+        current_password: mfaResetPassword,
+      })
+      setMfaResetPassword('')
+      setMfaResetConfirm('')
+      setMfaResetUser(null)
+      if (ownAccount) {
+        // The reset revoked the caller's JWT; clear client credentials now.
+        clearSession()
+        return
+      }
+      setPageMsg(`Authenticator MFA reset for ${name}. Existing sessions were revoked; the user must enroll again.`)
+      await refreshAll()
+    } catch (err) {
+      setMfaResetError(err instanceof Error ? err.message : 'Failed to reset authenticator MFA.')
     } finally {
       setBusy(false)
     }
@@ -1006,6 +1046,26 @@ export function AdminSettingsPage() {
                             {formatTs(u.last_login_at)}
                           </td>
                           <td className="px-3 py-3 text-right">
+                            {u.mfa_enabled && !accountMutationReadOnly ? (
+                              <button
+                                type="button"
+                                disabled={busy}
+                                aria-label={`Reset MFA for ${u.username}`}
+                                className={cn(
+                                  'mr-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-500/10 disabled:opacity-50 dark:text-amber-300',
+                                  focusRing,
+                                )}
+                                onClick={() => {
+                                  setMfaResetUser(u)
+                                  setMfaResetConfirm('')
+                                  setMfaResetPassword('')
+                                  setMfaResetError(null)
+                                }}
+                              >
+                                <ShieldAlert className="h-4 w-4" aria-hidden />
+                                Reset MFA
+                              </button>
+                            ) : null}
                             {hideActions || accountMutationReadOnly ? (
                               <span className="text-xs text-slate-400">
                                 {readOnly ? 'Read-only' : isOperator ? 'Administrator only' : lastOnlyAdmin ? 'Protected' : '—'}
@@ -1244,6 +1304,76 @@ export function AdminSettingsPage() {
           </button>
         </div>
       </section>
+
+      {mfaResetUser ? (
+        <div
+          className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4 dark:bg-black/60"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="admin-mfa-reset-title"
+          data-testid="admin-mfa-reset-dialog"
+        >
+          <div className={cn(gdcUi.modalPanel, 'max-w-md')}>
+            <h4 id="admin-mfa-reset-title" className="text-base font-semibold text-slate-900 dark:text-slate-50">
+              Reset authenticator MFA for {mfaResetUser.username}
+            </h4>
+            <p className="mt-3 text-sm text-slate-600 dark:text-gdc-muted" role="alert">
+              This disables MFA for this account, invalidates its existing sessions and recovery codes,
+              and requires new authenticator enrollment. Verify the account owner before continuing.
+            </p>
+            <form className="mt-4 space-y-3" onSubmit={(event) => { event.preventDefault(); void onResetUserMfa() }}>
+              <div>
+                <label className={fieldLabel} htmlFor="mfa-reset-confirm-username">
+                  Type the exact username to confirm
+                </label>
+                <input
+                  id="mfa-reset-confirm-username"
+                  className={cn('mt-1.5 w-full', gdcUi.input)}
+                  value={mfaResetConfirm}
+                  autoComplete="off"
+                  onChange={(event) => setMfaResetConfirm(event.target.value)}
+                />
+              </div>
+              <div>
+                <label className={fieldLabel} htmlFor="mfa-reset-admin-password">
+                  Current Administrator password
+                </label>
+                <input
+                  id="mfa-reset-admin-password"
+                  type="password"
+                  autoComplete="current-password"
+                  className={cn('mt-1.5 w-full', gdcUi.input)}
+                  value={mfaResetPassword}
+                  onChange={(event) => setMfaResetPassword(event.target.value)}
+                />
+              </div>
+              {mfaResetError ? <p role="alert" className="text-sm text-rose-600">{mfaResetError}</p> : null}
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  disabled={busy}
+                  className={cn('rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-gdc-border', focusRing)}
+                  onClick={() => {
+                    setMfaResetUser(null)
+                    setMfaResetConfirm('')
+                    setMfaResetPassword('')
+                    setMfaResetError(null)
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={busy || accountMutationReadOnly || mfaResetConfirm !== mfaResetUser.username || !mfaResetPassword}
+                  className={cn('rounded-lg bg-amber-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50', focusRing)}
+                >
+                  {busy ? 'Resetting…' : 'Reset MFA and revoke sessions'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
 
       {userModal ? (
         <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4 dark:bg-black/60" role="dialog" aria-modal="true" aria-labelledby="admin-user-modal-title">

@@ -64,6 +64,7 @@ export type PlatformUserDto = {
   created_at: string
   last_login_at: string | null
   timezone?: string | null
+  mfa_enabled?: boolean
 }
 
 export type DisplaySettingsDto = {
@@ -338,6 +339,16 @@ export async function updateAdminUser(
 
 export async function deleteAdminUser(userId: number): Promise<void> {
   await requestJson(`${GDC_API_PREFIX}/admin/users/${userId}`, { method: 'DELETE' })
+}
+
+export async function postAdminUserMfaReset(
+  userId: number,
+  body: { confirm_username: string; current_password: string },
+): Promise<void> {
+  await requestJson(`${GDC_API_PREFIX}/admin/users/${userId}/mfa/reset`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
 }
 
 export async function postAdminPasswordChange(body: {

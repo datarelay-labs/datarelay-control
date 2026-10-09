@@ -863,3 +863,119 @@ def test_parallel_revoke_all_calls_advance_epoch_only_once(
         list(pool.map(revoke, (1, 2)))
     db_session.expire_all()
     assert db_session.get(PlatformUser, user_id).token_version == 2
+
+
+def test_admin_mfa_reset_requires_reauthentication_and_invalidates_target_tokens(
+    client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only the authenticated Administrator can recover an enrolled user."""
+    from app.platform_admin.models import PlatformAuditEvent
+
+    monkeypatch.setattr(settings, "REQUIRE_AUTH", True)
+    admin = create_user(db_session, username="mfa-admin-reset", role="ADMINISTRATOR")
+    target = create_user(db_session, username="mfa-target-reset", role="VIEWER")
+    target_id, admin_id = int(target.id), int(admin.id)
+    db_session.add(PlatformUserMfa(
+        user_id=target_id, required=True,
+        secret_ciphertext=_seal(target_id, "JBSWY3DPEHPK3PXP"),
+        recovery_hashes_json=["not-a-real-code"],
+    ))
+    db_session.commit()
+
+    signed_admin = client.post("/api/v1/auth/login", json={
+        "username": admin.username, "password": PASSWORD,
+    })
+    assert signed_admin.status_code == 200, signed_admin.text
+    auth_admin = {"Authorization": "Bearer " + signed_admin.json()["access_token"]}
+    listed = client.get("/api/v1/admin/users", headers=auth_admin)
+    assert listed.status_code == 200, listed.text
+    summaries = {u["username"]: u for u in listed.json()}
+    assert summaries["mfa-target-reset"]["mfa_enabled"] is True
+    assert summaries["mfa-admin-reset"]["mfa_enabled"] is False
+
+    target_login = client.post("/api/v1/auth/login", json={
+        "username": target.username, "password": PASSWORD,
+    })
+    assert target_login.status_code == 200
+    assert target_login.json()["mfa_required"] is True
+    challenge = target_login.json()["challenge_token"]
+
+    unsigned = client.post(f"/api/v1/admin/users/{target_id}/mfa/reset", json={
+        "confirm_username": target.username, "current_password": PASSWORD,
+    })
+    assert unsigned.status_code == 401
+    wrong_confirm = client.post(f"/api/v1/admin/users/{target_id}/mfa/reset", headers=auth_admin, json={
+        "confirm_username": "wrong-target", "current_password": PASSWORD,
+    })
+    assert wrong_confirm.status_code == 400
+    wrong_password = client.post(f"/api/v1/admin/users/{target_id}/mfa/reset", headers=auth_admin, json={
+        "confirm_username": target.username, "current_password": "incorrect-password",
+    })
+    assert wrong_password.status_code == 400
+    db_session.expire_all()
+    assert db_session.get(PlatformUserMfa, target_id).required is True
+
+    other = create_user(db_session, username="mfa-not-admin", role="OPERATOR")
+    other_login = client.post("/api/v1/auth/login", json={
+        "username": other.username, "password": PASSWORD,
+    })
+    assert other_login.status_code == 200
+    not_admin = client.post(f"/api/v1/admin/users/{target_id}/mfa/reset", headers={
+        "Authorization": "Bearer " + other_login.json()["access_token"],
+    }, json={"confirm_username": target.username, "current_password": PASSWORD})
+    assert not_admin.status_code == 403
+
+    reset = client.post(f"/api/v1/admin/users/{target_id}/mfa/reset", headers=auth_admin, json={
+        "confirm_username": target.username, "current_password": PASSWORD,
+    })
+    assert reset.status_code == 204, reset.text
+    db_session.expire_all()
+    mfa = db_session.get(PlatformUserMfa, target_id)
+    assert mfa.required is False
+    assert mfa.secret_ciphertext is None
+    assert mfa.pending_secret_ciphertext is None
+    assert mfa.recovery_hashes_json == []
+    assert db_session.get(PlatformUser, target_id).token_version == 2
+    assert db_session.get(PlatformUser, admin_id).token_version == 1
+    assert db_session.query(PlatformMfaChallenge).filter_by(user_id=target_id).count() == 0
+    assert db_session.query(PlatformAuditEvent).filter_by(
+        action="MFA_ADMIN_RESET", entity_id=target_id,
+    ).count() == 1
+    old_challenge = client.post("/api/v1/auth/mfa/verify", json={
+        "challenge_token": challenge, "totp": "123456",
+    })
+    assert old_challenge.status_code == 401
+    after = client.post("/api/v1/auth/login", json={
+        "username": target.username, "password": PASSWORD,
+    })
+    assert after.status_code == 200 and "access_token" in after.json()
+
+    repeat = client.post(f"/api/v1/admin/users/{target_id}/mfa/reset", headers=auth_admin, json={
+        "confirm_username": target.username, "current_password": PASSWORD,
+    })
+    assert repeat.status_code == 409
+
+
+def test_revoked_admin_jwt_cannot_reset_enrolled_user(
+    client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "REQUIRE_AUTH", True)
+    admin = create_user(db_session, username="mfa-admin-old", role="ADMINISTRATOR")
+    target = create_user(db_session, username="mfa-target-old", role="VIEWER")
+    target_id = int(target.id)
+    db_session.add(PlatformUserMfa(
+        user_id=target_id, required=True, secret_ciphertext=_seal(target_id, "JBSWY3DPEHPK3PXP"),
+    ))
+    db_session.commit()
+    logged_in = client.post("/api/v1/auth/login", json={
+        "username": admin.username, "password": PASSWORD,
+    })
+    auth = {"Authorization": "Bearer " + logged_in.json()["access_token"]}
+    revoke = client.post("/api/v1/auth/logout", headers=auth, json={"revoke_all": True})
+    assert revoke.status_code == 204
+    stale = client.post(f"/api/v1/admin/users/{target_id}/mfa/reset", headers=auth, json={
+        "confirm_username": target.username, "current_password": PASSWORD,
+    })
+    assert stale.status_code == 401
+    db_session.expire_all()
+    assert db_session.get(PlatformUserMfa, target_id).required is True

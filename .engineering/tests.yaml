@@ -90,6 +90,8 @@ scenarios:
       - "Expired challenge pruning skips verification-locked rows rather than causing lock timeout/deadlock."
       - "MFA enrollment password guesses and setup OTP guesses are rate-limited."
       - "Enrollment confirmation locks current JWT epoch before rotating credentials."
+      - "Administrator MFA reset requires fresh authenticated admin and current password plus typed target, revokes target JWTs and never reveals recovery codes."
+      - "Non-admin, stale-admin, wrong-password, wrong-target, and repeated reset fail closed."
       - "Unrecognized persisted roles cannot mint JWTs or revive sessions as Administrator/Viewer."
       - "A revoked or stale JWT cannot repeat revoke_all logout or invalidate a newer session."
       - "IP throttle rejects spoofed forwarding headers; OTP failures survive API worker restarts."
@@ -103,10 +105,11 @@ scenarios:
     domains: [frontend]
     triggers: [affected, pr]
     platforms: [linux]
-    command: "cd frontend && npm run test -- --run src/components/settings/admin-mfa-enrollment.test.tsx src/components/auth/platform-login-mfa.test.tsx"
+    command: "cd frontend && npm run test -- --run src/components/settings/admin-mfa-enrollment.test.tsx src/components/auth/platform-login-mfa.test.tsx src/components/settings/admin-settings-access-security.test.tsx"
     invariants:
       - "QR is generated locally without disclosing the seed to external services."
       - "Recovery codes appear once after confirmed enrollment and are never stored in the client."
+      - "Only Administrators with verified identity can start the separate typed-target MFA recovery confirmation."
       - "No authenticated frontend session is created at password-only stage."
     release_gate: true
 
