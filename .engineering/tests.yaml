@@ -99,6 +99,46 @@ scenarios:
       - "MFA schema migration and rollback run in the guarded pytest catalog only."
     release_gate: true
 
+  - id: BACKEND-PF9-MANAGEMENT-ACL-PREVIEW
+    name: Preview-only source-bound management ingress ACL policy
+    level: integration
+    domains: [backend]
+    triggers: [affected, pr]
+    platforms: [linux]
+    command: "PYTHONPATH=vendor/onprem-security/datarelay_onprem_security-0.10.0.dev0-py3-none-any.whl:. python3 -m pytest -q tests/test_management_acl_preview.py"
+    invariants:
+      - "Reuse pinned Foundation CIDR and self-lockout preview engine; reject /0, invalid, duplicate and empty enabled lists."
+      - "Never trust spoofed X-Forwarded-For or Forwarded when evaluating the observed API peer."
+      - "No host SSH/NGINX/API ingress ACL activation or policy storage exists in this source-only preview."
+      - "No apply endpoint or false-positive SSH/Web enablement; all responses explicitly report enforcement unavailable."
+      - "Only currently authenticated Administrators can read policy preview; other roles fail closed."
+    release_gate: false
+
+  - id: BACKEND-PF9-TRUSTED-PROXY-PEER-STRICT
+    name: Strict fail-closed proxy-peer selection for login IP and ACL source
+    level: unit
+    domains: [backend]
+    triggers: [affected, pr]
+    platforms: [linux]
+    command: "PYTHONPATH=vendor/onprem-security/datarelay_onprem_security-0.10.0.dev0-py3-none-any.whl:. python3 -m pytest -q tests/test_trusted_proxy_host_security.py"
+    invariants:
+      - "With forwarded-header trust explicitly enabled, missing or wildcard trusted peers are rejected at app startup."
+      - "Only canonical explicit trusted proxy CIDRs/IPs are passed to Uvicorn; unrestricted /0 and ambiguous mapped networks rejected."
+    release_gate: true
+
+  - id: FRONTEND-PF9-MANAGEMENT-ACL-PREVIEW
+    name: Administrator draft-only management CIDR proposal UI
+    level: component
+    domains: [frontend]
+    triggers: [affected, pr]
+    platforms: [linux]
+    command: "cd frontend && npm run test -- --run src/components/settings/admin-management-acl-preview.test.tsx src/components/settings/admin-settings-access-security.test.tsx"
+    invariants:
+      - "Preview-only UI never offers enable, apply, save or actual SSH/NGINX/host mutation."
+      - "Only Administrators may submit read-only CIDR proposals; no browser storage of candidate policy."
+      - "Missing host recovery/rollback and public ingress verification are displayed as unavailable."
+    release_gate: false
+
   - id: FRONTEND-PF9-CONTROL-TOTP-MFA
     name: Account MFA setup and password-first OTP login UI
     level: component
