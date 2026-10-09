@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, CheckCircle2, Loader2 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { NAV_PATH, runtimeOverviewPath } from '../../config/nav-paths'
 import { WIZARD_LABEL } from '../../lib/operator-vocabulary'
@@ -108,6 +108,9 @@ export function NewStreamWizardPage() {
   const importHydratedRef = useRef(false)
   const draftHydratedRef = useRef(false)
   const cancelButtonRef = useRef<HTMLButtonElement>(null)
+  const connectorDialogRef = useRef<HTMLElement>(null)
+  const connectorCloseButtonRef = useRef<HTMLButtonElement>(null)
+  const connectorReturnFocusRef = useRef<HTMLElement | null>(null)
   const [exitConfirmationOpen, setExitConfirmationOpen] = useState(false)
   const [stepIndex, setStepIndex] = useState(0)
   const [intentSelected, setIntentSelected] = useState(false)
@@ -202,6 +205,52 @@ export function NewStreamWizardPage() {
     },
     [navigateToWizardStep],
   )
+
+  const openConnectorCreate = () => {
+    connectorReturnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    setConnectorCreateOpen(true)
+  }
+
+  useEffect(() => {
+    if (!connectorCreateOpen) return
+    connectorCloseButtonRef.current?.focus()
+    return () => {
+      // Source catalog refresh can replace the original button after a successful create.
+      queueMicrotask(() => {
+        const original = connectorReturnFocusRef.current
+        if (original?.isConnected) original.focus()
+        else document.querySelector<HTMLElement>('[data-testid="wizard-add-connector"]')?.focus()
+        connectorReturnFocusRef.current = null
+      })
+    }
+  }, [connectorCreateOpen])
+
+  const handleConnectorDialogKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.key !== 'Tab') return
+    const dialog = connectorDialogRef.current
+    if (!dialog) return
+    const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
+      'a[href], button:not(:disabled), input:not(:disabled):not([type="hidden"]), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+    )).filter((element) =>
+      !element.closest('[hidden], [aria-hidden="true"]') &&
+      getComputedStyle(element).display !== 'none' &&
+      getComputedStyle(element).visibility !== 'hidden',
+    )
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+    if (!first || !last) {
+      event.preventDefault()
+      dialog.focus()
+      return
+    }
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault()
+      last.focus()
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault()
+      first.focus()
+    }
+  }
 
   const handleConnectorCreated = useCallback((id: number) => {
     // Keep the entire parent draft in React memory, including sample confirmation.
@@ -1010,10 +1059,10 @@ export function NewStreamWizardPage() {
       ) : null}
       {connectorCreateOpen ? (
         <div role="presentation" className="fixed inset-0 z-[150] overflow-y-auto bg-slate-950/60 p-2 sm:p-6">
-          <section role="dialog" aria-modal="true" aria-label="Add Connector to Data Flow" className="mx-auto max-w-5xl rounded-xl bg-white p-4 shadow-2xl dark:bg-gdc-panel sm:p-6">
+          <section ref={connectorDialogRef} onKeyDown={handleConnectorDialogKeyDown} role="dialog" aria-modal="true" aria-label="Add Connector to Data Flow" tabIndex={-1} className="mx-auto max-w-5xl rounded-xl bg-white p-4 shadow-2xl dark:bg-gdc-panel sm:p-6">
             <div className="mb-4 flex items-center justify-between gap-3 border-b border-slate-200 pb-3 dark:border-gdc-border">
               <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Add Connector to this Data Flow</p>
-              <button type="button" onClick={() => setConnectorCreateOpen(false)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 dark:border-gdc-border dark:text-slate-100">
+              <button ref={connectorCloseButtonRef} type="button" onClick={() => setConnectorCreateOpen(false)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 dark:border-gdc-border dark:text-slate-100">
                 Return to Data Flow
               </button>
             </div>
@@ -1082,7 +1131,7 @@ export function NewStreamWizardPage() {
             state={state}
             onConnectorChange={updateConnector}
             onStreamChange={updateStream}
-            onCreateConnector={() => setConnectorCreateOpen(true)}
+            onCreateConnector={openConnectorCreate}
           />
         ) : null}
         {currentStepKey === 'sample' ? (

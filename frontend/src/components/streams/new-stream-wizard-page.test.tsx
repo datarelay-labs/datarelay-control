@@ -84,6 +84,35 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
     expect(screen.getByTestId('wizard-step-connect')).toBeInTheDocument()
   })
 
+  it('keeps keyboard focus in the contextual Connector dialog and returns it to the parent Wizard on cancel', async () => {
+    vi.mocked(fetchCatalogSnapshot).mockResolvedValue({ connectors: [], sources: [], apiBacked: true })
+    localStorage.removeItem(WIZARD_DRAFT_KEY_V2)
+    const user = userEvent.setup()
+    render(<MemoryRouter initialEntries={['/streams/new']}><NewStreamWizardPage /></MemoryRouter>)
+    await user.click(screen.getByTestId('wizard-intent-scratch'))
+    const addConnector = await screen.findByTestId('wizard-add-connector')
+    await user.click(addConnector)
+
+    const dialog = screen.getByRole('dialog', { name: 'Add Connector to Data Flow' })
+    const returnButton = screen.getByRole('button', { name: 'Return to Data Flow' })
+    expect(returnButton).toHaveFocus()
+    await user.tab({ shift: true })
+    expect(dialog.contains(document.activeElement)).toBe(true)
+    expect(document.activeElement).not.toBe(returnButton)
+    await user.tab()
+    expect(returnButton).toHaveFocus()
+
+    const saveButton = screen.getByRole('button', { name: 'Save Connector' })
+    saveButton.focus()
+    await user.tab()
+    expect(returnButton).toHaveFocus()
+
+    await user.click(returnButton)
+    await waitFor(() => expect(addConnector).toHaveFocus())
+    expect(screen.getByTestId('wizard-step-connect')).toBeInTheDocument()
+    expect(localStorage.getItem(WIZARD_DRAFT_KEY_V2)).toBeNull()
+  })
+
   it('returns a saved Connector ID directly to the active Wizard without re-creation', async () => {
     vi.mocked(fetchCatalogSnapshot).mockResolvedValue({ connectors: [], sources: [], apiBacked: true })
     localStorage.removeItem(WIZARD_DRAFT_KEY_V2)
