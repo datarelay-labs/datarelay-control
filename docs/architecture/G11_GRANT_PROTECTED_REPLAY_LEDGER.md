@@ -36,6 +36,48 @@ describe this branch as ready for secure protected replay.**
 - No bearer secret, personal data, raw email link, PIN or TOTP is recorded in the
   ledger. No arbitrary callback may trigger a replay.
 
+## Staged exact Grant read/consume response validation (no network)
+
+`app/runtime/grant_replay_claim.py` is a new pure, unmounted contract checker.
+It does not make requests, store tokens, register API routes, or authorize a
+destination effect. A future Control-owned executor must first obtain the
+following server-authenticated responses over a separately approved scoped
+Grant connection; **caller-provided dictionaries or callbacks are never proof
+of approval**:
+
+1. Authenticated `GET /api/v1/requests/{grant_request_id}` confirming
+   `state=APPROVED`, exact request and trusted integration ID, and the
+   product-derived immutable `action` / `action_hash`.
+2. Authenticated `POST /api/v1/requests/{grant_request_id}/consume` with
+   the stable product execution ID and action hash. Grant must return
+   `committed=true`, `replay=false`, same request/execution ID and hash.
+   A repeated claim returns `replay=true`; never send a second time.
+3. Independently verify product operation/route/destination current authority
+   and perform the product-ledger atomic arm. A positive contract match alone
+   is **not** an execution permission; the checker explicitly returns
+   `independently_authenticated=false, permits_effect=false`.
+
+The proposed approval action, currently for **contract testing only**, is
+`kind=datarelay.control.delivery_log.replay`,
+`target=delivery-log/{id}`,
+`parameters={log_id,route_id,destination_id}`, where IDs are immutable
+positive integers read from actual Control state, not requester-provided JSON.
+The operator must accept the final policy/action mapping before live use.
+
+Action fingerprints match Grant's exact UTF-8
+`sha256(json.dumps(action,sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False))`.
+Python value equality is NOT sufficient because `True == 1`; recomputing
+the untrusted request action hash catches that discrepancy. Malformed,
+nonfinite or secret-bearing fields, wrong integration, changed identity/action,
+denial/hold/expiry, uncommitted or replayed responses fail closed.
+Network timeout after the Grant consume POST is **ambiguous**; never retry
+blindly or infer fresh approval from a stale GET.
+
+The module is not mounted into the Control replay route and intentionally
+does not create a Grant-to-Control authentication integration. Its future
+authenticated transport must be independently qualified with approved
+minimal scopes and avoid insecure HTTP, redirects and credential disclosure.
+
 ## Persistence and state transitions
 
 Schema: `grant_protected_replay_ledger`, append-only operation identity with
