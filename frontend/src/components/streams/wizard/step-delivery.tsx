@@ -648,6 +648,32 @@ export function StepDelivery({ state, onChange, onOpenDestinationPrerequisite }:
                 ))}
               </div>
               <ul className="mt-3 max-h-[320px] space-y-2 overflow-y-auto pr-0.5">
+                {filteredLibrary.length === 0 ? (
+                  <li role="status" data-testid="destination-library-empty" className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center dark:border-gdc-border dark:bg-gdc-section">
+                    <p className="text-xs text-slate-600 dark:text-gdc-mutedStrong">
+                      {tabCounts.all === 0 ? 'No enabled destinations are available.' : 'No destinations match this search or filter.'}
+                    </p>
+                    {tabCounts.all > 0 ? (
+                      <button
+                        type="button"
+                        className="mt-2 text-xs font-semibold text-violet-700 hover:underline dark:text-violet-300"
+                        onClick={() => { setSearch(''); setTab('all') }}
+                      >
+                        Clear destination filters
+                      </button>
+                    ) : (
+                      <Link
+                        to={NAV_PATH.destinations}
+                        onClick={(event) => {
+                          if (onOpenDestinationPrerequisite?.() === false) event.preventDefault()
+                        }}
+                        className="mt-2 inline-block text-xs font-semibold text-violet-700 hover:underline dark:text-violet-300"
+                      >
+                        Manage destinations
+                      </Link>
+                    )}
+                  </li>
+                ) : null}
                 {filteredLibrary.map((d) => {
                   const icon =
                     d.destination_type === 'WEBHOOK_POST' ? (

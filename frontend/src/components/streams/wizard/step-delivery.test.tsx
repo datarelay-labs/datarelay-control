@@ -222,6 +222,60 @@ describe('StepDelivery', () => {
     }))
   })
 
+  it('explains zero search results and clears filters without changing delivery paths', async () => {
+    const user = userEvent.setup()
+    const state = buildInitialState()
+    state.destinations.routeDrafts = [{
+      key: 'retained-filter-path',
+      destinationId: 1,
+      enabled: true,
+      failurePolicy: 'RETRY_AND_BACKOFF',
+      rateLimitJson: {},
+    }]
+    const onChange = vi.fn()
+    render(
+      <MemoryRouter>
+        <StepDelivery state={state} onChange={onChange} />
+      </MemoryRouter>,
+    )
+    await screen.findByText('Backup Webhook')
+    await user.type(screen.getByPlaceholderText('Search destinations…'), 'not-an-existing-target')
+    expect(screen.getByTestId('destination-library-empty')).toHaveTextContent('No destinations match')
+    await user.click(screen.getByRole('button', { name: 'Clear destination filters' }))
+    expect(screen.getByPlaceholderText('Search destinations…')).toHaveValue('')
+    expect(screen.getByText('Backup Webhook')).toBeInTheDocument()
+    expect(state.destinations.routeDrafts).toHaveLength(1)
+    expect(onChange).not.toHaveBeenCalledWith(expect.objectContaining({ routeDrafts: [] }))
+  })
+
+  it('explains when every destination is disabled and guards the manage link', async () => {
+    fetchDestinationsList.mockResolvedValueOnce([{
+      id: 19,
+      name: 'Disabled Webhook',
+      destination_type: 'WEBHOOK_POST',
+      config_json: { url: 'https://disabled.example.test' },
+      enabled: false,
+      rate_limit_json: {},
+      streams_using_count: 0,
+      routes: [],
+    }])
+    const onOpenDestinationPrerequisite = vi.fn(() => false)
+    render(
+      <MemoryRouter initialEntries={['/streams/new']}>
+        <Routes>
+          <Route path="/streams/new" element={
+            <StepDelivery state={buildInitialState()} onChange={vi.fn()} onOpenDestinationPrerequisite={onOpenDestinationPrerequisite} />
+          } />
+          <Route path="/destinations" element={<p>Destination management workspace</p>} />
+        </Routes>
+      </MemoryRouter>,
+    )
+    expect(await screen.findByText('No enabled destinations are available.')).toBeInTheDocument()
+    await userEvent.setup().click(screen.getByRole('link', { name: 'Manage destinations' }))
+    expect(onOpenDestinationPrerequisite).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText('Destination management workspace')).not.toBeInTheDocument()
+  })
+
   it('checks for new destinations when the wizard tab regains focus', async () => {
     fetchDestinationsList.mockResolvedValueOnce([])
     render(

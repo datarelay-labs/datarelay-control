@@ -174,4 +174,6 @@ Protect #410's Chromium test run, locked ports/session/DB, #411/PR #412 and PF-5
 
 **Regression evidence:** New failing-before/fixed-after tests cover populated-library navigation, failed draft save navigation blocking, and failed-catalog recovery without loss of configured delivery paths. The prior empty-catalog draft-save test remains in `new-stream-wizard-page.test.tsx`. Existing Stream Edit behavior is not silently changed; in-context draft-resume guidance appears only when the New Stream prerequisite save callback exists.
 
+**Additional empty-state recovery:** The destination library previously rendered a blank list when a search/category filter matched nothing, or when every configured destination was disabled. It now presents distinct messages: **No destinations match this search or filter** with **Clear destination filters**, or **No enabled destinations are available** with **Manage destinations** (using the same guarded pre-navigation draft-save callback when provided). Search/filter reset is local UI state only; it does not change Route drafts or enable a destination. Component regressions cover both states.
+
 **Protected boundaries:** no route/destination persistence semantics, API, credentials, runtime, policy, user rights, shared DB, or #410 browser process modified. Final authenticated UX/BFS and 2-user Full User E2E remain NOT VERIFIED.
