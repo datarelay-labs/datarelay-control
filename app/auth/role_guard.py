@@ -107,7 +107,10 @@ def _normalize_role(raw: str | None) -> str:
 
 
 def _is_bypass(path: str) -> bool:
-    return any(path == p or path.startswith(p) for p in _BYPASS_PREFIXES)
+    # Only exact endpoints or their path descendants may bypass authentication.
+    # Raw lexical prefixes such as "/auth/loginAgain" or "/healthcare" must
+    # never inherit the authorization exception for "/auth/login" or "/health".
+    return any(path == p or path.startswith(p + "/") for p in _BYPASS_PREFIXES)
 
 
 def _must_change_password_bypass(path: str) -> bool:
@@ -120,7 +123,9 @@ def _must_change_password_bypass(path: str) -> bool:
         f"{base}/auth/whoami",
         f"{base}/auth/change-password",
     )
-    return any(path == p or path.startswith(p) for p in prefixes)
+    # These are concrete authentication endpoints, not prefixes that may
+    # authorize arbitrary sibling paths during mandatory password rotation.
+    return path in prefixes
 
 
 def _extract_bearer(request: Request) -> str | None:

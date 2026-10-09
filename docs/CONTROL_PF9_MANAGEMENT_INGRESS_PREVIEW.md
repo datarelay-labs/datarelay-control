@@ -59,6 +59,21 @@ to platform settings, environment variables, proxy configuration, iptables,
 nftables, firewall, or sshd. A positive `web_source_matches` is **not** an
 authorization to apply a policy.
 
+## Additional authentication-path hardening
+
+The Control role guard now matches trusted authentication bypasses with
+**path-segment boundaries**, not string prefixes. Example lookalike paths such
+as `/api/v1/auth/loginAgain`, `/api/v1/ingest/webhookExtra`,
+`/healthcheck` and `/docs-malicious` do not inherit exemptions for their
+similarly named legitimate endpoints. The mandatory-password-change escape
+set also contains only exact permitted endpoints.
+
+This change reduces potential exposure from future route additions; it does
+not establish that a registered route previously allowed an unauthorized
+request. The behavior is validated by direct role-guard unit and live ASGI
+middleware tests with `REQUIRE_AUTH=true`, without starting a product
+service or accessing a product DB.
+
 ## Host integration requirements before product activation
 
 1. Verify a physically reachable, authenticated out-of-band management or
@@ -90,6 +105,9 @@ authorization to apply a policy.
 
 Trusted-proxy security:
 `PYTHONPATH=vendor/onprem-security/datarelay_onprem_security-0.10.0.dev0-py3-none-any.whl:. python3 -m pytest -q tests/test_trusted_proxy_host_security.py`
+
+JWT bypass/path-boundary security:
+`PYTHONPATH=vendor/onprem-security/datarelay_onprem_security-0.10.0.dev0-py3-none-any.whl:. python3 -m pytest -q tests/test_role_guard_bypass_boundary.py`
 
 Web companion:
 `cd frontend && npm run test -- --run src/components/settings/admin-management-acl-preview.test.tsx`
