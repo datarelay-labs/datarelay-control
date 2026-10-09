@@ -312,6 +312,33 @@ describe('StepDelivery', () => {
     expect(await screen.findByText('Destination details workspace')).toBeInTheDocument()
   })
 
+  it('does not offer a second destination test while another test request is in flight', async () => {
+    const user = userEvent.setup()
+    let resolveFirst: (result: { success: boolean; message: string; latency_ms: number; tested_at: string }) => void = () => {}
+    testDestination.mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve }))
+    const state = buildInitialState()
+    state.destinations.routeDrafts = [
+      { key: 'busy-a', destinationId: 1, enabled: true, failurePolicy: 'RETRY_AND_BACKOFF', rateLimitJson: {} },
+      { key: 'busy-b', destinationId: 2, enabled: true, failurePolicy: 'RETRY_AND_BACKOFF', rateLimitJson: {} },
+    ]
+    render(<MemoryRouter><StepDelivery state={state} onChange={vi.fn()} /></MemoryRouter>)
+    const a = await screen.findByTestId('destination-route-card-busy-a')
+    const b = screen.getByTestId('destination-route-card-busy-b')
+    await user.click(within(a).getByRole('button', { name: 'Actions for Stellar Syslog' }))
+    await user.click(within(a).getByRole('menuitem', { name: 'Test destination' }))
+    expect(within(a).getByTestId('destination-connectivity-loading-busy-a')).toBeInTheDocument()
+
+    await user.click(within(b).getByRole('button', { name: 'Actions for Backup Webhook' }))
+    expect(within(b).getByRole('menuitem', { name: 'Test destination' })).toBeDisabled()
+    expect(testDestination).toHaveBeenCalledTimes(1)
+    resolveFirst({ success: true, message: 'Endpoint responded', latency_ms: 4, tested_at: '2026-10-09T07:10:00Z' })
+    await within(a).findByText(/Connection check passed/)
+    expect(within(b).getByRole('menuitem', { name: 'Test destination' })).toBeEnabled()
+    await user.click(within(b).getByRole('menuitem', { name: 'Test destination' }))
+    expect(testDestination).toHaveBeenCalledTimes(2)
+    expect(testDestination).toHaveBeenLastCalledWith(2)
+  })
+
   it('does not expose route delivery tuning controls', async () => {
     const state = buildInitialState()
     state.destinations.routeDrafts = [

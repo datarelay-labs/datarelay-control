@@ -99,6 +99,7 @@ function DestinationRouteCard({
   onDuplicate,
   onTest,
   testBusy,
+  testBlocked,
   testFeedback,
   menuOpen,
   onMenuOpenChange,
@@ -111,6 +112,7 @@ function DestinationRouteCard({
   onDuplicate: () => void
   onTest: () => void
   testBusy: boolean
+  testBlocked: boolean
   testFeedback?: DestinationProbeFeedback
   menuOpen: boolean
   onMenuOpenChange: (open: boolean) => void
@@ -181,7 +183,7 @@ function DestinationRouteCard({
                 Remove route
               </button>
               <hr className="my-1 border-slate-100 dark:border-gdc-border" />
-              <button type="button" role="menuitem" className={routeMenuItemCls} onClick={() => { void onTest(); onMenuOpenChange(false) }} disabled={testBusy}>
+              <button type="button" role="menuitem" className={routeMenuItemCls} onClick={() => { void onTest(); onMenuOpenChange(false) }} disabled={testBlocked}>
                 {testBusy ? 'Testing destination…' : 'Test destination'}
               </button>
               <Link
@@ -610,6 +612,7 @@ export function StepDelivery({
                     onDuplicate={() => onChange({ routeDrafts: duplicateRouteDraft(drafts, draft.key) })}
                     onTest={() => handleTestDestination(draft.destinationId)}
                     testBusy={testBusyId === draft.destinationId}
+                    testBlocked={testBusyId != null}
                     testFeedback={testFeedbackByDestinationId[draft.destinationId]}
                     menuOpen={menuKey === draft.key}
                     onMenuOpenChange={(open) => setMenuKey(open ? draft.key : null)}
