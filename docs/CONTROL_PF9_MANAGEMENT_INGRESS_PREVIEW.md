@@ -44,6 +44,9 @@ The read-only administrator diagnostic endpoint is
   separately validate the ASGI server's own forwarded-header settings (for
   example, Uvicorn `--forwarded-allow-ips`), not merely the Control-added
   middleware. Never configure that independent trust boundary as `*`.
+- Reports `web_source_matches=true` only when an **enabled candidate**
+  allowlist matched an explicit CIDR; disabled/unrestricted policy does not
+  falsely count as an IP match. This still is only an observed API peer.
 - Always reports `mode=PREVIEW_ONLY`, `apply_available=false`,
   `ssh_enforcement_available=false`, and
   `web_enforcement_available=false`. The permanent blockers include

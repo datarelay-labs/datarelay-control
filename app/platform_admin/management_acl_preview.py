@@ -9,7 +9,7 @@ from __future__ import annotations
 from ipaddress import ip_address
 
 from datarelay_onprem_security import (
-    AllowEntry, ManagementPolicy, SurfacePolicy, preview_change,
+    AllowEntry, ManagementPolicy, Reason, SurfacePolicy, preview_change,
 )
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -135,7 +135,7 @@ def preview_management_access(
     return ManagementPreviewResponse(
         observed_api_source=source,
         web_reason=advisory.web_decision.reason.value,
-        web_source_matches=advisory.web_decision.allowed,
+        web_source_matches=advisory.web_decision.reason is Reason.ALLOW_CIDR,
         ssh_reason=advisory.ssh_decision.reason.value,
         blockers=blockers,
         candidate_web_enabled=candidate.web.enabled,

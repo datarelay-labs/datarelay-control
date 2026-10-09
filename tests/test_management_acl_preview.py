@@ -63,6 +63,8 @@ def test_management_allowlist_preview_disabled_by_default_but_never_apply_ready(
     assert result["web_enforcement_available"] is False
     assert result["ssh_enforcement_available"] is False
     assert result["web_reason"] == "ALLOW_DISABLED"
+    # Disabled means unrestricted, not that the observed peer matched a CIDR.
+    assert result["web_source_matches"] is False
     assert result["ssh_reason"] == "ALLOW_DISABLED"
     assert "WEB_PROXY_AND_API_ATOMIC_ENFORCEMENT_UNAVAILABLE" in result["blockers"]
     assert "HOST_SSH_APPLY_AND_ROLLBACK_UNAVAILABLE" in result["blockers"]
@@ -142,3 +144,35 @@ def test_observed_peer_is_not_supplied_xff():
         "client": ("203.0.113.10", 1234), "server": ("testserver", 80),
     })
     assert _observed_source(req) == "203.0.113.10"
+
+
+def test_only_a_real_enabled_cidr_match_reports_source_match(
+    browser_client: TestClient, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.platform_admin import management_acl_preview as preview_module
+
+    # Deterministically model the ASGI-observed socket source, not a forwarded
+    # request header or asserted public Web ingress.
+    monkeypatch.setattr(preview_module, "_observed_source", lambda request: "203.0.113.9")
+    headers = sign_in(browser_client, "acl-source-admin")
+    allowed = browser_client.post("/api/v1/admin/management-access/preview", headers=headers, json={
+        "web": {"enabled": True, "sources": [{"cidr": "203.0.113.0/24"}]},
+    })
+    assert allowed.status_code == 200, allowed.text
+    assert allowed.json()["web_source_matches"] is True
+    assert allowed.json()["web_reason"] == "ALLOW_CIDR"
+    assert allowed.json()["apply_available"] is False
+
+    disabled = browser_client.post("/api/v1/admin/management-access/preview", headers=headers, json={
+        "web": {"enabled": False, "sources": [{"cidr": "203.0.113.0/24"}]},
+    })
+    assert disabled.status_code == 200, disabled.text
+    assert disabled.json()["web_reason"] == "ALLOW_DISABLED"
+    assert disabled.json()["web_source_matches"] is False
+
+    excluded = browser_client.post("/api/v1/admin/management-access/preview", headers=headers, json={
+        "web": {"enabled": True, "sources": [{"cidr": "198.51.100.0/24"}]},
+    })
+    assert excluded.status_code == 200, excluded.text
+    assert excluded.json()["web_reason"] == "DENY_NO_MATCH"
+    assert excluded.json()["web_source_matches"] is False

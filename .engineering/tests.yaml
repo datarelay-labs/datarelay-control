@@ -109,6 +109,7 @@ scenarios:
     invariants:
       - "Reuse pinned Foundation CIDR and self-lockout preview engine; reject /0, invalid, duplicate and empty enabled lists."
       - "Never trust spoofed X-Forwarded-For or Forwarded when evaluating the observed API peer."
+      - "Disabled web allowlists cannot claim a CIDR source match; positive match requires explicit enabled CIDR."
       - "No host SSH/NGINX/API ingress ACL activation or policy storage exists in this source-only preview."
       - "No apply endpoint or false-positive SSH/Web enablement; all responses explicitly report enforcement unavailable."
       - "Only currently authenticated Administrators can read policy preview; other roles fail closed."
