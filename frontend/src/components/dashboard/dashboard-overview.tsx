@@ -3,6 +3,7 @@ import { useLayoutEffect, useMemo, useState } from 'react'
 import { loadDashboardRefreshMs, persistDashboardRefreshMs } from '../../localPreferences'
 import { Link } from 'react-router-dom'
 import { NAV_PATH, newStreamPath } from '../../config/nav-paths'
+import { dashboardPriorityInvestigations } from './dashboard-priority-investigations'
 import { cn } from '../../lib/utils'
 import {
   deriveOperationalIssuesFromSnapshot,
@@ -108,6 +109,10 @@ export function DashboardOverview() {
       ).length,
     }
   }, [bundle?.operationalSnapshot])
+  const priorityInvestigations = useMemo(
+    () => dashboardPriorityInvestigations(bundle?.operationalSnapshot ?? null),
+    [bundle?.operationalSnapshot],
+  )
   const attentionItems = useMemo(
     () =>
       [
@@ -126,7 +131,8 @@ export function DashboardOverview() {
     [operationalIssues, overallHealth.warning, overallHealth.critical, runtimeHealthAttention],
   )
   const attentionDataPartial = Object.values(operationalIssues).some((value) => value == null)
-  const attentionUnknown = attentionItems.length === 0 && attentionDataPartial
+  const hasAnyAttention = priorityInvestigations.length > 0 || attentionItems.length > 0
+  const attentionUnknown = !hasAnyAttention && attentionDataPartial
 
   return (
     <div className="w-full min-w-0 space-y-5" data-testid="dashboard-overview">
@@ -269,30 +275,68 @@ export function DashboardOverview() {
               <span
                 className={cn(
                   'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
-                  attentionItems.length > 0 || attentionUnknown
+                  hasAnyAttention || attentionUnknown
                     ? 'bg-amber-500/10 text-amber-600 dark:text-amber-300'
                     : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300',
                 )}
                 aria-hidden
               >
-                {attentionItems.length > 0 || attentionUnknown ? <AlertTriangle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+                {hasAnyAttention || attentionUnknown ? <AlertTriangle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
               </span>
               <div className="min-w-0 flex-1">
                 <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.15em] text-violet-600 dark:text-violet-300">Live operations</p>
                 <h2 className="text-xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
-                  {attentionItems.length > 0 ? 'Action needed' : attentionUnknown ? 'Status partially available' : 'No action needed'}
+                  {hasAnyAttention ? 'Action needed' : attentionUnknown ? 'Status partially available' : 'No action needed'}
                 </h2>
                 <p className="mt-0.5 text-xs leading-relaxed text-slate-500 dark:text-gdc-muted">
-                  {attentionItems.length > 0
-                    ? 'Start with an open signal below; each link keeps you in the workspace that owns the next investigation step.'
+                  {hasAnyAttention
+                    ? 'Start with an affected resource below. Its link opens the workspace that owns the next investigation.'
                     : attentionDataPartial
                       ? 'No actionable signal is currently known from the available snapshot; some signal categories are unavailable.'
                       : 'No open operational signals are present in the current snapshot. Continue monitoring or inspect a Stream.'}
                 </p>
               </div>
             </div>
+            {priorityInvestigations.length > 0 ? (
+              <section className="mt-4 space-y-3" data-testid="dashboard-priority-investigations" aria-label="Priority investigations">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Investigate these first</h3>
+                  <span className="text-xs text-slate-500 dark:text-gdc-muted">Specific resources · current operational snapshot</span>
+                </div>
+                <ol className="grid gap-2 lg:grid-cols-3">
+                  {priorityInvestigations.map((item) => (
+                    <li key={item.key} className="min-w-0">
+                      <Link
+                        to={item.href}
+                        data-testid={`dashboard-investigation-${item.key}`}
+                        className="group flex min-h-24 flex-col justify-between gap-2 rounded-xl border border-slate-200/90 bg-white px-3.5 py-3 shadow-sm transition-colors hover:border-violet-300 hover:bg-violet-50/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:border-gdc-border dark:bg-gdc-card dark:hover:border-violet-500/40 dark:hover:bg-gdc-rowHover"
+                      >
+                        <div className="flex min-w-0 items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-gdc-muted">{item.kind}</p>
+                            <p className="mt-0.5 break-words text-sm font-semibold text-slate-900 dark:text-slate-100">{item.resource}</p>
+                          </div>
+                          <span className={cn(
+                            'shrink-0 rounded-md px-2 py-1 text-[10px] font-semibold',
+                            item.severity === 'critical'
+                              ? 'bg-red-500/10 text-red-700 dark:text-red-300'
+                              : 'bg-amber-500/10 text-amber-800 dark:text-amber-300',
+                          )}>{item.severity === 'critical' ? 'Critical' : 'Warning'}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 text-xs text-slate-600 dark:text-gdc-mutedStrong">
+                          <span className="min-w-0 break-words">{item.reason}</span>
+                          <span className="inline-flex shrink-0 items-center gap-1 font-semibold text-violet-700 dark:text-violet-300">
+                            Investigate <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+                          </span>
+                        </div>
+                      </Link>
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            ) : null}
             {attentionItems.length > 0 ? (
-              <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
                 {attentionItems.map((item) => (
                   <Link
                     key={item.label}
@@ -310,8 +354,10 @@ export function DashboardOverview() {
               <div className="min-w-0">
                 <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-violet-300">Recommended next step</p>
                 <p className="mt-1 text-sm font-medium leading-relaxed text-slate-100" data-testid="dashboard-next-step-description">
-                  {attentionItems.length > 0
-                    ? `Investigate ${attentionItems[0].label.toLowerCase()}.`
+                  {priorityInvestigations.length > 0
+                    ? `Investigate ${priorityInvestigations[0].resource} — ${priorityInvestigations[0].reason.toLowerCase()}.`
+                    : attentionItems.length > 0
+                      ? `Investigate ${attentionItems[0].label.toLowerCase()}.`
                     : attentionDataPartial
                       ? 'Inspect your Streams while some operational signals are unavailable.'
                       : 'Explore a Stream to review its collection and delivery status.'}
@@ -319,11 +365,11 @@ export function DashboardOverview() {
               </div>
               <div className="flex shrink-0 flex-wrap gap-2">
                 <Link
-                  to={attentionItems[0]?.to ?? NAV_PATH.streams}
+                  to={priorityInvestigations[0]?.href ?? attentionItems[0]?.to ?? NAV_PATH.streams}
                   className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-violet-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-300"
                   data-testid="dashboard-next-action"
                 >
-                  {attentionItems.length > 0 ? 'Review issue' : 'Open Streams'}
+                  {hasAnyAttention ? 'Review issue' : 'Open Streams'}
                   <ArrowRight className="h-4 w-4" aria-hidden />
                 </Link>
                 <Link

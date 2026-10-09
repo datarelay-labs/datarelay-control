@@ -455,6 +455,25 @@ describe('DashboardOverview', () => {
     expect(screen.queryByText(/All times shown in UTC/i)).not.toBeInTheDocument()
   })
 
+  it('prioritizes exact unhealthy resources over generic catalog navigation', async () => {
+    render(
+      <MemoryRouter>
+        <main><DashboardOverview /></main>
+      </MemoryRouter>,
+    )
+    const firstLevel = await within(mainRegion()).findByTestId('dashboard-first-level')
+    const attention = within(firstLevel).getByTestId('dashboard-action-needed')
+    const prioritized = await within(attention).findByTestId('dashboard-priority-investigations')
+    const stream = within(prioritized).getByTestId('dashboard-investigation-stream-1')
+    const destination = within(prioritized).getByTestId('dashboard-investigation-destination-2')
+    expect(stream).toHaveTextContent('Payment API Stream')
+    expect(stream).toHaveAttribute('href', '/streams/1/runtime')
+    expect(destination).toHaveTextContent('Delivery Warning Only')
+    expect(destination).toHaveAttribute('href', '/destinations/2')
+    expect(within(attention).getByTestId('dashboard-next-action')).toHaveAttribute('href', '/streams/1/runtime')
+    expect(within(attention).getByTestId('dashboard-next-step-description')).toHaveTextContent('Payment API Stream')
+  })
+
   it('makes page purpose, action-needed priority, and contextual help explicit', async () => {
     const user = userEvent.setup()
     render(
@@ -481,11 +500,11 @@ describe('DashboardOverview', () => {
       'href',
       '/destinations',
     )
-    expect(within(actionNeeded).getByTestId('dashboard-next-action')).toHaveAttribute('href', '/streams')
+    expect(within(actionNeeded).getByTestId('dashboard-next-action')).toHaveAttribute('href', '/streams/1/runtime')
     expect(within(actionNeeded).getByTestId('dashboard-next-action')).toHaveTextContent('Review issue')
     expect(within(actionNeeded).getByTestId('dashboard-create-stream')).toHaveAttribute('href', '/streams/new')
     expect(within(actionNeeded).getByTestId('dashboard-next-step-description')).toHaveTextContent(
-      'Investigate streams needing health review.',
+      'Investigate Payment API Stream — health error reported.',
     )
 
     await user.click(screen.getByRole('button', { name: 'Help' }))

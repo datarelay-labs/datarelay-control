@@ -222,3 +222,33 @@ Protect #410's Chromium test run, locked ports/session/DB, #411/PR #412 and PF-5
 - Policy creation/editing does not move to the Dashboard. Stream/Route/Wizard ownership, existing RBAC, backend/runtime/persistence, and mobile sidebar component behavior are unchanged.
 
 **Verification scope:** nav structure, roles, deep-link routing, Governance Dashboard/Workspace, app shell, documentation integrity, affected ESLint and production build. CI and code tests do **not** establish real browser acceptance: #410 holds its own authorized browser lab at older `b45ad9d`; actual latest-HEAD desktop/mobile 1440/375/320, full Browser BFS and two-user Full User E2E are not passed. No merge/freeze/prod deploy/release.
+
+## 2026-10-09 competitor UX adoption reconciliation — P0 user priority
+
+**Owner priority:** Complete the still-incomplete competitor-inspired UI usability work before non-UX roadmap polish. `#354` A–G merged source history is not owner-visible browser acceptance; this `#413` branch remains draft. The table distinguishes implemented UI code from verified user behavior rather than reporting every recommendation as completed.
+
+| Research precedent / product outcome | Current code observation | Disposition |
+| --- | --- | --- |
+| Cribl: Source → multi-Route → Destinations explanation, usable input/output inspection | StreamFlowMap and Wizard flow overview exist; Route Edit uses a real no-send sample preview; Wizard stage overview previously repeated null comparisons | **PARTIAL** — make stage selection useful and truthful; full browser flow verification outstanding |
+| Datadog: choose a use case before blank setup | IntentTemplatePicker seeds the existing 5-step Wizard; Start from scratch retained | **IMPLEMENTED IN CODE** — browser acceptance outstanding |
+| Splunk Edge Processor: preview up to the selected processing action | WizardMappingOutputAside runs an existing final-event draft-preview API; stage overview often has no verified per-stage output | **PARTIAL** — never fabricate intermediate results; final stage-by-stage runtime-backed preview is pending |
+| Confluent: investigate Action needed in context, not generic NOC counters | Dashboard Action needed existed, but count-only cards sent users to generic lists | **IMPROVED HERE** — snapshot-derived prioritized Stream/Route/Destination drill-down with exact resource links; browser acceptance pending |
+| Elastic/Kibana: stable app shell and contextual help with deep documentation links | Shared PagePurposeHeader and help drawer exist on primary screens; no production PageHelpContent currently sets `docsHref` | **PARTIAL** — actual validated operator documentation URL/deep links pending, do not invent URLs |
+| Mezmo: working demo/sample learning flow | Isolated demo/sample path was merged previously (#380/#381) | **IMPLEMENTED IN CODE** — real browser operator acceptance outstanding |
+| Confluent: recent resources / favorites; global command search | Not shipped; `#354` explicitly ROI-gated due lack of usage evidence | **DEFERRED**, not falsely complete; reconsider only if measured navigation evidence supports it |
+
+### P0 UX changes in this worktree
+
+1. **Dashboard: resource-first investigation.** Existing Runtime Snapshot only (no new API) drives a bounded, sorted list of unhealthy enabled Stream/Route/Destination resources, critical first, with actual IDs, names, and direct existing UI links. The primary **Review issue** CTA targets the exact highest-priority item instead of always pointing to the Streams catalog. Category-wide counters remain available as secondary diagnosis. Unknown/IDLE, disabled, or invalid-ID resources do not create guessed deep links. Backend error-message contents are not echoed as cards.
+2. **Processing Preview Dock: staged, operator-selected inspection.** Replace five permanently exposed empty before/after panes with a focused 5-stage visual sequence and one inspection panel. Show actual supplied before/after evidence only, explicit missing-output guidance when evidence is unavailable, and clearly differentiated Preview/Saved/Runtime claim types. Existing Wizard and Route Edit no-send/runtime preview APIs remain authoritative; selecting a stage never sends events or persists configuration.
+
+**RED→GREEN tests:** New Dashboard browser-component test initially failed because no exact-resource priority list existed; new Preview Dock tests initially failed because no active-stage state or focused comparison existed. Both pass after bounded presentation changes. Pure unit regression verifies critical sorting, only valid entity links, no raw error-message leaks, limits, and disabled/idle handling.
+
+**No product runtime, database, authentication, Route execution, checkpoint, permissions, release, production service, or #410 audit lab changes.** These are visible UX code changes, **not** an authenticated browser BFS / Full User E2E PASS.
+
+### Still-required user-visible acceptance
+
+- Fully verify the latest branch at 1440/375/320 with an owner-authenticated real Chromium UI, navigation/read-back and task-first usability (not a component/jsdom substitute). Do not bypass prior platform denial of #410 disposable test DB cleanup.
+- Verify complete Stream Wizard Source → Sample → Destinations → Route Processing → Deploy → first actual delivery with the current contract and same final HEAD.
+- Validate screen-specific full documentation destinations only after a trustworthy operator-accessible docs host/path is established; never synthesize a link.
+- Complete prescribed BFS-001..020 / capability-control census and two-user Full User E2E on final integrated HEAD. Keep PR Draft and release gates NOT PASS until the full contract is satisfied.
