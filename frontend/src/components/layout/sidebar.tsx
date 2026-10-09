@@ -1,4 +1,4 @@
-import { LogOut, PanelLeftClose, PanelLeftOpen, Plus } from 'lucide-react'
+import { ChevronDown, LogOut, PanelLeftClose, PanelLeftOpen, Plus } from 'lucide-react'
 import { useEffect, useState, type ComponentType } from 'react'
 import { Link } from 'react-router-dom'
 import { DataRelayWordmark } from '@datarelay-labs/product-shell'
@@ -6,7 +6,7 @@ import { cn } from '../../lib/utils'
 import { newStreamPath } from '../../config/nav-paths'
 import { getAdminSystemInfo, postAuthLogout } from '../../api/gdcAdmin'
 import { clearSession, readSession } from '../../auth/session'
-import type { SidebarNavEntry, SidebarTopItem } from '../../config/app-navigation'
+import type { SidebarGroupItem, SidebarNavEntry, SidebarTopItem } from '../../config/app-navigation'
 import { getDatarelayInstanceLabel } from '../../config/datarelay-instance-label'
 import type { PlatformPersona } from '../../utils/persona-mode'
 import { PersonaSwitcher } from './persona-switcher'
@@ -115,6 +115,75 @@ function NavButton({
       )}
       {!collapsed ? <span className="truncate">{item.label}</span> : <span className="sr-only">{item.label}</span>}
     </button>
+  )
+}
+
+function NavGroup({
+  group,
+  collapsed,
+  pathname,
+  onNavigate,
+}: {
+  group: SidebarGroupItem
+  collapsed: boolean
+  pathname: string
+  onNavigate: (path: string) => void
+}) {
+  const groupActive = isGroupActive(pathname, group.items)
+  const [expanded, setExpanded] = useState(groupActive)
+  const GroupIcon = group.icon
+
+  // If navigation opens a new section, reveal the selected item without
+  // forcing a manually collapsed section open on every render.
+  useEffect(() => {
+    if (groupActive) setExpanded(true)
+  }, [groupActive, pathname])
+
+  return (
+    <div className="space-y-0.5">
+      <button
+        type="button"
+        aria-label={group.label}
+        aria-expanded={expanded}
+        aria-controls={`sidebar-group-${group.id}`}
+        title={collapsed ? group.label : undefined}
+        onClick={() => setExpanded((current) => !current)}
+        className={cn(
+          'flex min-h-11 w-full items-center gap-2.5 rounded-lg px-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400',
+          collapsed ? 'justify-center px-0' : 'mt-3',
+          groupActive
+            ? 'bg-violet-50/60 text-violet-800 dark:bg-violet-500/10 dark:text-violet-200'
+            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-gdc-muted dark:hover:bg-gdc-rowHover',
+        )}
+      >
+        <GroupIcon className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
+        {!collapsed ? (
+          <>
+            <span className="flex-1 truncate text-[11px] font-bold uppercase tracking-[0.10em]">{group.label}</span>
+            <ChevronDown
+              className={cn('h-4 w-4 shrink-0 transition-transform', expanded && 'rotate-180')}
+              aria-hidden
+            />
+          </>
+        ) : null}
+      </button>
+      <div
+        id={`sidebar-group-${group.id}`}
+        hidden={!expanded}
+        className={cn('space-y-0.5', !collapsed && 'ml-2 border-l border-slate-200 pl-1 dark:border-gdc-border')}
+      >
+        {group.items.map((item) => (
+          <NavButton
+            key={item.key}
+            item={item}
+            collapsed={collapsed}
+            pathname={pathname}
+            onNavigate={onNavigate}
+            nested
+          />
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -241,36 +310,14 @@ export function Sidebar({
             )
           }
 
-          const groupActive = isGroupActive(pathname, entry.group.items)
           return (
-            <div key={entry.group.id} className="space-y-0.5">
-              {!collapsed ? (
-                <p
-                  className={cn(
-                    'mb-2 mt-4 px-3 text-[10px] font-bold uppercase tracking-[0.12em] first:mt-2',
-                    groupActive ? 'text-slate-700 dark:text-gdc-foreground' : 'text-slate-400 dark:text-gdc-muted',
-                  )}
-                >
-                  {entry.group.label}
-                </p>
-              ) : (
-                <div
-                  className="mx-auto my-1 h-px w-6 bg-slate-200 dark:bg-gdc-border"
-                  aria-hidden
-                  title={entry.group.label}
-                />
-              )}
-              {entry.group.items.map((item) => (
-                <NavButton
-                  key={item.key}
-                  item={item}
-                  collapsed={collapsed}
-                  pathname={pathname}
-                  onNavigate={handleNavigate}
-                  nested
-                />
-              ))}
-            </div>
+            <NavGroup
+              key={entry.group.id}
+              group={entry.group}
+              collapsed={collapsed}
+              pathname={pathname}
+              onNavigate={handleNavigate}
+            />
           )
         })}
       </nav>

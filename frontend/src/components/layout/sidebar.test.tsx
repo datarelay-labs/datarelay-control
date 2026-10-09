@@ -40,15 +40,47 @@ describe('Sidebar SaaS shell', () => {
     clearTestSession()
   })
 
-  it('renders primary navigation structure with calm group labels', () => {
+  it('keeps the primary sections discoverable and discloses nested destinations on demand', async () => {
     persistTestSession('ADMINISTRATOR')
+    const user = userEvent.setup()
     renderSidebar({ pathname: '/monitoring' })
     const nav = screen.getByRole('complementary', { name: 'Primary navigation' })
-    expect(within(nav).getByText('Data Sources')).toBeInTheDocument()
-    expect(within(nav).getByText('Delivery')).toBeInTheDocument()
-    expect(within(nav).getByText('Governance')).toBeInTheDocument()
+    const sources = within(nav).getByRole('button', { name: 'Data Sources' })
+    const delivery = within(nav).getByRole('button', { name: 'Delivery' })
+    const governance = within(nav).getByRole('button', { name: 'Governance' })
+    expect(sources).toHaveAttribute('aria-expanded', 'false')
+    expect(delivery).toHaveAttribute('aria-expanded', 'false')
+    expect(governance).toHaveAttribute('aria-expanded', 'false')
+    expect(within(nav).queryByRole('button', { name: 'Streams' })).not.toBeInTheDocument()
+    expect(within(nav).queryByRole('button', { name: 'Routes' })).not.toBeInTheDocument()
+
+    await user.click(sources)
+    expect(sources).toHaveAttribute('aria-expanded', 'true')
+    expect(sources).toHaveAttribute('aria-controls', 'sidebar-group-dataSources')
+    expect(within(nav).getByRole('button', { name: 'Connectors' })).toBeInTheDocument()
     expect(within(nav).getByRole('button', { name: 'Streams' })).toBeInTheDocument()
+
+    await user.click(delivery)
+    expect(delivery).toHaveAttribute('aria-expanded', 'true')
+    expect(within(nav).getByRole('button', { name: 'Destinations' })).toBeInTheDocument()
     expect(within(nav).getByRole('button', { name: 'Routes' })).toBeInTheDocument()
+
+    await user.click(sources)
+    expect(sources).toHaveAttribute('aria-expanded', 'false')
+    expect(within(nav).queryByRole('button', { name: 'Streams' })).not.toBeInTheDocument()
+    expect(within(nav).getByRole('button', { name: 'Routes' })).toBeInTheDocument()
+  })
+
+  it('keeps compact desktop navigation groups keyboard-accessible by name', async () => {
+    const user = userEvent.setup()
+    const { onNavigate } = renderSidebar({ collapsed: true, pathname: '/monitoring' })
+    const sources = screen.getByRole('button', { name: 'Data Sources' })
+    expect(sources).toHaveAttribute('title', 'Data Sources')
+    expect(sources).toHaveAttribute('aria-expanded', 'false')
+    await user.click(sources)
+    expect(sources).toHaveAttribute('aria-expanded', 'true')
+    await user.click(screen.getByRole('button', { name: 'Streams' }))
+    expect(onNavigate).toHaveBeenCalledWith('/streams')
   })
 
   it('provides a prominent create action for authorized Stream operators, including mobile', async () => {
@@ -66,9 +98,13 @@ describe('Sidebar SaaS shell', () => {
     expect(screen.queryByTestId('sidebar-create-stream')).not.toBeInTheDocument()
   })
 
-  it('marks the active leaf with aria-current=page', () => {
+  it('automatically expands the active group and marks only its active leaf', async () => {
+    const user = userEvent.setup()
     renderSidebar({ pathname: '/destinations' })
+    expect(screen.getByRole('button', { name: 'Delivery' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: 'Data Sources' })).toHaveAttribute('aria-expanded', 'false')
     expect(screen.getByRole('button', { name: 'Destinations' })).toHaveAttribute('aria-current', 'page')
+    await user.click(screen.getByRole('button', { name: 'Data Sources' }))
     expect(screen.getByRole('button', { name: 'Streams' })).not.toHaveAttribute('aria-current')
   })
 

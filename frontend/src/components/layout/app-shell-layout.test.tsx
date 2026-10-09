@@ -169,6 +169,8 @@ describe('AppShellLayout responsive accessibility', () => {
     renderShell()
     await user.click(screen.getByTestId('shell-mobile-nav-toggle'))
     const nav = screen.getByRole('complementary', { name: 'Primary navigation' })
+    await user.click(within(nav).getByRole('button', { name: 'Delivery' }))
+    expect(within(nav).getByRole('button', { name: 'Delivery' })).toHaveAttribute('aria-expanded', 'true')
     await user.click(within(nav).getByRole('button', { name: 'Destinations' }))
     expect(screen.getByRole('main')).toHaveTextContent('Destinations workspace')
     expect(screen.getByTestId('shell-mobile-nav-toggle')).toHaveAttribute('aria-expanded', 'false')

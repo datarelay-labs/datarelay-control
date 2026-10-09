@@ -535,10 +535,16 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     localStorage.removeItem('gdc-platform-governance-mode')
   })
 
-  it('renders core nav for CONNECTOR_OPERATOR (M20 RBAC)', () => {
+  it('exposes the full role-allowed nav through expandable groups for CONNECTOR_OPERATOR', async () => {
+    const user = userEvent.setup()
     persistTestSession('CONNECTOR_OPERATOR')
     renderApp()
     const nav = screen.getByRole('complementary', { name: 'Primary navigation' })
+    for (const group of ['Data Sources', 'Delivery', 'Governance']) {
+      const toggle = within(nav).getByRole('button', { name: group })
+      await user.click(toggle)
+      expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    }
     for (const label of ['Connectors', 'Streams', 'Destinations', 'Routes', 'Administration']) {
       expect(within(nav).getByRole('button', { name: label })).toBeInTheDocument()
     }
@@ -574,11 +580,12 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     expect(within(nav).getAllByRole('button', { name: 'Dashboard' })).toHaveLength(1)
   })
 
-  it('renders Governance nav for GOVERNANCE_OPERATOR (M20 RBAC)', () => {
+  it('renders Governance nav for GOVERNANCE_OPERATOR (M20 RBAC)', async () => {
+    const user = userEvent.setup()
     persistTestSession('GOVERNANCE_OPERATOR')
     renderApp()
     const nav = screen.getByRole('complementary', { name: 'Primary navigation' })
-    expect(nav).toHaveTextContent('Governance')
+    await user.click(within(nav).getByRole('button', { name: 'Governance' }))
     expect(within(nav).getByRole('button', { name: 'Governance Workspace' })).toBeInTheDocument()
   })
 
@@ -592,6 +599,7 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
   it('renders Destinations via Delivery sidebar entry', async () => {
     const user = userEvent.setup()
     renderApp()
+    await user.click(screen.getByRole('button', { name: 'Delivery' }))
     await user.click(screen.getByRole('button', { name: 'Destinations' }))
     expect(
       await screen.findByText(
@@ -635,6 +643,7 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
   it('renders Connectors via Data Sources sidebar entry', async () => {
     const user = userEvent.setup()
     renderApp()
+    await user.click(screen.getByRole('button', { name: 'Data Sources' }))
     await user.click(screen.getByRole('button', { name: 'Connectors' }))
     expect(
       await screen.findByText(/Which source connection needs attention\? Connectors manage reusable source access/i, {}, { timeout: 15000 }),
@@ -648,6 +657,7 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
   it('renders Streams operational console when Streams is selected', async () => {
     const user = userEvent.setup()
     renderApp()
+    await user.click(screen.getByRole('button', { name: 'Data Sources' }))
     await user.click(screen.getByRole('button', { name: 'Streams' }))
     expect(
       await screen.findByText(/Which data flow needs attention/i, {}, { timeout: 15000 }),
