@@ -602,3 +602,42 @@ are Route aware.
 Users should never create multiple Streams solely because destinations require different processing.
 
 Destination specific behavior must be implemented through Routes.
+
+==================================================
+OWNER-APPROVED UX ADDENDUM — NEW DATA FLOW ENTRY (2026-10-09, #354)
+==================================================
+
+The primary global onboarding action is named "New Data Flow" rather than
+"Create Stream". This is an operator-facing journey through the EXISTING
+Connector / Stream / Route / Destination model, not a new runtime entity.
+The Stream Wizard retains the explicitly described five functional stages:
+Connect -> Sample & Record Selection -> Destinations -> Route Processing -> Deploy.
+Destination selection always precedes destination-specific Route Processing.
+
+At the Connect step, select a reusable Connector. If none is appropriate,
+offer "Add Connector" in contextual setup; after its authorized creation,
+return with the prior draft, selection and step intact. No creation of
+credentials/authorization by inference.
+
+At the Destinations step, select one or more existing receivers. If missing,
+offer "Add Destination" contextually; after authorized creation, restore the
+previous Wizard state/selected targets and continue. Do not force operators
+to abandon or restart Source/API/sample configuration to satisfy prerequisites.
+
+Explain the chosen Source/Stream and Destination relationship before Deploy,
+with each Destination producing its own Route and optional Route override.
+Do not silently enable a Stream or fabricate route delivery success.
+A source sample, a preview, a saved configuration and a verified runtime
+delivery are four distinct states and must be labelled truthfully.
+
+The five intent templates currently seed portions of a single Wizard state.
+Each must expose the *real* contextual setup differences, constraints and
+next steps; do not advertise distinct implementation pipelines unless they
+actually exist. Advanced users retain the existing direct Wizard/configuration path.
+
+Keep the current validation gates, event root/checkpoint explicit confirmation,
+Route persistence contract, RBAC, approval flow, and runtime delivery proof.
+This bounded UX addendum does not correct unrelated legacy header/version
+discrepancies, introduce an alternate processing engine or authorize release.
+Implementation reference:
+docs/ux/DATA-RELAY-FLOW-FIRST-IA-IMPLEMENTATION-CONTRACT.md

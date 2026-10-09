@@ -1,7 +1,7 @@
 # Data Relay Control Authority Map
 
 **Role:** Canonical registry of repository authority; this file is not itself a replacement Product Charter.
-**Last reviewed:** 2026-09-21
+**Last reviewed:** 2026-10-09
 **Canonical product-document directory:** `docs/source-of-truth/`
 
 ## Current Data Relay Control product scope
@@ -88,6 +88,14 @@ Route Processing is the only supported product runtime. An explicit `GDC_ROUTE_P
 3. Treat code/runtime divergence as implementation drift, not an automatic requirement rewrite.
 4. If two artifacts at the same authority layer conflict, fail closed and create an explicit product/specification decision.
 5. Do not resolve conflicts from filename version, commit date, or AI inference alone.
+
+### Owner-approved Flow-First information architecture (#354/#413, 2026-10-09)
+
+The owner explicitly approved a **Data Flows operational topology** (existing Routes overview, **no new backend DataFlow model**) as the primary place to understand actual Stream -> per-Route Processing -> Destination edges and their runtime-backed metrics. Streams retain source/collection/execution ownership. Reusable Connectors and Destinations are grouped under Connections; the global CTA becomes **New Data Flow**, which reuses the canonical five-stage Stream Wizard and lets an authorized operator create missing Connector/Destination prerequisites **without losing the draft**. Existing Route Edit, Stream, Connector, Destination and Governance deep links remain compatible. Origin/receiver evidence and unknown metrics must not be invented.
+
+The current designated **UX Charter §4/§5/§21/§26/§29/§31** and **Stream Wizard UX Charter owner addendum** implement this expressly approved design, while **Master WBS owner-approved UX convergence** records the still-pending implementation work. The Product Charter scope is unchanged: no alternate runtime, database entity, Marketplace M29, AI Gateway or Enterprise feature. Historical pre-approval navigation recommendations are superseded only within this bounded UX decision. Governance navigation remains governed by separate #362 exception below.
+
+Detailed source-to-code implementation contract: [`docs/ux/DATA-RELAY-FLOW-FIRST-IA-IMPLEMENTATION-CONTRACT.md`](../ux/DATA-RELAY-FLOW-FIRST-IA-IMPLEMENTATION-CONTRACT.md), subordinate to current source-of-truth documents. Execution remains in existing [roadmap #354](https://github.com/datarelay-labs/datarelay-control/issues/354) / [packet #413](https://github.com/datarelay-labs/datarelay-control/issues/413) / Draft PR #414; no new competing roadmap. Document approval does **not** equal source implementation, authenticated browser PASS, two-user E2E PASS, merge or release authorization.
 
 ### Owner-approved Governance navigation exception (#362, 2026-10-09)
 
