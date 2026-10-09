@@ -116,6 +116,19 @@ def test_same_operation_different_request_or_effect_is_binding_conflict(store, b
     assert record(store, binding.operation_key) == (RESERVED, 0)
 
 
+def test_same_control_log_cannot_be_rearmed_under_another_approval(store, binding):
+    reserve(store, binding)
+    another = replace(
+        binding,
+        operation_key="different-approval-for-same-log",
+        execution_id="another-execution",
+        grant_request_id=str(uuid.uuid4()),
+    )
+    with pytest.raises(ReplayLedgerBindingError, match="BINDING_CONFLICT"):
+        reserve(store, another)
+    assert record(store, binding.operation_key) == (RESERVED, 0)
+
+
 def test_execution_id_cannot_be_recycled_as_a_second_operation(store, binding):
     reserve(store, binding)
     another = replace(binding, operation_key="other-operation-key")

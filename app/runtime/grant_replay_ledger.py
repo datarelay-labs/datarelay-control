@@ -53,6 +53,7 @@ class GrantProtectedReplayLedger(Base):
     __tablename__ = "grant_protected_replay_ledger"
     __table_args__ = (
         UniqueConstraint("execution_id", name="uq_grant_replay_execution"),
+        UniqueConstraint("delivery_log_id", name="uq_grant_replay_protected_log"),
         CheckConstraint("delivery_log_id > 0", name="ck_grant_replay_log_positive"),
         CheckConstraint("route_id > 0", name="ck_grant_replay_route_positive"),
         CheckConstraint("destination_id > 0", name="ck_grant_replay_destination_positive"),

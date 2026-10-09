@@ -135,6 +135,65 @@ do **not** prove PostgreSQL transaction locks, migrations on a real Control
 installation, actual authenticated Grant consume/results, or endpoint/product
 and destination readback. The latter remain release-blocking G11 acceptance.
 
+## Isolated actual API and loopback delivery E2E (2026-10-09)
+
+This is an **owner-approved, separately executed development-only pilot** under
+Control [Work Packet #422](https://github.com/datarelay-labs/datarelay-control/issues/422).
+It adds `app/runtime/grant_replay_pilot.py` and an **opt-in executable test
+harness** `scripts/testing/g11_grant_control_loopback_e2e.py`; the ordinary
+Control `/api/v1/runtime/replay/delivery-log/{log_id}` router is NOT modified.
+The test-only pilot refuses non-loopback or usual shared PostgreSQL port ranges
+and checks a user-explicit sandbox flag. This is not a product permission path.
+
+The execution uses the exact checked-out Grant development source
+`c3ad02571609f57b6ce7bbf05e4da2ccfe4ba5a4` with a new disposable
+SQLite store, synthetic requester/approver and independently scoped API tokens
+(`request:create` for the producer; `request:read,grant:consume,result:write`
+for Control). Grant runs as a real loopback HTTP server, with explicit
+authenticated human approval calls. No real email/SaaS/customer credential.
+
+Control uses a **new, single-use containerized PostgreSQL** database on a
+random `127.0.0.1` port with its full Alembic migration chain, a synthetic
+failed-delivery-log row, an immutable product route/destination binding and
+the product-owned effect ledger. Only a uniquely named test-owned container
+is eligible; the script must be invoked with a private sandbox root and
+`G11_APPROVED_DISPOSABLE_E2E=yes`. Existing Control/PostgreSQL/Grant services,
+customer destinations and running source worktrees stay untouched.
+
+The Control pilot checks current log/route/destination state, the current
+approved Grant request and a fresh authenticated exact-action Grant consume,
+then commits **UNKNOWN/attempts=1** before calling Control's existing native
+`replay_service.replay_delivery_log`. The webhook sender really performs
+one HTTP POST to a newly bound loopback receiving server. After independent
+receiver GET and unchanged Control checkpoint/operation-stage readback, the
+pilot test records DELIVERED and uses authenticated Grant result API to
+report `REPORTED_SUCCEEDED`.
+
+The run explicitly verifies zero send on PENDING, HELD and DENIED; exact
+action mismatch and insufficient producer-only `grant:consume` scope reject
+before delivery; success delivers **one observed local HTTP event**;
+repeat product ledger invocation and repeated Grant consume never deliver
+again. A second approval/request cannot rearm a protected log because
+the ledger now enforces **unique delivery_log_id** as well as unique
+execution_id/operation_key. That uniqueness constraint was tested both on
+disposable SQLite and the new isolated PostgreSQL migration.
+
+**Evidence truthfulness:**
+- The test is a real loopback HTTP + Control **native replay service** end-to-end
+  flow. It does **not** exercise the Control operator-facing HTTP replay endpoint,
+  which remains unguarded. The generic product replay API must not be described
+  as Grant-protected, and full M3 external acceptance remains WAITING.
+- A local receiving webhook is actual isolated network I/O, but is not a
+  customer product destination. The independently read back local receiver
+  is not a production/control-plane independent observer.
+- The synthetic human account/API token belongs only to test Grant SQLite.
+  No independent real two-person email/browser acceptance occurred, no actual
+  Stellar receiver was involved, and no production credential was provisioned.
+- Redacted receipt tracks actual Grant/Control source SHA, negative conditions,
+  receiver count, ledger state and action/result readback; it contains no bearer
+  token, SMTP secret or personal data. A fresh exact committed Control HEAD
+  rerun is required before promoting a source test to an exact-HEAD evidence claim.
+
 ## Phase 2 remaining
 
 1. Owner-approved **disposable** Control failed-delivery log and safe destination,

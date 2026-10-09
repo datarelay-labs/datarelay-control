@@ -33,6 +33,7 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False,
                   server_default=sa.func.now()),
         sa.UniqueConstraint("execution_id", name="uq_grant_replay_execution"),
+        sa.UniqueConstraint("delivery_log_id", name="uq_grant_replay_protected_log"),
         sa.CheckConstraint("delivery_log_id > 0", name="ck_grant_replay_log_positive"),
         sa.CheckConstraint("route_id > 0", name="ck_grant_replay_route_positive"),
         sa.CheckConstraint("destination_id > 0", name="ck_grant_replay_destination_positive"),
