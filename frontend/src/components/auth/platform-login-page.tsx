@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { AuthLayout } from '@datarelay-labs/auth-ui'
 import { BookOpen, Eye, EyeOff, Globe, Lock, Mail, Rocket, ScrollText, User } from 'lucide-react'
-import { postAuthLogin } from '../../api/gdcAdmin'
+import { postAuthLogin, postAuthMfaVerify, type TokenBundleDto, type MfaChallengeDto } from '../../api/gdcAdmin'
 import { accessTokenRequiresPasswordChange } from '../../auth/jwt-session-hints'
 import { markSessionRequiresPasswordChange } from '../../auth/password-change-gate'
 import { persistSession } from '../../auth/session'
@@ -31,6 +31,10 @@ export function PlatformLoginPage({ onAuthenticated }: PlatformLoginPageProps) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
+  const [mfaChallenge, setMfaChallenge] = useState<MfaChallengeDto | null>(null)
+  const [otp, setOtp] = useState('')
+  const [recovery, setRecovery] = useState('')
+  const [useRecovery, setUseRecovery] = useState(false)
 
   useEffect(() => {
     try {
@@ -43,6 +47,53 @@ export function PlatformLoginPage({ onAuthenticated }: PlatformLoginPageProps) {
     }
   }, [])
 
+  function finishAuthenticated(res: TokenBundleDto) {
+    persistSession({
+      access_token: res.access_token,
+      refresh_token: res.refresh_token,
+      expires_at: res.expires_at,
+      user: {
+        username: res.user.username,
+        role: res.user.role,
+        status: res.user.status,
+        ...(res.user.must_change_password === true ? { must_change_password: true } : {}),
+        ...(res.user.capabilities ? { capabilities: res.user.capabilities } : {}),
+      },
+    })
+    if (res.user.must_change_password === true || accessTokenRequiresPasswordChange(res.access_token)) {
+      markSessionRequiresPasswordChange()
+    }
+    onAuthenticated()
+  }
+
+  async function onVerifyOtp(e: FormEvent) {
+    e.preventDefault()
+    if (!mfaChallenge || (useRecovery ? !recovery.trim() : !/^[0-9]{6}$/.test(otp))) return
+    setBusy(true)
+    setError(null)
+    try {
+      const res = await postAuthMfaVerify({
+        challenge_token: mfaChallenge.challenge_token,
+        totp: useRecovery ? '' : otp,
+        recovery_code: useRecovery ? recovery.trim() : '',
+      })
+      setMfaChallenge(null)
+      setOtp('')
+      setRecovery('')
+      finishAuthenticated(res)
+    } catch {
+      // The server consumes each pre-auth challenge once. A failed factor
+      // cannot be retried without another password verification.
+      setMfaChallenge(null)
+      setOtp('')
+      setRecovery('')
+      setPassword('')
+      setError('MFA verification failed or expired. Sign in again.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     setError(null)
@@ -54,22 +105,14 @@ export function PlatformLoginPage({ onAuthenticated }: PlatformLoginPageProps) {
     setBusy(true)
     try {
       const res = await postAuthLogin({ username: u, password })
-      persistSession({
-        access_token: res.access_token,
-        refresh_token: res.refresh_token,
-        expires_at: res.expires_at,
-        user: {
-          username: res.user.username,
-          role: res.user.role,
-          status: res.user.status,
-          ...(res.user.must_change_password === true ? { must_change_password: true } : {}),
-          ...(res.user.capabilities ? { capabilities: res.user.capabilities } : {}),
-        },
-      })
-      if (res.user.must_change_password === true || accessTokenRequiresPasswordChange(res.access_token)) {
-        markSessionRequiresPasswordChange()
+      setPassword('')
+      if ('mfa_required' in res) {
+        setMfaChallenge(res)
+        setOtp('')
+        setRecovery('')
+        return
       }
-      onAuthenticated()
+      finishAuthenticated(res)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sign-in failed.')
     } finally {
@@ -93,6 +136,34 @@ export function PlatformLoginPage({ onAuthenticated }: PlatformLoginPageProps) {
         external: href.startsWith('http'),
       }))}
     >
+      {mfaChallenge ? (
+        <form onSubmit={(e) => void onVerifyOtp(e)} className="space-y-4" data-testid="gdc-mfa-challenge">
+          <h2 className="text-base font-semibold">Verify your sign-in</h2>
+          <p className="text-sm text-gdc-muted">Password verified. Complete the second factor before the platform creates a session.</p>
+          {error ? <p role="alert" className="text-sm text-rose-300">{error}</p> : null}
+          {useRecovery ? (
+            <label className="block text-sm">Recovery code
+              <input value={recovery} autoComplete="off" onChange={(e) => setRecovery(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-gdc-inputBorder bg-gdc-input px-3 py-2" />
+            </label>
+          ) : (
+            <label className="block text-sm">6-digit authentication code
+              <input value={otp} autoComplete="one-time-code" inputMode="numeric" autoFocus
+                onChange={(e) => setOtp(e.target.value)} maxLength={6}
+                className="mt-1 w-full rounded-lg border border-gdc-inputBorder bg-gdc-input px-3 py-2" />
+            </label>
+          )}
+          <button type="button" disabled={busy} onClick={() => setUseRecovery((v) => !v)}
+            className="text-sm text-gdc-primary">{useRecovery ? 'Use authenticator code' : 'Use recovery code'}</button>
+          <button type="submit" disabled={busy || (useRecovery ? !recovery.trim() : !/^[0-9]{6}$/.test(otp))}
+            className="mt-2 flex h-9 w-full items-center justify-center rounded-lg bg-gdc-primary font-semibold text-white disabled:opacity-50">
+            {busy ? 'Verifying…' : 'Verify and sign in'}
+          </button>
+          <button type="button" disabled={busy}
+            onClick={() => { setMfaChallenge(null); setOtp(''); setRecovery(''); setPassword(''); setError(null) }}
+            className="block w-full text-center text-sm text-gdc-muted">Cancel and start over</button>
+        </form>
+      ) : (
       <form onSubmit={(e) => void onSubmit(e)} className="space-y-4">
         <div>
           <label htmlFor="platform-login-username" className="mb-1.5 block text-xs font-medium text-gdc-mutedStrong">
@@ -163,6 +234,7 @@ export function PlatformLoginPage({ onAuthenticated }: PlatformLoginPageProps) {
           Accounts are created by an administrator. Self-service registration is not available.
         </p>
       </form>
+      )}
       </AuthLayout>
     </div>
   )

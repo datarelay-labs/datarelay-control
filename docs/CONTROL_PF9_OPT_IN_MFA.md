@@ -1,0 +1,32 @@
+# PF-9 Control opt-in Web TOTP MFA — source candidate
+
+Status: **unreleased candidate**, stacked on pinned Foundation security-wheel Control PR #416. This describes source behavior and test-only verification; it is **not** permission to migrate a live DB, configure an account, set a secret, or deploy.
+
+## Account behavior
+
+- Default: MFA disabled per account. Existing password-only login works as before.
+- Each signed-in local user may enroll *their own* account under **Administration → Admin settings → Authenticator (TOTP) MFA**. Enrollment requires the current password and a valid six-digit authenticator code within five minutes.
+- The authenticator QR is rendered entirely inside the product browser with the pinned qrcode library. TOTP URI/secret is **never sent to an external QR service**. A manual setup key is available. The browser does not persist the setup secret.
+- Confirmation enables MFA, increments the user's JWT token epoch, and returns **eight** individual recovery codes **once**. The operator must save them offline. The browser does not persist these codes.
+- At the next login, a valid password yields a three-minute, one-use **non-JWT** challenge, followed by TOTP or an unused recovery code. Access and refresh JWTs are created only after the second factor succeeds.
+- The per-account TOTP seed is AES-256-GCM encrypted with user-bound AAD; recovery codes are digested; and pending tokens are SHA-256 hashed. OTP counter reuse, recovery replay, expired/source-changed challenges, and concurrent re-verification fail closed. A database-backed account MFA failure window protects all API workers.
+- Enabling MFA revokes earlier access and refresh tokens. Live authenticated product routes check current account epoch, role and second-factor assertion; simultaneous refreshes are serialized.
+- An MFA-required account cannot downgrade itself to password-only login when the MFA encryption key is missing. Administrator-assisted recovery/disable is **not** yet part of this source candidate.
+
+## Separate rollout requirements (not executed)
+
+1. Approve the parent Foundation security wheel dependency and Control source PR; keep the release gates independent.
+2. Review and migrate 20261009_0066_platform_mfa and 20261009_0067_mfa_lockout via an authorized **live-DB migration plan**. Only guarded gdc_pytest catalog DDL is run by tests.
+3. Independently provision a strong, dedicated 32-byte hex GDC_MFA_ENCRYPTION_KEY_HEX using approved secret management. Do not set it in git, the current development host configuration, or any service as part of the source PR.
+4. Preserve safe ingress: GDC_TRUST_PROXY_HEADERS is false by default; if enabled, specify actual trusted proxy peers in GDC_PROXY_FORWARD_TRUSTED_HOSTS. Do not trust arbitrary client-supplied X-Forwarded-For. The default explicit list is loopback-only. Host SSH and Web ingress IP ACLs are **out of scope**.
+5. Before activation/release, run an actual browser feature reconciliation and two-user Full User E2E on the same candidate HEAD, then candidate freeze, exact-head CI and independent review, and obtain owner acceptance.
+
+## Source-only validation
+
+Run backend tests **only after** the local repo test database guard verifies TEST_DATABASE_URL is an isolated pytest catalog. Test fixtures may reset that catalog; never point them at the operator/application DB.
+
+- Backend: PYTHONPATH=vendor/onprem-security/datarelay_onprem_security-0.10.0.dev0-py3-none-any.whl:. python3 -m pytest -q tests/test_platform_user_totp_mfa.py
+- Frontend: cd frontend && npm run test -- --run src/components/settings/admin-mfa-enrollment.test.tsx src/components/auth/platform-login-mfa.test.tsx
+- Build: cd frontend && npm run build
+
+Scripted/component checks are not a substitute for real-browser/Full User E2E or approval to deploy.

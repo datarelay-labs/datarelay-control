@@ -39,6 +39,7 @@ import { cn } from '../../lib/utils'
 import { AdminDevValidationPanel } from './admin-dev-validation-panel'
 import { AdminDisplayTimezoneSettings } from './admin-display-timezone-settings'
 import { AdminMaintenanceCenter } from './admin-maintenance-center'
+import { AdminMfaEnrollment } from './admin-mfa-enrollment'
 import { AdminNetworkSettingsPage } from './admin-network-settings-page'
 import { AdminRetentionSettings } from './admin-retention-settings'
 import { AdminOperationalDashboard } from './admin-settings-operational'
@@ -54,6 +55,7 @@ const VALID_DAY_OPTIONS = [30, 90, 180, 365, 730] as const
 const SETTINGS_SECTION_JUMPS = [
   { href: '#admin-https-heading', label: 'HTTPS', group: 'Access & security' },
   { href: '#admin-password-heading', label: 'Password', group: 'Access & security' },
+  { href: '#admin-mfa-heading', label: 'Authenticator MFA', group: 'Access & security' },
   { href: '#admin-users-heading', label: 'Users', group: 'Access & security' },
   { href: '#admin-display-timezone-heading', label: 'Timezone', group: 'Platform & network' },
   { href: '#admin-network-heading', label: 'Network', group: 'Platform & network' },
@@ -865,6 +867,10 @@ export function AdminSettingsPage() {
           </div>
         </form>
       </section>
+
+      {/* Per-user MFA enrollment is self-service; it must not inherit the
+          administrator-only other-account mutation restriction. */}
+      <AdminMfaEnrollment />
 
       {/* User Management */}
       <section

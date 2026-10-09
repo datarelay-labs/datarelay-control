@@ -33,6 +33,7 @@ vi.mock('../../api/gdcAdmin', () => ({
     server_time_utc: '2026-01-01T00:00:00Z',
   })),
   getAuthWhoAmI: vi.fn(async () => ({ role: 'ADMINISTRATOR', username: 'admin' })),
+  getAuthMfaStatus: vi.fn(async () => ({ enabled: false })),
   createAdminUser: vi.fn(),
   deleteAdminUser: vi.fn(),
   updateAdminUser: vi.fn(),
@@ -230,7 +231,7 @@ describe('AdminSettingsPage Access & security modernization', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/do not match/i)
     expect(postAdminPasswordChange).not.toHaveBeenCalled()
 
-    await user.type(screen.getByLabelText('Current password'), 'old-secret')
+    await user.type(within(screen.getByTestId('admin-password-panel')).getByLabelText('Current password'), 'old-secret')
     await user.clear(screen.getByLabelText('New password'))
     await user.type(screen.getByLabelText('New password'), 'long-enough')
     await user.clear(screen.getByLabelText('Confirm new password'))

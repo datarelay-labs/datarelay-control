@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     GDC_SLOW_QUERY_LOG: bool = True
     SECRET_KEY: str = "change-me-in-production"
     JWT_SECRET_KEY: str = ""
+    # Dedicated AES-256 key for optional per-user Control MFA; blank means
+    # enrollment unavailable, never silently store TOTP seeds in plaintext.
+    GDC_MFA_ENCRYPTION_KEY_HEX: str = ""
     JWT_ALGORITHM: str = "HS256"
     JWT_ISSUER: str = "gdc-platform"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
@@ -222,7 +225,9 @@ class Settings(BaseSettings):
     # When True, trust ``X-Forwarded-Proto`` / ``X-Forwarded-For`` from ``GDC_PROXY_FORWARD_TRUSTED_HOSTS``.
     # Enable behind the bundled nginx reverse proxy; keep False for direct local API exposure.
     GDC_TRUST_PROXY_HEADERS: bool = False
-    GDC_PROXY_FORWARD_TRUSTED_HOSTS: str = "*"
+    # Safe default when proxy header support is enabled: only loopback peers.
+    # A containerized ingress must configure its exact trusted proxy address.
+    GDC_PROXY_FORWARD_TRUSTED_HOSTS: str = "127.0.0.1,::1"
 
     @model_validator(mode="after")
     def _apply_dev_validation_lab_defaults(self) -> "Settings":

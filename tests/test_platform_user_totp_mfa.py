@@ -1,0 +1,474 @@
+"""PF-9 Control opt-in MFA native API contract (dedicated pytest catalog only)."""
+from __future__ import annotations
+
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
+import json
+import threading
+
+from fastapi import HTTPException, Request
+from fastapi.testclient import TestClient
+import pytest
+from sqlalchemy.orm import Session
+from datarelay_onprem_security import code_at
+
+from app.auth.security import get_password_hash
+from app.auth.jwt_service import decode_token
+from app.config import settings
+from app.database import get_db, SessionLocal
+from app.auth.login_throttle import client_ip_from_request, reset_login_throttle_for_tests
+from app.main import app
+from app.platform_admin.models import PlatformUser, PlatformUserMfa, PlatformMfaChallenge
+from app.auth.mfa import _seal, _unseal, verify_password_challenge
+
+MFA_KEY = "c1" * 32
+USERNAME = "mfa-demo-1"
+PASSWORD = "ExamplePassword9!"
+
+
+@pytest.fixture
+def client(db_session: Session, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(settings, "GDC_MFA_ENCRYPTION_KEY_HEX", MFA_KEY)
+    reset_login_throttle_for_tests()
+    def override():
+        yield db_session
+    app.dependency_overrides[get_db] = override
+    with TestClient(app) as c:
+        yield c
+    app.dependency_overrides.pop(get_db, None)
+    reset_login_throttle_for_tests()
+
+
+def create_user(db: Session, username: str = USERNAME, role: str = "OPERATOR") -> PlatformUser:
+    row = PlatformUser(username=username, password_hash=get_password_hash(PASSWORD),
+                       role=role, status="ACTIVE", token_version=1)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def begin_enrollment(client: TestClient, db: Session, username: str = USERNAME) -> tuple[PlatformUser, str, list[str], str]:
+    user = create_user(db, username=username)
+    login = client.post("/api/v1/auth/login", json={"username":username,"password":PASSWORD})
+    assert login.status_code == 200, login.text
+    first = login.json()
+    assert first["access_token"] and first["refresh_token"]
+    auth = {"Authorization": "Bearer " + first["access_token"]}
+    r = client.post("/api/v1/auth/mfa/enroll/start", json={"current_password": PASSWORD},
+                    headers=auth)
+    assert r.status_code == 200, r.text
+    payload = r.json()
+    assert payload["otpauth_uri"].startswith("otpauth://totp/")
+    key = payload["secret"]
+    db.expire_all()
+    profile = db.get(PlatformUserMfa, user.id)
+    assert profile.required is False and profile.secret_ciphertext is None
+    assert key not in (profile.pending_secret_ciphertext or "")
+    from app.auth.mfa import _now
+    otp = code_at(key, _now().timestamp())
+    done = client.post("/api/v1/auth/mfa/enroll/confirm", json={"totp":otp}, headers=auth)
+    assert done.status_code == 200, done.text
+    codes = done.json()["recovery_codes"]
+    assert len(codes) == 8 and key not in json.dumps(codes)
+    assert done.json()["enabled"] is True
+    db.expire_all()
+    return user, key, codes, first["access_token"]
+
+
+def test_mfa_off_login_issues_jwt_without_second_step(client: TestClient, db_session: Session) -> None:
+    create_user(db_session)
+    r = client.post("/api/v1/auth/login", json={"username":USERNAME,"password":PASSWORD})
+    assert r.status_code == 200, r.text
+    assert "access_token" in r.json() and "mfa_required" not in r.json()
+    assert decode_token(r.json()["access_token"]).mfa_verified is False
+    assert db_session.query(PlatformMfaChallenge).count() == 0
+
+
+def test_enrollment_recovery_never_stores_plaintext_and_revokes_old_jwt(
+    client: TestClient, db_session: Session,
+) -> None:
+    user, secret, codes, old_access = begin_enrollment(client, db_session)
+    profile = db_session.get(PlatformUserMfa, user.id)
+    assert profile.required is True
+    assert profile.secret_ciphertext and secret not in profile.secret_ciphertext
+    assert profile.pending_secret_ciphertext is None
+    assert profile.last_counter >= 0
+    assert all(v not in json.dumps(profile.recovery_hashes_json) for v in codes)
+    changed = db_session.get(PlatformUser, user.id)
+    assert changed.token_version > decode_token(old_access).token_version
+    revoked = client.get("/api/v1/auth/whoami", headers={"Authorization":"Bearer " + old_access})
+    assert revoked.status_code == 401, revoked.text
+    assert revoked.json()["detail"]["error_code"] == "AUTH_TOKEN_REVOKED"
+
+
+def test_password_then_recovery_issues_no_jwt_before_factor_and_replay_is_denied(
+    client: TestClient, db_session: Session,
+) -> None:
+    user, _, codes, _ = begin_enrollment(client, db_session)
+    password = client.post("/api/v1/auth/login", json={"username":USERNAME,"password":PASSWORD})
+    assert password.status_code == 200, password.text
+    challenge = password.json()
+    assert challenge["mfa_required"] is True
+    assert "access_token" not in challenge and "refresh_token" not in challenge
+    assert "user" not in challenge
+    assert "set-cookie" not in {k.lower() for k in password.headers}
+    pending = db_session.query(PlatformMfaChallenge).one()
+    assert challenge["challenge_token"] not in pending.token_hash
+    assert pending.user_id == user.id
+    complete = client.post("/api/v1/auth/mfa/verify", json={
+        "challenge_token":challenge["challenge_token"], "recovery_code":codes[0],
+    })
+    assert complete.status_code == 200, complete.text
+    assert decode_token(complete.json()["access_token"]).mfa_verified is True
+    assert decode_token(complete.json()["refresh_token"]).mfa_verified is True
+    again = client.post("/api/v1/auth/mfa/verify",json={
+        "challenge_token":challenge["challenge_token"], "recovery_code":codes[0],
+    })
+    assert again.status_code == 401
+    new = client.post("/api/v1/auth/login",json={"username":USERNAME,"password":PASSWORD}).json()
+    consumed = client.post("/api/v1/auth/mfa/verify", json={
+        "challenge_token":new["challenge_token"], "recovery_code":codes[0],
+    })
+    assert consumed.status_code == 401
+
+
+def test_invalid_factor_consumes_challenge_and_preserves_rate_limiter(
+    client: TestClient, db_session: Session,
+) -> None:
+    begin_enrollment(client, db_session)
+    pwd = client.post("/api/v1/auth/login", json={"username":USERNAME,"password":PASSWORD})
+    assert pwd.status_code == 200
+    attempt = client.post("/api/v1/auth/mfa/verify",json={
+        "challenge_token":pwd.json()["challenge_token"],"totp":"000000",
+    })
+    assert attempt.status_code == 401
+    assert db_session.query(PlatformMfaChallenge).count() == 0
+    retried = client.post("/api/v1/auth/mfa/verify",json={
+        "challenge_token":pwd.json()["challenge_token"],"totp":"000000",
+    })
+    assert retried.status_code == 401
+
+
+def test_stale_role_or_ip_spoof_cannot_mint_jwt(client: TestClient, db_session: Session) -> None:
+    user, _, codes, _ = begin_enrollment(client, db_session)
+    first = client.post("/api/v1/auth/login", json={"username":USERNAME,"password":PASSWORD},
+                        headers={"x-forwarded-for":"198.51.100.1"})
+    assert first.status_code == 200
+    db_session.query(PlatformUser).filter(PlatformUser.id == user.id).update({
+        "role":"VIEWER", "token_version":PlatformUser.token_version + 1,
+    })
+    db_session.commit()
+    result = client.post("/api/v1/auth/mfa/verify",json={
+        "challenge_token":first.json()["challenge_token"],"recovery_code":codes[0],
+    },headers={"x-forwarded-for":"198.51.100.2"})
+    assert result.status_code == 401, result.text
+    assert "access_token" not in result.text
+
+
+def test_mfa_key_lost_does_not_fallback_to_password_only(
+    client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    begin_enrollment(client, db_session)
+    monkeypatch.setattr(settings, "GDC_MFA_ENCRYPTION_KEY_HEX", "")
+    password = client.post("/api/v1/auth/login",json={"username":USERNAME,"password":PASSWORD})
+    assert password.status_code == 503, password.text
+    assert "access_token" not in password.text and "refresh_token" not in password.text
+
+
+def test_aead_user_binding_and_missing_key_fail_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "GDC_MFA_ENCRYPTION_KEY_HEX", MFA_KEY)
+    value = _seal(33, "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")
+    assert "GEZDG" not in value
+    assert _unseal(33, value) == "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+    with pytest.raises(Exception):
+        _unseal(34, value)
+    monkeypatch.setattr(settings, "GDC_MFA_ENCRYPTION_KEY_HEX", "")
+    with pytest.raises(Exception):
+        _seal(33, "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")
+
+
+def _request_from(ip: str, agent: str = "testclient") -> Request:
+    """A controlled direct ASGI peer, not a user-supplied forwarding header."""
+    return Request({
+        "type": "http", "method": "POST", "scheme": "http",
+        "path": "/api/v1/auth/mfa/verify", "root_path": "",
+        "headers": [(b"user-agent", agent.encode())],
+        "client": (ip, 12345), "server": ("testserver", 80),
+        "query_string": b"",
+    })
+
+
+def test_login_throttle_ignores_spoofed_x_forwarded_for(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.auth import login_throttle
+    fake_request = Request({
+        "type": "http", "headers": [(b"x-forwarded-for", b"198.51.100.200")],
+        "client": ("203.0.113.20", 51200), "server": ("testserver", 80),
+    })
+    assert client_ip_from_request(fake_request) == "203.0.113.20"
+    assert client_ip_from_request(None) == "unknown"
+    monkeypatch.setattr(login_throttle, "_DEFAULT", login_throttle.LoginThrottleConfig(
+        max_failures_per_username=8, max_failures_per_ip=3,
+    ))
+    for i in range(3):
+        result = client.post("/api/v1/auth/login", json={
+            "username": "nonexistent-" + str(i), "password": "invalid",
+        }, headers={"x-forwarded-for": "198.51.100." + str(i)})
+        assert result.status_code == 400, result.text
+    denied = client.post("/api/v1/auth/login", json={
+        "username": "nonexistent-4", "password": "invalid",
+    }, headers={"x-forwarded-for": "192.0.2.99"})
+    assert denied.status_code == 429, denied.text
+    assert denied.json()["detail"]["error_code"] == "LOGIN_RATE_LIMITED"
+
+
+def test_expired_or_source_changed_challenge_fails_closed(
+    client: TestClient, db_session: Session,
+) -> None:
+    _, secret, codes, _ = begin_enrollment(client, db_session)
+    first = client.post("/api/v1/auth/login", json={
+        "username": USERNAME, "password": PASSWORD,
+    }).json()
+    with pytest.raises(HTTPException) as changed:
+        verify_password_challenge(
+            db_session, first["challenge_token"], "", codes[0],
+            _request_from("198.51.100.99"),
+        )
+    assert changed.value.status_code == 401
+    assert db_session.query(PlatformMfaChallenge).count() == 0
+    # A failed source binding does not consume a valid recovery code.
+    assert len(db_session.get(PlatformUserMfa, 1).recovery_hashes_json) == 8
+
+    second = client.post("/api/v1/auth/login", json={
+        "username": USERNAME, "password": PASSWORD,
+    }).json()
+    challenge = db_session.query(PlatformMfaChallenge).one()
+    challenge.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    db_session.commit()
+    expired = client.post("/api/v1/auth/mfa/verify", json={
+        "challenge_token": second["challenge_token"], "recovery_code": codes[0],
+    })
+    assert expired.status_code == 401
+    assert db_session.query(PlatformMfaChallenge).count() == 0
+    assert len(db_session.get(PlatformUserMfa, 1).recovery_hashes_json) == 8
+    assert secret  # Enrollment secret only used by the registered authenticator.
+
+
+def test_old_refresh_and_protected_access_are_revoked_on_enablement(
+    client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user, _, _, old_access = begin_enrollment(client, db_session)
+    # Request a token from the first login epoch to show refresh revocation.
+    from app.auth.jwt_service import issue_refresh_token
+    old_refresh, _ = issue_refresh_token(
+        username=user.username, user_id=user.id, role=user.role,
+        token_version=1,
+    )
+    refused = client.post("/api/v1/auth/refresh", json={"refresh_token": old_refresh})
+    assert refused.status_code == 401
+    assert refused.json()["detail"]["error_code"] == "AUTH_TOKEN_REVOKED"
+    refused = client.get("/api/v1/auth/mfa/status", headers={
+        "Authorization": "Bearer " + old_access,
+    })
+    assert refused.status_code == 401
+    # Live JWT/role check must stay active on other guarded product routes.
+    monkeypatch.setattr(settings, "REQUIRE_AUTH", True)
+    refused = client.get("/api/v1/admin/users", headers={
+        "Authorization": "Bearer " + old_access,
+    })
+    assert refused.status_code == 401
+
+
+def test_totp_counter_one_time_even_across_distinct_login_challenges(
+    client: TestClient, db_session: Session,
+) -> None:
+    user, secret, _, _ = begin_enrollment(client, db_session)
+    mfa = db_session.get(PlatformUserMfa, user.id)
+    enrolled_counter = int(mfa.last_counter)
+    consumed_code = code_at(secret, enrolled_counter * 30)
+    first = client.post("/api/v1/auth/login", json={
+        "username": USERNAME, "password": PASSWORD,
+    }).json()
+    # Force the authenticator's already-consumed enrollment counter to be in
+    # its acceptance window, not dependent on a 30-second wall-clock edge.
+    with pytest.raises(HTTPException) as replay:
+        verify_password_challenge(
+            db_session, first["challenge_token"], consumed_code, "",
+            _request_from("testclient"),
+            current=datetime.fromtimestamp(enrolled_counter * 30, timezone.utc),
+        )
+    assert replay.value.status_code == 401
+
+    # Move the synthetic factor clock at least one full counter forward.
+    # Challenge remains within its 180-second lifetime.
+    future_time = datetime.fromtimestamp((enrolled_counter + 2) * 30, timezone.utc)
+    future_code = code_at(secret, future_time.timestamp())
+    second = client.post("/api/v1/auth/login", json={
+        "username": USERNAME, "password": PASSWORD,
+    }).json()
+    result = verify_password_challenge(
+        db_session, second["challenge_token"], future_code, "",
+        _request_from("testclient"), current=future_time,
+    )
+    assert result.id == user.id
+    third = client.post("/api/v1/auth/login", json={
+        "username": USERNAME, "password": PASSWORD,
+    }).json()
+    with pytest.raises(HTTPException) as reused:
+        verify_password_challenge(
+            db_session, third["challenge_token"], future_code, "",
+            _request_from("testclient"), current=future_time,
+        )
+    assert reused.value.status_code == 401
+
+
+def test_concurrent_recovery_verification_has_only_one_winner(
+    client: TestClient, db_session: Session,
+) -> None:
+    _, _, codes, _ = begin_enrollment(client, db_session)
+    challenge = client.post("/api/v1/auth/login", json={
+        "username": USERNAME, "password": PASSWORD,
+    }).json()
+    db_session.commit()  # Do not hold the fixture transaction across workers.
+    barrier = threading.Barrier(2)
+
+    def run() -> int:
+        with SessionLocal() as session:
+            barrier.wait(timeout=10)
+            try:
+                verify_password_challenge(
+                    session, challenge["challenge_token"], "", codes[0],
+                    _request_from("testclient"),
+                )
+                return 200
+            except HTTPException as exc:
+                return exc.status_code
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: run(), range(2)))
+    assert sorted(results) == [200, 401], results
+    db_session.expire_all()
+    assert db_session.query(PlatformMfaChallenge).count() == 0
+    assert len(db_session.get(PlatformUserMfa, 1).recovery_hashes_json) == 7
+
+
+def test_mfa_failures_share_password_login_lockout(
+    client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.auth import login_throttle
+    monkeypatch.setattr(login_throttle, "_DEFAULT", login_throttle.LoginThrottleConfig(
+        max_failures_per_username=3, max_failures_per_ip=40,
+    ))
+    begin_enrollment(client, db_session)
+    for i in range(3):
+        password = client.post("/api/v1/auth/login", json={
+            "username": USERNAME, "password": PASSWORD,
+        })
+        assert password.status_code == 200
+        rejected = client.post("/api/v1/auth/mfa/verify", json={
+            "challenge_token": password.json()["challenge_token"],
+            "totp": "00000" + str(i),
+        })
+        assert rejected.status_code == 401
+    limited = client.post("/api/v1/auth/login", json={
+        "username": USERNAME, "password": PASSWORD,
+    })
+    assert limited.status_code == 429
+    assert limited.json()["detail"]["error_code"] == "LOGIN_RATE_LIMITED"
+
+
+def test_mfa_lockout_is_db_persistent_after_soft_throttle_reset(
+    client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.auth import login_throttle
+    monkeypatch.setattr(login_throttle, "_DEFAULT", login_throttle.LoginThrottleConfig(
+        max_failures_per_username=100, max_failures_per_ip=100,
+    ))
+    user, secret, _, _ = begin_enrollment(client, db_session)
+    for _ in range(8):
+        password = client.post("/api/v1/auth/login", json={
+            "username": USERNAME, "password": PASSWORD,
+        })
+        assert password.status_code == 200
+        rejected = client.post("/api/v1/auth/mfa/verify", json={
+            "challenge_token": password.json()["challenge_token"],
+            "totp": "invalid",
+        })
+        assert rejected.status_code == 401
+    db_session.expire_all()
+    profile = db_session.get(PlatformUserMfa, user.id)
+    assert profile.failed_attempts == 8
+    assert profile.locked_until > datetime.now(timezone.utc)
+    # Simulate another API worker/restart with an empty process-local throttle.
+    reset_login_throttle_for_tests()
+    fresh = client.post("/api/v1/auth/login", json={
+        "username": USERNAME, "password": PASSWORD,
+    }).json()
+    real_code = code_at(secret, datetime.now(timezone.utc).timestamp())
+    refused = client.post("/api/v1/auth/mfa/verify", json={
+        "challenge_token": fresh["challenge_token"], "totp": real_code,
+    })
+    assert refused.status_code == 429, refused.text
+    assert refused.json()["detail"]["error_code"] == "MFA_RATE_LIMITED"
+    assert "access_token" not in refused.text
+
+
+def test_refresh_token_replay_race_mints_one_bundle(
+    client: TestClient, db_session: Session,
+) -> None:
+    create_user(db_session)
+    token = client.post("/api/v1/auth/login", json={
+        "username": USERNAME, "password": PASSWORD,
+    }).json()["refresh_token"]
+    db_session.commit()
+    barrier = threading.Barrier(2)
+    from app.auth.router import refresh, RefreshRequest
+
+    def run() -> int:
+        with SessionLocal() as session:
+            barrier.wait(timeout=10)
+            try:
+                bundle = refresh(RefreshRequest(refresh_token=token), db=session)
+                assert bundle.access_token
+                return 200
+            except HTTPException as exc:
+                return exc.status_code
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: run(), range(2)))
+    assert sorted(results) == [200, 401], results
+
+
+def test_mfa_migration_0067_downgrade_upgrade_on_guarded_pytest_db_only(
+    db_session: Session, db_engine, test_db_url: str, project_root,
+) -> None:
+    """Run real reversible DDL exclusively in the policy-protected pytest catalog."""
+    from alembic import command
+    from alembic.config import Config
+    from sqlalchemy import inspect, text
+    from tests.db_test_policy import catalog_name_from_database_url, validate_host_pytest_catalog
+
+    validate_host_pytest_catalog(catalog_name_from_database_url(test_db_url))
+    db_session.commit()
+    cfg = Config(str(project_root / "alembic.ini"))
+    cfg.set_main_option("script_location", str(project_root / "alembic"))
+    cfg.set_main_option("sqlalchemy.url", test_db_url)
+
+    def columns() -> set[str]:
+        with db_engine.connect() as conn:
+            return {col["name"] for col in inspect(conn).get_columns("platform_user_mfa")}
+
+    with db_engine.connect() as conn:
+        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == "20261009_0067_mfa_lockout"
+    assert {"failed_attempts", "failure_window_started_at", "locked_until"} <= columns()
+    try:
+        command.downgrade(cfg, "20261009_0066_platform_mfa")
+        assert "failed_attempts" not in columns()
+        assert "secret_ciphertext" in columns()
+    finally:
+        command.upgrade(cfg, "head")
+    assert {"failed_attempts", "failure_window_started_at", "locked_until"} <= columns()
+    with db_engine.connect() as conn:
+        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == "20261009_0067_mfa_lockout"
