@@ -321,3 +321,17 @@ This is a **reconciliation of the already approved product UX backlog**, not a n
 **Regression:** new deterministic rendered Wizard test reproduces the missing initial focus before the repair (RED) and covers both focus-trap directions, cancellation focus restoration, unchanged parent Connect step, and no automatic local-draft write (GREEN, 33/33 focused Wizard tests). Broader exact-source build, full suite, CI and authenticated real-browser acceptance must be reported separately; the focused test is not Browser BFS or two-user E2E.
 
 **Boundaries:** no edit of the previously platform-denied Destination-creation path, Routes parent screen, #410 DB, or PF5B. No runtime/DB/API/permission change, production deployment, PR merge, or user acceptance.
+
+### Batch 2 continuation — guard pending Connector creation from premature return
+
+**Observed:** the nested Connector form already disables its own Cancel/Save buttons during a pending create request, but the enclosing Wizard's Return to Data Flow header remained clickable, so it could unmount the form while the create result was unresolved.
+
+**Repair:** the existing Connector form now reports its own busy state through an optional callback to the contextual parent. The parent disables its header Return while the API create is pending, re-enables it on a failed save and closes/selects the actual returned Connector ID on success. No new API request, draft persistence, identity change, global navigation change, or authorization bypass. A failed create stays visible for correction until the user deliberately returns.
+
+**Deterministic coverage:** RED→GREEN pending-create regression, successful Connector selection, and failed-create recovery/cancel. Real authenticated browser multi-user and Destination create-and-return remain unverified/blocked as separately documented. This is not Full User E2E.
+
+### Exact-HEAD CI feedback — asynchronous Governance Violation deep link
+
+GitHub Frontend CI on prior 3014e005 reported one failure in 307 test files: the existing violation-center-page.test.tsx deep-link investigation test checked violation-matched-rule synchronously after the detail drawer mounted, before its asynchronous detail API completed under CI load. GitHub job 113915419135 showed the drawer and page still loading, not a rejected detail or a broken correlation ID.
+
+The bounded regression repair waits for the actual detail content (findByTestId) and retains the original exact q-42 API argument and quarantine-link expectations. No Governance runtime, API, permission or product behavior changed. New exact-head full Frontend CI must pass before claiming a complete machine gate.

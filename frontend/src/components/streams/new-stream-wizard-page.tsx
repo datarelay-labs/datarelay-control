@@ -124,6 +124,7 @@ export function NewStreamWizardPage() {
   const [operationalSampleId, setOperationalSampleId] = useState<OperationalSampleId | null>(null)
   const [dataProtectionDrawerOpen, setDataProtectionDrawerOpen] = useState(false)
   const [connectorCreateOpen, setConnectorCreateOpen] = useState(false)
+  const [connectorCreateBusy, setConnectorCreateBusy] = useState(false)
   const [connectorCatalogEpoch, setConnectorCatalogEpoch] = useState(0)
 
   const handleIntentSelect = useCallback((id: WizardIntentTemplateId) => {
@@ -207,6 +208,7 @@ export function NewStreamWizardPage() {
   )
 
   const openConnectorCreate = () => {
+    setConnectorCreateBusy(false)
     connectorReturnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     setConnectorCreateOpen(true)
   }
@@ -252,7 +254,12 @@ export function NewStreamWizardPage() {
     }
   }
 
+  const closeConnectorCreate = () => {
+    if (!connectorCreateBusy) setConnectorCreateOpen(false)
+  }
+
   const handleConnectorCreated = useCallback((id: number) => {
+    setConnectorCreateBusy(false)
     // Keep the entire parent draft in React memory, including sample confirmation.
     // Connector credentials stay in the create form and are never copied into storage.
     clearWizardCatalogSnapshot()
@@ -1062,13 +1069,14 @@ export function NewStreamWizardPage() {
           <section ref={connectorDialogRef} onKeyDown={handleConnectorDialogKeyDown} role="dialog" aria-modal="true" aria-label="Add Connector to Data Flow" tabIndex={-1} className="mx-auto max-w-5xl rounded-xl bg-white p-4 shadow-2xl dark:bg-gdc-panel sm:p-6">
             <div className="mb-4 flex items-center justify-between gap-3 border-b border-slate-200 pb-3 dark:border-gdc-border">
               <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Add Connector to this Data Flow</p>
-              <button ref={connectorCloseButtonRef} type="button" onClick={() => setConnectorCreateOpen(false)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 dark:border-gdc-border dark:text-slate-100">
+              <button ref={connectorCloseButtonRef} type="button" disabled={connectorCreateBusy} onClick={closeConnectorCreate} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 dark:border-gdc-border dark:text-slate-100">
                 Return to Data Flow
               </button>
             </div>
             <NewConnectorWizardPage
               onCreated={handleConnectorCreated}
-              onCancel={() => setConnectorCreateOpen(false)}
+              onCancel={closeConnectorCreate}
+              onBusyChange={setConnectorCreateBusy}
             />
           </section>
         </div>

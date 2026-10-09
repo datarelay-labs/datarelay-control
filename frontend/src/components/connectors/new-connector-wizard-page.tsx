@@ -24,14 +24,20 @@ import { WebhookReceiverFields } from './webhook-receiver-fields'
 export function NewConnectorWizardPage({
   onCreated,
   onCancel,
+  onBusyChange,
 }: {
   /** Contextual creation keeps the owning Wizard and all in-memory inputs mounted. */
   onCreated?: (connectorId: number) => void
   onCancel?: () => void
+  /** Lets a contextual parent guard navigation until the create request settles. */
+  onBusyChange?: (busy: boolean) => void
 } = {}) {
   const navigate = useNavigate()
   const location = useLocation()
   const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    onBusyChange?.(busy)
+  }, [busy, onBusyChange])
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [form, setForm] = useState<ConnectorWritePayload>({

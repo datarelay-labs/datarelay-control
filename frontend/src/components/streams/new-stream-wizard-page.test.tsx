@@ -12,6 +12,7 @@ import { WIZARD_DRAFT_KEY_V2 } from './wizard/wizard-draft-migration'
 import { computeDeployReadiness } from './wizard/wizard-deploy-readiness'
 import * as gdcRuntimePreview from '../../api/gdcRuntimePreview'
 import { fetchCatalogSnapshot } from '../../api/gdcCatalog'
+import { createConnector } from '../../api/gdcConnectors'
 import { clearWizardCatalogSnapshot } from './wizard/wizard-catalog-cache'
 
 vi.mock('../../api/gdcStreams', () => ({
@@ -109,6 +110,48 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
 
     await user.click(returnButton)
     await waitFor(() => expect(addConnector).toHaveFocus())
+    expect(screen.getByTestId('wizard-step-connect')).toBeInTheDocument()
+    expect(localStorage.getItem(WIZARD_DRAFT_KEY_V2)).toBeNull()
+  })
+
+  it('prevents leaving the contextual Connector form while its create request is pending', async () => {
+    vi.mocked(fetchCatalogSnapshot).mockResolvedValue({ connectors: [], sources: [], apiBacked: true })
+    let resolveSave!: () => void
+    vi.mocked(createConnector).mockImplementationOnce(() => new Promise((resolve) => {
+      resolveSave = () => resolve({ id: 31 } as Awaited<ReturnType<typeof createConnector>>)
+    }))
+    const user = userEvent.setup()
+    render(<MemoryRouter initialEntries={['/streams/new']}><NewStreamWizardPage /></MemoryRouter>)
+    await user.click(screen.getByTestId('wizard-intent-scratch'))
+    await user.click(await screen.findByTestId('wizard-add-connector'))
+    await user.type(screen.getByLabelText('Connector Name *'), 'Pending source')
+    await user.type(screen.getByLabelText('Host / Base URL *'), 'https://example.net')
+    await user.click(screen.getByRole('button', { name: 'Save Connector' }))
+
+    const returnButton = screen.getByRole('button', { name: 'Return to Data Flow' })
+    await waitFor(() => expect(returnButton).toBeDisabled())
+    expect(screen.getByRole('dialog', { name: 'Add Connector to Data Flow' })).toBeInTheDocument()
+
+    resolveSave()
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add Connector to Data Flow' })).not.toBeInTheDocument())
+    expect(await screen.findByRole('option', { name: /Connector #31.*verifying source link/i })).toHaveValue('31')
+  })
+
+  it('allows a deliberate return after Connector saving fails without changing the parent draft', async () => {
+    vi.mocked(fetchCatalogSnapshot).mockResolvedValue({ connectors: [], sources: [], apiBacked: true })
+    vi.mocked(createConnector).mockRejectedValueOnce(new Error('Connector was not saved'))
+    const user = userEvent.setup()
+    render(<MemoryRouter initialEntries={['/streams/new']}><NewStreamWizardPage /></MemoryRouter>)
+    await user.click(screen.getByTestId('wizard-intent-scratch'))
+    await user.click(await screen.findByTestId('wizard-add-connector'))
+    await user.type(screen.getByLabelText('Connector Name *'), 'Retry source')
+    await user.type(screen.getByLabelText('Host / Base URL *'), 'https://example.net')
+    await user.click(screen.getByRole('button', { name: 'Save Connector' }))
+
+    expect(await screen.findByText('Connector was not saved')).toBeInTheDocument()
+    const returnButton = screen.getByRole('button', { name: 'Return to Data Flow' })
+    await waitFor(() => expect(returnButton).toBeEnabled())
+    await user.click(returnButton)
     expect(screen.getByTestId('wizard-step-connect')).toBeInTheDocument()
     expect(localStorage.getItem(WIZARD_DRAFT_KEY_V2)).toBeNull()
   })
