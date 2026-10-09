@@ -277,6 +277,41 @@ describe('StepDelivery', () => {
     expect(testDestination).toHaveBeenCalledTimes(2)
   })
 
+  it('preserves Stream setup before opening an existing destination detail from a Route card', async () => {
+    const user = userEvent.setup()
+    const state = buildInitialState()
+    state.destinations.routeDrafts = [{
+      key: 'route-open-detail',
+      destinationId: 1,
+      enabled: true,
+      failurePolicy: 'RETRY_AND_BACKOFF',
+      rateLimitJson: {},
+    }]
+    const onOpenDestinationPrerequisite = vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true)
+    render(
+      <MemoryRouter initialEntries={['/streams/new']}>
+        <Routes>
+          <Route path="/streams/new" element={
+            <StepDelivery state={state} onChange={vi.fn()} onOpenDestinationPrerequisite={onOpenDestinationPrerequisite} showCreateDraftReturnGuidance />
+          } />
+          <Route path="/destinations/:destinationId" element={<p>Destination details workspace</p>} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    const card = await screen.findByTestId('destination-route-card-route-open-detail')
+    await user.click(within(card).getByRole('button', { name: 'Actions for Stellar Syslog' }))
+    await user.click(within(card).getByRole('menuitem', { name: 'Open destination' }))
+    expect(onOpenDestinationPrerequisite).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText('Destination details workspace')).not.toBeInTheDocument()
+    expect(screen.getByTestId('destination-route-card-route-open-detail')).toBeInTheDocument()
+
+    await user.click(within(card).getByRole('button', { name: 'Actions for Stellar Syslog' }))
+    await user.click(within(card).getByRole('menuitem', { name: 'Open destination' }))
+    expect(onOpenDestinationPrerequisite).toHaveBeenCalledTimes(2)
+    expect(await screen.findByText('Destination details workspace')).toBeInTheDocument()
+  })
+
   it('does not expose route delivery tuning controls', async () => {
     const state = buildInitialState()
     state.destinations.routeDrafts = [

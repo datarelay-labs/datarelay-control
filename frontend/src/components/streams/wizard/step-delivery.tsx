@@ -102,6 +102,7 @@ function DestinationRouteCard({
   testFeedback,
   menuOpen,
   onMenuOpenChange,
+  onOpenDestinationPrerequisite,
 }: {
   routeIndex: number
   draft: WizardRouteDraft
@@ -113,6 +114,7 @@ function DestinationRouteCard({
   testFeedback?: DestinationProbeFeedback
   menuOpen: boolean
   onMenuOpenChange: (open: boolean) => void
+  onOpenDestinationPrerequisite?: () => boolean | void
 }) {
   const menuRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -186,7 +188,10 @@ function DestinationRouteCard({
                 role="menuitem"
                 to={destinationDetailPath(String(draft.destinationId))}
                 className={routeMenuItemCls}
-                onClick={() => onMenuOpenChange(false)}
+                onClick={(event) => {
+                  onMenuOpenChange(false)
+                  if (onOpenDestinationPrerequisite?.() === false) event.preventDefault()
+                }}
               >
                 Open destination
               </Link>
@@ -608,6 +613,7 @@ export function StepDelivery({
                     testFeedback={testFeedbackByDestinationId[draft.destinationId]}
                     menuOpen={menuKey === draft.key}
                     onMenuOpenChange={(open) => setMenuKey(open ? draft.key : null)}
+                    onOpenDestinationPrerequisite={onOpenDestinationPrerequisite}
                   />
                 ))
               )}
