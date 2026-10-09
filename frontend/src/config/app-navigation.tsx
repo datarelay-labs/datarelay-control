@@ -9,7 +9,6 @@ export type SidebarNavKey =
   | 'destinations'
   | 'routes'
   | 'governance'
-  | 'governanceWorkspace'
   | 'administration'
 
 export type SidebarGroupId = 'dataSources' | 'delivery' | 'governance'
@@ -95,8 +94,7 @@ const GOVERNANCE_GROUP: SidebarGroupItem = {
   label: 'Governance',
   icon: Shield,
   items: [
-    { key: 'governance', label: 'Dashboard', path: '/governance', icon: LayoutDashboard },
-    { key: 'governanceWorkspace', label: 'Governance Workspace', path: '/governance/workspace', icon: Shield },
+    { key: 'governance', label: 'Governance Dashboard', path: '/governance', icon: LayoutDashboard },
   ],
 }
 
@@ -155,7 +153,7 @@ export const PAGE_TITLE: Record<AppNavKey, string> = {
   streams: 'Streams',
   logs: 'Logs',
   alerts: 'Operational alerts',
-  governance: 'Governance',
+  governance: 'Governance Dashboard',
   administration: 'Administration',
   connectors: 'Connectors',
   mappings: 'Mappings',

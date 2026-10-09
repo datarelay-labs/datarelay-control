@@ -572,6 +572,27 @@ export function GovernanceDashboardPage() {
             })}
           </ul>
         </section>
+
+        <div
+          className="flex flex-col gap-3 rounded-xl border border-slate-200/80 bg-slate-50/60 px-4 py-3 dark:border-gdc-border dark:bg-gdc-section/40 sm:flex-row sm:items-center sm:justify-between"
+          data-testid="governance-advanced-entry"
+          aria-label="Advanced governance context"
+        >
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">Advanced · Stream and Route governance</p>
+            <p className="mt-1 text-xs leading-5 text-slate-600 dark:text-gdc-mutedStrong">
+              Read-only view of effective protection, classification and policy context. Edit settings in the owning Stream or Route.
+            </p>
+          </div>
+          <Link
+            to={NAV_PATH.governanceWorkspace}
+            aria-label="Open advanced Governance Workspace"
+            className="inline-flex min-h-10 shrink-0 items-center gap-1.5 self-start rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-violet-300 hover:text-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100 sm:self-auto"
+          >
+            Open Governance Workspace
+            <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+          </Link>
+        </div>
       </section>
 
       <div className="hidden" aria-hidden data-testid="dashboard-risk-overview">

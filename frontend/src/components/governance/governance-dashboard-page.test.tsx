@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -78,6 +78,21 @@ describe('GovernanceDashboardPage', () => {
     expect(screen.getByTestId('governance-quick-actions')).toBeInTheDocument()
     expect(screen.queryByText('Approve')).not.toBeInTheDocument()
     expect(screen.queryByText('Reject')).not.toBeInTheDocument()
+  })
+
+  it('offers read-only Stream and Route governance context as a secondary advanced entry', async () => {
+    render(
+      <MemoryRouter>
+        <GovernanceDashboardPage />
+      </MemoryRouter>,
+    )
+    const advanced = await screen.findByTestId('governance-advanced-entry')
+    expect(within(advanced).getByRole('link', { name: 'Open advanced Governance Workspace' })).toHaveAttribute(
+      'href',
+      '/governance/workspace',
+    )
+    expect(advanced).toHaveTextContent('Read-only')
+    expect(screen.queryByText('New Policy')).not.toBeInTheDocument()
   })
 
   it('explains the page purpose and keeps configuration out of the dashboard', async () => {

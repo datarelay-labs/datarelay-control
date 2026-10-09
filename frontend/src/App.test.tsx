@@ -550,7 +550,8 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     }
     expect(within(nav).getAllByRole('button', { name: 'Dashboard' }).length).toBeGreaterThanOrEqual(1)
     expect(nav).toHaveTextContent('Governance')
-    expect(within(nav).getByRole('button', { name: 'Governance Workspace' })).toBeInTheDocument()
+    expect(within(nav).getByRole('button', { name: 'Governance Dashboard' })).toBeInTheDocument()
+    expect(within(nav).queryByRole('button', { name: 'Governance Workspace' })).not.toBeInTheDocument()
     for (const removed of [
       'Operations',
       'Operations Center',
@@ -586,7 +587,8 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     renderApp()
     const nav = screen.getByRole('complementary', { name: 'Primary navigation' })
     await user.click(within(nav).getByRole('button', { name: 'Governance' }))
-    expect(within(nav).getByRole('button', { name: 'Governance Workspace' })).toBeInTheDocument()
+    expect(within(nav).getByRole('button', { name: 'Governance Dashboard' })).toBeInTheDocument()
+    expect(within(nav).queryByRole('button', { name: 'Governance Workspace' })).not.toBeInTheDocument()
   })
 
   it('logo links to Dashboard home', () => {
@@ -890,6 +892,15 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     expect(screen.getByTestId('governance-nav-violations')).toBeInTheDocument()
     expect(screen.queryByTestId('governance-read-only-banner')).not.toBeInTheDocument()
   })
+
+  it('retains the authorized Governance Workspace deep link after demoting its primary nav entry', async () => {
+    persistTestSession('GOVERNANCE_OPERATOR')
+    renderApp('/governance/workspace?stream_id=10')
+    expect(await screen.findByTestId('governance-workspace-page', {}, { timeout: 15000 })).toBeInTheDocument()
+    const nav = screen.getByRole('complementary', { name: 'Primary navigation' })
+    expect(within(nav).queryByRole('button', { name: 'Governance Workspace' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Back to Governance Dashboard' })).toHaveAttribute('href', '/governance')
+  }, 20000)
 
   it('shows an explicit 404 page for unknown URLs instead of redirecting to /streams', async () => {
     renderApp('/this-route-does-not-exist-xyz')

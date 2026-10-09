@@ -103,6 +103,7 @@ describe('GovernanceWorkspacePage', () => {
     )
 
     expect(await screen.findByTestId('governance-workspace-page')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Back to Governance Dashboard' })).toHaveAttribute('href', '/governance')
     expect(screen.getByTestId('governance-workspace-streams-panel')).toBeInTheDocument()
     expect(screen.getByTestId('governance-workspace-summary-panel')).toBeInTheDocument()
     expect(screen.getByTestId('governance-workspace-routes-panel')).toBeInTheDocument()

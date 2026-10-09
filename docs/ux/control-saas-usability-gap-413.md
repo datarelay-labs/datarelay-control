@@ -15,7 +15,7 @@ The current Product Charter, UX Charter, Stream Wizard Charter, and source-of-tr
 - Connect → Sample & Record Selection → Destinations → Route Processing → Deploy.
 - Runtime Is Truth: never create invented health, capacity, or delivery evidence.
 - Existing task-oriented UX phases A–G already merged under #354. This iteration is a visible usability convergence, not a replacement of existing features or processing preview.
-- Issue #362 remains unresolved: the Governance primary-navigation group and its child destinations are retained unchanged.
+- Issue #362 was resolved by explicit owner approval on 2026-10-09: Option A keeps Governance as an operational primary group with Governance Dashboard as its normal entry. Workspace is contextual/advanced and remains routable by authorized deep links; Browser BFS and User E2E acceptance remain pending.
 
 Evidence tiers used here:
 
@@ -47,7 +47,7 @@ The table supports UI patterns, not competitor parity claims or a conclusion tha
 | **Sidebar** | `sidebar.tsx`: Dashboard, Data Sources, Delivery, Governance, Administration; group captions and subdued current-page highlight; creation available through Streams page | Larger accessible active-leaf treatment, explicit Create stream at top for Administrator/Operator/Connector Operator, mobile drawer closes on action | Newcomers can initiate the main workflow without knowing the Streams information architecture | P0 / low; no change to Governance grouping |
 | **Wizard intent entry** | `intent-template-picker.tsx`: six equally weighted text-heavy cards, including Start from scratch | Use-case icon cards with clear descriptions, seed lists, explicit action; unmodified expert scratch path in a separate secondary panel | Novice intent selection first, experienced users keep a single-click blank path | P0 / low |
 | **Wizard progress** | `wizard-stepper.tsx`: five tiles squeezed into a 2-column mobile grid, labels may truncate | Current-step text, accessible progressbar and swipeable mobile rail; 5-column desktop layout with retained validation gates | Operator can see overall progress and long step names at narrow widths | P0 / low |
-| **Governance IA** | Top-level group with Dashboard and Workspace | **Unchanged** | Avoids silently deciding the current normative conflict #362 | Blocked on product decision |
+| **Governance IA** | Top-level group with Dashboard and equally prominent Workspace | **Owner-approved Option A:** Governance group retained; Governance Dashboard is the single primary leaf, advanced read-only Workspace accessed via secondary contextual link; deep links and operational investigations preserved | Clear operational starting point without hiding advanced Stream/Route evidence | #362 decision approved; browser acceptance pending |
 | **Advanced route previews** | Existing Processing Preview Dock, Flow Map, intent/template features merged A–G under #354 | **Kept**, no duplicate implementation | Preserves prior expert functionality and avoids parallel semantics | Existing / not duplicated |
 
 These are verified *source* before/after comparisons. They are not labeled photographic or authenticated-browser comparisons.
@@ -138,12 +138,12 @@ Templates remain existing `applyWizardIntentTemplate` state setters; they do not
 - [x] `npm run lint`: PASS with 74 preexisting warnings and zero errors.
 - [x] Documentation Source-of-Truth integrity test: PASS (9 current documents / 89 specs).
 - [x] Initial source revision full frontend suite (7b73c0d): 1,740/1,740 PASS locally across 298 test files.
-- [ ] Updated source revision complete CI test/build after the route-status race fix: check exact new HEAD; do not treat the previous full suite as new-HEAD evidence.
+- [x] Previous exact-HEAD `29a7b910` GitHub Actions 5/5 PASS, before the Option A menu change. The final Option A revision requires separate exact-HEAD CI.
 - [ ] Authenticated 1440/375/320 Chromium before/after comparison on exact UX branch HEAD: **NOT VERIFIED** (#410 exclusive browser audit lock).
 - [ ] Browser Feature Scenario Reconciliation: **NOT PASS**.
 - [ ] Full User E2E and owner acceptance: **NOT PASS**.
 - [ ] Review and CI on the isolated UX PR.
-- [ ] Owner decision #362 on Governance placement (independent product question).
+- [x] Owner decision #362 on Governance placement: Option A approved 2026-10-09; implementation in Draft PR #414, actual browser acceptance still pending.
 
 Protect #410's Chromium test run, locked ports/session/DB, #411/PR #412 and PF-5B preview; do not merge or release before owner approval and user-E2E gates.
 
@@ -209,3 +209,16 @@ Protect #410's Chromium test run, locked ports/session/DB, #411/PR #412 and PF-5
 **Evidence:** Dedicated `wizard-stepper.test.tsx` red/green regressions cover Review open while zero stages are complete, partial progress, actionable source/sample/Route requirements, and Edit mode nonblocking navigation. Existing Stream Wizard modernization checks updated to distinguish location from completion. Real browser comparison and two-user E2E still pending under #410's exclusive test boundary.
 
 **Protected boundaries:** no route/destination persistence semantics, API, credentials, runtime, policy, user rights, shared DB, or #410 browser process modified. Final authenticated UX/BFS and 2-user Full User E2E remain NOT VERIFIED.
+
+## 2026-10-09 owner-approved Governance navigation — Option A (#362)
+
+**Explicit owner decision:** Governance remains one primary **operations** group. The current Governance UX Charter is an approved domain exception to the general top-level navigation anti-pattern. This is recorded in GitHub #362 and in the authority index without rewriting either historical Source-of-Truth document.
+
+**UI implementation on #413 / Draft PR #414:**
+
+- Navigation configuration keeps `Governance` in the existing group structure with a single named `Governance Dashboard` destination. `Governance Workspace` is no longer an equally weighted primary leaf.
+- Governance Dashboard retains posture, prioritized investigation, violations, quarantine, approvals, audit and replay links; its **secondary evidence** area adds an **Advanced** read-only Stream/Route governance context link.
+- The existing `/governance/workspace` page and `?stream_id=...&route_id=...` context contract remain intact; its header offers **Back to Governance Dashboard**.
+- Policy creation/editing does not move to the Dashboard. Stream/Route/Wizard ownership, existing RBAC, backend/runtime/persistence, and mobile sidebar component behavior are unchanged.
+
+**Verification scope:** nav structure, roles, deep-link routing, Governance Dashboard/Workspace, app shell, documentation integrity, affected ESLint and production build. CI and code tests do **not** establish real browser acceptance: #410 holds its own authorized browser lab at older `b45ad9d`; actual latest-HEAD desktop/mobile 1440/375/320, full Browser BFS and two-user Full User E2E are not passed. No merge/freeze/prod deploy/release.

@@ -89,6 +89,12 @@ Route Processing is the only supported product runtime. An explicit `GDC_ROUTE_P
 4. If two artifacts at the same authority layer conflict, fail closed and create an explicit product/specification decision.
 5. Do not resolve conflicts from filename version, commit date, or AI inference alone.
 
+### Owner-approved Governance navigation exception (#362, 2026-10-09)
+
+The owner expressly selected **Option A** to resolve the same-layer conflict between the general UX Charter and Governance UX Charter. In Data Relay Control, a single `Governance` primary group remains an approved operational exception to the general top-level navigation anti-pattern. `Governance Dashboard` is its entry point; Violations, Quarantine, Approvals, Audit, Replay and Notifications stay operational drill-downs. `Governance Workspace` is an advanced, contextual, read-only Stream/Route view rather than an equally prominent primary menu entry, with existing authorized routes preserved. Policy configuration stays in Stream/Route/Wizard ownership.
+
+Decision: [GitHub #362](https://github.com/datarelay-labs/datarelay-control/issues/362). Implementation: [Draft PR #414](https://github.com/datarelay-labs/datarelay-control/pull/414). This decision does **not** confer Browser BFS, two-user Full User E2E, merge or release approval; both user-test gates remain required on one final HEAD. The Source-of-Truth charters retain their original text; this explicit owner disposition resolves the bounded navigation conflict without changing unrelated UX authority.
+
 ## Historical / superseded material
 
 The following are retained only for history or old-link resolution and must not drive new implementation:
