@@ -67,6 +67,29 @@ describe('Wizard flow overview (configuration, not live delivery)', () => {
     expect(delivery).not.toHaveTextContent('1 of 1 delivery path enabled')
   })
 
+  it('does not claim a selected source for invalid connector/source identifiers', () => {
+    for (const [connectorId, sourceId] of [[0, 10], [10, -1], [1.5, 3], [Number.NaN, 3], [3, Number.POSITIVE_INFINITY]]) {
+      const state = buildInitialState()
+      state.connector.connectorId = connectorId
+      state.connector.sourceId = sourceId
+      state.connector.connectorName = 'Unresolved source'
+      const { unmount } = render(<WizardFlowOverview state={state} activeStep="connect" />)
+      const source = screen.getByTestId('wizard-flow-source')
+      expect(source).toHaveTextContent('Choose a source')
+      expect(source).not.toHaveTextContent('Unresolved source')
+      expect(source).not.toHaveTextContent('Source selected')
+      unmount()
+    }
+  })
+
+  it('treats an empty connector module id as no draft selection', () => {
+    const state = buildInitialState()
+    state.connector.registryModuleId = '  '
+    render(<WizardFlowOverview state={state} activeStep="connect" />)
+    expect(screen.getByTestId('wizard-flow-source')).toHaveTextContent('Choose a source')
+    expect(screen.getByTestId('wizard-flow-source')).not.toHaveTextContent('Connector module selected')
+  })
+
   it('identifies connector-module drafts without claiming saved source records', () => {
     const state = buildInitialState()
     state.connector.registryModuleId = 'example-module'

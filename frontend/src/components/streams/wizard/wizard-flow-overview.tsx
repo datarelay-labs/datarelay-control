@@ -11,8 +11,10 @@ const STEP_ACTIONS: Record<WizardStepKey, string> = {
 }
 
 function deriveWizardFlowOutline(state: WizardState) {
-  const sourceSelected = state.connector.connectorId != null && state.connector.sourceId != null
-  const sourceDraft = !sourceSelected && state.connector.registryModuleId != null
+  const sourceSelected =
+    Number.isSafeInteger(state.connector.connectorId) && state.connector.connectorId! > 0 &&
+    Number.isSafeInteger(state.connector.sourceId) && state.connector.sourceId! > 0
+  const sourceDraft = !sourceSelected && Boolean(state.connector.registryModuleId?.trim())
   const sampleConfirmed = wizardSampleStepGateReady(state)
   const routes = state.destinations.routeDrafts
   const enabled = routes.filter((route) => route.enabled).length
