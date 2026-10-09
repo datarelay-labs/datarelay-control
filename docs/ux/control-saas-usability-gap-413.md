@@ -43,6 +43,7 @@ The table supports UI patterns, not competitor parity claims or a conclusion tha
 | --- | --- | --- | --- | --- |
 | **Dashboard, populated** | `dashboard-overview.tsx`: small Action needed card containing seven possible issue categories as inline tiles; main action to investigate is one of several links | Bigger operational hero, issue-aware recommended action linking to the first **actual** snapshot-supported issue; adjacent New Stream entry. Existing health, traffic, and operational issues preserved | Reduces choice paralysis: one obvious next diagnostic click instead of interpreting a wall of tiles | P0 / low (presentation and existing links) |
 | **Dashboard, no Streams** | One heading, explanatory sentence, Create First Stream button | Guided three-stage Connect / Route / Verify cards, more prominent First Stream action | Explains what a Stream does before the user configures one | P0 / low |
+| **Dashboard, unavailable snapshot** | Empty fallback bundle could incorrectly appear as a first installation with zero Streams | Separate operational-unavailable state; never infer zero Stream count or a healthy condition; explicit Retry status | Prevents API failure from being presented as a successful blank install | P0 / low |
 | **Sidebar** | `sidebar.tsx`: Dashboard, Data Sources, Delivery, Governance, Administration; group captions and subdued current-page highlight; creation available through Streams page | Larger accessible active-leaf treatment, explicit Create stream at top for Administrator/Operator/Connector Operator, mobile drawer closes on action | Newcomers can initiate the main workflow without knowing the Streams information architecture | P0 / low; no change to Governance grouping |
 | **Wizard intent entry** | `intent-template-picker.tsx`: six equally weighted text-heavy cards, including Start from scratch | Use-case icon cards with clear descriptions, seed lists, explicit action; unmodified expert scratch path in a separate secondary panel | Novice intent selection first, experienced users keep a single-click blank path | P0 / low |
 | **Wizard progress** | `wizard-stepper.tsx`: five tiles squeezed into a 2-column mobile grid, labels may truncate | Current-step text, accessible progressbar and swipeable mobile rail; 5-column desktop layout with retained validation gates | Operator can see overall progress and long step names at narrow widths | P0 / low |
@@ -71,7 +72,7 @@ These are verified *source* before/after comparisons. They are not labeled photo
  Streams / Delivery health / Destinations / Logs / Governance
 ```
 
-**Fresh install:** replace populated panels with Welcome → three setup steps → Create First Stream. This states a *workflow*, not a claim that data has already been delivered. When available operational signals are partial, use the existing partial-data warning rather than say the environment is healthy.
+**Fresh install:** replace populated panels with Welcome → three setup steps → Create First Stream only when an authoritative operational snapshot says there are zero Streams. If the snapshot is unavailable, show an explicit unverified-status state with Retry rather than an empty-install or healthy-state claim. When operational signals are partial, preserve the existing partial-data warning.
 
 **320px/375px target:** hero text and two buttons stack or wrap; no side scrolling from the hero; keyboard focus reaches Review issue then New Stream. To be measured in an isolated authenticated Chromium test after #410 releases the browser lock.
 
@@ -131,7 +132,8 @@ Templates remain existing `applyWizardIntentTemplate` state setters; they do not
 - [x] Independent worktree and branch based on `main-v2` `b45ad9d`.
 - [x] Initial affected Dashboard/Sidebar/Wizard tests: 42/42 PASS (4 test files).
 - [x] CI race remediation: Route Processing preserves the operator-selected Data Protection tab during late effective-status hydration; a deterministic deferred-response regression test covers this.
-- [x] Affected UI + Route Processing tests after remediation: 49/49 PASS (5 test files).
+- [x] Affected UI + Route Processing tests after Route tab remediation: 49/49 PASS (5 test files).
+- [x] Dashboard unavailable-snapshot presentation now fails closed and offers Retry rather than fabricating an empty installation; affected test exercises recovery.
 - [x] `npm run build`: PASS.
 - [x] `npm run lint`: PASS with 74 preexisting warnings and zero errors.
 - [x] Documentation Source-of-Truth integrity test: PASS (9 current documents / 89 specs).

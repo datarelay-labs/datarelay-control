@@ -95,8 +95,8 @@ export function DashboardOverview() {
     [bundle?.operationalSnapshot, bundle?.dashboard, bundle?.destinations],
   )
 
-  const totalStreams = bundle?.operationalSnapshot?.global.total_streams ?? bundle?.streams.length ?? 0
-  const isFreshInstall = !initialLoading && totalStreams === 0
+  const hasOperationalSnapshot = bundle?.operationalSnapshot != null
+  const isFreshInstall = bundle?.operationalSnapshot?.global.total_streams === 0
   const runtimeHealthAttention = useMemo(() => {
     const snapshot = bundle?.operationalSnapshot
     if (!snapshot) return { routes: 0, destinations: 0 }
@@ -202,7 +202,28 @@ export function DashboardOverview() {
         </p>
       ) : null}
 
-      {isFreshInstall ? (
+      {initialLoading ? null : !hasOperationalSnapshot ? (
+        <section
+          className="rounded-2xl border border-amber-300 bg-amber-50 px-5 py-6 dark:border-amber-500/40 dark:bg-amber-500/10 sm:px-7"
+          role="status"
+          data-testid="dashboard-snapshot-unavailable"
+        >
+          <h2 className="text-lg font-semibold text-amber-950 dark:text-amber-100">Operational status unavailable</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-amber-900 dark:text-amber-200">
+            The operational snapshot could not be loaded. Stream count, health and delivery status have not been verified.
+            No configuration was changed.
+          </p>
+          <button
+            type="button"
+            onClick={() => void reload()}
+            disabled={loading}
+            className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-lg border border-amber-300 bg-white px-4 py-2 text-sm font-semibold text-amber-950 transition hover:bg-amber-100 disabled:opacity-60 dark:border-amber-500/40 dark:bg-gdc-card dark:text-amber-100"
+          >
+            <RefreshCw className="h-4 w-4" aria-hidden />
+            Retry status
+          </button>
+        </section>
+      ) : isFreshInstall ? (
         <section
           className="overflow-hidden rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-white p-6 shadow-sm dark:border-gdc-border dark:from-gdc-section dark:via-gdc-card dark:to-gdc-card sm:p-8"
           data-testid="dashboard-empty-state"

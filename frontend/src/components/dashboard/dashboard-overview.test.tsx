@@ -652,9 +652,10 @@ describe('DashboardOverview', () => {
     expect(screen.queryByTestId('dashboard-first-level')).not.toBeInTheDocument()
   })
 
-  it('shows load error when operational snapshot is unavailable', async () => {
+  it('does not misrepresent an unavailable snapshot as a fresh install or healthy status', async () => {
     const snap = await import('../../api/operationalSnapshot')
     vi.mocked(snap.getOperationalSnapshot).mockResolvedValueOnce(null)
+    const user = userEvent.setup()
 
     render(
       <MemoryRouter>
@@ -664,6 +665,14 @@ describe('DashboardOverview', () => {
       </MemoryRouter>,
     )
     expect(await within(mainRegion()).findByTestId('dashboard-load-error')).toHaveTextContent(/operational snapshot/i)
+    const unavailable = await within(mainRegion()).findByTestId('dashboard-snapshot-unavailable')
+    expect(within(unavailable).getByText(/Stream count, health and delivery status have not been verified/i)).toBeInTheDocument()
+    expect(within(mainRegion()).queryByTestId('dashboard-empty-state')).not.toBeInTheDocument()
+    expect(within(mainRegion()).queryByTestId('dashboard-first-level')).not.toBeInTheDocument()
+
+    await user.click(within(unavailable).getByRole('button', { name: 'Retry status' }))
+    expect(await within(mainRegion()).findByTestId('dashboard-first-level')).toBeInTheDocument()
+    expect(within(mainRegion()).queryByTestId('dashboard-snapshot-unavailable')).not.toBeInTheDocument()
   })
 
   it('allows manual refresh from the toolbar', async () => {
