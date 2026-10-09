@@ -248,6 +248,9 @@ describe('AppShellLayout responsive accessibility', () => {
     await user.click(screen.getByRole('button', { name: 'Refresh dashboard and runtime data' }))
     await waitFor(() => expect(screen.getByLabelText('Runtime status')).toHaveTextContent('Attention'))
     expect(screen.getByTestId('shell-runtime-evidence')).toHaveTextContent('error')
+    expect(screen.getByTestId('shell-runtime-evidence')).toHaveAttribute('role', 'status')
+    expect(screen.getByTestId('shell-runtime-evidence')).toHaveAttribute('aria-live', 'polite')
+    expect(screen.getByTestId('shell-runtime-evidence')).toHaveAttribute('aria-atomic', 'true')
     expect(getOperationalSnapshot).toHaveBeenCalledTimes(2)
   })
 
