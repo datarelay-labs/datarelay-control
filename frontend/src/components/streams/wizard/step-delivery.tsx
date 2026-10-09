@@ -491,10 +491,13 @@ export function StepDelivery({ state, onChange, onOpenDestinationPrerequisite }:
           Loading destinations…
         </p>
       ) : catalogLoadFailed ? (
-        <div className="rounded-xl border border-dashed border-amber-300/80 bg-amber-50/80 p-4 dark:border-amber-500/40 dark:bg-amber-500/10">
+        <div role="alert" className="rounded-xl border border-dashed border-amber-300/80 bg-amber-50/80 p-4 dark:border-amber-500/40 dark:bg-amber-500/10">
           <p className="text-[12px] text-amber-900 dark:text-amber-100">
             Failed to load destinations. Check authentication and API connectivity.
           </p>
+          <button type="button" className={cn(btnGhost, 'mt-3 min-h-10')} onClick={() => void refreshDestinations(true)}>
+            Retry loading destinations
+          </button>
         </div>
       ) : destinations.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-300 bg-white p-4 dark:border-gdc-border dark:bg-gdc-card">
@@ -672,11 +675,19 @@ export function StepDelivery({ state, onChange, onOpenDestinationPrerequisite }:
               </ul>
               <Link
                 to={NAV_PATH.destinations}
+                onClick={(event) => {
+                  if (onOpenDestinationPrerequisite?.() === false) event.preventDefault()
+                }}
                 className="mt-3 flex items-center justify-center gap-1 text-[11px] font-semibold text-violet-700 hover:underline dark:text-violet-300"
               >
                 <Plus className="h-3.5 w-3.5" aria-hidden />
                 Create new destination
               </Link>
+              {onOpenDestinationPrerequisite ? (
+                <p className="mt-1 text-center text-[11px] leading-4 text-slate-500 dark:text-gdc-muted" data-testid="wizard-destination-resume-guidance">
+                  Your Stream draft is saved before leaving. Return to Create Stream and choose Resume draft to continue.
+                </p>
+              ) : null}
             </div>
 
             <div className="rounded-lg border border-slate-200/90 bg-white p-3 shadow-sm dark:border-gdc-border dark:bg-gdc-card">

@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { StepDelivery } from './step-delivery'
 import { buildInitialState } from './wizard-state'
@@ -102,6 +102,31 @@ describe('StepDelivery', () => {
         routeDrafts: [],
       }),
     )
+  })
+
+  it('offers in-context recovery after a destination catalog failure without dropping configured paths', async () => {
+    fetchDestinationsList.mockResolvedValueOnce(null)
+    const state = buildInitialState()
+    state.destinations.routeDrafts = [{
+      key: 'keep-retry-path',
+      destinationId: 1,
+      enabled: true,
+      failurePolicy: 'RETRY_AND_BACKOFF',
+      rateLimitJson: {},
+    }]
+    const onChange = vi.fn()
+    render(
+      <MemoryRouter>
+        <StepDelivery state={state} onChange={onChange} />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByText(/Failed to load destinations/i)).toBeInTheDocument()
+    const retry = screen.getByRole('button', { name: 'Retry loading destinations' })
+    await userEvent.setup().click(retry)
+    expect((await screen.findAllByText('Stellar Syslog')).length).toBeGreaterThan(0)
+    expect(fetchDestinationsList).toHaveBeenCalledTimes(2)
+    expect(onChange).not.toHaveBeenCalledWith(expect.objectContaining({ routeDrafts: [] }))
   })
 
   it('treats a successful empty destination list as empty catalog, not failure', async () => {
@@ -233,4 +258,43 @@ describe('StepDelivery', () => {
     expect(state.destinations.routeDrafts).toHaveLength(1)
   })
 
+  it('preserves the current Stream draft before opening a new destination from a populated library', async () => {
+    const onOpenDestinationPrerequisite = vi.fn(() => true)
+    render(
+      <MemoryRouter initialEntries={['/streams/new']}>
+        <Routes>
+          <Route path="/streams/new" element={
+            <StepDelivery state={buildInitialState()} onChange={vi.fn()} onOpenDestinationPrerequisite={onOpenDestinationPrerequisite} />
+          } />
+          <Route path="/destinations" element={<p>Destination management workspace</p>} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    await screen.findByText('Stellar Syslog')
+    expect(screen.getByTestId('wizard-destination-resume-guidance')).toHaveTextContent('Resume draft')
+    await userEvent.setup().click(screen.getByRole('link', { name: 'Create new destination' }))
+    expect(onOpenDestinationPrerequisite).toHaveBeenCalledTimes(1)
+    expect(await screen.findByText('Destination management workspace')).toBeInTheDocument()
+  })
+
+  it('keeps the populated Wizard open if saving the draft fails before destination creation', async () => {
+    const onOpenDestinationPrerequisite = vi.fn(() => false)
+    render(
+      <MemoryRouter initialEntries={['/streams/new']}>
+        <Routes>
+          <Route path="/streams/new" element={
+            <StepDelivery state={buildInitialState()} onChange={vi.fn()} onOpenDestinationPrerequisite={onOpenDestinationPrerequisite} />
+          } />
+          <Route path="/destinations" element={<p>Destination management workspace</p>} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    await screen.findByText('Stellar Syslog')
+    await userEvent.setup().click(screen.getByRole('link', { name: 'Create new destination' }))
+    expect(onOpenDestinationPrerequisite).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText('Destination management workspace')).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Create new destination' })).toBeInTheDocument()
+  })
 })

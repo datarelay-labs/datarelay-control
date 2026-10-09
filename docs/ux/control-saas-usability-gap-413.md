@@ -165,3 +165,13 @@ Protect #410's Chromium test run, locked ports/session/DB, #411/PR #412 and PF-5
 - Tests verify default/unconfigured vs configured/disabled/customized routes, no credential/sample payload disclosure, and current five-step UX and expert path remain unchanged.
 
 **Boundaries:** No API, schema, runtime, auth, persistence, policy, sample-selection, checkpoint, route ordering, Step gate, actual Stream enablement, or delivery-proving changes. This is a visual orientation layer above existing canonical state. The pre-existing `#410` live browser reconciliation lab is exclusive; 1440/375/320 authenticated browser comparison and Full User E2E remain **NOT VERIFIED**, regardless of unit test/build/CI outcomes.
+
+## 2026-10-09 continuation — destination prerequisite and recovery
+
+**Observed usability gap:** The Stream Wizard already saved the current draft before following `Go to Destinations` when the destination catalog was empty. But in a populated catalog, `Create new destination` skipped that same pre-navigation save callback, risking lost unsaved Stream setup when adding another destination. This is a user-journey gap, not a backend or authorization change.
+
+**Implemented fix:** In `frontend/src/components/streams/wizard/step-delivery.tsx`, both destination-creation links now invoke the existing `onOpenDestinationPrerequisite` save callback when provided; navigation is canceled if saving fails. For the New Stream flow, contextual text explains that users return to Create Stream and choose **Resume draft**. When the destination API fails to load, an in-place **Retry loading destinations** button uses the established forced-refresh path rather than requiring users to find a separate top-bar control. The existing draft/routes are not cleared on API failures.
+
+**Regression evidence:** New failing-before/fixed-after tests cover populated-library navigation, failed draft save navigation blocking, and failed-catalog recovery without loss of configured delivery paths. The prior empty-catalog draft-save test remains in `new-stream-wizard-page.test.tsx`. Existing Stream Edit behavior is not silently changed; in-context draft-resume guidance appears only when the New Stream prerequisite save callback exists.
+
+**Protected boundaries:** no route/destination persistence semantics, API, credentials, runtime, policy, user rights, shared DB, or #410 browser process modified. Final authenticated UX/BFS and 2-user Full User E2E remain NOT VERIFIED.
