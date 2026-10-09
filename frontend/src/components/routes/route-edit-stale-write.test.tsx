@@ -140,11 +140,38 @@ describe('RouteEditPage stale-write conflict', () => {
       42,
       expect.objectContaining({
         expected_updated_at: '2026-01-01T00:00:00Z',
+        failure_policy: 'LOG_AND_CONTINUE',
       }),
     )
     expect(screen.getByDisplayValue('77')).toBeInTheDocument()
     expect(screen.getByTestId('route-edit-save-status')).toHaveTextContent('Conflict')
     expect(screen.getByTestId('route-edit-unsaved-hint')).toBeInTheDocument()
+  })
+
+  it('retains the strict Retry API enum when editing unrelated fields on an existing route', async () => {
+    fetchRouteById.mockResolvedValue({
+      id: 42,
+      name: 'Route A',
+      description: 'desc',
+      enabled: true,
+      stream_id: 10,
+      destination_id: 5,
+      failure_policy: 'RETRY_AND_BACKOFF',
+      formatter_config_json: { delivery_mode: 'Reliable' },
+      rate_limit_json: { enabled: true, per_second: 50, burst_size: 100 },
+      updated_at: '2026-01-01T00:00:00Z',
+    })
+    updateRoute.mockRejectedValue(new Error('Synthetic transport failure after request capture'))
+    renderRouteEdit()
+    fireEvent.change(await screen.findByDisplayValue('50'), { target: { value: '77' } })
+    fireEvent.click(screen.getByTestId('route-edit-save'))
+    await waitFor(() => {
+      expect(updateRoute).toHaveBeenCalledWith(42, expect.objectContaining({
+        expected_updated_at: '2026-01-01T00:00:00Z',
+        failure_policy: 'RETRY_AND_BACKOFF',
+        rate_limit_json: expect.objectContaining({ per_second: 77 }),
+      }))
+    })
   })
 
   it('refresh latest requires discard confirmation while dirty, then reloads server baseline', async () => {

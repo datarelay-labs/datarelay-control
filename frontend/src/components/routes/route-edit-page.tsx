@@ -16,7 +16,7 @@ import {
   ROUTE_DELIVERY_PREVIEW_SAMPLE_EVENT,
   runRouteDeliveryPreview,
 } from '../../api/gdcRuntimePreview'
-import { ROUTE_EDIT_DEFAULTS, type RouteDeliveryMode, type RouteFailurePolicy, type RouteRetryBackoff } from './route-edit-defaults'
+import { ROUTE_EDIT_DEFAULTS, routeFailurePolicyToApi, type RouteDeliveryMode, type RouteFailurePolicy, type RouteRetryBackoff } from './route-edit-defaults'
 import {
   defaultsRouteDeliveryFormState,
   isRouteDeliveryDirty,
@@ -549,14 +549,7 @@ export function RouteEditPage() {
     setSaveSuccess(null)
     setStaleConflict(false)
     try {
-      const policy =
-        failurePolicy === 'Retry'
-          ? 'retry'
-          : failurePolicy === 'Log and Continue'
-            ? 'log_and_continue'
-            : failurePolicy === 'Pause Stream'
-              ? 'pause_stream'
-              : 'disable_route'
+      const policy = routeFailurePolicyToApi(failurePolicy)
       const routePayload = {
         name: routeName,
         description,
