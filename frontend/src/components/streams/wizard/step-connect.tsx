@@ -14,6 +14,7 @@ export type StepConnectProps = {
   activeTab?: ConnectTabKey
   onTabChange?: (tab: ConnectTabKey) => void
   connectorReadonly?: boolean
+  onCreateConnector?: () => void
   onConnectorChange: (patch: Partial<WizardState['connector']>) => void
   onStreamChange: (patch: Partial<WizardState['stream']>) => void
 }
@@ -33,6 +34,7 @@ export function StepConnect({
   activeTab: controlledTab,
   onTabChange,
   connectorReadonly = false,
+  onCreateConnector,
   onConnectorChange,
   onStreamChange,
 }: StepConnectProps) {
@@ -129,6 +131,7 @@ export function StepConnect({
             state={state}
             section="connector"
             connectorReadonly={connectorReadonly}
+            onCreateConnector={onCreateConnector}
             onChange={onConnectorChange}
             onOpenRequestConfiguration={() => setTab('request')}
             requestConfigurationLabel={requestLabel}

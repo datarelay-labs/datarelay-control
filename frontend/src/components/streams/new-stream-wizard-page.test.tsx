@@ -32,6 +32,7 @@ vi.mock('../../api/gdcCatalog', () => ({
 }))
 
 vi.mock('../../api/gdcConnectors', () => ({
+  createConnector: vi.fn(async () => ({ id: 30 })),
   fetchConnectorsList: vi.fn(async () => []),
   fetchConnectorById: vi.fn(async () => null),
 }))
@@ -56,6 +57,35 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
     expect(screen.queryByTestId('wizard-intent-picker')).not.toBeInTheDocument()
     expect(screen.getByTestId('wizard-step-connect')).toBeInTheDocument()
     expect(screen.getByTestId('wizard-stepper')).toBeInTheDocument()
+  })
+
+  it('keeps the original Wizard mounted after contextual Connector cancel', async () => {
+    localStorage.removeItem(WIZARD_DRAFT_KEY_V2)
+    const user = userEvent.setup()
+    render(<MemoryRouter initialEntries={['/streams/new']}><NewStreamWizardPage /></MemoryRouter>)
+    await user.click(screen.getByTestId('wizard-intent-scratch'))
+    await user.click(await screen.findByTestId('wizard-add-connector'))
+    expect(screen.getByRole('dialog', { name: 'Add Connector to Data Flow' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Return to Data Flow' }))
+    expect(screen.queryByRole('dialog', { name: 'Add Connector to Data Flow' })).not.toBeInTheDocument()
+    expect(screen.getByTestId('wizard-step-connect')).toBeInTheDocument()
+  })
+
+  it('returns a saved Connector ID directly to the active Wizard without re-creation', async () => {
+    localStorage.removeItem(WIZARD_DRAFT_KEY_V2)
+    const user = userEvent.setup()
+    render(<MemoryRouter initialEntries={['/streams/new']}><NewStreamWizardPage /></MemoryRouter>)
+    await user.click(screen.getByTestId('wizard-intent-scratch'))
+    await user.click(await screen.findByTestId('wizard-add-connector'))
+    await user.type(screen.getByLabelText('Connector Name *'), 'Parent source')
+    await user.type(screen.getByLabelText('Host / Base URL *'), 'https://example.net')
+    await user.click(screen.getByRole('button', { name: 'Save Connector' }))
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Add Connector to Data Flow' })).not.toBeInTheDocument()
+    })
+    expect(screen.getByTestId('wizard-step-connect')).toBeInTheDocument()
+    expect(await screen.findByRole('option', { name: /Connector #30.*verifying source link/i })).toHaveValue('30')
+    expect(screen.queryByText('Draft restored from local storage.')).not.toBeInTheDocument()
   })
 
   it('renders 5-step stepper labels with Route Processing', async () => {

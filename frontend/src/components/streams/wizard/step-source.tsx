@@ -13,6 +13,7 @@ type StepSourceProps = {
   state: WizardState
   section?: StepSourceSection
   connectorReadonly?: boolean
+  onCreateConnector?: () => void
   onChange: (next: Partial<WizardState['connector']>) => void
   onOpenRequestConfiguration?: () => void
   requestConfigurationLabel?: string
@@ -25,6 +26,7 @@ export function StepSource({
   state,
   section = 'connector',
   connectorReadonly = false,
+  onCreateConnector,
   onChange,
   onOpenRequestConfiguration,
   requestConfigurationLabel = 'Request Configuration',
@@ -91,7 +93,10 @@ export function StepSource({
     )
   }
 
-  const hasSavedConnectors = Boolean(snapshot && snapshot.connectors.length > 0)
+  const selectedIdValid = typeof c.connectorId === 'number' && Number.isSafeInteger(c.connectorId) && c.connectorId > 0
+  // A newly saved connector can appear before the source/catalog read catches up.
+  // Preserve its ID for verification instead of silently hiding it as "no connector".
+  const hasSavedConnectors = Boolean(snapshot && snapshot.connectors.length > 0) || selectedIdValid
 
   if (!hasSavedConnectors) {
     return (
@@ -100,12 +105,15 @@ export function StepSource({
         <p className="mt-1 text-[12px] text-amber-800 dark:text-amber-300">
           Create a connector first, then return here to bind it to a new stream.
         </p>
-        <Link
-          to="/connectors/new"
-          className="mt-3 inline-flex h-8 items-center rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white hover:bg-violet-700"
-        >
-          Go to Connector Create Page
-        </Link>
+        {onCreateConnector && !connectorReadonly ? (
+          <button type="button" onClick={onCreateConnector} className="mt-3 inline-flex min-h-9 items-center rounded-md bg-violet-600 px-3 text-xs font-semibold text-white" data-testid="wizard-add-connector">
+            Add Connector without leaving this Data Flow
+          </button>
+        ) : (
+          <Link to="/connectors/new" className="mt-3 inline-flex min-h-9 items-center rounded-md bg-violet-600 px-3 text-xs font-semibold text-white">
+            Go to Connector Create Page
+          </Link>
+        )}
       </section>
     )
   }
@@ -124,6 +132,11 @@ export function StepSource({
           </p>
         </div>
 
+        {onCreateConnector && !connectorReadonly ? (
+          <button type="button" onClick={onCreateConnector} data-testid="wizard-add-connector" className="mt-3 text-xs font-semibold text-violet-700 hover:underline dark:text-violet-300">
+            + Add Connector
+          </button>
+        ) : null}
         <div className="mt-4 space-y-3">
           <Field label="Connector">
             <select
@@ -148,6 +161,11 @@ export function StepSource({
               data-testid="wizard-saved-connector-select"
             >
               <option value="">Select saved connector</option>
+              {selectedIdValid && !snapshot?.connectors.some((conn) => conn.id === c.connectorId) ? (
+                <option value={c.connectorId}>
+                  {c.connectorName?.trim() || `Connector #${c.connectorId}`} · verifying source link
+                </option>
+              ) : null}
               {snapshot?.connectors.map((conn) => (
                 <option key={conn.id} value={conn.id}>
                   {conn.name}

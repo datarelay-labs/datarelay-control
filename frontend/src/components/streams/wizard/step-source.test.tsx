@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { StepSource } from './step-source'
@@ -32,5 +33,18 @@ describe('StepSource', () => {
 
     expect(await screen.findByText('No connectors available')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Go to Connector Create Page' })).toHaveAttribute('href', '/connectors/new')
+  })
+
+  it('opens connector creation in the parent Data Flow without navigating away', async () => {
+    const user = userEvent.setup()
+    const onCreateConnector = vi.fn()
+    render(
+      <MemoryRouter>
+        <StepSource state={buildInitialState()} onChange={() => {}} onCreateConnector={onCreateConnector} />
+      </MemoryRouter>,
+    )
+    await user.click(await screen.findByTestId('wizard-add-connector'))
+    expect(onCreateConnector).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('link', { name: 'Go to Connector Create Page' })).not.toBeInTheDocument()
   })
 })

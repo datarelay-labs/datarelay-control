@@ -21,7 +21,14 @@ import { DatabaseConnectorFields } from './database-connector-fields'
 import { RemoteFileConnectorFields } from './remote-file-connector-fields'
 import { WebhookReceiverFields } from './webhook-receiver-fields'
 
-export function NewConnectorWizardPage() {
+export function NewConnectorWizardPage({
+  onCreated,
+  onCancel,
+}: {
+  /** Contextual creation keeps the owning Wizard and all in-memory inputs mounted. */
+  onCreated?: (connectorId: number) => void
+  onCancel?: () => void
+} = {}) {
   const navigate = useNavigate()
   const location = useLocation()
   const [busy, setBusy] = useState(false)
@@ -311,6 +318,10 @@ export function NewConnectorWizardPage() {
                 : 'generic_http',
         auth_type: isS3 || isDb || isRemote || isWebhook ? 'no_auth' : form.auth_type,
       })
+      if (onCreated) {
+        onCreated(created.id)
+        return
+      }
       const streamDraft = pendingStreamDraftRef.current
       if (streamDraft && isHttp) {
         navigateToStreamWizardWithDraft(navigate, created.id, streamDraft)
@@ -501,7 +512,7 @@ export function NewConnectorWizardPage() {
       />
 
       <div className="flex gap-2">
-        <button type="button" disabled={busy} onClick={() => navigate('/connectors')} className={cn('h-9 px-3', gdcUi.secondaryBtn)}>
+        <button type="button" disabled={busy} onClick={() => onCancel ? onCancel() : navigate('/connectors')} className={cn('h-9 px-3', gdcUi.secondaryBtn)}>
           Cancel
         </button>
         <button type="button" disabled={busy} onClick={() => void onSubmit()} className={cn('h-9 px-3', gdcUi.primaryBtn)}>

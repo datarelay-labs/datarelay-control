@@ -18,6 +18,8 @@ import {
   wizardPersistErrorLabel,
 } from './wizard/wizard-multi-template-configure'
 import { StepConnect } from './wizard/step-connect'
+import { NewConnectorWizardPage } from '../connectors/new-connector-wizard-page'
+import { clearWizardCatalogSnapshot } from './wizard/wizard-catalog-cache'
 import { StepSample } from './wizard/step-sample'
 import { StepDelivery } from './wizard/step-delivery'
 import { StepRouteProcessing } from './wizard/step-route-processing'
@@ -112,6 +114,8 @@ export function NewStreamWizardPage() {
   const [draftNotice, setDraftNotice] = useState<string | null>(null)
   const [operationalSampleId, setOperationalSampleId] = useState<OperationalSampleId | null>(null)
   const [dataProtectionDrawerOpen, setDataProtectionDrawerOpen] = useState(false)
+  const [connectorCreateOpen, setConnectorCreateOpen] = useState(false)
+  const [connectorCatalogEpoch, setConnectorCatalogEpoch] = useState(0)
 
   const handleIntentSelect = useCallback((id: WizardIntentTemplateId) => {
     clearWizardDraft()
@@ -190,6 +194,24 @@ export function NewStreamWizardPage() {
     },
     [navigateToWizardStep],
   )
+
+  const handleConnectorCreated = useCallback((id: number) => {
+    // Keep the entire parent draft in React memory, including sample confirmation.
+    // Connector credentials stay in the create form and are never copied into storage.
+    clearWizardCatalogSnapshot()
+    setState((current) => ({
+      ...current,
+      connector: {
+        ...current.connector,
+        connectorId: id,
+        sourceId: null,
+        registryModuleId: null,
+        selectedTemplateIds: [],
+      },
+    }))
+    setConnectorCatalogEpoch((n) => n + 1)
+    setConnectorCreateOpen(false)
+  }, [])
 
   const updateConnector = useCallback((patch: Partial<WizardState['connector']>) => {
     setState((s) => ({ ...s, connector: { ...s.connector, ...patch } }))
@@ -900,6 +922,22 @@ export function NewStreamWizardPage() {
         </div>
       </div>
 
+      {connectorCreateOpen ? (
+        <div role="presentation" className="fixed inset-0 z-[150] overflow-y-auto bg-slate-950/60 p-2 sm:p-6">
+          <section role="dialog" aria-modal="true" aria-label="Add Connector to Data Flow" className="mx-auto max-w-5xl rounded-xl bg-white p-4 shadow-2xl dark:bg-gdc-panel sm:p-6">
+            <div className="mb-4 flex items-center justify-between gap-3 border-b border-slate-200 pb-3 dark:border-gdc-border">
+              <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Add Connector to this Data Flow</p>
+              <button type="button" onClick={() => setConnectorCreateOpen(false)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 dark:border-gdc-border dark:text-slate-100">
+                Return to Data Flow
+              </button>
+            </div>
+            <NewConnectorWizardPage
+              onCreated={handleConnectorCreated}
+              onCancel={() => setConnectorCreateOpen(false)}
+            />
+          </section>
+        </div>
+      ) : null}
       {!intentSelected && !draftBannerVisible ? (
         <IntentTemplatePicker onSelect={handleIntentSelect} />
       ) : null}
@@ -953,7 +991,13 @@ export function NewStreamWizardPage() {
 
       {intentSelected || draftBannerVisible ? <div>
         {currentStepKey === 'connect' ? (
-          <StepConnect state={state} onConnectorChange={updateConnector} onStreamChange={updateStream} />
+          <StepConnect
+            key={connectorCatalogEpoch}
+            state={state}
+            onConnectorChange={updateConnector}
+            onStreamChange={updateStream}
+            onCreateConnector={() => setConnectorCreateOpen(true)}
+          />
         ) : null}
         {currentStepKey === 'sample' ? (
           <StepSample

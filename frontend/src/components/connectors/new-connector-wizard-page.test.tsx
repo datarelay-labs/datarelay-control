@@ -38,6 +38,34 @@ describe('NewConnectorWizardPage', () => {
     expect(screen.getByLabelText('Token exchange URL')).toBeInTheDocument()
   })
 
+  it('completes contextual Connector creation without losing the parent Wizard', async () => {
+    const user = userEvent.setup()
+    const onCreated = vi.fn()
+    const onCancel = vi.fn()
+    render(
+      <MemoryRouter>
+        <NewConnectorWizardPage onCreated={onCreated} onCancel={onCancel} />
+      </MemoryRouter>,
+    )
+    await user.type(screen.getByLabelText('Connector Name *'), 'Inline source')
+    await user.type(screen.getByLabelText('Host / Base URL *'), 'https://example.net')
+    await user.click(screen.getByRole('button', { name: 'Save Connector' }))
+    expect(onCreated).toHaveBeenCalledWith(1)
+    expect(onCancel).not.toHaveBeenCalled()
+  })
+
+  it('returns to the parent on contextual cancel', async () => {
+    const user = userEvent.setup()
+    const onCancel = vi.fn()
+    render(
+      <MemoryRouter>
+        <NewConnectorWizardPage onCancel={onCancel} />
+      </MemoryRouter>,
+    )
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(onCancel).toHaveBeenCalledOnce()
+  })
+
   it('shows remote file source option', async () => {
     const user = userEvent.setup()
     render(
