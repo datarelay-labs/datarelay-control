@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NewStreamWizardPage } from './new-stream-wizard-page'
 import { StepMappingCombined } from './wizard/step-mapping-combined'
 import { EnrichmentRulesEditor } from './wizard/enrichment-rules-editor'
@@ -10,6 +10,8 @@ import { buildInitialState } from './wizard/wizard-state'
 import { WIZARD_DRAFT_KEY_V2 } from './wizard/wizard-draft-migration'
 import { computeDeployReadiness } from './wizard/wizard-deploy-readiness'
 import * as gdcRuntimePreview from '../../api/gdcRuntimePreview'
+import { fetchCatalogSnapshot } from '../../api/gdcCatalog'
+import { clearWizardCatalogSnapshot } from './wizard/wizard-catalog-cache'
 
 vi.mock('../../api/gdcStreams', () => ({
   createStream: vi.fn(),
@@ -46,6 +48,13 @@ vi.mock('../../api/gdcDestinations', () => ({
 }))
 
 describe('NewStreamWizardPage v5.2 5-step', () => {
+  beforeEach(() => {
+    clearWizardCatalogSnapshot()
+    vi.mocked(fetchCatalogSnapshot).mockReset().mockResolvedValue({
+      connectors: [], sources: [], apiBacked: false,
+    })
+  })
+
   it('starts fresh creation with intent choices and applies a selected template before the existing wizard', async () => {
     localStorage.setItem('gdc-platform-persona', 'connector')
     localStorage.removeItem('gdc-stream-wizard-draft-v2')
@@ -62,6 +71,7 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
   })
 
   it('keeps the original Wizard mounted after contextual Connector cancel', async () => {
+    vi.mocked(fetchCatalogSnapshot).mockResolvedValue({ connectors: [], sources: [], apiBacked: true })
     localStorage.removeItem(WIZARD_DRAFT_KEY_V2)
     const user = userEvent.setup()
     render(<MemoryRouter initialEntries={['/streams/new']}><NewStreamWizardPage /></MemoryRouter>)
@@ -74,6 +84,7 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
   })
 
   it('returns a saved Connector ID directly to the active Wizard without re-creation', async () => {
+    vi.mocked(fetchCatalogSnapshot).mockResolvedValue({ connectors: [], sources: [], apiBacked: true })
     localStorage.removeItem(WIZARD_DRAFT_KEY_V2)
     const user = userEvent.setup()
     render(<MemoryRouter initialEntries={['/streams/new']}><NewStreamWizardPage /></MemoryRouter>)

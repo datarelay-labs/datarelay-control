@@ -97,15 +97,39 @@ export function StepSource({
   // A newly saved connector can appear before the source/catalog read catches up.
   // Preserve its ID for verification instead of silently hiding it as "no connector".
   const hasSavedConnectors = Boolean(snapshot && snapshot.connectors.length > 0) || selectedIdValid
+  const catalogUnavailable = snapshot?.apiBacked === false
+
+  async function retryCatalog() {
+    setLoading(true)
+    try {
+      const fresh = await fetchCatalogSnapshot()
+      writeWizardCatalogSnapshot(fresh)
+      setSnapshot(fresh)
+      onChange({
+        candidates: { connectors: fresh.connectors, sources: fresh.sources },
+        apiBacked: fresh.apiBacked,
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
 
   if (!hasSavedConnectors) {
     return (
       <section className="rounded-xl border border-amber-300/70 bg-amber-50 p-4 shadow-sm dark:border-amber-500/40 dark:bg-amber-500/10">
-        <h3 className="text-sm font-semibold text-amber-900 dark:text-amber-200">No connectors available</h3>
+        <h3 className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+          {catalogUnavailable ? 'Connector catalog unavailable' : 'No connectors available'}
+        </h3>
         <p className="mt-1 text-[12px] text-amber-800 dark:text-amber-300">
-          Create a connector first, then return here to bind it to a new stream.
+          {catalogUnavailable
+            ? 'Could not verify saved Connectors and Sources. Check API access or your session, then retry. This does not mean zero Connectors are configured.'
+            : 'Create a connector first, then return here to bind it to a new stream.'}
         </p>
-        {onCreateConnector && !connectorReadonly ? (
+        {catalogUnavailable ? (
+          <button type="button" onClick={() => void retryCatalog()} disabled={loading} className="mt-3 inline-flex min-h-9 items-center rounded-md bg-violet-600 px-3 text-xs font-semibold text-white disabled:opacity-60" data-testid="wizard-retry-connector-catalog">
+            {loading ? 'Checking catalog…' : 'Retry Connector catalog'}
+          </button>
+        ) : onCreateConnector && !connectorReadonly ? (
           <button type="button" onClick={onCreateConnector} className="mt-3 inline-flex min-h-9 items-center rounded-md bg-violet-600 px-3 text-xs font-semibold text-white" data-testid="wizard-add-connector">
             Add Connector without leaving this Data Flow
           </button>
@@ -136,6 +160,11 @@ export function StepSource({
           <button type="button" onClick={onCreateConnector} data-testid="wizard-add-connector" className="mt-3 text-xs font-semibold text-violet-700 hover:underline dark:text-violet-300">
             + Add Connector
           </button>
+        ) : null}
+        {catalogUnavailable ? (
+          <p role="status" className="mt-3 text-xs text-amber-700 dark:text-amber-300">
+            The Connector/Source catalog could not be fully verified. Review API access before continuing.
+          </p>
         ) : null}
         <div className="mt-4 space-y-3">
           <Field label="Connector">
