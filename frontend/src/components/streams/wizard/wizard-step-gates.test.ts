@@ -152,8 +152,20 @@ describe('wizard-step-gates', () => {
       failurePolicy: 'RETRY_AND_BACKOFF',
       rateLimitJson: {},
     })
+    // One valid Route must not hide another enabled Route with a broken destination.
+    expect(wizardDestinationGateReady(state)).toBe(false)
+    expect(wizardStepReachable('deploy', state)).toBe(false)
+    expect(wizardRouteProcessingStepBlockReason(state)).toContain('valid destination')
+
+    // An invalid, disabled Route is excluded from the intended delivery paths.
+    state.destinations.routeDrafts[0]!.enabled = false
     expect(wizardDestinationGateReady(state)).toBe(true)
     expect(wizardStepReachable('deploy', state)).toBe(true)
+
+    // Restoring the route is only safe once its destination is valid.
+    state.destinations.routeDrafts[0]!.enabled = true
+    state.destinations.routeDrafts[0]!.destinationId = 7
+    expect(wizardDestinationGateReady(state)).toBe(true)
   })
 
   it('allows advancing from destinations without enabled routes', () => {

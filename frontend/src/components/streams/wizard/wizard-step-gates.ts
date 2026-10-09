@@ -281,10 +281,11 @@ export function wizardSampleStepBlockReason(state: WizardState): string {
   return 'Complete required fields on this step before continuing.'
 }
 
-/** An enabled Route must also point to a real destination before Deploy. */
+/** At least one enabled Route, and all enabled Routes must target a valid destination. */
 export function wizardDestinationGateReady(state: Pick<WizardState, 'destinations'>): boolean {
-  return state.destinations.routeDrafts.some(
-    (route) => route.enabled && Number.isSafeInteger(route.destinationId) && route.destinationId > 0,
+  const routes = state.destinations.routeDrafts
+  return routes.some((route) => route.enabled) && routes.every(
+    (route) => !route.enabled || (Number.isSafeInteger(route.destinationId) && route.destinationId > 0),
   )
 }
 
