@@ -87,6 +87,7 @@ scenarios:
       - "MFA accounts never obtain a bearer token before a valid separate factor."
       - "OTP, recovery proofs and refresh JWTs cannot be replayed concurrently."
       - "IP throttle rejects spoofed forwarding headers; OTP failures survive API worker restarts."
+      - "Read-only and governance-only users may enroll their own MFA without administrator privileges."
       - "MFA schema migration and rollback run in the guarded pytest catalog only."
     release_gate: true
 

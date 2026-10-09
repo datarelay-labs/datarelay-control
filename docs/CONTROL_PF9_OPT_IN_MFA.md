@@ -5,7 +5,7 @@ Status: **unreleased candidate**, stacked on pinned Foundation security-wheel Co
 ## Account behavior
 
 - Default: MFA disabled per account. Existing password-only login works as before.
-- Each signed-in local user may enroll *their own* account under **Administration → Admin settings → Authenticator (TOTP) MFA**. Enrollment requires the current password and a valid six-digit authenticator code within five minutes.
+- Each signed-in local user, including Viewer and governance-only roles, may enroll *their own* account under **Administration → Admin settings → Authenticator (TOTP) MFA** (or the direct account Settings route for roles without an Administration hub shortcut). Enrollment requires the current password and a valid six-digit authenticator code within five minutes. This permission never grants other-account/platform administration.
 - The authenticator QR is rendered entirely inside the product browser with the pinned qrcode library. TOTP URI/secret is **never sent to an external QR service**. A manual setup key is available. The browser does not persist the setup secret.
 - Confirmation enables MFA, increments the user's JWT token epoch, and returns **eight** individual recovery codes **once**. The operator must save them offline. The browser does not persist these codes.
 - At the next login, a valid password yields a three-minute, one-use **non-JWT** challenge, followed by TOTP or an unused recovery code. Access and refresh JWTs are created only after the second factor succeeds.

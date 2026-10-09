@@ -139,6 +139,15 @@ def evaluate_http_access(*, role: str, method: str, path: str) -> AccessDenied |
     m = method.upper()
     base = api_prefix()
 
+    # Per-account authenticator setup must remain accessible to every role,
+    # including governance-only and read-only users. Auth endpoints enforce
+    # live JWT identity and the current password in the actual route handler.
+    if m == "POST" and path in {
+        f"{base}/auth/mfa/enroll/start",
+        f"{base}/auth/mfa/enroll/confirm",
+    }:
+        return None
+
     # --- Sensitive administrator surfaces (not even read for non-admins) ---
     admin_exclusive = (
         f"{base}/admin/maintenance/health",

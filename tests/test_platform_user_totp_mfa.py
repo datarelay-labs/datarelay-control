@@ -472,3 +472,38 @@ def test_mfa_migration_0067_downgrade_upgrade_on_guarded_pytest_db_only(
     assert {"failed_attempts", "failure_window_started_at", "locked_until"} <= columns()
     with db_engine.connect() as conn:
         assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == "20261009_0067_mfa_lockout"
+
+
+@pytest.mark.parametrize("role", ["VIEWER", "CONNECTOR_OPERATOR", "GOVERNANCE_REVIEWER"])
+def test_read_only_members_can_enroll_only_own_mfa(
+    client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch, role: str,
+) -> None:
+    """MFA self-enrollment is not a platform-admin mutation privilege."""
+    monkeypatch.setattr(settings, "REQUIRE_AUTH", True)
+    user = create_user(db_session, role=role)
+    signed_in = client.post("/api/v1/auth/login", json={
+        "username": user.username, "password": PASSWORD,
+    })
+    assert signed_in.status_code == 200, signed_in.text
+    auth = {"Authorization": "Bearer " + signed_in.json()["access_token"]}
+    status = client.get("/api/v1/auth/mfa/status", headers=auth)
+    assert status.status_code == 200 and status.json()["enabled"] is False
+
+    # Ordinary privileged administrator mutations remain disallowed.
+    if role == "VIEWER":
+        denied = client.post("/api/v1/admin/users", headers=auth, json={})
+        assert denied.status_code == 403
+
+    started = client.post("/api/v1/auth/mfa/enroll/start", headers=auth, json={
+        "current_password": PASSWORD,
+    })
+    assert started.status_code == 200, started.text
+    otp = code_at(started.json()["secret"], datetime.now(timezone.utc).timestamp())
+    confirmed = client.post("/api/v1/auth/mfa/enroll/confirm", headers=auth, json={"totp": otp})
+    assert confirmed.status_code == 200, confirmed.text
+    assert confirmed.json()["enabled"] is True
+    assert len(confirmed.json()["recovery_codes"]) == 8
+
+    # Newly enrolled account's original JWT is revoked for all roles.
+    revoked = client.get("/api/v1/auth/mfa/status", headers=auth)
+    assert revoked.status_code == 401
