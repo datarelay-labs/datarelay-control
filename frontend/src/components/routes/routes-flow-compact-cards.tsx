@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { NAV_PATH, destinationDetailPath, logsExplorerPath, routeEditPath, streamRuntimePath } from '../../config/nav-paths'
 import { cn } from '../../lib/utils'
+import { routeMatchesQuery, streamMatchesQuery } from './routes-flow-search'
 import {
   formatFlowEps,
   formatFlowErrorRate,
@@ -17,18 +18,6 @@ const FIRST_ROUTES = 12
 const NEXT_ROUTES = 20
 const FIRST_STREAMS = 12
 const NEXT_STREAMS = 20
-
-function routeMatchesQuery(route: RouteFlowRouteRow, query: string): boolean {
-  return String(route.routeId).includes(query) ||
-    routePublicId(route.routeId).toLowerCase().includes(query) ||
-    route.routeLabel.toLowerCase().includes(query) ||
-    route.destinationName.toLowerCase().includes(query) ||
-    (route.destinationId != null && String(route.destinationId).includes(query))
-}
-
-function streamMatchesQuery(group: RouteFlowStreamGroup, query: string): boolean {
-  return group.streamName.toLowerCase().includes(query) || String(group.streamId).includes(query)
-}
 
 function isRouteAttention(route: RouteFlowRouteRow): boolean {
   return route.enabled && (route.health === 'Error' || route.health === 'Warning')

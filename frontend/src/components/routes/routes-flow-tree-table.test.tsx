@@ -709,3 +709,82 @@ describe('Attention-first mobile delivery order', () => {
     }
   })
 })
+
+describe('REA-informed expert Route Flow indexed find', () => {
+  it('reveals a Route by exact public ID outside the first eight Streams without mounting unrelated groups', async () => {
+    const user = userEvent.setup()
+    const s = evidence()
+    const ids = Array.from({ length: 36 }, (_, i) => i + 1)
+    s.global.total_streams = ids.length
+    s.global.total_routes = ids.length
+    s.streams = ids.map((id) => ({
+      ...s.streams[0]!, stream_id: id, stream_name: `Tenant Flow ${id}`,
+    }))
+    s.routes = ids.map((id) => ({
+      ...s.routes[0]!, route_id: 100 + id, stream_id: id,
+      stream_name: `Tenant Flow ${id}`, destination_id: 900 + id,
+      destination_name: `Receiver ${id}`,
+    }))
+    mount(s)
+    expect(screen.queryByRole('link', { name: 'R-0136' })).not.toBeInTheDocument()
+    await user.type(screen.getByRole('searchbox', { name: 'Find in expert Route Flow' }), 'R-0136')
+    expect(screen.getByRole('link', { name: 'R-0136' })).toHaveAttribute('href', '/routes/136/edit')
+    expect(screen.getByRole('link', { name: 'Tenant Flow 36' })).toHaveAttribute('href', '/streams/36/runtime')
+    expect(screen.getByRole('link', { name: 'Investigate R-0136 delivery logs' }))
+      .toHaveAttribute('href', '/logs?route_id=136&stream_id=36&destination_id=936')
+    expect(screen.queryByRole('link', { name: 'R-0101' })).not.toBeInTheDocument()
+    expect(screen.getByTestId('routes-flow-expert-find-status')).toHaveTextContent('1 matching Stream')
+    expect(screen.queryByText('No routes configured yet.')).not.toBeInTheDocument()
+  })
+
+  it('finds an exact Destination by name and a Route beyond the first twelve Route rows', async () => {
+    const user = userEvent.setup()
+    const s = evidence()
+    s.global.total_routes = 60
+    s.streams = [{ ...s.streams[0]!, route_count: 60 }]
+    s.routes = Array.from({ length: 60 }, (_, i) => ({
+      ...s.routes[0]!,
+      route_id: i + 1,
+      destination_id: 1000 + i,
+      destination_name: i === 56 ? 'Cold Archive East' : `Receiver ${i + 1}`,
+    }))
+    mount(s)
+    expect(screen.queryByRole('link', { name: 'R-0057' })).not.toBeInTheDocument()
+    await user.type(screen.getByRole('searchbox', { name: 'Find in expert Route Flow' }), 'Cold Archive East')
+    expect(screen.getByRole('link', { name: 'R-0057' })).toHaveAttribute('href', '/routes/57/edit')
+    expect(screen.getByRole('link', { name: 'View Cold Archive East destination' }))
+      .toHaveAttribute('href', '/destinations/1056')
+    expect(screen.queryByRole('link', { name: 'R-0001' })).not.toBeInTheDocument()
+  })
+
+  it('searches by exact Stream ID first and preserves a manually collapsed Stream after clearing search', async () => {
+    const user = userEvent.setup()
+    mount(evidence())
+    await user.click(screen.getByRole('button', { name: 'Collapse Finance flow routes' }))
+    expect(screen.queryByRole('link', { name: 'R-0042' })).not.toBeInTheDocument()
+    await user.type(screen.getByRole('searchbox', { name: 'Find in expert Route Flow' }), '1')
+    expect(screen.getByRole('link', { name: 'R-0042' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Clear expert Route search' }))
+    expect(screen.getByRole('button', { name: 'Expand Finance flow routes' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('link', { name: 'R-0042' })).not.toBeInTheDocument()
+  })
+
+  it('reports no matches only within loaded inventory, never a new empty installation', async () => {
+    const user = userEvent.setup()
+    mount(evidence())
+    await user.type(screen.getByRole('searchbox', { name: 'Find in expert Route Flow' }), 'no-receiver-by-this-name')
+    const message = screen.getByTestId('routes-flow-no-expert-matches')
+    expect(message).toHaveTextContent('No matching Streams, Routes or Destinations')
+    expect(message).toHaveTextContent('loaded snapshot')
+    expect(screen.queryByText('No routes configured yet.')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Clear expert Route search' }))
+    expect(screen.getByRole('link', { name: 'Finance flow' })).toBeInTheDocument()
+  })
+
+  it('does not turn an unavailable runtime snapshot into search results or claim a healthy Route', () => {
+    mount(null)
+    expect(screen.queryByRole('searchbox', { name: 'Find in expert Route Flow' })).not.toBeInTheDocument()
+    expect(screen.getByTestId('routes-flow-inventory-state')).toHaveTextContent('Route inventory not verified')
+    expect(screen.getByTestId('routes-flow-snapshot-status')).toHaveTextContent('Runtime snapshot unavailable')
+  })
+})

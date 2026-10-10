@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { ChevronDown, ChevronRight, Search } from 'lucide-react'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { NAV_PATH, destinationDetailPath, logsExplorerPath, routeEditPath, streamRuntimePath } from '../../config/nav-paths'
@@ -17,6 +17,7 @@ import {
 } from './routes-flow-helpers'
 import type { OperationalSnapshotResponse } from '../../api/operationalSnapshot'
 import { RoutesFlowCompactCards } from './routes-flow-compact-cards'
+import { routeMatchesQuery, streamMatchesQuery } from './routes-flow-search'
 import type { RouteConsoleRow } from './routes-overview-helpers'
 
 const INITIAL_EXPANDED_STREAM_LIMIT = 8
@@ -38,6 +39,23 @@ export function RoutesFlowTreeTable({ snapshot, consoleRows, loading = false }: 
   const verifiedEmpty = !loading && snapshot != null && !evidenceStale &&
     snapshot.global?.total_routes === 0 && snapshot.routes.length === 0
   const [expandedIds, setExpandedIds] = useState<Set<number>>(() => new Set())
+  const [expertSearch, setExpertSearch] = useState('')
+  // Searching reveals a Route without overwriting the operator's own collapse state.
+  const [searchCollapsedIds, setSearchCollapsedIds] = useState<Set<number>>(() => new Set())
+  const expertQuery = expertSearch.trim().toLowerCase()
+  const expertMatches = useMemo(() => {
+    if (!expertQuery) return groups
+    // Match the mobile search rule: an exact Stream ID takes precedence.
+    const exactStream = /^\d+$/.test(expertQuery)
+      ? groups.find((group) => String(group.streamId) === expertQuery)
+      : undefined
+    if (exactStream) return [exactStream]
+    return groups.flatMap((group) => {
+      if (streamMatchesQuery(group, expertQuery)) return [group]
+      const routes = group.routes.filter((route) => routeMatchesQuery(route, expertQuery))
+      return routes.length > 0 ? [{ ...group, routes }] : []
+    })
+  }, [expertQuery, groups])
   const knownStreamIds = useRef<Set<number>>(new Set())
   const expandNewStreams = useRef<'initial' | 'all' | 'none'>('initial')
 
@@ -71,6 +89,15 @@ export function RoutesFlowTreeTable({ snapshot, consoleRows, loading = false }: 
   function toggleStream(streamId: number) {
     setExpandedIds((prev) => {
       const next = new Set(prev)
+      if (next.has(streamId)) next.delete(streamId)
+      else next.add(streamId)
+      return next
+    })
+  }
+
+  function toggleSearchedStream(streamId: number) {
+    setSearchCollapsedIds((previous) => {
+      const next = new Set(previous)
       if (next.has(streamId)) next.delete(streamId)
       else next.add(streamId)
       return next
@@ -113,7 +140,7 @@ export function RoutesFlowTreeTable({ snapshot, consoleRows, loading = false }: 
                     : <>As of <time dateTime={snapshot.updated_at}>{new Date(snapshotTime).toISOString()}</time> (UTC)</>}
           </p>
         </div>
-        {groups.length > 0 ? (
+        {groups.length > 0 && !(expertQuery && !isNarrowViewport) ? (
           <div className="flex flex-wrap items-center gap-3">
             <span
               data-testid="routes-flow-expanded-summary"
@@ -132,6 +159,51 @@ export function RoutesFlowTreeTable({ snapshot, consoleRows, loading = false }: 
           </div>
         ) : null}
       </div>
+      {!isNarrowViewport && groups.length > 0 ? (
+        <div className="flex flex-col gap-2 border-b border-slate-200 bg-slate-50/50 px-3 py-3 dark:border-gdc-border dark:bg-gdc-section/30 sm:flex-row sm:items-center">
+          <label className="shrink-0 text-xs font-semibold text-slate-700 dark:text-gdc-mutedStrong" htmlFor="route-flow-expert-find">
+            Find a delivery path
+          </label>
+          <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-gdc-muted" aria-hidden />
+            <input
+              id="route-flow-expert-find"
+              type="search"
+              aria-label="Find in expert Route Flow"
+              autoComplete="off"
+              placeholder="Stream, Route, Destination name or ID"
+              value={expertSearch}
+              onChange={(event) => {
+                setExpertSearch(event.target.value)
+                setSearchCollapsedIds(new Set())
+              }}
+              className="min-h-10 w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
+            />
+          </div>
+          {expertQuery ? (
+            <button
+              type="button"
+              aria-label="Clear expert Route search"
+              onClick={() => {
+                setExpertSearch('')
+                setSearchCollapsedIds(new Set())
+              }}
+              className="min-h-10 shrink-0 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-violet-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:border-gdc-border dark:text-violet-300"
+            >
+              Clear search
+            </button>
+          ) : null}
+          <p
+            role="status"
+            data-testid="routes-flow-expert-find-status"
+            className="text-[11px] leading-5 text-slate-600 dark:text-gdc-mutedStrong"
+          >
+            {expertQuery
+              ? `${expertMatches.length} matching Stream${expertMatches.length === 1 ? '' : 's'} in loaded snapshot`
+              : 'Search the already-loaded Stream → Route → Destination inventory'}
+          </p>
+        </div>
+      ) : null}
       {isNarrowViewport ? (
         <RoutesFlowCompactCards
           groups={groups}
@@ -187,13 +259,25 @@ export function RoutesFlowTreeTable({ snapshot, consoleRows, loading = false }: 
                 </td>
               </tr>
             ) : null}
-            {groups.map((group) => (
+            {expertQuery && groups.length > 0 && expertMatches.length === 0 ? (
+              <tr className={opTr}>
+                <td colSpan={6} data-testid="routes-flow-no-expert-matches" className={cn(opTd, 'py-8 text-center text-xs text-amber-900 dark:text-amber-200')}>
+                  No matching Streams, Routes or Destinations in the loaded snapshot.
+                  This search does not prove that a Route is unconfigured or delivered successfully.
+                </td>
+              </tr>
+            ) : null}
+            {(expertQuery ? expertMatches : groups).map((group) => (
               <StreamFlowRows
                 key={group.streamId}
                 group={group}
                 evidenceStale={evidenceStale}
-                expanded={expandedIds.has(group.streamId)}
-                onToggle={() => toggleStream(group.streamId)}
+                matchOnly={Boolean(expertQuery)}
+                expanded={expertQuery ? !searchCollapsedIds.has(group.streamId) : expandedIds.has(group.streamId)}
+                onToggle={() => {
+                  if (expertQuery) toggleSearchedStream(group.streamId)
+                  else toggleStream(group.streamId)
+                }}
               />
             ))}
           </tbody>
@@ -207,11 +291,13 @@ export function RoutesFlowTreeTable({ snapshot, consoleRows, loading = false }: 
 function StreamFlowRows({
   group,
   evidenceStale,
+  matchOnly,
   expanded,
   onToggle,
 }: {
   group: RouteFlowStreamGroup
   evidenceStale: boolean
+  matchOnly: boolean
   expanded: boolean
   onToggle: () => void
 }) {
@@ -241,7 +327,7 @@ function StreamFlowRows({
           </div>
         </td>
         <td className={cn(opTd, 'text-[11px] text-slate-500 dark:text-gdc-muted')}>
-          {routeCount} route{routeCount === 1 ? '' : 's'}
+          {routeCount} {matchOnly ? 'matching route' : 'route'}{routeCount === 1 ? '' : 's'}
         </td>
         <td className={cn(opTd, 'tabular-nums text-[11px] font-semibold text-slate-900 dark:text-slate-50')}>
           {formatFlowEps(group.totalEps)}
