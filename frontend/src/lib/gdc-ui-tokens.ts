@@ -40,7 +40,7 @@ export function readAdminUiRole(): SessionRole | null {
   if (fromSession) return fromSession
   try {
     const v = globalThis.localStorage?.getItem('gdc_platform_ui_role')?.trim().toUpperCase()
-    if (v === 'VIEWER' || v === 'OPERATOR' || v === 'ADMINISTRATOR') return v as SessionRole
+    if (v === 'VIEWER' || v === 'OPERATOR' || v === 'ADMINISTRATOR' || v === 'CONNECTOR_OPERATOR') return v as SessionRole
   } catch {
     /* ignore */
   }

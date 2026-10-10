@@ -75,9 +75,11 @@ function defaultApiBaseUrl(): string {
     return String(envBase).replace(/\/+$/, '')
   }
   if (import.meta.env.DEV) {
-    // Vitest must keep a concrete origin; real dev uses the Vite page origin so `/api` hits the dev-server proxy.
+    // Vitest needs a concrete but unreachable origin. Port 8000 may host a real dev API,
+    // whose 401 responses would invalidate mocked test sessions and corrupt UI role tests.
+    // An explicit VITE_API_BASE_URL override above still supports intentional API integration tests.
     if (import.meta.env.VITEST) {
-      return DEV_DEFAULT_API_BASE_URL
+      return 'http://127.0.0.1:0'
     }
     if (typeof window !== 'undefined' && window.location?.origin) {
       return window.location.origin
@@ -120,11 +122,13 @@ function logResolvedApiBaseUrlOnce(): void {
     ? `(VITE_API_BASE_URL=${envBase})`
     : resolved === ''
       ? '(same-origin /api/*)'
-      : resolved === DEV_DEFAULT_API_BASE_URL
-        ? `(default=${DEV_DEFAULT_API_BASE_URL})`
-        : '(see localStorage gdc.apiBaseUrlOverride)'
+      : import.meta.env.VITEST && resolved === 'http://127.0.0.1:0'
+        ? '(isolated Vitest origin)'
+        : resolved === DEV_DEFAULT_API_BASE_URL
+          ? `(default=${DEV_DEFAULT_API_BASE_URL})`
+          : '(see localStorage gdc.apiBaseUrlOverride)'
   log('[gdc] API base resolved:', resolved || '(empty → relative /api)', hint)
-  if (!honoredEnv && resolved !== DEV_DEFAULT_API_BASE_URL && resolved !== '' && resolved !== window.location?.origin) {
+  if (!honoredEnv && !import.meta.env.VITEST && resolved !== DEV_DEFAULT_API_BASE_URL && resolved !== '' && resolved !== window.location?.origin) {
     log('[gdc] API base differs from dev default. localStorage override active:', resolved)
   }
 }

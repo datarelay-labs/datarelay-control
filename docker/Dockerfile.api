@@ -2,6 +2,7 @@
 FROM node:20-bookworm-slim AS fe
 WORKDIR /fe
 COPY frontend/package.json frontend/package-lock.json ./
+COPY frontend/.foundation/packs ./.foundation/packs
 RUN --mount=type=secret,id=npmrc,target=/root/.npmrc,required=true npm ci
 COPY frontend .
 RUN npm run build
