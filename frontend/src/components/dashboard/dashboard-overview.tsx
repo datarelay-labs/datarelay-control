@@ -7,6 +7,7 @@ import { dashboardPriorityInvestigations } from './dashboard-priority-investigat
 import { cn } from '../../lib/utils'
 import { useSessionCapabilities } from '../../lib/rbac'
 import { DashboardFirstFlowSetup } from './dashboard-first-flow-setup'
+import { isRouteSnapshotStale } from '../routes/routes-flow-helpers'
 import {
   deriveOperationalIssuesFromSnapshot,
   deriveOverallHealthFromSnapshot,
@@ -101,7 +102,12 @@ export function DashboardOverview() {
   )
 
   const hasOperationalSnapshot = bundle?.operationalSnapshot != null
-  const isFreshInstall = bundle?.operationalSnapshot?.global.total_streams === 0
+  const snapshotUpdatedAt = bundle?.operationalSnapshot?.updated_at
+  // Match the existing Data Flows 90s operational-evidence freshness policy.
+  const snapshotStale = hasOperationalSnapshot && isRouteSnapshotStale(snapshotUpdatedAt)
+  const snapshotTimestampValid = snapshotUpdatedAt != null && Number.isFinite(Date.parse(snapshotUpdatedAt))
+  // Unknown/aged inventory is not proof this is a brand-new empty installation.
+  const isFreshInstall = !snapshotStale && bundle?.operationalSnapshot?.global.total_streams === 0
   const runtimeHealthAttention = useMemo(() => {
     const snapshot = bundle?.operationalSnapshot
     if (!snapshot) return { routes: 0, destinations: 0 }
@@ -137,7 +143,7 @@ export function DashboardOverview() {
   // Deferred alerts/dashboard reads may fail while the authoritative runtime
   // snapshot remains valid. Do not imply that every incident source was checked.
   const attentionDataPartial = Object.values(operationalIssues).some((value) => value == null) ||
-    bundle?.alertsFailed === true || bundle?.dashboardFailed === true
+    bundle?.alertsFailed === true || bundle?.dashboardFailed === true || snapshotStale
   const hasAnyAttention = priorityInvestigations.length > 0 || attentionItems.length > 0
   const attentionUnknown = !hasAnyAttention && attentionDataPartial
 
@@ -155,7 +161,7 @@ export function DashboardOverview() {
             {!isFreshInstall ? (
               <DashboardRunningBadge
                 engineStatus={bundle?.dashboard?.runtime_engine_status}
-                dashboardFailed={bundle?.dashboardFailed}
+                dashboardFailed={bundle?.dashboardFailed || snapshotStale}
                 posture={overallHealth.posture}
               />
             ) : null}
@@ -199,6 +205,31 @@ export function DashboardOverview() {
       />
 
       <RuntimeFixtureModeBanner surface="dashboard" />
+
+      {snapshotStale && !initialLoading ? (
+        <section
+          role="status"
+          aria-label="Operational snapshot is stale"
+          data-testid="dashboard-snapshot-stale"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200"
+        >
+          <p className="min-w-0 flex-1">
+            Operational snapshot last reported
+            {snapshotTimestampValid ? (
+              <> at <time dateTime={snapshotUpdatedAt}>{new Date(snapshotUpdatedAt!).toLocaleString()}</time></>
+            ) : ' with an unverified timestamp'}.
+            {' '}Current collection, Route delivery and configured inventory are not verified. Refresh before treating a status as live.
+          </p>
+          <button
+            type="button"
+            onClick={() => void reload()}
+            disabled={loading}
+            className="min-h-10 shrink-0 rounded-md border border-amber-400 px-3 py-2 font-semibold transition hover:bg-amber-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-600 disabled:opacity-60 dark:border-amber-700 dark:hover:bg-amber-950/50"
+          >
+            Refresh operational status
+          </button>
+        </section>
+      ) : null}
 
       {loadError ? (
         <div
@@ -263,13 +294,17 @@ export function DashboardOverview() {
                 {hasAnyAttention || attentionUnknown ? <AlertTriangle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
               </span>
               <div className="min-w-0 flex-1">
-                <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.15em] text-violet-600 dark:text-violet-300">Live operations</p>
+                <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.15em] text-violet-600 dark:text-violet-300">
+                  {snapshotStale ? 'Last reported operations' : 'Live operations'}
+                </p>
                 <h2 className="text-xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
-                  {hasAnyAttention ? 'Action needed' : attentionUnknown ? 'Status partially available' : 'No action needed'}
+                  {hasAnyAttention ? (snapshotStale ? 'Last reported issues' : 'Action needed') : attentionUnknown ? 'Status partially available' : 'No action needed'}
                 </h2>
                 <p className="mt-0.5 text-xs leading-relaxed text-slate-500 dark:text-gdc-muted">
                   {hasAnyAttention
-                    ? 'Start with an affected resource below. Its link opens the workspace that owns the next investigation.'
+                    ? snapshotStale
+                      ? 'These issues were last reported by an old snapshot; open the resource to confirm current evidence before acting.'
+                      : 'Start with an affected resource below. Its link opens the workspace that owns the next investigation.'
                     : attentionDataPartial
                       ? 'No actionable signal is currently known from the available snapshot; some signal categories are unavailable.'
                       : 'No open operational signals are present in the current snapshot. Continue monitoring or inspect a Stream.'}
@@ -291,7 +326,9 @@ export function DashboardOverview() {
               <section className="mt-4 space-y-3" data-testid="dashboard-priority-investigations" aria-label="Priority investigations">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Investigate these first</h3>
-                  <span className="text-xs text-slate-500 dark:text-gdc-muted">Specific resources · current operational snapshot</span>
+                  <span className="text-xs text-slate-500 dark:text-gdc-muted">
+                    Specific resources · {snapshotStale ? 'last reported snapshot' : 'current operational snapshot'}
+                  </span>
                 </div>
                 <ol className="grid gap-2 lg:grid-cols-3">
                   {priorityInvestigations.map((item) => (
@@ -375,7 +412,7 @@ export function DashboardOverview() {
             </div>
           </section>
 
-          <OverallHealthHero health={overallHealth} basisLabel={SNAPSHOT_KPI_BASIS_LABEL} />
+          <OverallHealthHero health={overallHealth} basisLabel={SNAPSHOT_KPI_BASIS_LABEL} stale={snapshotStale} />
 
           <div className="grid gap-5 lg:grid-cols-2">
             <TrafficOverviewPanel traffic={traffic} />

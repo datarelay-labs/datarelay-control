@@ -367,7 +367,9 @@ vi.mock('../../api/operationalSnapshot', () => ({
         last_seen_at: null,
       },
     ],
-    updated_at: '2026-01-01T00:00:00Z',
+    // Ordinary source fixtures represent a just-retrieved operational snapshot.
+    // Explicit regression scenarios below supply their own stale timestamp.
+    updated_at: new Date().toISOString(),
   })),
 }))
 
@@ -720,6 +722,73 @@ describe('DashboardOverview', () => {
     expect(within(mainRegion()).getByTestId('dashboard-drilldown-governance')).toHaveAttribute('href', '/governance')
   })
 
+  it('marks old operational snapshots as last reported, rather than asserting live status', async () => {
+    const snap = await import('../../api/operationalSnapshot')
+    const baseline = await snap.getOperationalSnapshot()
+    if (!baseline) throw new Error('Missing snapshot fixture')
+    vi.mocked(snap.getOperationalSnapshot).mockResolvedValueOnce({
+      ...baseline,
+      updated_at: '2026-01-01T00:00:00Z',
+    })
+    render(<MemoryRouter><main><DashboardOverview /></main></MemoryRouter>)
+    const main = mainRegion()
+    const banner = await within(main).findByTestId('dashboard-snapshot-stale')
+    expect(banner).toHaveTextContent('last reported')
+    const section = await within(main).findByTestId('dashboard-action-needed')
+    expect(within(section).queryByText('Live operations')).not.toBeInTheDocument()
+    expect(within(section).getByText('Last reported operations')).toBeInTheDocument()
+    expect(within(main).getByTestId('dashboard-running-badge')).toHaveTextContent('Unknown')
+    expect(within(main).getByTestId('dashboard-running-badge')).not.toHaveTextContent('All Systems Operational')
+    expect(within(main).getByTestId('dashboard-overall-posture-label')).toHaveTextContent('Not verified')
+  })
+
+  it('does not declare a stale zero-Stream snapshot to be a verified fresh installation', async () => {
+    const snap = await import('../../api/operationalSnapshot')
+    const baseline = await snap.getOperationalSnapshot()
+    if (!baseline) throw new Error('Missing operational snapshot fixture')
+    vi.mocked(snap.getOperationalSnapshot).mockResolvedValueOnce({
+      ...baseline,
+      global: { ...baseline.global, health_status: 'HEALTHY', total_streams: 0,
+        enabled_streams: 0, running_streams: 0, error_streams: 0, total_routes: 0, enabled_routes: 0 },
+      streams: [], routes: [], destinations: [], problems: [],
+      updated_at: '2026-01-01T00:00:00Z',
+    })
+    render(<MemoryRouter><main><DashboardOverview /></main></MemoryRouter>)
+    const main = mainRegion()
+    expect(await within(main).findByTestId('dashboard-snapshot-stale')).toBeInTheDocument()
+    expect(within(main).queryByTestId('dashboard-empty-state')).not.toBeInTheDocument()
+    expect(await within(main).findByTestId('dashboard-first-level')).toBeInTheDocument()
+  })
+
+  it('does not claim No action needed when a healthy snapshot is too old to prove current health', async () => {
+    const snap = await import('../../api/operationalSnapshot')
+    const baseline = await snap.getOperationalSnapshot()
+    const healthy = baseline?.streams.find((stream) => stream.health_status === 'HEALTHY')
+    if (!baseline || !healthy) throw new Error('Missing healthy fixture')
+    vi.mocked(snap.getOperationalSnapshot).mockResolvedValueOnce({
+      ...baseline,
+      global: { ...baseline.global, health_status: 'HEALTHY', total_streams: 1,
+        enabled_streams: 1, running_streams: 1, error_streams: 0, total_routes: 0,
+        enabled_routes: 0, total_destinations: 0, enabled_destinations: 0 },
+      streams: [{ ...healthy, eps_1m: 100, eps_5m: 100, enabled: true, status: 'RUNNING' }],
+      routes: [], destinations: [], problems: [],
+      updated_at: '2026-01-01T00:00:00Z',
+    })
+    const runtime = await import('../../api/gdcRuntime')
+    vi.mocked(runtime.fetchRuntimeDashboardSummary).mockResolvedValueOnce({
+      ...sampleDashboard(), open_schema_field_drift_count: 0,
+    })
+    const dest = await import('../../api/gdcDestinations')
+    vi.mocked(dest.fetchDestinationsList).mockResolvedValueOnce([])
+    render(<MemoryRouter><main><DashboardOverview /></main></MemoryRouter>)
+    const first = await within(mainRegion()).findByTestId('dashboard-first-level')
+    const action = within(first).getByTestId('dashboard-action-needed')
+    await waitFor(() => expect(within(action).getByRole('heading', { name: 'Status partially available' })).toBeInTheDocument())
+    expect(within(action).queryByRole('heading', { name: 'No action needed' })).not.toBeInTheDocument()
+    expect(within(mainRegion()).getByTestId('dashboard-snapshot-stale')).toHaveTextContent('last reported')
+    expect(within(action).getByTestId('dashboard-next-action')).toHaveAttribute('href', '/streams')
+  })
+
   it('shows resource-aware first-run steps without skipping the connector/destination catalog', async () => {
     const snap = await import('../../api/operationalSnapshot')
     vi.mocked(snap.getOperationalSnapshot).mockResolvedValueOnce({
@@ -742,7 +811,7 @@ describe('DashboardOverview', () => {
       routes: [],
       destinations: [],
       problems: [],
-      updated_at: '2026-01-01T00:00:00Z',
+      updated_at: new Date().toISOString(),
     } as Awaited<ReturnType<typeof snap.getOperationalSnapshot>>)
     const streams = await import('../../api/gdcStreams')
     vi.mocked(streams.fetchStreamsList).mockResolvedValueOnce([])
