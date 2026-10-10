@@ -351,6 +351,27 @@ describe('Data Flows topology: operator priority and bounded exploration', () =>
     expect(screen.getByTestId('routes-architecture-inspector')).toHaveTextContent('Stream #1 · Route R-0002')
   })
 
+  it('moves focus into the selected Route inspector after a delivery alert without trapping normal graph controls', async () => {
+    const user = userEvent.setup()
+    render(<GraphHarness snapshot={snapshotFor()} />)
+    const highestPriority = screen.getByTestId('routes-architecture-review-first')
+    highestPriority.focus()
+    await user.keyboard('{Enter}')
+    const inspector = screen.getByTestId('routes-architecture-inspector')
+    expect(inspector).toHaveAttribute('tabindex', '-1')
+    expect(inspector).toHaveFocus()
+    expect(inspector).toHaveTextContent('Stream #2 · Route R-0006')
+    await user.click(screen.getByRole('button', { name: 'Inspect Warning Route R-0002 in Stream #1' }))
+    expect(inspector).toHaveFocus()
+    expect(inspector).toHaveTextContent('Stream #1 · Route R-0002')
+    const streamSelector = screen.getByTestId('routes-architecture-stream-2')
+    await user.click(streamSelector)
+    expect(streamSelector).toHaveFocus()
+    const routeCard = screen.getByTestId('routes-architecture-route-6')
+    await user.click(routeCard)
+    expect(routeCard).toHaveFocus()
+  })
+
   it('does not treat a failed or old operational read as a live incident or a healthy receiver', () => {
     const old = { ...snapshotFor(), updated_at: '2026-01-01T00:00:00Z' }
     render(<GraphHarness snapshot={old} requestFailed />)

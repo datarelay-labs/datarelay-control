@@ -1,5 +1,5 @@
 import { ArrowRight, GitBranch, Layers3, Network, Settings2 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { OperationalSnapshotResponse, OperationalStreamSnapshot } from '../../api/operationalSnapshot'
 import { formatOperationalHealth } from '../../lib/operational-snapshot-selectors'
@@ -85,8 +85,15 @@ export function RoutesArchitectureWorkspace({
   ), [snapshot?.streams])
   const selectedStream = selectedGroup ? streamsById.get(selectedGroup.streamId) : undefined
   const [inspectedRouteId, setInspectedRouteId] = useState<number | null>(null)
+  const focusInspectorAfterAttention = useRef(false)
+  const inspectorRef = useRef<HTMLElement | null>(null)
   const selectedRoute = selectedGroup?.routes.find((route) => route.routeId === inspectedRouteId) ??
     selectedGroup?.routes[0]
+  useEffect(() => {
+    if (!focusInspectorAfterAttention.current || selectedRoute?.routeId !== inspectedRouteId) return
+    focusInspectorAfterAttention.current = false
+    inspectorRef.current?.focus()
+  }, [inspectedRouteId, selectedRoute?.routeId, selectedGroup?.streamId])
   const selectedRow = consoleRows.find((row) => row.route.id === selectedRoute?.routeId)
   const inspectedMetric = snapshot?.routes.find((route) =>
     route.route_id === selectedRoute?.routeId && route.stream_id === selectedGroup?.streamId)
@@ -190,6 +197,10 @@ export function RoutesArchitectureWorkspace({
 
   function reviewAttention(item: (typeof attention)[number]) {
     // Numeric Route and Stream IDs prevent same-name entities from leaking into each other's inspector.
+    const alreadyInspected = selectedGroup?.streamId === item.streamId &&
+      selectedRoute?.routeId === item.routeId
+    focusInspectorAfterAttention.current = !alreadyInspected
+    if (alreadyInspected) inspectorRef.current?.focus()
     setInspectedRouteId(item.routeId)
     setVisiblePathCount(12)
     setVisibleStreamCount(12)
@@ -433,7 +444,7 @@ export function RoutesArchitectureWorkspace({
                     aria-pressed={selected}
                     aria-label={`Inspect delivery for ${group.streamName} (Stream #${group.streamId})`}
                     data-testid={`routes-architecture-stream-${group.streamId}`}
-                    onClick={() => { setInspectedRouteId(null); setVisiblePathCount(12); setVisibleStreamCount(12); onSelectStream(group.streamId) }}
+                    onClick={() => { focusInspectorAfterAttention.current = false; setInspectedRouteId(null); setVisiblePathCount(12); setVisibleStreamCount(12); onSelectStream(group.streamId) }}
                     className={cn(
                       'flex min-w-[160px] flex-1 items-center justify-between gap-3 rounded-lg border px-3 py-3 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 xl:min-w-0 xl:flex-none',
                       selected
@@ -568,7 +579,7 @@ export function RoutesArchitectureWorkspace({
                               type="button"
                               aria-pressed={selected}
                               aria-controls="routes-architecture-inspector-panel"
-                              onClick={() => setInspectedRouteId(route.routeId)}
+                              onClick={() => { focusInspectorAfterAttention.current = false; setInspectedRouteId(route.routeId) }}
                               data-testid={`routes-architecture-route-${route.routeId}`}
                               className={cn(
                                 'min-w-0 rounded-xl border px-3 py-3 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500',
@@ -665,7 +676,7 @@ export function RoutesArchitectureWorkspace({
               </div>
 
               {selectedRoute ? (
-                <section id="routes-architecture-inspector-panel" data-testid="routes-architecture-inspector" aria-label="Selected Route details" className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 dark:border-gdc-border dark:bg-gdc-section/60">
+                <section ref={inspectorRef} id="routes-architecture-inspector-panel" tabIndex={-1} data-testid="routes-architecture-inspector" aria-label="Selected Route details" className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-violet-500 dark:border-gdc-border dark:bg-gdc-section/60">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500 dark:text-gdc-muted">Selected delivery path</p>
