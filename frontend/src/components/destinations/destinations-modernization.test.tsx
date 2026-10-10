@@ -215,6 +215,20 @@ describe('DestinationDetailPage capacity truth', () => {
       .toHaveTextContent('—')
   })
 
+  it('does not label missing historical Destination success outcomes as 0% or snapshot success', async () => {
+    const { useDestinationDetailData } = await import('./use-destination-detail-data')
+    vi.mocked(useDestinationDetailData).mockReturnValue({
+      ...vi.mocked(useDestinationDetailData)(),
+      successRatePct: null,
+    } as ReturnType<typeof useDestinationDetailData>)
+    render(
+      <MemoryRouter initialEntries={['/destinations/9']}>
+        <Routes><Route path="/destinations/:destinationId" element={<DestinationDetailPage />} /></Routes>
+      </MemoryRouter>,
+    )
+    expect(screen.getByText('Success rate (24h)').parentElement).toHaveTextContent('—')
+  })
+
   it('still displays an observed 24h zero-failure count as zero, not unknown', () => {
     render(
       <MemoryRouter initialEntries={['/destinations/9']}>

@@ -91,6 +91,25 @@ describe('useDestinationDetailData ownership + stale protection', () => {
     expect(result.current.destination?.name).toBe('Dest-7')
   })
 
+  it('uses destination-scoped historical 24h success/failure totals over instantaneous 1m KPIs', async () => {
+    fetchDestinationById.mockResolvedValue(detail(9, 'Dest-9'))
+    getOperationalSnapshot.mockResolvedValue({
+      global: { health_status: 'HEALTHY', total_streams: 0 },
+      streams: [], routes: [], problems: [],
+      destinations: [{
+        destination_id: 9, enabled: true, health_status: 'HEALTHY',
+        inbound_eps_1m: 90, failed_eps_1m: 10,
+      }],
+      updated_at: '2026-10-11T00:00:00Z',
+    })
+    fetchDeliveryOutcomesByDestination.mockResolvedValue({
+      rows: [{destination_id: 9, success_events: 2, failure_events: 8}],
+    })
+    const { result } = renderHook(() => useDestinationDetailData(9))
+    await waitFor(() => expect(result.current.runtimeLoading).toBe(false))
+    expect(result.current.successRatePct).toBe(20)
+  })
+
   it('does not treat a failed 24h analytics fetch as zero failed Destination events', async () => {
     fetchDestinationById.mockResolvedValue(detail(7, 'Dest-7'))
     fetchRouteFailuresAnalytics.mockRejectedValueOnce(new Error('historical analytics offline'))

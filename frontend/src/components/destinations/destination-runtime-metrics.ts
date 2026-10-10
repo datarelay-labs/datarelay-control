@@ -185,13 +185,22 @@ export function resolveDestinationUiHealth(
   return selectDestinationKpi(snapshot).health.label
 }
 
+/** Historical success counts are fetched for the selected 24h window.
+ * Instantaneous 1m Destination EPS cannot legitimately stand in for 24h success.
+ */
 export function computeDestinationSuccessRate(
-  _health: DestinationHealthRow | null,
-  _outcome: DestinationDeliveryOutcomeRow | null,
-  snapshot: OperationalDestinationSnapshot | null,
+  health: DestinationHealthRow | null,
+  outcome: DestinationDeliveryOutcomeRow | null,
+  _snapshot: OperationalDestinationSnapshot | null,
 ): number | null {
-  if (snapshot == null) return null
-  return selectDestinationKpi(snapshot).successRatePct
+  const success = outcome != null ? outcome.success_events : health?.metrics?.success_count
+  const failures = outcome != null ? outcome.failure_events : health?.metrics?.failure_count
+  if (typeof success !== 'number' || typeof failures !== 'number' ||
+      !Number.isFinite(success) || !Number.isFinite(failures) || success < 0 || failures < 0) {
+    return null
+  }
+  const total = success + failures
+  return Number.isFinite(total) && total > 0 ? Math.round((10000 * success) / total) / 100 : null
 }
 
 export function computeDestinationCurrentEps(snapshot: OperationalDestinationSnapshot | null): number | null {
