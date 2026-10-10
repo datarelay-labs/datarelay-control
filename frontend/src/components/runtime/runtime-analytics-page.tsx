@@ -279,13 +279,26 @@ export function RuntimeAnalyticsPage() {
       </header>
 
       {invalidAnalyticsFilters.length > 0 ? (
-        <p
+        <div
           role="status"
           aria-label="Invalid analytics filters"
-          className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200"
         >
-          {invalidAnalyticsFilters.map(({ label }) => `Invalid ${label} ID ignored`).join(' · ')}. Use positive, whole-number IDs; invalid values were not applied.
-        </p>
+          <span>
+            {invalidAnalyticsFilters.map(({ label }) => `Invalid ${label} ID ignored`).join(' · ')}. Use positive, whole-number IDs; invalid values were not applied.
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              const next = new URLSearchParams(searchParams)
+              for (const { key } of invalidAnalyticsFilters) next.delete(key)
+              setSearchParams(next, { replace: true })
+            }}
+            className="min-h-9 shrink-0 rounded-md border border-amber-400 px-3 py-1.5 text-xs font-semibold hover:bg-amber-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-600 dark:border-amber-700 dark:hover:bg-amber-950/50"
+          >
+            Clear invalid IDs
+          </button>
+        </div>
       ) : null}
       {error ? (
         <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-900 dark:border-rose-900/50 dark:text-rose-100">

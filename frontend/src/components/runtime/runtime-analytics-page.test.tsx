@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { RuntimeAnalyticsPage } from './runtime-analytics-page'
 import { observabilitySummaryFixture } from '../../test/runtimeApiFixtures'
@@ -9,6 +9,11 @@ import type {
   RouteFailuresAnalyticsResponse,
   StreamRetriesAnalyticsResponse,
 } from '../../api/types/gdcApi'
+
+function AnalyticsLocationProbe() {
+  const location = useLocation()
+  return <span data-testid="analytics-location-query">{location.search}</span>
+}
 
 const snapshotParam = (params?: { snapshot_id?: string }) => params?.snapshot_id ?? '2026-01-02T00:00:00Z'
 
@@ -108,6 +113,37 @@ describe('RuntimeAnalyticsPage', () => {
     expect(notice).toHaveTextContent('Invalid Stream ID ignored')
     expect(notice).toHaveTextContent('Invalid Route ID ignored')
     expect(notice).toHaveTextContent('Invalid Destination ID ignored')
+  })
+
+  it('clears only invalid Analytics ID filters without losing valid Route and time-window context', async () => {
+    const user = userEvent.setup()
+    const mod = await import('../../api/gdcRuntimeAnalytics')
+    render(
+      <MemoryRouter initialEntries={['/monitoring/analytics?window=1h&stream_id=-2&route_id=42&destination_id=3.5']}>
+        <RuntimeAnalyticsPage />
+        <AnalyticsLocationProbe />
+      </MemoryRouter>,
+    )
+    expect(screen.getByRole('status', { name: 'Invalid analytics filters' })).toHaveTextContent('Invalid Stream ID ignored')
+    await user.click(screen.getByRole('button', { name: 'Clear invalid IDs' }))
+    expect(screen.queryByRole('status', { name: 'Invalid analytics filters' })).not.toBeInTheDocument()
+    expect(screen.getByTestId('analytics-location-query')).toHaveTextContent('?window=1h&route_id=42')
+    expect(screen.getByLabelText('route_id')).toHaveValue('42')
+    expect(screen.getByLabelText('stream_id')).toHaveValue('')
+    expect(screen.getByLabelText('destination_id')).toHaveValue('')
+    expect(screen.getByLabelText('Window')).toHaveValue('1h')
+    await waitFor(() => expect(mod.fetchRouteFailuresAnalytics).toHaveBeenCalledWith(expect.objectContaining({
+      window: '1h', route_id: 42, stream_id: undefined, destination_id: undefined,
+    })))
+  })
+
+  it('does not show a clear-invalid-filters action when the saved Route scope is valid', () => {
+    render(
+      <MemoryRouter initialEntries={['/monitoring/analytics?window=24h&stream_id=2&route_id=42']}>
+        <RuntimeAnalyticsPage />
+      </MemoryRouter>,
+    )
+    expect(screen.queryByRole('button', { name: 'Clear invalid IDs' })).not.toBeInTheDocument()
   })
 
   it('retains valid exact Route, Stream and Destination scope from a Data Flows deep link', async () => {
