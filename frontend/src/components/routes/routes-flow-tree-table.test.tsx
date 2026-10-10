@@ -429,3 +429,39 @@ describe('Mobile delivery evidence integrity on unreliable state', () => {
     })
   })
 })
+
+describe('Compact Route Flow at large Stream cardinality', () => {
+  it('bounds mobile Stream cards to 12, then reveals next 20 on request', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
+      matches: query === '(max-width: 767px)',
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })))
+    try {
+      const baseline = evidence()
+      const ids = Array.from({ length: 30 }, (_, i) => i + 1)
+      const s: OperationalSnapshotResponse = {
+        ...baseline,
+        global: { ...baseline.global, total_streams: 30, total_routes: 30 },
+        streams: ids.map((id) => ({
+          ...baseline.streams[0]!, stream_id: id, stream_name: `Mobile Stream ${id}`,
+        })),
+        routes: ids.map((id) => ({
+          ...baseline.routes[0]!, route_id: id + 100, stream_id: id,
+          stream_name: `Mobile Stream ${id}`, destination_id: id + 900,
+        })),
+      }
+      mount(s)
+      expect(screen.getAllByTestId(/^routes-flow-mobile-stream-/)).toHaveLength(12)
+      expect(screen.getByRole('button', { name: 'Show next Streams (12 of 30 shown)' })).toBeInTheDocument()
+      expect(screen.getByTestId('routes-flow-expanded-summary')).toHaveTextContent('8 of 30 Streams expanded')
+      await user.click(screen.getByRole('button', { name: 'Show next Streams (12 of 30 shown)' }))
+      expect(screen.getAllByTestId(/^routes-flow-mobile-stream-/)).toHaveLength(30)
+      expect(screen.queryByRole('button', { name: /Show next Streams/ })).not.toBeInTheDocument()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+})

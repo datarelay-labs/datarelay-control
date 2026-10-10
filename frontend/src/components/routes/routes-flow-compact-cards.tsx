@@ -14,6 +14,8 @@ import {
 
 const FIRST_ROUTES = 12
 const NEXT_ROUTES = 20
+const FIRST_STREAMS = 12
+const NEXT_STREAMS = 20
 
 /** Operator-native cards for narrow viewports; pure presentation of an existing snapshot. */
 export function RoutesFlowCompactCards({
@@ -33,6 +35,8 @@ export function RoutesFlowCompactCards({
   evidenceStale: boolean
   validObservationTime: boolean
 }) {
+  const [shownStreams, setShownStreams] = useState(FIRST_STREAMS)
+  const visibleStreams = Math.min(groups.length, shownStreams)
   return (
     <section aria-label="Compact route delivery" data-testid="routes-flow-compact-cards" className="space-y-3 p-3">
       {loading && groups.length === 0 ? (
@@ -55,7 +59,7 @@ export function RoutesFlowCompactCards({
           )}
         </div>
       ) : null}
-      {groups.map((group) => (
+      {groups.slice(0, visibleStreams).map((group) => (
         <CompactStreamGroup
           key={group.streamId}
           group={group}
@@ -65,6 +69,16 @@ export function RoutesFlowCompactCards({
           evidenceStale={evidenceStale}
         />
       ))}
+      {visibleStreams < groups.length ? (
+        <button
+          type="button"
+          aria-label={`Show next Streams (${visibleStreams} of ${groups.length} shown)`}
+          onClick={() => setShownStreams((count) => Math.min(count + NEXT_STREAMS, groups.length))}
+          className="min-h-11 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-violet-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:border-gdc-border dark:bg-gdc-section dark:text-violet-300"
+        >
+          Show next Streams ({visibleStreams} of {groups.length} shown)
+        </button>
+      ) : null}
       {groups.length > 0 ? (
         <p className="text-[11px] leading-5 text-slate-500 dark:text-gdc-muted">
           Gateway Route attempts are reported here; downstream receiver ingestion not confirmed. Inspect per-Route logs before concluding delivery.
