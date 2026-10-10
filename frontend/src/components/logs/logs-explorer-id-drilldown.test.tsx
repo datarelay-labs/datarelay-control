@@ -125,6 +125,9 @@ describe('Logs Explorer receiving an actual Data Flows numeric-ID drilldown', ()
     await waitFor(() =>
       expect(screen.getByLabelText('Stream')).toHaveValue('Repeated stream (Stream #2)'),
     )
+    const activeFilters = screen.getByRole('region', { name: 'Active URL filters' })
+    expect(activeFilters).toHaveTextContent('Stream · Repeated stream (Stream #2)')
+    expect(activeFilters).toHaveTextContent('Route · Repeated route (Route #42)')
     expect(await screen.findByText('Actual Route 42 failed delivery')).toBeInTheDocument()
   })
 

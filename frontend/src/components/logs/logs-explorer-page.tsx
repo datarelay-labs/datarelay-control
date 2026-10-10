@@ -870,13 +870,13 @@ export function LogsExplorerPage() {
   const summaryStreamLabel = useMemo(() => {
     const sid = effectiveStreamIdForApi
     if (sid == null) return null
-    return entityLabels.streams.get(sid) ?? `Stream #${sid}`
-  }, [effectiveStreamIdForApi, entityLabels.streams])
+    return streamDisplayLabels.get(sid) ?? `Stream #${sid}`
+  }, [effectiveStreamIdForApi, streamDisplayLabels])
 
   const summaryRouteLabel = useMemo(() => {
     if (routeIdFromQuery == null) return null
-    return entityLabels.routes.get(routeIdFromQuery) ?? `Route #${routeIdFromQuery}`
-  }, [routeIdFromQuery, entityLabels.routes])
+    return routeDisplayLabels.get(routeIdFromQuery) ?? `Route #${routeIdFromQuery}`
+  }, [routeIdFromQuery, routeDisplayLabels])
 
   const summaryDestinationLabel = useMemo(() => {
     if (destinationIdFromQuery == null) return null
