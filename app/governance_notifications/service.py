@@ -198,7 +198,10 @@ class NotificationService:
             return GovernanceNotificationTestResponse(
                 channel="email",
                 success=ok,
-                message="Test email sent." if ok else "Test email delivery failed.",
+                message=(
+                    "SMTP relay accepted the test message; inbox delivery is not verified."
+                    if ok else "SMTP test not accepted; check configured transport and relay."
+                ),
             )
 
         if ch == "webhook":
@@ -220,7 +223,10 @@ class NotificationService:
             return GovernanceNotificationTestResponse(
                 channel="webhook",
                 success=ok,
-                message="Test webhook delivered." if ok else "Test webhook delivery failed.",
+                message=(
+                    "Webhook endpoint returned success; downstream processing is not verified."
+                    if ok else "Webhook test not accepted; check configured transport and endpoint."
+                ),
             )
 
         raise NotificationServiceError(f"unsupported channel: {channel!r}")
