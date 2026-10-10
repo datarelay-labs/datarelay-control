@@ -72,10 +72,11 @@ function KpiCard({ label, value, hint }: { label: string; value: string; hint?: 
 
 export function DestinationDetailPage() {
   const { destinationId = '' } = useParams<{ destinationId: string }>()
-  const backendDestinationNumericId = useMemo(
-    () => (/^\d+$/.test(String(destinationId)) ? Number(destinationId) : null),
-    [destinationId],
-  )
+  const backendDestinationNumericId = useMemo(() => {
+    if (!/^\d+$/.test(destinationId)) return null
+    const candidate = Number(destinationId)
+    return Number.isSafeInteger(candidate) && candidate > 0 ? candidate : null
+  }, [destinationId])
 
   const runtime = useDestinationDetailData(backendDestinationNumericId)
   const [mainTab, setMainTab] = useState<MainTab>('overview')
