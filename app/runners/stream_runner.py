@@ -24,6 +24,7 @@ from app.mappers.mapper import apply_mappings_with_results
 from app.parsers.event_extractor import extract_events
 from app.pollers.http_poller import HttpPoller
 from app.rate_limit.destination_limiter import DestinationRateLimiter
+from app.rate_limit.udp_pacing_config import udp_paced_destination_config as _udp_paced_destination_config
 from app.rate_limit.source_limiter import SourceRateLimiter
 from app.logs.models import DeliveryLog
 from app.logs.payload_sample import build_delivery_log_payload_sample
@@ -79,29 +80,6 @@ def _effective_destination_rate_limit_json(route: Any, destination: Any) -> dict
     if isinstance(dest_rl, dict) and dest_rl:
         return dict(dest_rl)
     return {}
-
-
-def _udp_paced_destination_config(
-    destination_type: str,
-    config: dict[str, Any],
-    rate_limit: dict[str, Any],
-    route_key: int,
-) -> dict[str, Any]:
-    """Pass UI Route EPS intent to the existing UDP adapter, never to persisted config.
-
-    Legacy max_events/per_seconds remains a batch gate. Only the distinct
-    enabled/per_second/burst_size UI shape activates datagram pacing.
-    """
-    result = dict(config)
-    result.pop("_route_udp_event_rate", None)
-    if destination_type == "SYSLOG_UDP" and rate_limit.get("enabled") is not False:
-        if "per_second" in rate_limit or "burst_size" in rate_limit:
-            result["_route_udp_event_rate"] = {
-                "route_id": route_key,
-                "per_second": rate_limit.get("per_second"),
-                "burst_size": rate_limit.get("burst_size"),
-            }
-    return result
 
 
 @dataclass(slots=True)
