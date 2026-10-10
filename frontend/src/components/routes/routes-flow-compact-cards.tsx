@@ -10,12 +10,25 @@ import {
   routeHealthBadgeClass,
   routePublicId,
   type RouteFlowStreamGroup,
+  type RouteFlowRouteRow,
 } from './routes-flow-helpers'
 
 const FIRST_ROUTES = 12
 const NEXT_ROUTES = 20
 const FIRST_STREAMS = 12
 const NEXT_STREAMS = 20
+
+function routeMatchesQuery(route: RouteFlowRouteRow, query: string): boolean {
+  return String(route.routeId).includes(query) ||
+    routePublicId(route.routeId).toLowerCase().includes(query) ||
+    route.routeLabel.toLowerCase().includes(query) ||
+    route.destinationName.toLowerCase().includes(query) ||
+    (route.destinationId != null && String(route.destinationId).includes(query))
+}
+
+function streamMatchesQuery(group: RouteFlowStreamGroup, query: string): boolean {
+  return group.streamName.toLowerCase().includes(query) || String(group.streamId).includes(query)
+}
 
 /** Operator-native cards for narrow viewports; pure presentation of an existing snapshot. */
 export function RoutesFlowCompactCards({
@@ -38,11 +51,18 @@ export function RoutesFlowCompactCards({
   const [shownStreams, setShownStreams] = useState(FIRST_STREAMS)
   const [streamSearch, setStreamSearch] = useState('')
   const query = streamSearch.trim().toLowerCase()
-  // Work only with the already-observed snapshot; do not guess/search the API.
+  // Search existing in-memory delivery lineage, never a new API request.
+  // A bare exact Stream ID takes precedence over a coincidentally matching
+  // Route/Destination ID. Explicit R- IDs or receiver names search all paths.
+  const exactStream = /^\d+$/.test(query)
+    ? groups.find((group) => String(group.streamId) === query)
+    : undefined
   const matches = query
-    ? groups.filter((group) =>
-        group.streamName.toLowerCase().includes(query) || String(group.streamId).includes(query),
-      )
+    ? exactStream
+      ? [exactStream]
+      : groups.filter((group) =>
+          streamMatchesQuery(group, query) || group.routes.some((route) => routeMatchesQuery(route, query)),
+        )
     : groups
   const visibleStreams = Math.min(matches.length, shownStreams)
   return (
@@ -72,21 +92,21 @@ export function RoutesFlowCompactCards({
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-gdc-muted" aria-hidden />
           <input
             type="search"
-            aria-label="Find a Stream by name or ID"
+            aria-label="Find Stream, Route or Destination"
             autoComplete="off"
             value={streamSearch}
             onChange={(event) => {
               setStreamSearch(event.target.value)
               setShownStreams(FIRST_STREAMS)
             }}
-            placeholder="Find Stream name or ID"
+            placeholder="Find Stream, Route or Destination"
             className="min-h-11 w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
           />
         </div>
       ) : null}
       {query && matches.length === 0 ? (
-        <p role="status" aria-label="Stream search result" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
-          No matching Streams in the currently loaded snapshot. Change the search to inspect other available Streams.
+        <p role="status" aria-label="Flow search result" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
+          No matching Streams, Routes or Destinations in the currently loaded snapshot. Change the search to inspect other available paths.
         </p>
       ) : null}
       {matches.slice(0, visibleStreams).map((group) => (
@@ -95,6 +115,7 @@ export function RoutesFlowCompactCards({
           group={group}
           expanded={expandedIds.has(group.streamId)}
           onToggle={() => onToggle(group.streamId)}
+          routeQuery={query && !streamMatchesQuery(group, query) ? query : null}
           validObservationTime={validObservationTime}
           evidenceStale={evidenceStale}
         />
@@ -122,17 +143,21 @@ function CompactStreamGroup({
   group,
   expanded,
   onToggle,
+  routeQuery,
   evidenceStale,
   validObservationTime,
 }: {
   group: RouteFlowStreamGroup
   expanded: boolean
   onToggle: () => void
+  routeQuery: string | null
   evidenceStale: boolean
   validObservationTime: boolean
 }) {
   const [shown, setShown] = useState(FIRST_ROUTES)
   const count = group.routes.length
+  const visibleRoutes = routeQuery == null ? group.routes : group.routes.filter((route) => routeMatchesQuery(route, routeQuery))
+  const shownCount = Math.min(shown, visibleRoutes.length)
   return (
     <article
       className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-gdc-border dark:bg-gdc-card"
@@ -158,11 +183,17 @@ function CompactStreamGroup({
           <p className="text-xs text-slate-600 dark:text-gdc-mutedStrong">
             {count} Route{count === 1 ? '' : 's'} · Gateway {formatFlowEps(group.totalEps)} EPS
           </p>
+          {routeQuery ? (
+            <p role="status" className="mt-1 text-xs font-semibold text-violet-700 dark:text-violet-300">
+              {visibleRoutes.length} matching Route{visibleRoutes.length === 1 ? '' : 's'} of {count}
+              {!expanded ? ' · Expand to inspect' : ''}
+            </p>
+          ) : null}
         </div>
       </div>
       {expanded ? (
         <ol className="space-y-2 p-3">
-          {group.routes.slice(0, shown).map((route) => {
+          {visibleRoutes.slice(0, shownCount).map((route) => {
             const canLinkDestination = route.destinationId != null &&
               Number.isSafeInteger(route.destinationId) && route.destinationId > 0
             const displayHealth = !route.enabled
@@ -243,15 +274,15 @@ function CompactStreamGroup({
               </li>
             )
           })}
-          {shown < count ? (
+          {shownCount < visibleRoutes.length ? (
             <li>
               <button
                 type="button"
-                aria-label={`Show next Routes (${shown} of ${count} shown)`}
-                onClick={() => setShown((previous) => Math.min(previous + NEXT_ROUTES, count))}
+                aria-label={`Show next Routes (${shownCount} of ${visibleRoutes.length} shown)`}
+                onClick={() => setShown((previous) => Math.min(previous + NEXT_ROUTES, visibleRoutes.length))}
                 className="min-h-11 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-violet-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:border-gdc-border dark:bg-gdc-section dark:text-violet-300"
               >
-                Show next Routes ({Math.min(shown, count)} of {count} shown)
+                Show next Routes ({shownCount} of {visibleRoutes.length} shown)
               </button>
             </li>
           ) : null}

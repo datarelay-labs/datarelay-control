@@ -492,14 +492,14 @@ describe('Compact Route Flow name and stable-ID investigation', () => {
       }
       mount(many)
       expect(screen.getAllByTestId(/^routes-flow-mobile-stream-/)).toHaveLength(12)
-      await user.type(screen.getByRole('searchbox', { name: 'Find a Stream by name or ID' }), '115')
+      await user.type(screen.getByRole('searchbox', { name: 'Find Stream, Route or Destination' }), '115')
       expect(screen.getAllByTestId(/^routes-flow-mobile-stream-/)).toHaveLength(1)
       expect(screen.getByTestId('routes-flow-mobile-stream-115')).toBeInTheDocument()
       expect(screen.getByRole('link', { name: 'Finance 115' })).toHaveAttribute('href', '/streams/115/runtime')
       expect(screen.queryByRole('button', { name: /Show next Streams/ })).not.toBeInTheDocument()
       await user.click(screen.getByRole('button', { name: 'Expand Finance 115 routes' }))
       expect(screen.getByRole('link', { name: 'R-0215' })).toHaveAttribute('href', '/routes/215/edit')
-      await user.clear(screen.getByRole('searchbox', { name: 'Find a Stream by name or ID' }))
+      await user.clear(screen.getByRole('searchbox', { name: 'Find Stream, Route or Destination' }))
       expect(screen.getAllByTestId(/^routes-flow-mobile-stream-/)).toHaveLength(12)
     } finally {
       vi.unstubAllGlobals()
@@ -516,10 +516,90 @@ describe('Compact Route Flow name and stable-ID investigation', () => {
     })))
     try {
       mount(evidence())
-      await user.type(screen.getByRole('searchbox', { name: 'Find a Stream by name or ID' }), 'not-listed')
-      expect(screen.getByRole('status', { name: 'Stream search result' })).toHaveTextContent('No matching Streams')
+      await user.type(screen.getByRole('searchbox', { name: 'Find Stream, Route or Destination' }), 'not-listed')
+      expect(screen.getByRole('status', { name: 'Flow search result' })).toHaveTextContent('No matching Streams')
       expect(screen.queryByText('No routes configured yet.')).not.toBeInTheDocument()
       expect(screen.queryByText('Route inventory not verified')).not.toBeInTheDocument()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+})
+
+describe('Compact Route Flow investigation by saved Route and Destination identity', () => {
+  it('finds a rare Route by its stable ID across 120 Streams, without mounting every Stream', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
+      matches: query === '(max-width: 767px)',
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })))
+    try {
+      const baseline = evidence()
+      const ids = Array.from({ length: 120 }, (_, index) => index + 1)
+      const many: OperationalSnapshotResponse = {
+        ...baseline,
+        global: { ...baseline.global, total_streams: 120, total_routes: 120 },
+        streams: ids.map((id) => ({
+          ...baseline.streams[0]!, stream_id: id, stream_name: 'Finance ' + id,
+        })),
+        routes: ids.map((id) => ({
+          ...baseline.routes[0]!, route_id: id + 100, stream_id: id,
+          stream_name: 'Finance ' + id, destination_id: id + 900,
+        })),
+      }
+      mount(many)
+      const search = screen.getByRole('searchbox', { name: 'Find Stream, Route or Destination' })
+      await user.type(search, 'R-0215')
+      expect(screen.getAllByTestId(/^routes-flow-mobile-stream-/)).toHaveLength(1)
+      expect(screen.getByRole('link', { name: 'Finance 115' })).toHaveAttribute('href', '/streams/115/runtime')
+      await user.click(screen.getByRole('button', { name: 'Expand Finance 115 routes' }))
+      expect(screen.getByRole('link', { name: 'R-0215' })).toHaveAttribute('href', '/routes/215/edit')
+      expect(screen.getByRole('link', { name: 'Investigate R-0215 delivery logs' })).toHaveAttribute(
+        'href', '/logs?route_id=215&stream_id=115&destination_id=1015',
+      )
+      await user.clear(search)
+      expect(screen.getAllByTestId(/^routes-flow-mobile-stream-/)).toHaveLength(12)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('finds a receiver beyond the first 12 of 140 Routes while preserving true Stream route count', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
+      matches: query === '(max-width: 767px)',
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })))
+    try {
+      const baseline = evidence()
+      const routes = Array.from({ length: 140 }, (_, index) => ({
+        ...baseline.routes[0]!,
+        route_id: index + 1,
+        destination_id: index + 1001,
+        destination_name: index === 139 ? 'Rare SIEM Receiver' : 'Sink ' + (index + 1),
+      }))
+      const many: OperationalSnapshotResponse = {
+        ...baseline,
+        global: { ...baseline.global, total_routes: 140 },
+        streams: [{ ...baseline.streams[0]!, route_count: 140 }],
+        routes,
+      }
+      mount(many)
+      const search = screen.getByRole('searchbox', { name: 'Find Stream, Route or Destination' })
+      await user.type(search, 'Rare SIEM Receiver')
+      expect(screen.getByRole('link', { name: 'R-0140' })).toHaveAttribute('href', '/routes/140/edit')
+      expect(screen.getByRole('link', { name: 'View Rare SIEM Receiver destination' }))
+        .toHaveAttribute('href', '/destinations/1140')
+      expect(screen.getByTestId('routes-flow-mobile-stream-1')).toHaveTextContent('140 Routes')
+      expect(screen.getByTestId('routes-flow-mobile-stream-1')).toHaveTextContent('1 matching Route')
+      expect(screen.queryByRole('button', { name: /Show next Routes/ })).not.toBeInTheDocument()
+      await user.clear(search)
+      expect(screen.getAllByRole('link', { name: /^R-\d+$/ })).toHaveLength(12)
+      expect(screen.getByRole('button', { name: 'Show next Routes (12 of 140 shown)' })).toBeInTheDocument()
     } finally {
       vi.unstubAllGlobals()
     }
