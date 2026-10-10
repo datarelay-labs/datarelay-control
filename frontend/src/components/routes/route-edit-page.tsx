@@ -16,7 +16,7 @@ import {
   ROUTE_DELIVERY_PREVIEW_SAMPLE_EVENT,
   runRouteDeliveryPreview,
 } from '../../api/gdcRuntimePreview'
-import { ROUTE_EDIT_DEFAULTS, type RouteDeliveryMode, type RouteFailurePolicy, type RouteRetryBackoff } from './route-edit-defaults'
+import { ROUTE_EDIT_DEFAULTS, routeFailurePolicyToApi, type RouteDeliveryMode, type RouteFailurePolicy, type RouteRetryBackoff } from './route-edit-defaults'
 import {
   defaultsRouteDeliveryFormState,
   isRouteDeliveryDirty,
@@ -549,14 +549,7 @@ export function RouteEditPage() {
     setSaveSuccess(null)
     setStaleConflict(false)
     try {
-      const policy =
-        failurePolicy === 'Retry'
-          ? 'retry'
-          : failurePolicy === 'Log and Continue'
-            ? 'log_and_continue'
-            : failurePolicy === 'Pause Stream'
-              ? 'pause_stream'
-              : 'disable_route'
+      const policy = routeFailurePolicyToApi(failurePolicy)
       const routePayload = {
         name: routeName,
         description,
@@ -637,6 +630,12 @@ export function RouteEditPage() {
       setIsSaving(false)
     }
   }
+
+  // Confirmation identifies the persisted Route, not a draft name or the create-form placeholder.
+  const persistedRouteLabel = deliveryBaseline?.routeName?.trim() ?? ''
+  const confirmationTargetName = isCreateMode
+    ? routeName.trim() || 'New Route'
+    : `Route #${backendRouteId}${persistedRouteLabel && persistedRouteLabel !== ROUTE_EDIT_DEFAULTS.routeName ? ` — ${persistedRouteLabel}` : ''}`
 
   const saveStatusLabel = !canMutateWorkspace
     ? 'Read-only'
@@ -1200,7 +1199,7 @@ export function RouteEditPage() {
             if (!open) setDiscardOpen(false)
           }}
           title="Discard unsaved route changes?"
-          targetName={routeName.trim() || (isCreateMode ? 'New Route' : `Route #${backendRouteId}`)}
+          targetName={confirmationTargetName}
           risk="medium"
           impactBullets={[
             'Local delivery and transform edits that were not saved will be discarded.',
@@ -1224,7 +1223,7 @@ export function RouteEditPage() {
             if (!open) setRefreshConfirmOpen(false)
           }}
           title="Refresh and discard unsaved route changes?"
-          targetName={routeName.trim() || `Route #${backendRouteId}`}
+          targetName={confirmationTargetName}
           risk="medium"
           impactBullets={[
             'Your unsaved local edits will be discarded.',

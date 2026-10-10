@@ -24,6 +24,7 @@ from app.mappers.mapper import apply_mappings_with_results
 from app.parsers.event_extractor import extract_events
 from app.pollers.http_poller import HttpPoller
 from app.rate_limit.destination_limiter import DestinationRateLimiter
+from app.rate_limit.udp_pacing_config import udp_paced_destination_config as _udp_paced_destination_config
 from app.rate_limit.source_limiter import SourceRateLimiter
 from app.logs.models import DeliveryLog
 from app.logs.payload_sample import build_delivery_log_payload_sample
@@ -987,7 +988,7 @@ class StreamRunner(BaseRunner):
             self._send_to_destination(
                 destination_type,
                 route_events,
-                destination_config,
+                _udp_paced_destination_config(destination_type, destination_config, effective_rl, route_id),
                 formatter_override=formatter_override,
                 prefix_context=prefix_context,
             )
@@ -1575,7 +1576,12 @@ class StreamRunner(BaseRunner):
             self._send_to_destination(
                 binding.secondary_destination_type,
                 events,
-                secondary_config,
+                _udp_paced_destination_config(
+                    binding.secondary_destination_type,
+                    secondary_config,
+                    rate_limit_json,
+                    limiter_key,
+                ),
                 formatter_override=formatter_override,
                 prefix_context=prefix_context,
             )
@@ -1781,7 +1787,12 @@ class StreamRunner(BaseRunner):
             backoff_seconds = float(_get(route, "backoff_seconds", 1.0))
             destination = _get(route, "destination", {}) or {}
             destination_type = str(_get(destination, "destination_type", "")).upper()
-            destination_config = _get(destination, "config", {}) or {}
+            destination_config = _udp_paced_destination_config(
+                destination_type,
+                _get(destination, "config", {}) or {},
+                _effective_destination_rate_limit_json(route, destination),
+                route_id,
+            )
             route_fc_retry = _get(route, "formatter_config_json")
             formatter_retry: dict[str, Any] | None = None
             if isinstance(route_fc_retry, dict) and route_fc_retry:
@@ -2256,7 +2267,12 @@ class StreamRunner(BaseRunner):
                 self._send_to_destination(
                     destination_type,
                     events,
-                    destination_config,
+                    _udp_paced_destination_config(
+                        destination_type,
+                        destination_config,
+                        rate_limit_json,
+                        limiter_key,
+                    ),
                     formatter_override=None,
                     prefix_context=prefix_context,
                 )
