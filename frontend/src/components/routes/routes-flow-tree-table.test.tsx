@@ -465,3 +465,63 @@ describe('Compact Route Flow at large Stream cardinality', () => {
     }
   })
 })
+
+
+describe('Compact Route Flow name and stable-ID investigation', () => {
+  it('finds a Stream beyond the initial 12 cards by its numeric ID without loading new data', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
+      matches: query === '(max-width: 767px)',
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })))
+    try {
+      const one = evidence()
+      const ids = Array.from({ length: 120 }, (_, index) => index + 1)
+      const many: OperationalSnapshotResponse = {
+        ...one,
+        global: { ...one.global, total_streams: 120, total_routes: 120 },
+        streams: ids.map((id) => ({
+          ...one.streams[0]!, stream_id: id, stream_name: `Finance ${id}`,
+        })),
+        routes: ids.map((id) => ({
+          ...one.routes[0]!, route_id: id + 100, stream_id: id,
+          stream_name: `Finance ${id}`, destination_id: id + 900,
+        })),
+      }
+      mount(many)
+      expect(screen.getAllByTestId(/^routes-flow-mobile-stream-/)).toHaveLength(12)
+      await user.type(screen.getByRole('searchbox', { name: 'Find a Stream by name or ID' }), '115')
+      expect(screen.getAllByTestId(/^routes-flow-mobile-stream-/)).toHaveLength(1)
+      expect(screen.getByTestId('routes-flow-mobile-stream-115')).toBeInTheDocument()
+      expect(screen.getByRole('link', { name: 'Finance 115' })).toHaveAttribute('href', '/streams/115/runtime')
+      expect(screen.queryByRole('button', { name: /Show next Streams/ })).not.toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Expand Finance 115 routes' }))
+      expect(screen.getByRole('link', { name: 'R-0215' })).toHaveAttribute('href', '/routes/215/edit')
+      await user.clear(screen.getByRole('searchbox', { name: 'Find a Stream by name or ID' }))
+      expect(screen.getAllByTestId(/^routes-flow-mobile-stream-/)).toHaveLength(12)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('reports zero search matches without calling a source inventory empty or healthy', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
+      matches: query === '(max-width: 767px)',
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })))
+    try {
+      mount(evidence())
+      await user.type(screen.getByRole('searchbox', { name: 'Find a Stream by name or ID' }), 'not-listed')
+      expect(screen.getByRole('status', { name: 'Stream search result' })).toHaveTextContent('No matching Streams')
+      expect(screen.queryByText('No routes configured yet.')).not.toBeInTheDocument()
+      expect(screen.queryByText('Route inventory not verified')).not.toBeInTheDocument()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+})

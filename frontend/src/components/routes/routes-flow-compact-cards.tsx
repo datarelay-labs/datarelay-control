@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, ArrowRight, Activity } from 'lucide-react'
+import { ChevronDown, ChevronRight, ArrowRight, Activity, Search } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { NAV_PATH, destinationDetailPath, logsExplorerPath, routeEditPath, streamRuntimePath } from '../../config/nav-paths'
@@ -36,7 +36,15 @@ export function RoutesFlowCompactCards({
   validObservationTime: boolean
 }) {
   const [shownStreams, setShownStreams] = useState(FIRST_STREAMS)
-  const visibleStreams = Math.min(groups.length, shownStreams)
+  const [streamSearch, setStreamSearch] = useState('')
+  const query = streamSearch.trim().toLowerCase()
+  // Work only with the already-observed snapshot; do not guess/search the API.
+  const matches = query
+    ? groups.filter((group) =>
+        group.streamName.toLowerCase().includes(query) || String(group.streamId).includes(query),
+      )
+    : groups
+  const visibleStreams = Math.min(matches.length, shownStreams)
   return (
     <section aria-label="Compact route delivery" data-testid="routes-flow-compact-cards" className="space-y-3 p-3">
       {loading && groups.length === 0 ? (
@@ -59,7 +67,29 @@ export function RoutesFlowCompactCards({
           )}
         </div>
       ) : null}
-      {groups.slice(0, visibleStreams).map((group) => (
+      {groups.length > 0 ? (
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-gdc-muted" aria-hidden />
+          <input
+            type="search"
+            aria-label="Find a Stream by name or ID"
+            autoComplete="off"
+            value={streamSearch}
+            onChange={(event) => {
+              setStreamSearch(event.target.value)
+              setShownStreams(FIRST_STREAMS)
+            }}
+            placeholder="Find Stream name or ID"
+            className="min-h-11 w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
+          />
+        </div>
+      ) : null}
+      {query && matches.length === 0 ? (
+        <p role="status" aria-label="Stream search result" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
+          No matching Streams in the currently loaded snapshot. Change the search to inspect other available Streams.
+        </p>
+      ) : null}
+      {matches.slice(0, visibleStreams).map((group) => (
         <CompactStreamGroup
           key={group.streamId}
           group={group}
@@ -69,14 +99,14 @@ export function RoutesFlowCompactCards({
           evidenceStale={evidenceStale}
         />
       ))}
-      {visibleStreams < groups.length ? (
+      {visibleStreams < matches.length ? (
         <button
           type="button"
-          aria-label={`Show next Streams (${visibleStreams} of ${groups.length} shown)`}
-          onClick={() => setShownStreams((count) => Math.min(count + NEXT_STREAMS, groups.length))}
+          aria-label={`Show next Streams (${visibleStreams} of ${matches.length} shown)`}
+          onClick={() => setShownStreams((count) => Math.min(count + NEXT_STREAMS, matches.length))}
           className="min-h-11 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-violet-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:border-gdc-border dark:bg-gdc-section dark:text-violet-300"
         >
-          Show next Streams ({visibleStreams} of {groups.length} shown)
+          Show next Streams ({visibleStreams} of {matches.length} shown)
         </button>
       ) : null}
       {groups.length > 0 ? (
