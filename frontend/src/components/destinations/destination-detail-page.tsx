@@ -36,7 +36,7 @@ function healthToneFromUi(h: DestinationUiHealth): 'success' | 'warning' | 'erro
   }
 }
 
-function deliveryActivityTone(s: 'SUCCESS' | 'RETRY' | 'FAILED'): 'success' | 'warning' | 'error' {
+function deliveryActivityTone(s: 'SUCCESS' | 'RETRY' | 'FAILED' | 'UNKNOWN'): 'success' | 'warning' | 'error' | 'neutral' {
   switch (s) {
     case 'SUCCESS':
       return 'success'
@@ -44,6 +44,8 @@ function deliveryActivityTone(s: 'SUCCESS' | 'RETRY' | 'FAILED'): 'success' | 'w
       return 'warning'
     case 'FAILED':
       return 'error'
+    case 'UNKNOWN':
+      return 'neutral'
     default: {
       const _e: never = s
       return _e
@@ -478,7 +480,7 @@ export function RoutesTable({
   )
 }
 
-function DeliveryActivityTable({
+export function DeliveryActivityTable({
   rows,
   destinationId,
   emptyMessage,
@@ -517,13 +519,27 @@ function DeliveryActivityTable({
               display.map((row) => (
                 <tr key={row.id} className={opTr}>
                   <td className={cn(opTd, 'whitespace-nowrap font-mono text-[11px]')}>{row.time}</td>
-                  <td className={opTd}>{row.routeName}</td>
+                  <td className={opTd}>
+                    {row.routeId != null ? (
+                      <Link
+                        to={logsExplorerPath({
+                          route_id: row.routeId,
+                          stream_id: row.streamId ?? undefined,
+                          destination_id: destinationId,
+                        })}
+                        aria-label={`Investigate ${row.routeName} delivery logs`}
+                        className="inline-flex min-h-9 items-center font-semibold text-violet-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:text-violet-300"
+                      >
+                        {row.routeName}
+                      </Link>
+                    ) : row.routeName}
+                  </td>
                   <td className={opTd}>
                     <StatusBadge tone={deliveryActivityTone(row.status)} className="uppercase">
                       {row.status}
                     </StatusBadge>
                   </td>
-                  <td className={cn(opTd, 'tabular-nums')}>{row.latencyMs} ms</td>
+                  <td className={cn(opTd, 'tabular-nums')}>{row.latencyMs != null ? `${row.latencyMs} ms` : '—'}</td>
                   <td className={cn(opTd, 'max-w-[320px] truncate text-[11px]')}>{row.message}</td>
                 </tr>
               ))

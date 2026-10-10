@@ -271,23 +271,32 @@ export function connectedStreamIdsFromRoutes(routes: DestinationListItem['routes
 }
 
 export function mapLogToDeliveryActivity(log: RuntimeLogSearchItem, routeNameById: Map<number, string>) {
-  const statusRaw = String(log.status ?? '').toUpperCase()
-  let status: 'SUCCESS' | 'RETRY' | 'FAILED' = 'SUCCESS'
-  if (statusRaw.includes('FAIL') || log.level === 'ERROR') status = 'FAILED'
-  else if (statusRaw.includes('RETRY') || (log.retry_count ?? 0) > 0) status = 'RETRY'
+  // A retry counter is not the final delivery outcome. Only a stated
+  // outcome is success: unknown/queued records must not become green.
+  const statusRaw = String(log.status ?? '').trim().toUpperCase()
+  let status: 'SUCCESS' | 'RETRY' | 'FAILED' | 'UNKNOWN' = 'UNKNOWN'
+  if (statusRaw === 'FAILED' || statusRaw === 'FAILURE' || statusRaw.endsWith('_FAILED') || log.level?.toUpperCase() === 'ERROR') {
+    status = 'FAILED'
+  } else if (statusRaw === 'RETRY' || statusRaw === 'RETRYING' || statusRaw === 'RETRY_PENDING') {
+    status = 'RETRY'
+  } else if (statusRaw === 'OK' || statusRaw === 'SUCCESS' || statusRaw === 'SUCCEEDED' || statusRaw === 'DELIVERED') {
+    status = 'SUCCESS'
+  }
 
-  const routeLabel =
-    log.route_id != null
-      ? routeNameById.get(log.route_id) ?? `Route #${log.route_id}`
-      : '—'
+  const routeId = log.route_id != null && Number.isSafeInteger(log.route_id) && log.route_id > 0 ? log.route_id : null
+  const streamId = log.stream_id != null && Number.isSafeInteger(log.stream_id) && log.stream_id > 0 ? log.stream_id : null
+  const routeLabel = routeId != null ? routeNameById.get(routeId) ?? `Route #${routeId}` : '—'
 
   return {
     id: String(log.id),
     time: log.created_at?.slice(0, 19).replace('T', ' ') ?? '—',
+    routeId,
+    streamId,
     routeName: routeLabel,
     status,
     events: 1,
-    latencyMs: log.latency_ms != null ? Math.round(log.latency_ms) : 0,
+    latencyMs: typeof log.latency_ms === 'number' && Number.isFinite(log.latency_ms) && log.latency_ms >= 0
+      ? Math.round(log.latency_ms) : null,
     message: (log.message ?? log.error_code ?? '—').trim() || '—',
   }
 }
@@ -297,7 +306,7 @@ export function mapLogToRecentFailure(log: RuntimeLogSearchItem, routeNameById: 
   const allowed = ['TIMEOUT', 'CONN_REFUSED', 'RATE_LIMIT', 'TLS_HANDSHAKE'] as const
   const normalized = allowed.includes(code as (typeof allowed)[number])
     ? (code as (typeof allowed)[number])
-    : ('TIMEOUT' as const)
+    : ('UNCLASSIFIED' as const)
 
   return {
     id: String(log.id),
