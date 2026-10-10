@@ -1,7 +1,7 @@
 import { ChevronDown, ChevronRight, ArrowRight, Activity, Search } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { NAV_PATH, destinationDetailPath, logsExplorerPath, routeEditPath, streamRuntimePath } from '../../config/nav-paths'
+import { NAV_PATH, destinationDetailPath, logsExplorerPath, routeEditPath, runtimeAnalyticsPath, streamRuntimePath } from '../../config/nav-paths'
 import { cn } from '../../lib/utils'
 import { RouteFlowFailedAttemptLink } from './routes-flow-failed-attempt-link'
 import { routeMatchesQuery, streamMatchesQuery } from './routes-flow-search'
@@ -316,6 +316,21 @@ function CompactStreamGroup({
                     validObservationTime={validObservationTime}
                     className="inline-flex min-h-10 items-center font-semibold text-amber-800 underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:text-amber-300"
                   />
+                  {Number.isSafeInteger(route.routeId) && route.routeId > 0 &&
+                    Number.isSafeInteger(group.streamId) && group.streamId > 0 ? (
+                      <Link
+                        to={runtimeAnalyticsPath({
+                          window: '24h',
+                          stream_id: group.streamId,
+                          route_id: route.routeId,
+                          destination_id: canLinkDestination ? route.destinationId ?? undefined : undefined,
+                        })}
+                        aria-label={`Inspect ${routePublicId(route.routeId)} delivery trends (24h)`}
+                        className="inline-flex min-h-10 items-center font-semibold text-violet-700 underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:text-violet-300"
+                      >
+                        24h trends
+                      </Link>
+                    ) : null}
                   {canLinkDestination ? (
                     <Link
                       to={destinationDetailPath(String(route.destinationId))}

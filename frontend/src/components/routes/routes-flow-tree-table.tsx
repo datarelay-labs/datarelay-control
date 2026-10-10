@@ -1,7 +1,7 @@
 import { ChevronDown, ChevronRight, Search } from 'lucide-react'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { NAV_PATH, destinationDetailPath, logsExplorerPath, routeEditPath, streamRuntimePath } from '../../config/nav-paths'
+import { NAV_PATH, destinationDetailPath, logsExplorerPath, routeEditPath, runtimeAnalyticsPath, streamRuntimePath } from '../../config/nav-paths'
 import { cn } from '../../lib/utils'
 import { useMediaQuery } from '../../hooks/use-media-query'
 import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
@@ -419,6 +419,21 @@ function StreamFlowRows({
                           evidenceStale={evidenceStale}
                           validObservationTime={validObservationTime}
                         />
+                        {Number.isSafeInteger(route.routeId) && route.routeId > 0 &&
+                          Number.isSafeInteger(group.streamId) && group.streamId > 0 ? (
+                            <Link
+                              to={runtimeAnalyticsPath({
+                                window: '24h',
+                                stream_id: group.streamId,
+                                route_id: route.routeId,
+                                destination_id: route.destinationId ?? undefined,
+                              })}
+                              aria-label={`Inspect ${routePublicId(route.routeId)} delivery trends (24h)`}
+                              className="font-medium text-violet-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:text-violet-300"
+                            >
+                              24h trends
+                            </Link>
+                          ) : null}
                         {route.destinationId != null ? (
                           <Link
                             to={destinationDetailPath(String(route.destinationId))}

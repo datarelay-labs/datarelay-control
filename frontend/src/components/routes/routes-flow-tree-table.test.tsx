@@ -127,6 +127,20 @@ describe('Flow-First expert delivery table — runtime evidence and keyboard saf
       .toHaveAttribute('href', '/routes/42/edit')
   })
 
+  it('opens committed 24h delivery analytics for the exact Stream, Route and Destination from the expert row', () => {
+    mount(evidence())
+    expect(screen.getByRole('link', { name: 'Inspect R-0042 delivery trends (24h)' }))
+      .toHaveAttribute('href', '/monitoring/analytics?window=24h&stream_id=1&route_id=42&destination_id=10')
+  })
+
+  it('keeps Route and Stream scope without inventing an invalid Destination in the 24h analytics link', () => {
+    const s = evidence()
+    s.routes[0]!.destination_id = -2
+    mount(s)
+    expect(screen.getByRole('link', { name: 'Inspect R-0042 delivery trends (24h)' }))
+      .toHaveAttribute('href', '/monitoring/analytics?window=24h&stream_id=1&route_id=42')
+  })
+
   it('does not invent a destination details link if the Route has no valid receiver ID', () => {
     const s = evidence()
     s.routes[0]!.destination_id = -2
@@ -395,6 +409,8 @@ describe('Flow-First compact mobile Route delivery', () => {
         'href', '/logs?route_id=42&stream_id=1&destination_id=10',
       )
       expect(screen.getByRole('link', { name: 'View Analytics sink destination' })).toHaveAttribute('href', '/destinations/10')
+      expect(screen.getByRole('link', { name: 'Inspect R-0042 delivery trends (24h)' }))
+        .toHaveAttribute('href', '/monitoring/analytics?window=24h&stream_id=1&route_id=42&destination_id=10')
       expect(screen.getByTestId('routes-flow-mobile-health-42')).toHaveTextContent('Healthy')
       expect(screen.getByText(/downstream receiver ingestion not confirmed/i)).toBeInTheDocument()
       await user.click(screen.getByRole('button', { name: 'Collapse Finance flow routes' }))
