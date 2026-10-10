@@ -207,6 +207,33 @@ describe('Data Flows empty-state prerequisite guidance', () => {
   })
 })
 
+describe('Selected Route contextual log investigation', () => {
+  it('retains the inspected Route, Stream and Destination IDs and reveals an evidence-backed failed-only shortcut', async () => {
+    const user = userEvent.setup()
+    const data = snapshotFor([route(51, 1, 151, 'ERROR'), route(52, 2, 152, 'HEALTHY')])
+    render(<GraphHarness snapshot={data} />)
+    const inspector = within(screen.getByTestId('routes-architecture-inspector'))
+    expect(inspector.getByRole('link', { name: 'Delivery logs' }))
+      .toHaveAttribute('href', '/logs?route_id=51&stream_id=1&destination_id=151')
+    expect(inspector.getByRole('link', { name: 'Investigate R-0051 failed attempts' }))
+      .toHaveAttribute('href', '/logs?route_id=51&stream_id=1&destination_id=151&status=failed')
+    await user.click(screen.getByTestId('routes-architecture-stream-2'))
+    expect(inspector.getByRole('link', { name: 'Delivery logs' }))
+      .toHaveAttribute('href', '/logs?route_id=52&stream_id=2&destination_id=152')
+    expect(inspector.queryByRole('link', { name: 'Investigate R-0052 failed attempts' })).not.toBeInTheDocument()
+  })
+
+  it('marks stale failure evidence as last reported and does not offer shortcuts for disabled Routes', () => {
+    const old = { ...snapshotFor([route(61, 1, 161, 'ERROR')]), updated_at: '2026-01-01T00:00:00Z' }
+    const view = render(<GraphHarness snapshot={old} requestFailed />)
+    expect(within(screen.getByTestId('routes-architecture-inspector'))
+      .getByRole('link', { name: 'Investigate R-0061 failed attempts' })).toHaveTextContent('Last reported failures')
+    view.rerender(<GraphHarness snapshot={snapshotFor([route(61, 1, 161, 'ERROR', false)])} />)
+    expect(within(screen.getByTestId('routes-architecture-inspector'))
+      .queryByRole('link', { name: 'Investigate R-0061 failed attempts' })).not.toBeInTheDocument()
+  })
+})
+
 describe('Data Flows collection status and investigation context', () => {
   it('separates Stream collection Error from a Healthy gateway Route and shows observed checkpoint lag', async () => {
     const data = snapshotFor([route(90, 1, 190, 'HEALTHY'), route(91, 2, 191, 'HEALTHY')])
