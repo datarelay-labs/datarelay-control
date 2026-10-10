@@ -195,6 +195,36 @@ describe('DestinationDetailPage capacity truth', () => {
     expect(screen.queryByText(/capacity warning/i)).not.toBeInTheDocument()
   })
 
+  it('shows unavailable 24h failure evidence instead of fabricated zero in Overview, tab and Failures', async () => {
+    const { useDestinationDetailData } = await import('./use-destination-detail-data')
+    vi.mocked(useDestinationDetailData).mockReturnValue({
+      ...vi.mocked(useDestinationDetailData)(),
+      failed24h: null,
+      failuresAnalytics: null,
+    } as ReturnType<typeof useDestinationDetailData>)
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter initialEntries={['/destinations/9']}>
+        <Routes><Route path="/destinations/:destinationId" element={<DestinationDetailPage />} /></Routes>
+      </MemoryRouter>,
+    )
+    expect(screen.getByRole('button', { name: 'Failures (—)' })).toBeInTheDocument()
+    expect(screen.getByText('Failed events (24h)').parentElement).toHaveTextContent('—')
+    await user.click(screen.getByRole('button', { name: 'Failures (—)' }))
+    expect(screen.getByRole('heading', { name: 'Recent failure events (24h)' }).parentElement)
+      .toHaveTextContent('—')
+  })
+
+  it('still displays an observed 24h zero-failure count as zero, not unknown', () => {
+    render(
+      <MemoryRouter initialEntries={['/destinations/9']}>
+        <Routes><Route path="/destinations/:destinationId" element={<DestinationDetailPage />} /></Routes>
+      </MemoryRouter>,
+    )
+    expect(screen.getByRole('button', { name: 'Failures (0)' })).toBeInTheDocument()
+    expect(screen.getByText('Failed events (24h)').parentElement).toHaveTextContent('0')
+  })
+
   it('shows No limit when capacity is not configured', async () => {
     const { useDestinationDetailData } = await import('./use-destination-detail-data')
     vi.mocked(useDestinationDetailData).mockReturnValue({

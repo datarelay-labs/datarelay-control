@@ -91,6 +91,15 @@ describe('useDestinationDetailData ownership + stale protection', () => {
     expect(result.current.destination?.name).toBe('Dest-7')
   })
 
+  it('does not treat a failed 24h analytics fetch as zero failed Destination events', async () => {
+    fetchDestinationById.mockResolvedValue(detail(7, 'Dest-7'))
+    fetchRouteFailuresAnalytics.mockRejectedValueOnce(new Error('historical analytics offline'))
+    const { result } = renderHook(() => useDestinationDetailData(7))
+    await waitFor(() => expect(result.current.runtimeLoading).toBe(false))
+    expect(result.current.destination?.id).toBe(7)
+    expect(result.current.failed24h).toBeNull()
+  })
+
   it('initial load skips route-health (snapshot owns route EPS/status)', async () => {
     fetchDestinationById.mockResolvedValue(detail(7, 'Dest-7'))
     const { result } = renderHook(() => useDestinationDetailData(7))

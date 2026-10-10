@@ -9,6 +9,7 @@ import {
   destinationUiHealthForListRow,
   listRuntimeMetricsForDestination,
   routeMetricsFromSnapshot,
+  failureCountFromAnalytics,
 } from './destination-runtime-metrics'
 
 function catalogRow(id: number, enabled = true): DestinationListItem {
@@ -89,6 +90,16 @@ describe('Route success-rate snapshot window integrity', () => {
       enabled: true, health_status: 'IDLE', failure_policy: 'LOG_AND_CONTINUE',
     } as OperationalSnapshotResponse['routes'][number]
     expect(routeMetricsFromSnapshot(41, [r], []).successRate5m).toBeNull()
+  })
+})
+
+describe('Historical Destination failure evidence availability', () => {
+  it('distinguishes unavailable 24h failure analytics from observed zero failures', () => {
+    expect(failureCountFromAnalytics(null)).toBeNull()
+    const observedZero = {
+      totals: { failure_events: 0 },
+    } as unknown as NonNullable<Parameters<typeof failureCountFromAnalytics>[0]>
+    expect(failureCountFromAnalytics(observedZero)).toBe(0)
   })
 })
 

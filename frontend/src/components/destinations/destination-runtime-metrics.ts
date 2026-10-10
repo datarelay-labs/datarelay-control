@@ -350,7 +350,10 @@ export function routeMetricsFromHealthAndSnapshot(
   return routeMetricsFromSnapshot(routeId, snapshotRoutes, problems)
 }
 
-export function failureCountFromAnalytics(failures: RouteFailuresAnalyticsResponse | null): number {
-  if (failures?.totals == null) return 0
-  return failures.totals.failure_events ?? 0
+export function failureCountFromAnalytics(failures: RouteFailuresAnalyticsResponse | null): number | null {
+  // Missing/failed historical analytics is not evidence of zero delivery failures.
+  const count = failures?.totals?.failure_events
+  return typeof count === 'number' && Number.isFinite(count) && count >= 0
+    ? Math.floor(count)
+    : null
 }

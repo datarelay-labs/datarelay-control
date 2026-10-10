@@ -49,7 +49,7 @@ export type DestinationDetailRuntimeBundle = {
   }[]
   successRatePct: number | null
   currentEps: number | null
-  failed24h: number
+  failed24h: number | null
   avgLatencyMs: number | null
   lastDeliveryAt: string | null
   lastErrorMessage: string | null

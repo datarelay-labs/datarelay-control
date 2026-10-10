@@ -90,12 +90,14 @@ export function DestinationDetailPage() {
       ? `${runtime.destination.destination_type.replace(/_/g, ' ')} destination`
       : 'Destination endpoint for downstream delivery'
 
+  const failureCountLabel = runtime.failed24h == null ? '—' : runtime.failed24h.toLocaleString()
+
   const tabs: { key: MainTab; label: string }[] = [
     { key: 'overview', label: 'Overview' },
     { key: 'routes', label: `Routes (${runtime.connectedRoutes.length})` },
     { key: 'delivery', label: 'Delivery' },
     { key: 'health', label: 'Health' },
-    { key: 'failures', label: `Failures (${runtime.failed24h})` },
+    { key: 'failures', label: `Failures (${failureCountLabel})` },
   ]
 
   const cfg = runtime.destination?.config_json ?? {}
@@ -276,7 +278,7 @@ export function DestinationDetailPage() {
                     : undefined
                 }
               />
-              <KpiCard label="Failed events (24h)" value={runtime.failed24h.toLocaleString()} />
+              <KpiCard label="Failed events (24h)" value={failureCountLabel} />
               <KpiCard
                 label="Last delivery"
                 value={runtime.lastDeliveryAt ? relativeShort(runtime.lastDeliveryAt) : '—'}
@@ -346,12 +348,12 @@ export function DestinationDetailPage() {
         <div className="space-y-4">
           <section className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-gdc-border dark:bg-gdc-card">
             <h3 className="text-[13px] font-semibold text-slate-900 dark:text-slate-100">Recent failure events (24h)</h3>
-            <p className="mt-1 text-2xl font-bold tabular-nums text-red-700 dark:text-red-300">{runtime.failed24h}</p>
+            <p className="mt-1 text-2xl font-bold tabular-nums text-red-700 dark:text-red-300">{failureCountLabel}</p>
           </section>
           <DeliveryActivityTable
             rows={runtime.recentActivity}
             destinationId={backendDestinationNumericId}
-            emptyMessage="No failed delivery events in the last 24 hours."
+            emptyMessage={runtime.failed24h == null ? 'Failure history not verified. Log evidence may be unavailable or outside the selected window.' : 'No failed delivery events in the last 24 hours.'}
             failuresOnly
           />
           <RecentFailuresList failures={runtime.recentFailures} />
