@@ -219,6 +219,37 @@ describe('routes-flow-helpers', () => {
     ])
   })
 
+  it('includes snapshot-backed Destination faults without mislabeling a Healthy Route as failed', () => {
+    const changed: OperationalSnapshotResponse = {
+      ...snapshot,
+      routes: [
+        { ...snapshot.routes[0]!, health_status: 'HEALTHY' },
+        { ...snapshot.routes[1]!, health_status: 'DEGRADED' },
+      ],
+      destinations: [
+        { ...snapshot.destinations[0]!, health_status: 'ERROR' },
+        { ...snapshot.destinations[1]!, health_status: 'DEGRADED' },
+      ],
+    }
+    const tree = buildRouteFlowTree(changed, buildRouteRowsFromOperationalSnapshot(changed))
+    expect(listRouteFlowAttention(tree, changed.destinations)).toMatchObject([
+      { routeId: 1, status: 'Error', subject: 'Destination' },
+      { routeId: 2, status: 'Warning', subject: 'Route' },
+    ])
+    const missingDestination = { ...changed, destinations: [] }
+    const missingTree = buildRouteFlowTree(missingDestination, buildRouteRowsFromOperationalSnapshot(missingDestination))
+    expect(listRouteFlowAttention(missingTree, missingDestination.destinations)).toMatchObject([
+      { routeId: 2, status: 'Warning', subject: 'Route' },
+    ])
+    const disabledDestination = {
+      ...changed,
+      routes: [changed.routes[0]!],
+      destinations: [{ ...changed.destinations[0]!, enabled: false }],
+    }
+    const disabledTree = buildRouteFlowTree(disabledDestination, buildRouteRowsFromOperationalSnapshot(disabledDestination))
+    expect(listRouteFlowAttention(disabledTree, disabledDestination.destinations)).toEqual([])
+  })
+
   it('uses explicit destination-disabled snapshot state rather than a synthetic enabled placeholder', () => {
     const changed: OperationalSnapshotResponse = {
       ...snapshot,

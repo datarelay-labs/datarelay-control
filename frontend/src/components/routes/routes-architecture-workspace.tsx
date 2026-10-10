@@ -57,8 +57,13 @@ export function RoutesArchitectureWorkspace({
   const selectedRow = consoleRows.find((row) => row.route.id === selectedRoute?.routeId)
   const inspectedMetric = snapshot?.routes.find((route) =>
     route.route_id === selectedRoute?.routeId && route.stream_id === selectedGroup?.streamId)
-  const receivingDestination = snapshot?.destinations.find((destination) =>
-    destination.destination_id === selectedRoute?.destinationId)
+  const destinationsById = useMemo(() => new Map(
+    snapshot?.destinations.filter((destination) => validId(destination.destination_id))
+      .map((destination) => [destination.destination_id, destination]) ?? [],
+  ), [snapshot?.destinations])
+  const receivingDestination = selectedRoute?.destinationId != null
+    ? destinationsById.get(selectedRoute.destinationId)
+    : undefined
   const receivingDestinationHealth = receivingDestination
     ? uiStatusFromOperationalHealth(receivingDestination.health_status, receivingDestination.enabled)
     : null
@@ -73,7 +78,7 @@ export function RoutesArchitectureWorkspace({
     Number.isSafeInteger(snapshot?.global?.total_streams) &&
     (snapshot?.global?.total_streams ?? 0) > 0 &&
     snapshot?.streams.some((stream) => validId(stream.stream_id)) === true
-  const attention = useMemo(() => listRouteFlowAttention(groups), [groups])
+  const attention = useMemo(() => listRouteFlowAttention(groups, snapshot?.destinations), [groups, snapshot?.destinations])
   const [visibleAttentionCount, setVisibleAttentionCount] = useState(4)
   const [visiblePathCount, setVisiblePathCount] = useState(12)
   const [visibleStreamCount, setVisibleStreamCount] = useState(12)
@@ -175,7 +180,7 @@ export function RoutesArchitectureWorkspace({
             <div>
               <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Delivery attention</h3>
               <p className="mt-0.5 text-xs text-slate-600 dark:text-gdc-mutedStrong">
-                {evidenceStale ? 'Last reported Route conditions · snapshot stale or fetch failed' : 'Route warnings and errors from the current snapshot'}
+                {evidenceStale ? 'Last reported Route conditions · snapshot stale or fetch failed' : 'Route and Destination warnings and errors from the current snapshot'}
                 {' · '}{attention.length} need attention
                 {' · '}{disabledPaths} disabled
               </p>
@@ -202,7 +207,9 @@ export function RoutesArchitectureWorkspace({
                   key={item.routeId}
                   type="button"
                   onClick={() => reviewAttention(item)}
-                  aria-label={`Inspect ${item.status} Route ${routePublicId(item.routeId)} in Stream #${item.streamId}`}
+                  aria-label={item.subject === 'Destination'
+                    ? `Inspect ${item.status} Destination via Route ${routePublicId(item.routeId)} in Stream #${item.streamId}`
+                    : `Inspect ${item.status} Route ${routePublicId(item.routeId)} in Stream #${item.streamId}`}
                   className={cn(
                     'inline-flex min-h-9 min-w-0 max-w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500',
                     item.status === 'Error'
@@ -210,7 +217,7 @@ export function RoutesArchitectureWorkspace({
                       : 'border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200',
                   )}
                 >
-                  <span>{evidenceStale ? 'Last reported ' : ''}{item.status}</span>
+                  <span>{evidenceStale ? 'Last reported ' : ''}{item.status} {item.subject}</span>
                   <span className="truncate font-medium">{item.streamName} #{item.streamId} · {routePublicId(item.routeId)} → {item.destinationName}</span>
                 </button>
               ))}
@@ -392,6 +399,10 @@ export function RoutesArchitectureWorkspace({
                     {visiblePaths.map((route) => {
                       const selected = route.routeId === selectedRoute?.routeId
                       const hasDestination = validId(route.destinationId)
+                      const destination = hasDestination ? destinationsById.get(route.destinationId) : undefined
+                      const destinationStatus = destination
+                        ? uiStatusFromOperationalHealth(destination.health_status, destination.enabled)
+                        : null
                       return (
                         <li key={route.routeId} className={cn('min-w-0', !route.enabled && 'opacity-65')}>
                           <div className="grid min-w-0 grid-cols-1 items-center gap-1.5 sm:grid-cols-[minmax(0,1fr)_24px_minmax(0,1fr)]">
@@ -444,6 +455,16 @@ export function RoutesArchitectureWorkspace({
                               >
                                 <span className="break-words text-xs font-semibold text-slate-900 dark:text-slate-100">{route.destinationName}</span>
                                 <span className="text-[11px] text-slate-500 dark:text-gdc-muted">Destination #{route.destinationId} · Open details</span>
+                                <span className={cn(
+                                  'mt-1 self-start rounded-md border px-1.5 py-0.5 text-[10px] font-semibold',
+                                  evidenceStale
+                                    ? 'border-amber-400/70 bg-amber-50 text-amber-900 dark:bg-amber-500/10 dark:text-amber-200'
+                                    : routeHealthBadgeClass(destinationStatus ?? 'Idle'),
+                                )}>
+                                  Destination health: {evidenceStale
+                                    ? destinationStatus ? `Stale · last reported ${destinationStatus}` : 'Not verified (stale)'
+                                    : destinationStatus ?? 'Not verified'}
+                                </span>
                               </Link>
                             ) : (
                               <div className="flex min-h-[76px] items-center rounded-xl border border-dashed border-amber-400/60 bg-amber-50/50 px-3 text-xs font-medium text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">

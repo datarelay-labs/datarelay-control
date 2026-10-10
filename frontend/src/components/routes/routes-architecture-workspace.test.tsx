@@ -303,6 +303,9 @@ describe('Data Flows topology: operator priority and bounded exploration', () =>
     const inspector = screen.getByTestId('routes-architecture-inspector')
     expect(within(inspector).getByText('Route health').nextElementSibling).toHaveTextContent('Healthy')
     expect(within(inspector).getByText('Destination health (snapshot)').nextElementSibling).toHaveTextContent('Error')
+    expect(screen.getByTestId('routes-architecture-attention')).toHaveTextContent('1 need attention')
+    expect(screen.getByRole('button', { name: 'Inspect Error Destination via Route R-0080 in Stream #1' })).toBeInTheDocument()
+    expect(screen.getByTestId('routes-architecture-destination-180')).toHaveTextContent('Destination health: Error')
     expect(within(inspector).getByText('Receiver-confirmed ingestion').nextElementSibling).toHaveTextContent('Not verified')
   })
 
@@ -313,6 +316,7 @@ describe('Data Flows topology: operator priority and bounded exploration', () =>
     const inspector = screen.getByTestId('routes-architecture-inspector')
     expect(within(inspector).getByText('Route health').nextElementSibling).toHaveTextContent('Disabled')
     expect(within(inspector).getByText('Destination health (snapshot)').nextElementSibling).toHaveTextContent('Disabled')
+    expect(screen.getByTestId('routes-architecture-destination-183')).toHaveTextContent('Destination health: Disabled')
     expect(within(inspector).getByText('Receiver-confirmed ingestion').nextElementSibling).toHaveTextContent('Not verified')
   })
 

@@ -13,6 +13,7 @@ import {
   routePublicId,
   type RouteConsoleRow,
   type RouteUiStatus,
+  uiStatusFromOperationalHealth,
 } from './routes-overview-helpers'
 
 export type RouteFlowRouteRow = {
@@ -46,19 +47,36 @@ export type RouteFlowAttentionItem = {
   routeId: number
   destinationName: string
   status: 'Error' | 'Warning'
+  subject: 'Route' | 'Destination'
 }
 
-export function listRouteFlowAttention(groups: readonly RouteFlowStreamGroup[]): RouteFlowAttentionItem[] {
+export function listRouteFlowAttention(
+  groups: readonly RouteFlowStreamGroup[],
+  destinations: OperationalSnapshotResponse['destinations'] = [],
+): RouteFlowAttentionItem[] {
   const items: RouteFlowAttentionItem[] = []
+  const destinationHealthById = new Map(destinations
+    .filter((destination) => Number.isSafeInteger(destination.destination_id) && destination.destination_id > 0)
+    .map((destination) => [destination.destination_id,
+      uiStatusFromOperationalHealth(destination.health_status, destination.enabled)]))
   for (const group of groups) {
     for (const route of group.routes) {
-      if (!route.enabled || (route.health !== 'Error' && route.health !== 'Warning')) continue
+      if (!route.enabled) continue
+      const routeProblem = route.health === 'Error' || route.health === 'Warning' ? route.health : null
+      const receivingStatus = route.destinationId != null ? destinationHealthById.get(route.destinationId) : null
+      const destinationProblem = receivingStatus === 'Error' || receivingStatus === 'Warning' ? receivingStatus : null
+      if (!routeProblem && !destinationProblem) continue
+      // Preserve the Route's actual status: a failing receiver does not
+      // retroactively turn a gateway-reported Healthy Route into an Error.
+      const destinationWins = destinationProblem != null &&
+        (routeProblem == null || (destinationProblem === 'Error' && routeProblem === 'Warning'))
       items.push({
         streamId: group.streamId,
         streamName: group.streamName,
         routeId: route.routeId,
         destinationName: route.destinationName,
-        status: route.health,
+        status: destinationWins ? destinationProblem! : routeProblem!,
+        subject: destinationWins ? 'Destination' : 'Route',
       })
     }
   }
