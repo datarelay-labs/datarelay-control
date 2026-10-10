@@ -55,7 +55,7 @@ export function RoutesArchitectureWorkspace({
     route.route_id === selectedRoute?.routeId && route.stream_id === selectedGroup?.streamId)
   const evidenceStale = requestFailed || isRouteSnapshotStale(snapshot?.updated_at)
   const attention = useMemo(() => listRouteFlowAttention(groups), [groups])
-  const [allAttentionVisible, setAllAttentionVisible] = useState(false)
+  const [visibleAttentionCount, setVisibleAttentionCount] = useState(4)
   const [allPathsVisible, setAllPathsVisible] = useState(false)
   const [allStreamsVisible, setAllStreamsVisible] = useState(false)
   const [streamQuery, setStreamQuery] = useState('')
@@ -74,7 +74,8 @@ export function RoutesArchitectureWorkspace({
       !firstStreams.some((group) => group.streamId === selectedGroup.streamId)
       ? [...firstStreams, selectedGroup]
       : firstStreams
-  const attentionVisible = allAttentionVisible ? attention : attention.slice(0, 4)
+  const attentionVisible = attention.slice(0, visibleAttentionCount)
+  const allAttentionVisible = visibleAttentionCount >= attention.length
   // Keep the selected Route visible without forcing hundreds of unrelated
   // paths into the DOM when an operator reviews a deep/low-throughput issue.
   const firstPaths = selectedGroup?.routes.slice(0, 12) ?? []
@@ -183,10 +184,14 @@ export function RoutesArchitectureWorkspace({
                 <button
                   type="button"
                   aria-expanded={allAttentionVisible}
-                  onClick={() => setAllAttentionVisible((value) => !value)}
+                  onClick={() => setVisibleAttentionCount((current) => current >= attention.length ? 4 : Math.min(attention.length, current + 20))}
                   className="min-h-9 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-violet-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:border-gdc-border dark:text-violet-300"
                 >
-                  {allAttentionVisible ? 'Show fewer issues' : `Show all ${attention.length} issues`}
+                  {allAttentionVisible
+                    ? 'Show fewer issues'
+                    : attention.length <= 24
+                      ? `Show all ${attention.length} issues`
+                      : `Show next issues (${attentionVisible.length} of ${attention.length} shown)`}
                 </button>
               ) : null}
             </div>

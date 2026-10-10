@@ -255,6 +255,26 @@ describe('Data Flows topology: operator priority and bounded exploration', () =>
     expect(within(streamList).getAllByTestId(/^routes-architecture-stream-/)).toHaveLength(12)
   })
 
+  it('reveals a large warning queue in bounded steps without mounting every issue at once', async () => {
+    const manyRoutes = Array.from({ length: 105 }, (_, index) => route(index + 1, 1, index + 200, 'DEGRADED'))
+    const user = userEvent.setup()
+    render(<GraphHarness snapshot={snapshotFor(manyRoutes)} />)
+    const list = screen.getByTestId('routes-architecture-issue-list')
+    expect(within(list).getAllByRole('button')).toHaveLength(5)
+    const expand = screen.getByRole('button', { name: 'Show next issues (4 of 105 shown)' })
+    expect(expand).toHaveAttribute('aria-expanded', 'false')
+
+    await user.click(expand)
+    expect(within(list).getAllByRole('button')).toHaveLength(25)
+    expect(screen.queryByRole('button', { name: 'Inspect Warning Route R-0105 in Stream #1' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Inspect Warning Route R-0024 in Stream #1' }))
+    expect(screen.getByTestId('routes-architecture-inspector')).toHaveTextContent('Route R-0024')
+
+    await user.click(screen.getByRole('button', { name: 'Show next issues (24 of 105 shown)' }))
+    expect(within(list).getAllByRole('button')).toHaveLength(45)
+    expect(screen.getByTestId('routes-architecture-show-paths')).toHaveAttribute('aria-expanded', 'false')
+  })
+
   it('expands the issue queue for many paths and allows direct inspection of a later problem Route', async () => {
     const routes = Array.from({ length: 18 }, (_, index) => route(index + 1, 1, index + 100, 'DEGRADED'))
     const user = userEvent.setup()
