@@ -36,6 +36,7 @@ import {
   buildAdvancedStreamConfigJsonPatch,
   mergeStreamConfigJson,
 } from './wizard-stream-config-sync'
+import { wizardDestinationGateReady } from './wizard-step-gates'
 
 /** Top-level wizard steps (Stream Wizard UX Charter v5.2 — P1 structure MVP). */
 export const WIZARD_STEP_KEYS = [
@@ -1418,7 +1419,9 @@ function aggregateCompletion(statuses: StepCompletion[]): StepCompletion {
 
 /** Per legacy sub-step completion (internal; review/deploy edit shortcuts). */
 export function computeLegacySubstepCompletion(state: WizardState): WizardLegacySubstepCompletion {
-  const connectorReady = state.connector.connectorId != null && state.connector.sourceId != null
+  const connectorReady =
+    Number.isSafeInteger(state.connector.connectorId) && state.connector.connectorId! > 0 &&
+    Number.isSafeInteger(state.connector.sourceId) && state.connector.sourceId! > 0
   const isS3 = state.connector.sourceType === 'S3_OBJECT_POLLING'
   const isRemote = state.connector.sourceType === 'REMOTE_FILE_POLLING'
   const isWebhook = state.connector.sourceType === 'WEBHOOK_RECEIVER'
@@ -1457,7 +1460,8 @@ export function computeLegacySubstepCompletion(state: WizardState): WizardLegacy
     ((isRemote || isWebhook) && state.unmappedFieldsPolicy === 'pass_through')
   const enrichmentReady = state.enrichment.length === 0 || state.enrichment.every((e) => e.fieldName.trim().length > 0)
   const enrichmentHasRows = state.enrichment.length > 0
-  const destinationsReady = state.destinations.routeDrafts.some((r) => r.enabled)
+  // Completion reflects the same required delivery-path validity as the Deploy gate.
+  const destinationsReady = wizardDestinationGateReady(state)
   const dataProtectionReady = wizardDataProtectionStepComplete(state.dataProtection)
   const reviewReady =
     connectorReady &&

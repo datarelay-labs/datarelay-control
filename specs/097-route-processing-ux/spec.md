@@ -35,6 +35,12 @@ Runtime and persistence behavior remain in M13.1–M13.6; this spec defines **la
 
 See §18 in [`docs/ux/DATA-RELAY-ROUTE-PROCESSING-UX-SPEC.md`](../../docs/ux/DATA-RELAY-ROUTE-PROCESSING-UX-SPEC.md).
 
+## Owner-approved operator surface boundary (2026-10-09, #354)
+
+The existing **Routes Overview** becomes the operator-facing **Data Flows** page: real Connector/source → Stream collection → Route Processing → Destination topology plus runtime-backed per-Route EPS, failure/success, last activity and Destination configured capacity when available. **This is not a new processing/persistence model** and it does not replace Route Edit/Wizard stage contracts in this specification. Source ingestion EPS must not be treated as the sum of fan-out Route egress EPS. Absence of runtime proof must not be rendered as Healthy or receiver-confirmed delivery. The graph is read-only; the selected Route Inspector links into the existing authorized Route Edit and Logs.
+
+Implementation-level navigation, first-run Connector/Destination prerequisites and acceptance are defined in [`docs/ux/DATA-RELAY-FLOW-FIRST-IA-IMPLEMENTATION-CONTRACT.md`](../../docs/ux/DATA-RELAY-FLOW-FIRST-IA-IMPLEMENTATION-CONTRACT.md), subordinate to the approved UX Charter/Wizard addenda. No new runtime, API or RBAC implied by this UI change.
+
 ## Related specs
 
 | Spec | Topic |

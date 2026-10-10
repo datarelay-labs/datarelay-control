@@ -16,7 +16,7 @@ import { StatusBadge } from '../shell/status-badge'
 import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
 import { DestinationOperationalHealthPanel } from './destination-operational-health-panel'
 import { relativeShort } from '../routes/routes-overview-helpers'
-import { useDestinationDetailData } from './use-destination-detail-data'
+import { useDestinationDetailData, type DestinationRecentLogsState } from './use-destination-detail-data'
 import type { DestinationUiHealth } from './destination-runtime-metrics'
 import { extractCapacityConfig } from './destination-mini-charts'
 
@@ -36,7 +36,7 @@ function healthToneFromUi(h: DestinationUiHealth): 'success' | 'warning' | 'erro
   }
 }
 
-function deliveryActivityTone(s: 'SUCCESS' | 'RETRY' | 'FAILED'): 'success' | 'warning' | 'error' {
+function deliveryActivityTone(s: 'SUCCESS' | 'RETRY' | 'FAILED' | 'UNKNOWN'): 'success' | 'warning' | 'error' | 'neutral' {
   switch (s) {
     case 'SUCCESS':
       return 'success'
@@ -44,6 +44,8 @@ function deliveryActivityTone(s: 'SUCCESS' | 'RETRY' | 'FAILED'): 'success' | 'w
       return 'warning'
     case 'FAILED':
       return 'error'
+    case 'UNKNOWN':
+      return 'neutral'
     default: {
       const _e: never = s
       return _e
@@ -72,10 +74,11 @@ function KpiCard({ label, value, hint }: { label: string; value: string; hint?: 
 
 export function DestinationDetailPage() {
   const { destinationId = '' } = useParams<{ destinationId: string }>()
-  const backendDestinationNumericId = useMemo(
-    () => (/^\d+$/.test(String(destinationId)) ? Number(destinationId) : null),
-    [destinationId],
-  )
+  const backendDestinationNumericId = useMemo(() => {
+    if (!/^\d+$/.test(destinationId)) return null
+    const candidate = Number(destinationId)
+    return Number.isSafeInteger(candidate) && candidate > 0 ? candidate : null
+  }, [destinationId])
 
   const runtime = useDestinationDetailData(backendDestinationNumericId)
   const [mainTab, setMainTab] = useState<MainTab>('overview')
@@ -89,12 +92,14 @@ export function DestinationDetailPage() {
       ? `${runtime.destination.destination_type.replace(/_/g, ' ')} destination`
       : 'Destination endpoint for downstream delivery'
 
+  const failureCountLabel = runtime.failed24h == null ? '—' : runtime.failed24h.toLocaleString()
+
   const tabs: { key: MainTab; label: string }[] = [
     { key: 'overview', label: 'Overview' },
     { key: 'routes', label: `Routes (${runtime.connectedRoutes.length})` },
     { key: 'delivery', label: 'Delivery' },
     { key: 'health', label: 'Health' },
-    { key: 'failures', label: `Failures (${runtime.failed24h})` },
+    { key: 'failures', label: `Failures (${failureCountLabel})` },
   ]
 
   const cfg = runtime.destination?.config_json ?? {}
@@ -275,7 +280,7 @@ export function DestinationDetailPage() {
                     : undefined
                 }
               />
-              <KpiCard label="Failed events (24h)" value={runtime.failed24h.toLocaleString()} />
+              <KpiCard label="Failed events (24h)" value={failureCountLabel} />
               <KpiCard
                 label="Last delivery"
                 value={runtime.lastDeliveryAt ? relativeShort(runtime.lastDeliveryAt) : '—'}
@@ -303,7 +308,7 @@ export function DestinationDetailPage() {
               )}
             </section>
 
-            <RoutesTable routes={runtime.connectedRoutes} />
+            <RoutesTable routes={runtime.connectedRoutes} destinationId={backendDestinationNumericId} />
           </div>
 
           <aside className="flex min-w-0 flex-col gap-4 xl:sticky xl:top-24 xl:self-start">
@@ -326,17 +331,19 @@ export function DestinationDetailPage() {
             <RecentFailuresSidebar
               failures={runtime.recentFailures}
               destinationId={backendDestinationNumericId}
+              evidenceState={runtime.recentLogsState}
             />
           </aside>
         </div>
       ) : null}
 
-      {mainTab === 'routes' ? <RoutesTable routes={runtime.connectedRoutes} full /> : null}
+      {mainTab === 'routes' ? <RoutesTable routes={runtime.connectedRoutes} destinationId={backendDestinationNumericId} full /> : null}
 
       {mainTab === 'delivery' ? (
         <DeliveryActivityTable
           rows={runtime.recentActivity}
           destinationId={backendDestinationNumericId}
+          evidenceState={runtime.recentLogsState}
           emptyMessage="No delivery log entries in the last 24 hours for this destination."
         />
       ) : null}
@@ -345,15 +352,29 @@ export function DestinationDetailPage() {
         <div className="space-y-4">
           <section className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-gdc-border dark:bg-gdc-card">
             <h3 className="text-[13px] font-semibold text-slate-900 dark:text-slate-100">Recent failure events (24h)</h3>
-            <p className="mt-1 text-2xl font-bold tabular-nums text-red-700 dark:text-red-300">{runtime.failed24h}</p>
+            <p className="mt-1 text-2xl font-bold tabular-nums text-red-700 dark:text-red-300">{failureCountLabel}</p>
+            {runtime.failed24h != null && runtime.failed24h > 0 ? (
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <Link
+                  to={logsExplorerPath({ destination_id: backendDestinationNumericId, status: 'failed' })}
+                  className="inline-flex min-h-10 items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-800 hover:bg-red-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-500 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-200"
+                >
+                  Investigate failed delivery attempts <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                </Link>
+                <span className="text-[11px] leading-5 text-slate-500 dark:text-gdc-muted">
+                  Log search may have a different retention or time window than 24h analytics.
+                </span>
+              </div>
+            ) : null}
           </section>
           <DeliveryActivityTable
             rows={runtime.recentActivity}
             destinationId={backendDestinationNumericId}
-            emptyMessage="No failed delivery events in the last 24 hours."
+            evidenceState={runtime.recentLogsState}
+            emptyMessage={runtime.failed24h == null ? 'Failure history not verified. Log evidence may be unavailable or outside the selected window.' : 'No failed delivery events in the last 24 hours.'}
             failuresOnly
           />
-          <RecentFailuresList failures={runtime.recentFailures} />
+          <RecentFailuresList failures={runtime.recentFailures} destinationId={backendDestinationNumericId} evidenceState={runtime.recentLogsState} />
         </div>
       ) : null}
 
@@ -367,11 +388,14 @@ export function DestinationDetailPage() {
   )
 }
 
-function RoutesTable({
+export function RoutesTable({
   routes,
+  destinationId,
   full,
 }: {
   routes: ReturnType<typeof useDestinationDetailData>['connectedRoutes']
+  /** Positively resolved Destination identity, not inferred from a Route label. */
+  destinationId: number
   full?: boolean
 }) {
   return (
@@ -388,7 +412,7 @@ function RoutesTable({
               <th className={opTh}>Delivery mode</th>
               <th className={opTh}>Status</th>
               <th className={cn(opTh, 'tabular-nums')}>EPS (1m)</th>
-              <th className={cn(opTh, 'tabular-nums')}>Success (24h)</th>
+              <th className={cn(opTh, 'tabular-nums')}>Success (5m snapshot)</th>
               <th className={cn(opTh, 'text-right')}>Actions</th>
             </tr>
           </thead>
@@ -422,16 +446,32 @@ function RoutesTable({
                   </td>
                   <td className={cn(opTd, 'tabular-nums')}>{formatThroughputEps(r.epsAvg)}</td>
                   <td className={cn(opTd, 'tabular-nums')}>
-                    {r.successRate24h > 0 ? `${r.successRate24h.toFixed(1)}%` : '—'}
+                    {r.successRate5m == null ? '—' : `${r.successRate5m.toFixed(1)}%`}
                   </td>
                   <td className={cn(opTd, 'text-right')}>
-                    <Link
-                      to={routeEditPath(r.routeId)}
-                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-violet-700 hover:underline dark:text-violet-300"
-                    >
-                      View route
-                      <ExternalLink className="h-3 w-3" aria-hidden />
-                    </Link>
+                    <div className="inline-flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
+                      {/^[1-9]\d*$/.test(r.routeId) && Number.isSafeInteger(Number(r.routeId)) ? (
+                        <Link
+                          to={logsExplorerPath({
+                            route_id: Number(r.routeId),
+                            stream_id: r.streamId,
+                            destination_id: destinationId,
+                          })}
+                          aria-label={`Investigate Route #${r.routeId} delivery logs`}
+                          className="inline-flex min-h-9 items-center gap-1 text-[11px] font-semibold text-violet-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:text-violet-300"
+                        >
+                          Delivery logs
+                          <ExternalLink className="h-3 w-3" aria-hidden />
+                        </Link>
+                      ) : null}
+                      <Link
+                        to={routeEditPath(r.routeId)}
+                        className="inline-flex min-h-9 items-center gap-1 text-[11px] font-semibold text-violet-700 hover:underline dark:text-violet-300"
+                      >
+                        View route
+                        <ExternalLink className="h-3 w-3" aria-hidden />
+                      </Link>
+                    </div>
                   </td>
                 </tr>
               ))
@@ -443,16 +483,18 @@ function RoutesTable({
   )
 }
 
-function DeliveryActivityTable({
+export function DeliveryActivityTable({
   rows,
   destinationId,
   emptyMessage,
   failuresOnly,
+  evidenceState = 'verified',
 }: {
   rows: ReturnType<typeof useDestinationDetailData>['recentActivity']
   destinationId: number
   emptyMessage: string
   failuresOnly?: boolean
+  evidenceState?: DestinationRecentLogsState
 }) {
   const display = failuresOnly ? rows.filter((r) => r.status === 'FAILED') : rows
   return (
@@ -475,20 +517,38 @@ function DeliveryActivityTable({
             {display.length === 0 ? (
               <tr className={opTr}>
                 <td className={opTd} colSpan={5}>
-                  {emptyMessage}
+                  {evidenceState === 'pending'
+                    ? 'Checking recent delivery log evidence…'
+                    : evidenceState === 'unavailable'
+                      ? 'Delivery log evidence unavailable. A missing log result does not confirm zero delivery events.'
+                      : emptyMessage}
                 </td>
               </tr>
             ) : (
               display.map((row) => (
                 <tr key={row.id} className={opTr}>
                   <td className={cn(opTd, 'whitespace-nowrap font-mono text-[11px]')}>{row.time}</td>
-                  <td className={opTd}>{row.routeName}</td>
+                  <td className={opTd}>
+                    {row.routeId != null ? (
+                      <Link
+                        to={logsExplorerPath({
+                          route_id: row.routeId,
+                          stream_id: row.streamId ?? undefined,
+                          destination_id: destinationId,
+                        })}
+                        aria-label={`Investigate ${row.routeName} delivery logs`}
+                        className="inline-flex min-h-9 items-center font-semibold text-violet-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:text-violet-300"
+                      >
+                        {row.routeName}
+                      </Link>
+                    ) : row.routeName}
+                  </td>
                   <td className={opTd}>
                     <StatusBadge tone={deliveryActivityTone(row.status)} className="uppercase">
                       {row.status}
                     </StatusBadge>
                   </td>
-                  <td className={cn(opTd, 'tabular-nums')}>{row.latencyMs} ms</td>
+                  <td className={cn(opTd, 'tabular-nums')}>{row.latencyMs != null ? `${row.latencyMs} ms` : '—'}</td>
                   <td className={cn(opTd, 'max-w-[320px] truncate text-[11px]')}>{row.message}</td>
                 </tr>
               ))
@@ -616,9 +676,11 @@ function RuntimeHealthSidebar({
 function RecentFailuresSidebar({
   failures,
   destinationId,
+  evidenceState,
 }: {
   failures: ReturnType<typeof useDestinationDetailData>['recentFailures']
   destinationId: number
+  evidenceState: DestinationRecentLogsState
 }) {
   return (
     <section className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-gdc-border dark:bg-gdc-card">
@@ -631,20 +693,29 @@ function RecentFailuresSidebar({
           View all
         </Link>
       </div>
-      <RecentFailuresList failures={failures} compact />
+      <RecentFailuresList failures={failures} destinationId={destinationId} evidenceState={evidenceState} compact />
     </section>
   )
 }
 
-function RecentFailuresList({
+export function RecentFailuresList({
   failures,
+  destinationId,
   compact,
+  evidenceState = 'verified',
 }: {
   failures: ReturnType<typeof useDestinationDetailData>['recentFailures']
+  destinationId: number
   compact?: boolean
+  evidenceState?: DestinationRecentLogsState
 }) {
   if (failures.length === 0) {
-    return <p className={cn('text-[12px] text-slate-500', compact ? 'mt-3' : 'px-1 py-2')}>No recent failures in window.</p>
+    const emptyCopy = evidenceState === 'pending'
+      ? 'Checking recent failure logs…'
+      : evidenceState === 'unavailable'
+        ? 'Recent failure log evidence unavailable. No results do not verify zero failures.'
+        : 'No recent failures in window.'
+    return <p className={cn('text-[12px] text-slate-500', compact ? 'mt-3' : 'px-1 py-2')}>{emptyCopy}</p>
   }
   return (
     <ul className={cn('space-y-3', compact ? 'mt-3' : 'mt-2')}>
@@ -659,7 +730,21 @@ function RecentFailuresList({
           >
             {f.code}
           </span>
-          <p className="mt-1 text-[11px] font-medium text-slate-800 dark:text-slate-200">{f.routeName}</p>
+          <p className="mt-1 text-[11px] font-medium text-slate-800 dark:text-slate-200">
+            {f.routeId != null ? (
+              <Link
+                to={logsExplorerPath({
+                  route_id: f.routeId,
+                  stream_id: f.streamId ?? undefined,
+                  destination_id: destinationId,
+                })}
+                aria-label={`Investigate ${f.routeName} recent failures`}
+                className="inline-flex min-h-9 items-center font-semibold text-violet-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:text-violet-300"
+              >
+                {f.routeName}
+              </Link>
+            ) : f.routeName}
+          </p>
           {f.message ? <p className="text-[11px] text-slate-600 dark:text-gdc-muted">{f.message}</p> : null}
         </li>
       ))}

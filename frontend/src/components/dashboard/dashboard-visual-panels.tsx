@@ -183,25 +183,31 @@ export function DataModeBadge({ isFixtureMode }: { isFixtureMode: boolean }) {
 export function OverallHealthHero({
   health,
   basisLabel,
+  stale = false,
 }: {
   health: OverallHealthCounts
   basisLabel: string
+  /** Counts may be last reported; never style an aged snapshot as verified green. */
+  stale?: boolean
 }) {
   return (
     <section
       aria-label="Overall health"
       data-testid="dashboard-overall-health-hero"
-      className={cn('relative overflow-hidden rounded-lg border px-4 py-4', postureHeroClass(health.posture))}
+      className={cn(
+        'relative overflow-hidden rounded-lg border px-4 py-4',
+        stale ? 'border-amber-300/70 bg-amber-50/40 dark:border-amber-700/60 dark:bg-amber-950/20' : postureHeroClass(health.posture),
+      )}
     >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-3">
-          {health.posture === 'healthy' ? (
+          {!stale && health.posture === 'healthy' ? (
             <CheckCircle2 className="h-6 w-6 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
           ) : (
             <AlertTriangle
               className={cn(
                 'h-6 w-6 shrink-0',
-                health.posture === 'critical'
+                !stale && health.posture === 'critical'
                   ? 'text-red-600 dark:text-red-400'
                   : 'text-amber-600 dark:text-amber-400',
               )}
@@ -213,17 +219,21 @@ export function OverallHealthHero({
             <p
               className={cn(
                 'text-2xl font-semibold leading-tight tracking-tight',
-                health.posture === 'critical'
-                  ? 'text-red-700 dark:text-red-300'
-                  : health.posture === 'warning'
-                    ? 'text-amber-700 dark:text-amber-300'
-                    : 'text-emerald-700 dark:text-emerald-300',
+                stale
+                  ? 'text-amber-800 dark:text-amber-200'
+                  : health.posture === 'critical'
+                    ? 'text-red-700 dark:text-red-300'
+                    : health.posture === 'warning'
+                      ? 'text-amber-700 dark:text-amber-300'
+                      : 'text-emerald-700 dark:text-emerald-300',
               )}
               data-testid="dashboard-overall-posture-label"
             >
-              {postureLabel(health.posture)}
+              {stale ? 'Not verified' : postureLabel(health.posture)}
             </p>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{basisLabel}</p>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              {stale ? 'Last reported · ' : ''}{basisLabel}
+            </p>
           </div>
         </div>
 
@@ -250,9 +260,10 @@ export function OverallHealthHero({
               <p
                 className={cn(
                   'mt-1 text-xl font-semibold tabular-nums leading-none',
-                  tone === 'healthy' && 'text-emerald-700 dark:text-emerald-300',
-                  tone === 'warning' && 'text-amber-700 dark:text-amber-300',
-                  tone === 'critical' && 'text-red-700 dark:text-red-300',
+                  stale && 'text-slate-500 dark:text-slate-400',
+                  !stale && tone === 'healthy' && 'text-emerald-700 dark:text-emerald-300',
+                  !stale && tone === 'warning' && 'text-amber-700 dark:text-amber-300',
+                  !stale && tone === 'critical' && 'text-red-700 dark:text-red-300',
                 )}
               >
                 {formatMetricCount(count)}

@@ -1474,15 +1474,22 @@ export function StreamRuntimeDetailPage() {
                 Field mapping and enrichment define the output schema for this stream.
               </p>
             </div>
-            <Link
-              to={streamMappingPath(streamId)}
-              className="inline-flex h-8 items-center rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white hover:bg-violet-700"
-            >
-              Open mapping
-            </Link>
+            {canMutateWorkspace ? (
+              <Link
+                to={streamMappingPath(streamId)}
+                className="inline-flex min-h-10 items-center rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white hover:bg-violet-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500"
+              >
+                Open mapping
+              </Link>
+            ) : (
+              <span className="inline-flex min-h-10 items-center text-xs font-medium text-slate-500 dark:text-gdc-mutedStrong">
+                Read-only Stream schema
+              </span>
+            )}
           </div>
           <StreamDetailDeliveryPanel
             streamId={streamId}
+            canConfigure={canMutateWorkspace}
             connectorName={connectorDisplayName ?? data.connectorName}
             connectorProductGroup={connectorProductGroup}
             sourceLabel={runtimeSourceUi.displayName}
@@ -1620,7 +1627,9 @@ export function StreamRuntimeDetailPage() {
             loading={metricsLoading && !runtimeMetrics}
             routeToggleBusyId={routeToggleBusyId}
             onToggleEnabled={onToggleRouteEnabled}
-            routeActionsReadOnly={!canRuntimeControl}
+            // Route edit/probe UI requires workspace mutation authority as well as
+            // runtime control; inconsistent capability claims must fail closed.
+            routeActionsReadOnly={!canRuntimeControl || !canMutateWorkspace}
           />
         </div>
       </section>

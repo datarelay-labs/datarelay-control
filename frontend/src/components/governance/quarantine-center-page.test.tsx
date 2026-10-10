@@ -202,8 +202,8 @@ describe('QuarantineCenterPage', () => {
       expect(screen.getByTestId('quarantine-detail-drawer')).toBeInTheDocument()
     })
     expect(detailSpy).toHaveBeenCalledWith(42, expect.any(String))
-    expect(screen.getByTestId('quarantine-matched-rule')).toBeInTheDocument()
-    expect(screen.getByTestId('quarantine-action-release')).toBeInTheDocument()
+    expect(await screen.findByTestId('quarantine-matched-rule')).toBeInTheDocument()
+    expect(await screen.findByTestId('quarantine-action-release')).toBeInTheDocument()
   })
 
   it('supports keyboard activation of a quarantine row', async () => {

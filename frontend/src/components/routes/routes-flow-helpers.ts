@@ -13,6 +13,7 @@ import {
   routePublicId,
   type RouteConsoleRow,
   type RouteUiStatus,
+  uiStatusFromOperationalHealth,
 } from './routes-overview-helpers'
 
 export type RouteFlowRouteRow = {
@@ -30,8 +31,62 @@ export type RouteFlowRouteRow = {
 export type RouteFlowStreamGroup = {
   streamId: number
   streamName: string
+  connectorId: number | null
+  sourceId: number | null
   totalEps: number | null
   routes: RouteFlowRouteRow[]
+}
+
+/**
+ * Operator-facing attention is based on the existing route snapshot health,
+ * not configured status alone and never on summed fan-out throughput.
+ */
+export type RouteFlowAttentionItem = {
+  streamId: number
+  streamName: string
+  routeId: number
+  destinationName: string
+  status: 'Error' | 'Warning'
+  subject: 'Route' | 'Destination'
+}
+
+export function listRouteFlowAttention(
+  groups: readonly RouteFlowStreamGroup[],
+  destinations: OperationalSnapshotResponse['destinations'] = [],
+): RouteFlowAttentionItem[] {
+  const items: RouteFlowAttentionItem[] = []
+  const destinationHealthById = new Map(destinations
+    .filter((destination) => Number.isSafeInteger(destination.destination_id) && destination.destination_id > 0)
+    .map((destination) => [destination.destination_id,
+      uiStatusFromOperationalHealth(destination.health_status, destination.enabled)]))
+  for (const group of groups) {
+    for (const route of group.routes) {
+      if (!route.enabled) continue
+      const routeProblem = route.health === 'Error' || route.health === 'Warning' ? route.health : null
+      const receivingStatus = route.destinationId != null ? destinationHealthById.get(route.destinationId) : null
+      const destinationProblem = receivingStatus === 'Error' || receivingStatus === 'Warning' ? receivingStatus : null
+      if (!routeProblem && !destinationProblem) continue
+      // Preserve the Route's actual status: a failing receiver does not
+      // retroactively turn a gateway-reported Healthy Route into an Error.
+      const destinationWins = destinationProblem != null &&
+        (routeProblem == null || (destinationProblem === 'Error' && routeProblem === 'Warning'))
+      items.push({
+        streamId: group.streamId,
+        streamName: group.streamName,
+        routeId: route.routeId,
+        destinationName: route.destinationName,
+        status: destinationWins ? destinationProblem! : routeProblem!,
+        subject: destinationWins ? 'Destination' : 'Route',
+      })
+    }
+  }
+  // Errors first, then warnings. Use stable numeric identities for equal-severity
+  // items so duplicate names cannot hijack Route selection.
+  return items.sort((a, b) =>
+    (a.status === 'Error' ? 0 : 1) - (b.status === 'Error' ? 0 : 1) ||
+    a.streamId - b.streamId ||
+    a.routeId - b.routeId,
+  )
 }
 
 export type ProblemRouteRow = {
@@ -72,13 +127,17 @@ function routeFlowRowFromConsole(row: RouteConsoleRow): RouteFlowRouteRow {
   return {
     routeId: row.route.id,
     routeLabel: row.routeLabel,
-    destinationId: row.destination?.id ?? row.route.destination_id ?? null,
+    destinationId: Number.isSafeInteger(row.route.destination_id) && (row.route.destination_id ?? 0) > 0
+      ? row.route.destination_id
+      : null,
     destinationName: (row.destination?.name ?? '').trim() || `Destination #${row.route.destination_id ?? '—'}`,
     eps: delivered,
     successRatePct,
     errorRatePct: errorRateFromSuccess(successRatePct, m?.delivered_last_hour ?? 0, m?.failed_last_hour ?? 0),
     health: row.uiStatus,
-    enabled: row.route.enabled !== false,
+    // This graph describes effective delivery availability, which can be
+    // disabled by either the Route or its configured Destination.
+    enabled: row.route.enabled !== false && row.uiStatus !== 'Disabled',
   }
 }
 
@@ -89,24 +148,27 @@ export function buildRouteFlowTree(
 ): RouteFlowStreamGroup[] {
   if (snapshot == null || consoleRows.length === 0) return []
 
-  const streamEps = new Map<number, number>()
-  for (const s of snapshot.streams ?? []) {
-    if (typeof s.stream_id === 'number' && Number.isFinite(s.eps_1m)) {
-      streamEps.set(s.stream_id, s.eps_1m)
-    }
-  }
-
+  const validId = (id: unknown): id is number =>
+    typeof id === 'number' && Number.isSafeInteger(id) && id > 0
+  const streamsById = new Map((snapshot.streams ?? [])
+    .filter((s) => validId(s.stream_id))
+    .map((s) => [s.stream_id, s]))
   const byStream = new Map<number, RouteFlowStreamGroup>()
+  const seenRoutes = new Set<number>()
   for (const row of consoleRows) {
+    // The graph must not manufacture edges for invalid or duplicate identifiers.
     const sid = row.stream?.id ?? row.route.stream_id
-    if (typeof sid !== 'number') continue
+    if (!validId(sid) || !validId(row.route.id) || seenRoutes.has(row.route.id)) continue
+    seenRoutes.add(row.route.id)
     const streamName = (row.stream?.name ?? '').trim() || `Stream #${sid}`
     let group = byStream.get(sid)
     if (group == null) {
       group = {
         streamId: sid,
         streamName,
-        totalEps: streamEps.get(sid) ?? null,
+        connectorId: validId(streamsById.get(sid)?.connector_id) ? streamsById.get(sid)!.connector_id : null,
+        sourceId: validId(streamsById.get(sid)?.source_id) ? streamsById.get(sid)!.source_id : null,
+        totalEps: Number.isFinite(streamsById.get(sid)?.eps_1m) ? streamsById.get(sid)!.eps_1m : null,
         routes: [],
       }
       byStream.set(sid, group)
@@ -204,6 +266,13 @@ export function buildDestinationRouteMetrics(
   return rows
     .filter((r) => r.connectedRoutes > 0 || (r.throughputEps ?? 0) > 0)
     .sort((a, b) => (b.throughputEps ?? 0) - (a.throughputEps ?? 0))
+}
+
+/** A snapshot is evidence only while its origin timestamp is recent and parseable. */
+export function isRouteSnapshotStale(updatedAt: string | null | undefined, nowMs = Date.now()): boolean {
+  if (!updatedAt) return true
+  const ms = Date.parse(updatedAt)
+  return !Number.isFinite(ms) || ms > nowMs + 60_000 || nowMs - ms > 90_000
 }
 
 export function formatFlowEps(eps: number | null | undefined): string {

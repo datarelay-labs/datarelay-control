@@ -22,7 +22,6 @@ describe('sidebarStructureForRole (DATA-RELAY-UX-CHARTER)', () => {
       'destinations',
       'routes',
       'governance',
-      'governanceWorkspace',
       'administration',
     ])
   })
@@ -30,6 +29,17 @@ describe('sidebarStructureForRole (DATA-RELAY-UX-CHARTER)', () => {
   it('exposes grouped Data Sources, Delivery, and Governance sections', () => {
     const groups = SIDEBAR_STRUCTURE.filter((entry) => entry.type === 'group').map((entry) => entry.group.id)
     expect(groups).toEqual(['dataSources', 'delivery', 'governance'])
+    const governance = SIDEBAR_STRUCTURE.find(
+      (entry) => entry.type === 'group' && entry.group.id === 'governance',
+    )
+    expect(governance?.type).toBe('group')
+    if (governance?.type !== 'group') throw new Error('Governance group missing')
+    expect(governance.group.items).toHaveLength(1)
+    expect(governance.group.items[0]).toMatchObject({
+      key: 'governance',
+      label: 'Governance Dashboard',
+      path: '/governance',
+    })
   })
 })
 
@@ -49,9 +59,8 @@ describe('sidebarItemsForPersona M17.4', () => {
       'destinations',
       'routes',
       'governance',
-      'governanceWorkspace',
       'administration',
     ])
-    expect(items).toHaveLength(8)
+    expect(items).toHaveLength(7)
   })
 })

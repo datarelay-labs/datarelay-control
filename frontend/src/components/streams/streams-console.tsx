@@ -421,6 +421,7 @@ function childEpsLabel(row: StreamConsoleRow): string | null {
 }
 
 const STREAMS_HELP: PageHelpContent = {
+  docsHref: '/help/operations',
   title: 'Streams',
   intro: 'A Stream owns how one collected data flow is configured and executed. Start from the Source Product group, find the Stream that needs attention, then open Runtime for diagnosis.',
   sections: [

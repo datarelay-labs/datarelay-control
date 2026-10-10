@@ -101,7 +101,9 @@ Governance는 부가 기능이다.
 
 Flow 생성
 
-빈도 낮음
+일상 운영/상태 확인보다 빈도가 낮을 수 있으나,
+Connector / Destination 재사용 리소스 등록보다 Stream 생성은 더 자주 발생할 수 있다.
+실제 사용 빈도를 근거 없이 단정하지 않는다.
 
 --------------------------------------------------
 
@@ -175,59 +177,49 @@ Quarantine
 
 --------------------------------------------------
 
-사용자 탐색 흐름
+사용자 탐색 흐름 (2026-10-09 Owner-approved Data Flows IA)
 
 Dashboard
 
 ↓
 
-Data Sources
+Data Flows (운영: 실제 연결 경로와 전송 상태)
 
 ↓
 
-Stream Group
+Stream / Route / Destination 상세
 
 ↓
 
-Stream
-
-↓
-
-Action
+조사 또는 설정 Action
 
 --------------------------------------------------
 
-좌측 메뉴는 최소화한다.
+Stream Group은 Streams 화면의 Source Product 분류이며 독립 메뉴가 아니다.
+Connections는 Connector / Destination 재사용 리소스를 설정하는 영역이다.
+좌측 메뉴는 최소화하며, 제품 내부 객체를 모두 동등한 메뉴로 노출하지 않는다.
 
 ==================================================
-5. Recommended Navigation
+5. Recommended Navigation — Owner Approved 2026-10-09 (#354)
 ==================================================
 
-🏠 Dashboard
+Primary operator navigation:
 
---------------------------------------------------
+- Dashboard: 전체 데이터 전달 상태, 우선 조사 대상.
+- Data Flows: 운영 중심 연결도. 실제 Connector/Source -> Stream -> Route Processing -> Destination 연관성과 해당 경로의 전송 메트릭; 기존 Routes Overview의 사용자용 이름.
+- Streams: 수집 설정, API/샘플, 실행 상태, 체크포인트, Source Product 그룹.
+- Connections (collapsed group):
+  - Connectors: 재사용 가능한 출발지 접근/인증 리소스.
+  - Destinations: 재사용 가능한 수신지, 용량/연결 리소스.
+- Governance: owner-approved Governance Dashboard 운영 그룹 예외 (#362), 권한에 따라 표시.
+- Administration: 시스템 관리.
 
-📥 Data Sources
-
-- Connectors
-- Streams
-
---------------------------------------------------
-
-⚙️ Data Processing
-
-- Mapping
-- Enrichment
-
---------------------------------------------------
-
-🚚 Delivery
-
-- Destinations
-
---------------------------------------------------
-
-🔧 Administration
+Global primary action: + New Data Flow.
+기존 + Create Stream은 첫 Connector/Destination이 준비됐다고 가정해서는 안 된다.
+New Data Flow는 신규 backend 데이터 모델이나 별도 runtime이 아니라 기존 Connector, Stream, Route, Destination 생성/선택을 묶는 안내형 UI이다.
+Navigation order is based on operator frequency/intent, NOT the order in which dependencies must be created.
+Mapping, Enrichment, Protection, Policy and Route edit are contextual workspaces, not separate primary menu entries.
+Authenticated legacy paths for Streams, Routes, Connectors and Destinations remain valid for deep links/bookmarks.
 
 ==================================================
 6. Navigation Anti-Pattern
@@ -239,13 +231,16 @@ Action
 - Alerts
 - Activity
 - Runtime
-- Governance
 - Schema Drift
 - Protection
 - Policy
 - Replay
 - Quarantine
 - Classification
+
+Owner-approved exception (#362): Governance remains a single role-gated primary group
+with Governance Dashboard entry point. Data Flows is an operator workflow page,
+not an internal engine menu. See §5 and §31.
 
 ==================================================
 7. Logo Navigation Rule
@@ -776,9 +771,11 @@ Recent Delivery Issues
 21. Stream Creation Model
 ==================================================
 
-Stream 생성은
+Connector와 Destination 등록은 대개 재사용하는 저빈도 작업이다.
 
-저빈도 작업이다.
+Stream 생성은 그보다 반복되는 구성 작업일 수 있다.
+정확한 사용 빈도는 실제 운영에 따라 다르므로 Stream 생성을 무조건 저빈도라고 가정하여 UX를 설계하지 않는다.
+운영/문제 조사 화면이 더 자주 사용될 수 있다는 운영 중심 원칙은 유지한다.
 
 ==================================================
 
@@ -1038,28 +1035,19 @@ Policy
 Route 단위 처리로 인식한다.
 
 ==================================================
-26. Navigation Update
+26. Navigation Update — Owner Approved 2026-10-09
 ==================================================
 
-Data Processing
+Route Processing은 Data Flows의 각 Route 또는 Stream Wizard / Route Edit에서 여는 문맥형 설정이다.
 
-메뉴는
+- Transform
+- Protection
+- Classification
+- Policy
 
-Route Processing 개념을 포함한다.
-
---------------------------------------------------
-
-Transform
-
-Protection
-
-Classification
-
-Policy
-
-는
-
-Route Processing 영역으로 확장될 수 있다.
+이 기능들은 destination-specific Route의 처리 단계이다.
+별도 최상위 Data Processing 메뉴를 필수로 만들지 않는다.
+기존 허가된 Route Edit / Stream Edit / Governance advanced 경로는 유지한다.
 
 ==================================================
 27. Stream And Route Model
@@ -1126,44 +1114,36 @@ Destination Capacity Monitoring은
 계속 필수 기능이다.
 
 ==================================================
-29. Stream Creation Model Extension
+29. Stream Creation Model Extension — Owner Approved 2026-10-09
 ==================================================
 
-Stream 생성 흐름
+새 사용자 진입점: + New Data Flow.
 
-Connect Source
+1. Connector 선택 또는 같은 생성 흐름 안에서 Connector 추가 후 복귀.
+2. Stream 수집 설정 및 실제 Source Test / Sample Data / Record Path / Checkpoint 검토.
+3. 기존 Destination 선택 또는 같은 생성 흐름 안에서 Destination 추가 후 복귀.
+4. 선택한 Destination별 Route 생성 제안 및 Route Processing / override 설정.
+5. 저장/배포하고 실제 Stream 및 Route Runtime 확인.
 
-↓
-
-Sample Data
-
-↓
-
-Select Destinations
-
-↓
-
-Configure Route Processing
-
-↓
-
-Deploy
-
-==================================================
-
-Route는
-
-Destination 선택 이후
-
-자동 생성될 수 있다.
+이 흐름은 기존 Connect Source -> Sample Data -> Select Destinations -> Configure Route Processing -> Deploy 5단계 상태 모델을 재사용한다.
+Connector와 Destination은 별도 리소스로 재사용되며, 선택 도중 새로 만들 수 있어야 한다.
+중간 생성 화면 이동은 입력 중인 Wizard draft와 선택한 리소스/Step을 보존하고 정확히 복귀시켜야 한다.
+사용자 동의와 권한/검증 없이 새 Connector, Destination, Stream, Route 또는 활성화를 자동 확정하지 않는다.
+Destination First, Route Processing Second의 순서는 유지한다.
+Route는 Destination 선택 후 표준 Stream/Route persistence 경로를 통해 생성될 수 있다.
+Source -> Stream -> Routes -> Destinations는 실제 실행 topology이다.
+Connector -> Destination -> Stream은 준비 리소스 순서에 대한 설명일 수 있으나 데이터 실행 경로를 뜻하지 않는다.
 
 ==================================================
 30. UX Golden Rules Extension
 ==================================================
 
-Rule 16
+Rule 16 (Owner clarification 2026-10-09)
 
-사용자는 먼저 목적지를 선택한다.
+사용자는 목적지별 Route Processing을 설정하기 전에 Destination을 선택한다.
+이는 Source/Connector의 선행 연결 또는 Sample Test보다 항상 Destination을
+먼저 생성해야 한다는 의미가 아니다. 필요한 Connector와 Destination은
+New Data Flow 안에서 추가한 뒤 이전 단계/초안으로 복귀할 수 있다.
 
 ==================================================
 
@@ -1212,3 +1192,50 @@ Destination First
 Route Processing Second
 
 원칙을 따른다.
+
+==================================================
+31. Data Flows Operational Workspace (Owner Approved 2026-10-09, #354)
+==================================================
+
+Data Flows는 기존 Routes Overview를 운영 관점으로 재구성한 사용자 화면이다.
+Data Flow라는 새 데이터베이스 엔터티, 새 런타임, 새 제품 도메인을 만들지 않는다.
+
+실제 실행/전송 연결 관계:
+Connector (Source Access) -> Stream (Collection/Execution)
+  -> one or more Routes (Destination-specific Processing)
+  -> each Route's Destination (Reusable Receiver)
+
+주요 사용 목적: 어떤 데이터가 어디로 이동하는지, 어느 구간이 정상/경고/실패인지,
+각 전송 경로의 처리량과 결과를 한 화면에서 확인한다.
+Stream은 수집 및 실행 설정 소유자, Route는 목적지별 처리/실패/전송 설정 소유자,
+Destination은 수신 주소 및 용량 설정 소유자로 유지한다.
+
+기본 Data Flows UX:
+1. 현재 구성된 연결만 사용하여 전체/그룹별 관계도 표시.
+2. Stream/Route/Destination을 선택하여 오른쪽 또는 하단 운영 Inspector 표시.
+3. Route Inspector는 실제 Runtime Snapshot에서 수집된 Delivered EPS, 실패/Retry,
+   Success Rate, 최근 성공/실패, 건강 상태 및 시간 범위를 표시.
+4. Capacity 사용률은 Destination에 실제 configured capacity_limit_eps가 있는 경우에만.
+5. 수집 Stream EPS와 분기된 Route 송신 EPS를 합산해 단일 실시간 처리량인 것처럼 표현하지 않는다.
+6. 런타임 상태가 없으면 Unknown/Unavailable로 표시; Healthy를 추정하지 않는다.
+7. API Preview/Formatter Preview는 sent/delivered/receiver-confirmed evidence를 의미하지 않는다.
+   UDP 및 best-effort delivery에서 receiver acknowledgment를 추정하지 않는다.
+8. 운영 기본 화면에서는 경로 확인/문제 조사/로그/상세로 이동하며,
+   Route 설정 변경은 기존 Route Edit의 권한 및 확인 절차를 따른다.
+9. 많은 노드에서 검색/그룹/선택/축약을 제공하며 키보드 접근 가능한
+   동등한 표/리스트 View를 유지한다.
+10. 기존 승인된 상세 URL과 사용자 소유의 구성/데이터/권한은 변경하지 않는다.
+
+업무 빈도와 순서를 구분한다:
+- Connector / Destination 등록은 재사용하므로 상대적으로 적다.
+- Stream 신규/수정은 이들 재사용 리소스보다 빈번할 수 있다.
+- Data Flows 탐색 및 운영은 일상 사용의 중심이다.
+- 생성 준비 순서는 실행 데이터 topology가 아니다.
+- New Data Flow가 기존 Connector와 Destination을 선택/생성하고
+  선택 상태를 잃지 않고 Stream Wizard에 복귀하도록 한다.
+
+Scope: Current Control v1 UX only; no Marketplace M29, AI Gateway, IAM expansion.
+Authority: Product Charter > this Charter and other current UX Charters > specs.
+Implementation reference: docs/ux/DATA-RELAY-FLOW-FIRST-IA-IMPLEMENTATION-CONTRACT.md
+This owner approval does not authorize merge/release, production changes,
+or substitute for same-HEAD Browser Feature Scenario and Full User E2E acceptance.

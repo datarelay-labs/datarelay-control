@@ -2,8 +2,9 @@ import { Loader2, Server, TestTube2, Webhook } from 'lucide-react'
 import { useCallback, useMemo, useState, Fragment } from 'react'
 import { Link } from 'react-router-dom'
 import { testDestination } from '../../api/gdcDestinations'
-import { destinationDetailPath, logsPath, routeEditPath } from '../../config/nav-paths'
+import { destinationDetailPath, logsExplorerPath, routeEditPath, runtimeAnalyticsPath } from '../../config/nav-paths'
 import { formatThroughputEps } from '../../lib/observability-format'
+import { useSessionCapabilities } from '../../lib/rbac'
 import { cn } from '../../lib/utils'
 import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
 import { StatusBadge } from '../shell/status-badge'
@@ -80,10 +81,11 @@ function fallbackRowFromHealth(h: StreamMetricsRouteHealthRow, windowSeconds: nu
   const ok = h.success_count
   const bad = h.failed_count
   const tot = ok + bad
-  const sr = tot > 0 ? Math.round((100 * ok) / tot * 10) / 10 : 100
+  // A zero-outcome legacy row has no observed delivery success rate.
+  // Keep the required numeric DTO stable but treat the state as IDLE, not HEALTHY.
+  const sr = tot > 0 ? Math.round((100 * ok) / tot * 10) / 10 : 0
   const conn: RouteRuntimeConnectivityState =
-    !h.enabled ? 'DISABLED' : bad > 0 && ok === 0 ? 'ERROR' : bad > 0 ? 'DEGRADED' : 'HEALTHY'
-  const ts = new Date().toISOString()
+    !h.enabled ? 'DISABLED' : tot === 0 ? 'IDLE' : bad > 0 && ok === 0 ? 'ERROR' : bad > 0 ? 'DEGRADED' : 'HEALTHY'
   return {
     route_id: h.route_id,
     destination_id: 0,
@@ -107,8 +109,10 @@ function fallbackRowFromHealth(h: StreamMetricsRouteHealthRow, windowSeconds: nu
     failure_policy: h.failure_policy,
     connectivity_state: conn,
     disable_reason: null,
-    latency_trend: Array.from({ length: 12 }, () => ({ timestamp: ts, avg_latency_ms: h.avg_latency_ms })),
-    success_rate_trend: Array.from({ length: 12 }, () => ({ timestamp: ts, success_rate: sr })),
+    // Legacy aggregate responses contain no timestamped series. Never
+    // synthesize twelve 'now' points and present them as observed history.
+    latency_trend: [],
+    success_rate_trend: [],
   }
 }
 
@@ -134,7 +138,6 @@ type RouteOperationalPanelProps = {
 }
 
 export function RouteOperationalPanel({
-  streamSlug,
   backendStreamId,
   metrics,
   loading,
@@ -143,6 +146,11 @@ export function RouteOperationalPanel({
   routeActionsReadOnly = false,
 }: RouteOperationalPanelProps) {
   const rows = resolveRouteRuntimeRows(metrics)
+  // Defense in depth: do not trust the parent route control flag alone for a
+  // mutation/edit affordance. Workspace and runtime capabilities both required.
+  const routeCaps = useSessionCapabilities()
+  const canMutateRoute = !routeActionsReadOnly &&
+    routeCaps.workspace_mutations === true && routeCaps.runtime_stream_control === true
   const [testBusyId, setTestBusyId] = useState<number | null>(null)
   const [testHint, setTestHint] = useState<string | null>(null)
   const [disableDialog, setDisableDialog] = useState<{ routeId: number; destinationName: string } | null>(null)
@@ -237,6 +245,12 @@ export function RouteOperationalPanel({
           </thead>
           <tbody>
             {rows.map((r) => {
+              const validRouteId = Number.isSafeInteger(r.route_id) && r.route_id > 0
+              const validStreamId = typeof backendStreamId === 'number' &&
+                Number.isSafeInteger(backendStreamId) && backendStreamId > 0
+              const deliveryOutcomesObserved = Number.isFinite(r.delivered_last_hour) &&
+                Number.isFinite(r.failed_last_hour) &&
+                r.delivered_last_hour + r.failed_last_hour > 0 && Number.isFinite(r.success_rate)
               const latSpark = r.latency_trend?.length
                 ? r.latency_trend.map((p) => p.avg_latency_ms)
                 : [r.avg_latency_ms]
@@ -249,7 +263,9 @@ export function RouteOperationalPanel({
                 )
               const hoverDetail = [
                 r.disable_reason ? `Disable reason: ${r.disable_reason}` : null,
-                `Max latency: ${r.max_latency_ms.toFixed(0)} ms · P95: ${r.p95_latency_ms.toFixed(0)} ms`,
+                deliveryOutcomesObserved
+                  ? `Max latency: ${r.max_latency_ms.toFixed(0)} ms · P95: ${r.p95_latency_ms.toFixed(0)} ms`
+                  : 'Delivery latency not observed in this metrics window',
                 r.last_error_code ? `Code: ${r.last_error_code}` : null,
                 `Delivered 1h: ${r.delivered_last_hour} · Failed 1h: ${r.failed_last_hour}`,
               ]
@@ -287,11 +303,19 @@ export function RouteOperationalPanel({
                   </td>
                   <td className={cn(opTd, 'tabular-nums')}>
                     <div className="flex flex-col gap-0.5">
-                      <span className="text-[12px] font-semibold text-slate-900 dark:text-slate-100">{r.success_rate.toFixed(1)}%</span>
-                      <MiniSparkline
-                        values={r.success_rate_trend?.length ? r.success_rate_trend.map((p) => p.success_rate) : [r.success_rate]}
-                        className="text-emerald-600 dark:text-emerald-400"
-                      />
+                      <span data-testid={`route-delivery-success-${r.route_id}`} className="text-[12px] font-semibold text-slate-900 dark:text-slate-100">
+                        {deliveryOutcomesObserved ? `${r.success_rate.toFixed(1)}%` : '—'}
+                      </span>
+                      {deliveryOutcomesObserved && r.success_rate_trend.length > 1 ? (
+                        <MiniSparkline
+                          values={r.success_rate_trend?.length ? r.success_rate_trend.map((p) => p.success_rate) : [r.success_rate]}
+                          className="text-emerald-600 dark:text-emerald-400"
+                        />
+                      ) : !deliveryOutcomesObserved ? (
+                        <span className="max-w-40 text-[10px] text-slate-500 dark:text-gdc-muted">
+                          No observed Route delivery outcomes in this metrics window
+                        </span>
+                      ) : null}
                     </div>
                   </td>
                   <td className={cn(opTd, 'tabular-nums text-[12px] font-semibold text-slate-800 dark:text-slate-100')}>
@@ -299,10 +323,10 @@ export function RouteOperationalPanel({
                   </td>
                   <td className={cn(opTd, 'tabular-nums')}>
                     <div className="flex flex-col gap-0.5">
-                      <span className="text-[11px] font-semibold text-slate-800 dark:text-slate-100">
-                        {r.avg_latency_ms.toFixed(0)} / {r.p95_latency_ms.toFixed(0)} ms
+                      <span data-testid={`route-delivery-latency-${r.route_id}`} className="text-[11px] font-semibold text-slate-800 dark:text-slate-100">
+                        {deliveryOutcomesObserved ? `${r.avg_latency_ms.toFixed(0)} / ${r.p95_latency_ms.toFixed(0)} ms` : '—'}
                       </span>
-                      <MiniSparkline values={latSpark} />
+                      {r.latency_trend.length > 1 ? <MiniSparkline values={latSpark} /> : null}
                     </div>
                   </td>
                   <td className={cn(opTd, 'tabular-nums text-[12px]')}>{r.retry_count_last_hour}</td>
@@ -320,7 +344,7 @@ export function RouteOperationalPanel({
                   </td>
                   <td className={cn(opTd, 'text-right')}>
                     <div className="flex flex-wrap justify-end gap-1">
-                      {!routeActionsReadOnly ? (
+                      {canMutateRoute ? (
                         <>
                           {r.enabled ? (
                             <button
@@ -358,19 +382,42 @@ export function RouteOperationalPanel({
                       ) : (
                         <span className="text-[10px] text-slate-500 dark:text-gdc-muted">Read-only</span>
                       )}
-                      <Link
-                        to={`${logsPath(streamSlug)}?route=${r.route_id}`}
-                        className="inline-flex h-7 items-center rounded border border-slate-200/90 bg-white px-1.5 text-[10px] font-semibold text-violet-700 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-violet-300"
-                      >
-                        Logs
-                      </Link>
-                      <Link
-                        to={routeEditPath(String(r.route_id))}
-                        className="inline-flex h-7 items-center rounded border border-slate-200/90 bg-white px-1.5 text-[10px] font-semibold text-slate-800 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
-                      >
-                        Edit
-                      </Link>
-                      {r.destination_id > 0 ? (
+                      {validRouteId && validStreamId ? (
+                        <>
+                          <Link
+                            to={logsExplorerPath({
+                              route_id: r.route_id,
+                              stream_id: backendStreamId,
+                              destination_id: r.destination_id,
+                            })}
+                            aria-label={`Investigate Route #${r.route_id} delivery logs`}
+                            className="inline-flex min-h-10 items-center rounded border border-slate-200/90 bg-white px-2 text-[10px] font-semibold text-violet-700 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:border-gdc-border dark:bg-gdc-card dark:text-violet-300"
+                          >
+                            Logs
+                          </Link>
+                          <Link
+                            to={runtimeAnalyticsPath({
+                              window: '24h',
+                              stream_id: backendStreamId,
+                              route_id: r.route_id,
+                              destination_id: r.destination_id,
+                            })}
+                            aria-label={`Inspect Route #${r.route_id} delivery trends (24h)`}
+                            className="inline-flex min-h-10 items-center rounded border border-slate-200/90 bg-white px-2 text-[10px] font-semibold text-violet-700 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:border-gdc-border dark:bg-gdc-card dark:text-violet-300"
+                          >
+                            24h trends
+                          </Link>
+                        </>
+                      ) : null}
+                      {canMutateRoute && validRouteId ? (
+                        <Link
+                          to={routeEditPath(String(r.route_id))}
+                          className="inline-flex min-h-10 items-center rounded border border-slate-200/90 bg-white px-2 text-[10px] font-semibold text-slate-800 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
+                        >
+                          Edit
+                        </Link>
+                      ) : null}
+                      {Number.isSafeInteger(r.destination_id) && r.destination_id > 0 ? (
                         <Link
                           to={destinationDetailPath(String(r.destination_id))}
                           className="inline-flex h-7 items-center rounded border border-slate-200/90 bg-white px-1.5 text-[10px] font-semibold text-slate-700 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200"

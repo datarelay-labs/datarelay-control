@@ -1,0 +1,368 @@
+import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router-dom'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import * as gdcRuntime from '../../api/gdcRuntime'
+import { LogsExplorerPage } from './logs-explorer-page'
+
+const SNAPSHOT_ID = '2026-06-05T10:00:00Z'
+
+vi.mock('../../api/gdcStreams', () => ({
+  fetchStreamsList: vi.fn(async () => [
+    { id: 1, name: 'Repeated stream' },
+    { id: 2, name: 'Repeated stream' },
+  ]),
+}))
+vi.mock('../../api/gdcRoutes', () => ({
+  fetchRoutesList: vi.fn(async () => [
+    { id: 41, name: 'Repeated route' },
+    { id: 42, name: 'Repeated route' },
+  ]),
+}))
+vi.mock('../../api/gdcDestinations', () => ({
+  fetchDestinationsList: vi.fn(async () => [{ id: 10, name: 'Receiving destination' }]),
+}))
+vi.mock('../../api/gdcConnectors', () => ({
+  fetchConnectorsList: vi.fn(async () => []),
+}))
+vi.mock('../../api/observabilitySummary', () => ({
+  fetchObservabilitySummary: vi.fn(async (_window: string, params?: { snapshot_id?: string }) => ({
+    snapshot_id: params?.snapshot_id ?? SNAPSHOT_ID,
+    generated_at: params?.snapshot_id ?? SNAPSHOT_ID,
+    window: '1h',
+    window_start: '2026-06-05T09:00:00Z',
+    window_end: SNAPSHOT_ID,
+    metric_contract_version: 'v1',
+    totals: {
+      streams_total: 2,
+      streams_running: 2,
+      routes_total: 2,
+      routes_enabled: 2,
+      healthy_routes: 1,
+      idle_routes: 0,
+      unhealthy_routes: 1,
+      delivery_success_events: 1,
+      delivery_failed_events: 1,
+      retry_success_events: 0,
+      retry_failed_events: 0,
+      runtime_telemetry_rows: 2,
+      lifecycle_rows: 0,
+      processed_events: 0,
+      throughput_eps: 0,
+      p95_latency_ms: null,
+    },
+    metric_contract: {},
+    metric_meta: {},
+  })),
+}))
+
+function row(id: number, stream: number, route: number, message: string) {
+  return {
+    id,
+    created_at: SNAPSHOT_ID,
+    level: 'ERROR',
+    stage: 'webhook_send',
+    status: 'FAILED',
+    message,
+    stream_id: stream,
+    route_id: route,
+    destination_id: 10,
+    connector_id: null,
+    run_id: null,
+    latency_ms: 0,
+    retry_count: 0,
+    error_code: 'DELIVERY_FAILED',
+    payload_sample: null,
+  }
+}
+
+function setup(items: ReturnType<typeof row>[]) {
+  const fetchPage = vi.spyOn(gdcRuntime, 'fetchRuntimeLogsPage').mockImplementation(async (params) => ({
+    total_returned: items.length,
+    has_next: false,
+    next_cursor_created_at: null,
+    next_cursor_id: null,
+    items,
+    snapshot_id: params.snapshot_id,
+    metric_meta: {},
+  } as never))
+  vi.spyOn(gdcRuntime, 'searchRuntimeDeliveryLogs').mockImplementation(async (params) => ({
+    total_returned: 0,
+    filters: {},
+    logs: [],
+    snapshot_id: params.snapshot_id,
+    metric_meta: {},
+  } as never))
+  vi.spyOn(gdcRuntime, 'fetchRuntimeLogsTotals').mockImplementation(async (params) => ({
+    metrics_window_seconds: 3600,
+    window_start: '2026-06-05T09:00:00Z',
+    window_end: SNAPSHOT_ID,
+    total_rows: items.length,
+    error_rows: items.length,
+    warning_rows: 0,
+    info_rows: 0,
+    debug_rows: 0,
+    snapshot_id: params.snapshot_id,
+    metric_meta: {},
+  } as never))
+  vi.spyOn(gdcRuntime, 'fetchRuntimeDashboardSummary').mockResolvedValue(null)
+  return { fetchPage }
+}
+
+afterEach(() => vi.restoreAllMocks())
+
+describe('Logs Explorer receiving an actual Data Flows numeric-ID drilldown', () => {
+  it('retains Route 42 + Stream 2 + Destination 10 evidence even when Stream names are duplicated', async () => {
+    const { fetchPage } = setup([row(72, 2, 42, 'Actual Route 42 failed delivery')])
+    render(
+      <MemoryRouter initialEntries={['/logs?route_id=42&stream_id=2&destination_id=10']}>
+        <LogsExplorerPage />
+      </MemoryRouter>,
+    )
+    await waitFor(() => expect(fetchPage).toHaveBeenCalledWith(expect.objectContaining({
+      route_id: 42, stream_id: 2, destination_id: 10,
+    })))
+    await waitFor(() =>
+      expect(screen.getByLabelText('Stream')).toHaveValue('Repeated stream (Stream #2)'),
+    )
+    const activeFilters = screen.getByRole('region', { name: 'Active URL filters' })
+    expect(activeFilters).toHaveTextContent('Stream · Repeated stream (Stream #2)')
+    expect(activeFilters).toHaveTextContent('Route · Repeated route (Route #42)')
+    expect(await screen.findByText('Actual Route 42 failed delivery')).toBeInTheDocument()
+  })
+
+  it('makes duplicate Stream and Route choices independently selectable by stable numeric identity', async () => {
+    const user = userEvent.setup()
+    setup([
+      row(71, 1, 41, 'First stream Route 41 evidence'),
+      row(72, 2, 42, 'Second stream Route 42 evidence'),
+    ])
+    render(<MemoryRouter initialEntries={['/logs']}><LogsExplorerPage /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Repeated stream (Stream #2)' })).toBeInTheDocument())
+    await user.selectOptions(screen.getByLabelText('Stream'), 'Repeated stream (Stream #2)')
+    expect(screen.getByText('Second stream Route 42 evidence')).toBeInTheDocument()
+    expect(screen.queryByText('First stream Route 41 evidence')).not.toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText('Stream'), 'All Streams')
+    await user.selectOptions(screen.getByLabelText('Route'), 'Repeated route (Route #42)')
+    expect(screen.getByText('Second stream Route 42 evidence')).toBeInTheDocument()
+    expect(screen.queryByText('First stream Route 41 evidence')).not.toBeInTheDocument()
+  })
+
+  it('switching Stream from a Data Flows deep link updates actual API scope and clears stale Route/Destination IDs', async () => {
+    const user = userEvent.setup()
+    const { fetchPage } = setup([
+      row(71, 1, 41, 'First stream Route 41 evidence'),
+      row(72, 2, 42, 'Second stream Route 42 evidence'),
+    ])
+    render(
+      <MemoryRouter initialEntries={['/logs?route_id=42&stream_id=2&destination_id=10']}>
+        <LogsExplorerPage />
+      </MemoryRouter>,
+    )
+    await waitFor(() => expect(screen.getByLabelText('Stream')).toHaveValue('Repeated stream (Stream #2)'))
+    await user.selectOptions(screen.getByLabelText('Stream'), 'Repeated stream (Stream #1)')
+    await waitFor(() => {
+      expect(fetchPage.mock.calls.at(-1)?.[0]).toMatchObject({ stream_id: 1 })
+      expect(fetchPage.mock.calls.at(-1)?.[0]?.route_id).toBeUndefined()
+      expect(fetchPage.mock.calls.at(-1)?.[0]?.destination_id).toBeUndefined()
+    })
+    expect(await screen.findByText('First stream Route 41 evidence')).toBeInTheDocument()
+    expect(screen.queryByText('Second stream Route 42 evidence')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Remove route filter' })).not.toBeInTheDocument()
+  })
+
+  it('switching Route from a Data Flows deep link updates actual API scope without the previous Stream/Destination filter', async () => {
+    const user = userEvent.setup()
+    const { fetchPage } = setup([
+      row(71, 1, 41, 'First stream Route 41 evidence'),
+      row(72, 2, 42, 'Second stream Route 42 evidence'),
+    ])
+    render(
+      <MemoryRouter initialEntries={['/logs?route_id=42&stream_id=2&destination_id=10']}>
+        <LogsExplorerPage />
+      </MemoryRouter>,
+    )
+    await waitFor(() => expect(screen.getByLabelText('Route')).toHaveValue('Repeated route (Route #42)'))
+    await user.selectOptions(screen.getByLabelText('Route'), 'Repeated route (Route #41)')
+    await waitFor(() => {
+      expect(fetchPage.mock.calls.at(-1)?.[0]).toMatchObject({ route_id: 41 })
+      expect(fetchPage.mock.calls.at(-1)?.[0]?.stream_id).toBeUndefined()
+      expect(fetchPage.mock.calls.at(-1)?.[0]?.destination_id).toBeUndefined()
+    })
+    expect(await screen.findByText('First stream Route 41 evidence')).toBeInTheDocument()
+    expect(screen.queryByText('Second stream Route 42 evidence')).not.toBeInTheDocument()
+  })
+
+  it('removing the numeric Route URL chip also removes any residual hidden route dropdown filter', async () => {
+    const user = userEvent.setup()
+    setup([row(72, 2, 42, 'Route 42 retained after chip removal')])
+    render(<MemoryRouter initialEntries={['/logs?route_id=42']}><LogsExplorerPage /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByLabelText('Route')).toHaveValue('Repeated route (Route #42)'))
+    await user.click(screen.getByRole('button', { name: 'Remove route filter' }))
+    expect(screen.getByLabelText('Route')).toHaveValue('All Routes')
+    expect(screen.getByText('Route 42 retained after chip removal')).toBeInTheDocument()
+  })
+
+  it('removing a numeric Stream URL chip does not leave a hidden name filter', async () => {
+    const user = userEvent.setup()
+    setup([row(72, 2, 42, 'Recovered scope still shows Route 42')])
+    render(<MemoryRouter initialEntries={['/logs?stream_id=2']}><LogsExplorerPage /></MemoryRouter>)
+    expect(await screen.findByText('Recovered scope still shows Route 42')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Remove stream filter' }))
+    expect(screen.queryByRole('button', { name: 'Remove stream filter' })).not.toBeInTheDocument()
+    expect(screen.getByText('Recovered scope still shows Route 42')).toBeInTheDocument()
+  })
+})
+
+
+describe('Logs Explorer non-placeholder export', () => {
+  it('downloads an actual CSV of the currently loaded filtered logs', async () => {
+    const user = userEvent.setup()
+    setup([
+      row(71, 1, 41, 'Unrelated Route 41 evidence'),
+      row(72, 2, 42, 'CSV diagnostic row'),
+    ])
+    const createBefore = Object.getOwnPropertyDescriptor(URL, 'createObjectURL')
+    const revokeBefore = Object.getOwnPropertyDescriptor(URL, 'revokeObjectURL')
+    const createObjectURL = vi.fn((_blob: Blob) => 'blob:logs-csv-probe')
+    const revokeObjectURL = vi.fn()
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL })
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL })
+    try {
+      render(<MemoryRouter initialEntries={['/logs?route_id=42']}><LogsExplorerPage /></MemoryRouter>)
+      expect(await screen.findByText('CSV diagnostic row')).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Export' }))
+      await user.click(screen.getByRole('menuitem', { name: /Download CSV/i }))
+      expect(createObjectURL).toHaveBeenCalledTimes(1)
+      const [file] = createObjectURL.mock.calls[0] ?? []
+      expect(file).toBeInstanceOf(Blob)
+      if (!(file instanceof Blob)) throw new Error('CSV download was not a file')
+      expect(file.type).toContain('text/csv')
+      const csv = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(String(reader.result))
+        reader.onerror = () => reject(reader.error)
+        reader.readAsText(file)
+      })
+      expect(csv).toContain('CSV diagnostic row')
+      expect(csv).not.toContain('Unrelated Route 41 evidence')
+      expect(click).toHaveBeenCalledOnce()
+      expect(revokeObjectURL).toHaveBeenCalledWith('blob:logs-csv-probe')
+    } finally {
+      if (createBefore) Object.defineProperty(URL, 'createObjectURL', createBefore)
+      else Reflect.deleteProperty(URL, 'createObjectURL')
+      if (revokeBefore) Object.defineProperty(URL, 'revokeObjectURL', revokeBefore)
+      else Reflect.deleteProperty(URL, 'revokeObjectURL')
+    }
+  })
+})
+
+
+describe('Logs Explorer keyboard-operated export menu', () => {
+  it('opens via ArrowDown, moves between exports, and Escape returns focus to the trigger', async () => {
+    const user = userEvent.setup()
+    setup([row(72, 2, 42, 'Keyboard navigation diagnostic')])
+    render(<MemoryRouter initialEntries={['/logs?route_id=42']}><LogsExplorerPage /></MemoryRouter>)
+    expect(await screen.findByText('Keyboard navigation diagnostic')).toBeInTheDocument()
+    const trigger = screen.getByRole('button', { name: 'Export' })
+    trigger.focus()
+    await user.keyboard('{ArrowDown}')
+    const json = screen.getByRole('menuitem', { name: /Download JSON/i })
+    const csv = screen.getByRole('menuitem', { name: /Download CSV/i })
+    expect(json).toHaveFocus()
+    await user.keyboard('{ArrowDown}')
+    expect(csv).toHaveFocus()
+    await user.keyboard('{ArrowUp}')
+    expect(json).toHaveFocus()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('menuitem', { name: /Download CSV/i })).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
+    await user.keyboard('{ArrowUp}')
+    expect(screen.getByRole('menuitem', { name: /Download CSV/i })).toHaveFocus()
+    await user.keyboard('{Home}')
+    expect(screen.getByRole('menuitem', { name: /Download JSON/i })).toHaveFocus()
+    await user.keyboard('{End}')
+    expect(screen.getByRole('menuitem', { name: /Download CSV/i })).toHaveFocus()
+    await user.keyboard('{Escape}')
+    expect(trigger).toHaveFocus()
+  })
+})
+
+
+describe('Logs Explorer Columns menu accessibility', () => {
+  it('uses arrow keys to navigate visible column toggles and Escape restores toolbar focus', async () => {
+    const user = userEvent.setup()
+    setup([row(72, 2, 42, 'Columns keyboard navigation')])
+    render(<MemoryRouter initialEntries={['/logs?route_id=42']}><LogsExplorerPage /></MemoryRouter>)
+    expect(await screen.findByText('Columns keyboard navigation')).toBeInTheDocument()
+    const trigger = screen.getByRole('button', { name: 'Columns' })
+    trigger.focus()
+    await user.keyboard('{ArrowDown}')
+    const options = screen.getAllByRole('menuitemcheckbox')
+    expect(options.length).toBeGreaterThan(2)
+    expect(options[0]).toHaveFocus()
+    await user.keyboard('{ArrowDown}')
+    expect(options[1]).toHaveFocus()
+    await user.keyboard('{Home}')
+    expect(options[0]).toHaveFocus()
+    await user.keyboard('{End}')
+    expect(options.at(-1)).toHaveFocus()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('menuitemcheckbox')).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
+  })
+})
+
+describe('Logs Explorer invalid manually entered investigation IDs', () => {
+  it('ignores bad ID-scoped API filters, explains the ignored values and preserves matching evidence', async () => {
+    const user = userEvent.setup()
+    const { fetchPage } = setup([row(72, 2, 42, 'Real Route 42 evidence remains visible')])
+    render(
+      <MemoryRouter initialEntries={['/logs?route_id=0&stream_id=9007199254740992&destination_id=-2']}>
+        <LogsExplorerPage />
+      </MemoryRouter>,
+    )
+    await waitFor(() => {
+      const request = fetchPage.mock.calls.at(-1)?.[0]
+      expect(request?.route_id).toBeUndefined()
+      expect(request?.stream_id).toBeUndefined()
+      expect(request?.destination_id).toBeUndefined()
+    })
+    expect(await screen.findByText('Real Route 42 evidence remains visible')).toBeInTheDocument()
+    const active = screen.getByRole('region', { name: 'Active URL filters' })
+    expect(active).toHaveTextContent('Invalid Stream ID ignored')
+    expect(active).toHaveTextContent('Invalid Route ID ignored')
+    expect(active).toHaveTextContent('Invalid Destination ID ignored')
+    expect(active).not.toHaveTextContent('Route #0')
+    await user.click(screen.getByRole('button', { name: 'Remove invalid route filter' }))
+    expect(active).not.toHaveTextContent('Invalid Route ID ignored')
+    expect(await screen.findByText('Real Route 42 evidence remains visible')).toBeInTheDocument()
+  })
+})
+
+
+describe('Logs Explorer narrow viewport source integration', () => {
+  it('uses compact cards instead of the wide table while retaining selected log details', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
+      matches: query === '(max-width: 767px)',
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })))
+    try {
+      setup([row(72, 2, 42, 'Mobile Route failure evidence')])
+      render(<MemoryRouter initialEntries={['/logs?route_id=42']}><LogsExplorerPage /></MemoryRouter>)
+      const cards = await screen.findByRole('region', { name: 'Compact delivery logs' })
+      expect(cards).toHaveTextContent('Mobile Route failure evidence')
+      expect(cards).toHaveTextContent('FAILED')
+      expect(screen.queryByTestId('logs-dense-table')).not.toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Inspect log evt_72' }))
+      expect(screen.getByRole('complementary', { name: 'Log details' })).toBeInTheDocument()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+})

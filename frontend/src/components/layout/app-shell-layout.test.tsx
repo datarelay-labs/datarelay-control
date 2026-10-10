@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppShellLayout } from './app-shell-layout'
 import { MAIN_CONTENT_ID } from '../shell/app-shell'
 import { clearTestSession, persistTestSession } from '../../lib/governance-rbac'
+import { getOperationalSnapshot } from '../../api/operationalSnapshot'
+import { isRuntimeFixtureModeActive } from '../../lib/runtime-operational-fixture-mode'
 
 const mediaState = vi.hoisted(() => ({ isMdUp: false }))
 
@@ -33,6 +35,15 @@ vi.mock('../../api/gdcAdmin', () => ({
   getAdminSystemInfo: vi.fn(async () => ({ app_env: 'development' })),
 }))
 
+vi.mock('../../api/operationalSnapshot', () => ({
+  getOperationalSnapshot: vi.fn(async () => null),
+  clearOperationalSnapshotCache: vi.fn(),
+}))
+
+vi.mock('../../lib/runtime-operational-fixture-mode', () => ({
+  isRuntimeFixtureModeActive: vi.fn(async () => false),
+}))
+
 function renderShell(initialPath = '/streams') {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
@@ -43,6 +54,7 @@ function renderShell(initialPath = '/streams') {
           <Route path="/monitoring" element={<p>Dashboard workspace</p>} />
           <Route path="/admin" element={<p>Administration workspace</p>} />
           <Route path="/routes" element={<p>Routes workspace</p>} />
+          <Route path="/help/:topic" element={<p>In-product help guide</p>} />
         </Route>
       </Routes>
     </MemoryRouter>,
@@ -53,6 +65,8 @@ describe('AppShellLayout responsive accessibility', () => {
   beforeEach(() => {
     mediaState.isMdUp = false
     persistTestSession('ADMINISTRATOR', 'shell-tester')
+    vi.mocked(getOperationalSnapshot).mockReset().mockResolvedValue(null)
+    vi.mocked(isRuntimeFixtureModeActive).mockReset().mockResolvedValue(false)
   })
 
   afterEach(() => {
@@ -169,6 +183,8 @@ describe('AppShellLayout responsive accessibility', () => {
     renderShell()
     await user.click(screen.getByTestId('shell-mobile-nav-toggle'))
     const nav = screen.getByRole('complementary', { name: 'Primary navigation' })
+    await user.click(within(nav).getByRole('button', { name: 'Delivery' }))
+    expect(within(nav).getByRole('button', { name: 'Delivery' })).toHaveAttribute('aria-expanded', 'true')
     await user.click(within(nav).getByRole('button', { name: 'Destinations' }))
     expect(screen.getByRole('main')).toHaveTextContent('Destinations workspace')
     expect(screen.getByTestId('shell-mobile-nav-toggle')).toHaveAttribute('aria-expanded', 'false')
@@ -181,6 +197,72 @@ describe('AppShellLayout responsive accessibility', () => {
     await user.click(screen.getByTestId('shell-mobile-nav-toggle'))
     await user.click(screen.getByRole('button', { name: 'Close navigation' }))
     expect(screen.getByTestId('shell-mobile-nav-toggle')).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('labels an in-product help guide correctly instead of displaying operational status', () => {
+    renderShell('/help/delivery')
+    expect(screen.getByRole('heading', { level: 1, name: 'Help Center' })).toBeInTheDocument()
+    const breadcrumb = screen.getByRole('navigation', { name: 'Breadcrumb' })
+    expect(within(breadcrumb).getByRole('link', { name: 'Help Center' })).toHaveAttribute('href', '/help')
+    expect(breadcrumb).toHaveTextContent('Workflow guide')
+    expect(screen.getByText('In-product help guide')).toBeInTheDocument()
+    expect(screen.getByText(/In-product workflow guidance/i)).toBeInTheDocument()
+    expect(screen.queryByLabelText('Runtime status')).not.toBeInTheDocument()
+  })
+
+  it('uses the fresh authenticated operational snapshot for global health instead of default green', async () => {
+    vi.mocked(getOperationalSnapshot).mockResolvedValue({
+      updated_at: new Date().toISOString(),
+      global: { health_status: 'HEALTHY', running_streams: 2, enabled_streams: 2, total_routes: 3 },
+    } as Awaited<ReturnType<typeof getOperationalSnapshot>> & object)
+    renderShell('/monitoring')
+    await waitFor(() => {
+      expect(screen.getByLabelText('Runtime status')).toHaveTextContent('Healthy')
+    })
+    expect(screen.getByTestId('shell-runtime-evidence')).toHaveTextContent('2 running / 2 enabled Streams · 3 Routes')
+    expect(screen.getByTestId('shell-runtime-evidence')).toHaveTextContent('Receiver ingestion is not verified')
+    expect(getOperationalSnapshot).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not label an unavailable snapshot as Offline or Healthy', async () => {
+    renderShell('/routes')
+    await waitFor(() => {
+      expect(screen.getByLabelText('Runtime status')).toHaveTextContent('Not verified')
+    })
+    expect(screen.getByTestId('shell-runtime-evidence')).toHaveTextContent('Runtime snapshot unavailable')
+    expect(screen.queryByText(/^Offline$/)).not.toBeInTheDocument()
+  })
+
+  it('revalidates observed runtime health on the existing shell refresh action', async () => {
+    vi.mocked(getOperationalSnapshot).mockResolvedValueOnce({
+      updated_at: new Date().toISOString(),
+      global: { health_status: 'HEALTHY', running_streams: 2, enabled_streams: 2, total_routes: 3 },
+    } as Awaited<ReturnType<typeof getOperationalSnapshot>> & object)
+    vi.mocked(getOperationalSnapshot).mockResolvedValue({
+      updated_at: new Date().toISOString(),
+      global: { health_status: 'ERROR', running_streams: 1, enabled_streams: 2, total_routes: 3 },
+    } as Awaited<ReturnType<typeof getOperationalSnapshot>> & object)
+    const user = userEvent.setup()
+    renderShell('/streams')
+    await waitFor(() => expect(screen.getByLabelText('Runtime status')).toHaveTextContent('Healthy'))
+    await user.click(screen.getByRole('button', { name: 'Refresh dashboard and runtime data' }))
+    await waitFor(() => expect(screen.getByLabelText('Runtime status')).toHaveTextContent('Attention'))
+    expect(screen.getByTestId('shell-runtime-evidence')).toHaveTextContent('error')
+    expect(screen.getByTestId('shell-runtime-evidence')).toHaveAttribute('role', 'status')
+    expect(screen.getByTestId('shell-runtime-evidence')).toHaveAttribute('aria-live', 'polite')
+    expect(screen.getByTestId('shell-runtime-evidence')).toHaveAttribute('aria-atomic', 'true')
+    expect(getOperationalSnapshot).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not treat an opted-in development fixture as live runtime health', async () => {
+    vi.mocked(isRuntimeFixtureModeActive).mockResolvedValue(true)
+    vi.mocked(getOperationalSnapshot).mockResolvedValue({
+      updated_at: new Date().toISOString(),
+      global: { health_status: 'HEALTHY', running_streams: 2, enabled_streams: 2, total_routes: 3 },
+    } as Awaited<ReturnType<typeof getOperationalSnapshot>> & object)
+    renderShell('/monitoring')
+    await waitFor(() => expect(screen.getByLabelText('Runtime status')).toHaveTextContent('Fixture'))
+    expect(screen.getByTestId('shell-runtime-evidence')).toHaveTextContent('not live runtime')
   })
 
   it('gives Dashboard a single shell title without a repeated breadcrumb', () => {

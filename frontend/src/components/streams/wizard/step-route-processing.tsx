@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { fetchDestinationsList, type DestinationListItem } from '../../../api/gdcDestinations'
+import type { FinalEventDraftPreviewResponse } from '../../../api/gdcRuntimePreview'
 import {
   WizardSharedProcessingSection,
   type SharedProcessingTab,
@@ -81,6 +82,15 @@ export function StepRouteProcessing({
   const [sharedTab, setSharedTab] = useState<SharedProcessingTab>('transform')
   const [selectedRouteKey, setSelectedRouteKey] = useState<string | null>(null)
   const [protectionDrawerOpen, setProtectionDrawerOpen] = useState(false)
+  const [previewEvidence, setPreviewEvidence] = useState<{
+    scope: string
+    data: FinalEventDraftPreviewResponse | null
+  } | null>(null)
+  const onPreviewEvidence = useCallback((scope: string, data: FinalEventDraftPreviewResponse | null) => {
+    setPreviewEvidence((previous) => (
+      previous?.scope === scope && previous.data === data ? previous : { scope, data }
+    ))
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -111,6 +121,14 @@ export function StepRouteProcessing({
   }, [routeDrafts])
 
   const selectedDraft = routeDrafts.find((d) => d.key === selectedRouteKey) ?? null
+  const sampleReady = wizardTransformSampleReady(state)
+  // Never show an earlier selected Route's preview for a newly selected Route.
+  const activePreview = sampleReady && selectedDraft && previewEvidence?.scope === selectedDraft.key
+    ? previewEvidence.data
+    : null
+  const mappedPreview = activePreview?.mapped_events?.[0] ?? null
+  const finalPreview = activePreview?.final_events?.[0] ?? null
+  const sampleBeforeMapping = state.apiTest.extractedEvents[0] ?? null
   const drawerOpen = dataProtectionDrawerOpen ?? protectionDrawerOpen
   const setDrawerOpen = onDataProtectionDrawerOpenChange ?? setProtectionDrawerOpen
 
@@ -163,18 +181,19 @@ export function StepRouteProcessing({
     <div className="space-y-5" data-testid="wizard-step-route-processing">
       <header className="space-y-1">
         <h3 className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-50">Route Processing</h3>
-        <p className="max-w-3xl text-sm leading-relaxed text-slate-600 dark:text-gdc-muted">
-          Set shared defaults first, then override Transform, Protection, Classification, or Policy only where a
-          destination needs different processing.
+        <p className="max-w-3xl text-sm leading-relaxed text-slate-600 dark:text-gdc-muted" data-testid="route-processing-simple-guidance">
+          <strong className="font-semibold text-slate-800 dark:text-slate-200">Start with one set of rules.</strong>{' '}
+          Shared Processing applies to every destination unless you change it.
+          To treat one destination differently, select its Route below and turn off Inherit only for the setting you want to customize.
         </p>
       </header>
 
       <ProcessingPreviewDock title="Route Processing Preview" stages={[
         { id: 'input', label: 'Input', truth: 'Preview', status: state.apiTest.analysis?.sampleEvent ? 'Sample loaded' : 'No sample loaded', before: state.apiTest.analysis?.sampleEvent ?? null, after: state.apiTest.analysis?.sampleEvent ?? null },
-        { id: 'mapping', label: 'Mapping', truth: 'Preview', status: selectedDraft?.inherit.transform === false ? 'Route-specific draft' : 'Stream draft', before: state.apiTest.analysis?.sampleEvent ?? null, after: null, message: 'Use the mapping preview workspace below for field-level before/after evidence.' },
-        { id: 'transform', label: 'Enrichment / Transform', truth: 'Preview', status: selectedDraft?.inherit.transform === false ? 'Route-specific draft' : 'Stream draft', message: 'Draft processing is not persisted until the wizard deploy step succeeds.' },
-        { id: 'policy', label: 'Protection / Policy', truth: 'Preview', status: selectedRouteDeploy?.statusLabel ?? 'Draft', message: 'Protection and policy preview are planning evidence, not runtime enforcement proof.' },
-        { id: 'destination', label: 'Destination Payload', truth: 'Preview', status: selectedDraft ? (destById.get(selectedDraft.destinationId)?.name ?? `Destination #${selectedDraft.destinationId}`) : 'Select a Route', message: 'Delivery remains no-send until Deploy.' },
+        { id: 'mapping', label: 'Mapping', truth: 'Preview', status: mappedPreview ? 'No-send API preview' : 'Output not verified', before: sampleBeforeMapping, after: mappedPreview, message: 'Preview of the selected Route draft using the existing Mapping API; not saved or delivered.' },
+        { id: 'transform', label: 'Enrichment / Transform', truth: 'Preview', status: finalPreview ? 'No-send API preview' : 'Output not verified', before: mappedPreview, after: finalPreview, message: 'Preview of mapping and enrichment only; draft processing is not saved or deployed.' },
+        { id: 'policy', label: 'Protection / Policy', truth: 'Preview', status: selectedRouteDeploy?.statusLabel ?? 'Not evaluated', before: finalPreview, after: null, message: 'Mapping/enrichment preview is not Route Protection or Policy proof. Check the effective Route preview before deploy.' },
+        { id: 'destination', label: 'Destination Payload', truth: 'Preview', status: selectedDraft ? (destById.get(selectedDraft.destinationId)?.name ?? `Destination #${selectedDraft.destinationId}`) : 'Select a Route', before: finalPreview, after: null, message: 'Mapped draft is not formatted destination payload or verified delivery. Use Route delivery preview and runtime evidence.' },
       ]} />
 
       <WizardSharedProcessingSection
@@ -238,9 +257,11 @@ export function StepRouteProcessing({
                 deployStatusLabel={selectedRouteDeploy?.statusLabel}
               />
 
-              {wizardTransformSampleReady(state) ? (
+              {sampleReady ? (
                 <WizardMappingOutputAside
                   state={outputState}
+                  previewScope={selectedDraft.key}
+                  onPreviewEvidence={onPreviewEvidence}
                   onChangeUnmappedFieldsPolicy={patchRouteUnmappedPolicy}
                 />
               ) : (

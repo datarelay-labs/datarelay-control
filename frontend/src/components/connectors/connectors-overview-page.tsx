@@ -37,6 +37,7 @@ function formatEps(eps: number): string {
 }
 
 const CONNECTORS_HELP: PageHelpContent = {
+  docsHref: '/help/start',
   title: 'Connectors',
   intro:
     'Connectors hold reusable source access and authentication. Streams use a Connector to collect a specific data flow, then Routes deliver that Stream to Destinations.',

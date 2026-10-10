@@ -238,7 +238,9 @@ describe('AuditTrailPage', () => {
       expect(screen.getByTestId('audit-detail-drawer')).toBeInTheDocument()
     })
     expect(detailSpy).toHaveBeenCalledWith('q-42', '7d')
-    expect(screen.getByTestId('audit-detail-correlation')).toHaveTextContent('q-42')
+    // The deep-link drawer mounts before its asynchronous detail API returns.
+    // Wait for the actual correlation evidence, not merely the loading shell.
+    expect(await screen.findByTestId('audit-detail-correlation')).toHaveTextContent('q-42')
   })
 
   it('synchronizes open/close URL with ?correlation while preserving unrelated params', async () => {

@@ -31,7 +31,9 @@ import { connectorDetailPath, destinationDetailPath, logsPath, routeEditPath, st
 import { gdcUi } from '../../lib/gdc-ui-tokens'
 import { loadLogsAutoRefresh, persistLogsAutoRefresh } from '../../localPreferences'
 import { cn } from '../../lib/utils'
+import { useSessionCapabilities } from '../../lib/rbac'
 import { useDocumentVisible } from '../../hooks/use-document-visible'
+import { useMediaQuery } from '../../hooks/use-media-query'
 import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
 import {
   bucketLogsForHistogram,
@@ -41,9 +43,13 @@ import {
   deliveryOutcomeCountsFromRows,
   metricsWindowFromTimeRangeLabel,
   safeCtxInt,
+  safeOperationalResourceId,
   stageChipText,
 } from './logs-console-helpers'
 import { LogDetailDrawer } from './log-detail-drawer'
+import { LogsRouteReturnActions } from './logs-route-return-actions'
+import { LogsCompactCards } from './logs-compact-cards'
+import { serializeLoadedLogsCsv } from './logs-export-csv'
 import { LogsDiagnosisOverview, type LogsDiagnosisSnapshot } from './logs-diagnosis-overview'
 import { LevelBadge } from './logs-level-badge'
 import { HelpTooltip } from '../ui/help-tooltip'
@@ -71,6 +77,35 @@ import {
 } from './delivery-log-status-url'
 
 const KPI_WINDOW_LABEL = '1h'
+
+/** Disambiguate operator filters by saved identity, not duplicate display names. */
+function entityFilterLabels(
+  labels: ReadonlyMap<number, string>,
+  entityType: 'Stream' | 'Route',
+  reservedLabel: string,
+): Map<number, string> {
+  const counts = new Map<string, number>()
+  for (const name of labels.values()) counts.set(name, (counts.get(name) ?? 0) + 1)
+  return new Map([...labels].map(([id, name]) => [
+    id,
+    (counts.get(name) ?? 0) > 1 || name === reservedLabel
+      ? `${name} (${entityType} #${id})`
+      : name,
+  ]))
+}
+
+/** A legacy saved name is accepted only when it resolves to one exact ID. */
+function filterEntityId(
+  selected: string,
+  displayLabels: ReadonlyMap<number, string>,
+  originalLabels: ReadonlyMap<number, string>,
+): number | null {
+  for (const [id, label] of displayLabels) {
+    if (label === selected) return id
+  }
+  const legacyMatches = [...originalLabels].filter(([, label]) => label === selected)
+  return legacyMatches.length === 1 ? legacyMatches[0]![0] : null
+}
 
 const EMPTY_LOG_KPI = { total: 0, errors: 0, warnings: 0, info: 0, debug: 0 }
 
@@ -174,6 +209,16 @@ function DropdownMenu({
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement | null>(null)
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+  const focusLastOnOpen = useRef(false)
+  useEffect(() => {
+    if (!open) return
+    const elements = menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')
+    const target = focusLastOnOpen.current ? elements?.[elements.length - 1] : elements?.[0]
+    target?.focus()
+    focusLastOnOpen.current = false
+  }, [open])
   useEffect(() => {
     function onDoc(e: MouseEvent) {
       if (!ref.current?.contains(e.target as Node)) setOpen(false)
@@ -184,9 +229,20 @@ function DropdownMenu({
   return (
     <div className="relative" ref={ref}>
       <button
+        ref={triggerRef}
         type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200/90 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-elevated dark:text-slate-100 dark:hover:bg-gdc-card"
+        onClick={() => {
+          focusLastOnOpen.current = false
+          setOpen((o) => !o)
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault()
+            focusLastOnOpen.current = event.key === 'ArrowUp'
+            setOpen(true)
+          }
+        }}
+        className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200/90 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:border-gdc-border dark:bg-gdc-elevated dark:text-slate-100 dark:hover:bg-gdc-card"
         aria-expanded={open}
         aria-haspopup="menu"
       >
@@ -196,7 +252,30 @@ function DropdownMenu({
       </button>
       {open ? (
         <div
+          ref={menuRef}
           role="menu"
+          aria-label={`${label} actions`}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault()
+              setOpen(false)
+              triggerRef.current?.focus()
+              return
+            }
+            if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+            event.preventDefault()
+            const controls = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not([disabled])'))
+            if (controls.length === 0) return
+            const current = controls.findIndex((item) => item === document.activeElement)
+            const next = event.key === 'Home'
+              ? 0
+              : event.key === 'End'
+                ? controls.length - 1
+                : event.key === 'ArrowDown'
+                  ? (current + 1) % controls.length
+                  : (current + controls.length - 1) % controls.length
+            controls[next]?.focus()
+          }}
           className="absolute right-0 z-40 mt-1 min-w-[12rem] rounded-lg border border-slate-200/90 bg-white py-1 text-sm shadow-lg dark:border-gdc-border dark:bg-gdc-elevated"
         >
           {items.map((item) => (
@@ -204,10 +283,11 @@ function DropdownMenu({
               key={item.id}
               type="button"
               role="menuitem"
-              className="block w-full px-3 py-2 text-left font-medium text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-gdc-card"
+              className="block w-full px-3 py-2 text-left font-medium text-slate-700 hover:bg-slate-50 focus-visible:bg-violet-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-400 dark:text-slate-200 dark:hover:bg-gdc-card dark:focus-visible:bg-gdc-rowHover"
               onClick={() => {
                 onPick?.(item.id)
                 setOpen(false)
+                triggerRef.current?.focus()
               }}
             >
               {item.label}
@@ -238,24 +318,21 @@ function TableSkeletonRows({ cols }: { cols: number }) {
 }
 
 export function LogsExplorerPage() {
+  const canConfigure = useSessionCapabilities().workspace_mutations === true
+  const compactLogsView = useMediaQuery('(max-width: 767px)')
   const { streamId: streamSlug } = useParams<{ streamId?: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
   const location = useLocation()
 
-  const streamIdFromRoute = useMemo(() => {
-    if (!streamSlug || !/^\d+$/.test(streamSlug)) return undefined
-    return Number(streamSlug)
-  }, [streamSlug])
+  const streamIdFromRoute = useMemo(() => safeOperationalResourceId(streamSlug), [streamSlug])
 
   const routeIdFromQuery = useMemo(() => {
-    const r = searchParams.get('route_id')
-    return r && /^\d+$/.test(r) ? Number(r) : undefined
+    return safeOperationalResourceId(searchParams.get('route_id'))
   }, [searchParams])
 
   const destinationIdFromQuery = useMemo(() => {
-    const r = searchParams.get('destination_id')
-    return r && /^\d+$/.test(r) ? Number(r) : undefined
+    return safeOperationalResourceId(searchParams.get('destination_id'))
   }, [searchParams])
 
   const runIdFromQuery = useMemo(() => {
@@ -275,11 +352,15 @@ export function LogsExplorerPage() {
   const deliveryApiFilters = useMemo(() => resolveDeliveryLogApiFilters(searchParams), [searchParams])
 
   const streamIdFromQuery = useMemo(() => {
-    const r = searchParams.get('stream_id')
-    return r && /^\d+$/.test(r) ? Number(r) : undefined
+    return safeOperationalResourceId(searchParams.get('stream_id'))
   }, [searchParams])
 
   const effectiveStreamIdForApi = streamIdFromRoute ?? streamIdFromQuery
+  const invalidResourceUrlFilters = [
+    { key: 'stream_id', label: 'Stream', id: streamIdFromQuery },
+    { key: 'route_id', label: 'Route', id: routeIdFromQuery },
+    { key: 'destination_id', label: 'Destination', id: destinationIdFromQuery },
+  ].filter(({ key, id }) => (searchParams.get(key)?.trim() ?? '') !== '' && id == null)
 
   const [search, setSearch] = useState('')
   const [timeRange, setTimeRange] = useState<string>(TIME_RANGE_OPTIONS[1])
@@ -305,6 +386,9 @@ export function LogsExplorerPage() {
   const [pulseFetch, setPulseFetch] = useState(false)
   const [columnsOpen, setColumnsOpen] = useState(false)
   const columnsRef = useRef<HTMLDivElement | null>(null)
+  const columnsTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const columnsMenuRef = useRef<HTMLDivElement | null>(null)
+  const focusLastColumnOnOpenRef = useRef(false)
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set())
   const documentVisible = useDocumentVisible()
   const [logRows, setLogRows] = useState<LogExplorerRow[]>([])
@@ -433,6 +517,16 @@ export function LogsExplorerPage() {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    if (!columnsOpen) return
+    const enabled = columnsMenuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitemcheckbox"]:not([disabled])')
+    const focused = enabled && enabled.length > 0
+      ? enabled[focusLastColumnOnOpenRef.current ? enabled.length - 1 : 0]
+      : undefined
+    focused?.focus()
+    focusLastColumnOnOpenRef.current = false
+  }, [columnsOpen])
 
   useEffect(() => {
     function onDoc(e: MouseEvent) {
@@ -636,37 +730,91 @@ export function LogsExplorerPage() {
     snapshotId,
   ])
 
+  const streamDisplayLabels = useMemo(
+    () => entityFilterLabels(entityLabels.streams, 'Stream', ALL_STREAMS_LABEL),
+    [entityLabels.streams],
+  )
+  const routeDisplayLabels = useMemo(
+    () => entityFilterLabels(entityLabels.routes, 'Route', ALL_ROUTES_LABEL),
+    [entityLabels.routes],
+  )
   const streamFilterOptions = useMemo(() => {
-    const names = [...entityLabels.streams.values()].sort((a, b) => a.localeCompare(b))
+    const names = [...streamDisplayLabels.values()].sort((a, b) => a.localeCompare(b))
     return [ALL_STREAMS_LABEL, ...names] as const
-  }, [entityLabels.streams])
-
+  }, [streamDisplayLabels])
   const routeFilterOptions = useMemo(() => {
-    const names = [...entityLabels.routes.values()].sort((a, b) => a.localeCompare(b))
+    const names = [...routeDisplayLabels.values()].sort((a, b) => a.localeCompare(b))
     return [ALL_ROUTES_LABEL, ...names] as const
-  }, [entityLabels.routes])
+  }, [routeDisplayLabels])
 
-  const streamFilterId = useMemo(() => {
-    if (streamFilter === ALL_STREAMS_LABEL) return null
-    for (const [id, name] of entityLabels.streams) {
-      if (name === streamFilter) return id
+  const streamFilterId = useMemo(() =>
+    streamFilter === ALL_STREAMS_LABEL ? null
+      : filterEntityId(streamFilter, streamDisplayLabels, entityLabels.streams),
+  [streamFilter, streamDisplayLabels, entityLabels.streams])
+
+  const routeFilterId = useMemo(() =>
+    routeFilter === ALL_ROUTES_LABEL ? null
+      : filterEntityId(routeFilter, routeDisplayLabels, entityLabels.routes),
+  [routeFilter, routeDisplayLabels, entityLabels.routes])
+
+  // A deep link is an authoritative numeric scope, not a cosmetic filter chip.
+  // Changing its Stream/Route selector must change the backend query as well,
+  // otherwise the old URL ID intersects with the newly selected name and hides
+  // legitimate delivery evidence.
+  function changeStreamFilter(label: string) {
+    const selectedId = filterEntityId(label, streamDisplayLabels, entityLabels.streams)
+    const next = new URLSearchParams(searchParams)
+    if (selectedId == null) next.delete('stream_id')
+    else next.set('stream_id', String(selectedId))
+    if (selectedId != null && selectedId !== effectiveStreamIdForApi) {
+      // Existing Route and receiver scopes belong to the previous flow.
+      next.delete('route_id')
+      next.delete('destination_id')
+      setRouteFilter(ALL_ROUTES_LABEL)
     }
-    return null
-  }, [streamFilter, entityLabels.streams])
+    setStreamFilter(label)
+    setSearchParams(next, { replace: true })
+  }
 
-  const routeFilterId = useMemo(() => {
-    if (routeFilter === ALL_ROUTES_LABEL) return null
-    for (const [id, name] of entityLabels.routes) {
-      if (name === routeFilter) return id
+  function changeRouteFilter(label: string) {
+    const selectedId = filterEntityId(label, routeDisplayLabels, entityLabels.routes)
+    const next = new URLSearchParams(searchParams)
+    if (selectedId == null) next.delete('route_id')
+    else next.set('route_id', String(selectedId))
+    if (selectedId != null && selectedId !== routeIdFromQuery) {
+      // The new Route can belong to another Stream and Destination.
+      next.delete('stream_id')
+      next.delete('destination_id')
+      setStreamFilter(ALL_STREAMS_LABEL)
     }
-    return null
-  }, [routeFilter, entityLabels.routes])
+    setRouteFilter(label)
+    setSearchParams(next, { replace: true })
+  }
 
+  const lastUrlStreamId = useRef<number | null>(null)
   useEffect(() => {
-    if (effectiveStreamIdForApi == null) return
-    const name = entityLabels.streams.get(effectiveStreamIdForApi)
-    if (name) setStreamFilter(name)
-  }, [effectiveStreamIdForApi, entityLabels.streams])
+    if (effectiveStreamIdForApi == null) {
+      // Removing an ID-based URL chip must not leave a hidden name filter.
+      if (lastUrlStreamId.current != null) setStreamFilter(ALL_STREAMS_LABEL)
+      lastUrlStreamId.current = null
+      return
+    }
+    const label = streamDisplayLabels.get(effectiveStreamIdForApi)
+    if (label) setStreamFilter(label)
+    lastUrlStreamId.current = effectiveStreamIdForApi
+  }, [effectiveStreamIdForApi, streamDisplayLabels])
+
+  const lastUrlRouteId = useRef<number | null>(null)
+  useEffect(() => {
+    if (routeIdFromQuery == null) {
+      if (lastUrlRouteId.current != null) setRouteFilter(ALL_ROUTES_LABEL)
+      lastUrlRouteId.current = null
+      return
+    }
+    const label = routeDisplayLabels.get(routeIdFromQuery)
+    if (label) setRouteFilter(label)
+    lastUrlRouteId.current = routeIdFromQuery
+  }, [routeIdFromQuery, routeDisplayLabels])
 
   const baseLogRows = useMemo(
     () => enrichLogExplorerRows(logRows, entityLabels),
@@ -833,13 +981,13 @@ export function LogsExplorerPage() {
   const summaryStreamLabel = useMemo(() => {
     const sid = effectiveStreamIdForApi
     if (sid == null) return null
-    return entityLabels.streams.get(sid) ?? `Stream #${sid}`
-  }, [effectiveStreamIdForApi, entityLabels.streams])
+    return streamDisplayLabels.get(sid) ?? `Stream #${sid}`
+  }, [effectiveStreamIdForApi, streamDisplayLabels])
 
   const summaryRouteLabel = useMemo(() => {
     if (routeIdFromQuery == null) return null
-    return entityLabels.routes.get(routeIdFromQuery) ?? `Route #${routeIdFromQuery}`
-  }, [routeIdFromQuery, entityLabels.routes])
+    return routeDisplayLabels.get(routeIdFromQuery) ?? `Route #${routeIdFromQuery}`
+  }, [routeIdFromQuery, routeDisplayLabels])
 
   const summaryDestinationLabel = useMemo(() => {
     if (destinationIdFromQuery == null) return null
@@ -893,6 +1041,18 @@ export function LogsExplorerPage() {
     const a = document.createElement('a')
     a.href = url
     a.download = `gdc-logs-export-${Date.now()}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  function exportCsv() {
+    // Unlike JSON, CSV exports only a fixed, visible-field projection, never
+    // raw contextJson/eventPreview. A BOM helps spreadsheet UTF-8 handling.
+    const blob = new Blob(['\uFEFF', serializeLoadedLogsCsv(filteredRowsBase)], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `gdc-logs-export-${Date.now()}.csv`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -1111,11 +1271,12 @@ export function LogsExplorerPage() {
             label="Export"
             icon={Download}
             items={[
-              { id: 'json', label: 'Download JSON (current filters)' },
-              { id: 'csv', label: 'Download CSV (placeholder)' },
+              { id: 'json', label: 'Download JSON (loaded matching rows)' },
+              { id: 'csv', label: 'Download CSV (loaded matching rows)' },
             ]}
             onPick={(id) => {
               if (id === 'json') exportJson()
+              else if (id === 'csv') exportCsv()
             }}
           />
           <button
@@ -1155,7 +1316,24 @@ export function LogsExplorerPage() {
                   Loading…
                 </span>
               ) : null}
-              {searchParams.get('stream_id') ? (
+              {invalidResourceUrlFilters.map(({ key, label }) => (
+                <span
+                  key={key}
+                  data-testid={`logs-invalid-${key}-filter`}
+                  className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 py-0.5 pl-2 pr-1 text-[11px] font-medium text-amber-950 dark:border-amber-700/50 dark:bg-amber-950/35 dark:text-amber-100"
+                >
+                  Invalid {label} ID ignored
+                  <button
+                    type="button"
+                    className="rounded-full p-0.5 hover:bg-amber-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500 dark:hover:bg-amber-900/50"
+                    aria-label={`Remove invalid ${label.toLowerCase()} filter`}
+                    onClick={() => removeSearchParamKey(key)}
+                  >
+                    <X className="h-3 w-3" aria-hidden />
+                  </button>
+                </span>
+              ))}
+              {streamIdFromQuery != null ? (
                 <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 py-0.5 pl-2 pr-1 text-[11px] font-medium text-slate-800 dark:border-gdc-border dark:bg-gdc-input dark:text-slate-100">
                   Stream · {summaryStreamLabel ?? `Stream #${searchParams.get('stream_id')}`}
                   <button
@@ -1168,7 +1346,7 @@ export function LogsExplorerPage() {
                   </button>
                 </span>
               ) : null}
-              {searchParams.get('route_id') ? (
+              {routeIdFromQuery != null ? (
                 <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 py-0.5 pl-2 pr-1 text-[11px] font-medium text-slate-800 dark:border-gdc-border dark:bg-gdc-input dark:text-slate-100">
                   Route · {summaryRouteLabel ?? `Route #${searchParams.get('route_id')}`}
                   <button
@@ -1181,7 +1359,7 @@ export function LogsExplorerPage() {
                   </button>
                 </span>
               ) : null}
-              {searchParams.get('destination_id') ? (
+              {destinationIdFromQuery != null ? (
                 <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 py-0.5 pl-2 pr-1 text-[11px] font-medium text-slate-800 dark:border-gdc-border dark:bg-gdc-input dark:text-slate-100">
                   Destination · {summaryDestinationLabel ?? `Destination #${searchParams.get('destination_id')}`}
                   <button
@@ -1293,6 +1471,7 @@ export function LogsExplorerPage() {
               <span className="font-semibold text-slate-700 dark:text-slate-200">Time window:</span> {timeRange}
             </span>
           </div>
+          <LogsRouteReturnActions routeId={routeIdFromQuery} streamId={effectiveStreamIdForApi} destinationId={destinationIdFromQuery} canConfigure={canConfigure} />
         </section>
       )}
 
@@ -1313,8 +1492,8 @@ export function LogsExplorerPage() {
               <SelectField id="logs-time-range" label="Time range" value={timeRange} options={TIME_RANGE_OPTIONS} onChange={setTimeRange} />
             </div>
             <SelectField id="logs-level" label="Level" value={levelFilter} options={LEVEL_FILTER_OPTIONS} onChange={setLevelFilter} />
-            <SelectField id="logs-stream" label="Stream" value={streamFilter} options={streamFilterOptions} onChange={setStreamFilter} />
-            <SelectField id="logs-route" label="Route" value={routeFilter} options={routeFilterOptions} onChange={setRouteFilter} />
+            <SelectField id="logs-stream" label="Stream" value={streamFilter} options={streamFilterOptions} onChange={changeStreamFilter} />
+            <SelectField id="logs-route" label="Route" value={routeFilter} options={routeFilterOptions} onChange={changeRouteFilter} />
             <SelectField
               id="logs-stage"
               label="Pipeline stage"
@@ -1589,10 +1768,22 @@ export function LogsExplorerPage() {
             </button>
             <div className="relative" ref={columnsRef}>
               <button
+                ref={columnsTriggerRef}
                 type="button"
-                onClick={() => setColumnsOpen((o) => !o)}
-                className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-elevated dark:text-slate-200 dark:hover:bg-gdc-card"
+                onClick={() => {
+                  focusLastColumnOnOpenRef.current = false
+                  setColumnsOpen((o) => !o)
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                    event.preventDefault()
+                    focusLastColumnOnOpenRef.current = event.key === 'ArrowUp'
+                    setColumnsOpen(true)
+                  }
+                }}
+                className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-400 dark:border-gdc-border dark:bg-gdc-elevated dark:text-slate-200 dark:hover:bg-gdc-card"
                 aria-expanded={columnsOpen}
+                aria-haspopup="menu"
               >
                 <Settings2 className="h-3.5 w-3.5" aria-hidden />
                 Columns
@@ -1600,7 +1791,30 @@ export function LogsExplorerPage() {
               </button>
               {columnsOpen ? (
                 <div
+                  ref={columnsMenuRef}
                   role="menu"
+                  aria-label="Visible log columns"
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') {
+                      event.preventDefault()
+                      setColumnsOpen(false)
+                      columnsTriggerRef.current?.focus()
+                      return
+                    }
+                    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+                    event.preventDefault()
+                    const controls = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitemcheckbox"]:not([disabled])'))
+                    if (controls.length === 0) return
+                    const current = controls.findIndex((item) => item === document.activeElement)
+                    const next = event.key === 'Home'
+                      ? 0
+                      : event.key === 'End'
+                        ? controls.length - 1
+                        : event.key === 'ArrowDown'
+                          ? (current + 1) % controls.length
+                          : (current + controls.length - 1) % controls.length
+                    controls[next]?.focus()
+                  }}
                   className="absolute right-0 z-40 mt-1 min-w-[13rem] rounded-lg border border-slate-200 bg-white py-1 text-[12px] shadow-lg dark:border-gdc-border dark:bg-gdc-elevated"
                 >
                   {(Object.keys(COLUMN_LABELS) as ColumnKey[])
@@ -1612,7 +1826,7 @@ export function LogsExplorerPage() {
                         role="menuitemcheckbox"
                         aria-checked={visibleCols[key]}
                         disabled={visibleCols[key] && visibleColCount <= 2}
-                        className="flex w-full items-center gap-2 px-3 py-2 text-left font-medium hover:bg-slate-50 disabled:opacity-40 dark:hover:bg-gdc-card"
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left font-medium hover:bg-slate-50 focus-visible:bg-violet-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-400 disabled:opacity-40 dark:hover:bg-gdc-card dark:focus-visible:bg-gdc-rowHover"
                         onClick={() => toggleCol(key)}
                       >
                         <span
@@ -1668,7 +1882,28 @@ export function LogsExplorerPage() {
           </div>
         </div>
 
+        {compactLogsView ? (
+          <LogsCompactCards
+            rows={pageRows}
+            loading={logsFetchLoading && logRows.length === 0}
+            apiUnavailable={runtimeLogsError}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            onShowAllStatusesForRoute={
+              routeIdFromQuery != null && deliveryApiFilters.status === 'FAILED' && !runtimeLogsError
+                ? () => removeSearchParamKey('status')
+                : undefined
+            }
+            onClearFilters={() => {
+              clearOperationalUrlFilters()
+              setSearch('')
+              setLevelFilter('All Levels')
+              setStageFilter('All Stages')
+            }}
+          />
+        ) : (
         <div
+          data-testid="logs-dense-table"
           className={cn('relative overflow-x-auto transition-opacity duration-300', pulseFetch && 'opacity-90')}
           aria-busy={logsFetchLoading}
         >
@@ -1784,6 +2019,15 @@ export function LogsExplorerPage() {
                           : 'Clear filters or open the full logs workspace to widen the search.'}
                       </p>
                       <div className="flex flex-wrap items-center justify-center gap-2">
+                        {!runtimeLogsError && routeIdFromQuery != null && deliveryApiFilters.status === 'FAILED' ? (
+                          <button
+                            type="button"
+                            onClick={() => removeSearchParamKey('status')}
+                            className="inline-flex min-h-10 items-center rounded-lg bg-gdc-primary px-3 text-sm font-semibold text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500"
+                          >
+                            Show all statuses for this Route
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           onClick={() => {
@@ -1980,6 +2224,7 @@ export function LogsExplorerPage() {
             </tbody>
           </table>
         </div>
+        )}
 
         <div className="sticky bottom-0 z-10 flex flex-col gap-2 border-t border-slate-200 bg-white/95 px-3 py-2.5 text-[11px] text-slate-600 backdrop-blur-sm dark:border-gdc-border dark:bg-gdc-card dark:text-gdc-muted sm:flex-row sm:items-center sm:justify-between">
           <p className="tabular-nums">

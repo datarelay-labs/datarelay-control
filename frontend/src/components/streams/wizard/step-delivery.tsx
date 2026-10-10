@@ -89,6 +89,8 @@ function destinationEndpointLine(dest: DestinationListItem): string {
   return `${formatWizardSyslogLabel(dest.destination_type)} · ${host}:${port} (${proto})`
 }
 
+type DestinationProbeFeedback = { kind: 'success' | 'failed' | 'unavailable'; message: string }
+
 function DestinationRouteCard({
   routeIndex,
   draft,
@@ -97,8 +99,11 @@ function DestinationRouteCard({
   onDuplicate,
   onTest,
   testBusy,
+  testBlocked,
+  testFeedback,
   menuOpen,
   onMenuOpenChange,
+  onOpenDestinationPrerequisite,
 }: {
   routeIndex: number
   draft: WizardRouteDraft
@@ -107,8 +112,11 @@ function DestinationRouteCard({
   onDuplicate: () => void
   onTest: () => void
   testBusy: boolean
+  testBlocked: boolean
+  testFeedback?: DestinationProbeFeedback
   menuOpen: boolean
   onMenuOpenChange: (open: boolean) => void
+  onOpenDestinationPrerequisite?: () => boolean | void
 }) {
   const menuRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -150,6 +158,7 @@ function DestinationRouteCard({
         <div className="relative shrink-0" ref={menuRef}>
           <button
             type="button"
+            aria-label={`Actions for ${destLabel}`}
             aria-expanded={menuOpen}
             aria-haspopup="menu"
             className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-transparent text-slate-500 hover:bg-slate-100 dark:hover:bg-gdc-rowHover"
@@ -174,14 +183,17 @@ function DestinationRouteCard({
                 Remove route
               </button>
               <hr className="my-1 border-slate-100 dark:border-gdc-border" />
-              <button type="button" role="menuitem" className={routeMenuItemCls} onClick={() => { void onTest(); onMenuOpenChange(false) }} disabled={testBusy}>
-                Test destination
+              <button type="button" role="menuitem" className={routeMenuItemCls} onClick={() => { void onTest(); onMenuOpenChange(false) }} disabled={testBlocked}>
+                {testBusy ? 'Testing destination…' : 'Test destination'}
               </button>
               <Link
                 role="menuitem"
                 to={destinationDetailPath(String(draft.destinationId))}
                 className={routeMenuItemCls}
-                onClick={() => onMenuOpenChange(false)}
+                onClick={(event) => {
+                  onMenuOpenChange(false)
+                  if (onOpenDestinationPrerequisite?.() === false) event.preventDefault()
+                }}
               >
                 Open destination
               </Link>
@@ -189,6 +201,29 @@ function DestinationRouteCard({
           ) : null}
         </div>
       </div>
+      {testBusy ? (
+        <p
+          role="status"
+          data-testid={`destination-connectivity-loading-${draft.key}`}
+          className="mx-3 mb-3 inline-flex items-center gap-2 text-xs text-slate-600 dark:text-gdc-mutedStrong"
+        >
+          <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+          Checking destination connectivity…
+        </p>
+      ) : testFeedback ? (
+        <p
+          role={testFeedback.kind === 'success' ? 'status' : 'alert'}
+          data-testid={`destination-connectivity-feedback-${draft.key}`}
+          className={cn(
+            'mx-3 mb-3 rounded-md border px-3 py-2 text-xs leading-5',
+            testFeedback.kind === 'success'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-100'
+              : 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100',
+          )}
+        >
+          {testFeedback.message}
+        </p>
+      ) : null}
     </article>
   )
 }
@@ -199,9 +234,16 @@ type StepDeliveryProps = {
   state: WizardState
   onChange: (patch: Partial<WizardDestinationsState>) => void
   onOpenDestinationPrerequisite?: () => boolean | void
+  /** Only the New Stream wizard has a local Create Stream / Resume draft journey. */
+  showCreateDraftReturnGuidance?: boolean
 }
 
-export function StepDelivery({ state, onChange, onOpenDestinationPrerequisite }: StepDeliveryProps) {
+export function StepDelivery({
+  state,
+  onChange,
+  onOpenDestinationPrerequisite,
+  showCreateDraftReturnGuidance = false,
+}: StepDeliveryProps) {
   const [loading, setLoading] = useState(true)
   const [destinations, setDestinations] = useState<DestinationListItem[]>([])
   /** True when fetchDestinationsList returned null (failure), not a valid empty catalog. */
@@ -211,6 +253,7 @@ export function StepDelivery({ state, onChange, onOpenDestinationPrerequisite }:
   const [tab, setTab] = useState<DestinationLibraryTab>('all')
   const [menuKey, setMenuKey] = useState<string | null>(null)
   const [testBusyId, setTestBusyId] = useState<number | null>(null)
+  const [testFeedbackByDestinationId, setTestFeedbackByDestinationId] = useState<Record<number, DestinationProbeFeedback>>({})
   const onChangeRef = useRef(onChange)
   const fetchVersionRef = useRef(0)
   useEffect(() => { onChangeRef.current = onChange }, [onChange])
@@ -446,15 +489,42 @@ export function StepDelivery({ state, onChange, onOpenDestinationPrerequisite }:
   }, [])
 
   const handleTestDestination = useCallback(async (destinationId: number) => {
+    if (testBusyId != null) return
     setTestBusyId(destinationId)
+    // Do not leave an old success visible while a new test is in flight.
+    setTestFeedbackByDestinationId((prev) => {
+      const next = { ...prev }
+      delete next[destinationId]
+      return next
+    })
     try {
-      await testDestination(destinationId)
+      const result = await testDestination(destinationId)
+      const detail = typeof result?.message === 'string' ? result.message.trim() : ''
+      setTestFeedbackByDestinationId((prev) => ({
+        ...prev,
+        [destinationId]: result?.success === true
+          ? {
+              kind: 'success',
+              message: `Connection check passed.${detail ? ` ${detail}.` : ''} This tests connectivity, not end-to-end Stream delivery.`,
+            }
+          : {
+              kind: 'failed',
+              message: `Connection check failed.${detail ? ` ${detail}.` : ''} Open destination to review its settings and retry.`,
+            },
+      }))
     } catch {
-      /* surfaced via connectivity columns when available */
+      // Avoid rendering raw exception text; it can contain private network or auth data.
+      setTestFeedbackByDestinationId((prev) => ({
+        ...prev,
+        [destinationId]: {
+          kind: 'unavailable',
+          message: 'Connection check unavailable. Check authentication and API connectivity, then retry.',
+        },
+      }))
     } finally {
       setTestBusyId(null)
     }
-  }, [])
+  }, [testBusyId])
 
   return (
     <section className="space-y-4">
@@ -491,10 +561,13 @@ export function StepDelivery({ state, onChange, onOpenDestinationPrerequisite }:
           Loading destinations…
         </p>
       ) : catalogLoadFailed ? (
-        <div className="rounded-xl border border-dashed border-amber-300/80 bg-amber-50/80 p-4 dark:border-amber-500/40 dark:bg-amber-500/10">
+        <div role="alert" className="rounded-xl border border-dashed border-amber-300/80 bg-amber-50/80 p-4 dark:border-amber-500/40 dark:bg-amber-500/10">
           <p className="text-[12px] text-amber-900 dark:text-amber-100">
             Failed to load destinations. Check authentication and API connectivity.
           </p>
+          <button type="button" className={cn(btnGhost, 'mt-3 min-h-10')} onClick={() => void refreshDestinations(true)}>
+            Retry loading destinations
+          </button>
         </div>
       ) : destinations.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-300 bg-white p-4 dark:border-gdc-border dark:bg-gdc-card">
@@ -539,8 +612,11 @@ export function StepDelivery({ state, onChange, onOpenDestinationPrerequisite }:
                     onDuplicate={() => onChange({ routeDrafts: duplicateRouteDraft(drafts, draft.key) })}
                     onTest={() => handleTestDestination(draft.destinationId)}
                     testBusy={testBusyId === draft.destinationId}
+                    testBlocked={testBusyId != null}
+                    testFeedback={testFeedbackByDestinationId[draft.destinationId]}
                     menuOpen={menuKey === draft.key}
                     onMenuOpenChange={(open) => setMenuKey(open ? draft.key : null)}
+                    onOpenDestinationPrerequisite={onOpenDestinationPrerequisite}
                   />
                 ))
               )}
@@ -645,6 +721,32 @@ export function StepDelivery({ state, onChange, onOpenDestinationPrerequisite }:
                 ))}
               </div>
               <ul className="mt-3 max-h-[320px] space-y-2 overflow-y-auto pr-0.5">
+                {filteredLibrary.length === 0 ? (
+                  <li role="status" data-testid="destination-library-empty" className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center dark:border-gdc-border dark:bg-gdc-section">
+                    <p className="text-xs text-slate-600 dark:text-gdc-mutedStrong">
+                      {tabCounts.all === 0 ? 'No enabled destinations are available.' : 'No destinations match this search or filter.'}
+                    </p>
+                    {tabCounts.all > 0 ? (
+                      <button
+                        type="button"
+                        className="mt-2 text-xs font-semibold text-violet-700 hover:underline dark:text-violet-300"
+                        onClick={() => { setSearch(''); setTab('all') }}
+                      >
+                        Clear destination filters
+                      </button>
+                    ) : (
+                      <Link
+                        to={NAV_PATH.destinations}
+                        onClick={(event) => {
+                          if (onOpenDestinationPrerequisite?.() === false) event.preventDefault()
+                        }}
+                        className="mt-2 inline-block text-xs font-semibold text-violet-700 hover:underline dark:text-violet-300"
+                      >
+                        Manage destinations
+                      </Link>
+                    )}
+                  </li>
+                ) : null}
                 {filteredLibrary.map((d) => {
                   const icon =
                     d.destination_type === 'WEBHOOK_POST' ? (
@@ -672,11 +774,19 @@ export function StepDelivery({ state, onChange, onOpenDestinationPrerequisite }:
               </ul>
               <Link
                 to={NAV_PATH.destinations}
+                onClick={(event) => {
+                  if (onOpenDestinationPrerequisite?.() === false) event.preventDefault()
+                }}
                 className="mt-3 flex items-center justify-center gap-1 text-[11px] font-semibold text-violet-700 hover:underline dark:text-violet-300"
               >
                 <Plus className="h-3.5 w-3.5" aria-hidden />
                 Create new destination
               </Link>
+              {showCreateDraftReturnGuidance && onOpenDestinationPrerequisite ? (
+                <p className="mt-1 text-center text-[11px] leading-4 text-slate-500 dark:text-gdc-muted" data-testid="wizard-destination-resume-guidance">
+                  Opening Destinations saves this Stream draft first. Return to Create Stream and choose Resume draft to continue.
+                </p>
+              ) : null}
             </div>
 
             <div className="rounded-lg border border-slate-200/90 bg-white p-3 shadow-sm dark:border-gdc-border dark:bg-gdc-card">

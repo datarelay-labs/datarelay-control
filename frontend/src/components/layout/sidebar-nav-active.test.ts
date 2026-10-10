@@ -12,8 +12,8 @@ describe('isNavKeyActive', () => {
   it('scopes governance dashboard vs workspace', () => {
     expect(isNavKeyActive('/governance', 'governance')).toBe(true)
     expect(isNavKeyActive('/governance/violations', 'governance')).toBe(true)
+    // The advanced Workspace keeps its route but no longer masquerades as a primary nav leaf.
     expect(isNavKeyActive('/governance/workspace', 'governance')).toBe(false)
-    expect(isNavKeyActive('/governance/workspace', 'governanceWorkspace')).toBe(true)
   })
 
   it('treats validation and settings as administration', () => {

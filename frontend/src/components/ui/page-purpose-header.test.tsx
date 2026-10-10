@@ -61,6 +61,19 @@ describe('PagePurposeHeader', () => {
     expect(close).toHaveFocus()
   })
 
+  it('links to in-product operator guide while preserving the current editing page', async () => {
+    const user = userEvent.setup()
+    render(<PagePurposeHeader title="Destinations" purpose="Choose a delivery target" help={{
+      ...help,
+      docsHref: '/help/delivery',
+    }} />)
+    await user.click(screen.getByRole('button', { name: 'Help' }))
+    const link = screen.getByRole('link', { name: 'Open step-by-step guide' })
+    expect(link).toHaveAttribute('href', '/help/delivery')
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+  })
+
   it('closes the drawer with Escape', async () => {
     const user = userEvent.setup()
     render(

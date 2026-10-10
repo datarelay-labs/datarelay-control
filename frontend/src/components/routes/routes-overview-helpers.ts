@@ -198,6 +198,10 @@ export function buildRouteRowsFromOperationalSnapshot(
   const metaById = new Map(routesMetadata.map((r) => [r.id, r]))
   const streamById = new Map((entityLookup?.streams ?? []).map((s) => [s.id, s]))
   const destById = new Map((entityLookup?.destinations ?? []).map((d) => [d.id, d]))
+  // The Route's own health may be Healthy while its Destination is disabled.
+  // Use the explicit Destination state in the same operational snapshot,
+  // even when full catalog metadata was not requested for this read.
+  const snapshotDestinationById = new Map((snapshot.destinations ?? []).map((d) => [d.destination_id, d]))
   const problems = snapshot.problems ?? []
   return (snapshot.routes ?? []).map((snap) => {
     const route = mergeRouteMetadata(metaById.get(snap.route_id), snap)
@@ -206,7 +210,8 @@ export function buildRouteRowsFromOperationalSnapshot(
       snap.destination_id != null
         ? destinationFromSnapshotRoute(snap, destById.get(snap.destination_id))
         : null
-    const destEnabled = destination?.enabled !== false
+    const destEnabled = destination?.enabled !== false &&
+      (snap.destination_id == null || snapshotDestinationById.get(snap.destination_id)?.enabled !== false)
     const uiStatus =
       snap.enabled === false || !destEnabled
         ? 'Disabled'

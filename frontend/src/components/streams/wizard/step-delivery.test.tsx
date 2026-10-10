@@ -1,6 +1,6 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { StepDelivery } from './step-delivery'
 import { buildInitialState } from './wizard-state'
@@ -31,16 +31,20 @@ const fetchDestinationsList = vi.hoisted(() =>
 )
 
 const invalidateDestinationsListCache = vi.hoisted(() => vi.fn())
+const testDestination = vi.hoisted(() => vi.fn())
 
 vi.mock('../../../api/gdcDestinations', () => ({
   fetchDestinationsList: (...args: unknown[]) => fetchDestinationsList(...args),
   invalidateDestinationsListCache: () => invalidateDestinationsListCache(),
+  testDestination: (...args: unknown[]) => testDestination(...args),
 }))
 
 describe('StepDelivery', () => {
 
   beforeEach(() => {
     invalidateDestinationsListCache.mockClear()
+    testDestination.mockReset()
+    testDestination.mockResolvedValue({ success: true, message: 'Endpoint responded', latency_ms: 12.4, tested_at: '2026-10-09T07:00:00Z' })
     fetchDestinationsList.mockReset()
     fetchDestinationsList.mockResolvedValue([
       {
@@ -104,6 +108,31 @@ describe('StepDelivery', () => {
     )
   })
 
+  it('offers in-context recovery after a destination catalog failure without dropping configured paths', async () => {
+    fetchDestinationsList.mockResolvedValueOnce(null)
+    const state = buildInitialState()
+    state.destinations.routeDrafts = [{
+      key: 'keep-retry-path',
+      destinationId: 1,
+      enabled: true,
+      failurePolicy: 'RETRY_AND_BACKOFF',
+      rateLimitJson: {},
+    }]
+    const onChange = vi.fn()
+    render(
+      <MemoryRouter>
+        <StepDelivery state={state} onChange={onChange} />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByText(/Failed to load destinations/i)).toBeInTheDocument()
+    const retry = screen.getByRole('button', { name: 'Retry loading destinations' })
+    await userEvent.setup().click(retry)
+    expect((await screen.findAllByText('Stellar Syslog')).length).toBeGreaterThan(0)
+    expect(fetchDestinationsList).toHaveBeenCalledTimes(2)
+    expect(onChange).not.toHaveBeenCalledWith(expect.objectContaining({ routeDrafts: [] }))
+  })
+
   it('treats a successful empty destination list as empty catalog, not failure', async () => {
     fetchDestinationsList.mockResolvedValueOnce([])
     const onChange = vi.fn()
@@ -145,6 +174,169 @@ describe('StepDelivery', () => {
         }),
       )
     })
+  })
+
+  it('shows the destination connectivity check result without claiming Stream delivery', async () => {
+    const user = userEvent.setup()
+    const state = buildInitialState()
+    state.destinations.routeDrafts = [{
+      key: 'probe-route',
+      destinationId: 1,
+      enabled: true,
+      failurePolicy: 'RETRY_AND_BACKOFF',
+      rateLimitJson: {},
+    }]
+    const onChange = vi.fn()
+    render(<MemoryRouter><StepDelivery state={state} onChange={onChange} /></MemoryRouter>)
+    const card = await screen.findByTestId('destination-route-card-probe-route')
+    await user.click(within(card).getByRole('button', { name: 'Actions for Stellar Syslog' }))
+    await user.click(within(card).getByRole('menuitem', { name: 'Test destination' }))
+
+    expect(testDestination).toHaveBeenCalledWith(1)
+    const result = await within(card).findByRole('status')
+    expect(result).toHaveTextContent('Connection check passed')
+    expect(result).toHaveTextContent('Endpoint responded')
+    expect(result).toHaveTextContent('not end-to-end Stream delivery')
+    expect(card).not.toHaveTextContent('Delivery proven')
+    expect(onChange).not.toHaveBeenCalledWith(expect.objectContaining({ routeDrafts: expect.anything() }))
+  })
+
+  it('surfaces an API-confirmed failed connectivity check as actionable failure, not success', async () => {
+    const user = userEvent.setup()
+    testDestination.mockResolvedValueOnce({
+      success: false, message: 'Connection refused', latency_ms: 3.2, tested_at: '2026-10-09T07:00:00Z',
+    })
+    const state = buildInitialState()
+    state.destinations.routeDrafts = [{
+      key: 'failed-probe',
+      destinationId: 2,
+      enabled: true,
+      failurePolicy: 'RETRY_AND_BACKOFF',
+      rateLimitJson: {},
+    }]
+    render(<MemoryRouter><StepDelivery state={state} onChange={vi.fn()} /></MemoryRouter>)
+    const card = await screen.findByTestId('destination-route-card-failed-probe')
+    await user.click(within(card).getByRole('button', { name: 'Actions for Backup Webhook' }))
+    await user.click(within(card).getByRole('menuitem', { name: 'Test destination' }))
+    const result = await within(card).findByRole('alert')
+    expect(result).toHaveTextContent('Connection check failed')
+    expect(result).toHaveTextContent('Connection refused')
+    expect(result).toHaveTextContent('Open destination')
+    expect(result).not.toHaveTextContent('Connection check passed')
+  })
+
+  it('distinguishes test request failure from a failed endpoint check', async () => {
+    const user = userEvent.setup()
+    testDestination.mockRejectedValueOnce(new Error('private-secret-value'))
+    const state = buildInitialState()
+    state.destinations.routeDrafts = [{
+      key: 'unavailable-probe',
+      destinationId: 1,
+      enabled: true,
+      failurePolicy: 'RETRY_AND_BACKOFF',
+      rateLimitJson: {},
+    }]
+    render(<MemoryRouter><StepDelivery state={state} onChange={vi.fn()} /></MemoryRouter>)
+    const card = await screen.findByTestId('destination-route-card-unavailable-probe')
+    await user.click(within(card).getByRole('button', { name: 'Actions for Stellar Syslog' }))
+    await user.click(within(card).getByRole('menuitem', { name: 'Test destination' }))
+    const result = await within(card).findByRole('alert')
+    expect(result).toHaveTextContent('Connection check unavailable')
+    expect(result).toHaveTextContent('Check authentication and API connectivity')
+    expect(result).not.toHaveTextContent('private-secret-value')
+    expect(result).not.toHaveTextContent('Connection check passed')
+  })
+
+  it('replaces stale positive probe feedback during a new test and shows the new failed result', async () => {
+    const user = userEvent.setup()
+    let releaseTest: (result: { success: boolean; message: string; latency_ms: number; tested_at: string }) => void = () => {}
+    testDestination.mockResolvedValueOnce({
+      success: true, message: 'Probe passed', latency_ms: 8, tested_at: '2026-10-09T07:00:00Z',
+    }).mockImplementationOnce(() => new Promise((resolve) => { releaseTest = resolve }))
+    const state = buildInitialState()
+    state.destinations.routeDrafts = [{
+      key: 'repeated-probe',
+      destinationId: 1,
+      enabled: true,
+      failurePolicy: 'RETRY_AND_BACKOFF',
+      rateLimitJson: {},
+    }]
+    render(<MemoryRouter><StepDelivery state={state} onChange={vi.fn()} /></MemoryRouter>)
+    const card = await screen.findByTestId('destination-route-card-repeated-probe')
+    await user.click(within(card).getByRole('button', { name: 'Actions for Stellar Syslog' }))
+    await user.click(within(card).getByRole('menuitem', { name: 'Test destination' }))
+    expect(await within(card).findByText(/Connection check passed/)).toBeInTheDocument()
+
+    await user.click(within(card).getByRole('button', { name: 'Actions for Stellar Syslog' }))
+    await user.click(within(card).getByRole('menuitem', { name: 'Test destination' }))
+    expect(within(card).getByTestId('destination-connectivity-loading-repeated-probe')).toHaveTextContent('Checking destination connectivity')
+    expect(within(card).queryByText(/Connection check passed/)).not.toBeInTheDocument()
+    releaseTest({ success: false, message: 'Connection timed out', latency_ms: 45, tested_at: '2026-10-09T07:01:00Z' })
+    expect(await within(card).findByRole('alert')).toHaveTextContent('Connection timed out')
+    expect(within(card).queryByTestId('destination-connectivity-loading-repeated-probe')).not.toBeInTheDocument()
+    expect(testDestination).toHaveBeenCalledTimes(2)
+  })
+
+  it('preserves Stream setup before opening an existing destination detail from a Route card', async () => {
+    const user = userEvent.setup()
+    const state = buildInitialState()
+    state.destinations.routeDrafts = [{
+      key: 'route-open-detail',
+      destinationId: 1,
+      enabled: true,
+      failurePolicy: 'RETRY_AND_BACKOFF',
+      rateLimitJson: {},
+    }]
+    const onOpenDestinationPrerequisite = vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true)
+    render(
+      <MemoryRouter initialEntries={['/streams/new']}>
+        <Routes>
+          <Route path="/streams/new" element={
+            <StepDelivery state={state} onChange={vi.fn()} onOpenDestinationPrerequisite={onOpenDestinationPrerequisite} showCreateDraftReturnGuidance />
+          } />
+          <Route path="/destinations/:destinationId" element={<p>Destination details workspace</p>} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    const card = await screen.findByTestId('destination-route-card-route-open-detail')
+    await user.click(within(card).getByRole('button', { name: 'Actions for Stellar Syslog' }))
+    await user.click(within(card).getByRole('menuitem', { name: 'Open destination' }))
+    expect(onOpenDestinationPrerequisite).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText('Destination details workspace')).not.toBeInTheDocument()
+    expect(screen.getByTestId('destination-route-card-route-open-detail')).toBeInTheDocument()
+
+    await user.click(within(card).getByRole('button', { name: 'Actions for Stellar Syslog' }))
+    await user.click(within(card).getByRole('menuitem', { name: 'Open destination' }))
+    expect(onOpenDestinationPrerequisite).toHaveBeenCalledTimes(2)
+    expect(await screen.findByText('Destination details workspace')).toBeInTheDocument()
+  })
+
+  it('does not offer a second destination test while another test request is in flight', async () => {
+    const user = userEvent.setup()
+    let resolveFirst: (result: { success: boolean; message: string; latency_ms: number; tested_at: string }) => void = () => {}
+    testDestination.mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve }))
+    const state = buildInitialState()
+    state.destinations.routeDrafts = [
+      { key: 'busy-a', destinationId: 1, enabled: true, failurePolicy: 'RETRY_AND_BACKOFF', rateLimitJson: {} },
+      { key: 'busy-b', destinationId: 2, enabled: true, failurePolicy: 'RETRY_AND_BACKOFF', rateLimitJson: {} },
+    ]
+    render(<MemoryRouter><StepDelivery state={state} onChange={vi.fn()} /></MemoryRouter>)
+    const a = await screen.findByTestId('destination-route-card-busy-a')
+    const b = screen.getByTestId('destination-route-card-busy-b')
+    await user.click(within(a).getByRole('button', { name: 'Actions for Stellar Syslog' }))
+    await user.click(within(a).getByRole('menuitem', { name: 'Test destination' }))
+    expect(within(a).getByTestId('destination-connectivity-loading-busy-a')).toBeInTheDocument()
+
+    await user.click(within(b).getByRole('button', { name: 'Actions for Backup Webhook' }))
+    expect(within(b).getByRole('menuitem', { name: 'Test destination' })).toBeDisabled()
+    expect(testDestination).toHaveBeenCalledTimes(1)
+    resolveFirst({ success: true, message: 'Endpoint responded', latency_ms: 4, tested_at: '2026-10-09T07:10:00Z' })
+    await within(a).findByText(/Connection check passed/)
+    expect(within(b).getByRole('menuitem', { name: 'Test destination' })).toBeEnabled()
+    await user.click(within(b).getByRole('menuitem', { name: 'Test destination' }))
+    expect(testDestination).toHaveBeenCalledTimes(2)
+    expect(testDestination).toHaveBeenLastCalledWith(2)
   })
 
   it('does not expose route delivery tuning controls', async () => {
@@ -197,6 +389,60 @@ describe('StepDelivery', () => {
     }))
   })
 
+  it('explains zero search results and clears filters without changing delivery paths', async () => {
+    const user = userEvent.setup()
+    const state = buildInitialState()
+    state.destinations.routeDrafts = [{
+      key: 'retained-filter-path',
+      destinationId: 1,
+      enabled: true,
+      failurePolicy: 'RETRY_AND_BACKOFF',
+      rateLimitJson: {},
+    }]
+    const onChange = vi.fn()
+    render(
+      <MemoryRouter>
+        <StepDelivery state={state} onChange={onChange} />
+      </MemoryRouter>,
+    )
+    await screen.findByText('Backup Webhook')
+    await user.type(screen.getByPlaceholderText('Search destinations…'), 'not-an-existing-target')
+    expect(screen.getByTestId('destination-library-empty')).toHaveTextContent('No destinations match')
+    await user.click(screen.getByRole('button', { name: 'Clear destination filters' }))
+    expect(screen.getByPlaceholderText('Search destinations…')).toHaveValue('')
+    expect(screen.getByText('Backup Webhook')).toBeInTheDocument()
+    expect(state.destinations.routeDrafts).toHaveLength(1)
+    expect(onChange).not.toHaveBeenCalledWith(expect.objectContaining({ routeDrafts: [] }))
+  })
+
+  it('explains when every destination is disabled and guards the manage link', async () => {
+    fetchDestinationsList.mockResolvedValueOnce([{
+      id: 19,
+      name: 'Disabled Webhook',
+      destination_type: 'WEBHOOK_POST',
+      config_json: { url: 'https://disabled.example.test' },
+      enabled: false,
+      rate_limit_json: {},
+      streams_using_count: 0,
+      routes: [],
+    }])
+    const onOpenDestinationPrerequisite = vi.fn(() => false)
+    render(
+      <MemoryRouter initialEntries={['/streams/new']}>
+        <Routes>
+          <Route path="/streams/new" element={
+            <StepDelivery state={buildInitialState()} onChange={vi.fn()} onOpenDestinationPrerequisite={onOpenDestinationPrerequisite} showCreateDraftReturnGuidance />
+          } />
+          <Route path="/destinations" element={<p>Destination management workspace</p>} />
+        </Routes>
+      </MemoryRouter>,
+    )
+    expect(await screen.findByText('No enabled destinations are available.')).toBeInTheDocument()
+    await userEvent.setup().click(screen.getByRole('link', { name: 'Manage destinations' }))
+    expect(onOpenDestinationPrerequisite).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText('Destination management workspace')).not.toBeInTheDocument()
+  })
+
   it('checks for new destinations when the wizard tab regains focus', async () => {
     fetchDestinationsList.mockResolvedValueOnce([])
     render(
@@ -233,4 +479,44 @@ describe('StepDelivery', () => {
     expect(state.destinations.routeDrafts).toHaveLength(1)
   })
 
+  it('preserves the current Stream draft before opening a new destination from a populated library', async () => {
+    const onOpenDestinationPrerequisite = vi.fn(() => true)
+    render(
+      <MemoryRouter initialEntries={['/streams/new']}>
+        <Routes>
+          <Route path="/streams/new" element={
+            <StepDelivery state={buildInitialState()} onChange={vi.fn()} onOpenDestinationPrerequisite={onOpenDestinationPrerequisite} showCreateDraftReturnGuidance />
+          } />
+          <Route path="/destinations" element={<p>Destination management workspace</p>} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    await screen.findByText('Stellar Syslog')
+    expect(screen.getByTestId('wizard-destination-resume-guidance')).toHaveTextContent('Opening Destinations saves this Stream draft first')
+    expect(screen.getByTestId('wizard-destination-resume-guidance')).toHaveTextContent('Resume draft')
+    await userEvent.setup().click(screen.getByRole('link', { name: 'Create new destination' }))
+    expect(onOpenDestinationPrerequisite).toHaveBeenCalledTimes(1)
+    expect(await screen.findByText('Destination management workspace')).toBeInTheDocument()
+  })
+
+  it('keeps the populated Wizard open if saving the draft fails before destination creation', async () => {
+    const onOpenDestinationPrerequisite = vi.fn(() => false)
+    render(
+      <MemoryRouter initialEntries={['/streams/new']}>
+        <Routes>
+          <Route path="/streams/new" element={
+            <StepDelivery state={buildInitialState()} onChange={vi.fn()} onOpenDestinationPrerequisite={onOpenDestinationPrerequisite} showCreateDraftReturnGuidance />
+          } />
+          <Route path="/destinations" element={<p>Destination management workspace</p>} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    await screen.findByText('Stellar Syslog')
+    await userEvent.setup().click(screen.getByRole('link', { name: 'Create new destination' }))
+    expect(onOpenDestinationPrerequisite).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText('Destination management workspace')).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Create new destination' })).toBeInTheDocument()
+  })
 })

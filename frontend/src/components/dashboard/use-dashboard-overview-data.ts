@@ -33,6 +33,8 @@ export type DashboardOverviewBundle = {
   outcomeTs: DashboardOutcomeTimeseriesResponse | null
   streams: StreamRead[]
   connectors: ConnectorRead[]
+  /** False until the Connector catalog request has returned a valid list. */
+  connectorsKnown: boolean
   destinations: DestinationListItem[] | null
   operationalSnapshot: OperationalSnapshotResponse | null
   /** True when the operational snapshot came from a dev fixture file, not the live API. */
@@ -47,6 +49,7 @@ const EMPTY_DASHBOARD_BUNDLE: DashboardOverviewBundle = {
   outcomeTs: null,
   streams: [],
   connectors: [],
+  connectorsKnown: false,
   destinations: null,
   operationalSnapshot: null,
   isFixtureMode: false,
@@ -94,6 +97,7 @@ function mergeDeferredBundle(
     outcomeTs: null,
     streams: unwrapDeferredList(streamsResult),
     connectors: unwrapDeferredList(connectorsResult),
+    connectorsKnown: connectorsResult.status === 'fulfilled' && Array.isArray(connectorsResult.value),
     destinations: unwrapDeferred(destinationsResult),
   }
 }

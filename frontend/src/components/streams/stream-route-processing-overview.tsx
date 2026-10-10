@@ -304,14 +304,9 @@ export function StreamRouteProcessingOverview({ streamId }: { streamId: number }
 
   const selectedRoute = routes.find((r) => r.id === selectedRouteId) ?? null
 
-  useEffect(() => {
-    if (statusesLoading) return
-    const statuses = selectedRouteId != null ? statusByRoute[selectedRouteId] : undefined
-    if (!statuses) return
-    if (routeStatusesUseShared(statuses)) setDetailTab('delivery')
-    else setDetailTab('transform')
-  }, [selectedRouteId, statusByRoute, statusesLoading])
-
+  // A late effective-status response must never reset the tab the user just chose.
+  // Shared-only routes are redirected to Delivery by StreamRouteDetailTabs; route
+  // selection itself resets to Transform in the navigator callback.
   return (
     <section
       id="route-processing-section"
@@ -350,7 +345,10 @@ export function StreamRouteProcessingOverview({ streamId }: { streamId: number }
           statusByRoute={statusByRoute}
           statusesLoading={statusesLoading}
           selectedRouteId={selectedRouteId}
-          onSelect={setSelectedRouteId}
+          onSelect={(nextRouteId) => {
+            setSelectedRouteId(nextRouteId)
+            setDetailTab('transform')
+          }}
           loading={loading}
         />
 

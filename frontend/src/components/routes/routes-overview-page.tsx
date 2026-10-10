@@ -53,7 +53,7 @@ import { RoutesProblemRoutesPanel } from './routes-problem-routes-panel'
 import { RuntimeFixtureModeBanner } from '../runtime/runtime-fixture-mode-banner'
 import { ROUTES_TABLE_ROW_HEIGHT, ROUTES_VIRTUAL_SCROLL_THRESHOLD, RoutesTableRow } from './routes-table-row'
 import { PagePurposeHeader, type PageHelpContent } from '../ui/page-purpose-header'
-import { StreamFlowMap } from '../flow/stream-flow-map'
+import { RoutesArchitectureWorkspace } from './routes-architecture-workspace'
 
 const WINDOW_OPTIONS: { value: MetricsWindow; label: string }[] = [
   { value: '15m', label: 'Last 15 minutes' },
@@ -63,6 +63,7 @@ const WINDOW_OPTIONS: { value: MetricsWindow; label: string }[] = [
 ]
 
 const ROUTES_HELP: PageHelpContent = {
+  docsHref: '/help/delivery',
   title: 'Routes',
   intro: 'A Route is the destination-specific delivery path from one Stream to one Destination. Use Routes when the same Stream needs different processing or delivery behavior for different destinations.',
   sections: [
@@ -515,36 +516,13 @@ export function RoutesOverviewPage() {
         </button>
       </div>
 
-      <section
-        className="rounded-xl border border-violet-200/70 bg-violet-50/40 px-4 py-3 dark:border-violet-500/20 dark:bg-violet-500/[0.06]"
-        data-testid="routes-mental-model"
-        aria-label="DataRelay delivery model"
-      >
-        <p className="text-xs font-semibold uppercase tracking-wide text-violet-800 dark:text-violet-200">How delivery works</p>
-        <div className="mt-2 flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
-          <span className="rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-gdc-border dark:bg-gdc-card">Stream</span>
-          <ChevronRight className="h-4 w-4 text-slate-400" aria-hidden />
-          <span className="rounded-lg border border-violet-200 bg-white px-3 py-2 dark:border-violet-500/30 dark:bg-gdc-card">Route Processing</span>
-          <ChevronRight className="h-4 w-4 text-slate-400" aria-hidden />
-          <span className="rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-gdc-border dark:bg-gdc-card">Destination</span>
-        </div>
-        <p className="mt-2 text-xs leading-relaxed text-slate-600 dark:text-gdc-muted">
-          One Stream can fan out through many Routes to many Destinations. Use each Route for destination-specific processing and delivery behavior instead of duplicating the Stream.
-        </p>
-      </section>
-
-      {operationalSnapshot && streamFilter !== '__all__' ? (
-        <section aria-label="Selected Stream delivery flow" className="space-y-3" data-testid="routes-flow-maps">
-          {operationalSnapshot.streams.filter((stream) => String(stream.stream_id) === streamFilter).map((stream) => (
-            <StreamFlowMap
-              key={stream.stream_id}
-              streamId={stream.stream_id}
-              streamName={stream.stream_name || `Stream #${stream.stream_id}`}
-              routes={consoleRows.filter((row) => row.route.stream_id === stream.stream_id && row.metrics != null).map((row) => row.metrics!)}
-            />
-          ))}
-        </section>
-      ) : null}
+      <RoutesArchitectureWorkspace
+        snapshot={operationalSnapshot}
+        consoleRows={consoleRows}
+        loading={loading}
+        selectedStreamId={streamFilter === '__all__' ? null : Number(streamFilter)}
+        onSelectStream={(id) => setStreamFilter(String(id))}
+      />
 
       <section aria-label="Route KPI summary" className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6 xl:gap-3">
         <div className="rounded-lg border border-slate-200/70 bg-white/90 px-3 py-2 dark:border-gdc-border/90 dark:bg-gdc-card">
@@ -595,7 +573,15 @@ export function RoutesOverviewPage() {
         </div>
       </section>
 
-      <RoutesFlowTreeTable snapshot={operationalSnapshot} consoleRows={consoleRows} loading={loading} />
+      <details className="overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-sm dark:border-gdc-border dark:bg-gdc-card">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-50 dark:text-slate-100 dark:hover:bg-gdc-rowHover">
+          Advanced: expanded Route Flow table
+          <span className="ml-2 text-xs font-normal text-slate-500 dark:text-gdc-muted">Complete hierarchy and runtime metrics</span>
+        </summary>
+        <div className="border-t border-slate-200/90 dark:border-gdc-border">
+          <RoutesFlowTreeTable snapshot={operationalSnapshot} consoleRows={consoleRows} loading={loading} />
+        </div>
+      </details>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <RoutesProblemRoutesPanel consoleRows={consoleRows} />

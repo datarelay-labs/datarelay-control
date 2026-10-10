@@ -281,14 +281,20 @@ export function wizardSampleStepBlockReason(state: WizardState): string {
   return 'Complete required fields on this step before continuing.'
 }
 
-/** At least one enabled delivery path before Deploy. */
+/** At least one enabled Route, and all enabled Routes must target a valid destination. */
 export function wizardDestinationGateReady(state: Pick<WizardState, 'destinations'>): boolean {
-  return state.destinations.routeDrafts.some((route) => route.enabled)
+  const routes = state.destinations.routeDrafts
+  return routes.some((route) => route.enabled) && routes.every(
+    (route) => !route.enabled || (Number.isSafeInteger(route.destinationId) && route.destinationId > 0),
+  )
 }
 
 /** Human-readable reason the route-processing Next control stays disabled. */
 export function wizardRouteProcessingStepBlockReason(state: Pick<WizardState, 'destinations'>): string {
   if (!wizardDestinationGateReady(state)) {
+    if (state.destinations.routeDrafts.some((route) => route.enabled)) {
+      return 'Select a valid destination for an enabled delivery path before continuing.'
+    }
     return 'Enable at least one delivery path before continuing.'
   }
   return 'Complete required fields on this step before continuing.'

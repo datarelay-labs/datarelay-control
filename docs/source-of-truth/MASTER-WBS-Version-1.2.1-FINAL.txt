@@ -739,3 +739,56 @@ Current implementation lane:
 - Re-audit and rebaseline all remaining M29 work against the future approved final Marketplace specification before resuming.
 
 M29 integration gates apply only when Marketplace work is explicitly resumed; they are not Control v1 release gates.
+
+==================================================
+OWNER-APPROVED CONTROL V1 UX CONVERGENCE — 2026-10-09 (#354/#413)
+==================================================
+
+Status: IMPLEMENTATION PENDING (design approved; user/browser gates NOT PASS).
+This is a presentation/orchestration refinement of existing Phase A/B
+Connectors/Sources/Streams/Routes/Destinations and Phase C Governance,
+NOT a new phase, engine, persistence domain, post-v1 Marketplace task,
+AI Gateway or Enterprise feature. Existing finished WBS milestones remain finished.
+
+P0-UX-01 — Data Flows Operational Workspace (Routes overview successor)
+- Current Source/Stream -> Route Processing -> Destination topology first.
+- Actual per-edge EPS, success/failure/retry, health, activity and selected
+  route inspector using existing Runtime Snapshot; capacity only if configured.
+- Distinguish Source ingest vs Route egress and sent vs acknowledged.
+- Preserve filtered expert catalog/table and authorized Route Edit deep links.
+
+P0-UX-02 — New Data Flow guided onboarding
+- Reuse/select Connector; create missing Connector without losing Wizard draft.
+- Source test/sample/record path/checkpoint; destination selection or contextual
+  destination creation; return to draft after each prerequisite.
+- Route Processing per destination, deploy and verify actual runtime results.
+- Reuse canonical state/persistence/gates and RBAC, do not auto-activate.
+
+P0-UX-03 — Navigation and page ownership
+- Data Flows for operation and lineage; Streams for collection/execution;
+  Connections for reusable Connectors and Destinations; Governance and
+  Administration remain role-constrained.
+- Global "New Data Flow"; retain legacy routes and expert editing URLs.
+- Remove redundant Stream/Route onboarding controls only when owner-facing
+  replacement is working, not by deleting necessary configuration workflows.
+
+P0-UX-04 — Operational truth corrections
+- Explain "offline/local draft" accurately when API state is unavailable.
+- No generic Header Healthy badge based on configuration page or missing data.
+- No fake delivery/acknowledgment, capacity/EPS or preview-persistence claims.
+
+P1-UX-05 — Progressive operator/expert modes and accessibility
+- Scale topology via grouping/filter/search/select; maintain keyboard-accessible
+  table/list fallback and mobile narrow-view layout.
+- Contextual help and working sample path remain applicable.
+
+Acceptance (independent release gates):
+- Affected tests/build/review and fresh authenticated browser proof at
+  1440/375/320 for novice first run and reused-resource repeat creation.
+- Mandatory Browser Feature Scenario Reconciliation on integrated exact HEAD,
+  then same-HEAD two-user Full User E2E, freeze, machine qualification and
+  owner approval; no release from static/component tests alone.
+
+Source: docs/ux/DATA-RELAY-FLOW-FIRST-IA-IMPLEMENTATION-CONTRACT.md
+The feature workstream is tracked in existing GitHub roadmap #354 /
+active Work Packet #413; no competing parallel roadmap.

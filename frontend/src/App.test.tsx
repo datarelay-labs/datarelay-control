@@ -535,16 +535,23 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     localStorage.removeItem('gdc-platform-governance-mode')
   })
 
-  it('renders core nav for CONNECTOR_OPERATOR (M20 RBAC)', () => {
+  it('exposes the full role-allowed nav through expandable groups for CONNECTOR_OPERATOR', async () => {
+    const user = userEvent.setup()
     persistTestSession('CONNECTOR_OPERATOR')
     renderApp()
     const nav = screen.getByRole('complementary', { name: 'Primary navigation' })
+    for (const group of ['Data Sources', 'Delivery', 'Governance']) {
+      const toggle = within(nav).getByRole('button', { name: group })
+      await user.click(toggle)
+      expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    }
     for (const label of ['Connectors', 'Streams', 'Destinations', 'Routes', 'Administration']) {
       expect(within(nav).getByRole('button', { name: label })).toBeInTheDocument()
     }
     expect(within(nav).getAllByRole('button', { name: 'Dashboard' }).length).toBeGreaterThanOrEqual(1)
     expect(nav).toHaveTextContent('Governance')
-    expect(within(nav).getByRole('button', { name: 'Governance Workspace' })).toBeInTheDocument()
+    expect(within(nav).getByRole('button', { name: 'Governance Dashboard' })).toBeInTheDocument()
+    expect(within(nav).queryByRole('button', { name: 'Governance Workspace' })).not.toBeInTheDocument()
     for (const removed of [
       'Operations',
       'Operations Center',
@@ -574,12 +581,14 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     expect(within(nav).getAllByRole('button', { name: 'Dashboard' })).toHaveLength(1)
   })
 
-  it('renders Governance nav for GOVERNANCE_OPERATOR (M20 RBAC)', () => {
+  it('renders Governance nav for GOVERNANCE_OPERATOR (M20 RBAC)', async () => {
+    const user = userEvent.setup()
     persistTestSession('GOVERNANCE_OPERATOR')
     renderApp()
     const nav = screen.getByRole('complementary', { name: 'Primary navigation' })
-    expect(nav).toHaveTextContent('Governance')
-    expect(within(nav).getByRole('button', { name: 'Governance Workspace' })).toBeInTheDocument()
+    await user.click(within(nav).getByRole('button', { name: 'Governance' }))
+    expect(within(nav).getByRole('button', { name: 'Governance Dashboard' })).toBeInTheDocument()
+    expect(within(nav).queryByRole('button', { name: 'Governance Workspace' })).not.toBeInTheDocument()
   })
 
   it('logo links to Dashboard home', () => {
@@ -592,6 +601,7 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
   it('renders Destinations via Delivery sidebar entry', async () => {
     const user = userEvent.setup()
     renderApp()
+    await user.click(screen.getByRole('button', { name: 'Delivery' }))
     await user.click(screen.getByRole('button', { name: 'Destinations' }))
     expect(
       await screen.findByText(
@@ -635,6 +645,7 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
   it('renders Connectors via Data Sources sidebar entry', async () => {
     const user = userEvent.setup()
     renderApp()
+    await user.click(screen.getByRole('button', { name: 'Data Sources' }))
     await user.click(screen.getByRole('button', { name: 'Connectors' }))
     expect(
       await screen.findByText(/Which source connection needs attention\? Connectors manage reusable source access/i, {}, { timeout: 15000 }),
@@ -648,6 +659,7 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
   it('renders Streams operational console when Streams is selected', async () => {
     const user = userEvent.setup()
     renderApp()
+    await user.click(screen.getByRole('button', { name: 'Data Sources' }))
     await user.click(screen.getByRole('button', { name: 'Streams' }))
     expect(
       await screen.findByText(/Which data flow needs attention/i, {}, { timeout: 15000 }),
@@ -880,6 +892,15 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     expect(screen.getByTestId('governance-nav-violations')).toBeInTheDocument()
     expect(screen.queryByTestId('governance-read-only-banner')).not.toBeInTheDocument()
   })
+
+  it('retains the authorized Governance Workspace deep link after demoting its primary nav entry', async () => {
+    persistTestSession('GOVERNANCE_OPERATOR')
+    renderApp('/governance/workspace?stream_id=10')
+    expect(await screen.findByTestId('governance-workspace-page', {}, { timeout: 15000 })).toBeInTheDocument()
+    const nav = screen.getByRole('complementary', { name: 'Primary navigation' })
+    expect(within(nav).queryByRole('button', { name: 'Governance Workspace' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Back to Governance Dashboard' })).toHaveAttribute('href', '/governance')
+  }, 20000)
 
   it('shows an explicit 404 page for unknown URLs instead of redirecting to /streams', async () => {
     renderApp('/this-route-does-not-exist-xyz')

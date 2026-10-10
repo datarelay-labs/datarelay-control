@@ -1,8 +1,9 @@
 import { ChevronLeft, ChevronRight, CheckCircle2, Loader2 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { NAV_PATH, runtimeOverviewPath } from '../../config/nav-paths'
 import { WIZARD_LABEL } from '../../lib/operator-vocabulary'
+import { useSessionCapabilities } from '../../lib/rbac'
 import { createStream } from '../../api/gdcStreams'
 import { materializeConnectorTemplates } from '../../api/gdcConnectorTemplates'
 import { saveStreamMappingUiConfigStrict } from '../../api/gdcRuntimeUi'
@@ -18,6 +19,8 @@ import {
   wizardPersistErrorLabel,
 } from './wizard/wizard-multi-template-configure'
 import { StepConnect } from './wizard/step-connect'
+import { NewConnectorWizardPage } from '../connectors/new-connector-wizard-page'
+import { clearWizardCatalogSnapshot } from './wizard/wizard-catalog-cache'
 import { StepSample } from './wizard/step-sample'
 import { StepDelivery } from './wizard/step-delivery'
 import { StepRouteProcessing } from './wizard/step-route-processing'
@@ -68,6 +71,7 @@ import {
 } from './wizard/wizard-operational-samples'
 import { applyHttpImportToWizardState, type HttpImportWizardLocationState } from '../../utils/httpImportDraft'
 import { IntentTemplatePicker } from './wizard/intent-template-picker'
+import { WizardExitConfirmation } from './wizard/wizard-exit-confirmation'
 import { applyWizardIntentTemplate, type WizardIntentTemplateId } from './wizard/intent-templates'
 import { persistWizardDataProtectionIntents } from './wizard/wizard-data-protection-persist'
 import { persistWizardRouteTransformOverrides, verifyWizardRouteTransformEffective } from './wizard/wizard-stream-persist'
@@ -98,9 +102,16 @@ const NEXT_STEP_LABEL: Partial<Record<WizardStepKey, string>> = {
 
 export function NewStreamWizardPage() {
   const navigate = useNavigate()
+  const capabilities = useSessionCapabilities()
+  const canCreateStream = capabilities.workspace_mutations === true
   const location = useLocation()
   const importHydratedRef = useRef(false)
   const draftHydratedRef = useRef(false)
+  const cancelButtonRef = useRef<HTMLButtonElement>(null)
+  const connectorDialogRef = useRef<HTMLElement>(null)
+  const connectorCloseButtonRef = useRef<HTMLButtonElement>(null)
+  const connectorReturnFocusRef = useRef<HTMLElement | null>(null)
+  const [exitConfirmationOpen, setExitConfirmationOpen] = useState(false)
   const [stepIndex, setStepIndex] = useState(0)
   const [intentSelected, setIntentSelected] = useState(false)
   const [state, setState] = useState<WizardState>(() => buildInitialState())
@@ -112,6 +123,9 @@ export function NewStreamWizardPage() {
   const [draftNotice, setDraftNotice] = useState<string | null>(null)
   const [operationalSampleId, setOperationalSampleId] = useState<OperationalSampleId | null>(null)
   const [dataProtectionDrawerOpen, setDataProtectionDrawerOpen] = useState(false)
+  const [connectorCreateOpen, setConnectorCreateOpen] = useState(false)
+  const [connectorCreateBusy, setConnectorCreateBusy] = useState(false)
+  const [connectorCatalogEpoch, setConnectorCatalogEpoch] = useState(0)
 
   const handleIntentSelect = useCallback((id: WizardIntentTemplateId) => {
     clearWizardDraft()
@@ -132,13 +146,15 @@ export function NewStreamWizardPage() {
   const completion = useMemo(() => computeStepCompletion(state), [state])
 
   useEffect(() => {
-    if (draftHydratedRef.current) return
+    // Do not show persisted configuration from another user's browser draft
+    // to a role without the server-provided workspace mutation capability.
+    if (!canCreateStream || draftHydratedRef.current) return
     draftHydratedRef.current = true
     const draft = loadWizardDraft()
     if (!draft) return
     setPendingDraft(draft)
     setDraftBannerVisible(true)
-  }, [])
+  }, [canCreateStream])
 
   const handleResumeDraft = useCallback(() => {
     if (!pendingDraft) return
@@ -162,7 +178,7 @@ export function NewStreamWizardPage() {
   }, [])
 
   useEffect(() => {
-    if (importHydratedRef.current) return
+    if (!canCreateStream || importHydratedRef.current) return
     const routeState = (location.state ?? {}) as HttpImportWizardLocationState
     const connectorId = routeState.connectorId
     if (connectorId == null) return
@@ -171,7 +187,7 @@ export function NewStreamWizardPage() {
     setDraftNotice('Stream fields prefilled from import. Review polling and mapping before creating.')
     setIntentSelected(true)
     setStepIndex(wizardStepIndexForKey(wizardSteps, 'connect'))
-  }, [location.state, wizardSteps])
+  }, [canCreateStream, location.state, wizardSteps])
 
   const navigateToWizardStep = useCallback(
     (key: WizardStepKey) => {
@@ -190,6 +206,82 @@ export function NewStreamWizardPage() {
     },
     [navigateToWizardStep],
   )
+
+  const openConnectorCreate = () => {
+    setConnectorCreateBusy(false)
+    connectorReturnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    setConnectorCreateOpen(true)
+  }
+
+  useEffect(() => {
+    if (!connectorCreateOpen) return
+    connectorCloseButtonRef.current?.focus()
+    return () => {
+      // Source catalog refresh can replace the original button after a successful create.
+      queueMicrotask(() => {
+        const original = connectorReturnFocusRef.current
+        if (original?.isConnected) original.focus()
+        else document.querySelector<HTMLElement>('[data-testid="wizard-add-connector"]')?.focus()
+        connectorReturnFocusRef.current = null
+      })
+    }
+  }, [connectorCreateOpen])
+
+  const handleConnectorDialogKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      if (!connectorCreateBusy) setConnectorCreateOpen(false)
+      return
+    }
+    if (event.key !== 'Tab') return
+    const dialog = connectorDialogRef.current
+    if (!dialog) return
+    const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
+      'a[href], button:not(:disabled), input:not(:disabled):not([type="hidden"]), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+    )).filter((element) =>
+      !element.closest('[hidden], [aria-hidden="true"]') &&
+      getComputedStyle(element).display !== 'none' &&
+      getComputedStyle(element).visibility !== 'hidden',
+    )
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+    if (!first || !last) {
+      event.preventDefault()
+      dialog.focus()
+      return
+    }
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault()
+      last.focus()
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault()
+      first.focus()
+    }
+  }
+
+  const closeConnectorCreate = () => {
+    if (!connectorCreateBusy) setConnectorCreateOpen(false)
+  }
+
+  const handleConnectorCreated = useCallback((id: number) => {
+    setConnectorCreateBusy(false)
+    // Keep the entire parent draft in React memory, including sample confirmation.
+    // Connector credentials stay in the create form and are never copied into storage.
+    clearWizardCatalogSnapshot()
+    setState((current) => ({
+      ...current,
+      connector: {
+        ...current.connector,
+        connectorId: id,
+        sourceId: null,
+        registryModuleId: null,
+        selectedTemplateIds: [],
+      },
+    }))
+    setConnectorCatalogEpoch((n) => n + 1)
+    setConnectorCreateOpen(false)
+  }, [])
 
   const updateConnector = useCallback((patch: Partial<WizardState['connector']>) => {
     setState((s) => ({ ...s, connector: { ...s.connector, ...patch } }))
@@ -852,6 +944,51 @@ export function NewStreamWizardPage() {
 
   const isDeployStep = currentStepKey === 'deploy'
   const streamCreated = state.outcome?.streamId != null
+
+  // Never navigate away from an in-progress wizard without an explicit choice.
+  // The draft serializer already strips secrets and raw samples; do not autosave.
+  const requestCancel = () => {
+    if (!intentSelected || streamCreated) {
+      navigate(NAV_PATH.streams)
+    } else {
+      setExitConfirmationOpen(true)
+    }
+  }
+  const keepEditing = () => {
+    setExitConfirmationOpen(false)
+    queueMicrotask(() => cancelButtonRef.current?.focus())
+  }
+  const saveAndExit = () => {
+    try {
+      saveWizardDraft(state, currentStepKey)
+      setExitConfirmationOpen(false)
+      navigate(NAV_PATH.streams)
+    } catch {
+      setExitConfirmationOpen(false)
+      setDraftNotice('Unable to save the local draft. You are still in the wizard; review browser storage and try again.')
+    }
+  }
+  const discardAndExit = () => {
+    try {
+      clearWizardDraft()
+      setExitConfirmationOpen(false)
+      navigate(NAV_PATH.streams)
+    } catch {
+      setExitConfirmationOpen(false)
+      setDraftNotice('Unable to clear the saved draft. You are still in the wizard.')
+    }
+  }
+  useEffect(() => {
+    if (!intentSelected || streamCreated) return
+    // Reload/close cannot use our in-app dialog; the browser owns this prompt.
+    const guard = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', guard)
+    return () => window.removeEventListener('beforeunload', guard)
+  }, [intentSelected, streamCreated])
+
   const stepGateOpen = canAdvanceFromWizardStep(currentStepKey, state)
   const canAdvance = (!isDeployStep || !streamCreated) && stepGateOpen
   const nextStepBlockReason = useMemo(() => {
@@ -873,11 +1010,35 @@ export function NewStreamWizardPage() {
 
   const persistenceLabel = state.connector.apiBacked
     ? 'Changes will be saved to Data Relay Control when you create the stream.'
-    : 'Offline mode · this wizard is using a local draft until the Control API is available.'
+    : 'Local draft · Connector and Source availability are not yet verified. No runtime changes have been applied.'
 
   const nextLabel = NEXT_STEP_LABEL[currentStepKey]
 
   const stagePurpose = wizardStagePurpose(currentStepKey)
+
+  if (!canCreateStream) {
+    return (
+      <section
+        data-testid="wizard-create-readonly"
+        role="status"
+        className="rounded-xl border border-amber-200 bg-amber-50/60 p-6 dark:border-amber-500/30 dark:bg-amber-500/10"
+      >
+        <h2 className="text-lg font-semibold text-amber-950 dark:text-amber-100">
+          Creating Data Flows requires workspace write access
+        </h2>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-amber-900 dark:text-amber-200">
+          Your current session does not allow Connector or Stream creation. Review existing Streams,
+          or ask an administrator for workspace write access. The server still enforces every permission.
+        </p>
+        <Link
+          to={NAV_PATH.streams}
+          className="mt-4 inline-flex min-h-10 items-center rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700"
+        >
+          View existing Streams
+        </Link>
+      </section>
+    )
+  }
 
   return (
     <div className="flex h-fit w-full min-w-0 grow-0 flex-col gap-5 pb-8" data-testid="new-stream-wizard">
@@ -891,15 +1052,41 @@ export function NewStreamWizardPage() {
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <button
+            ref={cancelButtonRef}
             type="button"
-            onClick={() => navigate(NAV_PATH.streams)}
-            className="inline-flex h-9 items-center rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-200 dark:hover:bg-gdc-rowHover"
+            onClick={requestCancel}
+            disabled={busy || isStarting}
+            className="inline-flex h-9 items-center rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-200 dark:hover:bg-gdc-rowHover"
           >
             Cancel
           </button>
         </div>
       </div>
 
+      {exitConfirmationOpen ? (
+        <WizardExitConfirmation
+          onKeepEditing={keepEditing}
+          onSaveDraftAndLeave={saveAndExit}
+          onDiscardAndLeave={discardAndExit}
+        />
+      ) : null}
+      {connectorCreateOpen ? (
+        <div role="presentation" className="fixed inset-0 z-[150] overflow-y-auto bg-slate-950/60 p-2 sm:p-6">
+          <section ref={connectorDialogRef} onKeyDown={handleConnectorDialogKeyDown} role="dialog" aria-modal="true" aria-label="Add Connector to Data Flow" tabIndex={-1} className="mx-auto max-w-5xl rounded-xl bg-white p-4 shadow-2xl dark:bg-gdc-panel sm:p-6">
+            <div className="mb-4 flex items-center justify-between gap-3 border-b border-slate-200 pb-3 dark:border-gdc-border">
+              <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Add Connector to this Data Flow</p>
+              <button ref={connectorCloseButtonRef} type="button" disabled={connectorCreateBusy} onClick={closeConnectorCreate} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 dark:border-gdc-border dark:text-slate-100">
+                Return to Data Flow
+              </button>
+            </div>
+            <NewConnectorWizardPage
+              onCreated={handleConnectorCreated}
+              onCancel={closeConnectorCreate}
+              onBusyChange={setConnectorCreateBusy}
+            />
+          </section>
+        </div>
+      ) : null}
       {!intentSelected && !draftBannerVisible ? (
         <IntentTemplatePicker onSelect={handleIntentSelect} />
       ) : null}
@@ -953,7 +1140,13 @@ export function NewStreamWizardPage() {
 
       {intentSelected || draftBannerVisible ? <div>
         {currentStepKey === 'connect' ? (
-          <StepConnect state={state} onConnectorChange={updateConnector} onStreamChange={updateStream} />
+          <StepConnect
+            key={connectorCatalogEpoch}
+            state={state}
+            onConnectorChange={updateConnector}
+            onStreamChange={updateStream}
+            onCreateConnector={openConnectorCreate}
+          />
         ) : null}
         {currentStepKey === 'sample' ? (
           <StepSample
@@ -972,6 +1165,7 @@ export function NewStreamWizardPage() {
             state={state}
             onChange={setDestinations}
             onOpenDestinationPrerequisite={preserveDraftBeforeDestinationPrerequisite}
+            showCreateDraftReturnGuidance
           />
         ) : null}
         {currentStepKey === 'route_processing' ? (

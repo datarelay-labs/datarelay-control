@@ -151,6 +151,7 @@ export function StreamEditWizardPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null)
+  const [exitNavigationBlocked, setExitNavigationBlocked] = useState(false)
   const [runtimeStatus, setRuntimeStatus] = useState<StreamRuntimeStatus>('UNKNOWN')
   const [controlBusy, setControlBusy] = useState(false)
   const [runOnceBusy, setRunOnceBusy] = useState(false)
@@ -879,6 +880,17 @@ export function StreamEditWizardPage() {
         confirmedSavedSnapshot: confirmedSavedSnapshotRef.current,
       })
 
+  const confirmEditNavigation = () => {
+    // A fire-and-forget unmount save is not authoritative persistence evidence.
+    // Guard in-editor exit actions until the existing save contract is fulfilled.
+    if (canMutateWorkspace && runtimeVerificationBlocked) {
+      setExitNavigationBlocked(true)
+      return false
+    }
+    setExitNavigationBlocked(false)
+    return true
+  }
+
   const saveStateLabel = !canMutateWorkspace
     ? 'Read-only'
     : isSaving
@@ -968,7 +980,9 @@ export function StreamEditWizardPage() {
           ) : null}
           <button
             type="button"
-            onClick={() => navigate(streamRuntimePath(streamId))}
+            onClick={() => {
+              if (confirmEditNavigation()) navigate(streamRuntimePath(streamId))
+            }}
             className="inline-flex h-9 items-center rounded-lg border border-slate-200/90 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-200"
           >
             Back to monitoring
@@ -995,6 +1009,19 @@ export function StreamEditWizardPage() {
       {saveError ? (
         <p className="rounded-md border border-red-200/80 bg-red-500/[0.06] p-3 text-[12px] font-medium text-red-700 dark:border-red-500/40 dark:text-red-300">
           {saveError}
+        </p>
+      ) : null}
+      {exitNavigationBlocked && runtimeVerificationBlocked ? (
+        <p
+          role="status"
+          data-testid="edit-navigation-notice"
+          className="rounded-lg border border-amber-300/80 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100"
+        >
+          {saveError
+            ? 'The last save failed. Correct the error and choose Save now before leaving this Stream.'
+            : isSaving
+              ? 'Your changes are still saving. Leave after Changes saved appears.'
+              : 'This Stream has unsaved changes. Choose Save now below, then leave after Changes saved appears.'}
         </p>
       ) : null}
       {controlMessage ? <p className="text-[11px] font-medium text-slate-600 dark:text-gdc-mutedStrong">{controlMessage}</p> : null}
@@ -1065,7 +1092,11 @@ export function StreamEditWizardPage() {
         {currentStepKey === 'destinations' ? (
           <div className="space-y-6" data-testid="edit-stream-destinations">
             <ReadonlyInspectionFrame readOnly={!canMutateWorkspace}>
-              <StepDelivery state={state} onChange={setDestinations} />
+              <StepDelivery
+                state={state}
+                onChange={setDestinations}
+                onOpenDestinationPrerequisite={confirmEditNavigation}
+              />
             </ReadonlyInspectionFrame>
             {backendStreamId != null ? (
               <StreamEditDeliveryPanel
@@ -1134,6 +1165,9 @@ export function StreamEditWizardPage() {
           ) : (
             <Link
               to={streamRuntimePath(streamId)}
+              onClick={(event) => {
+                if (!confirmEditNavigation()) event.preventDefault()
+              }}
               className="inline-flex h-9 items-center gap-1 rounded-lg bg-gdc-primary px-4 text-sm font-semibold text-white hover:bg-violet-700"
               data-testid="wizard-open-monitoring"
             >

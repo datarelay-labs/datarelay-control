@@ -12,6 +12,7 @@ import {
   wizardRecordPathConfirmed,
   wizardRecordPathReady,
   wizardRecordPathStale,
+  wizardRouteProcessingStepBlockReason,
   wizardIncrementalFetchGuidanceComplete,
   wizardSampleStepBlockReason,
   wizardSampleStepGateReady,
@@ -127,6 +128,44 @@ describe('wizard-step-gates', () => {
     state.destinations.routeDrafts[0]!.enabled = true
     expect(wizardDestinationGateReady(state)).toBe(true)
     expect(canAdvanceFromWizardStep('route_processing', state)).toBe(true)
+  })
+
+  it('does not unlock Deploy for an enabled route with an invalid destination id', () => {
+    const state = sampleReadyState()
+    for (const invalidId of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      state.destinations.routeDrafts = [{
+        key: 'invalid-destination',
+        destinationId: invalidId,
+        enabled: true,
+        failurePolicy: 'RETRY_AND_BACKOFF',
+        rateLimitJson: {},
+      }]
+      expect(wizardDestinationGateReady(state)).toBe(false)
+      expect(wizardRouteProcessingStepBlockReason(state)).toContain('valid destination')
+      expect(canAdvanceFromWizardStep('route_processing', state)).toBe(false)
+      expect(wizardStepReachable('deploy', state)).toBe(false)
+    }
+    state.destinations.routeDrafts.push({
+      key: 'valid-destination',
+      destinationId: 42,
+      enabled: true,
+      failurePolicy: 'RETRY_AND_BACKOFF',
+      rateLimitJson: {},
+    })
+    // One valid Route must not hide another enabled Route with a broken destination.
+    expect(wizardDestinationGateReady(state)).toBe(false)
+    expect(wizardStepReachable('deploy', state)).toBe(false)
+    expect(wizardRouteProcessingStepBlockReason(state)).toContain('valid destination')
+
+    // An invalid, disabled Route is excluded from the intended delivery paths.
+    state.destinations.routeDrafts[0]!.enabled = false
+    expect(wizardDestinationGateReady(state)).toBe(true)
+    expect(wizardStepReachable('deploy', state)).toBe(true)
+
+    // Restoring the route is only safe once its destination is valid.
+    state.destinations.routeDrafts[0]!.enabled = true
+    state.destinations.routeDrafts[0]!.destinationId = 7
+    expect(wizardDestinationGateReady(state)).toBe(true)
   })
 
   it('allows advancing from destinations without enabled routes', () => {

@@ -1,9 +1,13 @@
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Plus, RefreshCw } from 'lucide-react'
+import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react'
 import { useLayoutEffect, useMemo, useState } from 'react'
 import { loadDashboardRefreshMs, persistDashboardRefreshMs } from '../../localPreferences'
 import { Link } from 'react-router-dom'
 import { NAV_PATH, newStreamPath } from '../../config/nav-paths'
+import { dashboardPriorityInvestigations } from './dashboard-priority-investigations'
 import { cn } from '../../lib/utils'
+import { useSessionCapabilities } from '../../lib/rbac'
+import { DashboardFirstFlowSetup } from './dashboard-first-flow-setup'
+import { isRouteSnapshotStale } from '../routes/routes-flow-helpers'
 import {
   deriveOperationalIssuesFromSnapshot,
   deriveOverallHealthFromSnapshot,
@@ -44,6 +48,7 @@ const selectClass = cn(
 )
 
 const DASHBOARD_HELP: PageHelpContent = {
+  docsHref: '/help/operations',
   title: 'Dashboard',
   intro: 'Start here to see whether DataRelay needs your attention. This page summarizes operational truth; use the linked workspaces to investigate or change configuration.',
   sections: [
@@ -67,6 +72,7 @@ const DASHBOARD_HELP: PageHelpContent = {
 }
 
 export function DashboardOverview() {
+  const canConfigure = useSessionCapabilities().workspace_mutations === true
   const [refreshMs, setRefreshMs] = useState<number | null>(null)
 
   useLayoutEffect(() => {
@@ -95,8 +101,13 @@ export function DashboardOverview() {
     [bundle?.operationalSnapshot, bundle?.dashboard, bundle?.destinations],
   )
 
-  const totalStreams = bundle?.operationalSnapshot?.global.total_streams ?? bundle?.streams.length ?? 0
-  const isFreshInstall = !initialLoading && totalStreams === 0
+  const hasOperationalSnapshot = bundle?.operationalSnapshot != null
+  const snapshotUpdatedAt = bundle?.operationalSnapshot?.updated_at
+  // Match the existing Data Flows 90s operational-evidence freshness policy.
+  const snapshotStale = hasOperationalSnapshot && isRouteSnapshotStale(snapshotUpdatedAt)
+  const snapshotTimestampValid = snapshotUpdatedAt != null && Number.isFinite(Date.parse(snapshotUpdatedAt))
+  // Unknown/aged inventory is not proof this is a brand-new empty installation.
+  const isFreshInstall = !snapshotStale && bundle?.operationalSnapshot?.global.total_streams === 0
   const runtimeHealthAttention = useMemo(() => {
     const snapshot = bundle?.operationalSnapshot
     if (!snapshot) return { routes: 0, destinations: 0 }
@@ -108,6 +119,10 @@ export function DashboardOverview() {
       ).length,
     }
   }, [bundle?.operationalSnapshot])
+  const priorityInvestigations = useMemo(
+    () => dashboardPriorityInvestigations(bundle?.operationalSnapshot ?? null),
+    [bundle?.operationalSnapshot],
+  )
   const attentionItems = useMemo(
     () =>
       [
@@ -125,7 +140,12 @@ export function DashboardOverview() {
       ].filter((item) => item.count != null && item.count > 0),
     [operationalIssues, overallHealth.warning, overallHealth.critical, runtimeHealthAttention],
   )
-  const attentionDataPartial = Object.values(operationalIssues).some((value) => value == null)
+  // Deferred alerts/dashboard reads may fail while the authoritative runtime
+  // snapshot remains valid. Do not imply that every incident source was checked.
+  const attentionDataPartial = Object.values(operationalIssues).some((value) => value == null) ||
+    bundle?.alertsFailed === true || bundle?.dashboardFailed === true || snapshotStale
+  const hasAnyAttention = priorityInvestigations.length > 0 || attentionItems.length > 0
+  const attentionUnknown = !hasAnyAttention && attentionDataPartial
 
   return (
     <div className="w-full min-w-0 space-y-5" data-testid="dashboard-overview">
@@ -141,7 +161,7 @@ export function DashboardOverview() {
             {!isFreshInstall ? (
               <DashboardRunningBadge
                 engineStatus={bundle?.dashboard?.runtime_engine_status}
-                dashboardFailed={bundle?.dashboardFailed}
+                dashboardFailed={bundle?.dashboardFailed || snapshotStale}
                 posture={overallHealth.posture}
               />
             ) : null}
@@ -186,6 +206,31 @@ export function DashboardOverview() {
 
       <RuntimeFixtureModeBanner surface="dashboard" />
 
+      {snapshotStale && !initialLoading ? (
+        <section
+          role="status"
+          aria-label="Operational snapshot is stale"
+          data-testid="dashboard-snapshot-stale"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200"
+        >
+          <p className="min-w-0 flex-1">
+            Operational snapshot last reported
+            {snapshotTimestampValid ? (
+              <> at <time dateTime={snapshotUpdatedAt}>{new Date(snapshotUpdatedAt!).toLocaleString()}</time></>
+            ) : ' with an unverified timestamp'}.
+            {' '}Current collection, Route delivery and configured inventory are not verified. Refresh before treating a status as live.
+          </p>
+          <button
+            type="button"
+            onClick={() => void reload()}
+            disabled={loading}
+            className="min-h-10 shrink-0 rounded-md border border-amber-400 px-3 py-2 font-semibold transition hover:bg-amber-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-600 disabled:opacity-60 dark:border-amber-700 dark:hover:bg-amber-950/50"
+          >
+            Refresh operational status
+          </button>
+        </section>
+      ) : null}
+
       {loadError ? (
         <div
           className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-100"
@@ -202,27 +247,37 @@ export function DashboardOverview() {
         </p>
       ) : null}
 
-      {isFreshInstall ? (
+      {initialLoading ? null : !hasOperationalSnapshot ? (
         <section
-          className="rounded-xl border border-slate-200 bg-white px-5 py-6 shadow-sm dark:border-gdc-border dark:bg-gdc-card"
-          data-testid="dashboard-empty-state"
+          className="rounded-2xl border border-amber-300 bg-amber-50 px-5 py-6 dark:border-amber-500/40 dark:bg-amber-500/10 sm:px-7"
+          role="status"
+          data-testid="dashboard-snapshot-unavailable"
         >
-          <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">Welcome to Data Relay</h2>
-          <p className="mt-2 max-w-2xl text-sm text-slate-600 dark:text-gdc-mutedStrong">
-            No streams are configured yet. Create your first stream to start collecting, transforming, and delivering data.
+          <h2 className="text-lg font-semibold text-amber-950 dark:text-amber-100">Operational status unavailable</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-amber-900 dark:text-amber-200">
+            The operational snapshot could not be loaded. Stream count, health and delivery status have not been verified.
+            No configuration was changed.
           </p>
-          <Link
-            to={newStreamPath()}
-            className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-gdc-primary px-3.5 py-2 text-sm font-semibold text-white hover:bg-violet-700"
+          <button
+            type="button"
+            onClick={() => void reload()}
+            disabled={loading}
+            className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-lg border border-amber-300 bg-white px-4 py-2 text-sm font-semibold text-amber-950 transition hover:bg-amber-100 disabled:opacity-60 dark:border-amber-500/40 dark:bg-gdc-card dark:text-amber-100"
           >
-            <Plus className="h-4 w-4" aria-hidden />
-            Create First Stream
-          </Link>
+            <RefreshCw className="h-4 w-4" aria-hidden />
+            Retry status
+          </button>
         </section>
+      ) : isFreshInstall ? (
+        <DashboardFirstFlowSetup
+          connectorCount={bundle?.connectorsKnown === true ? bundle.connectors.length : null}
+          destinationCount={bundle?.destinations?.length ?? null}
+          canConfigure={canConfigure}
+        />
       ) : (
         <div className={cn('space-y-5', initialLoading && 'opacity-80')} data-testid="dashboard-first-level">
           <section
-            className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-gdc-border dark:bg-gdc-card"
+            className="overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br from-white via-white to-violet-50/60 p-5 shadow-sm dark:border-gdc-border dark:from-gdc-card dark:via-gdc-card dark:to-gdc-panel sm:p-6"
             data-testid="dashboard-action-needed"
             aria-label="Action needed"
           >
@@ -230,29 +285,85 @@ export function DashboardOverview() {
               <span
                 className={cn(
                   'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
-                  attentionItems.length > 0
+                  hasAnyAttention || attentionUnknown
                     ? 'bg-amber-500/10 text-amber-600 dark:text-amber-300'
                     : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300',
                 )}
                 aria-hidden
               >
-                {attentionItems.length > 0 ? <AlertTriangle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+                {hasAnyAttention || attentionUnknown ? <AlertTriangle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
               </span>
               <div className="min-w-0 flex-1">
-                <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                  {attentionItems.length > 0 ? 'Action needed' : 'No action needed'}
+                <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.15em] text-violet-600 dark:text-violet-300">
+                  {snapshotStale ? 'Last reported operations' : 'Live operations'}
+                </p>
+                <h2 className="text-xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
+                  {hasAnyAttention ? (snapshotStale ? 'Last reported issues' : 'Action needed') : attentionUnknown ? 'Status partially available' : 'No action needed'}
                 </h2>
                 <p className="mt-0.5 text-xs leading-relaxed text-slate-500 dark:text-gdc-muted">
-                  {attentionItems.length > 0
-                    ? 'Start with an open signal below; each link keeps you in the workspace that owns the next investigation step.'
+                  {hasAnyAttention
+                    ? snapshotStale
+                      ? 'These issues were last reported by an old snapshot; open the resource to confirm current evidence before acting.'
+                      : 'Start with an affected resource below. Its link opens the workspace that owns the next investigation.'
                     : attentionDataPartial
                       ? 'No actionable signal is currently known from the available snapshot; some signal categories are unavailable.'
                       : 'No open operational signals are present in the current snapshot. Continue monitoring or inspect a Stream.'}
                 </p>
+                {bundle?.alertsFailed || bundle?.dashboardFailed ? (
+                  <p
+                    className="mt-2 text-xs font-medium text-amber-800 dark:text-amber-300"
+                    data-testid="dashboard-unknown-signal-source"
+                    role="status"
+                  >
+                    {bundle?.alertsFailed ? 'Alert feed unavailable. ' : ''}
+                    {bundle?.dashboardFailed ? 'Dashboard summary unavailable. ' : ''}
+                    Check the affected source or refresh; missing signals do not mean healthy delivery.
+                  </p>
+                ) : null}
               </div>
             </div>
+            {priorityInvestigations.length > 0 ? (
+              <section className="mt-4 space-y-3" data-testid="dashboard-priority-investigations" aria-label="Priority investigations">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Investigate these first</h3>
+                  <span className="text-xs text-slate-500 dark:text-gdc-muted">
+                    Specific resources · {snapshotStale ? 'last reported snapshot' : 'current operational snapshot'}
+                  </span>
+                </div>
+                <ol className="grid gap-2 lg:grid-cols-3">
+                  {priorityInvestigations.map((item) => (
+                    <li key={item.key} className="min-w-0">
+                      <Link
+                        to={item.href}
+                        data-testid={`dashboard-investigation-${item.key}`}
+                        className="group flex min-h-24 flex-col justify-between gap-2 rounded-xl border border-slate-200/90 bg-white px-3.5 py-3 shadow-sm transition-colors hover:border-violet-300 hover:bg-violet-50/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:border-gdc-border dark:bg-gdc-card dark:hover:border-violet-500/40 dark:hover:bg-gdc-rowHover"
+                      >
+                        <div className="flex min-w-0 items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-gdc-muted">{item.kind}</p>
+                            <p className="mt-0.5 break-words text-sm font-semibold text-slate-900 dark:text-slate-100">{item.resource}</p>
+                          </div>
+                          <span className={cn(
+                            'shrink-0 rounded-md px-2 py-1 text-[10px] font-semibold',
+                            item.severity === 'critical'
+                              ? 'bg-red-500/10 text-red-700 dark:text-red-300'
+                              : 'bg-amber-500/10 text-amber-800 dark:text-amber-300',
+                          )}>{item.severity === 'critical' ? 'Critical' : 'Warning'}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 text-xs text-slate-600 dark:text-gdc-mutedStrong">
+                          <span className="min-w-0 break-words">{item.reason}</span>
+                          <span className="inline-flex shrink-0 items-center gap-1 font-semibold text-violet-700 dark:text-violet-300">
+                            Investigate <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+                          </span>
+                        </div>
+                      </Link>
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            ) : null}
             {attentionItems.length > 0 ? (
-              <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
                 {attentionItems.map((item) => (
                   <Link
                     key={item.label}
@@ -266,9 +377,42 @@ export function DashboardOverview() {
                 ))}
               </div>
             ) : null}
+            <div className="mt-5 flex flex-col gap-4 rounded-xl bg-slate-900 px-4 py-4 text-white shadow-sm sm:flex-row sm:items-center sm:justify-between sm:px-5 dark:bg-slate-950">
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-violet-300">Recommended next step</p>
+                <p className="mt-1 text-sm font-medium leading-relaxed text-slate-100" data-testid="dashboard-next-step-description">
+                  {priorityInvestigations.length > 0
+                    ? `Investigate ${priorityInvestigations[0].resource} — ${priorityInvestigations[0].reason.toLowerCase()}.`
+                    : attentionItems.length > 0
+                      ? `Investigate ${attentionItems[0].label.toLowerCase()}.`
+                    : attentionDataPartial
+                      ? 'Inspect your Streams while some operational signals are unavailable.'
+                      : 'Explore Data Flows to review current collection and per-route delivery.'}
+                </p>
+              </div>
+              <div className="flex shrink-0 flex-wrap gap-2">
+                <Link
+                  to={priorityInvestigations[0]?.href ?? attentionItems[0]?.to ?? (attentionDataPartial ? NAV_PATH.streams : NAV_PATH.routes)}
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-violet-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-300"
+                  data-testid="dashboard-next-action"
+                >
+                  {hasAnyAttention ? 'Review issue' : attentionDataPartial ? 'Open Streams' : 'Open Data Flows'}
+                  <ArrowRight className="h-4 w-4" aria-hidden />
+                </Link>
+                {canConfigure ? (
+                  <Link
+                    to={newStreamPath()}
+                    className="inline-flex min-h-10 items-center justify-center rounded-lg border border-white/30 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-300"
+                    data-testid="dashboard-create-stream"
+                  >
+                    New Stream
+                  </Link>
+                ) : null}
+              </div>
+            </div>
           </section>
 
-          <OverallHealthHero health={overallHealth} basisLabel={SNAPSHOT_KPI_BASIS_LABEL} />
+          <OverallHealthHero health={overallHealth} basisLabel={SNAPSHOT_KPI_BASIS_LABEL} stale={snapshotStale} />
 
           <div className="grid gap-5 lg:grid-cols-2">
             <TrafficOverviewPanel traffic={traffic} />
@@ -280,6 +424,13 @@ export function DashboardOverview() {
             data-testid="dashboard-drilldown"
             className="flex flex-wrap gap-x-4 gap-y-2 border-t border-slate-200/80 pt-4 text-sm dark:border-gdc-divider"
           >
+            <Link
+              to={NAV_PATH.routes}
+              className="font-medium text-slate-700 underline-offset-2 hover:underline dark:text-slate-200"
+              data-testid="dashboard-drilldown-data-flows"
+            >
+              Data Flows
+            </Link>
             <Link
               to={NAV_PATH.streams}
               className="font-medium text-slate-700 underline-offset-2 hover:underline dark:text-slate-200"
