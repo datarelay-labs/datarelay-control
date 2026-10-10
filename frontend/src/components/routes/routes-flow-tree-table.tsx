@@ -1,7 +1,7 @@
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { routeEditPath, streamRuntimePath } from '../../config/nav-paths'
+import { NAV_PATH, routeEditPath, streamRuntimePath } from '../../config/nav-paths'
 import { cn } from '../../lib/utils'
 import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
 import {
@@ -9,6 +9,7 @@ import {
   formatFlowEps,
   formatFlowErrorRate,
   formatFlowSuccessRate,
+  isRouteSnapshotStale,
   routeHealthBadgeClass,
   routePublicId,
   type RouteFlowStreamGroup,
@@ -24,6 +25,11 @@ export type RoutesFlowTreeTableProps = {
 
 export function RoutesFlowTreeTable({ snapshot, consoleRows, loading = false }: RoutesFlowTreeTableProps) {
   const groups = useMemo(() => buildRouteFlowTree(snapshot, consoleRows), [snapshot, consoleRows])
+  const snapshotTime = snapshot?.updated_at ? Date.parse(snapshot.updated_at) : NaN
+  const validObservationTime = Number.isFinite(snapshotTime)
+  const evidenceStale = isRouteSnapshotStale(snapshot?.updated_at)
+  const verifiedEmpty = !loading && snapshot != null && !evidenceStale &&
+    snapshot.global?.total_routes === 0 && snapshot.routes.length === 0
   const [expandedIds, setExpandedIds] = useState<Set<number>>(() => new Set())
 
   useEffect(() => {
@@ -60,6 +66,21 @@ export function RoutesFlowTreeTable({ snapshot, consoleRows, loading = false }: 
           <p className="text-[11px] text-slate-500 dark:text-gdc-muted">
             Stream → route → destination delivery at a glance
           </p>
+          <p
+            role="status"
+            data-testid="routes-flow-snapshot-status"
+            className="mt-1 text-[11px] text-slate-600 dark:text-gdc-mutedStrong"
+          >
+            {loading && !snapshot
+              ? 'Loading route evidence'
+              : !snapshot
+                ? 'Runtime snapshot unavailable'
+                : !validObservationTime
+                  ? 'Snapshot time not verified'
+                  : evidenceStale
+                    ? <>Stale · last reported <time dateTime={snapshot.updated_at}>{new Date(snapshotTime).toISOString()}</time></>
+                    : <>As of <time dateTime={snapshot.updated_at}>{new Date(snapshotTime).toISOString()}</time> (UTC)</>}
+          </p>
         </div>
         {groups.length > 0 ? (
           <button
@@ -72,7 +93,7 @@ export function RoutesFlowTreeTable({ snapshot, consoleRows, loading = false }: 
         ) : null}
       </div>
       <div className="overflow-x-auto">
-        <table className={opTable}>
+        <table className={opTable} aria-label="Expert Route delivery table">
           <thead>
             <tr className={opThRow}>
               <th className={cn(opTh, 'min-w-[200px]')}>Stream</th>
@@ -97,8 +118,21 @@ export function RoutesFlowTreeTable({ snapshot, consoleRows, loading = false }: 
               : null}
             {!loading && groups.length === 0 ? (
               <tr className={opTr}>
-                <td className={cn(opTd, 'py-8 text-center text-[12px] text-slate-500')} colSpan={6}>
-                  No routes configured yet.
+                <td
+                  data-testid="routes-flow-inventory-state"
+                  className={cn(opTd, 'py-8 text-center text-[12px] text-slate-500')}
+                  colSpan={6}
+                >
+                  {verifiedEmpty ? (
+                    'No routes configured yet.'
+                  ) : (
+                    <>
+                      Route inventory not verified. Inspect current Stream state before creating another Route.{' '}
+                      <Link to={NAV_PATH.streams} className="font-semibold text-violet-700 hover:underline dark:text-violet-300">
+                        View Streams
+                      </Link>
+                    </>
+                  )}
                 </td>
               </tr>
             ) : null}
@@ -106,6 +140,7 @@ export function RoutesFlowTreeTable({ snapshot, consoleRows, loading = false }: 
               <StreamFlowRows
                 key={group.streamId}
                 group={group}
+                evidenceStale={evidenceStale}
                 expanded={expandedIds.has(group.streamId)}
                 onToggle={() => toggleStream(group.streamId)}
               />
@@ -119,10 +154,12 @@ export function RoutesFlowTreeTable({ snapshot, consoleRows, loading = false }: 
 
 function StreamFlowRows({
   group,
+  evidenceStale,
   expanded,
   onToggle,
 }: {
   group: RouteFlowStreamGroup
+  evidenceStale: boolean
   expanded: boolean
   onToggle: () => void
 }) {
@@ -131,24 +168,23 @@ function StreamFlowRows({
     <Fragment>
       <tr className={cn(opTr, 'bg-slate-50/60 dark:bg-gdc-section/50')}>
         <td className={cn(opTd, 'font-semibold')}>
-          <button
-            type="button"
-            onClick={onToggle}
-            className="inline-flex items-center gap-1.5 text-left text-[12px] text-slate-900 hover:text-violet-700 dark:text-slate-100 dark:hover:text-violet-300"
-          >
-            {routeCount > 0 ? (
-              expanded ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />
-            ) : (
-              <span className="inline-block w-3.5" />
-            )}
+          <div className="inline-flex min-w-0 items-center gap-1.5 text-[12px] text-slate-900 dark:text-slate-100">
+            <button
+              type="button"
+              aria-expanded={expanded}
+              aria-label={`${expanded ? 'Collapse' : 'Expand'} ${group.streamName} routes`}
+              onClick={onToggle}
+              className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-md hover:bg-slate-200/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:hover:bg-gdc-elevated"
+            >
+              {expanded ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronRight className="h-4 w-4" aria-hidden />}
+            </button>
             <Link
               to={streamRuntimePath(String(group.streamId))}
-              className="hover:underline"
-              onClick={(e) => e.stopPropagation()}
+              className="min-w-0 break-words font-semibold hover:text-violet-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:hover:text-violet-300"
             >
               {group.streamName}
             </Link>
-          </button>
+          </div>
         </td>
         <td className={cn(opTd, 'text-[11px] text-slate-500 dark:text-gdc-muted')}>
           {routeCount} route{routeCount === 1 ? '' : 's'}
@@ -186,12 +222,15 @@ function StreamFlowRows({
                 <td className={cn(opTd, 'tabular-nums text-[11px]')}>{formatFlowErrorRate(route.errorRatePct)}</td>
                 <td className={opTd}>
                   <span
+                    data-testid={`routes-flow-route-health-${route.routeId}`}
                     className={cn(
                       'inline-flex rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide',
-                      routeHealthBadgeClass(route.health),
+                      evidenceStale
+                        ? 'border-slate-300 bg-slate-100 text-slate-700 dark:border-gdc-border dark:bg-gdc-section dark:text-gdc-mutedStrong'
+                        : routeHealthBadgeClass(route.health),
                     )}
                   >
-                    {route.health}
+                    {evidenceStale ? `Last reported ${route.health}` : route.health}
                   </span>
                 </td>
               </tr>
