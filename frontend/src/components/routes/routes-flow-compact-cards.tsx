@@ -30,6 +30,18 @@ function streamMatchesQuery(group: RouteFlowStreamGroup, query: string): boolean
   return group.streamName.toLowerCase().includes(query) || String(group.streamId).includes(query)
 }
 
+function isRouteAttention(route: RouteFlowRouteRow): boolean {
+  return route.enabled && (route.health === 'Error' || route.health === 'Warning')
+}
+
+function routeAttentionPriority(route: RouteFlowRouteRow): number {
+  return route.health === 'Error' ? 0 : route.health === 'Warning' ? 1 : 2
+}
+
+function streamAttentionPriority(group: RouteFlowStreamGroup): number {
+  return group.routes.some((route) => isRouteAttention(route) && route.health === 'Error') ? 0 : 1
+}
+
 /** Operator-native cards for narrow viewports; pure presentation of an existing snapshot. */
 export function RoutesFlowCompactCards({
   groups,
@@ -50,20 +62,28 @@ export function RoutesFlowCompactCards({
 }) {
   const [shownStreams, setShownStreams] = useState(FIRST_STREAMS)
   const [streamSearch, setStreamSearch] = useState('')
+  const [attentionOnly, setAttentionOnly] = useState(false)
   const query = streamSearch.trim().toLowerCase()
-  // Search existing in-memory delivery lineage, never a new API request.
+  // Triaging reported gateway Errors/Warnings is independent of and scoped
+  // by the same already-loaded snapshot; disabled paths are not live alerts.
+  const eligibleGroups = attentionOnly
+    ? groups.filter((group) => group.routes.some(isRouteAttention)).sort((a, b) =>
+        streamAttentionPriority(a) - streamAttentionPriority(b) || a.streamId - b.streamId,
+      )
+    : groups
   // A bare exact Stream ID takes precedence over a coincidentally matching
   // Route/Destination ID. Explicit R- IDs or receiver names search all paths.
   const exactStream = /^\d+$/.test(query)
-    ? groups.find((group) => String(group.streamId) === query)
+    ? eligibleGroups.find((group) => String(group.streamId) === query)
     : undefined
   const matches = query
     ? exactStream
       ? [exactStream]
-      : groups.filter((group) =>
-          streamMatchesQuery(group, query) || group.routes.some((route) => routeMatchesQuery(route, query)),
+      : eligibleGroups.filter((group) =>
+          streamMatchesQuery(group, query) || group.routes.some((route) =>
+            (!attentionOnly || isRouteAttention(route)) && routeMatchesQuery(route, query)),
         )
-    : groups
+    : eligibleGroups
   const visibleStreams = Math.min(matches.length, shownStreams)
   return (
     <section aria-label="Compact route delivery" data-testid="routes-flow-compact-cards" className="space-y-3 p-3">
@@ -104,7 +124,39 @@ export function RoutesFlowCompactCards({
           />
         </div>
       ) : null}
-      {query && matches.length === 0 ? (
+      {groups.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            aria-label="Show only enabled Routes needing attention"
+            aria-pressed={attentionOnly}
+            onClick={() => {
+              setAttentionOnly((current) => !current)
+              setShownStreams(FIRST_STREAMS)
+            }}
+            className={cn(
+              'min-h-11 rounded-lg border px-3 py-2 text-xs font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500',
+              attentionOnly
+                ? 'border-amber-400 bg-amber-50 text-amber-950 dark:border-amber-700 dark:bg-amber-950/35 dark:text-amber-100'
+                : 'border-slate-200 bg-white text-slate-700 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200',
+            )}
+          >
+            Attention only
+          </button>
+          {attentionOnly ? (
+            <span className="text-[11px] text-slate-600 dark:text-gdc-mutedStrong">
+              {evidenceStale || !validObservationTime
+                ? 'Last reported Error/Warning evidence — not current incident confirmation'
+                : 'Snapshot-reported Error/Warning paths, not receiver ingestion proof'}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+      {attentionOnly && matches.length === 0 && groups.length > 0 ? (
+        <p role="status" aria-label="Route attention filter result" className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 dark:border-gdc-border dark:bg-gdc-panel dark:text-gdc-mutedStrong">
+          No enabled Error or Warning Routes reported for the loaded snapshot{query ? ' matching this search' : ''}; not proof of receiver ingestion.
+        </p>
+      ) : query && matches.length === 0 ? (
         <p role="status" aria-label="Flow search result" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
           No matching Streams, Routes or Destinations in the currently loaded snapshot. Change the search to inspect other available paths.
         </p>
@@ -116,6 +168,7 @@ export function RoutesFlowCompactCards({
           expanded={expandedIds.has(group.streamId)}
           onToggle={() => onToggle(group.streamId)}
           routeQuery={query && !streamMatchesQuery(group, query) ? query : null}
+          attentionOnly={attentionOnly}
           validObservationTime={validObservationTime}
           evidenceStale={evidenceStale}
         />
@@ -144,6 +197,7 @@ function CompactStreamGroup({
   expanded,
   onToggle,
   routeQuery,
+  attentionOnly,
   evidenceStale,
   validObservationTime,
 }: {
@@ -151,12 +205,16 @@ function CompactStreamGroup({
   expanded: boolean
   onToggle: () => void
   routeQuery: string | null
+  attentionOnly: boolean
   evidenceStale: boolean
   validObservationTime: boolean
 }) {
   const [shown, setShown] = useState(FIRST_ROUTES)
   const count = group.routes.length
-  const visibleRoutes = routeQuery == null ? group.routes : group.routes.filter((route) => routeMatchesQuery(route, routeQuery))
+  const visibleRoutes = group.routes.filter((route) =>
+    (!attentionOnly || isRouteAttention(route)) && (routeQuery == null || routeMatchesQuery(route, routeQuery)))
+  // Sort a filtered copy, not the authoritative snapshot or parent group.
+  if (attentionOnly) visibleRoutes.sort((a, b) => routeAttentionPriority(a) - routeAttentionPriority(b) || a.routeId - b.routeId)
   const shownCount = Math.min(shown, visibleRoutes.length)
   return (
     <article
@@ -183,9 +241,9 @@ function CompactStreamGroup({
           <p className="text-xs text-slate-600 dark:text-gdc-mutedStrong">
             {count} Route{count === 1 ? '' : 's'} · Gateway {formatFlowEps(group.totalEps)} EPS
           </p>
-          {routeQuery ? (
+          {routeQuery || attentionOnly ? (
             <p role="status" className="mt-1 text-xs font-semibold text-violet-700 dark:text-violet-300">
-              {visibleRoutes.length} matching Route{visibleRoutes.length === 1 ? '' : 's'} of {count}
+              {visibleRoutes.length} {attentionOnly ? 'reported Error/Warning' : 'matching'} Route{visibleRoutes.length === 1 ? '' : 's'} of {count}
               {!expanded ? ' · Expand to inspect' : ''}
             </p>
           ) : null}

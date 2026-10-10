@@ -605,3 +605,107 @@ describe('Compact Route Flow investigation by saved Route and Destination identi
     }
   })
 })
+
+describe('Mobile Route Flow attention triage without extra backend reads', () => {
+  it('surfaces enabled Error and Warning delivery paths outside the first 12 Stream cards', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
+      matches: query === '(max-width: 767px)',
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })))
+    try {
+      const baseline = evidence()
+      const ids = Array.from({ length: 30 }, (_, index) => index + 1)
+      const snapshot = {
+        ...baseline,
+        global: { ...baseline.global, total_streams: 30, total_routes: 30 },
+        streams: ids.map((id) => ({ ...baseline.streams[0]!, stream_id: id, stream_name: 'Finance ' + id })),
+        routes: ids.map((id) => ({
+          ...baseline.routes[0]!, route_id: id + 100, stream_id: id,
+          stream_name: 'Finance ' + id, destination_id: 1000 + id,
+          health_status: id === 1 || id === 21 ? 'ERROR' : id === 28 ? 'DEGRADED' : 'HEALTHY',
+          enabled: id !== 21,
+        })),
+      } as OperationalSnapshotResponse
+      mount(snapshot)
+      expect(screen.getAllByTestId(/^routes-flow-mobile-stream-/)).toHaveLength(12)
+      const button = screen.getByRole('button', { name: 'Show only enabled Routes needing attention' })
+      await user.click(button)
+      expect(button).toHaveAttribute('aria-pressed', 'true')
+      expect(screen.getAllByTestId(/^routes-flow-mobile-stream-/)).toHaveLength(2)
+      expect(screen.getByTestId('routes-flow-mobile-stream-1')).toBeInTheDocument()
+      expect(screen.getByTestId('routes-flow-mobile-stream-28')).toBeInTheDocument()
+      expect(screen.queryByTestId('routes-flow-mobile-stream-21')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Expand Finance 28 routes' })).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Expand Finance 28 routes' }))
+      expect(screen.getByTestId('routes-flow-mobile-health-128')).toHaveTextContent('Warning')
+      expect(screen.getByRole('link', { name: 'Investigate R-0128 delivery logs' }))
+        .toHaveAttribute('href', '/logs?route_id=128&stream_id=28&destination_id=1028')
+      await user.click(button)
+      expect(button).toHaveAttribute('aria-pressed', 'false')
+      expect(screen.getAllByTestId(/^routes-flow-mobile-stream-/)).toHaveLength(12)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('distinguishes no reported issues from missing inventory or proof of receiver ingestion', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
+      matches: query === '(max-width: 767px)',
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })))
+    try {
+      const s = evidence()
+      mount(s)
+      await user.click(screen.getByRole('button', { name: 'Show only enabled Routes needing attention' }))
+      const result = screen.getByRole('status', { name: 'Route attention filter result' })
+      expect(result).toHaveTextContent('No enabled Error or Warning Routes reported')
+      expect(result).toHaveTextContent('not proof of receiver ingestion')
+      expect(screen.queryByText('No routes configured yet.')).not.toBeInTheDocument()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+})
+
+describe('Attention-first mobile delivery order', () => {
+  it('places enabled Errors before Warnings across both Streams and Routes', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
+      matches: query === '(max-width: 767px)',
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })))
+    try {
+      const s = evidence()
+      s.global.total_streams = 2
+      s.global.total_routes = 3
+      s.streams = [
+        { ...s.streams[0]!, stream_id: 1, stream_name: 'Warning Stream' },
+        { ...s.streams[0]!, stream_id: 2, stream_name: 'Error Stream' },
+      ]
+      s.routes = [
+        { ...s.routes[0]!, route_id: 42, stream_id: 1, stream_name: 'Warning Stream', health_status: 'DEGRADED' },
+        { ...s.routes[0]!, route_id: 44, stream_id: 2, stream_name: 'Error Stream', health_status: 'DEGRADED' },
+        { ...s.routes[0]!, route_id: 45, stream_id: 2, stream_name: 'Error Stream', health_status: 'ERROR' },
+      ]
+      mount(s)
+      await user.click(screen.getByRole('button', { name: 'Show only enabled Routes needing attention' }))
+      expect(screen.getAllByTestId(/^routes-flow-mobile-stream-/).map((card) => card.getAttribute('data-testid'))).toEqual([
+        'routes-flow-mobile-stream-2',
+        'routes-flow-mobile-stream-1',
+      ])
+      expect(screen.getAllByRole('link', { name: /^R-\d+$/ }).map((link) => link.textContent)).toEqual([
+        'R-0045', 'R-0044', 'R-0042',
+      ])
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+})
