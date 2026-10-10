@@ -136,6 +136,121 @@ describe('Flow-First expert delivery table — runtime evidence and keyboard saf
       .toHaveAttribute('href', '/logs?route_id=42&stream_id=1')
   })
 
+  it('keeps manually collapsed Stream rows collapsed while fresh snapshot metrics update', async () => {
+    const user = userEvent.setup()
+    const first = evidence()
+    const view = mount(first)
+    await user.click(screen.getByRole('button', { name: 'Collapse Finance flow routes' }))
+    expect(screen.queryByRole('link', { name: 'R-0042' })).not.toBeInTheDocument()
+    const refreshed = {
+      ...first,
+      updated_at: new Date().toISOString(),
+      streams: first.streams.map((s) => ({ ...s, eps_1m: 18 })),
+      routes: first.routes.map((route) => ({ ...route, delivered_eps_1m: 12 })),
+    }
+    view.rerender(
+      <MemoryRouter>
+        <RoutesFlowTreeTable snapshot={refreshed} consoleRows={buildRouteRowsFromOperationalSnapshot(refreshed)} />
+      </MemoryRouter>,
+    )
+    expect(screen.getByRole('button', { name: 'Expand Finance flow routes' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('link', { name: 'R-0042' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Finance flow' })).toHaveAttribute('href', '/streams/1/runtime')
+  })
+
+  it('remembers a collapsed Stream through an unavailable snapshot and recovery', async () => {
+    const user = userEvent.setup()
+    const s = evidence()
+    const view = mount(s)
+    await user.click(screen.getByRole('button', { name: 'Collapse Finance flow routes' }))
+    view.rerender(<MemoryRouter><RoutesFlowTreeTable snapshot={null} consoleRows={[]} loading /></MemoryRouter>)
+    expect(screen.queryByRole('link', { name: 'R-0042' })).not.toBeInTheDocument()
+    const recovered = { ...s, updated_at: new Date().toISOString() }
+    view.rerender(
+      <MemoryRouter>
+        <RoutesFlowTreeTable snapshot={recovered} consoleRows={buildRouteRowsFromOperationalSnapshot(recovered)} />
+      </MemoryRouter>,
+    )
+    expect(screen.getByRole('button', { name: 'Expand Finance flow routes' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('link', { name: 'R-0042' })).not.toBeInTheDocument()
+  })
+
+  it('adds a newly discovered Stream without reopening an operator-collapsed existing Stream', async () => {
+    const user = userEvent.setup()
+    const first = evidence()
+    const view = mount(first)
+    await user.click(screen.getByRole('button', { name: 'Collapse Finance flow routes' }))
+    const second = {
+      ...first,
+      global: { ...first.global, total_streams: 2, total_routes: 2 },
+      streams: [...first.streams, { ...first.streams[0]!, stream_id: 2, stream_name: 'Audit flow', connector_id: 4 }],
+      routes: [...first.routes, { ...first.routes[0]!, route_id: 43, stream_id: 2, stream_name: 'Audit flow' }],
+    }
+    view.rerender(
+      <MemoryRouter>
+        <RoutesFlowTreeTable snapshot={second} consoleRows={buildRouteRowsFromOperationalSnapshot(second)} />
+      </MemoryRouter>,
+    )
+    expect(screen.getByRole('button', { name: 'Expand Finance flow routes' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('button', { name: 'Collapse Audit flow routes' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('link', { name: 'R-0043' })).toHaveAttribute('href', '/routes/43/edit')
+    expect(screen.queryByRole('link', { name: 'R-0042' })).not.toBeInTheDocument()
+  })
+
+  it('bounds initial expanded Route rows at eight Streams and offers explicit expand all', async () => {
+    const user = userEvent.setup()
+    const base = evidence()
+    const indices = Array.from({ length: 30 }, (_, i) => i)
+    const many = {
+      ...base,
+      global: { ...base.global, total_streams: 30, total_routes: 30 },
+      streams: indices.map((i) => ({
+        ...base.streams[0]!,
+        stream_id: i + 1,
+        stream_name: `Collection ${i + 1}`,
+        connector_id: i + 1,
+      })),
+      routes: indices.map((i) => ({
+        ...base.routes[0]!,
+        route_id: i + 101,
+        stream_id: i + 1,
+        stream_name: `Collection ${i + 1}`,
+        destination_id: i + 901,
+      })),
+    }
+    mount(many)
+    expect(screen.getAllByRole('link', { name: /^R-\d+$/ })).toHaveLength(8)
+    expect(screen.getByTestId('routes-flow-expanded-summary')).toHaveTextContent('8 of 30 Streams expanded')
+    expect(screen.getByRole('button', { name: 'Expand all' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Expand all' }))
+    expect(screen.getAllByRole('link', { name: /^R-\d+$/ })).toHaveLength(30)
+    expect(screen.getByTestId('routes-flow-expanded-summary')).toHaveTextContent('30 of 30 Streams expanded')
+    await user.click(screen.getByRole('button', { name: 'Collapse all' }))
+    expect(screen.queryByRole('link', { name: /^R-\d+$/ })).not.toBeInTheDocument()
+    expect(screen.getByTestId('routes-flow-expanded-summary')).toHaveTextContent('0 of 30 Streams expanded')
+  })
+
+  it('preserves explicit collapse-all preference when a new Stream arrives', async () => {
+    const user = userEvent.setup()
+    const first = evidence()
+    const view = mount(first)
+    await user.click(screen.getByRole('button', { name: 'Collapse all' }))
+    const second = {
+      ...first,
+      global: { ...first.global, total_streams: 2, total_routes: 2 },
+      streams: [...first.streams, { ...first.streams[0]!, stream_id: 2, stream_name: 'Audit flow' }],
+      routes: [...first.routes, { ...first.routes[0]!, route_id: 43, stream_id: 2, stream_name: 'Audit flow' }],
+    }
+    view.rerender(
+      <MemoryRouter>
+        <RoutesFlowTreeTable snapshot={second} consoleRows={buildRouteRowsFromOperationalSnapshot(second)} />
+      </MemoryRouter>,
+    )
+    expect(screen.getByRole('button', { name: 'Expand Finance flow routes' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('button', { name: 'Expand Audit flow routes' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByTestId('routes-flow-expanded-summary')).toHaveTextContent('0 of 2 Streams expanded')
+  })
+
   it('loading from an unverified snapshot does not declare there are no Routes', () => {
     mount(null, true)
     expect(screen.queryByText('No routes configured yet.')).not.toBeInTheDocument()

@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight } from 'lucide-react'
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { NAV_PATH, destinationDetailPath, logsExplorerPath, routeEditPath, streamRuntimePath } from '../../config/nav-paths'
 import { cn } from '../../lib/utils'
@@ -17,6 +17,8 @@ import {
 import type { OperationalSnapshotResponse } from '../../api/operationalSnapshot'
 import type { RouteConsoleRow } from './routes-overview-helpers'
 
+const INITIAL_EXPANDED_STREAM_LIMIT = 8
+
 export type RoutesFlowTreeTableProps = {
   snapshot: OperationalSnapshotResponse | null
   consoleRows: readonly RouteConsoleRow[]
@@ -31,12 +33,35 @@ export function RoutesFlowTreeTable({ snapshot, consoleRows, loading = false }: 
   const verifiedEmpty = !loading && snapshot != null && !evidenceStale &&
     snapshot.global?.total_routes === 0 && snapshot.routes.length === 0
   const [expandedIds, setExpandedIds] = useState<Set<number>>(() => new Set())
+  const knownStreamIds = useRef<Set<number>>(new Set())
+  const expandNewStreams = useRef<'initial' | 'all' | 'none'>('initial')
 
   useEffect(() => {
-    setExpandedIds(new Set(groups.map((g) => g.streamId)))
-  }, [groups])
+    // A transient unavailable/loading snapshot must not erase the operator's
+    // manual collapse choice. The next authoritative snapshot reconciles IDs.
+    if (!snapshot || loading) return
+    const nextKnown = new Set(groups.map((group) => group.streamId))
+    const previouslyKnown = knownStreamIds.current
+    setExpandedIds((previous) => {
+      const next = new Set([...previous].filter((id) => nextKnown.has(id)))
+      // Initial render and newly discovered Streams are shown in a bounded
+      // first set. Existing IDs retain manual expand/collapse across refresh.
+      for (const [index, group] of groups.entries()) {
+        if (!previouslyKnown.has(group.streamId) &&
+            (expandNewStreams.current === 'all' ||
+              (expandNewStreams.current === 'initial' && index < INITIAL_EXPANDED_STREAM_LIMIT))) {
+          next.add(group.streamId)
+        }
+      }
+      if (next.size === previous.size && [...next].every((id) => previous.has(id))) {
+        return previous
+      }
+      return next
+    })
+    knownStreamIds.current = nextKnown
+  }, [groups, snapshot, loading])
 
-  const allExpanded = groups.length > 0 && expandedIds.size >= groups.length
+  const allExpanded = groups.length > 0 && groups.every((group) => expandedIds.has(group.streamId))
 
   function toggleStream(streamId: number) {
     setExpandedIds((prev) => {
@@ -48,6 +73,7 @@ export function RoutesFlowTreeTable({ snapshot, consoleRows, loading = false }: 
   }
 
   function toggleAll() {
+    expandNewStreams.current = allExpanded ? 'none' : 'all'
     if (allExpanded) {
       setExpandedIds(new Set())
     } else {
@@ -83,13 +109,22 @@ export function RoutesFlowTreeTable({ snapshot, consoleRows, loading = false }: 
           </p>
         </div>
         {groups.length > 0 ? (
-          <button
-            type="button"
-            onClick={toggleAll}
-            className="text-[11px] font-semibold text-violet-700 hover:underline dark:text-violet-300"
-          >
-            {allExpanded ? 'Collapse all' : 'Expand all'}
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <span
+              data-testid="routes-flow-expanded-summary"
+              role="status"
+              className="text-[11px] text-slate-600 dark:text-gdc-mutedStrong"
+            >
+              {groups.filter((group) => expandedIds.has(group.streamId)).length} of {groups.length} Streams expanded
+            </span>
+            <button
+              type="button"
+              onClick={toggleAll}
+              className="min-h-9 rounded-md px-2 text-[11px] font-semibold text-violet-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:text-violet-300"
+            >
+              {allExpanded ? 'Collapse all' : 'Expand all'}
+            </button>
+          </div>
         ) : null}
       </div>
       <div className="overflow-x-auto">
