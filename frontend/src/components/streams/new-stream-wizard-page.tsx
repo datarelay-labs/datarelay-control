@@ -228,6 +228,12 @@ export function NewStreamWizardPage() {
   }, [connectorCreateOpen])
 
   const handleConnectorDialogKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      if (!connectorCreateBusy) setConnectorCreateOpen(false)
+      return
+    }
     if (event.key !== 'Tab') return
     const dialog = connectorDialogRef.current
     if (!dialog) return

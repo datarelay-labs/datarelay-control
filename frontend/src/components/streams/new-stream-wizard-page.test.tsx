@@ -114,6 +114,23 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
     expect(localStorage.getItem(WIZARD_DRAFT_KEY_V2)).toBeNull()
   })
 
+  it('returns to the same Data Flow step on Escape without silently persisting a Connector draft', async () => {
+    vi.mocked(fetchCatalogSnapshot).mockResolvedValue({ connectors: [], sources: [], apiBacked: true })
+    localStorage.removeItem(WIZARD_DRAFT_KEY_V2)
+    const user = userEvent.setup()
+    render(<MemoryRouter initialEntries={['/streams/new']}><NewStreamWizardPage /></MemoryRouter>)
+    await user.click(screen.getByTestId('wizard-intent-scratch'))
+    const addConnector = await screen.findByTestId('wizard-add-connector')
+    await user.click(addConnector)
+    expect(screen.getByRole('dialog', { name: 'Add Connector to Data Flow' })).toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add Connector to Data Flow' })).not.toBeInTheDocument())
+    expect(screen.getByTestId('wizard-step-connect')).toBeInTheDocument()
+    await waitFor(() => expect(addConnector).toHaveFocus())
+    expect(localStorage.getItem(WIZARD_DRAFT_KEY_V2)).toBeNull()
+  })
+
   it('prevents leaving the contextual Connector form while its create request is pending', async () => {
     vi.mocked(fetchCatalogSnapshot).mockResolvedValue({ connectors: [], sources: [], apiBacked: true })
     let resolveSave!: () => void
@@ -130,6 +147,8 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
 
     const returnButton = screen.getByRole('button', { name: 'Return to Data Flow' })
     await waitFor(() => expect(returnButton).toBeDisabled())
+    expect(screen.getByRole('dialog', { name: 'Add Connector to Data Flow' })).toBeInTheDocument()
+    await user.keyboard('{Escape}')
     expect(screen.getByRole('dialog', { name: 'Add Connector to Data Flow' })).toBeInTheDocument()
 
     resolveSave()
