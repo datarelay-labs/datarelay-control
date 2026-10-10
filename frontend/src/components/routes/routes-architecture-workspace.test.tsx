@@ -265,6 +265,37 @@ describe('Data Flows topology: operator priority and bounded exploration', () =>
     expect(within(inspector).getByText('Route health').nextElementSibling).not.toHaveTextContent('Healthy')
   })
 
+  it('does not present an unresolved receiving Destination as an actively Healthy delivery path', () => {
+    const broken = { ...route(77, 1, 0, 'HEALTHY', true), destination_id: null }
+    const data = snapshotFor([broken])
+    data.destinations = []
+    render(<GraphHarness snapshot={data} />)
+
+    const card = screen.getByTestId('routes-architecture-route-77')
+    expect(card).toHaveTextContent('Not verified')
+    expect(card).toHaveTextContent('Destination unresolved')
+    expect(card).not.toHaveTextContent('Delivery path enabled')
+    expect(screen.getByText('Destination not resolved')).toBeInTheDocument()
+    expect(screen.queryByTestId('routes-architecture-destination-0')).not.toBeInTheDocument()
+
+    const inspector = screen.getByTestId('routes-architecture-inspector')
+    expect(within(inspector).getByText('Route health').nextElementSibling).toHaveTextContent('Not verified')
+    expect(within(inspector).getByText('Route health').nextElementSibling).not.toHaveTextContent('Healthy')
+  })
+
+  it('keeps explicit disabled state ahead of unresolved Destination identity', () => {
+    const broken = { ...route(78, 1, 0, 'HEALTHY', false), destination_id: null }
+    const data = snapshotFor([broken])
+    data.destinations = []
+    render(<GraphHarness snapshot={data} />)
+    const card = screen.getByTestId('routes-architecture-route-78')
+    expect(card).toHaveTextContent('Disabled')
+    expect(card).toHaveTextContent('Delivery path disabled')
+    const inspector = screen.getByTestId('routes-architecture-inspector')
+    expect(within(inspector).getByText('Route health').nextElementSibling).toHaveTextContent('Disabled')
+    expect(screen.getByTestId('routes-architecture-attention')).toHaveTextContent('1 disabled')
+  })
+
   it('excludes disabled paths from error queue and reports no errors without declaring delivery verified', () => {
     render(<GraphHarness snapshot={snapshotFor([
       route(8, 1, 108, 'ERROR', false),

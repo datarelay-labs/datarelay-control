@@ -407,12 +407,25 @@ export function RoutesArchitectureWorkspace({
                                 <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">
                                   Route {routePublicId(route.routeId)}
                                 </span>
-                                <span className={cn('rounded-md border px-1.5 py-0.5 text-[10px] font-semibold', evidenceStale ? 'border-amber-400/70 bg-amber-50 text-amber-900 dark:bg-amber-500/10 dark:text-amber-200' : routeHealthBadgeClass(route.health))}>
-                                  {evidenceStale ? 'Stale' : route.health}
+                                <span className={cn(
+                                  'rounded-md border px-1.5 py-0.5 text-[10px] font-semibold',
+                                  !route.enabled
+                                    ? routeHealthBadgeClass('Disabled')
+                                    : !hasDestination
+                                      ? routeHealthBadgeClass('Idle')
+                                      : evidenceStale
+                                        ? 'border-amber-400/70 bg-amber-50 text-amber-900 dark:bg-amber-500/10 dark:text-amber-200'
+                                        : routeHealthBadgeClass(route.health),
+                                )}>
+                                  {!route.enabled ? 'Disabled' : !hasDestination ? 'Not verified' : evidenceStale ? 'Stale' : route.health}
                                 </span>
                               </span>
                               <span className="mt-1.5 block text-[11px] text-slate-500 dark:text-gdc-mutedStrong">
-                                {route.enabled ? 'Delivery path enabled' : 'Delivery path disabled'} · {formatFlowEps(route.eps)}
+                                {!route.enabled
+                                  ? 'Delivery path disabled'
+                                  : !hasDestination
+                                    ? 'Destination unresolved · delivery not verified'
+                                    : 'Delivery path enabled'} · {formatFlowEps(route.eps)}
                               </span>
                             </button>
                             <span className="flex h-6 items-center justify-center text-slate-400 dark:text-gdc-muted" aria-hidden>
@@ -497,7 +510,13 @@ export function RoutesArchitectureWorkspace({
                     <div>
                       <dt className="text-[11px] text-slate-500 dark:text-gdc-muted">Route health</dt>
                       <dd className="mt-1 text-xs font-semibold text-slate-800 dark:text-slate-100">
-                        {evidenceStale ? `Stale · last reported ${selectedRoute.health}` : selectedRoute.health}
+                        {!selectedRoute.enabled
+                          ? (evidenceStale ? 'Stale · last reported Disabled' : 'Disabled')
+                          : !validId(selectedRoute.destinationId)
+                            ? 'Not verified · Destination unresolved'
+                            : evidenceStale
+                              ? `Stale · last reported ${selectedRoute.health}`
+                              : selectedRoute.health}
                       </dd>
                     </div>
                     <div>
