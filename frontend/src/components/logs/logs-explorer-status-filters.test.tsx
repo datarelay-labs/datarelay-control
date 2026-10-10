@@ -204,6 +204,8 @@ describe('Route failure investigation has an explicit next step', () => {
       .toHaveAttribute('href', '/routes/42/edit')
     expect(screen.getByRole('link', { name: 'Back to Data Flows' }))
       .toHaveAttribute('href', '/routes')
+    expect(screen.getByRole('link', { name: 'Inspect Destination #10' }))
+      .toHaveAttribute('href', '/destinations/10')
     expect(await screen.findByRole('button', { name: 'Show all statuses for this Route' }))
       .toBeInTheDocument()
     fetchPage.mockRestore()

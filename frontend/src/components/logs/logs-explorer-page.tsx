@@ -1471,7 +1471,7 @@ export function LogsExplorerPage() {
               <span className="font-semibold text-slate-700 dark:text-slate-200">Time window:</span> {timeRange}
             </span>
           </div>
-          <LogsRouteReturnActions routeId={routeIdFromQuery} canConfigure={canConfigure} />
+          <LogsRouteReturnActions routeId={routeIdFromQuery} destinationId={destinationIdFromQuery} canConfigure={canConfigure} />
         </section>
       )}
 

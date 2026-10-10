@@ -3,10 +3,10 @@ import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
 import { LogsRouteReturnActions } from './logs-route-return-actions'
 
-function show(routeId: number | undefined, canConfigure: boolean) {
+function show(routeId: number | undefined, canConfigure: boolean, destinationId?: number) {
   return render(
     <MemoryRouter>
-      <LogsRouteReturnActions routeId={routeId} canConfigure={canConfigure} />
+      <LogsRouteReturnActions routeId={routeId} canConfigure={canConfigure} destinationId={destinationId} />
     </MemoryRouter>,
   )
 }
@@ -38,6 +38,23 @@ describe('Kibana-style contextual Route investigation return', () => {
       show(id, true)
       expect(screen.queryByRole('region', { name: 'Route investigation next actions' }))
         .not.toBeInTheDocument()
+    },
+  )
+})
+
+describe('Receiver investigation next action', () => {
+  it('allows read-only and operator users to inspect the exact positively identified Destination', () => {
+    show(42, false, 10)
+    expect(screen.getByRole('link', { name: 'Inspect Destination #10' }))
+      .toHaveAttribute('href', '/destinations/10')
+    expect(screen.queryByRole('link', { name: /Review Route #42 configuration/ })).not.toBeInTheDocument()
+  })
+
+  it.each([0, -1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1])(
+    'never synthesizes a destination detail link for invalid ID %s',
+    (id) => {
+      show(42, true, id)
+      expect(screen.queryByRole('link', { name: /Inspect Destination/ })).not.toBeInTheDocument()
     },
   )
 })
