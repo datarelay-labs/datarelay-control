@@ -63,3 +63,35 @@ describe('Data Flow first-run onboarding', () => {
     expect(within(region).queryByRole('link', { name: /Create First Stream/i })).not.toBeInTheDocument()
   })
 })
+
+describe('Competitor-informed first-run flow explanation', () => {
+  it('shows the actual collection-to-delivery order, separate from prerequisite setup order', () => {
+    setup({ connectors: 0, destinations: 0 })
+    const panel = screen.getByTestId('dashboard-empty-state')
+    const path = within(panel).getByRole('list', { name: 'Runtime event path' })
+    const nodes = within(path).getAllByRole('listitem')
+    expect(nodes).toHaveLength(4)
+    expect(nodes.map((item) => item.getAttribute('data-flow-node'))).toEqual([
+      'connector', 'stream', 'route', 'destination',
+    ])
+    expect(path).toHaveTextContent('Source access')
+    expect(path).toHaveTextContent('Collection')
+    expect(path).toHaveTextContent('Per-destination processing')
+    expect(path).toHaveTextContent('Receiving endpoint')
+    expect(within(panel).getByText(/One Stream can deliver through multiple Routes to different Destinations/i)).toBeInTheDocument()
+    expect(within(panel).getByText(/Concept only.*not observed runtime delivery/i)).toBeInTheDocument()
+    expect(within(panel).getByText(/Preparation checklist.*not the event path/i)).toBeInTheDocument()
+    // A missing Connector/Destination remains a real prerequisite, not an invented runtime entity.
+    expect(within(panel).getByTestId('dashboard-first-flow-next')).toHaveAttribute('href', '/connectors')
+  })
+
+  it('keeps the conceptual delivery path read-only for Viewer and unknown catalog evidence', () => {
+    setup({ connectors: null, destinations: null, canConfigure: false })
+    const panel = screen.getByTestId('dashboard-empty-state')
+    expect(within(panel).getByRole('list', { name: 'Runtime event path' })).toBeInTheDocument()
+    expect(within(panel).getByTestId('dashboard-first-flow-next')).toHaveAttribute('href', '/routes')
+    expect(within(panel).queryByRole('button', { name: /Create|Deploy|Activate/ })).not.toBeInTheDocument()
+    expect(within(panel).getByTestId('dashboard-first-flow-source-state')).toHaveTextContent('Not verified')
+    expect(within(panel).getByTestId('dashboard-first-flow-destination-state')).toHaveTextContent('Not verified')
+  })
+})

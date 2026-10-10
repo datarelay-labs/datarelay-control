@@ -56,6 +56,55 @@ export function DashboardFirstFlowSetup({
           </p>
         ) : null}
       </div>
+      <section
+        aria-labelledby="dashboard-conceptual-flow-title"
+        className="border-b border-violet-100 bg-violet-50/40 px-4 py-5 dark:border-gdc-border dark:bg-gdc-panel/50 sm:px-7"
+      >
+        <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-1.5">
+          <div>
+            <h3 id="dashboard-conceptual-flow-title" className="text-sm font-semibold text-slate-900 dark:text-white">
+              How events move after deployment
+            </h3>
+            <p className="mt-1 text-xs leading-5 text-slate-600 dark:text-gdc-mutedStrong">
+              One Stream can deliver through multiple Routes to different Destinations.
+            </p>
+          </div>
+          <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:border-gdc-border dark:bg-gdc-card dark:text-gdc-mutedStrong">
+            Concept only — not observed runtime delivery
+          </span>
+        </div>
+        <ol aria-label="Runtime event path" className="mt-4 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-4">
+          {([
+            { key: 'connector', name: 'Connector', detail: 'Source access' },
+            { key: 'stream', name: 'Stream', detail: 'Collection' },
+            { key: 'route', name: 'Routes', detail: 'Per-destination processing' },
+            { key: 'destination', name: 'Destinations', detail: 'Receiving endpoint' },
+          ] as const).map(({ key, name, detail }, index) => (
+            <li
+              key={key}
+              data-flow-node={key}
+              className="flex min-w-0 items-center gap-3 rounded-lg border border-violet-200/80 bg-white px-3 py-2.5 shadow-sm dark:border-gdc-border dark:bg-gdc-card sm:flex-col sm:items-stretch sm:gap-1.5"
+            >
+              <span className="flex min-w-0 flex-1 items-center gap-2 sm:w-full">
+                <span className="shrink-0 rounded-md bg-violet-100 px-2 py-1 font-mono text-[10px] font-bold text-violet-800 dark:bg-violet-900/30 dark:text-violet-200">
+                  {index + 1}
+                </span>
+                <span className="break-words text-sm font-semibold text-slate-900 dark:text-white">{name}</span>
+              </span>
+              <span className="min-w-0 flex-1 break-words text-xs leading-5 text-slate-600 dark:text-gdc-mutedStrong sm:w-full">
+                {detail}
+              </span>
+              {index < 3 ? (
+                <span className="shrink-0 font-bold text-violet-600 dark:text-violet-300" aria-hidden="true">→</span>
+              ) : null}
+            </li>
+          ))}
+        </ol>
+        <p className="mt-3 text-xs leading-5 text-slate-600 dark:text-gdc-mutedStrong">
+          Preparation checklist — not the event path. Reusable Destinations can be registered ahead of
+          Stream setup, but events reach them only through configured Routes.
+        </p>
+      </section>
       <ol className="grid gap-3 p-4 sm:grid-cols-2 sm:p-6 xl:grid-cols-4" aria-label="First data flow setup steps">
         <li className="min-w-0 rounded-xl border border-slate-200/80 bg-white/95 p-4 dark:border-gdc-border dark:bg-gdc-panel">
           <div className="flex items-center justify-between gap-2">
