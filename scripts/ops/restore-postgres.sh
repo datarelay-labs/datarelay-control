@@ -66,6 +66,56 @@ if [[ ! -f "$DUMP_PATH" ]]; then
   exit 1
 fi
 
+# Validate archive bytes BEFORE creating a pre-restore backup or starting a
+# destructive pg_restore operation. SHA256 is integrity evidence only; not
+# encryption, trusted provenance or proof of a successful recovery drill.
+DIGEST_PATH="${DUMP_PATH}.sha256"
+if [[ ! -f "$DIGEST_PATH" ]]; then
+  if [[ "${ALLOW_UNVERIFIED_LEGACY_DUMP:-no}" != "yes" ]]; then
+    echo "ERROR: Refusing unverified legacy backup without SHA256 sidecar." >&2
+    echo "Set ALLOW_UNVERIFIED_LEGACY_DUMP=yes only for explicitly approved legacy recovery." >&2
+    exit 1
+  fi
+  echo "  WARNING: UNVERIFIED LEGACY ARCHIVE — no SHA256 digest proof"
+else
+  if ! python3 - "$DUMP_PATH" "$DIGEST_PATH" <<'PY'
+import hashlib
+import os
+from pathlib import Path
+import re
+import sys
+
+archive, checksum = (Path(arg) for arg in sys.argv[1:])
+try:
+    # A digest sidecar may be copied with the archive, but may never nominate
+    # another path and must not itself be a symlink.
+    if archive.is_symlink() or checksum.is_symlink():
+        raise ValueError("Symlink is not trusted digest evidence")
+    with checksum.open("rb") as f:
+        sidecar = f.read(512)
+        if f.read(1):
+            raise ValueError("Digest sidecar is oversized")
+    match = re.fullmatch(rb"([a-f0-9]{64})  ([^/\\\r\n]+)\n?", sidecar)
+    if match is None or match.group(2).decode("utf-8") != archive.name:
+        raise ValueError("Digest references an invalid archive")
+    hasher = hashlib.sha256()
+    with archive.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            hasher.update(chunk)
+    if not hasher.digest_size or not os.path.getsize(archive):
+        raise ValueError("Empty archive")
+    if hasher.hexdigest().encode("ascii") != match.group(1):
+        raise ValueError("Checksum mismatch")
+except (OSError, UnicodeError, ValueError):
+    sys.exit(1)
+print("  Backup digest verified (SHA256; not encryption or recovery proof)")
+PY
+  then
+    echo "ERROR: Backup digest verification failed before restore." >&2
+    exit 1
+  fi
+fi
+
 if [[ -z "${DATABASE_URL:-}" ]]; then
   echo "ERROR: DATABASE_URL is not set or is empty." >&2
   echo "----------------------------------------------------------------"
@@ -118,6 +168,14 @@ if [[ ! -f "$BACKUP_SCRIPT" ]]; then
   exit 1
 fi
 
+# Validate restore resource settings before creating any pre-restore backup.
+# An invalid jobs value must not contact PostgreSQL just to fail afterward.
+JOBS="${PGRESTORE_JOBS:-4}"
+if ! [[ "$JOBS" =~ ^[0-9]+$ ]] || [[ "$JOBS" -lt 1 ]]; then
+  echo "ERROR: PGRESTORE_JOBS must be a positive integer." >&2
+  exit 1
+fi
+
 PRE_DIR="${PRE_RESTORE_BACKUP_DIR:-${BACKUP_DIR:-$ROOT/var/backups/postgres}/pre-restore}"
 export BACKUP_DIR="$PRE_DIR"
 mkdir -p "$BACKUP_DIR"
@@ -133,12 +191,6 @@ if [[ "$PRE_RC" -ne 0 ]]; then
   echo "  RESULT: FAILURE (pre-restore backup)"
   echo "----------------------------------------------------------------"
   exit "$PRE_RC"
-fi
-
-JOBS="${PGRESTORE_JOBS:-4}"
-if ! [[ "$JOBS" =~ ^[0-9]+$ ]] || [[ "$JOBS" -lt 1 ]]; then
-  echo "ERROR: PGRESTORE_JOBS must be a positive integer." >&2
-  exit 1
 fi
 
 RESTORE_LABEL="$(basename "$DUMP_PATH")"

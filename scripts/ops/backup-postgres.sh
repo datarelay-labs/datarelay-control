@@ -14,6 +14,9 @@
 #
 # Logs: never prints the full DATABASE_URL (passwords stay out of this script's stdout/stderr).
 set -euo pipefail
+# pg_dump archives contain credentials and application data; restrict both
+# completed artifacts and partial outputs from the moment they are created.
+umask 077
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -43,6 +46,10 @@ if ! command -v pg_dump >/dev/null 2>&1; then
   echo "ERROR: pg_dump not found in PATH. Install PostgreSQL client tools." >&2
   exit 1
 fi
+if ! command -v sha256sum >/dev/null 2>&1; then
+  echo "ERROR: sha256sum not found in PATH; cannot produce a verifiable archive digest." >&2
+  exit 1
+fi
 
 python3 - <<'PY' || exit 1
 import os
@@ -68,6 +75,15 @@ mkdir -p "$BACKUP_DIR"
 
 TS="$(date -u +"%Y%m%dT%H%M%SZ")"
 OUT_FILE="$BACKUP_DIR/gdc-postgres-${TS}.dump"
+# Refuse same-second collisions: never overwrite another valid or partial
+# backup, even if its digest sidecar is absent.
+if [[ -e "$OUT_FILE" || -L "$OUT_FILE" ||
+      -e "${OUT_FILE}.gz" || -L "${OUT_FILE}.gz" ||
+      -e "${OUT_FILE}.sha256" || -L "${OUT_FILE}.sha256" ||
+      -e "${OUT_FILE}.gz.sha256" || -L "${OUT_FILE}.gz.sha256" ]]; then
+  echo "ERROR: Backup artifact for this timestamp already exists; refusing overwrite." >&2
+  exit 1
+fi
 
 echo "================================================================"
 echo "  GDC PostgreSQL backup (read-only pg_dump)"
@@ -97,9 +113,23 @@ if [[ "$GZIP_WANTED" == "1" ]]; then
 fi
 
 BYTES="$(wc -c <"$FINAL_PATH" | tr -d ' ')"
+if [[ "$BYTES" -le 0 ]]; then
+  echo "ERROR: Empty PostgreSQL archive; cannot report backup success." >&2
+  exit 1
+fi
+chmod 600 -- "$FINAL_PATH"
+# Integrity evidence only. SHA256 is NOT encryption, publisher proof or
+# independent evidence that a clean restore completed.
+SHA256="$(sha256sum -- "$FINAL_PATH" | cut -c 1-64)"
+DIGEST_FILE="${FINAL_PATH}.sha256"
+printf '%s  %s\n' "$SHA256" "$(basename -- "$FINAL_PATH")" > "$DIGEST_FILE"
+chmod 600 -- "$DIGEST_FILE"
 echo "----------------------------------------------------------------"
 echo "  RESULT: SUCCESS"
 echo "  Bytes:  $BYTES"
+echo "  SHA256: $SHA256"
+echo "  Digest: $DIGEST_FILE"
+echo "  Encryption: NOT PROVIDED by this script"
 echo "  File:   $FINAL_PATH"
 echo "  Finished: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 echo "----------------------------------------------------------------"
