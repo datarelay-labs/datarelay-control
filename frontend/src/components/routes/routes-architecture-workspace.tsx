@@ -7,8 +7,11 @@ import {
   logsExplorerPath,
   routeEditPath,
   streamRuntimePath,
+  newStreamPath,
+  NAV_PATH,
 } from '../../config/nav-paths'
 import { cn } from '../../lib/utils'
+import { useSessionCapabilities } from '../../lib/rbac'
 import {
   buildRouteFlowTree,
   formatFlowEps,
@@ -45,6 +48,7 @@ export function RoutesArchitectureWorkspace({
   selectedStreamId,
   onSelectStream,
 }: RoutesArchitectureWorkspaceProps) {
+  const canCreateFlow = useSessionCapabilities().workspace_mutations === true
   const groups = useMemo(() => buildRouteFlowTree(snapshot, consoleRows), [snapshot, consoleRows])
   const selectedGroup = groups.find((group) => group.streamId === selectedStreamId) ?? groups[0]
   const [inspectedRouteId, setInspectedRouteId] = useState<number | null>(null)
@@ -54,10 +58,20 @@ export function RoutesArchitectureWorkspace({
   const inspectedMetric = snapshot?.routes.find((route) =>
     route.route_id === selectedRoute?.routeId && route.stream_id === selectedGroup?.streamId)
   const evidenceStale = requestFailed || isRouteSnapshotStale(snapshot?.updated_at)
+  // An empty graph is not proof of a fresh installation: the Route list may
+  // be incomplete while a healthy Stream exists, or the read may be stale.
+  const verifiedEmptyRoutes = !loading && !evidenceStale &&
+    snapshot?.global?.total_routes === 0 && snapshot.routes.length === 0
+  const verifiedNoStreams = verifiedEmptyRoutes &&
+    snapshot?.global?.total_streams === 0 && snapshot.streams.length === 0
+  const verifiedExistingStreams = verifiedEmptyRoutes &&
+    Number.isSafeInteger(snapshot?.global?.total_streams) &&
+    (snapshot?.global?.total_streams ?? 0) > 0 &&
+    snapshot?.streams.some((stream) => validId(stream.stream_id)) === true
   const attention = useMemo(() => listRouteFlowAttention(groups), [groups])
   const [visibleAttentionCount, setVisibleAttentionCount] = useState(4)
   const [visiblePathCount, setVisiblePathCount] = useState(12)
-  const [allStreamsVisible, setAllStreamsVisible] = useState(false)
+  const [visibleStreamCount, setVisibleStreamCount] = useState(12)
   const [streamQuery, setStreamQuery] = useState('')
   const normalizedStreamQuery = streamQuery.trim().toLocaleLowerCase()
   const matchingStreams = normalizedStreamQuery
@@ -65,15 +79,14 @@ export function RoutesArchitectureWorkspace({
         group.streamName.toLocaleLowerCase().includes(normalizedStreamQuery) ||
         String(group.streamId).includes(normalizedStreamQuery))
     : groups
-  const firstStreams = matchingStreams.slice(0, 12)
+  const firstStreams = matchingStreams.slice(0, visibleStreamCount)
+  const allStreamsVisible = visibleStreamCount >= matchingStreams.length
   // A selected low-throughput Stream must remain discoverable when the
   // topology has many higher-throughput Streams, without rendering them all.
-  const visibleStreams = allStreamsVisible
-    ? matchingStreams
-    : !normalizedStreamQuery && selectedGroup &&
-      !firstStreams.some((group) => group.streamId === selectedGroup.streamId)
-      ? [...firstStreams, selectedGroup]
-      : firstStreams
+  const visibleStreams = !normalizedStreamQuery && selectedGroup &&
+    !firstStreams.some((group) => group.streamId === selectedGroup.streamId)
+    ? [...firstStreams, selectedGroup]
+    : firstStreams
   const attentionVisible = attention.slice(0, visibleAttentionCount)
   const allAttentionVisible = visibleAttentionCount >= attention.length
   // Keep the selected Route visible without forcing hundreds of unrelated
@@ -89,7 +102,7 @@ export function RoutesArchitectureWorkspace({
     // Numeric Route and Stream IDs prevent same-name entities from leaking into each other's inspector.
     setInspectedRouteId(item.routeId)
     setVisiblePathCount(12)
-    setAllStreamsVisible(false)
+    setVisibleStreamCount(12)
     setStreamQuery('')
     onSelectStream(item.streamId)
   }
@@ -203,15 +216,39 @@ export function RoutesArchitectureWorkspace({
           {loading ? 'Loading current delivery connections…' : 'The operational snapshot is unavailable. Refresh before trusting Route status or topology.'}
         </div>
       ) : groups.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 px-6 py-12 text-center">
+        <div className="flex flex-col items-center gap-3 px-6 py-12 text-center" data-testid="routes-architecture-empty-state">
           <GitBranch className="h-8 w-8 text-slate-400" aria-hidden />
-          <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">No Route connections in this snapshot</h3>
+          <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+            {verifiedNoStreams
+              ? 'Start your first Data Flow'
+              : verifiedExistingStreams
+                ? 'No Route delivery paths configured'
+                : 'Route inventory not verified'}
+          </h3>
           <p className="max-w-lg text-sm text-slate-600 dark:text-gdc-muted">
-            Create a Route for an existing Stream to connect it to a Destination. The source and its collection settings stay in Streams.
+            {verifiedNoStreams
+              ? canCreateFlow
+                ? 'No Streams or Routes are configured in this verified snapshot. Start with a Source, sample its events, select Destinations, configure Route Processing, then deploy.'
+                : 'No Streams or Routes are configured in this verified snapshot. Creating a Data Flow requires workspace write access; ask an administrator for access.'
+              : verifiedExistingStreams
+                ? canCreateFlow
+                  ? 'Streams already exist, but none of their Routes are configured. Create a Route for an existing Stream and Destination without duplicating collection.'
+                  : 'Streams exist, but there are no configured delivery Routes. Creating a Route requires workspace write access.'
+                : 'Current Stream and Route inventory cannot be confirmed. Refresh the snapshot or review the Streams catalog before attempting creation.'}
           </p>
-          <Link to={routeEditPath('new')} className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700">
-            Create Route <ArrowRight className="h-4 w-4" aria-hidden />
-          </Link>
+          {canCreateFlow && verifiedNoStreams ? (
+            <Link to={newStreamPath()} className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700">
+              Start a Data Flow <ArrowRight className="h-4 w-4" aria-hidden />
+            </Link>
+          ) : canCreateFlow && verifiedExistingStreams ? (
+            <Link to={routeEditPath('new')} className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700">
+              Create Route <ArrowRight className="h-4 w-4" aria-hidden />
+            </Link>
+          ) : (
+            <Link to={NAV_PATH.streams} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-violet-700 hover:bg-violet-50 dark:border-gdc-border dark:text-violet-300">
+              View Streams <ArrowRight className="h-4 w-4" aria-hidden />
+            </Link>
+          )}
         </div>
       ) : (
         <div className="grid min-w-0 xl:grid-cols-[220px_minmax(0,1fr)]">
@@ -225,7 +262,7 @@ export function RoutesArchitectureWorkspace({
                 type="search"
                 aria-label="Find Stream by name or ID"
                 value={streamQuery}
-                onChange={(event) => { setStreamQuery(event.target.value); setAllStreamsVisible(false) }}
+                onChange={(event) => { setStreamQuery(event.target.value); setVisibleStreamCount(12) }}
                 placeholder="Find Stream…"
                 className="min-h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus-visible:border-violet-400 focus-visible:ring-2 focus-visible:ring-violet-400 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
               />
@@ -244,7 +281,7 @@ export function RoutesArchitectureWorkspace({
                     aria-pressed={selected}
                     aria-label={`Inspect delivery for ${group.streamName} (Stream #${group.streamId})`}
                     data-testid={`routes-architecture-stream-${group.streamId}`}
-                    onClick={() => { setInspectedRouteId(null); setVisiblePathCount(12); onSelectStream(group.streamId) }}
+                    onClick={() => { setInspectedRouteId(null); setVisiblePathCount(12); setVisibleStreamCount(12); onSelectStream(group.streamId) }}
                     className={cn(
                       'flex min-w-[160px] flex-1 items-center justify-between gap-3 rounded-lg border px-3 py-3 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 xl:min-w-0 xl:flex-none',
                       selected
@@ -273,13 +310,18 @@ export function RoutesArchitectureWorkspace({
             {matchingStreams.length > 12 ? (
               <button
                 type="button"
-                aria-expanded={allStreamsVisible}
+                aria-expanded={visibleStreamCount > 12}
                 aria-controls="routes-architecture-stream-list"
                 data-testid="routes-architecture-show-streams"
-                onClick={() => setAllStreamsVisible((value) => !value)}
+                onClick={() => setVisibleStreamCount((current) =>
+                  current >= matchingStreams.length ? 12 : Math.min(matchingStreams.length, current + 20))}
                 className="mt-2 min-h-10 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-violet-700 hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:border-gdc-border dark:text-violet-300 dark:hover:bg-gdc-card"
               >
-                {allStreamsVisible ? 'Show fewer Streams' : `Show all ${matchingStreams.length} Streams`}
+                {allStreamsVisible
+                  ? 'Show fewer Streams'
+                  : matchingStreams.length <= 32
+                    ? `Show all ${matchingStreams.length} Streams`
+                    : `Show next Streams (${visibleStreams.length} of ${matchingStreams.length} shown)`}
               </button>
             ) : null}
           </nav>

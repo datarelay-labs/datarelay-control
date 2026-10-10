@@ -2,10 +2,11 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import type { OperationalRouteSnapshot, OperationalSnapshotResponse } from '../../api/operationalSnapshot'
 import { buildRouteRowsFromOperationalSnapshot } from './routes-overview-helpers'
 import { RoutesArchitectureWorkspace } from './routes-architecture-workspace'
+import { clearTestSession, persistTestSession } from '../../lib/governance-rbac'
 
 const recent = () => new Date().toISOString()
 
@@ -108,6 +109,76 @@ function GraphHarness({ snapshot, requestFailed = false }: { snapshot: Operation
     </MemoryRouter>
   )
 }
+
+describe('Data Flows empty-state prerequisite guidance', () => {
+  afterEach(() => clearTestSession())
+
+  it('starts with the existing five-step Data Flow Wizard when no Streams exist in a fresh snapshot', () => {
+    const zero = snapshotFor([])
+    zero.global = { ...zero.global, health_status: 'IDLE', total_streams: 0, enabled_streams: 0, running_streams: 0, total_routes: 0 }
+    zero.streams = []
+    render(<GraphHarness snapshot={zero} />)
+
+    expect(screen.getByRole('heading', { name: 'Start your first Data Flow' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Start a Data Flow' })).toHaveAttribute('href', '/streams/new')
+    expect(screen.queryByRole('link', { name: 'Create Route' })).not.toBeInTheDocument()
+  })
+
+  it('does not invite a read-only user to create a Stream or Route', () => {
+    persistTestSession('VIEWER')
+    const zero = snapshotFor([])
+    zero.global = { ...zero.global, health_status: 'IDLE', total_streams: 0, enabled_streams: 0, running_streams: 0, total_routes: 0 }
+    zero.streams = []
+    render(<GraphHarness snapshot={zero} />)
+    expect(screen.queryByRole('link', { name: 'Start a Data Flow' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Create Route' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'View Streams' })).toHaveAttribute('href', '/streams')
+    expect(screen.getByText(/workspace write access/i)).toBeInTheDocument()
+  })
+
+  it('offers a Route action only when a fresh snapshot actually confirms existing Streams', () => {
+    render(<GraphHarness snapshot={snapshotFor([])} />)
+    expect(screen.getByRole('heading', { name: 'No Route delivery paths configured' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Create Route' })).toHaveAttribute('href', '/routes/new/edit')
+    expect(screen.queryByRole('link', { name: 'Start a Data Flow' })).not.toBeInTheDocument()
+  })
+
+  it('does not offer Route creation to a read-only inspector when Streams exist', () => {
+    persistTestSession('VIEWER')
+    render(<GraphHarness snapshot={snapshotFor([])} />)
+    expect(screen.getByRole('heading', { name: 'No Route delivery paths configured' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Create Route' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'View Streams' })).toHaveAttribute('href', '/streams')
+    expect(screen.getByText(/requires workspace write access/i)).toBeInTheDocument()
+  })
+
+  it('does not infer a blank installation from missing Route rows or a failed current read', () => {
+    const partial = snapshotFor([])
+    partial.global = { ...partial.global, total_routes: 2 }
+    const { rerender } = render(<GraphHarness snapshot={partial} />)
+    expect(screen.getByRole('heading', { name: 'Route inventory not verified' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Create Route' })).not.toBeInTheDocument()
+
+    const empty = snapshotFor([])
+    empty.global = { ...empty.global, total_streams: 0, enabled_streams: 0, running_streams: 0 }
+    empty.streams = []
+    rerender(<GraphHarness snapshot={empty} requestFailed />)
+    expect(screen.getByRole('heading', { name: 'Route inventory not verified' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Start a Data Flow' })).not.toBeInTheDocument()
+  })
+
+  it('does not claim an empty installation when snapshot inventory is stale or incomplete', () => {
+    const stale = snapshotFor([])
+    stale.global = { ...stale.global, total_streams: 0, enabled_streams: 0, running_streams: 0, total_routes: 0 }
+    stale.streams = []
+    stale.updated_at = '2026-01-01T00:00:00Z'
+    render(<GraphHarness snapshot={stale} />)
+    expect(screen.getByRole('heading', { name: 'Route inventory not verified' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'View Streams' })).toHaveAttribute('href', '/streams')
+    expect(screen.queryByRole('link', { name: 'Start a Data Flow' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Create Route' })).not.toBeInTheDocument()
+  })
+})
 
 describe('Data Flows topology: operator priority and bounded exploration', () => {
   it('keeps the flow explanation discoverable without occupying the operations viewport by default', async () => {
@@ -252,6 +323,29 @@ describe('Data Flows topology: operator priority and bounded exploration', () =>
     expect(within(streamList).getAllByTestId(/^routes-architecture-stream-/)).toHaveLength(13)
     expect(screen.getByTestId('routes-architecture-inspector')).toHaveTextContent('Route R-0120')
     expect(screen.getByTestId('routes-architecture-show-streams')).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('reveals 120 Stream selectors in bounded steps, preserving selected offscreen Stream detail', async () => {
+    const routes = Array.from({ length: 120 }, (_, index) => ({
+      ...route(index + 1, index + 1, index + 501, 'HEALTHY'),
+      stream_name: `Flow ${index + 1}`,
+    }))
+    const data = snapshotFor(routes)
+    data.streams = routes.map((r) => ({ ...data.streams[0]!, stream_id: r.stream_id, stream_name: r.stream_name }))
+    const user = userEvent.setup()
+    render(<GraphHarness snapshot={data} />)
+    const nav = screen.getByRole('navigation', { name: 'Choose a Stream for delivery' })
+
+    expect(within(nav).getAllByTestId(/^routes-architecture-stream-/)).toHaveLength(12)
+    await user.click(screen.getByRole('button', { name: 'Show next Streams (12 of 120 shown)' }))
+    expect(within(nav).getAllByTestId(/^routes-architecture-stream-/)).toHaveLength(32)
+    await user.click(screen.getByRole('button', { name: 'Show next Streams (32 of 120 shown)' }))
+    expect(within(nav).getAllByTestId(/^routes-architecture-stream-/)).toHaveLength(52)
+    await user.click(screen.getByTestId('routes-architecture-stream-50'))
+    expect(screen.getByTestId('routes-architecture-stream-50')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('routes-architecture-inspector')).toHaveTextContent('Stream #50')
+    expect(within(nav).getAllByTestId(/^routes-architecture-stream-/)).toHaveLength(13)
+    expect(screen.queryByTestId('routes-architecture-stream-70')).not.toBeInTheDocument()
   })
 
   it('explains an empty Stream search and expands or collapses larger matching results', async () => {
