@@ -149,6 +149,61 @@ describe('Logs Explorer receiving an actual Data Flows numeric-ID drilldown', ()
     expect(screen.queryByText('First stream Route 41 evidence')).not.toBeInTheDocument()
   })
 
+  it('switching Stream from a Data Flows deep link updates actual API scope and clears stale Route/Destination IDs', async () => {
+    const user = userEvent.setup()
+    const { fetchPage } = setup([
+      row(71, 1, 41, 'First stream Route 41 evidence'),
+      row(72, 2, 42, 'Second stream Route 42 evidence'),
+    ])
+    render(
+      <MemoryRouter initialEntries={['/logs?route_id=42&stream_id=2&destination_id=10']}>
+        <LogsExplorerPage />
+      </MemoryRouter>,
+    )
+    await waitFor(() => expect(screen.getByLabelText('Stream')).toHaveValue('Repeated stream (Stream #2)'))
+    await user.selectOptions(screen.getByLabelText('Stream'), 'Repeated stream (Stream #1)')
+    await waitFor(() => {
+      expect(fetchPage.mock.calls.at(-1)?.[0]).toMatchObject({ stream_id: 1 })
+      expect(fetchPage.mock.calls.at(-1)?.[0]?.route_id).toBeUndefined()
+      expect(fetchPage.mock.calls.at(-1)?.[0]?.destination_id).toBeUndefined()
+    })
+    expect(await screen.findByText('First stream Route 41 evidence')).toBeInTheDocument()
+    expect(screen.queryByText('Second stream Route 42 evidence')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Remove route filter' })).not.toBeInTheDocument()
+  })
+
+  it('switching Route from a Data Flows deep link updates actual API scope without the previous Stream/Destination filter', async () => {
+    const user = userEvent.setup()
+    const { fetchPage } = setup([
+      row(71, 1, 41, 'First stream Route 41 evidence'),
+      row(72, 2, 42, 'Second stream Route 42 evidence'),
+    ])
+    render(
+      <MemoryRouter initialEntries={['/logs?route_id=42&stream_id=2&destination_id=10']}>
+        <LogsExplorerPage />
+      </MemoryRouter>,
+    )
+    await waitFor(() => expect(screen.getByLabelText('Route')).toHaveValue('Repeated route (Route #42)'))
+    await user.selectOptions(screen.getByLabelText('Route'), 'Repeated route (Route #41)')
+    await waitFor(() => {
+      expect(fetchPage.mock.calls.at(-1)?.[0]).toMatchObject({ route_id: 41 })
+      expect(fetchPage.mock.calls.at(-1)?.[0]?.stream_id).toBeUndefined()
+      expect(fetchPage.mock.calls.at(-1)?.[0]?.destination_id).toBeUndefined()
+    })
+    expect(await screen.findByText('First stream Route 41 evidence')).toBeInTheDocument()
+    expect(screen.queryByText('Second stream Route 42 evidence')).not.toBeInTheDocument()
+  })
+
+  it('removing the numeric Route URL chip also removes any residual hidden route dropdown filter', async () => {
+    const user = userEvent.setup()
+    setup([row(72, 2, 42, 'Route 42 retained after chip removal')])
+    render(<MemoryRouter initialEntries={['/logs?route_id=42']}><LogsExplorerPage /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByLabelText('Route')).toHaveValue('Repeated route (Route #42)'))
+    await user.click(screen.getByRole('button', { name: 'Remove route filter' }))
+    expect(screen.getByLabelText('Route')).toHaveValue('All Routes')
+    expect(screen.getByText('Route 42 retained after chip removal')).toBeInTheDocument()
+  })
+
   it('removing a numeric Stream URL chip does not leave a hidden name filter', async () => {
     const user = userEvent.setup()
     setup([row(72, 2, 42, 'Recovered scope still shows Route 42')])

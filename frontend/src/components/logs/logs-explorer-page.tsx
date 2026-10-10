@@ -692,6 +692,40 @@ export function LogsExplorerPage() {
       : filterEntityId(routeFilter, routeDisplayLabels, entityLabels.routes),
   [routeFilter, routeDisplayLabels, entityLabels.routes])
 
+  // A deep link is an authoritative numeric scope, not a cosmetic filter chip.
+  // Changing its Stream/Route selector must change the backend query as well,
+  // otherwise the old URL ID intersects with the newly selected name and hides
+  // legitimate delivery evidence.
+  function changeStreamFilter(label: string) {
+    const selectedId = filterEntityId(label, streamDisplayLabels, entityLabels.streams)
+    const next = new URLSearchParams(searchParams)
+    if (selectedId == null) next.delete('stream_id')
+    else next.set('stream_id', String(selectedId))
+    if (selectedId != null && selectedId !== effectiveStreamIdForApi) {
+      // Existing Route and receiver scopes belong to the previous flow.
+      next.delete('route_id')
+      next.delete('destination_id')
+      setRouteFilter(ALL_ROUTES_LABEL)
+    }
+    setStreamFilter(label)
+    setSearchParams(next, { replace: true })
+  }
+
+  function changeRouteFilter(label: string) {
+    const selectedId = filterEntityId(label, routeDisplayLabels, entityLabels.routes)
+    const next = new URLSearchParams(searchParams)
+    if (selectedId == null) next.delete('route_id')
+    else next.set('route_id', String(selectedId))
+    if (selectedId != null && selectedId !== routeIdFromQuery) {
+      // The new Route can belong to another Stream and Destination.
+      next.delete('stream_id')
+      next.delete('destination_id')
+      setStreamFilter(ALL_STREAMS_LABEL)
+    }
+    setRouteFilter(label)
+    setSearchParams(next, { replace: true })
+  }
+
   const lastUrlStreamId = useRef<number | null>(null)
   useEffect(() => {
     if (effectiveStreamIdForApi == null) {
@@ -704,6 +738,18 @@ export function LogsExplorerPage() {
     if (label) setStreamFilter(label)
     lastUrlStreamId.current = effectiveStreamIdForApi
   }, [effectiveStreamIdForApi, streamDisplayLabels])
+
+  const lastUrlRouteId = useRef<number | null>(null)
+  useEffect(() => {
+    if (routeIdFromQuery == null) {
+      if (lastUrlRouteId.current != null) setRouteFilter(ALL_ROUTES_LABEL)
+      lastUrlRouteId.current = null
+      return
+    }
+    const label = routeDisplayLabels.get(routeIdFromQuery)
+    if (label) setRouteFilter(label)
+    lastUrlRouteId.current = routeIdFromQuery
+  }, [routeIdFromQuery, routeDisplayLabels])
 
   const baseLogRows = useMemo(
     () => enrichLogExplorerRows(logRows, entityLabels),
@@ -1350,8 +1396,8 @@ export function LogsExplorerPage() {
               <SelectField id="logs-time-range" label="Time range" value={timeRange} options={TIME_RANGE_OPTIONS} onChange={setTimeRange} />
             </div>
             <SelectField id="logs-level" label="Level" value={levelFilter} options={LEVEL_FILTER_OPTIONS} onChange={setLevelFilter} />
-            <SelectField id="logs-stream" label="Stream" value={streamFilter} options={streamFilterOptions} onChange={setStreamFilter} />
-            <SelectField id="logs-route" label="Route" value={routeFilter} options={routeFilterOptions} onChange={setRouteFilter} />
+            <SelectField id="logs-stream" label="Stream" value={streamFilter} options={streamFilterOptions} onChange={changeStreamFilter} />
+            <SelectField id="logs-route" label="Route" value={routeFilter} options={routeFilterOptions} onChange={changeRouteFilter} />
             <SelectField
               id="logs-stage"
               label="Pipeline stage"
