@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import * as gdcRuntime from '../../api/gdcRuntime'
 import { LogsExplorerPage } from './logs-explorer-page'
@@ -143,5 +144,40 @@ describe('LogsExplorerPage status URL → API', () => {
 
     const sel = await screen.findByLabelText(/Delivery status/i)
     expect(sel).toHaveValue('Failed')
+  })
+})
+
+
+describe('Failed-attempt deep-link zero-results recovery', () => {
+  it('clears only failed status, retaining saved Route/Stream/Destination identity', async () => {
+    const user = userEvent.setup()
+    const fetchPage = vi.spyOn(gdcRuntime, 'fetchRuntimeLogsPage').mockResolvedValue(emptyPage as never)
+    vi.spyOn(gdcRuntime, 'searchRuntimeDeliveryLogs').mockResolvedValue(emptySearch as never)
+    vi.spyOn(gdcRuntime, 'fetchRuntimeLogsTotals').mockResolvedValue(emptyTotals as never)
+    vi.spyOn(gdcRuntime, 'fetchRuntimeDashboardSummary').mockResolvedValue(null)
+
+    render(
+      <MemoryRouter initialEntries={['/logs?route_id=42&stream_id=2&destination_id=10&status=failed']}>
+        <LogsExplorerPage />
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => {
+      expect(fetchPage.mock.calls.some(([request]) =>
+        request?.route_id === 42 &&
+        request?.stream_id === 2 &&
+        request?.destination_id === 10 &&
+        request?.status === 'FAILED',
+      )).toBe(true)
+    })
+    const recovery = await screen.findByRole('button', { name: 'Show all statuses for this Route' })
+    await user.click(recovery)
+    await waitFor(() => {
+      const latest = fetchPage.mock.calls.at(-1)?.[0]
+      expect(latest).toMatchObject({ route_id: 42, stream_id: 2, destination_id: 10 })
+      expect(latest?.status).toBeUndefined()
+    })
+    expect(screen.getByRole('button', { name: 'Remove route filter' })).toBeInTheDocument()
+    fetchPage.mockRestore()
   })
 })

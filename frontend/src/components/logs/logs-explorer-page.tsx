@@ -1885,6 +1885,11 @@ export function LogsExplorerPage() {
             apiUnavailable={runtimeLogsError}
             selectedId={selectedId}
             onSelect={setSelectedId}
+            onShowAllStatusesForRoute={
+              routeIdFromQuery != null && deliveryApiFilters.status === 'FAILED' && !runtimeLogsError
+                ? () => removeSearchParamKey('status')
+                : undefined
+            }
             onClearFilters={() => {
               clearOperationalUrlFilters()
               setSearch('')
@@ -2010,6 +2015,15 @@ export function LogsExplorerPage() {
                           : 'Clear filters or open the full logs workspace to widen the search.'}
                       </p>
                       <div className="flex flex-wrap items-center justify-center gap-2">
+                        {!runtimeLogsError && routeIdFromQuery != null && deliveryApiFilters.status === 'FAILED' ? (
+                          <button
+                            type="button"
+                            onClick={() => removeSearchParamKey('status')}
+                            className="inline-flex min-h-10 items-center rounded-lg bg-gdc-primary px-3 text-sm font-semibold text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500"
+                          >
+                            Show all statuses for this Route
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           onClick={() => {

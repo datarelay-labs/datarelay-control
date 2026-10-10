@@ -37,15 +37,19 @@ No competitor currently offers a feature unless documentation here actually supp
 | Search, keyboard, narrow/mobile | Node-RED REA licensed search pilot, Kibana search/flyouts, Confluent search | Expert quick-find; responsive compact Route/Logs cards; Export/Columns arrow/menu keyboard; bounded listing, focus states | Source native/CI; competitor mobile implementation UNKNOWN; Control physical viewport 320/375/1440 **NOT PASS** | P0 acceptance gate, not new icon/cosmetic backlog |
 | Help and progressive configuration | Cribl Stream Tour, Elastic global Help | Existing in-product contextual help, wizard template and stage-progress, Save Draft and Resume | Source-present/native tested; partial approval/denied paths prevent complete user acceptance | P1; avoid another redundant help modal |
 
-## Chosen top three **not already implemented** tasks (preserve safety)
+## Chosen top three gaps at comparison time (current disposition; preserve safety)
 
 ### P0-UI-REA-01 — Contextual per-Route failed-attempt drilldown (**FIRST runnable**)
 
 Design: Extend existing read-only expert and narrow-screen Route Flow rows with **one explicit `Failed attempts` link when a Route is enabled and the existing authoritative numeric error evidence reports a positive error rate**. Preserve generic `Delivery logs`. Carry exact valid Stream, Route and optional Destination IDs via existing `logsExplorerPath({ ..., status: 'failed' })`, already understood by Logs Explorer and backend. Never claim the failure occurred *now* if the snapshot is stale, and never show a path-specific failure shortcut for disabled or unknown/error-rate=0 Routes. Do not copy competitor markup or add a preview/delivery API. **Acceptance:** RED→GREEN desktop/mobile tests on positive/zero/unknown/disabled/stale and invalid Destination ID; downstream Logs `FAILED` filter test passes; all existing links remain unchanged; source tests, ESLint, Vite build and exact HEAD CI. **Evidence level:** Source/native, NOT Browser FUE.
 
-### P0-UI-REA-02 — Explicit evidence scope on investigation handoff (**NEXT, independent if allowed**)
+### P0-UI-REA-02 — One-click failed-filter empty-state recovery (**SOURCE IMPLEMENTED; CI/Browser GATES OPEN**)
 
-Design: From the selected Route/Stream into existing Logs workspace, clearly label that source Route EPS, selected log status and actual receiving Destination do not imply ingestion, and allow operator to clear *just* the failure filter without losing Route/Stream identity. Avoid unverified time-window propagation. No new source of truth or sticky extra state. Acceptance: clicking failure link shows exact identity + status chip; removing Failed preserves Route IDs; unknown API not labeled empty. **Check existing Logs UI first** because chips and remove actions may already implement some/all of this; if implemented, mark **already done**, do not duplicate.
+Existing Logs Explorer already has a status-filter chip that can be removed without clearing Route, Stream and Destination identity. **Do not duplicate that capability.** The genuine source gap was specifically the **zero-result panel**: its primary choices were *Clear all filters* or *Open full logs*, both losing exact Route context just because the current `FAILED` subset was empty.
+
+Implementation: On desktop **and** compact mobile empty-list states, when a saved positive Route ID is URL-scoped with `status=failed` and the API is reachable, show **Show all statuses for this Route**. This removes **only** the `status` URL parameter using the existing routing/state callback, preserving Route, Stream and optional Destination, as well as normal loaded-log filters and the original full-clear alternative. Never display this recovery if the API itself is unavailable or if Route ID/status evidence is missing. No extra API endpoint or server write.
+
+Acceptance: a RED→GREEN actual page test drives `FAILED` API scope, clicks the recovery, then checks that the subsequent request drops only status while retaining the same numeric route/stream/destination identities. A compact mobile test separately verifies correct callback versus clear-all and no false-positive action on API error. Actual authenticated Browser and cross-page return still require approval.
 
 ### P1-UI-REA-03 — Path-selectable preview readiness / residual gap audit (**AFTER safety review**)
 

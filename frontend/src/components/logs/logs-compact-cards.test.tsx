@@ -74,3 +74,35 @@ describe('Logs Explorer narrow-screen compact investigation', () => {
     expect(onClearFilters).toHaveBeenCalledTimes(1)
   })
 })
+
+
+describe('Narrow-screen Route failure investigation recovery', () => {
+  it('offers identity-preserving recovery before destructive clear-all filters', async () => {
+    const onWiden = vi.fn()
+    const onClear = vi.fn()
+    const user = userEvent.setup()
+    render(
+      <LogsCompactCards
+        rows={[]} loading={false} apiUnavailable={false}
+        selectedId={null} onSelect={vi.fn()} onClearFilters={onClear}
+        onShowAllStatusesForRoute={onWiden}
+      />,
+    )
+    const narrow = screen.getByRole('region', { name: 'Compact delivery logs' })
+    expect(narrow).toHaveTextContent('No logs match the current filters')
+    await user.click(screen.getByRole('button', { name: 'Show all statuses for this Route' }))
+    expect(onWiden).toHaveBeenCalledTimes(1)
+    expect(onClear).not.toHaveBeenCalled()
+  })
+
+  it('does not offer failed-status recovery when API evidence is unavailable', () => {
+    render(
+      <LogsCompactCards
+        rows={[]} loading={false} apiUnavailable
+        selectedId={null} onSelect={vi.fn()} onClearFilters={vi.fn()}
+        onShowAllStatusesForRoute={vi.fn()}
+      />,
+    )
+    expect(screen.queryByRole('button', { name: 'Show all statuses for this Route' })).not.toBeInTheDocument()
+  })
+})

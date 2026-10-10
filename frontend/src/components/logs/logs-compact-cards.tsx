@@ -11,6 +11,7 @@ export function LogsCompactCards({
   selectedId,
   onSelect,
   onClearFilters,
+  onShowAllStatusesForRoute,
 }: {
   rows: readonly LogExplorerRow[]
   loading: boolean
@@ -18,6 +19,8 @@ export function LogsCompactCards({
   selectedId: string | null
   onSelect: (id: string) => void
   onClearFilters: () => void
+  /** Optional recovery from a failed-only deep link; preserves Route identity. */
+  onShowAllStatusesForRoute?: () => void
 }) {
   return (
     <section aria-label="Compact delivery logs" data-testid="logs-compact-list" className="space-y-3 p-3" aria-busy={loading}>
@@ -42,13 +45,24 @@ export function LogsCompactCards({
               : 'Widen the search to inspect more available delivery evidence.'}
           </p>
           {!apiUnavailable ? (
-            <button
-              type="button"
-              onClick={onClearFilters}
-              className="mt-3 min-h-10 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
-            >
-              Clear log filters
-            </button>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {onShowAllStatusesForRoute ? (
+                <button
+                  type="button"
+                  onClick={onShowAllStatusesForRoute}
+                  className="min-h-10 rounded-lg bg-gdc-primary px-3 py-2 text-sm font-semibold text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500"
+                >
+                  Show all statuses for this Route
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={onClearFilters}
+                className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
+              >
+                Clear log filters
+              </button>
+            </div>
           ) : null}
         </div>
       ) : (
