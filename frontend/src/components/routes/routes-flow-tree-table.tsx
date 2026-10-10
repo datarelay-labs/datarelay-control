@@ -272,6 +272,7 @@ export function RoutesFlowTreeTable({ snapshot, consoleRows, loading = false }: 
                 key={group.streamId}
                 group={group}
                 evidenceStale={evidenceStale}
+                validObservationTime={validObservationTime}
                 matchOnly={Boolean(expertQuery)}
                 expanded={expertQuery ? !searchCollapsedIds.has(group.streamId) : expandedIds.has(group.streamId)}
                 onToggle={() => {
@@ -291,12 +292,14 @@ export function RoutesFlowTreeTable({ snapshot, consoleRows, loading = false }: 
 function StreamFlowRows({
   group,
   evidenceStale,
+  validObservationTime,
   matchOnly,
   expanded,
   onToggle,
 }: {
   group: RouteFlowStreamGroup
   evidenceStale: boolean
+  validObservationTime: boolean
   matchOnly: boolean
   expanded: boolean
   onToggle: () => void
@@ -387,12 +390,12 @@ function StreamFlowRows({
                     data-testid={`routes-flow-route-health-${route.routeId}`}
                     className={cn(
                       'inline-flex rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide',
-                      evidenceStale
+                      !route.enabled || !validObservationTime || evidenceStale
                         ? 'border-slate-300 bg-slate-100 text-slate-700 dark:border-gdc-border dark:bg-gdc-section dark:text-gdc-mutedStrong'
                         : routeHealthBadgeClass(route.health),
                     )}
                   >
-                    {evidenceStale ? `Last reported ${route.health}` : route.health}
+                    {!route.enabled ? 'Disabled' : !validObservationTime ? 'Unverified' : evidenceStale ? `Last reported ${route.health}` : route.health}
                   </span>
                 </td>
               </tr>

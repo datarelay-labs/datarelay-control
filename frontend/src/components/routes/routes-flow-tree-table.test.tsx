@@ -788,3 +788,26 @@ describe('REA-informed expert Route Flow indexed find', () => {
     expect(screen.getByTestId('routes-flow-snapshot-status')).toHaveTextContent('Runtime snapshot unavailable')
   })
 })
+
+describe('Expert Route Flow time and disabled-status trust parity', () => {
+  it('never displays a live Healthy badge when snapshot observation time is invalid', () => {
+    const snapshot = evidence()
+    snapshot.updated_at = 'not-a-timestamp'
+    mount(snapshot)
+    const health = screen.getByTestId('routes-flow-route-health-42')
+    expect(health).toHaveTextContent('Unverified')
+    expect(health).not.toHaveClass('text-emerald-800')
+    expect(screen.getByTestId('routes-flow-snapshot-status')).toHaveTextContent('Snapshot time not verified')
+  })
+
+  it('does not promote a disabled Route with old green metrics into an active Healthy state', () => {
+    const snapshot = evidence()
+    snapshot.routes = [{ ...snapshot.routes[0]!, enabled: false, health_status: 'HEALTHY' }]
+    mount(snapshot)
+    const health = screen.getByTestId('routes-flow-route-health-42')
+    expect(health).toHaveTextContent('Disabled')
+    expect(health).not.toHaveClass('text-emerald-800')
+    expect(screen.getByRole('link', { name: 'Investigate R-0042 delivery logs' }))
+      .toHaveAttribute('href', '/logs?route_id=42&stream_id=1&destination_id=10')
+  })
+})
