@@ -309,15 +309,22 @@ export function routeMetricsFromSnapshot(
   problems: OperationalSnapshotResponse['problems'] | null | undefined,
 ): {
   epsAvg: number
-  successRate24h: number
+  /** 5-minute operational snapshot, not a 24-hour historical success metric. */
+  successRate5m: number | null
   status: 'ACTIVE' | 'PAUSED' | 'ERROR'
   deliveryMode: string
 } {
   const snap = (snapshotRoutes ?? []).find((r) => r.route_id === routeId)
   if (snap == null) {
-    return { epsAvg: 0, successRate24h: 0, status: 'ACTIVE', deliveryMode: '—' }
+    return { epsAvg: 0, successRate5m: null, status: 'ACTIVE', deliveryMode: '—' }
   }
   const kpi = selectRouteKpi(snap, problems ?? [])
+  // A reported 0% with no recent outcome sample is ambiguous: never render it
+  // as verified failed-only delivery. Keep a genuine 0% where failures exist.
+  const hasRecentSample = (Number.isFinite(snap.delivered_eps_1m) && snap.delivered_eps_1m > 0) ||
+    (Number.isFinite(snap.failed_eps_1m) && snap.failed_eps_1m > 0)
+  const successRate5m = kpi.successRatePct == null || (kpi.successRatePct === 0 && !hasRecentSample)
+    ? null : kpi.successRatePct
 
   let status: 'ACTIVE' | 'PAUSED' | 'ERROR' = 'ACTIVE'
   if (!snap.enabled) status = 'PAUSED'
@@ -325,7 +332,7 @@ export function routeMetricsFromSnapshot(
 
   return {
     epsAvg: snap.delivered_eps_1m ?? 0,
-    successRate24h: kpi.successRatePct ?? 0,
+    successRate5m,
     status,
     deliveryMode: snap.failure_policy?.trim() || '—',
   }

@@ -8,6 +8,7 @@ import {
   destinationIssuesForListRow,
   destinationUiHealthForListRow,
   listRuntimeMetricsForDestination,
+  routeMetricsFromSnapshot,
 } from './destination-runtime-metrics'
 
 function catalogRow(id: number, enabled = true): DestinationListItem {
@@ -69,6 +70,27 @@ function healthRow(overrides: Partial<DestinationHealthRow> = {}): DestinationHe
     ...overrides,
   }
 }
+
+describe('Route success-rate snapshot window integrity', () => {
+  it('exposes a measured failed-only 5m rate as 0% instead of hiding it as unknown', () => {
+    const r = {
+      route_id: 41, success_rate_5m: 0, delivered_eps_1m: 0, failed_eps_1m: 2,
+      enabled: true, health_status: 'ERROR', failure_policy: 'LOG_AND_CONTINUE',
+    } as OperationalSnapshotResponse['routes'][number]
+    const metrics = routeMetricsFromSnapshot(41, [r], [])
+    expect(metrics.successRate5m).toBe(0)
+    expect(metrics).not.toHaveProperty('successRate24h')
+  })
+
+  it('does not invent historical or measured success where no Route snapshot or recent sample exists', () => {
+    expect(routeMetricsFromSnapshot(41, [], []).successRate5m).toBeNull()
+    const r = {
+      route_id: 41, success_rate_5m: 0, delivered_eps_1m: 0, failed_eps_1m: 0,
+      enabled: true, health_status: 'IDLE', failure_policy: 'LOG_AND_CONTINUE',
+    } as OperationalSnapshotResponse['routes'][number]
+    expect(routeMetricsFromSnapshot(41, [r], []).successRate5m).toBeNull()
+  })
+})
 
 describe('destination-runtime-metrics', () => {
   it('builds list runtime metrics from health API for the selected window', () => {

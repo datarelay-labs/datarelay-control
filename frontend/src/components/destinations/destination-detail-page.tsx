@@ -392,7 +392,7 @@ export function RoutesTable({
               <th className={opTh}>Delivery mode</th>
               <th className={opTh}>Status</th>
               <th className={cn(opTh, 'tabular-nums')}>EPS (1m)</th>
-              <th className={cn(opTh, 'tabular-nums')}>Success (24h)</th>
+              <th className={cn(opTh, 'tabular-nums')}>Success (5m snapshot)</th>
               <th className={cn(opTh, 'text-right')}>Actions</th>
             </tr>
           </thead>
@@ -426,7 +426,7 @@ export function RoutesTable({
                   </td>
                   <td className={cn(opTd, 'tabular-nums')}>{formatThroughputEps(r.epsAvg)}</td>
                   <td className={cn(opTd, 'tabular-nums')}>
-                    {r.successRate24h > 0 ? `${r.successRate24h.toFixed(1)}%` : '—'}
+                    {r.successRate5m == null ? '—' : `${r.successRate5m.toFixed(1)}%`}
                   </td>
                   <td className={cn(opTd, 'text-right')}>
                     <div className="inline-flex flex-wrap items-center justify-end gap-x-3 gap-y-1">

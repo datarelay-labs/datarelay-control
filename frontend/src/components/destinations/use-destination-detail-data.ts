@@ -45,7 +45,7 @@ export type DestinationDetailRuntimeBundle = {
     deliveryMode: string
     status: 'ACTIVE' | 'PAUSED' | 'ERROR'
     epsAvg: number
-    successRate24h: number
+    successRate5m: number | null
   }[]
   successRatePct: number | null
   currentEps: number | null
@@ -255,7 +255,7 @@ export function useDestinationDetailData(destinationId: number | null): Destinat
         deliveryMode: metrics.deliveryMode,
         status: r.route_enabled === false ? ('PAUSED' as const) : metrics.status,
         epsAvg: metrics.epsAvg,
-        successRate24h: metrics.successRate24h,
+        successRate5m: metrics.successRate5m,
       }
     })
   }, [listRow?.routes, snapshotRoutes])
