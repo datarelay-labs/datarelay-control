@@ -131,6 +131,29 @@ describe('RuntimeAnalyticsPage', () => {
     expect(field).toHaveValue('12')
   })
 
+  it('always offers a read-only way back to the exact scoped Route logs when analytics has no outcomes', async () => {
+    render(
+      <MemoryRouter initialEntries={['/monitoring/analytics?window=24h&stream_id=2&route_id=42&destination_id=10']}>
+        <RuntimeAnalyticsPage />
+      </MemoryRouter>,
+    )
+    expect(await screen.findByText(/No delivery outcomes in this window/i)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Back to Route #42 logs' }))
+      .toHaveAttribute('href', '/logs?route_id=42&stream_id=2&destination_id=10')
+  })
+
+  it('never invents a return path for invalid or unspecified Route URL scope', async () => {
+    const invalid = render(
+      <MemoryRouter initialEntries={['/monitoring/analytics?route_id=42junk&stream_id=2']}>
+        <RuntimeAnalyticsPage />
+      </MemoryRouter>,
+    )
+    expect(screen.queryByRole('link', { name: /Back to Route .* logs/ })).not.toBeInTheDocument()
+    invalid.unmount()
+    render(<MemoryRouter><RuntimeAnalyticsPage /></MemoryRouter>)
+    expect(screen.queryByRole('link', { name: /Back to Route .* logs/ })).not.toBeInTheDocument()
+  })
+
   it('renders unstable route row when API returns candidates', async () => {
     const mod = await import('../../api/gdcRuntimeAnalytics')
     vi.mocked(mod.fetchRouteFailuresAnalytics).mockImplementationOnce(async (params?: { snapshot_id?: string }) => ({

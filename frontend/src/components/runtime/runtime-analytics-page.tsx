@@ -175,6 +175,14 @@ export function RuntimeAnalyticsPage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {routeId != null ? (
+              <Link
+                to={logsExplorerPath({ route_id: routeId, stream_id: streamId, destination_id: destinationId })}
+                className="inline-flex min-h-9 items-center rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-1.5 text-[11px] font-semibold text-violet-800 hover:bg-violet-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:border-violet-900/40 dark:bg-violet-950/20 dark:text-violet-200"
+              >
+                Back to Route #{routeId} logs
+              </Link>
+            ) : null}
             <Link
               to={runtimeOverviewPath()}
               className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200 dark:hover:bg-gdc-rowHover"
