@@ -101,6 +101,11 @@ export PGRESTORE_JOBS=1
 CONFIRM_RESTORE=yes ./scripts/ops/restore-postgres.sh /path/to/file.dump
 ```
 
+Invalid `PGRESTORE_JOBS` values (zero, negative or non-integer) are rejected
+**before** the pre-restore `pg_dump` is attempted. An omitted or empty value
+retains the established default of 4 jobs. This preflight check does not
+authorize a restore or substitute for an isolated recovery drill.
+
 ### Docker example (restore)
 
 ```bash

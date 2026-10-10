@@ -168,6 +168,14 @@ if [[ ! -f "$BACKUP_SCRIPT" ]]; then
   exit 1
 fi
 
+# Validate restore resource settings before creating any pre-restore backup.
+# An invalid jobs value must not contact PostgreSQL just to fail afterward.
+JOBS="${PGRESTORE_JOBS:-4}"
+if ! [[ "$JOBS" =~ ^[0-9]+$ ]] || [[ "$JOBS" -lt 1 ]]; then
+  echo "ERROR: PGRESTORE_JOBS must be a positive integer." >&2
+  exit 1
+fi
+
 PRE_DIR="${PRE_RESTORE_BACKUP_DIR:-${BACKUP_DIR:-$ROOT/var/backups/postgres}/pre-restore}"
 export BACKUP_DIR="$PRE_DIR"
 mkdir -p "$BACKUP_DIR"
@@ -183,12 +191,6 @@ if [[ "$PRE_RC" -ne 0 ]]; then
   echo "  RESULT: FAILURE (pre-restore backup)"
   echo "----------------------------------------------------------------"
   exit "$PRE_RC"
-fi
-
-JOBS="${PGRESTORE_JOBS:-4}"
-if ! [[ "$JOBS" =~ ^[0-9]+$ ]] || [[ "$JOBS" -lt 1 ]]; then
-  echo "ERROR: PGRESTORE_JOBS must be a positive integer." >&2
-  exit 1
 fi
 
 RESTORE_LABEL="$(basename "$DUMP_PATH")"

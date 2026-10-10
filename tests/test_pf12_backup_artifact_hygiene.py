@@ -110,7 +110,9 @@ def test_backup_refuses_broken_symlink_artifact_collisions(tmp_path, extension):
     assert not outside.exists()
 
 
-def _restore_preflight(tmp_path: Path, archive: Path, *, allow_legacy: bool = False):
+def _restore_preflight(
+    tmp_path: Path, archive: Path, *, allow_legacy: bool = False, jobs: str | None = None,
+):
     # No network or DB access: fake pg_dump refuses all real pre-restore
     # backup calls, even when checksum verification passes.
     fake_bin = tmp_path / "restore-bin"
@@ -129,6 +131,8 @@ def _restore_preflight(tmp_path: Path, archive: Path, *, allow_legacy: bool = Fa
         "ALLOW_UNVERIFIED_LEGACY_DUMP": "yes" if allow_legacy else "no",
         "PRE_RESTORE_BACKUP_DIR": str(tmp_path / "fake-pre-restore"),
     }
+    if jobs is not None:
+        env["PGRESTORE_JOBS"] = jobs
     return subprocess.run(
         ["bash", str(ROOT / "scripts/ops/restore-postgres.sh"), str(archive)],
         env=env, capture_output=True, text=True, check=False, timeout=25,
@@ -219,3 +223,19 @@ def test_export_fails_closed_without_real_postgres_binary_or_credentials(tmp_pat
     )
     assert result.returncode != 0
     assert not list(folder.glob("*.dump")) if folder.exists() else True
+
+
+@pytest.mark.parametrize("invalid_jobs", ["0", "-1", "not-a-number", "2.5"])
+def test_invalid_restore_parallelism_fails_before_any_pg_dump(
+    tmp_path: Path, invalid_jobs: str,
+) -> None:
+    """A bad worker setting must never touch the DB for a pre-restore backup."""
+    archive = tmp_path / "restore-owned.dump"
+    archive.write_bytes(b"FAKE_VALID_ARCHIVE_BYTES")
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    Path(f"{archive}.sha256").write_text(f"{digest}  {archive.name}\n")
+    result = _restore_preflight(tmp_path, archive, jobs=invalid_jobs)
+    assert result.returncode != 0
+    assert "PGRESTORE_JOBS" in result.stderr
+    assert "SAFE_FAKE_PG_DUMP_REJECTED" not in result.stdout + result.stderr
+    assert "UNEXPECTED_RESTORE" not in result.stdout + result.stderr

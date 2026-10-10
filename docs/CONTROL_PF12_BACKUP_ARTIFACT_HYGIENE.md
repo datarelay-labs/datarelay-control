@@ -59,6 +59,9 @@ archives with no sidecar, the operator must additionally set
 cryptographic or isolated-restore verification. Negative tests run the
 restore shell preflight with **fake pg_dump and pg_restore executables**,
 ensuring no actual DB connection, backup, recovery or user data mutation.
+The restore script also rejects invalid `PGRESTORE_JOBS` **before** even
+attempting the read-only pre-restore database backup; this prevents an
+unnecessary PostgreSQL interaction for a known-bad operator setting.
 Actual restore remains an explicit privileged operation requiring separate
 authorization and an approved isolated environment.
 
