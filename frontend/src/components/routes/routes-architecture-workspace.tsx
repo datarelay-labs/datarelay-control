@@ -97,6 +97,21 @@ export function RoutesArchitectureWorkspace({
     ? [...firstPaths, selectedRoute]
     : firstPaths
   const disabledPaths = groups.reduce((total, group) => total + group.routes.filter((route) => !route.enabled).length, 0)
+  const connectedRouteCount = groups.reduce((total, group) => total + group.routes.length, 0)
+  const reportedStreamCount = snapshot?.global?.total_streams
+  const streamCounterConsistent = Number.isSafeInteger(reportedStreamCount) &&
+    reportedStreamCount! >= Math.max(groups.length, snapshot?.streams.length ?? 0)
+  const reportedRouteCount = snapshot?.global?.total_routes
+  const routeCounterConsistent = Number.isSafeInteger(reportedRouteCount) &&
+    reportedRouteCount! >= Math.max(connectedRouteCount, snapshot?.routes.length ?? 0)
+  const streamCountSummary = streamCounterConsistent
+    ? `${reportedStreamCount} total Streams`
+    : 'Stream count not verified'
+  const routeCountSummary = !routeCounterConsistent
+    ? 'Route count not verified'
+    : reportedRouteCount === connectedRouteCount
+      ? `${reportedRouteCount} Routes`
+      : `${reportedRouteCount} reported Routes (${connectedRouteCount} shown)`
 
   function reviewAttention(item: (typeof attention)[number]) {
     // Numeric Route and Stream IDs prevent same-name entities from leaking into each other's inspector.
@@ -126,8 +141,10 @@ export function RoutesArchitectureWorkspace({
             attention, or select any Route for details; collection setup stays in Streams.
           </p>
         </div>
-        <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-200">
-          {snapshot ? `${groups.length} Streams · ${consoleRows.length} Routes · ${evidenceStale ? 'Stale snapshot' : 'Snapshot received'}` : 'Runtime snapshot unavailable'}
+        <span data-testid="routes-architecture-count-summary" className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-200">
+          {snapshot
+            ? `${streamCountSummary} · ${groups.length} with Routes · ${routeCountSummary} · ${evidenceStale ? 'Stale snapshot' : 'Snapshot received'}`
+            : 'Runtime snapshot unavailable'}
         </span>
       </div>
 

@@ -113,6 +113,33 @@ function GraphHarness({ snapshot, requestFailed = false }: { snapshot: Operation
 describe('Data Flows empty-state prerequisite guidance', () => {
   afterEach(() => clearTestSession())
 
+  it('separates saved Stream inventory from connected Stream groups when there are zero Routes', () => {
+    render(<GraphHarness snapshot={snapshotFor([])} />)
+    const summary = screen.getByTestId('routes-architecture-count-summary')
+    expect(summary).toHaveTextContent('2 total Streams')
+    expect(summary).toHaveTextContent('0 with Routes')
+    expect(summary).toHaveTextContent('0 Routes')
+    expect(summary).not.toHaveTextContent('0 total Streams')
+  })
+
+  it('does not report contradictory Stream or Route inventory counters as verified', () => {
+    const mismatched = snapshotFor()
+    mismatched.global = { ...mismatched.global, total_streams: 0, total_routes: 1 }
+    render(<GraphHarness snapshot={mismatched} />)
+    const summary = screen.getByTestId('routes-architecture-count-summary')
+    expect(summary).toHaveTextContent('Stream count not verified')
+    expect(summary).toHaveTextContent('Route count not verified')
+    expect(summary).toHaveTextContent('2 with Routes')
+  })
+
+  it('distinguishes API-reported Routes from graph-visible Routes when metadata is incomplete', () => {
+    const partial = snapshotFor([])
+    partial.global = { ...partial.global, total_routes: 2 }
+    render(<GraphHarness snapshot={partial} />)
+    expect(screen.getByTestId('routes-architecture-count-summary')).toHaveTextContent('2 reported Routes (0 shown)')
+    expect(screen.getByRole('heading', { name: 'Route inventory not verified' })).toBeInTheDocument()
+  })
+
   it('starts with the existing five-step Data Flow Wizard when no Streams exist in a fresh snapshot', () => {
     const zero = snapshotFor([])
     zero.global = { ...zero.global, health_status: 'IDLE', total_streams: 0, enabled_streams: 0, running_streams: 0, total_routes: 0 }
