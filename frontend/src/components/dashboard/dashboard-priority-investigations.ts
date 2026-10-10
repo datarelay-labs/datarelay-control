@@ -1,5 +1,5 @@
 import type { OperationalHealthStatus, OperationalSnapshotResponse } from '../../api/operationalSnapshot'
-import { destinationDetailPath, routeEditPath, streamRuntimePath } from '../../config/nav-paths'
+import { destinationDetailPath, logsExplorerPath, streamRuntimePath } from '../../config/nav-paths'
 
 export type DashboardInvestigation = {
   key: string
@@ -62,7 +62,13 @@ export function dashboardPriorityInvestigations(
       resource: `Route #${route.route_id} → ${target}`,
       reason: issueReason(route.health_status, problem?.title),
       severity: route.health_status === 'ERROR' || problem?.severity === 'critical' ? 'critical' : 'warning',
-      href: routeEditPath(String(route.route_id)),
+      // Investigation is read-only, even for Viewers; configuration stays in the
+      // Route editor. Scope only to real identifiers in the runtime snapshot.
+      href: logsExplorerPath({
+        route_id: route.route_id,
+        stream_id: isValidId(route.stream_id) ? route.stream_id : undefined,
+        destination_id: isValidId(route.destination_id) ? route.destination_id : undefined,
+      }),
     })
   }
 

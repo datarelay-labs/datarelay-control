@@ -54,10 +54,39 @@ describe('Dashboard priority investigations', () => {
     })
     expect(dashboardPriorityInvestigations(input)).toEqual([{
       key: 'route-12', kind: 'Route', resource: 'Route #12 → External SIEM',
-      reason: 'Health degraded', severity: 'warning', href: '/routes/12/edit',
+      reason: 'Health degraded', severity: 'warning', href: '/logs?route_id=12&destination_id=6',
     }])
     expect(dashboardPriorityInvestigations(input, 0)).toEqual([])
     expect(dashboardPriorityInvestigations(null)).toEqual([])
+  })
+
+  it('takes failed Route operator cards to read-only scoped delivery evidence, not configuration', () => {
+    const s = snapshot({
+      routes: [{
+        route_id: 42, stream_id: 2, destination_id: 10,
+        destination_name: 'Finance sink', enabled: true, health_status: 'ERROR',
+        failed_eps_1m: 0,
+      } as OperationalSnapshotResponse['routes'][number]],
+    })
+    const [route] = dashboardPriorityInvestigations(s)
+    expect(route).toMatchObject({
+      key: 'route-42', severity: 'critical',
+      href: '/logs?route_id=42&stream_id=2&destination_id=10',
+    })
+    expect(route?.href).not.toContain('/edit')
+    expect(route?.href).not.toContain('status=failed')
+  })
+
+  it('preserves route ID but omits invalid Stream and Destination scopes rather than guessing telemetry', () => {
+    const s = snapshot({
+      routes: [{
+        route_id: 91, stream_id: -1, destination_id: Number.NaN,
+        destination_name: '', enabled: true, health_status: 'DEGRADED',
+      } as OperationalSnapshotResponse['routes'][number]],
+    })
+    const [route] = dashboardPriorityInvestigations(s)
+    expect(route?.href).toBe('/logs?route_id=91')
+    expect(route?.resource).toBe('Route #91 → destination unknown')
   })
 
   it('bounds cards to three and shows explicit critical problems above warnings', () => {
