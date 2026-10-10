@@ -811,3 +811,70 @@ describe('Expert Route Flow time and disabled-status trust parity', () => {
       .toHaveAttribute('href', '/logs?route_id=42&stream_id=1&destination_id=10')
   })
 })
+
+describe('REA competitor P0 contextual Route failure investigation', () => {
+  function reportingErrors() {
+    const s = evidence()
+    s.routes = [{
+      ...s.routes[0]!,
+      enabled: true,
+      health_status: 'ERROR',
+      success_rate_5m: 75,
+      failed_eps_1m: 1,
+    }]
+    return s
+  }
+
+  it('offers an independent failed-attempts path without replacing all Route logs in the expert table', () => {
+    mount(reportingErrors())
+    expect(screen.getByRole('link', { name: 'Investigate R-0042 delivery logs' }))
+      .toHaveAttribute('href', '/logs?route_id=42&stream_id=1&destination_id=10')
+    expect(screen.getByRole('link', { name: 'Investigate R-0042 failed attempts' }))
+      .toHaveAttribute('href', '/logs?route_id=42&stream_id=1&destination_id=10&status=failed')
+  })
+
+  it('preserves exact Route, Stream and Destination ID in the mobile failed-attempts drilldown', () => {
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
+      matches: query === '(max-width: 767px)',
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })))
+    try {
+      mount(reportingErrors())
+      expect(screen.getByRole('link', { name: 'Investigate R-0042 failed attempts' }))
+        .toHaveAttribute('href', '/logs?route_id=42&stream_id=1&destination_id=10&status=failed')
+      expect(screen.getByRole('link', { name: 'Investigate R-0042 delivery logs' }))
+        .toHaveAttribute('href', '/logs?route_id=42&stream_id=1&destination_id=10')
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it('never invents a failure shortcut for disabled or zero-error Routes', () => {
+    const zero = evidence()
+    const zeroView = mount(zero)
+    expect(screen.queryByRole('link', { name: 'Investigate R-0042 failed attempts' })).not.toBeInTheDocument()
+    zeroView.unmount()
+
+    const disabled = reportingErrors()
+    disabled.routes[0]!.enabled = false
+    mount(disabled)
+    expect(screen.queryByRole('link', { name: 'Investigate R-0042 failed attempts' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Investigate R-0042 delivery logs' })).toBeInTheDocument()
+  })
+
+  it('labels stale failed-attempt evidence as last-reported, never current live failure', () => {
+    const stale = reportingErrors()
+    stale.updated_at = '2026-01-01T00:00:00Z'
+    mount(stale)
+    const link = screen.getByRole('link', { name: 'Investigate R-0042 failed attempts' })
+    expect(link).toHaveTextContent('Last reported failures')
+    expect(link).toHaveAttribute('href', '/logs?route_id=42&stream_id=1&destination_id=10&status=failed')
+  })
+
+  it('omits failure shortcut when the observation timestamp is not verified', () => {
+    const s = reportingErrors()
+    s.updated_at = 'invalid-snapshot-time'
+    mount(s)
+    expect(screen.queryByRole('link', { name: 'Investigate R-0042 failed attempts' })).not.toBeInTheDocument()
+  })
+})

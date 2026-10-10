@@ -17,6 +17,7 @@ import {
 } from './routes-flow-helpers'
 import type { OperationalSnapshotResponse } from '../../api/operationalSnapshot'
 import { RoutesFlowCompactCards } from './routes-flow-compact-cards'
+import { RouteFlowFailedAttemptLink } from './routes-flow-failed-attempt-link'
 import { routeMatchesQuery, streamMatchesQuery } from './routes-flow-search'
 import type { RouteConsoleRow } from './routes-overview-helpers'
 
@@ -369,6 +370,12 @@ function StreamFlowRows({
                         >
                           Delivery logs
                         </Link>
+                        <RouteFlowFailedAttemptLink
+                          route={route}
+                          streamId={group.streamId}
+                          evidenceStale={evidenceStale}
+                          validObservationTime={validObservationTime}
+                        />
                         {route.destinationId != null ? (
                           <Link
                             to={destinationDetailPath(String(route.destinationId))}

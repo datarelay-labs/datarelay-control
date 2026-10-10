@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { NAV_PATH, destinationDetailPath, logsExplorerPath, routeEditPath, streamRuntimePath } from '../../config/nav-paths'
 import { cn } from '../../lib/utils'
+import { RouteFlowFailedAttemptLink } from './routes-flow-failed-attempt-link'
 import { routeMatchesQuery, streamMatchesQuery } from './routes-flow-search'
 import {
   formatFlowEps,
@@ -308,6 +309,13 @@ function CompactStreamGroup({
                   >
                     <Activity className="h-3.5 w-3.5" aria-hidden /> Delivery logs <ArrowRight className="h-3.5 w-3.5" aria-hidden />
                   </Link>
+                  <RouteFlowFailedAttemptLink
+                    route={route}
+                    streamId={group.streamId}
+                    evidenceStale={evidenceStale}
+                    validObservationTime={validObservationTime}
+                    className="inline-flex min-h-10 items-center font-semibold text-amber-800 underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:text-amber-300"
+                  />
                   {canLinkDestination ? (
                     <Link
                       to={destinationDetailPath(String(route.destinationId))}
