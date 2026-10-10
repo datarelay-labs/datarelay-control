@@ -336,16 +336,16 @@ export function DashboardOverview() {
                       ? `Investigate ${attentionItems[0].label.toLowerCase()}.`
                     : attentionDataPartial
                       ? 'Inspect your Streams while some operational signals are unavailable.'
-                      : 'Explore a Stream to review its collection and delivery status.'}
+                      : 'Explore Data Flows to review current collection and per-route delivery.'}
                 </p>
               </div>
               <div className="flex shrink-0 flex-wrap gap-2">
                 <Link
-                  to={priorityInvestigations[0]?.href ?? attentionItems[0]?.to ?? NAV_PATH.streams}
+                  to={priorityInvestigations[0]?.href ?? attentionItems[0]?.to ?? (attentionDataPartial ? NAV_PATH.streams : NAV_PATH.routes)}
                   className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-violet-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-300"
                   data-testid="dashboard-next-action"
                 >
-                  {hasAnyAttention ? 'Review issue' : 'Open Streams'}
+                  {hasAnyAttention ? 'Review issue' : attentionDataPartial ? 'Open Streams' : 'Open Data Flows'}
                   <ArrowRight className="h-4 w-4" aria-hidden />
                 </Link>
                 {canConfigure ? (
@@ -373,6 +373,13 @@ export function DashboardOverview() {
             data-testid="dashboard-drilldown"
             className="flex flex-wrap gap-x-4 gap-y-2 border-t border-slate-200/80 pt-4 text-sm dark:border-gdc-divider"
           >
+            <Link
+              to={NAV_PATH.routes}
+              className="font-medium text-slate-700 underline-offset-2 hover:underline dark:text-slate-200"
+              data-testid="dashboard-drilldown-data-flows"
+            >
+              Data Flows
+            </Link>
             <Link
               to={NAV_PATH.streams}
               className="font-medium text-slate-700 underline-offset-2 hover:underline dark:text-slate-200"

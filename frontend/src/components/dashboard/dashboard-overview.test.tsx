@@ -674,6 +674,7 @@ describe('DashboardOverview', () => {
       </MemoryRouter>,
     )
     expect(await within(mainRegion()).findByTestId('dashboard-drilldown-streams')).toHaveAttribute('href', '/streams')
+    expect(within(mainRegion()).getByTestId('dashboard-drilldown-data-flows')).toHaveAttribute('href', '/routes')
     expect(within(mainRegion()).getByTestId('dashboard-drilldown-destinations')).toHaveAttribute('href', '/destinations')
     expect(within(mainRegion()).getByTestId('dashboard-drilldown-logs')).toHaveAttribute('href', '/logs')
     expect(within(mainRegion()).getByTestId('dashboard-drilldown-governance')).toHaveAttribute('href', '/governance')
