@@ -72,6 +72,35 @@ import {
 
 const KPI_WINDOW_LABEL = '1h'
 
+/** Disambiguate operator filters by saved identity, not duplicate display names. */
+function entityFilterLabels(
+  labels: ReadonlyMap<number, string>,
+  entityType: 'Stream' | 'Route',
+  reservedLabel: string,
+): Map<number, string> {
+  const counts = new Map<string, number>()
+  for (const name of labels.values()) counts.set(name, (counts.get(name) ?? 0) + 1)
+  return new Map([...labels].map(([id, name]) => [
+    id,
+    (counts.get(name) ?? 0) > 1 || name === reservedLabel
+      ? `${name} (${entityType} #${id})`
+      : name,
+  ]))
+}
+
+/** A legacy saved name is accepted only when it resolves to one exact ID. */
+function filterEntityId(
+  selected: string,
+  displayLabels: ReadonlyMap<number, string>,
+  originalLabels: ReadonlyMap<number, string>,
+): number | null {
+  for (const [id, label] of displayLabels) {
+    if (label === selected) return id
+  }
+  const legacyMatches = [...originalLabels].filter(([, label]) => label === selected)
+  return legacyMatches.length === 1 ? legacyMatches[0]![0] : null
+}
+
 const EMPTY_LOG_KPI = { total: 0, errors: 0, warnings: 0, info: 0, debug: 0 }
 
 type ColumnKey =
@@ -636,37 +665,45 @@ export function LogsExplorerPage() {
     snapshotId,
   ])
 
+  const streamDisplayLabels = useMemo(
+    () => entityFilterLabels(entityLabels.streams, 'Stream', ALL_STREAMS_LABEL),
+    [entityLabels.streams],
+  )
+  const routeDisplayLabels = useMemo(
+    () => entityFilterLabels(entityLabels.routes, 'Route', ALL_ROUTES_LABEL),
+    [entityLabels.routes],
+  )
   const streamFilterOptions = useMemo(() => {
-    const names = [...entityLabels.streams.values()].sort((a, b) => a.localeCompare(b))
+    const names = [...streamDisplayLabels.values()].sort((a, b) => a.localeCompare(b))
     return [ALL_STREAMS_LABEL, ...names] as const
-  }, [entityLabels.streams])
-
+  }, [streamDisplayLabels])
   const routeFilterOptions = useMemo(() => {
-    const names = [...entityLabels.routes.values()].sort((a, b) => a.localeCompare(b))
+    const names = [...routeDisplayLabels.values()].sort((a, b) => a.localeCompare(b))
     return [ALL_ROUTES_LABEL, ...names] as const
-  }, [entityLabels.routes])
+  }, [routeDisplayLabels])
 
-  const streamFilterId = useMemo(() => {
-    if (streamFilter === ALL_STREAMS_LABEL) return null
-    for (const [id, name] of entityLabels.streams) {
-      if (name === streamFilter) return id
-    }
-    return null
-  }, [streamFilter, entityLabels.streams])
+  const streamFilterId = useMemo(() =>
+    streamFilter === ALL_STREAMS_LABEL ? null
+      : filterEntityId(streamFilter, streamDisplayLabels, entityLabels.streams),
+  [streamFilter, streamDisplayLabels, entityLabels.streams])
 
-  const routeFilterId = useMemo(() => {
-    if (routeFilter === ALL_ROUTES_LABEL) return null
-    for (const [id, name] of entityLabels.routes) {
-      if (name === routeFilter) return id
-    }
-    return null
-  }, [routeFilter, entityLabels.routes])
+  const routeFilterId = useMemo(() =>
+    routeFilter === ALL_ROUTES_LABEL ? null
+      : filterEntityId(routeFilter, routeDisplayLabels, entityLabels.routes),
+  [routeFilter, routeDisplayLabels, entityLabels.routes])
 
+  const lastUrlStreamId = useRef<number | null>(null)
   useEffect(() => {
-    if (effectiveStreamIdForApi == null) return
-    const name = entityLabels.streams.get(effectiveStreamIdForApi)
-    if (name) setStreamFilter(name)
-  }, [effectiveStreamIdForApi, entityLabels.streams])
+    if (effectiveStreamIdForApi == null) {
+      // Removing an ID-based URL chip must not leave a hidden name filter.
+      if (lastUrlStreamId.current != null) setStreamFilter(ALL_STREAMS_LABEL)
+      lastUrlStreamId.current = null
+      return
+    }
+    const label = streamDisplayLabels.get(effectiveStreamIdForApi)
+    if (label) setStreamFilter(label)
+    lastUrlStreamId.current = effectiveStreamIdForApi
+  }, [effectiveStreamIdForApi, streamDisplayLabels])
 
   const baseLogRows = useMemo(
     () => enrichLogExplorerRows(logRows, entityLabels),
