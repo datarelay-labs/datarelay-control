@@ -1,8 +1,10 @@
 import { ArrowRight, GitBranch, Layers3, Network, Settings2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import type { OperationalSnapshotResponse } from '../../api/operationalSnapshot'
+import type { OperationalSnapshotResponse, OperationalStreamSnapshot } from '../../api/operationalSnapshot'
+import { formatOperationalHealth } from '../../lib/operational-snapshot-selectors'
 import {
+  connectorDetailPath,
   destinationDetailPath,
   logsExplorerPath,
   routeEditPath,
@@ -35,6 +37,32 @@ export type RoutesArchitectureWorkspaceProps = {
 const validId = (value: number | null | undefined): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value > 0
 
+type CollectionHealthTone = ReturnType<typeof formatOperationalHealth>['tone']
+
+function collectionHealthEvidence(
+  stream: OperationalStreamSnapshot | undefined,
+  stale: boolean,
+): { label: string; tone: CollectionHealthTone } {
+  if (!stream) return { label: 'Not verified', tone: 'neutral' }
+  const observed = formatOperationalHealth(stream.health_status, stream.enabled, stream.status)
+  return stale
+    ? { label: `Stale · last reported ${observed.label}`, tone: 'warning' }
+    : { label: observed.label, tone: observed.tone }
+}
+
+function collectionHealthBadgeClass(tone: CollectionHealthTone): string {
+  switch (tone) {
+    case 'error':
+      return 'border-red-300 bg-red-50 text-red-900 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-200'
+    case 'warning':
+      return 'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200'
+    case 'success':
+      return 'border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-200'
+    default:
+      return 'border-slate-200 bg-slate-100 text-slate-600 dark:border-gdc-border dark:bg-gdc-section dark:text-gdc-muted'
+  }
+}
+
 /**
  * Route ownership, not another Stream creation flow:
  * Streams collect; each route processes and delivers to one Destination.
@@ -51,6 +79,11 @@ export function RoutesArchitectureWorkspace({
   const canCreateFlow = useSessionCapabilities().workspace_mutations === true
   const groups = useMemo(() => buildRouteFlowTree(snapshot, consoleRows), [snapshot, consoleRows])
   const selectedGroup = groups.find((group) => group.streamId === selectedStreamId) ?? groups[0]
+  const streamsById = useMemo(() => new Map(
+    snapshot?.streams.filter((stream) => validId(stream.stream_id))
+      .map((stream) => [stream.stream_id, stream]) ?? [],
+  ), [snapshot?.streams])
+  const selectedStream = selectedGroup ? streamsById.get(selectedGroup.streamId) : undefined
   const [inspectedRouteId, setInspectedRouteId] = useState<number | null>(null)
   const selectedRoute = selectedGroup?.routes.find((route) => route.routeId === inspectedRouteId) ??
     selectedGroup?.routes[0]
@@ -68,6 +101,11 @@ export function RoutesArchitectureWorkspace({
     ? uiStatusFromOperationalHealth(receivingDestination.health_status, receivingDestination.enabled)
     : null
   const evidenceStale = requestFailed || isRouteSnapshotStale(snapshot?.updated_at)
+  const selectedCollectionHealth = collectionHealthEvidence(selectedStream, evidenceStale)
+  const selectedCheckpointLag = Number.isFinite(selectedStream?.checkpoint_lag_seconds) &&
+    (selectedStream?.checkpoint_lag_seconds ?? -1) >= 0
+    ? `${selectedStream!.checkpoint_lag_seconds} s${evidenceStale ? ' · last reported' : ''}`
+    : 'Not reported'
   // An empty graph is not proof of a fresh installation: the Route list may
   // be incomplete while a healthy Stream exists, or the read may be stale.
   const verifiedEmptyRoutes = !loading && !evidenceStale &&
@@ -79,6 +117,33 @@ export function RoutesArchitectureWorkspace({
     (snapshot?.global?.total_streams ?? 0) > 0 &&
     snapshot?.streams.some((stream) => validId(stream.stream_id)) === true
   const attention = useMemo(() => listRouteFlowAttention(groups, snapshot?.destinations), [groups, snapshot?.destinations])
+  const issueCountsByStream = useMemo(() => {
+    const counts = new Map<number, number>()
+    for (const item of attention) counts.set(item.streamId, (counts.get(item.streamId) ?? 0) + 1)
+    return counts
+  }, [attention])
+  // Collection health is separate from Route delivery health. Show only observed
+  // active Error/Warning Streams, including Streams that have no Routes yet.
+  const collectionIssues = useMemo(() => {
+    const seen = new Set<number>()
+    const issues: Array<{ streamId: number; streamName: string; status: 'Error' | 'Warning' }> = []
+    for (const stream of snapshot?.streams ?? []) {
+      if (!validId(stream.stream_id) || seen.has(stream.stream_id)) continue
+      seen.add(stream.stream_id)
+      const label = formatOperationalHealth(stream.health_status, stream.enabled, stream.status).label
+      if (label !== 'Error' && label !== 'Warning') continue
+      issues.push({
+        streamId: stream.stream_id,
+        streamName: stream.stream_name.trim() || `Stream #${stream.stream_id}`,
+        status: label,
+      })
+    }
+    return issues.sort((a, b) =>
+      (a.status === 'Error' ? 0 : 1) - (b.status === 'Error' ? 0 : 1) || a.streamId - b.streamId)
+  }, [snapshot?.streams])
+  const [visibleCollectionCount, setVisibleCollectionCount] = useState(4)
+  const visibleCollectionIssues = collectionIssues.slice(0, visibleCollectionCount)
+  const allCollectionIssuesVisible = visibleCollectionCount >= collectionIssues.length
   const [visibleAttentionCount, setVisibleAttentionCount] = useState(4)
   const [visiblePathCount, setVisiblePathCount] = useState(12)
   const [visibleStreamCount, setVisibleStreamCount] = useState(12)
@@ -169,6 +234,62 @@ export function RoutesArchitectureWorkspace({
           One Stream can fan out through many Routes to many Destinations without collecting the same source twice.
         </p>
       </details>
+
+      {snapshot && collectionIssues.length > 0 ? (
+        <section
+          data-testid="routes-architecture-collection-attention"
+          aria-label="Collection attention"
+          className="space-y-2 border-b border-slate-200/80 bg-white px-4 py-3 dark:border-gdc-border dark:bg-gdc-card sm:px-6"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Collection attention</h3>
+              <p className="mt-0.5 text-xs text-slate-600 dark:text-gdc-mutedStrong">
+                {evidenceStale
+                  ? 'Last reported collection conditions · snapshot stale or fetch failed'
+                  : 'Observed Stream collection errors and warnings from the current snapshot'}
+                {' · '}{collectionIssues.length} collections need review
+              </p>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-gdc-muted">
+              Investigate the Stream runtime; collection health is distinct from Route delivery.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {visibleCollectionIssues.map((item) => (
+              <Link
+                key={item.streamId}
+                to={streamRuntimePath(String(item.streamId))}
+                className={cn(
+                  'inline-flex min-h-9 min-w-0 max-w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500',
+                  item.status === 'Error'
+                    ? 'border-red-300 bg-red-50 text-red-900 hover:bg-red-100 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-200'
+                    : 'border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200',
+                )}
+              >
+                <span>{evidenceStale ? 'Last reported ' : ''}{item.status}</span>
+                <span className="truncate">{item.streamName} · Stream #{item.streamId}</span>
+                <ArrowRight className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              </Link>
+            ))}
+            {collectionIssues.length > 4 ? (
+              <button
+                type="button"
+                aria-expanded={allCollectionIssuesVisible}
+                onClick={() => setVisibleCollectionCount((current) =>
+                  current >= collectionIssues.length ? 4 : Math.min(collectionIssues.length, current + 20))}
+                className="min-h-9 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-violet-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:border-gdc-border dark:text-violet-300"
+              >
+                {allCollectionIssuesVisible
+                  ? 'Show fewer collection issues'
+                  : collectionIssues.length <= 24
+                    ? `Show all ${collectionIssues.length} collection issues`
+                    : `Show next collection issues (${visibleCollectionIssues.length} of ${collectionIssues.length} shown)`}
+              </button>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
 
       {snapshot && groups.length > 0 ? (
         <section
@@ -303,6 +424,8 @@ export function RoutesArchitectureWorkspace({
             <div id="routes-architecture-stream-list" className="flex gap-2 overflow-x-auto pb-1 xl:max-h-[420px] xl:flex-col xl:overflow-x-hidden xl:overflow-y-auto">
               {visibleStreams.map((group) => {
                 const selected = selectedGroup?.streamId === group.streamId
+                const collectionHealth = collectionHealthEvidence(streamsById.get(group.streamId), evidenceStale)
+                const issueCount = issueCountsByStream.get(group.streamId) ?? 0
                 return (
                   <button
                     key={group.streamId}
@@ -325,6 +448,20 @@ export function RoutesArchitectureWorkspace({
                       <span className="mt-1 block text-[11px] text-slate-500 dark:text-gdc-muted">
                         #{group.streamId} · {group.routes.length} route{group.routes.length === 1 ? '' : 's'}
                       </span>
+                      <span
+                        data-testid={`routes-architecture-collection-${group.streamId}`}
+                        className={cn(
+                          'mt-2 inline-flex max-w-full flex-wrap rounded-md border px-1.5 py-0.5 text-[10px] font-semibold',
+                          collectionHealthBadgeClass(collectionHealth.tone),
+                        )}
+                      >
+                        Collection: {collectionHealth.label}
+                      </span>
+                      {issueCount > 0 ? (
+                        <span className="mt-1 block text-[11px] font-semibold text-amber-800 dark:text-amber-300">
+                          {evidenceStale ? 'Last reported ' : ''}{issueCount} delivery issue{issueCount === 1 ? '' : 's'}
+                        </span>
+                      ) : null}
                     </span>
                     <ChevronIndicator selected={selected} />
                   </button>
@@ -373,17 +510,38 @@ export function RoutesArchitectureWorkspace({
                   <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-violet-700 dark:text-violet-300">
                     01 · Collection
                   </p>
-                  <p className="mt-3 text-[11px] leading-5 text-slate-600 dark:text-gdc-mutedStrong">
-                    Source access: {selectedGroup.connectorId != null ? `Connector #${selectedGroup.connectorId}` : 'Connector not resolved'}
-                    {selectedGroup.sourceId != null ? ` · Source #${selectedGroup.sourceId}` : ''}
-                  </p>
+                  <div className="mt-3 space-y-1 text-[11px] leading-5 text-slate-600 dark:text-gdc-mutedStrong">
+                    <p>Source access:</p>
+                    {selectedGroup.connectorId != null ? (
+                      <Link
+                        to={connectorDetailPath(String(selectedGroup.connectorId))}
+                        className="inline-flex min-h-9 max-w-full items-center gap-1 break-words font-semibold text-violet-700 underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:text-violet-300"
+                      >
+                        Connector #{selectedGroup.connectorId} · View connection <ArrowRight className="h-3 w-3 shrink-0" aria-hidden />
+                      </Link>
+                    ) : <p>Connector not resolved</p>}
+                    {selectedGroup.sourceId != null ? <p>Source #{selectedGroup.sourceId}</p> : null}
+                  </div>
                   <Layers3 className="mt-3 h-6 w-6 text-violet-600 dark:text-violet-300" aria-hidden />
                   <p className="mt-3 break-words text-sm font-semibold text-slate-900 dark:text-slate-100">
                     {selectedGroup.streamName}
                   </p>
                   <p className="mt-1 text-[11px] text-slate-600 dark:text-gdc-mutedStrong">Stream #{selectedGroup.streamId}</p>
-                  <p className="mt-4 text-xs text-slate-600 dark:text-gdc-mutedStrong">
-                    Source ingest: <strong className="font-semibold text-slate-800 dark:text-slate-200">{formatFlowEps(selectedGroup.totalEps)}</strong>
+                  <p
+                    data-testid="routes-architecture-selected-collection-health"
+                    className={cn(
+                      'mt-3 inline-flex flex-wrap rounded-md border px-2 py-1 text-xs font-semibold',
+                      collectionHealthBadgeClass(selectedCollectionHealth.tone),
+                    )}
+                  >
+                    Collection health: {selectedCollectionHealth.label}
+                  </p>
+                  <p className="mt-3 text-xs text-slate-600 dark:text-gdc-mutedStrong">
+                    Source ingest (1m, gateway-reported): <strong className="font-semibold text-slate-800 dark:text-slate-200">{formatFlowEps(selectedGroup.totalEps)}</strong>
+                    {evidenceStale ? <span> · last reported</span> : null}
+                  </p>
+                  <p data-testid="routes-architecture-selected-checkpoint-lag" className="mt-2 text-xs text-slate-600 dark:text-gdc-mutedStrong">
+                    Checkpoint lag (reported): <strong className="font-semibold text-slate-800 dark:text-slate-200">{selectedCheckpointLag}</strong>
                   </p>
                   <p className="mt-2 text-[11px] leading-5 text-slate-500 dark:text-gdc-muted">
                     Source setup, schedules, and checkpoints belong to Streams.

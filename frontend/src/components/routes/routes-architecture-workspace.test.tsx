@@ -207,6 +207,117 @@ describe('Data Flows empty-state prerequisite guidance', () => {
   })
 })
 
+describe('Data Flows collection status and investigation context', () => {
+  it('separates Stream collection Error from a Healthy gateway Route and shows observed checkpoint lag', async () => {
+    const data = snapshotFor([route(90, 1, 190, 'HEALTHY'), route(91, 2, 191, 'HEALTHY')])
+    data.streams[0]!.health_status = 'ERROR'
+    data.streams[0]!.checkpoint_lag_seconds = 180
+    data.streams[1]!.health_status = 'IDLE'
+    const user = userEvent.setup()
+    render(<GraphHarness snapshot={data} />)
+    expect(screen.getByTestId('routes-architecture-collection-1')).toHaveTextContent('Collection: Error')
+    expect(screen.getByTestId('routes-architecture-collection-2')).toHaveTextContent('Collection: No Data')
+    expect(screen.getByTestId('routes-architecture-selected-collection-health')).toHaveTextContent('Collection health: Error')
+    expect(screen.getByTestId('routes-architecture-selected-checkpoint-lag')).toHaveTextContent('180 s')
+    expect(within(screen.getByTestId('routes-architecture-inspector')).getByText('Route health').nextElementSibling)
+      .toHaveTextContent('Healthy')
+    await user.click(screen.getByTestId('routes-architecture-stream-2'))
+    expect(screen.getByTestId('routes-architecture-selected-collection-health')).toHaveTextContent('Collection health: No Data')
+    expect(screen.getByTestId('routes-architecture-selected-checkpoint-lag')).toHaveTextContent('Not reported')
+    expect(screen.getByTestId('routes-architecture-inspector')).toHaveTextContent('Stream #2 · Route R-0091')
+  })
+
+  it('respects runtime Stopped and explicit Disabled status instead of inventing Healthy collection', () => {
+    const data = snapshotFor([route(100, 1, 200, 'HEALTHY'), route(101, 2, 201, 'HEALTHY')])
+    data.streams[0]!.status = 'PAUSED'
+    data.streams[1]!.enabled = false
+    render(<GraphHarness snapshot={data} />)
+    expect(screen.getByTestId('routes-architecture-collection-1')).toHaveTextContent('Collection: Stopped')
+    expect(screen.getByTestId('routes-architecture-collection-2')).toHaveTextContent('Collection: Disabled')
+    expect(screen.getByTestId('routes-architecture-selected-collection-health')).not.toHaveTextContent('Healthy')
+  })
+
+  it('uses Not verified for absent Stream evidence and Stale last reported for failed reads', () => {
+    const data = snapshotFor([route(110, 1, 210, 'HEALTHY')])
+    data.streams = data.streams.filter((stream) => stream.stream_id !== 1)
+    const { rerender } = render(<GraphHarness snapshot={data} />)
+    expect(screen.getByTestId('routes-architecture-collection-1')).toHaveTextContent('Collection: Not verified')
+    expect(screen.getByTestId('routes-architecture-selected-collection-health')).toHaveTextContent('Collection health: Not verified')
+    const stale = snapshotFor([route(111, 1, 211, 'HEALTHY')])
+    stale.streams[0]!.health_status = 'DEGRADED'
+    stale.streams[0]!.checkpoint_lag_seconds = 47
+    rerender(<GraphHarness snapshot={stale} requestFailed />)
+    expect(screen.getByTestId('routes-architecture-collection-1')).toHaveTextContent('Stale · last reported Warning')
+    expect(screen.getByTestId('routes-architecture-selected-collection-health')).toHaveTextContent('Stale · last reported Warning')
+    expect(screen.getByTestId('routes-architecture-selected-checkpoint-lag')).toHaveTextContent('47 s · last reported')
+  })
+
+  it('links only validated Connector identity to existing read-only source connection details', () => {
+    const data = snapshotFor([route(115, 1, 215, 'HEALTHY')])
+    const { rerender } = render(<GraphHarness snapshot={data} />)
+    expect(screen.getByRole('link', { name: 'Connector #1 · View connection' }))
+      .toHaveAttribute('href', '/connectors/1')
+    data.streams[0]!.connector_id = -4
+    rerender(<GraphHarness snapshot={{ ...data, streams: [...data.streams] }} />)
+    expect(screen.queryByRole('link', { name: /Connector #-4/ })).not.toBeInTheDocument()
+    expect(screen.getByText(/Connector not resolved/)).toBeInTheDocument()
+  })
+
+  it('prioritizes actual Stream collection problems even when Route delivery looks healthy', () => {
+    const data = snapshotFor([route(130, 1, 230, 'HEALTHY')])
+    data.streams[0]!.health_status = 'ERROR'
+    data.streams[1]!.health_status = 'DEGRADED'
+    render(<GraphHarness snapshot={data} />)
+    const panel = screen.getByTestId('routes-architecture-collection-attention')
+    expect(panel).toHaveTextContent('2 collections need review')
+    const links = within(panel).getAllByRole('link')
+    expect(links[0]).toHaveAttribute('href', '/streams/1/runtime')
+    expect(links[0]).toHaveTextContent('Error')
+    expect(links[1]).toHaveAttribute('href', '/streams/2/runtime')
+    expect(links[1]).toHaveTextContent('Warning')
+    expect(screen.getByTestId('routes-architecture-attention')).toHaveTextContent('0 need attention')
+    expect(within(screen.getByTestId('routes-architecture-inspector')).getByText('Route health').nextElementSibling)
+      .toHaveTextContent('Healthy')
+  })
+
+  it('does not create collection incidents for Stopped, Disabled, No Data or invalid IDs', () => {
+    const data = snapshotFor([route(131, 1, 231, 'HEALTHY')])
+    data.streams[0]!.health_status = 'ERROR'
+    data.streams[0]!.status = 'PAUSED'
+    data.streams[1]!.health_status = 'ERROR'
+    data.streams[1]!.enabled = false
+    data.streams.push({ ...data.streams[0]!, stream_id: 0, status: 'RUNNING' })
+    render(<GraphHarness snapshot={data} />)
+    expect(screen.queryByTestId('routes-architecture-collection-attention')).not.toBeInTheDocument()
+  })
+
+  it('retains last-reported wording on failed reads and limits a large collection issue queue', async () => {
+    const data = snapshotFor([])
+    data.global = { ...data.global, total_streams: 64, total_routes: 0 }
+    data.streams = Array.from({ length: 64 }, (_, index) => ({
+      ...data.streams[0]!, stream_id: index + 1, stream_name: `Collection ${index + 1}`,
+      health_status: 'ERROR' as const,
+    }))
+    const user = userEvent.setup()
+    render(<GraphHarness snapshot={data} requestFailed />)
+    const panel = screen.getByTestId('routes-architecture-collection-attention')
+    expect(panel).toHaveTextContent('Last reported collection conditions')
+    expect(within(panel).getAllByRole('link')).toHaveLength(4)
+    await user.click(within(panel).getByRole('button', { name: 'Show next collection issues (4 of 64 shown)' }))
+    expect(within(panel).getAllByRole('link')).toHaveLength(24)
+    expect(within(panel).queryByRole('link', { name: /Stream #64/ })).not.toBeInTheDocument()
+  })
+
+  it('shows affected receiving-path counts by Stream ID without inventing additional Route failures', () => {
+    const data = snapshotFor([route(120, 1, 220, 'HEALTHY'), route(121, 1, 221, 'DEGRADED'), route(122, 2, 222, 'HEALTHY')])
+    data.destinations[0]!.health_status = 'ERROR'
+    render(<GraphHarness snapshot={data} />)
+    expect(screen.getByTestId('routes-architecture-stream-1')).toHaveTextContent('2 delivery issues')
+    expect(screen.getByTestId('routes-architecture-stream-2')).not.toHaveTextContent('delivery issues')
+    expect(screen.getByTestId('routes-architecture-attention')).toHaveTextContent('2 need attention')
+  })
+})
+
 describe('Data Flows topology: operator priority and bounded exploration', () => {
   it('keeps the flow explanation discoverable without occupying the operations viewport by default', async () => {
     const user = userEvent.setup()
