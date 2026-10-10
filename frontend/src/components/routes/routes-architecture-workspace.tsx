@@ -56,7 +56,7 @@ export function RoutesArchitectureWorkspace({
   const evidenceStale = requestFailed || isRouteSnapshotStale(snapshot?.updated_at)
   const attention = useMemo(() => listRouteFlowAttention(groups), [groups])
   const [visibleAttentionCount, setVisibleAttentionCount] = useState(4)
-  const [allPathsVisible, setAllPathsVisible] = useState(false)
+  const [visiblePathCount, setVisiblePathCount] = useState(12)
   const [allStreamsVisible, setAllStreamsVisible] = useState(false)
   const [streamQuery, setStreamQuery] = useState('')
   const normalizedStreamQuery = streamQuery.trim().toLocaleLowerCase()
@@ -78,18 +78,17 @@ export function RoutesArchitectureWorkspace({
   const allAttentionVisible = visibleAttentionCount >= attention.length
   // Keep the selected Route visible without forcing hundreds of unrelated
   // paths into the DOM when an operator reviews a deep/low-throughput issue.
-  const firstPaths = selectedGroup?.routes.slice(0, 12) ?? []
-  const visiblePaths = selectedGroup && allPathsVisible
-    ? selectedGroup.routes
-    : selectedRoute && !firstPaths.some((route) => route.routeId === selectedRoute.routeId)
-      ? [...firstPaths, selectedRoute]
-      : firstPaths
+  const firstPaths = selectedGroup?.routes.slice(0, visiblePathCount) ?? []
+  const allPathsVisible = selectedGroup != null && visiblePathCount >= selectedGroup.routes.length
+  const visiblePaths = selectedRoute && !firstPaths.some((route) => route.routeId === selectedRoute.routeId)
+    ? [...firstPaths, selectedRoute]
+    : firstPaths
   const disabledPaths = groups.reduce((total, group) => total + group.routes.filter((route) => !route.enabled).length, 0)
 
   function reviewAttention(item: (typeof attention)[number]) {
     // Numeric Route and Stream IDs prevent same-name entities from leaking into each other's inspector.
     setInspectedRouteId(item.routeId)
-    setAllPathsVisible(false)
+    setVisiblePathCount(12)
     setAllStreamsVisible(false)
     setStreamQuery('')
     onSelectStream(item.streamId)
@@ -245,7 +244,7 @@ export function RoutesArchitectureWorkspace({
                     aria-pressed={selected}
                     aria-label={`Inspect delivery for ${group.streamName} (Stream #${group.streamId})`}
                     data-testid={`routes-architecture-stream-${group.streamId}`}
-                    onClick={() => { setInspectedRouteId(null); setAllPathsVisible(false); onSelectStream(group.streamId) }}
+                    onClick={() => { setInspectedRouteId(null); setVisiblePathCount(12); onSelectStream(group.streamId) }}
                     className={cn(
                       'flex min-w-[160px] flex-1 items-center justify-between gap-3 rounded-lg border px-3 py-3 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 xl:min-w-0 xl:flex-none',
                       selected
@@ -382,16 +381,28 @@ export function RoutesArchitectureWorkspace({
                   {selectedGroup.routes.length > 12 ? (
                     <button
                       type="button"
-                      onClick={() => {
-                        setAllPathsVisible((current) => !current)
-                        if (allPathsVisible) setInspectedRouteId(null)
-                      }}
-                      aria-expanded={allPathsVisible}
+                      onClick={() => setVisiblePathCount((current) =>
+                        current >= selectedGroup.routes.length ? 12 : Math.min(selectedGroup.routes.length, current + 20))}
+                      aria-expanded={visiblePathCount > 12}
                       aria-controls="routes-architecture-delivery-paths"
                       data-testid="routes-architecture-show-paths"
                       className="mt-2 w-full min-h-9 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-violet-700 hover:bg-violet-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:border-gdc-border dark:text-violet-300 dark:hover:bg-gdc-rowHover"
                     >
-                      {allPathsVisible ? 'Show fewer delivery paths' : `Show all ${selectedGroup.routes.length} delivery paths (${visiblePaths.length} shown)`}
+                      {allPathsVisible
+                        ? 'Show fewer delivery paths'
+                        : selectedGroup.routes.length <= 32
+                          ? `Show all ${selectedGroup.routes.length} delivery paths (${visiblePaths.length} shown)`
+                          : `Show next delivery paths (${visiblePaths.length} of ${selectedGroup.routes.length} shown)`}
+                    </button>
+                  ) : null}
+                  {visiblePathCount > 12 && !allPathsVisible ? (
+                    <button
+                      type="button"
+                      data-testid="routes-architecture-show-fewer"
+                      onClick={() => setVisiblePathCount(12)}
+                      className="mt-2 w-full min-h-9 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:border-gdc-border dark:text-gdc-mutedStrong"
+                    >
+                      Show fewer delivery paths
                     </button>
                   ) : null}
                 </div>

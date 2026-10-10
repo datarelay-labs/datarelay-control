@@ -179,8 +179,30 @@ describe('Data Flows topology: operator priority and bounded exploration', () =>
     expect(last).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByTestId('routes-architecture-inspector')).toHaveTextContent('Route R-0020')
     await user.click(screen.getByTestId('routes-architecture-show-paths'))
-    expect(screen.queryByTestId('routes-architecture-route-20')).not.toBeInTheDocument()
-    expect(screen.getByTestId('routes-architecture-inspector')).toHaveTextContent('Route R-0001')
+    // Collapsing the list never discards the operator's selected Route.
+    expect(screen.getByTestId('routes-architecture-route-20')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('routes-architecture-inspector')).toHaveTextContent('Route R-0020')
+    expect(within(graph).getAllByTestId(/^routes-architecture-route-/)).toHaveLength(13)
+  })
+
+  it('loads 140 delivery paths in bounded batches without losing selected Route inspection', async () => {
+    const routes = Array.from({ length: 140 }, (_, index) =>
+      route(index + 1, 1, index + 100, 'HEALTHY'))
+    const user = userEvent.setup()
+    render(<GraphHarness snapshot={snapshotFor(routes)} />)
+    const graph = screen.getByTestId('routes-architecture-graph')
+    expect(within(graph).getAllByTestId(/^routes-architecture-route-/)).toHaveLength(12)
+    await user.click(screen.getByRole('button', { name: 'Show next delivery paths (12 of 140 shown)' }))
+    expect(within(graph).getAllByTestId(/^routes-architecture-route-/)).toHaveLength(32)
+    const inspected = screen.getByTestId('routes-architecture-route-30')
+    await user.click(inspected)
+    expect(screen.getByTestId('routes-architecture-inspector')).toHaveTextContent('Route R-0030')
+    await user.click(screen.getByRole('button', { name: 'Show next delivery paths (32 of 140 shown)' }))
+    expect(within(graph).getAllByTestId(/^routes-architecture-route-/)).toHaveLength(52)
+    expect(screen.getByTestId('routes-architecture-route-30')).toHaveAttribute('aria-pressed', 'true')
+    await user.click(screen.getByTestId('routes-architecture-show-fewer'))
+    expect(within(graph).getAllByTestId(/^routes-architecture-route-/)).toHaveLength(13)
+    expect(screen.getByTestId('routes-architecture-inspector')).toHaveTextContent('Route R-0030')
   })
 
   it('keeps a 140-Route topology bounded while inspecting an issue beyond the first 12 paths', async () => {
