@@ -303,7 +303,7 @@ export function DestinationDetailPage() {
               )}
             </section>
 
-            <RoutesTable routes={runtime.connectedRoutes} />
+            <RoutesTable routes={runtime.connectedRoutes} destinationId={backendDestinationNumericId} />
           </div>
 
           <aside className="flex min-w-0 flex-col gap-4 xl:sticky xl:top-24 xl:self-start">
@@ -331,7 +331,7 @@ export function DestinationDetailPage() {
         </div>
       ) : null}
 
-      {mainTab === 'routes' ? <RoutesTable routes={runtime.connectedRoutes} full /> : null}
+      {mainTab === 'routes' ? <RoutesTable routes={runtime.connectedRoutes} destinationId={backendDestinationNumericId} full /> : null}
 
       {mainTab === 'delivery' ? (
         <DeliveryActivityTable
@@ -367,11 +367,14 @@ export function DestinationDetailPage() {
   )
 }
 
-function RoutesTable({
+export function RoutesTable({
   routes,
+  destinationId,
   full,
 }: {
   routes: ReturnType<typeof useDestinationDetailData>['connectedRoutes']
+  /** Positively resolved Destination identity, not inferred from a Route label. */
+  destinationId: number
   full?: boolean
 }) {
   return (
@@ -425,13 +428,29 @@ function RoutesTable({
                     {r.successRate24h > 0 ? `${r.successRate24h.toFixed(1)}%` : '—'}
                   </td>
                   <td className={cn(opTd, 'text-right')}>
-                    <Link
-                      to={routeEditPath(r.routeId)}
-                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-violet-700 hover:underline dark:text-violet-300"
-                    >
-                      View route
-                      <ExternalLink className="h-3 w-3" aria-hidden />
-                    </Link>
+                    <div className="inline-flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
+                      {/^[1-9]\d*$/.test(r.routeId) && Number.isSafeInteger(Number(r.routeId)) ? (
+                        <Link
+                          to={logsExplorerPath({
+                            route_id: Number(r.routeId),
+                            stream_id: r.streamId,
+                            destination_id: destinationId,
+                          })}
+                          aria-label={`Investigate Route #${r.routeId} delivery logs`}
+                          className="inline-flex min-h-9 items-center gap-1 text-[11px] font-semibold text-violet-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:text-violet-300"
+                        >
+                          Delivery logs
+                          <ExternalLink className="h-3 w-3" aria-hidden />
+                        </Link>
+                      ) : null}
+                      <Link
+                        to={routeEditPath(r.routeId)}
+                        className="inline-flex min-h-9 items-center gap-1 text-[11px] font-semibold text-violet-700 hover:underline dark:text-violet-300"
+                      >
+                        View route
+                        <ExternalLink className="h-3 w-3" aria-hidden />
+                      </Link>
+                    </div>
                   </td>
                 </tr>
               ))
