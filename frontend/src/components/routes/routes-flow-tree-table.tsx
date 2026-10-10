@@ -25,6 +25,11 @@ const INITIAL_EXPANDED_STREAM_LIMIT = 8
 const INITIAL_VISIBLE_ROUTES_PER_STREAM = 12
 const NEXT_ROUTE_PAGE_SIZE = 20
 
+// NiFi-style operator summary filtering; evaluate only existing snapshot data.
+function needsRouteAttention(route: RouteFlowStreamGroup['routes'][number]): boolean {
+  return route.enabled && (route.health === 'Error' || route.health === 'Warning')
+}
+
 export type RoutesFlowTreeTableProps = {
   snapshot: OperationalSnapshotResponse | null
   consoleRows: readonly RouteConsoleRow[]
@@ -41,22 +46,34 @@ export function RoutesFlowTreeTable({ snapshot, consoleRows, loading = false }: 
     snapshot.global?.total_routes === 0 && snapshot.routes.length === 0
   const [expandedIds, setExpandedIds] = useState<Set<number>>(() => new Set())
   const [expertSearch, setExpertSearch] = useState('')
-  // Searching reveals a Route without overwriting the operator's own collapse state.
+  const [expertAttentionOnly, setExpertAttentionOnly] = useState(false)
+  // Temporary filtered expansion must not overwrite manual collapse preferences.
   const [searchCollapsedIds, setSearchCollapsedIds] = useState<Set<number>>(() => new Set())
   const expertQuery = expertSearch.trim().toLowerCase()
+  const expertFiltered = Boolean(expertQuery) || expertAttentionOnly
+  const expertCandidates = useMemo(() => {
+    if (!expertAttentionOnly) return groups
+    return groups.flatMap((group) => {
+      const routes = group.routes.filter(needsRouteAttention).sort((a, b) =>
+        Number(b.health === 'Error') - Number(a.health === 'Error') || a.routeId - b.routeId)
+      return routes.length > 0 ? [{ ...group, routes }] : []
+    }).sort((a, b) =>
+      Number(b.routes.some((route) => route.health === 'Error')) -
+      Number(a.routes.some((route) => route.health === 'Error')) || a.streamId - b.streamId)
+  }, [expertAttentionOnly, groups])
   const expertMatches = useMemo(() => {
-    if (!expertQuery) return groups
+    if (!expertQuery) return expertCandidates
     // Match the mobile search rule: an exact Stream ID takes precedence.
     const exactStream = /^\d+$/.test(expertQuery)
-      ? groups.find((group) => String(group.streamId) === expertQuery)
+      ? expertCandidates.find((group) => String(group.streamId) === expertQuery)
       : undefined
     if (exactStream) return [exactStream]
-    return groups.flatMap((group) => {
+    return expertCandidates.flatMap((group) => {
       if (streamMatchesQuery(group, expertQuery)) return [group]
       const routes = group.routes.filter((route) => routeMatchesQuery(route, expertQuery))
       return routes.length > 0 ? [{ ...group, routes }] : []
     })
-  }, [expertQuery, groups])
+  }, [expertQuery, expertCandidates])
   const knownStreamIds = useRef<Set<number>>(new Set())
   const expandNewStreams = useRef<'initial' | 'all' | 'none'>('initial')
 
@@ -141,7 +158,7 @@ export function RoutesFlowTreeTable({ snapshot, consoleRows, loading = false }: 
                     : <>As of <time dateTime={snapshot.updated_at}>{new Date(snapshotTime).toISOString()}</time> (UTC)</>}
           </p>
         </div>
-        {groups.length > 0 && !(expertQuery && !isNarrowViewport) ? (
+        {groups.length > 0 && !(expertFiltered && !isNarrowViewport) ? (
           <div className="flex flex-wrap items-center gap-3">
             <span
               data-testid="routes-flow-expanded-summary"
@@ -161,7 +178,7 @@ export function RoutesFlowTreeTable({ snapshot, consoleRows, loading = false }: 
         ) : null}
       </div>
       {!isNarrowViewport && groups.length > 0 ? (
-        <div className="flex flex-col gap-2 border-b border-slate-200 bg-slate-50/50 px-3 py-3 dark:border-gdc-border dark:bg-gdc-section/30 sm:flex-row sm:items-center">
+        <div className="flex flex-col gap-2 border-b border-slate-200 bg-slate-50/50 px-3 py-3 dark:border-gdc-border dark:bg-gdc-section/30 sm:flex-row sm:flex-wrap sm:items-center">
           <label className="shrink-0 text-xs font-semibold text-slate-700 dark:text-gdc-mutedStrong" htmlFor="route-flow-expert-find">
             Find a delivery path
           </label>
@@ -181,6 +198,30 @@ export function RoutesFlowTreeTable({ snapshot, consoleRows, loading = false }: 
               className="min-h-10 w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
             />
           </div>
+          <button
+            type="button"
+            aria-label="Show only enabled Routes needing attention in expert table"
+            aria-pressed={expertAttentionOnly}
+            onClick={() => {
+              setExpertAttentionOnly((current) => !current)
+              setSearchCollapsedIds(new Set())
+            }}
+            className={cn(
+              'min-h-10 shrink-0 rounded-lg border px-3 py-2 text-xs font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500',
+              expertAttentionOnly
+                ? 'border-amber-400 bg-amber-50 text-amber-950 dark:border-amber-700 dark:bg-amber-950/35 dark:text-amber-100'
+                : 'border-slate-200 bg-white text-slate-700 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200',
+            )}
+          >
+            Attention only
+          </button>
+          {expertAttentionOnly ? (
+            <span data-testid="routes-flow-desktop-attention-context" className="text-[11px] text-slate-600 dark:text-gdc-mutedStrong">
+              {!validObservationTime || evidenceStale
+                ? 'Last reported Error/Warning paths — not current incident confirmation; Stream EPS includes all Routes'
+                : 'Snapshot-reported Error/Warning — not receiver ingestion proof; Stream EPS includes all Routes'}
+            </span>
+          ) : null}
           {expertQuery ? (
             <button
               type="button"
@@ -199,7 +240,7 @@ export function RoutesFlowTreeTable({ snapshot, consoleRows, loading = false }: 
             data-testid="routes-flow-expert-find-status"
             className="text-[11px] leading-5 text-slate-600 dark:text-gdc-mutedStrong"
           >
-            {expertQuery
+            {expertFiltered
               ? `${expertMatches.length} matching Stream${expertMatches.length === 1 ? '' : 's'} in loaded snapshot`
               : 'Search the already-loaded Stream → Route → Destination inventory'}
           </p>
@@ -260,24 +301,26 @@ export function RoutesFlowTreeTable({ snapshot, consoleRows, loading = false }: 
                 </td>
               </tr>
             ) : null}
-            {expertQuery && groups.length > 0 && expertMatches.length === 0 ? (
+            {expertFiltered && groups.length > 0 && expertMatches.length === 0 ? (
               <tr className={opTr}>
                 <td colSpan={6} data-testid="routes-flow-no-expert-matches" className={cn(opTd, 'py-8 text-center text-xs text-amber-900 dark:text-amber-200')}>
-                  No matching Streams, Routes or Destinations in the loaded snapshot.
-                  This search does not prove that a Route is unconfigured or delivered successfully.
+                  {expertAttentionOnly
+                    ? 'No enabled Error or Warning Routes match the selected filters in the loaded snapshot.'
+                    : 'No matching Streams, Routes or Destinations in the loaded snapshot.'}
+                  This filter does not prove receiver ingestion or delivery success.
                 </td>
               </tr>
             ) : null}
-            {(expertQuery ? expertMatches : groups).map((group) => (
+            {(expertFiltered ? expertMatches : groups).map((group) => (
               <StreamFlowRows
                 key={group.streamId}
                 group={group}
                 evidenceStale={evidenceStale}
                 validObservationTime={validObservationTime}
-                matchOnly={Boolean(expertQuery)}
-                expanded={expertQuery ? !searchCollapsedIds.has(group.streamId) : expandedIds.has(group.streamId)}
+                matchOnly={expertFiltered}
+                expanded={expertFiltered ? !searchCollapsedIds.has(group.streamId) : expandedIds.has(group.streamId)}
                 onToggle={() => {
-                  if (expertQuery) toggleSearchedStream(group.streamId)
+                  if (expertFiltered) toggleSearchedStream(group.streamId)
                   else toggleStream(group.streamId)
                 }}
               />

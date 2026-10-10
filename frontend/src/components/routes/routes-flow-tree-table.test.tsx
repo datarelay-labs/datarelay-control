@@ -136,6 +136,63 @@ describe('Flow-First expert delivery table — runtime evidence and keyboard saf
       .toHaveAttribute('href', '/logs?route_id=42&stream_id=1')
   })
 
+  it('shows an attention-only expert filter for enabled Error and Warning Routes', async () => {
+    const user = userEvent.setup()
+    const s = evidence()
+    s.global.total_routes = 4
+    s.streams[0]!.route_count = 4
+    s.routes = [
+      { ...s.routes[0]!, route_id: 50, health_status: 'ERROR', failed_eps_1m: 2 },
+      { ...s.routes[0]!, route_id: 51, health_status: 'DEGRADED', failed_eps_1m: 1 },
+      { ...s.routes[0]!, route_id: 52, health_status: 'HEALTHY' },
+      { ...s.routes[0]!, route_id: 53, health_status: 'ERROR', enabled: false },
+    ]
+    mount(s)
+    const filter = screen.getByRole('button', { name: 'Show only enabled Routes needing attention in expert table' })
+    expect(filter).toHaveAttribute('aria-pressed', 'false')
+    await user.click(filter)
+    expect(filter).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('link', { name: 'R-0050' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'R-0051' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'R-0052' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'R-0053' })).not.toBeInTheDocument()
+    await user.click(filter)
+    expect(screen.getByRole('link', { name: 'R-0052' })).toBeInTheDocument()
+  })
+
+  it('reveals stale attention for collapsed Streams and restores manual collapse when disabled', async () => {
+    const user = userEvent.setup()
+    const s = evidence()
+    s.updated_at = '2026-01-01T00:00:00Z'
+    s.routes[0]!.health_status = 'ERROR'
+    const view = mount(s)
+    await user.click(screen.getByRole('button', { name: 'Collapse Finance flow routes' }))
+    expect(screen.queryByRole('link', { name: 'R-0042' })).not.toBeInTheDocument()
+    const filter = screen.getByRole('button', { name: 'Show only enabled Routes needing attention in expert table' })
+    await user.click(filter)
+    expect(screen.getByRole('link', { name: 'R-0042' })).toBeInTheDocument()
+    expect(screen.getByTestId('routes-flow-desktop-attention-context')).toHaveTextContent('Last reported')
+    view.rerender(<MemoryRouter><RoutesFlowTreeTable snapshot={{ ...s }} consoleRows={buildRouteRowsFromOperationalSnapshot(s)} /></MemoryRouter>)
+    await user.click(filter)
+    expect(screen.queryByRole('link', { name: 'R-0042' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Expand Finance flow routes' })).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('reports zero attention matches as filtered evidence rather than healthy delivery', async () => {
+    const user = userEvent.setup()
+    mount(evidence())
+    const filter = screen.getByRole('button', { name: 'Show only enabled Routes needing attention in expert table' })
+    await user.click(filter)
+    const filteredEmpty = screen.getByTestId('routes-flow-no-expert-matches')
+    expect(filteredEmpty).toHaveTextContent('No enabled Error or Warning Routes')
+    expect(filteredEmpty).toHaveTextContent('does not prove receiver ingestion')
+    expect(screen.queryByText('No routes configured yet.')).not.toBeInTheDocument()
+    await user.type(screen.getByRole('searchbox', { name: 'Find in expert Route Flow' }), 'Finance')
+    expect(screen.getByTestId('routes-flow-no-expert-matches')).toHaveTextContent('No enabled Error or Warning Routes')
+    await user.click(filter)
+    expect(screen.getByRole('link', { name: 'R-0042' })).toBeInTheDocument()
+  })
+
   it('keeps manually collapsed Stream rows collapsed while fresh snapshot metrics update', async () => {
     const user = userEvent.setup()
     const first = evidence()
