@@ -341,3 +341,28 @@ describe('Logs Explorer invalid manually entered investigation IDs', () => {
     expect(await screen.findByText('Real Route 42 evidence remains visible')).toBeInTheDocument()
   })
 })
+
+
+describe('Logs Explorer narrow viewport source integration', () => {
+  it('uses compact cards instead of the wide table while retaining selected log details', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
+      matches: query === '(max-width: 767px)',
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })))
+    try {
+      setup([row(72, 2, 42, 'Mobile Route failure evidence')])
+      render(<MemoryRouter initialEntries={['/logs?route_id=42']}><LogsExplorerPage /></MemoryRouter>)
+      const cards = await screen.findByRole('region', { name: 'Compact delivery logs' })
+      expect(cards).toHaveTextContent('Mobile Route failure evidence')
+      expect(cards).toHaveTextContent('FAILED')
+      expect(screen.queryByTestId('logs-dense-table')).not.toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Inspect log evt_72' }))
+      expect(screen.getByRole('complementary', { name: 'Log details' })).toBeInTheDocument()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+})

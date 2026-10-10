@@ -32,6 +32,7 @@ import { gdcUi } from '../../lib/gdc-ui-tokens'
 import { loadLogsAutoRefresh, persistLogsAutoRefresh } from '../../localPreferences'
 import { cn } from '../../lib/utils'
 import { useDocumentVisible } from '../../hooks/use-document-visible'
+import { useMediaQuery } from '../../hooks/use-media-query'
 import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
 import {
   bucketLogsForHistogram,
@@ -45,6 +46,7 @@ import {
   stageChipText,
 } from './logs-console-helpers'
 import { LogDetailDrawer } from './log-detail-drawer'
+import { LogsCompactCards } from './logs-compact-cards'
 import { serializeLoadedLogsCsv } from './logs-export-csv'
 import { LogsDiagnosisOverview, type LogsDiagnosisSnapshot } from './logs-diagnosis-overview'
 import { LevelBadge } from './logs-level-badge'
@@ -314,6 +316,7 @@ function TableSkeletonRows({ cols }: { cols: number }) {
 }
 
 export function LogsExplorerPage() {
+  const compactLogsView = useMediaQuery('(max-width: 767px)')
   const { streamId: streamSlug } = useParams<{ streamId?: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
@@ -1875,7 +1878,23 @@ export function LogsExplorerPage() {
           </div>
         </div>
 
+        {compactLogsView ? (
+          <LogsCompactCards
+            rows={pageRows}
+            loading={logsFetchLoading && logRows.length === 0}
+            apiUnavailable={runtimeLogsError}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            onClearFilters={() => {
+              clearOperationalUrlFilters()
+              setSearch('')
+              setLevelFilter('All Levels')
+              setStageFilter('All Stages')
+            }}
+          />
+        ) : (
         <div
+          data-testid="logs-dense-table"
           className={cn('relative overflow-x-auto transition-opacity duration-300', pulseFetch && 'opacity-90')}
           aria-busy={logsFetchLoading}
         >
@@ -2187,6 +2206,7 @@ export function LogsExplorerPage() {
             </tbody>
           </table>
         </div>
+        )}
 
         <div className="sticky bottom-0 z-10 flex flex-col gap-2 border-t border-slate-200 bg-white/95 px-3 py-2.5 text-[11px] text-slate-600 backdrop-blur-sm dark:border-gdc-border dark:bg-gdc-card dark:text-gdc-muted sm:flex-row sm:items-center sm:justify-between">
           <p className="tabular-nums">
