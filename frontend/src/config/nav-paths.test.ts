@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { appNavKeyFromPathname, governanceWorkspacePath, legacyRuntimeRedirectTarget, logsExplorerPath, NAV_PATH, runtimeOverviewPath, streamsExpandedGroupPath } from './nav-paths'
+import { appNavKeyFromPathname, governanceWorkspacePath, legacyRuntimeRedirectTarget, logsExplorerPath, NAV_PATH, runtimeAnalyticsPath, runtimeOverviewPath, streamsExpandedGroupPath } from './nav-paths'
 
 describe('nav-paths M17.1', () => {
   it('maps templates to templates nav key under Streams IA', () => {
@@ -43,6 +43,46 @@ describe('nav-paths M17.1', () => {
   it('uses /monitoring/streams for runtimeOverviewPath', () => {
     expect(runtimeOverviewPath({ stream_id: 3 })).toBe('/monitoring/streams?stream_id=3')
     expect(NAV_PATH.dashboard).toBe('/monitoring')
+  })
+
+  it('only builds Runtime Analytics scopes for saved positive safe integer resource IDs', () => {
+    expect(runtimeAnalyticsPath({
+      window: '24h',
+      stream_id: 2,
+      route_id: 42,
+      destination_id: 10,
+    })).toBe('/monitoring/analytics?window=24h&stream_id=2&route_id=42&destination_id=10')
+    expect(runtimeAnalyticsPath({
+      window: '24h',
+      stream_id: 0,
+      route_id: -1,
+      destination_id: 1.5,
+    })).toBe('/monitoring/analytics?window=24h')
+    expect(runtimeAnalyticsPath({
+      stream_id: Number.MAX_SAFE_INTEGER + 1,
+      route_id: Number.POSITIVE_INFINITY,
+      destination_id: Number.NaN,
+    })).toBe('/monitoring/analytics')
+  })
+
+  it('never deep-links Runtime Overview to an invalid or unknown numeric scope', () => {
+    expect(runtimeOverviewPath({
+      stream_id: 2,
+      route_id: 42,
+      destination_id: 10,
+      run_id: 'run-4',
+    })).toBe('/monitoring/streams?stream_id=2&route_id=42&destination_id=10&run_id=run-4')
+    expect(runtimeOverviewPath({
+      stream_id: 0,
+      route_id: -42,
+      destination_id: 1.5,
+      run_id: 'run-4',
+    })).toBe('/monitoring/streams?run_id=run-4')
+    expect(runtimeOverviewPath({
+      stream_id: Number.MAX_SAFE_INTEGER + 1,
+      route_id: Number.NaN,
+      destination_id: Number.POSITIVE_INFINITY,
+    })).toBe('/monitoring/streams')
   })
 
   it('builds streams path with expand_group for dashboard drill-down', () => {
