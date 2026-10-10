@@ -37,6 +37,64 @@ def _reset_transport(monkeypatch: pytest.MonkeyPatch):
     reset_webhook_sender()
 
 
+def test_external_notification_payload_redacts_untrusted_details_and_preserves_identifiers():
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+
+    from app.governance_notifications.dispatcher import dispatch_notification_event
+
+    raw = {
+        "policy_id": 17, "route_id": 23, "replay_event_id": 31,
+        "password": "super-secret-do-not-export",
+        "token": "bearer-do-not-export",
+        "comment": "private-customer-personal-content",
+        "message": "unsafe-full-delivery-failure-details",
+        "headers": {"authorization": "Bearer private-auth", "x-customer": "internal-only"},
+        "nested": {"client_secret": "hidden-secret", "id": 999},
+        "certificate": "-----BEGIN PRIVATE KEY-----\\nprivate-key-value\\n-----END PRIVATE KEY-----",
+        "arbitrary": "untrusted-business-text",
+    }
+    event = SimpleNamespace(
+        event_type="POLICY_SUBMITTED", event_category="approval", severity="HIGH",
+        created_at=datetime(2026, 10, 10, tzinfo=timezone.utc), payload_json=raw.copy(),
+        status="PENDING", sent_at=None,
+    )
+    config = SimpleNamespace(
+        email_enabled=True, email_recipients_json=["ops@example.com"],
+        webhook_enabled=True, webhook_url="https://hooks.example.com/approved",
+    )
+    mail = MockEmailSender()
+    webhook = MockWebhookSender()
+    assert dispatch_notification_event(event, config, email_sender=mail, webhook_sender=webhook)
+    assert event.payload_json == raw
+    body = str(mail.sent[0]["body"])
+    external = webhook.sent[0]["payload"]
+    assert "policy_id: 17" in body and "route_id: 23" in body
+    assert external["payload"] == {"policy_id": 17, "route_id": 23, "replay_event_id": 31}
+    for secret in (
+        "super-secret-do-not-export", "bearer-do-not-export",
+        "private-customer-personal-content", "unsafe-full-delivery-failure-details",
+        "Bearer private-auth", "internal-only", "hidden-secret",
+        "private-key-value", "untrusted-business-text",
+    ):
+        assert secret not in body
+        assert secret not in repr(external)
+
+
+def test_external_payload_excludes_forged_or_invalid_identifiers():
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+
+    from app.governance_notifications.dispatcher import _webhook_payload
+
+    event = SimpleNamespace(
+        event_type="REPLAY_FAILED", severity="HIGH",
+        created_at=datetime(2026, 10, 10, tzinfo=timezone.utc),
+        payload_json={"policy_id": True, "route_id": -3, "replay_event_id": "99; injected", "stream_id": 9},
+    )
+    assert _webhook_payload(event)["payload"] == {"stream_id": 9}
+
+
 def test_real_notification_service_does_not_claim_delivery_without_transports(monkeypatch):
     from types import SimpleNamespace
 

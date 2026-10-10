@@ -44,6 +44,18 @@ report success solely from these mock defaults.
   of inbox receipt. An HTTP Webhook 2xx similarly does not prove that the
   remote application processed the event. Test Send messages now distinguish
   that explicitly. Unavailable channels never claim a real send.
+- **External event projection.** The original internal Governance event may
+  retain structured diagnostic content, freeform operator comments and
+  upstream failure strings. Outbound mail/Webhook now transmits only the
+  event's type/severity/timestamp plus validated positive integer resource
+  references (policy, replay event, Stream, Route and Destination IDs).
+  Arbitrary event payload, freeform comments/messages, nested HTTP headers,
+  API tokens, PEM/secret material and URL parameters never leave through
+  notification payload serialization. The product-owned persisted event is
+  unchanged, and operators can investigate full authorized evidence inside
+  Control. Existing production integrations that relied on arbitrary
+  notification payload fields must explicitly migrate to the bounded
+  projection; they must not regain raw untrusted payload transmission.
 - **Existing product ownership:** Control backend retains event/config
   data, role guards and message templates; Foundation defines shared
   policy, not a network client. No Foundation library was copied or
