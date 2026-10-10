@@ -44,6 +44,7 @@ import {
   stageChipText,
 } from './logs-console-helpers'
 import { LogDetailDrawer } from './log-detail-drawer'
+import { serializeLoadedLogsCsv } from './logs-export-csv'
 import { LogsDiagnosisOverview, type LogsDiagnosisSnapshot } from './logs-diagnosis-overview'
 import { LevelBadge } from './logs-level-badge'
 import { HelpTooltip } from '../ui/help-tooltip'
@@ -203,6 +204,16 @@ function DropdownMenu({
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement | null>(null)
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+  const focusLastOnOpen = useRef(false)
+  useEffect(() => {
+    if (!open) return
+    const elements = menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')
+    const target = focusLastOnOpen.current ? elements?.[elements.length - 1] : elements?.[0]
+    target?.focus()
+    focusLastOnOpen.current = false
+  }, [open])
   useEffect(() => {
     function onDoc(e: MouseEvent) {
       if (!ref.current?.contains(e.target as Node)) setOpen(false)
@@ -213,9 +224,20 @@ function DropdownMenu({
   return (
     <div className="relative" ref={ref}>
       <button
+        ref={triggerRef}
         type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200/90 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-elevated dark:text-slate-100 dark:hover:bg-gdc-card"
+        onClick={() => {
+          focusLastOnOpen.current = false
+          setOpen((o) => !o)
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault()
+            focusLastOnOpen.current = event.key === 'ArrowUp'
+            setOpen(true)
+          }
+        }}
+        className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200/90 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:border-gdc-border dark:bg-gdc-elevated dark:text-slate-100 dark:hover:bg-gdc-card"
         aria-expanded={open}
         aria-haspopup="menu"
       >
@@ -225,7 +247,30 @@ function DropdownMenu({
       </button>
       {open ? (
         <div
+          ref={menuRef}
           role="menu"
+          aria-label={`${label} actions`}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault()
+              setOpen(false)
+              triggerRef.current?.focus()
+              return
+            }
+            if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+            event.preventDefault()
+            const controls = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not([disabled])'))
+            if (controls.length === 0) return
+            const current = controls.findIndex((item) => item === document.activeElement)
+            const next = event.key === 'Home'
+              ? 0
+              : event.key === 'End'
+                ? controls.length - 1
+                : event.key === 'ArrowDown'
+                  ? (current + 1) % controls.length
+                  : (current + controls.length - 1) % controls.length
+            controls[next]?.focus()
+          }}
           className="absolute right-0 z-40 mt-1 min-w-[12rem] rounded-lg border border-slate-200/90 bg-white py-1 text-sm shadow-lg dark:border-gdc-border dark:bg-gdc-elevated"
         >
           {items.map((item) => (
@@ -233,10 +278,11 @@ function DropdownMenu({
               key={item.id}
               type="button"
               role="menuitem"
-              className="block w-full px-3 py-2 text-left font-medium text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-gdc-card"
+              className="block w-full px-3 py-2 text-left font-medium text-slate-700 hover:bg-slate-50 focus-visible:bg-violet-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-400 dark:text-slate-200 dark:hover:bg-gdc-card dark:focus-visible:bg-gdc-rowHover"
               onClick={() => {
                 onPick?.(item.id)
                 setOpen(false)
+                triggerRef.current?.focus()
               }}
             >
               {item.label}
@@ -980,6 +1026,18 @@ export function LogsExplorerPage() {
     URL.revokeObjectURL(url)
   }
 
+  function exportCsv() {
+    // Unlike JSON, CSV exports only a fixed, visible-field projection, never
+    // raw contextJson/eventPreview. A BOM helps spreadsheet UTF-8 handling.
+    const blob = new Blob(['\uFEFF', serializeLoadedLogsCsv(filteredRowsBase)], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `gdc-logs-export-${Date.now()}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   function saveCurrentSearch() {
     const statusUrl = statusUrlParamFromUiLabel(statusFilter)
     const label = `${streamFilter} · ${levelFilter} · ${statusFilter}${search ? ` · ${search.slice(0, 32)}` : ''}`
@@ -1194,11 +1252,12 @@ export function LogsExplorerPage() {
             label="Export"
             icon={Download}
             items={[
-              { id: 'json', label: 'Download JSON (current filters)' },
-              { id: 'csv', label: 'Download CSV (placeholder)' },
+              { id: 'json', label: 'Download JSON (loaded matching rows)' },
+              { id: 'csv', label: 'Download CSV (loaded matching rows)' },
             ]}
             onPick={(id) => {
               if (id === 'json') exportJson()
+              else if (id === 'csv') exportCsv()
             }}
           />
           <button

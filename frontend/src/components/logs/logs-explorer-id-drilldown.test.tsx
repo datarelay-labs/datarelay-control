@@ -214,3 +214,78 @@ describe('Logs Explorer receiving an actual Data Flows numeric-ID drilldown', ()
     expect(screen.getByText('Recovered scope still shows Route 42')).toBeInTheDocument()
   })
 })
+
+
+describe('Logs Explorer non-placeholder export', () => {
+  it('downloads an actual CSV of the currently loaded filtered logs', async () => {
+    const user = userEvent.setup()
+    setup([
+      row(71, 1, 41, 'Unrelated Route 41 evidence'),
+      row(72, 2, 42, 'CSV diagnostic row'),
+    ])
+    const createBefore = Object.getOwnPropertyDescriptor(URL, 'createObjectURL')
+    const revokeBefore = Object.getOwnPropertyDescriptor(URL, 'revokeObjectURL')
+    const createObjectURL = vi.fn((_blob: Blob) => 'blob:logs-csv-probe')
+    const revokeObjectURL = vi.fn()
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL })
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL })
+    try {
+      render(<MemoryRouter initialEntries={['/logs?route_id=42']}><LogsExplorerPage /></MemoryRouter>)
+      expect(await screen.findByText('CSV diagnostic row')).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Export' }))
+      await user.click(screen.getByRole('menuitem', { name: /Download CSV/i }))
+      expect(createObjectURL).toHaveBeenCalledTimes(1)
+      const [file] = createObjectURL.mock.calls[0] ?? []
+      expect(file).toBeInstanceOf(Blob)
+      if (!(file instanceof Blob)) throw new Error('CSV download was not a file')
+      expect(file.type).toContain('text/csv')
+      const csv = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(String(reader.result))
+        reader.onerror = () => reject(reader.error)
+        reader.readAsText(file)
+      })
+      expect(csv).toContain('CSV diagnostic row')
+      expect(csv).not.toContain('Unrelated Route 41 evidence')
+      expect(click).toHaveBeenCalledOnce()
+      expect(revokeObjectURL).toHaveBeenCalledWith('blob:logs-csv-probe')
+    } finally {
+      if (createBefore) Object.defineProperty(URL, 'createObjectURL', createBefore)
+      else Reflect.deleteProperty(URL, 'createObjectURL')
+      if (revokeBefore) Object.defineProperty(URL, 'revokeObjectURL', revokeBefore)
+      else Reflect.deleteProperty(URL, 'revokeObjectURL')
+    }
+  })
+})
+
+
+describe('Logs Explorer keyboard-operated export menu', () => {
+  it('opens via ArrowDown, moves between exports, and Escape returns focus to the trigger', async () => {
+    const user = userEvent.setup()
+    setup([row(72, 2, 42, 'Keyboard navigation diagnostic')])
+    render(<MemoryRouter initialEntries={['/logs?route_id=42']}><LogsExplorerPage /></MemoryRouter>)
+    expect(await screen.findByText('Keyboard navigation diagnostic')).toBeInTheDocument()
+    const trigger = screen.getByRole('button', { name: 'Export' })
+    trigger.focus()
+    await user.keyboard('{ArrowDown}')
+    const json = screen.getByRole('menuitem', { name: /Download JSON/i })
+    const csv = screen.getByRole('menuitem', { name: /Download CSV/i })
+    expect(json).toHaveFocus()
+    await user.keyboard('{ArrowDown}')
+    expect(csv).toHaveFocus()
+    await user.keyboard('{ArrowUp}')
+    expect(json).toHaveFocus()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('menuitem', { name: /Download CSV/i })).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
+    await user.keyboard('{ArrowUp}')
+    expect(screen.getByRole('menuitem', { name: /Download CSV/i })).toHaveFocus()
+    await user.keyboard('{Home}')
+    expect(screen.getByRole('menuitem', { name: /Download JSON/i })).toHaveFocus()
+    await user.keyboard('{End}')
+    expect(screen.getByRole('menuitem', { name: /Download CSV/i })).toHaveFocus()
+    await user.keyboard('{Escape}')
+    expect(trigger).toHaveFocus()
+  })
+})
