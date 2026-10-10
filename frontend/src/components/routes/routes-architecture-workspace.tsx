@@ -57,6 +57,23 @@ export function RoutesArchitectureWorkspace({
   const attention = useMemo(() => listRouteFlowAttention(groups), [groups])
   const [allAttentionVisible, setAllAttentionVisible] = useState(false)
   const [allPathsVisible, setAllPathsVisible] = useState(false)
+  const [allStreamsVisible, setAllStreamsVisible] = useState(false)
+  const [streamQuery, setStreamQuery] = useState('')
+  const normalizedStreamQuery = streamQuery.trim().toLocaleLowerCase()
+  const matchingStreams = normalizedStreamQuery
+    ? groups.filter((group) =>
+        group.streamName.toLocaleLowerCase().includes(normalizedStreamQuery) ||
+        String(group.streamId).includes(normalizedStreamQuery))
+    : groups
+  const firstStreams = matchingStreams.slice(0, 12)
+  // A selected low-throughput Stream must remain discoverable when the
+  // topology has many higher-throughput Streams, without rendering them all.
+  const visibleStreams = allStreamsVisible
+    ? matchingStreams
+    : !normalizedStreamQuery && selectedGroup &&
+      !firstStreams.some((group) => group.streamId === selectedGroup.streamId)
+      ? [...firstStreams, selectedGroup]
+      : firstStreams
   const attentionVisible = allAttentionVisible ? attention : attention.slice(0, 4)
   // Keep the selected Route visible without forcing hundreds of unrelated
   // paths into the DOM when an operator reviews a deep/low-throughput issue.
@@ -72,6 +89,8 @@ export function RoutesArchitectureWorkspace({
     // Numeric Route and Stream IDs prevent same-name entities from leaking into each other's inspector.
     setInspectedRouteId(item.routeId)
     setAllPathsVisible(false)
+    setAllStreamsVisible(false)
+    setStreamQuery('')
     onSelectStream(item.streamId)
   }
 
@@ -99,14 +118,17 @@ export function RoutesArchitectureWorkspace({
         </span>
       </div>
 
-      <div className="border-b border-slate-200/80 px-5 py-3 dark:border-gdc-border sm:px-6" data-testid="routes-mental-model">
-        <p className="text-xs leading-5 text-slate-600 dark:text-gdc-mutedStrong">
+      <details className="border-b border-slate-200/80 px-5 py-2 dark:border-gdc-border sm:px-6" data-testid="routes-mental-model">
+        <summary className="cursor-pointer py-1 text-xs font-semibold text-violet-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-400 dark:text-violet-300">
+          How delivery paths work
+        </summary>
+        <p className="pb-2 pt-1 text-xs leading-5 text-slate-600 dark:text-gdc-mutedStrong">
           <strong className="text-slate-800 dark:text-slate-100">Stream</strong> collects data →
           <strong className="text-slate-800 dark:text-slate-100"> Route Processing</strong> applies destination-specific rules →
           <strong className="text-slate-800 dark:text-slate-100"> Destination</strong> receives the result.
           One Stream can fan out through many Routes to many Destinations without collecting the same source twice.
         </p>
-      </div>
+      </details>
 
       {snapshot && groups.length > 0 ? (
         <section
@@ -193,8 +215,23 @@ export function RoutesArchitectureWorkspace({
             <p className="px-2 pb-3 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-gdc-muted">
               Streams with Routes
             </p>
-            <div className="flex gap-2 overflow-x-auto pb-1 xl:max-h-[420px] xl:flex-col xl:overflow-x-hidden xl:overflow-y-auto">
-              {groups.map((group) => {
+            <label className="mb-2 block px-2">
+              <span className="sr-only">Find Stream by name or ID</span>
+              <input
+                type="search"
+                aria-label="Find Stream by name or ID"
+                value={streamQuery}
+                onChange={(event) => { setStreamQuery(event.target.value); setAllStreamsVisible(false) }}
+                placeholder="Find Stream…"
+                className="min-h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus-visible:border-violet-400 focus-visible:ring-2 focus-visible:ring-violet-400 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
+              />
+            </label>
+            <p role="status" className="px-2 pb-2 text-[11px] text-slate-500 dark:text-gdc-muted">
+              {visibleStreams.length} of {matchingStreams.length} matching Streams shown
+              {normalizedStreamQuery ? ` · filtered from ${groups.length}` : ''}
+            </p>
+            <div id="routes-architecture-stream-list" className="flex gap-2 overflow-x-auto pb-1 xl:max-h-[420px] xl:flex-col xl:overflow-x-hidden xl:overflow-y-auto">
+              {visibleStreams.map((group) => {
                 const selected = selectedGroup?.streamId === group.streamId
                 return (
                   <button
@@ -224,6 +261,23 @@ export function RoutesArchitectureWorkspace({
                 )
               })}
             </div>
+            {matchingStreams.length === 0 ? (
+              <p className="px-2 py-3 text-xs text-slate-600 dark:text-gdc-mutedStrong">
+                No matching Streams. Search by display name or numeric Stream ID.
+              </p>
+            ) : null}
+            {matchingStreams.length > 12 ? (
+              <button
+                type="button"
+                aria-expanded={allStreamsVisible}
+                aria-controls="routes-architecture-stream-list"
+                data-testid="routes-architecture-show-streams"
+                onClick={() => setAllStreamsVisible((value) => !value)}
+                className="mt-2 min-h-10 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-violet-700 hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:border-gdc-border dark:text-violet-300 dark:hover:bg-gdc-card"
+              >
+                {allStreamsVisible ? 'Show fewer Streams' : `Show all ${matchingStreams.length} Streams`}
+              </button>
+            ) : null}
           </nav>
 
           {selectedGroup ? (

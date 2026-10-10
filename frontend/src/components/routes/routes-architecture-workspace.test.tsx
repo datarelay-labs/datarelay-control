@@ -110,6 +110,17 @@ function GraphHarness({ snapshot, requestFailed = false }: { snapshot: Operation
 }
 
 describe('Data Flows topology: operator priority and bounded exploration', () => {
+  it('keeps the flow explanation discoverable without occupying the operations viewport by default', async () => {
+    const user = userEvent.setup()
+    render(<GraphHarness snapshot={snapshotFor()} />)
+    const guide = screen.getByTestId('routes-mental-model')
+    expect(guide.tagName).toBe('DETAILS')
+    expect(guide).not.toHaveAttribute('open')
+    await user.click(screen.getByText('How delivery paths work'))
+    expect(guide).toHaveAttribute('open')
+    expect(guide).toHaveTextContent('One Stream can fan out through many Routes')
+  })
+
   it('puts actual Error before Warning and focuses the correct Stream and Route, not matching display names', async () => {
     const user = userEvent.setup()
     render(<GraphHarness snapshot={snapshotFor()} />)
@@ -185,6 +196,63 @@ describe('Data Flows topology: operator priority and bounded exploration', () =>
     // Issue navigation must not force all 140 DOM nodes into the graph.
     expect(within(graph).getAllByTestId(/^routes-architecture-route-/)).toHaveLength(13)
     expect(screen.getByTestId('routes-architecture-show-paths')).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('bounds the Stream selector on large topologies while keeping search and issue drill-down usable', async () => {
+    const manyRoutes = Array.from({ length: 120 }, (_, index) => ({
+      ...route(index + 1, index + 1, index + 501, index === 119 ? 'ERROR' : 'HEALTHY'),
+      stream_name: index === 119 ? 'Rare collection path' : `Flow ${index + 1}`,
+    }))
+    const data = snapshotFor(manyRoutes)
+    data.streams = manyRoutes.map((r, index) => ({
+      ...data.streams[0]!,
+      stream_id: r.stream_id,
+      stream_name: index === 119 ? 'Rare collection path' : `Flow ${index + 1}`,
+      eps_1m: 120 - index,
+    }))
+    const user = userEvent.setup()
+    render(<GraphHarness snapshot={data} />)
+
+    const streamList = screen.getByRole('navigation', { name: 'Choose a Stream for delivery' })
+    expect(within(streamList).getAllByTestId(/^routes-architecture-stream-/)).toHaveLength(12)
+    expect(screen.getByTestId('routes-architecture-inspector')).toHaveTextContent('Stream #1')
+
+    await user.type(within(streamList).getByRole('searchbox', { name: 'Find Stream by name or ID' }), 'Rare collection')
+    expect(within(streamList).getAllByTestId(/^routes-architecture-stream-/)).toHaveLength(1)
+    await user.click(screen.getByTestId('routes-architecture-stream-120'))
+    expect(screen.getByTestId('routes-architecture-inspector')).toHaveTextContent('Stream #120')
+    expect(screen.getByTestId('routes-architecture-inspector')).toHaveTextContent('Route R-0120')
+
+    await user.clear(within(streamList).getByRole('searchbox', { name: 'Find Stream by name or ID' }))
+    expect(within(streamList).getAllByTestId(/^routes-architecture-stream-/)).toHaveLength(13)
+    await user.click(screen.getByTestId('routes-architecture-review-first'))
+    expect(screen.getByTestId('routes-architecture-stream-120')).toHaveAttribute('aria-pressed', 'true')
+    expect(within(streamList).getAllByTestId(/^routes-architecture-stream-/)).toHaveLength(13)
+    expect(screen.getByTestId('routes-architecture-inspector')).toHaveTextContent('Route R-0120')
+    expect(screen.getByTestId('routes-architecture-show-streams')).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('explains an empty Stream search and expands or collapses larger matching results', async () => {
+    const manyRoutes = Array.from({ length: 16 }, (_, index) => ({
+      ...route(index + 1, index + 1, index + 300, 'HEALTHY'),
+      stream_name: `Flow ${index + 1}`,
+    }))
+    const user = userEvent.setup()
+    render(<GraphHarness snapshot={snapshotFor(manyRoutes)} />)
+    const streamList = screen.getByRole('navigation', { name: 'Choose a Stream for delivery' })
+    const query = within(streamList).getByRole('searchbox', { name: 'Find Stream by name or ID' })
+
+    await user.type(query, 'no-such-stream')
+    expect(within(streamList).queryAllByTestId(/^routes-architecture-stream-/)).toHaveLength(0)
+    expect(within(streamList).getByText(/No matching Streams/)).toBeInTheDocument()
+    expect(screen.getByTestId('routes-architecture-inspector')).toHaveTextContent('Stream #1')
+
+    await user.clear(query)
+    expect(within(streamList).getAllByTestId(/^routes-architecture-stream-/)).toHaveLength(12)
+    await user.click(screen.getByRole('button', { name: 'Show all 16 Streams' }))
+    expect(within(streamList).getAllByTestId(/^routes-architecture-stream-/)).toHaveLength(16)
+    await user.click(screen.getByRole('button', { name: 'Show fewer Streams' }))
+    expect(within(streamList).getAllByTestId(/^routes-architecture-stream-/)).toHaveLength(12)
   })
 
   it('expands the issue queue for many paths and allows direct inspection of a later problem Route', async () => {
