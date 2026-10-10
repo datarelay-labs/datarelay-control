@@ -3,6 +3,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { NAV_PATH, destinationDetailPath, logsExplorerPath, routeEditPath, streamRuntimePath } from '../../config/nav-paths'
 import { cn } from '../../lib/utils'
+import { useMediaQuery } from '../../hooks/use-media-query'
 import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
 import {
   buildRouteFlowTree,
@@ -15,6 +16,7 @@ import {
   type RouteFlowStreamGroup,
 } from './routes-flow-helpers'
 import type { OperationalSnapshotResponse } from '../../api/operationalSnapshot'
+import { RoutesFlowCompactCards } from './routes-flow-compact-cards'
 import type { RouteConsoleRow } from './routes-overview-helpers'
 
 const INITIAL_EXPANDED_STREAM_LIMIT = 8
@@ -28,6 +30,7 @@ export type RoutesFlowTreeTableProps = {
 }
 
 export function RoutesFlowTreeTable({ snapshot, consoleRows, loading = false }: RoutesFlowTreeTableProps) {
+  const isNarrowViewport = useMediaQuery('(max-width: 767px)')
   const groups = useMemo(() => buildRouteFlowTree(snapshot, consoleRows), [snapshot, consoleRows])
   const snapshotTime = snapshot?.updated_at ? Date.parse(snapshot.updated_at) : NaN
   const validObservationTime = Number.isFinite(snapshotTime)
@@ -129,6 +132,17 @@ export function RoutesFlowTreeTable({ snapshot, consoleRows, loading = false }: 
           </div>
         ) : null}
       </div>
+      {isNarrowViewport ? (
+        <RoutesFlowCompactCards
+          groups={groups}
+          expandedIds={expandedIds}
+          onToggle={toggleStream}
+          loading={loading}
+          verifiedEmpty={verifiedEmpty}
+          evidenceStale={evidenceStale}
+          validObservationTime={validObservationTime}
+        />
+      ) : (
       <div className="overflow-x-auto">
         <table className={opTable} aria-label="Expert Route delivery table">
           <thead>
@@ -185,6 +199,7 @@ export function RoutesFlowTreeTable({ snapshot, consoleRows, loading = false }: 
           </tbody>
         </table>
       </div>
+      )}
     </section>
   )
 }

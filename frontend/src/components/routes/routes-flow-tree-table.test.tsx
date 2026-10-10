@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { OperationalSnapshotResponse } from '../../api/operationalSnapshot'
 import { buildRouteRowsFromOperationalSnapshot } from './routes-overview-helpers'
 import { RoutesFlowTreeTable } from './routes-flow-tree-table'
@@ -308,5 +308,86 @@ describe('Flow-First expert delivery table — runtime evidence and keyboard saf
   it('loading from an unverified snapshot does not declare there are no Routes', () => {
     mount(null, true)
     expect(screen.queryByText('No routes configured yet.')).not.toBeInTheDocument()
+  })
+})
+
+describe('Flow-First compact mobile Route delivery', () => {
+  function onSmallViewport<T>(run: () => T): T {
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
+      matches: query === '(max-width: 767px)',
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })))
+    try {
+      return run()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  }
+
+  it('shows touch-friendly Stream and Route evidence cards instead of a six-column table', async () => {
+    const user = userEvent.setup()
+    await onSmallViewport(async () => {
+      mount(evidence())
+      expect(screen.getByRole('region', { name: 'Compact route delivery' })).toBeInTheDocument()
+      expect(screen.queryByRole('table', { name: 'Expert Route delivery table' })).not.toBeInTheDocument()
+      expect(screen.getByRole('link', { name: 'Finance flow' })).toHaveAttribute('href', '/streams/1/runtime')
+      expect(screen.getByRole('link', { name: 'R-0042' })).toHaveAttribute('href', '/routes/42/edit')
+      expect(screen.getByRole('link', { name: 'Investigate R-0042 delivery logs' })).toHaveAttribute(
+        'href', '/logs?route_id=42&stream_id=1&destination_id=10',
+      )
+      expect(screen.getByRole('link', { name: 'View Analytics sink destination' })).toHaveAttribute('href', '/destinations/10')
+      expect(screen.getByTestId('routes-flow-mobile-health-42')).toHaveTextContent('Healthy')
+      expect(screen.getByText(/downstream receiver ingestion not confirmed/i)).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Collapse Finance flow routes' }))
+      expect(screen.queryByRole('link', { name: 'R-0042' })).not.toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Expand Finance flow routes' }))
+      expect(screen.getByRole('link', { name: 'R-0042' })).toBeInTheDocument()
+    })
+  })
+
+  it('explains unverified inventory and refuses to declare a healthy Route on invalid or stale snapshots', () => {
+    onSmallViewport(() => {
+      const noSnapshot = mount(null)
+      expect(screen.getByTestId('routes-flow-inventory-state')).toHaveTextContent('Route inventory not verified')
+      expect(screen.queryByText('No routes configured yet.')).not.toBeInTheDocument()
+      noSnapshot.unmount()
+
+      const stale = evidence()
+      stale.updated_at = '2026-01-01T00:00:00Z'
+      const view = mount(stale)
+      expect(screen.getByTestId('routes-flow-mobile-health-42')).toHaveTextContent('Last reported Healthy')
+      view.unmount()
+
+      const invalidTime = evidence()
+      invalidTime.updated_at = 'not-a-timestamp'
+      mount(invalidTime)
+      expect(screen.getByTestId('routes-flow-mobile-health-42')).toHaveTextContent('Unverified')
+      expect(screen.getByTestId('routes-flow-snapshot-status')).toHaveTextContent('Snapshot time not verified')
+    })
+  })
+
+  it('progressively reveals 12 then 32 of 55 delivery routes without mounting every mobile card', async () => {
+    const user = userEvent.setup()
+    await onSmallViewport(async () => {
+      const s = evidence()
+      s.global.total_routes = 55
+      s.streams = [{ ...s.streams[0]!, route_count: 55 }]
+      s.routes = Array.from({ length: 55 }, (_, i) => ({
+        ...s.routes[0]!,
+        route_id: i + 1,
+        destination_id: i + 901,
+      }))
+      mount(s)
+      expect(screen.getAllByRole('link', { name: /^R-\d+$/ })).toHaveLength(12)
+      await user.click(screen.getByRole('button', { name: 'Show next Routes (12 of 55 shown)' }))
+      expect(screen.getAllByRole('link', { name: /^R-\d+$/ })).toHaveLength(32)
+      await user.click(screen.getByRole('button', { name: 'Collapse Finance flow routes' }))
+      expect(screen.queryByRole('link', { name: 'R-0032' })).not.toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Expand Finance flow routes' }))
+      expect(screen.getAllByRole('link', { name: /^R-\d+$/ })).toHaveLength(32)
+      expect(screen.getByRole('button', { name: 'Show next Routes (32 of 55 shown)' })).toBeInTheDocument()
+    })
   })
 })
