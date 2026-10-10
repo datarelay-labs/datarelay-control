@@ -314,3 +314,30 @@ describe('Logs Explorer Columns menu accessibility', () => {
     expect(trigger).toHaveFocus()
   })
 })
+
+describe('Logs Explorer invalid manually entered investigation IDs', () => {
+  it('ignores bad ID-scoped API filters, explains the ignored values and preserves matching evidence', async () => {
+    const user = userEvent.setup()
+    const { fetchPage } = setup([row(72, 2, 42, 'Real Route 42 evidence remains visible')])
+    render(
+      <MemoryRouter initialEntries={['/logs?route_id=0&stream_id=9007199254740992&destination_id=-2']}>
+        <LogsExplorerPage />
+      </MemoryRouter>,
+    )
+    await waitFor(() => {
+      const request = fetchPage.mock.calls.at(-1)?.[0]
+      expect(request?.route_id).toBeUndefined()
+      expect(request?.stream_id).toBeUndefined()
+      expect(request?.destination_id).toBeUndefined()
+    })
+    expect(await screen.findByText('Real Route 42 evidence remains visible')).toBeInTheDocument()
+    const active = screen.getByRole('region', { name: 'Active URL filters' })
+    expect(active).toHaveTextContent('Invalid Stream ID ignored')
+    expect(active).toHaveTextContent('Invalid Route ID ignored')
+    expect(active).toHaveTextContent('Invalid Destination ID ignored')
+    expect(active).not.toHaveTextContent('Route #0')
+    await user.click(screen.getByRole('button', { name: 'Remove invalid route filter' }))
+    expect(active).not.toHaveTextContent('Invalid Route ID ignored')
+    expect(await screen.findByText('Real Route 42 evidence remains visible')).toBeInTheDocument()
+  })
+})

@@ -41,6 +41,7 @@ import {
   deliveryOutcomeCountsFromRows,
   metricsWindowFromTimeRangeLabel,
   safeCtxInt,
+  safeOperationalResourceId,
   stageChipText,
 } from './logs-console-helpers'
 import { LogDetailDrawer } from './log-detail-drawer'
@@ -318,19 +319,14 @@ export function LogsExplorerPage() {
   const navigate = useNavigate()
   const location = useLocation()
 
-  const streamIdFromRoute = useMemo(() => {
-    if (!streamSlug || !/^\d+$/.test(streamSlug)) return undefined
-    return Number(streamSlug)
-  }, [streamSlug])
+  const streamIdFromRoute = useMemo(() => safeOperationalResourceId(streamSlug), [streamSlug])
 
   const routeIdFromQuery = useMemo(() => {
-    const r = searchParams.get('route_id')
-    return r && /^\d+$/.test(r) ? Number(r) : undefined
+    return safeOperationalResourceId(searchParams.get('route_id'))
   }, [searchParams])
 
   const destinationIdFromQuery = useMemo(() => {
-    const r = searchParams.get('destination_id')
-    return r && /^\d+$/.test(r) ? Number(r) : undefined
+    return safeOperationalResourceId(searchParams.get('destination_id'))
   }, [searchParams])
 
   const runIdFromQuery = useMemo(() => {
@@ -350,11 +346,15 @@ export function LogsExplorerPage() {
   const deliveryApiFilters = useMemo(() => resolveDeliveryLogApiFilters(searchParams), [searchParams])
 
   const streamIdFromQuery = useMemo(() => {
-    const r = searchParams.get('stream_id')
-    return r && /^\d+$/.test(r) ? Number(r) : undefined
+    return safeOperationalResourceId(searchParams.get('stream_id'))
   }, [searchParams])
 
   const effectiveStreamIdForApi = streamIdFromRoute ?? streamIdFromQuery
+  const invalidResourceUrlFilters = [
+    { key: 'stream_id', label: 'Stream', id: streamIdFromQuery },
+    { key: 'route_id', label: 'Route', id: routeIdFromQuery },
+    { key: 'destination_id', label: 'Destination', id: destinationIdFromQuery },
+  ].filter(({ key, id }) => (searchParams.get(key)?.trim() ?? '') !== '' && id == null)
 
   const [search, setSearch] = useState('')
   const [timeRange, setTimeRange] = useState<string>(TIME_RANGE_OPTIONS[1])
@@ -1310,7 +1310,24 @@ export function LogsExplorerPage() {
                   Loading…
                 </span>
               ) : null}
-              {searchParams.get('stream_id') ? (
+              {invalidResourceUrlFilters.map(({ key, label }) => (
+                <span
+                  key={key}
+                  data-testid={`logs-invalid-${key}-filter`}
+                  className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 py-0.5 pl-2 pr-1 text-[11px] font-medium text-amber-950 dark:border-amber-700/50 dark:bg-amber-950/35 dark:text-amber-100"
+                >
+                  Invalid {label} ID ignored
+                  <button
+                    type="button"
+                    className="rounded-full p-0.5 hover:bg-amber-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500 dark:hover:bg-amber-900/50"
+                    aria-label={`Remove invalid ${label.toLowerCase()} filter`}
+                    onClick={() => removeSearchParamKey(key)}
+                  >
+                    <X className="h-3 w-3" aria-hidden />
+                  </button>
+                </span>
+              ))}
+              {streamIdFromQuery != null ? (
                 <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 py-0.5 pl-2 pr-1 text-[11px] font-medium text-slate-800 dark:border-gdc-border dark:bg-gdc-input dark:text-slate-100">
                   Stream · {summaryStreamLabel ?? `Stream #${searchParams.get('stream_id')}`}
                   <button
@@ -1323,7 +1340,7 @@ export function LogsExplorerPage() {
                   </button>
                 </span>
               ) : null}
-              {searchParams.get('route_id') ? (
+              {routeIdFromQuery != null ? (
                 <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 py-0.5 pl-2 pr-1 text-[11px] font-medium text-slate-800 dark:border-gdc-border dark:bg-gdc-input dark:text-slate-100">
                   Route · {summaryRouteLabel ?? `Route #${searchParams.get('route_id')}`}
                   <button
@@ -1336,7 +1353,7 @@ export function LogsExplorerPage() {
                   </button>
                 </span>
               ) : null}
-              {searchParams.get('destination_id') ? (
+              {destinationIdFromQuery != null ? (
                 <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 py-0.5 pl-2 pr-1 text-[11px] font-medium text-slate-800 dark:border-gdc-border dark:bg-gdc-input dark:text-slate-100">
                   Destination · {summaryDestinationLabel ?? `Destination #${searchParams.get('destination_id')}`}
                   <button

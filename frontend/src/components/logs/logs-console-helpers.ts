@@ -1,5 +1,12 @@
 import type { LogExplorerRow } from './logs-types'
 
+/** Never turn manually pasted URL identities into false-empty delivery evidence. */
+export function safeOperationalResourceId(raw: string | null | undefined): number | undefined {
+  if (raw == null || !/^\d+$/.test(raw)) return undefined
+  const id = Number(raw)
+  return Number.isSafeInteger(id) && id > 0 ? id : undefined
+}
+
 export type HistogramBucket = { bucket: string; error: number; warn: number; info: number }
 
 export function metricsWindowFromTimeRangeLabel(label: string): '15m' | '1h' | '6h' | '24h' {
