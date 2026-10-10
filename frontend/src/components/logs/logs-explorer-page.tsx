@@ -380,6 +380,9 @@ export function LogsExplorerPage() {
   const [pulseFetch, setPulseFetch] = useState(false)
   const [columnsOpen, setColumnsOpen] = useState(false)
   const columnsRef = useRef<HTMLDivElement | null>(null)
+  const columnsTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const columnsMenuRef = useRef<HTMLDivElement | null>(null)
+  const focusLastColumnOnOpenRef = useRef(false)
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set())
   const documentVisible = useDocumentVisible()
   const [logRows, setLogRows] = useState<LogExplorerRow[]>([])
@@ -508,6 +511,16 @@ export function LogsExplorerPage() {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    if (!columnsOpen) return
+    const enabled = columnsMenuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitemcheckbox"]:not([disabled])')
+    const focused = enabled && enabled.length > 0
+      ? enabled[focusLastColumnOnOpenRef.current ? enabled.length - 1 : 0]
+      : undefined
+    focused?.focus()
+    focusLastColumnOnOpenRef.current = false
+  }, [columnsOpen])
 
   useEffect(() => {
     function onDoc(e: MouseEvent) {
@@ -1731,10 +1744,22 @@ export function LogsExplorerPage() {
             </button>
             <div className="relative" ref={columnsRef}>
               <button
+                ref={columnsTriggerRef}
                 type="button"
-                onClick={() => setColumnsOpen((o) => !o)}
-                className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-elevated dark:text-slate-200 dark:hover:bg-gdc-card"
+                onClick={() => {
+                  focusLastColumnOnOpenRef.current = false
+                  setColumnsOpen((o) => !o)
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                    event.preventDefault()
+                    focusLastColumnOnOpenRef.current = event.key === 'ArrowUp'
+                    setColumnsOpen(true)
+                  }
+                }}
+                className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-400 dark:border-gdc-border dark:bg-gdc-elevated dark:text-slate-200 dark:hover:bg-gdc-card"
                 aria-expanded={columnsOpen}
+                aria-haspopup="menu"
               >
                 <Settings2 className="h-3.5 w-3.5" aria-hidden />
                 Columns
@@ -1742,7 +1767,30 @@ export function LogsExplorerPage() {
               </button>
               {columnsOpen ? (
                 <div
+                  ref={columnsMenuRef}
                   role="menu"
+                  aria-label="Visible log columns"
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') {
+                      event.preventDefault()
+                      setColumnsOpen(false)
+                      columnsTriggerRef.current?.focus()
+                      return
+                    }
+                    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+                    event.preventDefault()
+                    const controls = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitemcheckbox"]:not([disabled])'))
+                    if (controls.length === 0) return
+                    const current = controls.findIndex((item) => item === document.activeElement)
+                    const next = event.key === 'Home'
+                      ? 0
+                      : event.key === 'End'
+                        ? controls.length - 1
+                        : event.key === 'ArrowDown'
+                          ? (current + 1) % controls.length
+                          : (current + controls.length - 1) % controls.length
+                    controls[next]?.focus()
+                  }}
                   className="absolute right-0 z-40 mt-1 min-w-[13rem] rounded-lg border border-slate-200 bg-white py-1 text-[12px] shadow-lg dark:border-gdc-border dark:bg-gdc-elevated"
                 >
                   {(Object.keys(COLUMN_LABELS) as ColumnKey[])
@@ -1754,7 +1802,7 @@ export function LogsExplorerPage() {
                         role="menuitemcheckbox"
                         aria-checked={visibleCols[key]}
                         disabled={visibleCols[key] && visibleColCount <= 2}
-                        className="flex w-full items-center gap-2 px-3 py-2 text-left font-medium hover:bg-slate-50 disabled:opacity-40 dark:hover:bg-gdc-card"
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left font-medium hover:bg-slate-50 focus-visible:bg-violet-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-400 disabled:opacity-40 dark:hover:bg-gdc-card dark:focus-visible:bg-gdc-rowHover"
                         onClick={() => toggleCol(key)}
                       >
                         <span

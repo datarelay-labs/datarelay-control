@@ -289,3 +289,28 @@ describe('Logs Explorer keyboard-operated export menu', () => {
     expect(trigger).toHaveFocus()
   })
 })
+
+
+describe('Logs Explorer Columns menu accessibility', () => {
+  it('uses arrow keys to navigate visible column toggles and Escape restores toolbar focus', async () => {
+    const user = userEvent.setup()
+    setup([row(72, 2, 42, 'Columns keyboard navigation')])
+    render(<MemoryRouter initialEntries={['/logs?route_id=42']}><LogsExplorerPage /></MemoryRouter>)
+    expect(await screen.findByText('Columns keyboard navigation')).toBeInTheDocument()
+    const trigger = screen.getByRole('button', { name: 'Columns' })
+    trigger.focus()
+    await user.keyboard('{ArrowDown}')
+    const options = screen.getAllByRole('menuitemcheckbox')
+    expect(options.length).toBeGreaterThan(2)
+    expect(options[0]).toHaveFocus()
+    await user.keyboard('{ArrowDown}')
+    expect(options[1]).toHaveFocus()
+    await user.keyboard('{Home}')
+    expect(options[0]).toHaveFocus()
+    await user.keyboard('{End}')
+    expect(options.at(-1)).toHaveFocus()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('menuitemcheckbox')).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
+  })
+})
