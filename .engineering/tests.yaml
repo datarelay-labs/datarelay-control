@@ -7,8 +7,6 @@ paths:
     domains: [backend, runtime]
   "tests/**":
     domains: [backend]
-  "scripts/testing/verify_pinned_foundation_packages.py":
-    domains: [backend, release]
   "alembic/**":
     domains: [persistence]
   "e2e/**":
@@ -27,6 +25,8 @@ paths:
     domains: [documentation]
   "scripts/docs/**":
     domains: [documentation]
+  "scripts/testing/verify_pinned_foundation_packages.py":
+    domains: [backend, release]
 
 scenarios:
   - id: FRONTEND-BUILD-AFFECTED
@@ -53,20 +53,6 @@ scenarios:
     invariants:
       - "Affected backend behavior passes before broader qualification."
     origin: "docs/testing/cursor-development-workflow.md"
-    release_gate: true
-
-  - id: BACKEND-FOUNDATION-PINNED-INTEGRITY
-    name: Verify immutable local Foundation package family
-    level: static
-    cost: cheap
-    domains: [backend, release]
-    triggers: [affected, pr]
-    platforms: [linux]
-    command: "python3 -m pytest -q tests/test_pinned_foundation_packages.py && python3 scripts/testing/verify_pinned_foundation_packages.py"
-    invariants:
-      - "All ten local Foundation packages match the immutable exact-version lock and npm SHA512 tarball integrity."
-      - "The canonical Foundation stage-release tree SHA256 matches unpacked package files."
-      - "Mutated archives and staged tree digests fail closed before consumption."
     release_gate: true
 
   - id: RUNTIME-E2E-SMOKE
@@ -164,4 +150,18 @@ scenarios:
       - "Required exhaustive user-test documents remain executable ChatGPT-owned contracts."
       - "This CI/static contract check never counts as execution PASS for either exhaustive user test; release evidence must come from the active release Work Packet."
     origin: ".engineering/release.yaml"
+    release_gate: true
+
+  - id: BACKEND-FOUNDATION-PINNED-INTEGRITY
+    name: Verify immutable local Foundation package family
+    level: static
+    cost: cheap
+    domains: [backend, release]
+    triggers: [affected, pr]
+    platforms: [linux]
+    command: "python3 -m pytest -q tests/test_pinned_foundation_packages.py && python3 scripts/testing/verify_pinned_foundation_packages.py"
+    invariants:
+      - "All ten local Foundation packages match the immutable exact-version lock and npm SHA512 tarball integrity."
+      - "The canonical Foundation stage-release tree SHA256 matches unpacked package files."
+      - "Mutated archives and staged tree digests fail closed before consumption."
     release_gate: true
