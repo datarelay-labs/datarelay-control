@@ -105,7 +105,7 @@ export function TopHeader({
               <div className="min-w-0 space-y-0.5">
                 <p className="text-xs leading-snug text-slate-600 dark:text-gdc-muted">{runtimeSummary}</p>
                 {showRuntimeStatus && runtimeStatusEvidence ? (
-                  <p data-testid="shell-runtime-evidence" className="text-[11px] leading-snug text-slate-500 dark:text-gdc-muted">
+                  <p data-testid="shell-runtime-evidence" role="status" aria-live="polite" aria-atomic="true" className="text-[11px] leading-snug text-slate-500 dark:text-gdc-muted">
                     {runtimeStatusEvidence}
                   </p>
                 ) : null}
