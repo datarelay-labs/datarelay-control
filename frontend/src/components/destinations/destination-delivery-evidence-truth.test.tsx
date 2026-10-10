@@ -3,7 +3,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
 import type { RuntimeLogSearchItem } from '../../api/types/gdcApi'
 import { mapLogToDeliveryActivity, mapLogToRecentFailure } from './destination-runtime-metrics'
-import { DeliveryActivityTable } from './destination-detail-page'
+import { DeliveryActivityTable, RecentFailuresList } from './destination-detail-page'
 
 const routeLabels = new Map([[42, 'Route #42']])
 function evidence(patch: Partial<RuntimeLogSearchItem> = {}): RuntimeLogSearchItem {
@@ -72,6 +72,27 @@ describe('Destination delivery evidence integrity', () => {
     expect(row.latencyMs).toBeNull()
     showLog(evidence({ route_id: -1, stream_id: Number.NaN }))
     expect(screen.queryByRole('link', { name: /Investigate Route.*delivery logs/ })).not.toBeInTheDocument()
+  })
+
+  it('investigates a recorded failure from the exact Route and Stream, not the entire Destination log corpus', () => {
+    const failure = mapLogToRecentFailure(evidence({
+      status: 'FAILED', level: 'ERROR', error_code: null,
+    }), routeLabels)
+    render(<MemoryRouter><RecentFailuresList failures={[failure]} destinationId={10} compact /></MemoryRouter>)
+    expect(screen.getByRole('link', { name: 'Investigate Route #42 recent failures' }))
+      .toHaveAttribute('href', '/logs?route_id=42&stream_id=2&destination_id=10')
+    expect(screen.getByText('UNCLASSIFIED')).toBeInTheDocument()
+  })
+
+  it('keeps unknown failure Route attribution visibly unavailable rather than inventing a link', () => {
+    const failure = mapLogToRecentFailure(evidence({
+      status: 'FAILED', level: 'ERROR', route_id: -2, stream_id: 0,
+    }), routeLabels)
+    expect(failure.routeName).toBe('—')
+    expect(failure.routeId).toBeNull()
+    expect(failure.streamId).toBeNull()
+    render(<MemoryRouter><RecentFailuresList failures={[failure]} destinationId={10} /></MemoryRouter>)
+    expect(screen.queryByRole('link', { name: /Investigate .* recent failures/ })).not.toBeInTheDocument()
   })
 
   it('only scopes to positively observed IDs and retains confirmed failure evidence without creating a false receiver result', () => {

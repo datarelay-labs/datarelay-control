@@ -308,14 +308,15 @@ export function mapLogToRecentFailure(log: RuntimeLogSearchItem, routeNameById: 
     ? (code as (typeof allowed)[number])
     : ('UNCLASSIFIED' as const)
 
+  const routeId = log.route_id != null && Number.isSafeInteger(log.route_id) && log.route_id > 0 ? log.route_id : null
+  const streamId = log.stream_id != null && Number.isSafeInteger(log.stream_id) && log.stream_id > 0 ? log.stream_id : null
   return {
     id: String(log.id),
     at: log.created_at?.slice(0, 19).replace('T', ' ') ?? '—',
     code: normalized,
-    routeName:
-      log.route_id != null
-        ? routeNameById.get(log.route_id) ?? `Route #${log.route_id}`
-        : '—',
+    routeId,
+    streamId,
+    routeName: routeId != null ? routeNameById.get(routeId) ?? `Route #${routeId}` : '—',
     failedEvents: 1,
     message: (log.message ?? '').trim(),
   }

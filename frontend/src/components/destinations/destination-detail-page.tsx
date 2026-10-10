@@ -371,7 +371,7 @@ export function DestinationDetailPage() {
             emptyMessage={runtime.failed24h == null ? 'Failure history not verified. Log evidence may be unavailable or outside the selected window.' : 'No failed delivery events in the last 24 hours.'}
             failuresOnly
           />
-          <RecentFailuresList failures={runtime.recentFailures} />
+          <RecentFailuresList failures={runtime.recentFailures} destinationId={backendDestinationNumericId} />
         </div>
       ) : null}
 
@@ -682,16 +682,18 @@ function RecentFailuresSidebar({
           View all
         </Link>
       </div>
-      <RecentFailuresList failures={failures} compact />
+      <RecentFailuresList failures={failures} destinationId={destinationId} compact />
     </section>
   )
 }
 
-function RecentFailuresList({
+export function RecentFailuresList({
   failures,
+  destinationId,
   compact,
 }: {
   failures: ReturnType<typeof useDestinationDetailData>['recentFailures']
+  destinationId: number
   compact?: boolean
 }) {
   if (failures.length === 0) {
@@ -710,7 +712,21 @@ function RecentFailuresList({
           >
             {f.code}
           </span>
-          <p className="mt-1 text-[11px] font-medium text-slate-800 dark:text-slate-200">{f.routeName}</p>
+          <p className="mt-1 text-[11px] font-medium text-slate-800 dark:text-slate-200">
+            {f.routeId != null ? (
+              <Link
+                to={logsExplorerPath({
+                  route_id: f.routeId,
+                  stream_id: f.streamId ?? undefined,
+                  destination_id: destinationId,
+                })}
+                aria-label={`Investigate ${f.routeName} recent failures`}
+                className="inline-flex min-h-9 items-center font-semibold text-violet-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:text-violet-300"
+              >
+                {f.routeName}
+              </Link>
+            ) : f.routeName}
+          </p>
           {f.message ? <p className="text-[11px] text-slate-600 dark:text-gdc-muted">{f.message}</p> : null}
         </li>
       ))}
