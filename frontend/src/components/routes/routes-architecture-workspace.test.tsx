@@ -296,6 +296,41 @@ describe('Data Flows topology: operator priority and bounded exploration', () =>
     expect(screen.getByTestId('routes-architecture-attention')).toHaveTextContent('1 disabled')
   })
 
+  it('shows a real failing Destination separately from a still-Healthy gateway Route', () => {
+    const data = snapshotFor([route(80, 1, 180, 'HEALTHY', true)])
+    data.destinations[0]!.health_status = 'ERROR'
+    render(<GraphHarness snapshot={data} />)
+    const inspector = screen.getByTestId('routes-architecture-inspector')
+    expect(within(inspector).getByText('Route health').nextElementSibling).toHaveTextContent('Healthy')
+    expect(within(inspector).getByText('Destination health (snapshot)').nextElementSibling).toHaveTextContent('Error')
+    expect(within(inspector).getByText('Receiver-confirmed ingestion').nextElementSibling).toHaveTextContent('Not verified')
+  })
+
+  it('distinguishes an explicitly disabled Destination from an unavailable Destination snapshot', () => {
+    const data = snapshotFor([route(83, 1, 183, 'HEALTHY', true)])
+    data.destinations[0]!.enabled = false
+    render(<GraphHarness snapshot={data} />)
+    const inspector = screen.getByTestId('routes-architecture-inspector')
+    expect(within(inspector).getByText('Route health').nextElementSibling).toHaveTextContent('Disabled')
+    expect(within(inspector).getByText('Destination health (snapshot)').nextElementSibling).toHaveTextContent('Disabled')
+    expect(within(inspector).getByText('Receiver-confirmed ingestion').nextElementSibling).toHaveTextContent('Not verified')
+  })
+
+  it('shows unknown or stale receiving Destination health without inventing current success', () => {
+    const data = snapshotFor([route(81, 1, 181, 'HEALTHY', true)])
+    data.destinations = []
+    const { rerender } = render(<GraphHarness snapshot={data} />)
+    expect(within(screen.getByTestId('routes-architecture-inspector')).getByText('Destination health (snapshot)').nextElementSibling)
+      .toHaveTextContent('Not verified')
+
+    const stale = snapshotFor([route(82, 1, 182, 'HEALTHY', true)])
+    stale.destinations[0]!.health_status = 'DEGRADED'
+    stale.updated_at = '2026-01-01T00:00:00Z'
+    rerender(<GraphHarness snapshot={stale} />)
+    expect(within(screen.getByTestId('routes-architecture-inspector')).getByText('Destination health (snapshot)').nextElementSibling)
+      .toHaveTextContent('Stale · last reported Warning')
+  })
+
   it('excludes disabled paths from error queue and reports no errors without declaring delivery verified', () => {
     render(<GraphHarness snapshot={snapshotFor([
       route(8, 1, 108, 'ERROR', false),

@@ -21,7 +21,7 @@ import {
   routeHealthBadgeClass,
   routePublicId,
 } from './routes-flow-helpers'
-import { formatFailurePolicy, type RouteConsoleRow } from './routes-overview-helpers'
+import { formatFailurePolicy, uiStatusFromOperationalHealth, type RouteConsoleRow } from './routes-overview-helpers'
 
 export type RoutesArchitectureWorkspaceProps = {
   snapshot: OperationalSnapshotResponse | null
@@ -57,6 +57,11 @@ export function RoutesArchitectureWorkspace({
   const selectedRow = consoleRows.find((row) => row.route.id === selectedRoute?.routeId)
   const inspectedMetric = snapshot?.routes.find((route) =>
     route.route_id === selectedRoute?.routeId && route.stream_id === selectedGroup?.streamId)
+  const receivingDestination = snapshot?.destinations.find((destination) =>
+    destination.destination_id === selectedRoute?.destinationId)
+  const receivingDestinationHealth = receivingDestination
+    ? uiStatusFromOperationalHealth(receivingDestination.health_status, receivingDestination.enabled)
+    : null
   const evidenceStale = requestFailed || isRouteSnapshotStale(snapshot?.updated_at)
   // An empty graph is not proof of a fresh installation: the Route list may
   // be incomplete while a healthy Stream exists, or the read may be stale.
@@ -517,6 +522,16 @@ export function RoutesArchitectureWorkspace({
                             : evidenceStale
                               ? `Stale · last reported ${selectedRoute.health}`
                               : selectedRoute.health}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-[11px] text-slate-500 dark:text-gdc-muted">Destination health (snapshot)</dt>
+                      <dd className="mt-1 text-xs font-semibold text-slate-800 dark:text-slate-100">
+                        {receivingDestinationHealth
+                          ? evidenceStale
+                            ? `Stale · last reported ${receivingDestinationHealth}`
+                            : receivingDestinationHealth
+                          : 'Not verified by this snapshot'}
                       </dd>
                     </div>
                     <div>
