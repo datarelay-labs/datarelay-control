@@ -1627,7 +1627,9 @@ export function StreamRuntimeDetailPage() {
             loading={metricsLoading && !runtimeMetrics}
             routeToggleBusyId={routeToggleBusyId}
             onToggleEnabled={onToggleRouteEnabled}
-            routeActionsReadOnly={!canRuntimeControl}
+            // Route edit/probe UI requires workspace mutation authority as well as
+            // runtime control; inconsistent capability claims must fail closed.
+            routeActionsReadOnly={!canRuntimeControl || !canMutateWorkspace}
           />
         </div>
       </section>
