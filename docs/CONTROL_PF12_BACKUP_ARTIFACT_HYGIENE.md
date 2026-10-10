@@ -45,10 +45,22 @@ capable of replacing both files can rewrite the digest.
 
 The new source-only tests replace `pg_dump` with a fake executable and
 `date` with fixed UTC output, passing only a fake test URL; **no
-PostgreSQL socket, live database, or restore command is touched**.
+PostgreSQL socket, live database or real restore operation is touched**.
 The tests cover both gzip modes, archive/digest read-only mode 0600,
-checksum matches actual bytes, refusal to overwrite an existing archive,
-partial failed dumps and missing credentials.
+checksum matches actual bytes, refusal to overwrite an existing archive
+or dangling symlinks, partial failed dumps and missing credentials.
+
+The restore script now checks its named archive's actual SHA256 bytes against
+the accompanying archive-specific sidecar **before any PostgreSQL backup or
+restore connection**. Corrupt bytes, a sidecar referring to another file,
+empty archives and symlinked evidence are rejected. For existing legacy
+archives with no sidecar, the operator must additionally set
+`ALLOW_UNVERIFIED_LEGACY_DUMP=yes`; this intentionally does **not** claim
+cryptographic or isolated-restore verification. Negative tests run the
+restore shell preflight with **fake pg_dump and pg_restore executables**,
+ensuring no actual DB connection, backup, recovery or user data mutation.
+Actual restore remains an explicit privileged operation requiring separate
+authorization and an approved isolated environment.
 
 Actual Control B5 closure still requires authorized encrypted-at-rest
 backups with key custody, reliable retention, actual product-owned

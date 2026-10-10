@@ -110,6 +110,107 @@ def test_backup_refuses_broken_symlink_artifact_collisions(tmp_path, extension):
     assert not outside.exists()
 
 
+def _restore_preflight(tmp_path: Path, archive: Path, *, allow_legacy: bool = False):
+    # No network or DB access: fake pg_dump refuses all real pre-restore
+    # backup calls, even when checksum verification passes.
+    fake_bin = tmp_path / "restore-bin"
+    fake_bin.mkdir(exist_ok=True)
+    fake_pg_dump = fake_bin / "pg_dump"
+    fake_pg_dump.write_text("#!/bin/sh\necho SAFE_FAKE_PG_DUMP_REJECTED\nexit 47\n")
+    fake_pg_dump.chmod(0o700)
+    fake_pg_restore = fake_bin / "pg_restore"
+    fake_pg_restore.write_text("#!/bin/sh\necho UNEXPECTED_RESTORE\nexit 67\n")
+    fake_pg_restore.chmod(0o700)
+    env = {
+        **os.environ,
+        "PATH": str(fake_bin) + os.pathsep + os.environ.get("PATH", ""),
+        "DATABASE_URL": "postgresql://fake:fake@127.0.0.1:5432/gdc_pf12_fake_only",
+        "CONFIRM_RESTORE": "yes",
+        "ALLOW_UNVERIFIED_LEGACY_DUMP": "yes" if allow_legacy else "no",
+        "PRE_RESTORE_BACKUP_DIR": str(tmp_path / "fake-pre-restore"),
+    }
+    return subprocess.run(
+        ["bash", str(ROOT / "scripts/ops/restore-postgres.sh"), str(archive)],
+        env=env, capture_output=True, text=True, check=False, timeout=25,
+    )
+
+
+def test_restore_refuses_corrupted_archive_before_pre_backup_or_db_work(tmp_path):
+    archive = tmp_path / "owned.dump"
+    archive.write_bytes(b"CHANGED_AFTER_ARCHIVE")
+    Path(f"{archive}.sha256").write_text("0" * 64 + f"  {archive.name}\n")
+    result = _restore_preflight(tmp_path, archive)
+    assert result.returncode != 0
+    assert "digest verification failed" in result.stderr
+    assert "SAFE_FAKE_PG_DUMP_REJECTED" not in result.stdout + result.stderr
+    assert "UNEXPECTED_RESTORE" not in result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("gzip", [False, True])
+def test_restore_validates_real_export_digest_before_fake_pre_backup(tmp_path, gzip):
+    result, folder = _fake_backup(tmp_path, gzip=gzip)
+    assert result.returncode == 0
+    archive = next(folder.glob("*.dump.gz" if gzip else "*.dump"))
+    restored = _restore_preflight(tmp_path, archive)
+    assert restored.returncode != 0
+    assert "Backup digest verified" in restored.stdout
+    assert "SAFE_FAKE_PG_DUMP_REJECTED" in restored.stdout
+    assert "UNEXPECTED_RESTORE" not in restored.stdout + restored.stderr
+
+
+def test_restore_rejects_zero_byte_archive_even_with_matching_sha(tmp_path):
+    archive = tmp_path / "empty.dump"
+    archive.write_bytes(b"")
+    digest = hashlib.sha256(b"").hexdigest()
+    Path(f"{archive}.sha256").write_text(f"{digest}  {archive.name}\n")
+    result = _restore_preflight(tmp_path, archive)
+    assert result.returncode != 0
+    assert "digest verification failed" in result.stderr
+    assert "SAFE_FAKE_PG_DUMP_REJECTED" not in result.stdout + result.stderr
+
+
+def test_restore_requires_explicit_legacy_override_without_digest(tmp_path):
+    archive = tmp_path / "legacy.dump"
+    archive.write_bytes(b"LEGACY_ARCHIVE_WITHOUT_RECEIPT")
+    result = _restore_preflight(tmp_path, archive)
+    assert result.returncode != 0
+    assert "unverified legacy backup" in result.stderr
+    assert "SAFE_FAKE_PG_DUMP_REJECTED" not in result.stdout + result.stderr
+
+
+def test_restore_accepts_actual_bytes_checksum_into_only_fake_pre_restore_guard(tmp_path):
+    archive = tmp_path / "owned.dump"
+    archive.write_bytes(b"SAFE_FAKE_DB_ARCHIVE")
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    Path(f"{archive}.sha256").write_text(f"{digest}  {archive.name}\n")
+    result = _restore_preflight(tmp_path, archive)
+    assert result.returncode != 0
+    assert "Backup digest verified" in result.stdout
+    assert "SAFE_FAKE_PG_DUMP_REJECTED" in result.stdout
+    assert "UNEXPECTED_RESTORE" not in result.stdout + result.stderr
+
+
+def test_restore_legacy_override_is_explicit_and_never_claims_verified(tmp_path):
+    archive = tmp_path / "legacy.dump"
+    archive.write_bytes(b"LEGACY_ARCHIVE_WITHOUT_RECEIPT")
+    result = _restore_preflight(tmp_path, archive, allow_legacy=True)
+    assert result.returncode != 0
+    assert "UNVERIFIED LEGACY ARCHIVE" in result.stdout
+    assert "SAFE_FAKE_PG_DUMP_REJECTED" in result.stdout
+    assert "Backup digest verified" not in result.stdout
+
+
+def test_restore_rejects_untrusted_sidecar_filename_even_with_matching_digest(tmp_path):
+    archive = tmp_path / "owned.dump"
+    archive.write_bytes(b"FAKE_BACKUP")
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    Path(f"{archive}.sha256").write_text(f"{digest}  ../other.dump\n")
+    result = _restore_preflight(tmp_path, archive)
+    assert result.returncode != 0
+    assert "digest verification failed" in result.stderr
+    assert "SAFE_FAKE_PG_DUMP_REJECTED" not in result.stdout + result.stderr
+
+
 def test_export_fails_closed_without_real_postgres_binary_or_credentials(tmp_path):
     folder = tmp_path / "owned-backups"
     result = subprocess.run(
