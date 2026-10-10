@@ -251,6 +251,60 @@ describe('Flow-First expert delivery table — runtime evidence and keyboard saf
     expect(screen.getByTestId('routes-flow-expanded-summary')).toHaveTextContent('0 of 2 Streams expanded')
   })
 
+  it('renders a bounded first 12 Routes and allows bounded progressive inspection of 55 Routes', async () => {
+    const user = userEvent.setup()
+    const base = evidence()
+    const many = {
+      ...base,
+      global: { ...base.global, total_routes: 55 },
+      streams: [{ ...base.streams[0]!, route_count: 55 }],
+      routes: Array.from({ length: 55 }, (_, i) => ({
+        ...base.routes[0]!, route_id: i + 1, destination_id: 901 + i,
+      })),
+    }
+    mount(many)
+    expect(screen.getAllByRole('link', { name: /^R-\d+$/ })).toHaveLength(12)
+    expect(screen.getByRole('button', { name: 'Show next Routes (12 of 55 shown)' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'R-0055' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Show next Routes (12 of 55 shown)' }))
+    expect(screen.getAllByRole('link', { name: /^R-\d+$/ })).toHaveLength(32)
+    await user.click(screen.getByRole('button', { name: 'Show next Routes (32 of 55 shown)' }))
+    expect(screen.getAllByRole('link', { name: /^R-\d+$/ })).toHaveLength(52)
+    await user.click(screen.getByRole('button', { name: 'Show next Routes (52 of 55 shown)' }))
+    expect(screen.getAllByRole('link', { name: /^R-\d+$/ })).toHaveLength(55)
+    expect(screen.queryByRole('button', { name: /Show next Routes/ })).not.toBeInTheDocument()
+  })
+
+  it('preserves inspected route page count when Stream is collapsed and snapshot refreshes', async () => {
+    const user = userEvent.setup()
+    const base = evidence()
+    const many = {
+      ...base,
+      global: { ...base.global, total_routes: 48 },
+      streams: [{ ...base.streams[0]!, route_count: 48 }],
+      routes: Array.from({ length: 48 }, (_, i) => ({
+        ...base.routes[0]!, route_id: i + 1, destination_id: 901 + i,
+      })),
+    }
+    const view = mount(many)
+    await user.click(screen.getByRole('button', { name: 'Show next Routes (12 of 48 shown)' }))
+    expect(screen.getAllByRole('link', { name: /^R-\d+$/ })).toHaveLength(32)
+    await user.click(screen.getByRole('button', { name: 'Collapse Finance flow routes' }))
+    const refreshed = {
+      ...many, updated_at: new Date().toISOString(),
+      routes: many.routes.map((r) => ({ ...r, delivered_eps_1m: 5 })),
+    }
+    view.rerender(
+      <MemoryRouter>
+        <RoutesFlowTreeTable snapshot={refreshed} consoleRows={buildRouteRowsFromOperationalSnapshot(refreshed)} />
+      </MemoryRouter>,
+    )
+    expect(screen.queryByRole('link', { name: 'R-0001' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Expand Finance flow routes' }))
+    expect(screen.getAllByRole('link', { name: /^R-\d+$/ })).toHaveLength(32)
+    expect(screen.getByRole('button', { name: 'Show next Routes (32 of 48 shown)' })).toBeInTheDocument()
+  })
+
   it('loading from an unverified snapshot does not declare there are no Routes', () => {
     mount(null, true)
     expect(screen.queryByText('No routes configured yet.')).not.toBeInTheDocument()

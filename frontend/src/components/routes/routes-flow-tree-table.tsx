@@ -18,6 +18,8 @@ import type { OperationalSnapshotResponse } from '../../api/operationalSnapshot'
 import type { RouteConsoleRow } from './routes-overview-helpers'
 
 const INITIAL_EXPANDED_STREAM_LIMIT = 8
+const INITIAL_VISIBLE_ROUTES_PER_STREAM = 12
+const NEXT_ROUTE_PAGE_SIZE = 20
 
 export type RoutesFlowTreeTableProps = {
   snapshot: OperationalSnapshotResponse | null
@@ -199,6 +201,8 @@ function StreamFlowRows({
   onToggle: () => void
 }) {
   const routeCount = group.routes.length
+  const [visibleRouteCount, setVisibleRouteCount] = useState(INITIAL_VISIBLE_ROUTES_PER_STREAM)
+  const shownRouteCount = Math.min(visibleRouteCount, routeCount)
   return (
     <Fragment>
       <tr className={cn(opTr, 'bg-slate-50/60 dark:bg-gdc-section/50')}>
@@ -230,7 +234,7 @@ function StreamFlowRows({
         <td className={opTd} colSpan={3} />
       </tr>
       {expanded
-        ? group.routes.map((route, idx) => {
+        ? group.routes.slice(0, shownRouteCount).map((route, idx) => {
             const isLast = idx === group.routes.length - 1
             const prefix = isLast ? '└' : '├'
             return (
@@ -294,6 +298,21 @@ function StreamFlowRows({
             )
           })
         : null}
+      {expanded && shownRouteCount < routeCount ? (
+        <tr className={opTr}>
+          <td className={opTd} />
+          <td className={cn(opTd, 'pl-4')} colSpan={5}>
+            <button
+              type="button"
+              aria-label={`Show next Routes (${shownRouteCount} of ${routeCount} shown)`}
+              onClick={() => setVisibleRouteCount((previous) => Math.min(previous + NEXT_ROUTE_PAGE_SIZE, routeCount))}
+              className="min-h-9 rounded-md px-3 text-[11px] font-semibold text-violet-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:text-violet-300"
+            >
+              Show next Routes ({shownRouteCount} of {routeCount} shown)
+            </button>
+          </td>
+        </tr>
+      ) : null}
     </Fragment>
   )
 }
