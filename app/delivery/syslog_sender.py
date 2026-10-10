@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import select
 import socket
@@ -13,6 +14,7 @@ from typing import Any
 from app.delivery.syslog_tls import SyslogTlsConfig, build_syslog_tls_context, normalize_syslog_tls_config
 from app.formatters.config_resolver import resolve_formatter_config
 from app.formatters.message_prefix import MessagePrefixResolveContext, format_delivery_lines_syslog
+from app.rate_limit.process_destination_limiter import get_process_destination_rate_limiter
 from app.runtime.errors import DestinationSendError
 
 
@@ -185,6 +187,24 @@ class SyslogSender:
         if not host:
             raise DestinationSendError("Syslog destination requires host")
 
+        # Private, runtime-only Route pacing policy. Keep existing legacy
+        # max_events/per_seconds batch gating unchanged and never persist this.
+        udp_pacing = config.get("_route_udp_event_rate") if protocol == "udp" else None
+        udp_limiter = None
+        if udp_pacing is not None:
+            try:
+                route_id = int(udp_pacing["route_id"])
+                per_second = float(udp_pacing["per_second"])
+                burst_size = int(udp_pacing["burst_size"])
+                if (
+                    route_id == 0 or not math.isfinite(per_second) or per_second <= 0 or
+                    burst_size <= 0 or float(udp_pacing["burst_size"]) != burst_size
+                ):
+                    raise ValueError("invalid UDP pacing parameters")
+            except (TypeError, KeyError, ValueError, OverflowError) as exc:
+                raise DestinationSendError("Invalid UDP Route rate-limit policy") from exc
+            udp_limiter = get_process_destination_rate_limiter()
+
         pool_key = f"syslog-tcp:{host}:{port}"
         try:
             if protocol == "udp":
@@ -196,6 +216,15 @@ class SyslogSender:
                     sock.settimeout(timeout)
                     sock.connect((host, port))
                     for payload in payloads:
+                        if udp_limiter is not None:
+                            wait = udp_limiter.reserve_event(
+                                route_id,
+                                per_second=per_second,
+                                burst_size=burst_size,
+                                now=time.monotonic(),
+                            )
+                            if wait > 0:
+                                time.sleep(wait)
                         sock.send(payload)
                     time.sleep(min(0.05, max(timeout, 0.0)))
                     err = sock.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
