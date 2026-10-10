@@ -133,6 +133,20 @@ scenarios:
     origin: "docs/architecture/source-of-truth-index.md"
     release_gate: true
 
+  - id: BACKEND-PF11-PRODUCTION-WEBHOOK-FAIL-CLOSED
+    name: Production Governance Webhook startup cannot bypass egress policy
+    level: unit
+    cost: cheap
+    domains: [backend, runtime]
+    triggers: [affected, pr]
+    platforms: [linux]
+    command: "python3 -m pytest -q tests/test_pf11_webhook_startup_fail_closed.py tests/test_pf11_governance_delivery_transport.py"
+    invariants:
+      - "Production and prod startup never install legacy HttpWebhookSender without a qualified SSRF and egress boundary."
+      - "Default Governance Webhook sender remains unavailable, and genuine HTTP delivery is not claimed."
+      - "Explicit isolated SMTP and Webhook mock test contracts remain intact."
+    release_gate: true
+
   - id: PRE-RELEASE-EXHAUSTIVE-USER-TEST-CONTRACT
     name: Pre-release exhaustive user-test contract
     level: static
@@ -148,18 +162,4 @@ scenarios:
       - "Required exhaustive user-test documents remain executable ChatGPT-owned contracts."
       - "This CI/static contract check never counts as execution PASS for either exhaustive user test; release evidence must come from the active release Work Packet."
     origin: ".engineering/release.yaml"
-    release_gate: true
-
-  - id: BACKEND-PF11-PRODUCTION-WEBHOOK-FAIL-CLOSED
-    name: Production Governance Webhook startup cannot bypass egress policy
-    level: unit
-    cost: cheap
-    domains: [backend, runtime]
-    triggers: [affected, pr]
-    platforms: [linux]
-    command: "python3 -m pytest -q tests/test_pf11_webhook_startup_fail_closed.py tests/test_pf11_governance_delivery_transport.py"
-    invariants:
-      - "Production and prod startup never install legacy HttpWebhookSender without a qualified SSRF and egress boundary."
-      - "Default Governance Webhook sender remains unavailable, and genuine HTTP delivery is not claimed."
-      - "Explicit isolated SMTP and Webhook mock test contracts remain intact."
     release_gate: true
