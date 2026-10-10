@@ -117,6 +117,25 @@ describe('Flow-First expert delivery table — runtime evidence and keyboard saf
     expect(link).toHaveAttribute('href', '/streams/1/runtime')
   })
 
+  it('offers a read-only investigate → destination evidence path from the expert Route row', () => {
+    mount(evidence())
+    expect(screen.getByRole('link', { name: 'Investigate R-0042 delivery logs' }))
+      .toHaveAttribute('href', '/logs?route_id=42&stream_id=1&destination_id=10')
+    expect(screen.getByRole('link', { name: 'View Analytics sink destination' }))
+      .toHaveAttribute('href', '/destinations/10')
+    expect(screen.getByRole('link', { name: 'R-0042' }))
+      .toHaveAttribute('href', '/routes/42/edit')
+  })
+
+  it('does not invent a destination details link if the Route has no valid receiver ID', () => {
+    const s = evidence()
+    s.routes[0]!.destination_id = -2
+    mount(s)
+    expect(screen.queryByRole('link', { name: /View .* destination/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Investigate R-0042 delivery logs' }))
+      .toHaveAttribute('href', '/logs?route_id=42&stream_id=1')
+  })
+
   it('loading from an unverified snapshot does not declare there are no Routes', () => {
     mount(null, true)
     expect(screen.queryByText('No routes configured yet.')).not.toBeInTheDocument()

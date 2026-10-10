@@ -1,7 +1,7 @@
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { NAV_PATH, routeEditPath, streamRuntimePath } from '../../config/nav-paths'
+import { NAV_PATH, destinationDetailPath, logsExplorerPath, routeEditPath, streamRuntimePath } from '../../config/nav-paths'
 import { cn } from '../../lib/utils'
 import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
 import {
@@ -214,6 +214,28 @@ function StreamFlowRows({
                         {route.routeLabel !== routePublicId(route.routeId) ? route.routeLabel : routePublicId(route.routeId)}
                       </Link>
                       <div className="truncate text-[11px] text-slate-600 dark:text-gdc-muted">{route.destinationName}</div>
+                      <div className="mt-1 flex flex-wrap gap-2 text-[11px]">
+                        <Link
+                          to={logsExplorerPath({
+                            route_id: route.routeId,
+                            stream_id: group.streamId,
+                            destination_id: route.destinationId ?? undefined,
+                          })}
+                          aria-label={`Investigate ${routePublicId(route.routeId)} delivery logs`}
+                          className="font-medium text-violet-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:text-violet-300"
+                        >
+                          Delivery logs
+                        </Link>
+                        {route.destinationId != null ? (
+                          <Link
+                            to={destinationDetailPath(String(route.destinationId))}
+                            aria-label={`View ${route.destinationName} destination`}
+                            className="font-medium text-slate-600 hover:text-violet-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:text-gdc-mutedStrong dark:hover:text-violet-300"
+                          >
+                            Destination details
+                          </Link>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
                 </td>
