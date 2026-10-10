@@ -335,3 +335,7 @@ This is a **reconciliation of the already approved product UX backlog**, not a n
 GitHub Frontend CI on prior 3014e005 reported one failure in 307 test files: the existing violation-center-page.test.tsx deep-link investigation test checked violation-matched-rule synchronously after the detail drawer mounted, before its asynchronous detail API completed under CI load. GitHub job 113915419135 showed the drawer and page still loading, not a rejected detail or a broken correlation ID.
 
 The bounded regression repair waits for the actual detail content (findByTestId) and retains the original exact q-42 API argument and quarantine-link expectations. No Governance runtime, API, permission or product behavior changed. New exact-head full Frontend CI must pass before claiming a complete machine gate.
+
+### Batch 2 safety: reject unverified create-response Connector identities
+
+The contextual and standalone Connector create page now refuses a success-looking response unless the returned Connector ID is a positive safe integer. Before this change, a malformed API response such as ID 0 was fed directly to the parent Wizard and could be mistaken for a saved reusable resource. The error keeps the form open with explicit catalog verification guidance; it does not claim the upstream mutation definitely failed or automatically retry potentially duplicate creation. New RED→GREEN component regression covers the invalid-ID case. There is no API/schema/authorization change.

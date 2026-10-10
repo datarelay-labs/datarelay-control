@@ -324,6 +324,11 @@ export function NewConnectorWizardPage({
                 : 'generic_http',
         auth_type: isS3 || isDb || isRemote || isWebhook ? 'no_auth' : form.auth_type,
       })
+      if (!Number.isSafeInteger(created.id) || created.id <= 0) {
+        throw new Error(
+          'Connector creation response could not be verified. Check the Connector catalog before attempting another save.',
+        )
+      }
       if (onCreated) {
         onCreated(created.id)
         return

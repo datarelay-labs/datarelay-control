@@ -115,6 +115,33 @@ describe('Wizard first-run resource readiness', () => {
     })
   })
 
+  it('does not claim a usable Source when catalog identities cannot pass Wizard ID validation', () => {
+    const invalidConnector = catalog(1, 1)
+    invalidConnector.connectors[0]!.id = 0
+    invalidConnector.sources[0]!.connector_id = 0
+    expect(summarizeResourceReadiness(invalidConnector, [destination(true)]).source).toMatchObject({
+      state: 'not-verified',
+    })
+
+    const invalidSource = catalog(1, 1)
+    invalidSource.sources[0]!.id = Number.MAX_SAFE_INTEGER + 1
+    expect(summarizeResourceReadiness(invalidSource, [destination(true)]).source).toMatchObject({
+      state: 'not-verified',
+    })
+  })
+
+  it('only counts Destinations with selectable positive safe integer IDs', () => {
+    const invalid = { ...destination(true), id: 0 }
+    expect(summarizeResourceReadiness(catalog(1, 1), [invalid]).destination).toMatchObject({
+      state: 'not-verified',
+    })
+    const mixed = [destination(true), { ...destination(true), id: Number.NaN }]
+    expect(summarizeResourceReadiness(catalog(1, 1), mixed).destination).toMatchObject({
+      state: 'available',
+      description: '1 enabled Destination available for selection. Delivery is not yet verified.',
+    })
+  })
+
   it('classifies saved Connector without Source as still requiring setup', () => {
     expect(summarizeResourceReadiness(catalog(0, 2), [destination(true)]).source).toMatchObject({
       state: 'needs-setup',

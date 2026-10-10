@@ -70,6 +70,9 @@ describe('WizardStepper honest setup progress', () => {
     expect(screen.getByTestId('wizard-unlock-guidance')).toHaveTextContent('To open Destinations')
     expect(screen.getByTestId('wizard-unlock-guidance')).toHaveTextContent('Choose a source in Connect')
     expect(screen.getByTestId('wizard-stepper-destinations')).toHaveAttribute('title', expect.stringContaining('Choose a source in Connect'))
+    expect(screen.getByTestId('wizard-stepper-destinations')).toHaveAttribute('aria-describedby', 'wizard-unlock-guidance')
+    expect(screen.getByTestId('wizard-unlock-guidance')).toHaveAttribute('id', 'wizard-unlock-guidance')
+    expect(screen.getByTestId('wizard-stepper-sample')).not.toHaveAttribute('aria-describedby')
   })
 
   it('points to the latest sample test once a connector and source have been selected', () => {

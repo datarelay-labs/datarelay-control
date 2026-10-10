@@ -101,6 +101,10 @@ export function WizardStepper({
           const active = index === stepIndex
           const status = completion[step.key]
           const reachable = wizardStepReachable(step.key, state, reachability)
+          const describedByUnlockGuidance = !reachable && (
+            (unlockGuidance?.target === 'Destinations' && step.key === 'destinations') ||
+            (unlockGuidance?.target === 'Deploy' && step.key === 'deploy')
+          )
           const tone =
             status === 'complete'
               ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
@@ -127,6 +131,7 @@ export function WizardStepper({
                   !reachable && 'cursor-not-allowed opacity-60',
                 )}
                 aria-current={active ? 'step' : undefined}
+                aria-describedby={describedByUnlockGuidance ? 'wizard-unlock-guidance' : undefined}
                 data-testid={`wizard-stepper-${step.key}`}
                 data-active={active ? 'true' : 'false'}
                 data-status={status}
@@ -155,6 +160,7 @@ export function WizardStepper({
       {unlockGuidance ? (
         <p
           className="text-xs leading-5 text-slate-600 dark:text-gdc-mutedStrong"
+          id="wizard-unlock-guidance"
           data-testid="wizard-unlock-guidance"
           role="status"
         >

@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 import { NewConnectorWizardPage } from './new-connector-wizard-page'
+import { createConnector } from '../../api/gdcConnectors'
 
 vi.mock('../../api/gdcConnectors', () => ({
   createConnector: vi.fn(async () => ({ id: 1 })),
@@ -76,6 +77,19 @@ describe('NewConnectorWizardPage', () => {
     await user.click(screen.getByRole('radio', { name: /Remote file polling \(SFTP/i }))
     expect(screen.getByLabelText('Protocol')).toBeInTheDocument()
     expect(screen.getByLabelText('Host *')).toBeInTheDocument()
+  })
+
+  it('does not present a malformed Connector create response as an accepted saved resource', async () => {
+    vi.mocked(createConnector).mockResolvedValueOnce({ id: 0 } as Awaited<ReturnType<typeof createConnector>>)
+    const user = userEvent.setup()
+    const onCreated = vi.fn()
+    render(<MemoryRouter><NewConnectorWizardPage onCreated={onCreated} /></MemoryRouter>)
+    await user.type(screen.getByLabelText('Connector Name *'), 'Unverified source')
+    await user.type(screen.getByLabelText('Host / Base URL *'), 'https://example.net')
+    await user.click(screen.getByRole('button', { name: 'Save Connector' }))
+    expect(await screen.findByText(/Connector creation response could not be verified/i)).toBeInTheDocument()
+    expect(onCreated).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Save Connector' })).toBeEnabled()
   })
 
   it('shows required validation before save', async () => {
