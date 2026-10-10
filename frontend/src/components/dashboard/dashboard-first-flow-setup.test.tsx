@@ -44,6 +44,35 @@ describe('Data Flow first-run onboarding', () => {
     expect(within(region).getByText(/registered resources do not prove that data is flowing/i)).toBeInTheDocument()
   })
 
+  it('opens the existing Stream Wizard directly from step 03 only when reusable resources are registered', () => {
+    setup({ connectors: 2, destinations: 3 })
+    const steps = screen.getByRole('list', { name: 'First data flow setup steps' })
+    expect(within(steps).getByRole('link', { name: 'Open Stream Wizard from setup checklist' }))
+      .toHaveAttribute('href', '/streams/new')
+    expect(steps).toHaveTextContent('Ready to start')
+  })
+
+  it.each([
+    { connectors: 0, destinations: 2, reason: 'Register a Connector first' },
+    { connectors: 2, destinations: 0, reason: 'Register a Destination first' },
+    { connectors: null, destinations: 2, reason: 'Connector inventory not verified' },
+    { connectors: 2, destinations: null, reason: 'Destination inventory not verified' },
+  ])('does not start Stream setup when prerequisites are incomplete: $reason', ({ connectors, destinations, reason }) => {
+    setup({ connectors, destinations })
+    const steps = screen.getByRole('list', { name: 'First data flow setup steps' })
+    expect(within(steps).queryByRole('link', { name: 'Open Stream Wizard from setup checklist' }))
+      .not.toBeInTheDocument()
+    expect(within(steps).getByText(reason)).toBeInTheDocument()
+  })
+
+  it('never offers checklist Wizard access to a read-only Viewer, even when catalogs are populated', () => {
+    setup({ connectors: 2, destinations: 3, canConfigure: false })
+    const steps = screen.getByRole('list', { name: 'First data flow setup steps' })
+    expect(within(steps).queryByRole('link', { name: 'Open Stream Wizard from setup checklist' }))
+      .not.toBeInTheDocument()
+    expect(within(steps).getByText('Configuration permission required')).toBeInTheDocument()
+  })
+
   it('never presents failed or pending catalog evidence as zero installed resources', () => {
     setup({ connectors: null, destinations: null })
     const region = screen.getByTestId('dashboard-empty-state')

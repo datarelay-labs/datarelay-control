@@ -25,6 +25,17 @@ export function DashboardFirstFlowSetup({
 }) {
   const source = resourceStatus(connectorCount)
   const destination = resourceStatus(destinationCount)
+  const canStartWizard = canConfigure && connectorCount !== null && connectorCount > 0 &&
+    destinationCount !== null && destinationCount > 0
+  const wizardPrerequisiteMessage = !canConfigure
+    ? 'Configuration permission required'
+    : connectorCount === null
+      ? 'Connector inventory not verified'
+      : connectorCount === 0
+        ? 'Register a Connector first'
+        : destinationCount === null
+          ? 'Destination inventory not verified'
+          : 'Register a Destination first'
   const next = !canConfigure
     ? { to: NAV_PATH.routes, label: 'View Data Flows' }
     : connectorCount === null || connectorCount === 0
@@ -141,15 +152,27 @@ export function DashboardFirstFlowSetup({
             <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-violet-700 dark:text-violet-300">
               <GitBranch className="h-4 w-4" aria-hidden /> 03 · Configure
             </span>
-            <span className="text-xs font-semibold text-slate-500 dark:text-gdc-muted">Not started</span>
+            <span className="text-xs font-semibold text-slate-500 dark:text-gdc-muted">
+              {canStartWizard ? 'Ready to start' : 'Not started'}
+            </span>
           </div>
           <h3 className="mt-3 text-sm font-semibold text-slate-900 dark:text-white">Stream and Routes</h3>
           <p className="mt-1 min-h-12 text-xs leading-5 text-slate-600 dark:text-gdc-mutedStrong">
             Sample your source, select Destinations, then configure each Route's processing.
           </p>
-          <span className="inline-flex min-h-10 items-center text-xs font-medium text-slate-500 dark:text-gdc-muted">
-            {canConfigure ? 'Use the guided Stream Wizard' : 'Configuration permission required'}
-          </span>
+          {canStartWizard ? (
+            <Link
+              to={newStreamPath()}
+              aria-label="Open Stream Wizard from setup checklist"
+              className={setupLinkClass}
+            >
+              Open Stream Wizard <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+            </Link>
+          ) : (
+            <span className="inline-flex min-h-10 items-center text-xs font-medium text-slate-500 dark:text-gdc-muted">
+              {wizardPrerequisiteMessage}
+            </span>
+          )}
         </li>
         <li className="min-w-0 rounded-xl border border-slate-200/80 bg-white/95 p-4 dark:border-gdc-border dark:bg-gdc-panel">
           <div className="flex items-center justify-between gap-2">
