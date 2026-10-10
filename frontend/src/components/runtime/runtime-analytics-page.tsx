@@ -31,9 +31,9 @@ function formatPct(rate: number): string {
 }
 
 function parseOptionalInt(raw: string | null): number | undefined {
-  if (raw == null || raw.trim() === '') return undefined
-  const n = Number.parseInt(raw, 10)
-  return Number.isFinite(n) ? n : undefined
+  if (raw == null || !/^\d+$/.test(raw)) return undefined
+  const n = Number(raw)
+  return Number.isSafeInteger(n) && n > 0 ? n : undefined
 }
 
 function KpiCard({
@@ -69,6 +69,14 @@ export function RuntimeAnalyticsPage() {
   const streamId = parseOptionalInt(searchParams.get('stream_id'))
   const routeId = parseOptionalInt(searchParams.get('route_id'))
   const destinationId = parseOptionalInt(searchParams.get('destination_id'))
+  const invalidAnalyticsFilters = [
+    { key: 'stream_id', label: 'Stream' },
+    { key: 'route_id', label: 'Route' },
+    { key: 'destination_id', label: 'Destination' },
+  ].filter(({ key }) => {
+    const raw = searchParams.get(key)
+    return raw != null && raw !== '' && parseOptionalInt(raw) == null
+  })
 
   const [failures, setFailures] = useState<RouteFailuresAnalyticsResponse | null>(null)
   const [observability, setObservability] = useState<ObservabilitySummaryResponse | null>(null)
@@ -218,7 +226,7 @@ export function RuntimeAnalyticsPage() {
                 const v = e.target.value.trim()
                 const next = new URLSearchParams(searchParams)
                 if (v === '') next.delete('stream_id')
-                else if (Number.isFinite(Number.parseInt(v, 10))) next.set('stream_id', v)
+                else if (parseOptionalInt(v) != null) next.set('stream_id', v)
                 setSearchParams(next, { replace: true })
               }}
             />
@@ -236,7 +244,7 @@ export function RuntimeAnalyticsPage() {
                 const v = e.target.value.trim()
                 const next = new URLSearchParams(searchParams)
                 if (v === '') next.delete('route_id')
-                else if (Number.isFinite(Number.parseInt(v, 10))) next.set('route_id', v)
+                else if (parseOptionalInt(v) != null) next.set('route_id', v)
                 setSearchParams(next, { replace: true })
               }}
             />
@@ -254,7 +262,7 @@ export function RuntimeAnalyticsPage() {
                 const v = e.target.value.trim()
                 const next = new URLSearchParams(searchParams)
                 if (v === '') next.delete('destination_id')
-                else if (Number.isFinite(Number.parseInt(v, 10))) next.set('destination_id', v)
+                else if (parseOptionalInt(v) != null) next.set('destination_id', v)
                 setSearchParams(next, { replace: true })
               }}
             />
@@ -262,8 +270,17 @@ export function RuntimeAnalyticsPage() {
         </div>
       </header>
 
+      {invalidAnalyticsFilters.length > 0 ? (
+        <p
+          role="status"
+          aria-label="Invalid analytics filters"
+          className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200"
+        >
+          {invalidAnalyticsFilters.map(({ label }) => `Invalid ${label} ID ignored`).join(' · ')}. Use positive, whole-number IDs; invalid values were not applied.
+        </p>
+      ) : null}
       {error ? (
-        <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-900 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-100">
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-900 dark:border-rose-900/50 dark:text-rose-100">
           {error}
         </div>
       ) : null}

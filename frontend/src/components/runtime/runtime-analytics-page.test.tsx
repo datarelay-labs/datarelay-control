@@ -93,6 +93,44 @@ describe('RuntimeAnalyticsPage', () => {
     expect(await screen.findByText(/No delivery outcomes in this window/i)).toBeInTheDocument()
   })
 
+  it('does not silently interpret malformed analytics URL IDs as valid narrow-scoped outcomes', async () => {
+    const mod = await import('../../api/gdcRuntimeAnalytics')
+    render(
+      <MemoryRouter initialEntries={['/monitoring/analytics?stream_id=-2&route_id=42junk&destination_id=3.5']}>
+        <RuntimeAnalyticsPage />
+      </MemoryRouter>,
+    )
+    await waitFor(() => expect(mod.fetchRouteFailuresAnalytics).toHaveBeenCalled())
+    expect(vi.mocked(mod.fetchRouteFailuresAnalytics).mock.calls[0]?.[0]).toMatchObject({
+      stream_id: undefined, route_id: undefined, destination_id: undefined,
+    })
+    const notice = screen.getByRole('status', { name: 'Invalid analytics filters' })
+    expect(notice).toHaveTextContent('Invalid Stream ID ignored')
+    expect(notice).toHaveTextContent('Invalid Route ID ignored')
+    expect(notice).toHaveTextContent('Invalid Destination ID ignored')
+  })
+
+  it('retains valid exact Route, Stream and Destination scope from a Data Flows deep link', async () => {
+    const mod = await import('../../api/gdcRuntimeAnalytics')
+    render(
+      <MemoryRouter initialEntries={['/monitoring/analytics?window=24h&stream_id=2&route_id=42&destination_id=10']}>
+        <RuntimeAnalyticsPage />
+      </MemoryRouter>,
+    )
+    await waitFor(() => expect(mod.fetchRouteFailuresAnalytics).toHaveBeenCalledWith(expect.objectContaining({
+      stream_id: 2, route_id: 42, destination_id: 10, window: '24h',
+    })))
+    expect(screen.queryByRole('status', { name: 'Invalid analytics filters' })).not.toBeInTheDocument()
+  })
+
+  it('rejects pasted nonnumeric Route IDs rather than presenting truncated ID results', async () => {
+    const user = userEvent.setup()
+    render(<MemoryRouter><RuntimeAnalyticsPage /></MemoryRouter>)
+    const field = screen.getByLabelText('route_id')
+    await user.type(field, '12oops')
+    expect(field).toHaveValue('12')
+  })
+
   it('renders unstable route row when API returns candidates', async () => {
     const mod = await import('../../api/gdcRuntimeAnalytics')
     vi.mocked(mod.fetchRouteFailuresAnalytics).mockImplementationOnce(async (params?: { snapshot_id?: string }) => ({
