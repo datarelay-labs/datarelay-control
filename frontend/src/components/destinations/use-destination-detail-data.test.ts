@@ -110,6 +110,32 @@ describe('useDestinationDetailData ownership + stale protection', () => {
     expect(result.current.successRatePct).toBe(20)
   })
 
+  it('distinguishes an unavailable delivery log search from verified zero results and recovers on refresh', async () => {
+    fetchDestinationById.mockResolvedValue(detail(7, 'Dest-7'))
+    searchRuntimeDeliveryLogs.mockRejectedValueOnce(new Error('log API unavailable'))
+    const { result } = renderHook(() => useDestinationDetailData(7))
+    await waitFor(() => expect(result.current.runtimeLoading).toBe(false))
+    expect(result.current.recentActivity).toEqual([])
+    expect(result.current.recentFailures).toEqual([])
+    expect(result.current.recentLogsState).toBe('unavailable')
+    expect(result.current.destination?.id).toBe(7)
+
+    await act(async () => { await result.current.refresh() })
+    expect(result.current.recentLogsState).toBe('verified')
+    expect(result.current.recentActivity).toEqual([])
+  })
+
+  it('keeps log evidence pending until its async request has actually settled', async () => {
+    fetchDestinationById.mockResolvedValue(detail(7, 'Dest-7'))
+    let resolveLogs: ((value: { logs: [] }) => void) | null = null
+    searchRuntimeDeliveryLogs.mockImplementationOnce(() => new Promise<{ logs: [] }>(resolve => { resolveLogs = resolve }))
+    const { result } = renderHook(() => useDestinationDetailData(7))
+    await waitFor(() => expect(result.current.destination?.id).toBe(7))
+    expect(result.current.recentLogsState).toBe('pending')
+    await act(async () => { resolveLogs?.({ logs: [] }) })
+    await waitFor(() => expect(result.current.recentLogsState).toBe('verified'))
+  })
+
   it('does not treat a failed 24h analytics fetch as zero failed Destination events', async () => {
     fetchDestinationById.mockResolvedValue(detail(7, 'Dest-7'))
     fetchRouteFailuresAnalytics.mockRejectedValueOnce(new Error('historical analytics offline'))

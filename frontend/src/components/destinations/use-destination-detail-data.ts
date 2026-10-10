@@ -31,6 +31,8 @@ import type { DestinationHealthState } from './destination-detail-model'
 
 const RUNTIME_WINDOW = '24h' as const
 
+export type DestinationRecentLogsState = 'pending' | 'verified' | 'unavailable'
+
 export type DestinationDetailRuntimeBundle = {
   destination: DestinationRead | null
   listRow: DestinationListItem | null
@@ -55,6 +57,8 @@ export type DestinationDetailRuntimeBundle = {
   lastErrorMessage: string | null
   recentActivity: ReturnType<typeof mapLogToDeliveryActivity>[]
   recentFailures: ReturnType<typeof mapLogToRecentFailure>[]
+  /** A settled API search is not equivalent to an empty result from a failed API. */
+  recentLogsState: DestinationRecentLogsState
   healthRow: DestinationHealthRow | null
   failuresAnalytics: RouteFailuresAnalyticsResponse | null
   loading: boolean
@@ -108,6 +112,7 @@ export function useDestinationDetailData(destinationId: number | null): Destinat
   const [failuresAnalytics, setFailuresAnalytics] = useState<RouteFailuresAnalyticsResponse | null>(null)
   const [snapshotRoutes, setSnapshotRoutes] = useState<OperationalSnapshotResponse['routes']>([])
   const [recentLogs, setRecentLogs] = useState<RuntimeLogSearchItem[]>([])
+  const [recentLogsState, setRecentLogsState] = useState<DestinationRecentLogsState>('pending')
   const [loading, setLoading] = useState(true)
   const [runtimeLoading, setRuntimeLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -130,6 +135,7 @@ export function useDestinationDetailData(destinationId: number | null): Destinat
     loadAbortRef.current = abort
     setLoading(true)
     setRuntimeLoading(true)
+    setRecentLogsState('pending')
     setError(null)
     try {
       const detail = await fetchDestinationById(destinationId)
@@ -186,6 +192,7 @@ export function useDestinationDetailData(destinationId: number | null): Destinat
       setFailuresAnalytics(failuresVal)
       setSnapshotRoutes(scopedRoutes)
       setRecentLogs(logsVal?.logs ?? [])
+      setRecentLogsState(logsVal != null && Array.isArray(logsVal.logs) ? 'verified' : 'unavailable')
 
       if (snapshotVal == null && healthListVal == null && failuresVal == null && outcomesVal == null) {
         setError((prev) => prev ?? 'Runtime APIs unavailable for this destination.')
@@ -202,6 +209,7 @@ export function useDestinationDetailData(destinationId: number | null): Destinat
         setFailuresAnalytics(null)
         setSnapshotRoutes([])
         setRecentLogs([])
+        setRecentLogsState('unavailable')
       }
     } finally {
       if (gen === loadGenRef.current) {
@@ -332,6 +340,7 @@ export function useDestinationDetailData(destinationId: number | null): Destinat
     lastErrorMessage,
     recentActivity,
     recentFailures,
+    recentLogsState,
     healthRow,
     failuresAnalytics,
     loading,

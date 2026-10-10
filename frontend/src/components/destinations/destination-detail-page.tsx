@@ -16,7 +16,7 @@ import { StatusBadge } from '../shell/status-badge'
 import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
 import { DestinationOperationalHealthPanel } from './destination-operational-health-panel'
 import { relativeShort } from '../routes/routes-overview-helpers'
-import { useDestinationDetailData } from './use-destination-detail-data'
+import { useDestinationDetailData, type DestinationRecentLogsState } from './use-destination-detail-data'
 import type { DestinationUiHealth } from './destination-runtime-metrics'
 import { extractCapacityConfig } from './destination-mini-charts'
 
@@ -331,6 +331,7 @@ export function DestinationDetailPage() {
             <RecentFailuresSidebar
               failures={runtime.recentFailures}
               destinationId={backendDestinationNumericId}
+              evidenceState={runtime.recentLogsState}
             />
           </aside>
         </div>
@@ -342,6 +343,7 @@ export function DestinationDetailPage() {
         <DeliveryActivityTable
           rows={runtime.recentActivity}
           destinationId={backendDestinationNumericId}
+          evidenceState={runtime.recentLogsState}
           emptyMessage="No delivery log entries in the last 24 hours for this destination."
         />
       ) : null}
@@ -368,10 +370,11 @@ export function DestinationDetailPage() {
           <DeliveryActivityTable
             rows={runtime.recentActivity}
             destinationId={backendDestinationNumericId}
+            evidenceState={runtime.recentLogsState}
             emptyMessage={runtime.failed24h == null ? 'Failure history not verified. Log evidence may be unavailable or outside the selected window.' : 'No failed delivery events in the last 24 hours.'}
             failuresOnly
           />
-          <RecentFailuresList failures={runtime.recentFailures} destinationId={backendDestinationNumericId} />
+          <RecentFailuresList failures={runtime.recentFailures} destinationId={backendDestinationNumericId} evidenceState={runtime.recentLogsState} />
         </div>
       ) : null}
 
@@ -485,11 +488,13 @@ export function DeliveryActivityTable({
   destinationId,
   emptyMessage,
   failuresOnly,
+  evidenceState = 'verified',
 }: {
   rows: ReturnType<typeof useDestinationDetailData>['recentActivity']
   destinationId: number
   emptyMessage: string
   failuresOnly?: boolean
+  evidenceState?: DestinationRecentLogsState
 }) {
   const display = failuresOnly ? rows.filter((r) => r.status === 'FAILED') : rows
   return (
@@ -512,7 +517,11 @@ export function DeliveryActivityTable({
             {display.length === 0 ? (
               <tr className={opTr}>
                 <td className={opTd} colSpan={5}>
-                  {emptyMessage}
+                  {evidenceState === 'pending'
+                    ? 'Checking recent delivery log evidence…'
+                    : evidenceState === 'unavailable'
+                      ? 'Delivery log evidence unavailable. A missing log result does not confirm zero delivery events.'
+                      : emptyMessage}
                 </td>
               </tr>
             ) : (
@@ -667,9 +676,11 @@ function RuntimeHealthSidebar({
 function RecentFailuresSidebar({
   failures,
   destinationId,
+  evidenceState,
 }: {
   failures: ReturnType<typeof useDestinationDetailData>['recentFailures']
   destinationId: number
+  evidenceState: DestinationRecentLogsState
 }) {
   return (
     <section className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-gdc-border dark:bg-gdc-card">
@@ -682,7 +693,7 @@ function RecentFailuresSidebar({
           View all
         </Link>
       </div>
-      <RecentFailuresList failures={failures} destinationId={destinationId} compact />
+      <RecentFailuresList failures={failures} destinationId={destinationId} evidenceState={evidenceState} compact />
     </section>
   )
 }
@@ -691,13 +702,20 @@ export function RecentFailuresList({
   failures,
   destinationId,
   compact,
+  evidenceState = 'verified',
 }: {
   failures: ReturnType<typeof useDestinationDetailData>['recentFailures']
   destinationId: number
   compact?: boolean
+  evidenceState?: DestinationRecentLogsState
 }) {
   if (failures.length === 0) {
-    return <p className={cn('text-[12px] text-slate-500', compact ? 'mt-3' : 'px-1 py-2')}>No recent failures in window.</p>
+    const emptyCopy = evidenceState === 'pending'
+      ? 'Checking recent failure logs…'
+      : evidenceState === 'unavailable'
+        ? 'Recent failure log evidence unavailable. No results do not verify zero failures.'
+        : 'No recent failures in window.'
+    return <p className={cn('text-[12px] text-slate-500', compact ? 'mt-3' : 'px-1 py-2')}>{emptyCopy}</p>
   }
   return (
     <ul className={cn('space-y-3', compact ? 'mt-3' : 'mt-2')}>

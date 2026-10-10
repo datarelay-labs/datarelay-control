@@ -95,6 +95,34 @@ describe('Destination delivery evidence integrity', () => {
     expect(screen.queryByRole('link', { name: /Investigate .* recent failures/ })).not.toBeInTheDocument()
   })
 
+  it('distinguishes pending and unavailable log evidence from a truly verified empty delivery table', () => {
+    const pending = render(<MemoryRouter><DeliveryActivityTable rows={[]} destinationId={10}
+      emptyMessage="No delivery log entries" evidenceState="pending" /></MemoryRouter>)
+    expect(screen.getByText('Checking recent delivery log evidence…')).toBeInTheDocument()
+    expect(screen.queryByText('No delivery log entries')).not.toBeInTheDocument()
+    pending.unmount()
+    const unavailable = render(<MemoryRouter><DeliveryActivityTable rows={[]} destinationId={10}
+      emptyMessage="No delivery log entries" evidenceState="unavailable" /></MemoryRouter>)
+    expect(screen.getByText(/Delivery log evidence unavailable/)).toBeInTheDocument()
+    expect(screen.queryByText('No delivery log entries')).not.toBeInTheDocument()
+    unavailable.unmount()
+    render(<MemoryRouter><DeliveryActivityTable rows={[]} destinationId={10}
+      emptyMessage="No delivery log entries" evidenceState="verified" /></MemoryRouter>)
+    expect(screen.getByText('No delivery log entries')).toBeInTheDocument()
+  })
+
+  it('does not claim zero recent failures when the destination log API failed', () => {
+    const failed = render(<MemoryRouter><RecentFailuresList failures={[]} destinationId={10} evidenceState="unavailable" /></MemoryRouter>)
+    expect(screen.getByText(/Recent failure log evidence unavailable/)).toBeInTheDocument()
+    expect(screen.queryByText('No recent failures in window.')).not.toBeInTheDocument()
+    failed.unmount()
+    const pending = render(<MemoryRouter><RecentFailuresList failures={[]} destinationId={10} evidenceState="pending" /></MemoryRouter>)
+    expect(screen.getByText('Checking recent failure logs…')).toBeInTheDocument()
+    pending.unmount()
+    render(<MemoryRouter><RecentFailuresList failures={[]} destinationId={10} evidenceState="verified" /></MemoryRouter>)
+    expect(screen.getByText('No recent failures in window.')).toBeInTheDocument()
+  })
+
   it('only scopes to positively observed IDs and retains confirmed failure evidence without creating a false receiver result', () => {
     showLog(evidence({ stream_id: -2, status: 'FAILED', level: 'ERROR' }), Number.NaN, true)
     const link = screen.getByRole('link', { name: 'Investigate Route #42 delivery logs' })
