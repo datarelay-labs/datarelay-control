@@ -679,7 +679,7 @@ describe('DashboardOverview', () => {
     expect(within(mainRegion()).getByTestId('dashboard-drilldown-governance')).toHaveAttribute('href', '/governance')
   })
 
-  it('shows fresh-install empty state with create-first-stream action', async () => {
+  it('shows resource-aware first-run steps without skipping the connector/destination catalog', async () => {
     const snap = await import('../../api/operationalSnapshot')
     vi.mocked(snap.getOperationalSnapshot).mockResolvedValueOnce({
       global: {
@@ -715,7 +715,14 @@ describe('DashboardOverview', () => {
     )
     const empty = await within(mainRegion()).findByTestId('dashboard-empty-state')
     expect(within(empty).getByText(/Welcome to Data Relay/i)).toBeInTheDocument()
-    expect(within(empty).getByRole('link', { name: /Create First Stream/i })).toHaveAttribute('href', '/streams/new')
+    expect(within(empty).getByRole('heading', { name: /Set up your first data flow/i })).toBeInTheDocument()
+    expect(within(empty).getByRole('link', { name: 'Review Connectors' })).toHaveAttribute('href', '/connectors')
+    expect(within(empty).getByRole('link', { name: 'Review Destinations' })).toHaveAttribute('href', '/destinations')
+    await waitFor(() => {
+      expect(within(empty).getByTestId('dashboard-first-flow-source-state')).toHaveTextContent('2 registered')
+      expect(within(empty).getByTestId('dashboard-first-flow-destination-state')).toHaveTextContent('2 registered')
+      expect(within(empty).getByTestId('dashboard-first-flow-next')).toHaveAttribute('href', '/streams/new')
+    })
     expect(screen.queryByTestId('dashboard-first-level')).not.toBeInTheDocument()
   })
 

@@ -1,10 +1,12 @@
-import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, ChevronRight, Plus, RefreshCw } from 'lucide-react'
+import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react'
 import { useLayoutEffect, useMemo, useState } from 'react'
 import { loadDashboardRefreshMs, persistDashboardRefreshMs } from '../../localPreferences'
 import { Link } from 'react-router-dom'
 import { NAV_PATH, newStreamPath } from '../../config/nav-paths'
 import { dashboardPriorityInvestigations } from './dashboard-priority-investigations'
 import { cn } from '../../lib/utils'
+import { useSessionCapabilities } from '../../lib/rbac'
+import { DashboardFirstFlowSetup } from './dashboard-first-flow-setup'
 import {
   deriveOperationalIssuesFromSnapshot,
   deriveOverallHealthFromSnapshot,
@@ -69,6 +71,7 @@ const DASHBOARD_HELP: PageHelpContent = {
 }
 
 export function DashboardOverview() {
+  const canConfigure = useSessionCapabilities().workspace_mutations === true
   const [refreshMs, setRefreshMs] = useState<number | null>(null)
 
   useLayoutEffect(() => {
@@ -232,39 +235,11 @@ export function DashboardOverview() {
           </button>
         </section>
       ) : isFreshInstall ? (
-        <section
-          className="overflow-hidden rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-white p-6 shadow-sm dark:border-gdc-border dark:from-gdc-section dark:via-gdc-card dark:to-gdc-card sm:p-8"
-          data-testid="dashboard-empty-state"
-        >
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-violet-700 dark:text-violet-300">Welcome to Data Relay</p>
-          <h2 className="mt-3 max-w-2xl text-2xl font-semibold tracking-tight text-slate-950 dark:text-white sm:text-3xl">
-            Start delivering data with confidence.
-          </h2>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 dark:text-gdc-mutedStrong">
-            No Streams are configured yet. Choose a source, select where its data should go, and confirm delivery in a guided setup.
-          </p>
-          <ol className="mt-6 grid gap-3 sm:grid-cols-3" aria-label="Your first data flow">
-            {[
-              ['01', 'Connect', 'Select a source and sample its events.'],
-              ['02', 'Route', 'Choose destinations and optional processing.'],
-              ['03', 'Verify', 'Deploy and check actual delivery.'],
-            ].map(([number, title, detail]) => (
-              <li key={number} className="rounded-xl border border-slate-200/80 bg-white/90 p-4 dark:border-gdc-border dark:bg-gdc-panel">
-                <span className="text-xs font-bold text-violet-600 dark:text-violet-300">{number}</span>
-                <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{title}</p>
-                <p className="mt-1 text-xs leading-5 text-slate-600 dark:text-gdc-muted">{detail}</p>
-              </li>
-            ))}
-          </ol>
-          <Link
-            to={newStreamPath()}
-            className="mt-6 inline-flex min-h-11 items-center gap-2 rounded-lg bg-gdc-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500"
-          >
-            <Plus className="h-4 w-4" aria-hidden />
-            Create First Stream
-            <ArrowRight className="h-4 w-4" aria-hidden />
-          </Link>
-        </section>
+        <DashboardFirstFlowSetup
+          connectorCount={bundle?.connectorsKnown === true ? bundle.connectors.length : null}
+          destinationCount={bundle?.destinations?.length ?? null}
+          canConfigure={canConfigure}
+        />
       ) : (
         <div className={cn('space-y-5', initialLoading && 'opacity-80')} data-testid="dashboard-first-level">
           <section
@@ -373,13 +348,15 @@ export function DashboardOverview() {
                   {hasAnyAttention ? 'Review issue' : 'Open Streams'}
                   <ArrowRight className="h-4 w-4" aria-hidden />
                 </Link>
-                <Link
-                  to={newStreamPath()}
-                  className="inline-flex min-h-10 items-center justify-center rounded-lg border border-white/30 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-300"
-                  data-testid="dashboard-create-stream"
-                >
-                  New Stream
-                </Link>
+                {canConfigure ? (
+                  <Link
+                    to={newStreamPath()}
+                    className="inline-flex min-h-10 items-center justify-center rounded-lg border border-white/30 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-300"
+                    data-testid="dashboard-create-stream"
+                  >
+                    New Stream
+                  </Link>
+                ) : null}
               </div>
             </div>
           </section>
