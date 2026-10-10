@@ -117,7 +117,9 @@ function routeFlowRowFromConsole(row: RouteConsoleRow): RouteFlowRouteRow {
     successRatePct,
     errorRatePct: errorRateFromSuccess(successRatePct, m?.delivered_last_hour ?? 0, m?.failed_last_hour ?? 0),
     health: row.uiStatus,
-    enabled: row.route.enabled !== false,
+    // This graph describes effective delivery availability, which can be
+    // disabled by either the Route or its configured Destination.
+    enabled: row.route.enabled !== false && row.uiStatus !== 'Disabled',
   }
 }
 

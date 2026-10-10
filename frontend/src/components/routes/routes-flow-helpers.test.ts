@@ -219,6 +219,23 @@ describe('routes-flow-helpers', () => {
     ])
   })
 
+  it('uses explicit destination-disabled snapshot state rather than a synthetic enabled placeholder', () => {
+    const changed: OperationalSnapshotResponse = {
+      ...snapshot,
+      routes: [{ ...snapshot.routes[0]!, enabled: true, health_status: 'HEALTHY' }],
+      destinations: [{ ...snapshot.destinations[0]!, enabled: false }],
+    }
+    const rows = buildRouteRowsFromOperationalSnapshot(changed)
+    expect(rows).toHaveLength(1)
+    // The Route itself remains configured as enabled. Its effective delivery
+    // path is disabled because the observed receiving Destination is disabled.
+    expect(rows[0]?.route.enabled).toBe(true)
+    expect(rows[0]?.uiStatus).toBe('Disabled')
+    const tree = buildRouteFlowTree(changed, rows)
+    expect(tree[0]?.routes[0]).toMatchObject({ health: 'Disabled', enabled: false })
+    expect(listRouteFlowAttention(tree)).toEqual([])
+  })
+
   it('does not substitute delivered route EPS when stream ingest EPS is unavailable', () => {
     const snapshotWithoutStreamEps: OperationalSnapshotResponse = {
       ...snapshot,

@@ -249,6 +249,22 @@ describe('Data Flows topology: operator priority and bounded exploration', () =>
     expect(screen.getByTestId('routes-architecture-inspector')).toHaveTextContent('Not verified by this snapshot')
   })
 
+  it('never paints a destination-disabled Route as Healthy or actively delivering', async () => {
+    const data = snapshotFor([route(70, 1, 170, 'HEALTHY', true)])
+    data.destinations[0]!.enabled = false
+    const user = userEvent.setup()
+    render(<GraphHarness snapshot={data} />)
+
+    const routeCard = screen.getByTestId('routes-architecture-route-70')
+    expect(routeCard).toHaveTextContent('Disabled')
+    expect(routeCard).toHaveTextContent('Delivery path disabled')
+    expect(screen.getByTestId('routes-architecture-attention')).toHaveTextContent('1 disabled')
+    await user.click(routeCard)
+    const inspector = screen.getByTestId('routes-architecture-inspector')
+    expect(within(inspector).getByText('Route health').nextElementSibling).toHaveTextContent('Disabled')
+    expect(within(inspector).getByText('Route health').nextElementSibling).not.toHaveTextContent('Healthy')
+  })
+
   it('excludes disabled paths from error queue and reports no errors without declaring delivery verified', () => {
     render(<GraphHarness snapshot={snapshotFor([
       route(8, 1, 108, 'ERROR', false),
