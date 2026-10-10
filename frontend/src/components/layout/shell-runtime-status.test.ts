@@ -37,6 +37,25 @@ describe('presentShellRuntimeStatus — Runtime Is Truth', () => {
     }, { nowMs: NOW })).toMatchObject({ label: 'Attention', healthy: false })
   })
 
+  it.each(['ERROR', 'DEGRADED'] as const)(
+    'does not conceal an explicit %s snapshot when enabled Streams are stopped',
+    (health) => {
+      const status = presentShellRuntimeStatus({
+        ...sample,
+        global: { ...sample.global, health_status: health, running_streams: 0 },
+      }, { nowMs: NOW })
+      expect(status).toMatchObject({ label: 'Attention', healthy: false })
+      expect(status.evidence).toContain(health.toLowerCase())
+    },
+  )
+
+  it('does not report Healthy when running Streams exceed enabled Streams', () => {
+    expect(presentShellRuntimeStatus({
+      ...sample,
+      global: { ...sample.global, running_streams: 3, enabled_streams: 2 },
+    }, { nowMs: NOW })).toMatchObject({ label: 'Not verified', healthy: null })
+  })
+
   it('handles idle or no running streams without fabricated active delivery', () => {
     for (const global of [
       { ...sample.global, health_status: 'IDLE' as const },

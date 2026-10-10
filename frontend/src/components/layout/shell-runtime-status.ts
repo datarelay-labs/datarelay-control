@@ -35,20 +35,21 @@ export function presentShellRuntimeStatus(
     !Number.isSafeInteger(global.running_streams) ||
     global.running_streams < 0 ||
     !Number.isSafeInteger(global.total_routes) ||
-    global.total_routes < 0
+    global.total_routes < 0 ||
+    global.running_streams > global.enabled_streams
   ) {
     return { label: 'Not verified', healthy: null, evidence: 'Runtime snapshot contains invalid counters.' }
   }
 
   const counts = `${global.running_streams} running / ${global.enabled_streams} enabled Streams · ${global.total_routes} Routes`
+  if (global.health_status === 'DEGRADED' || global.health_status === 'ERROR') {
+    return { label: 'Attention', healthy: false, evidence: `Runtime snapshot (${global.health_status.toLowerCase()}): ${counts}. Investigate affected flows.` }
+  }
   if (global.enabled_streams === 0 || global.running_streams === 0 || global.health_status === 'IDLE') {
     return { label: 'Idle', healthy: null, evidence: `Snapshot: ${counts}. No active delivery is asserted.` }
   }
   if (global.health_status === 'HEALTHY') {
     return { label: 'Healthy', healthy: true, evidence: `Runtime snapshot: ${counts}. Receiver ingestion is not verified.` }
-  }
-  if (global.health_status === 'DEGRADED' || global.health_status === 'ERROR') {
-    return { label: 'Attention', healthy: false, evidence: `Runtime snapshot (${global.health_status.toLowerCase()}): ${counts}. Investigate affected flows.` }
   }
   return { label: 'Not verified', healthy: null, evidence: 'Runtime snapshot health is unknown.' }
 }
