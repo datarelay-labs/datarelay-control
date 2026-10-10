@@ -23,6 +23,9 @@ offline update provenance and rollback are **not qualified** in Control.
 The PostgreSQL backup script previously inherited the invoking process's
 umask (e.g. 0022). An archive containing a complete Control database could
 be created **0644**, exposing secrets or tenant data to other local users.
+A second RED regression found that the same-second overwrite check used
+`-e` only and missed dangling symlinks at the archive or digest path.
+Such links could redirect a subsequent file write outside the owned folder.
 
 Now the backup command sets `umask 077` before creating any artifact,
 refuses to overwrite another same-second archive or digest, fails on

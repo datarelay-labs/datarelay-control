@@ -94,6 +94,22 @@ def test_second_backup_same_timestamp_refuses_to_overwrite_existing_archive(tmp_
     assert sidecar.read_text() == original_digest
 
 
+@pytest.mark.parametrize("extension", [".dump", ".dump.gz", ".dump.sha256", ".dump.gz.sha256"])
+def test_backup_refuses_broken_symlink_artifact_collisions(tmp_path, extension):
+    # A broken symlink is false under -e, but a pg_dump --file write would
+    # otherwise follow it and create an arbitrary outside file.
+    folder = tmp_path / "owned-backups"
+    folder.mkdir()
+    outside = tmp_path / f"unrelated-{extension.replace('.', '_')}"
+    link = folder / f"gdc-postgres-20261010T000000Z{extension}"
+    link.symlink_to(outside)
+    result, _ = _fake_backup(tmp_path)
+    assert result.returncode != 0
+    assert "refusing overwrite" in result.stderr
+    assert link.is_symlink()
+    assert not outside.exists()
+
+
 def test_export_fails_closed_without_real_postgres_binary_or_credentials(tmp_path):
     folder = tmp_path / "owned-backups"
     result = subprocess.run(

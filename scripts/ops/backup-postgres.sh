@@ -77,8 +77,10 @@ TS="$(date -u +"%Y%m%dT%H%M%SZ")"
 OUT_FILE="$BACKUP_DIR/gdc-postgres-${TS}.dump"
 # Refuse same-second collisions: never overwrite another valid or partial
 # backup, even if its digest sidecar is absent.
-if [[ -e "$OUT_FILE" || -e "${OUT_FILE}.gz" ||
-      -e "${OUT_FILE}.sha256" || -e "${OUT_FILE}.gz.sha256" ]]; then
+if [[ -e "$OUT_FILE" || -L "$OUT_FILE" ||
+      -e "${OUT_FILE}.gz" || -L "${OUT_FILE}.gz" ||
+      -e "${OUT_FILE}.sha256" || -L "${OUT_FILE}.sha256" ||
+      -e "${OUT_FILE}.gz.sha256" || -L "${OUT_FILE}.gz.sha256" ]]; then
   echo "ERROR: Backup artifact for this timestamp already exists; refusing overwrite." >&2
   exit 1
 fi
