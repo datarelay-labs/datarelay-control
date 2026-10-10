@@ -134,7 +134,10 @@ export function DashboardOverview() {
       ].filter((item) => item.count != null && item.count > 0),
     [operationalIssues, overallHealth.warning, overallHealth.critical, runtimeHealthAttention],
   )
-  const attentionDataPartial = Object.values(operationalIssues).some((value) => value == null)
+  // Deferred alerts/dashboard reads may fail while the authoritative runtime
+  // snapshot remains valid. Do not imply that every incident source was checked.
+  const attentionDataPartial = Object.values(operationalIssues).some((value) => value == null) ||
+    bundle?.alertsFailed === true || bundle?.dashboardFailed === true
   const hasAnyAttention = priorityInvestigations.length > 0 || attentionItems.length > 0
   const attentionUnknown = !hasAnyAttention && attentionDataPartial
 
@@ -271,6 +274,17 @@ export function DashboardOverview() {
                       ? 'No actionable signal is currently known from the available snapshot; some signal categories are unavailable.'
                       : 'No open operational signals are present in the current snapshot. Continue monitoring or inspect a Stream.'}
                 </p>
+                {bundle?.alertsFailed || bundle?.dashboardFailed ? (
+                  <p
+                    className="mt-2 text-xs font-medium text-amber-800 dark:text-amber-300"
+                    data-testid="dashboard-unknown-signal-source"
+                    role="status"
+                  >
+                    {bundle?.alertsFailed ? 'Alert feed unavailable. ' : ''}
+                    {bundle?.dashboardFailed ? 'Dashboard summary unavailable. ' : ''}
+                    Check the affected source or refresh; missing signals do not mean healthy delivery.
+                  </p>
+                ) : null}
               </div>
             </div>
             {priorityInvestigations.length > 0 ? (

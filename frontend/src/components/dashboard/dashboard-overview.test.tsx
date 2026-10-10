@@ -665,6 +665,46 @@ describe('DashboardOverview', () => {
     expect(within(attention).getByTestId('dashboard-next-action')).toHaveTextContent('Open Streams')
   })
 
+  it('does not promise no action needed when the alerts service fails despite a clean runtime snapshot', async () => {
+    const snapshotApi = await import('../../api/operationalSnapshot')
+    const baseline = await snapshotApi.getOperationalSnapshot()
+    const healthy = baseline?.streams.find((stream) => stream.health_status === 'HEALTHY')
+    if (!baseline || !healthy) throw new Error('Missing healthy runtime fixture')
+    vi.mocked(snapshotApi.getOperationalSnapshot).mockResolvedValueOnce({
+      ...baseline,
+      global: {
+        ...baseline.global,
+        health_status: 'HEALTHY',
+        total_streams: 1,
+        enabled_streams: 1,
+        running_streams: 1,
+        error_streams: 0,
+        total_routes: 0,
+        enabled_routes: 0,
+        total_destinations: 0,
+        enabled_destinations: 0,
+      },
+      streams: [{ ...healthy, eps_1m: 20, eps_5m: 20, status: 'RUNNING', enabled: true }],
+      routes: [],
+      destinations: [],
+      problems: [],
+    })
+    const runtime = await import('../../api/gdcRuntime')
+    vi.mocked(runtime.fetchRuntimeDashboardSummary).mockResolvedValueOnce({
+      ...sampleDashboard(),
+      open_schema_field_drift_count: 0,
+    })
+    vi.mocked(runtime.fetchRuntimeAlertSummary).mockRejectedValueOnce(new Error('alerts unavailable'))
+
+    render(<MemoryRouter><main><DashboardOverview /></main></MemoryRouter>)
+    const first = await within(mainRegion()).findByTestId('dashboard-first-level')
+    const action = within(first).getByTestId('dashboard-action-needed')
+    await waitFor(() => expect(within(action).getByRole('heading', { name: 'Status partially available' })).toBeInTheDocument())
+    expect(within(action).queryByRole('heading', { name: 'No action needed' })).not.toBeInTheDocument()
+    expect(within(action).getByTestId('dashboard-unknown-signal-source')).toHaveTextContent('Alert feed unavailable')
+    expect(within(action).getByTestId('dashboard-next-action')).toHaveAttribute('href', '/streams')
+  })
+
   it('exposes drill-down links to existing operational surfaces', async () => {
     render(
       <MemoryRouter>
