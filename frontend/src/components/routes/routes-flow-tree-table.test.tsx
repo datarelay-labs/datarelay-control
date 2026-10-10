@@ -391,3 +391,41 @@ describe('Flow-First compact mobile Route delivery', () => {
     })
   })
 })
+
+describe('Mobile delivery evidence integrity on unreliable state', () => {
+  function smallViewport(run: () => void) {
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
+      matches: query === '(max-width: 767px)',
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })))
+    try { run() } finally { vi.unstubAllGlobals() }
+  }
+
+  it('does not equate an invalid-time snapshot with verified zero Route configuration', () => {
+    smallViewport(() => {
+      const s = evidence()
+      s.global.total_routes = 0
+      s.routes = []
+      s.updated_at = 'not-a-timestamp'
+      mount(s)
+      expect(screen.getByTestId('routes-flow-inventory-state')).toHaveTextContent('Route inventory not verified')
+      expect(screen.queryByText('No routes configured yet.')).not.toBeInTheDocument()
+    })
+  })
+
+  it('never labels a disabled delivery Route as healthy, even if old metrics were green', () => {
+    smallViewport(() => {
+      const s = evidence()
+      s.routes = [{ ...s.routes[0]!, enabled: false, health_status: 'HEALTHY' }]
+      mount(s)
+      const badge = screen.getByTestId('routes-flow-mobile-health-42')
+      expect(badge).toHaveTextContent(/^Disabled$/)
+      expect(badge).not.toHaveClass('text-emerald-700')
+      expect(screen.getByRole('link', { name: 'Investigate R-0042 delivery logs' })).toHaveAttribute(
+        'href', '/logs?route_id=42&stream_id=1&destination_id=10',
+      )
+    })
+  })
+})

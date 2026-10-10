@@ -121,11 +121,13 @@ function CompactStreamGroup({
           {group.routes.slice(0, shown).map((route) => {
             const canLinkDestination = route.destinationId != null &&
               Number.isSafeInteger(route.destinationId) && route.destinationId > 0
-            const displayHealth = !validObservationTime
-              ? 'Unverified'
-              : evidenceStale
-                ? `Last reported ${route.health}`
-                : route.health
+            const displayHealth = !route.enabled
+              ? 'Disabled'
+              : !validObservationTime
+                ? 'Unverified'
+                : evidenceStale
+                  ? `Last reported ${route.health}`
+                  : route.health
             return (
               <li
                 key={route.routeId}
@@ -150,12 +152,12 @@ function CompactStreamGroup({
                     data-testid={`routes-flow-mobile-health-${route.routeId}`}
                     className={cn(
                       'inline-flex max-w-full rounded-md border px-2 py-1 text-[10px] font-bold uppercase tracking-wide',
-                      !validObservationTime || evidenceStale
+                      !route.enabled || !validObservationTime || evidenceStale
                         ? 'border-slate-300 bg-slate-100 text-slate-700 dark:border-gdc-border dark:bg-gdc-section dark:text-gdc-mutedStrong'
                         : routeHealthBadgeClass(route.health),
                     )}
                   >
-                    {!route.enabled ? 'Disabled · ' : null}{displayHealth}
+                    {displayHealth}
                   </span>
                 </div>
                 <dl className="mt-3 grid grid-cols-3 gap-1.5 rounded-lg bg-slate-50/90 p-2 text-center dark:bg-gdc-panel">
