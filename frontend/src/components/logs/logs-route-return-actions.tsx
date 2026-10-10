@@ -1,16 +1,18 @@
 import { ArrowLeft, ArrowUpRight, GitBranch } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { NAV_PATH, destinationDetailPath, routeEditPath } from '../../config/nav-paths'
+import { NAV_PATH, destinationDetailPath, routeEditPath, runtimeAnalyticsPath } from '../../config/nav-paths'
 
 /** A direct, read-only investigation return path; never changes event state. */
 export function LogsRouteReturnActions({
   routeId,
   canConfigure,
   destinationId,
+  streamId,
 }: {
   routeId: number | undefined
   canConfigure: boolean
   destinationId?: number
+  streamId?: number
 }) {
   if (routeId == null || !Number.isSafeInteger(routeId) || routeId <= 0) return null
   return (
@@ -37,6 +39,18 @@ export function LogsRouteReturnActions({
         >
           <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
           Back to Data Flows
+        </Link>
+        <Link
+          to={runtimeAnalyticsPath({
+            window: '24h',
+            stream_id: streamId,
+            route_id: routeId,
+            destination_id: destinationId,
+          })}
+          className="inline-flex min-h-10 items-center gap-1.5 text-xs font-semibold text-violet-700 underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:text-violet-300"
+        >
+          View Route #{routeId} delivery trends (24h)
+          <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
         </Link>
         {destinationId != null && Number.isSafeInteger(destinationId) && destinationId > 0 ? (
           <Link
