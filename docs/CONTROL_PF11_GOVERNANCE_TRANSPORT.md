@@ -18,6 +18,12 @@ report success solely from these mock defaults.
 - **Default fail closed.** No email/Webhook transport is enabled implicitly.
   Unconfigured senders return False and do not create real network traffic.
   Explicit test doubles remain injectable in native tests.
+  The production FastAPI lifespan previously overrode this default with
+  `HttpWebhookSender` regardless of a verified Webhook egress/SSRF policy.
+  Production startup now reasserts the unavailable sender; this was reproduced
+  RED in a production-lifespan regression, then fixed and tested GREEN.
+  Runtime Webhook network sending remains unavailable until a separately
+  qualified egress boundary and explicit deployment authority exist.
 - **SMTP opt-in.** To create a production-usable `SmtpEmailSender` the
   authorized product **deployment** must explicitly set the following
   server environment (not client-provided fields):
