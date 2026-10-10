@@ -181,3 +181,42 @@ describe('Failed-attempt deep-link zero-results recovery', () => {
     fetchPage.mockRestore()
   })
 })
+
+
+describe('Route failure investigation has an explicit next step', () => {
+  it('retains a read-only Data Flows return and exact saved Route settings link even with no matching failures', async () => {
+    const fetchPage = vi.spyOn(gdcRuntime, 'fetchRuntimeLogsPage').mockResolvedValue(emptyPage as never)
+    vi.spyOn(gdcRuntime, 'searchRuntimeDeliveryLogs').mockResolvedValue(emptySearch as never)
+    vi.spyOn(gdcRuntime, 'fetchRuntimeLogsTotals').mockResolvedValue(emptyTotals as never)
+    vi.spyOn(gdcRuntime, 'fetchRuntimeDashboardSummary').mockResolvedValue(null)
+
+    render(
+      <MemoryRouter initialEntries={['/logs?route_id=42&stream_id=2&destination_id=10&status=failed']}>
+        <LogsExplorerPage />
+      </MemoryRouter>,
+    )
+    await waitFor(() => expect(fetchPage).toHaveBeenCalledWith(expect.objectContaining({
+      route_id: 42, stream_id: 2, destination_id: 10, status: 'FAILED',
+    })))
+    const next = screen.getByRole('region', { name: 'Route investigation next actions' })
+    expect(next).toHaveTextContent('Investigating Route #42')
+    expect(screen.getByRole('link', { name: 'Review Route #42 configuration' }))
+      .toHaveAttribute('href', '/routes/42/edit')
+    expect(screen.getByRole('link', { name: 'Back to Data Flows' }))
+      .toHaveAttribute('href', '/routes')
+    expect(await screen.findByRole('button', { name: 'Show all statuses for this Route' }))
+      .toBeInTheDocument()
+    fetchPage.mockRestore()
+  })
+
+  it('does not claim a return to nonexistent Route 0 from manually entered bad URL scope', async () => {
+    vi.spyOn(gdcRuntime, 'fetchRuntimeLogsPage').mockResolvedValue(emptyPage as never)
+    vi.spyOn(gdcRuntime, 'searchRuntimeDeliveryLogs').mockResolvedValue(emptySearch as never)
+    vi.spyOn(gdcRuntime, 'fetchRuntimeLogsTotals').mockResolvedValue(emptyTotals as never)
+    vi.spyOn(gdcRuntime, 'fetchRuntimeDashboardSummary').mockResolvedValue(null)
+    render(<MemoryRouter initialEntries={['/logs?route_id=0&status=failed']}><LogsExplorerPage /></MemoryRouter>)
+    expect(await screen.findByText('Invalid Route ID ignored')).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Route investigation next actions' }))
+      .not.toBeInTheDocument()
+  })
+})

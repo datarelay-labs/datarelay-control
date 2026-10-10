@@ -31,6 +31,7 @@ import { connectorDetailPath, destinationDetailPath, logsPath, routeEditPath, st
 import { gdcUi } from '../../lib/gdc-ui-tokens'
 import { loadLogsAutoRefresh, persistLogsAutoRefresh } from '../../localPreferences'
 import { cn } from '../../lib/utils'
+import { useSessionCapabilities } from '../../lib/rbac'
 import { useDocumentVisible } from '../../hooks/use-document-visible'
 import { useMediaQuery } from '../../hooks/use-media-query'
 import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
@@ -46,6 +47,7 @@ import {
   stageChipText,
 } from './logs-console-helpers'
 import { LogDetailDrawer } from './log-detail-drawer'
+import { LogsRouteReturnActions } from './logs-route-return-actions'
 import { LogsCompactCards } from './logs-compact-cards'
 import { serializeLoadedLogsCsv } from './logs-export-csv'
 import { LogsDiagnosisOverview, type LogsDiagnosisSnapshot } from './logs-diagnosis-overview'
@@ -316,6 +318,7 @@ function TableSkeletonRows({ cols }: { cols: number }) {
 }
 
 export function LogsExplorerPage() {
+  const canConfigure = useSessionCapabilities().workspace_mutations === true
   const compactLogsView = useMediaQuery('(max-width: 767px)')
   const { streamId: streamSlug } = useParams<{ streamId?: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -1468,6 +1471,7 @@ export function LogsExplorerPage() {
               <span className="font-semibold text-slate-700 dark:text-slate-200">Time window:</span> {timeRange}
             </span>
           </div>
+          <LogsRouteReturnActions routeId={routeIdFromQuery} canConfigure={canConfigure} />
         </section>
       )}
 
