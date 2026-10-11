@@ -36,6 +36,97 @@ function isDeliveryMessage(log: RecentLogLine): boolean {
   return m.includes('route') || m.includes('deliver') || m.includes('send') || m.includes('destination')
 }
 
+// Route-scoped runtime records are gateway-side observations, not a complete
+// delivery-rate window, end-to-end receiver acknowledgment, or processing preview.
+const RECORDED_GATEWAY_SUCCESSES = new Set([
+  'route_send_success',
+  'route_retry_success',
+  'dynamic_route_send_success',
+  'failover_route_send_success',
+])
+const RECORDED_GATEWAY_FAILURES = new Set([
+  'route_send_failed',
+  'route_retry_failed',
+  'dynamic_route_send_failed',
+  'failover_route_send_failed',
+])
+
+function SelectedRouteEvidence({
+  routeId,
+  recentLogs,
+  backendStreamId,
+}: {
+  routeId: number
+  recentLogs: readonly RecentLogLine[]
+  backendStreamId: number | undefined
+}) {
+  const stages = recentLogs
+    .map((log) => log.stage?.trim().toLowerCase())
+    .filter((stage): stage is string => Boolean(stage))
+  const successful = stages.filter((stage) => RECORDED_GATEWAY_SUCCESSES.has(stage)).length
+  const failed = stages.filter((stage) => RECORDED_GATEWAY_FAILURES.has(stage)).length
+  const observedStages = [...new Set(stages)].slice(0, 4)
+  const destinations = [...new Set(
+    recentLogs.map((log) => log.destinationId)
+      .filter((id): id is number => typeof id === 'number' && Number.isSafeInteger(id) && id > 0),
+  )]
+  const failureLogsHref = Number.isSafeInteger(backendStreamId) && (backendStreamId ?? 0) > 0 && failed > 0
+    ? logsExplorerPath({ route_id: routeId, stream_id: backendStreamId, status: 'failed' })
+    : null
+
+  return (
+    <section
+      aria-label="Selected Route evidence"
+      data-testid="stream-selected-route-evidence"
+      className="space-y-2 border-b border-slate-200/80 bg-slate-50/70 px-3 py-3 dark:border-gdc-border dark:bg-gdc-elevated/40"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h4 className="text-xs font-semibold text-slate-900 dark:text-slate-100">Route #{routeId} — observed gateway records</h4>
+          <p className="mt-0.5 text-[11px] text-slate-600 dark:text-gdc-muted">
+            {recentLogs.length} events in loaded sample · not a full-history health or delivery rate
+          </p>
+        </div>
+        {failureLogsHref ? (
+          <Link
+            to={failureLogsHref}
+            className="inline-flex min-h-9 items-center rounded-md border border-red-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-red-800 hover:underline dark:border-red-500/35 dark:bg-gdc-card dark:text-red-200"
+          >
+            Inspect recorded Route failures
+          </Link>
+        ) : null}
+      </div>
+      <div className="flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-slate-700 dark:text-gdc-mutedStrong">
+        <span>Gateway success records: {successful}</span>
+        <span>Gateway failure records: {failed}</span>
+        {destinations.length > 0 ? (
+          <span>Observed {destinations.map((id) => `Destination #${id}`).join(', ')}</span>
+        ) : (
+          <span>Destination identity not verified in sample</span>
+        )}
+      </div>
+      {successful + failed === 0 ? (
+        <p className="text-[11px] font-medium text-slate-600 dark:text-gdc-muted">
+          Gateway outcome not verified in this sample
+        </p>
+      ) : null}
+      {observedStages.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[10px] text-slate-600 dark:text-gdc-muted">Observed stages:</span>
+          {observedStages.map((stage) => (
+            <code key={stage} className="rounded bg-slate-200/70 px-1.5 py-0.5 text-[10px] text-slate-700 dark:bg-gdc-card dark:text-gdc-mutedStrong">
+              {stage}
+            </code>
+          ))}
+        </div>
+      ) : null}
+      <p className="text-[10px] text-slate-600 dark:text-gdc-muted">
+        Receiver acknowledgment not verified. Only actual runtime stage records count as gateway outcomes.
+      </p>
+    </section>
+  )
+}
+
 export type StreamRecentEventsPanelProps = {
   streamId: string
   backendStreamId: number | undefined
@@ -45,12 +136,13 @@ export type StreamRecentEventsPanelProps = {
   variant?: 'default' | 'compact'
 }
 
-function compactEventIcon(message: string, level: string) {
-  const m = message.toLowerCase()
-  if (level === 'ERROR' || level === 'WARN' || m.includes('fail')) {
+function compactEventIcon(log: RecentLogLine) {
+  // A free-text message is not evidence of successful delivery. Runtime stage wins.
+  const stage = log.stage?.trim().toLowerCase()
+  if (log.level === 'ERROR' || log.level === 'WARN' || (stage != null && RECORDED_GATEWAY_FAILURES.has(stage))) {
     return <AlertTriangle className="h-4 w-4 text-amber-500" aria-hidden />
   }
-  if (m.includes('deliver') || m.includes('success')) {
+  if (stage != null && RECORDED_GATEWAY_SUCCESSES.has(stage)) {
     return <CheckCircle2 className="h-4 w-4 text-emerald-500" aria-hidden />
   }
   return <Info className="h-4 w-4 text-sky-500" aria-hidden />
@@ -114,7 +206,7 @@ export function StreamRecentEventsPanel({
   ) : null
 
   const tabs: { id: RecentEventsTab; label: string; count: number }[] = [
-    { id: 'events', label: 'Recent events', count: recentLogs.length },
+    { id: 'events', label: 'Recent events', count: scopedLogs.length },
     { id: 'errors', label: 'Recent errors', count: errorLogs.length },
     { id: 'delivery', label: 'Recent delivery', count: deliveryLogs.length + deliveryRuns.length },
   ]
@@ -134,6 +226,9 @@ export function StreamRecentEventsPanel({
           </Link>
         </div>
         {routeSampleFilter}
+        {activeRouteId != null ? (
+          <SelectedRouteEvidence routeId={activeRouteId} recentLogs={scopedLogs} backendStreamId={backendStreamId} />
+        ) : null}
         <div className="hidden border-b border-slate-200/80 px-4 py-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:border-gdc-divider dark:text-gdc-muted sm:grid sm:grid-cols-[minmax(7rem,1fr)_minmax(0,1.5fr)_6rem] sm:gap-3">
           <span>Event</span>
           <span>Description</span>
@@ -152,7 +247,7 @@ export function StreamRecentEventsPanel({
                   className="grid gap-1 px-4 py-3 sm:grid-cols-[minmax(7rem,1fr)_minmax(0,1.5fr)_6rem] sm:items-start sm:gap-3"
                 >
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className="shrink-0 sm:hidden">{compactEventIcon(log.message, log.level)}</span>
+                    <span className="shrink-0 sm:hidden">{compactEventIcon(log)}</span>
                     <p className="truncate text-[12px] font-semibold text-slate-800 dark:text-slate-100">{eventName}</p>
                   </div>
                   <p className="truncate text-[11px] text-slate-500 dark:text-gdc-muted">{description}</p>
@@ -186,6 +281,9 @@ export function StreamRecentEventsPanel({
       </div>
 
       {routeSampleFilter}
+      {activeRouteId != null ? (
+        <SelectedRouteEvidence routeId={activeRouteId} recentLogs={scopedLogs} backendStreamId={backendStreamId} />
+      ) : null}
       <div className="flex flex-wrap gap-1 border-b border-slate-200/80 px-3 py-2 dark:border-gdc-border">
         {tabs.map((t) => (
           <button
