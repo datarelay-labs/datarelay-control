@@ -17,6 +17,8 @@ import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operati
 import { DestinationOperationalHealthPanel } from './destination-operational-health-panel'
 import { relativeShort } from '../routes/routes-overview-helpers'
 import { useDestinationDetailData, type DestinationRecentLogsState } from './use-destination-detail-data'
+import { isRouteSnapshotStale } from '../routes/routes-flow-helpers'
+import { useOperationalEvidenceClock } from '../../hooks/use-operational-evidence-clock'
 import type { DestinationUiHealth } from './destination-runtime-metrics'
 import { extractCapacityConfig } from './destination-mini-charts'
 
@@ -308,7 +310,7 @@ export function DestinationDetailPage() {
               )}
             </section>
 
-            <RoutesTable routes={runtime.connectedRoutes} destinationId={backendDestinationNumericId} />
+            <RoutesTable routes={runtime.connectedRoutes} destinationId={backendDestinationNumericId} snapshotUpdatedAt={runtime.snapshotUpdatedAt} />
           </div>
 
           <aside className="flex min-w-0 flex-col gap-4 xl:sticky xl:top-24 xl:self-start">
@@ -337,7 +339,7 @@ export function DestinationDetailPage() {
         </div>
       ) : null}
 
-      {mainTab === 'routes' ? <RoutesTable routes={runtime.connectedRoutes} destinationId={backendDestinationNumericId} full /> : null}
+      {mainTab === 'routes' ? <RoutesTable routes={runtime.connectedRoutes} destinationId={backendDestinationNumericId} snapshotUpdatedAt={runtime.snapshotUpdatedAt} full /> : null}
 
       {mainTab === 'delivery' ? (
         <DeliveryActivityTable
@@ -391,17 +393,28 @@ export function DestinationDetailPage() {
 export function RoutesTable({
   routes,
   destinationId,
+  snapshotUpdatedAt,
   full,
 }: {
   routes: ReturnType<typeof useDestinationDetailData>['connectedRoutes']
   /** Positively resolved Destination identity, not inferred from a Route label. */
   destinationId: number
+  snapshotUpdatedAt?: string | null
   full?: boolean
 }) {
+  useOperationalEvidenceClock(snapshotUpdatedAt ?? undefined)
+  const verified = snapshotUpdatedAt != null && !isRouteSnapshotStale(snapshotUpdatedAt)
+  const time = snapshotUpdatedAt == null ? NaN : Date.parse(snapshotUpdatedAt)
+  const lastReported = Number.isFinite(time) && time <= Date.now()
   return (
     <section className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm dark:border-gdc-border dark:bg-gdc-card">
       <div className="border-b border-slate-200/70 px-3 py-2 dark:border-gdc-border">
         <h3 className="text-[13px] font-semibold text-slate-900 dark:text-slate-100">Routes using this destination</h3>
+        {!verified ? (
+          <p data-testid="destination-route-observation-state" role="status" className="mt-1 text-xs text-amber-800 dark:text-amber-300">
+            {lastReported ? 'Last reported Route observation' : 'Route observation not verified'} — current delivery status and rates are not verified.
+          </p>
+        ) : null}
       </div>
       <div className="overflow-x-auto">
         <table className={opTable}>
@@ -420,7 +433,9 @@ export function RoutesTable({
             {routes.length === 0 ? (
               <tr className={opTr}>
                 <td className={opTd} colSpan={7}>
-                  No routes reference this destination.
+                  {verified ? 'No routes reference this destination.' : (
+                    <span data-testid="destination-route-inventory-status">Route inventory not verified by a current operational snapshot.</span>
+                  )}
                 </td>
               </tr>
             ) : (
@@ -438,15 +453,15 @@ export function RoutesTable({
                   <td className={opTd}>{r.deliveryMode}</td>
                   <td className={opTd}>
                     <StatusBadge
-                      tone={r.status === 'ACTIVE' ? 'success' : r.status === 'ERROR' ? 'error' : 'warning'}
+                      tone={!verified ? 'neutral' : r.status === 'ACTIVE' ? 'success' : r.status === 'ERROR' ? 'error' : 'warning'}
                       className="uppercase"
                     >
-                      {r.status}
+                      {verified ? r.status : lastReported ? `Last reported ${r.status}` : 'Unverified'}
                     </StatusBadge>
                   </td>
-                  <td className={cn(opTd, 'tabular-nums')}>{formatThroughputEps(r.epsAvg)}</td>
+                  <td className={cn(opTd, 'tabular-nums')}>{verified ? formatThroughputEps(r.epsAvg) : '—'}</td>
                   <td className={cn(opTd, 'tabular-nums')}>
-                    {r.successRate5m == null ? '—' : `${r.successRate5m.toFixed(1)}%`}
+                    {!verified || r.successRate5m == null ? '—' : `${r.successRate5m.toFixed(1)}%`}
                   </td>
                   <td className={cn(opTd, 'text-right')}>
                     <div className="inline-flex flex-wrap items-center justify-end gap-x-3 gap-y-1">

@@ -38,6 +38,8 @@ export type DestinationDetailRuntimeBundle = {
   listRow: DestinationListItem | null
   uiHealth: DestinationUiHealth
   healthState: DestinationHealthState
+  /** Observation time of the snapshot supplying the Route status and EPS. */
+  snapshotUpdatedAt: string | null
   connectedStreams: { streamId: number; streamName: string }[]
   connectedRoutes: {
     routeId: string
@@ -111,6 +113,7 @@ export function useDestinationDetailData(destinationId: number | null): Destinat
   const [outcomeRow, setOutcomeRow] = useState<DestinationDeliveryOutcomeRow | null>(null)
   const [failuresAnalytics, setFailuresAnalytics] = useState<RouteFailuresAnalyticsResponse | null>(null)
   const [snapshotRoutes, setSnapshotRoutes] = useState<OperationalSnapshotResponse['routes']>([])
+  const [snapshotUpdatedAt, setSnapshotUpdatedAt] = useState<string | null>(null)
   const [recentLogs, setRecentLogs] = useState<RuntimeLogSearchItem[]>([])
   const [recentLogsState, setRecentLogsState] = useState<DestinationRecentLogsState>('pending')
   const [loading, setLoading] = useState(true)
@@ -136,6 +139,7 @@ export function useDestinationDetailData(destinationId: number | null): Destinat
     setLoading(true)
     setRuntimeLoading(true)
     setRecentLogsState('pending')
+    setSnapshotUpdatedAt(null)
     setError(null)
     try {
       const detail = await fetchDestinationById(destinationId)
@@ -191,6 +195,7 @@ export function useDestinationDetailData(destinationId: number | null): Destinat
       setOutcomeRow(oRow)
       setFailuresAnalytics(failuresVal)
       setSnapshotRoutes(scopedRoutes)
+      setSnapshotUpdatedAt(snapshotVal?.updated_at ?? null)
       setRecentLogs(logsVal?.logs ?? [])
       setRecentLogsState(logsVal != null && Array.isArray(logsVal.logs) ? 'verified' : 'unavailable')
 
@@ -208,6 +213,7 @@ export function useDestinationDetailData(destinationId: number | null): Destinat
         setOutcomeRow(null)
         setFailuresAnalytics(null)
         setSnapshotRoutes([])
+        setSnapshotUpdatedAt(null)
         setRecentLogs([])
         setRecentLogsState('unavailable')
       }
@@ -330,6 +336,7 @@ export function useDestinationDetailData(destinationId: number | null): Destinat
     listRow,
     uiHealth,
     healthState: healthStateFromUi(uiHealth),
+    snapshotUpdatedAt,
     connectedStreams,
     connectedRoutes,
     successRatePct,

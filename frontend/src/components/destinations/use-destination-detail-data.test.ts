@@ -284,6 +284,7 @@ describe('useDestinationDetailData ownership + stale protection', () => {
     expect(result.current.connectedRoutes).toHaveLength(1)
     expect(result.current.connectedRoutes[0]?.epsAvg).toBe(4.5)
     expect(result.current.connectedRoutes[0]?.status).toBe('ACTIVE')
+    expect(result.current.snapshotUpdatedAt).toBe('2026-08-10T00:00:00Z')
     expect(result.current.connectedRoutes[0]?.deliveryMode).toBe('LOG_AND_CONTINUE')
   })
 })
