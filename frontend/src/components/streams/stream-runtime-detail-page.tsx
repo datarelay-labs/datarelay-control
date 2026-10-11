@@ -960,7 +960,7 @@ export function StreamRuntimeDetailPage() {
     const next = new Date(Date.parse(lastAt) + intervalSec * 1000)
     if (!Number.isFinite(next.getTime())) return null
     if (next.getTime() <= Date.now()) return 'Now'
-    return next.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+    return formatTimestampWithResolvedTimezone(next.toISOString())
   }, [displayStatus, runtimeMetrics?.stream.last_run_at, streamEntity?.polling_interval])
 
   const schemaVersionDisplay = useMemo(() => {

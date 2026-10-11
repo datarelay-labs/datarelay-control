@@ -9,6 +9,7 @@ import * as gdcRuntime from '../../api/gdcRuntime'
 import * as gdcBackfill from '../../api/gdcBackfill'
 import * as streamGovernanceSnapshot from '../../lib/stream-governance-snapshot'
 import { setDisplayTimezoneCache } from '../../lib/display-timezone-cache'
+import { formatPlatformTimestamp } from '../../lib/platform-timestamps'
 import {
   persistRuntimeRefreshEvery,
   persistStreamRuntimeMetricsAutoRefresh,
@@ -648,6 +649,32 @@ describe('StreamRuntimeDetailPage lifecycle cleanup', () => {
     const trace = await screen.findByRole('region', { name: 'Sync position trace' })
     await waitFor(() => {
       expect(trace).toHaveTextContent('2026-10-10 09:00 UTC')
+    })
+  })
+
+  it('uses the configured user timezone for the next scheduled run', async () => {
+    const observedAt = new Date(Date.now() - 60_000).toISOString()
+    const expectedNextAt = new Date(Date.parse(observedAt) + 3_600_000).toISOString()
+    setDisplayTimezoneCache({ userTimezone: 'Pacific/Honolulu', platformDefaultTimezone: 'UTC' })
+    mockFetchStreamById.mockImplementationOnce(async (id) => ({
+      id,
+      name: `Stream ${id}`,
+      connector_id: 1,
+      stream_type: 'HTTP_API_POLLING',
+      status: 'RUNNING',
+      polling_interval: 3600,
+    }))
+    vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mockImplementation(async (_id, _window, params) => {
+      const response = streamRuntimeMetricsFixture(params)
+      return { ...response, stream: { ...response.stream, last_run_at: observedAt } }
+    })
+
+    renderRuntimePage('42')
+    const information = await screen.findByTestId('stream-information-panel')
+    const expected = formatPlatformTimestamp(expectedNextAt, 'Pacific/Honolulu')
+    await waitFor(() => {
+      expect(information).toHaveTextContent('Next Run')
+      expect(information).toHaveTextContent(expected)
     })
   })
 
