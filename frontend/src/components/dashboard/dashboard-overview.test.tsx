@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
@@ -720,6 +720,53 @@ describe('DashboardOverview', () => {
     expect(within(mainRegion()).getByTestId('dashboard-drilldown-destinations')).toHaveAttribute('href', '/destinations')
     expect(within(mainRegion()).getByTestId('dashboard-drilldown-logs')).toHaveAttribute('href', '/logs')
     expect(within(mainRegion()).getByTestId('dashboard-drilldown-governance')).toHaveAttribute('href', '/governance')
+  })
+
+  it('expires a formerly current Dashboard snapshot with auto-refresh Off, without another API fetch', async () => {
+    const api = await import('../../api/operationalSnapshot')
+    const baseline = await api.getOperationalSnapshot()
+    if (!baseline) throw new Error('Missing operational snapshot fixture')
+    vi.mocked(api.getOperationalSnapshot).mockResolvedValueOnce({
+      ...baseline,
+      // Initially source-verified; expire naturally while the page stays open.
+      updated_at: new Date(Date.now() - 88_000).toISOString(),
+    })
+    render(<MemoryRouter><main><DashboardOverview /></main></MemoryRouter>)
+    const main = mainRegion()
+    await within(main).findByTestId('dashboard-first-level')
+    expect(within(main).queryByTestId('dashboard-snapshot-stale')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Auto refresh interval')).toHaveValue('off')
+    const callsAfterLoad = vi.mocked(api.getOperationalSnapshot).mock.calls.length
+
+    // No clicks, polling or parent rerender: the clock must invalidate the view.
+    await waitFor(() => expect(within(main).getByTestId('dashboard-snapshot-stale')).toBeInTheDocument(),
+      { timeout: 5_000, interval: 75 })
+    expect(within(main).getByTestId('dashboard-running-badge')).toHaveTextContent('Unknown')
+    expect(within(main).getByTestId('dashboard-overall-posture-label')).toHaveTextContent('Not verified')
+    expect(vi.mocked(api.getOperationalSnapshot).mock.calls.length).toBe(callsAfterLoad)
+  }, 8_000)
+
+  it('re-evaluates evidence on tab focus after background timer throttling', async () => {
+    const api = await import('../../api/operationalSnapshot')
+    const baseline = await api.getOperationalSnapshot()
+    if (!baseline) throw new Error('Missing operational snapshot fixture')
+    const observedNow = Date.now()
+    vi.mocked(api.getOperationalSnapshot).mockResolvedValueOnce({
+      ...baseline,
+      updated_at: new Date(observedNow).toISOString(),
+    })
+    render(<MemoryRouter><main><DashboardOverview /></main></MemoryRouter>)
+    const main = mainRegion()
+    await within(main).findByTestId('dashboard-first-level')
+    expect(within(main).queryByTestId('dashboard-snapshot-stale')).not.toBeInTheDocument()
+    const mockedNow = vi.spyOn(Date, 'now').mockReturnValue(observedNow + 91_000)
+    try {
+      act(() => window.dispatchEvent(new Event('focus')))
+      expect(within(main).getByTestId('dashboard-snapshot-stale')).toBeInTheDocument()
+      expect(within(main).getByTestId('dashboard-running-badge')).toHaveTextContent('Unknown')
+    } finally {
+      mockedNow.mockRestore()
+    }
   })
 
   it('marks old operational snapshots as last reported, rather than asserting live status', async () => {
