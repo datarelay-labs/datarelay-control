@@ -395,3 +395,12 @@ The selected delivery-path inspector now shows **Destination health (snapshot)**
 **Minimal correction:** Carry Stream-ID-scoped timeline load authority (loaded / unavailable / not loaded) from existing read response to both native Recent Events layouts. Treat an authoritative zero-item timeline response as genuinely empty. Mark missing/mismatched timeline evidence as unavailable rather than interpreting lack of rows as proof that events did not occur; when Route Metrics is available, its Route-specific sample count remains unverified. Preserve the existing exact Stream/Route scoped Logs follow-through; no resend, invented delivery evidence, new API/backend or permission change.
 
 **Verification boundary:** Native page RED confirmed the previously false "No recent events" when timeline fetch returns null, paired with a valid zero-item response control test; regression additionally covers the case where Route Metrics exists but timeline does not. Browser/user acceptance still pending.
+
+
+## 2026-10-11 — P0 prevent cross-window stale runtime evidence
+
+**Source-confirmed diagnostic defect:** On the Stream Overview/Metrics time-range selector, changing 1h to 24h started a new fetch but kept rendering the last 1h Route metrics while the 24h response was pending. An actual component RED demonstrated Route #101 reporting 13 failures from the prior 1h snapshot after 24h had been selected.
+
+**Bounded correction:** Retain the returned Stream Metrics together with the exact requested MetricsWindow in one atomic state object. Project loaded metrics only when both backend Stream ID and requested time window match. During a new window request, old Route metrics and derived status/evidence are withheld instead of relabeled; after response, only the new matching metrics become visible. Existing request-generation and stale-response guards remain; no new API, permissions, network requests or runtime state mutation.
+
+**Validation:** Actual native delayed 24h response regression 1 RED to GREEN, with Route #101 failures 13 withheld until new 24h value 2 arrives; adjacent Stream/Route/Timeline tests and full build are separate source-level checks. Authenticated Browser and two-user Full User E2E remain NOT PASS.

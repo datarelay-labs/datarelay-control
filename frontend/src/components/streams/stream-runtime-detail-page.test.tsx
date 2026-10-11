@@ -606,6 +606,45 @@ describe('StreamRuntimeDetailPage M17.2 layout', () => {
     )
   })
 
+  it('never carries prior-window Route metrics into a newly requested time range', async () => {
+    const user = userEvent.setup()
+    let resolve24h!: (metrics: ReturnType<typeof streamRuntimeMetricsFixture>) => void
+    const pending24h = new Promise<ReturnType<typeof streamRuntimeMetricsFixture>>((resolve) => {
+      resolve24h = resolve
+    })
+    const metricWithFailures = (
+      params: { snapshot_id?: string } | undefined,
+      failedCount: number,
+    ) => {
+      const base = streamRuntimeMetricsFixture(params)
+      return {
+        ...base,
+        metrics_window_seconds: failedCount === 13 ? 3600 : 86400,
+        route_health: base.route_health.map((row) => ({ ...row, failed_count: failedCount })),
+      }
+    }
+    vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mockImplementation(async (_id, window, params) => {
+      if (window === '24h') return pending24h
+      return metricWithFailures(params, 13)
+    })
+    renderRuntimePage('42')
+    const panel = await screen.findByTestId('stream-recent-events-panel')
+    const selector = await within(panel).findByLabelText('Filter recent events by Route')
+    await user.selectOptions(selector, '101')
+    expect(within(panel).getByText('Metrics-reported failed attempts: 13')).toBeInTheDocument()
+
+    await user.selectOptions(screen.getByTestId('stream-runtime-time-range'), '24h')
+    await waitFor(() => expect(gdcRuntime.fetchStreamRuntimeMetrics).toHaveBeenCalledWith(
+      42, '24h', expect.any(Object), expect.any(Object),
+    ))
+    expect(panel).not.toHaveTextContent('Metrics-reported failed attempts: 13')
+
+    resolve24h(metricWithFailures(undefined, 2))
+    const reloadedSelector = await within(panel).findByLabelText('Filter recent events by Route')
+    await user.selectOptions(reloadedSelector, '101')
+    expect(await within(panel).findByText('Metrics-reported failed attempts: 2')).toBeInTheDocument()
+  })
+
   it('retains the actual selected Route investigation across Overview and Events tabs', async () => {
     vi.mocked(gdcRuntime.fetchStreamRuntimeTimeline).mockResolvedValueOnce({
       stream_id: 42,

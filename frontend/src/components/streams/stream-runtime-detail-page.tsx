@@ -204,7 +204,10 @@ export function StreamRuntimeDetailPage() {
   const [streamMetaError, setStreamMetaError] = useState<string | null>(null)
   const [connectorProductGroup, setConnectorProductGroup] = useState<string | null>(null)
   const [connectorDisplayName, setConnectorDisplayName] = useState<string | null>(null)
-  const [runtimeMetricsStored, setRuntimeMetrics] = useState<StreamRuntimeMetricsResponse | null>(null)
+  const [runtimeMetricsStored, setRuntimeMetrics] = useState<{
+    window: MetricsWindow
+    data: StreamRuntimeMetricsResponse
+  } | null>(null)
   const [metricsLoading, setMetricsLoading] = useState(false)
   const [metricsError, setMetricsError] = useState<string | null>(null)
   const metricsGenerationRef = useRef(0)
@@ -255,7 +258,10 @@ export function StreamRuntimeDetailPage() {
   // React Router can reuse this component when the Stream URL changes.
   // Never present an old Stream's evidence under a new Stream ID while
   // pending requests settle: it can create false Route-specific diagnostics.
-  const runtimeMetrics = runtimeMetricsStored?.stream.id === backendStreamId ? runtimeMetricsStored : null
+  // Metrics are scoped to both the Stream and the requested time range.
+  // Never display a previous range's counts under newly selected controls.
+  const runtimeMetrics = runtimeMetricsStored?.data.stream.id === backendStreamId &&
+    runtimeMetricsStored.window === metricsWindow ? runtimeMetricsStored.data : null
   const timelineScopeValid = timelineSourceStreamId === backendStreamId
   const timelineLoadState = timelineScopeValid ? timelineLoadStateStored : null
   const timelineRecentLogs = timelineScopeValid ? timelineRecentLogsStored : null
@@ -375,7 +381,7 @@ export function StreamRuntimeDetailPage() {
       const m = await fetchStreamRuntimeMetrics(backendStreamId, metricsWindow, { snapshot_id }, fetchOpts)
       if (!isCurrent()) return
       if (m) {
-        setRuntimeMetrics(m)
+        setRuntimeMetrics({ window: metricsWindow, data: m })
       } else {
         setMetricsError('Metrics API unavailable')
       }
@@ -500,7 +506,7 @@ export function StreamRuntimeDetailPage() {
         .then((metrics) => {
           if (!isCurrent()) return
           if (metrics) {
-            setRuntimeMetrics(metrics)
+            setRuntimeMetrics({ window: metricsWindow, data: metrics })
             setMetricsError(null)
           } else {
             setMetricsError('Metrics API unavailable')
