@@ -110,8 +110,8 @@ function AccessContextBanner() {
       >
         <p className="font-semibold">Viewer session — read-only.</p>
         <p className="mt-1 text-sm leading-relaxed opacity-90">
-          Mutating Administration actions stay disabled in the UI and are rejected by the backend role guard. Sign in as
-          Operator or Administrator to make changes.
+          Read-only Audit and Backup views remain available. Only Administrators can change Administration settings.
+          The backend role guard rejects unauthorized changes.
         </p>
       </div>
     )

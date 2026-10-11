@@ -94,6 +94,7 @@ describe('AdministrationHubPage modernization', () => {
     renderHub()
     expect(screen.getByTestId('admin-hub-access-context')).toHaveTextContent(/Viewer session — read-only/i)
     expect(screen.getByTestId('admin-hub-access-context')).toHaveTextContent(/backend role guard/i)
+    expect(screen.getByTestId('admin-hub-access-context')).toHaveTextContent(/Only Administrators can change Administration settings/i)
   })
 
   it('does not advertise forbidden Settings destinations to a Viewer', () => {
