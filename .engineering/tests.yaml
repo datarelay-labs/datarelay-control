@@ -133,6 +133,21 @@ scenarios:
     origin: "docs/architecture/source-of-truth-index.md"
     release_gate: true
 
+  - id: BACKEND-BFS410-UDP-PACED-DELIVERY
+    name: Route UI rate-limit datagram pacing without batch loss
+    level: unit
+    cost: cheap
+    domains: [backend, runtime]
+    triggers: [affected, pr]
+    platforms: [linux]
+    command: "python3 -m pytest -q tests/test_udp_route_rate_pacing.py"
+    invariants:
+      - "SYSLOG_UDP Route per_second/burst_size limits each datagram without discarding a batch."
+      - "Rate budget persists across sends within a worker and remains isolated by Route."
+      - "Primary, retry, dynamic and secondary failover delivery preserve the UI rate intent."
+      - "Legacy max_events/per_seconds, disabled limits, and checkpoint-failure behavior remain unchanged."
+    release_gate: true
+
   - id: PRE-RELEASE-EXHAUSTIVE-USER-TEST-CONTRACT
     name: Pre-release exhaustive user-test contract
     level: static

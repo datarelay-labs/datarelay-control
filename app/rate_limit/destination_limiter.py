@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+import threading
 import time
 from typing import Any
 
@@ -16,6 +18,43 @@ class DestinationRateLimiter:
 
     def __init__(self) -> None:
         self._windows: dict[int, dict[str, Any]] = {}
+        # In-process UDP datagram pacing. Reservations are per Route; a future
+        # reservation is retained across batches and concurrent senders.
+        self._pacing_lock = threading.Lock()
+        self._pacing: dict[int, tuple[float, float, float, int]] = {}
+
+    def reserve_event(
+        self, route_id: int, *, per_second: float, burst_size: int, now: float
+    ) -> float:
+        """Reserve one event with a token bucket; return seconds until safe to send.
+
+        Unlike legacy allow(), pacing reserves every datagram rather than
+        rejecting a whole event batch. A concurrent reservation may be in the
+        future, so we never let another caller jump ahead of it.
+        """
+        rate = float(per_second)
+        burst = int(burst_size)
+        if (
+            not math.isfinite(rate) or rate <= 0 or
+            float(burst_size) != burst or burst <= 0 or
+            not math.isfinite(now)
+        ):
+            raise ValueError("invalid UDP event rate or burst")
+        with self._pacing_lock:
+            previous = self._pacing.get(route_id)
+            if previous is None or (previous[2], previous[3]) != (rate, burst):
+                clock = now
+                tokens = float(burst)
+            else:
+                clock = max(now, previous[0])
+                tokens = min(float(burst), previous[1] + (clock - previous[0]) * rate)
+            if tokens >= 1:
+                tokens -= 1
+            else:
+                clock += (1 - tokens) / rate
+                tokens = 0.0
+            self._pacing[route_id] = (clock, tokens, rate, burst)
+            return max(0.0, clock - now)
 
     def allow(self, route_id: int, rate_limit_json: dict[str, Any] | None = None) -> bool:
         """Return True if delivery may proceed for this route."""
