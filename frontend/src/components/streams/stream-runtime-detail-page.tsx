@@ -766,6 +766,9 @@ export function StreamRuntimeDetailPage() {
     return [v, v, v, v, v, v, v]
   }, [runtimeMetrics, numericOverlay.events1h])
 
+  // Reuse the same modern-first Route Metrics adapter as FlowMap/Route panel.
+  const observedRuntimeRoutes = useMemo(() => resolveRouteRuntimeRows(runtimeMetrics), [runtimeMetrics])
+
   const deliveryPct = numericOverlay.deliveryPct
   const deliveryLabel = numericOverlay.deliveryLabel
 
@@ -1361,11 +1364,11 @@ export function StreamRuntimeDetailPage() {
             streamId={streamId}
             backendStreamId={backendStreamId}
             recentLogs={recentLogLines}
-            observedRouteIds={runtimeMetrics?.route_health?.map((route) => route.route_id)}
-            routeMetrics={runtimeMetrics?.route_health?.map((route) => ({
+            observedRouteIds={observedRuntimeRoutes.map((route) => route.route_id)}
+            routeMetrics={observedRuntimeRoutes.map((route) => ({
               routeId: route.route_id,
               enabled: route.enabled,
-              failedCount: route.failed_count,
+              failedCount: route.failed_last_hour,
               destinationName: route.destination_name,
             }))}
             runHistory={runHistoryRows}
@@ -1477,11 +1480,11 @@ export function StreamRuntimeDetailPage() {
           streamId={streamId}
           backendStreamId={backendStreamId}
           recentLogs={recentLogLines}
-          observedRouteIds={runtimeMetrics?.route_health?.map((route) => route.route_id)}
-          routeMetrics={runtimeMetrics?.route_health?.map((route) => ({
+          observedRouteIds={observedRuntimeRoutes.map((route) => route.route_id)}
+          routeMetrics={observedRuntimeRoutes.map((route) => ({
             routeId: route.route_id,
             enabled: route.enabled,
-            failedCount: route.failed_count,
+            failedCount: route.failed_last_hour,
             destinationName: route.destination_name,
           }))}
           runHistory={runHistoryRows}
@@ -1618,7 +1621,7 @@ export function StreamRuntimeDetailPage() {
       ) : null}
 
       {backendStreamId != null ? (
-        <StreamFlowMap streamId={backendStreamId} streamName={runtimeMetrics?.stream.name || streamEntity?.name || `Stream #${backendStreamId}`} routes={resolveRouteRuntimeRows(runtimeMetrics)} loading={metricsLoading && !runtimeMetrics} />
+        <StreamFlowMap streamId={backendStreamId} streamName={runtimeMetrics?.stream.name || streamEntity?.name || `Stream #${backendStreamId}`} routes={observedRuntimeRoutes} loading={metricsLoading && !runtimeMetrics} />
       ) : null}
 
       <section aria-label="Delivery path operational panel">

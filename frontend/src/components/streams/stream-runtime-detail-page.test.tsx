@@ -511,6 +511,58 @@ describe('StreamRuntimeDetailPage M17.2 layout', () => {
     expect(screen.getByTestId('stream-information-panel')).toBeInTheDocument()
   })
 
+  it('lets operators investigate a modern route_runtime-only path with no legacy route_health row', async () => {
+    vi.mocked(gdcRuntime.fetchStreamRuntimeTimeline).mockResolvedValueOnce(null)
+    vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mockImplementationOnce(async (_id, _window, params) => ({
+      ...streamRuntimeMetricsFixture(params),
+      route_health: [],
+      route_runtime: [{
+        route_id: 501,
+        destination_id: 601,
+        destination_name: 'Modern SIEM',
+        destination_type: 'SYSLOG_UDP',
+        enabled: false,
+        route_status: 'DISABLED',
+        success_rate: 0,
+        events_last_hour: 2,
+        delivered_last_hour: 0,
+        failed_last_hour: 2,
+        avg_latency_ms: 100,
+        p95_latency_ms: 100,
+        max_latency_ms: 100,
+        eps_current: 0,
+        retry_count_last_hour: 1,
+        last_success_at: null,
+        last_failure_at: '2026-10-11T09:00:00Z',
+        last_error_message: 'Gateway transport error',
+        last_error_code: 'TIMEOUT',
+        failure_policy: 'RETRY_AND_BACKOFF',
+        connectivity_state: 'DISABLED',
+        disable_reason: 'Paused by operator',
+        latency_trend: [],
+        success_rate_trend: [],
+      }],
+    }))
+    const user = userEvent.setup()
+    renderRuntimePage('42')
+    const panel = await screen.findByTestId('stream-recent-events-panel')
+    const selector = await within(panel).findByLabelText('Filter recent events by Route')
+    await user.selectOptions(selector, '501')
+    const evidence = within(panel).getByRole('region', { name: 'Selected Route evidence' })
+    expect(evidence).toHaveTextContent('Route #501')
+    expect(evidence).toHaveTextContent('Last reported Route state: Disabled')
+    expect(evidence).toHaveTextContent('Metrics-reported failed attempts: 2')
+    expect(evidence).toHaveTextContent('Destination Modern SIEM')
+    expect(evidence).toHaveTextContent('0 events in loaded sample')
+    expect(evidence).toHaveTextContent('Gateway outcome not verified in this sample')
+    expect(within(evidence).getByRole('link', { name: 'Inspect recorded Route failures' })).toHaveAttribute(
+      'href', '/logs?route_id=501&stream_id=42&status=failed',
+    )
+    expect(within(evidence).getByRole('link', { name: 'Analyze Route failure trend (24h)' })).toHaveAttribute(
+      'href', '/monitoring/analytics?window=24h&stream_id=42&route_id=501',
+    )
+  })
+
   it('lets operators inspect a Route reported by Metrics even with no recent Route event', async () => {
     vi.mocked(gdcRuntime.fetchStreamRuntimeTimeline).mockResolvedValueOnce(null)
     const user = userEvent.setup()
