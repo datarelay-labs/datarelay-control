@@ -743,6 +743,8 @@ describe('DashboardOverview', () => {
       { timeout: 5_000, interval: 75 })
     expect(within(main).getByTestId('dashboard-running-badge')).toHaveTextContent('Unknown')
     expect(within(main).getByTestId('dashboard-overall-posture-label')).toHaveTextContent('Not verified')
+    expect(within(main).getByTestId('dashboard-traffic-evidence-caption')).toHaveTextContent('Last reported')
+    expect(within(main).getByTestId('dashboard-issues-evidence-caption')).toHaveTextContent('Last reported')
     expect(vi.mocked(api.getOperationalSnapshot).mock.calls.length).toBe(callsAfterLoad)
   }, 8_000)
 
@@ -787,6 +789,14 @@ describe('DashboardOverview', () => {
     expect(within(main).getByTestId('dashboard-running-badge')).toHaveTextContent('Unknown')
     expect(within(main).getByTestId('dashboard-running-badge')).not.toHaveTextContent('All Systems Operational')
     expect(within(main).getByTestId('dashboard-overall-posture-label')).toHaveTextContent('Not verified')
+    const traffic = within(main).getByTestId('dashboard-traffic-overview')
+    expect(within(traffic).getByTestId('dashboard-traffic-evidence-caption'))
+      .toHaveTextContent('Last reported 5m snapshot')
+    expect(within(traffic).getByTestId('dashboard-traffic-success')).not.toHaveClass('text-emerald-700')
+    const issues = within(main).getByTestId('dashboard-operational-issues')
+    expect(within(issues).getByTestId('dashboard-issues-evidence-caption'))
+      .toHaveTextContent('Last reported issue counts')
+    expect(within(issues).queryByText('No issue')).not.toBeInTheDocument()
   })
 
   it('does not declare a stale zero-Stream snapshot to be a verified fresh installation', async () => {
@@ -834,6 +844,25 @@ describe('DashboardOverview', () => {
     expect(within(action).queryByRole('heading', { name: 'No action needed' })).not.toBeInTheDocument()
     expect(within(mainRegion()).getByTestId('dashboard-snapshot-stale')).toHaveTextContent('last reported')
     expect(within(action).getByTestId('dashboard-next-action')).toHaveAttribute('href', '/streams')
+  })
+
+  it('preserves ordinary snapshot labels on a freshly observed operational Dashboard', async () => {
+    const snap = await import('../../api/operationalSnapshot')
+    const baseline = await snap.getOperationalSnapshot()
+    if (!baseline) throw new Error('Missing operational snapshot fixture')
+    vi.mocked(snap.getOperationalSnapshot).mockResolvedValueOnce({
+      ...baseline, updated_at: new Date().toISOString(),
+    })
+    render(<MemoryRouter><main><DashboardOverview /></main></MemoryRouter>)
+    const main = mainRegion()
+    const traffic = await within(main).findByTestId('dashboard-traffic-overview')
+    expect(within(traffic).getByTestId('dashboard-traffic-evidence-caption'))
+      .toHaveTextContent('Snapshot window 5m')
+    expect(within(traffic).getByTestId('dashboard-traffic-evidence-caption'))
+      .not.toHaveTextContent('Last reported')
+    const issues = within(main).getByTestId('dashboard-operational-issues')
+    expect(within(issues).getByTestId('dashboard-issues-evidence-caption'))
+      .not.toHaveTextContent('Last reported')
   })
 
   it('shows resource-aware first-run steps without skipping the connector/destination catalog', async () => {

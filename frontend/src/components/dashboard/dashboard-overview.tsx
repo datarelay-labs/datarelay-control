@@ -418,8 +418,8 @@ export function DashboardOverview() {
           <OverallHealthHero health={overallHealth} basisLabel={SNAPSHOT_KPI_BASIS_LABEL} stale={snapshotStale} />
 
           <div className="grid gap-5 lg:grid-cols-2">
-            <TrafficOverviewPanel traffic={traffic} />
-            <OperationalIssuesPanel issues={operationalIssues} />
+            <TrafficOverviewPanel traffic={traffic} stale={snapshotStale} />
+            <OperationalIssuesPanel issues={operationalIssues} stale={snapshotStale} />
           </div>
 
           <nav
