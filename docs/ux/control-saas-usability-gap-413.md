@@ -386,3 +386,12 @@ The selected delivery-path inspector now shows **Destination health (snapshot)**
 **Minimal implementation:** Use the existing set of stage-proven Gateway failures in the Recent errors filter, alongside existing ERROR/WARN severity. Continue to honor selected Route scope; do not infer a failure from free-text messages, rewrite log levels, invent receiver acknowledgement, add endpoints or mutate runtime.
 
 **Verification:** Native RED scenario demonstrated a zero-error tab with two INFO-level actual failed stages on one Route; corrected filter produces two scoped errors while excluding unrelated Route, source message, and successful retry. Code/native evidence only; authenticated Browser 320/375/1440, BFS 20/97 and two actual users' same-HEAD E2E remain NOT PASS.
+
+
+## 2026-10-11 — P0 unavailable versus verified-empty Stream timeline
+
+**Source-confirmed operator gap:** The Stream Runtime page normalized a failed/null or foreign-Stream timeline response into the same empty list as a successfully loaded timeline with zero items. Both compact Overview and full Events displayed "No recent events", creating false operational reassurance while a Metrics-reported Route could still be failing.
+
+**Minimal correction:** Carry Stream-ID-scoped timeline load authority (loaded / unavailable / not loaded) from existing read response to both native Recent Events layouts. Treat an authoritative zero-item timeline response as genuinely empty. Mark missing/mismatched timeline evidence as unavailable rather than interpreting lack of rows as proof that events did not occur; when Route Metrics is available, its Route-specific sample count remains unverified. Preserve the existing exact Stream/Route scoped Logs follow-through; no resend, invented delivery evidence, new API/backend or permission change.
+
+**Verification boundary:** Native page RED confirmed the previously false "No recent events" when timeline fetch returns null, paired with a valid zero-item response control test; regression additionally covers the case where Route Metrics exists but timeline does not. Browser/user acceptance still pending.

@@ -60,6 +60,7 @@ function SelectedRouteEvidence({
   metricsGeneratedAt,
   metricsWindowSeconds,
   failureCountBasis,
+  timelineLoadState,
 }: {
   routeId: number
   recentLogs: readonly RecentLogLine[]
@@ -68,6 +69,7 @@ function SelectedRouteEvidence({
   metricsGeneratedAt?: string | null
   metricsWindowSeconds?: number | null
   failureCountBasis?: 'last-hour' | 'legacy-aggregate'
+  timelineLoadState?: 'loaded' | 'unavailable' | null
 }) {
   const stages = recentLogs
     .map((log) => log.stage?.trim().toLowerCase())
@@ -113,7 +115,9 @@ function SelectedRouteEvidence({
         <div>
           <h4 className="text-xs font-semibold text-slate-900 dark:text-slate-100">Route #{routeId} — loaded runtime evidence</h4>
           <p className="mt-0.5 text-[11px] text-slate-600 dark:text-gdc-muted">
-            {recentLogs.length} events in loaded sample · not a full-history health or delivery rate
+            {timelineLoadState === 'unavailable'
+              ? 'Timeline sample unavailable · Route event count not verified'
+              : String(recentLogs.length) + ' events in loaded sample · not a full-history health or delivery rate'}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -210,6 +214,7 @@ export type StreamRecentEventsPanelProps = {
   metricsWindowSeconds?: number | null
   /** route_runtime uses failed_last_hour; legacy route_health has no fixed count window. */
   failureCountBasis?: 'last-hour' | 'legacy-aggregate'
+  timelineLoadState?: 'loaded' | 'unavailable' | null
   variant?: 'default' | 'compact'
   /** Optional page-level shared scope for Overview → Events navigation. */
   selectedRouteId?: number | null
@@ -239,6 +244,7 @@ export function StreamRecentEventsPanel({
   metricsGeneratedAt,
   metricsWindowSeconds,
   failureCountBasis,
+  timelineLoadState = null,
   variant = 'default',
   selectedRouteId: controlledRouteId,
   onSelectedRouteIdChange,
@@ -370,6 +376,7 @@ export function StreamRecentEventsPanel({
             metricsGeneratedAt={metricsGeneratedAt}
             metricsWindowSeconds={metricsWindowSeconds}
             failureCountBasis={failureCountBasis}
+            timelineLoadState={timelineLoadState}
           />
         ) : null}
         <div className="hidden border-b border-slate-200/80 px-4 py-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:border-gdc-divider dark:text-gdc-muted sm:grid sm:grid-cols-[minmax(7rem,1fr)_minmax(0,1.5fr)_6rem] sm:gap-3">
@@ -380,7 +387,9 @@ export function StreamRecentEventsPanel({
         <ul className="flex-1 divide-y divide-slate-200/70 dark:divide-gdc-divider">
           {items.length === 0 ? (
             <li className="px-4 py-8 text-center text-[12px] text-slate-500 dark:text-gdc-muted">
-              {activeRouteId != null
+              {timelineLoadState === 'unavailable'
+                ? 'Recent timeline unavailable. No event count verified; inspect scoped Logs for wider history.'
+                : activeRouteId != null
                 ? `No Route #${activeRouteId} events in this timeline sample. Inspect scoped Logs for wider history.`
                 : 'No recent events.'}
             </li>
@@ -437,6 +446,7 @@ export function StreamRecentEventsPanel({
             metricsGeneratedAt={metricsGeneratedAt}
             metricsWindowSeconds={metricsWindowSeconds}
             failureCountBasis={failureCountBasis}
+            timelineLoadState={timelineLoadState}
           />
       ) : null}
       <div className="flex flex-wrap gap-1 border-b border-slate-200/80 px-3 py-2 dark:border-gdc-border">
@@ -464,7 +474,9 @@ export function StreamRecentEventsPanel({
             logs={scopedLogs.slice(0, 8)}
             streamId={streamId}
             backendStreamId={backendStreamId}
-            emptyLabel={activeRouteId != null
+            emptyLabel={timelineLoadState === 'unavailable'
+              ? 'Recent timeline unavailable. No event count verified; inspect scoped Logs for wider history.'
+              : activeRouteId != null
               ? `No events for Route #${activeRouteId} in this timeline sample. Inspect scoped Logs for wider history.`
               : 'No recent events. Open logs explorer for a wider range.'}
           />
@@ -474,7 +486,9 @@ export function StreamRecentEventsPanel({
             logs={errorLogs.slice(0, 8)}
             streamId={streamId}
             backendStreamId={backendStreamId}
-            emptyLabel={activeRouteId != null
+            emptyLabel={timelineLoadState === 'unavailable'
+              ? 'Recent timeline unavailable. No error count verified; inspect scoped Logs for wider history.'
+              : activeRouteId != null
               ? `No errors observed for Route #${activeRouteId} in this timeline sample.`
               : 'No errors in the recent timeline sample.'}
           />
@@ -523,7 +537,9 @@ export function StreamRecentEventsPanel({
               logs={deliveryLogs.slice(0, 8)}
               streamId={streamId}
               backendStreamId={backendStreamId}
-              emptyLabel={deliveryRuns.length === 0
+              emptyLabel={timelineLoadState === 'unavailable' && deliveryRuns.length === 0
+                ? 'Recent timeline unavailable. No delivery event count verified; inspect scoped Logs for wider history.'
+                : deliveryRuns.length === 0
                 ? activeRouteId != null
                   ? `No delivery events observed for Route #${activeRouteId} in this timeline sample.`
                   : 'No recent delivery events in timeline sample.'

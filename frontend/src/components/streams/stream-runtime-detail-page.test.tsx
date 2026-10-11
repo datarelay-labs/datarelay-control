@@ -511,6 +511,33 @@ describe('StreamRuntimeDetailPage M17.2 layout', () => {
     expect(screen.getByTestId('stream-information-panel')).toBeInTheDocument()
   })
 
+  it('distinguishes an unavailable runtime timeline from genuine zero recent events', async () => {
+    vi.mocked(gdcRuntime.fetchStreamRuntimeTimeline).mockResolvedValueOnce(null)
+    const user = userEvent.setup()
+    renderRuntimePage('42')
+    const compact = await screen.findByTestId('stream-recent-events-panel')
+    expect(await within(compact).findByText(/Recent timeline unavailable/)).toBeInTheDocument()
+    expect(compact).not.toHaveTextContent('No recent events.')
+    await user.click(screen.getByTestId('stream-detail-tab-events'))
+    const full = screen.getByTestId('stream-recent-events-panel')
+    expect(full).toHaveTextContent('Recent timeline unavailable')
+    expect(within(full).getByRole('link', { name: 'View all logs' })).toHaveAttribute(
+      'href', '/logs?stream_id=42',
+    )
+    expect(full).not.toHaveTextContent('No recent events.')
+  })
+
+  it('shows a real empty timeline as zero recent events, not an API failure', async () => {
+    vi.mocked(gdcRuntime.fetchStreamRuntimeTimeline).mockResolvedValueOnce({
+      stream_id: 42, total: 0, items: [],
+    })
+    renderRuntimePage('42')
+    const panel = await screen.findByTestId('stream-recent-events-panel')
+    await waitFor(() => expect(gdcRuntime.fetchStreamRuntimeTimeline).toHaveBeenCalled())
+    expect(await within(panel).findByText('No recent events.')).toBeInTheDocument()
+    expect(panel).not.toHaveTextContent('Recent timeline unavailable')
+  })
+
   it('lets operators investigate a modern route_runtime-only path with no legacy route_health row', async () => {
     vi.mocked(gdcRuntime.fetchStreamRuntimeTimeline).mockResolvedValueOnce(null)
     vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mockImplementationOnce(async (_id, _window, params) => ({
@@ -553,7 +580,7 @@ describe('StreamRuntimeDetailPage M17.2 layout', () => {
     expect(evidence).toHaveTextContent('Last reported Route state: Disabled')
     expect(evidence).toHaveTextContent('Metrics-reported failed attempts (last hour): 2')
     expect(evidence).toHaveTextContent('Destination Modern SIEM')
-    expect(evidence).toHaveTextContent('0 events in loaded sample')
+    expect(evidence).toHaveTextContent('Timeline sample unavailable · Route event count not verified')
     expect(evidence).toHaveTextContent('Gateway outcome not verified in this sample')
     expect(within(evidence).getByRole('link', { name: 'Inspect recorded Route failures' })).toHaveAttribute(
       'href', '/logs?route_id=501&stream_id=42&status=failed',

@@ -183,6 +183,7 @@ export function StreamRuntimeDetailPage() {
   const [timelineRecentLogsStored, setTimelineRecentLogs] = useState<RecentLogLine[] | null>(null)
   const [timelineRunIdHintStored, setTimelineRunIdHint] = useState<string | null>(null)
   const [timelineSourceStreamId, setTimelineSourceStreamId] = useState<number | null>(null)
+  const [timelineLoadStateStored, setTimelineLoadState] = useState<'loaded' | 'unavailable' | null>(null)
   const [runtimeStatsStored, setRuntimeStats] = useState<StreamRuntimeStatsResponse | null>(null)
   const [runtimeHealthStored, setRuntimeHealth] = useState<StreamHealthResponse | null>(null)
   const [runtimeStatsSourceStreamId, setRuntimeStatsSourceStreamId] = useState<number | null>(null)
@@ -256,6 +257,7 @@ export function StreamRuntimeDetailPage() {
   // pending requests settle: it can create false Route-specific diagnostics.
   const runtimeMetrics = runtimeMetricsStored?.stream.id === backendStreamId ? runtimeMetricsStored : null
   const timelineScopeValid = timelineSourceStreamId === backendStreamId
+  const timelineLoadState = timelineScopeValid ? timelineLoadStateStored : null
   const timelineRecentLogs = timelineScopeValid ? timelineRecentLogsStored : null
   const timelineRunHistory = timelineScopeValid ? timelineRunHistoryStored : null
   const timelineRunIdHint = timelineScopeValid ? timelineRunIdHintStored : null
@@ -437,6 +439,7 @@ export function StreamRuntimeDetailPage() {
       setTimelineRunHistory(null)
       setTimelineRecentLogs(null)
       setTimelineRunIdHint(null)
+      setTimelineLoadState(null)
       setRuntimeStats(null)
       setRuntimeHealth(null)
       setCheckpointHistory(null)
@@ -477,6 +480,7 @@ export function StreamRuntimeDetailPage() {
       }
       // The response is a read of a particular Stream, not reusable global data.
       setTimelineSourceStreamId(backendStreamId)
+      setTimelineLoadState(res?.stream_id === backendStreamId && Array.isArray(res.items) ? 'loaded' : 'unavailable')
       setRuntimeStatsSourceStreamId(backendStreamId)
       if (res?.stream_id === backendStreamId && res.items?.length) {
         const items = res.items
@@ -1381,6 +1385,7 @@ export function StreamRuntimeDetailPage() {
             streamId={streamId}
             backendStreamId={backendStreamId}
             recentLogs={recentLogLines}
+            timelineLoadState={timelineLoadState}
             observedRouteIds={observedRuntimeRoutes.map((route) => route.route_id)}
             routeMetrics={observedRuntimeRoutes.map((route) => ({
               routeId: route.route_id,
@@ -1500,6 +1505,7 @@ export function StreamRuntimeDetailPage() {
           streamId={streamId}
           backendStreamId={backendStreamId}
           recentLogs={recentLogLines}
+          timelineLoadState={timelineLoadState}
           observedRouteIds={observedRuntimeRoutes.map((route) => route.route_id)}
           routeMetrics={observedRuntimeRoutes.map((route) => ({
             routeId: route.route_id,
