@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
@@ -83,6 +83,45 @@ describe('Flow-First expert delivery table — runtime evidence and keyboard saf
     rerender(<MemoryRouter><RoutesFlowTreeTable snapshot={{ ...s }} consoleRows={[]} /></MemoryRouter>)
     expect(screen.getByTestId('routes-flow-inventory-state')).toHaveTextContent('Route inventory not verified')
     expect(screen.queryByText('No routes configured yet.')).not.toBeInTheDocument()
+  })
+
+  it('expires the Route Flow snapshot automatically when no parent refresh occurs', async () => {
+    const snapshot = evidence()
+    snapshot.updated_at = new Date(Date.now() - 88_000).toISOString()
+    mount(snapshot)
+    expect(screen.getByTestId('routes-flow-route-health-42')).toHaveTextContent('Healthy')
+    expect(screen.getByTestId('routes-flow-snapshot-status')).not.toHaveTextContent('Stale')
+
+    await waitFor(() => {
+      expect(screen.getByTestId('routes-flow-snapshot-status')).toHaveTextContent('Stale')
+      expect(screen.getByTestId('routes-flow-route-health-42')).toHaveTextContent('Last reported Healthy')
+    }, { timeout: 5_000, interval: 75 })
+  }, 8_000)
+
+  it('invalidates compact mobile Route health on tab return without a snapshot refetch', () => {
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
+      matches: query === '(max-width: 767px)',
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })))
+    const now = Date.now()
+    try {
+      const snapshot = evidence()
+      snapshot.updated_at = new Date(now).toISOString()
+      mount(snapshot)
+      expect(screen.getByTestId('routes-flow-mobile-health-42')).toHaveTextContent('Healthy')
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 91_000)
+      try {
+        act(() => window.dispatchEvent(new Event('focus')))
+        expect(screen.getByTestId('routes-flow-mobile-health-42')).toHaveTextContent('Last reported Healthy')
+        expect(screen.getByTestId('routes-flow-snapshot-status')).toHaveTextContent('Stale')
+      } finally {
+        clock.mockRestore()
+      }
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('does not classify an aged snapshot as a current healthy Route', () => {

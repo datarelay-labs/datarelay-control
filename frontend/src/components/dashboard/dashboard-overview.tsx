@@ -1,11 +1,12 @@
 import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react'
-import { useEffect, useLayoutEffect, useMemo, useState } from 'react'
+import { useLayoutEffect, useMemo, useState } from 'react'
 import { loadDashboardRefreshMs, persistDashboardRefreshMs } from '../../localPreferences'
 import { Link } from 'react-router-dom'
 import { NAV_PATH, newStreamPath } from '../../config/nav-paths'
 import { dashboardPriorityInvestigations } from './dashboard-priority-investigations'
 import { cn } from '../../lib/utils'
 import { useSessionCapabilities } from '../../lib/rbac'
+import { useOperationalEvidenceClock } from '../../hooks/use-operational-evidence-clock'
 import { DashboardFirstFlowSetup } from './dashboard-first-flow-setup'
 import { isRouteSnapshotStale } from '../routes/routes-flow-helpers'
 import {
@@ -103,27 +104,8 @@ export function DashboardOverview() {
 
   const hasOperationalSnapshot = bundle?.operationalSnapshot != null
   const snapshotUpdatedAt = bundle?.operationalSnapshot?.updated_at
-  // A snapshot can expire while this page remains mounted and polling is Off.
-  // Re-evaluate its existing 90-second policy at the boundary; never fetch,
-  // treat aged observations as live, or change the operator's refresh choice.
-  const [, recheckEvidenceClock] = useState(0)
-  useEffect(() => {
-    if (!snapshotUpdatedAt) return
-    const checkClock = () => recheckEvidenceClock((version) => version + 1)
-    const observedAt = Date.parse(snapshotUpdatedAt)
-    const remainingMs = observedAt + 90_000 + 1 - Date.now()
-    const expiryTimer = Number.isFinite(observedAt) && remainingMs > 0 && remainingMs <= 2_147_483_647
-      ? window.setTimeout(checkClock, remainingMs)
-      : null
-    // Background tabs may throttle timers. Re-evaluate immediately on return.
-    window.addEventListener('focus', checkClock)
-    document.addEventListener('visibilitychange', checkClock)
-    return () => {
-      if (expiryTimer !== null) window.clearTimeout(expiryTimer)
-      window.removeEventListener('focus', checkClock)
-      document.removeEventListener('visibilitychange', checkClock)
-    }
-  }, [snapshotUpdatedAt])
+  // Time passage invalidates the displayed snapshot even when polling is Off.
+  useOperationalEvidenceClock(snapshotUpdatedAt)
   // Match the existing Data Flows 90s operational-evidence freshness policy.
   const snapshotStale = hasOperationalSnapshot && isRouteSnapshotStale(snapshotUpdatedAt)
   const snapshotTimestampValid = snapshotUpdatedAt != null && Number.isFinite(Date.parse(snapshotUpdatedAt))

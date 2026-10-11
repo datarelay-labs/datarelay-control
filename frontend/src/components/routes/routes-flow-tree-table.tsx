@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { NAV_PATH, destinationDetailPath, logsExplorerPath, routeEditPath, runtimeAnalyticsPath, streamRuntimePath } from '../../config/nav-paths'
 import { cn } from '../../lib/utils'
 import { useMediaQuery } from '../../hooks/use-media-query'
+import { useOperationalEvidenceClock } from '../../hooks/use-operational-evidence-clock'
 import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
 import {
   buildRouteFlowTree,
@@ -41,6 +42,7 @@ export function RoutesFlowTreeTable({ snapshot, consoleRows, loading = false }: 
   const groups = useMemo(() => buildRouteFlowTree(snapshot, consoleRows), [snapshot, consoleRows])
   const snapshotTime = snapshot?.updated_at ? Date.parse(snapshot.updated_at) : NaN
   const validObservationTime = Number.isFinite(snapshotTime)
+  useOperationalEvidenceClock(snapshot?.updated_at)
   const evidenceStale = isRouteSnapshotStale(snapshot?.updated_at)
   const verifiedEmpty = !loading && snapshot != null && !evidenceStale &&
     snapshot.global?.total_routes === 0 && snapshot.routes.length === 0
