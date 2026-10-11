@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2, Info, Send } from 'lucide-react'
 import { cn } from '../../lib/utils'
-import { logsExplorerPath } from '../../config/nav-paths'
+import { logsExplorerPath, runtimeAnalyticsPath } from '../../config/nav-paths'
 import { toOperatorEventLabel } from '../../lib/stream-governance-snapshot'
 import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
 import type { RecentLogLine, RunHistoryRow } from './stream-runtime-detail-model'
@@ -76,9 +76,16 @@ function SelectedRouteEvidence({
     recentLogs.map((log) => log.destinationId)
       .filter((id): id is number => typeof id === 'number' && Number.isSafeInteger(id) && id > 0),
   )]
-  const failureLogsHref = Number.isSafeInteger(backendStreamId) && (backendStreamId ?? 0) > 0 &&
-    (failed > 0 || (recordedMetricsFailures ?? 0) > 0)
+  const hasExactScope =
+    Number.isSafeInteger(backendStreamId) && (backendStreamId ?? 0) > 0 &&
+    Number.isSafeInteger(routeId) && routeId > 0
+  const failureLogsHref = hasExactScope && (failed > 0 || (recordedMetricsFailures ?? 0) > 0)
     ? logsExplorerPath({ route_id: routeId, stream_id: backendStreamId, status: 'failed' })
+    : null
+  // The existing Analytics view makes a separate Route-filtered 24h API request.
+  // This path does not present the currently loaded 12-event sample as history.
+  const routeAnalyticsHref = hasExactScope
+    ? runtimeAnalyticsPath({ window: '24h', stream_id: backendStreamId, route_id: routeId })
     : null
 
   return (
@@ -94,14 +101,24 @@ function SelectedRouteEvidence({
             {recentLogs.length} events in loaded sample · not a full-history health or delivery rate
           </p>
         </div>
-        {failureLogsHref ? (
-          <Link
-            to={failureLogsHref}
-            className="inline-flex min-h-9 items-center rounded-md border border-red-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-red-800 hover:underline dark:border-red-500/35 dark:bg-gdc-card dark:text-red-200"
-          >
-            Inspect recorded Route failures
-          </Link>
-        ) : null}
+        <div className="flex flex-wrap gap-2">
+          {failureLogsHref ? (
+            <Link
+              to={failureLogsHref}
+              className="inline-flex min-h-9 items-center rounded-md border border-red-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-red-800 hover:underline dark:border-red-500/35 dark:bg-gdc-card dark:text-red-200"
+            >
+              Inspect recorded Route failures
+            </Link>
+          ) : null}
+          {routeAnalyticsHref ? (
+            <Link
+              to={routeAnalyticsHref}
+              className="inline-flex min-h-9 items-center rounded-md border border-violet-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-violet-800 hover:underline dark:border-violet-500/35 dark:bg-gdc-card dark:text-violet-200"
+            >
+              Analyze Route failure trend (24h)
+            </Link>
+          ) : null}
+        </div>
       </div>
       <div className="flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-slate-700 dark:text-gdc-mutedStrong">
         <span>Gateway success records: {successful}</span>
@@ -140,6 +157,11 @@ function SelectedRouteEvidence({
             </code>
           ))}
         </div>
+      ) : null}
+      {routeAnalyticsHref ? (
+        <p className="text-[10px] text-slate-600 dark:text-gdc-muted">
+          Historical Analytics is loaded separately; this is a recent timeline sample.
+        </p>
       ) : null}
       <p className="text-[10px] text-slate-600 dark:text-gdc-muted">
         Receiver acknowledgment not verified. Only actual runtime stage records count as gateway outcomes.
