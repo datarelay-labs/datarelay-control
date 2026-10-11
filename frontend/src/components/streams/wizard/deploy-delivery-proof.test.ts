@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { evaluateExactRunDelivery, nextDeliveryProofPrior, type DeliveryEvidenceRow } from './deploy-delivery-proof'
+import { deliveryProofLines, evaluateExactRunDelivery, nextDeliveryProofPrior, type DeliveryEvidenceRow } from './deploy-delivery-proof'
 
 function row(partial: DeliveryEvidenceRow): DeliveryEvidenceRow {
   return partial
@@ -15,6 +15,48 @@ function counts(success: number, failure = 0, blocked = 0) {
     attemptCount: success + failure + blocked,
   }
 }
+
+describe('receiver-ingestion truth in run-once operator feedback', () => {
+  it('does not present a gateway send as verified receiver ingestion', () => {
+    const proof = evaluateExactRunDelivery({
+      streamId: 42,
+      runtimeRunId: 'run-udp',
+      commandAccepted: true,
+      evidence: [row({ route_id: 7, destination_id: 11, stage: 'route_send_success', sequence: 1 })],
+      aggregates: counts(1),
+    })
+    expect(proof.status).toBe('proven')
+    expect(deliveryProofLines(proof).join(' ')).toContain('does not confirm receiver ingestion')
+    expect(deliveryProofLines(proof).join(' ')).toContain('receiver logs')
+  })
+
+  it('warns about receiver truth even when only one of several routes succeeded', () => {
+    const proof = evaluateExactRunDelivery({
+      streamId: 42,
+      runtimeRunId: 'run-partial',
+      commandAccepted: true,
+      evidence: [
+        row({ route_id: 7, destination_id: 11, stage: 'route_send_success', sequence: 1 }),
+        row({ route_id: 8, destination_id: 12, stage: 'route_send_failed', sequence: 2 }),
+      ],
+      aggregates: counts(1, 1),
+    })
+    expect(proof.status).toBe('partial')
+    expect(deliveryProofLines(proof).join(' ')).toContain('does not confirm receiver ingestion')
+  })
+
+  it('does not imply sender success or receiver arrival for failed-only attempts', () => {
+    const proof = evaluateExactRunDelivery({
+      streamId: 42,
+      runtimeRunId: 'run-failed',
+      commandAccepted: true,
+      evidence: [row({ route_id: 7, destination_id: 11, stage: 'route_send_failed' })],
+      aggregates: counts(0, 1),
+    })
+    expect(proof.status).toBe('failed')
+    expect(deliveryProofLines(proof).join(' ')).not.toContain('does not confirm receiver ingestion')
+  })
+})
 
 describe('evaluateExactRunDelivery', () => {
   it('treats an exact-run success as proven', () => {
