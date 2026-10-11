@@ -377,3 +377,12 @@ A snapshot Route could be reported Healthy while its receiving Destination ID is
 ### 2026-10-10 — P0-UX-04: distinguish Route from receiving Destination health
 
 The selected delivery-path inspector now shows **Destination health (snapshot)** separately from **Route health**, using the existing operational snapshot only. A gateway Route reported Healthy is not presented as proof that a receiving Destination is healthy: an independently observed Destination error is shown as Error, a disabled receiving Destination is shown as Disabled, an aged reading is labeled Stale · last reported, and absent evidence remains Not verified. **Receiver-confirmed ingestion** continues to say Not verified by this snapshot. This uses existing Route and Destination IDs, no network calls or mutations, and leaves backend/runtime or previously platform-denied parent Routes/Sidebar/Destination-create operations untouched. RED→GREEN rendered tests cover opposing health states, disabled, missing, and stale evidence. Authenticated Browser BFS and two-user Full User E2E are still NOT PASS.
+
+
+## 2026-10-11 — P0 failure-stage authority in scoped Stream Recent errors
+
+**Source-confirmed operator failure:** Stream Recent Events already recognized actual Gateway failure stages (route_send_failed, route_retry_failed) in the compact alert icon and selected-Route evidence. The full-screen Recent errors tab instead filtered only upstream log severity (ERROR/WARN). An INFO-level record reporting a proven Gateway failure left the tab count at zero, hiding actual failed delivery attempts from operators.
+
+**Minimal implementation:** Use the existing set of stage-proven Gateway failures in the Recent errors filter, alongside existing ERROR/WARN severity. Continue to honor selected Route scope; do not infer a failure from free-text messages, rewrite log levels, invent receiver acknowledgement, add endpoints or mutate runtime.
+
+**Verification:** Native RED scenario demonstrated a zero-error tab with two INFO-level actual failed stages on one Route; corrected filter produces two scoped errors while excluding unrelated Route, source message, and successful retry. Code/native evidence only; authenticated Browser 320/375/1440, BFS 20/97 and two actual users' same-HEAD E2E remain NOT PASS.

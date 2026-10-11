@@ -285,7 +285,12 @@ export function StreamRecentEventsPanel({
   const scopedLogs = useMemo(() =>
     activeRouteId == null ? recentLogs : recentLogs.filter((log) => log.routeId === activeRouteId),
   [recentLogs, activeRouteId])
-  const errorLogs = useMemo(() => scopedLogs.filter((l) => l.level === 'ERROR' || l.level === 'WARN'), [scopedLogs])
+  // Stage-proven Gateway failures remain errors even when the upstream log level is INFO.
+  // Do not classify message text as failure evidence.
+  const errorLogs = useMemo(() => scopedLogs.filter((log) =>
+    log.level === 'ERROR' || log.level === 'WARN' ||
+    (log.stage != null && RECORDED_GATEWAY_FAILURES.has(log.stage.trim().toLowerCase())),
+  ), [scopedLogs])
   const deliveryLogs = useMemo(() => scopedLogs.filter(isDeliveryMessage), [scopedLogs])
   // A per-Stream Run count has no Route identity: do not attribute it to the selected Route.
   const deliveryRuns = useMemo(() =>

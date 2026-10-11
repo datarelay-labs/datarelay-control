@@ -73,6 +73,25 @@ describe('Stream Recent Events: selected-Route sample inspection', () => {
     expect(panel).not.toHaveTextContent('run-aggregation')
   })
 
+  it('includes stage-proven INFO-level Route delivery failures in the scoped errors tab', () => {
+    const rows: RecentLogLine[] = [
+      { ...line(17, 'Route 17 send failed with INFO severity'), stage: 'route_send_failed' },
+      { ...line(17, 'Route 17 retry failed with INFO severity'), stage: 'route_retry_failed' },
+      { ...line(17, 'Source text says failed but did not fail delivery'), stage: 'source_fetch' },
+      { ...line(17, 'Route 17 recovered'), stage: 'route_retry_success' },
+      { ...line(23, 'Route 23 unrelated error', 'ERROR'), stage: 'route_send_failed' },
+    ]
+    const { panel } = mount('default', rows)
+    fireEvent.change(within(panel).getByLabelText('Filter recent events by Route'), { target: { value: '17' } })
+    fireEvent.click(within(panel).getByRole('button', { name: /Recent errors/ }))
+    expect(within(panel).getByRole('button', { name: /Recent errors\s*\(2\)/ })).toBeInTheDocument()
+    expect(panel).toHaveTextContent('Route 17 send failed with INFO severity')
+    expect(panel).toHaveTextContent('Route 17 retry failed with INFO severity')
+    expect(panel).not.toHaveTextContent('Source text says failed but did not fail delivery')
+    expect(panel).not.toHaveTextContent('Route 17 recovered')
+    expect(panel).not.toHaveTextContent('Route 23 unrelated error')
+  })
+
   it('provides the same scoped Route inspection on compact and narrow screen markup', () => {
     const { panel } = mount('compact')
     fireEvent.change(within(panel).getByLabelText('Filter recent events by Route'), { target: { value: '17' } })
