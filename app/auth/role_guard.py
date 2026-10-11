@@ -66,21 +66,23 @@ KNOWN_ROLES = frozenset(
 
 _API = settings.API_PREFIX.rstrip("/")
 
-# Bypass = no role enforcement at all.  Authentication endpoints, OpenAPI/docs,
-# and health checks always pass through.
-_BYPASS_PREFIXES: tuple[str, ...] = (
+# Auth bypass is limited to actual public route shapes/methods, not the
+# descendants of arbitrary parent paths. Ingest receivers enforce their own
+# receiver credential, while authentication endpoints do not require a JWT.
+_BYPASS_POST_PATHS = frozenset({
     f"{_API}/auth/login",
     f"{_API}/auth/mfa/verify",
     f"{_API}/auth/refresh",
     f"{_API}/auth/logout",
-    f"{_API}/ingest/webhook",
-    f"{_API}/ingest/ai",
+})
+_BYPASS_GET_PATHS = frozenset({
     "/health",
     "/api/openapi.json",
     "/docs",
+    "/docs/oauth2-redirect",
     "/redoc",
     "/openapi.json",
-)
+})
 
 
 @dataclass(frozen=True)
@@ -106,8 +108,31 @@ def _normalize_role(raw: str | None) -> str:
     return v
 
 
-def _is_bypass(path: str) -> bool:
-    return any(path == p or path.startswith(p) for p in _BYPASS_PREFIXES)
+def _is_bypass(path: str, method: str) -> bool:
+    """Match exact public endpoint paths and HTTP verbs.
+
+    The method is mandatory: no path-only caller can accidentally broaden an
+    authentication exemption. Dynamic ingress route shapes are bounded below.
+    """
+    verb = method.upper()
+    if verb == "POST" and path in _BYPASS_POST_PATHS:
+        return True
+    if verb in {"GET", "HEAD"} and path in _BYPASS_GET_PATHS:
+        return True
+    if verb != "POST":
+        return False
+
+    webhook_prefix = f"{_API}/ingest/webhook/"
+    if path.startswith(webhook_prefix):
+        key = path[len(webhook_prefix):]
+        return bool(key) and "/" not in key
+
+    ai_prefix = f"{_API}/ingest/ai/"
+    if path.startswith(ai_prefix):
+        slug, sep, suffix = path[len(ai_prefix):].partition("/")
+        return bool(slug) and bool(sep) and suffix == "v1/chat/completions"
+
+    return False
 
 
 def _must_change_password_bypass(path: str) -> bool:
@@ -120,7 +145,9 @@ def _must_change_password_bypass(path: str) -> bool:
         f"{base}/auth/whoami",
         f"{base}/auth/change-password",
     )
-    return any(path == p or path.startswith(p) for p in prefixes)
+    # These are concrete authentication endpoints, not prefixes that may
+    # authorize arbitrary sibling paths during mandatory password rotation.
+    return path in prefixes
 
 
 def _extract_bearer(request: Request) -> str | None:
@@ -247,7 +274,7 @@ async def role_guard_middleware(request: Request, call_next):
     if method == "OPTIONS":
         return await call_next(request)
 
-    if _is_bypass(path):
+    if _is_bypass(path, method=method):
         return await call_next(request)
 
     ctx = resolve_auth_context(request)
@@ -270,7 +297,7 @@ async def role_guard_middleware(request: Request, call_next):
     if (
         ctx.source == "anonymous_admin"
         and settings.REQUIRE_AUTH
-        and not _is_bypass(path)
+        and not _is_bypass(path, method=method)
     ):
         return JSONResponse(
             status_code=status.HTTP_401_UNAUTHORIZED,

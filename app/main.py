@@ -17,6 +17,7 @@ from app.middleware.read_api_timing import ReadApiTimingMiddleware
 from app.middleware.slow_query_context import SlowQueryRequestContextMiddleware
 from app.platform_admin.alert_monitor import PlatformAlertMonitor, register_alert_monitor
 from app.platform_admin.router import router as platform_admin_router
+from app.platform_admin.management_acl_preview import router as management_acl_preview_router
 from app.retention.router import router as retention_router
 from app.db.partition_maintenance_scheduler import (
     PartitionMaintenanceScheduler,
@@ -235,13 +236,14 @@ app = FastAPI(
 
 if settings.GDC_TRUST_PROXY_HEADERS:
     from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+    from app.auth.trusted_proxy import trusted_proxy_peer_networks
 
-    _th = (settings.GDC_PROXY_FORWARD_TRUSTED_HOSTS or "*").strip()
-    if "," in _th:
-        _hosts = [h.strip() for h in _th.split(",") if h.strip()]
-        app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=_hosts)
-    else:
-        app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=_th)
+    # The old empty-string fallback to "*" silently trusted arbitrary XFF.
+    # Validate every peer CIDR when proxy trust is explicitly enabled; reject
+    # missing/wildcard sources instead of upgrading untrusted headers to client
+    # IP authority on startup.
+    _hosts = trusted_proxy_peer_networks(settings.GDC_PROXY_FORWARD_TRUSTED_HOSTS)
+    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=_hosts)
 
 app.add_middleware(
     CORSMiddleware,
@@ -262,6 +264,7 @@ app.include_router(auth_router, prefix=f"{_prefix}/auth", tags=["auth"])
 # Operator/admin HTTP surface: HTTPS, users, retention, maintenance, and lab diagnostics
 # (e.g. GET {API_PREFIX}/admin/dev-validation/status — see app.platform_admin.router).
 app.include_router(platform_admin_router, prefix=f"{_prefix}/admin", tags=["admin"])
+app.include_router(management_acl_preview_router, prefix=f"{_prefix}/admin", tags=["admin"])
 app.include_router(connectors_router, prefix=f"{_prefix}/connectors", tags=["connectors"])
 app.include_router(sources_router, prefix=f"{_prefix}/sources", tags=["sources"])
 app.include_router(streams_router, prefix=f"{_prefix}/streams", tags=["streams"])

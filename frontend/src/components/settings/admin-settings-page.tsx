@@ -43,6 +43,7 @@ import { AdminDevValidationPanel } from './admin-dev-validation-panel'
 import { AdminDisplayTimezoneSettings } from './admin-display-timezone-settings'
 import { AdminMaintenanceCenter } from './admin-maintenance-center'
 import { AdminMfaEnrollment } from './admin-mfa-enrollment'
+import { AdminManagementAclPreview } from './admin-management-acl-preview'
 import { AdminNetworkSettingsPage } from './admin-network-settings-page'
 import { AdminRetentionSettings } from './admin-retention-settings'
 import { AdminOperationalDashboard } from './admin-settings-operational'
@@ -59,6 +60,7 @@ const SETTINGS_SECTION_JUMPS = [
   { href: '#admin-https-heading', label: 'HTTPS', group: 'Access & security' },
   { href: '#admin-password-heading', label: 'Password', group: 'Access & security' },
   { href: '#admin-mfa-heading', label: 'Authenticator MFA', group: 'Access & security' },
+  { href: '#admin-management-acl-heading', label: 'Management IP preview', group: 'Access & security' },
   { href: '#admin-users-heading', label: 'Users', group: 'Access & security' },
   { href: '#admin-display-timezone-heading', label: 'Timezone', group: 'Platform & network' },
   { href: '#admin-network-heading', label: 'Network', group: 'Platform & network' },
@@ -911,6 +913,10 @@ export function AdminSettingsPage() {
       {/* Per-user MFA enrollment is self-service; it must not inherit the
           administrator-only other-account mutation restriction. */}
       <AdminMfaEnrollment />
+
+      {/* The Management ACL is only a proposal preview; do not imply that
+          host SSH, Web UI, or API ingress restrictions are installed. */}
+      <AdminManagementAclPreview isAdministrator={effectiveRole === 'ADMINISTRATOR'} />
 
       {/* User Management */}
       <section

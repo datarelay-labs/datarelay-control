@@ -34,6 +34,27 @@ export type HttpsSettingsSaveDto = {
   proxy_fallback_to_http: boolean
 }
 
+export type ManagementAccessPreviewDraft = {
+  web: { enabled: boolean; sources: Array<{ cidr: string }> }
+  ssh: { enabled: boolean; sources: Array<{ cidr: string }> }
+  rollback_seconds: number
+}
+
+export type ManagementAccessPreviewDto = {
+  mode: 'PREVIEW_ONLY'
+  apply_available: false
+  ssh_enforcement_available: false
+  web_enforcement_available: false
+  observed_api_source: string | null
+  web_reason: string
+  web_source_matches: boolean
+  ssh_reason: string
+  blockers: string[]
+  candidate_web_enabled: boolean
+  candidate_ssh_enabled: boolean
+  rollback_seconds: number
+}
+
 export type NetworkSettingsDto = {
   http_port: number
   https_port: number
@@ -293,6 +314,15 @@ export async function putAdminHttpsSettings(body: {
       ...body,
       regenerate_certificate: body.regenerate_certificate ?? true,
     }),
+  })
+}
+
+export async function postAdminManagementAclPreview(
+  draft: ManagementAccessPreviewDraft,
+): Promise<ManagementAccessPreviewDto> {
+  return requestJson<ManagementAccessPreviewDto>(`${GDC_API_PREFIX}/admin/management-access/preview`, {
+    method: 'POST',
+    body: JSON.stringify(draft),
   })
 }
 
