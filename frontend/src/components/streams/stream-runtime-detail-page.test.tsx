@@ -569,7 +569,7 @@ describe('StreamRuntimeDetailPage M17.2 layout', () => {
     renderRuntimePage('42')
     const panel = await screen.findByTestId('stream-recent-events-panel')
     const selector = await within(panel).findByLabelText('Filter recent events by Route')
-    expect(within(selector).getByRole('option', { name: 'Route #101' })).toBeInTheDocument()
+    expect(within(selector).getByRole('option', { name: /^Route #101 — Stellar Syslog/ })).toBeInTheDocument()
     await user.selectOptions(selector, '101')
     expect(within(panel).getByRole('region', { name: 'Selected Route evidence' })).toHaveTextContent(
       'Gateway outcome not verified in this sample',

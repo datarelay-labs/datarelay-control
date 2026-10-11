@@ -197,7 +197,7 @@ export type StreamRecentEventsPanelProps = {
   recentLogs: RecentLogLine[]
   runHistory: RunHistoryRow[]
   logsHref: string
-  /** Actual numeric IDs from the already-loaded runtime Metrics route_health snapshot. */
+  /** Verified Route IDs from the loaded modern/legacy runtime Metrics snapshot. */
   observedRouteIds?: readonly number[]
   /** Already loaded Metrics evidence, not a verified current receiver state. */
   routeMetrics?: readonly {
@@ -254,6 +254,25 @@ export function StreamRecentEventsPanel({
     [...recentLogs.map((log) => log.routeId), ...(observedRouteIds ?? []), ...(routeMetrics?.map((row) => row.routeId) ?? [])]
       .filter((id): id is number => typeof id === 'number' && Number.isSafeInteger(id) && id > 0),
   )].sort((a, b) => a - b), [recentLogs, observedRouteIds, routeMetrics])
+
+  // A multi-destination Stream can have many numbered Routes. Distinguish
+  // routes with recent records from quiet Metrics-only Routes and label only
+  // actual reported Destination/state data; browser-native select stays keyboard-friendly.
+  const timelineRouteIds = useMemo(() => new Set(recentLogs
+    .map((log) => log.routeId)
+    .filter((id): id is number => typeof id === 'number' && Number.isSafeInteger(id) && id > 0),
+  ), [recentLogs])
+  const recentRouteChoices = availableRouteIds.filter((id) => timelineRouteIds.has(id))
+  const otherRouteChoices = availableRouteIds.filter((id) => !timelineRouteIds.has(id))
+  function routeChoiceLabel(routeId: number): string {
+    const reported = routeMetrics?.find((row) => row.routeId === routeId)
+    const destination = typeof reported?.destinationName === 'string' ? reported.destinationName.trim() : ''
+    const state = typeof reported?.enabled === 'boolean'
+      ? ` · last reported ${reported.enabled ? 'Enabled' : 'Disabled'}`
+      : ''
+    return `Route #${routeId}${destination ? ` — ${destination}` : ''}${state}`
+  }
+
   const activeRouteId = selectedRouteId != null && availableRouteIds.includes(selectedRouteId)
     ? selectedRouteId : null
   const scopedLogs = useMemo(() =>
@@ -283,10 +302,21 @@ export function StreamRecentEventsPanel({
         }}
         className="min-h-9 max-w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-600 dark:border-gdc-border dark:bg-gdc-elevated dark:text-slate-100"
       >
-        <option value="all">All routes in sample</option>
-        {availableRouteIds.map((routeId) => (
-          <option key={routeId} value={routeId}>Route #{routeId}</option>
-        ))}
+        <option value="all">All recent events</option>
+        {recentRouteChoices.length > 0 ? (
+          <optgroup label="Routes in recent timeline">
+            {recentRouteChoices.map((routeId) => (
+              <option key={routeId} value={routeId}>{routeChoiceLabel(routeId)}</option>
+            ))}
+          </optgroup>
+        ) : null}
+        {otherRouteChoices.length > 0 ? (
+          <optgroup label="Other Routes in loaded Metrics">
+            {otherRouteChoices.map((routeId) => (
+              <option key={routeId} value={routeId}>{routeChoiceLabel(routeId)}</option>
+            ))}
+          </optgroup>
+        ) : null}
       </select>
       <p className="w-full text-[10px] text-slate-500 dark:text-gdc-muted">
         Route IDs come from loaded timeline or Metrics. Outcomes are recent sample only; inspect scoped Logs for wider history.
