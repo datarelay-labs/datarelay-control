@@ -106,3 +106,15 @@ describe('Narrow-screen Route failure investigation recovery', () => {
     expect(screen.queryByRole('button', { name: 'Show all statuses for this Route' })).not.toBeInTheDocument()
   })
 })
+
+describe('Logs timestamp evidence on narrow screens', () => {
+  it('identifies the UTC time basis instead of stripping the source timezone', () => {
+    render(<LogsCompactCards rows={[row]} loading={false} apiUnavailable={false} selectedId={null} onSelect={vi.fn()} onClearFilters={vi.fn()} />)
+    expect(screen.getByRole('region', { name: 'Compact delivery logs' })).toHaveTextContent('2026-10-10 09:00:00.000 UTC')
+  })
+
+  it('normalizes an explicitly offset timestamp to UTC rather than showing a misleading wall clock', () => {
+    render(<LogsCompactCards rows={[{ ...row, timeIso: '2026-10-10T18:00:00+09:00' }]} loading={false} apiUnavailable={false} selectedId={null} onSelect={vi.fn()} onClearFilters={vi.fn()} />)
+    expect(screen.getByRole('region', { name: 'Compact delivery logs' })).toHaveTextContent('2026-10-10 09:00:00.000 UTC')
+  })
+})

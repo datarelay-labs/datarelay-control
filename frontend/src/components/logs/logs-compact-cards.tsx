@@ -1,6 +1,6 @@
 import { ArrowRight, Clock3 } from 'lucide-react'
 import { cn } from '../../lib/utils'
-import { deliveryStatusPresentation, destinationFromRouteLabel, formatLatencyMs, stageChipText } from './logs-console-helpers'
+import { deliveryStatusPresentation, destinationFromRouteLabel, formatLatencyMs, formatLogTimeUtc, stageChipText } from './logs-console-helpers'
 import { LevelBadge } from './logs-level-badge'
 import type { LogExplorerRow } from './logs-types'
 
@@ -100,7 +100,7 @@ export function LogsCompactCards({
                       </span>
                     </span>
                     <span className="font-mono text-[10px] tabular-nums text-slate-500 dark:text-gdc-muted">
-                      {row.timeIso.slice(0, 23).replace('T', ' ')}
+                      {formatLogTimeUtc(row.timeIso)}
                     </span>
                   </span>
                   <span className="min-w-0 break-words text-sm font-semibold leading-snug text-slate-900 dark:text-slate-100">

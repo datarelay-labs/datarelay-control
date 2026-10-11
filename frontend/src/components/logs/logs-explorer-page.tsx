@@ -40,6 +40,7 @@ import {
   deliveryStatusPresentation,
   destinationFromRouteLabel,
   formatLatencyMs,
+  formatLogTimeUtc,
   deliveryOutcomeCountsFromRows,
   metricsWindowFromTimeRangeLabel,
   safeCtxInt,
@@ -297,10 +298,6 @@ function DropdownMenu({
       ) : null}
     </div>
   )
-}
-
-function formatTableTime(iso: string) {
-  return iso.slice(0, 23).replace('T', ' ')
 }
 
 function TableSkeletonRows({ cols }: { cols: number }) {
@@ -2099,7 +2096,7 @@ export function LogsExplorerPage() {
                       ) : null}
                       {visibleCols.time ? (
                         <td className={cn(opTd, 'whitespace-nowrap font-mono text-[11px] text-slate-700 dark:text-gdc-mutedStrong')}>
-                          {formatTableTime(row.timeIso)}
+                          {formatLogTimeUtc(row.timeIso)}
                         </td>
                       ) : null}
                       {visibleCols.level ? (
