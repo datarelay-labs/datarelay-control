@@ -46,6 +46,8 @@ Restore is **destructive** for the target database inside the Compose PostgreSQL
 1. Environment: `RESTORE_CONFIRM=YES_I_UNDERSTAND`
 2. Interactive prompt: you must type the **exact** database name that will be dropped/recreated (defaults to the same catalog inferred from Compose `POSTGRES_DB` when `GDC_RESTORE_DB_NAME` is unset).
 3. **Unknown DB guard**: the resolved target must be `gdc` or `datarelay`. Other names are refused to avoid targeting unexpected catalogs.
+4. **Archive checksum preflight**: the matching `.sql.gz.sha256` receipt must reference the exact archive name and its current SHA256 bytes; corruption, empty or malformed receipts, and symlinked inputs fail before any Docker/PostgreSQL connection. The digest is not an authenticated publisher signature or proof of a successful restore.
+5. **Legacy compatibility**: for an older archive with no checksum receipt only, the operator must explicitly add `ALLOW_UNVERIFIED_LEGACY_DUMP=yes`; this is an integrity-verification waiver, not a restore authorization or permission to bypass database confirmation. Prefer regenerating an independently verified backup.
 
 ### Example
 

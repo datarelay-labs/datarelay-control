@@ -206,3 +206,90 @@ def test_offline_skip_reset_compatibility_preserves_volumes(tmp_path: Path) -> N
     result = _run_offline(lab, env, "--skip-reset")
     assert result.returncode == 0, result.stdout + result.stderr
     assert "down -v" not in _actions(env)
+
+
+def _run_release_restore_preflight(
+    tmp_path: Path,
+    *,
+    checksum: str | None,
+    legacy_override: bool = False,
+) -> tuple[subprocess.CompletedProcess[str], str]:
+    """Only a fake docker binary exists on PATH; no actual restore can run."""
+    archive = tmp_path / "mock-release.sql.gz"
+    archive.write_bytes(b"NOT_A_REAL_DATABASE_DUMP")
+    if checksum is not None:
+        receipt = archive.with_name(archive.name + ".sha256")
+        if checksum == "valid":
+            receipt.write_text(
+                f"{hashlib.sha256(archive.read_bytes()).hexdigest()}  {archive.name}\n"
+            )
+        elif checksum == "wrong-name":
+            receipt.write_text(
+                f"{hashlib.sha256(archive.read_bytes()).hexdigest()}  another.sql.gz\n"
+            )
+        else:
+            receipt.write_text(f"{'0' * 64}  {archive.name}\n")
+
+    bin_dir = tmp_path / "fake-bin"
+    bin_dir.mkdir()
+    docker = bin_dir / "docker"
+    docker.write_text(
+        "#!/usr/bin/env bash\n"
+        'printf "%s\\n" "$*" >> "$MOCK_RESTORE_DOCKER_LOG"\n'
+        'exit 88  # Stop before any real Compose/PostgreSQL operation.\n'
+    )
+    docker.chmod(0o700)
+    calls = tmp_path / "restore-docker-calls.log"
+    env = {
+        **os.environ,
+        "PATH": str(bin_dir) + os.pathsep + os.environ.get("PATH", ""),
+        "RESTORE_CONFIRM": "YES_I_UNDERSTAND",
+        "MOCK_RESTORE_DOCKER_LOG": str(calls),
+    }
+    if legacy_override:
+        env["ALLOW_UNVERIFIED_LEGACY_DUMP"] = "yes"
+    else:
+        env.pop("ALLOW_UNVERIFIED_LEGACY_DUMP", None)
+    result = subprocess.run(
+        ["bash", str(ROOT / "scripts/release/restore.sh"), str(archive)],
+        env=env, capture_output=True, text=True, input="", timeout=15, check=False,
+    )
+    return result, calls.read_text() if calls.exists() else ""
+
+
+def test_release_restore_rejects_bad_digest_before_docker(tmp_path: Path) -> None:
+    result, docker_calls = _run_release_restore_preflight(tmp_path, checksum="corrupt")
+    assert result.returncode != 0
+    assert "checksum" in (result.stdout + result.stderr).lower()
+    assert docker_calls == ""
+
+
+def test_release_restore_rejects_digest_for_other_archive(tmp_path: Path) -> None:
+    result, docker_calls = _run_release_restore_preflight(tmp_path, checksum="wrong-name")
+    assert result.returncode != 0
+    assert "checksum" in (result.stdout + result.stderr).lower()
+    assert docker_calls == ""
+
+
+def test_release_restore_requires_explicit_legacy_waiver(tmp_path: Path) -> None:
+    result, docker_calls = _run_release_restore_preflight(tmp_path, checksum=None)
+    assert result.returncode != 0
+    assert "ALLOW_UNVERIFIED_LEGACY_DUMP" in result.stdout + result.stderr
+    assert docker_calls == ""
+
+
+def test_release_restore_accepts_valid_digest_at_preflight_only(tmp_path: Path) -> None:
+    result, docker_calls = _run_release_restore_preflight(tmp_path, checksum="valid")
+    # The fake docker intentionally exits 88; real restore never proceeds.
+    assert result.returncode != 0
+    assert "compose version" in docker_calls
+    assert "exec" not in docker_calls
+
+
+def test_release_restore_legacy_waiver_reaches_mock_only(tmp_path: Path) -> None:
+    result, docker_calls = _run_release_restore_preflight(
+        tmp_path, checksum=None, legacy_override=True
+    )
+    assert result.returncode != 0
+    assert "compose version" in docker_calls
+    assert "exec" not in docker_calls
