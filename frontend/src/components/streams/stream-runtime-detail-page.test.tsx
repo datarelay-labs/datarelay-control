@@ -1480,6 +1480,9 @@ describe('StreamRuntimeDetailPage diagnosis overview', () => {
       expires_at: new Date(Date.now() + 3600_000).toISOString(),
       user: { username: 'viewer', role: 'VIEWER', status: 'ACTIVE' },
     })
+    // Keep the test's Viewer session valid: this component test does not mount
+    // PlatformSessionRoot, which otherwise redirects after a 401 response.
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse([])))
     renderRuntimePage('42')
     expect(await screen.findByText(/Read-only monitoring session/i)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Run Now' })).not.toBeInTheDocument()
@@ -1489,6 +1492,10 @@ describe('StreamRuntimeDetailPage diagnosis overview', () => {
     const user = userEvent.setup()
     await user.click(screen.getByTestId('stream-detail-tab-schema'))
     expect(screen.getByTestId('stream-detail-delivery-panel')).toBeInTheDocument()
+    const { getSessionCapabilities } = await import('../../lib/rbac')
+    const { readSession } = await import('../../auth/session')
+    expect(readSession()?.user.role).toBe('VIEWER')
+    expect(getSessionCapabilities().workspace_mutations).toBe(false)
     expect(screen.queryByRole('link', { name: 'Open mapping' })).not.toBeInTheDocument()
     expect(screen.getByText('Read-only Stream schema')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Inspect Stream delivery logs' }))
