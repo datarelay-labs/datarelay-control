@@ -70,6 +70,7 @@ import { formatCheckpointValueForConsole, mapBackendStreamStatus } from '../../a
 import { createRefreshCycleSnapshotId, resetRefreshCycleSnapshotId } from '../../api/runtimeSnapshotSync'
 import { visualizationSummary } from '../../api/visualizationMeta'
 import { cn } from '../../lib/utils'
+import { formatTimestampWithResolvedTimezone } from '../../lib/platform-timestamps'
 import { useSessionCapabilities } from '../../lib/rbac'
 import { governanceWorkspacePath, logsExplorerPath, logsPath, NAV_PATH, streamEditPath, streamMappingPath } from '../../config/nav-paths'
 import { useGovernanceCapabilities } from '../../lib/governance-rbac'
@@ -1364,7 +1365,7 @@ export function StreamRuntimeDetailPage() {
             streamName={streamDisplayName}
             streamGroup={connectorProductGroup ?? connectorDisplayName}
             status={diagnosticDisplayStatus}
-            createdAt={streamEntity?.created_at ? streamEntity.created_at.slice(0, 19).replace('T', ' ') : null}
+            createdAt={streamEntity?.created_at ? formatTimestampWithResolvedTimezone(streamEntity.created_at) : null}
             lastRun={lastRunDisplay}
             nextRun={nextRunDisplay}
             schemaVersion={schemaVersionDisplay}
@@ -1547,7 +1548,7 @@ export function StreamRuntimeDetailPage() {
                       className="flex flex-wrap items-start gap-x-3 gap-y-1 rounded-md border border-slate-100 bg-slate-50/50 px-2 py-1.5 dark:border-gdc-divider dark:bg-gdc-elevated/60"
                     >
                       <span className="shrink-0 font-mono text-[10px] text-slate-500 dark:text-gdc-muted">
-                        {it.created_at.slice(0, 19).replace('T', ' ')}
+                        {formatTimestampWithResolvedTimezone(it.created_at)}
                       </span>
                       <span className="rounded border border-slate-200 bg-slate-50 px-1 py-px font-mono text-[10px] dark:border-gdc-border dark:bg-gdc-elevated">
                         {it.update_reason ?? '—'}

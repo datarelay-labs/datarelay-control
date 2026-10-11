@@ -8,6 +8,7 @@ import { getUrl, jsonResponse } from '../../test/fetchMock'
 import * as gdcRuntime from '../../api/gdcRuntime'
 import * as gdcBackfill from '../../api/gdcBackfill'
 import * as streamGovernanceSnapshot from '../../lib/stream-governance-snapshot'
+import { setDisplayTimezoneCache } from '../../lib/display-timezone-cache'
 import {
   persistRuntimeRefreshEvery,
   persistStreamRuntimeMetricsAutoRefresh,
@@ -558,6 +559,7 @@ describe('StreamRuntimeDetailPage lifecycle cleanup', () => {
     vi.useRealTimers()
     persistStreamRuntimeMetricsAutoRefresh(false)
     persistRuntimeRefreshEvery('off')
+    setDisplayTimezoneCache({ userTimezone: null, platformDefaultTimezone: null })
   })
 
   it('runs initial runtime refresh once after stream metadata resolves', async () => {
@@ -605,6 +607,47 @@ describe('StreamRuntimeDetailPage lifecycle cleanup', () => {
     resolveTimeline(null)
     await waitFor(() => {
       expect(governanceSpy).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('shows Stream creation time in the resolved explicit timezone, not an offset-stripped clock', async () => {
+    setDisplayTimezoneCache({ userTimezone: 'UTC' })
+    mockFetchStreamById.mockImplementationOnce(async (id) => ({
+      id,
+      name: `Stream ${id}`,
+      connector_id: 1,
+      stream_type: 'HTTP_API_POLLING',
+      created_at: '2026-10-10T18:00:00+09:00',
+    }))
+
+    renderRuntimePage('42')
+    const information = await screen.findByTestId('stream-information-panel')
+    await waitFor(() => {
+      expect(information).toHaveTextContent('2026-10-10 09:00 UTC')
+    })
+  })
+
+  it('shows checkpoint history timestamps with their resolved time basis', async () => {
+    setDisplayTimezoneCache({ userTimezone: 'UTC' })
+    vi.mocked(gdcRuntime.fetchStreamCheckpointHistory).mockResolvedValueOnce({
+      stream_id: 42,
+      items: [{
+        log_id: 1001,
+        run_id: 'run-timestamp-probe',
+        created_at: '2026-10-10T18:00:00+09:00',
+        checkpoint_type: 'TIMESTAMP',
+        update_reason: 'DELIVERY_SUCCEEDED',
+        partial_success: false,
+        checkpoint_after_preview: '123',
+      }],
+    })
+
+    const user = userEvent.setup()
+    renderRuntimePage('42')
+    await user.click(await screen.findByTestId('stream-detail-tab-audit'))
+    const trace = await screen.findByRole('region', { name: 'Sync position trace' })
+    await waitFor(() => {
+      expect(trace).toHaveTextContent('2026-10-10 09:00 UTC')
     })
   })
 
