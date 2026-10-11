@@ -9,8 +9,30 @@ import type { RecentLogLine, RunHistoryRow } from './stream-runtime-detail-model
 
 export type RecentEventsTab = 'events' | 'errors' | 'delivery'
 
-function isDeliveryMessage(message: string): boolean {
-  const m = message.toLowerCase()
+const DELIVERY_EVENT_STAGES = new Set([
+  'route_send_success',
+  'route_send_failed',
+  'route_retry_success',
+  'route_retry_failed',
+  'route_unknown_failure_policy',
+  'route_skip',
+  'destination_rate_limited',
+  'dynamic_route_send_success',
+  'dynamic_route_send_failed',
+  'dynamic_route_send_skip',
+  'dynamic_route_send_rate_limited',
+  'dynamic_route_rate_limited',
+  'dynamic_route_skip',
+  'failover_route_attempt',
+  'failover_route_send_success',
+  'failover_route_send_failed',
+])
+
+function isDeliveryMessage(log: RecentLogLine): boolean {
+  // Runtime stage is authoritative. Only older lines without stage use text inference.
+  const stage = log.stage?.trim().toLowerCase()
+  if (stage) return DELIVERY_EVENT_STAGES.has(stage)
+  const m = log.message.toLowerCase()
   return m.includes('route') || m.includes('deliver') || m.includes('send') || m.includes('destination')
 }
 
@@ -45,7 +67,7 @@ export function StreamRecentEventsPanel({
   const [tab, setTab] = useState<RecentEventsTab>('events')
 
   const errorLogs = useMemo(() => recentLogs.filter((l) => l.level === 'ERROR' || l.level === 'WARN'), [recentLogs])
-  const deliveryLogs = useMemo(() => recentLogs.filter((l) => isDeliveryMessage(l.message)), [recentLogs])
+  const deliveryLogs = useMemo(() => recentLogs.filter(isDeliveryMessage), [recentLogs])
   const deliveryRuns = useMemo(() => runHistory.filter((r) => r.delivered > 0 || r.failed > 0), [runHistory])
 
   const tabs: { id: RecentEventsTab; label: string; count: number }[] = [
