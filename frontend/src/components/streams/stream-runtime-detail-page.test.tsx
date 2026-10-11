@@ -580,6 +580,20 @@ describe('StreamRuntimeDetailPage M17.2 layout', () => {
     )
   })
 
+  it('does not show a verified Healthy chip in the violations pane without delivery outcomes', async () => {
+    vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mockResolvedValueOnce(null)
+    const user = userEvent.setup()
+    renderRuntimePage('42')
+    await user.click(await screen.findByTestId('stream-detail-tab-violations'))
+    const issueRail = await screen.findByTestId('stream-issue-rail')
+    await waitFor(() => {
+      expect(issueRail).toHaveTextContent('Not verified')
+      expect(issueRail).toHaveTextContent(/(Delivery outcomes not verified|Stream runtime status is not verified)/)
+    })
+    expect(within(issueRail).queryByText('Healthy')).not.toBeInTheDocument()
+    expect(issueRail).not.toHaveTextContent('No active issues')
+  })
+
   it('keeps the Recent Issues rail neutral without confirmed runtime or governance evidence', async () => {
     vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mockResolvedValueOnce(null)
     renderRuntimePage('42')
