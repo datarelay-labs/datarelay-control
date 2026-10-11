@@ -1,5 +1,5 @@
 import { ArrowRight, GitBranch, Layers3, Network, Settings2 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { Link } from 'react-router-dom'
 import type { OperationalSnapshotResponse, OperationalStreamSnapshot } from '../../api/operationalSnapshot'
 import { formatOperationalHealth } from '../../lib/operational-snapshot-selectors'
@@ -37,6 +37,9 @@ export type RoutesArchitectureWorkspaceProps = {
 
 const validId = (value: number | null | undefined): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value > 0
+
+const INSPECTOR_TABS = ['Overview', 'Delivery', 'Diagnostics'] as const
+type InspectorTab = (typeof INSPECTOR_TABS)[number]
 
 type CollectionHealthTone = ReturnType<typeof formatOperationalHealth>['tone']
 
@@ -86,10 +89,15 @@ export function RoutesArchitectureWorkspace({
   ), [snapshot?.streams])
   const selectedStream = selectedGroup ? streamsById.get(selectedGroup.streamId) : undefined
   const [inspectedRouteId, setInspectedRouteId] = useState<number | null>(null)
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab>('Overview')
+  const inspectorTabButtons = useRef<Partial<Record<InspectorTab, HTMLButtonElement | null>>>({})
   const focusInspectorAfterAttention = useRef(false)
   const inspectorRef = useRef<HTMLElement | null>(null)
   const selectedRoute = selectedGroup?.routes.find((route) => route.routeId === inspectedRouteId) ??
     selectedGroup?.routes[0]
+  useEffect(() => {
+    setInspectorTab('Overview')
+  }, [selectedGroup?.streamId, selectedRoute?.routeId])
   useEffect(() => {
     if (!focusInspectorAfterAttention.current || selectedRoute?.routeId !== inspectedRouteId) return
     focusInspectorAfterAttention.current = false
@@ -195,6 +203,31 @@ export function RoutesArchitectureWorkspace({
     : reportedRouteCount === connectedRouteCount
       ? `${reportedRouteCount} Routes`
       : `${reportedRouteCount} reported Routes (${connectedRouteCount} shown)`
+
+  function handleInspectorTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, tab: InspectorTab) {
+    const index = INSPECTOR_TABS.indexOf(tab)
+    let nextIndex: number
+    switch (event.key) {
+      case 'ArrowRight':
+        nextIndex = (index + 1) % INSPECTOR_TABS.length
+        break
+      case 'ArrowLeft':
+        nextIndex = (index + INSPECTOR_TABS.length - 1) % INSPECTOR_TABS.length
+        break
+      case 'Home':
+        nextIndex = 0
+        break
+      case 'End':
+        nextIndex = INSPECTOR_TABS.length - 1
+        break
+      default:
+        return
+    }
+    event.preventDefault()
+    const next = INSPECTOR_TABS[nextIndex]
+    setInspectorTab(next)
+    inspectorTabButtons.current[next]?.focus()
+  }
 
   function reviewAttention(item: (typeof attention)[number]) {
     // Numeric Route and Stream IDs prevent same-name entities from leaking into each other's inspector.
@@ -709,8 +742,41 @@ export function RoutesArchitectureWorkspace({
                       Stale or unavailable snapshot. Values below are last reported, not confirmed current health.
                     </p>
                   ) : null}
-                  <dl className="mt-4 grid gap-3 border-t border-slate-200/80 pt-4 sm:grid-cols-2 dark:border-gdc-border">
-                    <div>
+                  <div role="tablist" aria-label="Selected Route detail sections" className="mt-4 flex max-w-full gap-1 overflow-x-auto border-b border-slate-200 pb-2 dark:border-gdc-border">
+                    {INSPECTOR_TABS.map((tab) => (
+                      <button
+                        key={tab}
+                        ref={(node) => { inspectorTabButtons.current[tab] = node }}
+                        id={'routes-architecture-tab-' + tab.toLowerCase()}
+                        type="button"
+                        role="tab"
+                        aria-selected={inspectorTab === tab}
+                        aria-controls="routes-architecture-inspector-current-panel"
+                        tabIndex={inspectorTab === tab ? 0 : -1}
+                        onClick={() => setInspectorTab(tab)}
+                        onKeyDown={(event) => handleInspectorTabKeyDown(event, tab)}
+                        className={cn(
+                          'min-h-10 shrink-0 rounded-lg px-3 py-2 text-xs font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500',
+                          inspectorTab === tab
+                            ? 'bg-violet-100 text-violet-800 dark:bg-violet-500/20 dark:text-violet-200'
+                            : 'text-slate-600 hover:bg-slate-100 dark:text-gdc-mutedStrong dark:hover:bg-gdc-rowHover',
+                        )}
+                      >
+                        {tab}
+                      </button>
+                    ))}
+                  </div>
+                  <div
+                    id="routes-architecture-inspector-current-panel"
+                    role="tabpanel"
+                    aria-labelledby={'routes-architecture-tab-' + inspectorTab.toLowerCase()}
+                    tabIndex={0}
+                    className="min-w-0 pt-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500"
+                  >
+                    <dl className="grid gap-3 sm:grid-cols-2">
+                      {inspectorTab === 'Overview' ? (
+                        <>
+                          <div>
                       <dt className="text-[11px] text-slate-500 dark:text-gdc-muted">Route health</dt>
                       <dd className="mt-1 text-xs font-semibold text-slate-800 dark:text-slate-100">
                         {!selectedRoute.enabled
@@ -722,7 +788,7 @@ export function RoutesArchitectureWorkspace({
                               : selectedRoute.health}
                       </dd>
                     </div>
-                    <div>
+                          <div>
                       <dt className="text-[11px] text-slate-500 dark:text-gdc-muted">Destination health (snapshot)</dt>
                       <dd className="mt-1 text-xs font-semibold text-slate-800 dark:text-slate-100">
                         {receivingDestinationHealth
@@ -732,41 +798,50 @@ export function RoutesArchitectureWorkspace({
                           : 'Not verified by this snapshot'}
                       </dd>
                     </div>
-                    <div>
+                          <div>
                       <dt className="text-[11px] text-slate-500 dark:text-gdc-muted">Route output (1m, gateway-reported)</dt>
                       <dd className="mt-1 text-xs font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatFlowEps(selectedRoute.eps)}</dd>
                     </div>
-                    <div>
-                      <dt className="text-[11px] text-slate-500 dark:text-gdc-muted">Delivery success (5m)</dt>
-                      <dd className="mt-1 text-xs font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatFlowSuccessRate(selectedRoute.successRatePct)}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-[11px] text-slate-500 dark:text-gdc-muted">Failed output (1m)</dt>
-                      <dd className="mt-1 text-xs font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatFlowEps(inspectedMetric?.failed_eps_1m)}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-[11px] text-slate-500 dark:text-gdc-muted">Retry rate (5m)</dt>
-                      <dd className="mt-1 text-xs font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatFlowSuccessRate(inspectedMetric?.retry_rate_5m)}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-[11px] text-slate-500 dark:text-gdc-muted">Average latency</dt>
-                      <dd className="mt-1 text-xs font-semibold tabular-nums text-slate-800 dark:text-slate-100">{Number.isFinite(inspectedMetric?.avg_latency_ms) ? `${inspectedMetric!.avg_latency_ms} ms` : 'Not available'}</dd>
-                    </div>
-                    <div>
+                          <div>
                       <dt className="text-[11px] text-slate-500 dark:text-gdc-muted">Receiver-confirmed ingestion</dt>
                       <dd className="mt-1 text-xs font-semibold text-slate-800 dark:text-slate-100">Not verified by this snapshot</dd>
                     </div>
-                    <div>
+                        </>
+                      ) : inspectorTab === 'Delivery' ? (
+                        <>
+                          <div>
+                      <dt className="text-[11px] text-slate-500 dark:text-gdc-muted">Delivery success (5m)</dt>
+                      <dd className="mt-1 text-xs font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatFlowSuccessRate(selectedRoute.successRatePct)}</dd>
+                    </div>
+                          <div>
+                      <dt className="text-[11px] text-slate-500 dark:text-gdc-muted">Retry rate (5m)</dt>
+                      <dd className="mt-1 text-xs font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatFlowSuccessRate(inspectedMetric?.retry_rate_5m)}</dd>
+                    </div>
+                          <div>
+                      <dt className="text-[11px] text-slate-500 dark:text-gdc-muted">Average latency</dt>
+                      <dd className="mt-1 text-xs font-semibold tabular-nums text-slate-800 dark:text-slate-100">{Number.isFinite(inspectedMetric?.avg_latency_ms) ? `${inspectedMetric!.avg_latency_ms} ms` : 'Not available'}</dd>
+                    </div>
+                          <div>
                       <dt className="text-[11px] text-slate-500 dark:text-gdc-muted">Destination capacity</dt>
                       <dd className="mt-1 text-xs font-semibold text-slate-800 dark:text-slate-100">Not available in snapshot</dd>
                     </div>
-                    <div>
+                        </>
+                      ) : (
+                        <>
+                          <div>
+                      <dt className="text-[11px] text-slate-500 dark:text-gdc-muted">Failed output (1m)</dt>
+                      <dd className="mt-1 text-xs font-semibold tabular-nums text-slate-800 dark:text-slate-100">{formatFlowEps(inspectedMetric?.failed_eps_1m)}</dd>
+                    </div>
+                          <div>
                       <dt className="text-[11px] text-slate-500 dark:text-gdc-muted">Failure policy</dt>
                       <dd className="mt-1 text-xs font-semibold text-slate-800 dark:text-slate-100">
                         {selectedRow?.route.failure_policy ? formatFailurePolicy(selectedRow.route.failure_policy) : 'Not available'}
                       </dd>
                     </div>
-                  </dl>
+                        </>
+                      )}
+                    </dl>
+                  </div>
                   <p className="mt-3 text-[11px] leading-5 text-slate-500 dark:text-gdc-muted">
                     Health and rates reflect the latest operational snapshot, not receiver acknowledgment. Use the Route editor for configuration and delivery logs for observed outcomes.
                   </p>

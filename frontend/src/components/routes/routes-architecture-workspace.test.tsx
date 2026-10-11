@@ -207,6 +207,84 @@ describe('Data Flows empty-state prerequisite guidance', () => {
   })
 })
 
+describe('selected Route contextual detail tabs, Confluent-inspired P0B-1', () => {
+  it('defaults to truth-based Overview while keeping the selected Route and deep links available', () => {
+    render(<GraphHarness snapshot={snapshotFor([route(51, 1, 151, 'ERROR')])} />)
+    const inspector = within(screen.getByTestId('routes-architecture-inspector'))
+    expect(inspector.getByRole('tablist', { name: 'Selected Route detail sections' })).toBeInTheDocument()
+    expect(inspector.getAllByRole('tab')).toHaveLength(3)
+    expect(inspector.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true')
+    const panel = inspector.getByRole('tabpanel', { name: 'Overview' })
+    expect(panel).toHaveTextContent('Route health')
+    expect(panel).toHaveTextContent('Destination health (snapshot)')
+    expect(panel).toHaveTextContent('Route output (1m, gateway-reported)')
+    expect(panel).toHaveTextContent('Receiver-confirmed ingestion')
+    expect(panel).not.toHaveTextContent('Retry rate (5m)')
+    expect(panel).not.toHaveTextContent('Failure policy')
+    expect(inspector.getByRole('link', { name: 'Delivery logs' })).toHaveAttribute(
+      'href', '/logs?route_id=51&stream_id=1&destination_id=151',
+    )
+  })
+
+  it('opens Delivery and Diagnostics with the actual Route-specific existing read evidence', async () => {
+    const user = userEvent.setup()
+    render(<GraphHarness snapshot={snapshotFor([route(51, 1, 151, 'ERROR')])} />)
+    const inspector = within(screen.getByTestId('routes-architecture-inspector'))
+    await user.click(inspector.getByRole('tab', { name: 'Delivery' }))
+    const delivery = inspector.getByRole('tabpanel', { name: 'Delivery' })
+    expect(delivery).toHaveTextContent('Delivery success (5m)')
+    expect(delivery).toHaveTextContent('Retry rate (5m)')
+    expect(delivery).toHaveTextContent('Average latency')
+    expect(delivery).toHaveTextContent('Destination capacity')
+    expect(delivery).not.toHaveTextContent('Failure policy')
+    await user.click(inspector.getByRole('tab', { name: 'Diagnostics' }))
+    const diagnostics = inspector.getByRole('tabpanel', { name: 'Diagnostics' })
+    expect(diagnostics).toHaveTextContent('Failed output (1m)')
+    expect(diagnostics).toHaveTextContent('Failure policy')
+    expect(diagnostics).toHaveTextContent('Log and Continue')
+    expect(diagnostics).not.toHaveTextContent('Delivery success (5m)')
+  })
+
+  it('supports arrow, Home and End navigation across exactly the three inspector tabs', async () => {
+    const user = userEvent.setup()
+    render(<GraphHarness snapshot={snapshotFor()} />)
+    const inspector = within(screen.getByTestId('routes-architecture-inspector'))
+    inspector.getByRole('tab', { name: 'Overview' }).focus()
+    await user.keyboard('{ArrowRight}')
+    expect(inspector.getByRole('tab', { name: 'Delivery' })).toHaveFocus()
+    expect(inspector.getByRole('tab', { name: 'Delivery' })).toHaveAttribute('aria-selected', 'true')
+    await user.keyboard('{End}')
+    expect(inspector.getByRole('tab', { name: 'Diagnostics' })).toHaveFocus()
+    await user.keyboard('{Home}')
+    expect(inspector.getByRole('tab', { name: 'Overview' })).toHaveFocus()
+  })
+
+  it('resets to Overview on selected Stream/Route switch instead of leaking prior diagnostics', async () => {
+    const user = userEvent.setup()
+    render(<GraphHarness snapshot={snapshotFor([route(51, 1, 151, 'ERROR'), route(52, 2, 152, 'HEALTHY')])} />)
+    const inspector = within(screen.getByTestId('routes-architecture-inspector'))
+    await user.click(inspector.getByRole('tab', { name: 'Diagnostics' }))
+    expect(inspector.getByRole('tabpanel')).toHaveTextContent('Failed output')
+    await user.click(screen.getByTestId('routes-architecture-stream-2'))
+    expect(inspector.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true')
+    expect(inspector.getByRole('tabpanel')).toHaveTextContent('Route health')
+    expect(inspector.getByRole('tabpanel')).not.toHaveTextContent('Failed output')
+    expect(screen.getByTestId('routes-architecture-inspector')).toHaveTextContent('Stream #2 · Route R-0052')
+  })
+
+  it('keeps stale/failure authority visible above tabs and never upgrades a disabled Route to Healthy', async () => {
+    const user = userEvent.setup()
+    const old = { ...snapshotFor([route(51, 1, 151, 'HEALTHY', false)]), updated_at: '2026-01-01T00:00:00Z' }
+    render(<GraphHarness snapshot={old} requestFailed />)
+    const inspector = within(screen.getByTestId('routes-architecture-inspector'))
+    expect(inspector.getByRole('status')).toHaveTextContent('Stale or unavailable snapshot')
+    expect(inspector.getByRole('tabpanel')).toHaveTextContent('Stale · last reported Disabled')
+    await user.click(inspector.getByRole('tab', { name: 'Delivery' }))
+    expect(inspector.getByRole('status')).toHaveTextContent('Stale or unavailable snapshot')
+    expect(inspector.getByRole('tabpanel')).not.toHaveTextContent('Healthy')
+  })
+})
+
 describe('Selected Route contextual log investigation', () => {
   it('retains the inspected Route, Stream and Destination IDs and reveals an evidence-backed failed-only shortcut', async () => {
     const user = userEvent.setup()
