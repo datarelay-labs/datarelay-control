@@ -179,11 +179,13 @@ export function StreamRuntimeDetailPage() {
     routeId: null,
   })
   const recentSelectedRouteId = recentRouteScope.streamId === streamId ? recentRouteScope.routeId : null
-  const [timelineRunHistory, setTimelineRunHistory] = useState<RunHistoryRow[] | null>(null)
-  const [timelineRecentLogs, setTimelineRecentLogs] = useState<RecentLogLine[] | null>(null)
-  const [timelineRunIdHint, setTimelineRunIdHint] = useState<string | null>(null)
-  const [runtimeStats, setRuntimeStats] = useState<StreamRuntimeStatsResponse | null>(null)
-  const [runtimeHealth, setRuntimeHealth] = useState<StreamHealthResponse | null>(null)
+  const [timelineRunHistoryStored, setTimelineRunHistory] = useState<RunHistoryRow[] | null>(null)
+  const [timelineRecentLogsStored, setTimelineRecentLogs] = useState<RecentLogLine[] | null>(null)
+  const [timelineRunIdHintStored, setTimelineRunIdHint] = useState<string | null>(null)
+  const [timelineSourceStreamId, setTimelineSourceStreamId] = useState<number | null>(null)
+  const [runtimeStatsStored, setRuntimeStats] = useState<StreamRuntimeStatsResponse | null>(null)
+  const [runtimeHealthStored, setRuntimeHealth] = useState<StreamHealthResponse | null>(null)
+  const [runtimeStatsSourceStreamId, setRuntimeStatsSourceStreamId] = useState<number | null>(null)
   const [controlBusy, setControlBusy] = useState(false)
   const [routeToggleBusyId, setRouteToggleBusyId] = useState<number | null>(null)
   const [controlMessage, setControlMessage] = useState<string | null>(null)
@@ -201,7 +203,7 @@ export function StreamRuntimeDetailPage() {
   const [streamMetaError, setStreamMetaError] = useState<string | null>(null)
   const [connectorProductGroup, setConnectorProductGroup] = useState<string | null>(null)
   const [connectorDisplayName, setConnectorDisplayName] = useState<string | null>(null)
-  const [runtimeMetrics, setRuntimeMetrics] = useState<StreamRuntimeMetricsResponse | null>(null)
+  const [runtimeMetricsStored, setRuntimeMetrics] = useState<StreamRuntimeMetricsResponse | null>(null)
   const [metricsLoading, setMetricsLoading] = useState(false)
   const [metricsError, setMetricsError] = useState<string | null>(null)
   const metricsGenerationRef = useRef(0)
@@ -249,6 +251,16 @@ export function StreamRuntimeDetailPage() {
   const canClone = caps.backup_clone === true
 
   const backendStreamId = useMemo(() => (/^\d+$/.test(streamId) ? Number(streamId) : undefined), [streamId])
+  // React Router can reuse this component when the Stream URL changes.
+  // Never present an old Stream's evidence under a new Stream ID while
+  // pending requests settle: it can create false Route-specific diagnostics.
+  const runtimeMetrics = runtimeMetricsStored?.stream.id === backendStreamId ? runtimeMetricsStored : null
+  const timelineScopeValid = timelineSourceStreamId === backendStreamId
+  const timelineRecentLogs = timelineScopeValid ? timelineRecentLogsStored : null
+  const timelineRunHistory = timelineScopeValid ? timelineRunHistoryStored : null
+  const timelineRunIdHint = timelineScopeValid ? timelineRunIdHintStored : null
+  const runtimeStats = runtimeStatsSourceStreamId === backendStreamId ? runtimeStatsStored : null
+  const runtimeHealth = runtimeStatsSourceStreamId === backendStreamId ? runtimeHealthStored : null
 
   useEffect(() => {
     priorDeliveryProofRef.current = null
@@ -463,7 +475,10 @@ export function StreamRuntimeDetailPage() {
         sourceFailureAuthorityRevisionRef.current = null
         setRunOnceError((current) => (currentSourceRunFailureMessage(current) ? null : current))
       }
-      if (res?.items?.length) {
+      // The response is a read of a particular Stream, not reusable global data.
+      setTimelineSourceStreamId(backendStreamId)
+      setRuntimeStatsSourceStreamId(backendStreamId)
+      if (res?.stream_id === backendStreamId && res.items?.length) {
         const items = res.items
         const last = items[items.length - 1]
         const rid = typeof last.run_id === 'string' && last.run_id.trim() !== '' ? last.run_id : null

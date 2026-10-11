@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -639,6 +639,105 @@ describe('StreamRuntimeDetailPage M17.2 layout', () => {
     expect(within(returned).getByRole('link', { name: 'View all →' })).toHaveAttribute(
       'href', '/logs?route_id=17&stream_id=42',
     )
+  })
+
+  it('ignores an API Metrics or Timeline response scoped to a different Stream identity', async () => {
+    let resolveMetrics!: (value: Awaited<ReturnType<typeof gdcRuntime.fetchStreamRuntimeMetrics>>) => void
+    const metricsPending = new Promise<Awaited<ReturnType<typeof gdcRuntime.fetchStreamRuntimeMetrics>>>(
+      (resolve) => { resolveMetrics = resolve },
+    )
+    vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mockImplementationOnce(async () => metricsPending)
+    vi.mocked(gdcRuntime.fetchStreamRuntimeTimeline).mockResolvedValueOnce({
+      stream_id: 99, // bad identity: requested Stream 42
+      total: 1,
+      items: [{
+        id: 401,
+        created_at: '2026-10-11T06:00:00Z',
+        stream_id: 99,
+        route_id: 91,
+        destination_id: 88,
+        run_id: 'other-stream-run',
+        stage: 'route_send_failed',
+        level: 'ERROR',
+        status: 'FAILED',
+        message: 'Another Stream route failure',
+        error_code: 'TIMEOUT',
+        retry_count: 0,
+        http_status: null,
+        latency_ms: 9,
+      }],
+    })
+    renderRuntimePage('42')
+    await waitFor(() => expect(gdcRuntime.fetchStreamRuntimeMetrics).toHaveBeenCalled())
+    const mismatched = streamRuntimeMetricsFixture()
+    await act(async () => {
+      resolveMetrics({
+        ...mismatched,
+        stream: { ...mismatched.stream, id: 99 },
+      })
+    })
+    const panel = screen.getByTestId('stream-recent-events-panel')
+    expect(within(panel).queryByLabelText('Filter recent events by Route')).not.toBeInTheDocument()
+    expect(panel).not.toHaveTextContent('Another Stream route failure')
+    expect(within(panel).getByRole('link', { name: 'View all →' })).toHaveAttribute(
+      'href', '/logs?stream_id=42',
+    )
+  })
+
+  it('does not carry pending previous-Stream route evidence into a new Stream investigation', async () => {
+    const neverResolveTimeline = new Promise<null>(() => {})
+    const neverResolveMetrics = new Promise<null>(() => {})
+    vi.mocked(gdcRuntime.fetchStreamRuntimeTimeline).mockImplementation(async (id) => {
+      if (id !== 42) return neverResolveTimeline
+      return {
+        stream_id: 42,
+        total: 1,
+        items: [{
+          id: 9001,
+          created_at: '2026-10-11T07:00:00Z',
+          stream_id: 42,
+          route_id: 17,
+          destination_id: 71,
+          run_id: 'run-stream-42-only',
+          stage: 'route_send_failed',
+          level: 'ERROR',
+          status: 'FAILED',
+          message: 'Stream 42 old Route 17 gateway timeout',
+          error_code: 'TIMEOUT',
+          retry_count: 0,
+          http_status: null,
+          latency_ms: 42,
+        }],
+      }
+    })
+    vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mockImplementation(async (id, _window, params) =>
+      id === 42 ? streamRuntimeMetricsFixture(params) : neverResolveMetrics
+    )
+    function NavigateBetweenStreams() {
+      const navigate = useNavigate()
+      return <button type="button" onClick={() => navigate('/streams/99/runtime')}>Open Stream 99</button>
+    }
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter initialEntries={['/streams/42/runtime']}>
+        <NavigateBetweenStreams />
+        <Routes>
+          <Route path="/streams/:streamId/runtime" element={<StreamRuntimeDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+    const oldPanel = await screen.findByTestId('stream-recent-events-panel')
+    expect(await within(oldPanel).findByLabelText('Filter recent events by Route')).toBeInTheDocument()
+    expect(oldPanel).toHaveTextContent('Stream 42 old Route 17 gateway timeout')
+    await user.selectOptions(within(oldPanel).getByLabelText('Filter recent events by Route'), '17')
+    expect(within(oldPanel).getByRole('region', { name: 'Selected Route evidence' })).toHaveTextContent('Route #17')
+
+    await user.click(screen.getByRole('button', { name: 'Open Stream 99' }))
+    await screen.findByRole('heading', { name: 'Stream 99' })
+    const newPanel = screen.getByTestId('stream-recent-events-panel')
+    expect(within(newPanel).queryByLabelText('Filter recent events by Route')).not.toBeInTheDocument()
+    expect(newPanel).not.toHaveTextContent('Stream 42 old Route 17 gateway timeout')
+    expect(within(newPanel).getByRole('link', { name: 'View all →' })).toHaveAttribute('href', '/logs?stream_id=99')
   })
 
   it('does not carry a selected Route investigation into a different Stream', async () => {
