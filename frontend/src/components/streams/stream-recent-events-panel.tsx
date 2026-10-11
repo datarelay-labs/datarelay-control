@@ -259,7 +259,13 @@ function RecentLogsTable({
             {logs.map((log, i) => {
               const logHref =
                 backendStreamId != null
-                  ? logsExplorerPath({ stream_id: backendStreamId })
+                  ? logsExplorerPath({
+                      stream_id: backendStreamId,
+                      route_id: log.routeId ?? undefined,
+                      destination_id: log.destinationId ?? undefined,
+                      // Logs Explorer recognizes a run filter only for a usable run identity.
+                      run_id: log.runId?.trim() && log.runId.trim().length >= 8 ? log.runId : undefined,
+                    })
                   : `/logs/${streamId}`
               return (
                 <tr key={`${log.at}-${i}`} className={opTr}>

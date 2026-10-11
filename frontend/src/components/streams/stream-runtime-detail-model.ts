@@ -33,6 +33,10 @@ export type RecentLogLine = {
   rawMessage?: string
   errorCode?: string | null
   stage?: string
+  /** IDs observed on the actual runtime timeline event, not inferred from labels. */
+  runId?: string | null
+  routeId?: number | null
+  destinationId?: number | null
   duration: string
 }
 

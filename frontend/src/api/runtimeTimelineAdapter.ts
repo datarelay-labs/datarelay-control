@@ -94,6 +94,9 @@ export function timelineItemsToRecentLogLines(items: readonly RuntimeTimelineIte
       rawMessage: raw.length > 140 ? `${raw.slice(0, 137)}…` : raw,
       errorCode: t.error_code,
       stage: t.stage,
+      runId: t.run_id,
+      routeId: t.route_id,
+      destinationId: t.destination_id,
       duration: formatLatencyMs(t.latency_ms),
     }
   })
