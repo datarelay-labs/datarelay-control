@@ -83,9 +83,12 @@ async def lifespan(_: FastAPI):
             },
         )
     if settings.APP_ENV.lower() in {"production", "prod"}:
-        from app.governance_notifications.webhook_sender import HttpWebhookSender, set_webhook_sender
+        # PF-11A: no automatic HTTP webhook transport until the server-side
+        # egress allowlist/SSRF boundary is implemented and qualified.
+        # The legacy startup override bypassed unavailable-by-default policy.
+        from app.governance_notifications.webhook_sender import reset_webhook_sender
 
-        set_webhook_sender(HttpWebhookSender(timeout_seconds=float(settings.WEBHOOK_TIMEOUT)))
+        reset_webhook_sender()
     scheduler = Scheduler(streams_provider=load_enabled_stream_contexts)
     register_scheduler_instance(scheduler)
     validation_scheduler = ContinuousValidationScheduler()
