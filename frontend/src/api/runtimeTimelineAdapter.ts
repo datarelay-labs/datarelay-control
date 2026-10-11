@@ -59,8 +59,12 @@ export function timelineItemsToRunHistoryRows(items: readonly RuntimeTimelineIte
     if (level === 'ERROR' || st.includes('fail') || st === 'error') status = 'Failed'
     else if (level === 'WARN' || st.includes('partial')) status = 'Partial'
 
-    const failed = status === 'Failed' ? 1 : 0
-    const delivered = status === 'Success' ? 1 : 0
+    // An INFO/Success lifecycle event is not a recorded Route delivery.
+    const deliveryStage = String(t.stage ?? '').toLowerCase()
+    const delivered = deliveryStage === 'route_send_success' || deliveryStage === 'route_retry_success' ? 1 : 0
+    const failed = deliveryStage === 'route_send_failed' ||
+      deliveryStage === 'route_retry_failed' ||
+      deliveryStage === 'route_unknown_failure_policy' ? 1 : 0
 
     const idPart = t.id != null && Number.isFinite(Number(t.id)) ? String(t.id) : '—'
 

@@ -46,7 +46,7 @@ export function StreamRecentEventsPanel({
 
   const errorLogs = useMemo(() => recentLogs.filter((l) => l.level === 'ERROR' || l.level === 'WARN'), [recentLogs])
   const deliveryLogs = useMemo(() => recentLogs.filter((l) => isDeliveryMessage(l.message)), [recentLogs])
-  const deliveryRuns = useMemo(() => runHistory.filter((r) => r.delivered > 0 || r.status === 'Success'), [runHistory])
+  const deliveryRuns = useMemo(() => runHistory.filter((r) => r.delivered > 0 || r.failed > 0), [runHistory])
 
   const tabs: { id: RecentEventsTab; label: string; count: number }[] = [
     { id: 'events', label: 'Recent events', count: recentLogs.length },
