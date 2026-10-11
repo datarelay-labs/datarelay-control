@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2, Info, Send } from 'lucide-react'
 import { cn } from '../../lib/utils'
+import { formatTimestampWithResolvedTimezone, parseApiTimestampMs } from '../../lib/platform-timestamps'
 import { logsExplorerPath, runtimeAnalyticsPath } from '../../config/nav-paths'
 import { toOperatorEventLabel } from '../../lib/stream-governance-snapshot'
 import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
@@ -56,11 +57,17 @@ function SelectedRouteEvidence({
   recentLogs,
   backendStreamId,
   routeMetrics,
+  metricsGeneratedAt,
+  metricsWindowSeconds,
+  failureCountBasis,
 }: {
   routeId: number
   recentLogs: readonly RecentLogLine[]
   backendStreamId: number | undefined
   routeMetrics?: StreamRecentEventsPanelProps['routeMetrics']
+  metricsGeneratedAt?: string | null
+  metricsWindowSeconds?: number | null
+  failureCountBasis?: 'last-hour' | 'legacy-aggregate'
 }) {
   const stages = recentLogs
     .map((log) => log.stage?.trim().toLowerCase())
@@ -69,6 +76,14 @@ function SelectedRouteEvidence({
   const failed = stages.filter((stage) => RECORDED_GATEWAY_FAILURES.has(stage)).length
   const observedStages = [...new Set(stages)].slice(0, 4)
   const metricRow = routeMetrics?.find((row) => row.routeId === routeId)
+  const metricsObservedAt = metricsGeneratedAt && parseApiTimestampMs(metricsGeneratedAt) != null
+    ? formatTimestampWithResolvedTimezone(metricsGeneratedAt)
+    : null
+  const metricsWindowLabel = metricsWindowSeconds != null &&
+    Number.isSafeInteger(metricsWindowSeconds) && metricsWindowSeconds > 0
+    ? ({ 900: '15m', 3600: '1h', 21600: '6h', 86400: '24h' } as Record<number, string>)[metricsWindowSeconds] ??
+      `${metricsWindowSeconds}s`
+    : null
   const recordedMetricsFailures = metricRow != null &&
     Number.isSafeInteger(metricRow.failedCount) && metricRow.failedCount >= 0
       ? metricRow.failedCount : null
@@ -138,13 +153,19 @@ function SelectedRouteEvidence({
         <div className="space-y-1 text-[11px] text-slate-600 dark:text-gdc-muted">
           <p>Last reported Route state: {metricRow.enabled ? 'Enabled' : 'Disabled'}</p>
           {recordedMetricsFailures != null ? (
-            <p>Metrics-reported failed attempts: {recordedMetricsFailures}</p>
+            <p>Metrics-reported failed attempts{failureCountBasis === 'last-hour' ? ' (last hour)' : ''}: {recordedMetricsFailures}</p>
           ) : (
             <p>Metrics failure count not verified</p>
           )}
           {metricRow.destinationName?.trim() ? (
             <p>Destination {metricRow.destinationName}</p>
           ) : null}
+          <p>{metricsObservedAt
+            ? `Metrics snapshot observed: ${metricsObservedAt}`
+            : 'Metrics observation time not verified'}</p>
+          <p>{metricsWindowLabel
+            ? `Metrics requested window: ${metricsWindowLabel}`
+            : 'Metrics window not verified'}</p>
           <p>Metrics is not proof of current receiver acknowledgment or complete live history.</p>
         </div>
       ) : null}
@@ -185,6 +206,10 @@ export type StreamRecentEventsPanelProps = {
     failedCount: number
     destinationName?: string | null
   }[]
+  metricsGeneratedAt?: string | null
+  metricsWindowSeconds?: number | null
+  /** route_runtime uses failed_last_hour; legacy route_health has no fixed count window. */
+  failureCountBasis?: 'last-hour' | 'legacy-aggregate'
   variant?: 'default' | 'compact'
   /** Optional page-level shared scope for Overview → Events navigation. */
   selectedRouteId?: number | null
@@ -211,6 +236,9 @@ export function StreamRecentEventsPanel({
   logsHref,
   observedRouteIds,
   routeMetrics,
+  metricsGeneratedAt,
+  metricsWindowSeconds,
+  failureCountBasis,
   variant = 'default',
   selectedRouteId: controlledRouteId,
   onSelectedRouteIdChange,
@@ -293,6 +321,9 @@ export function StreamRecentEventsPanel({
             recentLogs={scopedLogs}
             backendStreamId={backendStreamId}
             routeMetrics={routeMetrics}
+            metricsGeneratedAt={metricsGeneratedAt}
+            metricsWindowSeconds={metricsWindowSeconds}
+            failureCountBasis={failureCountBasis}
           />
         ) : null}
         <div className="hidden border-b border-slate-200/80 px-4 py-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:border-gdc-divider dark:text-gdc-muted sm:grid sm:grid-cols-[minmax(7rem,1fr)_minmax(0,1.5fr)_6rem] sm:gap-3">
@@ -357,6 +388,9 @@ export function StreamRecentEventsPanel({
             recentLogs={scopedLogs}
             backendStreamId={backendStreamId}
             routeMetrics={routeMetrics}
+            metricsGeneratedAt={metricsGeneratedAt}
+            metricsWindowSeconds={metricsWindowSeconds}
+            failureCountBasis={failureCountBasis}
           />
       ) : null}
       <div className="flex flex-wrap gap-1 border-b border-slate-200/80 px-3 py-2 dark:border-gdc-border">

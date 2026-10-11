@@ -768,6 +768,8 @@ export function StreamRuntimeDetailPage() {
 
   // Reuse the same modern-first Route Metrics adapter as FlowMap/Route panel.
   const observedRuntimeRoutes = useMemo(() => resolveRouteRuntimeRows(runtimeMetrics), [runtimeMetrics])
+  const routeFailureCountBasis = runtimeMetrics?.route_runtime?.length
+    ? 'last-hour' as const : 'legacy-aggregate' as const
 
   const deliveryPct = numericOverlay.deliveryPct
   const deliveryLabel = numericOverlay.deliveryLabel
@@ -1371,6 +1373,9 @@ export function StreamRuntimeDetailPage() {
               failedCount: route.failed_last_hour,
               destinationName: route.destination_name,
             }))}
+            metricsGeneratedAt={runtimeMetrics?.generated_at}
+            metricsWindowSeconds={runtimeMetrics?.metrics_window_seconds}
+            failureCountBasis={routeFailureCountBasis}
             runHistory={runHistoryRows}
             logsHref={logsExplorerDrilldown ?? logsPath(streamId)}
             variant="compact"
@@ -1487,6 +1492,9 @@ export function StreamRuntimeDetailPage() {
             failedCount: route.failed_last_hour,
             destinationName: route.destination_name,
           }))}
+          metricsGeneratedAt={runtimeMetrics?.generated_at}
+          metricsWindowSeconds={runtimeMetrics?.metrics_window_seconds}
+          failureCountBasis={routeFailureCountBasis}
           runHistory={runHistoryRows}
           logsHref={logsExplorerDrilldown ?? logsPath(streamId)}
           selectedRouteId={recentSelectedRouteId}

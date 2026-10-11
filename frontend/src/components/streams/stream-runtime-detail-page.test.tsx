@@ -551,7 +551,7 @@ describe('StreamRuntimeDetailPage M17.2 layout', () => {
     const evidence = within(panel).getByRole('region', { name: 'Selected Route evidence' })
     expect(evidence).toHaveTextContent('Route #501')
     expect(evidence).toHaveTextContent('Last reported Route state: Disabled')
-    expect(evidence).toHaveTextContent('Metrics-reported failed attempts: 2')
+    expect(evidence).toHaveTextContent('Metrics-reported failed attempts (last hour): 2')
     expect(evidence).toHaveTextContent('Destination Modern SIEM')
     expect(evidence).toHaveTextContent('0 events in loaded sample')
     expect(evidence).toHaveTextContent('Gateway outcome not verified in this sample')
