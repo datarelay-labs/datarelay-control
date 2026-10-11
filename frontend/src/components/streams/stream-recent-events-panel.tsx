@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2, Info, Send } from 'lucide-react'
 import { cn } from '../../lib/utils'
@@ -275,6 +275,13 @@ export function StreamRecentEventsPanel({
 
   const activeRouteId = selectedRouteId != null && availableRouteIds.includes(selectedRouteId)
     ? selectedRouteId : null
+  // Expiring selection is real state, not just a temporary display fallback:
+  // otherwise a once-removed Route silently reselects itself on a future refresh.
+  useEffect(() => {
+    if (selectedRouteId != null && !availableRouteIds.includes(selectedRouteId)) {
+      setSelectedRouteId(null)
+    }
+  }, [selectedRouteId, availableRouteIds, setSelectedRouteId])
   const scopedLogs = useMemo(() =>
     activeRouteId == null ? recentLogs : recentLogs.filter((log) => log.routeId === activeRouteId),
   [recentLogs, activeRouteId])
@@ -284,9 +291,13 @@ export function StreamRecentEventsPanel({
   const deliveryRuns = useMemo(() =>
     activeRouteId == null ? runHistory.filter((r) => r.delivered > 0 || r.failed > 0) : [],
   [runHistory, activeRouteId])
-  const scopedLogsHref = backendStreamId != null && activeRouteId != null
-    ? logsExplorerPath({ stream_id: backendStreamId, route_id: activeRouteId })
-    : logsHref
+  const validStreamScope = typeof backendStreamId === 'number' &&
+    Number.isSafeInteger(backendStreamId) && backendStreamId > 0
+  const scopedLogsHref = !validStreamScope
+    ? logsExplorerPath()
+    : activeRouteId != null
+      ? logsExplorerPath({ stream_id: backendStreamId, route_id: activeRouteId })
+      : logsHref
   const routeSampleFilter = availableRouteIds.length > 0 ? (
     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 px-3 py-2 dark:border-gdc-border">
       <label htmlFor="stream-recent-route-filter" className="text-[11px] font-semibold text-slate-700 dark:text-gdc-mutedStrong">
