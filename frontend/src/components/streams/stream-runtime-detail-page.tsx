@@ -1678,6 +1678,21 @@ export function StreamRuntimeDetailPage() {
                 </tr>
               </thead>
               <tbody>
+                {!metricsLoading && runHistoryRows.length === 0 ? (
+                  <tr className={opTr} data-testid="stream-run-history-unverified">
+                    <td colSpan={8} className={cn(opTd, 'px-4 py-5 text-sm text-slate-600 dark:text-gdc-muted')}>
+                      No run records verified in the loaded runtime evidence — this is not proof that no runs occurred.
+                      {backendStreamId != null ? (
+                        <Link
+                          to={logsExplorerPath({ stream_id: backendStreamId })}
+                          className="ml-2 font-semibold text-violet-700 hover:underline dark:text-violet-300"
+                        >
+                          Inspect Stream logs
+                        </Link>
+                      ) : null}
+                    </td>
+                  </tr>
+                ) : null}
                 {runHistoryRows.map((row) => {
                   const countsVerified = row.countsVerified !== false
                   const failed = countsVerified && row.failed > 0

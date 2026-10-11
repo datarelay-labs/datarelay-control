@@ -562,6 +562,24 @@ describe('StreamRuntimeDetailPage M17.2 layout', () => {
     expect(within(history).queryByText(/^evt-/)).not.toBeInTheDocument()
   })
 
+  it('explains unobserved Run history without calling the empty evidence healthy or complete', async () => {
+    vi.mocked(gdcRuntime.fetchStreamRuntimeTimeline).mockResolvedValueOnce(null)
+    vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mockImplementationOnce(async (_id, _window, params) => ({
+      ...streamRuntimeMetricsFixture(params),
+      recent_runs: [],
+    }))
+    const user = userEvent.setup()
+    renderRuntimePage('42')
+    await user.click(await screen.findByTestId('stream-detail-tab-audit'))
+    const history = screen.getByRole('region', { name: 'Run history' })
+    const empty = await within(history).findByTestId('stream-run-history-unverified')
+    expect(empty).toHaveTextContent('No run records verified in the loaded runtime evidence')
+    expect(empty).toHaveTextContent('not proof that no runs occurred')
+    expect(within(empty).getByRole('link', { name: 'Inspect Stream logs' })).toHaveAttribute(
+      'href', '/logs?stream_id=42',
+    )
+  })
+
   it('never deep-links a Metrics completion-record label as an exact run_id', async () => {
     vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mockImplementationOnce(async (_id, _window, params) => ({
       ...streamRuntimeMetricsFixture(params),
