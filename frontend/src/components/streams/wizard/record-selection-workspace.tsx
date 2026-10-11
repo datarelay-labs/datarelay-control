@@ -62,6 +62,7 @@ import {
 import { RequestPreviewCopyButton, RequestPreviewDrawer } from './request-preview-drawer'
 import { resolveJsonPath } from '../stream-api-test-json-utils'
 import { UnionSchemaStatusCard } from './union-schema-status-card'
+import { buildSampleFieldCoverage } from './sample-field-coverage'
 import { checkpointModeFromFieldType } from './wizard-stream-config-sync'
 import type { WizardCheckpointFieldType, WizardConfigState, WizardState } from './wizard-state'
 
@@ -174,6 +175,8 @@ export function RecordSelectionWorkspace({
     () => wizardExtractEvents(rawPayload, paths.eventArrayPath, paths.eventRootPath),
     [rawPayload, paths.eventArrayPath, paths.eventRootPath],
   )
+
+  const fieldCoverage = useMemo(() => buildSampleFieldCoverage(extractedEvents), [extractedEvents])
 
   /** Extracted event records (event root applied) — used for incremental Test checkpoint values. */
   const checkpointTestRecords = extractedEvents
@@ -554,6 +557,54 @@ export function RecordSelectionWorkspace({
         </div>
 
         <UnionSchemaStatusCard state={state} extractedEventCount={extractedEvents.length} className="mt-2" />
+
+        <section
+          data-testid="record-selection-sample-field-coverage"
+          aria-label="Sample field coverage"
+          className="mt-2 min-w-0 rounded-lg border border-slate-200 bg-white p-3 dark:border-gdc-border dark:bg-gdc-card"
+        >
+          <h3 className="text-xs font-semibold text-slate-900 dark:text-slate-100">Sample field coverage</h3>
+          <p className="mt-1 text-[11px] text-slate-600 dark:text-gdc-mutedStrong">
+            Sample only — not production coverage. {fieldCoverage.examinedCount} sample events examined
+            {fieldCoverage.truncatedEvents ? ' (first 20 only)' : ''} of {fieldCoverage.totalCount} extracted.
+          </p>
+          {fieldCoverage.examinedCount > 0 && fieldCoverage.examinedCount < 10 ? (
+            <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-300">
+              Small sample: field frequency may be unrepresentative.
+            </p>
+          ) : null}
+          {fieldCoverage.truncatedFields ? (
+            <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-300">
+              Field view limited to 50 observed paths.
+            </p>
+          ) : null}
+          {fieldCoverage.fields.length ? (
+            <div className="mt-2 max-h-56 max-w-full overflow-auto rounded border border-slate-200 dark:border-gdc-border">
+              <table className="w-full min-w-[320px] text-left text-[11px]">
+                <thead className="sticky top-0 bg-slate-50 dark:bg-gdc-section">
+                  <tr>
+                    <th scope="col" className="p-2">Sample field</th>
+                    <th scope="col" className="p-2">Present</th>
+                    <th scope="col" className="p-2">Approx. distinct (sample)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {fieldCoverage.fields.map((row) => (
+                    <tr key={row.path} className="border-t border-slate-100 dark:border-gdc-border">
+                      <th scope="row" className="max-w-[180px] break-all p-2 font-mono font-medium text-slate-800 dark:text-slate-200">{row.path}</th>
+                      <td className="whitespace-nowrap p-2 tabular-nums">{row.presentCount} / {fieldCoverage.examinedCount}</td>
+                      <td className="whitespace-nowrap p-2 tabular-nums">{row.distinctCount}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="mt-2 text-[11px] text-slate-500 dark:text-gdc-muted">
+              No sample fields available. Run API Test and select event records first.
+            </p>
+          )}
+        </section>
 
         {t.status === 'success' && t.ok && t.parsedJson != null ? (
           <CheckpointExtractionSuggestionsPanel

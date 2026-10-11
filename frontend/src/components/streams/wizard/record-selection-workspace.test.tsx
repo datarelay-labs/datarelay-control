@@ -61,6 +61,21 @@ describe('RecordSelectionWorkspace', () => {
     expect(screen.getByTestId('summary-records')).toHaveTextContent('2')
   })
 
+  it('shows bounded per-field sample coverage with no secret sample values in the summary', () => {
+    renderWorkspace({ payload: [
+      { id: 'a', nested: { email: 'secret1@example.test' } },
+      { id: 'b' },
+      { id: 'b', nested: { email: 'secret2@example.test' } },
+    ] })
+    const coverage = screen.getByTestId('record-selection-sample-field-coverage')
+    expect(coverage).toHaveTextContent('3 sample events')
+    expect(coverage).toHaveTextContent('Sample only')
+    expect(coverage).toHaveTextContent('$.nested.email')
+    expect(coverage).toHaveTextContent('2 / 3')
+    expect(coverage).not.toHaveTextContent('secret1@example.test')
+    expect(coverage).not.toHaveTextContent('secret2@example.test')
+  })
+
   it('shows CloudTrail-style extraction summary', () => {
     const sample = getOperationalSample('aws_cloudtrail')
     renderWorkspace({
