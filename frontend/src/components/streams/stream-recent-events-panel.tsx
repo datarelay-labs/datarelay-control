@@ -82,7 +82,7 @@ function SelectedRouteEvidence({
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h4 className="text-xs font-semibold text-slate-900 dark:text-slate-100">Route #{routeId} — observed gateway records</h4>
+          <h4 className="text-xs font-semibold text-slate-900 dark:text-slate-100">Route #{routeId} — loaded runtime evidence</h4>
           <p className="mt-0.5 text-[11px] text-slate-600 dark:text-gdc-muted">
             {recentLogs.length} events in loaded sample · not a full-history health or delivery rate
           </p>
@@ -133,6 +133,8 @@ export type StreamRecentEventsPanelProps = {
   recentLogs: RecentLogLine[]
   runHistory: RunHistoryRow[]
   logsHref: string
+  /** Actual numeric IDs from the already-loaded runtime Metrics route_health snapshot. */
+  observedRouteIds?: readonly number[]
   variant?: 'default' | 'compact'
   /** Optional page-level shared scope for Overview → Events navigation. */
   selectedRouteId?: number | null
@@ -157,6 +159,7 @@ export function StreamRecentEventsPanel({
   recentLogs,
   runHistory,
   logsHref,
+  observedRouteIds,
   variant = 'default',
   selectedRouteId: controlledRouteId,
   onSelectedRouteIdChange,
@@ -166,12 +169,12 @@ export function StreamRecentEventsPanel({
   const selectedRouteId = controlledRouteId === undefined ? localRouteId : controlledRouteId
   const setSelectedRouteId = onSelectedRouteIdChange ?? setLocalRouteId
 
-  // Actual IDs in the loaded runtime timeline sample only: never infer unseen Routes.
+  // Only IDs explicitly present in the loaded runtime timeline or Metrics snapshot.
+  // A Metrics-only Route may have ZERO timeline events; absence is not evidence of health.
   const availableRouteIds = useMemo(() => [...new Set(
-    recentLogs
-      .map((log) => log.routeId)
+    [...recentLogs.map((log) => log.routeId), ...(observedRouteIds ?? [])]
       .filter((id): id is number => typeof id === 'number' && Number.isSafeInteger(id) && id > 0),
-  )].sort((a, b) => a - b), [recentLogs])
+  )].sort((a, b) => a - b), [recentLogs, observedRouteIds])
   const activeRouteId = selectedRouteId != null && availableRouteIds.includes(selectedRouteId)
     ? selectedRouteId : null
   const scopedLogs = useMemo(() =>
@@ -189,7 +192,7 @@ export function StreamRecentEventsPanel({
   const routeSampleFilter = availableRouteIds.length > 0 ? (
     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 px-3 py-2 dark:border-gdc-border">
       <label htmlFor="stream-recent-route-filter" className="text-[11px] font-semibold text-slate-700 dark:text-gdc-mutedStrong">
-        Route (recent sample)
+        Route (loaded runtime evidence)
       </label>
       <select
         id="stream-recent-route-filter"
@@ -207,7 +210,7 @@ export function StreamRecentEventsPanel({
         ))}
       </select>
       <p className="w-full text-[10px] text-slate-500 dark:text-gdc-muted">
-        Recent timeline sample only — for complete records, inspect scoped Logs.
+        Route IDs come from loaded timeline or Metrics. Outcomes are recent sample only; inspect scoped Logs for wider history.
       </p>
     </div>
   ) : null
@@ -243,7 +246,11 @@ export function StreamRecentEventsPanel({
         </div>
         <ul className="flex-1 divide-y divide-slate-200/70 dark:divide-gdc-divider">
           {items.length === 0 ? (
-            <li className="px-4 py-8 text-center text-[12px] text-slate-500 dark:text-gdc-muted">No recent events.</li>
+            <li className="px-4 py-8 text-center text-[12px] text-slate-500 dark:text-gdc-muted">
+              {activeRouteId != null
+                ? `No Route #${activeRouteId} events in this timeline sample. Inspect scoped Logs for wider history.`
+                : 'No recent events.'}
+            </li>
           ) : (
             items.map((log, i) => {
               const eventName = toOperatorEventLabel(log.message)

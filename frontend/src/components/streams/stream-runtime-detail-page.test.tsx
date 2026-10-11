@@ -511,6 +511,22 @@ describe('StreamRuntimeDetailPage M17.2 layout', () => {
     expect(screen.getByTestId('stream-information-panel')).toBeInTheDocument()
   })
 
+  it('lets operators inspect a Route reported by Metrics even with no recent Route event', async () => {
+    vi.mocked(gdcRuntime.fetchStreamRuntimeTimeline).mockResolvedValueOnce(null)
+    const user = userEvent.setup()
+    renderRuntimePage('42')
+    const panel = await screen.findByTestId('stream-recent-events-panel')
+    const selector = await within(panel).findByLabelText('Filter recent events by Route')
+    expect(within(selector).getByRole('option', { name: 'Route #101' })).toBeInTheDocument()
+    await user.selectOptions(selector, '101')
+    expect(within(panel).getByRole('region', { name: 'Selected Route evidence' })).toHaveTextContent(
+      'Gateway outcome not verified in this sample',
+    )
+    expect(within(panel).getByRole('link', { name: 'View all →' })).toHaveAttribute(
+      'href', '/logs?route_id=101&stream_id=42',
+    )
+  })
+
   it('retains the actual selected Route investigation across Overview and Events tabs', async () => {
     vi.mocked(gdcRuntime.fetchStreamRuntimeTimeline).mockResolvedValueOnce({
       stream_id: 42,

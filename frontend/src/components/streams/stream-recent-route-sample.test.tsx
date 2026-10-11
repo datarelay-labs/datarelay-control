@@ -58,7 +58,7 @@ describe('Stream Recent Events: selected-Route sample inspection', () => {
     expect(panel).not.toHaveTextContent('route 23 scoped delivery')
     expect(panel).not.toHaveTextContent('source-only event')
     expect(within(panel).getByRole('link', { name: 'View all logs' })).toHaveAttribute('href', '/logs?route_id=17&stream_id=42')
-    expect(panel).toHaveTextContent('Recent timeline sample only')
+    expect(panel).toHaveTextContent('Outcomes are recent sample only; inspect scoped Logs for wider history.')
   })
 
   it('keeps the selected Route in errors/delivery tabs and never includes unscoped run totals', () => {
@@ -79,7 +79,7 @@ describe('Stream Recent Events: selected-Route sample inspection', () => {
     expect(panel).toHaveTextContent('route 17 scoped delivery')
     expect(panel).not.toHaveTextContent('route 23 scoped delivery')
     expect(within(panel).getByRole('link', { name: 'View all →' })).toHaveAttribute('href', '/logs?route_id=17&stream_id=42')
-    expect(panel).toHaveTextContent('Recent timeline sample only')
+    expect(panel).toHaveTextContent('Outcomes are recent sample only; inspect scoped Logs for wider history.')
   })
 
   it('reverts to all observed Routes when refresh no longer contains the selected ID', () => {

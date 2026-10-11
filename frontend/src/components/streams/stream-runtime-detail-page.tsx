@@ -1361,6 +1361,7 @@ export function StreamRuntimeDetailPage() {
             streamId={streamId}
             backendStreamId={backendStreamId}
             recentLogs={recentLogLines}
+            observedRouteIds={runtimeMetrics?.route_health?.map((route) => route.route_id)}
             runHistory={runHistoryRows}
             logsHref={logsExplorerDrilldown ?? logsPath(streamId)}
             variant="compact"
@@ -1470,6 +1471,7 @@ export function StreamRuntimeDetailPage() {
           streamId={streamId}
           backendStreamId={backendStreamId}
           recentLogs={recentLogLines}
+          observedRouteIds={runtimeMetrics?.route_health?.map((route) => route.route_id)}
           runHistory={runHistoryRows}
           logsHref={logsExplorerDrilldown ?? logsPath(streamId)}
           selectedRouteId={recentSelectedRouteId}
