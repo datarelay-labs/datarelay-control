@@ -85,12 +85,13 @@ scripts/install-offline.sh
 checks/verify-install.sh
 ```
 
-`install-offline.sh` by default also runs `docker compose down -v` before installing.
-Use `scripts/install-offline.sh --skip-reset` to keep an existing database volume.
+`install-offline.sh` **preserves existing database volumes by default**. To intentionally erase existing data, use `scripts/reset-production-data.sh` separately or `scripts/install-offline.sh --reset-existing-data`; both demand typed `YES` and create **no backup**. Never use the destructive path as an in-place upgrade or rollback. The `--skip-reset` flag remains an alias for the safe default.
 
 ### Options
 
 ```bash
+scripts/install-offline.sh --reset-existing-data   # DESTRUCTIVE: additional typed YES required
+scripts/install-offline.sh --skip-reset           # preserve volumes (default)
 scripts/install-offline.sh --skip-load     # images already loaded
 scripts/install-offline.sh --skip-verify   # skip post-install checks
 scripts/install-offline.sh --skip-docker-install   # fail instead of auto-installing Docker

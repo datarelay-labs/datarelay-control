@@ -18,7 +18,7 @@ Operator scripts live under `scripts/release/`:
 ### Output layout
 
 - Default directory: `deploy/backups/` (override with `GDC_BACKUP_DIR`; must still resolve **under the repository root**).
-- Filenames: `gdc_pg_<UTC-timestamp>.sql.gz` plus a small `backup_<timestamp>.log`.
+- Filenames: `gdc_pg_<UTC-timestamp>.sql.gz`, its matching `.sql.gz.sha256` checksum receipt, and `backup_<timestamp>.log`. The backup script sets restrictive 0600 file permissions and refuses to overwrite an existing archive, digest, log or dangling symlink. The checksum is integrity evidence **only**: neither encryption, an authenticated signature, nor proof of a successful restore.
 
 ### Safety rules
 

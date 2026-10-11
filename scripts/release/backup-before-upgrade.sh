@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Create a compressed PostgreSQL logical dump before upgrades. Never deletes volumes.
 set -euo pipefail
+# Treat backup archives, digest receipts and logs as secrets.
+umask 077
+set -C  # Bash noclobber protects against a race after the collision preflight.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -13,6 +16,7 @@ TS="$(date -u +%Y%m%dT%H%M%SZ)"
 DUMP_NAME="gdc_pg_${TS}.sql.gz"
 DUMP_PATH="$BACKUP_ROOT/$DUMP_NAME"
 LOG_PATH="$BACKUP_ROOT/backup_${TS}.log"
+DIGEST_PATH="${DUMP_PATH}.sha256"
 
 log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*" | tee -a "$LOG_PATH"; }
 
@@ -52,6 +56,15 @@ case "$BACKUP_RESOLVED" in
     ;;
 esac
 
+# Refuse both ordinary files and dangling symlinks with this UTC timestamp.
+for artifact in "$DUMP_PATH" "$DIGEST_PATH" "$LOG_PATH"; do
+  if [[ -e "$artifact" || -L "$artifact" ]]; then
+    echo "Refusing overwrite of existing backup artifact: $artifact" >&2
+    exit 3
+  fi
+done
+: > "$LOG_PATH"  # Exclusive create, no pre-existing log append across runs.
+
 cd "$ROOT"
 PG_CID="$(docker compose -f "$COMPOSE_REL" ps -q postgres 2>/dev/null | head -n1 || true)"
 if [[ -z "$PG_CID" ]]; then
@@ -79,5 +92,11 @@ if ! docker exec "$PG_CID" psql -U "$DB_USER" -d postgres -tAc "SELECT 1 FROM pg
 fi
 
 docker exec "$PG_CID" pg_dump -U "$DB_USER" -d "$DB_NAME" --no-owner --no-acl | gzip -c >"$DUMP_PATH"
+if [[ ! -s "$DUMP_PATH" ]]; then
+  log "ERROR: archive output is empty; no successful receipt was created."
+  exit 4
+fi
+(cd "$BACKUP_RESOLVED" && sha256sum "$DUMP_NAME" > "${DUMP_NAME}.sha256")
 log "Wrote $DUMP_PATH ($(du -h "$DUMP_PATH" | cut -f1))"
+log "SHA256: $DIGEST_PATH (integrity only; NOT encrypted or signed)"
 log "Done."

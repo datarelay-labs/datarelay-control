@@ -37,8 +37,9 @@ Quick sequence:
 tar -xzf offline-release-*.tar.gz
 cd offline-release
 sudo scripts/install-docker-offline.sh   # when Docker is not installed
-scripts/reset-production-data.sh
-scripts/install-offline.sh
+# Only for an approved fresh reinstall that intentionally deletes existing data:
+# scripts/reset-production-data.sh   # interactive YES; no backup is created
+scripts/install-offline.sh            # keeps existing DB volumes by default
 checks/verify-install.sh
 ```
 
