@@ -151,6 +151,85 @@ describe('RouteEditPage delivery preview', () => {
     })
   })
 
+  it('shows metadata-only formatted output without disclosing payloads, headers or secrets', async () => {
+    runRouteDeliveryPreview.mockResolvedValueOnce({
+      route_id: 42,
+      destination_id: 5,
+      destination_type: 'WEBHOOK_POST',
+      message_count: 2,
+      preview_messages: [
+        { body: 'synthetic_secret_123', headers: { Authorization: 'Bearer hidden_token_123' } },
+        { body: { password: 'do_not_disclose_123', api_key: 'key_secret_123' } },
+      ],
+    })
+    renderRouteEdit()
+    fireEvent.click(await screen.findByTestId('route-edit-preview-delivery'))
+    const panel = await screen.findByTestId('route-edit-delivery-preview-output')
+    expect(panel).toHaveTextContent('Formatted output metadata — no send')
+    expect(panel).toHaveTextContent('Message 1')
+    expect(panel).toHaveTextContent('Message 2')
+    expect(panel).toHaveTextContent('Text body')
+    expect(panel).toHaveTextContent('Structured body')
+    expect(panel).not.toHaveTextContent(/synthetic_secret_123|Bearer hidden_token_123|do_not_disclose_123|key_secret_123/)
+    expect(screen.getByTestId('route-edit-delivery-preview-status')).toHaveTextContent('no events were sent')
+  })
+
+  it('bounds large preview message lists to three summaries without implying delivery success', async () => {
+    runRouteDeliveryPreview.mockResolvedValueOnce({
+      route_id: 42,
+      destination_id: 5,
+      destination_type: 'WEBHOOK_POST',
+      message_count: 8,
+      preview_messages: Array.from({ length: 8 }, (_, index) => ({ body: 'private-' + index })),
+    })
+    renderRouteEdit()
+    fireEvent.click(await screen.findByTestId('route-edit-preview-delivery'))
+    const panel = await screen.findByTestId('route-edit-delivery-preview-output')
+    expect(panel).toHaveTextContent('Showing 3 of 8 formatted messages')
+    expect(panel).toHaveTextContent('Message 3')
+    expect(panel).not.toHaveTextContent('Message 4')
+    expect(panel).not.toHaveTextContent('private-0')
+    expect(panel).toHaveTextContent('not receiver-confirmed')
+  })
+
+  it('clears any previous success output if a later no-send preview fails', async () => {
+    renderRouteEdit()
+    const button = await screen.findByTestId('route-edit-preview-delivery')
+    fireEvent.click(button)
+    expect(await screen.findByTestId('route-edit-delivery-preview-output')).toBeInTheDocument()
+    runRouteDeliveryPreview.mockRejectedValueOnce(new Error('preview unavailable'))
+    fireEvent.click(button)
+    await waitFor(() => {
+      expect(screen.getByTestId('route-edit-delivery-preview-status')).toHaveTextContent('preview unavailable')
+      expect(screen.queryByTestId('route-edit-delivery-preview-output')).not.toBeInTheDocument()
+    })
+  })
+
+  it('rejects mismatched route preview evidence without displaying output', async () => {
+    runRouteDeliveryPreview.mockResolvedValueOnce({
+      route_id: 99,
+      destination_id: 5,
+      destination_type: 'WEBHOOK_POST',
+      message_count: 1,
+      preview_messages: [{ body: { token: 'hidden' } }],
+    })
+    renderRouteEdit()
+    fireEvent.click(await screen.findByTestId('route-edit-preview-delivery'))
+    expect(await screen.findByTestId('route-edit-delivery-preview-status')).toHaveTextContent(
+      'did not match the saved Route and Destination',
+    )
+    expect(screen.queryByTestId('route-edit-delivery-preview-output')).not.toBeInTheDocument()
+  })
+
+  it('hides prior no-send output whenever the persisted Route has unsaved edits', async () => {
+    renderRouteEdit()
+    fireEvent.click(await screen.findByTestId('route-edit-preview-delivery'))
+    expect(await screen.findByTestId('route-edit-delivery-preview-output')).toBeInTheDocument()
+    fireEvent.change(await screen.findByDisplayValue('Route A'), { target: { value: 'Edited route' } })
+    expect(await screen.findByTestId('route-edit-unsaved-hint')).toBeInTheDocument()
+    expect(screen.queryByTestId('route-edit-delivery-preview-output')).not.toBeInTheDocument()
+  })
+
   it('runs route-delivery preview and reports no-send success', async () => {
     renderRouteEdit()
     const button = await screen.findByTestId('route-edit-preview-delivery')

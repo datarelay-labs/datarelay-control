@@ -38,6 +38,26 @@ import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
 
 type DeliveryPreviewStatus = 'idle' | 'pending' | 'success' | 'failure'
 
+type SafeFormattedPreview = {
+  routeId: number
+  destinationId: number
+  messageCount: number
+  messageKinds: string[]
+}
+
+const MAX_FORMATTED_PREVIEW_ROWS = 3
+
+function previewBodyKind(value: unknown): string {
+  const body = value && typeof value === 'object' && !Array.isArray(value) && 'body' in value
+    ? value.body
+    : value
+  if (typeof body === 'string') return 'Text body'
+  if (Array.isArray(body)) return 'Array body'
+  if (body != null && typeof body === 'object') return 'Structured body'
+  if (body == null) return 'No body'
+  return 'Scalar body'
+}
+
 type RouteEditTab = 'delivery' | 'transform' | 'protection' | 'classification' | 'policy'
 
 function failurePolicyFromApi(raw: string): RouteFailurePolicy {
@@ -188,6 +208,8 @@ export function RouteEditPage() {
   const [streamLabel, setStreamLabel] = useState('—')
   const [deliveryPreviewStatus, setDeliveryPreviewStatus] = useState<DeliveryPreviewStatus>('idle')
   const [deliveryPreviewMessage, setDeliveryPreviewMessage] = useState<string | null>(null)
+  const [safeFormattedPreview, setSafeFormattedPreview] = useState<SafeFormattedPreview | null>(null)
+  const previewRequestToken = useRef(0)
   const destinationLabel = useMemo(() => {
     const found = destinationOptions.find((o) => o.id === backendDestinationId)
     return found?.label ?? '—'
@@ -242,6 +264,13 @@ export function RouteEditPage() {
     return null
   }, [backendRouteId, hasUnsavedChanges, isCreateMode])
   const deliveryPreviewBusy = deliveryPreviewStatus === 'pending'
+  // Reset on a different Route identity, not on delayed destination hydration.
+  useEffect(() => {
+    previewRequestToken.current += 1
+    setSafeFormattedPreview(null)
+    setDeliveryPreviewMessage(null)
+    setDeliveryPreviewStatus('idle')
+  }, [routeId])
 
   const applyDeliveryForm = useCallback((form: RouteDeliveryFormState) => {
     setRouteName(form.routeName)
@@ -509,6 +538,8 @@ export function RouteEditPage() {
       return
     }
     if (backendRouteId == null) return
+    const requestToken = ++previewRequestToken.current
+    setSafeFormattedPreview(null)
     setDeliveryPreviewStatus('pending')
     setDeliveryPreviewMessage('Running delivery preview (no send)…')
     try {
@@ -516,11 +547,24 @@ export function RouteEditPage() {
         route_id: backendRouteId,
         events: [ROUTE_DELIVERY_PREVIEW_SAMPLE_EVENT],
       })
+      if (requestToken !== previewRequestToken.current) return
+      if (result.route_id !== backendRouteId || result.destination_id !== backendDestinationId) {
+        throw new Error('Preview result did not match the saved Route and Destination.')
+      }
+      const returned = Array.isArray(result.preview_messages) ? result.preview_messages : []
+      setSafeFormattedPreview({
+        routeId: backendRouteId,
+        destinationId: result.destination_id,
+        messageCount: returned.length,
+        messageKinds: returned.slice(0, MAX_FORMATTED_PREVIEW_ROWS).map(previewBodyKind),
+      })
       setDeliveryPreviewStatus('success')
       setDeliveryPreviewMessage(
         `Delivery preview ready — no events were sent. Formatted ${result.message_count} message(s) for ${result.destination_type} (destination #${result.destination_id}).`,
       )
     } catch (err) {
+      if (requestToken !== previewRequestToken.current) return
+      setSafeFormattedPreview(null)
       const message = err instanceof Error ? err.message : 'Delivery preview failed.'
       setDeliveryPreviewStatus('failure')
       setDeliveryPreviewMessage(`Delivery preview failed: ${message}`)
@@ -795,6 +839,39 @@ export function RouteEditPage() {
         >
           {deliveryPreviewMessage}
         </p>
+      ) : null}
+      {deliveryPreviewStatus === 'success' && !hasUnsavedChanges && safeFormattedPreview &&
+      safeFormattedPreview.routeId === backendRouteId && safeFormattedPreview.destinationId === backendDestinationId ? (
+        <section
+          data-testid="route-edit-delivery-preview-output"
+          aria-label="Formatted delivery preview metadata"
+          className="min-w-0 rounded-lg border border-violet-200 bg-violet-50/40 p-3 dark:border-violet-500/30 dark:bg-violet-500/5"
+        >
+          <h3 className="text-xs font-semibold text-slate-900 dark:text-slate-100">
+            Formatted output metadata — no send
+          </h3>
+          <p className="mt-1 text-xs text-slate-600 dark:text-gdc-mutedStrong">
+            Sample formatting only; not receiver-confirmed. Body values, headers and credentials are intentionally hidden.
+          </p>
+          {safeFormattedPreview.messageCount > MAX_FORMATTED_PREVIEW_ROWS ? (
+            <p className="mt-1 text-xs text-slate-600 dark:text-gdc-mutedStrong">
+              Showing {MAX_FORMATTED_PREVIEW_ROWS} of {safeFormattedPreview.messageCount} formatted messages.
+            </p>
+          ) : null}
+          {safeFormattedPreview.messageKinds.length ? (
+            <ol className="mt-2 grid gap-1 sm:grid-cols-2">
+              {safeFormattedPreview.messageKinds.map((kind, i) => (
+                <li key={i} className="min-w-0 rounded-md border border-slate-200 bg-white p-2 text-xs dark:border-gdc-border dark:bg-gdc-card">
+                  <span className="font-semibold">Message {i + 1}</span> · {kind}
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="mt-2 text-xs text-slate-600 dark:text-gdc-mutedStrong">
+              No formatted messages returned by the no-send preview.
+            </p>
+          )}
+        </section>
       ) : null}
       {staleConflict ? (
         <div
