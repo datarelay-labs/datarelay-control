@@ -557,12 +557,12 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     persistTestSession('CONNECTOR_OPERATOR')
     renderApp()
     const nav = screen.getByRole('complementary', { name: 'Primary navigation' })
-    for (const group of ['Data Sources', 'Delivery', 'Governance']) {
+    for (const group of ['Connections', 'Governance']) {
       const toggle = within(nav).getByRole('button', { name: group })
       await user.click(toggle)
       expect(toggle).toHaveAttribute('aria-expanded', 'true')
     }
-    for (const label of ['Connectors', 'Streams', 'Destinations', 'Routes', 'Administration']) {
+    for (const label of ['Connectors', 'Destinations', 'Streams', 'Data Flows', 'Administration']) {
       expect(within(nav).getByRole('button', { name: label })).toBeInTheDocument()
     }
     expect(within(nav).getAllByRole('button', { name: 'Dashboard' }).length).toBeGreaterThanOrEqual(1)
@@ -586,8 +586,8 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     ]) {
       expect(within(nav).queryByRole('button', { name: removed })).not.toBeInTheDocument()
     }
-    expect(nav).toHaveTextContent('Data Sources')
-    expect(nav).toHaveTextContent('Delivery')
+    expect(nav).toHaveTextContent('Connections')
+    expect(nav).toHaveTextContent('Data Flows')
   })
 
   it('hides Governance nav for VIEWER (M20 RBAC)', () => {
@@ -615,10 +615,10 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     expect(home).toHaveAttribute('href', '/monitoring')
   })
 
-  it('renders Destinations via Delivery sidebar entry', async () => {
+  it('renders Destinations via Connections sidebar entry', async () => {
     const user = userEvent.setup()
     renderApp()
-    await user.click(screen.getByRole('button', { name: 'Delivery' }))
+    await user.click(screen.getByRole('button', { name: 'Connections' }))
     await user.click(screen.getByRole('button', { name: 'Destinations' }))
     expect(
       await screen.findByText(
@@ -659,10 +659,10 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     expect(screen.getByTestId('shell-environment-status')).toBeInTheDocument()
   })
 
-  it('renders Connectors via Data Sources sidebar entry', async () => {
+  it('renders Connectors via Connections sidebar entry', async () => {
     const user = userEvent.setup()
     renderApp()
-    await user.click(screen.getByRole('button', { name: 'Data Sources' }))
+    await user.click(screen.getByRole('button', { name: 'Connections' }))
     await user.click(screen.getByRole('button', { name: 'Connectors' }))
     expect(
       await screen.findByText(/Which source connection needs attention\? Connectors manage reusable source access/i, {}, { timeout: 15000 }),
@@ -676,7 +676,6 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
   it('renders Streams operational console when Streams is selected', async () => {
     const user = userEvent.setup()
     renderApp()
-    await user.click(screen.getByRole('button', { name: 'Data Sources' }))
     await user.click(screen.getByRole('button', { name: 'Streams' }))
     expect(
       await screen.findByText(/Which data flow needs attention/i, {}, { timeout: 15000 }),
@@ -823,7 +822,9 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     localStorage.setItem('gdc-platform-persona', 'connector')
     renderApp('/streams/new')
     expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 1, name: 'Stream Creation Wizard' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'New data flow' })).toBeInTheDocument()
+    expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toHaveTextContent('Streams')
+    expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toHaveTextContent('New data flow')
     expect(await screen.findByTestId('wizard-intent-picker', {}, { timeout: 15000 })).toBeInTheDocument()
     expect(screen.getByTestId('wizard-intent-scratch')).toBeInTheDocument()
     expect(screen.getByTestId('wizard-intent-api-logs-siem')).toBeInTheDocument()

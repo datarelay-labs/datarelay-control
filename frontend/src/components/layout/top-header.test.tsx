@@ -2,6 +2,9 @@ import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { act } from 'react'
+import { persistTestSession, clearTestSession } from '../../lib/governance-rbac'
+import { persistSession, readSession } from '../../auth/session'
 import { SHELL_ALERTS_PATH, TopHeader } from './top-header'
 
 function LocationProbe() {
@@ -9,10 +12,10 @@ function LocationProbe() {
   return <div data-testid="location">{location.pathname}</div>
 }
 
-function renderHeader(opts?: { mobileNavOpen?: boolean; onMobileNavToggle?: () => void; runtimeHealthy?: boolean | null }) {
+function renderHeader(opts?: { mobileNavOpen?: boolean; onMobileNavToggle?: () => void; runtimeHealthy?: boolean | null; initialPath?: string }) {
   const onToggleTheme = vi.fn()
   render(
-    <MemoryRouter initialEntries={['/monitoring']}>
+    <MemoryRouter initialEntries={[opts?.initialPath ?? '/monitoring']}>
       <Routes>
         <Route
           path="*"
@@ -39,6 +42,79 @@ function renderHeader(opts?: { mobileNavOpen?: boolean; onMobileNavToggle?: () =
 describe('TopHeader SaaS shell', () => {
   afterEach(() => {
     cleanup()
+    clearTestSession()
+  })
+
+  it.each(['ADMINISTRATOR', 'OPERATOR', 'CONNECTOR_OPERATOR'] as const)(
+    'offers a primary New data flow action to an active %s user on a landing page',
+    async (role) => {
+      persistTestSession(role)
+      const user = userEvent.setup()
+      renderHeader()
+      const link = screen.getByRole('link', { name: 'New data flow' })
+      expect(link).toHaveAttribute('href', '/streams/new')
+      expect(link).toHaveClass('min-h-11')
+      await user.click(link)
+      expect(screen.getByTestId('location')).toHaveTextContent('/streams/new')
+    },
+  )
+
+  it.each(['VIEWER', 'GOVERNANCE_OPERATOR', 'GOVERNANCE_AUDITOR'] as const)(
+    'does not offer New data flow to %s',
+    (role) => {
+      persistTestSession(role)
+      renderHeader()
+      expect(screen.queryByRole('link', { name: 'New data flow' })).not.toBeInTheDocument()
+    },
+  )
+
+  it.each([
+    ['expired', { expires_at: '2020-01-01T00:00:00Z' }],
+    ['inactive', { status: 'DISABLED' }],
+    ['must reset password', { must_change_password: true }],
+  ])('does not offer New data flow to an Administrator with %s session', (_, overrides) => {
+    persistTestSession('ADMINISTRATOR')
+    const session = readSession()
+    expect(session).not.toBeNull()
+    persistSession({
+      ...session!,
+      ...('expires_at' in overrides ? { expires_at: overrides.expires_at } : {}),
+      user: { ...session!.user, ...('status' in overrides ? { status: overrides.status } : {}), ...('must_change_password' in overrides ? { must_change_password: overrides.must_change_password } : {}) },
+    })
+    renderHeader()
+    expect(screen.queryByRole('link', { name: 'New data flow' })).not.toBeInTheDocument()
+  })
+
+  it('removes the global creation CTA when the current session role changes', () => {
+    persistTestSession('ADMINISTRATOR')
+    renderHeader()
+    expect(screen.getByRole('link', { name: 'New data flow' })).toBeInTheDocument()
+    act(() => persistTestSession('VIEWER'))
+    expect(screen.queryByRole('link', { name: 'New data flow' })).not.toBeInTheDocument()
+  })
+
+  it('does not offer a new-flow navigation link from an unfinished Wizard', () => {
+    persistTestSession('ADMINISTRATOR')
+    renderHeader({ initialPath: '/streams/new' })
+    expect(screen.queryByRole('link', { name: 'New data flow' })).not.toBeInTheDocument()
+  })
+
+  it('makes New data flow available from the existing operational Data Flows page', () => {
+    persistTestSession('ADMINISTRATOR')
+    renderHeader({ initialPath: '/routes' })
+    expect(screen.getByRole('link', { name: 'New data flow' })).toHaveAttribute('href', '/streams/new')
+  })
+
+  it('does not accept a legacy browser role hint without a valid session', () => {
+    localStorage.setItem('gdc_platform_ui_role', 'ADMINISTRATOR')
+    renderHeader()
+    expect(screen.queryByRole('link', { name: 'New data flow' })).not.toBeInTheDocument()
+  })
+
+  it('keeps the global creation CTA out of the keyboard path while the mobile drawer is open', () => {
+    persistTestSession('ADMINISTRATOR')
+    renderHeader({ mobileNavOpen: true, onMobileNavToggle: () => undefined })
+    expect(screen.getByRole('link', { name: 'New data flow', hidden: true }).parentElement).toHaveAttribute('inert')
   })
 
   it('does not render a non-functional global search control', () => {

@@ -183,8 +183,8 @@ describe('AppShellLayout responsive accessibility', () => {
     renderShell()
     await user.click(screen.getByTestId('shell-mobile-nav-toggle'))
     const nav = screen.getByRole('complementary', { name: 'Primary navigation' })
-    await user.click(within(nav).getByRole('button', { name: 'Delivery' }))
-    expect(within(nav).getByRole('button', { name: 'Delivery' })).toHaveAttribute('aria-expanded', 'true')
+    await user.click(within(nav).getByRole('button', { name: 'Connections' }))
+    expect(within(nav).getByRole('button', { name: 'Connections' })).toHaveAttribute('aria-expanded', 'true')
     await user.click(within(nav).getByRole('button', { name: 'Destinations' }))
     expect(screen.getByRole('main')).toHaveTextContent('Destinations workspace')
     expect(screen.getByTestId('shell-mobile-nav-toggle')).toHaveAttribute('aria-expanded', 'false')
@@ -294,8 +294,8 @@ describe('AppShellLayout responsive accessibility', () => {
     expect(
       within(nav).getByRole('button', { name: 'Dashboard', current: 'page', hidden: true }),
     ).toBeInTheDocument()
-    expect(within(nav).getByText('Data Sources')).toBeInTheDocument()
-    expect(within(nav).getByText('Delivery')).toBeInTheDocument()
+    expect(within(nav).getByText('Connections')).toBeInTheDocument()
+    expect(within(nav).getByText('Data Flows')).toBeInTheDocument()
     expect(screen.getByTestId('shell-environment-status')).toHaveAttribute('role', 'status')
   })
 })

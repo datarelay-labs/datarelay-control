@@ -1,12 +1,28 @@
-import type { ReactNode, Ref } from 'react'
-import { Bell, CircleHelp, Menu, Moon, RefreshCw, Settings, Sun, X } from 'lucide-react'
-import { Link, useNavigate } from 'react-router-dom'
-import { NAV_PATH } from '../../config/nav-paths'
+import { useSyncExternalStore, type ReactNode, type Ref } from 'react'
+import { Bell, CircleHelp, Menu, Moon, Plus, RefreshCw, Settings, Sun, X } from 'lucide-react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { NAV_PATH, newStreamPath } from '../../config/nav-paths'
 import { cn } from '../../lib/utils'
+import { isSessionExpired, onSessionChange, readSession } from '../../auth/session'
 import { GDC_HEADER_REFRESH_EVENT } from './header-refresh-event'
 
 /** Global operational-alert surface. Kept out of primary sidebar by UX charter. */
 export const SHELL_ALERTS_PATH = NAV_PATH.alerts
+
+const DATA_FLOW_LANDING_PATHS = new Set([
+  NAV_PATH.dashboard,
+  NAV_PATH.streams,
+  NAV_PATH.connectors,
+  NAV_PATH.destinations,
+  NAV_PATH.routes,
+])
+
+// This is a presentation-only guard; the backend still owns mutation authority.
+function canStartDataFlow(): boolean {
+  const session = readSession()
+  if (!session || isSessionExpired() || session.user.status !== 'ACTIVE' || session.user.must_change_password) return false
+  return ['ADMINISTRATOR', 'OPERATOR', 'CONNECTOR_OPERATOR'].includes(session.user.role)
+}
 
 type TopHeaderProps = {
   title: string
@@ -44,6 +60,9 @@ export function TopHeader({
   mobileNavToggleRef,
 }: TopHeaderProps) {
   const navigate = useNavigate()
+  const location = useLocation()
+  const canCreateFlow = useSyncExternalStore(onSessionChange, canStartDataFlow, () => false)
+  const showNewDataFlow = canCreateFlow && DATA_FLOW_LANDING_PATHS.has(location.pathname)
 
   function handleHeaderRefresh() {
     onRefresh?.()
@@ -114,7 +133,22 @@ export function TopHeader({
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-1" {...(mobileNavOpen ? { inert: true } : {})}>
+        <div className="flex w-full flex-wrap items-center justify-end gap-1 sm:w-auto" {...(mobileNavOpen ? { inert: true } : {})}>
+          {showNewDataFlow ? (
+            <Link
+              to={newStreamPath()}
+              onClick={(event) => {
+                if (!canStartDataFlow()) event.preventDefault()
+              }}
+              className="inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-lg bg-gdc-primary px-3 text-xs font-semibold text-white hover:bg-violet-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-400"
+              aria-label="New data flow"
+              title="Start a new Stream, then configure Routes and Destinations before delivery"
+              data-testid="shell-new-data-flow"
+            >
+              <Plus className="h-4 w-4" aria-hidden />
+              <span className="hidden min-[375px]:inline">New data flow</span>
+            </Link>
+          ) : null}
           <Link
             to="/help"
             target="_blank"

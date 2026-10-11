@@ -197,7 +197,7 @@ export function AppShellLayout() {
           <span className="text-slate-400 dark:text-gdc-muted" aria-hidden>
             /
           </span>
-          <span className="font-semibold text-slate-800 dark:text-slate-200">New Stream</span>
+          <span className="font-semibold text-slate-800 dark:text-slate-200">New data flow</span>
         </nav>
       )
     }
@@ -559,7 +559,7 @@ export function AppShellLayout() {
     : location.pathname.startsWith('/validation')
     ? PAGE_TITLE.validation
     : newStreamMatch
-        ? 'Stream Creation Wizard'
+        ? 'New data flow'
         : streamEditMatch
           ? 'Edit Stream'
           : apiTestMatch
@@ -591,7 +591,7 @@ export function AppShellLayout() {
     : location.pathname.startsWith('/validation')
     ? 'Runtime verification runs on live configuration; use alongside stream runtime, logs, and delivery health.'
     : newStreamMatch
-      ? 'Draft stream wizard — configuration is not applied to runtime until the stream is saved and enabled.'
+      ? 'New data flow — configure a Stream, its Routes and Destinations. Runtime delivery is not proven until the Stream is saved, enabled, and run.'
       : streamEditMatch
         ? /^\d+$/.test(streamEditMatch.params.streamId ?? '')
           ? 'Edit stream configuration — loads saved stream from the API.'
