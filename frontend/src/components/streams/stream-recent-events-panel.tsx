@@ -176,7 +176,7 @@ export function StreamRecentEventsPanel({
                   <table className={opTable}>
                     <thead>
                       <tr className={opThRow}>
-                        <th className={opTh}>Run ID</th>
+                        <th className={opTh}>Run / Record</th>
                         <th className={opTh}>Started</th>
                         <th className={opTh}>Status</th>
                         <th className={opTh}>Delivered</th>
@@ -185,7 +185,9 @@ export function StreamRecentEventsPanel({
                     <tbody>
                       {deliveryRuns.slice(0, 5).map((row) => (
                         <tr key={row.runId} className={opTr}>
-                          <td className={cn(opTd, 'font-mono text-[11px]')}>{row.runId}</td>
+                          <td className={cn(opTd, 'font-mono text-[11px]')}>
+                            {row.idBasis === 'completion-record' ? `Completion record ${row.runId}` : row.runId}
+                          </td>
                           <td className={cn(opTd, 'whitespace-nowrap tabular-nums')}>{row.startedAt}</td>
                           <td className={opTd}>
                             <span className="inline-flex items-center gap-1 text-[11px] font-semibold">

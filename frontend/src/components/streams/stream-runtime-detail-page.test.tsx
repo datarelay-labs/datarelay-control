@@ -562,6 +562,33 @@ describe('StreamRuntimeDetailPage M17.2 layout', () => {
     expect(within(history).queryByText(/^evt-/)).not.toBeInTheDocument()
   })
 
+  it('never deep-links a Metrics completion-record label as an exact run_id', async () => {
+    vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mockImplementationOnce(async (_id, _window, params) => ({
+      ...streamRuntimeMetricsFixture(params),
+      recent_runs: [{
+        run_id: 'run-123456',
+        started_at: '2026-10-11T10:00:00Z',
+        duration_ms: 0,
+        status: 'SUCCESS',
+        events: 8,
+        delivered: 7,
+        failed: 1,
+      }],
+    }))
+    const user = userEvent.setup()
+    renderRuntimePage('42')
+    await user.click(await screen.findByTestId('stream-detail-tab-audit'))
+    const history = screen.getByRole('region', { name: 'Run history' })
+    expect(await within(history).findByText('Completion record run-123456')).toBeInTheDocument()
+    expect(within(history).queryByRole('link', { name: 'run-123456' })).not.toBeInTheDocument()
+    expect(within(history).getByRole('link', { name: 'Browse completion logs' })).toHaveAttribute(
+      'href', '/logs?stream_id=42&stage=run_complete',
+    )
+    expect(history).toHaveTextContent('8')
+    expect(screen.getByTestId('stream-run-history-metrics-record-basis')).toHaveTextContent(/not verified run IDs/i)
+    expect(within(history).getByRole('columnheader', { name: 'Observed At' })).toBeInTheDocument()
+  })
+
   it('shows error state instead of monitoring shell when stream metadata fails to load', async () => {
     mockFetchStreamById.mockResolvedValueOnce(null)
     renderRuntimePage('42')

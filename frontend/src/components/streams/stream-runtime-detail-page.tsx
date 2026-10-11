@@ -1656,14 +1656,19 @@ export function StreamRuntimeDetailPage() {
               Timeline-only run evidence: event, delivery and failure totals are not verified by runtime metrics.
             </p>
           ) : null}
+          {runHistoryRows.some((row) => row.idBasis === 'completion-record') ? (
+            <p data-testid="stream-run-history-metrics-record-basis" className="mt-1 text-xs text-slate-600 dark:text-gdc-muted">
+              Metrics completion labels are log record references, not verified run IDs. Open scoped completion logs to investigate.
+            </p>
+          ) : null}
         </div>
         <div className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm dark:border-gdc-border dark:bg-gdc-card">
           <div className="overflow-x-auto p-2">
             <table className={opTable}>
               <thead>
                 <tr className={opThRow}>
-                  <th scope="col" className={opTh}>Run ID</th>
-                  <th scope="col" className={opTh}>Started At</th>
+                  <th scope="col" className={opTh}>Run / Record</th>
+                  <th scope="col" className={opTh}>Observed At</th>
                   <th scope="col" className={opTh}>Duration</th>
                   <th scope="col" className={opTh}>Status</th>
                   <th scope="col" className={opTh}>Events</th>
@@ -1677,10 +1682,14 @@ export function StreamRuntimeDetailPage() {
                   const countsVerified = row.countsVerified !== false
                   const failed = countsVerified && row.failed > 0
                   const partial = row.status === 'Partial'
+                  const isCompletionRecord = row.idBasis === 'completion-record'
                   const runLogsHref =
-                    backendStreamId != null && row.runId.trim().length >= 8
+                    backendStreamId != null && !isCompletionRecord && row.runId.trim().length >= 8
                       ? logsExplorerPath({ stream_id: backendStreamId, run_id: row.runId })
                       : null
+                  const completionLogsHref = backendStreamId != null && isCompletionRecord
+                    ? logsExplorerPath({ stream_id: backendStreamId, stage: 'run_complete' })
+                    : null
                   return (
                     <tr
                       key={row.runId}
@@ -1696,7 +1705,9 @@ export function StreamRuntimeDetailPage() {
                             {row.runId}
                           </Link>
                         ) : (
-                          <span className="font-mono text-[11px] font-semibold text-slate-700 dark:text-gdc-mutedStrong">{row.runId}</span>
+                          <span className="font-mono text-[11px] font-semibold text-slate-700 dark:text-gdc-mutedStrong">
+                            {isCompletionRecord ? `Completion record ${row.runId}` : row.runId}
+                          </span>
                         )}
                       </td>
                       <td className={cn(opTd, 'whitespace-nowrap tabular-nums text-slate-700 dark:text-gdc-mutedStrong')}>{row.startedAt}</td>
@@ -1724,6 +1735,10 @@ export function StreamRuntimeDetailPage() {
                         {runLogsHref ? (
                           <Link to={runLogsHref} className="inline-flex text-[11px] font-semibold text-violet-700 hover:underline dark:text-violet-300">
                             Logs
+                          </Link>
+                        ) : completionLogsHref ? (
+                          <Link to={completionLogsHref} className="inline-flex text-[11px] font-semibold text-violet-700 hover:underline dark:text-violet-300">
+                            Browse completion logs
                           </Link>
                         ) : (
                           <span className="text-[11px] text-slate-400 dark:text-slate-500">—</span>

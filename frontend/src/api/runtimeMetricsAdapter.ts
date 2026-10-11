@@ -71,6 +71,9 @@ export function runHistoryFromMetricsRecentRuns(metrics: StreamRuntimeMetricsRes
     const ms = safeNonNegInt(r.duration_ms)
     return {
       runId: r.run_id,
+      // Backend metrics_service and snapshot reader currently synthesize run-${delivery_log.id}.
+      // Do not promote that completion record label to an exact run_id filter.
+      idBasis: 'completion-record',
       startedAt: formatIsoShort(r.started_at),
       duration: ms > 0 ? `${ms} ms` : '—',
       status: mapRunStatus(r.status),

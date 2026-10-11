@@ -25,6 +25,8 @@ export type RunHistoryRow = {
   failed: number
   /** false for timeline-only run evidence: event/delivery totals were not reported by runtime metrics. */
   countsVerified?: boolean
+  /** Current metrics API labels are run_complete log references, not authoritative run_id values. */
+  idBasis?: 'run' | 'completion-record'
 }
 
 export type RecentLogLine = {
