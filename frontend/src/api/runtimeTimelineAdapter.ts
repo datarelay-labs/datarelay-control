@@ -1,7 +1,7 @@
 import type { RecentLogLine, RunHistoryRow } from '../components/streams/stream-runtime-detail-model'
 import { toOperatorEventLabel } from '../lib/stream-governance-snapshot'
 import type { RuntimeTimelineItem } from './types/gdcApi'
-import { formatTimestampWithResolvedTimezone, parseApiTimestampMs, resolveDisplayTimezone } from '../lib/platform-timestamps'
+import { formatTimestampWithResolvedTimezone, getTimezoneAbbreviation, parseApiTimestampMs, resolveDisplayTimezone } from '../lib/platform-timestamps'
 import { getDisplayTimezoneCache } from '../lib/display-timezone-cache'
 
 function safeNonNegInt(n: unknown): number {
@@ -28,13 +28,15 @@ function formatClockTime(iso: string | null | undefined): string {
   if (t == null) return '—'
   const tz = resolveDisplayTimezone(getDisplayTimezoneCache())
   try {
-    return new Intl.DateTimeFormat('en-GB', {
+    const at = new Date(t)
+    const clock = new Intl.DateTimeFormat('en-GB', {
       timeZone: tz,
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
       hour12: false,
-    }).format(new Date(t))
+    }).format(at)
+    return `${clock} ${getTimezoneAbbreviation(tz, at)}`
   } catch {
     return '—'
   }

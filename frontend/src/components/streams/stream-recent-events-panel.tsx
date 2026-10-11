@@ -68,7 +68,7 @@ export function StreamRecentEventsPanel({
             View all →
           </Link>
         </div>
-        <div className="hidden border-b border-slate-200/80 px-4 py-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:border-gdc-divider dark:text-gdc-muted sm:grid sm:grid-cols-[minmax(7rem,1fr)_minmax(0,1.5fr)_4.5rem] sm:gap-3">
+        <div className="hidden border-b border-slate-200/80 px-4 py-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:border-gdc-divider dark:text-gdc-muted sm:grid sm:grid-cols-[minmax(7rem,1fr)_minmax(0,1.5fr)_6rem] sm:gap-3">
           <span>Event</span>
           <span>Description</span>
           <span className="text-right">Time</span>
@@ -83,14 +83,14 @@ export function StreamRecentEventsPanel({
               return (
                 <li
                   key={`${log.at}-${i}`}
-                  className="grid gap-1 px-4 py-3 sm:grid-cols-[minmax(7rem,1fr)_minmax(0,1.5fr)_4.5rem] sm:items-start sm:gap-3"
+                  className="grid gap-1 px-4 py-3 sm:grid-cols-[minmax(7rem,1fr)_minmax(0,1.5fr)_6rem] sm:items-start sm:gap-3"
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="shrink-0 sm:hidden">{compactEventIcon(log.message, log.level)}</span>
                     <p className="truncate text-[12px] font-semibold text-slate-800 dark:text-slate-100">{eventName}</p>
                   </div>
                   <p className="truncate text-[11px] text-slate-500 dark:text-gdc-muted">{description}</p>
-                  <p className="text-[11px] tabular-nums text-slate-500 dark:text-gdc-muted sm:text-right">{log.at}</p>
+                  <p className="whitespace-nowrap text-[11px] tabular-nums text-slate-500 dark:text-gdc-muted sm:text-right">{log.at}</p>
                 </li>
               )
             })
