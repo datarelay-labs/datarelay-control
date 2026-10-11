@@ -343,13 +343,13 @@ def test_logout_revoke_all_bumps_token_version(client: TestClient, db_session: S
     assert w.json()["detail"]["error_code"] == "AUTH_TOKEN_REVOKED"
 
 
-def test_stale_access_token_tv_still_passes_non_auth_routes_until_ttl(
+def test_stale_access_token_tv_is_denied_on_all_protected_routes(
     client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """INTENTIONAL_BY_CONTRACT: middleware does not live-check token_version.
+    """PF-9 security contract: access JWTs with stale epochs fail immediately.
 
-    After ``token_version`` bumps, access JWTs remain usable on ordinary APIs
-    until TTL; only refresh / whoami / change-password enforce live TV.
+    Previously ordinary APIs allowed stale tokens until TTL. MFA enrollment
+    revokes old access tokens, so guarded routes now verify current DB epoch.
     """
 
     monkeypatch.setattr(settings, "REQUIRE_AUTH", True)
@@ -370,9 +370,10 @@ def test_stale_access_token_tv_still_passes_non_auth_routes_until_ttl(
     assert who.status_code == 401
     assert who.json()["detail"]["error_code"] == "AUTH_TOKEN_REVOKED"
 
-    # Same access token still authorizes a non-auth API (signature + role only).
+    # The same stale access token must also be rejected by a protected API.
     api = client.get("/api/v1/connectors/", headers={"Authorization": f"Bearer {token}"})
-    assert api.status_code == 200, api.text
+    assert api.status_code == 401, api.text
+    assert api.json()["detail"]["error_code"] == "AUTH_TOKEN_REVOKED"
 
 
 def test_logout_without_revoke_all_leaves_token_version_unchanged(
@@ -440,11 +441,12 @@ def test_get_connectors_requires_auth_when_require_auth(
     assert r.json()["detail"]["error_code"] == "AUTH_REQUIRED"
 
 
-def test_require_auth_allows_jwt(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_require_auth_allows_jwt(client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "REQUIRE_AUTH", True)
+    user = _seed_user(db_session, username="auth-live-admin", role="ADMINISTRATOR")
     r = client.put(
         "/api/v1/admin/retention-policy",
-        headers=_bearer("ADMINISTRATOR"),
+        headers=_bearer("ADMINISTRATOR", username=user.username, user_id=int(user.id)),
         json={"logs_retention_days": 30, "logs_enabled": True},
     )
     assert r.status_code == 200

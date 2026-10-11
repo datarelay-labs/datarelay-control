@@ -151,6 +151,9 @@ vi.mock('./api/gdcAdmin', () => ({
   getAuthWhoAmI: vi.fn(() =>
     Promise.resolve({ username: 'tester', role: 'ADMINISTRATOR', authenticated: true }),
   ),
+  // Preserve the existing read-only MFA account state when the Settings page
+  // mounts in this component-only shell test; no real auth request is issued.
+  getAuthMfaStatus: vi.fn(async () => ({ enabled: false })),
   getAdminMaintenanceHealth: vi.fn(() =>
     Promise.resolve({
       generated_at: '2026-01-01T00:00:00Z',

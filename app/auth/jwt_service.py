@@ -5,8 +5,8 @@ Lightweight: HS256 access + refresh tokens, signed with ``settings.JWT_SECRET_KE
 invalidation is via ``platform_users.token_version`` bumps.
 
 Only stdlib + ``python-jose`` (already in ``requirements.txt``).  No DB writes
-happen here; live ``token_version`` is enforced in ``/auth/refresh``,
-``/auth/whoami``, and ``/auth/change-password`` (not in the global HTTP middleware).
+happen here; native auth routes and the authenticated HTTP role guard verify
+current product user epoch, role and MFA factor before admitting JWT access.
 """
 
 from __future__ import annotations
@@ -54,6 +54,7 @@ class TokenClaims:
     expires_at: datetime
     raw: dict[str, Any]
     must_change_password: bool = False
+    mfa_verified: bool = False
 
 
 def _signing_key() -> str:
@@ -104,6 +105,7 @@ def _build_payload(
     token_version: int,
     token_type: str,
     must_change_password: bool = False,
+    mfa_verified: bool = False,
 ) -> dict[str, Any]:
     now = _utcnow()
     exp = now + timedelta(minutes=_expire_minutes(token_type))
@@ -120,6 +122,8 @@ def _build_payload(
     }
     if must_change_password:
         out["mcp"] = 1
+    if mfa_verified:
+        out["mfa"] = 1
     return out
 
 
@@ -130,6 +134,7 @@ def issue_access_token(
     role: str,
     token_version: int,
     must_change_password: bool = False,
+    mfa_verified: bool = False,
 ) -> tuple[str, datetime]:
     """Return ``(jwt_string, expires_at_utc)`` for an access token."""
 
@@ -140,6 +145,7 @@ def issue_access_token(
         token_version=token_version,
         token_type=TOKEN_TYPE_ACCESS,
         must_change_password=must_change_password,
+        mfa_verified=mfa_verified,
     )
     token = jwt.encode(payload, _signing_key(), algorithm=settings.JWT_ALGORITHM)
     return token, datetime.fromtimestamp(payload["exp"], tz=timezone.utc)
@@ -152,6 +158,7 @@ def issue_refresh_token(
     role: str,
     token_version: int,
     must_change_password: bool = False,
+    mfa_verified: bool = False,
 ) -> tuple[str, datetime]:
     payload = _build_payload(
         username=username,
@@ -160,6 +167,7 @@ def issue_refresh_token(
         token_version=token_version,
         token_type=TOKEN_TYPE_REFRESH,
         must_change_password=must_change_password,
+        mfa_verified=mfa_verified,
     )
     token = jwt.encode(payload, _signing_key(), algorithm=settings.JWT_ALGORITHM)
     return token, datetime.fromtimestamp(payload["exp"], tz=timezone.utc)
@@ -208,6 +216,7 @@ def decode_token(token: str, *, expected_type: str | None = None) -> TokenClaims
             expires_at=datetime.fromtimestamp(int(payload["exp"]), tz=timezone.utc),
             raw=dict(payload),
             must_change_password=must_change,
+            mfa_verified=payload.get("mfa") == 1,
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise AuthTokenError("AUTH_TOKEN_INVALID", f"Malformed token claims: {exc}") from exc

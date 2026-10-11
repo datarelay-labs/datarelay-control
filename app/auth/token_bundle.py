@@ -39,6 +39,7 @@ def build_token_bundle(
     token_version: int,
     user_status: str,
     must_change_password: bool = False,
+    mfa_verified: bool = False,
 ) -> TokenBundle:
     access, access_exp = issue_access_token(
         username=username,
@@ -46,6 +47,7 @@ def build_token_bundle(
         role=role,
         token_version=token_version,
         must_change_password=must_change_password,
+        mfa_verified=mfa_verified,
     )
     refresh, _refresh_exp = issue_refresh_token(
         username=username,
@@ -53,6 +55,7 @@ def build_token_bundle(
         role=role,
         token_version=token_version,
         must_change_password=must_change_password,
+        mfa_verified=mfa_verified,
     )
     expires_in = max(1, int((access_exp - _utcnow()).total_seconds()))
     return TokenBundle(
