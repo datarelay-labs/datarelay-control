@@ -1651,6 +1651,11 @@ export function StreamRuntimeDetailPage() {
         <div className="mb-2">
           <h3 className="text-[12px] font-semibold text-slate-900 dark:text-slate-100">Run History</h3>
           <p className="text-[11px] text-slate-600 dark:text-gdc-muted">Recent pipeline runs from runtime metrics and timeline APIs.</p>
+          {runHistoryRows.some((row) => row.countsVerified === false) ? (
+            <p data-testid="stream-run-history-timeline-basis" className="mt-1 text-xs text-slate-600 dark:text-gdc-muted">
+              Timeline-only run evidence: event, delivery and failure totals are not verified by runtime metrics.
+            </p>
+          ) : null}
         </div>
         <div className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm dark:border-gdc-border dark:bg-gdc-card">
           <div className="overflow-x-auto p-2">
@@ -1669,10 +1674,13 @@ export function StreamRuntimeDetailPage() {
               </thead>
               <tbody>
                 {runHistoryRows.map((row) => {
-                  const failed = row.failed > 0
+                  const countsVerified = row.countsVerified !== false
+                  const failed = countsVerified && row.failed > 0
                   const partial = row.status === 'Partial'
                   const runLogsHref =
-                    backendStreamId != null ? logsExplorerPath({ stream_id: backendStreamId, run_id: row.runId }) : null
+                    backendStreamId != null && row.runId.trim().length >= 8
+                      ? logsExplorerPath({ stream_id: backendStreamId, run_id: row.runId })
+                      : null
                   return (
                     <tr
                       key={row.runId}
@@ -1699,16 +1707,18 @@ export function StreamRuntimeDetailPage() {
                             <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden />
                           ) : row.status === 'Failed' ? (
                             <XCircle className="h-3.5 w-3.5 text-red-600 dark:text-red-400" aria-hidden />
-                          ) : (
+                          ) : row.status === 'Partial' ? (
                             <AlertTriangle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" aria-hidden />
+                          ) : (
+                            <History className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" aria-hidden />
                           )}
                           <span className="text-[11px] font-semibold text-slate-800 dark:text-slate-200">{row.status}</span>
                         </span>
                       </td>
-                      <td className={cn(opTd, 'tabular-nums font-medium text-slate-800 dark:text-slate-100')}>{row.events.toLocaleString()}</td>
-                      <td className={cn(opTd, 'tabular-nums text-slate-700 dark:text-gdc-mutedStrong')}>{row.delivered.toLocaleString()}</td>
+                      <td className={cn(opTd, 'tabular-nums font-medium text-slate-800 dark:text-slate-100')}>{countsVerified ? row.events.toLocaleString() : '—'}</td>
+                      <td className={cn(opTd, 'tabular-nums text-slate-700 dark:text-gdc-mutedStrong')}>{countsVerified ? row.delivered.toLocaleString() : '—'}</td>
                       <td className={cn(opTd, 'tabular-nums font-semibold', failed ? 'text-red-600 dark:text-red-400' : 'text-slate-700 dark:text-gdc-mutedStrong')}>
-                        {row.failed.toLocaleString()}
+                        {countsVerified ? row.failed.toLocaleString() : '—'}
                       </td>
                       <td className={cn(opTd, 'text-right')}>
                         {runLogsHref ? (

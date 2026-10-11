@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { timelineItemsToRunHistoryRows } from './runtimeTimelineAdapter'
+import { timelineItemsToRecentLogLines, timelineItemsToRunHistoryRows } from './runtimeTimelineAdapter'
 import type { RuntimeTimelineItem } from './types/gdcApi'
 
 function event(id: number, stage: string, level = 'INFO', status = 'SUCCESS'): RuntimeTimelineItem {
@@ -28,19 +28,32 @@ describe('Stream runtime timeline delivery evidence', () => {
       event(2, 'run_complete'),
       event(3, 'checkpoint_update'),
     ])
-    expect(rows.map((row) => row.delivered)).toEqual([0, 0, 0])
-    expect(rows.map((row) => row.failed)).toEqual([0, 0, 0])
+    // A lifecycle completion is a real run record, but cannot prove any delivery volume.
+    expect(rows).toMatchObject([{
+      runId: 'run-evidence',
+      status: 'Completed',
+      countsVerified: false,
+      delivered: 0,
+      failed: 0,
+    }])
   })
 
-  it('counts actual route delivery outcomes and not unrelated source failures', () => {
-    const rows = timelineItemsToRunHistoryRows([
+  it('preserves recorded Route delivery outcomes in scoped recent logs, not synthetic Run totals', () => {
+    const events = [
       event(1, 'route_send_success'),
       event(2, 'route_retry_success'),
       event(3, 'route_send_failed', 'ERROR', 'FAILED'),
       event(4, 'route_retry_failed', 'ERROR', 'FAILED'),
       event(5, 'source_fetch', 'ERROR', 'FAILED'),
+    ]
+    // An individual delivery event does not establish that a run completed or how many events it processed.
+    expect(timelineItemsToRunHistoryRows(events)).toEqual([])
+    const logs = timelineItemsToRecentLogLines(events)
+    expect(logs.map((row) => row.stage)).toEqual([
+      'source_fetch', 'route_retry_failed', 'route_send_failed', 'route_retry_success', 'route_send_success',
     ])
-    expect(rows.map((row) => row.delivered)).toEqual([1, 1, 0, 0, 0])
-    expect(rows.map((row) => row.failed)).toEqual([0, 0, 1, 1, 0])
+    expect(logs.filter((row) => row.level === 'ERROR').map((row) => row.stage)).toEqual([
+      'source_fetch', 'route_retry_failed', 'route_send_failed',
+    ])
   })
 })

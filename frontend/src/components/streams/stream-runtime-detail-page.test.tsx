@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -519,6 +519,47 @@ describe('StreamRuntimeDetailPage M17.2 layout', () => {
     expect(screen.getByTestId('stream-monitoring-observability')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Configuration' })).not.toBeInTheDocument()
     expect(screen.queryByText(/No additional tab-specific data/i)).not.toBeInTheDocument()
+  })
+
+  it('links real timeline Run IDs and labels unavailable counts without inventing delivery evidence', async () => {
+    const actualRunId = 'run-20261011-confirmed'
+    const event = (id: number, stage: string, time: string) => ({
+      id,
+      created_at: time,
+      stream_id: 42,
+      route_id: null,
+      destination_id: null,
+      run_id: actualRunId,
+      stage,
+      level: 'INFO',
+      status: stage === 'run_complete' ? 'COMPLETED' : 'OK',
+      message: stage,
+      error_code: null,
+      retry_count: 0,
+      http_status: null,
+      latency_ms: null,
+    })
+    vi.mocked(gdcRuntime.fetchStreamRuntimeTimeline).mockResolvedValueOnce({
+      stream_id: 42,
+      total: 3,
+      items: [
+        event(1, 'run_started', '2026-10-11T09:00:00Z'),
+        event(2, 'source_fetch', '2026-10-11T09:00:01Z'),
+        event(3, 'run_complete', '2026-10-11T09:02:00Z'),
+      ],
+    })
+    const user = userEvent.setup()
+    renderRuntimePage('42')
+    await user.click(await screen.findByTestId('stream-detail-tab-audit'))
+    const history = screen.getByRole('region', { name: 'Run history' })
+    const link = await within(history).findByRole('link', { name: actualRunId })
+    expect(link).toHaveAttribute('href', '/logs?stream_id=42&run_id=run-20261011-confirmed')
+    const row = link.closest('tr')
+    expect(row).not.toBeNull()
+    expect(within(row!).getByText('Completed')).toBeInTheDocument()
+    expect(within(row!).getAllByText('—')).toHaveLength(4)
+    expect(screen.getByTestId('stream-run-history-timeline-basis')).toHaveTextContent(/not verified by runtime metrics/i)
+    expect(within(history).queryByText(/^evt-/)).not.toBeInTheDocument()
   })
 
   it('shows error state instead of monitoring shell when stream metadata fails to load', async () => {

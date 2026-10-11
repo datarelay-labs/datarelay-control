@@ -19,10 +19,12 @@ export type RunHistoryRow = {
   runId: string
   startedAt: string
   duration: string
-  status: 'Success' | 'Failed' | 'Partial'
+  status: 'Success' | 'Failed' | 'Partial' | 'Started' | 'Completed'
   events: number
   delivered: number
   failed: number
+  /** false for timeline-only run evidence: event/delivery totals were not reported by runtime metrics. */
+  countsVerified?: boolean
 }
 
 export type RecentLogLine = {
