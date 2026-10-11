@@ -14,7 +14,7 @@ This runbook describes **read-only backups** and **controlled restores** for the
 
 ## Prerequisites
 
-- PostgreSQL client tools installed: `pg_dump`, `pg_restore` (same major version as the server, or compatible).
+- PostgreSQL client tools installed: `pg_dump`, `pg_restore` (same major version as the server, or compatible); `sha256sum` is required for producing digests.
 - `DATABASE_URL` set to a `postgresql://` or `postgres://` URL that includes a **database name** (and host/port or local socket path as appropriate).
 - `python3` on `PATH` (used for URL validation only).
 
@@ -47,6 +47,8 @@ Artifacts:
 - Default directory: `var/backups/postgres/` under the repo root (created if missing).
 - Filename pattern: `gdc-postgres-YYYYMMDDTHHMMSSZ.dump` (or `.dump.gz` when gzip is enabled).
 - Format: **custom** (`-Fc`), suitable for `pg_restore`.
+- Archive and `.sha256` sidecar are owner-only mode **0600**, including partial dumps. Running the script does not encrypt a database dump. The operator is responsible for encryption-at-rest, secure key custody, offsite replication and access to the backup directory.
+- Refuses to overwrite an existing or symlinked archive/digest with the same timestamp, and refuses a zero-byte archive. Backup receipts include byte count and the SHA256 of the exact completed `.dump` or `.dump.gz` file. This digest is **integrity evidence only**, not a signature, encryption, proven restorable archive or verified isolated restore.
 
 ### Docker example (backup)
 
@@ -86,17 +88,23 @@ CONFIRM_RESTORE=yes ./scripts/ops/restore-postgres.sh /path/to/gdc-postgres-....
 
 Behaviour:
 
-1. **`CONFIRM_RESTORE` must be exactly `yes`** — any other value (including unset) causes immediate refusal with no database changes beyond what a failed `pg_restore` might partially apply if you bypass checks (you should not).
-2. **Empty or invalid `DATABASE_URL`** (wrong scheme, missing database name, etc.) is refused before any backup/restore step that needs a live connection for restore.
-3. A **pre-restore backup** is taken first (same read-only `pg_dump` flow as the backup script) into `PRE_RESTORE_BACKUP_DIR` or, by default, `var/backups/postgres/pre-restore/` (override with `PRE_RESTORE_BACKUP_DIR` or `BACKUP_DIR`).
-4. `pg_restore` runs with **`--no-owner --no-acl`** for portability and **without `--clean`** so the script does not instruct `pg_restore` to drop existing objects.
-
+1. **`CONFIRM_RESTORE` must be exactly `yes`** — any other value (including unset) causes immediate refusal without database changes.
+2. **Before touching PostgreSQL**, the restore command requires a sidecar `ARCHIVE.sha256` that names precisely this archive and has a matching actual byte digest. Invalid, modified, empty or symlinked backup evidence is rejected. New backup scripts generate this sidecar automatically; it must be copied together with the archive.
+3. **Legacy archives without a checksum** are refused by default. To pursue an explicitly approved emergency restore of a legacy archive, set `ALLOW_UNVERIFIED_LEGACY_DUMP=yes` **in addition** to `CONFIRM_RESTORE=yes`. This does not verify archive integrity and must not be represented as PF-12B qualified; use a separate trusted archival provenance and approved recovery process.
+4. **Empty or invalid `DATABASE_URL`** (wrong scheme, missing database name, etc.) is refused before any backup/restore step.
+5. A **pre-restore backup** is taken first (same read-only `pg_dump` flow as the backup script) into `PRE_RESTORE_BACKUP_DIR` or, by default, `var/backups/postgres/pre-restore/` (override with `PRE_RESTORE_BACKUP_DIR` or `BACKUP_DIR`).
+6. `pg_restore` runs with **`--no-owner --no-acl`** for portability and **without `--clean`** so the script does not instruct `pg_restore` to drop existing objects.
 Optional parallelism:
 
 ```bash
 export PGRESTORE_JOBS=1
 CONFIRM_RESTORE=yes ./scripts/ops/restore-postgres.sh /path/to/file.dump
 ```
+
+Invalid `PGRESTORE_JOBS` values (zero, negative or non-integer) are rejected
+**before** the pre-restore `pg_dump` is attempted. An omitted or empty value
+retains the established default of 4 jobs. This preflight check does not
+authorize a restore or substitute for an isolated recovery drill.
 
 ### Docker example (restore)
 
