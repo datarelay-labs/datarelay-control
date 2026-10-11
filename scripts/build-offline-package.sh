@@ -84,7 +84,9 @@ stage_package_tree() {
   cp "$ROOT/scripts/offline/templates/offline_install/install-docker.sh" "$INSTALL_DIR/install-docker.sh"
   cp "$ROOT/scripts/offline/templates/offline_install/load-images.sh" "$INSTALL_DIR/load-images.sh"
   cp "$ROOT/scripts/offline/templates/offline_install/docker-compose.offline.yml" "$INSTALL_DIR/docker-compose.offline.yml"
-  cp "$ROOT/scripts/offline/templates/offline_install/.env" "$INSTALL_DIR/.env"
+  cp "$ROOT/scripts/offline/templates/.env.production.template" "$INSTALL_DIR/.env"
+  chmod 600 "$INSTALL_DIR/.env"  # User-editable secrets file; not in immutable checksum manifest.
+  cp "$ROOT/scripts/offline/templates/.env.production.template" "$INSTALL_DIR/.env.production.template"
   cp "$ROOT/scripts/offline/templates/offline_install/README.md" "$INSTALL_DIR/README.md"
 
   if [[ "${GDC_OFFLINE_SKIP_DOCKER_DEBS:-0}" == "1" ]]; then
@@ -125,7 +127,8 @@ write_checksums() {
   echo "[checksum] Writing offline_install/checksums/SHA256SUMS ..."
   (
     cd "$INSTALL_DIR"
-    find . -type f ! -path './checksums/SHA256SUMS' -print0 | sort -z | xargs -0 sha256sum
+    # Operator-managed .env changes after package transfer; hash the immutable template instead.
+    find . -type f ! -path './checksums/SHA256SUMS' ! -path './.env' -print0 | sort -z | xargs -0 sha256sum
   ) >"$INSTALL_DIR/checksums/SHA256SUMS"
 }
 

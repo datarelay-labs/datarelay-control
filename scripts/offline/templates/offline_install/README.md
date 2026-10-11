@@ -62,6 +62,20 @@ Expected result:
 - package extraction succeeds
 - dry-run ends with `Dry-run validation PASS`
 
+### Operator-owned environment (required before install)
+
+The package ships .env as a copy of .env.production.template with
+**non-production placeholders**. Review and replace all database, JWT, encryption,
+proxy reload and application secret placeholders in offline_install/.env before
+installing or exposing the service. Keep this private file out of version control
+and restrict its permissions (chmod 600 offline_install/.env). The immutable
+.env.production.template is covered by SHA256SUMS; operator-owned .env is
+intentionally excluded, so editing actual credentials does not invalidate
+package integrity. The package SHA256 is **not a publisher signature**.
+
+**The --dry-run checks package integrity and Compose shape; it does not
+certify that operator credentials, restore plan or signatures are ready.**
+
 ### 2) Delete existing data
 
 ```bash

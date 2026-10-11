@@ -20,6 +20,7 @@ REQUIRED_FILES=(
   "load-images.sh"
   "docker-compose.offline.yml"
   ".env"
+  ".env.production.template"
   "README.md"
   "checksums/SHA256SUMS"
   "checksums/IMAGES.manifest"
