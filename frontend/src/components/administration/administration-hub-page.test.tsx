@@ -1,9 +1,24 @@
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { NAV_PATH, SETTINGS_SECTION_PATH } from '../../config/nav-paths'
+import { persistSession, type SessionRole } from '../../auth/session'
 import { AdministrationHubPage } from './administration-hub-page'
+
+function signInAs(role: SessionRole, options?: { mustChangePassword?: boolean; status?: string; expiresAt?: string }) {
+  persistSession({
+    access_token: 'component-only-test-token',
+    refresh_token: 'component-only-test-refresh',
+    expires_at: options?.expiresAt ?? '2099-01-01T00:00:00Z',
+    user: {
+      username: 'component-role-test',
+      role,
+      status: options?.status ?? 'ACTIVE',
+      must_change_password: options?.mustChangePassword ?? false,
+    },
+  })
+}
 
 function LocationProbe() {
   const location = useLocation()
@@ -27,6 +42,7 @@ function renderHub(initialPath = '/admin') {
 describe('AdministrationHubPage modernization', () => {
   beforeEach(() => {
     localStorage.clear()
+    signInAs('ADMINISTRATOR')
   })
 
   it('shows SaaS hierarchy: purpose, access context, and task groups', () => {
@@ -35,7 +51,8 @@ describe('AdministrationHubPage modernization', () => {
     expect(screen.getByTestId('administration-purpose-header')).toHaveTextContent(/What needs configuring/i)
     expect(screen.getByTestId('admin-hub-access-context')).toBeInTheDocument()
     expect(screen.getByTestId('admin-hub-task-groups')).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: 'Manage' })).toHaveLength(9)
+    expect(screen.getAllByRole('button', { name: 'Manage' })).toHaveLength(7)
+    expect(screen.getAllByRole('button', { name: 'View' })).toHaveLength(2)
     expect(screen.getByRole('heading', { name: 'Access & security' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Platform & network' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Lifecycle & recovery' })).toBeInTheDocument()
@@ -60,7 +77,8 @@ describe('AdministrationHubPage modernization', () => {
       const view = renderHub()
       const card = screen.getByText(item.title).closest('.dr-card')
       expect(card).toBeTruthy()
-      await user.click(within(card as HTMLElement).getByRole('button', { name: 'Manage' }))
+      const action = item.title === 'Audit' || item.title === 'System Health' ? 'View' : 'Manage'
+      await user.click(within(card as HTMLElement).getByRole('button', { name: action }))
       expect(screen.getByTestId('location-probe')).toHaveTextContent(item.path)
       view.unmount()
     }
@@ -75,17 +93,80 @@ describe('AdministrationHubPage modernization', () => {
   })
 
   it('frames Viewer sessions as read-only without inventing extra capabilities', () => {
-    localStorage.setItem('gdc_platform_ui_role', 'VIEWER')
+    signInAs('VIEWER')
     renderHub()
     expect(screen.getByTestId('admin-hub-access-context')).toHaveTextContent(/Viewer session — read-only/i)
     expect(screen.getByTestId('admin-hub-access-context')).toHaveTextContent(/backend role guard/i)
   })
 
   it('frames Operator sessions with Administrator-restricted security settings truth', () => {
-    localStorage.setItem('gdc_platform_ui_role', 'OPERATOR')
+    signInAs('OPERATOR')
     renderHub()
     expect(screen.getByTestId('admin-hub-access-context')).toHaveTextContent(/Operator session/i)
     expect(screen.getByTestId('admin-hub-access-context')).toHaveTextContent(/restricted to Administrators/i)
+  })
+
+  it.each(['OPERATOR', 'VIEWER', 'CONNECTOR_OPERATOR'] as const)(
+    'offers only the native read-only Audit and Backup routes for authenticated %s',
+    async (role) => {
+      signInAs(role)
+      localStorage.setItem('gdc_platform_ui_role', 'ADMINISTRATOR')
+      const user = userEvent.setup()
+      for (const item of [
+        { title: 'Audit', path: SETTINGS_SECTION_PATH.audit },
+        { title: 'Backup & Import', path: NAV_PATH.backup },
+      ]) {
+        const view = renderHub()
+        expect(screen.queryByTestId('admin-hub-open-all-settings')).not.toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: 'Manage' })).not.toBeInTheDocument()
+        expect(screen.getAllByRole('button', { name: 'View' })).toHaveLength(2)
+        const card = screen.getByText(item.title).closest('.dr-card')
+        expect(card).toBeTruthy()
+        await user.click(within(card as HTMLElement).getByRole('button', { name: 'View' }))
+        expect(screen.getByTestId('location-probe')).toHaveTextContent(item.path)
+        view.unmount()
+      }
+    },
+  )
+
+  it('never turns a legacy Administrator hint into executable tasks without a session', () => {
+    localStorage.clear()
+    localStorage.setItem('gdc_platform_ui_role', 'ADMINISTRATOR')
+    renderHub()
+    expect(screen.queryByTestId('admin-hub-open-all-settings')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Manage' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'View' })).not.toBeInTheDocument()
+  })
+
+  it('does not reveal settings during forced password change or disabled account status', () => {
+    signInAs('ADMINISTRATOR', { mustChangePassword: true })
+    const first = renderHub()
+    expect(screen.queryByTestId('admin-hub-open-all-settings')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Manage' })).not.toBeInTheDocument()
+    first.unmount()
+    signInAs('ADMINISTRATOR', { status: 'DISABLED' })
+    renderHub()
+    expect(screen.queryByRole('button', { name: 'Manage' })).not.toBeInTheDocument()
+  })
+
+  it('removes privileged links when the authenticated session changes while the page is mounted', async () => {
+    renderHub()
+    expect(screen.getAllByRole('button', { name: 'Manage' })).toHaveLength(7)
+    act(() => signInAs('VIEWER'))
+    await waitFor(() => {
+      expect(screen.queryByTestId('admin-hub-open-all-settings')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Manage' })).not.toBeInTheDocument()
+      expect(screen.getAllByRole('button', { name: 'View' })).toHaveLength(2)
+    })
+  })
+
+  it('refuses privileged tasks for an expired Administrator session despite the legacy hint', () => {
+    signInAs('ADMINISTRATOR', { expiresAt: '2020-01-01T00:00:00Z' })
+    localStorage.setItem('gdc_platform_ui_role', 'ADMINISTRATOR')
+    renderHub()
+    expect(screen.queryByTestId('admin-hub-open-all-settings')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Manage' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'View' })).not.toBeInTheDocument()
   })
 
   it('supports keyboard-accessible navigation to all settings', async () => {

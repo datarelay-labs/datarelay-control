@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { clearTestSession, persistTestSession } from './lib/governance-rbac'
+import { getSessionRole, isSessionExpired } from './auth/session'
 import { clearWizardCatalogSnapshot } from './components/streams/wizard/wizard-catalog-cache'
 
 vi.mock('./api/operationalSnapshot', () => ({
@@ -486,6 +487,19 @@ function renderApp(initialPath = '/') {
   )
 }
 
+// Unmocked API reads must never contact a live service or clear another test's
+// session on an accidental 401. A fail-closed fallback preserves negative truth.
+beforeEach(() => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', {
+    status: 503,
+    headers: { 'Content-Type': 'application/json' },
+  })))
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
 describe('DataRelay sidebar branding', () => {
   afterEach(() => {
     vi.unstubAllEnvs()
@@ -747,9 +761,13 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Streams' })).toBeInTheDocument()
   })
 
-  it('renders Administration hub at /admin with task groups', async () => {
+  it('renders the full Administration task groups for an authenticated Administrator', async () => {
+    persistTestSession('ADMINISTRATOR')
+    expect(getSessionRole()).toBe('ADMINISTRATOR')
+    expect(isSessionExpired()).toBe(false)
     renderApp('/admin')
     expect(await screen.findByTestId('administration-hub-page', {}, { timeout: 8000 })).toBeInTheDocument()
+    expect(getSessionRole()).toBe('ADMINISTRATOR')
     expect(screen.getAllByRole('heading', { name: 'Administration' })).toHaveLength(1)
     expect(screen.queryByRole('navigation', { name: 'Breadcrumb' })).not.toBeInTheDocument()
     expect(within(screen.getByRole('main')).queryByRole('heading', { name: /^Administration$/ })).not.toBeInTheDocument()
@@ -757,8 +775,19 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     expect(screen.getByRole('heading', { name: 'Access & security' })).toBeInTheDocument()
     expect(screen.getByText('HTTPS')).toBeInTheDocument()
     expect(screen.getByText('Backup & Import')).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: 'Manage' })).toHaveLength(9)
+    expect(screen.getAllByRole('button', { name: 'Manage' })).toHaveLength(7)
+    expect(screen.getAllByRole('button', { name: 'View' })).toHaveLength(2)
     expect(screen.queryByRole('heading', { name: 'Admin settings' })).not.toBeInTheDocument()
+  }, 20000)
+
+  it('restricts the authenticated Connector Operator hub to the two supported view tasks', async () => {
+    renderApp('/admin')
+    expect(await screen.findByTestId('administration-hub-page', {}, { timeout: 8000 })).toBeInTheDocument()
+    expect(screen.queryByTestId('admin-hub-open-all-settings')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Manage' })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'View' })).toHaveLength(2)
+    expect(screen.getByText('Audit')).toBeInTheDocument()
+    expect(screen.getByText('Backup & Import')).toBeInTheDocument()
   }, 20000)
 
   it('renders Admin settings at /settings with preserved sections', async () => {
