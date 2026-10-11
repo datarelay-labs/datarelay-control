@@ -134,6 +134,9 @@ export type StreamRecentEventsPanelProps = {
   runHistory: RunHistoryRow[]
   logsHref: string
   variant?: 'default' | 'compact'
+  /** Optional page-level shared scope for Overview → Events navigation. */
+  selectedRouteId?: number | null
+  onSelectedRouteIdChange?: (routeId: number | null) => void
 }
 
 function compactEventIcon(log: RecentLogLine) {
@@ -155,9 +158,13 @@ export function StreamRecentEventsPanel({
   runHistory,
   logsHref,
   variant = 'default',
+  selectedRouteId: controlledRouteId,
+  onSelectedRouteIdChange,
 }: StreamRecentEventsPanelProps) {
   const [tab, setTab] = useState<RecentEventsTab>('events')
-  const [selectedRouteId, setSelectedRouteId] = useState<number | null>(null)
+  const [localRouteId, setLocalRouteId] = useState<number | null>(null)
+  const selectedRouteId = controlledRouteId === undefined ? localRouteId : controlledRouteId
+  const setSelectedRouteId = onSelectedRouteIdChange ?? setLocalRouteId
 
   // Actual IDs in the loaded runtime timeline sample only: never infer unseen Routes.
   const availableRouteIds = useMemo(() => [...new Set(

@@ -172,6 +172,13 @@ export function StreamRuntimeDetailPage() {
   const navigate = useNavigate()
   const { isGovernance } = usePersonaMode()
   const data = useMemo(() => emptyStreamRuntimeDetail(streamId), [streamId])
+  // Preserve path diagnosis between compact Overview and full Events, but never
+  // carry a Route ID into a different Stream after navigation.
+  const [recentRouteScope, setRecentRouteScope] = useState<{ streamId: string; routeId: number | null }>({
+    streamId,
+    routeId: null,
+  })
+  const recentSelectedRouteId = recentRouteScope.streamId === streamId ? recentRouteScope.routeId : null
   const [timelineRunHistory, setTimelineRunHistory] = useState<RunHistoryRow[] | null>(null)
   const [timelineRecentLogs, setTimelineRecentLogs] = useState<RecentLogLine[] | null>(null)
   const [timelineRunIdHint, setTimelineRunIdHint] = useState<string | null>(null)
@@ -1357,6 +1364,8 @@ export function StreamRuntimeDetailPage() {
             runHistory={runHistoryRows}
             logsHref={logsExplorerDrilldown ?? logsPath(streamId)}
             variant="compact"
+            selectedRouteId={recentSelectedRouteId}
+            onSelectedRouteIdChange={(routeId) => setRecentRouteScope({ streamId, routeId })}
           />
         </div>
         <div className="flex flex-col gap-4 lg:col-span-4">
@@ -1463,6 +1472,8 @@ export function StreamRuntimeDetailPage() {
           recentLogs={recentLogLines}
           runHistory={runHistoryRows}
           logsHref={logsExplorerDrilldown ?? logsPath(streamId)}
+          selectedRouteId={recentSelectedRouteId}
+          onSelectedRouteIdChange={(routeId) => setRecentRouteScope({ streamId, routeId })}
         />
       ) : null}
 

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { StreamRuntimeDetailPage } from './stream-runtime-detail-page'
 import { getUrl, jsonResponse } from '../../test/fetchMock'
@@ -509,6 +509,112 @@ describe('StreamRuntimeDetailPage M17.2 layout', () => {
     expect(screen.getByTestId('stream-recent-issues-panel')).toBeInTheDocument()
     expect(screen.getByTestId('stream-why-panel')).toBeInTheDocument()
     expect(screen.getByTestId('stream-information-panel')).toBeInTheDocument()
+  })
+
+  it('retains the actual selected Route investigation across Overview and Events tabs', async () => {
+    vi.mocked(gdcRuntime.fetchStreamRuntimeTimeline).mockResolvedValueOnce({
+      stream_id: 42,
+      total: 2,
+      items: [
+        {
+          id: 1001,
+          created_at: '2026-10-11T09:00:00Z',
+          stream_id: 42,
+          route_id: 17,
+          destination_id: 71,
+          run_id: 'run-17-observed',
+          stage: 'route_send_failed',
+          level: 'ERROR',
+          status: 'FAILED',
+          message: 'Gateway route 17 failure',
+          error_code: 'TIMEOUT',
+          retry_count: 0,
+          http_status: null,
+          latency_ms: 22,
+        },
+        {
+          id: 1002,
+          created_at: '2026-10-11T09:01:00Z',
+          stream_id: 42,
+          route_id: 23,
+          destination_id: 73,
+          run_id: 'run-23-observed',
+          stage: 'route_send_success',
+          level: 'INFO',
+          status: 'SUCCESS',
+          message: 'Gateway route 23 success',
+          error_code: null,
+          retry_count: 0,
+          http_status: null,
+          latency_ms: 13,
+        },
+      ],
+    })
+    const user = userEvent.setup()
+    renderRuntimePage('42')
+    const compact = await screen.findByTestId('stream-recent-events-panel')
+    const picker = await within(compact).findByLabelText('Filter recent events by Route')
+    await user.selectOptions(picker, '17')
+    expect(within(compact).getByRole('region', { name: 'Selected Route evidence' })).toHaveTextContent('Route #17')
+
+    await user.click(screen.getByTestId('stream-detail-tab-events'))
+    const detailed = await screen.findByTestId('stream-recent-events-panel')
+    expect(within(detailed).getByLabelText('Filter recent events by Route')).toHaveValue('17')
+    expect(within(detailed).getByRole('region', { name: 'Selected Route evidence' })).toHaveTextContent('Gateway failure records: 1')
+    expect(within(detailed).getByRole('link', { name: 'View all logs' })).toHaveAttribute(
+      'href', '/logs?route_id=17&stream_id=42',
+    )
+
+    await user.click(screen.getByTestId('stream-detail-tab-overview'))
+    const returned = await screen.findByTestId('stream-recent-events-panel')
+    expect(within(returned).getByLabelText('Filter recent events by Route')).toHaveValue('17')
+    expect(within(returned).getByRole('link', { name: 'View all →' })).toHaveAttribute(
+      'href', '/logs?route_id=17&stream_id=42',
+    )
+  })
+
+  it('does not carry a selected Route investigation into a different Stream', async () => {
+    vi.mocked(gdcRuntime.fetchStreamRuntimeTimeline).mockImplementation(async (id) => ({
+      stream_id: Number(id),
+      total: 1,
+      items: [{
+        id: 7000,
+        created_at: '2026-10-11T09:00:00Z',
+        stream_id: Number(id),
+        route_id: 17, // intentionally same route number to catch stale cross-Stream scope
+        destination_id: 71,
+        run_id: 'run-source-switch',
+        stage: 'route_send_failed',
+        level: 'ERROR',
+        status: 'FAILED',
+        message: 'Observed route sample',
+        error_code: 'TIMEOUT',
+        retry_count: 0,
+        http_status: null,
+        latency_ms: 22,
+      }],
+    }))
+    function Navigation() {
+      const navigate = useNavigate()
+      return <button type="button" onClick={() => navigate('/streams/99/runtime')}>Open different Stream</button>
+    }
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter initialEntries={['/streams/42/runtime']}>
+        <Navigation />
+        <Routes>
+          <Route path="/streams/:streamId/runtime" element={<StreamRuntimeDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+    const selector = await screen.findByLabelText('Filter recent events by Route')
+    await user.selectOptions(selector, '17')
+    expect(selector).toHaveValue('17')
+    await user.click(screen.getByRole('button', { name: 'Open different Stream' }))
+    await screen.findByRole('heading', { name: 'Stream 99' })
+    const nextSelector = await screen.findByLabelText('Filter recent events by Route')
+    expect(nextSelector).toHaveValue('all')
+    expect(screen.queryByRole('region', { name: 'Selected Route evidence' })).not.toBeInTheDocument()
   })
 
   it('shows run history inside observability without placeholder tabs', async () => {
