@@ -10,8 +10,10 @@ function controlAdministrationBindings(): StandardAdministrationTaskBindings {
   const role = getSessionRole()
   const authenticated = role === 'ADMINISTRATOR' || role === 'OPERATOR' || role === 'VIEWER' || role === 'CONNECTOR_OPERATOR'
   const administrator = role === 'ADMINISTRATOR'
-  const access = administrator ? 'manage' : authenticated ? 'view' : 'none'
+  const access = administrator ? 'manage' : 'none'
   const readAccess = authenticated ? 'view' : 'none'
+  const backupAccess = administrator ? 'manage' : readAccess
+  const healthAccess = administrator ? 'view' : 'none'
   return {
     'core.https': {
       availability: 'supported',
@@ -46,7 +48,7 @@ function controlAdministrationBindings(): StandardAdministrationTaskBindings {
     },
     'core.backup-import': {
       availability: 'supported',
-      access,
+      access: backupAccess,
       target: { kind: 'path', path: NAV_PATH.backup },
     },
     'core.audit': {
@@ -56,7 +58,7 @@ function controlAdministrationBindings(): StandardAdministrationTaskBindings {
     },
     'core.health': {
       availability: 'read_only',
-      access: readAccess,
+      access: healthAccess,
       target: { kind: 'path', path: SETTINGS_SECTION_PATH.systemHealth },
     },
   }
@@ -108,8 +110,8 @@ function AccessContextBanner() {
       >
         <p className="font-semibold">Viewer session — read-only.</p>
         <p className="mt-1 text-sm leading-relaxed opacity-90">
-          Mutating Administration actions stay disabled in the UI and are rejected by the backend role guard. Sign in as
-          Operator or Administrator to make changes.
+          Read-only Audit and Backup views remain available. Only Administrators can change Administration settings.
+          The backend role guard rejects unauthorized changes.
         </p>
       </div>
     )
@@ -148,6 +150,7 @@ function AccessContextBanner() {
 
 export function AdministrationHubPage() {
   const navigate = useNavigate()
+  const canOpenSettings = getSessionRole() === 'ADMINISTRATOR'
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-6" data-testid="administration-hub-page">
@@ -157,7 +160,7 @@ export function AdministrationHubPage() {
         purpose="What needs configuring on this platform? Choose an Administration task for access, security, network, lifecycle, recovery, or audit; data-flow setup stays in its operational workspace."
         help={ADMINISTRATION_HELP}
         testId="administration-purpose-header"
-        actions={
+        actions={canOpenSettings ? (
           <Link
             to={NAV_PATH.settings}
             data-testid="admin-hub-open-all-settings"
@@ -165,7 +168,7 @@ export function AdministrationHubPage() {
           >
             Browse all settings
           </Link>
-        }
+        ) : undefined}
       />
 
       <AccessContextBanner />

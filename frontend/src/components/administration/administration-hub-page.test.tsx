@@ -94,13 +94,17 @@ describe('AdministrationHubPage modernization', () => {
     renderHub()
     expect(screen.getByTestId('admin-hub-access-context')).toHaveTextContent(/Viewer session — read-only/i)
     expect(screen.getByTestId('admin-hub-access-context')).toHaveTextContent(/backend role guard/i)
+    expect(screen.getByTestId('admin-hub-access-context')).toHaveTextContent(/Only Administrators can change Administration settings/i)
   })
 
-  it('does not advertise mutation controls to the Viewer and keeps supported view destinations', () => {
+  it('does not advertise forbidden Settings destinations to a Viewer', () => {
     signInAs('VIEWER')
     renderHub()
     expect(screen.queryByRole('button', { name: /^Manage / })).not.toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: /^View / })).toHaveLength(9)
+    expect(screen.getAllByRole('button', { name: /^View / })).toHaveLength(2)
+    expect(screen.queryByTestId('admin-hub-open-all-settings')).not.toBeInTheDocument()
+    expect(screen.getByText('Audit')).toBeInTheDocument()
+    expect(screen.getByText('Backup & Import')).toBeInTheDocument()
   })
 
   it('ignores an Administrator legacy role hint when no authenticated session exists', () => {
@@ -112,12 +116,13 @@ describe('AdministrationHubPage modernization', () => {
     expect(screen.queryByRole('button', { name: /^View / })).not.toBeInTheDocument()
   })
 
-  it('retains Connector Operator read-only Administration navigation', () => {
+  it('retains only supported Connector Operator view destinations', () => {
     signInAs('CONNECTOR_OPERATOR')
     renderHub()
     expect(screen.getByTestId('admin-hub-access-context')).toHaveTextContent(/Operator session/i)
     expect(screen.queryByRole('button', { name: /^Manage / })).not.toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: /^View / })).toHaveLength(9)
+    expect(screen.getAllByRole('button', { name: /^View / })).toHaveLength(2)
+    expect(screen.queryByTestId('admin-hub-open-all-settings')).not.toBeInTheDocument()
   })
 
   it('frames Operator sessions with Administrator-restricted security settings truth', () => {
@@ -129,18 +134,44 @@ describe('AdministrationHubPage modernization', () => {
 
   it.each([
     ['ADMINISTRATOR', 7, 2],
-    ['OPERATOR', 0, 9],
-    ['VIEWER', 0, 9],
-    ['CONNECTOR_OPERATOR', 0, 9],
+    ['OPERATOR', 0, 2],
+    ['VIEWER', 0, 2],
+    ['CONNECTOR_OPERATOR', 0, 2],
   ] as const)('uses the authenticated %s role rather than a stale local role hint', (role, manageCount, viewCount) => {
     signInAs(role)
     localStorage.setItem('gdc_platform_ui_role', role === 'ADMINISTRATOR' ? 'VIEWER' : 'ADMINISTRATOR')
     renderHub()
-    expect(screen.getAllByRole('button', { name: /^(Manage|View) / })).toHaveLength(9)
+    expect(screen.getAllByRole('button', { name: /^(Manage|View) / })).toHaveLength(manageCount + viewCount)
     expect(screen.queryAllByRole('button', { name: /^Manage / })).toHaveLength(manageCount)
     expect(screen.queryAllByRole('button', { name: /^View / })).toHaveLength(viewCount)
     expect(screen.getByTestId('foundation-administration-hub')).toBeInTheDocument()
+    if (role === 'ADMINISTRATOR') {
+      expect(screen.getByTestId('admin-hub-open-all-settings')).toBeInTheDocument()
+    } else {
+      expect(screen.queryByTestId('admin-hub-open-all-settings')).not.toBeInTheDocument()
+    }
   })
+
+  it.each(['OPERATOR', 'VIEWER', 'CONNECTOR_OPERATOR'] as const)(
+    'opens only standalone Audit and Backup views for authenticated %s',
+    async (role) => {
+      signInAs(role)
+      const user = userEvent.setup()
+      for (const item of [
+        { title: 'Audit', path: SETTINGS_SECTION_PATH.audit },
+        { title: 'Backup & Import', path: NAV_PATH.backup },
+      ]) {
+        const view = renderHub()
+        expect(screen.getAllByRole('button', { name: /^View / })).toHaveLength(2)
+        expect(screen.queryByTestId('admin-hub-open-all-settings')).not.toBeInTheDocument()
+        const card = screen.getByText(item.title).closest('.dr-card')
+        expect(card).toBeTruthy()
+        await user.click(within(card as HTMLElement).getByRole('button', { name: /^View / }))
+        expect(screen.getByTestId('location-probe')).toHaveTextContent(item.path)
+        view.unmount()
+      }
+    },
+  )
 
   it('supports keyboard-accessible navigation to all settings', async () => {
     const user = userEvent.setup()
