@@ -55,10 +55,12 @@ function SelectedRouteEvidence({
   routeId,
   recentLogs,
   backendStreamId,
+  routeMetrics,
 }: {
   routeId: number
   recentLogs: readonly RecentLogLine[]
   backendStreamId: number | undefined
+  routeMetrics?: StreamRecentEventsPanelProps['routeMetrics']
 }) {
   const stages = recentLogs
     .map((log) => log.stage?.trim().toLowerCase())
@@ -66,11 +68,16 @@ function SelectedRouteEvidence({
   const successful = stages.filter((stage) => RECORDED_GATEWAY_SUCCESSES.has(stage)).length
   const failed = stages.filter((stage) => RECORDED_GATEWAY_FAILURES.has(stage)).length
   const observedStages = [...new Set(stages)].slice(0, 4)
+  const metricRow = routeMetrics?.find((row) => row.routeId === routeId)
+  const recordedMetricsFailures = metricRow != null &&
+    Number.isSafeInteger(metricRow.failedCount) && metricRow.failedCount >= 0
+      ? metricRow.failedCount : null
   const destinations = [...new Set(
     recentLogs.map((log) => log.destinationId)
       .filter((id): id is number => typeof id === 'number' && Number.isSafeInteger(id) && id > 0),
   )]
-  const failureLogsHref = Number.isSafeInteger(backendStreamId) && (backendStreamId ?? 0) > 0 && failed > 0
+  const failureLogsHref = Number.isSafeInteger(backendStreamId) && (backendStreamId ?? 0) > 0 &&
+    (failed > 0 || (recordedMetricsFailures ?? 0) > 0)
     ? logsExplorerPath({ route_id: routeId, stream_id: backendStreamId, status: 'failed' })
     : null
 
@@ -110,6 +117,20 @@ function SelectedRouteEvidence({
           Gateway outcome not verified in this sample
         </p>
       ) : null}
+      {metricRow ? (
+        <div className="space-y-1 text-[11px] text-slate-600 dark:text-gdc-muted">
+          <p>Last reported Route state: {metricRow.enabled ? 'Enabled' : 'Disabled'}</p>
+          {recordedMetricsFailures != null ? (
+            <p>Metrics-reported failed attempts: {recordedMetricsFailures}</p>
+          ) : (
+            <p>Metrics failure count not verified</p>
+          )}
+          {metricRow.destinationName?.trim() ? (
+            <p>Destination {metricRow.destinationName}</p>
+          ) : null}
+          <p>Metrics is not proof of current receiver acknowledgment or complete live history.</p>
+        </div>
+      ) : null}
       {observedStages.length > 0 ? (
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-[10px] text-slate-600 dark:text-gdc-muted">Observed stages:</span>
@@ -135,6 +156,13 @@ export type StreamRecentEventsPanelProps = {
   logsHref: string
   /** Actual numeric IDs from the already-loaded runtime Metrics route_health snapshot. */
   observedRouteIds?: readonly number[]
+  /** Already loaded Metrics evidence, not a verified current receiver state. */
+  routeMetrics?: readonly {
+    routeId: number
+    enabled: boolean
+    failedCount: number
+    destinationName?: string | null
+  }[]
   variant?: 'default' | 'compact'
   /** Optional page-level shared scope for Overview → Events navigation. */
   selectedRouteId?: number | null
@@ -160,6 +188,7 @@ export function StreamRecentEventsPanel({
   runHistory,
   logsHref,
   observedRouteIds,
+  routeMetrics,
   variant = 'default',
   selectedRouteId: controlledRouteId,
   onSelectedRouteIdChange,
@@ -172,9 +201,9 @@ export function StreamRecentEventsPanel({
   // Only IDs explicitly present in the loaded runtime timeline or Metrics snapshot.
   // A Metrics-only Route may have ZERO timeline events; absence is not evidence of health.
   const availableRouteIds = useMemo(() => [...new Set(
-    [...recentLogs.map((log) => log.routeId), ...(observedRouteIds ?? [])]
+    [...recentLogs.map((log) => log.routeId), ...(observedRouteIds ?? []), ...(routeMetrics?.map((row) => row.routeId) ?? [])]
       .filter((id): id is number => typeof id === 'number' && Number.isSafeInteger(id) && id > 0),
-  )].sort((a, b) => a - b), [recentLogs, observedRouteIds])
+  )].sort((a, b) => a - b), [recentLogs, observedRouteIds, routeMetrics])
   const activeRouteId = selectedRouteId != null && availableRouteIds.includes(selectedRouteId)
     ? selectedRouteId : null
   const scopedLogs = useMemo(() =>
@@ -237,7 +266,12 @@ export function StreamRecentEventsPanel({
         </div>
         {routeSampleFilter}
         {activeRouteId != null ? (
-          <SelectedRouteEvidence routeId={activeRouteId} recentLogs={scopedLogs} backendStreamId={backendStreamId} />
+          <SelectedRouteEvidence
+            routeId={activeRouteId}
+            recentLogs={scopedLogs}
+            backendStreamId={backendStreamId}
+            routeMetrics={routeMetrics}
+          />
         ) : null}
         <div className="hidden border-b border-slate-200/80 px-4 py-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:border-gdc-divider dark:text-gdc-muted sm:grid sm:grid-cols-[minmax(7rem,1fr)_minmax(0,1.5fr)_6rem] sm:gap-3">
           <span>Event</span>
@@ -296,7 +330,12 @@ export function StreamRecentEventsPanel({
 
       {routeSampleFilter}
       {activeRouteId != null ? (
-        <SelectedRouteEvidence routeId={activeRouteId} recentLogs={scopedLogs} backendStreamId={backendStreamId} />
+        <SelectedRouteEvidence
+            routeId={activeRouteId}
+            recentLogs={scopedLogs}
+            backendStreamId={backendStreamId}
+            routeMetrics={routeMetrics}
+          />
       ) : null}
       <div className="flex flex-wrap gap-1 border-b border-slate-200/80 px-3 py-2 dark:border-gdc-border">
         {tabs.map((t) => (
