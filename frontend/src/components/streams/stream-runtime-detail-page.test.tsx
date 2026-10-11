@@ -580,6 +580,20 @@ describe('StreamRuntimeDetailPage M17.2 layout', () => {
     )
   })
 
+  it('keeps the Recent Issues rail neutral without confirmed runtime or governance evidence', async () => {
+    vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mockResolvedValueOnce(null)
+    renderRuntimePage('42')
+    const panel = await screen.findByTestId('stream-recent-issues-panel')
+    await waitFor(() => {
+      expect(panel).toHaveTextContent('Delivery outcomes not verified')
+      expect(panel).toHaveTextContent('Schema drift summary not verified')
+      expect(panel).toHaveTextContent('Sensitive findings summary not verified')
+    })
+    expect(panel).not.toHaveTextContent('No delivery failures')
+    expect(panel.querySelectorAll('[data-evidence-status="unknown"]').length).toBeGreaterThanOrEqual(3)
+    expect(within(panel).getByRole('link', { name: /View all/ })).toBeInTheDocument()
+  })
+
   it('renders a no-events Metrics completion neutrally, without Partial warnings', async () => {
     vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mockImplementationOnce(async (_id, _window, params) => ({
       ...streamRuntimeMetricsFixture(params),
@@ -941,7 +955,7 @@ describe('StreamRuntimeDetailPage lifecycle cleanup', () => {
       expect(governanceSpy).toHaveBeenCalledTimes(1)
     })
     await screen.findByTestId('stream-recent-issues-panel')
-    expect(screen.getByText('No drift detected')).toBeInTheDocument()
+    expect(await screen.findByText('No open schema drift findings in loaded summary')).toBeInTheDocument()
 
     notifyStreamGovernanceChanged(42)
 
