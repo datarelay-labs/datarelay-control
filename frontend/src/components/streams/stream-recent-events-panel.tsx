@@ -65,10 +65,53 @@ export function StreamRecentEventsPanel({
   variant = 'default',
 }: StreamRecentEventsPanelProps) {
   const [tab, setTab] = useState<RecentEventsTab>('events')
+  const [selectedRouteId, setSelectedRouteId] = useState<number | null>(null)
 
-  const errorLogs = useMemo(() => recentLogs.filter((l) => l.level === 'ERROR' || l.level === 'WARN'), [recentLogs])
-  const deliveryLogs = useMemo(() => recentLogs.filter(isDeliveryMessage), [recentLogs])
-  const deliveryRuns = useMemo(() => runHistory.filter((r) => r.delivered > 0 || r.failed > 0), [runHistory])
+  // Actual IDs in the loaded runtime timeline sample only: never infer unseen Routes.
+  const availableRouteIds = useMemo(() => [...new Set(
+    recentLogs
+      .map((log) => log.routeId)
+      .filter((id): id is number => typeof id === 'number' && Number.isSafeInteger(id) && id > 0),
+  )].sort((a, b) => a - b), [recentLogs])
+  const activeRouteId = selectedRouteId != null && availableRouteIds.includes(selectedRouteId)
+    ? selectedRouteId : null
+  const scopedLogs = useMemo(() =>
+    activeRouteId == null ? recentLogs : recentLogs.filter((log) => log.routeId === activeRouteId),
+  [recentLogs, activeRouteId])
+  const errorLogs = useMemo(() => scopedLogs.filter((l) => l.level === 'ERROR' || l.level === 'WARN'), [scopedLogs])
+  const deliveryLogs = useMemo(() => scopedLogs.filter(isDeliveryMessage), [scopedLogs])
+  // A per-Stream Run count has no Route identity: do not attribute it to the selected Route.
+  const deliveryRuns = useMemo(() =>
+    activeRouteId == null ? runHistory.filter((r) => r.delivered > 0 || r.failed > 0) : [],
+  [runHistory, activeRouteId])
+  const scopedLogsHref = backendStreamId != null && activeRouteId != null
+    ? logsExplorerPath({ stream_id: backendStreamId, route_id: activeRouteId })
+    : logsHref
+  const routeSampleFilter = availableRouteIds.length > 0 ? (
+    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 px-3 py-2 dark:border-gdc-border">
+      <label htmlFor="stream-recent-route-filter" className="text-[11px] font-semibold text-slate-700 dark:text-gdc-mutedStrong">
+        Route (recent sample)
+      </label>
+      <select
+        id="stream-recent-route-filter"
+        aria-label="Filter recent events by Route"
+        value={activeRouteId == null ? 'all' : String(activeRouteId)}
+        onChange={(event) => {
+          const value = event.target.value
+          setSelectedRouteId(value === 'all' ? null : Number(value))
+        }}
+        className="min-h-9 max-w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-600 dark:border-gdc-border dark:bg-gdc-elevated dark:text-slate-100"
+      >
+        <option value="all">All routes in sample</option>
+        {availableRouteIds.map((routeId) => (
+          <option key={routeId} value={routeId}>Route #{routeId}</option>
+        ))}
+      </select>
+      <p className="w-full text-[10px] text-slate-500 dark:text-gdc-muted">
+        Recent timeline sample only — for complete records, inspect scoped Logs.
+      </p>
+    </div>
+  ) : null
 
   const tabs: { id: RecentEventsTab; label: string; count: number }[] = [
     { id: 'events', label: 'Recent events', count: recentLogs.length },
@@ -77,7 +120,7 @@ export function StreamRecentEventsPanel({
   ]
 
   if (variant === 'compact') {
-    const items = recentLogs.slice(0, 6)
+    const items = scopedLogs.slice(0, 6)
     return (
       <section
         aria-label="Recent events"
@@ -86,10 +129,11 @@ export function StreamRecentEventsPanel({
       >
         <div className="flex items-center justify-between gap-2 border-b border-slate-200/80 px-4 py-3 dark:border-gdc-border">
           <h3 className="text-[13px] font-semibold text-slate-900 dark:text-slate-100">Recent Events</h3>
-          <Link to={logsHref} className="text-[11px] font-semibold text-violet-600 hover:underline dark:text-violet-400">
+          <Link to={scopedLogsHref} className="text-[11px] font-semibold text-violet-600 hover:underline dark:text-violet-400">
             View all →
           </Link>
         </div>
+        {routeSampleFilter}
         <div className="hidden border-b border-slate-200/80 px-4 py-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:border-gdc-divider dark:text-gdc-muted sm:grid sm:grid-cols-[minmax(7rem,1fr)_minmax(0,1.5fr)_6rem] sm:gap-3">
           <span>Event</span>
           <span>Description</span>
@@ -134,13 +178,14 @@ export function StreamRecentEventsPanel({
           <p className="text-[10px] text-slate-500 dark:text-gdc-muted">Latest pipeline activity from runtime timeline</p>
         </div>
         <Link
-          to={logsHref}
+          to={scopedLogsHref}
           className="text-[11px] font-semibold text-violet-700 hover:underline dark:text-violet-300"
         >
           View all logs
         </Link>
       </div>
 
+      {routeSampleFilter}
       <div className="flex flex-wrap gap-1 border-b border-slate-200/80 px-3 py-2 dark:border-gdc-border">
         {tabs.map((t) => (
           <button
@@ -162,10 +207,24 @@ export function StreamRecentEventsPanel({
 
       <div className="p-2">
         {tab === 'events' ? (
-          <RecentLogsTable logs={recentLogs.slice(0, 8)} streamId={streamId} backendStreamId={backendStreamId} emptyLabel="No recent events. Open logs explorer for a wider range." />
+          <RecentLogsTable
+            logs={scopedLogs.slice(0, 8)}
+            streamId={streamId}
+            backendStreamId={backendStreamId}
+            emptyLabel={activeRouteId != null
+              ? `No events for Route #${activeRouteId} in this timeline sample. Inspect scoped Logs for wider history.`
+              : 'No recent events. Open logs explorer for a wider range.'}
+          />
         ) : null}
         {tab === 'errors' ? (
-          <RecentLogsTable logs={errorLogs.slice(0, 8)} streamId={streamId} backendStreamId={backendStreamId} emptyLabel="No errors in the recent timeline sample." />
+          <RecentLogsTable
+            logs={errorLogs.slice(0, 8)}
+            streamId={streamId}
+            backendStreamId={backendStreamId}
+            emptyLabel={activeRouteId != null
+              ? `No errors observed for Route #${activeRouteId} in this timeline sample.`
+              : 'No errors in the recent timeline sample.'}
+          />
         ) : null}
         {tab === 'delivery' ? (
           <div className="space-y-3">
@@ -211,7 +270,11 @@ export function StreamRecentEventsPanel({
               logs={deliveryLogs.slice(0, 8)}
               streamId={streamId}
               backendStreamId={backendStreamId}
-              emptyLabel={deliveryRuns.length === 0 ? 'No recent delivery events in timeline sample.' : undefined}
+              emptyLabel={deliveryRuns.length === 0
+                ? activeRouteId != null
+                  ? `No delivery events observed for Route #${activeRouteId} in this timeline sample.`
+                  : 'No recent delivery events in timeline sample.'
+                : undefined}
               showHeader={deliveryRuns.length > 0}
               headerLabel="Delivery logs"
             />
