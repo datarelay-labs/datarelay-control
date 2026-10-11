@@ -580,6 +580,31 @@ describe('StreamRuntimeDetailPage M17.2 layout', () => {
     )
   })
 
+  it('renders a no-events Metrics completion neutrally, without Partial warnings', async () => {
+    vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mockImplementationOnce(async (_id, _window, params) => ({
+      ...streamRuntimeMetricsFixture(params),
+      recent_runs: [{
+        run_id: 'run-777',
+        started_at: '2026-10-11T10:00:00Z',
+        duration_ms: 0,
+        status: 'NO_EVENTS',
+        events: 0,
+        delivered: 0,
+        failed: 0,
+      }],
+    }))
+    const user = userEvent.setup()
+    renderRuntimePage('42')
+    await user.click(await screen.findByTestId('stream-detail-tab-audit'))
+    const history = screen.getByRole('region', { name: 'Run history' })
+    const completionLabel = await within(history).findByText('Completion record run-777')
+    const row = completionLabel.closest('tr')
+    expect(row).not.toBeNull()
+    expect(within(row!).getByText('No events')).toBeInTheDocument()
+    expect(within(row!).queryByText('Partial')).not.toBeInTheDocument()
+    expect(row).not.toHaveClass('bg-amber-500/[0.04]')
+  })
+
   it('never deep-links a Metrics completion-record label as an exact run_id', async () => {
     vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mockImplementationOnce(async (_id, _window, params) => ({
       ...streamRuntimeMetricsFixture(params),

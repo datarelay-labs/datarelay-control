@@ -19,7 +19,7 @@ export type RunHistoryRow = {
   runId: string
   startedAt: string
   duration: string
-  status: 'Success' | 'Failed' | 'Partial' | 'Started' | 'Completed'
+  status: 'Success' | 'Failed' | 'Partial' | 'Started' | 'Completed' | 'No events' | 'Unknown'
   events: number
   delivered: number
   failed: number
