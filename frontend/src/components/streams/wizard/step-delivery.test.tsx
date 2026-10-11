@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { StepDelivery } from './step-delivery'
 import { buildInitialState } from './wizard-state'
@@ -38,6 +38,11 @@ vi.mock('../../../api/gdcDestinations', () => ({
   invalidateDestinationsListCache: () => invalidateDestinationsListCache(),
   testDestination: (...args: unknown[]) => testDestination(...args),
 }))
+
+function WizardDestinationReturnStateProbe() {
+  const location = useLocation()
+  return <output data-testid="destination-return-state">{String((location.state as { returnToSavedWizardDraft?: boolean } | null)?.returnToSavedWizardDraft)}</output>
+}
 
 describe('StepDelivery', () => {
 
@@ -498,6 +503,24 @@ describe('StepDelivery', () => {
     await userEvent.setup().click(screen.getByRole('link', { name: 'Create new destination' }))
     expect(onOpenDestinationPrerequisite).toHaveBeenCalledTimes(1)
     expect(await screen.findByText('Destination management workspace')).toBeInTheDocument()
+  })
+
+  it('passes only contextual return intent when opening Destination creation', async () => {
+    const onOpenDestinationPrerequisite = vi.fn(() => true)
+    render(
+      <MemoryRouter initialEntries={['/streams/new']}>
+        <Routes>
+          <Route path="/streams/new" element={
+            <StepDelivery state={buildInitialState()} onChange={vi.fn()} onOpenDestinationPrerequisite={onOpenDestinationPrerequisite} showCreateDraftReturnGuidance />
+          } />
+          <Route path="/destinations" element={<WizardDestinationReturnStateProbe />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+    await screen.findByText('Stellar Syslog')
+    await userEvent.setup().click(screen.getByRole('link', { name: 'Create new destination' }))
+    expect(onOpenDestinationPrerequisite).toHaveBeenCalledTimes(1)
+    expect(await screen.findByTestId('destination-return-state')).toHaveTextContent('true')
   })
 
   it('keeps the populated Wizard open if saving the draft fails before destination creation', async () => {

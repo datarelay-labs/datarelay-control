@@ -393,6 +393,56 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
     expect(screen.queryByTestId('wizard-draft-banner')).not.toBeInTheDocument()
   })
 
+  it('returns from a created destination to the exact saved Destinations step without auto-selecting a route', async () => {
+    localStorage.setItem('gdc-platform-persona', 'connector')
+    const draft = buildInitialState()
+    draft.connector.connectorId = 42
+    draft.stream.name = 'Keep this Stream identity'
+    draft.stream.eventArrayPath = '$.data'
+    localStorage.setItem(
+      WIZARD_DRAFT_KEY_V2,
+      JSON.stringify({ version: 2, savedAt: Date.now(), stepKey: 'destinations', state: draft }),
+    )
+
+    render(
+      <MemoryRouter initialEntries={[{
+        pathname: '/streams/new',
+        state: { resumeSavedWizardDraft: true, createdDestinationId: 91 },
+      }]}>
+        <NewStreamWizardPage />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByText('No destinations configured yet. Create a destination first.')).toBeInTheDocument()
+    expect(screen.getByText(/Destination #91 saved. Choose Add delivery path/)).toBeInTheDocument()
+    expect(screen.queryByTestId('wizard-draft-banner')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('wizard-intent-picker')).not.toBeInTheDocument()
+    expect(screen.getByTestId('wizard-stepper-destinations')).toHaveAttribute('data-active', 'true')
+    expect(screen.queryByTestId(/destination-route-card-/)).not.toBeInTheDocument()
+    const saved = JSON.parse(localStorage.getItem(WIZARD_DRAFT_KEY_V2) ?? '{}')
+    expect(saved.stepKey).toBe('destinations')
+    expect(saved.state.connector.connectorId).toBe(42)
+    expect(saved.state.stream.name).toBe('Keep this Stream identity')
+    expect(saved.state.stream.eventArrayPath).toBe('$.data')
+    expect(saved.state.destinations.routeDrafts).toEqual([])
+  })
+
+  it('does not invent a resumed draft when destination return state has no valid saved draft', () => {
+    localStorage.setItem('gdc-platform-persona', 'connector')
+    localStorage.removeItem(WIZARD_DRAFT_KEY_V2)
+    render(
+      <MemoryRouter initialEntries={[{
+        pathname: '/streams/new',
+        state: { resumeSavedWizardDraft: true, createdDestinationId: 91 },
+      }]}>
+        <NewStreamWizardPage />
+      </MemoryRouter>,
+    )
+    expect(screen.getByText(/Saved Stream draft is unavailable/)).toBeInTheDocument()
+    expect(screen.getByTestId('wizard-intent-picker')).toBeInTheDocument()
+    expect(screen.queryByText(/Destination #91 saved/)).not.toBeInTheDocument()
+  })
+
   it('saves the current wizard draft before leaving to create a required destination', async () => {
     localStorage.setItem('gdc-platform-persona', 'connector')
 

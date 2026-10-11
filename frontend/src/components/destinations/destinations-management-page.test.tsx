@@ -1,8 +1,9 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, within, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 import { DestinationsManagementPage } from './destinations-management-page'
+import { createDestination } from '../../api/gdcDestinations'
 
 vi.mock('./use-destinations-overview-data', () => ({
   useDestinationsOverviewData: vi.fn(() => ({
@@ -104,7 +105,62 @@ vi.mock('../../api/gdcDestinations', () => ({
   DESTINATION_STALE_WRITE_CODE: 'DESTINATION_STALE_WRITE',
 }))
 
+function LocationStateProbe() {
+  const location = useLocation()
+  return <output data-testid="returned-wizard-location">{JSON.stringify(location.state)}</output>
+}
+
 describe('DestinationsManagementPage', () => {
+  it('opens contextual Create and returns to saved Wizard only after the Destination API succeeds', async () => {
+    const user = userEvent.setup()
+    vi.mocked(createDestination).mockReset().mockResolvedValue({
+      id: 91,
+    } as Awaited<ReturnType<typeof createDestination>>)
+    render(
+      <MemoryRouter initialEntries={[{
+        pathname: '/destinations',
+        state: { returnToSavedWizardDraft: true },
+      }]}>
+        <Routes>
+          <Route path="/destinations" element={<DestinationsManagementPage />} />
+          <Route path="/streams/new" element={<LocationStateProbe />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+    const dialog = await screen.findByRole('dialog')
+    expect(screen.getByText(/Creating a destination for a saved Stream draft/)).toBeInTheDocument()
+    await user.type(within(dialog).getByLabelText(/^Name/i), 'New intake')
+    await user.type(within(dialog).getByLabelText(/^Host/i), '127.0.0.1')
+    await user.click(within(dialog).getByRole('button', { name: /Save Destination/i }))
+    await waitFor(() => expect(createDestination).toHaveBeenCalledTimes(1))
+    expect(await screen.findByTestId('returned-wizard-location')).toHaveTextContent(
+      JSON.stringify({ resumeSavedWizardDraft: true, createdDestinationId: 91 }),
+    )
+  })
+
+  it('never returns to Wizard or hides an API failure while contextual Destination Save fails', async () => {
+    const user = userEvent.setup()
+    vi.mocked(createDestination).mockReset().mockRejectedValueOnce(new Error('Save rejected'))
+    render(
+      <MemoryRouter initialEntries={[{
+        pathname: '/destinations',
+        state: { returnToSavedWizardDraft: true },
+      }]}>
+        <Routes>
+          <Route path="/destinations" element={<DestinationsManagementPage />} />
+          <Route path="/streams/new" element={<LocationStateProbe />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+    const dialog = await screen.findByRole('dialog')
+    await user.type(within(dialog).getByLabelText(/^Name/i), 'Rejected intake')
+    await user.type(within(dialog).getByLabelText(/^Host/i), '127.0.0.1')
+    await user.click(within(dialog).getByRole('button', { name: /Save Destination/i }))
+    expect(await screen.findByTestId('destination-form-error')).toHaveTextContent('Save rejected')
+    expect(screen.queryByTestId('returned-wizard-location')).not.toBeInTheDocument()
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
   it('renders Test delivery action for each destination', async () => {
     const user = userEvent.setup()
     render(

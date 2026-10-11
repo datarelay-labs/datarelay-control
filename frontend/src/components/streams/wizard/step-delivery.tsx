@@ -236,6 +236,8 @@ type StepDeliveryProps = {
   onOpenDestinationPrerequisite?: () => boolean | void
   /** Only the New Stream wizard has a local Create Stream / Resume draft journey. */
   showCreateDraftReturnGuidance?: boolean
+  /** A saved Destination is offered for explicit route selection, never auto-attached. */
+  recentlyCreatedDestinationId?: number | null
 }
 
 export function StepDelivery({
@@ -243,6 +245,7 @@ export function StepDelivery({
   onChange,
   onOpenDestinationPrerequisite,
   showCreateDraftReturnGuidance = false,
+  recentlyCreatedDestinationId = null,
 }: StepDeliveryProps) {
   const [loading, setLoading] = useState(true)
   const [destinations, setDestinations] = useState<DestinationListItem[]>([])
@@ -555,6 +558,12 @@ export function StepDelivery({
         </div>
       </div>
 
+      {recentlyCreatedDestinationId != null ? (
+        <p role="status" data-testid="wizard-returned-destination" className="rounded-lg border border-violet-200 bg-violet-50 p-3 text-[12px] text-violet-900 dark:border-violet-500/40 dark:bg-violet-500/10 dark:text-violet-100">
+          Destination #{recentlyCreatedDestinationId} saved. Choose Add delivery path once it appears in the catalog; no Route was added automatically.
+        </p>
+      ) : null}
+
       {loading ? (
         <p className="inline-flex items-center gap-2 text-[12px] text-slate-600 dark:text-gdc-mutedStrong">
           <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
@@ -574,6 +583,7 @@ export function StepDelivery({
           <p className="text-[12px] text-slate-600 dark:text-gdc-muted">No destinations configured yet. Create a destination first.</p>
           <Link
             to={NAV_PATH.destinations}
+            state={showCreateDraftReturnGuidance ? { returnToSavedWizardDraft: true } : undefined}
             onClick={(event) => {
               if (onOpenDestinationPrerequisite?.() === false) event.preventDefault()
             }}
@@ -737,6 +747,7 @@ export function StepDelivery({
                     ) : (
                       <Link
                         to={NAV_PATH.destinations}
+                        state={showCreateDraftReturnGuidance ? { returnToSavedWizardDraft: true } : undefined}
                         onClick={(event) => {
                           if (onOpenDestinationPrerequisite?.() === false) event.preventDefault()
                         }}
@@ -774,6 +785,7 @@ export function StepDelivery({
               </ul>
               <Link
                 to={NAV_PATH.destinations}
+                state={showCreateDraftReturnGuidance ? { returnToSavedWizardDraft: true } : undefined}
                 onClick={(event) => {
                   if (onOpenDestinationPrerequisite?.() === false) event.preventDefault()
                 }}
@@ -784,7 +796,7 @@ export function StepDelivery({
               </Link>
               {showCreateDraftReturnGuidance && onOpenDestinationPrerequisite ? (
                 <p className="mt-1 text-center text-[11px] leading-4 text-slate-500 dark:text-gdc-muted" data-testid="wizard-destination-resume-guidance">
-                  Opening Destinations saves this Stream draft first. Return to Create Stream and choose Resume draft to continue.
+                  Opening Destinations saves this Stream draft first. After saving, return to this step automatically; Resume draft remains available if you leave.
                 </p>
               ) : null}
             </div>

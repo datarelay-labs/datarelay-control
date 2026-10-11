@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { newStreamPath } from '../../config/nav-paths'
 import {
   createDestination,
   deleteDestination,
@@ -661,6 +662,8 @@ const TD = 'px-3 py-2.5'
 export function DestinationsManagementPage() {
   const location = useLocation()
   const navigate = useNavigate()
+  const returnToSavedWizardDraft =
+    (location.state as { returnToSavedWizardDraft?: unknown } | null)?.returnToSavedWizardDraft === true
   const [autoRefresh, setAutoRefresh] = useState<StreamsAutoRefreshOption>('Off')
   const [timeRange, setTimeRange] = useState<StreamsMetricsWindow>('1h')
   const [refreshVersion, setRefreshVersion] = useState(0)
@@ -706,7 +709,9 @@ export function DestinationsManagementPage() {
 
   const [saving, setSaving] = useState(false)
   const [localError, setLocalError] = useState<string | null>(null)
-  const [sheetMode, setSheetMode] = useState<SheetMode>('closed')
+  const [sheetMode, setSheetMode] = useState<SheetMode>(
+    returnToSavedWizardDraft ? 'create' : 'closed',
+  )
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editingRow, setEditingRow] = useState<DestinationOverviewRow | null>(null)
   const [form, setForm] = useState<FormState>(INITIAL_FORM)
@@ -927,8 +932,20 @@ export function DestinationsManagementPage() {
     try {
       const payload = payloadFromForm(form)
       if (sheetMode === 'create') {
-        await createDestination(payload)
+        const created = await createDestination(payload)
         forceCloseSheet()
+        if (returnToSavedWizardDraft) {
+          if (!Number.isSafeInteger(created.id) || created.id <= 0) {
+            setLocalError('Destination saved, but no valid ID was returned. Review the destination before returning to the Stream draft.')
+            await refresh()
+            return
+          }
+          navigate(newStreamPath(), {
+            replace: true,
+            state: { resumeSavedWizardDraft: true, createdDestinationId: created.id },
+          })
+          return
+        }
       } else if (sheetMode === 'edit' && editingId != null) {
         if (!expectedUpdatedAt) {
           throw new Error('Missing destination concurrency token; refresh and try again.')
@@ -1098,6 +1115,15 @@ export function DestinationsManagementPage() {
           </button>
         }
       />
+
+      {returnToSavedWizardDraft ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-violet-200 bg-violet-50 px-4 py-3 text-[12px] text-violet-900 dark:border-violet-500/40 dark:bg-violet-500/10 dark:text-violet-100" data-testid="destination-saved-wizard-return">
+          <p>Creating a destination for a saved Stream draft. Save to return to the Destinations step and choose a delivery path.</p>
+          <button type="button" className="font-semibold underline underline-offset-2" onClick={() => navigate(newStreamPath(), { replace: true, state: { resumeSavedWizardDraft: true } })}>
+            Return to Stream draft
+          </button>
+        </div>
+      ) : null}
 
       <div
         className="flex flex-wrap items-center justify-end gap-2"

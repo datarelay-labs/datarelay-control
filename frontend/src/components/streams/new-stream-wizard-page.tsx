@@ -126,6 +126,7 @@ export function NewStreamWizardPage() {
   const [connectorCreateOpen, setConnectorCreateOpen] = useState(false)
   const [connectorCreateBusy, setConnectorCreateBusy] = useState(false)
   const [connectorCatalogEpoch, setConnectorCatalogEpoch] = useState(0)
+  const [recentlyCreatedDestinationId, setRecentlyCreatedDestinationId] = useState<number | null>(null)
 
   const handleIntentSelect = useCallback((id: WizardIntentTemplateId) => {
     clearWizardDraft()
@@ -151,10 +152,29 @@ export function NewStreamWizardPage() {
     if (!canCreateStream || draftHydratedRef.current) return
     draftHydratedRef.current = true
     const draft = loadWizardDraft()
+    const returnState = (location.state ?? {}) as {
+      resumeSavedWizardDraft?: unknown
+      createdDestinationId?: unknown
+    }
+    if (returnState.resumeSavedWizardDraft === true) {
+      if (draft?.stepKey === 'destinations') {
+        setState(applySampleConfirmationToWizardState(draft.state))
+        setStepIndex(wizardStepIndexForKey(wizardSteps, draft.stepKey))
+        setIntentSelected(true)
+        setRecentlyCreatedDestinationId(
+          Number.isSafeInteger(returnState.createdDestinationId) && Number(returnState.createdDestinationId) > 0
+            ? Number(returnState.createdDestinationId)
+            : null,
+        )
+        setDraftNotice('Saved Stream draft restored at Destinations.')
+        return
+      }
+      setDraftNotice('Saved Stream draft is unavailable for return. Start a new Stream or use Resume draft when available.')
+    }
     if (!draft) return
     setPendingDraft(draft)
     setDraftBannerVisible(true)
-  }, [canCreateStream])
+  }, [canCreateStream, location.state, wizardSteps])
 
   const handleResumeDraft = useCallback(() => {
     if (!pendingDraft) return
@@ -168,6 +188,7 @@ export function NewStreamWizardPage() {
   }, [pendingDraft, wizardSteps])
 
   const handleStartFresh = useCallback(() => {
+    setRecentlyCreatedDestinationId(null)
     clearWizardDraft()
     setState(buildInitialState())
     setStepIndex(0)
@@ -932,6 +953,7 @@ export function NewStreamWizardPage() {
   }, [state])
 
   const handleCreateAnother = useCallback(() => {
+    setRecentlyCreatedDestinationId(null)
     clearWizardDraft()
     setState(buildInitialState())
     setStepIndex(0)
@@ -1166,6 +1188,7 @@ export function NewStreamWizardPage() {
             onChange={setDestinations}
             onOpenDestinationPrerequisite={preserveDraftBeforeDestinationPrerequisite}
             showCreateDraftReturnGuidance
+            recentlyCreatedDestinationId={recentlyCreatedDestinationId}
           />
         ) : null}
         {currentStepKey === 'route_processing' ? (
