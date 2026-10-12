@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { RouteEditPage } from './route-edit-page'
@@ -118,6 +118,13 @@ function renderRouteEdit(path = '/routes/42/edit') {
   )
 }
 
+async function clickReadyDeliveryPreview() {
+  const button = await screen.findByTestId('route-edit-preview-delivery')
+  await waitFor(() => expect(button).toBeEnabled())
+  fireEvent.click(button)
+  return button
+}
+
 const savedRoute = {
   id: 42,
   name: 'Route A',
@@ -163,7 +170,7 @@ describe('RouteEditPage delivery preview', () => {
       ],
     })
     renderRouteEdit()
-    fireEvent.click(await screen.findByTestId('route-edit-preview-delivery'))
+    await clickReadyDeliveryPreview()
     const panel = await screen.findByTestId('route-edit-delivery-preview-output')
     expect(panel).toHaveTextContent('Formatted output metadata — no send')
     expect(panel).toHaveTextContent('Message 1')
@@ -183,7 +190,7 @@ describe('RouteEditPage delivery preview', () => {
       preview_messages: Array.from({ length: 8 }, (_, index) => ({ body: 'private-' + index })),
     })
     renderRouteEdit()
-    fireEvent.click(await screen.findByTestId('route-edit-preview-delivery'))
+    await clickReadyDeliveryPreview()
     const panel = await screen.findByTestId('route-edit-delivery-preview-output')
     expect(panel).toHaveTextContent('Showing 3 of 8 formatted messages')
     expect(panel).toHaveTextContent('Message 3')
@@ -195,6 +202,7 @@ describe('RouteEditPage delivery preview', () => {
   it('clears any previous success output if a later no-send preview fails', async () => {
     renderRouteEdit()
     const button = await screen.findByTestId('route-edit-preview-delivery')
+    await waitFor(() => expect(button).toBeEnabled())
     fireEvent.click(button)
     expect(await screen.findByTestId('route-edit-delivery-preview-output')).toBeInTheDocument()
     runRouteDeliveryPreview.mockRejectedValueOnce(new Error('preview unavailable'))
@@ -214,7 +222,7 @@ describe('RouteEditPage delivery preview', () => {
       preview_messages: [{ body: { token: 'hidden' } }],
     })
     renderRouteEdit()
-    fireEvent.click(await screen.findByTestId('route-edit-preview-delivery'))
+    await clickReadyDeliveryPreview()
     // The status element exists during the pending network operation.
     // Wait for the terminal fail-closed identity rejection, not its first render.
     await waitFor(() => {
@@ -227,18 +235,34 @@ describe('RouteEditPage delivery preview', () => {
 
   it('hides prior no-send output whenever the persisted Route has unsaved edits', async () => {
     renderRouteEdit()
-    fireEvent.click(await screen.findByTestId('route-edit-preview-delivery'))
+    await clickReadyDeliveryPreview()
     expect(await screen.findByTestId('route-edit-delivery-preview-output')).toBeInTheDocument()
     fireEvent.change(await screen.findByDisplayValue('Route A'), { target: { value: 'Edited route' } })
     expect(await screen.findByTestId('route-edit-unsaved-hint')).toBeInTheDocument()
     expect(screen.queryByTestId('route-edit-delivery-preview-output')).not.toBeInTheDocument()
   })
 
+  it('disables no-send delivery preview until the saved Route and Destination identity loads', async () => {
+    let resolveRoute: (route: typeof savedRoute) => void = () => {}
+    fetchRouteById.mockImplementationOnce(() => new Promise<typeof savedRoute>((resolve) => {
+      resolveRoute = resolve
+    }))
+    renderRouteEdit()
+    const button = await screen.findByTestId('route-edit-preview-delivery')
+    expect(button).toBeDisabled()
+    expect(button).toHaveAttribute('title', expect.stringContaining('saved Route and Destination'))
+    fireEvent.click(button)
+    expect(runRouteDeliveryPreview).not.toHaveBeenCalled()
+
+    await act(async () => resolveRoute(savedRoute))
+    await waitFor(() => expect(button).toBeEnabled())
+  })
+
   it('runs route-delivery preview and reports no-send success', async () => {
     renderRouteEdit()
     const button = await screen.findByTestId('route-edit-preview-delivery')
     expect(button).toHaveTextContent('Preview Delivery')
-    expect(button).not.toBeDisabled()
+    await waitFor(() => expect(button).not.toBeDisabled())
 
     fireEvent.click(button)
 
@@ -255,15 +279,17 @@ describe('RouteEditPage delivery preview', () => {
     })
 
     const status = await screen.findByTestId('route-edit-delivery-preview-status')
-    expect(status).toHaveTextContent(/Delivery preview ready — no events were sent/)
-    expect(status).toHaveTextContent(/WEBHOOK_POST/)
-    expect(status).not.toHaveTextContent(/delivery succeeded/i)
+    await waitFor(() => {
+      expect(status).toHaveTextContent(/Delivery preview ready — no events were sent/)
+      expect(status).toHaveTextContent(/WEBHOOK_POST/)
+      expect(status).not.toHaveTextContent(/delivery succeeded/i)
+    })
   })
 
   it('shows actionable failure text when preview API fails', async () => {
     runRouteDeliveryPreview.mockRejectedValueOnce(new Error('400: [ROUTE_DISABLED] route is disabled'))
     renderRouteEdit()
-    fireEvent.click(await screen.findByTestId('route-edit-preview-delivery'))
+    await clickReadyDeliveryPreview()
 
     const status = await screen.findByTestId('route-edit-delivery-preview-status')
     await waitFor(() => {

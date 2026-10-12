@@ -258,11 +258,14 @@ export function RouteEditPage() {
     if (isCreateMode || backendRouteId == null) {
       return 'Create and save the route before running a delivery preview.'
     }
+    if (deliveryBaseline == null || backendDestinationId == null || !Number.isSafeInteger(backendDestinationId) || backendDestinationId <= 0) {
+      return 'Wait for the saved Route and Destination to load before preview.'
+    }
     if (hasUnsavedChanges) {
       return 'Save or discard unsaved edits before preview. Preview uses the last persisted route configuration only.'
     }
     return null
-  }, [backendRouteId, hasUnsavedChanges, isCreateMode])
+  }, [backendDestinationId, backendRouteId, deliveryBaseline, hasUnsavedChanges, isCreateMode])
   const deliveryPreviewBusy = deliveryPreviewStatus === 'pending'
   // Reset on a different Route identity, not on delayed destination hydration.
   useEffect(() => {
