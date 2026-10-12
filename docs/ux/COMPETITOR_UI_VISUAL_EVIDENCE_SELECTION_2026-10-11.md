@@ -98,3 +98,14 @@ A regression assertion has been authored in `routes-overview-page.test.tsx` requ
 The two originally protected staged files `frontend/src/components/layout/sidebar.tsx` and `sidebar.test.tsx` were first committed in their **original** dev-drcontrol worktree, preserving their exact existing contents as immutable commit `45d26411` (archived staged diff SHA256 `5d7e20e44b19d3f97929b08304763d4de43c3645893b13900f3166321ae4f537`). They were subsequently cherry-picked without semantic modification into the existing Control Draft #414 as `b0151bf5`, using ordinary non-force Git operations. The original worktree and current candidate are clean.
 
 Sidebar's legacy role-only "Create stream" button now reflects an active, unexpired, password-change-complete authenticated session through the existing `onSessionChange` subscription and rechecks the same conditions on activation. A role-only local hint or stale UI must not imply authority; backend remains responsible for authorization. The previously staged 4 regression scenarios were preserved in source. No actual authenticated browser persona, host ACL or real-user E2E is implied; the owner deferred those tests until source implementation finishes.
+
+
+## Implementation-only completion checkpoint — task-first navigation labels (2026-10-12)
+
+The previously implemented **New data flow** global header CTA and **Data Flows** primary navigation link both use the existing product model and URLs: the Stream Wizard at `/streams/new` and the read-only Route operations workspace at `/routes`. This follow-on fixes remaining mismatched user-facing UI labels without inventing an additional flow backend entity or changing saved resource semantics:
+
+- The Sidebar's session-authorized creation button displays and exposes accessible name **New data flow** (same destination and RBAC guard as before, `/streams/new`).
+- The initial no-Stream Dashboard next action displays **New data flow** after required resources are known, preserving its existing prerequisite checks and link.
+- The application shell's canonical title and document title for `/routes` are **Data Flows**, consistent with primary navigation. Technical Route editing remains Route-specific; its breadcrumb identifies the parent operational workspace as **Data Flows**.
+
+The existing native component test expectations have been updated or extended. **User-directed test deferral is retained:** this source-only batch is not an authenticated Browser BFS or Full User E2E pass; exact-head CI/source validation must be distinguished from installed-user acceptance. No Product Charter schema, Router, RBAC, APIs, runtime, provider workflow, database or production state was modified.

@@ -167,7 +167,7 @@ export const PAGE_TITLE: Record<AppNavKey, string> = {
   connectors: 'Connectors',
   mappings: 'Mappings',
   destinations: 'Destinations',
-  routes: 'Routes',
+  routes: 'Data Flows',
   runtime: 'Runtime overview',
   topology: 'Topology',
   analytics: 'Delivery Analytics',

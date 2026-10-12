@@ -23,7 +23,7 @@ describe('Data Flow first-run onboarding', () => {
     expect(within(region).getByTestId('dashboard-first-flow-source-state')).toHaveTextContent('Not configured')
     expect(within(region).getByTestId('dashboard-first-flow-destination-state')).toHaveTextContent('Not configured')
     expect(within(region).getByTestId('dashboard-first-flow-next')).toHaveAttribute('href', '/connectors')
-    expect(within(region).queryByRole('link', { name: /Start Stream setup/i })).not.toBeInTheDocument()
+    expect(within(region).queryByRole('link', { name: /New data flow/i })).not.toBeInTheDocument()
   })
 
   it('guides to missing destination after registering a reusable Connector', () => {
@@ -39,7 +39,7 @@ describe('Data Flow first-run onboarding', () => {
     setup({ connectors: 1, destinations: 3 })
     const region = screen.getByTestId('dashboard-empty-state')
     expect(within(region).getByTestId('dashboard-first-flow-next')).toHaveAttribute('href', '/streams/new')
-    expect(within(region).getByTestId('dashboard-first-flow-next')).toHaveTextContent('Start Stream setup')
+    expect(within(region).getByTestId('dashboard-first-flow-next')).toHaveTextContent('New data flow')
     expect(within(region)).toBeTruthy()
     expect(within(region).getByText(/registered resources do not prove that data is flowing/i)).toBeInTheDocument()
   })
@@ -88,7 +88,7 @@ describe('Data Flow first-run onboarding', () => {
     const region = screen.getByTestId('dashboard-empty-state')
     expect(within(region).getByText(/read-only access/i)).toBeInTheDocument()
     expect(within(region).getByTestId('dashboard-first-flow-next')).toHaveAttribute('href', '/routes')
-    expect(within(region).queryByRole('link', { name: /Start Stream setup/i })).not.toBeInTheDocument()
+    expect(within(region).queryByRole('link', { name: /New data flow/i })).not.toBeInTheDocument()
     expect(within(region).queryByRole('link', { name: /Create First Stream/i })).not.toBeInTheDocument()
   })
 })

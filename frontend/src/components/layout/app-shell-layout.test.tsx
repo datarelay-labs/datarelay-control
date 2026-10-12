@@ -281,9 +281,10 @@ describe('AppShellLayout responsive accessibility', () => {
     expect(within(screen.getByRole('main')).queryByText(/^Administration$/)).not.toBeInTheDocument()
   })
 
-  it('gives Routes a single shell title', () => {
+  it('names the canonical Data Flows workspace consistently with the sidebar', () => {
     renderShell('/routes')
-    expect(screen.getAllByRole('heading', { name: 'Routes' })).toHaveLength(1)
+    expect(screen.getAllByRole('heading', { name: 'Data Flows' })).toHaveLength(1)
+    expect(screen.queryByRole('heading', { name: 'Routes' })).not.toBeInTheDocument()
     expect(screen.queryByRole('navigation', { name: 'Breadcrumb' })).not.toBeInTheDocument()
   })
 

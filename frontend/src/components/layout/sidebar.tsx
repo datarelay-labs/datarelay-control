@@ -291,8 +291,8 @@ export function Sidebar({
           <button
             type="button"
             onClick={() => { if (canCreateStreamForCurrentSession()) handleNavigate(newStreamPath()) }}
-            title="Create stream"
-            aria-label="Create stream"
+            title="New data flow"
+            aria-label="New data flow"
             className={cn(
               'flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-gdc-primary text-sm font-semibold text-white shadow-sm transition hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2',
               collapsed ? 'px-0' : 'px-3',
@@ -300,7 +300,7 @@ export function Sidebar({
             data-testid="sidebar-create-stream"
           >
             <Plus className="h-4 w-4 shrink-0" aria-hidden />
-            {!collapsed ? <span>Create stream</span> : null}
+            {!collapsed ? <span>New data flow</span> : null}
           </button>
         </div>
       ) : null}

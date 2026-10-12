@@ -404,7 +404,7 @@ export function AppShellLayout() {
             /
           </span>
           <Link to={NAV_PATH.routes} className="font-medium text-violet-700 hover:underline dark:text-violet-300">
-            Routes
+            Data Flows
           </Link>
           <span className="text-slate-400 dark:text-gdc-muted" aria-hidden>
             /

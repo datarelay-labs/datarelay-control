@@ -42,7 +42,7 @@ export function DashboardFirstFlowSetup({
       ? { to: NAV_PATH.connectors, label: connectorCount === null ? 'Inspect Connectors' : 'Review Connectors first' }
       : destinationCount === null || destinationCount === 0
         ? { to: NAV_PATH.destinations, label: destinationCount === null ? 'Inspect Destinations' : 'Review Destinations first' }
-        : { to: newStreamPath(), label: 'Start Stream setup' }
+        : { to: newStreamPath(), label: 'New data flow' }
 
   return (
     <section
