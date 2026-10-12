@@ -1,8 +1,10 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ConnectorDetailPage } from './connector-detail-page'
+import { clearTestSession, persistTestSession } from '../../lib/governance-rbac'
+import { persistSession, readSession } from '../../auth/session'
 
 const { fetchConnectorByIdMock, runConnectorAuthTestMock, updateConnectorMock } = vi.hoisted(() => ({
   fetchConnectorByIdMock: vi.fn(),
@@ -120,5 +122,81 @@ describe('ConnectorDetailPage auth test draft truth', () => {
       ),
     )
     expect(baseUrl).toHaveValue('https://new.example.invalid/v1')
+  })
+})
+
+
+describe('ConnectorDetailPage effective role/capability view', () => {
+  afterEach(() => {
+    clearTestSession()
+    vi.clearAllMocks()
+  })
+
+  function showConnector() {
+    fetchConnectorByIdMock.mockResolvedValue({
+      id: 7,
+      name: 'Observed connector',
+      description: 'Read-only evidence',
+      status: 'STOPPED',
+      connector_type: 'generic_http',
+      source_type: 'HTTP_API_POLLING',
+      source_id: 11,
+      stream_count: 0,
+      host: 'https://example.invalid',
+      base_url: 'https://example.invalid',
+      verify_ssl: true,
+      http_proxy: null,
+      common_headers: {},
+      auth_type: 'no_auth',
+      auth: { auth_type: 'no_auth' },
+    })
+    render(
+      <MemoryRouter initialEntries={['/connectors/7']}>
+        <Routes><Route path="/connectors/:connectorId" element={<ConnectorDetailPage />} /></Routes>
+      </MemoryRouter>,
+    )
+  }
+
+  it('lets a Viewer inspect connector details but does not offer editing, cloning, deletion or validation', async () => {
+    persistTestSession('VIEWER')
+    showConnector()
+    expect(await screen.findByDisplayValue('Observed connector')).toBeDisabled()
+    expect(screen.getByText('View connector')).toBeInTheDocument()
+    for (const name of ['Save', 'Delete', 'Clone connector', 'Test Authentication']) {
+      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
+    }
+  })
+
+  it('keeps editing but hides network tests when an Operator loses validation permission', async () => {
+    persistTestSession('OPERATOR')
+    const session = readSession()!
+    persistSession({
+      ...session,
+      user: { ...session.user, capabilities: {
+        ...session.user.capabilities, workspace_mutations: true, validation_mutations: false,
+      } },
+    })
+    showConnector()
+    expect(await screen.findByDisplayValue('Observed connector')).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Save', exact: true })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Test Authentication' })).not.toBeInTheDocument()
+  })
+
+  it('reacts to an in-session permission downgrade without dropping observed connector data', async () => {
+    persistTestSession('OPERATOR')
+    showConnector()
+    expect(await screen.findByDisplayValue('Observed connector')).toBeEnabled()
+    const session = readSession()!
+    act(() => persistSession({
+      ...session,
+      user: { ...session.user, capabilities: {
+        ...session.user.capabilities, workspace_mutations: false, validation_mutations: false,
+      } },
+    }))
+    expect(screen.getByDisplayValue('Observed connector')).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Save', exact: true })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Test Authentication' })).not.toBeInTheDocument()
+    expect(updateConnectorMock).not.toHaveBeenCalled()
   })
 })

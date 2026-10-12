@@ -1,9 +1,11 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NewConnectorWizardPage } from './new-connector-wizard-page'
 import { createConnector } from '../../api/gdcConnectors'
+import { clearTestSession, persistTestSession } from '../../lib/governance-rbac'
+import { persistSession, readSession } from '../../auth/session'
 
 vi.mock('../../api/gdcConnectors', () => ({
   createConnector: vi.fn(async () => ({ id: 1 })),
@@ -101,5 +103,42 @@ describe('NewConnectorWizardPage', () => {
     )
     await user.click(screen.getByRole('button', { name: 'Save Connector' }))
     expect(screen.getByText(/Connector name is required/i)).toBeInTheDocument()
+  })
+})
+
+
+describe('NewConnectorWizardPage effective creation authority', () => {
+  beforeEach(() => vi.clearAllMocks())
+  afterEach(() => {
+    clearTestSession()
+    vi.clearAllMocks()
+  })
+
+  it.each(['VIEWER', 'GOVERNANCE_AUDITOR'] as const)(
+    'does not expose Connector creation to direct-link read-only %s',
+    (role) => {
+      persistTestSession(role)
+      render(<MemoryRouter><NewConnectorWizardPage /></MemoryRouter>)
+      expect(screen.getByText('Connector creation is not available for your account.')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Save Connector' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Test Authentication' })).not.toBeInTheDocument()
+      expect(createConnector).not.toHaveBeenCalled()
+    },
+  )
+
+  it('switches to no-write state after an Operator capability downgrade', () => {
+    persistTestSession('OPERATOR')
+    render(<MemoryRouter><NewConnectorWizardPage /></MemoryRouter>)
+    expect(screen.getByRole('button', { name: 'Save Connector' })).toBeInTheDocument()
+    const session = readSession()!
+    act(() => persistSession({
+      ...session,
+      user: { ...session.user, capabilities: {
+        ...session.user.capabilities, workspace_mutations: false, validation_mutations: false,
+      } },
+    }))
+    expect(screen.getByText('Connector creation is not available for your account.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Save Connector' })).not.toBeInTheDocument()
+    expect(createConnector).not.toHaveBeenCalled()
   })
 })

@@ -20,6 +20,7 @@ import { S3ConnectorFields } from './s3-connector-fields'
 import { DatabaseConnectorFields } from './database-connector-fields'
 import { RemoteFileConnectorFields } from './remote-file-connector-fields'
 import { WebhookReceiverFields } from './webhook-receiver-fields'
+import { getSessionCapabilities, useSessionCapabilities } from '../../lib/rbac'
 
 export function NewConnectorWizardPage({
   onCreated,
@@ -34,6 +35,8 @@ export function NewConnectorWizardPage({
 } = {}) {
   const navigate = useNavigate()
   const location = useLocation()
+  const canMutateConnectors = useSessionCapabilities().workspace_mutations === true
+  const canTestConnectors = useSessionCapabilities().validation_mutations === true
   const [busy, setBusy] = useState(false)
   useEffect(() => {
     onBusyChange?.(busy)
@@ -115,6 +118,7 @@ export function NewConnectorWizardPage({
 
   const onApproveImport = useCallback(
     (draft: CurlImportDraft) => {
+      if (getSessionCapabilities().workspace_mutations !== true) return
       navigateToConnectorWizardWithDraft(navigate, draft)
     },
     [navigate],
@@ -302,6 +306,7 @@ export function NewConnectorWizardPage({
   }
 
   async function onSubmit() {
+    if (getSessionCapabilities().workspace_mutations !== true) return
     const msg = validate()
     if (msg) {
       setError(msg)
@@ -345,6 +350,17 @@ export function NewConnectorWizardPage({
     } finally {
       setBusy(false)
     }
+  }
+
+  if (!canMutateConnectors) {
+    return (
+      <div className="space-y-3" role="status">
+        <p className="text-sm text-slate-700 dark:text-slate-200">Connector creation is not available for your account.</p>
+        <button type="button" className={cn('h-9 px-3', gdcUi.secondaryBtn)} onClick={() => onCancel ? onCancel() : navigate('/connectors')}>
+          Back to connectors
+        </button>
+      </div>
+    )
   }
 
   return (
@@ -516,11 +532,13 @@ export function NewConnectorWizardPage({
         />
       </section>
 
+      {canTestConnectors ? (
       <ConnectorAuthTestPanel
         buildAuthTestPayload={buildAuthTestPayload}
         onTestStart={() => setError(null)}
         mode={isS3 ? 's3' : isDb ? 'database' : isRemote ? 'remote_file' : 'http'}
       />
+      ) : null}
 
       <div className="flex gap-2">
         <button type="button" disabled={busy} onClick={() => onCancel ? onCancel() : navigate('/connectors')} className={cn('h-9 px-3', gdcUi.secondaryBtn)}>

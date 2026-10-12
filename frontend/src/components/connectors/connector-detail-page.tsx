@@ -17,6 +17,7 @@ import { DatabaseConnectorFields } from './database-connector-fields'
 import { RemoteFileConnectorFields } from './remote-file-connector-fields'
 import { WebhookReceiverFields } from './webhook-receiver-fields'
 import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
+import { getSessionCapabilities, useSessionCapabilities } from '../../lib/rbac'
 
 type ConfiguredSecrets = Partial<
   Record<
@@ -41,6 +42,9 @@ type ConfiguredSecrets = Partial<
 export function ConnectorDetailPage() {
   const { connectorId = '' } = useParams<{ connectorId: string }>()
   const navigate = useNavigate()
+  const caps = useSessionCapabilities()
+  const canMutateConnectors = caps.workspace_mutations === true
+  const canTestConnectors = caps.validation_mutations === true
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -211,6 +215,7 @@ export function ConnectorDetailPage() {
   const isWebhook = ['WEBHOOK_RECEIVER', 'WEBHOOK'].includes(form.source_type ?? 'HTTP_API_POLLING')
 
   async function onSave() {
+    if (getSessionCapabilities().workspace_mutations !== true) return
     setBusy(true)
     setError(null)
     setSuccess(null)
@@ -349,6 +354,7 @@ export function ConnectorDetailPage() {
   }
 
   async function executeDelete() {
+    if (getSessionCapabilities().workspace_mutations !== true) return
     setDeleteBusy(true)
     setError(null)
     try {
@@ -377,6 +383,7 @@ export function ConnectorDetailPage() {
   }
 
   async function onCloneConnector() {
+    if (getSessionCapabilities().workspace_mutations !== true) return
     setBackupBusy(true)
     setError(null)
     try {
@@ -393,7 +400,7 @@ export function ConnectorDetailPage() {
   return (
     <div className="flex w-full min-w-0 max-w-full flex-col items-stretch gap-4">
       <h2 className={cn('text-lg font-semibold', gdcUi.textTitle)}>
-        {isS3
+        {!canMutateConnectors ? 'View connector' : isS3
           ? 'Edit S3 Connector'
           : isDb
             ? 'Edit Database Connector'
@@ -412,6 +419,7 @@ export function ConnectorDetailPage() {
       <p className={cn('text-[11px]', gdcUi.textMuted)}>
         Source type: <span className="font-semibold">{String(form.source_type ?? '').replace(/_/g, ' ')}</span>
       </p>
+      <fieldset disabled={!canMutateConnectors} className="contents">
       <section className={cn('w-full min-w-0 max-w-full rounded-lg border p-4', gdcUi.cardShell)}>
         <h3 className={cn('mb-2 text-sm font-semibold', gdcUi.textTitle)}>Basic Information</h3>
         <div className="grid w-full min-w-0 gap-2 md:grid-cols-2">
@@ -498,11 +506,14 @@ export function ConnectorDetailPage() {
         </div>
       )}
 
+      </fieldset>
+      {canTestConnectors ? (
       <ConnectorAuthTestPanel
         buildAuthTestPayload={buildAuthTestPayload}
         onTestStart={() => setError(null)}
         mode={isS3 ? 's3' : isDb ? 'database' : isRemote ? 'remote_file' : 'http'}
       />
+      ) : null}
 
       <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3 dark:border-gdc-border dark:bg-gdc-card">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted">Backup</p>
@@ -522,6 +533,7 @@ export function ConnectorDetailPage() {
           >
             {backupBusy ? 'Working…' : 'Export JSON'}
           </button>
+          {canMutateConnectors ? (
           <button
             type="button"
             disabled={busy || backupBusy}
@@ -530,9 +542,11 @@ export function ConnectorDetailPage() {
           >
             Clone connector
           </button>
+          ) : null}
         </div>
       </div>
 
+      {canMutateConnectors ? (
       <div className="flex flex-wrap gap-2">
         <button type="button" disabled={busy} onClick={() => void onSave()} className="h-9 rounded bg-violet-600 px-3 text-sm font-semibold text-white">
           {busy ? 'Saving...' : 'Save'}
@@ -541,8 +555,9 @@ export function ConnectorDetailPage() {
           Delete
         </button>
       </div>
+      ) : null}
       <DangerousActionDialog
-        open={deleteOpen}
+        open={deleteOpen && canMutateConnectors}
         onOpenChange={(open) => {
           if (!open && !deleteBusy) setDeleteOpen(false)
         }}

@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { connectorStreamsFilterPath, type ConnectorDashboardRow } from '../../lib/connector-operational-health'
 import { connectorDetailPath } from '../../config/nav-paths'
 import { runConnectorAuthCheck, runConnectorQueryTest } from '../../api/gdcConnectorsOperations'
+import { getSessionCapabilities, useSessionCapabilities } from '../../lib/rbac'
 
 type ConnectorRowActionsProps = {
   row: ConnectorDashboardRow
@@ -16,6 +17,9 @@ type ConnectorRowActionsProps = {
 
 export function ConnectorRowActions({ row, onAuthCheckStart, onAuthCheckEnd, onAuthCheckComplete, onDelete, onViewStreams }: ConnectorRowActionsProps) {
   const navigate = useNavigate()
+  const capabilities = useSessionCapabilities()
+  const canEdit = capabilities.workspace_mutations === true
+  const canTest = capabilities.validation_mutations === true
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState<'auth' | 'query' | null>(null)
   const [toast, setToast] = useState<string | null>(null)
@@ -37,6 +41,7 @@ export function ConnectorRowActions({ row, onAuthCheckStart, onAuthCheckEnd, onA
   }, [toast])
 
   async function onTestAuth() {
+    if (getSessionCapabilities().validation_mutations !== true) return
     setBusy('auth')
     setOpen(false)
     onAuthCheckStart?.()
@@ -57,6 +62,7 @@ export function ConnectorRowActions({ row, onAuthCheckStart, onAuthCheckEnd, onA
   }
 
   async function onTestQuery() {
+    if (getSessionCapabilities().validation_mutations !== true) return
     setBusy('query')
     setOpen(false)
     try {
@@ -101,7 +107,7 @@ export function ConnectorRowActions({ row, onAuthCheckStart, onAuthCheckEnd, onA
         to={connectorDetailPath(String(row.id))}
         className="inline-flex h-7 items-center rounded px-2 text-[11px] font-semibold text-slate-600 hover:bg-slate-100 dark:text-gdc-mutedStrong dark:hover:bg-gdc-rowHover"
       >
-        Edit
+        {canEdit ? 'Edit' : 'View connector'}
       </Link>
       <button
         type="button"
@@ -118,6 +124,7 @@ export function ConnectorRowActions({ row, onAuthCheckStart, onAuthCheckEnd, onA
           role="menu"
           data-testid="connector-row-actions-menu"
         >
+          {canTest ? (
           <button
             type="button"
             role="menuitem"
@@ -127,23 +134,28 @@ export function ConnectorRowActions({ row, onAuthCheckStart, onAuthCheckEnd, onA
           >
             {busy === 'auth' ? 'Testing…' : 'Test Auth'}
           </button>
+          ) : null}
+          {canTest ? (
           <button type="button" role="menuitem" className="block w-full px-3 py-1.5 text-left text-[12px] hover:bg-slate-50 dark:hover:bg-gdc-rowHover" onClick={() => void onTestQuery()}>
             Test Query
           </button>
+          ) : null}
           <button type="button" role="menuitem" className="block w-full px-3 py-1.5 text-left text-[12px] hover:bg-slate-50 dark:hover:bg-gdc-rowHover" onClick={onViewStreamsClick}>
             View Streams
           </button>
+          {canEdit ? (
           <button
             type="button"
             role="menuitem"
             className="block w-full px-3 py-1.5 text-left text-[12px] text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
             onClick={() => {
               setOpen(false)
-              onDelete()
+              if (getSessionCapabilities().workspace_mutations === true) onDelete()
             }}
           >
             Delete
           </button>
+          ) : null}
         </div>
       ) : null}
     </div>
