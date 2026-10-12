@@ -267,7 +267,8 @@ class NotificationService:
         )
         counts: dict[str, int] = {}
         scheduled_retries = 0
-        if durable_outbox_enabled():
+        outbox_active = durable_outbox_enabled()
+        if outbox_active:
             # Legacy deployments may not yet have the opt-in migration.
             # Default-OFF path does not touch the new table at all.
             counts = {
@@ -291,6 +292,7 @@ class NotificationService:
             pending_notifications=pending,
             failed_notifications=failed,
             last_delivery_time=last_sent,
+            durable_outbox_enabled=durable_outbox_enabled(),
             pending_delivery_jobs=counts.get("PENDING", 0),
             leased_delivery_jobs=counts.get("LEASED", 0),
             retry_scheduled_delivery_jobs=scheduled_retries,

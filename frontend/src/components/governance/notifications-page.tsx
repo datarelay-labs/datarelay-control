@@ -1,8 +1,9 @@
 import { Bell, Loader2, RefreshCw, Save } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   fetchGovernanceNotificationConfig,
   fetchGovernanceNotificationEvents,
+  fetchGovernanceNotificationHealth,
   testGovernanceNotification,
   updateGovernanceNotificationConfig,
   type GovernanceNotificationConfig,
@@ -143,6 +144,8 @@ export function NotificationsPage() {
   const [pending, setPending] = useState<GovernanceNotificationEventEntry[]>([])
   const [failed, setFailed] = useState<GovernanceNotificationEventEntry[]>([])
   const [recentSent, setRecentSent] = useState<GovernanceNotificationEventEntry[]>([])
+  const [queueHealth, setQueueHealth] = useState<Awaited<ReturnType<typeof fetchGovernanceNotificationHealth>> | null>(null)
+  const queueHealthRequestId = useRef(0)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState<'email' | 'webhook' | null>(null)
@@ -153,6 +156,16 @@ export function NotificationsPage() {
   const recipientsText = useMemo(() => (draft?.email_recipients ?? []).join(', '), [draft?.email_recipients])
 
   const load = useCallback(async () => {
+    const queueRequest = ++queueHealthRequestId.current
+    setQueueHealth(null)
+    // Optional queue telemetry must not block the existing settings or event lists.
+    void fetchGovernanceNotificationHealth()
+      .then((health) => {
+        if (queueHealthRequestId.current === queueRequest) setQueueHealth(health)
+      })
+      .catch(() => {
+        if (queueHealthRequestId.current === queueRequest) setQueueHealth(null)
+      })
     setLoading(true)
     setError(null)
     try {
@@ -398,6 +411,27 @@ export function NotificationsPage() {
 
       <div className="space-y-4" data-testid="notification-delivery-status">
         <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Delivery Status</h3>
+        {queueHealth?.durable_outbox_enabled ? (
+          <section className="rounded-xl border border-slate-200 bg-white p-4 dark:border-gdc-border dark:bg-gdc-panel" data-testid="notification-outbox-health">
+            <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Durable Delivery Queue</h4>
+            <div className="mt-3 grid grid-cols-2 gap-3 text-[12px] sm:grid-cols-4">
+              {([
+                ['Pending', queueHealth.pending_delivery_jobs, 'notification-outbox-pending'],
+                ['In progress', queueHealth.leased_delivery_jobs, 'notification-outbox-leased'],
+                ['Scheduled retry', queueHealth.retry_scheduled_delivery_jobs, 'notification-outbox-retry'],
+                ['Dead letter', queueHealth.dead_letter_delivery_jobs, 'notification-outbox-dead'],
+              ] as const).map(([label, count, id]) => (
+                <div key={id} data-testid={id} className="rounded-lg bg-slate-50 p-3 dark:bg-gdc-rowHover/20">
+                  <div className="text-slate-500 dark:text-gdc-muted">{label}</div>
+                  <div className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100">{Number.isSafeInteger(count) && (count ?? -1) >= 0 ? count?.toLocaleString() : 'Not verified'}</div>
+                </div>
+              ))}
+            </div>
+            <p className="mt-3 text-[12px] text-slate-500 dark:text-gdc-muted">
+              Queue acknowledgement does not confirm downstream receipt. Retry and worker activity require separate runtime verification.
+            </p>
+          </section>
+        ) : null}
         <div className="grid gap-4 lg:grid-cols-3">
           <DeliveryTable
             title="Pending"

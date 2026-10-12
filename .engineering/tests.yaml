@@ -259,7 +259,7 @@ scenarios:
       - "Outbox off by default; legacy synchronous behavior and persisted events remain unchanged."
       - "Per-channel revision-pinned jobs are claimed with PostgreSQL SKIP LOCKED and acknowledged using a lease token CAS."
       - "Failed channels retry with bounded backoff and eventual dead letter; an unconfigured target fails closed."
-      - "Read-only health shows queued, leased, scheduled retry and dead-letter counts without leaking event details."
+      - "Read-only health and existing Notifications UI show enabled queue, leased, scheduled retry and dead-letter counts without leaking event details."
       - "Outbox-off health never queries the optional migration table."
       - "Polling worker starts only when queue AND worker flags are explicitly true and the existing scheduler readiness gate passes; default OFF."
       - "Actual PostgreSQL concurrency, operator/browser and two-user E2E remain separate acceptance gates."

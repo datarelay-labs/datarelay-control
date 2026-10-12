@@ -64,6 +64,7 @@ class GovernanceNotificationHealthResponse(BaseModel):
     pending_notifications: int = 0
     failed_notifications: int = 0
     last_delivery_time: datetime | None = None
+    durable_outbox_enabled: bool = False
     pending_delivery_jobs: int = 0
     leased_delivery_jobs: int = 0
     retry_scheduled_delivery_jobs: int = 0

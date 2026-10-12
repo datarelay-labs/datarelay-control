@@ -100,7 +100,11 @@ failed/expired jobs remain observable. The read-only
 counts of pending, leased, retry-scheduled and dead-letter channel jobs,
 without revealing receiver URLs, credentials, payloads or operator comments.
 When outbox is OFF, these fields are zero and the legacy database is not
-queried for an uninstalled outbox table. Default legacy dispatch is unchanged
+queried for an uninstalled outbox table. The existing Notifications page
+shows a read-only four-metric queue summary only when the API explicitly
+reports `durable_outbox_enabled=true`; no new menu, retry command or sending
+action is introduced. Optional diagnostics failure cannot prevent the normal
+Notification Settings and Delivery Status tables from loading. Default legacy dispatch is unchanged
 unless `GDC_GOV_NOTIFICATION_DURABLE_QUEUE_ENABLED=true` is explicitly set.
 
 The in-process polling worker is integrated with the existing startup-readiness

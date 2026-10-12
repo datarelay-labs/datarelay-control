@@ -96,6 +96,7 @@ export async function fetchGovernanceNotificationHealth(): Promise<{
   pending_notifications: number
   failed_notifications: number
   last_delivery_time: string | null
+  durable_outbox_enabled?: boolean
   pending_delivery_jobs?: number
   leased_delivery_jobs?: number
   retry_scheduled_delivery_jobs?: number

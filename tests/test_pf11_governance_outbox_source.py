@@ -199,6 +199,7 @@ def test_outbox_health_exposes_read_only_channel_backlog_without_payload(session
     _enqueue(sessions)
     with sessions() as db:
         health = NotificationService.get_health(db).model_dump()
+        assert health["durable_outbox_enabled"] is True
         assert health["pending_delivery_jobs"] == 2
         assert health["leased_delivery_jobs"] == 0
         assert health["retry_scheduled_delivery_jobs"] == 0
@@ -226,5 +227,6 @@ def test_health_does_not_query_outbox_table_while_feature_off(sessions, monkeypa
     with sessions() as db:
         GovernanceNotificationDeliveryJob.__table__.drop(bind=db.bind)
         health = NotificationService.get_health(db).model_dump()
+        assert health["durable_outbox_enabled"] is False
         assert health["pending_delivery_jobs"] == 0
         assert health["dead_letter_delivery_jobs"] == 0
