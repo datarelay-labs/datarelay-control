@@ -11,6 +11,7 @@ import { getDatarelayInstanceLabel } from '../../config/datarelay-instance-label
 import type { PlatformPersona } from '../../utils/persona-mode'
 import { PersonaSwitcher } from './persona-switcher'
 import { isInternalOperatorUiEnabled } from '../../lib/feature-flags'
+import { getSessionCapabilities } from '../../lib/rbac'
 import { isNavKeyActive } from './sidebar-nav-active'
 
 export type { AppNavKey } from '../../config/app-navigation'
@@ -194,6 +195,7 @@ function canCreateStreamForCurrentSession(): boolean {
     return false
   }
   return ['ADMINISTRATOR', 'OPERATOR', 'CONNECTOR_OPERATOR'].includes(session.user.role)
+    && getSessionCapabilities().workspace_mutations === true
 }
 
 export function Sidebar({

@@ -130,6 +130,52 @@ describe('Sidebar SaaS shell', () => {
     expect(onNavigate).not.toHaveBeenCalled()
   })
 
+  it.each(['ADMINISTRATOR', 'OPERATOR', 'CONNECTOR_OPERATOR'] as const)(
+    'hides New data flow from %s when the server denies workspace mutations',
+    (role) => {
+      persistTestSession(role)
+      const session = readSession()!
+      persistSession({
+        ...session,
+        user: {
+          ...session.user,
+          capabilities: { ...session.user.capabilities, workspace_mutations: false },
+        },
+      })
+      renderSidebar({ mobileOpen: true })
+      expect(screen.queryByTestId('sidebar-create-stream')).not.toBeInTheDocument()
+    },
+  )
+
+  it('reacts to an Operator capability downgrade and restoration without navigating', async () => {
+    persistTestSession('OPERATOR')
+    const user = userEvent.setup()
+    const { onNavigate } = renderSidebar({ mobileOpen: true })
+    expect(screen.getByTestId('sidebar-create-stream')).toBeInTheDocument()
+
+    const session = readSession()!
+    act(() => persistSession({
+      ...session,
+      user: {
+        ...session.user,
+        capabilities: { ...session.user.capabilities, workspace_mutations: false },
+      },
+    }))
+    expect(screen.queryByTestId('sidebar-create-stream')).not.toBeInTheDocument()
+    expect(onNavigate).not.toHaveBeenCalled()
+
+    const restricted = readSession()!
+    act(() => persistSession({
+      ...restricted,
+      user: {
+        ...restricted.user,
+        capabilities: { ...restricted.user.capabilities, workspace_mutations: true },
+      },
+    }))
+    await user.click(screen.getByTestId('sidebar-create-stream'))
+    expect(onNavigate).toHaveBeenCalledExactlyOnceWith('/streams/new')
+  })
+
   it('automatically expands the active group and marks only its active leaf', async () => {
     const user = userEvent.setup()
     renderSidebar({ pathname: '/destinations' })
