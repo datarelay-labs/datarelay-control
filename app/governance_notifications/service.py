@@ -14,9 +14,11 @@ from app.governance_notifications.models import (
     GovernanceNotificationConfig,
     GovernanceNotificationEvent,
     NOTIFICATION_EVENT_TYPES,
+    NOTIFICATION_STATUS_FAILED,
     NOTIFICATION_STATUS_PENDING,
     NOTIFICATION_STATUS_SENT,
 )
+from app.governance_notifications.outbox import durable_outbox_enabled, enqueue_delivery_jobs
 from app.governance_notifications.schemas import (
     GovernanceNotificationConfigResponse,
     GovernanceNotificationConfigUpdateRequest,
@@ -133,6 +135,10 @@ class NotificationService:
         )
         db.add(row)
         db.flush()
+        if durable_outbox_enabled() and enqueue_delivery_jobs(db, config, row) == 0:
+            # Enabled but unconfigured channels cannot leave orphan PENDING jobs.
+            row.status = NOTIFICATION_STATUS_FAILED
+            row.sent_at = _utc_now()
         return row
 
     @staticmethod
@@ -142,6 +148,10 @@ class NotificationService:
         email_sender: EmailSender | None = None,
         webhook_sender: WebhookSender | None = None,
     ) -> int:
+        # Outbox jobs must be processed after the caller transaction commits.
+        # Never send from an in-flight write transaction when opt-in is enabled.
+        if durable_outbox_enabled():
+            return 0
         config = NotificationService.get_or_create_config(db)
         pending = list(
             db.execute(

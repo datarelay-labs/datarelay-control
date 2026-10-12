@@ -63,6 +63,7 @@ from app.connector_templates.router import router as connector_templates_router
 from app.validation.periodic_scheduler import ContinuousValidationScheduler, set_validation_scheduler
 from app.validation.router import router as validation_router
 from app.governance.router import router as governance_router
+from app.governance_notifications.worker import GovernanceOutboxWorker
 from app.platform_admin.delivery_logs_index_probe import probe_delivery_logs_indexes
 
 logger = logging.getLogger(__name__)
@@ -106,6 +107,8 @@ async def lifespan(_: FastAPI):
     register_runtime_analytics_bucket_scheduler(runtime_analytics_bucket_scheduler)
     alert_monitor = PlatformAlertMonitor()
     register_alert_monitor(alert_monitor)
+    # PF-11A: both explicit queue and worker gates default OFF.
+    notification_outbox_worker = GovernanceOutboxWorker()
     scheduler_started = False
     try:
         try:
@@ -184,6 +187,7 @@ async def lifespan(_: FastAPI):
             runtime_snapshot_scheduler.start()
             runtime_analytics_bucket_scheduler.start()
             alert_monitor.start()
+            notification_outbox_worker.start()
             scheduler_started = True
             logger.info("%s", {"stage": "scheduler_started_from_lifespan"})
         # Schema not ready: evaluate_startup_readiness already emitted structured startup_database_not_ready;
@@ -201,6 +205,7 @@ async def lifespan(_: FastAPI):
     try:
         yield
     finally:
+        notification_outbox_worker.stop()
         alert_monitor.stop()
         register_alert_monitor(None)
         runtime_snapshot_scheduler.stop()

@@ -943,5 +943,5 @@ def test_migration_upgrade_downgrade(reset_db_schema: None, test_db_url: str, db
     with db_engine.connect() as conn:
         rev = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
     # Marketplace rollback stays anchored at its original migration, while
-    # the final re-upgrade must reach the current PF-9 MFA schema head.
-    assert rev == "20261009_0067_mfa_lockout"
+    # the final re-upgrade must reach the current Governance outbox schema head.
+    assert rev == "20261012_0068_gov_outbox"

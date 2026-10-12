@@ -461,7 +461,7 @@ def test_mfa_migration_0067_downgrade_upgrade_on_guarded_pytest_db_only(
             return {col["name"] for col in inspect(conn).get_columns("platform_user_mfa")}
 
     with db_engine.connect() as conn:
-        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == "20261009_0067_mfa_lockout"
+        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == "20261012_0068_gov_outbox"
     assert {"failed_attempts", "failure_window_started_at", "locked_until"} <= columns()
     try:
         command.downgrade(cfg, "20261009_0066_platform_mfa")
@@ -471,7 +471,7 @@ def test_mfa_migration_0067_downgrade_upgrade_on_guarded_pytest_db_only(
         command.upgrade(cfg, "head")
     assert {"failed_attempts", "failure_window_started_at", "locked_until"} <= columns()
     with db_engine.connect() as conn:
-        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == "20261009_0067_mfa_lockout"
+        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == "20261012_0068_gov_outbox"
 
 
 @pytest.mark.parametrize("role", ["VIEWER", "CONNECTOR_OPERATOR", "GOVERNANCE_REVIEWER"])

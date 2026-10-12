@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, String
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -114,3 +114,31 @@ class GovernanceNotificationEvent(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False, default=NOTIFICATION_STATUS_PENDING, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow, index=True)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class GovernanceNotificationDeliveryJob(Base):
+    """Durable per-channel outbox; no raw secrets or external payload snapshots."""
+
+    __tablename__ = "governance_notification_delivery_jobs"
+    __table_args__ = (
+        UniqueConstraint("event_id", "channel", name="uq_gov_notification_job_event_channel"),
+        CheckConstraint("channel IN ('email', 'webhook')", name="ck_gov_notification_job_channel"),
+        CheckConstraint("status IN ('PENDING', 'LEASED', 'SENT', 'DEAD')", name="ck_gov_notification_job_status"),
+        Index("ix_gov_notification_job_due", "status", "next_attempt_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    event_id: Mapped[int] = mapped_column(
+        ForeignKey("governance_notification_events.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    channel: Mapped[str] = mapped_column(String(16), nullable=False)
+    config_updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="PENDING")
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+    lease_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)

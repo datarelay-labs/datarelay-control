@@ -83,19 +83,47 @@ unavailable sender**: no network requests are enabled by this source change.
 An authorized deployment policy, live egress qualification, runtime activation
 and independent operator/browser acceptance remain separate gates.
 
+## Durable outbox source path (opt-in, not scheduled)
+
+Migration `20261012_0068_gov_outbox` adds a dedicated per-event,
+per-channel delivery job table. Jobs are created within the originating
+transaction, pin the configuration's revision timestamp and contain only an
+internal event ID, channel, lease/retry state and bounded error type, **not**
+raw Webhook URL, notification body, SMTP credential or other package secret.
+The source-only `drain_outbox_once()` path commits PostgreSQL
+`FOR UPDATE SKIP LOCKED` claims before sending, uses token-based CAS for
+acknowledgements, supports expired-lease recovery and independently retries
+email/Webhook jobs with bounded backoff (five attempts) and dead-letter state.
+Notification-event SENT means all configured channel jobs succeeded;
+failed/expired jobs remain observable. The default legacy behavior is unchanged
+unless `GDC_GOV_NOTIFICATION_DURABLE_QUEUE_ENABLED=true` is explicitly set.
+
+The in-process polling worker is integrated with the existing startup-readiness
+and scheduler lifecycle, but it runs **only** when both
+`GDC_GOV_NOTIFICATION_DURABLE_QUEUE_ENABLED=true` **and**
+`GDC_GOV_NOTIFICATION_WORKER_ENABLED=true` are explicitly configured.
+Both default to OFF, and neither code path provisions credentials, enables
+Webhook egress, performs live sends or applies a DB migration. Authorized
+installation/configuration, real PostgreSQL concurrency/recovery evidence and
+operator approval remain required before either flag is enabled in deployment. The transport is at-least-once:
+crashes after remote acceptance but before acknowledgement may cause retries;
+exactly-once downstream delivery is not claimed. Native source tests run in an
+isolated in-memory DB with mocked senders and no external network calls.
+
 ## Safety and remaining product milestones
 
 This bounded slice intentionally does **not** enable live service
-configuration, update stored credentials, start a notification worker,
-create a durable persistent retry queue, integrate the pinned PF-11A policy
+configuration, update stored credentials, enable the gated notification
+worker, run a real PostgreSQL migration, integrate the pinned PF-11A policy
 wheel, activate the Webhook egress policy in production, or perform
 an actual external send. The existing `HttpWebhookSender` is deliberately
 **not** selected by default; it requires a later authorized integration
 with a validated egress/allowlist policy.
 
-Full PF-11A B4 acceptance still requires revision-pinned durable jobs,
-atomic attempt admission / CAS, bounded retry/dead letter, authenticated
-test send with audit evidence, real TLS relay + Webhook integration,
+Full PF-11A B4 acceptance still requires production qualification of the
+source-only outbox claims, CAS, retry and dead-letter under real PostgreSQL
+workers, owner-approved worker enablement, authenticated test send with audit
+evidence, real TLS relay + Webhook integration,
 tenant-safe redaction and observable recovery. The existing M20.2 event
 SENT/FAILED model is not claimed as full PF-11A queue conformance.
 
