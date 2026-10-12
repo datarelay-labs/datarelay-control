@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import logging
 from threading import Event
+from unittest.mock import Mock
 
 import pytest
 
+from app.governance_notifications import worker as worker_module
 from app.governance_notifications.worker import GovernanceOutboxWorker
 
 
@@ -56,15 +57,20 @@ def test_outbox_worker_runs_one_fake_batch_only_when_both_flags_enabled(monkeypa
     assert worker.is_running() is False
 
 
-def test_worker_errors_log_only_exception_type(monkeypatch, caplog):
+def test_worker_errors_log_only_exception_type(monkeypatch):
     monkeypatch.setenv("GDC_GOV_NOTIFICATION_DURABLE_QUEUE_ENABLED", "true")
     monkeypatch.setenv("GDC_GOV_NOTIFICATION_WORKER_ENABLED", "true")
 
     def failed(_sessions):
         raise RuntimeError("secret-payload-cannot-be-logged")
 
+    # Full-suite tests can change global logging state; assert the actual
+    # logger invocation instead of depending on pytest's capture handler.
+    warning = Mock()
+    monkeypatch.setattr(worker_module.logger, "warning", warning)
     worker = GovernanceOutboxWorker(session_factory=object(), drain=failed)
-    with caplog.at_level(logging.WARNING):
-        assert worker.trigger_once() == 0
-    assert "RuntimeError" in caplog.text
-    assert "secret-payload-cannot-be-logged" not in caplog.text
+    assert worker.trigger_once() == 0
+    warning.assert_called_once_with(
+        "governance_notification_outbox_tick_failed reason=%s", "RuntimeError",
+    )
+    assert "secret-payload-cannot-be-logged" not in repr(warning.call_args)
