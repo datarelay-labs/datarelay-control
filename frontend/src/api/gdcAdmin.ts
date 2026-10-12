@@ -191,6 +191,21 @@ export type ConfigVersionListDto = {
   items: ConfigVersionDto[]
 }
 
+export type ConfigSafeRollbackPreviewDto = {
+  entity_type: string
+  source_version_row_id: number
+  source_version: number
+  current_version: number
+  expected_version: number
+  target: 'before' | 'after'
+  changed_fields: Array<{ path: string; before: string | null; after: string | null }>
+  from_fingerprint: string
+  to_fingerprint: string
+  blockers: string[]
+  may_submit_to_product_authority: boolean
+  product_apply_required: boolean
+}
+
 export type HealthMetricDto = {
   key: string
   label: string
@@ -427,12 +442,30 @@ export async function getAdminAuditLog(params?: { limit?: number; offset?: numbe
   return requestJson<AuditLogListDto>(`${GDC_API_PREFIX}/admin/audit-log${suffix}`)
 }
 
-export async function getAdminConfigVersions(params?: { limit?: number; offset?: number }): Promise<ConfigVersionListDto> {
+export async function getAdminConfigVersions(params?: {
+  limit?: number
+  offset?: number
+  entity_type?: string
+  entity_id?: number
+}): Promise<ConfigVersionListDto> {
   const q = new URLSearchParams()
   if (params?.limit != null) q.set('limit', String(params.limit))
   if (params?.offset != null) q.set('offset', String(params.offset))
+  if (params?.entity_type != null) q.set('entity_type', params.entity_type)
+  if (params?.entity_id != null) q.set('entity_id', String(params.entity_id))
   const suffix = q.toString() ? `?${q.toString()}` : ''
   return requestJson<ConfigVersionListDto>(`${GDC_API_PREFIX}/admin/config-versions${suffix}`)
+}
+
+export async function getAdminSafeRollbackPreview(
+  rowId: number,
+  expectedVersion: number,
+  target: 'before' | 'after' = 'before',
+): Promise<ConfigSafeRollbackPreviewDto> {
+  const q = new URLSearchParams({ expected_version: String(expectedVersion), target })
+  return requestJson<ConfigSafeRollbackPreviewDto>(
+    `${GDC_API_PREFIX}/admin/config-versions/${rowId}/safe-rollback-preview?${q.toString()}`,
+  )
 }
 
 export async function getAdminHealthSummary(): Promise<AdminHealthSummaryDto> {

@@ -65,6 +65,21 @@ evidence, authorized MFA operator and action/revision CAS validation, safe
 preview-confirm-apply cycle, auditable actual read-back, isolated recovery
 qualification, Browser BFS and two genuine-user E2E before release.
 
+## Existing Administration UI integration
+
+The Administration operational panel's existing configuration-version table now
+provides a read-only **Preview safe changes** action for supported Stream,
+Route and Destination revisions. It resolves the latest version of that exact
+entity before requesting the backend preview, displays only the allowlisted
+non-secret field changes and blocker codes, and never exposes a rollback/apply
+action. Unsupported Mapping revisions explicitly disable the preview action.
+
+This preview is an optional investigation read path: a failed or stale response
+shows a non-secret error message and preserves the surrounding audit and
+version-history UI. No new top-level navigation, configuration engine, or
+network/host mutation is created. This is **code/component-tested only**;
+authenticated Browser acceptance is deferred by the owner.
+
 ## Source validation
 
 `tests/test_pf12a_config_safe_rollback_preview.py` covers strict

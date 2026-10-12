@@ -265,6 +265,19 @@ scenarios:
       - "Actual PostgreSQL concurrency, operator/browser and two-user E2E remain separate acceptance gates."
     release_gate: true
 
+  - id: FRONTEND-PF12A-SAFE-CONFIG-REVISION-UI
+    name: Administration read-only safe configuration history diff and rollback blockers
+    level: component
+    domains: [frontend]
+    triggers: [affected, pr]
+    platforms: [linux]
+    command: "cd frontend && npm run test -- --run src/components/settings/admin-settings-operational.test.tsx"
+    invariants:
+      - "Current entity revision is read before a read-only safe preview; no mutation or false apply authority."
+      - "Only allowlisted safe values and blocker reasons appear; unsupported history cannot preview."
+      - "Historical audit and configuration panels remain intact."
+    release_gate: true
+
   - id: BACKEND-PF12A-SAFE-CONFIG-ROLLBACK-PREVIEW
     name: Control existing history uses pinned Foundation PF-12A read-only safe preview
     level: unit
