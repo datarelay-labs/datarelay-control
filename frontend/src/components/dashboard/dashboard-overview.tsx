@@ -75,7 +75,7 @@ const DASHBOARD_HELP: PageHelpContent = {
 /** Do not present malformed catalog resource identities as verified setup readiness. */
 function verifiedCatalogCount(rows: readonly { id: number }[] | null): number | null {
   if (rows === null) return null
-  return rows.every((row) => Number.isSafeInteger(row.id) && row.id > 0) ? rows.length : null
+  return rows.every((row) => row !== null && typeof row === 'object' && Number.isSafeInteger(row.id) && row.id > 0) ? rows.length : null
 }
 
 export function DashboardOverview() {

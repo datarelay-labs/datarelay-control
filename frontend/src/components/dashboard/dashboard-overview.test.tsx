@@ -950,6 +950,33 @@ describe('DashboardOverview', () => {
       .not.toBeInTheDocument()
   })
 
+  it('fails closed on a malformed Connector catalog item instead of crashing first-run guidance', async () => {
+    const snapshotApi = await import('../../api/operationalSnapshot')
+    const baseline = await snapshotApi.getOperationalSnapshot()
+    if (!baseline) throw new Error('Missing operational snapshot fixture')
+    vi.mocked(snapshotApi.getOperationalSnapshot).mockResolvedValueOnce({
+      ...baseline,
+      global: { ...baseline.global, total_streams: 0, enabled_streams: 0, running_streams: 0,
+        total_routes: 0, enabled_routes: 0 },
+      streams: [], routes: [], destinations: [], problems: [],
+      updated_at: new Date().toISOString(),
+    })
+    const connectorsApi = await import('../../api/gdcConnectors')
+    vi.mocked(connectorsApi.fetchConnectorsList).mockResolvedValueOnce(
+      [null] as unknown as Awaited<ReturnType<typeof connectorsApi.fetchConnectorsList>>,
+    )
+
+    render(<MemoryRouter><main><DashboardOverview /></main></MemoryRouter>)
+    const firstRun = await within(mainRegion()).findByTestId('dashboard-empty-state')
+    await waitFor(() => {
+      expect(within(firstRun).getByTestId('dashboard-first-flow-source-state'))
+        .toHaveTextContent('Not verified')
+    })
+    expect(within(firstRun).getByTestId('dashboard-first-flow-next')).toHaveAttribute('href', '/connectors')
+    expect(within(firstRun).queryByRole('link', { name: 'Open Stream Wizard from setup checklist' }))
+      .not.toBeInTheDocument()
+  })
+
   it('does not misrepresent an unavailable snapshot as a fresh install or healthy status', async () => {
     const snap = await import('../../api/operationalSnapshot')
     vi.mocked(snap.getOperationalSnapshot).mockResolvedValueOnce(null)
