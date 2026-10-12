@@ -34,6 +34,16 @@ zero-byte output, and produces a restrictive 0600
 digest and archive basename. Both success and partial failure files are
 private. The script explicitly prints that encryption is **NOT PROVIDED**.
 
+A new fake-`pg_dump` concurrency test proved that two backups started within
+one second could both pass the previous file-existence check **before**
+either created its archive, leading to simultaneous writes to the same file.
+The backup script now acquires a timestamp-scoped directory lock atomically
+before entering `pg_dump`. A concurrent writer fails without modifying the
+first archive or checksum. The lock is automatically released on normal
+script exit; a stale lock following a killed process fails closed and must
+be manually investigated rather than removed by automatic retry.
+The test runs with controlled fake binaries and never connects to PostgreSQL.
+
 The digest allows **later independent byte-integrity comparison**. A
 SHA256 checksum does *not* authenticate a publisher, encrypt a backup,
 prove the backup contents are restorable, verify an isolated restore drill,
@@ -48,7 +58,8 @@ The new source-only tests replace `pg_dump` with a fake executable and
 PostgreSQL socket, live database or real restore operation is touched**.
 The tests cover both gzip modes, archive/digest read-only mode 0600,
 checksum matches actual bytes, refusal to overwrite an existing archive
-or dangling symlinks, partial failed dumps and missing credentials.
+or dangling symlinks, concurrent writers sharing a single-second timestamp,
+partial failed dumps and missing credentials.
 
 The restore script now checks its named archive's actual SHA256 bytes against
 the accompanying archive-specific sidecar **before any PostgreSQL backup or

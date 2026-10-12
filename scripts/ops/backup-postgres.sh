@@ -75,6 +75,15 @@ mkdir -p "$BACKUP_DIR"
 
 TS="$(date -u +"%Y%m%dT%H%M%SZ")"
 OUT_FILE="$BACKUP_DIR/gdc-postgres-${TS}.dump"
+# Concurrent invocations can both pass a file-existence preflight before
+# either pg_dump opens the archive. Claim an atomic directory lock first.
+# A process-killed stale lock fails closed and requires operator inspection.
+LOCK_DIR="$BACKUP_DIR/.gdc-postgres-${TS}.lock"
+if ! mkdir -- "$LOCK_DIR" 2>/dev/null; then
+  echo "ERROR: Backup timestamp is already locked; refusing concurrent overwrite." >&2
+  exit 1
+fi
+trap 'rmdir -- "$LOCK_DIR" 2>/dev/null || true' EXIT
 # Refuse same-second collisions: never overwrite another valid or partial
 # backup, even if its digest sidecar is absent.
 if [[ -e "$OUT_FILE" || -L "$OUT_FILE" ||
