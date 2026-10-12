@@ -1,8 +1,9 @@
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { act, cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
+import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
+import { DataRouterEnabledContext } from './router/data-router-enabled'
 import { clearTestSession, persistTestSession } from './lib/governance-rbac'
 import { getSessionRole, isSessionExpired } from './auth/session'
 import { clearWizardCatalogSnapshot } from './components/streams/wizard/wizard-catalog-cache'
@@ -489,6 +490,22 @@ function renderApp(initialPath = '/') {
     </MemoryRouter>,
   )
 }
+
+it('keeps the canonical lazy Data Flows and New data flow paths under the production data-router root', async () => {
+  const router = createMemoryRouter([{
+    path: '/*',
+    element: (
+      <DataRouterEnabledContext.Provider value>
+        <App />
+      </DataRouterEnabledContext.Provider>
+    ),
+  }], { initialEntries: ['/routes'] })
+  render(<RouterProvider router={router} />)
+  expect(await screen.findByTestId('routes-architecture-workspace', {}, { timeout: 15000 })).toBeInTheDocument()
+  await act(async () => { await router.navigate('/streams/new') })
+  expect(await screen.findByTestId('wizard-intent-picker', {}, { timeout: 15000 })).toBeInTheDocument()
+  expect(router.state.location.pathname).toBe('/streams/new')
+})
 
 // Unmocked API reads must never contact a live service or clear another test's
 // session on an accidental 401. A fail-closed fallback preserves negative truth.

@@ -72,6 +72,7 @@ import {
 import { applyHttpImportToWizardState, type HttpImportWizardLocationState } from '../../utils/httpImportDraft'
 import { IntentTemplatePicker } from './wizard/intent-template-picker'
 import { WizardExitConfirmation } from './wizard/wizard-exit-confirmation'
+import { WizardRouteLeaveGuard, type WizardBlockedNavigation } from './wizard/wizard-route-leave-guard'
 import { applyWizardIntentTemplate, type WizardIntentTemplateId } from './wizard/intent-templates'
 import { persistWizardDataProtectionIntents } from './wizard/wizard-data-protection-persist'
 import { persistWizardRouteTransformOverrides, verifyWizardRouteTransformEffective } from './wizard/wizard-stream-persist'
@@ -112,6 +113,15 @@ export function NewStreamWizardPage() {
   const connectorCloseButtonRef = useRef<HTMLButtonElement>(null)
   const connectorReturnFocusRef = useRef<HTMLElement | null>(null)
   const [exitConfirmationOpen, setExitConfirmationOpen] = useState(false)
+  const blockedNavigationRef = useRef<WizardBlockedNavigation | null>(null)
+  const allowedNextPathRef = useRef<string | null>(null)
+  const allowNextNavigation = useCallback((path: string) => {
+    allowedNextPathRef.current = path
+    // A cancelled Link must not leave a permanent exemption behind.
+    window.setTimeout(() => {
+      if (allowedNextPathRef.current === path) allowedNextPathRef.current = null
+    }, 0)
+  }, [])
   const [stepIndex, setStepIndex] = useState(0)
   const [intentSelected, setIntentSelected] = useState(false)
   const [state, setState] = useState<WizardState>(() => buildInitialState())
@@ -944,13 +954,16 @@ export function NewStreamWizardPage() {
   const preserveDraftBeforeDestinationPrerequisite = useCallback(() => {
     try {
       saveWizardDraft(state, 'destinations')
+      // The operator explicitly chose this prerequisite and the draft is
+      // already safely persisted. Only allow this one Destination navigation.
+      allowNextNavigation(NAV_PATH.destinations)
       return true
     } catch {
       setDraftNotice('Unable to save draft. Stay in the wizard and try again.')
       window.setTimeout(() => setDraftNotice(null), 4000)
       return false
     }
-  }, [state])
+  }, [allowNextNavigation, state])
 
   const handleCreateAnother = useCallback(() => {
     setRecentlyCreatedDestinationId(null)
@@ -967,6 +980,31 @@ export function NewStreamWizardPage() {
   const isDeployStep = currentStepKey === 'deploy'
   const streamCreated = state.outcome?.streamId != null
 
+  const handleBlockedNavigation = useCallback((pending: WizardBlockedNavigation) => {
+    // Never allow a blocked route transition to interrupt an in-flight write.
+    if (busy || isStarting || connectorCreateBusy) {
+      pending.reset()
+      blockedNavigationRef.current = null
+      setDraftNotice('Finish the current operation before leaving this Data Flow setup.')
+      return
+    }
+    blockedNavigationRef.current = pending
+    setExitConfirmationOpen(true)
+  }, [busy, connectorCreateBusy, isStarting])
+
+  const completeWizardExit = () => {
+    setExitConfirmationOpen(false)
+    const pending = blockedNavigationRef.current
+    blockedNavigationRef.current = null
+    if (pending) {
+      // Preserve the user's original destination, including Browser Back.
+      pending.proceed()
+    } else {
+      allowNextNavigation(NAV_PATH.streams)
+      navigate(NAV_PATH.streams)
+    }
+  }
+
   // Never navigate away from an in-progress wizard without an explicit choice.
   // The draft serializer already strips secrets and raw samples; do not autosave.
   const requestCancel = () => {
@@ -977,26 +1015,33 @@ export function NewStreamWizardPage() {
     }
   }
   const keepEditing = () => {
+    const pending = blockedNavigationRef.current
+    blockedNavigationRef.current = null
+    pending?.reset()
     setExitConfirmationOpen(false)
     queueMicrotask(() => cancelButtonRef.current?.focus())
+  }
+  const resetFailedExit = () => {
+    const pending = blockedNavigationRef.current
+    blockedNavigationRef.current = null
+    pending?.reset()
+    setExitConfirmationOpen(false)
   }
   const saveAndExit = () => {
     try {
       saveWizardDraft(state, currentStepKey)
-      setExitConfirmationOpen(false)
-      navigate(NAV_PATH.streams)
+      completeWizardExit()
     } catch {
-      setExitConfirmationOpen(false)
+      resetFailedExit()
       setDraftNotice('Unable to save the local draft. You are still in the wizard; review browser storage and try again.')
     }
   }
   const discardAndExit = () => {
     try {
       clearWizardDraft()
-      setExitConfirmationOpen(false)
-      navigate(NAV_PATH.streams)
+      completeWizardExit()
     } catch {
-      setExitConfirmationOpen(false)
+      resetFailedExit()
       setDraftNotice('Unable to clear the saved draft. You are still in the wizard.')
     }
   }
@@ -1064,6 +1109,11 @@ export function NewStreamWizardPage() {
 
   return (
     <div className="flex h-fit w-full min-w-0 grow-0 flex-col gap-5 pb-8" data-testid="new-stream-wizard">
+      <WizardRouteLeaveGuard
+        active={intentSelected && !streamCreated}
+        allowedNextPathRef={allowedNextPathRef}
+        onBlocked={handleBlockedNavigation}
+      />
       {/* Toolbar only — App Shell owns the page title */}
       <div className="flex flex-col gap-3 border-b border-slate-200/80 pb-4 dark:border-gdc-divider sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 space-y-1">

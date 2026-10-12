@@ -1,8 +1,9 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { createMemoryRouter, Link, MemoryRouter, Route, RouterProvider, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NewStreamWizardPage } from './new-stream-wizard-page'
+import { DataRouterEnabledContext } from '../../router/data-router-enabled'
 import { clearSession, persistSession, type SessionRole } from '../../auth/session'
 import { StepMappingCombined } from './wizard/step-mapping-combined'
 import { EnrichmentRulesEditor } from './wizard/enrichment-rules-editor'
@@ -828,6 +829,125 @@ describe('New Data Flow draft-safe exit', () => {
       expect(screen.getByTestId('wizard-step-connect')).toBeInTheDocument()
       expect(screen.queryByTestId('wizard-left-for-streams')).not.toBeInTheDocument()
       expect(screen.getByText(/Unable to save the local draft/i)).toBeInTheDocument()
+    } finally {
+      storage.mockRestore()
+    }
+  })
+})
+
+function renderWizardWithDataRouter(initialEntries: string[] = ['/streams/new'], initialIndex?: number) {
+  // Same one-splat data-router wrapper as the actual BrowserRouter replacement.
+  // Existing declarative MemoryRouter component tests continue to use the
+  // no-blocker fallback, while this harness exercises Link and POP transitions.
+  const router = createMemoryRouter([{
+    path: '/*',
+    element: (
+      <DataRouterEnabledContext.Provider value>
+        <nav><Link to="/monitoring" data-testid="wizard-external-nav">Dashboard</Link></nav>
+        <Routes>
+          <Route path="/streams/new" element={<NewStreamWizardPage />} />
+          <Route path="/streams" element={<p data-testid="wizard-streams-workspace">Streams</p>} />
+          <Route path="/monitoring" element={<p data-testid="wizard-dashboard-workspace">Dashboard workspace</p>} />
+          <Route path="/destinations" element={<p data-testid="wizard-destinations-workspace">Destination workspace</p>} />
+        </Routes>
+      </DataRouterEnabledContext.Provider>
+    ),
+  }], { initialEntries, initialIndex })
+  render(<RouterProvider router={router} />)
+  return router
+}
+
+describe('New Data Flow data-router unsaved cross-page navigation', () => {
+  beforeEach(() => {
+    localStorage.setItem('gdc-platform-persona', 'connector')
+    localStorage.removeItem(WIZARD_DRAFT_KEY_V2)
+    clearWizardCatalogSnapshot()
+    vi.mocked(fetchCatalogSnapshot).mockReset().mockResolvedValue({
+      connectors: [], sources: [], apiBacked: true,
+    })
+  })
+
+  it('blocks a navigation link until Keep editing or Save draft resolves the original destination', async () => {
+    const user = userEvent.setup()
+    const router = renderWizardWithDataRouter()
+    await user.click(screen.getByTestId('wizard-intent-scratch'))
+    await user.click(screen.getByTestId('wizard-external-nav'))
+    expect(await screen.findByTestId('wizard-unsaved-exit-dialog')).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/streams/new')
+    expect(localStorage.getItem(WIZARD_DRAFT_KEY_V2)).toBeNull()
+    await user.click(screen.getByTestId('wizard-exit-keep'))
+    expect(screen.queryByTestId('wizard-unsaved-exit-dialog')).not.toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/streams/new')
+    await user.click(screen.getByTestId('wizard-external-nav'))
+    await user.click(await screen.findByTestId('wizard-exit-save'))
+    expect(await screen.findByTestId('wizard-dashboard-workspace')).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/monitoring')
+    const saved = JSON.parse(localStorage.getItem(WIZARD_DRAFT_KEY_V2) ?? '{}')
+    expect(saved.stepKey).toBe('connect')
+  })
+
+  it('holds Browser Back until the operator explicitly discards local draft work', async () => {
+    const user = userEvent.setup()
+    const router = renderWizardWithDataRouter(['/monitoring', '/streams/new'], 1)
+    await user.click(screen.getByTestId('wizard-intent-scratch'))
+    act(() => { void router.navigate(-1) })
+    expect(await screen.findByTestId('wizard-unsaved-exit-dialog')).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/streams/new')
+    await user.click(screen.getByTestId('wizard-exit-discard'))
+    expect(await screen.findByTestId('wizard-dashboard-workspace')).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/monitoring')
+    expect(localStorage.getItem(WIZARD_DRAFT_KEY_V2)).toBeNull()
+  })
+
+  it('blocks Browser Forward to another page until the operator keeps editing or confirms exit', async () => {
+    const user = userEvent.setup()
+    const router = renderWizardWithDataRouter(['/streams/new', '/monitoring'], 0)
+    await user.click(screen.getByTestId('wizard-intent-scratch'))
+    act(() => { void router.navigate(1) })
+    expect(await screen.findByTestId('wizard-unsaved-exit-dialog')).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/streams/new')
+    await user.click(screen.getByTestId('wizard-exit-keep'))
+    expect(router.state.location.pathname).toBe('/streams/new')
+    expect(screen.queryByTestId('wizard-unsaved-exit-dialog')).not.toBeInTheDocument()
+    act(() => { void router.navigate(1) })
+    await user.click(await screen.findByTestId('wizard-exit-save'))
+    expect(await screen.findByTestId('wizard-dashboard-workspace')).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/monitoring')
+  })
+
+  it('allows the operator-selected Destination prerequisite only after saving the current Wizard draft', async () => {
+    const state = buildInitialState()
+    state.connector.connectorId = 42
+    state.stream.name = 'Preserved Destination setup'
+    localStorage.setItem(WIZARD_DRAFT_KEY_V2, JSON.stringify({
+      version: 2, savedAt: Date.now(), stepKey: 'destinations', state,
+    }))
+    const user = userEvent.setup()
+    const router = renderWizardWithDataRouter()
+    await user.click(await screen.findByTestId('wizard-draft-resume'))
+    localStorage.removeItem(WIZARD_DRAFT_KEY_V2)
+    await user.click(await screen.findByRole('link', { name: 'Go to Destinations' }))
+    expect(await screen.findByTestId('wizard-destinations-workspace')).toBeInTheDocument()
+    expect(screen.queryByTestId('wizard-unsaved-exit-dialog')).not.toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/destinations')
+    const saved = JSON.parse(localStorage.getItem(WIZARD_DRAFT_KEY_V2) ?? '{}')
+    expect(saved.stepKey).toBe('destinations')
+    expect(saved.state.stream.name).toBe('Preserved Destination setup')
+  })
+
+  it('resets a blocked transition if browser storage rejects a requested save', async () => {
+    const user = userEvent.setup()
+    const router = renderWizardWithDataRouter()
+    await user.click(screen.getByTestId('wizard-intent-scratch'))
+    await user.click(screen.getByTestId('wizard-external-nav'))
+    const storage = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('storage unavailable')
+    })
+    try {
+      await user.click(await screen.findByTestId('wizard-exit-save'))
+      expect(router.state.location.pathname).toBe('/streams/new')
+      expect(screen.queryByTestId('wizard-unsaved-exit-dialog')).not.toBeInTheDocument()
+      expect(await screen.findByText(/Unable to save the local draft/i)).toBeInTheDocument()
     } finally {
       storage.mockRestore()
     }
