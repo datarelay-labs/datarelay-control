@@ -355,14 +355,16 @@ export function StepDelivery({
   }, [])
 
   useEffect(() => {
-    void refreshDestinations()
+    // A Destination just created outside this Wizard must bypass the cached
+    // catalog; otherwise the return screen can claim it does not exist yet.
+    void refreshDestinations(recentlyCreatedDestinationId != null)
     const onFocus = () => { void refreshDestinations(true) }
     window.addEventListener('focus', onFocus)
     return () => {
       window.removeEventListener('focus', onFocus)
       fetchVersionRef.current += 1
     }
-  }, [refreshDestinations])
+  }, [refreshDestinations, recentlyCreatedDestinationId])
 
   const destById = useMemo(() => new Map(destinations.map((d) => [d.id, d])), [destinations])
 
@@ -404,6 +406,11 @@ export function StepDelivery({
   }, [destinations])
 
   const drafts = state.destinations.routeDrafts
+  const returnedDestination =
+    recentlyCreatedDestinationId != null ? destById.get(recentlyCreatedDestinationId) : undefined
+  const returnedDestinationHasPath =
+    recentlyCreatedDestinationId != null &&
+    drafts.some((draft) => draft.destinationId === recentlyCreatedDestinationId)
 
   const summary = useMemo(() => {
     const total = drafts.length
@@ -559,9 +566,34 @@ export function StepDelivery({
       </div>
 
       {recentlyCreatedDestinationId != null ? (
-        <p role="status" data-testid="wizard-returned-destination" className="rounded-lg border border-violet-200 bg-violet-50 p-3 text-[12px] text-violet-900 dark:border-violet-500/40 dark:bg-violet-500/10 dark:text-violet-100">
-          Destination #{recentlyCreatedDestinationId} saved. Choose Add delivery path once it appears in the catalog; no Route was added automatically.
-        </p>
+        <div data-testid="wizard-returned-destination" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-violet-200 bg-violet-50 p-3 text-[12px] text-violet-900 dark:border-violet-500/40 dark:bg-violet-500/10 dark:text-violet-100">
+          <p role="status">
+            Destination #{recentlyCreatedDestinationId} saved. Choose Add delivery path once it appears in the catalog; no Route was added automatically.
+            {returnedDestinationHasPath
+              ? ' A delivery path is already configured for this destination.'
+              : returnedDestination?.enabled
+                ? ' This destination is now available.'
+                : returnedDestination && !returnedDestination.enabled
+                  ? ' This destination is disabled; enable it in Destinations before adding a path.'
+                  : catalogLoadFailed
+                    ? ' Destination list unavailable; retry loading before selecting a path.'
+                    : ' Refresh the catalog if the destination is not visible yet.'}
+          </p>
+          {!returnedDestinationHasPath && returnedDestination?.enabled && !loading && !catalogLoadFailed ? (
+            <button
+              type="button"
+              className={btnPrimarySm}
+              data-testid="wizard-add-returned-destination"
+              onClick={() => addRouteForDestination(returnedDestination.id)}
+            >
+              Add delivery path to {returnedDestination.name}
+            </button>
+          ) : !loading && !catalogLoadFailed && !returnedDestination ? (
+            <button type="button" data-testid="wizard-refresh-returned-destination" className={btnGhost} onClick={() => void refreshDestinations(true)}>
+              Refresh destinations
+            </button>
+          ) : null}
+        </div>
       ) : null}
 
       {loading ? (

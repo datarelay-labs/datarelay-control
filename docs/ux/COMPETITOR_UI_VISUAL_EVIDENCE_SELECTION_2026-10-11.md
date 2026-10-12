@@ -63,3 +63,22 @@ Result: 2/2 JavaScript parsed, 0 failures; 6,656 visited AST nodes; semantic 4,3
 | P0B-3 Sample-only field coverage | Record Selection displays selected sample fields but not bounded multi-record field coverage. | Derived in-memory presence and sampled distinct counts, zero raw sensitive values and zero whole-production inference, RED empty/missing/nested/large/multi-event cases. |
 
 **Block 1 source-evidence exit:** Existing five official published-vendor UI references, verified Control source GAP and exactly three selected patterns are complete, with three separately executed bounded licensed static Node-RED REA passes. Authenticated competitor UI is NOT_OBSERVED. Control Browser BFS 20/97 and two-user same-head Full User E2E are NOT PASS. Proceed to Block 2 only in selected priority order; keep Draft PR #414 and preserved Sidebar/Route test worktrees.
+
+
+## Implementation-only checkpoint — 2026-10-12 (testing deferred by owner)
+
+The prior P0A official published-vendor UI comparison, lawful Node-RED static REA, and ranked P0B selections remain the approved *pattern selection*. They are not evidence of hands-on use of any proprietary competitor tenant. On current Control source branch `feat/control-saas-usability-convergence`, all **three selected independent P0B implementations** are present:
+
+| Selected pattern | Current Control-owned source | Source implementation disposition |
+| --- | --- | --- |
+| **P0B-1 Confluent-informed Route inspector** | `frontend/src/components/routes/routes-architecture-workspace.tsx` Overview / Delivery / Diagnostics panels; `routes-architecture-workspace.test.tsx` | Implemented in code (commit `64abbf37`), actual authenticated browser acceptance deferred |
+| **P0B-2 Splunk-informed no-send Route preview** | `frontend/src/components/routes/route-edit-page.tsx` privacy-limited formatted-output metadata; `route-edit-delivery-preview.test.tsx` | Implemented in code (commit `8d77e253`), no actual delivery implied |
+| **P0B-3 Elastic-informed sample field coverage** | `frontend/src/components/streams/wizard/record-selection-workspace.tsx` with bounded in-memory presence and distinct counts; `sample-field-coverage.ts` | Implemented in code (commit `44e2e3a9`), never indexed/production statistics |
+
+The task-first **Connections / Streams / Data Flows** navigation and global **New data flow** CTA have also been implemented in `app-navigation.tsx`, `top-header.tsx` and the existing five-stage Wizard (commit `ab01d50f`). The Wizard's existing saved-draft handoff opens Destination creation context, and a successful saved Destination returns to the saved Destinations step with positive saved ID, **without auto-creating a Route**. The following source completion removes a remaining post-return dead end:
+
+- On returning with `createdDestinationId`, `step-delivery.tsx` invalidates the Destination catalog TTL before the initial read; the newly saved item is not hidden by a cached empty list.
+- An enabled Destination verified in the refreshed catalog receives an explicit, keyboard-accessible **Add delivery path** button within the return notice; operator activation alone attaches the Route draft. An absent, disabled, failed-to-load or already-attached Destination is not presented as an unverified success or automatically connected.
+- Focused regression cases in `step-delivery.test.tsx` are authored. Owner requested tests later: **these new tests and full authenticated Browser BFS / two-real-user Full User E2E have not been executed for this addition**. The required frontend production build ran separately; final exact-head CI requires a fresh check after publication.
+
+**Remaining distinctions, not silently marked as implemented:** A protected unrelated staged Sidebar session-state guard (two files) and the previously platform-denied parent Route overview title/metrics-window edit are still outside this change; do not replace or move those edits through another worktree. Source code, actual login/session authority, real 1440/375/320 role-specific Chromium workflows, end-to-end route delivery, unmerged Draft PR integration and owner release are different gates. The current owner explicitly deferred exhaustive user testing; no Browser/FUE PASS is claimed.

@@ -542,4 +542,57 @@ describe('StepDelivery', () => {
     expect(screen.queryByText('Destination management workspace')).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Create new destination' })).toBeInTheDocument()
   })
+
+  it('refreshes a newly saved Destination and requires explicit operator Route attachment', async () => {
+    fetchDestinationsList.mockResolvedValueOnce([{
+      id: 91, name: 'Just created receiver', destination_type: 'WEBHOOK_POST',
+      config_json: { url: 'https://example.test/receiver' },
+      rate_limit_json: {}, enabled: true, streams_using_count: 0, routes: [],
+    }])
+    const onChange = vi.fn()
+    render(
+      <MemoryRouter>
+        <StepDelivery state={buildInitialState()} onChange={onChange} recentlyCreatedDestinationId={91} />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByTestId('wizard-returned-destination')).toHaveTextContent(
+      'Destination #91 saved. Choose Add delivery path',
+    )
+    await waitFor(() => expect(invalidateDestinationsListCache).toHaveBeenCalledTimes(1))
+    const add = await screen.findByRole('button', { name: 'Add delivery path to Just created receiver' })
+    expect(onChange).not.toHaveBeenCalledWith(expect.objectContaining({ routeDrafts: expect.any(Array) }))
+    await userEvent.setup().click(add)
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+      routeDrafts: [expect.objectContaining({ destinationId: 91, enabled: true })],
+    }))
+  })
+
+  it('keeps a missing or disabled returned Destination out of Route creation', async () => {
+    fetchDestinationsList.mockResolvedValueOnce([{
+      id: 92, name: 'Disabled receiver', destination_type: 'WEBHOOK_POST',
+      config_json: { url: 'https://example.test/disabled' },
+      rate_limit_json: {}, enabled: false, streams_using_count: 0, routes: [],
+    }])
+    const onChange = vi.fn()
+    const view = render(
+      <MemoryRouter>
+        <StepDelivery state={buildInitialState()} onChange={onChange} recentlyCreatedDestinationId={92} />
+      </MemoryRouter>,
+    )
+    expect(await screen.findByText(/This destination is disabled/)).toBeInTheDocument()
+    expect(screen.queryByTestId('wizard-add-returned-destination')).not.toBeInTheDocument()
+    view.unmount()
+
+    fetchDestinationsList.mockResolvedValueOnce([])
+    render(
+      <MemoryRouter>
+        <StepDelivery state={buildInitialState()} onChange={onChange} recentlyCreatedDestinationId={93} />
+      </MemoryRouter>,
+    )
+    expect(await screen.findByTestId('wizard-refresh-returned-destination')).toBeInTheDocument()
+    expect(screen.queryByTestId('wizard-add-returned-destination')).not.toBeInTheDocument()
+    expect(onChange).not.toHaveBeenCalledWith(expect.objectContaining({ routeDrafts: expect.any(Array) }))
+  })
+
 })
