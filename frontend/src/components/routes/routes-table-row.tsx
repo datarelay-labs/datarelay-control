@@ -102,7 +102,9 @@ function RoutesTableRowInner({
   })
   const streamId = row.stream?.id
   const destId = row.destination?.id ?? row.route.destination_id
-  const canTestRoute = useSessionCapabilities().workspace_mutations === true
+  const capabilities = useSessionCapabilities()
+  const canEditRoute = capabilities.workspace_mutations === true
+  const canTestRoute = capabilities.validation_mutations === true
 
   return (
     <tr
@@ -225,7 +227,7 @@ function RoutesTableRowInner({
                   className="block px-3 py-1.5 font-medium text-slate-800 hover:bg-slate-50 dark:text-slate-100 dark:hover:bg-gdc-rowHover"
                   onClick={onCloseMoreMenu}
                 >
-                  {canTestRoute ? 'Edit Route' : 'View Route settings'}
+                  {canEditRoute ? 'Edit Route' : 'View Route settings'}
                 </Link>
                 <Link
                   to={runtimeOverviewPath({

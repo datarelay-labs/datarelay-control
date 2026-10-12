@@ -21,6 +21,7 @@ import {
 } from '../../api/gdcRoutes'
 import type { StreamRead } from '../../api/types/gdcApi'
 import { routeEditPath } from '../../config/nav-paths'
+import { useSessionCapabilities } from '../../lib/rbac'
 import {
   aggregateDeliverySuccessRateFromSnapshot,
   formatOperationalEps,
@@ -146,6 +147,7 @@ function SelectField({
 }
 
 export function RoutesOverviewPage() {
+  const canCreateRoute = useSessionCapabilities().workspace_mutations === true
   const [refreshTick, setRefreshTick] = useState(0)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -454,7 +456,7 @@ export function RoutesOverviewPage() {
         purpose="How does each Stream reach each Destination? A Route is the destination-specific path that applies processing, delivery, retry, and rate-limit behavior before data is sent."
         help={ROUTES_HELP}
         testId="routes-purpose-header"
-        actions={
+        actions={canCreateRoute ? (
           <Link
             to={routeEditPath('new')}
             className="inline-flex h-9 items-center gap-1.5 rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white shadow-sm hover:bg-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500/40"
@@ -462,7 +464,7 @@ export function RoutesOverviewPage() {
             <Plus className="h-3.5 w-3.5" aria-hidden />
             Create Route
           </Link>
-        }
+        ) : undefined}
       />
 
       <div className="flex flex-wrap items-center justify-end gap-2" aria-label="Route runtime controls">

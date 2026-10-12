@@ -60,6 +60,18 @@ describe('Route operations table session capability actions', () => {
     expect(screen.getByRole('link', { name: 'Edit Route' })).toHaveAttribute('href', '/routes/42/edit')
   })
 
+  it('uses validation permission for the outbound test independently of Route edit permission', () => {
+    persistSession({
+      access_token: 'test-token',
+      refresh_token: 'test-refresh',
+      expires_at: new Date(Date.now() + 3600_000).toISOString(),
+      user: { username: 'operator', role: 'OPERATOR', status: 'ACTIVE', capabilities: { workspace_mutations: true, validation_mutations: false } },
+    })
+    mount()
+    expect(screen.getByRole('link', { name: 'Edit Route' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Test route R-0042' })).not.toBeInTheDocument()
+  })
+
   it('removes write actions immediately when the server capability downgrades an operator', () => {
     persistTestSession('OPERATOR')
     mount()
@@ -68,7 +80,7 @@ describe('Route operations table session capability actions', () => {
       access_token: 'test-token',
       refresh_token: 'test-refresh',
       expires_at: new Date(Date.now() + 3600_000).toISOString(),
-      user: { username: 'operator', role: 'OPERATOR', status: 'ACTIVE', capabilities: { workspace_mutations: false } },
+      user: { username: 'operator', role: 'OPERATOR', status: 'ACTIVE', capabilities: { workspace_mutations: false, validation_mutations: false } },
     }))
     expect(screen.queryByRole('button', { name: 'Test route R-0042' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'View Route settings' })).toBeInTheDocument()

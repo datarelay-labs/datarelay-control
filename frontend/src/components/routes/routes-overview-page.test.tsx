@@ -1,7 +1,9 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { persistSession } from '../../auth/session'
+import { clearTestSession, persistTestSession } from '../../lib/governance-rbac'
 import { RoutesOverviewPage } from './routes-overview-page'
 import type { OperationalSnapshotResponse } from '../../api/operationalSnapshot'
 
@@ -98,6 +100,7 @@ vi.mock('../../api/gdcStreams', () => ({
 }))
 
 describe('RoutesOverviewPage snapshot loading', () => {
+  afterEach(() => clearTestSession())
   beforeEach(async () => {
     vi.clearAllMocks()
     const snap = await import('../../api/operationalSnapshot')
@@ -136,6 +139,35 @@ describe('RoutesOverviewPage snapshot loading', () => {
       },
     ])
     vi.mocked(runtime.fetchStreamRuntimeMetrics).mockResolvedValue(null)
+  })
+
+  it.each(['VIEWER', 'GOVERNANCE_AUDITOR'] as const)('does not offer %s the global Create Route action', async (role) => {
+    persistTestSession(role)
+    render(<MemoryRouter><RoutesOverviewPage /></MemoryRouter>)
+    expect(await screen.findByTestId('routes-architecture-inspector')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Create Route' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'View Route settings' })).toBeInTheDocument()
+  })
+
+  it.each(['ADMINISTRATOR', 'OPERATOR'] as const)('offers %s the global Create Route action', async (role) => {
+    persistTestSession(role)
+    render(<MemoryRouter><RoutesOverviewPage /></MemoryRouter>)
+    expect(await screen.findByTestId('routes-architecture-inspector')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Create Route' })).toHaveAttribute('href', '/routes/new/edit')
+  })
+
+  it('removes the global creation action on live capability downgrade', async () => {
+    persistTestSession('OPERATOR')
+    render(<MemoryRouter><RoutesOverviewPage /></MemoryRouter>)
+    expect(await screen.findByTestId('routes-architecture-inspector')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Create Route' })).toBeInTheDocument()
+    act(() => persistSession({
+      access_token: 'test-token',
+      refresh_token: 'test-refresh',
+      expires_at: new Date(Date.now() + 3600_000).toISOString(),
+      user: { username: 'operator', role: 'OPERATOR', status: 'ACTIVE', capabilities: { workspace_mutations: false } },
+    }))
+    expect(screen.queryByRole('link', { name: 'Create Route' })).not.toBeInTheDocument()
   })
 
   it('loads operational snapshot on mount and does not fetch per-stream metrics', async () => {
