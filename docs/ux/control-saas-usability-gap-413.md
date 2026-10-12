@@ -495,3 +495,11 @@ Five focused parent-page role/downgrade cases and one independent validation-ove
 **Correction:** The existing header session subscription now reuses the effective `getSessionCapabilities().workspace_mutations` check alongside the existing active-session and role rules. A server capability downgrade hides the CTA immediately, and restoration restores it, matching the unchanged Wizard guard. No backend mutation, permission grant, new route, navigation rewrite, or effectful API request.
 
 **Verification:** Three related frontend native suites 48/48 PASS; TypeScript/Vite production build PASS; scoped ESLint PASS; Source-of-Truth validation 9 current documents and 89 tracked specs PASS. Authenticated Browser BFS 20 scenarios/97 controls and two-real-user Full User E2E remain owner-deferred, NOT PASS. Existing PR #414 stays Draft without merge, deployment, HEAD freeze or release.
+
+## 2026-10-12 — 1D Streams creation links honor effective operator capability
+
+**Source gap:** The Streams operational console presented both **New Stream** and empty-state **Create First Stream** to Viewer and Governance Auditor, and continued to offer these dead-end links when a server capability override revoked an active Operator's `workspace_mutations` permission. The unchanged Stream Wizard correctly rejected those writes. Native regressions reproduced 3 RED cases.
+
+**Bounded fix:** Use the existing reactive `useSessionCapabilities().workspace_mutations` gate on the two Streams creation links, consistent with the Route workspace, Destination actions and global New Data Flow CTA. Preserve all read-only Stream monitoring, search, filters, grouping and runtime links. Do not alter API/RBAC, persisted configuration, data-plane operations, Stream Wizard routing or backend auth.
+
+**Acceptance boundary:** New native role/downgrade tests and affected Streams console suites must PASS with scoped lint, TypeScript/Vite production build and exact-HEAD GitHub CI. Browser BFS 20/97 and two genuine-user FUE are deferred and NOT PASS; no merge, deployment or release authority.

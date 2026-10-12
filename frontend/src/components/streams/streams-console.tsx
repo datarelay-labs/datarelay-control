@@ -28,6 +28,7 @@ import {
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { gdcUi } from '../../lib/gdc-ui-tokens'
 import { cn } from '../../lib/utils'
+import { useSessionCapabilities } from '../../lib/rbac'
 import {
   logsPath,
   newStreamPath,
@@ -445,6 +446,7 @@ const STREAMS_HELP: PageHelpContent = {
 }
 
 export function StreamsConsole() {
+  const canCreateStream = useSessionCapabilities().workspace_mutations === true
   const cachedSnapshot = readStreamsConsoleSnapshot()
   const [displayRows, setDisplayRows] = useState<StreamConsoleRow[]>(() => cachedSnapshot?.displayRows ?? [])
   const [autoRefresh, setAutoRefresh] = useState<StreamsAutoRefreshOption>('Off')
@@ -792,13 +794,15 @@ export function StreamsConsole() {
         testId="streams-purpose-header"
         actions={
           <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
-            <Link
-              to={newStreamPath()}
-              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-gdc-primary px-4 text-sm font-semibold text-white hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/60"
-            >
-              <Plus className="h-4 w-4" aria-hidden />
-              New Stream
-            </Link>
+            {canCreateStream ? (
+              <Link
+                to={newStreamPath()}
+                className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-gdc-primary px-4 text-sm font-semibold text-white hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/60"
+              >
+                <Plus className="h-4 w-4" aria-hidden />
+                New Stream
+              </Link>
+            ) : null}
             <StreamsConsoleControls
               autoRefresh={autoRefresh}
               onAutoRefreshChange={handleAutoRefreshChange}
@@ -882,14 +886,16 @@ export function StreamsConsole() {
             </p>
             {!streamsAuthRequired && displayRows.length === 0 ? (
               <div className="mt-4 flex flex-col items-center gap-3" data-testid="streams-learning-path">
-                <Link
-                to={newStreamPath()}
-                data-testid="streams-create-first"
-                className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-gdc-primary px-3.5 py-2 text-sm font-semibold text-white hover:bg-violet-700"
-              >
-                <Plus className="h-4 w-4" aria-hidden />
-                Create First Stream
-                </Link>
+                {canCreateStream ? (
+                  <Link
+                    to={newStreamPath()}
+                    data-testid="streams-create-first"
+                    className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-gdc-primary px-3.5 py-2 text-sm font-semibold text-white hover:bg-violet-700"
+                  >
+                    <Plus className="h-4 w-4" aria-hidden />
+                    Create First Stream
+                  </Link>
+                ) : null}
                 <div className="max-w-xl rounded-lg border border-amber-200/80 bg-amber-50/70 px-3 py-2 text-left text-xs text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
                   <p className="font-semibold">Optional demo learning path</p>
                   <p className="mt-1">Development installs can load the bundled <span className="font-semibold">Sample Alerts Stream</span> with the documented seed command. Demo rows are create-only, explicitly labeled <span className="font-semibold">Demo seed</span>, and never overwrite operator data. Production UI never creates demo data automatically.</p>
