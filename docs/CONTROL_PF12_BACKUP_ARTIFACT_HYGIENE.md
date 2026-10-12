@@ -73,6 +73,16 @@ ensuring no actual DB connection, backup, recovery or user data mutation.
 The restore script also rejects invalid `PGRESTORE_JOBS` **before** even
 attempting the read-only pre-restore database backup; this prevents an
 unnecessary PostgreSQL interaction for a known-bad operator setting.
+
+Additional fake-backend RED tests found that an explicit legacy checksum
+waiver could accept a symlinked archive or a broken checksum-sidecar symlink
+and proceed to the pre-restore database backup. Separately, a corrupted
+`.dump.gz` with a matching SHA256 of its invalid bytes passed digest preflight
+and contacted the pre-backup path before decompression failed. The restore
+script now rejects symlinks unconditionally (including legacy waiver) and
+runs `gzip -t` for compressed backups **before** any PostgreSQL interaction.
+All three negative tests pass with fake binaries; no real restore, database
+connection or customer data is accessed.
 Actual restore remains an explicit privileged operation requiring separate
 authorization and an approved isolated environment.
 

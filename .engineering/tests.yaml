@@ -271,10 +271,12 @@ scenarios:
     domains: [backend, release]
     triggers: [affected, pr]
     platforms: [linux]
-    command: "PYTHONPATH=vendor/onprem-security/datarelay_onprem_security-0.10.0.dev0-py3-none-any.whl:. python3 -m pytest -q tests/test_pf12_backup_concurrency.py tests/test_pf12_backup_artifact_hygiene.py"
+    command: "PYTHONPATH=vendor/onprem-security/datarelay_onprem_security-0.10.0.dev0-py3-none-any.whl:. python3 -m pytest -q tests/test_pf12_backup_concurrency.py tests/test_pf12_backup_artifact_hygiene.py tests/test_pf12_restore_archive_preflight.py"
     invariants:
       - "Two concurrent pg_dump writers targeting the same timestamp cannot both enter archive creation."
       - "Archive checksum and private file modes remain valid with fake test-only tooling."
+      - "A legacy checksum waiver cannot bypass archive or sidecar symlink rejection."
+      - "Corrupted gzip bytes with a matching SHA256 fail before any pre-restore database backup."
       - "No real PostgreSQL socket, recovery, operator data or production host effect is used."
     release_gate: true
 

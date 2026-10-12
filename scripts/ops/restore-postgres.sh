@@ -58,6 +58,13 @@ if [[ -z "$DUMP_PATH" ]]; then
   exit 1
 fi
 
+# Neither verified nor explicitly approved legacy restores may follow symlinks.
+# Broken digest symlinks must not be downgraded to an absent legacy sidecar.
+if [[ -L "$DUMP_PATH" || -L "${DUMP_PATH}.sha256" ]]; then
+  echo "ERROR: Restore archive and sidecar symlinks are not accepted." >&2
+  exit 1
+fi
+
 if [[ ! -f "$DUMP_PATH" ]]; then
   echo "ERROR: Dump file not found: $DUMP_PATH" >&2
   echo "----------------------------------------------------------------"
@@ -112,6 +119,15 @@ print("  Backup digest verified (SHA256; not encryption or recovery proof)")
 PY
   then
     echo "ERROR: Backup digest verification failed before restore." >&2
+    exit 1
+  fi
+fi
+
+# Digest integrity cannot establish that the gzip stream is well-formed.
+# Refuse corrupted compressed archives BEFORE the pre-restore DB backup.
+if [[ "$DUMP_PATH" == *.gz ]]; then
+  if ! gzip -t -- "$DUMP_PATH" 2>/dev/null; then
+    echo "ERROR: gzip archive integrity preflight failed before any PostgreSQL operation." >&2
     exit 1
   fi
 fi
