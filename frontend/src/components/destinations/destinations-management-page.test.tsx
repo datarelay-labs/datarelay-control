@@ -1,7 +1,9 @@
 import { act, render, screen, within, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { persistSession } from '../../auth/session'
+import { clearTestSession, persistTestSession } from '../../lib/governance-rbac'
 import { DestinationsManagementPage } from './destinations-management-page'
 import { createDestination } from '../../api/gdcDestinations'
 
@@ -111,6 +113,8 @@ function LocationStateProbe() {
 }
 
 describe('DestinationsManagementPage', () => {
+  afterEach(() => clearTestSession())
+
   it('returns an untouched contextual Destination cancel to the saved Wizard without creating anything', async () => {
     const user = userEvent.setup()
     vi.mocked(createDestination).mockReset()
@@ -324,5 +328,93 @@ describe('DestinationsManagementPage', () => {
     expect(alert).toHaveAttribute('role', 'alert')
     expect(alert).toHaveTextContent(/http:\/\/ or https:\/\//i)
     expect(alert).toHaveTextContent(/Fix the highlighted fields/i)
+  })
+})
+
+
+describe('Destination role-appropriate contextual creation and diagnostics', () => {
+  afterEach(() => clearTestSession())
+
+  it.each(['VIEWER', 'GOVERNANCE_AUDITOR'] as const)('keeps %s on read-only Destinations and lets the user return to an existing Stream draft', async (role) => {
+    persistTestSession(role)
+    const user = userEvent.setup()
+    vi.mocked(createDestination).mockReset()
+    render(
+      <MemoryRouter initialEntries={[{
+        pathname: '/destinations',
+        state: { returnToSavedWizardDraft: true },
+      }]}>
+        <Routes>
+          <Route path="/destinations" element={<DestinationsManagementPage />} />
+          <Route path="/streams/new" element={<LocationStateProbe />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('destinations-new')).not.toBeInTheDocument()
+    expect(screen.getByTestId('destinations-readonly-access')).toHaveTextContent(/read-only/i)
+    expect(screen.getByText('MDS')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Return to Stream draft' }))
+    expect(await screen.findByTestId('returned-wizard-location')).toHaveTextContent(
+      JSON.stringify({ resumeSavedWizardDraft: true }),
+    )
+    expect(createDestination).not.toHaveBeenCalled()
+  })
+
+  it('retains read-only detail actions without exposing mutation and outbound test actions in the table and cards', async () => {
+    persistTestSession('VIEWER')
+    const user = userEvent.setup()
+    render(<MemoryRouter><DestinationsManagementPage /></MemoryRouter>)
+    expect(screen.queryByTestId('destinations-new')).not.toBeInTheDocument()
+    const row = screen.getByText('MDS').closest('tr')
+    expect(row).not.toBeNull()
+    await user.click(within(row!).getByRole('button', { name: 'Destination actions for MDS' }))
+    expect(within(row!).getByRole('button', { name: 'Open detail' })).toBeInTheDocument()
+    for (const label of ['Edit', 'Test delivery', 'Disable', 'Delete']) {
+      expect(within(row!).queryByRole('button', { name: label })).not.toBeInTheDocument()
+    }
+    await user.click(screen.getByTestId('destinations-view-card'))
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Test delivery' })).not.toBeInTheDocument()
+  })
+
+  it('keeps Edit available but hides outbound tests when an operator lacks validation_mutations', async () => {
+    persistSession({
+      access_token: 'test-token', refresh_token: 'test-refresh',
+      expires_at: new Date(Date.now() + 3600_000).toISOString(),
+      user: { username: 'operator', role: 'OPERATOR', status: 'ACTIVE',
+        capabilities: { workspace_mutations: true, validation_mutations: false } },
+    })
+    const user = userEvent.setup()
+    render(<MemoryRouter><DestinationsManagementPage /></MemoryRouter>)
+    expect(screen.getByTestId('destinations-new')).toBeInTheDocument()
+    const row = screen.getByText('MDS').closest('tr')
+    await user.click(within(row!).getByRole('button', { name: 'Destination actions for MDS' }))
+    expect(within(row!).getByRole('button', { name: 'Edit' })).toBeInTheDocument()
+    expect(within(row!).queryByRole('button', { name: 'Test delivery' })).not.toBeInTheDocument()
+  })
+
+  it('immediately removes contextual creation when operator write capability is withdrawn', async () => {
+    persistTestSession('OPERATOR')
+    render(
+      <MemoryRouter initialEntries={[{
+        pathname: '/destinations', state: { returnToSavedWizardDraft: true },
+      }]}>
+        <Routes>
+          <Route path="/destinations" element={<DestinationsManagementPage />} />
+          <Route path="/streams/new" element={<LocationStateProbe />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+    expect(screen.getByRole('dialog')).toHaveTextContent('Create Destination')
+    act(() => persistSession({
+      access_token: 'test-token', refresh_token: 'test-refresh',
+      expires_at: new Date(Date.now() + 3600_000).toISOString(),
+      user: { username: 'operator', role: 'OPERATOR', status: 'ACTIVE',
+        capabilities: { workspace_mutations: false, validation_mutations: false } },
+    }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('destinations-new')).not.toBeInTheDocument()
+    expect(screen.getByTestId('destinations-readonly-access')).toBeInTheDocument()
   })
 })

@@ -45,6 +45,7 @@ import {
 } from '../../localPreferences'
 import { destinationDetailPath } from '../../config/nav-paths'
 import { cn } from '../../lib/utils'
+import { useSessionCapabilities } from '../../lib/rbac'
 import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
 import { HelpTooltip } from '../ui/help-tooltip'
 import { HELP_COPY } from '../ui/help-tooltip-copy'
@@ -345,6 +346,8 @@ function RowKebabMenu({
   onDelete,
   testBusy,
   actionBusy,
+  canEdit,
+  canTest,
 }: {
   row: DestinationOverviewRow
   onOpenDetail: () => void
@@ -354,6 +357,8 @@ function RowKebabMenu({
   onDelete: () => void
   testBusy: boolean
   actionBusy: boolean
+  canEdit: boolean
+  canTest: boolean
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -367,12 +372,14 @@ function RowKebabMenu({
     return () => document.removeEventListener('mousedown', handle)
   }, [open])
 
-  const items = [
+  const items: Array<{ label: string; action: () => void; disabled?: boolean; danger?: boolean }> = [
     { label: 'Open detail', action: onOpenDetail },
-    { label: 'Edit', action: onEdit, disabled: !row.enabled },
-    { label: testBusy ? 'Testing…' : 'Test delivery', action: onTest, disabled: testBusy },
-    { label: row.enabled ? 'Disable' : 'Enable', action: () => onToggleEnabled(!row.enabled), disabled: actionBusy },
-    { label: 'Delete', action: onDelete, danger: true },
+    ...(canEdit ? [{ label: 'Edit', action: onEdit, disabled: !row.enabled }] : []),
+    ...(canTest ? [{ label: testBusy ? 'Testing…' : 'Test delivery', action: onTest, disabled: testBusy }] : []),
+    ...(canEdit ? [
+      { label: row.enabled ? 'Disable' : 'Enable', action: () => onToggleEnabled(!row.enabled), disabled: actionBusy },
+      { label: 'Delete', action: onDelete, danger: true },
+    ] : []),
   ]
 
   return (
@@ -380,6 +387,7 @@ function RowKebabMenu({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
+        aria-label={`Destination actions for ${row.name}`}
         className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200/80 dark:border-gdc-border text-slate-400 hover:border-slate-500 hover:text-slate-800 dark:text-slate-200"
       >
         <MoreHorizontal className="h-3.5 w-3.5" />
@@ -662,6 +670,9 @@ const TD = 'px-3 py-2.5'
 export function DestinationsManagementPage() {
   const location = useLocation()
   const navigate = useNavigate()
+  const capabilities = useSessionCapabilities()
+  const canMutateDestinations = capabilities.workspace_mutations === true
+  const canTestDestinations = capabilities.validation_mutations === true
   const returnToSavedWizardDraft =
     (location.state as { returnToSavedWizardDraft?: unknown } | null)?.returnToSavedWizardDraft === true
   const [autoRefresh, setAutoRefresh] = useState<StreamsAutoRefreshOption>('Off')
@@ -710,13 +721,13 @@ export function DestinationsManagementPage() {
   const [saving, setSaving] = useState(false)
   const [localError, setLocalError] = useState<string | null>(null)
   const [sheetMode, setSheetMode] = useState<SheetMode>(
-    returnToSavedWizardDraft ? 'create' : 'closed',
+    returnToSavedWizardDraft && canMutateDestinations ? 'create' : 'closed',
   )
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editingRow, setEditingRow] = useState<DestinationOverviewRow | null>(null)
   const [form, setForm] = useState<FormState>(INITIAL_FORM)
   const [formBaseline, setFormBaseline] = useState<FormState | null>(
-    returnToSavedWizardDraft ? INITIAL_FORM : null,
+    returnToSavedWizardDraft && canMutateDestinations ? INITIAL_FORM : null,
   )
   const [expectedUpdatedAt, setExpectedUpdatedAt] = useState<string | null>(null)
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false)
@@ -730,6 +741,15 @@ export function DestinationsManagementPage() {
   const [deleteModal, setDeleteModal] = useState<{ row: DestinationListItem; confirm: string } | null>(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [disableDialogRow, setDisableDialogRow] = useState<DestinationListItem | null>(null)
+  // A session capability downgrade immediately closes any pending write-only UI.
+  // The backend remains the authorization authority for all API calls.
+  useEffect(() => {
+    if (canMutateDestinations) return
+    setSheetMode('closed')
+    setDiscardConfirmOpen(false)
+    setDeleteModal(null)
+    setDisableDialogRow(null)
+  }, [canMutateDestinations])
   const [testBottomToast, setTestBottomToast] = useState<TestBottomToast | null>(null)
   const testToastClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -818,6 +838,7 @@ export function DestinationsManagementPage() {
   // ─── Sheet helpers ─────────────────────────────────────────────────────────
 
   function openCreateSheet() {
+    if (!canMutateDestinations) return
     setEditingId(null)
     setEditingRow(null)
     setSheetMode('create')
@@ -832,6 +853,7 @@ export function DestinationsManagementPage() {
   }
 
   function openEditSheet(row: DestinationOverviewRow) {
+    if (!canMutateDestinations) return
     const next = formFromRow(row)
     setEditingId(row.id)
     setEditingRow(row)
@@ -873,6 +895,7 @@ export function DestinationsManagementPage() {
   }
 
   async function onProbeForm() {
+    if (!canTestDestinations || !canMutateDestinations) return
     if (!form.name.trim()) {
       setProbeBanner({ tone: 'error', text: 'Enter a name before running the connection test.' })
       return
@@ -916,6 +939,7 @@ export function DestinationsManagementPage() {
 
   async function onSubmitSheet(e: React.FormEvent) {
     e.preventDefault()
+    if (!canMutateDestinations) return
     if (!form.name.trim()) {
       setLocalError('Destination name is required. Enter a name before saving.')
       return
@@ -987,6 +1011,7 @@ export function DestinationsManagementPage() {
   }
 
   function openDeleteFlow(row: DestinationListItem) {
+    if (!canMutateDestinations) return
     setDeleteBlocked(null)
     if (row.enabled) {
       setDeleteBlocked({
@@ -1008,7 +1033,7 @@ export function DestinationsManagementPage() {
   }
 
   async function executeDelete() {
-    if (!deleteModal) return
+    if (!canMutateDestinations || !deleteModal) return
     if (deleteModal.confirm.trim() !== deleteModal.row.name.trim()) return
     setDeleteBusy(true)
     setLocalError(null)
@@ -1024,6 +1049,7 @@ export function DestinationsManagementPage() {
   }
 
   async function onTestRow(row: DestinationListItem) {
+    if (!canTestDestinations) return
     setTestBusyId(row.id)
     setLocalError(null)
     const testTime = new Date().toISOString().slice(0, 19).replace('T', ' ')
@@ -1069,6 +1095,7 @@ export function DestinationsManagementPage() {
   }
 
   async function onToggleEnabled(row: DestinationListItem, nextEnabled: boolean) {
+    if (!canMutateDestinations) return
     if (!nextEnabled) {
       setDisableDialogRow(row)
       return
@@ -1086,7 +1113,7 @@ export function DestinationsManagementPage() {
   }
 
   async function executeDisableDestination() {
-    if (!disableDialogRow) return
+    if (!canMutateDestinations || !disableDialogRow) return
     setActionBusyId(disableDialogRow.id)
     setLocalError(null)
     try {
@@ -1100,7 +1127,7 @@ export function DestinationsManagementPage() {
     }
   }
 
-  const sheetOpen = sheetMode !== 'closed'
+  const sheetOpen = canMutateDestinations && sheetMode !== 'closed'
   const isRefreshing = loading || runtimeLoading
 
   // ─── Render ────────────────────────────────────────────────────────────────
@@ -1114,7 +1141,7 @@ export function DestinationsManagementPage() {
         purpose="Where is DataRelay sending data, and can each endpoint accept the current load? Review destination health and capacity, then inspect the Routes that deliver to it."
         help={DESTINATIONS_HELP}
         testId="destinations-purpose-header"
-        actions={
+        actions={canMutateDestinations ? (
           <button
             type="button"
             data-testid="destinations-new"
@@ -1124,12 +1151,19 @@ export function DestinationsManagementPage() {
             <Plus className="h-4 w-4" aria-hidden />
             New Destination
           </button>
-        }
+        ) : undefined}
       />
 
+      {!canMutateDestinations ? (
+        <p role="note" data-testid="destinations-readonly-access" className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-200">
+          Read-only access: Destination configuration requires workspace write permission. View health, Routes and diagnostics without creating or changing a Destination.
+        </p>
+      ) : null}
       {returnToSavedWizardDraft ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-violet-200 bg-violet-50 px-4 py-3 text-[12px] text-violet-900 dark:border-violet-500/40 dark:bg-violet-500/10 dark:text-violet-100" data-testid="destination-saved-wizard-return">
-          <p>Creating a destination for a saved Stream draft. Save to return to the Destinations step and choose a delivery path.</p>
+          <p>{canMutateDestinations
+            ? 'Creating a destination for a saved Stream draft. Save to return to the Destinations step and choose a delivery path.'
+            : 'Destination creation is unavailable to this role. Your saved Stream draft is unchanged.'}</p>
           <button type="button" className="font-semibold underline underline-offset-2" onClick={() => navigate(newStreamPath(), { replace: true, state: { resumeSavedWizardDraft: true } })}>
             Return to Stream draft
           </button>
@@ -1298,7 +1332,8 @@ export function DestinationsManagementPage() {
               <p className="max-w-md text-center text-sm text-slate-500 dark:text-gdc-muted">
                 Create a destination to send stream output to syslog or webhook endpoints.
               </p>
-              <button
+              {canMutateDestinations ? (
+                <button
                 type="button"
                 onClick={openCreateSheet}
                 data-testid="destinations-create-first"
@@ -1307,6 +1342,7 @@ export function DestinationsManagementPage() {
                 <Plus className="h-4 w-4" aria-hidden />
                 Create First Destination
               </button>
+              ) : <p className="text-sm text-slate-600 dark:text-gdc-muted">Ask an administrator for workspace write access to create a Destination.</p>}
             </div>
           ) : filteredRows.length === 0 ? (
             <div className="px-6 py-12 text-center text-sm text-slate-500 dark:text-gdc-muted" data-testid="destinations-no-match">
@@ -1404,6 +1440,8 @@ export function DestinationsManagementPage() {
                                 onDelete={() => openDeleteFlow(row)}
                                 testBusy={testBusyId === row.id}
                                 actionBusy={actionBusyId === row.id}
+                                canEdit={canMutateDestinations}
+                                canTest={canTestDestinations}
                               />
                             </td>
                           </tr>
@@ -1432,6 +1470,8 @@ export function DestinationsManagementPage() {
         <>
           <DestinationCardView
             rows={filteredRows}
+            canEdit={canMutateDestinations}
+            canTest={canTestDestinations}
             onSelectRow={setDrawerRow}
             onEditRow={(row) => openEditSheet(row)}
             onDeleteRow={(row) => openDeleteFlow(row)}
@@ -1456,7 +1496,7 @@ export function DestinationsManagementPage() {
         <DestinationDetailDrawer
           row={drawerRow}
           onClose={() => setDrawerRow(null)}
-          onEdit={() => { openEditSheet(drawerRow); setDrawerRow(null) }}
+          onEdit={canMutateDestinations ? () => { openEditSheet(drawerRow); setDrawerRow(null) } : undefined}
           lastTestResult={testResultById.get(drawerRow.id) ?? null}
         />
       )}
@@ -1974,7 +2014,7 @@ export function DestinationsManagementPage() {
                 <button
                   type="button"
                   onClick={() => void onProbeForm()}
-                  disabled={probeBusy}
+                  disabled={probeBusy || !canTestDestinations}
                   className="inline-flex h-10 min-w-[140px] items-center justify-center gap-1.5 rounded-md border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section px-4 text-[13px] font-semibold text-slate-800 dark:text-slate-200 hover:border-slate-500 disabled:opacity-60"
                 >
                   {probeBusy ? 'Testing…' : '⊸ Test Connection'}
