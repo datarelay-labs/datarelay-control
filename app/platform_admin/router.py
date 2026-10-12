@@ -23,7 +23,7 @@ from app.auth.login_throttle import (
     check_login_allowed, client_ip_from_request, record_login_failure,
 )
 from app.config import settings
-from app.database import get_db
+from app.database import get_db, get_db_read_bounded
 from app.platform_admin.cert_service import (
     backup_tls_pem_files,
     generate_self_signed_certificate,
@@ -47,7 +47,11 @@ from app.platform_admin.dev_validation_lab_admin import build_dev_validation_adm
 from app.platform_admin.health_summary import build_admin_health_summary
 from app.platform_admin.maintenance_health import build_maintenance_health
 from app.platform_admin.config_json_diff import diff_json
-from app.platform_admin.config_rollback_service import ConfigSnapshotApplyError, apply_versioned_snapshot
+from app.platform_admin.config_rollback_service import (
+    ConfigSnapshotApplyError, _capture_live, apply_versioned_snapshot,
+    current_entity_config_version,
+)
+from app.platform_admin.config_safe_rollback_preview import build_safe_rollback_readiness
 from app.security.secrets import mask_config_payload
 from app.platform_admin.repository import (
     count_administrators,
@@ -81,6 +85,7 @@ from app.platform_admin.schemas import (
     DisplaySettingsUpdate,
     ConfigJsonChangeItem,
     ConfigSnapshotApplyRequest,
+    ConfigSafeRollbackPreviewResponse,
     ConfigSnapshotApplyResponse,
     ConfigVersionCompareResponse,
     ConfigVersionDetailResponse,
@@ -1096,6 +1101,81 @@ def compare_config_versions(
         entity_type=str(left.entity_type),
         entity_id=int(left.entity_id),
         diff=[ConfigJsonChangeItem.model_validate(x) for x in changes],
+    )
+
+
+@router.get(
+    "/config-versions/{row_id}/safe-rollback-preview",
+    response_model=ConfigSafeRollbackPreviewResponse,
+)
+def read_safe_config_rollback_preview(
+    row_id: int,
+    request: Request,
+    expected_version: int = Query(..., ge=1),
+    target: Literal["before", "after"] = Query("before"),
+    db: Session = Depends(get_db_read_bounded),
+) -> ConfigSafeRollbackPreviewResponse:
+    """Advisory PF-12A safe scalar diff; never changes configuration or audit."""
+    row = get_config_version_by_id(db, row_id)
+    if row is None:
+        raise _http_error(
+            "CONFIG_VERSION_NOT_FOUND",
+            "Configuration version was not found.", status.HTTP_404_NOT_FOUND,
+        )
+    source = row.snapshot_before_json if target == "before" else row.snapshot_after_json
+    if not isinstance(source, dict):
+        raise _http_error(
+            "CONFIG_SNAPSHOT_UNAVAILABLE",
+            "This history row does not provide the requested snapshot.",
+            HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    current_version = current_entity_config_version(
+        db, entity_type=str(row.entity_type), entity_id=int(row.entity_id),
+    )
+    if current_version is None:
+        raise _http_error(
+            "CONFIG_CURRENT_REVISION_UNKNOWN",
+            "Cannot verify the authoritative live revision.",
+            status.HTTP_409_CONFLICT,
+        )
+    try:
+        current = _capture_live(db, str(row.entity_type), int(row.entity_id))
+        principal = getattr(getattr(request, "state", None), "auth", None)
+        trusted_admin = bool(
+            principal and getattr(principal, "source", None) == "jwt"
+            and getattr(principal, "role", None) == "ADMINISTRATOR"
+        )
+        facts = build_safe_rollback_readiness(
+            entity_type=str(row.entity_type),
+            current_version=current_version,
+            expected_version=expected_version,
+            target_version=int(row.version),
+            target_side=target,
+            current_snapshot=current,
+            target_snapshot=source,
+            current_created_at=int(datetime.now(timezone.utc).timestamp()),
+            target_created_at=int(row.created_at.timestamp()),
+            actor_authorized=trusted_admin,
+            recent_mfa_verified=bool(
+                trusted_admin and getattr(principal, "mfa_verified", None) is True
+            ),
+        )
+    except ConfigSnapshotApplyError as exc:
+        raise _http_error(
+            exc.error_code, str(exc), exc.http_status,
+            extra=exc.details or None,
+        ) from exc
+    except (TypeError, ValueError) as exc:
+        # Never echo untrusted snapshots or stored configuration values.
+        raise _http_error(
+            "CONFIG_SAFE_PREVIEW_UNAVAILABLE",
+            "Current or historical configuration is not eligible for a safe scalar preview.",
+            HTTP_422_UNPROCESSABLE_CONTENT,
+        ) from exc
+    return ConfigSafeRollbackPreviewResponse(
+        source_version_row_id=int(row.id),
+        target=target,
+        **facts,
     )
 
 

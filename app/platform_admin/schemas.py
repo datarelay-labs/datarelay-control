@@ -337,6 +337,27 @@ class ConfigVersionCompareResponse(BaseModel):
     diff: list[ConfigJsonChangeItem] = Field(default_factory=list)
 
 
+class ConfigSafeRollbackChange(BaseModel):
+    path: str
+    before: str | None = None
+    after: str | None = None
+
+
+class ConfigSafeRollbackPreviewResponse(BaseModel):
+    entity_type: str
+    source_version_row_id: int
+    source_version: int
+    current_version: int
+    expected_version: int
+    target: Literal["before", "after"]
+    changed_fields: list[ConfigSafeRollbackChange] = Field(default_factory=list)
+    from_fingerprint: str
+    to_fingerprint: str
+    blockers: list[str] = Field(default_factory=list)
+    may_submit_to_product_authority: bool = False
+    product_apply_required: bool = True
+
+
 class ConfigSnapshotApplyRequest(BaseModel):
     target: Literal["before", "after"]
     expected_version: int = Field(
