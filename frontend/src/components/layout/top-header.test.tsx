@@ -93,6 +93,37 @@ describe('TopHeader SaaS shell', () => {
     expect(screen.queryByRole('link', { name: 'New data flow' })).not.toBeInTheDocument()
   })
 
+  it('hides New data flow when the server denies workspace mutations for an active Operator', () => {
+    persistTestSession('OPERATOR')
+    const session = readSession()!
+    persistSession({
+      ...session,
+      user: { ...session.user, capabilities: { ...session.user.capabilities, workspace_mutations: false } },
+    })
+    renderHeader()
+    expect(screen.queryByRole('link', { name: 'New data flow' })).not.toBeInTheDocument()
+  })
+
+  it('updates New data flow after a server capability downgrade and restoration', () => {
+    persistTestSession('OPERATOR')
+    renderHeader()
+    expect(screen.getByRole('link', { name: 'New data flow' })).toBeInTheDocument()
+
+    const session = readSession()!
+    act(() => persistSession({
+      ...session,
+      user: { ...session.user, capabilities: { ...session.user.capabilities, workspace_mutations: false } },
+    }))
+    expect(screen.queryByRole('link', { name: 'New data flow' })).not.toBeInTheDocument()
+
+    const restrictedSession = readSession()!
+    act(() => persistSession({
+      ...restrictedSession,
+      user: { ...restrictedSession.user, capabilities: { ...restrictedSession.user.capabilities, workspace_mutations: true } },
+    }))
+    expect(screen.getByRole('link', { name: 'New data flow' })).toBeInTheDocument()
+  })
+
   it('does not offer a new-flow navigation link from an unfinished Wizard', () => {
     persistTestSession('ADMINISTRATOR')
     renderHeader({ initialPath: '/streams/new' })

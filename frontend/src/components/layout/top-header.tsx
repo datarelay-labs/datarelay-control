@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { NAV_PATH, newStreamPath } from '../../config/nav-paths'
 import { cn } from '../../lib/utils'
 import { isSessionExpired, onSessionChange, readSession } from '../../auth/session'
+import { getSessionCapabilities } from '../../lib/rbac'
 import { GDC_HEADER_REFRESH_EVENT } from './header-refresh-event'
 
 /** Global operational-alert surface. Kept out of primary sidebar by UX charter. */
@@ -22,6 +23,7 @@ function canStartDataFlow(): boolean {
   const session = readSession()
   if (!session || isSessionExpired() || session.user.status !== 'ACTIVE' || session.user.must_change_password) return false
   return ['ADMINISTRATOR', 'OPERATOR', 'CONNECTOR_OPERATOR'].includes(session.user.role)
+    && getSessionCapabilities().workspace_mutations === true
 }
 
 type TopHeaderProps = {
