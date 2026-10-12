@@ -67,6 +67,39 @@ operational package in this work. Neither caller-provided key nor manifest
 metadata constitutes a new root of trust without independently approved
 key custody/provenance.
 
+## PF-12C shared upgrade / rollback advisory (source only)
+
+The native `app/offline/upgrade_readiness.py` adapter now consumes the result
+of **actual detached signature + byte integrity verification** and invokes
+Product Foundation's `InstalledProduct`, `UpgradeEvidence`,
+`preview_offline_upgrade`, `UpgradeRollbackEvidence` and
+`preview_offline_rollback` contracts. The existing verification CLI accepts
+an optional, *complete* set of unverified operator hints:
+
+```text
+--operation upgrade|rollback
+--installed-version 0.9.0
+--installed-revision current.r7
+--installed-schema-revision 68
+--expected-live-revision current.r7
+```
+
+These options are illustrative; no real device or product state was inspected
+for this source change. All five must be provided together or omitted.
+`advisory.blockers` reports version order, stale revision, unverified schema,
+MFA, backup, installer, audit and recovery prerequisites. The input version
+and schema are only **caller assertions**, never a trusted live product read.
+The product-owned adapter supplies no positive runtime/permission/backup
+evidence and returns `may_submit_to_product_authority=false` under
+all inputs. Actual installation and rollback remain unavailable. A signature
+validates exact signed bytes, not installed state, approved release provenance,
+schema migration qualification or operator identity.
+
+Native tests exercise both directions, stale/invalid product state, CLI
+partial-state rejection and the previous signature-tamper tests using only
+ephemeral signing fixtures. No host upgrade, package publication or key
+provisioning is performed.
+
 ## Verification and release gates
 
 Native `tests/test_pf12c_signed_offline_bundle.py` uses an ephemeral
@@ -81,6 +114,7 @@ write an operator trust store or touch a production DB.
 **Still not implemented/approved:** real owner-pinned publisher trust
 distribution, authorized signing process and signed production packages,
 SBOM/provenance, immutable release manifest lifecycle, installer fail-closed
-signature gate, schema/upgrade compatibility, backup restore/recovery drill,
+signature gate, **verified live** schema/upgrade compatibility and real
+installer/rollback authority, backup restore/recovery drill,
 operational apply/rollback, Browser BFS, two genuine-user Full User E2E,
 candidate freeze and release authorization.

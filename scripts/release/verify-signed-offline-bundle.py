@@ -13,6 +13,7 @@ from pathlib import Path
 import sys
 
 from app.offline.signed_bundle_verifier import verify_signed_offline_bundle
+from app.offline.upgrade_readiness import build_control_upgrade_readiness
 
 
 def main() -> int:
@@ -24,7 +25,22 @@ def main() -> int:
     parser.add_argument("--expected-public-key-sha256", required=True)
     parser.add_argument("--expected-product", required=True)
     parser.add_argument("--expected-publisher", required=True)
+    # Optional untrusted operator hints: they cannot grant install/rollback.
+    parser.add_argument("--operation", choices=("upgrade", "rollback"))
+    parser.add_argument("--installed-version")
+    parser.add_argument("--installed-revision")
+    parser.add_argument("--installed-schema-revision", type=int)
+    parser.add_argument("--expected-live-revision")
     args = parser.parse_args()
+    advisory_args = (
+        args.operation, args.installed_version, args.installed_revision,
+        args.installed_schema_revision, args.expected_live_revision,
+    )
+    if any(item is not None for item in advisory_args) and not all(
+        item is not None for item in advisory_args
+    ):
+        print("PF12C_ADVISORY_STATE_INCOMPLETE", file=sys.stderr)
+        return 2
     try:
         receipt = verify_signed_offline_bundle(
             archive_path=args.archive,
@@ -35,11 +51,20 @@ def main() -> int:
             expected_product_ref=args.expected_product,
             expected_publisher_key_ref=args.expected_publisher,
         )
+        advisory = None
+        if args.operation is not None:
+            advisory = build_control_upgrade_readiness(
+                receipt, operation=args.operation,
+                installed_version=args.installed_version,
+                current_revision=args.installed_revision,
+                schema_revision=args.installed_schema_revision,
+                expected_revision=args.expected_live_revision,
+            )
     except (OSError, TypeError, ValueError):
         # Path, exception and signed manifest data may contain secrets.
         print("PF12C_OFFLINE_VERIFICATION_FAILED", file=sys.stderr)
         return 2
-    print(json.dumps({
+    response = {
         "product_ref": receipt.artifact.product_ref,
         "release_ref": receipt.artifact.release_ref,
         "version": receipt.artifact.version,
@@ -51,7 +76,10 @@ def main() -> int:
         "publisher_trust_pin_verified": receipt.proof.publisher_trust_verified,
         "provenance_verified": receipt.proof.provenance_verified,
         "installation_authorized": receipt.installation_authorized,
-    }, sort_keys=True))
+    }
+    if advisory is not None:
+        response["advisory"] = advisory
+    print(json.dumps(response, sort_keys=True))
     return 0
 
 
