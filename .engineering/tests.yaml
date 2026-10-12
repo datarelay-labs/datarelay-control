@@ -239,9 +239,11 @@ scenarios:
     domains: [backend, runtime]
     triggers: [affected, pr]
     platforms: [linux]
-    command: "python3 -m pytest -q tests/test_pf11_webhook_startup_fail_closed.py tests/test_pf11_governance_delivery_transport.py"
+    command: "python3 -m pytest -q tests/test_pf11_webhook_startup_fail_closed.py tests/test_pf11_governance_delivery_transport.py tests/test_pf11_governance_webhook_egress_policy.py"
     invariants:
-      - "Production and prod startup never install legacy HttpWebhookSender without a qualified SSRF and egress boundary."
+      - "Production and prod startup never install a Webhook sender without separately authorized egress activation."
+      - "Exact allowed DNS host, HTTPS/TLS hostname verification, public-only DNS and pinned-IP connection prevent SSRF and DNS rebinding."
+      - "All redirects fail closed; URLs, query tokens and payloads never enter error logs."
       - "Default Governance Webhook sender remains unavailable, and genuine HTTP delivery is not claimed."
       - "Explicit isolated SMTP and Webhook mock test contracts remain intact."
     release_gate: true

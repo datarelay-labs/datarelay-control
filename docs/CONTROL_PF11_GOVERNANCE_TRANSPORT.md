@@ -67,12 +67,28 @@ report success solely from these mock defaults.
   policy, not a network client. No Foundation library was copied or
   upgraded by this change.
 
+## Webhook SSRF/egress source boundary (not deployed)
+
+The opt-in `HttpWebhookSender` now requires an exact DNS-host allowlist passed by
+an authorized caller. It rejects HTTP, IP literals, credentials in URLs,
+fragments, nonstandard ports, malformed hosts and unsafe control characters.
+Every DNS response must contain only globally routable public addresses.
+The HTTPS connection is pinned to a validated numeric address while TLS
+verifies the original DNS hostname, preventing a second DNS lookup and DNS
+rebinding between validation and connect. HTTP redirects are never followed.
+Requests are bounded to 64 KiB and 30 seconds; logs contain exception types,
+not URL paths, queries, tokens or event payloads. The default empty allowlist
+rejects all attempts. The production startup **still installs only the
+unavailable sender**: no network requests are enabled by this source change.
+An authorized deployment policy, live egress qualification, runtime activation
+and independent operator/browser acceptance remain separate gates.
+
 ## Safety and remaining product milestones
 
 This bounded slice intentionally does **not** enable live service
 configuration, update stored credentials, start a notification worker,
 create a durable persistent retry queue, integrate the pinned PF-11A policy
-wheel, implement Webhook URL allowlisting and SSRF protection, or perform
+wheel, activate the Webhook egress policy in production, or perform
 an actual external send. The existing `HttpWebhookSender` is deliberately
 **not** selected by default; it requires a later authorized integration
 with a validated egress/allowlist policy.
