@@ -41,7 +41,15 @@ class VerifiedSignedBundle:
     installation_authorized: bool = False
 
 
+def _reject_symlink_path(path: Path) -> None:
+    """Reject links in any path component, not just the final file name."""
+    absolute = path.absolute()
+    if any(component.is_symlink() for component in (absolute, *absolute.parents)):
+        raise ValueError("Symlink is not a trusted offline source")
+
+
 def _read_limited(path: Path, *, limit: int) -> bytes:
+    _reject_symlink_path(path)
     if path.is_symlink() or not path.is_file():
         raise ValueError("Missing or untrusted offline verification file")
     with path.open("rb") as f:
@@ -80,8 +88,8 @@ def verify_signed_offline_bundle(
     manifest = Path(manifest_path)
     signature = Path(signature_path)
     trusted = Path(trusted_public_key_path)
-    if any(path.is_symlink() for path in (archive, manifest, signature, trusted)):
-        raise ValueError("Symlink is not a trusted offline source")
+    for path in (archive, manifest, signature, trusted):
+        _reject_symlink_path(path)
     if not all(p.parent.resolve() == manifest.parent.resolve() for p in (archive, signature)):
         raise ValueError("Offline archive and detached manifest must share package directory")
     if trusted.resolve().is_relative_to(manifest.parent.resolve()):

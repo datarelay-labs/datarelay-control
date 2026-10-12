@@ -184,3 +184,24 @@ def test_verifier_cli_prints_only_readiness_without_install(tmp_path):
     assert response["artifact_integrity_verified"] is True
     assert response["installation_authorized"] is False
     assert "FAKE_OFFLINE_ARCHIVE" not in completed.stdout
+
+
+@pytest.mark.parametrize("directory", ["package", "trust"])
+def test_verifier_rejects_symlinked_parent_directory_even_with_valid_signature(tmp_path, directory):
+    """An alias directory must not bypass the documented no-symlink boundary."""
+    fixture = _fake_signed_bundle(tmp_path)
+    archive, manifest, sig, trusted_key, pin, *_ = fixture
+    if directory == "package":
+        alias = tmp_path / "untrusted-package-alias"
+        alias.symlink_to(archive.parent, target_is_directory=True)
+        changes = {
+            "archive_path": alias / archive.name,
+            "manifest_path": alias / manifest.name,
+            "signature_path": alias / sig.name,
+        }
+    else:
+        alias = tmp_path / "operator-trust-alias"
+        alias.symlink_to(trusted_key.parent, target_is_directory=True)
+        changes = {"trusted_public_key_path": alias / trusted_key.name}
+    with pytest.raises(ValueError, match="Symlink"):
+        _verify(fixture, **changes)

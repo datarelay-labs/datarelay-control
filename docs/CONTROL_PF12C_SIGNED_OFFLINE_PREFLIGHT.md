@@ -43,7 +43,12 @@ The exact bytes of a UTF-8 JSON manifest are covered by the detached
 The digest and byte count in this illustrative template are placeholders,
 not real release evidence. Unknown fields, duplicate JSON fields, malformed
 values, wrong product/publisher, symlinks and archive filename substitutions
-fail closed. The manifest, signature and archive must be co-located; the
+fail closed. An additional RED regression proved that an otherwise
+valid detached signature could bypass the leaf-only symlink check when its
+package or trusted-key **parent directory** was a symlink. The verifier now
+rejects symlinks in every supplied path component, not just the final file,
+for both untrusted bundle inputs and the separately pinned trust key. The
+manifest, signature and archive must be co-located; the
 public trust key MUST come from a separate operator-controlled location
 outside the untrusted archive directory. An independent trusted key fingerprint
 argument is mandatory and cannot be sourced from the package itself.
@@ -107,7 +112,8 @@ in-memory test signing key, fake tiny archive and separate temporary trust
 directory. It covers successful detached signature and full byte hash,
 tampered archive/manifest/signature, wrong trust fingerprint, mismatched
 product/publisher/filename, duplicated JSON, invalid metadata, trust-key
-placement/symlink and CLI output without leaking payload bytes. The tests
+placement/symlink (including parent-directory links) and CLI output without
+leaking payload bytes. The tests
 do not install Docker, execute an installer, access a real release,
 write an operator trust store or touch a production DB.
 

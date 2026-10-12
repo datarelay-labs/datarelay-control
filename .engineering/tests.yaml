@@ -331,7 +331,7 @@ scenarios:
     invariants:
       - "Detached Ed25519 signature must verify against a separately pinned publisher public key from outside the untrusted package."
       - "Actual archive bytes, artifact identity and strict signed manifest schema must match the pinned Foundation contract."
-      - "Untrusted key substitution, archive tampering, symlinks, duplicate fields and incorrect product/publisher fail closed."
+      - "Untrusted key substitution, archive tampering, file and parent-directory symlinks, duplicate fields and incorrect product/publisher fail closed."
       - "No real package installation, signing, publisher key provisioning, release authorization or network action occurs."
     release_gate: true
 
