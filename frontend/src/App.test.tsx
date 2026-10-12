@@ -896,14 +896,14 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     expect(screen.getByTestId('stream-monitoring-observability')).toBeInTheDocument()
   }, 25000)
 
-  it('renders Routes operational console at /routes', async () => {
+  it('renders Data Flows operational console at /routes', async () => {
     renderApp('/routes')
-    expect(await screen.findByRole('heading', { level: 1, name: 'Routes' }, { timeout: 8000 })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Data Flows' }, { timeout: 8000 })).toBeInTheDocument()
     // LazyRoutesOverviewPage loads asynchronously; wait for page chrome before title assertions.
     expect(await screen.findByRole('region', { name: 'Route KPI summary' }, { timeout: 15000 })).toBeInTheDocument()
-    expect(screen.getAllByRole('heading', { name: 'Routes' })).toHaveLength(1)
-    expect(screen.queryByRole('heading', { level: 2, name: 'Routes' })).not.toBeInTheDocument()
-    expect(within(screen.getByRole('main')).queryByRole('heading', { name: 'Routes' })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('heading', { name: 'Data Flows' })).toHaveLength(1)
+    expect(screen.queryByRole('heading', { level: 2, name: 'Data Flows' })).not.toBeInTheDocument()
+    expect(within(screen.getByRole('main')).queryByRole('heading', { name: 'Data Flows' })).not.toBeInTheDocument()
     expect(screen.getByText(/How does each Stream reach each Destination\? A Route is the destination-specific path/i)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Create Route' })).toBeInTheDocument()
   }, 20000)

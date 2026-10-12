@@ -3,12 +3,18 @@ import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
 import { DashboardFirstFlowSetup } from './dashboard-first-flow-setup'
 
-function setup(options: { connectors: number | null; destinations: number | null; canConfigure?: boolean }) {
+function setup(options: {
+  connectors: number | null
+  destinations: number | null
+  enabledDestinations?: number | null
+  canConfigure?: boolean
+}) {
   return render(
     <MemoryRouter>
       <DashboardFirstFlowSetup
         connectorCount={options.connectors}
         destinationCount={options.destinations}
+        enabledDestinationCount={options.enabledDestinations === undefined ? options.destinations : options.enabledDestinations}
         canConfigure={options.canConfigure !== false}
       />
     </MemoryRouter>,
@@ -33,6 +39,25 @@ describe('Data Flow first-run onboarding', () => {
     expect(within(region).getByTestId('dashboard-first-flow-destination-state')).toHaveTextContent('Not configured')
     expect(within(region).getByTestId('dashboard-first-flow-next')).toHaveAttribute('href', '/destinations')
     expect(within(region).getByRole('link', { name: 'Review Connectors' })).toHaveAttribute('href', '/connectors')
+  })
+
+  it('does not claim a new Data Flow is ready when all saved Destinations are disabled', () => {
+    setup({ connectors: 1, destinations: 2, enabledDestinations: 0 })
+    const region = screen.getByTestId('dashboard-empty-state')
+    expect(within(region).getByTestId('dashboard-first-flow-destination-state')).toHaveTextContent(
+      '2 registered · none enabled',
+    )
+    expect(within(region).getByTestId('dashboard-first-flow-next')).toHaveAttribute('href', '/destinations')
+    expect(within(region).getByText('Enable a Destination first')).toBeInTheDocument()
+    expect(within(region).queryByRole('link', { name: 'Open Stream Wizard from setup checklist' })).not.toBeInTheDocument()
+  })
+
+  it('fails closed when destination readiness cannot be verified', () => {
+    setup({ connectors: 1, destinations: 2, enabledDestinations: null })
+    const region = screen.getByTestId('dashboard-empty-state')
+    expect(within(region).getByTestId('dashboard-first-flow-destination-state')).toHaveTextContent('Not verified')
+    expect(within(region).getByTestId('dashboard-first-flow-next')).toHaveAttribute('href', '/destinations')
+    expect(within(region).queryByRole('link', { name: 'Open Stream Wizard from setup checklist' })).not.toBeInTheDocument()
   })
 
   it('opens existing Stream wizard only when both resource catalogs are populated', () => {

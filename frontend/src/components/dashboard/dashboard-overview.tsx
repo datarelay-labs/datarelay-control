@@ -72,6 +72,12 @@ const DASHBOARD_HELP: PageHelpContent = {
   ],
 }
 
+/** Do not present malformed catalog resource identities as verified setup readiness. */
+function verifiedCatalogCount(rows: readonly { id: number }[] | null): number | null {
+  if (rows === null) return null
+  return rows.every((row) => Number.isSafeInteger(row.id) && row.id > 0) ? rows.length : null
+}
+
 export function DashboardOverview() {
   const canConfigure = useSessionCapabilities().workspace_mutations === true
   const [refreshMs, setRefreshMs] = useState<number | null>(null)
@@ -149,6 +155,15 @@ export function DashboardOverview() {
     bundle?.alertsFailed === true || bundle?.dashboardFailed === true || snapshotStale
   const hasAnyAttention = priorityInvestigations.length > 0 || attentionItems.length > 0
   const attentionUnknown = !hasAnyAttention && attentionDataPartial
+
+  // Reusable resources may be saved but invalid or disabled. Neither state
+  // proves an operator can select a receiving Destination for a new Route.
+  const firstFlowConnectorCount =
+    bundle?.connectorsKnown === true ? verifiedCatalogCount(bundle.connectors) : null
+  const firstFlowDestinationCount = verifiedCatalogCount(bundle?.destinations ?? null)
+  const firstFlowEnabledDestinationCount = firstFlowDestinationCount === null
+    ? null
+    : bundle?.destinations?.filter((row) => row.enabled === true).length ?? null
 
   return (
     <div className="w-full min-w-0 space-y-5" data-testid="dashboard-overview">
@@ -273,8 +288,9 @@ export function DashboardOverview() {
         </section>
       ) : isFreshInstall ? (
         <DashboardFirstFlowSetup
-          connectorCount={bundle?.connectorsKnown === true ? bundle.connectors.length : null}
-          destinationCount={bundle?.destinations?.length ?? null}
+          connectorCount={firstFlowConnectorCount}
+          destinationCount={firstFlowDestinationCount}
+          enabledDestinationCount={firstFlowEnabledDestinationCount}
           canConfigure={canConfigure}
         />
       ) : (

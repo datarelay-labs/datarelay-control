@@ -10,38 +10,51 @@ function resourceStatus(count: number | null): ResourceStatus {
   return { label: `${count} registered`, tone: 'text-emerald-700 dark:text-emerald-300' }
 }
 
+function destinationResourceStatus(count: number | null, enabledCount: number | null): ResourceStatus {
+  if (count === null || enabledCount === null) return { label: 'Not verified', tone: 'text-slate-600 dark:text-gdc-mutedStrong' }
+  if (count === 0) return { label: 'Not configured', tone: 'text-amber-800 dark:text-amber-300' }
+  if (enabledCount === 0) return { label: `${count} registered · none enabled`, tone: 'text-amber-800 dark:text-amber-300' }
+  return { label: `${count} registered · ${enabledCount} enabled`, tone: 'text-emerald-700 dark:text-emerald-300' }
+}
+
 const setupLinkClass =
   'inline-flex min-h-10 items-center gap-1.5 text-sm font-semibold text-violet-700 underline-offset-4 hover:underline focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:text-violet-300'
 
 export function DashboardFirstFlowSetup({
   connectorCount,
   destinationCount,
+  enabledDestinationCount,
   canConfigure,
 }: {
   /** Null means the catalog has not been verified; never silently treat it as empty. */
   connectorCount: number | null
   destinationCount: number | null
+  /** A saved but disabled receiver is not usable in a new delivery Route. */
+  enabledDestinationCount: number | null
   canConfigure: boolean
 }) {
   const source = resourceStatus(connectorCount)
-  const destination = resourceStatus(destinationCount)
+  const destination = destinationResourceStatus(destinationCount, enabledDestinationCount)
   const canStartWizard = canConfigure && connectorCount !== null && connectorCount > 0 &&
-    destinationCount !== null && destinationCount > 0
+    destinationCount !== null && destinationCount > 0 &&
+    enabledDestinationCount !== null && enabledDestinationCount > 0
   const wizardPrerequisiteMessage = !canConfigure
     ? 'Configuration permission required'
     : connectorCount === null
       ? 'Connector inventory not verified'
       : connectorCount === 0
         ? 'Register a Connector first'
-        : destinationCount === null
+        : destinationCount === null || enabledDestinationCount === null
           ? 'Destination inventory not verified'
-          : 'Register a Destination first'
+          : destinationCount === 0
+            ? 'Register a Destination first'
+            : 'Enable a Destination first'
   const next = !canConfigure
     ? { to: NAV_PATH.routes, label: 'View Data Flows' }
     : connectorCount === null || connectorCount === 0
       ? { to: NAV_PATH.connectors, label: connectorCount === null ? 'Inspect Connectors' : 'Review Connectors first' }
-      : destinationCount === null || destinationCount === 0
-        ? { to: NAV_PATH.destinations, label: destinationCount === null ? 'Inspect Destinations' : 'Review Destinations first' }
+      : destinationCount === null || enabledDestinationCount === null || enabledDestinationCount === 0
+        ? { to: NAV_PATH.destinations, label: destinationCount === null || enabledDestinationCount === null ? 'Inspect Destinations' : 'Review Destinations first' }
         : { to: newStreamPath(), label: 'New data flow' }
 
   return (

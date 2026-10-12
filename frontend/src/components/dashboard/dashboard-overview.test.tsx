@@ -912,6 +912,44 @@ describe('DashboardOverview', () => {
     expect(screen.queryByTestId('dashboard-first-level')).not.toBeInTheDocument()
   })
 
+  it('does not treat disabled saved receivers as ready for a first Data Flow', async () => {
+    const snapshotApi = await import('../../api/operationalSnapshot')
+    const baseline = await snapshotApi.getOperationalSnapshot()
+    if (!baseline) throw new Error('Missing operational snapshot fixture')
+    vi.mocked(snapshotApi.getOperationalSnapshot).mockResolvedValueOnce({
+      ...baseline,
+      global: {
+        ...baseline.global,
+        total_streams: 0,
+        enabled_streams: 0,
+        running_streams: 0,
+        total_routes: 0,
+        enabled_routes: 0,
+      },
+      streams: [],
+      routes: [],
+      destinations: [],
+      problems: [],
+      updated_at: new Date().toISOString(),
+    })
+    const destinationsApi = await import('../../api/gdcDestinations')
+    const saved = await destinationsApi.fetchDestinationsList()
+    if (!saved?.length) throw new Error('Missing saved destinations in test fixture')
+    vi.mocked(destinationsApi.fetchDestinationsList).mockResolvedValueOnce(
+      saved.map((row) => ({ ...row, enabled: false })),
+    )
+
+    render(<MemoryRouter><main><DashboardOverview /></main></MemoryRouter>)
+    const empty = await within(mainRegion()).findByTestId('dashboard-empty-state')
+    await waitFor(() => {
+      expect(within(empty).getByTestId('dashboard-first-flow-destination-state'))
+        .toHaveTextContent('none enabled')
+    })
+    expect(within(empty).getByTestId('dashboard-first-flow-next')).toHaveAttribute('href', '/destinations')
+    expect(within(empty).queryByRole('link', { name: 'Open Stream Wizard from setup checklist' }))
+      .not.toBeInTheDocument()
+  })
+
   it('does not misrepresent an unavailable snapshot as a fresh install or healthy status', async () => {
     const snap = await import('../../api/operationalSnapshot')
     vi.mocked(snap.getOperationalSnapshot).mockResolvedValueOnce(null)
