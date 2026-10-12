@@ -115,8 +115,18 @@ export function DashboardOverview() {
   // Match the existing Data Flows 90s operational-evidence freshness policy.
   const snapshotStale = hasOperationalSnapshot && isRouteSnapshotStale(snapshotUpdatedAt)
   const snapshotTimestampValid = snapshotUpdatedAt != null && Number.isFinite(Date.parse(snapshotUpdatedAt))
-  // Unknown/aged inventory is not proof this is a brand-new empty installation.
-  const isFreshInstall = !snapshotStale && bundle?.operationalSnapshot?.global.total_streams === 0
+  // A first-run card requires a fresh, internally consistent EMPTY inventory.
+  // A zero Stream counter alongside nonzero Routes or actual Stream/Route rows
+  // is incomplete/contradictory operational evidence, not an empty install.
+  const isFreshInstall = !snapshotStale && snapshotTimestampValid &&
+    bundle?.operationalSnapshot?.global.total_streams === 0 &&
+    bundle.operationalSnapshot.global.total_routes === 0 &&
+    bundle.operationalSnapshot.global.enabled_streams === 0 &&
+    bundle.operationalSnapshot.global.running_streams === 0 &&
+    bundle.operationalSnapshot.global.error_streams === 0 &&
+    bundle.operationalSnapshot.global.enabled_routes === 0 &&
+    bundle.operationalSnapshot.streams.length === 0 &&
+    bundle.operationalSnapshot.routes.length === 0
   const runtimeHealthAttention = useMemo(() => {
     const snapshot = bundle?.operationalSnapshot
     if (!snapshot) return { routes: 0, destinations: 0 }

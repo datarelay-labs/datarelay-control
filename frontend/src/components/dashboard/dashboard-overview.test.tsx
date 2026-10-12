@@ -817,6 +817,45 @@ describe('DashboardOverview', () => {
     expect(await within(main).findByTestId('dashboard-first-level')).toBeInTheDocument()
   })
 
+  it.each([
+    ['nonzero reported Routes', 'count'],
+    ['an actual Route row', 'route'],
+    ['an actual Stream row', 'stream'],
+  ] as const)('does not claim a fresh installation with contradictory %s', async (_name, kind) => {
+    const snap = await import('../../api/operationalSnapshot')
+    const baseline = await snap.getOperationalSnapshot()
+    if (!baseline || baseline.streams.length === 0) {
+      throw new Error('Missing Stream/Route test fixture')
+    }
+    const orphanedRoute = {
+      route_id: 900, stream_id: 1, stream_name: 'Orphaned Stream',
+      destination_id: 5, destination_name: 'Receiver', destination_type: 'SYSLOG_TCP',
+      enabled: true, failure_policy: 'RETRY_AND_BACKOFF', health_status: 'HEALTHY',
+      delivered_eps_1m: 0, failed_eps_1m: 0, success_rate_5m: 0, retry_rate_5m: 0,
+      avg_latency_ms: null, last_success_at: null, last_error_at: null, last_error_message: null,
+    } as const
+    vi.mocked(snap.getOperationalSnapshot).mockResolvedValueOnce({
+      ...baseline,
+      global: {
+        ...baseline.global,
+        total_streams: 0,
+        enabled_streams: 0,
+        running_streams: 0,
+        total_routes: kind === 'count' ? 1 : 0,
+        enabled_routes: 0,
+      },
+      streams: kind === 'stream' ? [baseline.streams[0]!] : [],
+      routes: kind === 'route' ? [orphanedRoute] : [],
+      destinations: [],
+      problems: [],
+      updated_at: new Date().toISOString(),
+    })
+    render(<MemoryRouter><main><DashboardOverview /></main></MemoryRouter>)
+    const main = mainRegion()
+    expect(await within(main).findByTestId('dashboard-first-level')).toBeInTheDocument()
+    expect(within(main).queryByTestId('dashboard-empty-state')).not.toBeInTheDocument()
+  })
+
   it('does not claim No action needed when a healthy snapshot is too old to prove current health', async () => {
     const snap = await import('../../api/operationalSnapshot')
     const baseline = await snap.getOperationalSnapshot()
@@ -923,6 +962,7 @@ describe('DashboardOverview', () => {
         total_streams: 0,
         enabled_streams: 0,
         running_streams: 0,
+        error_streams: 0,
         total_routes: 0,
         enabled_routes: 0,
       },
@@ -956,7 +996,7 @@ describe('DashboardOverview', () => {
     if (!baseline) throw new Error('Missing operational snapshot fixture')
     vi.mocked(snapshotApi.getOperationalSnapshot).mockResolvedValueOnce({
       ...baseline,
-      global: { ...baseline.global, total_streams: 0, enabled_streams: 0, running_streams: 0,
+      global: { ...baseline.global, total_streams: 0, enabled_streams: 0, running_streams: 0, error_streams: 0,
         total_routes: 0, enabled_routes: 0 },
       streams: [], routes: [], destinations: [], problems: [],
       updated_at: new Date().toISOString(),
