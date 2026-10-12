@@ -179,6 +179,37 @@ describe('Data Flows empty-state prerequisite guidance', () => {
     expect(screen.getByText(/requires workspace write access/i)).toBeInTheDocument()
   })
 
+  it.each([
+    ['nonzero enabled Route counter', 'enabled'],
+    ['Stream-specific Route count', 'per_stream'],
+  ] as const)('does not advertise Route creation from contradictory %s', (_name, kind) => {
+    const partial = snapshotFor([])
+    if (kind === 'enabled') {
+      partial.global = { ...partial.global, enabled_routes: 1 }
+    } else {
+      partial.streams[0] = { ...partial.streams[0]!, route_count: 1 }
+    }
+    render(<GraphHarness snapshot={partial} />)
+    expect(screen.getByRole('heading', { name: 'Route inventory not verified' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Create Route' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'View Streams' })).toHaveAttribute('href', '/streams')
+  })
+
+  it('does not claim a brand-new install when enabled Stream counters contradict zero Streams', () => {
+    const snapshot = snapshotFor([])
+    snapshot.global = {
+      ...snapshot.global,
+      total_streams: 0,
+      enabled_streams: 1,
+      running_streams: 0,
+      error_streams: 0,
+    }
+    snapshot.streams = []
+    render(<GraphHarness snapshot={snapshot} />)
+    expect(screen.getByRole('heading', { name: 'Route inventory not verified' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Start a Data Flow' })).not.toBeInTheDocument()
+  })
+
   it('does not infer a blank installation from missing Route rows or a failed current read', () => {
     const partial = snapshotFor([])
     partial.global = { ...partial.global, total_routes: 2 }

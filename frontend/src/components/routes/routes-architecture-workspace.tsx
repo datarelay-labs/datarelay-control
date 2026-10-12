@@ -124,10 +124,19 @@ export function RoutesArchitectureWorkspace({
     : 'Not reported'
   // An empty graph is not proof of a fresh installation: the Route list may
   // be incomplete while a healthy Stream exists, or the read may be stale.
+  // Both Route totals AND per-Stream Route counts must agree before offering
+  // setup actions. Contradictory counters/rows are unverified, not empty.
   const verifiedEmptyRoutes = !loading && !evidenceStale &&
-    snapshot?.global?.total_routes === 0 && snapshot.routes.length === 0
+    snapshot?.global?.total_routes === 0 &&
+    snapshot.global.enabled_routes === 0 &&
+    snapshot.routes.length === 0 &&
+    snapshot.streams.every((stream) => stream.route_count === 0)
   const verifiedNoStreams = verifiedEmptyRoutes &&
-    snapshot?.global?.total_streams === 0 && snapshot.streams.length === 0
+    snapshot?.global?.total_streams === 0 &&
+    snapshot.global.enabled_streams === 0 &&
+    snapshot.global.running_streams === 0 &&
+    snapshot.global.error_streams === 0 &&
+    snapshot.streams.length === 0
   const verifiedExistingStreams = verifiedEmptyRoutes &&
     Number.isSafeInteger(snapshot?.global?.total_streams) &&
     (snapshot?.global?.total_streams ?? 0) > 0 &&
