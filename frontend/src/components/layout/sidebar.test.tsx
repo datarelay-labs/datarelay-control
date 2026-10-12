@@ -1,9 +1,10 @@
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SIDEBAR_STRUCTURE } from '../../config/app-navigation'
 import { persistTestSession, clearTestSession } from '../../lib/governance-rbac'
+import { persistSession, readSession } from '../../auth/session'
 import { Sidebar } from './sidebar'
 
 vi.mock('../../api/gdcAdmin', () => ({
@@ -97,6 +98,34 @@ describe('Sidebar SaaS shell', () => {
     persistTestSession('VIEWER')
     renderSidebar()
     expect(screen.queryByTestId('sidebar-create-stream')).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['expired access token', { expires_at: '2020-01-01T00:00:00Z' }],
+    ['disabled platform account', { status: 'DISABLED' }],
+    ['mandatory password reset', { must_change_password: true }],
+  ])('hides Stream creation during %s even with an Administrator role', (_, override) => {
+    persistTestSession('ADMINISTRATOR')
+    const session = readSession()
+    expect(session).not.toBeNull()
+    persistSession({
+      ...session!,
+      ...(override.expires_at ? { expires_at: override.expires_at } : {}),
+      user: { ...session!.user, ...('status' in override ? { status: override.status } : {}), ...('must_change_password' in override ? { must_change_password: override.must_change_password } : {}) },
+    })
+    // Legacy UI hints must never grant a session capability.
+    localStorage.setItem('gdc_platform_ui_role', 'ADMINISTRATOR')
+    renderSidebar({ mobileOpen: true })
+    expect(screen.queryByTestId('sidebar-create-stream')).not.toBeInTheDocument()
+  })
+
+  it('updates Stream creation immediately on authenticated role demotion', async () => {
+    persistTestSession('ADMINISTRATOR')
+    const { onNavigate } = renderSidebar({ mobileOpen: true })
+    expect(screen.getByTestId('sidebar-create-stream')).toBeInTheDocument()
+    act(() => persistTestSession('VIEWER'))
+    await waitFor(() => expect(screen.queryByTestId('sidebar-create-stream')).not.toBeInTheDocument())
+    expect(onNavigate).not.toHaveBeenCalled()
   })
 
   it('automatically expands the active group and marks only its active leaf', async () => {

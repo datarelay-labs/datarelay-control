@@ -1,11 +1,11 @@
 import { ChevronDown, LogOut, PanelLeftClose, PanelLeftOpen, Plus } from 'lucide-react'
-import { useEffect, useState, type ComponentType } from 'react'
+import { useEffect, useState, useSyncExternalStore, type ComponentType } from 'react'
 import { Link } from 'react-router-dom'
 import { DataRelayWordmark } from '@datarelay-labs/product-shell'
 import { cn } from '../../lib/utils'
 import { newStreamPath } from '../../config/nav-paths'
 import { getAdminSystemInfo, postAuthLogout } from '../../api/gdcAdmin'
-import { clearSession, readSession } from '../../auth/session'
+import { clearSession, isSessionExpired, onSessionChange, readSession } from '../../auth/session'
 import type { SidebarGroupItem, SidebarNavEntry, SidebarTopItem } from '../../config/app-navigation'
 import { getDatarelayInstanceLabel } from '../../config/datarelay-instance-label'
 import type { PlatformPersona } from '../../utils/persona-mode'
@@ -187,6 +187,15 @@ function NavGroup({
   )
 }
 
+/** Read-only creation availability; backend/session guards still authorize mutations. */
+function canCreateStreamForCurrentSession(): boolean {
+  const session = readSession()
+  if (!session || isSessionExpired() || session.user.status !== 'ACTIVE' || session.user.must_change_password) {
+    return false
+  }
+  return ['ADMINISTRATOR', 'OPERATOR', 'CONNECTOR_OPERATOR'].includes(session.user.role)
+}
+
 export function Sidebar({
   structure,
   collapsed,
@@ -200,7 +209,7 @@ export function Sidebar({
   offCanvas = false,
 }: SidebarProps) {
   const [environment, setEnvironment] = useState('Unknown')
-  const canCreateStream = ['ADMINISTRATOR', 'OPERATOR', 'CONNECTOR_OPERATOR'].includes(readSession()?.user.role ?? '')
+  const canCreateStream = useSyncExternalStore(onSessionChange, canCreateStreamForCurrentSession, () => false)
 
   useEffect(() => {
     let active = true
@@ -281,7 +290,7 @@ export function Sidebar({
         <div className={cn('border-b border-slate-100 py-3 dark:border-gdc-border', collapsed ? 'px-1.5' : 'px-3')}>
           <button
             type="button"
-            onClick={() => handleNavigate(newStreamPath())}
+            onClick={() => { if (canCreateStreamForCurrentSession()) handleNavigate(newStreamPath()) }}
             title="Create stream"
             aria-label="Create stream"
             className={cn(
