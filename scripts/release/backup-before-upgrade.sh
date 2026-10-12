@@ -36,8 +36,10 @@ fi
 
 # Backup directory must stay under repository root (refuse production-dangerous host paths).
 mkdir -p "$BACKUP_ROOT"
-BACKUP_RESOLVED="$(cd "$BACKUP_ROOT" && pwd)"
-ROOT_RESOLVED="$(cd "$ROOT" && pwd)"
+# Use physical canonical paths. Bash pwd -L preserves symlink aliases and
+# can falsely classify an external directory as a repo-owned backup root.
+BACKUP_RESOLVED="$(cd "$BACKUP_ROOT" && pwd -P)"
+ROOT_RESOLVED="$(cd "$ROOT" && pwd -P)"
 if [[ "$BACKUP_RESOLVED" != "$ROOT_RESOLVED"/* ]]; then
   echo "Refusing: GDC_BACKUP_DIR / deploy/backups must resolve under repository root." >&2
   echo "  ROOT=$ROOT_RESOLVED" >&2

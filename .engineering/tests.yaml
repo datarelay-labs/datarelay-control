@@ -349,6 +349,19 @@ scenarios:
       - "No package, DB, host, signing key, service or operator configuration is mutated."
     release_gate: true
 
+  - id: BACKEND-MACRO-C-BACKUP-ROOT-ISOLATION
+    name: Offline pre-upgrade backup root canonicalization and fake-tool safety
+    level: unit
+    domains: [backend, release]
+    triggers: [affected, pr]
+    platforms: [linux]
+    command: "PYTHONPATH=vendor/onprem-security/datarelay_onprem_security-0.10.0.dev0-py3-none-any.whl:. python3 -m pytest -q tests/test_macro_c_offline_release_safety.py tests/test_macro_c_offline_package_contract.py"
+    invariants:
+      - "A repository-internal symlink to an external backup directory cannot bypass physical containment checks."
+      - "Pre-upgrade private archives and SHA256 receipts keep normal fake-tool behavior and no-overwrite guards."
+      - "No real Docker, PostgreSQL, customer backup, host operation, migration or restore is used."
+    release_gate: true
+
   - id: DOC-SOT-INTEGRITY
     name: Documentation Source-of-Truth integrity
     level: static

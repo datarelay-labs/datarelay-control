@@ -51,6 +51,21 @@ or authorize a destructive recovery operation. The checksum file must be
 protected with the backup; without a pinned trusted signature, an attacker
 capable of replacing both files can rewrite the digest.
 
+## Macro C pre-upgrade backup path isolation
+
+Control also ships a separate `scripts/release/backup-before-upgrade.sh`
+for the native pre-upgrade PostgreSQL dump. Its existing lexical
+`cd && pwd` containment check could accept a repository-internal symlink
+pointing to an unrelated directory **outside** the repository, despite
+stating that backup artifacts must remain under the product-owned root.
+An isolated fake-Docker RED regression reproduced a successful external
+archive write through `deploy/backups` symlink redirection. The script now
+compares physically canonical directories using `pwd -P` before opening its
+backup log or archive, so external backup roots fail closed. Normal private
+archive and SHA256 output, noclobber protection and all production recovery
+approval boundaries remain unchanged. This is a source-only test with fake
+Docker and no real DB or operator filesystem writes.
+
 ## Regression evidence and remaining gates
 
 The new source-only tests replace `pg_dump` with a fake executable and

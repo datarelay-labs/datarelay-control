@@ -293,3 +293,21 @@ def test_release_restore_legacy_waiver_reaches_mock_only(tmp_path: Path) -> None
     assert result.returncode != 0
     assert "compose version" in docker_calls
     assert "exec" not in docker_calls
+
+
+def test_preupgrade_backup_rejects_repo_internal_symlink_to_external_directory(
+    tmp_path: Path, backup_sandbox
+) -> None:
+    """A backup root *lexically* within the repo cannot redirect files outside."""
+    lab, env = backup_sandbox
+    root = lab / "deploy"
+    root.mkdir(parents=True, exist_ok=True)
+    outside = tmp_path / "unrelated-host-directory"
+    outside.mkdir()
+    shortcut = root / "backups"
+    shortcut.symlink_to(outside, target_is_directory=True)
+
+    result = _run_backup(lab, env)
+
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert not list(outside.iterdir()), "Backup wrote outside the repository through linked root"
