@@ -151,6 +151,12 @@ describe('RoutesOverviewPage snapshot loading', () => {
     await waitFor(() => {
       expect(snap.getOperationalSnapshot).toHaveBeenCalled()
     })
+    // The read path always returns one current gateway snapshot, not metrics
+    // for a user-selected 15m/1h/6h/24h window.
+    expect(screen.queryByRole('combobox', { name: 'Metrics window' })).not.toBeInTheDocument()
+    expect(screen.getByRole('note', { name: 'Metrics time basis' })).toHaveTextContent(
+      'Metrics basis: 5m gateway snapshot',
+    )
     expect(screen.getByTestId('routes-purpose-header')).toHaveTextContent(/destination-specific path/i)
     expect(screen.getByTestId('routes-mental-model')).toHaveTextContent('Stream')
     expect(screen.getByTestId('routes-mental-model')).toHaveTextContent('Route Processing')

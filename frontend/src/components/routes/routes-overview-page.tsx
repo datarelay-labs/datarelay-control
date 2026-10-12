@@ -19,7 +19,6 @@ import {
   fetchRoutesList,
   type RouteRead,
 } from '../../api/gdcRoutes'
-import { type MetricsWindow } from '../../api/gdcRuntime'
 import type { StreamRead } from '../../api/types/gdcApi'
 import { routeEditPath } from '../../config/nav-paths'
 import {
@@ -55,16 +54,9 @@ import { ROUTES_TABLE_ROW_HEIGHT, ROUTES_VIRTUAL_SCROLL_THRESHOLD, RoutesTableRo
 import { PagePurposeHeader, type PageHelpContent } from '../ui/page-purpose-header'
 import { RoutesArchitectureWorkspace } from './routes-architecture-workspace'
 
-const WINDOW_OPTIONS: { value: MetricsWindow; label: string }[] = [
-  { value: '15m', label: 'Last 15 minutes' },
-  { value: '1h', label: 'Last 1 hour' },
-  { value: '6h', label: 'Last 6 hours' },
-  { value: '24h', label: 'Last 24 hours' },
-]
-
 const ROUTES_HELP: PageHelpContent = {
   docsHref: '/help/delivery',
-  title: 'Routes',
+  title: 'Data Flows',
   intro: 'A Route is the destination-specific delivery path from one Stream to one Destination. Use Routes when the same Stream needs different processing or delivery behavior for different destinations.',
   sections: [
     {
@@ -154,7 +146,6 @@ function SelectField({
 }
 
 export function RoutesOverviewPage() {
-  const [metricsWindow, setMetricsWindow] = useState<MetricsWindow>('1h')
   const [refreshTick, setRefreshTick] = useState(0)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -458,7 +449,7 @@ export function RoutesOverviewPage() {
       ) : null}
       <RuntimeFixtureModeBanner surface="routes" />
       <PagePurposeHeader
-        title="Routes"
+        title="Data Flows"
         showTitle={false}
         purpose="How does each Stream reach each Destination? A Route is the destination-specific path that applies processing, delivery, retry, and rate-limit behavior before data is sent."
         help={ROUTES_HELP}
@@ -496,13 +487,13 @@ export function RoutesOverviewPage() {
         ) : (
           <span className="text-[11px] text-slate-500">Runtime status unavailable</span>
         )}
-        <SelectField
-          id="routes-window"
-          label="Metrics window"
-          value={metricsWindow}
-          options={WINDOW_OPTIONS}
-          onChange={(v) => setMetricsWindow(v as MetricsWindow)}
-        />
+        <span
+          role="note"
+          aria-label="Metrics time basis"
+          className="rounded-md border border-slate-200/90 bg-slate-50 px-2.5 py-1.5 text-[11px] font-medium text-slate-600 dark:border-gdc-border dark:bg-gdc-card dark:text-gdc-mutedStrong"
+        >
+          Metrics basis: 5m gateway snapshot
+        </span>
         <button
           type="button"
           onClick={() => {

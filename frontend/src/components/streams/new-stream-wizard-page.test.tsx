@@ -47,6 +47,7 @@ vi.mock('../../api/gdcSources', () => ({
 
 vi.mock('../../api/gdcDestinations', () => ({
   fetchDestinationsList: vi.fn(async () => []),
+  invalidateDestinationsListCache: vi.fn(),
 }))
 
 describe('NewStreamWizardPage v5.2 5-step', () => {
