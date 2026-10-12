@@ -1,4 +1,4 @@
-import { render, screen, within, waitFor } from '@testing-library/react'
+import { act, render, screen, within, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
@@ -111,6 +111,102 @@ function LocationStateProbe() {
 }
 
 describe('DestinationsManagementPage', () => {
+  it('returns an untouched contextual Destination cancel to the saved Wizard without creating anything', async () => {
+    const user = userEvent.setup()
+    vi.mocked(createDestination).mockReset()
+    render(
+      <MemoryRouter initialEntries={[{
+        pathname: '/destinations',
+        state: { returnToSavedWizardDraft: true },
+      }]}>
+        <Routes>
+          <Route path="/destinations" element={<DestinationsManagementPage />} />
+          <Route path="/streams/new" element={<LocationStateProbe />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    expect(await screen.findByTestId('returned-wizard-location')).toHaveTextContent(
+      JSON.stringify({ resumeSavedWizardDraft: true }),
+    )
+    expect(createDestination).not.toHaveBeenCalled()
+  })
+
+  it('preserves contextual Destination edits until Discard is explicitly confirmed, then returns', async () => {
+    const user = userEvent.setup()
+    vi.mocked(createDestination).mockReset()
+    render(
+      <MemoryRouter initialEntries={[{
+        pathname: '/destinations',
+        state: { returnToSavedWizardDraft: true },
+      }]}>
+        <Routes>
+          <Route path="/destinations" element={<DestinationsManagementPage />} />
+          <Route path="/streams/new" element={<LocationStateProbe />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+    const dialog = await screen.findByRole('dialog')
+    await user.type(within(dialog).getByLabelText(/^Name/i), 'Unsaved receiver')
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    const confirmation = await screen.findByTestId('destination-discard-dirty-dialog')
+    expect(screen.queryByTestId('returned-wizard-location')).not.toBeInTheDocument()
+    await user.click(within(confirmation).getByRole('button', { name: 'Cancel' }))
+    expect(screen.getByDisplayValue('Unsaved receiver')).toBeInTheDocument()
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }))
+    await user.click(within(await screen.findByTestId('destination-discard-dirty-dialog')).getByRole('button', { name: 'Discard changes' }))
+    expect(await screen.findByTestId('returned-wizard-location')).toHaveTextContent(
+      JSON.stringify({ resumeSavedWizardDraft: true }),
+    )
+    expect(createDestination).not.toHaveBeenCalled()
+  })
+
+  it('never navigates away while contextual Destination Save is in flight', async () => {
+    const user = userEvent.setup()
+    let finishSave: (value: Awaited<ReturnType<typeof createDestination>>) => void = () => {}
+    vi.mocked(createDestination).mockReset().mockImplementationOnce(() =>
+      new Promise<Awaited<ReturnType<typeof createDestination>>>((resolve) => { finishSave = resolve }),
+    )
+    render(
+      <MemoryRouter initialEntries={[{
+        pathname: '/destinations',
+        state: { returnToSavedWizardDraft: true },
+      }]}>
+        <Routes>
+          <Route path="/destinations" element={<DestinationsManagementPage />} />
+          <Route path="/streams/new" element={<LocationStateProbe />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+    const dialog = await screen.findByRole('dialog')
+    await user.type(within(dialog).getByLabelText(/^Name/i), 'Pending destination')
+    await user.type(within(dialog).getByLabelText(/^Host/i), '127.0.0.1')
+    await user.click(within(dialog).getByRole('button', { name: 'Save Destination' }))
+    await waitFor(() => expect(createDestination).toHaveBeenCalledTimes(1))
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeDisabled()
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }))
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.queryByTestId('returned-wizard-location')).not.toBeInTheDocument()
+
+    await act(async () => finishSave({ id: 95 } as Awaited<ReturnType<typeof createDestination>>))
+    expect(await screen.findByTestId('returned-wizard-location')).toHaveTextContent(
+      JSON.stringify({ resumeSavedWizardDraft: true, createdDestinationId: 95 }),
+    )
+  })
+
+  it('keeps ordinary Destination creation on its own page when cancelled', async () => {
+    const user = userEvent.setup()
+    vi.mocked(createDestination).mockReset()
+    render(<MemoryRouter><DestinationsManagementPage /></MemoryRouter>)
+    await user.click(screen.getByTestId('destinations-new'))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByTestId('destinations-management-page')).toBeInTheDocument()
+    expect(createDestination).not.toHaveBeenCalled()
+  })
+
   it('opens contextual Create and returns to saved Wizard only after the Destination API succeeds', async () => {
     const user = userEvent.setup()
     vi.mocked(createDestination).mockReset().mockResolvedValue({

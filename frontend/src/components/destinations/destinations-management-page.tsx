@@ -715,7 +715,9 @@ export function DestinationsManagementPage() {
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editingRow, setEditingRow] = useState<DestinationOverviewRow | null>(null)
   const [form, setForm] = useState<FormState>(INITIAL_FORM)
-  const [formBaseline, setFormBaseline] = useState<FormState | null>(null)
+  const [formBaseline, setFormBaseline] = useState<FormState | null>(
+    returnToSavedWizardDraft ? INITIAL_FORM : null,
+  )
   const [expectedUpdatedAt, setExpectedUpdatedAt] = useState<string | null>(null)
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false)
   const [probeOk, setProbeOk] = useState<boolean | null>(null)
@@ -853,12 +855,21 @@ export function DestinationsManagementPage() {
     setDiscardConfirmOpen(false)
   }
 
+  function finishCancelledSheet() {
+    const returnToDraft = returnToSavedWizardDraft && sheetMode === 'create'
+    forceCloseSheet()
+    if (returnToDraft) {
+      navigate(newStreamPath(), { replace: true, state: { resumeSavedWizardDraft: true } })
+    }
+  }
+
   function closeSheet() {
+    if (saving) return
     if (sheetMode !== 'closed' && isDestinationFormDirty(formBaseline, form)) {
       setDiscardConfirmOpen(true)
       return
     }
-    forceCloseSheet()
+    finishCancelledSheet()
   }
 
   async function onProbeForm() {
@@ -1956,7 +1967,7 @@ export function DestinationsManagementPage() {
 
             {/* ── Dialog footer ── */}
             <div className="flex shrink-0 items-center justify-between gap-3 border-t border-slate-200/80 dark:border-gdc-border px-6 py-4">
-              <button type="button" onClick={closeSheet} className="inline-flex h-10 items-center px-3 text-[13px] font-semibold text-slate-500 hover:text-slate-700 dark:text-slate-300">
+              <button type="button" onClick={closeSheet} disabled={saving} className="inline-flex h-10 items-center px-3 text-[13px] font-semibold text-slate-500 hover:text-slate-700 disabled:opacity-50 dark:text-slate-300">
                 Cancel
               </button>
               <div className="flex items-center gap-3">
@@ -2122,7 +2133,7 @@ export function DestinationsManagementPage() {
           reversibility="Your current draft will be lost. Re-open the destination to continue editing."
           risk="medium"
           primaryLabel="Discard changes"
-          onConfirm={() => forceCloseSheet()}
+          onConfirm={() => finishCancelledSheet()}
           dataTestId="destination-discard-dirty-dialog"
         />
       ) : null}
