@@ -14,7 +14,13 @@ archive and its adjacent exact-basename sidecar. It streams actual archive
 bytes and compares SHA256 rather than merely trusting the declared digest.
 A regular archive and sidecar must be private (no group/other permissions);
 symlinks, empty data, a mismatched/oversized sidecar, changing archive metadata,
-invalid extensions and short/extra digest records fail closed.
+invalid extensions and short/extra digest records fail closed. RED regression
+tests further proved that the earlier leaf-only `O_NOFOLLOW` check accepted
+an explicitly selected path whose **parent directory** was a symlink. The
+adapter now rejects symlinks in every supplied archive/sidecar path component
+(including intermediate parent directories) before opening files. This is
+read-only filesystem preflight, not immutable provenance or protection
+against all filesystem races.
 
 The shared, pre-pinned Foundation PF-12B `BackupEvidence`,
 `assess_backup` and `preview_restore` contracts evaluate only a

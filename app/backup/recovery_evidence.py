@@ -33,8 +33,14 @@ def _read_archive_receipt(path: Path) -> tuple[str, int, int]:
     archive = Path(path)
     if not (archive.name.endswith(".dump") or archive.name.endswith(".dump.gz")):
         raise ValueError("Unsupported backup archive format")
-    if archive.is_symlink() or Path(str(archive) + ".sha256").is_symlink():
-        raise ValueError("Symlink archive evidence is untrusted")
+    sidecar_path = Path(str(archive) + ".sha256")
+    # O_NOFOLLOW protects only the final path component. Reject linked
+    # ancestors as well, including paths supplied through a linked directory.
+    # A trusted real restore still requires independent operator authorization.
+    for candidate in (archive, sidecar_path):
+        absolute = candidate.absolute()
+        if any(part.is_symlink() for part in (absolute, *absolute.parents)):
+            raise ValueError("Symlink backup evidence path is untrusted")
 
     archive_fd = None
     sidecar_fd = None

@@ -120,3 +120,23 @@ def test_read_only_cli_never_prints_sensitive_filename_or_certifies_restore(tmp_
     assert report["may_submit_to_restore_authority"] is False
     assert str(archive) not in result.stdout
     assert "FAKE_CONTROL_ARCHIVE" not in result.stdout
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_backup_verifier_rejects_symlinked_parent_directory(tmp_path: Path, nested: bool):
+    """A leaf-only O_NOFOLLOW check must not accept a linked ancestor."""
+    owned = tmp_path / "owned-private"
+    owned.mkdir(mode=0o700)
+    archive = _fixture(owned)
+    alias = tmp_path / "backup-directory-alias"
+    alias.symlink_to(owned, target_is_directory=True)
+    if nested:
+        # Also cover an intermediate ancestor, not just the immediate parent.
+        nested_dir = owned / "nested"
+        nested_dir.mkdir(mode=0o700)
+        archive = _fixture(nested_dir)
+        aliased = alias / "nested" / archive.name
+    else:
+        aliased = alias / archive.name
+    with pytest.raises(ValueError, match="(?i)symlink"):
+        inspect_backup_archive(aliased, now=1_760_000_100)

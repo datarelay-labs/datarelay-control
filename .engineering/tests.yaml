@@ -316,7 +316,7 @@ scenarios:
     command: "PYTHONPATH=vendor/onprem-security/datarelay_onprem_security-0.10.0.dev0-py3-none-any.whl:. python3 -m pytest -q tests/test_pf12b_backup_archive_assessment.py"
     invariants:
       - "Explicit archive and sidecar are regular private files; hash actual stable bytes rather than trusting a digest alone."
-      - "Sidecar mismatch, symlink, insecure mode, changed archive and unsupported files fail closed."
+      - "Sidecar mismatch, file and ancestor-directory symlinks, insecure mode, changed archive and unsupported files fail closed."
       - "PF-12B BackupEvidence and restore preview never invent encryption, signed provenance, restore drill, schema or authorization."
       - "No PostgreSQL connection, customer backup scan, actual restore, key provisioning or service change."
     release_gate: true
