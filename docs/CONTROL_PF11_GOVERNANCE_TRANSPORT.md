@@ -95,7 +95,12 @@ The source-only `drain_outbox_once()` path commits PostgreSQL
 acknowledgements, supports expired-lease recovery and independently retries
 email/Webhook jobs with bounded backoff (five attempts) and dead-letter state.
 Notification-event SENT means all configured channel jobs succeeded;
-failed/expired jobs remain observable. The default legacy behavior is unchanged
+failed/expired jobs remain observable. The read-only
+`/api/v1/governance/notifications/health` contract additionally exposes
+counts of pending, leased, retry-scheduled and dead-letter channel jobs,
+without revealing receiver URLs, credentials, payloads or operator comments.
+When outbox is OFF, these fields are zero and the legacy database is not
+queried for an uninstalled outbox table. Default legacy dispatch is unchanged
 unless `GDC_GOV_NOTIFICATION_DURABLE_QUEUE_ENABLED=true` is explicitly set.
 
 The in-process polling worker is integrated with the existing startup-readiness

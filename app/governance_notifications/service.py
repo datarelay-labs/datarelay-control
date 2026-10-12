@@ -12,6 +12,7 @@ from app.governance_notifications.email_sender import EmailSender, get_email_sen
 from app.governance_notifications.models import (
     EVENT_TYPE_TO_CATEGORY,
     GovernanceNotificationConfig,
+    GovernanceNotificationDeliveryJob,
     GovernanceNotificationEvent,
     NOTIFICATION_EVENT_TYPES,
     NOTIFICATION_STATUS_FAILED,
@@ -264,10 +265,36 @@ class NotificationService:
                 GovernanceNotificationEvent.status == NOTIFICATION_STATUS_SENT
             )
         )
+        counts: dict[str, int] = {}
+        scheduled_retries = 0
+        if durable_outbox_enabled():
+            # Legacy deployments may not yet have the opt-in migration.
+            # Default-OFF path does not touch the new table at all.
+            counts = {
+                str(status): int(count)
+                for status, count in db.execute(
+                    select(
+                        GovernanceNotificationDeliveryJob.status,
+                        func.count(GovernanceNotificationDeliveryJob.id),
+                    ).group_by(GovernanceNotificationDeliveryJob.status)
+                ).all()
+            }
+            scheduled_retries = int(db.scalar(
+                select(func.count())
+                .select_from(GovernanceNotificationDeliveryJob)
+                .where(
+                    GovernanceNotificationDeliveryJob.status == "PENDING",
+                    GovernanceNotificationDeliveryJob.attempt_count > 0,
+                )
+            ) or 0)
         return GovernanceNotificationHealthResponse(
             pending_notifications=pending,
             failed_notifications=failed,
             last_delivery_time=last_sent,
+            pending_delivery_jobs=counts.get("PENDING", 0),
+            leased_delivery_jobs=counts.get("LEASED", 0),
+            retry_scheduled_delivery_jobs=scheduled_retries,
+            dead_letter_delivery_jobs=counts.get("DEAD", 0),
         )
 
     @staticmethod

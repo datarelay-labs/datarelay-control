@@ -193,3 +193,38 @@ def test_outbox_unconfigured_channels_cannot_leave_orphan_pending_jobs(sessions)
         )
         assert event is not None and event.status == NOTIFICATION_STATUS_FAILED
         assert list(db.scalars(select(GovernanceNotificationDeliveryJob))) == []
+
+
+def test_outbox_health_exposes_read_only_channel_backlog_without_payload(sessions):
+    _enqueue(sessions)
+    with sessions() as db:
+        health = NotificationService.get_health(db).model_dump()
+        assert health["pending_delivery_jobs"] == 2
+        assert health["leased_delivery_jobs"] == 0
+        assert health["retry_scheduled_delivery_jobs"] == 0
+        assert health["dead_letter_delivery_jobs"] == 0
+        assert "secret" not in repr(health) and "webhook_url" not in repr(health)
+    webhook = MockWebhookSender()
+    webhook.should_fail = True
+    now = datetime.now(timezone.utc)
+    drain_outbox_once(sessions, now=now, email_sender=MockEmailSender(), webhook_sender=webhook)
+    with sessions() as db:
+        health = NotificationService.get_health(db).model_dump()
+        assert health["pending_delivery_jobs"] == 1
+        assert health["retry_scheduled_delivery_jobs"] == 1
+    for day in (1, 2, 3, 4):
+        drain_outbox_once(sessions, now=now + timedelta(days=day), webhook_sender=webhook)
+    with sessions() as db:
+        health = NotificationService.get_health(db).model_dump()
+        assert health["dead_letter_delivery_jobs"] == 1
+        assert health["pending_delivery_jobs"] == 0
+        assert health["failed_notifications"] == 1
+
+
+def test_health_does_not_query_outbox_table_while_feature_off(sessions, monkeypatch):
+    monkeypatch.delenv("GDC_GOV_NOTIFICATION_DURABLE_QUEUE_ENABLED", raising=False)
+    with sessions() as db:
+        GovernanceNotificationDeliveryJob.__table__.drop(bind=db.bind)
+        health = NotificationService.get_health(db).model_dump()
+        assert health["pending_delivery_jobs"] == 0
+        assert health["dead_letter_delivery_jobs"] == 0
