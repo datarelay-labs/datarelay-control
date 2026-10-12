@@ -215,10 +215,14 @@ describe('RouteEditPage delivery preview', () => {
     })
     renderRouteEdit()
     fireEvent.click(await screen.findByTestId('route-edit-preview-delivery'))
-    expect(await screen.findByTestId('route-edit-delivery-preview-status')).toHaveTextContent(
-      'did not match the saved Route and Destination',
-    )
-    expect(screen.queryByTestId('route-edit-delivery-preview-output')).not.toBeInTheDocument()
+    // The status element exists during the pending network operation.
+    // Wait for the terminal fail-closed identity rejection, not its first render.
+    await waitFor(() => {
+      expect(screen.getByTestId('route-edit-delivery-preview-status')).toHaveTextContent(
+        'did not match the saved Route and Destination',
+      )
+      expect(screen.queryByTestId('route-edit-delivery-preview-output')).not.toBeInTheDocument()
+    })
   })
 
   it('hides prior no-send output whenever the persisted Route has unsaved edits', async () => {
