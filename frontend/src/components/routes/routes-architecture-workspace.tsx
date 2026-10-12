@@ -740,8 +740,16 @@ export function RoutesArchitectureWorkspace({
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <Link to={routeEditPath(String(selectedRoute.routeId))} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-700">
-                        <Settings2 className="h-3.5 w-3.5" aria-hidden /> Route settings
+                      <Link
+                        to={routeEditPath(String(selectedRoute.routeId))}
+                        className={cn(
+                          'inline-flex min-h-9 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500',
+                          canCreateFlow
+                            ? 'border-violet-600 bg-violet-600 text-white hover:bg-violet-700'
+                            : 'border-slate-200 bg-white text-slate-700 hover:border-violet-300 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100',
+                        )}
+                      >
+                        <Settings2 className="h-3.5 w-3.5" aria-hidden /> {canCreateFlow ? 'Route settings' : 'View Route settings'}
                       </Link>
                       <Link to={logsExplorerPath({ route_id: selectedRoute.routeId, stream_id: selectedGroup.streamId, destination_id: selectedRoute.destinationId ?? undefined })} className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-violet-300 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100">
                         Delivery logs <ArrowRight className="h-3.5 w-3.5" aria-hidden />
@@ -758,6 +766,11 @@ export function RoutesArchitectureWorkspace({
                   {evidenceStale ? (
                     <p role="status" className="mt-3 rounded-lg border border-amber-400/50 bg-amber-50 p-2 text-xs font-medium text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">
                       Stale or unavailable snapshot. Values below are last reported, not confirmed current health.
+                    </p>
+                  ) : null}
+                  {!canCreateFlow ? (
+                    <p role="note" className="mt-3 text-xs text-slate-600 dark:text-gdc-mutedStrong">
+                      Read-only access: Route configuration requires workspace write permission. Delivery diagnostics and logs remain available.
                     </p>
                   ) : null}
                   <div role="tablist" aria-label="Selected Route detail sections" className="mt-4 flex max-w-full gap-1 overflow-x-auto border-b border-slate-200 pb-2 dark:border-gdc-border">
