@@ -163,6 +163,20 @@ describe('Data Flows empty-state prerequisite guidance', () => {
     expect(screen.getByText(/workspace write access/i)).toBeInTheDocument()
   })
 
+  it.each([
+    ['reported total is smaller than visible Stream rows', 'too_few'],
+    ['enabled Stream count exceeds the reported total', 'enabled_gt_total'],
+  ] as const)('does not advertise Route creation when %s', (_name, kind) => {
+    const inconsistent = snapshotFor([])
+    inconsistent.global = {
+      ...inconsistent.global,
+      ...(kind === 'too_few' ? { total_streams: 1 } : { enabled_streams: 3 }),
+    }
+    render(<GraphHarness snapshot={inconsistent} />)
+    expect(screen.getByRole('heading', { name: 'Route inventory not verified' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Create Route' })).not.toBeInTheDocument()
+  })
+
   it('offers a Route action only when a fresh snapshot actually confirms existing Streams', () => {
     render(<GraphHarness snapshot={snapshotFor([])} />)
     expect(screen.getByRole('heading', { name: 'No Route delivery paths configured' })).toBeInTheDocument()

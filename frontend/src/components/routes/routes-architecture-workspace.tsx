@@ -137,10 +137,19 @@ export function RoutesArchitectureWorkspace({
     snapshot.global.running_streams === 0 &&
     snapshot.global.error_streams === 0 &&
     snapshot.streams.length === 0
-  const verifiedExistingStreams = verifiedEmptyRoutes &&
-    Number.isSafeInteger(snapshot?.global?.total_streams) &&
-    (snapshot?.global?.total_streams ?? 0) > 0 &&
-    snapshot?.streams.some((stream) => validId(stream.stream_id)) === true
+  const verifiedExistingStreams = verifiedEmptyRoutes && snapshot !== null &&
+    Number.isSafeInteger(snapshot.global.total_streams) &&
+    snapshot.global.total_streams > 0 &&
+    // A snapshot can supply a subset of Streams, but never more actual rows
+    // or enabled/running/error Streams than the corresponding global counts.
+    snapshot.streams.length <= snapshot.global.total_streams &&
+    snapshot.global.enabled_streams >= 0 &&
+    snapshot.global.enabled_streams <= snapshot.global.total_streams &&
+    snapshot.global.running_streams >= 0 &&
+    snapshot.global.running_streams <= snapshot.global.enabled_streams &&
+    snapshot.global.error_streams >= 0 &&
+    snapshot.global.error_streams <= snapshot.global.total_streams &&
+    snapshot.streams.some((stream) => validId(stream.stream_id))
   const attention = useMemo(() => listRouteFlowAttention(groups, snapshot?.destinations), [groups, snapshot?.destinations])
   const issueCountsByStream = useMemo(() => {
     const counts = new Map<number, number>()

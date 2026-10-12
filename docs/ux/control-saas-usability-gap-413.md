@@ -435,3 +435,10 @@ The current `/routes` operational workspace had a remaining first-run authority 
 The existing `RoutesArchitectureWorkspace` now requires the global Route total, enabled Route count, actual Route list and each Stream's Route count to agree at zero, in addition to successful fresh evidence, before presenting either creation choice. First-run Start also requires zero Stream total/rows and zero enabled/running/error Stream counters. Inconsistent or partial inventory displays **Route inventory not verified** and offers only nonmutating **View Streams**. The implementation uses existing snapshot data; it does not add backend reads, synthesize healthy receivers, auto-create Routes or modify live resources.
 
 Two affected native RED scenarios reproduced the misleading create action, and the corrected component suite passed **46/46** with an additional zero-Stream counter contradiction scenario. Real authenticated browser/user acceptance and two-genuine-user FUE remain deliberately deferred by the owner and are NOT PASS; current exact-source CI/build are separately required.
+
+
+### 2026-10-12 — Reject contradictory positive Stream counts when Route inventory is empty
+
+A second independent authority gap remained in the positive-Stream branch of `RoutesArchitectureWorkspace`: a zero-Route graph still offered **Create Route** when a snapshot reported fewer total Streams than it actually returned in `streams[]`, or reported `enabled_streams > total_streams`. This is contradictory and must not be presented as a verified inventory. The actual Stream API is permitted to return a subset; the UI therefore checks only impossible overcounts, not exact equality.
+
+Two new native RED scenarios reproduced false creation guidance. The source guard now requires a positive valid global Stream total, at least one valid Stream identity, no more observed Stream rows than reported, and bounded enabled/running/error counts. Native component suite **48/48 PASS** with no extra API, mutation, Route creation or role change. Browser BFS and two-genuine-user E2E remain owner-deferred and NOT PASS. Current PR exact-HEAD CI and release acceptance are separate gates.
