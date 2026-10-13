@@ -501,7 +501,7 @@ export function NotificationsPage() {
               >
                 Open governance workspace
               </Link>
-              {selectedEvent.status === 'FAILED' ? (
+              {selectedEvent.status === 'FAILED' && canEdit ? (
                 <button
                   type="button"
                   onClick={() => void runTest('email')}

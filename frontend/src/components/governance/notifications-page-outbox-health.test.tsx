@@ -3,6 +3,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as notificationsApi from '../../api/gdcGovernanceNotifications'
 import { persistTestSession } from '../../lib/governance-rbac'
+import { clearSession, readSession } from '../../auth/session'
 import { NotificationsPage } from './notifications-page'
 
 const config: notificationsApi.GovernanceNotificationConfig = {
@@ -38,9 +39,16 @@ function renderPage() {
 
 describe('Governance notification queue source-driven diagnostics', () => {
   beforeEach(() => {
+    clearSession()
     persistTestSession('GOVERNANCE_OPERATOR')
     vi.restoreAllMocks()
     vi.spyOn(notificationsApi, 'fetchGovernanceNotificationConfig').mockResolvedValue(config)
+    // Never hit the live optional health endpoint during notification UI tests:
+    // a 401 response would clear the synthetic actor and corrupt RBAC assertions.
+    vi.spyOn(notificationsApi, 'fetchGovernanceNotificationHealth').mockResolvedValue({
+      ...queueHealth,
+      durable_outbox_enabled: false,
+    })
     vi.spyOn(notificationsApi, 'fetchGovernanceNotificationEvents').mockResolvedValue({
       total: 0,
       events: [],
@@ -73,6 +81,61 @@ describe('Governance notification queue source-driven diagnostics', () => {
     expect(within(drawer).getByText(/transport (acceptance|acknowledgement)/i)).toBeInTheDocument()
     expect(within(drawer).getByText(/(does not|not).*confirm (inbox|downstream|receiver)/i)).toBeInTheDocument()
     expect(within(drawer).queryByText(/delivered successfully to the configured channel/i)).not.toBeInTheDocument()
+  })
+
+
+  it('does not advertise a nonfunctional email Test action to a read-only Governance Operator', async () => {
+    vi.spyOn(notificationsApi, 'fetchGovernanceNotificationEvents').mockImplementation(async (status) => ({
+      total: status === 'FAILED' ? 1 : 0,
+      events: status === 'FAILED' ? [{
+        id: 92,
+        event_type: 'POLICY_VIOLATION',
+        event_category: 'governance',
+        severity: 'HIGH',
+        status: 'FAILED',
+        payload: null,
+        created_at: '2026-10-13T02:00:00Z',
+        sent_at: null,
+      }] : [],
+    }))
+    renderPage()
+    const row = await screen.findByTestId('notification-event-92')
+    fireEvent.click(row)
+    const drawer = await screen.findByTestId('notification-event-drawer')
+    expect(within(drawer).queryByRole('button', { name: /Test email channel/i })).not.toBeInTheDocument()
+    expect(within(drawer).getByRole('link', { name: /Open governance workspace/i })).toBeInTheDocument()
+  })
+
+  it('retains the failed-event email Test action for an authorized Administrator', async () => {
+    persistTestSession('ADMINISTRATOR')
+    expect(readSession()?.user.role).toBe('ADMINISTRATOR')
+    vi.spyOn(notificationsApi, 'fetchGovernanceNotificationEvents').mockImplementation(async (status) => ({
+      total: status === 'FAILED' ? 1 : 0,
+      events: status === 'FAILED' ? [{
+        id: 93,
+        event_type: 'POLICY_VIOLATION',
+        event_category: 'governance',
+        severity: 'HIGH',
+        status: 'FAILED',
+        payload: null,
+        created_at: '2026-10-13T02:00:00Z',
+        sent_at: null,
+      }] : [],
+    }))
+    const send = vi.spyOn(notificationsApi, 'testGovernanceNotification').mockResolvedValue({
+      channel: 'email',
+      success: true,
+      message: 'SMTP relay accepted',
+    })
+    renderPage()
+    const row = await screen.findByTestId('notification-event-93')
+    expect(readSession()?.user.role).toBe('ADMINISTRATOR')
+    fireEvent.click(row)
+    expect(readSession()?.user.role).toBe('ADMINISTRATOR')
+    const drawer = await screen.findByTestId('notification-event-drawer')
+    const testButton = within(drawer).getByRole('button', { name: /Test email channel/i })
+    fireEvent.click(testButton)
+    expect(send).toHaveBeenCalledWith('email')
   })
 
   it('shows read-only queue depth, retries and dead letters when enabled', async () => {
