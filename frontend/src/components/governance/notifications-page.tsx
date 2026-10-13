@@ -12,7 +12,7 @@ import {
 import { NAV_PATH } from '../../config/nav-paths'
 import { governanceReadOnlyReason } from '../../lib/governance-rbac'
 import { cn } from '../../lib/utils'
-import { readSession } from '../../auth/session'
+import { isSessionExpired, readSession } from '../../auth/session'
 import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
 import { GovernanceInvestigationDrawer } from './governance-investigation-drawer'
 import { Link } from 'react-router-dom'
@@ -26,8 +26,8 @@ function formatTime(iso: string | null | undefined): string {
 
 function canManageNotificationRules(): boolean {
   const session = readSession()
-  if (!session) return false
-  return String(session.user.role || '').toUpperCase() === 'ADMINISTRATOR'
+  if (!session || isSessionExpired() || session.user.status !== 'ACTIVE' || session.user.must_change_password) return false
+  return session.user.role === 'ADMINISTRATOR'
 }
 
 function ToggleRow({

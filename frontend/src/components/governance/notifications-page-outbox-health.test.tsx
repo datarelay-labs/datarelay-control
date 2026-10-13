@@ -3,7 +3,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as notificationsApi from '../../api/gdcGovernanceNotifications'
 import { persistTestSession } from '../../lib/governance-rbac'
-import { clearSession, readSession } from '../../auth/session'
+import { clearSession, persistSession, readSession } from '../../auth/session'
 import { NotificationsPage } from './notifications-page'
 
 const config: notificationsApi.GovernanceNotificationConfig = {
@@ -136,6 +136,27 @@ describe('Governance notification queue source-driven diagnostics', () => {
     const testButton = within(drawer).getByRole('button', { name: /Test email channel/i })
     fireEvent.click(testButton)
     expect(send).toHaveBeenCalledWith('email')
+  })
+
+
+  it.each([
+    ['expired access', { expires_at: '2020-01-01T00:00:00.000Z' }],
+    ['disabled account', { status: 'DISABLED' }],
+    ['password reset required', { must_change_password: true }],
+  ])('does not expose Administrator notification mutations with %s', async (_label, override) => {
+    persistTestSession('ADMINISTRATOR')
+    const session = readSession()
+    if (session == null) throw new Error('Test Administrator session is missing')
+    persistSession({
+      ...session,
+      expires_at: 'expires_at' in override ? override.expires_at : session.expires_at,
+      user: { ...session.user, ...('status' in override ? { status: override.status } : {}), ...('must_change_password' in override ? { must_change_password: override.must_change_password } : {}) },
+    })
+    renderPage()
+    await screen.findByTestId('notification-channels')
+    expect(screen.queryByTestId('notification-save')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('notification-test-email')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('notification-test-webhook')).not.toBeInTheDocument()
   })
 
   it('shows read-only queue depth, retries and dead letters when enabled', async () => {
