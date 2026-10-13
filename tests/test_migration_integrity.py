@@ -22,7 +22,7 @@ def test_known_orphan_revision_list_includes_reported_drift() -> None:
 
 def test_load_script_directory_heads_match_repo() -> None:
     heads = load_script_directory(project_root()).get_heads()
-    assert heads == ["20261006_0065_legacy_bridge"]
+    assert heads == ["20261009_0071_grant_replay"]
 
 
 def test_legacy_dev_schema_revision_remains_on_active_chain() -> None:
@@ -76,7 +76,7 @@ def test_evaluate_migration_integrity_ok_on_migrated_db(
     assert report.status in ("ok", "warn")
     assert report.ok is True
     assert report.db_revision_is_head is True
-    assert report.repo_heads == ("20261006_0065_legacy_bridge",)
+    assert report.repo_heads == ("20261009_0071_grant_replay",)
 
 
 def test_evaluate_migration_integrity_orphan_revision_errors(db_engine) -> None:

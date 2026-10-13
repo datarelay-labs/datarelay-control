@@ -3525,9 +3525,19 @@ async def replay_failed_delivery_log(
 ) -> DeliveryLogReplayResponse:
     """Replay a failed route delivery from delivery_logs evidence; never updates checkpoints."""
 
+    from app.runtime.grant_replay_dispatch import ProtectedReplayDenied
+
     dry_run = bool(payload.dry_run) if payload is not None else False
     try:
         result = replay_service.replay_delivery_log(db, log_id, dry_run=dry_run)
+    except ProtectedReplayDenied as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_code": exc.code,
+                "message": "This delivery log requires product-verified Grant authorization.",
+            },
+        ) from exc
     except replay_service.DeliveryLogNotFoundError as exc:
         raise HTTPException(
             status_code=404,

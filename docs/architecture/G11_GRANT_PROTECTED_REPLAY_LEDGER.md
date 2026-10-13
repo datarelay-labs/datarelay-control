@@ -208,3 +208,50 @@ disposable SQLite and the new isolated PostgreSQL migration.
 5. Separate external Stellar receiver and full two-human Grant acceptance.
 
 Until all are met, **Control G11 M3 = WAITING_INTEGRATION**.
+
+## 2026-10-13 bounded source-only native replay boundary integration
+
+The unmerged G11 feature branch now has an **opt-in source-level** check at
+the original `app/runtime/replay_service.py::replay_delivery_log`, before
+eligibility, stage/audit writes or destination sends. If the additive
+product-owned `grant_protected_replay_ledger` table exists, any source log
+persistently bound to an approved protected operation is denied unless a
+matching, durable UNKNOWN/one-attempt ledger entry has a fresh one-use
+in-process permit. Direct calls through the existing operator HTTP route
+cannot supply that internal permit and receive a sanitized HTTP 409. This is
+not a new alternate API that bypasses the existing replay service.
+
+The **unprotected legacy replay path stays compatible** on installations
+without the additive ledger table; an attempt to use a protected permit while
+the table is missing is always refused. The isolated existing G11 pilot is
+updated to request this internal one-use permit only after its independently
+authenticated exact Grant read + consume checks, then dispatches through the
+same native service. Permit creation is *never* proof of Grant approval on
+its own and is not exposed through an operator API. The consuming product
+still needs the owner-approved installation policy, identity/credential
+provisioning, migration/rollback and independently verified receiver state.
+
+This is **source only on a Draft PR, not deployed or production qualified**.
+Source-bounded native guard tests use disposable SQLite to verify denial
+prior to any eligibility/send and exact protection binding; protected
+fallbacks and full G11 ledger/claim/pilot contracts run without live external
+destinations. Existing Control replay tests that require a PostgreSQL test
+schema were not qualified by the initial local attempt because the shared
+older test catalog referred to an Alembic revision absent from this branch
+(`20261012_0068_gov_outbox`). No shared database reset, schema rewrite,
+legacy live operator send or production modification is authorized by this
+source change; independent fresh-catalog CI is required. Full User E2E is
+explicitly outside the current scope.
+
+### Additive migration head compatibility, current feature branch
+
+The tracked G11 Alembic migration `20261009_0071_grant_replay` extends
+`20261006_0065_legacy_bridge`, making `0071` the required *feature-branch*
+head. The exact backend-focused CI result on the previous G11 Draft SHA
+showed 2,757 passed with three failures from assertions still expecting
+`0065` to be the current head. This change updates those three head
+assertions to `0071`; the ancestor-chain test retains the `0065` parent.
+Pure migration graph tests pass locally; upgrade/downgrade and full backend
+qualification must use a fresh, isolated database whose Alembic history
+matches this branch. A stale shared test database with an unrelated revision
+must NOT be reset merely to make the tests green.

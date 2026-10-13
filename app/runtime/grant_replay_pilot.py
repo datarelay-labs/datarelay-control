@@ -27,9 +27,9 @@ from app.runtime import replay_service
 from app.runtime.grant_replay_claim import (
     _expected_action, canonical_action_hash, inspect_exact_grant_consume,
 )
+from app.runtime.grant_replay_dispatch import arm_protected_dispatch_once
 from app.runtime.grant_replay_ledger import (
     RESERVED, GrantProtectedReplayLedger, ReplayBinding,
-    arm_after_external_grant_verification,
 )
 
 
@@ -161,7 +161,8 @@ def run_isolated_approved_control_replay(
         raise IsolatedPilotError("G11_GRANT_CLAIM_NOT_FRESH") from None
     if not match.claim_is_fresh:
         raise IsolatedPilotError("G11_GRANT_CLAIM_NOT_FRESH")
-    if arm_after_external_grant_verification(factory, binding) != "ONE_EFFECT_ATTEMPT_ARMED":
+    permit = arm_protected_dispatch_once(factory, binding)
+    if permit is None:
         raise IsolatedPilotError("G11_PRODUCT_EFFECT_ALREADY_ARMED")
     # Native Control sends a real HTTP POST to the validated loopback receiver.
     # The arm is committed *before* invoking the outbound destination.
@@ -169,6 +170,7 @@ def run_isolated_approved_control_replay(
         result = replay_service.replay_delivery_log(
             db, binding.delivery_log_id,
             dry_run=False, destination_registry=registry,
+            protected_permit=permit,
         )
         db.commit()
     except Exception:
