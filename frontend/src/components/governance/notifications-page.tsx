@@ -292,7 +292,8 @@ export function NotificationsPage() {
     setError(null)
     try {
       const result = await testGovernanceNotification(channel)
-      setMessage(result.message)
+      if (result.success) setMessage(result.message)
+      else setError(result.message || 'Test notification was not accepted by the configured transport.')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Test notification failed')
     } finally {
@@ -359,12 +360,12 @@ export function NotificationsPage() {
         </p>
       ) : null}
       {message ? (
-        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100">
+        <p data-testid="notification-success-message" className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100">
           {message}
         </p>
       ) : null}
       {error ? (
-        <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-900 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-100">
+        <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-900 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-100">
           {error}
         </p>
       ) : null}

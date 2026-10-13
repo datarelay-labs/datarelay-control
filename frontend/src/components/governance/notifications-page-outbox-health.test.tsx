@@ -357,6 +357,40 @@ describe('Governance notification queue source-driven diagnostics', () => {
     expect(await screen.findByTestId('notification-discard-dialog')).toBeInTheDocument()
   })
 
+
+  it.each([
+    ['email', 'Email channel is disabled.'],
+    ['webhook', 'Webhook channel is disabled or URL is missing.'],
+  ] as const)('displays a refused %s Test Send response as failure, not success', async (channel, detail) => {
+    persistTestSession('ADMINISTRATOR')
+    const request = vi.spyOn(notificationsApi, 'testGovernanceNotification').mockResolvedValue({
+      channel,
+      success: false,
+      message: detail,
+    })
+    renderPage()
+    await screen.findByTestId('notification-channels')
+    fireEvent.click(screen.getByTestId(channel === 'email' ? 'notification-test-email' : 'notification-test-webhook'))
+    await waitFor(() => expect(request).toHaveBeenCalledWith(channel))
+    expect(await screen.findByRole('alert')).toHaveTextContent(detail)
+    expect(screen.queryByTestId('notification-success-message')).not.toBeInTheDocument()
+  })
+
+  it('keeps an actually accepted email test as success without claiming inbox delivery', async () => {
+    persistTestSession('ADMINISTRATOR')
+    vi.spyOn(notificationsApi, 'testGovernanceNotification').mockResolvedValue({
+      channel: 'email',
+      success: true,
+      message: 'SMTP relay accepted the test message; inbox delivery is not verified.',
+    })
+    renderPage()
+    await screen.findByTestId('notification-channels')
+    fireEvent.click(screen.getByTestId('notification-test-email'))
+    await waitFor(() => expect(screen.getByTestId('notification-success-message')).toBeInTheDocument())
+    expect(screen.getByTestId('notification-success-message')).toHaveTextContent(/inbox delivery is not verified/i)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
   it('shows read-only queue depth, retries and dead letters when enabled', async () => {
     vi.spyOn(notificationsApi, 'fetchGovernanceNotificationHealth').mockResolvedValue(queueHealth)
     renderPage()
