@@ -199,12 +199,27 @@ def replay_delivery_log(
     *,
     dry_run: bool = False,
     destination_registry: DestinationAdapterRegistry | None = None,
+    protected_permit: object | None = None,
 ) -> ReplayExecutionResult:
-    """Replay one failed route delivery log without updating source checkpoints."""
+    """Replay a failed log. An opt-in Grant-protected log requires a one-use permit."""
 
     row = db.query(DeliveryLog).filter(DeliveryLog.id == int(log_id)).first()
     if row is None:
         raise DeliveryLogNotFoundError(log_id)
+
+    # Source-bound, not a new operator route: no eligibility/audit/send occurs
+    # before this check. The installed product owns protection by persisted log
+    # reservation; unprotected legacy logs retain their original behavior.
+    import sqlalchemy
+    from app.runtime import grant_replay_dispatch as dispatch
+
+    if sqlalchemy.inspect(db.get_bind()).has_table('grant_protected_replay_ledger'):
+        dispatch.enforce_native_replay_boundary(
+            db, row, protected_permit=protected_permit, dry_run=dry_run,
+        )
+    elif protected_permit is not None:
+        # A product-authenticated protected dispatch must not lose its ledger.
+        raise dispatch.ProtectedReplayDenied()
 
     eligibility = assess_replay_eligibility(db, row)
     if not eligibility.eligible:
