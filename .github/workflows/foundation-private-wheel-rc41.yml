@@ -24,6 +24,37 @@ jobs:
           python-version: "3.12"
       # This existing private token is used only for read-only acquisition.
       # Never emit its value or publish the downloaded artifact from Control.
+      - name: Preflight private artifact access without exposing credentials
+        env:
+          GH_TOKEN: ${{ secrets.FOUNDATION_PACKAGES_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error title=TOKEN_MISSING::FOUNDATION_PACKAGES_TOKEN is unavailable to this workflow"
+            exit 1
+          fi
+          status="$(curl -sS -o "$RUNNER_TEMP/rc41-artifact-meta.json" -w '%{http_code}' \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            https://api.github.com/repos/datarelay-labs/datarelay-product-foundation/actions/artifacts/11812460800)"
+          case "$status" in
+            200)
+              python3 - <<'PYMETA'
+          import json,os
+          from pathlib import Path
+          p=Path(os.environ['RUNNER_TEMP'])/'rc41-artifact-meta.json'
+          a=json.loads(p.read_text())
+          if (a.get('id') != 11812460800 or a.get('name') != 'foundation-private-signed-rc41'
+                  or a.get('expired') is not False or a.get('workflow_run',{}).get('id') != 38395149689):
+              raise SystemExit('ARTIFACT_METADATA_MISMATCH')
+          print('ARTIFACT_METADATA_VERIFIED=PASS')
+          PYMETA
+              ;;
+            401|403) echo "::error title=ARTIFACT_ACCESS_DENIED::Private Foundation Actions read denied (HTTP $status)"; exit 1 ;;
+            404) echo '::error title=ARTIFACT_NOT_VISIBLE::Artifact exists under authorized Foundation identity, but this CI token cannot see it (HTTP 404)'; exit 1 ;;
+            *) echo "::error title=ARTIFACT_API_ERROR::Unexpected artifact metadata HTTP $status"; exit 1 ;;
+          esac
       - name: Download exact approved signed Foundation artifact
         uses: actions/download-artifact@v4
         with:
