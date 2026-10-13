@@ -159,6 +159,48 @@ describe('Governance notification queue source-driven diagnostics', () => {
     expect(screen.queryByTestId('notification-test-webhook')).not.toBeInTheDocument()
   })
 
+
+  it('honors a server-denied notification-write capability even for an active Administrator', async () => {
+    persistTestSession('ADMINISTRATOR')
+    const session = readSession()
+    if (session == null) throw new Error('Test Administrator session missing')
+    persistSession({
+      ...session,
+      user: {
+        ...session.user,
+        capabilities: {
+          ...session.user.capabilities,
+          admin_alert_settings_write: false,
+        },
+      },
+    })
+    renderPage()
+    await screen.findByTestId('notification-channels')
+    expect(screen.queryByTestId('notification-save')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('notification-test-email')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('notification-test-webhook')).not.toBeInTheDocument()
+  })
+
+  it('does not let a nonadmin with an inconsistent write capability bypass the Administrator API role rule', async () => {
+    persistTestSession('GOVERNANCE_OPERATOR')
+    const session = readSession()
+    if (session == null) throw new Error('Test Governance Operator session missing')
+    persistSession({
+      ...session,
+      user: {
+        ...session.user,
+        capabilities: {
+          ...session.user.capabilities,
+          admin_alert_settings_write: true,
+        },
+      },
+    })
+    renderPage()
+    await screen.findByTestId('notification-channels')
+    expect(screen.queryByTestId('notification-save')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('notification-test-email')).not.toBeInTheDocument()
+  })
+
   it('shows read-only queue depth, retries and dead letters when enabled', async () => {
     vi.spyOn(notificationsApi, 'fetchGovernanceNotificationHealth').mockResolvedValue(queueHealth)
     renderPage()
