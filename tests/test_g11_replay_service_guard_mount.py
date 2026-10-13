@@ -100,3 +100,35 @@ def test_native_service_rejects_persistently_protected_log_without_product_permi
         with pytest.raises(ProtectedReplayDenied):
             replay_service.replay_delivery_log(wrapped,42,protected_permit=permit)
     engine.dispose()
+
+
+@pytest.mark.parametrize('dry_run', [False, True])
+def test_existing_operator_replay_http_handler_refuses_protected_log_before_audit(monkeypatch, dry_run):
+    """The native operator route must expose a sanitized 409, never permit a send."""
+    import asyncio
+
+    from fastapi import HTTPException
+
+    from app.runtime import router
+    from app.runtime.schemas import DeliveryLogReplayRequest
+
+    calls = []
+
+    def denied(_db, log_id, *, dry_run):
+        calls.append((log_id, dry_run))
+        raise ProtectedReplayDenied()
+
+    def unexpected_audit(*_args, **_kwargs):
+        pytest.fail('blocked HTTP replay must not create an execution audit event')
+
+    monkeypatch.setattr(router.replay_service, 'replay_delivery_log', denied)
+    monkeypatch.setattr(router.journal, 'record_audit_event', unexpected_audit)
+    with pytest.raises(HTTPException) as caught:
+        asyncio.run(router.replay_failed_delivery_log(
+            log_id=42, request=object(),
+            payload=DeliveryLogReplayRequest(dry_run=dry_run), db=object(),
+        ))
+    assert caught.value.status_code == 409
+    assert caught.value.detail['error_code'] == 'GRANT_PROTECTED_REPLAY_REQUIRED'
+    assert 'product-verified' in caught.value.detail['message']
+    assert calls == [(42, dry_run)]
