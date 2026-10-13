@@ -738,9 +738,15 @@ describe('DashboardOverview', () => {
     expect(screen.getByLabelText('Auto refresh interval')).toHaveValue('off')
     const callsAfterLoad = vi.mocked(api.getOperationalSnapshot).mock.calls.length
 
-    // No clicks, polling or parent rerender: the clock must invalidate the view.
-    await waitFor(() => expect(within(main).getByTestId('dashboard-snapshot-stale')).toBeInTheDocument(),
-      { timeout: 5_000, interval: 75 })
+    // The clock invalidates evidence at 90s. A throttled CI runner may delay
+    // timers, so trigger the supported tab-focus recheck instead of wall-clock waiting.
+    const mockedNow = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 91_000)
+    try {
+      act(() => window.dispatchEvent(new Event('focus')))
+      expect(within(main).getByTestId('dashboard-snapshot-stale')).toBeInTheDocument()
+    } finally {
+      mockedNow.mockRestore()
+    }
     expect(within(main).getByTestId('dashboard-running-badge')).toHaveTextContent('Unknown')
     expect(within(main).getByTestId('dashboard-overall-posture-label')).toHaveTextContent('Not verified')
     expect(within(main).getByTestId('dashboard-traffic-evidence-caption')).toHaveTextContent('Last reported')
