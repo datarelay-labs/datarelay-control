@@ -356,8 +356,10 @@ describe('Logs Explorer narrow viewport source integration', () => {
       setup([row(72, 2, 42, 'Mobile Route failure evidence')])
       render(<MemoryRouter initialEntries={['/logs?route_id=42']}><LogsExplorerPage /></MemoryRouter>)
       const cards = await screen.findByRole('region', { name: 'Compact delivery logs' })
-      expect(cards).toHaveTextContent('Mobile Route failure evidence')
-      expect(cards).toHaveTextContent('FAILED')
+      await waitFor(() => {
+        expect(cards).toHaveTextContent('Mobile Route failure evidence')
+        expect(cards).toHaveTextContent('FAILED')
+      })
       expect(screen.queryByTestId('logs-dense-table')).not.toBeInTheDocument()
       await user.click(screen.getByRole('button', { name: 'Inspect log evt_72' }))
       expect(screen.getByRole('complementary', { name: 'Log details' })).toBeInTheDocument()
