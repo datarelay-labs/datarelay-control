@@ -7,6 +7,7 @@ on:
       - ".github/workflows/foundation-private-wheel-rc41.yml"
       - "scripts/ci/stage-private-foundation-rc41-wheel.py"
       - "tests/test_private_foundation_rc41_wheel_control.py"
+      - "tests/test_private_foundation_rc41_artifact_stage.py"
       - "app/auth/password_policy.py"
       - "requirements.txt"
   workflow_dispatch:
@@ -71,6 +72,8 @@ jobs:
             --output-dir "$RUNNER_TEMP/foundation-rc41-verified"
       - name: Install existing Control native dependencies
         run: python3 -m pip install --no-cache-dir -r requirements.txt
+      - name: Verify fail-closed artifact staging regressions
+        run: python3 -m pytest -q tests/test_private_foundation_rc41_artifact_stage.py
       - name: Load exact signed private RC41 Python distribution
         run: |
           set -euo pipefail
