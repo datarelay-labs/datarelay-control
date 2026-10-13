@@ -17,6 +17,8 @@ import { getSessionCapabilities } from '../../lib/rbac'
 import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
 import { GovernanceInvestigationDrawer } from './governance-investigation-drawer'
 import { Link } from 'react-router-dom'
+import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
+import { WizardRouteLeaveGuard, type WizardBlockedNavigation } from '../streams/wizard/wizard-route-leave-guard'
 
 function formatTime(iso: string | null | undefined): string {
   if (!iso) return '—'
@@ -69,6 +71,23 @@ function ToggleRow({
       />
     </label>
   )
+}
+
+// Compare only persisted inputs. Queue telemetry and updated_at are not edits.
+function notificationRulesChanged(
+  persisted: GovernanceNotificationConfig | null,
+  draft: GovernanceNotificationConfig | null,
+): boolean {
+  if (persisted == null || draft == null) return false
+  return persisted.approval_events !== draft.approval_events ||
+    persisted.violation_events !== draft.violation_events ||
+    persisted.quarantine_events !== draft.quarantine_events ||
+    persisted.replay_events !== draft.replay_events ||
+    persisted.email_enabled !== draft.email_enabled ||
+    persisted.email_recipients.length !== draft.email_recipients.length ||
+    persisted.email_recipients.some((entry, index) => entry !== draft.email_recipients[index]) ||
+    persisted.webhook_enabled !== draft.webhook_enabled ||
+    persisted.webhook_url !== draft.webhook_url
 }
 
 function notificationWhy(entry: GovernanceNotificationEventEntry): string {
@@ -153,6 +172,41 @@ export function NotificationsPage() {
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [selectedEvent, setSelectedEvent] = useState<GovernanceNotificationEventEntry | null>(null)
+  const [discardOpen, setDiscardOpen] = useState(false)
+  const [refreshAfterDiscard, setRefreshAfterDiscard] = useState(false)
+  const [navigationDuringSave, setNavigationDuringSave] = useState(false)
+  const pendingNavigationRef = useRef<WizardBlockedNavigation | null>(null)
+  const allowedNextPathRef = useRef<string | null>(null)
+  const hasUnsavedChanges = canEdit && notificationRulesChanged(config, draft)
+
+  const onBlockedNavigation = useCallback((pending: WizardBlockedNavigation) => {
+    if (saving) {
+      pending.reset()
+      setNavigationDuringSave(true)
+      return
+    }
+    pendingNavigationRef.current = pending
+    setRefreshAfterDiscard(false)
+    setDiscardOpen(true)
+  }, [saving])
+
+  const dismissDiscard = useCallback(() => {
+    const pending = pendingNavigationRef.current
+    pendingNavigationRef.current = null
+    pending?.reset()
+    setDiscardOpen(false)
+    setRefreshAfterDiscard(false)
+  }, [])
+
+  useEffect(() => {
+    if (!canEdit || (!hasUnsavedChanges && !saving)) return
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [canEdit, hasUnsavedChanges, saving])
 
   const recipientsText = useMemo(() => (draft?.email_recipients ?? []).join(', '), [draft?.email_recipients])
 
@@ -191,6 +245,19 @@ export function NotificationsPage() {
   useEffect(() => {
     void load()
   }, [load])
+
+  const requestRefresh = () => {
+    if (saving) {
+      setNavigationDuringSave(true)
+      return
+    }
+    if (hasUnsavedChanges) {
+      setRefreshAfterDiscard(true)
+      setDiscardOpen(true)
+      return
+    }
+    void load()
+  }
 
   const save = async () => {
     if (!draft || !canEdit) return
@@ -244,6 +311,11 @@ export function NotificationsPage() {
 
   return (
     <div className="space-y-6" data-testid="governance-notifications-page">
+      <WizardRouteLeaveGuard
+        active={canEdit && (hasUnsavedChanges || saving)}
+        allowedNextPathRef={allowedNextPathRef}
+        onBlocked={onBlockedNavigation}
+      />
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
@@ -256,7 +328,8 @@ export function NotificationsPage() {
         </div>
         <button
           type="button"
-          onClick={() => void load()}
+          onClick={requestRefresh}
+          disabled={saving}
           className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-gdc-border dark:text-gdc-mutedStrong dark:hover:bg-gdc-rowHover"
           data-testid="notifications-refresh"
         >
@@ -265,6 +338,16 @@ export function NotificationsPage() {
         </button>
       </header>
 
+      {hasUnsavedChanges ? (
+        <p role="status" data-testid="notification-unsaved-warning" className="rounded-lg border border-amber-300/70 bg-amber-50/70 px-3 py-2 text-[12px] text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
+          Unsaved notification rules are local only. Save or explicitly discard changes before leaving or refreshing.
+        </p>
+      ) : null}
+      {navigationDuringSave && saving ? (
+        <p role="status" data-testid="notification-saving-navigation-warning" className="text-[12px] text-amber-800 dark:text-amber-200">
+          Finish saving notification rules before leaving or refreshing this page.
+        </p>
+      ) : null}
       {readOnlyReason ? (
         <p className="rounded-lg border border-amber-200/80 bg-amber-50/60 px-3 py-2 text-[12px] text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
           {readOnlyReason}
@@ -295,7 +378,7 @@ export function NotificationsPage() {
                 label="Email Enabled"
                 description="Send governance alerts to configured recipients."
                 checked={draft.email_enabled}
-                disabled={!canEdit}
+                disabled={!canEdit || saving}
                 onChange={(v) => setDraft({ ...draft, email_enabled: v })}
                 testId="notification-email-enabled"
               />
@@ -304,7 +387,7 @@ export function NotificationsPage() {
                 <input
                   type="text"
                   value={recipientsText}
-                  disabled={!canEdit}
+                  disabled={!canEdit || saving}
                   onChange={(e) =>
                     setDraft({
                       ...draft,
@@ -322,7 +405,7 @@ export function NotificationsPage() {
                 label="Webhook Enabled"
                 description="POST JSON payloads to your webhook URL."
                 checked={draft.webhook_enabled}
-                disabled={!canEdit}
+                disabled={!canEdit || saving}
                 onChange={(v) => setDraft({ ...draft, webhook_enabled: v })}
                 testId="notification-webhook-enabled"
               />
@@ -331,7 +414,7 @@ export function NotificationsPage() {
                 <input
                   type="url"
                   value={draft.webhook_url ?? ''}
-                  disabled={!canEdit}
+                  disabled={!canEdit || saving}
                   onChange={(e) => setDraft({ ...draft, webhook_url: e.target.value || null })}
                   className="mt-1 w-full rounded-md border border-slate-200 px-2.5 py-1.5 text-[13px] dark:border-gdc-border dark:bg-gdc-bg"
                   data-testid="notification-webhook-url"
@@ -351,7 +434,7 @@ export function NotificationsPage() {
                   </button>
                   <button
                     type="button"
-                    disabled={testing !== null}
+                    disabled={testing !== null || saving}
                     onClick={() => void runTest('email')}
                     className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-gdc-border dark:text-gdc-mutedStrong"
                     data-testid="notification-test-email"
@@ -360,7 +443,7 @@ export function NotificationsPage() {
                   </button>
                   <button
                     type="button"
-                    disabled={testing !== null}
+                    disabled={testing !== null || saving}
                     onClick={() => void runTest('webhook')}
                     className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-gdc-border dark:text-gdc-mutedStrong"
                     data-testid="notification-test-webhook"
@@ -380,28 +463,28 @@ export function NotificationsPage() {
               <ToggleRow
                 label="Approval Events"
                 checked={draft.approval_events}
-                disabled={!canEdit}
+                disabled={!canEdit || saving}
                 onChange={(v) => setDraft({ ...draft, approval_events: v })}
                 testId="notification-sub-approval"
               />
               <ToggleRow
                 label="Violation Events"
                 checked={draft.violation_events}
-                disabled={!canEdit}
+                disabled={!canEdit || saving}
                 onChange={(v) => setDraft({ ...draft, violation_events: v })}
                 testId="notification-sub-violation"
               />
               <ToggleRow
                 label="Quarantine Events"
                 checked={draft.quarantine_events}
-                disabled={!canEdit}
+                disabled={!canEdit || saving}
                 onChange={(v) => setDraft({ ...draft, quarantine_events: v })}
                 testId="notification-sub-quarantine"
               />
               <ToggleRow
                 label="Replay Events"
                 checked={draft.replay_events}
-                disabled={!canEdit}
+                disabled={!canEdit || saving}
                 onChange={(v) => setDraft({ ...draft, replay_events: v })}
                 testId="notification-sub-replay"
               />
@@ -515,6 +598,30 @@ export function NotificationsPage() {
           ) : null
         }
       />
+      {discardOpen ? (
+        <DangerousActionDialog
+          open
+          onOpenChange={(open) => { if (!open) dismissDiscard() }}
+          title={refreshAfterDiscard ? 'Refresh and discard unsaved notification rules?' : 'Discard unsaved notification rules?'}
+          targetName="Notification rules"
+          risk="medium"
+          impactBullets={[
+            'Unsaved changes to notification channels, recipients and event subscriptions will be lost.',
+            'Previously saved notification rules remain active until a successful Save.',
+          ]}
+          reversibility="Unsaved changes cannot be recovered after discard."
+          primaryLabel={refreshAfterDiscard ? 'Refresh latest' : 'Discard changes'}
+          onConfirm={() => {
+            const pending = pendingNavigationRef.current
+            pendingNavigationRef.current = null
+            setDiscardOpen(false)
+            if (pending) pending.proceed()
+            else if (refreshAfterDiscard) void load()
+            setRefreshAfterDiscard(false)
+          }}
+          dataTestId="notification-discard-dialog"
+        />
+      ) : null}
     </div>
   )
 }
