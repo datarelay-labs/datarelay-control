@@ -35,6 +35,7 @@ import { listAuditLogs } from '../../api/gdcAudit'
 import { HelpTooltip } from '../ui/help-tooltip'
 import { HELP_COPY } from '../ui/help-tooltip-copy'
 import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
+import { WizardRouteLeaveGuard, type WizardBlockedNavigation } from '../streams/wizard/wizard-route-leave-guard'
 
 type DeliveryPreviewStatus = 'idle' | 'pending' | 'success' | 'failure'
 
@@ -210,6 +211,9 @@ export function RouteEditPage() {
   const [deliveryPreviewMessage, setDeliveryPreviewMessage] = useState<string | null>(null)
   const [safeFormattedPreview, setSafeFormattedPreview] = useState<SafeFormattedPreview | null>(null)
   const previewRequestToken = useRef(0)
+  const pendingNavigationRef = useRef<WizardBlockedNavigation | null>(null)
+  const allowedNextPathRef = useRef<string | null>(null)
+  const [exitSaveBusyNotice, setExitSaveBusyNotice] = useState(false)
   const destinationLabel = useMemo(() => {
     const found = destinationOptions.find((o) => o.id === backendDestinationId)
     return found?.label ?? '—'
@@ -293,28 +297,59 @@ export function RouteEditPage() {
     setBatchSize(form.batchSize)
   }, [])
 
+  const navigateAfterConfirmedAction = useCallback((path: string) => {
+    // The explicit save/discard must navigate despite the still-dirty render snapshot.
+    allowedNextPathRef.current = path
+    navigate(path)
+    // Do not retain an exemption if the destination navigation was cancelled.
+    window.setTimeout(() => {
+      if (allowedNextPathRef.current === path) allowedNextPathRef.current = null
+    }, 0)
+  }, [navigate])
+
   const leaveWithoutSaving = useCallback(() => {
-    if (backendStreamId != null) navigate(streamRuntimePath(String(backendStreamId)))
-    else navigate(isCreateMode ? '/routes' : '/streams')
-  }, [backendStreamId, isCreateMode, navigate])
+    if (backendStreamId != null) navigateAfterConfirmedAction(streamRuntimePath(String(backendStreamId)))
+    else navigateAfterConfirmedAction(isCreateMode ? '/routes' : '/streams')
+  }, [backendStreamId, isCreateMode, navigateAfterConfirmedAction])
+
+  const cancelPendingNavigation = useCallback(() => {
+    const pending = pendingNavigationRef.current
+    pendingNavigationRef.current = null
+    pending?.reset()
+  }, [])
+
+  const handleBlockedNavigation = useCallback((pending: WizardBlockedNavigation) => {
+    if (isSaving) {
+      pending.reset()
+      setExitSaveBusyNotice(true)
+      return
+    }
+    pendingNavigationRef.current = pending
+    setExitSaveBusyNotice(false)
+    setDiscardOpen(true)
+  }, [isSaving])
 
   const requestLeave = useCallback(() => {
+    if (isSaving) {
+      setExitSaveBusyNotice(true)
+      return
+    }
     if (hasUnsavedChanges) {
       setDiscardOpen(true)
       return
     }
     leaveWithoutSaving()
-  }, [hasUnsavedChanges, leaveWithoutSaving])
+  }, [hasUnsavedChanges, isSaving, leaveWithoutSaving])
 
   useEffect(() => {
-    if (!hasUnsavedChanges) return
+    if (!canMutateWorkspace || (!hasUnsavedChanges && !isSaving)) return
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault()
       event.returnValue = ''
     }
     window.addEventListener('beforeunload', onBeforeUnload)
     return () => window.removeEventListener('beforeunload', onBeforeUnload)
-  }, [hasUnsavedChanges])
+  }, [canMutateWorkspace, hasUnsavedChanges, isSaving])
 
   const processingStatusGenRef = useRef(0)
   const refreshProcessingStatus = useCallback(async (routeId: number) => {
@@ -659,8 +694,8 @@ export function RouteEditPage() {
       setStaleConflict(false)
       setSaveSuccess(isCreateMode ? 'Route created. Moving to stream runtime…' : 'Route saved. Moving to stream runtime…')
       const runtimeStreamId = typeof saved.stream_id === 'number' ? saved.stream_id : backendStreamId
-      if (typeof runtimeStreamId === 'number') navigate(streamRuntimePath(String(runtimeStreamId)))
-      else navigate('/routes')
+      if (typeof runtimeStreamId === 'number') navigateAfterConfirmedAction(streamRuntimePath(String(runtimeStreamId)))
+      else navigateAfterConfirmedAction('/routes')
     } catch (err) {
       if (isRouteStaleWriteError(err)) {
         setStaleConflict(true)
@@ -699,6 +734,11 @@ export function RouteEditPage() {
             : 'Saved'
   return (
     <div className="w-full min-w-0 space-y-3" data-testid="route-edit-page">
+      <WizardRouteLeaveGuard
+        active={canMutateWorkspace && (hasUnsavedChanges || isSaving)}
+        allowedNextPathRef={allowedNextPathRef}
+        onBlocked={handleBlockedNavigation}
+      />
       {!canMutateWorkspace ? (
         <p
           role="status"
@@ -820,6 +860,11 @@ export function RouteEditPage() {
           ) : null}
         </div>
       </header>
+      {exitSaveBusyNotice && isSaving ? (
+        <p role="status" className="text-[11px] text-amber-800 dark:text-amber-200" data-testid="route-edit-navigation-saving-notice">
+          Finish saving this Route before leaving the editor.
+        </p>
+      ) : null}
       {hasUnsavedChanges ? (
         <p className="text-[11px] text-amber-800 dark:text-amber-200" data-testid="route-edit-unsaved-hint">
           Unsaved edits are local only. Runtime continues using the last persisted route configuration until Save succeeds.
@@ -1276,7 +1321,10 @@ export function RouteEditPage() {
         <DangerousActionDialog
           open
           onOpenChange={(open) => {
-            if (!open) setDiscardOpen(false)
+            if (!open) {
+              cancelPendingNavigation()
+              setDiscardOpen(false)
+            }
           }}
           title="Discard unsaved route changes?"
           targetName={confirmationTargetName}
@@ -1288,10 +1336,13 @@ export function RouteEditPage() {
           reversibility="Unsaved edits cannot be recovered after discard."
           primaryLabel="Discard changes"
           onConfirm={() => {
+            const pending = pendingNavigationRef.current
+            pendingNavigationRef.current = null
             setDiscardOpen(false)
             if (deliveryBaseline) applyDeliveryForm(deliveryBaseline)
             setTransformDirty(false)
-            leaveWithoutSaving()
+            if (pending) pending.proceed()
+            else leaveWithoutSaving()
           }}
           dataTestId="route-edit-discard-dialog"
         />
