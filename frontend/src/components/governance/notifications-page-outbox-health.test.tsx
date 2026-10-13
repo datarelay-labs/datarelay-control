@@ -391,6 +391,92 @@ describe('Governance notification queue source-driven diagnostics', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
+
+  it.each([
+    ['email', 'notification-email-enabled', 'notification-test-email'],
+    ['webhook', 'notification-webhook-enabled', 'notification-test-webhook'],
+  ] as const)('refuses %s Test Send while channel edits are unsaved, with saved-only guidance', async (channel, toggle, buttonId) => {
+    persistTestSession('ADMINISTRATOR')
+    const send = vi.spyOn(notificationsApi, 'testGovernanceNotification').mockResolvedValue({
+      channel, success: true, message: 'Configured channel accepted',
+    })
+    renderPage()
+    const control = await screen.findByTestId(toggle)
+    const button = screen.getByTestId(buttonId)
+    expect(button).toBeEnabled()
+    fireEvent.click(within(control).getByRole('checkbox'))
+    expect(await screen.findByTestId('notification-unsaved-warning')).toBeInTheDocument()
+    expect(button).toBeDisabled()
+    expect(screen.getByTestId('notification-test-saved-rules-warning')).toHaveTextContent(/Save.*before testing/i)
+    fireEvent.click(button)
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('enables Test Send only after the amended settings were successfully saved', async () => {
+    persistTestSession('ADMINISTRATOR')
+    const sender = vi.spyOn(notificationsApi, 'testGovernanceNotification').mockResolvedValue({
+      channel: 'email', success: true, message: 'SMTP relay accepted, inbox not verified',
+    })
+    vi.spyOn(notificationsApi, 'updateGovernanceNotificationConfig').mockImplementation(async body => ({
+      ...config, ...body, updated_at: '2026-10-13T05:50:00Z',
+    }))
+    renderPage()
+    const toggle = await screen.findByTestId('notification-email-enabled')
+    fireEvent.click(within(toggle).getByRole('checkbox'))
+    const test = screen.getByTestId('notification-test-email')
+    expect(test).toBeDisabled()
+    fireEvent.click(screen.getByTestId('notification-save'))
+    await waitFor(() => expect(screen.queryByTestId('notification-unsaved-warning')).not.toBeInTheDocument())
+    expect(test).toBeEnabled()
+    fireEvent.click(test)
+    await waitFor(() => expect(sender).toHaveBeenCalledWith('email'))
+  })
+
+
+  it('blocks Test email from a failed-event drawer while a different email draft is unsaved', async () => {
+    persistTestSession('ADMINISTRATOR')
+    const send = vi.spyOn(notificationsApi, 'testGovernanceNotification').mockResolvedValue({
+      channel: 'email', success: true, message: 'Accepted',
+    })
+    vi.spyOn(notificationsApi, 'fetchGovernanceNotificationEvents').mockImplementation(async status => ({
+      total: status === 'FAILED' ? 1 : 0,
+      events: status === 'FAILED' ? [{
+        id: 119,
+        event_type: 'POLICY_VIOLATION',
+        event_category: 'governance',
+        severity: 'HIGH',
+        status: 'FAILED',
+        payload: null,
+        created_at: '2026-10-13T03:00:00Z',
+        sent_at: null,
+      }] : [],
+    }))
+    renderPage()
+    const email = await screen.findByTestId('notification-email-enabled')
+    fireEvent.click(within(email).getByRole('checkbox'))
+    const eventRow = await screen.findByTestId('notification-event-119')
+    fireEvent.click(eventRow)
+    const drawer = await screen.findByTestId('notification-event-drawer')
+    const testButton = within(drawer).getByRole('button', { name: /Test email channel/i })
+    expect(testButton).toBeDisabled()
+    fireEvent.click(testButton)
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('reenables saved-configuration Test Send when unsaved edits are reverted without a Save', async () => {
+    persistTestSession('ADMINISTRATOR')
+    renderPage()
+    const toggle = await screen.findByTestId('notification-webhook-enabled')
+    const test = screen.getByTestId('notification-test-webhook')
+    const checkbox = within(toggle).getByRole('checkbox')
+    expect(test).toBeEnabled()
+    fireEvent.click(checkbox)
+    expect(test).toBeDisabled()
+    fireEvent.click(checkbox)
+    await waitFor(() => expect(screen.queryByTestId('notification-unsaved-warning')).not.toBeInTheDocument())
+    expect(test).toBeEnabled()
+  })
+
   it('shows read-only queue depth, retries and dead letters when enabled', async () => {
     vi.spyOn(notificationsApi, 'fetchGovernanceNotificationHealth').mockResolvedValue(queueHealth)
     renderPage()

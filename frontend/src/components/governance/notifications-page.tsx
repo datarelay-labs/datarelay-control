@@ -286,7 +286,8 @@ export function NotificationsPage() {
   }
 
   const runTest = async (channel: 'email' | 'webhook') => {
-    if (!canEdit) return
+    // The server sends to the persisted channel settings, never the unsaved draft.
+    if (!canEdit || hasUnsavedChanges || saving || testing !== null) return
     setTesting(channel)
     setMessage(null)
     setError(null)
@@ -435,22 +436,29 @@ export function NotificationsPage() {
                   </button>
                   <button
                     type="button"
-                    disabled={testing !== null || saving}
+                    disabled={testing !== null || saving || hasUnsavedChanges}
                     onClick={() => void runTest('email')}
                     className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-gdc-border dark:text-gdc-mutedStrong"
                     data-testid="notification-test-email"
+                    title={hasUnsavedChanges ? 'Save notification rules before testing. Test sends use the last saved settings.' : 'Test the last saved email settings.'}
                   >
                     Test Email
                   </button>
                   <button
                     type="button"
-                    disabled={testing !== null || saving}
+                    disabled={testing !== null || saving || hasUnsavedChanges}
                     onClick={() => void runTest('webhook')}
                     className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-gdc-border dark:text-gdc-mutedStrong"
                     data-testid="notification-test-webhook"
+                    title={hasUnsavedChanges ? 'Save notification rules before testing. Test sends use the last saved settings.' : 'Test the last saved webhook settings.'}
                   >
                     Test Webhook
                   </button>
+                  {hasUnsavedChanges ? (
+                    <p data-testid="notification-test-saved-rules-warning" className="w-full text-[12px] text-amber-800 dark:text-amber-200">
+                      Save notification rules before testing. Test Email and Test Webhook use the last saved channel settings.
+                    </p>
+                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -590,7 +598,9 @@ export function NotificationsPage() {
                 <button
                   type="button"
                   onClick={() => void runTest('email')}
-                  className="rounded-md border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-800 dark:border-gdc-border dark:text-slate-200"
+                  disabled={hasUnsavedChanges || saving || testing !== null}
+                  title={hasUnsavedChanges ? 'Save notification rules before testing; the server uses the saved email settings.' : 'Test the last saved email settings.'}
+                  className="rounded-md border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gdc-border dark:text-slate-200"
                 >
                   Test email channel
                 </button>
