@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { createMemoryRouter, Link, MemoryRouter, Route, RouterProvider, Routes } from 'react-router-dom'
+import { DataRouterEnabledContext } from '../../router/data-router-enabled'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fetchStreamById } from '../../api/gdcStreams'
 import { fetchStreamMappingUiConfig } from '../../api/gdcRuntime'
@@ -167,6 +168,27 @@ function renderStreamEdit() {
       </Routes>
     </MemoryRouter>,
   )
+}
+
+
+function renderStreamEditWithDataRouter(initialEntries: string[] = ['/streams/10/edit'], initialIndex?: number) {
+  // Same one-splat RouterProvider and data-router context as the application entrypoint.
+  const router = createMemoryRouter([{
+    path: '/*',
+    element: (
+      <DataRouterEnabledContext.Provider value>
+        <nav><Link to="/monitoring" data-testid="edit-external-nav">Dashboard</Link></nav>
+        <Routes>
+          <Route path="/streams/:streamId/edit" element={<StreamEditWizardPage />} />
+          <Route path="/streams/:streamId/runtime" element={<p>Stream monitoring workspace</p>} />
+          <Route path="/destinations" element={<p>Destination management workspace</p>} />
+          <Route path="/monitoring" element={<p>Dashboard workspace</p>} />
+        </Routes>
+      </DataRouterEnabledContext.Provider>
+    ),
+  }], { initialEntries, initialIndex })
+  render(<RouterProvider router={router} />)
+  return router
 }
 
 describe('StreamEditWizardPage workspace capability visibility', () => {
@@ -615,5 +637,80 @@ describe('StreamEditWizardPage workspace capability visibility', () => {
     })
     expect(await page.findByTestId('deploy-delivery-proof')).toBeInTheDocument()
     expect(runStreamOnce).toHaveBeenCalledTimes(1)
+  })
+
+  it('blocks an external sidebar route while Stream edits are unconfirmed and allows it after a verified save', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    const router = renderStreamEditWithDataRouter()
+    const page = await screen.findByTestId('edit-stream-wizard')
+    await user.click(within(page).getByTestId('wizard-connect-tab-request'))
+    await user.type(within(page).getByPlaceholderText('e.g. Cybereason Malop Stream'), ' pending edit')
+
+    await user.click(screen.getByTestId('edit-external-nav'))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/streams/10/edit'))
+    expect(within(page).getByTestId('edit-navigation-notice')).toHaveTextContent(/Save now/)
+    expect(screen.queryByText('Dashboard workspace')).not.toBeInTheDocument()
+
+    await user.click(within(page).getByTestId('wizard-save-now'))
+    await waitFor(() => expect(within(page).getByText('Changes saved')).toBeInTheDocument())
+    await user.click(screen.getByTestId('edit-external-nav'))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/monitoring'))
+  })
+
+  it('rejects browser Back with unsaved Stream edits without breaking same-page wizard query navigation', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    const router = renderStreamEditWithDataRouter(['/monitoring', '/streams/10/edit'], 1)
+    const page = await screen.findByTestId('edit-stream-wizard')
+    await user.click(within(page).getByTestId('wizard-connect-tab-request'))
+    await user.type(within(page).getByPlaceholderText('e.g. Cybereason Malop Stream'), ' unsaved back')
+
+    await router.navigate('/streams/10/edit?step=destinations')
+    expect(router.state.location.pathname).toBe('/streams/10/edit')
+    expect(router.state.location.search).toBe('?step=destinations')
+
+    await router.navigate(-1)
+    expect(router.state.location.pathname).toBe('/streams/10/edit')
+    await router.navigate(-1)
+    await waitFor(() => expect(router.state.location.pathname).toBe('/streams/10/edit'))
+    await waitFor(() => expect(within(page).getByTestId('edit-navigation-notice')).toHaveTextContent(/Save now/))
+
+    await user.click(within(page).getByTestId('wizard-save-now'))
+    await waitFor(() => expect(within(page).getByText('Changes saved')).toBeInTheDocument())
+    await router.navigate(-1)
+    await waitFor(() => expect(router.state.location.pathname).toBe('/monitoring'))
+  })
+
+  it('prevents hard reload only while an editable Stream has unconfirmed changes', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    renderStreamEditWithDataRouter()
+    const page = await screen.findByTestId('edit-stream-wizard')
+    const cleanUnload = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(cleanUnload)
+    expect(cleanUnload.defaultPrevented).toBe(false)
+
+    await user.click(within(page).getByTestId('wizard-connect-tab-request'))
+    await user.type(within(page).getByPlaceholderText('e.g. Cybereason Malop Stream'), ' unsaved reload')
+    const dirtyUnload = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(dirtyUnload)
+    expect(dirtyUnload.defaultPrevented).toBe(true)
+
+    await user.click(within(page).getByTestId('wizard-save-now'))
+    await waitFor(() => expect(within(page).getByText('Changes saved')).toBeInTheDocument())
+    const savedUnload = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(savedUnload)
+    expect(savedUnload.defaultPrevented).toBe(false)
+  })
+
+  it('does not restrict Viewer navigation away from a read-only Stream', async () => {
+    const user = userEvent.setup()
+    signIn('VIEWER')
+    const router = renderStreamEditWithDataRouter()
+    await screen.findByTestId('edit-stream-wizard')
+    await user.click(screen.getByTestId('edit-external-nav'))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/monitoring'))
+    expect(persistWizardStreamEdits).not.toHaveBeenCalled()
   })
 })

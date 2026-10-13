@@ -62,6 +62,7 @@ import {
 } from '../../utils/eventExtractionPaths'
 import { normalizeCheckpointRelativePath } from '../../utils/recordSelectionPaths'
 import { StreamDeleteConfirmDialog } from './stream-delete-confirm-dialog'
+import { WizardRouteLeaveGuard, type WizardBlockedNavigation } from './wizard/wizard-route-leave-guard'
 import { useSessionCapabilities } from '../../lib/rbac'
 
 const EDIT_NEXT_STEP_LABEL: Partial<Record<WizardStepKey, string>> = {
@@ -175,6 +176,7 @@ export function StreamEditWizardPage() {
   const isSavingRef = useRef(false)
   const saveErrorRef = useRef<string | null>(null)
   const priorDeliveryProofRef = useRef<PriorDeliveryProof | null>(null)
+  const allowedNextPathRef = useRef<string | null>(null)
   saveErrorRef.current = saveError
   const appliedQueryStepRef = useRef<StreamWizardStepKey | null>(null)
 
@@ -848,6 +850,8 @@ export function StreamEditWizardPage() {
     setStreamDeleteError(null)
     try {
       await deleteStream(backendStreamId)
+      // The operator explicitly confirmed deletion; do not block its completed exit.
+      allowedNextPathRef.current = NAV_PATH.streams
       navigate(NAV_PATH.streams)
     } catch (e) {
       setStreamDeleteError(e instanceof Error ? e.message : 'Delete failed.')
@@ -881,6 +885,22 @@ export function StreamEditWizardPage() {
         draftSnapshot: persistedWizardConfigSnapshot(state),
         confirmedSavedSnapshot: confirmedSavedSnapshotRef.current,
       })
+
+  const handleBlockedEditNavigation = useCallback((pending: WizardBlockedNavigation) => {
+    // An asynchronous unmount flush is not a verified save. Remain in the editor.
+    pending.reset()
+    setExitNavigationBlocked(true)
+  }, [])
+
+  useEffect(() => {
+    if (loading || state == null || !canMutateWorkspace || !runtimeVerificationBlocked) return
+    const guard = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', guard)
+    return () => window.removeEventListener('beforeunload', guard)
+  }, [loading, state, canMutateWorkspace, runtimeVerificationBlocked])
 
   const confirmEditNavigation = () => {
     // A fire-and-forget unmount save is not authoritative persistence evidence.
@@ -924,6 +944,12 @@ export function StreamEditWizardPage() {
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-5 pb-8" data-testid="edit-stream-wizard">
+      <WizardRouteLeaveGuard
+        active={canMutateWorkspace && runtimeVerificationBlocked}
+        allowedNextPathRef={allowedNextPathRef}
+        allowSamePathname
+        onBlocked={handleBlockedEditNavigation}
+      />
       {!canMutateWorkspace || !canRuntimeControl ? (
         <p
           role="status"

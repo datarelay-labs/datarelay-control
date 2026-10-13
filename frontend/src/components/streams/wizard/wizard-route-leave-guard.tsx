@@ -12,6 +12,7 @@ type GuardProps = {
   active: boolean
   allowedNextPathRef: MutableRefObject<string | null>
   onBlocked: (navigation: WizardBlockedNavigation) => void
+  allowSamePathname?: boolean
 }
 
 /**
@@ -23,12 +24,12 @@ export function WizardRouteLeaveGuard(props: GuardProps) {
   return dataRouterEnabled ? <DataRouterWizardLeaveGuard {...props} /> : null
 }
 
-function DataRouterWizardLeaveGuard({ active, allowedNextPathRef, onBlocked }: GuardProps) {
+function DataRouterWizardLeaveGuard({ active, allowedNextPathRef, onBlocked, allowSamePathname = false }: GuardProps) {
   const blocker = useBlocker(({ currentLocation, nextLocation }) => {
     if (!active) return false
     if (
       currentLocation.pathname === nextLocation.pathname &&
-      currentLocation.search === nextLocation.search
+      (allowSamePathname || currentLocation.search === nextLocation.search)
     ) return false
 
     const allowed = allowedNextPathRef.current
