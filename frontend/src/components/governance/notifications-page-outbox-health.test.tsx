@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as notificationsApi from '../../api/gdcGovernanceNotifications'
@@ -45,6 +45,34 @@ describe('Governance notification queue source-driven diagnostics', () => {
       total: 0,
       events: [],
     })
+  })
+
+
+  it('does not misrepresent SENT notification transport acknowledgement as receiver delivery', async () => {
+    vi.spyOn(notificationsApi, 'fetchGovernanceNotificationHealth').mockResolvedValue({
+      ...queueHealth,
+      durable_outbox_enabled: false,
+    })
+    vi.spyOn(notificationsApi, 'fetchGovernanceNotificationEvents').mockImplementation(async (status) => ({
+      total: status === 'SENT' ? 1 : 0,
+      events: status === 'SENT' ? [{
+        id: 91,
+        event_type: 'POLICY_VIOLATION',
+        event_category: 'governance',
+        severity: 'HIGH',
+        status: 'SENT',
+        payload: null,
+        created_at: '2026-10-13T01:00:00Z',
+        sent_at: '2026-10-13T01:00:01Z',
+      }] : [],
+    }))
+    renderPage()
+    const row = await screen.findByTestId('notification-event-91')
+    fireEvent.click(row)
+    const drawer = await screen.findByTestId('notification-event-drawer')
+    expect(within(drawer).getByText(/transport (acceptance|acknowledgement)/i)).toBeInTheDocument()
+    expect(within(drawer).getByText(/(does not|not).*confirm (inbox|downstream|receiver)/i)).toBeInTheDocument()
+    expect(within(drawer).queryByText(/delivered successfully to the configured channel/i)).not.toBeInTheDocument()
   })
 
   it('shows read-only queue depth, retries and dead letters when enabled', async () => {

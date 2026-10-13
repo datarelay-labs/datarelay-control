@@ -73,7 +73,7 @@ function ToggleRow({
 function notificationWhy(entry: GovernanceNotificationEventEntry): string {
   if (entry.status === 'FAILED') return 'Delivery to the configured channel failed — check email or webhook settings.'
   if (entry.status === 'PENDING') return 'Notification is queued and waiting for delivery.'
-  return 'Notification was delivered successfully to the configured channel.'
+  return 'Control recorded transport acceptance for the configured channel(s). This does not confirm inbox delivery or downstream receipt.'
 }
 
 function notificationActionHref(eventType: string): string {
