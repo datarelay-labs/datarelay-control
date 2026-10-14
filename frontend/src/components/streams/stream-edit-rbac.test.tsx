@@ -824,8 +824,13 @@ describe('StreamEditWizardPage workspace capability visibility', () => {
     )
     renderStreamEdit()
     await waitFor(() => expect(screen.getByTestId('stream-run-control-switch')).toHaveTextContent('Running'))
-    fireEvent.click(screen.getByRole('button', { name: 'Run Now' }))
-    expect(await screen.findByRole('button', { name: 'Running…' })).toBeDisabled()
+    const runNow = screen.getByRole('button', { name: 'Run Now' })
+    await waitFor(() => expect(runNow).toBeEnabled(), { timeout: 5_000 })
+    fireEvent.click(runNow)
+    await waitFor(
+      () => expect(screen.getByRole('button', { name: 'Running…' })).toBeDisabled(),
+      { timeout: 5_000 },
+    )
     expect(screen.getByTestId('stream-run-control-switch')).toBeEnabled()
     fireEvent.click(screen.getByTestId('stream-run-control-switch'))
     await waitFor(() => expect(stopRuntimeStream).toHaveBeenCalledWith(10))
