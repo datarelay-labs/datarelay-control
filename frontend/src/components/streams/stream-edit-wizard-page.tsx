@@ -24,6 +24,7 @@ import { StepConnect } from './wizard/step-connect'
 import { StepSample } from './wizard/step-sample'
 import { StepDelivery } from './wizard/step-delivery'
 import { StreamEditDeliveryPanel } from './stream-edit-delivery-panel'
+import { StreamConfigurationRevisions } from './stream-configuration-revisions'
 import { StepRouteProcessing } from './wizard/step-route-processing'
 import { StepDeploy } from './wizard/step-deploy'
 import { WizardStepper } from './wizard/wizard-stepper'
@@ -587,6 +588,27 @@ export function StreamEditWizardPage({
 
   const runtimeAllowsPlatformSave = runtimeStatus === 'STOPPED' || runtimeStatus === 'IDLE'
 
+  const reloadAfterRevisionRestore = useCallback(async () => {
+    if (backendStreamId == null) return
+    const hydrated = await hydrateWizardStateFromStream(backendStreamId)
+    if (!hydrated) {
+      setSaveError('The revision was restored, but the Stream could not be reloaded. Refresh before editing.')
+      return
+    }
+    const next = applySampleConfirmationToWizardState(hydrated)
+    confirmedStateRef.current = next
+    confirmedSavedSnapshotRef.current = persistedWizardConfigSnapshot(next)
+    failedAttemptSnapshotRef.current = null
+    latestStateRef.current = next
+    setState(next)
+    clearStreamEditDraft(backendStreamId)
+    setLocalDraftStatus('clean')
+    setSaveError(null)
+    setSaveSuccess('Saved revision restored. The Stream remains stopped until you start it.')
+    setDeliveryProjectionRevision((revision) => revision + 1)
+    await refreshRuntimeSnapshot()
+  }, [backendStreamId, refreshRuntimeSnapshot])
+
   const handleSave = useCallback(async (opts?: { manual?: boolean }): Promise<boolean> => {
     const manual = opts?.manual === true
     const stateToSave = latestStateRef.current
@@ -881,17 +903,24 @@ export function StreamEditWizardPage({
       if (action === 'start' && (runOnceBusy || runtimeVerificationBlockedNow())) return
       setControlBusy(true)
       setControlMessage(null)
-      const res =
-        action === 'start' ? await startRuntimeStream(backendStreamId) : await stopRuntimeStream(backendStreamId)
-      if (res) {
-        setControlMessage(res.message)
-        await refreshRuntimeSnapshot()
-        const found = await fetchStreamById(backendStreamId)
-        if (found?.status) setRuntimeStatus(mapBackendStreamStatus(found.status))
-      } else {
-        setControlMessage('Runtime API unavailable · control action not applied.')
+      try {
+        const res =
+          action === 'start' ? await startRuntimeStream(backendStreamId) : await stopRuntimeStream(backendStreamId)
+        if (res) {
+          setControlMessage(res.message)
+          await refreshRuntimeSnapshot()
+          const found = await fetchStreamById(backendStreamId)
+          if (found?.status) setRuntimeStatus(mapBackendStreamStatus(found.status))
+        } else {
+          setControlMessage('Runtime API unavailable · control action not applied.')
+        }
+      } catch (error) {
+        setControlMessage(
+          `Runtime ${action} failed · ${error instanceof Error ? error.message : String(error)}`,
+        )
+      } finally {
+        setControlBusy(false)
       }
-      setControlBusy(false)
     },
     [backendStreamId, canRuntimeControl, controlBusy, refreshRuntimeSnapshot, runOnceBusy, runtimeVerificationBlockedNow],
   )
@@ -1163,6 +1192,15 @@ export function StreamEditWizardPage({
               <span className="mt-0.5 block">{runtimeLifecycleLabel}</span>
             </p>
           </div>
+          {backendStreamId != null ? (
+            <StreamConfigurationRevisions
+              streamId={backendStreamId}
+              runtimeStatus={runtimeStatus}
+              canRestore={caps.admin_config_snapshot_apply === true}
+              restoreBlocked={runtimeVerificationBlocked}
+              onRestored={reloadAfterRevisionRestore}
+            />
+          ) : null}
           <p className="max-w-2xl text-sm text-slate-600 dark:text-gdc-muted" data-testid="wizard-stage-purpose">
             {stagePurpose}
           </p>

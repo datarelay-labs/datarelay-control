@@ -206,6 +206,14 @@ export type ConfigSafeRollbackPreviewDto = {
   product_apply_required: boolean
 }
 
+export type ConfigSnapshotApplyDto = {
+  applied_target: 'before' | 'after'
+  source_version_row_id: number
+  source_monotonic_version: number
+  new_monotonic_version: number
+  message: string
+}
+
 export type HealthMetricDto = {
   key: string
   label: string
@@ -465,6 +473,19 @@ export async function getAdminSafeRollbackPreview(
   const q = new URLSearchParams({ expected_version: String(expectedVersion), target })
   return requestJson<ConfigSafeRollbackPreviewDto>(
     `${GDC_API_PREFIX}/admin/config-versions/${rowId}/safe-rollback-preview?${q.toString()}`,
+  )
+}
+
+export async function applyAdminConfigSnapshot(
+  rowId: number,
+  body: { target: 'before' | 'after'; expected_version: number },
+): Promise<ConfigSnapshotApplyDto> {
+  return requestJson<ConfigSnapshotApplyDto>(
+    `${GDC_API_PREFIX}/admin/config-versions/${rowId}/apply-snapshot`,
+    {
+      method: 'POST',
+      body: JSON.stringify(body),
+    },
   )
 }
 

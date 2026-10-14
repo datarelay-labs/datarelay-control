@@ -94,6 +94,12 @@ vi.mock('../../api/gdcRoutes', () => ({
   updateRouteWithFreshToken: (...args: unknown[]) => updateRouteWithFreshToken(...args),
 }))
 
+vi.mock('../../api/gdcAdmin', () => ({
+  getAdminConfigVersions: vi.fn(async () => ({ total: 0, items: [] })),
+  getAdminSafeRollbackPreview: vi.fn(),
+  applyAdminConfigSnapshot: vi.fn(),
+}))
+
 vi.mock('../../api/gdcDestinations', () => ({
   fetchDestinationsList: vi.fn(async () => [{ id: 5, name: 'Dest A', destination_type: 'WEBHOOK_POST', config_json: {} }]),
   testDestination: vi.fn(),
@@ -559,6 +565,25 @@ describe('StreamEditWizardPage workspace capability visibility', () => {
     expect(screen.getByTestId('stream-run-control-switch')).toBeEnabled()
     await user.click(screen.getByTestId('stream-run-control-switch'))
     await waitFor(() => expect(stopRuntimeStream).toHaveBeenCalledWith(10))
+    expect(startRuntimeStream).not.toHaveBeenCalled()
+  })
+
+  it('releases the runtime control after a failed Stop so the operator can retry', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    vi.mocked(fetchStreamById).mockResolvedValue({ id: 10, name: 'Viewer Stream', status: 'RUNNING' })
+    stopRuntimeStream.mockRejectedValueOnce(new Error('receiver busy'))
+    renderStreamEdit()
+
+    const toggle = await screen.findByTestId('stream-run-control-switch')
+    await waitFor(() => expect(toggle).toHaveTextContent('Running'))
+    await user.click(toggle)
+
+    expect(await screen.findByText(/Runtime stop failed · receiver busy/i)).toBeInTheDocument()
+    await waitFor(() => expect(toggle).toBeEnabled())
+
+    await user.click(toggle)
+    await waitFor(() => expect(stopRuntimeStream).toHaveBeenCalledTimes(2))
     expect(startRuntimeStream).not.toHaveBeenCalled()
   })
 
