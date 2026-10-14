@@ -506,14 +506,16 @@ describe('wizard-state buildStreamCreatePayload', () => {
     state.connector.sourceId = 22
     state.connector.sourceType = 'DATABASE_QUERY'
     state.stream.name = 'DB stream'
-    state.stream.sqlQuery = 'SELECT id, message FROM source_e2e_orders'
+    state.stream.sqlQuery = 'SELECT id, message FROM source_e2e_orders WHERE message = %(ui_filter_1)s'
+    state.stream.dbQueryParams = { ui_filter_1: 'warning' }
     state.stream.dbCheckpointColumn = 'id'
     state.stream.dbCheckpointMode = 'SINGLE_COLUMN'
     const payload = buildStreamCreatePayload(state)
     expect(payload?.stream_type).toBe('DATABASE_QUERY')
     expect(payload?.enabled).toBe(false)
     expect(payload?.config_json).toMatchObject({
-      query: 'SELECT id, message FROM source_e2e_orders',
+      query: 'SELECT id, message FROM source_e2e_orders WHERE message = %(ui_filter_1)s',
+      query_params: { ui_filter_1: 'warning' },
       checkpoint_mode: 'SINGLE_COLUMN',
       checkpoint_column: 'id',
     })

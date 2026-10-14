@@ -509,6 +509,8 @@ export type WizardConfigState = {
   includeFileMetadata: boolean
   /** DATABASE_QUERY: SELECT-only SQL text persisted as config_json.query. */
   sqlQuery: string
+  /** DATABASE_QUERY named/positional values persisted separately from SQL text. */
+  dbQueryParams: Record<string, string | number | boolean | null>
   /** DATABASE_QUERY checkpoint column (optional; NONE mode when empty). */
   dbCheckpointColumn: string
   dbCheckpointMode: string
@@ -865,6 +867,7 @@ export const INITIAL_CONFIG: WizardConfigState = {
   lineEventField: 'line',
   includeFileMetadata: false,
   sqlQuery: '',
+  dbQueryParams: {},
   dbCheckpointColumn: '',
   dbCheckpointMode: 'NONE',
   incrementalRequestPattern: 'none',
@@ -1706,6 +1709,9 @@ export function buildStreamConfigPayload(state: WizardState): Record<string, unk
       query: state.stream.sqlQuery.trim(),
       checkpoint_mode: ckMode,
       query_timeout_seconds: state.stream.timeoutSec,
+    }
+    if (Object.keys(state.stream.dbQueryParams ?? {}).length > 0) {
+      out.query_params = { ...state.stream.dbQueryParams }
     }
     if (ckCol) out.checkpoint_column = ckCol
     return out

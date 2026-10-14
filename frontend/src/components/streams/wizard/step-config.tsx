@@ -100,6 +100,10 @@ export function StepConfig({ state, section = 'request', onChange }: StepConfigP
               <DatabaseDiscoveryPanel
                 connectorId={connector.connectorId}
                 connectorName={connector.connectorName}
+                sqlQuery={c.sqlQuery}
+                queryParams={c.dbQueryParams}
+                checkpointColumn={c.dbCheckpointColumn}
+                onApplySelection={(patch) => onChange(patch)}
               />
             </div>
           ) : null}
@@ -165,10 +169,10 @@ export function StepConfig({ state, section = 'request', onChange }: StepConfigP
           </div>
         ) : isDatabase ? (
           <>
-            <Field label="SQL query *">
+            <Field label="Custom SQL / generated SELECT *">
               <textarea
                 value={c.sqlQuery}
-                onChange={(e) => onChange({ sqlQuery: e.target.value })}
+                onChange={(e) => onChange({ sqlQuery: e.target.value, dbQueryParams: {} })}
                 placeholder="SELECT columns FROM your_table"
                 rows={5}
                 className={`${inputCls} h-auto min-h-[6rem] py-2 font-mono text-[11px] md:col-span-1`}
@@ -191,7 +195,7 @@ export function StepConfig({ state, section = 'request', onChange }: StepConfigP
                 />
               </Field>
               <p className="text-[11px] text-slate-500 dark:text-gdc-muted">
-                SELECT-only queries. Leave checkpoint empty for NONE mode, or set a monotonic column for incremental fetch.
+                SELECT-only queries. Builder filter values are stored as bound query parameters; editing Custom SQL clears generated filter binds. Leave checkpoint empty for full polling, or set a monotonic column for incremental fetch.
               </p>
             </div>
           </>
