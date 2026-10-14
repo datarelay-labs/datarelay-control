@@ -412,6 +412,12 @@ export type WizardConnectorState = {
   tokenTtlSeconds: number
 }
 
+/** A source-type hint or a saved Connector without a linked Source is not a configured source. */
+export function wizardHasLinkedSource(connector: Pick<WizardConnectorState, 'connectorId' | 'sourceId'>): boolean {
+  return typeof connector.connectorId === 'number' && Number.isSafeInteger(connector.connectorId) && connector.connectorId > 0
+    && typeof connector.sourceId === 'number' && Number.isSafeInteger(connector.sourceId) && connector.sourceId > 0
+}
+
 export type StreamConfigHeaderRow = { id: string; key: string; value: string }
 export type StreamConfigParamRow = { id: string; key: string; value: string }
 

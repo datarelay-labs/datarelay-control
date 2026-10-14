@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { cn } from '../../../lib/utils'
 import { fetchCatalogSnapshot, type CatalogSnapshot } from '../../../api/gdcCatalog'
 import { fetchConnectorById } from '../../../api/gdcConnectors'
-import { wizardConnectorPatchFromApi, type WizardState } from './wizard-state'
+import { wizardConnectorPatchFromApi, wizardHasLinkedSource, type WizardState } from './wizard-state'
 import { readWizardCatalogSnapshot, writeWizardCatalogSnapshot } from './wizard-catalog-cache'
 
 export type StepSourceSection = 'connector'
@@ -181,6 +181,7 @@ export function StepSource({
                 }
                 onChange({
                   connectorId: id,
+                  sourceId: null,
                   registryModuleId: null,
                   schemaFormValues: {},
                   selectedTemplateIds: [],
@@ -230,7 +231,7 @@ export function StepSource({
                         ? 'SSH host'
                         : c.sourceType === 'WEBHOOK_RECEIVER'
                           ? 'Receiver URL'
-                          : 'Base URL'}
+                          : c.sourceType === 'DATABASE_QUERY' ? 'Database host' : 'Base URL'}
                   </dt>
                   <dd className="max-w-[70%] break-all text-right font-medium text-slate-800 dark:text-slate-200">{c.hostBaseUrl || '—'}</dd>
                 </div>
@@ -243,7 +244,7 @@ export function StepSource({
         </div>
       </section>
 
-      {c.connectorId != null && !detailBusy && onOpenRequestConfiguration ? (
+      {wizardHasLinkedSource(c) && !detailBusy && onOpenRequestConfiguration ? (
         <div className="flex flex-wrap items-start justify-between gap-3 rounded-md border border-emerald-200/80 bg-emerald-500/[0.06] p-3 dark:border-emerald-500/40 dark:bg-emerald-500/10">
           <div className="min-w-0">
             <p className="text-[12px] font-semibold text-emerald-900 dark:text-emerald-100">

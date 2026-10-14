@@ -503,7 +503,7 @@ it('keeps the canonical lazy Data Flows and New data flow paths under the produc
   render(<RouterProvider router={router} />)
   expect(await screen.findByTestId('routes-architecture-workspace', {}, { timeout: 15000 })).toBeInTheDocument()
   await act(async () => { await router.navigate('/streams/new') })
-  expect(await screen.findByTestId('wizard-intent-picker', {}, { timeout: 15000 })).toBeInTheDocument()
+  expect(await screen.findByTestId('wizard-step-connect', {}, { timeout: 15000 })).toBeInTheDocument()
   expect(router.state.location.pathname).toBe('/streams/new')
 })
 
@@ -842,10 +842,10 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'New data flow' })).toBeInTheDocument()
     expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toHaveTextContent('Streams')
     expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toHaveTextContent('New data flow')
-    expect(await screen.findByTestId('wizard-intent-picker', {}, { timeout: 15000 })).toBeInTheDocument()
-    expect(screen.getByTestId('wizard-intent-scratch')).toBeInTheDocument()
-    expect(screen.getByTestId('wizard-intent-api-logs-siem')).toBeInTheDocument()
-    expect(screen.queryByTestId('wizard-stepper')).not.toBeInTheDocument()
+    expect(await screen.findByTestId('wizard-step-connect', {}, { timeout: 15000 })).toBeInTheDocument()
+    expect(screen.queryByTestId('wizard-intent-scratch')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('wizard-intent-picker')).not.toBeInTheDocument()
+    expect(screen.getByTestId('wizard-stepper')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { level: 2, name: 'Stream Onboarding Wizard' })).not.toBeInTheDocument()
     expect(await screen.findByTestId('wizard-stage-purpose', {}, { timeout: 15000 })).toHaveTextContent(
       'Can I connect to the source?',

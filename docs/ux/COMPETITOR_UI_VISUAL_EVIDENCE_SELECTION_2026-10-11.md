@@ -118,3 +118,33 @@ The existing native component test expectations have been updated or extended. *
 **Source change:** The existing dashboard deferred catalog (not a new API) supplies separately verified registered Destination count and enabled Destination count. The first-run panel distinguishes **N registered · none enabled** from **N registered · M enabled**, routes the operator to **Review Destinations** when none is usable, and offers `New data flow` only when existing allowed Connector prerequisites and an enabled receiving Destination are known. Malformed catalog IDs fail closed as **Not verified**, and unavailable reads never become zero. Registered Connector count remains a readiness prerequisite, **not proof that source connectivity or an individual Source is verified**; Wizard validation still owns those downstream checks.
 
 **Boundaries:** Native regression cases are scoped to the prior CI test title change, standalone first-flow disabled/unknown views, and the actual parent Dashboard disabled-Destination catalog case. No runtime, API, schema, additional network call, automatic Route, role permission or delivery claim. Full authenticated Browser BFS 20/97 and genuine two-user Full User E2E remain user-deferred, NOT PASS; code/native validation/CI must be assessed on the eventual exact candidate HEAD separately.
+
+
+## 2026-10-14 — Owner correction: direct source-first creation
+
+The owner rejected the five goal cards because they all entered the same Stream
+Wizard with only small defaults changed. The entire intent picker and unused
+preset module are removed. `New data flow` now opens Connect directly; the
+existing five stages, contextual Connector creation, saved-draft resume, RBAC,
+and explicit discard/save-before-leaving protections remain.
+
+Request and advanced sections stay disabled until a saved Connector has a valid
+linked Source. A database-type hint alone never exposes SQL fields. SQL is only
+for the selected database connection: the Stream stores the SELECT statement it
+will execute there, with sample testing in Sample & Record Selection. Switching
+Connectors clears the prior Source link while the new detail is loading. The
+incorrect Webhook helper on database requests and fixture-table placeholder are
+removed. Sampling cannot be entered without a linked source.
+
+This corrects a poor user journey; the old goal-card design must no longer be
+counted as an improvement merely because it was inspired by a vendor template.
+The previously implemented Route Inspector tabs, privacy-limited no-send
+preview, and sample-only field coverage are distinct features elsewhere, not
+proof that this creation journey was usable or that all competitor UX was
+applied. Their real-user acceptance remains separate.
+
+Development preview readiness also requires populated, explicitly named local
+test resources and actual receiver evidence. An empty catalog or HTTP 200 on a
+login page is not a working data-flow demonstration. No mock metrics, frontend
+placeholders, admin password resets, production writes or broad safety-guard
+removal may substitute for the requested real demo traffic.

@@ -70,10 +70,8 @@ import {
   type OperationalSampleId,
 } from './wizard/wizard-operational-samples'
 import { applyHttpImportToWizardState, type HttpImportWizardLocationState } from '../../utils/httpImportDraft'
-import { IntentTemplatePicker } from './wizard/intent-template-picker'
 import { WizardExitConfirmation } from './wizard/wizard-exit-confirmation'
 import { WizardRouteLeaveGuard, type WizardBlockedNavigation } from './wizard/wizard-route-leave-guard'
-import { applyWizardIntentTemplate, type WizardIntentTemplateId } from './wizard/intent-templates'
 import { persistWizardDataProtectionIntents } from './wizard/wizard-data-protection-persist'
 import { persistWizardRouteTransformOverrides, verifyWizardRouteTransformEffective } from './wizard/wizard-stream-persist'
 import { persistWizardStreamGovernance } from './wizard/wizard-governance-persist'
@@ -123,7 +121,6 @@ export function NewStreamWizardPage() {
     }, 0)
   }, [])
   const [stepIndex, setStepIndex] = useState(0)
-  const [intentSelected, setIntentSelected] = useState(false)
   const [state, setState] = useState<WizardState>(() => buildInitialState())
   const [pendingDraft, setPendingDraft] = useState<WizardDraftEnvelopeV2 | null>(null)
   const [draftBannerVisible, setDraftBannerVisible] = useState(false)
@@ -138,15 +135,6 @@ export function NewStreamWizardPage() {
   const [connectorCatalogEpoch, setConnectorCatalogEpoch] = useState(0)
   const [recentlyCreatedDestinationId, setRecentlyCreatedDestinationId] = useState<number | null>(null)
 
-  const handleIntentSelect = useCallback((id: WizardIntentTemplateId) => {
-    clearWizardDraft()
-    setState(applyWizardIntentTemplate(id))
-    setStepIndex(0)
-    setPendingDraft(null)
-    setDraftBannerVisible(false)
-    setOperationalSampleId(null)
-    setIntentSelected(true)
-  }, [])
 
   const wizardSteps = useMemo(
     () => wizardStepsWithSourcePresentation(WIZARD_STEPS, state.connector.sourceType),
@@ -170,7 +158,7 @@ export function NewStreamWizardPage() {
       if (draft?.stepKey === 'destinations') {
         setState(applySampleConfirmationToWizardState(draft.state))
         setStepIndex(wizardStepIndexForKey(wizardSteps, draft.stepKey))
-        setIntentSelected(true)
+
         setRecentlyCreatedDestinationId(
           Number.isSafeInteger(returnState.createdDestinationId) && Number(returnState.createdDestinationId) > 0
             ? Number(returnState.createdDestinationId)
@@ -192,7 +180,7 @@ export function NewStreamWizardPage() {
     setStepIndex(wizardStepIndexForKey(wizardSteps, pendingDraft.stepKey))
     setPendingDraft(null)
     setDraftBannerVisible(false)
-    setIntentSelected(true)
+
     setDraftNotice('Draft restored from local storage.')
     window.setTimeout(() => setDraftNotice(null), 4000)
   }, [pendingDraft, wizardSteps])
@@ -205,7 +193,7 @@ export function NewStreamWizardPage() {
     setPendingDraft(null)
     setDraftBannerVisible(false)
     setOperationalSampleId(null)
-    setIntentSelected(true)
+
   }, [])
 
   useEffect(() => {
@@ -216,7 +204,7 @@ export function NewStreamWizardPage() {
     importHydratedRef.current = true
     setState((prev) => applyHttpImportToWizardState(prev, { connectorId, streamDraft: routeState.streamDraft }))
     setDraftNotice('Stream fields prefilled from import. Review polling and mapping before creating.')
-    setIntentSelected(true)
+
     setStepIndex(wizardStepIndexForKey(wizardSteps, 'connect'))
   }, [canCreateStream, location.state, wizardSteps])
 
@@ -974,7 +962,7 @@ export function NewStreamWizardPage() {
     setOperationalSampleId(null)
     setPendingDraft(null)
     setDraftBannerVisible(false)
-    setIntentSelected(false)
+
   }, [])
 
   const isDeployStep = currentStepKey === 'deploy'
@@ -1008,7 +996,7 @@ export function NewStreamWizardPage() {
   // Never navigate away from an in-progress wizard without an explicit choice.
   // The draft serializer already strips secrets and raw samples; do not autosave.
   const requestCancel = () => {
-    if (!intentSelected || streamCreated) {
+    if (streamCreated) {
       navigate(NAV_PATH.streams)
     } else {
       setExitConfirmationOpen(true)
@@ -1046,7 +1034,7 @@ export function NewStreamWizardPage() {
     }
   }
   useEffect(() => {
-    if (!intentSelected || streamCreated) return
+    if (streamCreated) return
     // Reload/close cannot use our in-app dialog; the browser owns this prompt.
     const guard = (event: BeforeUnloadEvent) => {
       event.preventDefault()
@@ -1054,12 +1042,13 @@ export function NewStreamWizardPage() {
     }
     window.addEventListener('beforeunload', guard)
     return () => window.removeEventListener('beforeunload', guard)
-  }, [intentSelected, streamCreated])
+  }, [streamCreated])
 
   const stepGateOpen = canAdvanceFromWizardStep(currentStepKey, state)
   const canAdvance = (!isDeployStep || !streamCreated) && stepGateOpen
   const nextStepBlockReason = useMemo(() => {
     if (stepGateOpen) return undefined
+    if (currentStepKey === 'connect') return 'Select or create a Connector with a linked Source before sampling.'
     if (currentStepKey === 'sample') return wizardSampleStepBlockReason(state)
     if (currentStepKey === 'route_processing') return wizardRouteProcessingStepBlockReason(state)
     return 'Complete required fields on this step before continuing.'
@@ -1110,7 +1099,7 @@ export function NewStreamWizardPage() {
   return (
     <div className="flex h-fit w-full min-w-0 grow-0 flex-col gap-5 pb-8" data-testid="new-stream-wizard">
       <WizardRouteLeaveGuard
-        active={intentSelected && !streamCreated}
+        active={!streamCreated}
         allowedNextPathRef={allowedNextPathRef}
         onBlocked={handleBlockedNavigation}
       />
@@ -1159,9 +1148,6 @@ export function NewStreamWizardPage() {
           </section>
         </div>
       ) : null}
-      {!intentSelected && !draftBannerVisible ? (
-        <IntentTemplatePicker onSelect={handleIntentSelect} />
-      ) : null}
 
       {creationError ? (
         <p className="rounded-md border border-red-200/80 bg-red-500/[0.06] p-3 text-[12px] font-medium text-red-700 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-300">
@@ -1169,13 +1155,13 @@ export function NewStreamWizardPage() {
         </p>
       ) : null}
 
-      {intentSelected || draftBannerVisible ? <WizardStepper
+      <WizardStepper
         wizardSteps={wizardSteps}
         stepIndex={stepIndex}
         setStepIndex={setStepIndex}
         completion={completion}
         state={state}
-      /> : null}
+      />
 
       {draftBannerVisible && pendingDraft ? (
         <div
@@ -1210,7 +1196,7 @@ export function NewStreamWizardPage() {
         </p>
       ) : null}
 
-      {intentSelected || draftBannerVisible ? <div>
+      <div>
         {currentStepKey === 'connect' ? (
           <StepConnect
             key={connectorCatalogEpoch}
@@ -1267,9 +1253,9 @@ export function NewStreamWizardPage() {
             onNavigateToLegacySubstep={navigateToLegacySubstep}
           />
         ) : null}
-      </div> : null}
+      </div>
 
-      {intentSelected || draftBannerVisible ? <nav
+      <nav
         className="sticky bottom-0 z-20 mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 dark:border-gdc-border dark:bg-gdc-panel"
         aria-label="Wizard navigation"
         data-testid="wizard-action-bar"
@@ -1368,7 +1354,7 @@ export function NewStreamWizardPage() {
             </>
           )}
         </div>
-      </nav> : null}
+      </nav>
     </div>
   )
 }

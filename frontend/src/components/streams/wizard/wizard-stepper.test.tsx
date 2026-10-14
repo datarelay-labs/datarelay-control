@@ -93,6 +93,8 @@ describe('WizardStepper honest setup progress', () => {
 
   it('shifts the next action to enabled delivery paths when sample check is valid', () => {
     const state = buildInitialState()
+    state.connector.connectorId = 10
+    state.connector.sourceId = 5
     state.connector.sourceType = 'WEBHOOK_RECEIVER'
     state.apiTest.status = 'success'
     state.apiTest.ok = true

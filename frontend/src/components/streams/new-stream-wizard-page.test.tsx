@@ -59,18 +59,18 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
     })
   })
 
-  it('starts fresh creation with intent choices and applies a selected template before the existing wizard', async () => {
+  it('enters Connect directly without redundant goal cards or guessed source defaults', () => {
     localStorage.setItem('gdc-platform-persona', 'connector')
     localStorage.removeItem('gdc-stream-wizard-draft-v2')
-    const user = userEvent.setup()
     render(<MemoryRouter initialEntries={['/streams/new']}><NewStreamWizardPage /></MemoryRouter>)
-    expect(screen.getByTestId('wizard-intent-picker')).toBeInTheDocument()
-    expect(screen.queryByTestId('wizard-stepper')).not.toBeInTheDocument()
-    await user.click(screen.getByTestId('wizard-intent-database-collection'))
     expect(screen.queryByTestId('wizard-intent-picker')).not.toBeInTheDocument()
+    expect(screen.queryByText('What would you like to deliver?')).not.toBeInTheDocument()
     expect(screen.getByTestId('wizard-step-connect')).toBeInTheDocument()
     expect(screen.getByTestId('wizard-stepper')).toBeInTheDocument()
-    expect(screen.getByText(/Connector and Source availability are not yet verified/i)).toBeInTheDocument()
+    expect(screen.getByTestId('wizard-connect-tab-request')).toBeDisabled()
+    expect(screen.getByTestId('wizard-next')).toBeDisabled()
+    expect(screen.queryByRole('tab', { name: /SQL query/ })).not.toBeInTheDocument()
+    expect(screen.queryByTestId('wizard-database-sql-query')).not.toBeInTheDocument()
     expect(screen.queryByText(/Offline mode/i)).not.toBeInTheDocument()
   })
 
@@ -79,7 +79,6 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
     localStorage.removeItem(WIZARD_DRAFT_KEY_V2)
     const user = userEvent.setup()
     render(<MemoryRouter initialEntries={['/streams/new']}><NewStreamWizardPage /></MemoryRouter>)
-    await user.click(screen.getByTestId('wizard-intent-scratch'))
     await user.click(await screen.findByTestId('wizard-add-connector'))
     expect(screen.getByRole('dialog', { name: 'Add Connector to Data Flow' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Return to Data Flow' }))
@@ -92,7 +91,6 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
     localStorage.removeItem(WIZARD_DRAFT_KEY_V2)
     const user = userEvent.setup()
     render(<MemoryRouter initialEntries={['/streams/new']}><NewStreamWizardPage /></MemoryRouter>)
-    await user.click(screen.getByTestId('wizard-intent-scratch'))
     const addConnector = await screen.findByTestId('wizard-add-connector')
     await user.click(addConnector)
 
@@ -121,7 +119,6 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
     localStorage.removeItem(WIZARD_DRAFT_KEY_V2)
     const user = userEvent.setup()
     render(<MemoryRouter initialEntries={['/streams/new']}><NewStreamWizardPage /></MemoryRouter>)
-    await user.click(screen.getByTestId('wizard-intent-scratch'))
     const addConnector = await screen.findByTestId('wizard-add-connector')
     await user.click(addConnector)
     expect(screen.getByRole('dialog', { name: 'Add Connector to Data Flow' })).toBeInTheDocument()
@@ -141,7 +138,6 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
     }))
     const user = userEvent.setup()
     render(<MemoryRouter initialEntries={['/streams/new']}><NewStreamWizardPage /></MemoryRouter>)
-    await user.click(screen.getByTestId('wizard-intent-scratch'))
     await user.click(await screen.findByTestId('wizard-add-connector'))
     await user.type(screen.getByLabelText('Connector Name *'), 'Pending source')
     await user.type(screen.getByLabelText('Host / Base URL *'), 'https://example.net')
@@ -163,7 +159,6 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
     vi.mocked(createConnector).mockRejectedValueOnce(new Error('Connector was not saved'))
     const user = userEvent.setup()
     render(<MemoryRouter initialEntries={['/streams/new']}><NewStreamWizardPage /></MemoryRouter>)
-    await user.click(screen.getByTestId('wizard-intent-scratch'))
     await user.click(await screen.findByTestId('wizard-add-connector'))
     await user.type(screen.getByLabelText('Connector Name *'), 'Retry source')
     await user.type(screen.getByLabelText('Host / Base URL *'), 'https://example.net')
@@ -182,7 +177,6 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
     localStorage.removeItem(WIZARD_DRAFT_KEY_V2)
     const user = userEvent.setup()
     render(<MemoryRouter initialEntries={['/streams/new']}><NewStreamWizardPage /></MemoryRouter>)
-    await user.click(screen.getByTestId('wizard-intent-scratch'))
     await user.click(await screen.findByTestId('wizard-add-connector'))
     await user.type(screen.getByLabelText('Connector Name *'), 'Parent source')
     await user.type(screen.getByLabelText('Host / Base URL *'), 'https://example.net')
@@ -206,7 +200,6 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
       </MemoryRouter>,
     )
 
-    await userEvent.click(screen.getByTestId('wizard-intent-scratch'))
     const stepper = screen.getByTestId('wizard-stepper')
     expect(stepper.textContent).toContain('Connect')
     expect(stepper.textContent).toContain('Sample & Record Selection')
@@ -228,7 +221,6 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
       </MemoryRouter>,
     )
 
-    await userEvent.click(screen.getByTestId('wizard-intent-scratch'))
     expect(screen.getByTestId('wizard-step-connect')).toBeInTheDocument()
     expect(screen.getByTestId('wizard-connect-tabs')).toBeInTheDocument()
     expect(screen.getByTestId('wizard-connect-tab-connector')).toBeInTheDocument()
@@ -441,7 +433,7 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
       </MemoryRouter>,
     )
     expect(screen.getByText(/Saved Stream draft is unavailable/)).toBeInTheDocument()
-    expect(screen.getByTestId('wizard-intent-picker')).toBeInTheDocument()
+    expect(screen.getByTestId('wizard-step-connect')).toBeInTheDocument()
     expect(screen.queryByText(/Destination #91 saved/)).not.toBeInTheDocument()
   })
 
@@ -741,13 +733,16 @@ describe('New Data Flow draft-safe exit', () => {
     })
   })
 
-  it('does not interrupt users before they start a goal', async () => {
+  it('protects creation immediately now that Connect opens without a goal menu', async () => {
     const user = userEvent.setup()
     renderWizardWithStreamsExit()
     const before = new Event('beforeunload', { cancelable: true })
     window.dispatchEvent(before)
-    expect(before.defaultPrevented).toBe(false)
+    expect(before.defaultPrevented).toBe(true)
     await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.getByTestId('wizard-unsaved-exit-dialog')).toBeInTheDocument()
+    expect(screen.queryByTestId('wizard-left-for-streams')).not.toBeInTheDocument()
+    await user.click(screen.getByTestId('wizard-exit-discard'))
     expect(screen.getByTestId('wizard-left-for-streams')).toBeInTheDocument()
     expect(screen.queryByTestId('wizard-unsaved-exit-dialog')).not.toBeInTheDocument()
   })
@@ -755,7 +750,6 @@ describe('New Data Flow draft-safe exit', () => {
   it('prevents accidental Cancel and browser reload, restores focus and current setup on Escape', async () => {
     const user = userEvent.setup()
     renderWizardWithStreamsExit()
-    await user.click(screen.getByTestId('wizard-intent-scratch'))
     const before = new Event('beforeunload', { cancelable: true })
     window.dispatchEvent(before)
     expect(before.defaultPrevented).toBe(true)
@@ -819,7 +813,6 @@ describe('New Data Flow draft-safe exit', () => {
   it('does not navigate if draft persistence fails', async () => {
     const user = userEvent.setup()
     renderWizardWithStreamsExit()
-    await user.click(screen.getByTestId('wizard-intent-scratch'))
     await user.click(screen.getByRole('button', { name: 'Cancel' }))
     const storage = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new Error('quota')
@@ -870,7 +863,6 @@ describe('New Data Flow data-router unsaved cross-page navigation', () => {
   it('blocks a navigation link until Keep editing or Save draft resolves the original destination', async () => {
     const user = userEvent.setup()
     const router = renderWizardWithDataRouter()
-    await user.click(screen.getByTestId('wizard-intent-scratch'))
     await user.click(screen.getByTestId('wizard-external-nav'))
     expect(await screen.findByTestId('wizard-unsaved-exit-dialog')).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/streams/new')
@@ -889,7 +881,6 @@ describe('New Data Flow data-router unsaved cross-page navigation', () => {
   it('holds Browser Back until the operator explicitly discards local draft work', async () => {
     const user = userEvent.setup()
     const router = renderWizardWithDataRouter(['/monitoring', '/streams/new'], 1)
-    await user.click(screen.getByTestId('wizard-intent-scratch'))
     act(() => { void router.navigate(-1) })
     expect(await screen.findByTestId('wizard-unsaved-exit-dialog')).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/streams/new')
@@ -902,7 +893,6 @@ describe('New Data Flow data-router unsaved cross-page navigation', () => {
   it('blocks Browser Forward to another page until the operator keeps editing or confirms exit', async () => {
     const user = userEvent.setup()
     const router = renderWizardWithDataRouter(['/streams/new', '/monitoring'], 0)
-    await user.click(screen.getByTestId('wizard-intent-scratch'))
     act(() => { void router.navigate(1) })
     expect(await screen.findByTestId('wizard-unsaved-exit-dialog')).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/streams/new')
@@ -938,7 +928,6 @@ describe('New Data Flow data-router unsaved cross-page navigation', () => {
   it('resets a blocked transition if browser storage rejects a requested save', async () => {
     const user = userEvent.setup()
     const router = renderWizardWithDataRouter()
-    await user.click(screen.getByTestId('wizard-intent-scratch'))
     await user.click(screen.getByTestId('wizard-external-nav'))
     const storage = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new Error('storage unavailable')
@@ -1014,10 +1003,8 @@ describe('New Data Flow creation permission guidance', () => {
     'keeps the ordinary Stream creation workflow for authorized %s',
     async (role) => {
       asRole(role, { workspace_mutations: true })
-      const user = userEvent.setup()
       render(<MemoryRouter><NewStreamWizardPage /></MemoryRouter>)
       expect(screen.queryByTestId('wizard-create-readonly')).not.toBeInTheDocument()
-      await user.click(screen.getByTestId('wizard-intent-scratch'))
       expect(screen.getByTestId('wizard-step-connect')).toBeInTheDocument()
     },
   )
@@ -1038,9 +1025,7 @@ describe('New Data Flow creation permission guidance', () => {
 
   it('switches to read-only guidance immediately after a server capability downgrade', async () => {
     asRole('OPERATOR', { workspace_mutations: true })
-    const user = userEvent.setup()
     render(<MemoryRouter><NewStreamWizardPage /></MemoryRouter>)
-    await user.click(screen.getByTestId('wizard-intent-scratch'))
     expect(screen.getByTestId('wizard-step-connect')).toBeInTheDocument()
     asRole('OPERATOR', { workspace_mutations: false })
     await waitFor(() => expect(screen.getByTestId('wizard-create-readonly')).toBeInTheDocument())

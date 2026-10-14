@@ -1,4 +1,4 @@
-import type { WizardConfigState, WizardState, WizardStepKey } from './wizard-state'
+import { wizardHasLinkedSource, type WizardConfigState, type WizardState, type WizardStepKey } from './wizard-state'
 
 type SampleConfirmationStream = Pick<
   WizardConfigState,
@@ -303,6 +303,8 @@ export function wizardRouteProcessingStepBlockReason(state: Pick<WizardState, 'd
 /** Whether the wizard may advance from the current top-level step. */
 export function canAdvanceFromWizardStep(stepKey: WizardStepKey, state: WizardState): boolean {
   switch (stepKey) {
+    case 'connect':
+      return wizardHasLinkedSource(state.connector)
     case 'sample':
       return wizardSampleStepGateReady(state)
     case 'route_processing':

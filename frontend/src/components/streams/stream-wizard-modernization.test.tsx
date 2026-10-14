@@ -1,5 +1,4 @@
 import { render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 import { NewStreamWizardPage } from './new-stream-wizard-page'
@@ -53,17 +52,10 @@ describe('Stream Wizard SaaS modernization', () => {
     expect(screen.getByTestId('new-stream-wizard')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Stream Onboarding Wizard' })).not.toBeInTheDocument()
     expect(screen.queryByText(/Connect → Sample/)).not.toBeInTheDocument()
-    expect(screen.getByTestId('wizard-intent-picker')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'What would you like to deliver?' })).toBeInTheDocument()
-    expect(screen.getByTestId('wizard-intent-multi-destination')).toHaveTextContent('Start this setup')
-    const journey = screen.getByRole('list', { name: 'Stream setup journey' })
-    expect(journey.textContent).toContain('Connect a source')
-    expect(journey.textContent).toContain('Test a sample')
-    expect(journey.textContent).toContain('Choose destinations')
-    expect(journey.textContent).toContain('Tailor each route')
-    expect(journey.textContent).toContain('Deploy & verify')
-    expect(screen.queryByTestId('wizard-flow-overview')).not.toBeInTheDocument()
-    expect(screen.getByTestId('wizard-intent-scratch')).toHaveTextContent('Start from scratch')
+    expect(screen.queryByTestId('wizard-intent-picker')).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'What would you like to deliver?' })).not.toBeInTheDocument()
+    expect(screen.getByTestId('wizard-step-connect')).toBeInTheDocument()
+    expect(screen.getByTestId('wizard-flow-overview')).toBeInTheDocument()
     expect(screen.getByTestId('wizard-stage-purpose')).toHaveTextContent(WIZARD_STAGE_PURPOSE.connect)
   })
 
@@ -77,7 +69,6 @@ describe('Stream Wizard SaaS modernization', () => {
       </MemoryRouter>,
     )
 
-    await userEvent.click(screen.getByTestId('wizard-intent-scratch'))
     const stepper = screen.getByTestId('wizard-stepper')
     expect(stepper.textContent).toContain('Connect')
     expect(stepper.textContent).toContain('Sample & Record Selection')
@@ -98,10 +89,9 @@ describe('Stream Wizard SaaS modernization', () => {
     expect(screen.getByTestId('wizard-next')).toHaveTextContent('Next: Sample & Record Selection')
   })
 
-  it('demotes Advanced Settings relative to required Connect tabs', async () => {
+  it('keeps Advanced Settings locked until a saved source is selected', async () => {
     localStorage.setItem('gdc-platform-persona', 'connector')
     localStorage.removeItem('gdc-stream-wizard-draft-v2')
-    const user = userEvent.setup()
 
     render(
       <MemoryRouter initialEntries={['/streams/new']}>
@@ -109,14 +99,12 @@ describe('Stream Wizard SaaS modernization', () => {
       </MemoryRouter>,
     )
 
-    await user.click(screen.getByTestId('wizard-intent-scratch'))
     expect(screen.getByTestId('wizard-connect-tab-connector')).toBeInTheDocument()
     expect(screen.getByTestId('wizard-connect-tab-request')).toBeInTheDocument()
     expect(screen.getByTestId('wizard-connect-tab-advanced')).toBeInTheDocument()
     expect(screen.queryByTestId('wizard-connect-advanced-panel')).not.toBeInTheDocument()
 
-    await user.click(screen.getByTestId('wizard-connect-tab-advanced'))
-    expect(screen.getByTestId('wizard-connect-advanced-panel')).toBeInTheDocument()
-    expect(screen.getByTestId('wizard-connect-advanced-panel')).toHaveTextContent(/Optional pagination/i)
+    expect(screen.getByTestId('wizard-connect-tab-advanced')).toBeDisabled()
+    expect(screen.getByTestId('wizard-connect-tab-request')).toBeDisabled()
   })
 })

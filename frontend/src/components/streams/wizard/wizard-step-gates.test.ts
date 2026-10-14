@@ -24,6 +24,8 @@ import { buildInitialState } from './wizard-state'
 
 function sampleReadyState() {
   const state = buildInitialState()
+  state.connector.connectorId = 1
+  state.connector.sourceId = 2
   const finishedAt = Date.now()
   state.apiTest.status = 'success'
   state.apiTest.ok = true
@@ -280,6 +282,8 @@ describe('wizard-step-gates', () => {
 
   it('does not require HTTP record path / checkpoint for REMOTE_FILE_POLLING after a successful probe', () => {
     const state = buildInitialState()
+    state.connector.connectorId = 1
+    state.connector.sourceId = 2
     state.connector.sourceType = 'REMOTE_FILE_POLLING'
     state.stream.remoteDirectory = '/data'
     state.apiTest.status = 'success'
@@ -318,5 +322,23 @@ describe('wizard-step-gates', () => {
     state.apiTest.finishedAt = Date.now()
     expect(wizardSourceRequiresHttpRecordSelection(state)).toBe(true)
     expect(wizardSampleStepGateReady(state)).toBe(false)
+  })
+})
+
+
+describe('Connect prerequisite', () => {
+  it('does not unlock sampling for a source-type hint without a saved Connector and linked Source', () => {
+    const state = buildInitialState()
+    state.connector.sourceType = 'DATABASE_QUERY'
+    expect(canAdvanceFromWizardStep('connect', state)).toBe(false)
+    expect(wizardStepReachable('sample', state)).toBe(false)
+    state.connector.connectorId = 5
+    expect(wizardStepReachable('sample', state)).toBe(false)
+    state.connector.sourceId = 7
+    expect(wizardStepReachable('sample', state)).toBe(true)
+    for (const invalid of [0, -1, 1.5, NaN, Infinity]) {
+      state.connector.sourceId = invalid
+      expect(wizardStepReachable('sample', state)).toBe(false)
+    }
   })
 })
