@@ -7,6 +7,11 @@ import { fetchStreamById } from '../../api/gdcStreams'
 import { fetchStreamMappingUiConfig } from '../../api/gdcRuntime'
 import { clearSession, persistSession, type SessionRole } from '../../auth/session'
 import { StreamEditWizardPage } from './stream-edit-wizard-page'
+import {
+  loadStreamEditDraft,
+  saveStreamEditDraft,
+  streamEditDraftStorageKey,
+} from './wizard/wizard-edit-draft'
 import { buildInitialState } from './wizard/wizard-state'
 
 const persistWizardStreamEdits = vi.hoisted(() => vi.fn())
@@ -206,11 +211,16 @@ describe('StreamEditWizardPage workspace capability visibility', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     clearSession()
+    localStorage.removeItem(streamEditDraftStorageKey(10))
     hydrateHolder.factory = () => hydratedStream()
+    vi.mocked(fetchStreamById).mockResolvedValue({ id: 10, name: 'Viewer Stream', status: 'STOPPED' })
     persistWizardStreamEdits.mockResolvedValue({ ok: true, errors: [] })
+    startRuntimeStream.mockResolvedValue({ message: 'stream started' })
+    stopRuntimeStream.mockResolvedValue({ message: 'stream stopped', status: 'STOPPED', terminal: true })
   })
 
   afterEach(() => {
+    localStorage.removeItem(streamEditDraftStorageKey(10))
     clearSession()
   })
 
@@ -558,6 +568,100 @@ describe('StreamEditWizardPage workspace capability visibility', () => {
     await screen.findByTestId('wizard-save-now')
     await new Promise((resolve) => window.setTimeout(resolve, 1500))
     expect(persistWizardStreamEdits).not.toHaveBeenCalled()
+    expect(loadStreamEditDraft(10)).toBeNull()
+  })
+
+  it('auto-preserves dirty Stream edits only in the per-Stream local draft', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    renderStreamEdit()
+    const page = await screen.findByTestId('edit-stream-wizard')
+    await user.click(within(page).getByTestId('wizard-connect-tab-request'))
+    const name = within(page).getByPlaceholderText('e.g. Cybereason Malop Stream')
+    await user.clear(name)
+    await user.type(name, 'Locally preserved edit')
+
+    await waitFor(() => {
+      expect(loadStreamEditDraft(10)?.state.stream.name).toBe('Locally preserved edit')
+    }, { timeout: 3000 })
+
+    expect(persistWizardStreamEdits).not.toHaveBeenCalled()
+    expect(within(page).getByTestId('stream-lifecycle-draft')).toHaveTextContent(
+      'Local draft saved · not applied',
+    )
+    expect(within(page).getByText(/auto-save only to this browser/i)).toBeInTheDocument()
+  })
+
+  it('restores a matching per-Stream local draft without replacing server identity', async () => {
+    const draft = hydratedStream()
+    draft.stream.name = 'Restored local Stream name'
+    saveStreamEditDraft(10, draft, 'destinations')
+
+    signIn('OPERATOR')
+    renderStreamEdit()
+    const page = await screen.findByTestId('edit-stream-wizard')
+
+    expect(await within(page).findByTestId('edit-stream-destinations')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(within(page).getByTestId('stream-lifecycle-draft')).toHaveTextContent(
+        'Local draft saved · not applied',
+      )
+    }, { timeout: 3000 })
+    expect(persistWizardStreamEdits).not.toHaveBeenCalled()
+  })
+
+  it('does not write a dirty running Stream and keeps the local draft while Stop remains available', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    vi.mocked(fetchStreamById).mockResolvedValue({ id: 10, name: 'Viewer Stream', status: 'RUNNING' })
+    renderStreamEdit()
+    const page = await screen.findByTestId('edit-stream-wizard')
+    await waitFor(() => expect(within(page).getByTestId('stream-run-control-switch')).toHaveTextContent('Running'))
+    await user.click(within(page).getByTestId('wizard-connect-tab-request'))
+    await user.type(within(page).getByPlaceholderText('e.g. Cybereason Malop Stream'), ' local-only')
+
+    await waitFor(() => expect(loadStreamEditDraft(10)).not.toBeNull(), { timeout: 3000 })
+    expect(within(page).getByTestId('wizard-save-now')).toBeDisabled()
+    expect(within(page).getByTestId('wizard-apply-and-start')).toBeDisabled()
+    expect(within(page).getByTestId('stream-run-control-switch')).toBeEnabled()
+    expect(persistWizardStreamEdits).not.toHaveBeenCalled()
+  })
+
+  it('Apply & start saves the reviewed draft before starting the Stream', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    renderStreamEdit()
+    const page = await screen.findByTestId('edit-stream-wizard')
+    await waitFor(() => expect(within(page).getByTestId('wizard-apply-and-start')).toBeEnabled())
+    await user.click(within(page).getByTestId('wizard-connect-tab-request'))
+    const name = within(page).getByPlaceholderText('e.g. Cybereason Malop Stream')
+    await user.clear(name)
+    await user.type(name, 'Apply then start')
+
+    await user.click(within(page).getByTestId('wizard-apply-and-start'))
+
+    await waitFor(() => expect(persistWizardStreamEdits).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(startRuntimeStream).toHaveBeenCalledWith(10))
+    expect(persistWizardStreamEdits.mock.invocationCallOrder[0]).toBeLessThan(
+      startRuntimeStream.mock.invocationCallOrder[0]!,
+    )
+  })
+
+  it('Apply & start never starts when the explicit platform save fails', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    persistWizardStreamEdits.mockResolvedValueOnce({ ok: false, errors: ['save rejected'] })
+    renderStreamEdit()
+    const page = await screen.findByTestId('edit-stream-wizard')
+    await waitFor(() => expect(within(page).getByTestId('wizard-apply-and-start')).toBeEnabled())
+    await user.click(within(page).getByTestId('wizard-connect-tab-request'))
+    await user.type(within(page).getByPlaceholderText('e.g. Cybereason Malop Stream'), ' failed apply')
+
+    await user.click(within(page).getByTestId('wizard-apply-and-start'))
+
+    await waitFor(() => expect(persistWizardStreamEdits).toHaveBeenCalledTimes(1))
+    expect(startRuntimeStream).not.toHaveBeenCalled()
+    expect(within(page).getByText(/save rejected/i)).toBeInTheDocument()
   })
 
   it('keeps a created route id on a newer in-flight draft', async () => {

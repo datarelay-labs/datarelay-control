@@ -32,7 +32,7 @@ import { hydrateWizardStateFromStream, refreshWizardDestinationsFromStream } fro
 import { reconcileWizardAfterPartialPersist } from './wizard/wizard-partial-save-reconcile'
 import { proveStreamRunOnce } from './wizard/prove-stream-run-once'
 import { deliveryProofLines, nextDeliveryProofPrior, type ExactRunDeliveryProof, type PriorDeliveryProof } from './wizard/deploy-delivery-proof'
-import { confirmDeliveryPanelServerFields, editRuntimeVerificationBlocked, mergeDeliveryPanelRouteDrafts, persistedWizardConfigSnapshot, replacePersistedConcernSnapshot, shouldScheduleEditAutosave } from './wizard/wizard-edit-runtime-gate'
+import { confirmDeliveryPanelServerFields, editRuntimeVerificationBlocked, mergeDeliveryPanelRouteDrafts, persistedWizardConfigSnapshot, replacePersistedConcernSnapshot } from './wizard/wizard-edit-runtime-gate'
 import { applyCreatedRouteIdentity, applyPersistedRevisions, persistWizardStreamEdits } from './wizard/wizard-stream-persist'
 import {
   WIZARD_STEPS,
@@ -63,6 +63,12 @@ import {
 import { normalizeCheckpointRelativePath } from '../../utils/recordSelectionPaths'
 import { StreamDeleteConfirmDialog } from './stream-delete-confirm-dialog'
 import { WizardRouteLeaveGuard, type WizardBlockedNavigation } from './wizard/wizard-route-leave-guard'
+import {
+  clearStreamEditDraft,
+  loadStreamEditDraft,
+  restoreStreamEditDraft,
+  saveStreamEditDraft,
+} from './wizard/wizard-edit-draft'
 import { useSessionCapabilities } from '../../lib/rbac'
 
 const EDIT_NEXT_STEP_LABEL: Partial<Record<WizardStepKey, string>> = {
@@ -165,6 +171,7 @@ export function StreamEditWizardPage({
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null)
+  const [localDraftStatus, setLocalDraftStatus] = useState<'clean' | 'saving' | 'saved' | 'restored' | 'stale' | 'failed'>('clean')
   const [exitNavigationBlocked, setExitNavigationBlocked] = useState(false)
   const [runtimeStatus, setRuntimeStatus] = useState<StreamRuntimeStatus>('UNKNOWN')
   const [controlBusy, setControlBusy] = useState(false)
@@ -219,11 +226,27 @@ export function StreamEditWizardPage({
         return
       }
       const next = applySampleConfirmationToWizardState(hydrated)
-      setState(next)
       confirmedStateRef.current = next
       confirmedSavedSnapshotRef.current = persistedWizardConfigSnapshot(next)
       failedAttemptSnapshotRef.current = null
       priorDeliveryProofRef.current = null
+
+      const localDraft = canMutateWorkspace ? loadStreamEditDraft(backendStreamId) : null
+      const restoredDraft = localDraft ? restoreStreamEditDraft(next, localDraft) : null
+      if (restoredDraft) {
+        setState(restoredDraft)
+        setStepIndex(wizardStepIndexForKey(WIZARD_STEPS, localDraft!.stepKey))
+        setLocalDraftStatus(
+          persistedWizardConfigSnapshot(restoredDraft) === confirmedSavedSnapshotRef.current ? 'clean' : 'restored',
+        )
+        if (persistedWizardConfigSnapshot(restoredDraft) === confirmedSavedSnapshotRef.current) {
+          clearStreamEditDraft(backendStreamId)
+        }
+      } else {
+        setState(next)
+        setLocalDraftStatus(localDraft ? 'stale' : 'clean')
+      }
+
       setLoading(false)
       const found = await fetchStreamById(backendStreamId)
       if (!cancelled && found?.status) {
@@ -233,7 +256,7 @@ export function StreamEditWizardPage({
     return () => {
       cancelled = true
     }
-  }, [backendStreamId])
+  }, [backendStreamId, canMutateWorkspace])
 
   const wizardSteps = useMemo(() => {
     if (!state) return WIZARD_STEPS
@@ -562,10 +585,24 @@ export function StreamEditWizardPage({
     })
   }, [backendStreamId])
 
-  const handleSave = useCallback(async (opts?: { manual?: boolean }) => {
+  const runtimeAllowsPlatformSave = runtimeStatus === 'STOPPED' || runtimeStatus === 'IDLE'
+
+  const handleSave = useCallback(async (opts?: { manual?: boolean }): Promise<boolean> => {
     const manual = opts?.manual === true
     const stateToSave = latestStateRef.current
-    if (!canMutateWorkspace || !stateToSave || backendStreamId == null || isSavingRef.current) return
+    if (!canMutateWorkspace || !stateToSave || backendStreamId == null || isSavingRef.current) return false
+    if (!runtimeAllowsPlatformSave) {
+      try {
+        saveStreamEditDraft(backendStreamId, stateToSave, currentStepKey)
+        setLocalDraftStatus('saved')
+      } catch {
+        setLocalDraftStatus('failed')
+      }
+      setSaveError(
+        'Stop the Stream before saving configuration changes to the platform. Your local draft is preserved; the running configuration was not changed.',
+      )
+      return false
+    }
     if (manual && saveTimerRef.current != null) {
       window.clearTimeout(saveTimerRef.current)
       saveTimerRef.current = null
@@ -574,6 +611,7 @@ export function StreamEditWizardPage({
     setIsSaving(true)
     setSaveError(null)
     setSaveSuccess(null)
+    let saveConfirmed = false
     const submittedSnapshot = persistedWizardConfigSnapshot(stateToSave)
     const draftStillMatches = () => {
       const current = latestStateRef.current
@@ -682,13 +720,25 @@ export function StreamEditWizardPage({
             })
           }
         }
+        saveConfirmed = true
+        const latestAfterSave = latestStateRef.current
+        if (
+          latestAfterSave &&
+          persistedWizardConfigSnapshot(latestAfterSave) === confirmedSavedSnapshotRef.current
+        ) {
+          clearStreamEditDraft(backendStreamId)
+          setLocalDraftStatus('clean')
+        } else if (latestAfterSave) {
+          try {
+            saveStreamEditDraft(backendStreamId, latestAfterSave, currentStepKey)
+            setLocalDraftStatus('saved')
+          } catch {
+            setLocalDraftStatus('failed')
+          }
+        }
         await refreshRuntimeSnapshot()
         onSaved?.()
-        setSaveSuccess(
-          manual
-            ? 'Saved to the platform. Runtime state was not changed by this save.'
-            : 'Changes saved. Runtime state was not changed by this save.',
-        )
+        setSaveSuccess('Saved to the platform. The Stream remains stopped until you start it.')
         window.setTimeout(() => setSaveSuccess(null), 3000)
       } else if (draftMovedDuringSave) {
         failedAttemptSnapshotRef.current = identitySnapshot
@@ -754,16 +804,34 @@ export function StreamEditWizardPage({
       isSavingRef.current = false
       setIsSaving(false)
     }
-  }, [backendStreamId, canMutateWorkspace, onSaved, refreshRuntimeSnapshot])
+    return saveConfirmed
+  }, [
+    backendStreamId,
+    canMutateWorkspace,
+    currentStepKey,
+    onSaved,
+    refreshRuntimeSnapshot,
+    runtimeAllowsPlatformSave,
+  ])
 
   useEffect(() => {
     if (!canMutateWorkspace || !state || backendStreamId == null || isSaving) return
     const snapshot = persistedWizardConfigSnapshot(state)
-    if (!shouldScheduleEditAutosave(snapshot, confirmedSavedSnapshotRef.current, failedAttemptSnapshotRef.current)) return
+    if (snapshot === confirmedSavedSnapshotRef.current) {
+      clearStreamEditDraft(backendStreamId)
+      setLocalDraftStatus('clean')
+      return
+    }
     if (saveTimerRef.current != null) window.clearTimeout(saveTimerRef.current)
+    setLocalDraftStatus('saving')
     saveTimerRef.current = window.setTimeout(() => {
       saveTimerRef.current = null
-      void handleSave()
+      try {
+        saveStreamEditDraft(backendStreamId, state, currentStepKey)
+        setLocalDraftStatus('saved')
+      } catch {
+        setLocalDraftStatus('failed')
+      }
     }, 1200)
     return () => {
       if (saveTimerRef.current != null) {
@@ -771,9 +839,9 @@ export function StreamEditWizardPage({
         saveTimerRef.current = null
       }
     }
-  }, [backendStreamId, canMutateWorkspace, handleSave, isSaving, state])
+  }, [backendStreamId, canMutateWorkspace, currentStepKey, isSaving, state])
 
-  // Flush pending autosave on leave so debounce window cannot silently drop route edits.
+  // Preserve pending edits locally on leave. Never turn an unmount into a hidden platform apply.
   useEffect(() => {
     return () => {
       if (!canMutateWorkspace) return
@@ -783,12 +851,17 @@ export function StreamEditWizardPage({
       }
       const latest = latestStateRef.current
       if (!latest || backendStreamId == null) return
-      const snapshot = persistedWizardConfigSnapshot(latest)
-      if (!shouldScheduleEditAutosave(snapshot, confirmedSavedSnapshotRef.current, failedAttemptSnapshotRef.current)) return
-      if (isSavingRef.current) return
-      void persistWizardStreamEdits(backendStreamId, latest, { confirmedState: confirmedStateRef.current })
+      if (persistedWizardConfigSnapshot(latest) === confirmedSavedSnapshotRef.current) {
+        clearStreamEditDraft(backendStreamId)
+        return
+      }
+      try {
+        saveStreamEditDraft(backendStreamId, latest, currentStepKey)
+      } catch {
+        // beforeunload/route guards still protect the authoritative server configuration.
+      }
     }
-  }, [backendStreamId, canMutateWorkspace])
+  }, [backendStreamId, canMutateWorkspace, currentStepKey])
 
   const runtimeVerificationBlockedNow = useCallback(() => {
     const latest = latestStateRef.current
@@ -859,6 +932,47 @@ export function StreamEditWizardPage({
     await refreshRuntimeSnapshot()
     setIsStarting(false)
   }, [backendStreamId, canRuntimeControl, isStarting, refreshRuntimeSnapshot, runOnceBusy, runtimeVerificationBlockedNow])
+
+  const handleApplyAndStart = useCallback(async () => {
+    if (
+      !canRuntimeControl ||
+      backendStreamId == null ||
+      isStarting ||
+      isSavingRef.current ||
+      !runtimeAllowsPlatformSave
+    ) return
+
+    const latest = latestStateRef.current
+    if (!latest) return
+    const hasPendingDraft =
+      persistedWizardConfigSnapshot(latest) !== confirmedSavedSnapshotRef.current
+    if (hasPendingDraft) {
+      const saved = await handleSave({ manual: true })
+      if (!saved) return
+    }
+
+    setIsStarting(true)
+    setControlMessage(null)
+    try {
+      const result = await startRuntimeStream(backendStreamId)
+      setControlMessage(
+        result?.message ??
+          'Saved configuration is unchanged, but the runtime start result could not be verified.',
+      )
+      await refreshRuntimeSnapshot()
+      const found = await fetchStreamById(backendStreamId)
+      if (found?.status) setRuntimeStatus(mapBackendStreamStatus(found.status))
+    } finally {
+      setIsStarting(false)
+    }
+  }, [
+    backendStreamId,
+    canRuntimeControl,
+    handleSave,
+    isStarting,
+    refreshRuntimeSnapshot,
+    runtimeAllowsPlatformSave,
+  ])
 
   const executeStreamDelete = useCallback(async () => {
     if (!canMutateWorkspace || backendStreamId == null) return
@@ -934,22 +1048,38 @@ export function StreamEditWizardPage({
   const saveStateLabel = !canMutateWorkspace
     ? 'Read-only'
     : isSaving
-      ? 'Auto-saving…'
+      ? 'Saving to platform…'
       : saveError
-        ? 'Auto-save failed'
+        ? 'Platform save blocked or failed'
         : saveSuccess
           ? 'Changes saved'
-          : 'Auto-save enabled'
+          : localDraftStatus === 'saving'
+            ? 'Saving local draft…'
+            : localDraftStatus === 'saved' || localDraftStatus === 'restored'
+              ? 'Local draft saved'
+              : localDraftStatus === 'stale'
+                ? 'Stale local draft not restored'
+                : localDraftStatus === 'failed'
+                  ? 'Local draft save failed'
+                  : 'Saved configuration'
 
   const savedRevisionToken =
     typeof state?.streamUpdatedAt === 'string' ? state.streamUpdatedAt.trim() : ''
   const draftLifecycleLabel = !canMutateWorkspace
     ? 'Read-only inspection'
     : isSaving
-      ? 'Saving current draft…'
-      : runtimeVerificationBlocked
-        ? 'Pending changes are not confirmed saved'
-        : 'No pending draft changes'
+      ? 'Saving explicit platform configuration…'
+      : localDraftStatus === 'saving'
+        ? 'Saving local draft…'
+        : localDraftStatus === 'saved' || localDraftStatus === 'restored'
+          ? 'Local draft saved · not applied'
+          : localDraftStatus === 'stale'
+            ? 'Local draft from an older saved revision was not restored'
+            : localDraftStatus === 'failed'
+              ? 'Local draft save failed'
+              : runtimeVerificationBlocked
+                ? 'Pending local changes · not applied'
+                : 'No pending draft changes'
   const savedLifecycleLabel = savedRevisionToken
     ? `Saved configuration · revision ${savedRevisionToken}`
     : confirmedSavedSnapshotRef.current
@@ -1038,7 +1168,7 @@ export function StreamEditWizardPage({
           </p>
           <p className="text-xs text-slate-500 dark:text-gdc-muted">
             {canMutateWorkspace
-              ? `Editing ${state.stream.name} · changes auto-save to saved configuration; saving does not start or restart the Stream`
+              ? `Editing ${state.stream.name} · changes auto-save only to this browser; Save now writes platform configuration only while the Stream is stopped; saving does not start or restart the Stream`
               : `Viewing ${state.stream.name} · read-only`}
           </p>
         </div>
@@ -1231,11 +1361,32 @@ export function StreamEditWizardPage({
             <button
               type="button"
               onClick={() => void handleSave({ manual: true })}
-              disabled={isSaving}
+              disabled={isSaving || !runtimeAllowsPlatformSave}
+              title={
+                runtimeAllowsPlatformSave
+                  ? 'Save the current local draft to platform configuration without starting the Stream.'
+                  : 'Stop the Stream before saving platform configuration. Local draft changes stay in this browser.'
+              }
               className="inline-flex h-9 items-center rounded-lg border border-slate-200/90 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200"
               data-testid="wizard-save-now"
             >
               {isSaving ? 'Saving…' : 'Save now'}
+            </button>
+          ) : null}
+          {canMutateWorkspace && canRuntimeControl ? (
+            <button
+              type="button"
+              onClick={() => void handleApplyAndStart()}
+              disabled={isSaving || isStarting || !runtimeAllowsPlatformSave}
+              title={
+                runtimeAllowsPlatformSave
+                  ? 'Save pending configuration, then start the Stream with the saved configuration.'
+                  : 'Stop the Stream before applying a new saved configuration.'
+              }
+              className="inline-flex h-9 items-center rounded-lg bg-gdc-primary px-3 text-sm font-semibold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
+              data-testid="wizard-apply-and-start"
+            >
+              {isStarting ? 'Starting…' : 'Apply & start'}
             </button>
           ) : null}
           {stepIndex < wizardSteps.length - 1 ? (
