@@ -784,7 +784,11 @@ export function StreamsConsole() {
   const initialLoading = streamsLoading && displayRows.length === 0
 
   return (
-    <div ref={outerContainerRef} className="flex w-full min-w-0 items-start gap-0" data-testid="streams-console">
+    <div
+      ref={outerContainerRef}
+      className="flex w-full min-w-0 flex-col items-stretch gap-0 lg:flex-row lg:items-start"
+      data-testid="streams-console"
+    >
     <div className={cn('flex min-w-0 flex-col gap-5', selectedStreamRow ? 'flex-1' : 'w-full')}>
       <PagePurposeHeader
         title="Streams"
