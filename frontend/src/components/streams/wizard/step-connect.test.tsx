@@ -7,7 +7,10 @@ import { buildInitialState, type WizardState } from './wizard-state'
 
 vi.mock('../../../api/gdcCatalog', () => ({
   fetchCatalogSnapshot: vi.fn(async () => ({
-    connectors: [{ id: 1, name: 'Test Connector', source_id: 1 }],
+    connectors: [
+      { id: 1, name: 'Test Connector', source_id: 1 },
+      { id: 2, name: 'Webhook Connector', source_id: 2 },
+    ],
     sources: [],
     apiBacked: true,
   })),
@@ -18,13 +21,41 @@ vi.mock('../../../api/gdcConnectorsRegistry', () => ({
 }))
 
 vi.mock('../../../api/gdcConnectors', () => ({
-  fetchConnectorById: vi.fn(async (id: number) => ({
-    id,
-    name: 'Cybereason',
-    source_id: 1,
-    auth_type: 'SESSION_LOGIN',
-    config_json: { base_url: 'https://search1.cybereason.net' },
-  })),
+  fetchConnectorById: vi.fn(async (id: number) => (
+    id === 2
+      ? {
+          id,
+          name: 'Webhook Connector',
+          description: null,
+          status: 'ACTIVE',
+          connector_type: 'webhook_receiver',
+          source_type: 'WEBHOOK_RECEIVER',
+          source_id: 2,
+          stream_count: 0,
+          host: null,
+          base_url: null,
+          verify_ssl: true,
+          http_proxy: null,
+          common_headers: {},
+          auth_type: 'no_auth',
+          auth: {},
+          receiver_key: 'rx-saved',
+          receiver_path: '/api/v1/ingest/webhook/rx-saved',
+          webhook_auth_mode: 'shared_secret_header',
+          webhook_auth_header_name: 'X-Webhook-Secret',
+          webhook_shared_secret_configured: true,
+          webhook_bearer_token_configured: false,
+          max_request_bytes: 1048576,
+          payload_preview: '{"id":"sample"}',
+        }
+      : {
+          id,
+          name: 'Cybereason',
+          source_id: 1,
+          auth_type: 'SESSION_LOGIN',
+          config_json: { base_url: 'https://search1.cybereason.net' },
+        }
+  )),
 }))
 
 function StepConnectHarness() {
@@ -95,6 +126,24 @@ describe('StepConnect UX simplification', () => {
     expect(connectorTab).toHaveAttribute('aria-selected', 'false')
     expect(requestTab.className).toMatch(/text-slate-900|dark:text-slate-50/)
     expect(within(requestTab).getByText('Required')).toBeInTheDocument()
+  })
+
+  it('shows the saved webhook receiver URL instead of an empty generic host', async () => {
+    render(
+      <MemoryRouter>
+        <StepConnectHarness />
+      </MemoryRouter>,
+    )
+
+    fireEvent.change(await screen.findByTestId('wizard-saved-connector-select'), { target: { value: '2' } })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('wizard-saved-connector-endpoint')).toHaveTextContent(
+        '/api/v1/ingest/webhook/rx-saved',
+      )
+    })
+    expect(screen.getByText('Receiver URL')).toBeInTheDocument()
+    expect(screen.getByTestId('wizard-saved-connector-endpoint')).not.toHaveTextContent('—')
   })
 
   it('shows Request Configuration CTA after connector is selected', async () => {

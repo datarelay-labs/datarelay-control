@@ -94,6 +94,10 @@ export function StepSource({
   }
 
   const selectedIdValid = typeof c.connectorId === 'number' && Number.isSafeInteger(c.connectorId) && c.connectorId > 0
+  const inheritedConnectionValue =
+    c.sourceType === 'WEBHOOK_RECEIVER' && c.webhookReceiverPath
+      ? `${window.location.origin}${c.webhookReceiverPath.startsWith('/') ? '' : '/'}${c.webhookReceiverPath}`
+      : c.hostBaseUrl
   // A newly saved connector can appear before the source/catalog read catches up.
   // Preserve its ID for verification instead of silently hiding it as "no connector".
   const hasSavedConnectors = Boolean(snapshot && snapshot.connectors.length > 0) || selectedIdValid
@@ -233,7 +237,9 @@ export function StepSource({
                           ? 'Receiver URL'
                           : c.sourceType === 'DATABASE_QUERY' ? 'Database host' : 'Base URL'}
                   </dt>
-                  <dd className="max-w-[70%] break-all text-right font-medium text-slate-800 dark:text-slate-200">{c.hostBaseUrl || '—'}</dd>
+                  <dd className="max-w-[70%] break-all text-right font-medium text-slate-800 dark:text-slate-200" data-testid="wizard-saved-connector-endpoint">
+                    {inheritedConnectionValue || '—'}
+                  </dd>
                 </div>
               </dl>
               <p className="mt-2 text-[10px] text-slate-500 dark:text-gdc-muted">
