@@ -8,7 +8,7 @@ import {
   Search,
   Server,
 } from 'lucide-react'
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { Link } from 'react-router-dom'
 import {
   createDestination,
@@ -213,6 +213,43 @@ function DestinationRouteCard({
   onOpenDestinationPrerequisite?: () => boolean | void
 }) {
   const menuRef = useRef<HTMLDivElement>(null)
+  const menuButtonRef = useRef<HTMLButtonElement>(null)
+  const menuId = `destination-route-menu-${draft.key}`
+
+  const menuItems = () =>
+    Array.from(
+      menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not([disabled])') ?? [],
+    )
+
+  const focusMenuItem = (edge: 'first' | 'last') => {
+    queueMicrotask(() => {
+      const items = menuItems()
+      const target = edge === 'last' ? items[items.length - 1] : items[0]
+      target?.focus()
+    })
+  }
+
+  const handleMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const items = menuItems()
+    if (items.length === 0) return
+    const current = items.indexOf(document.activeElement as HTMLElement)
+    let nextIndex: number | null = null
+    if (event.key === 'ArrowDown') nextIndex = current < 0 ? 0 : (current + 1) % items.length
+    else if (event.key === 'ArrowUp') nextIndex = current < 0 ? items.length - 1 : (current - 1 + items.length) % items.length
+    else if (event.key === 'Home') nextIndex = 0
+    else if (event.key === 'End') nextIndex = items.length - 1
+    else if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      onMenuOpenChange(false)
+      queueMicrotask(() => menuButtonRef.current?.focus())
+      return
+    }
+    if (nextIndex == null) return
+    event.preventDefault()
+    items[nextIndex]?.focus()
+  }
+
   useEffect(() => {
     if (!menuOpen) return
     const close = (e: MouseEvent) => {
@@ -251,18 +288,29 @@ function DestinationRouteCard({
         </div>
         <div className="relative shrink-0" ref={menuRef}>
           <button
+            ref={menuButtonRef}
             type="button"
             aria-label={`Actions for ${destLabel}`}
+            aria-controls={menuId}
             aria-expanded={menuOpen}
             aria-haspopup="menu"
             className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-transparent text-slate-500 hover:bg-slate-100 dark:hover:bg-gdc-rowHover"
             onClick={() => onMenuOpenChange(!menuOpen)}
+            onKeyDown={(event) => {
+              if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+              event.preventDefault()
+              onMenuOpenChange(true)
+              focusMenuItem(event.key === 'ArrowUp' ? 'last' : 'first')
+            }}
           >
             <MoreVertical className="h-4 w-4" aria-hidden />
           </button>
           {menuOpen ? (
             <div
+              id={menuId}
               role="menu"
+              aria-label={`Actions for ${destLabel}`}
+              onKeyDown={handleMenuKeyDown}
               className="absolute right-0 z-30 mt-1 min-w-[200px] rounded-md border border-slate-200 bg-white py-1 shadow-lg dark:border-gdc-border dark:bg-gdc-card"
             >
               <button type="button" role="menuitem" className={routeMenuItemCls} onClick={() => { onDuplicate(); onMenuOpenChange(false) }}>

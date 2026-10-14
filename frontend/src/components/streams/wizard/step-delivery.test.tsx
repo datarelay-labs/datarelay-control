@@ -215,6 +215,39 @@ describe('StepDelivery', () => {
     expect(screen.queryByText('Delivery concepts')).not.toBeInTheDocument()
   })
 
+  it('supports Arrow/Home/End menu navigation and returns focus on Escape', async () => {
+    const user = userEvent.setup()
+    const state = buildInitialState()
+    state.destinations.routeDrafts = [{
+      key: 'keyboard-route',
+      destinationId: 1,
+      enabled: true,
+      failurePolicy: 'RETRY_AND_BACKOFF',
+      rateLimitJson: {},
+    }]
+    render(<MemoryRouter><StepDelivery state={state} onChange={vi.fn()} /></MemoryRouter>)
+
+    const card = await screen.findByTestId('destination-route-card-keyboard-route')
+    const trigger = within(card).getByRole('button', { name: 'Actions for Stellar Syslog' })
+    trigger.focus()
+    await user.keyboard('{ArrowDown}')
+
+    const menu = within(card).getByRole('menu', { name: 'Actions for Stellar Syslog' })
+    const items = within(menu).getAllByRole('menuitem')
+    expect(items[0]).toHaveFocus()
+
+    await user.keyboard('{ArrowDown}')
+    expect(items[1]).toHaveFocus()
+    await user.keyboard('{End}')
+    expect(items[items.length - 1]).toHaveFocus()
+    await user.keyboard('{Home}')
+    expect(items[0]).toHaveFocus()
+
+    await user.keyboard('{Escape}')
+    expect(within(card).queryByRole('menu')).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
+  })
+
   it('shows the destination connectivity check result without claiming Stream delivery', async () => {
     const user = userEvent.setup()
     const state = buildInitialState()
