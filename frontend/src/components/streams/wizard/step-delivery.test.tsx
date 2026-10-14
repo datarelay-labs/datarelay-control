@@ -32,8 +32,10 @@ const fetchDestinationsList = vi.hoisted(() =>
 
 const invalidateDestinationsListCache = vi.hoisted(() => vi.fn())
 const testDestination = vi.hoisted(() => vi.fn())
+const createDestination = vi.hoisted(() => vi.fn())
 
 vi.mock('../../../api/gdcDestinations', () => ({
+  createDestination: (...args: unknown[]) => createDestination(...args),
   fetchDestinationsList: (...args: unknown[]) => fetchDestinationsList(...args),
   invalidateDestinationsListCache: () => invalidateDestinationsListCache(),
   testDestination: (...args: unknown[]) => testDestination(...args),
@@ -48,6 +50,7 @@ describe('StepDelivery', () => {
 
   beforeEach(() => {
     invalidateDestinationsListCache.mockClear()
+    createDestination.mockReset()
     testDestination.mockReset()
     testDestination.mockResolvedValue({ success: true, message: 'Endpoint responded', latency_ms: 12.4, tested_at: '2026-10-09T07:00:00Z' })
     fetchDestinationsList.mockReset()
@@ -484,7 +487,180 @@ describe('StepDelivery', () => {
     expect(state.destinations.routeDrafts).toHaveLength(1)
   })
 
-  it('preserves the current Stream draft before opening a new destination from a populated library', async () => {
+  it('creates a Webhook Destination in the current Flow and attaches exactly one Route draft', async () => {
+    createDestination.mockResolvedValue({
+      id: 91,
+      name: 'Inline receiver',
+      destination_type: 'WEBHOOK_POST',
+      config_json: { url: 'https://inline.example.test/events', payload_mode: 'SINGLE_EVENT_OBJECT' },
+      rate_limit_json: {},
+      enabled: true,
+    })
+    const onChange = vi.fn()
+    render(
+      <MemoryRouter>
+        <StepDelivery state={buildInitialState()} onChange={onChange} />
+      </MemoryRouter>,
+    )
+
+    await screen.findByText('Stellar Syslog')
+    fetchDestinationsList.mockResolvedValueOnce([{
+      id: 91,
+      name: 'Inline receiver',
+      destination_type: 'WEBHOOK_POST',
+      config_json: { url: 'https://inline.example.test/events', payload_mode: 'SINGLE_EVENT_OBJECT' },
+      rate_limit_json: {},
+      enabled: true,
+      streams_using_count: 0,
+      routes: [],
+    }])
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Create destination here' }))
+    const form = screen.getByTestId('wizard-inline-destination-form')
+    await user.type(within(form).getByLabelText('Destination name'), 'Inline receiver')
+    await user.type(within(form).getByLabelText('Webhook URL'), 'https://inline.example.test/events')
+    await user.click(within(form).getByRole('button', { name: 'Create and add delivery path' }))
+
+    await waitFor(() => {
+      expect(createDestination).toHaveBeenCalledWith({
+        name: 'Inline receiver',
+        destination_type: 'WEBHOOK_POST',
+        enabled: true,
+        config_json: {
+          url: 'https://inline.example.test/events',
+          payload_mode: 'SINGLE_EVENT_OBJECT',
+        },
+        rate_limit_json: {},
+      })
+    })
+    await waitFor(() => {
+      const routeCalls = onChange.mock.calls
+        .map(([patch]) => patch as { routeDrafts?: Array<{ destinationId: number }> })
+        .filter((patch) => Array.isArray(patch.routeDrafts))
+      expect(routeCalls).toHaveLength(1)
+      expect(routeCalls[0]?.routeDrafts).toEqual([
+        expect.objectContaining({ destinationId: 91, enabled: true }),
+      ])
+    })
+    expect(await screen.findByTestId('wizard-inline-destination-created')).toHaveTextContent(
+      'Destination Inline receiver created and delivery path added.',
+    )
+    expect(screen.queryByTestId('wizard-inline-destination-form')).not.toBeInTheDocument()
+    expect(invalidateDestinationsListCache).toHaveBeenCalled()
+  })
+
+  it('uses strict verification and the TLS default port for an inline Syslog TLS Destination', async () => {
+    createDestination.mockResolvedValue({
+      id: 92,
+      name: 'TLS receiver',
+      destination_type: 'SYSLOG_TLS',
+      config_json: {
+        host: 'tls.receiver.internal',
+        port: 6514,
+        tls_enabled: true,
+        tls_verify_mode: 'strict',
+      },
+      rate_limit_json: {},
+      enabled: true,
+    })
+    const onChange = vi.fn()
+    render(
+      <MemoryRouter>
+        <StepDelivery state={buildInitialState()} onChange={onChange} />
+      </MemoryRouter>,
+    )
+    await screen.findByText('Stellar Syslog')
+    fetchDestinationsList.mockResolvedValueOnce([])
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Create destination here' }))
+    const form = screen.getByTestId('wizard-inline-destination-form')
+    await user.type(within(form).getByLabelText('Destination name'), 'TLS receiver')
+    await user.selectOptions(within(form).getByLabelText('Destination type'), 'SYSLOG_TLS')
+    expect(within(form).getByLabelText('Destination port')).toHaveValue('6514')
+    await user.type(within(form).getByLabelText('Syslog host'), 'tls.receiver.internal')
+    await user.click(within(form).getByRole('button', { name: 'Create and add delivery path' }))
+
+    await waitFor(() => expect(createDestination).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'TLS receiver',
+      destination_type: 'SYSLOG_TLS',
+      config_json: {
+        host: 'tls.receiver.internal',
+        port: 6514,
+        tls_enabled: true,
+        tls_verify_mode: 'strict',
+      },
+    })))
+  })
+
+  it('keeps the inline form open on validation error and does not call the API', async () => {
+    render(
+      <MemoryRouter>
+        <StepDelivery state={buildInitialState()} onChange={vi.fn()} />
+      </MemoryRouter>,
+    )
+    await screen.findByText('Stellar Syslog')
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Create destination here' }))
+    const form = screen.getByTestId('wizard-inline-destination-form')
+    await user.type(within(form).getByLabelText('Destination name'), 'Bad receiver')
+    await user.type(within(form).getByLabelText('Webhook URL'), 'not-a-url')
+    await user.click(within(form).getByRole('button', { name: 'Create and add delivery path' }))
+
+    expect(await within(form).findByRole('alert')).toHaveTextContent(
+      'Webhook URL must start with http:// or https:// and include a host.',
+    )
+    expect(createDestination).not.toHaveBeenCalled()
+    expect(screen.getByTestId('wizard-inline-destination-form')).toBeInTheDocument()
+  })
+
+  it('preserves inline input after an API save failure and does not attach a Route', async () => {
+    createDestination.mockRejectedValueOnce(new Error('private backend detail'))
+    const onChange = vi.fn()
+    render(
+      <MemoryRouter>
+        <StepDelivery state={buildInitialState()} onChange={onChange} />
+      </MemoryRouter>,
+    )
+    await screen.findByText('Stellar Syslog')
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Create destination here' }))
+    const form = screen.getByTestId('wizard-inline-destination-form')
+    await user.type(within(form).getByLabelText('Destination name'), 'Retry receiver')
+    await user.type(within(form).getByLabelText('Webhook URL'), 'https://retry.example.test/events')
+    await user.click(within(form).getByRole('button', { name: 'Create and add delivery path' }))
+
+    expect(await within(form).findByRole('alert')).toHaveTextContent(
+      'Destination save failed. Check required fields and API access, then retry.',
+    )
+    expect(within(form).getByLabelText('Destination name')).toHaveValue('Retry receiver')
+    expect(onChange).not.toHaveBeenCalledWith(expect.objectContaining({ routeDrafts: expect.any(Array) }))
+  })
+
+  it('cancels inline Destination creation without changing configured Route drafts', async () => {
+    const onChange = vi.fn()
+    render(
+      <MemoryRouter>
+        <StepDelivery state={buildInitialState()} onChange={onChange} />
+      </MemoryRouter>,
+    )
+    await screen.findByText('Stellar Syslog')
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Create destination here' }))
+    const form = screen.getByTestId('wizard-inline-destination-form')
+    await user.type(within(form).getByLabelText('Destination name'), 'Cancelled receiver')
+    await user.click(within(form).getAllByRole('button', { name: 'Cancel' })[0]!)
+
+    expect(screen.queryByTestId('wizard-inline-destination-form')).not.toBeInTheDocument()
+    expect(createDestination).not.toHaveBeenCalled()
+    expect(onChange).not.toHaveBeenCalledWith(expect.objectContaining({ routeDrafts: expect.any(Array) }))
+  })
+
+  it('preserves the current Stream draft before opening destination management from a populated library', async () => {
     const onOpenDestinationPrerequisite = vi.fn(() => true)
     render(
       <MemoryRouter initialEntries={['/streams/new']}>
@@ -500,7 +676,7 @@ describe('StepDelivery', () => {
     await screen.findByText('Stellar Syslog')
     expect(screen.getByTestId('wizard-destination-resume-guidance')).toHaveTextContent('Opening Destinations saves this Stream draft first')
     expect(screen.getByTestId('wizard-destination-resume-guidance')).toHaveTextContent('Resume draft')
-    await userEvent.setup().click(screen.getByRole('link', { name: 'Create new destination' }))
+    await userEvent.setup().click(screen.getByRole('link', { name: 'Manage all destinations' }))
     expect(onOpenDestinationPrerequisite).toHaveBeenCalledTimes(1)
     expect(await screen.findByText('Destination management workspace')).toBeInTheDocument()
   })
@@ -518,7 +694,7 @@ describe('StepDelivery', () => {
       </MemoryRouter>,
     )
     await screen.findByText('Stellar Syslog')
-    await userEvent.setup().click(screen.getByRole('link', { name: 'Create new destination' }))
+    await userEvent.setup().click(screen.getByRole('link', { name: 'Manage all destinations' }))
     expect(onOpenDestinationPrerequisite).toHaveBeenCalledTimes(1)
     expect(await screen.findByTestId('destination-return-state')).toHaveTextContent('true')
   })
@@ -537,10 +713,10 @@ describe('StepDelivery', () => {
     )
 
     await screen.findByText('Stellar Syslog')
-    await userEvent.setup().click(screen.getByRole('link', { name: 'Create new destination' }))
+    await userEvent.setup().click(screen.getByRole('link', { name: 'Manage all destinations' }))
     expect(onOpenDestinationPrerequisite).toHaveBeenCalledTimes(1)
     expect(screen.queryByText('Destination management workspace')).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Create new destination' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Manage all destinations' })).toBeInTheDocument()
   })
 
   it('adds a Destination only once when Add delivery path is double-clicked before parent re-render', async () => {

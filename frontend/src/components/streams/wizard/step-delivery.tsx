@@ -13,7 +13,15 @@ import {
 } from 'lucide-react'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { fetchDestinationsList, invalidateDestinationsListCache, testDestination, type DestinationListItem } from '../../../api/gdcDestinations'
+import {
+  createDestination,
+  fetchDestinationsList,
+  invalidateDestinationsListCache,
+  testDestination,
+  type DestinationListItem,
+  type DestinationType,
+  type DestinationWritePayload,
+} from '../../../api/gdcDestinations'
 import { runFinalEventDraftPreview } from '../../../api/gdcRuntimePreview'
 import { NAV_PATH, destinationDetailPath } from '../../../config/nav-paths'
 import { cn } from '../../../lib/utils'
@@ -90,6 +98,67 @@ function destinationEndpointLine(dest: DestinationListItem): string {
 }
 
 type DestinationProbeFeedback = { kind: 'success' | 'failed' | 'unavailable'; message: string }
+
+type InlineDestinationDraft = {
+  name: string
+  destinationType: DestinationType
+  url: string
+  host: string
+  port: string
+}
+
+const EMPTY_INLINE_DESTINATION: InlineDestinationDraft = {
+  name: '',
+  destinationType: 'WEBHOOK_POST',
+  url: '',
+  host: '',
+  port: '514',
+}
+
+function inlineDestinationPayload(draft: InlineDestinationDraft): DestinationWritePayload {
+  const name = draft.name.trim()
+  if (!name) throw new Error('Destination name is required.')
+  if (draft.destinationType === 'WEBHOOK_POST') {
+    const url = draft.url.trim()
+    if (!/^https?:\/\/[^\s/]+/i.test(url)) {
+      throw new Error('Webhook URL must start with http:// or https:// and include a host.')
+    }
+    return {
+      name,
+      destination_type: 'WEBHOOK_POST',
+      enabled: true,
+      config_json: { url, payload_mode: 'SINGLE_EVENT_OBJECT' },
+      rate_limit_json: {},
+    }
+  }
+
+  const host = draft.host.trim()
+  const port = Number(draft.port)
+  if (!host) throw new Error('Syslog host is required.')
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error('Port must be an integer from 1 to 65535.')
+  }
+  if (draft.destinationType === 'SYSLOG_TLS') {
+    return {
+      name,
+      destination_type: 'SYSLOG_TLS',
+      enabled: true,
+      config_json: { host, port, tls_enabled: true, tls_verify_mode: 'strict' },
+      rate_limit_json: {},
+    }
+  }
+  return {
+    name,
+    destination_type: draft.destinationType,
+    enabled: true,
+    config_json: {
+      host,
+      port,
+      protocol: draft.destinationType === 'SYSLOG_TCP' ? 'tcp' : 'udp',
+    },
+    rate_limit_json: {},
+  }
+}
 
 function DestinationRouteCard({
   routeIndex,
@@ -257,6 +326,12 @@ export function StepDelivery({
   const [menuKey, setMenuKey] = useState<string | null>(null)
   const [testBusyId, setTestBusyId] = useState<number | null>(null)
   const [testFeedbackByDestinationId, setTestFeedbackByDestinationId] = useState<Record<number, DestinationProbeFeedback>>({})
+  const [inlineCreateOpen, setInlineCreateOpen] = useState(false)
+  const [inlineDraft, setInlineDraft] = useState<InlineDestinationDraft>({ ...EMPTY_INLINE_DESTINATION })
+  const [inlineCreateBusy, setInlineCreateBusy] = useState(false)
+  const [inlineCreateError, setInlineCreateError] = useState<string | null>(null)
+  const [inlineCreateNotice, setInlineCreateNotice] = useState<string | null>(null)
+  const inlineCreateBusyRef = useRef(false)
   const onChangeRef = useRef(onChange)
   const routeDraftsRef = useRef(state.destinations.routeDrafts)
   const fetchVersionRef = useRef(0)
@@ -388,6 +463,78 @@ export function StepDelivery({
     },
     [onChange],
   )
+
+  const openInlineDestinationCreate = useCallback(() => {
+    setInlineCreateError(null)
+    setInlineCreateNotice(null)
+    setInlineDraft({ ...EMPTY_INLINE_DESTINATION })
+    setInlineCreateOpen(true)
+  }, [])
+
+  const cancelInlineDestinationCreate = useCallback(() => {
+    if (inlineCreateBusyRef.current) return
+    setInlineCreateOpen(false)
+    setInlineCreateError(null)
+    setInlineDraft({ ...EMPTY_INLINE_DESTINATION })
+  }, [])
+
+  const saveInlineDestination = useCallback(async () => {
+    if (inlineCreateBusyRef.current) return
+
+    let payload: DestinationWritePayload
+    try {
+      payload = inlineDestinationPayload(inlineDraft)
+    } catch (error) {
+      setInlineCreateError(error instanceof Error ? error.message : 'Check the destination fields and retry.')
+      return
+    }
+
+    inlineCreateBusyRef.current = true
+    setInlineCreateBusy(true)
+    setInlineCreateError(null)
+    setInlineCreateNotice(null)
+    try {
+      const created = await createDestination(payload)
+      const createdListItem: DestinationListItem = {
+        ...created,
+        streams_using_count: 0,
+        routes: [],
+      }
+
+      setDestinations((current) => [
+        ...current.filter((destination) => destination.id !== created.id),
+        createdListItem,
+      ])
+      setCatalogLoadFailed(false)
+      addRouteForDestination(created.id)
+      setInlineCreateNotice(`Destination ${created.name} created and delivery path added.`)
+      setInlineCreateOpen(false)
+      setInlineDraft({ ...EMPTY_INLINE_DESTINATION })
+
+      invalidateDestinationsListCache()
+      try {
+        const refreshed = await fetchDestinationsList()
+        if (refreshed !== null) {
+          setDestinations(refreshed)
+          onChangeRef.current({
+            destinationApiBacked: true,
+            destinationKindsById: Object.fromEntries(refreshed.map((destination) => [
+              destination.id,
+              destination.destination_type,
+            ])),
+          })
+        }
+      } catch {
+        // The create response is authoritative for this saved destination.
+        // Keep the created row and draft attached when catalog refresh is temporarily unavailable.
+      }
+    } catch {
+      setInlineCreateError('Destination save failed. Check required fields and API access, then retry.')
+    } finally {
+      inlineCreateBusyRef.current = false
+      setInlineCreateBusy(false)
+    }
+  }, [addRouteForDestination, inlineDraft])
 
   const filteredLibrary = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -555,6 +702,15 @@ export function StepDelivery({
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           <button
             type="button"
+            className={btnPrimarySm}
+            onClick={openInlineDestinationCreate}
+            disabled={inlineCreateBusy}
+          >
+            <Plus className="h-3.5 w-3.5" aria-hidden />
+            Create destination here
+          </button>
+          <button
+            type="button"
             className={btnGhost}
             onClick={() => void refreshDestinations(true)}
             disabled={loading}
@@ -570,6 +726,137 @@ export function StepDelivery({
           </button>
         </div>
       </div>
+
+      {inlineCreateNotice ? (
+        <p
+          role="status"
+          className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] text-emerald-900 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-100"
+          data-testid="wizard-inline-destination-created"
+        >
+          {inlineCreateNotice}
+        </p>
+      ) : null}
+
+      {inlineCreateOpen ? (
+        <form
+          data-testid="wizard-inline-destination-form"
+          className="rounded-xl border border-violet-200 bg-violet-50/60 p-4 dark:border-violet-500/40 dark:bg-violet-500/10"
+          onSubmit={(event) => {
+            event.preventDefault()
+            void saveInlineDestination()
+          }}
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h4 className="text-[13px] font-semibold text-slate-900 dark:text-slate-100">Create destination in this Flow</h4>
+              <p className="mt-1 text-[11px] text-slate-600 dark:text-gdc-mutedStrong">
+                Save a reusable Destination and attach one Route draft without leaving the current Stream setup.
+              </p>
+            </div>
+            <button type="button" className={btnGhost} onClick={cancelInlineDestinationCreate} disabled={inlineCreateBusy}>
+              Cancel
+            </button>
+          </div>
+
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-200">
+              Destination name
+              <input
+                aria-label="Destination name"
+                value={inlineDraft.name}
+                onChange={(event) => setInlineDraft((draft) => ({ ...draft, name: event.target.value }))}
+                className={cn(inputCls, 'mt-1')}
+                autoFocus
+              />
+            </label>
+            <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-200">
+              Destination type
+              <select
+                aria-label="Destination type"
+                value={inlineDraft.destinationType}
+                onChange={(event) => {
+                  const destinationType = event.target.value as DestinationType
+                  setInlineDraft((draft) => ({
+                    ...draft,
+                    destinationType,
+                    port: destinationType === 'SYSLOG_TLS' ? '6514' : destinationType === 'WEBHOOK_POST' ? draft.port : '514',
+                  }))
+                }}
+                className={cn(inputCls, 'mt-1')}
+              >
+                <option value="WEBHOOK_POST">Webhook (HTTP POST)</option>
+                <option value="SYSLOG_UDP">Syslog UDP</option>
+                <option value="SYSLOG_TCP">Syslog TCP</option>
+                <option value="SYSLOG_TLS">Syslog TLS</option>
+              </select>
+            </label>
+          </div>
+
+          {inlineDraft.destinationType === 'WEBHOOK_POST' ? (
+            <label className="mt-3 block text-[11px] font-semibold text-slate-700 dark:text-slate-200">
+              Webhook URL
+              <input
+                aria-label="Webhook URL"
+                value={inlineDraft.url}
+                onChange={(event) => setInlineDraft((draft) => ({ ...draft, url: event.target.value }))}
+                placeholder="https://receiver.example/events"
+                className={cn(inputCls, 'mt-1')}
+              />
+            </label>
+          ) : (
+            <div className="mt-3 grid gap-3 md:grid-cols-[1fr_160px]">
+              <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-200">
+                Syslog host
+                <input
+                  aria-label="Syslog host"
+                  value={inlineDraft.host}
+                  onChange={(event) => setInlineDraft((draft) => ({ ...draft, host: event.target.value }))}
+                  placeholder="receiver.internal"
+                  className={cn(inputCls, 'mt-1')}
+                />
+              </label>
+              <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-200">
+                Port
+                <input
+                  aria-label="Destination port"
+                  inputMode="numeric"
+                  value={inlineDraft.port}
+                  onChange={(event) => setInlineDraft((draft) => ({ ...draft, port: event.target.value }))}
+                  className={cn(inputCls, 'mt-1')}
+                />
+              </label>
+            </div>
+          )}
+
+          {inlineDraft.destinationType === 'SYSLOG_TLS' ? (
+            <p className="mt-2 text-[10px] text-slate-500 dark:text-gdc-muted">
+              TLS verification uses the product default: strict. Use Manage all destinations for advanced certificate settings.
+            </p>
+          ) : null}
+
+          {inlineCreateError ? (
+            <p role="alert" className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-800 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-200">
+              {inlineCreateError}
+            </p>
+          ) : null}
+
+          <div className="mt-3 flex flex-wrap justify-end gap-2">
+            <button type="button" className={btnGhost} onClick={cancelInlineDestinationCreate} disabled={inlineCreateBusy}>
+              Cancel
+            </button>
+            <button type="submit" className={btnPrimarySm} disabled={inlineCreateBusy}>
+              {inlineCreateBusy ? (
+                <>
+                  <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" aria-hidden />
+                  Saving…
+                </>
+              ) : (
+                'Create and add delivery path'
+              )}
+            </button>
+          </div>
+        </form>
+      ) : null}
 
       {recentlyCreatedDestinationId != null ? (
         <div data-testid="wizard-returned-destination" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-violet-200 bg-violet-50 p-3 text-[12px] text-violet-900 dark:border-violet-500/40 dark:bg-violet-500/10 dark:text-violet-100">
@@ -618,17 +905,23 @@ export function StepDelivery({
         </div>
       ) : destinations.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-300 bg-white p-4 dark:border-gdc-border dark:bg-gdc-card">
-          <p className="text-[12px] text-slate-600 dark:text-gdc-muted">No destinations configured yet. Create a destination first.</p>
-          <Link
-            to={NAV_PATH.destinations}
-            state={showCreateDraftReturnGuidance ? { returnToSavedWizardDraft: true } : undefined}
-            onClick={(event) => {
-              if (onOpenDestinationPrerequisite?.() === false) event.preventDefault()
-            }}
-            className="mt-2 inline-flex h-9 items-center rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white"
-          >
-            Go to Destinations
-          </Link>
+          <p className="text-[12px] text-slate-600 dark:text-gdc-muted">No destinations configured yet. Create one here without leaving this Flow.</p>
+          <div className="mt-2 flex flex-wrap items-center justify-center gap-3">
+            <button type="button" className={btnPrimarySm} onClick={openInlineDestinationCreate}>
+              <Plus className="mr-1 h-3.5 w-3.5" aria-hidden />
+              Create destination here
+            </button>
+            <Link
+              to={NAV_PATH.destinations}
+              state={showCreateDraftReturnGuidance ? { returnToSavedWizardDraft: true } : undefined}
+              onClick={(event) => {
+                if (onOpenDestinationPrerequisite?.() === false) event.preventDefault()
+              }}
+              className="text-[11px] font-semibold text-violet-700 hover:underline dark:text-violet-300"
+            >
+              Manage all destinations
+            </Link>
+          </div>
         </div>
       ) : (
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
@@ -835,8 +1128,7 @@ export function StepDelivery({
                 }}
                 className="mt-3 flex items-center justify-center gap-1 text-[11px] font-semibold text-violet-700 hover:underline dark:text-violet-300"
               >
-                <Plus className="h-3.5 w-3.5" aria-hidden />
-                Create new destination
+                Manage all destinations
               </Link>
               {showCreateDraftReturnGuidance && onOpenDestinationPrerequisite ? (
                 <p className="mt-1 text-center text-[11px] leading-4 text-slate-500 dark:text-gdc-muted" data-testid="wizard-destination-resume-guidance">
