@@ -258,8 +258,10 @@ export function StepDelivery({
   const [testBusyId, setTestBusyId] = useState<number | null>(null)
   const [testFeedbackByDestinationId, setTestFeedbackByDestinationId] = useState<Record<number, DestinationProbeFeedback>>({})
   const onChangeRef = useRef(onChange)
+  const routeDraftsRef = useRef(state.destinations.routeDrafts)
   const fetchVersionRef = useRef(0)
   useEffect(() => { onChangeRef.current = onChange }, [onChange])
+  useEffect(() => { routeDraftsRef.current = state.destinations.routeDrafts }, [state.destinations.routeDrafts])
 
   const fallbackSampleEvent = useMemo(() => {
     const payload = state.apiTest.parsedJson
@@ -370,6 +372,8 @@ export function StepDelivery({
 
   const addRouteForDestination = useCallback(
     (destinationId: number) => {
+      const currentDrafts = routeDraftsRef.current
+      if (currentDrafts.some((draft) => draft.destinationId === destinationId)) return
       const next: WizardRouteDraft = {
         key: newWizardRouteDraftKey(),
         destinationId,
@@ -378,9 +382,11 @@ export function StepDelivery({
         rateLimitJson: {},
         inherit: { ...DEFAULT_ROUTE_PROCESSING_INHERIT },
       }
-      onChange({ routeDrafts: [...state.destinations.routeDrafts, next] })
+      const nextDrafts = [...currentDrafts, next]
+      routeDraftsRef.current = nextDrafts
+      onChange({ routeDrafts: nextDrafts })
     },
-    [onChange, state.destinations.routeDrafts],
+    [onChange],
   )
 
   const filteredLibrary = useMemo(() => {
@@ -791,6 +797,7 @@ export function StepDelivery({
                   </li>
                 ) : null}
                 {filteredLibrary.map((d) => {
+                  const alreadyAdded = drafts.some((draft) => draft.destinationId === d.id)
                   const icon =
                     d.destination_type === 'WEBHOOK_POST' ? (
                       <Radio className="h-4 w-4 text-pink-500" aria-hidden />
@@ -808,8 +815,13 @@ export function StepDelivery({
                         <p className="truncate text-[10px] text-slate-500">{formatWizardSyslogLabel(d.destination_type)}</p>
                         <p className="truncate text-[10px] text-slate-400">{destinationEndpointLine(d)}</p>
                       </div>
-                      <button type="button" className={btnPrimarySm} onClick={() => addRouteForDestination(d.id)}>
-                        {WIZARD_LABEL.addDeliveryPath}
+                      <button
+                        type="button"
+                        className={btnPrimarySm}
+                        onClick={() => addRouteForDestination(d.id)}
+                        disabled={alreadyAdded}
+                      >
+                        {alreadyAdded ? 'Added' : WIZARD_LABEL.addDeliveryPath}
                       </button>
                     </li>
                   )

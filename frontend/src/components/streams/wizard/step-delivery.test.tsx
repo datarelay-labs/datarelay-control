@@ -543,6 +543,51 @@ describe('StepDelivery', () => {
     expect(screen.getByRole('link', { name: 'Create new destination' })).toBeInTheDocument()
   })
 
+  it('adds a Destination only once when Add delivery path is double-clicked before parent re-render', async () => {
+    const onChange = vi.fn()
+    render(
+      <MemoryRouter>
+        <StepDelivery state={buildInitialState()} onChange={onChange} />
+      </MemoryRouter>,
+    )
+
+    const syslogLabel = await screen.findByText('Stellar Syslog')
+    const syslogRow = syslogLabel.closest('li')
+    expect(syslogRow).not.toBeNull()
+    const add = within(syslogRow!).getByRole('button', { name: 'Add delivery path' })
+    await userEvent.setup().dblClick(add)
+
+    const routeCalls = onChange.mock.calls
+      .map(([patch]) => patch as { routeDrafts?: Array<{ destinationId: number }> })
+      .filter((patch) => Array.isArray(patch.routeDrafts))
+    expect(routeCalls).toHaveLength(1)
+    expect(routeCalls[0]?.routeDrafts).toEqual([
+      expect.objectContaining({ destinationId: 1 }),
+    ])
+  })
+
+  it('preserves two distinct Destination drafts across rapid sequential additions', async () => {
+    const onChange = vi.fn()
+    render(
+      <MemoryRouter>
+        <StepDelivery state={buildInitialState()} onChange={onChange} />
+      </MemoryRouter>,
+    )
+
+    const syslogRow = (await screen.findByText('Stellar Syslog')).closest('li')
+    const webhookRow = screen.getByText('Backup Webhook').closest('li')
+    expect(syslogRow).not.toBeNull()
+    expect(webhookRow).not.toBeNull()
+    const user = userEvent.setup()
+    await user.click(within(syslogRow!).getByRole('button', { name: 'Add delivery path' }))
+    await user.click(within(webhookRow!).getByRole('button', { name: 'Add delivery path' }))
+
+    const routeCalls = onChange.mock.calls
+      .map(([patch]) => patch as { routeDrafts?: Array<{ destinationId: number }> })
+      .filter((patch) => Array.isArray(patch.routeDrafts))
+    expect(routeCalls.at(-1)?.routeDrafts?.map((draft) => draft.destinationId)).toEqual([1, 2])
+  })
+
   it('refreshes a newly saved Destination and requires explicit operator Route attachment', async () => {
     fetchDestinationsList.mockResolvedValueOnce([{
       id: 91, name: 'Just created receiver', destination_type: 'WEBHOOK_POST',
