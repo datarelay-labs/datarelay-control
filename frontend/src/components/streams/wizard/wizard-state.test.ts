@@ -352,6 +352,46 @@ describe('wizard-state buildStreamConfigPayload', () => {
     const payload = buildStreamConfigPayload(state) as Record<string, unknown>
     expect(payload).not.toHaveProperty('event_array_path')
   })
+
+  it('binds checkpoint-driven pagination to the actual request params used by Run Test and runtime', () => {
+    const state = buildInitialState()
+    state.stream.params = [{ id: 'tenant', key: 'tenant', value: 'acme' }]
+    state.stream.paginationType = 'Cursor based'
+    state.stream.paginationCursorParam = 'cursor'
+    state.stream.paginationPageSize = 250
+    state.stream.paginationMaxPages = 4
+
+    const payload = buildStreamConfigPayload(state) as {
+      params: Record<string, string>
+      pagination: Record<string, unknown>
+    }
+
+    expect(payload.params).toEqual({
+      tenant: 'acme',
+      cursor: '{{checkpoint.next_cursor}}',
+    })
+    expect(payload.pagination).toEqual({
+      type: 'Cursor based',
+      cursor_param: 'cursor',
+      page_size: 250,
+      max_pages: 4,
+    })
+  })
+
+  it('does not inject a checkpoint pagination param when pagination is disabled', () => {
+    const state = buildInitialState()
+    state.stream.params = [{ id: 'tenant', key: 'tenant', value: 'acme' }]
+    state.stream.paginationType = 'None'
+    state.stream.paginationCursorParam = 'cursor'
+
+    const payload = buildStreamConfigPayload(state) as {
+      params: Record<string, string>
+      pagination: Record<string, unknown>
+    }
+
+    expect(payload.params).toEqual({ tenant: 'acme' })
+    expect(payload.pagination).toMatchObject({ type: 'none', cursor_param: 'cursor' })
+  })
 })
 
 describe('wizard-state buildStreamCreatePayload', () => {

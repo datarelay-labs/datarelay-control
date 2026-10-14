@@ -36,6 +36,7 @@ import {
   buildAdvancedStreamConfigJsonPatch,
   mergeStreamConfigJson,
 } from './wizard-stream-config-sync'
+import { buildPersistParams, normalizePaginationLabel } from '../stream-edit-request-params'
 import { wizardDestinationGateReady } from './wizard-step-gates'
 
 /** Top-level wizard steps (Stream Wizard UX Charter v5.2 — P1 structure MVP). */
@@ -1663,6 +1664,12 @@ export function buildStreamConfigPayload(state: WizardState): Record<string, unk
   for (const row of state.stream.params) {
     if (row.key.trim()) baseParams[row.key.trim()] = row.value
   }
+  const paginationParams = buildPersistParams({
+    paginationType: state.stream.paginationType,
+    cursorParam: state.stream.paginationCursorParam,
+  })
+  const params = { ...baseParams, ...paginationParams }
+  const paginationType = normalizePaginationLabel(state.stream.paginationType)
   const rawEndpoint = state.stream.endpoint.trim()
   let endpoint = rawEndpoint
   if (/^https?:\/\//i.test(rawEndpoint)) {
@@ -1677,9 +1684,15 @@ export function buildStreamConfigPayload(state: WizardState): Record<string, unk
     method: state.stream.httpMethod,
     endpoint,
     headers,
-    params: baseParams,
+    params,
     body: state.stream.requestBody.trim() || undefined,
     timeout_seconds: state.stream.timeoutSec,
+    pagination: {
+      type: paginationType === 'None' ? 'none' : paginationType,
+      cursor_param: state.stream.paginationCursorParam.trim(),
+      page_size: state.stream.paginationPageSize > 0 ? state.stream.paginationPageSize : undefined,
+      max_pages: state.stream.paginationMaxPages > 0 ? state.stream.paginationMaxPages : undefined,
+    },
   }
   if (!state.stream.useWholeResponseAsEvent) {
     const eap = state.stream.eventArrayPath.trim()

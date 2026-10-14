@@ -176,35 +176,20 @@ export function StreamConfigAdvancedPanels({
               ))}
             </select>
           </Field>
-          <Field label="Cursor / page param">
+          <Field label="Pagination query parameter">
             <input
               value={stream.paginationCursorParam}
               onChange={(e) => onChange({ paginationCursorParam: e.target.value })}
               className={inputCls}
-              placeholder="e.g. cursor"
+              placeholder="e.g. cursor, page, or offset"
               disabled={stream.paginationType === 'None'}
             />
           </Field>
-          <Field label="Page size (limit)">
-            <input
-              type="number"
-              min={0}
-              value={stream.paginationPageSize}
-              onChange={(e) => onChange({ paginationPageSize: Math.max(0, Number(e.target.value || 0)) })}
-              className={inputCls}
-              disabled={stream.paginationType === 'None'}
-            />
-          </Field>
-          <Field label="Max pages (optional)">
-            <input
-              type="number"
-              min={0}
-              value={stream.paginationMaxPages}
-              onChange={(e) => onChange({ paginationMaxPages: Math.max(0, Number(e.target.value || 0)) })}
-              className={inputCls}
-              disabled={stream.paginationType === 'None'}
-            />
-          </Field>
+          <p className="text-[11px] leading-5 text-slate-500 dark:text-gdc-muted md:col-span-2">
+            Pagination is checkpoint-driven: the selected query parameter is sent as{' '}
+            <code className="font-mono">{'{{checkpoint.next_cursor}}'}</code> on Run Test and runtime requests.
+            The current runtime performs one request per poll cycle; page-size and max-page batching are not exposed here.
+          </p>
         </div>
       </section>
     </div>
