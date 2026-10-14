@@ -1458,6 +1458,76 @@ def run_http_api_test(payload: HttpApiTestRequest, db: Session | None = None, *,
     else:
         source_config = dict(payload.source_config or {})
 
+    if _is_s3_connector_auth_config(source_config):
+        from app.sources.adapters.s3_object_polling import S3ObjectPollingAdapter
+
+        bounded_stream_config = dict(stream_config)
+        max_objects = int(bounded_stream_config.get("max_objects_per_run") or 3)
+        bounded_stream_config["max_objects_per_run"] = max(1, min(max_objects, 3))
+        started = time.perf_counter()
+        try:
+            events = S3ObjectPollingAdapter().fetch(
+                source_config,
+                bounded_stream_config,
+                payload.checkpoint,
+            )
+        except SourceFetchError as exc:
+            raise PreviewRequestError(
+                400,
+                {
+                    "ok": False,
+                    "error_type": "s3_sample_fetch_failed",
+                    "message": str(exc),
+                    "error_code": "s3_sample_fetch_failed",
+                },
+            ) from exc
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        cap = [dict(row) for row in events[:100]]
+        raw_out = json.dumps(cap, default=str, ensure_ascii=False)
+        body_truncated = False
+        if len(raw_out) > 150_000:
+            raw_out = raw_out[:150_000] + "\n...truncated..."
+            body_truncated = True
+        bucket = str(source_config.get("bucket") or "")
+        prefix = str(source_config.get("prefix") or "").lstrip("/")
+        meta_url = f"s3://{bucket}/{prefix}" if prefix else f"s3://{bucket}"
+        analysis_model = HttpApiTestAnalysis.model_validate(
+            build_http_api_test_analysis_dict(
+                cap,
+                raw_body=raw_out,
+                raw_body_length=len(raw_out.encode("utf-8", errors="replace")),
+                body_truncated=body_truncated,
+                content_type="application/json",
+                event_array_hint=None,
+            )
+        )
+        return HttpApiTestResponse(
+            ok=True,
+            request=HttpApiTestRequestMeta(
+                method="S3_OBJECT_POLLING",
+                url=meta_url,
+                headers_masked={},
+            ),
+            actual_request_sent=HttpApiTestActualRequestMeta(
+                method="S3_OBJECT_POLLING",
+                url=meta_url,
+                endpoint=None,
+                query_params={},
+                headers_masked={},
+                json_body_masked=None,
+                timeout_seconds=float(source_config.get("connection_timeout_seconds") or 30),
+            ),
+            response=HttpApiTestResponseMeta(
+                status_code=200,
+                latency_ms=latency_ms,
+                headers={},
+                raw_body=raw_out,
+                parsed_json=cap,
+                content_type="application/json",
+            ),
+            analysis=analysis_model,
+        )
+
     if _is_database_query_connector_auth_config(source_config):
         query = str(_lookup(stream_config, ["query"], "")).strip()
         if not query:

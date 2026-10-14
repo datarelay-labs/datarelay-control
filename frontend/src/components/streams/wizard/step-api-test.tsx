@@ -243,6 +243,7 @@ export function StepApiTest({
         unionSchema: null,
         analysis: null,
       })
+      let connectivityPassed = false
       try {
         const res = await runConnectorAuthTest({
           connector_id: state.connector.connectorId ?? undefined,
@@ -281,48 +282,27 @@ export function StepApiTest({
           })
           return
         }
-        const sample: Record<string, unknown> = {
-          id: 's3-wizard-preview',
-          message: 'Use a field path from your NDJSON or JSON objects (e.g. $.id, $.message).',
-          severity: '1',
-        }
-        const analysisModel: WizardHttpApiAnalysis = {
-          responseSummary: {
-            root_type: 'object',
-            approx_size_bytes: JSON.stringify(sample).length,
-            top_level_keys: Object.keys(sample),
-            item_count_root: 1,
-            truncation: null,
-          },
-          detectedArrays: [],
-          detectedCheckpointCandidates: [],
-          sampleEvent: sample,
-          selectedEventArrayDefault: null,
-          flatPreviewFields: Object.keys(sample).map((k) => `$.${k}`),
-          eventRootCandidates: detectEventRootCandidates(sample),
-          previewError: null,
-        }
+        connectivityPassed = true
+        const sampleRes = await runHttpApiTest({
+          connector_id: state.connector.connectorId ?? undefined,
+          source_config: { ...buildSourceConfig(state), ...buildSourceAuthPayload(state) },
+          stream_config: buildStreamConfigPayload(state),
+          checkpoint: null,
+          fetch_sample: true,
+        })
+        const parsedBody = sampleRes.response?.parsed_json ?? null
+        const analysisModel = sampleRes.analysis ? mapApiAnalysis(sampleRes.analysis) : null
         commitApiTest(gen, {
           status: 'success',
           ok: true,
-          requestUrl: state.connector.hostBaseUrl || null,
-          method: 'S3_PROBE',
-          statusCode: null,
-          responseHeaders: {},
-          rawBody: JSON.stringify(
-            {
-              s3_bucket_exists: res.s3_bucket_exists,
-              s3_object_count_preview: res.s3_object_count_preview,
-              s3_sample_keys: res.s3_sample_keys,
-              s3_endpoint_reachable: res.s3_endpoint_reachable,
-              s3_auth_ok: res.s3_auth_ok,
-            },
-            null,
-            2,
-          ),
-          parsedJson: null,
-          rawResponse: res,
-          ...buildApiTestSuccessPatch(sample, analysisModel),
+          requestUrl: sampleRes.request.url,
+          method: sampleRes.request.method,
+          statusCode: sampleRes.response?.status_code ?? 200,
+          responseHeaders: sampleRes.response?.headers ?? {},
+          rawBody: sampleRes.response?.raw_body ?? null,
+          parsedJson: parsedBody,
+          rawResponse: parsedBody ?? sampleRes.response?.raw_body ?? null,
+          ...buildApiTestSuccessPatch(parsedBody, analysisModel),
           startedAt,
           finishedAt: Date.now(),
           errorCode: null,
@@ -330,17 +310,30 @@ export function StepApiTest({
           errorMessage: null,
           targetStatusCode: null,
           targetResponseBody: null,
-          hint: null,
+          hint:
+            res.s3_object_count_preview === 0
+              ? 'S3 connectivity is healthy, but no matching objects were available for the sample.'
+              : 'S3 connectivity verified and sample fields were parsed from actual matching object data.',
           apiBacked: true,
-          steps: [],
-          responseSample: res,
-          effectiveHeadersMasked: null,
-          actualRequestSent: null,
+          steps: mapApiSteps(sampleRes.steps),
+          responseSample: parsedBody,
+          effectiveHeadersMasked: sampleRes.request.headers_masked ?? null,
+          actualRequestSent: sampleRes.actual_request_sent
+            ? {
+                method: sampleRes.actual_request_sent.method,
+                url: sampleRes.actual_request_sent.url,
+                endpoint: sampleRes.actual_request_sent.endpoint ?? null,
+                queryParams: sampleRes.actual_request_sent.query_params ?? {},
+                headersMasked: sampleRes.actual_request_sent.headers_masked ?? {},
+                jsonBodyMasked: sampleRes.actual_request_sent.json_body_masked ?? null,
+                timeoutSeconds: sampleRes.actual_request_sent.timeout_seconds,
+              }
+            : null,
           analysis: analysisModel,
           s3ConnectivityPassed: true,
         })
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'S3 probe failed.'
+        const message = err instanceof Error ? err.message : connectivityPassed ? 'S3 sample fetch failed.' : 'S3 probe failed.'
         commitApiTest(gen, {
           status: 'error',
           ok: false,
