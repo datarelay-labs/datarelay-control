@@ -203,7 +203,7 @@ describe('Route failure investigation has an explicit next step', () => {
     expect(screen.getByRole('link', { name: 'Review Route #42 configuration' }))
       .toHaveAttribute('href', '/routes/42/edit')
     expect(screen.getByRole('link', { name: 'Back to Data Flows' }))
-      .toHaveAttribute('href', '/routes')
+      .toHaveAttribute('href', '/routes?stream_id=2&route_id=42')
     expect(screen.getByRole('link', { name: 'Inspect Destination #10' }))
       .toHaveAttribute('href', '/destinations/10')
     expect(screen.getByRole('link', { name: 'View Route #42 delivery trends (24h)' }))

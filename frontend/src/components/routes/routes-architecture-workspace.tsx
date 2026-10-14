@@ -34,6 +34,7 @@ export type RoutesArchitectureWorkspaceProps = {
   loading?: boolean
   requestFailed?: boolean
   selectedStreamId: number | null
+  initialRouteId?: number | null
   onSelectStream: (id: number) => void
   onRouteSaved?: () => void
 }
@@ -82,6 +83,7 @@ export function RoutesArchitectureWorkspace({
   loading = false,
   requestFailed = false,
   selectedStreamId,
+  initialRouteId = null,
   onSelectStream,
   onRouteSaved,
 }: RoutesArchitectureWorkspaceProps) {
@@ -93,7 +95,7 @@ export function RoutesArchitectureWorkspace({
       .map((stream) => [stream.stream_id, stream]) ?? [],
   ), [snapshot?.streams])
   const selectedStream = selectedGroup ? streamsById.get(selectedGroup.streamId) : undefined
-  const [inspectedRouteId, setInspectedRouteId] = useState<number | null>(null)
+  const [inspectedRouteId, setInspectedRouteId] = useState<number | null>(validId(initialRouteId) ? initialRouteId : null)
   const [routeEditorOpen, setRouteEditorOpen] = useState(false)
   const [streamEditorOpen, setStreamEditorOpen] = useState(false)
   const [configurationSelectionNotice, setConfigurationSelectionNotice] = useState<string | null>(null)

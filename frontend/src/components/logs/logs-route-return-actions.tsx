@@ -1,6 +1,6 @@
 import { ArrowLeft, ArrowUpRight, GitBranch } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { NAV_PATH, destinationDetailPath, routeEditPath, runtimeAnalyticsPath } from '../../config/nav-paths'
+import { dataFlowsPath, destinationDetailPath, routeEditPath, runtimeAnalyticsPath } from '../../config/nav-paths'
 
 /** A direct, read-only investigation return path; never changes event state. */
 export function LogsRouteReturnActions({
@@ -34,7 +34,7 @@ export function LogsRouteReturnActions({
       </div>
       <div className="flex flex-wrap gap-x-3 gap-y-1">
         <Link
-          to={NAV_PATH.routes}
+          to={dataFlowsPath({ stream_id: streamId, route_id: routeId })}
           className="inline-flex min-h-10 items-center gap-1.5 text-xs font-semibold text-violet-700 underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:text-violet-300"
         >
           <ArrowLeft className="h-3.5 w-3.5" aria-hidden />

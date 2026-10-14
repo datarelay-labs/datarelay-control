@@ -19,14 +19,14 @@ describe('Kibana-style contextual Route investigation return', () => {
     expect(screen.getByRole('link', { name: 'Review Route #42 configuration' }))
       .toHaveAttribute('href', '/routes/42/edit')
     expect(screen.getByRole('link', { name: 'Back to Data Flows' }))
-      .toHaveAttribute('href', '/routes')
+      .toHaveAttribute('href', '/routes?route_id=42')
     expect(region).toHaveTextContent('Opening settings does not resend or verify events')
   })
 
   it('shows a non-mutating path to viewers without inviting forbidden configuration', () => {
     show(42, false)
     expect(screen.getByRole('link', { name: 'Back to Data Flows' }))
-      .toHaveAttribute('href', '/routes')
+      .toHaveAttribute('href', '/routes?route_id=42')
     expect(screen.queryByRole('link', { name: /Review Route #42 configuration/ })).not.toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Route investigation next actions' }))
       .toHaveTextContent('Read-only access')

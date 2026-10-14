@@ -8,7 +8,7 @@ import {
   Search,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { testDestination } from '../../api/gdcDestinations'
 import {
   clearOperationalSnapshotCache,
@@ -146,8 +146,17 @@ function SelectField({
   )
 }
 
+function safePositiveId(raw: string | null): number | null {
+  if (raw == null || raw.trim() === '') return null
+  const value = Number(raw)
+  return Number.isSafeInteger(value) && value > 0 ? value : null
+}
+
 export function RoutesOverviewPage() {
   const canCreateRoute = useSessionCapabilities().workspace_mutations === true
+  const [searchParams] = useSearchParams()
+  const initialStreamId = safePositiveId(searchParams.get('stream_id'))
+  const initialRouteId = safePositiveId(searchParams.get('route_id'))
   const [refreshTick, setRefreshTick] = useState(0)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -157,7 +166,7 @@ export function RoutesOverviewPage() {
   const destinationsRaw: never[] = []
   const [operationalSnapshot, setOperationalSnapshot] = useState<StabilizedOperationalSnapshot | null>(null)
   const [search, setSearch] = useState('')
-  const [streamFilter, setStreamFilter] = useState('__all__')
+  const [streamFilter, setStreamFilter] = useState(initialStreamId == null ? '__all__' : String(initialStreamId))
   const [destinationFilter, setDestinationFilter] = useState('__all__')
   const [statusFilter, setStatusFilter] = useState('__all__')
   const [policyFilter, setPolicyFilter] = useState('__all__')
@@ -514,6 +523,7 @@ export function RoutesOverviewPage() {
         consoleRows={consoleRows}
         loading={loading}
         selectedStreamId={streamFilter === '__all__' ? null : Number(streamFilter)}
+        initialRouteId={initialRouteId}
         onSelectStream={(id) => setStreamFilter(String(id))}
         onRouteSaved={() => {
           clearOperationalSnapshotCache()

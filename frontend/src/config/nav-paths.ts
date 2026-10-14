@@ -113,6 +113,22 @@ export function governanceWorkspacePath(context?: {
   return qs ? `${NAV_PATH.governanceWorkspace}?${qs}` : NAV_PATH.governanceWorkspace
 }
 
+/** Data Flows workspace with optional initial Stream/Route selection. */
+export function dataFlowsPath(context?: {
+  stream_id?: number | null
+  route_id?: number | null
+}): string {
+  const q = new URLSearchParams()
+  if (context?.stream_id != null && Number.isSafeInteger(context.stream_id) && context.stream_id > 0) {
+    q.set('stream_id', String(context.stream_id))
+  }
+  if (context?.route_id != null && Number.isSafeInteger(context.route_id) && context.route_id > 0) {
+    q.set('route_id', String(context.route_id))
+  }
+  const qs = q.toString()
+  return qs ? `${NAV_PATH.routes}?${qs}` : NAV_PATH.routes
+}
+
 /** Logs explorer scoped to a stream (slug → label resolved in UI). */
 export function logsPath(streamSlug?: string): string {
   if (!streamSlug || streamSlug.trim() === '') return '/logs'

@@ -284,4 +284,43 @@ describe('RoutesOverviewPage snapshot loading', () => {
     expect(screen.getByTestId('routes-architecture-inspector')).toHaveTextContent('R-0006')
     expect(screen.getByTestId('routes-architecture-stream-1')).toHaveAttribute('aria-pressed', 'false')
   })
+
+  it('restores the exact Stream and Route selection from a Data Flows investigation deep link', async () => {
+    const snap = await import('../../api/operationalSnapshot')
+    const deepLinkSnapshot: OperationalSnapshotResponse = {
+      ...operationalSnapshot,
+      global: {
+        ...operationalSnapshot.global,
+        total_routes: 2,
+        enabled_routes: 2,
+      },
+      streams: [
+        {
+          ...operationalSnapshot.streams[0]!,
+          route_count: 2,
+        },
+      ],
+      routes: [
+        operationalSnapshot.routes[0]!,
+        {
+          ...operationalSnapshot.routes[0]!,
+          route_id: 6,
+          stream_id: 1,
+          stream_name: 'S1',
+        },
+      ],
+    }
+    vi.mocked(snap.getOperationalSnapshot).mockResolvedValue(deepLinkSnapshot)
+
+    render(
+      <MemoryRouter initialEntries={['/routes?stream_id=1&route_id=6']}>
+        <RoutesOverviewPage />
+      </MemoryRouter>,
+    )
+
+    const inspector = await screen.findByTestId('routes-architecture-inspector')
+    expect(inspector).toHaveTextContent('R-0006')
+    expect(screen.getByTestId('routes-architecture-route-6')).toBeInTheDocument()
+    expect(screen.getByTestId('routes-architecture-stream-1')).toHaveAttribute('aria-pressed', 'true')
+  })
 })
