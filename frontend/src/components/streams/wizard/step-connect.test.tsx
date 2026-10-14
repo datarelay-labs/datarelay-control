@@ -128,6 +128,42 @@ describe('StepConnect UX simplification', () => {
     expect(within(requestTab).getByText('Required')).toBeInTheDocument()
   })
 
+  it('supports roving tab focus with Arrow keys and Home/End', async () => {
+    render(
+      <MemoryRouter>
+        <StepConnectHarness />
+      </MemoryRouter>,
+    )
+
+    const connector = await screen.findByTestId('wizard-connect-tab-connector')
+    const request = screen.getByTestId('wizard-connect-tab-request')
+    const advanced = screen.getByTestId('wizard-connect-tab-advanced')
+    const tablist = screen.getByTestId('wizard-connect-tabs')
+
+    fireEvent.change(await screen.findByTestId('wizard-saved-connector-select'), { target: { value: '1' } })
+    await waitFor(() => expect(request).toBeEnabled())
+
+    expect(tablist).toHaveAttribute('role', 'tablist')
+    expect(connector).toHaveAttribute('tabindex', '0')
+    expect(request).toHaveAttribute('tabindex', '-1')
+    expect(connector).toHaveAttribute('aria-controls', 'wizard-connect-panel-connector')
+
+    connector.focus()
+    fireEvent.keyDown(connector, { key: 'ArrowRight' })
+    expect(document.activeElement).toBe(request)
+    expect(request).toHaveAttribute('aria-selected', 'true')
+    expect(request).toHaveAttribute('tabindex', '0')
+
+    fireEvent.keyDown(request, { key: 'End' })
+    expect(document.activeElement).toBe(advanced)
+    expect(advanced).toHaveAttribute('aria-selected', 'true')
+
+    fireEvent.keyDown(advanced, { key: 'Home' })
+    expect(document.activeElement).toBe(connector)
+    expect(connector).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', 'wizard-connect-tab-connector')
+  })
+
   it('shows the saved webhook receiver URL instead of an empty generic host', async () => {
     render(
       <MemoryRouter>

@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react'
 import type { FieldImportance } from '../../../lib/field-importance'
+import { handleTablistKeyDown } from '../../../lib/tablist-keyboard'
 import { cn } from '../../../lib/utils'
 import { resolveSourceTypePresentation } from '../../../utils/sourceTypePresentation'
 import { FieldImportanceBadge } from './field-importance-badge'
@@ -79,6 +80,8 @@ export function StepConnect({
       <nav
         className="flex flex-wrap items-center gap-2"
         aria-label="Connect sections"
+        aria-orientation="horizontal"
+        role="tablist"
         data-testid="wizard-connect-tabs"
       >
         <div className="flex flex-wrap gap-1 rounded-lg border border-slate-200/80 bg-slate-50/80 p-1 dark:border-gdc-border dark:bg-gdc-card">
@@ -89,11 +92,15 @@ export function StepConnect({
                 key={tab.key}
                 type="button"
                 role="tab"
+                id={`wizard-connect-tab-${tab.key}`}
+                aria-controls={`wizard-connect-panel-${tab.key}`}
                 aria-selected={active}
+                tabIndex={active ? 0 : -1}
                 data-testid={`wizard-connect-tab-${tab.key}`}
                 disabled={tab.key !== 'connector' && !canOpenRequest}
                 title={tab.key !== 'connector' && !canOpenRequest ? 'Select or create a Connector with a linked Source first.' : undefined}
                 onClick={() => setTab(tab.key)}
+                onKeyDown={handleTablistKeyDown}
                 className={cn(
                   'rounded-md px-3 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50',
                   active
@@ -116,11 +123,15 @@ export function StepConnect({
         <button
           type="button"
           role="tab"
+          id="wizard-connect-tab-advanced"
+          aria-controls="wizard-connect-panel-advanced"
           aria-selected={activeTab === 'advanced'}
+          tabIndex={activeTab === 'advanced' ? 0 : -1}
           data-testid="wizard-connect-tab-advanced"
           disabled={!canOpenRequest}
           title={!canOpenRequest ? 'Select or create a Connector with a linked Source first.' : undefined}
           onClick={() => setTab('advanced')}
+          onKeyDown={handleTablistKeyDown}
           className={cn(
             'inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50',
             activeTab === 'advanced'
@@ -142,7 +153,7 @@ export function StepConnect({
           Select or create a Connector first. Request settings appear for its linked Source; SQL is only used with a database connection.
         </p>
       ) : null}
-      <div role="tabpanel">
+      <div role="tabpanel" id={`wizard-connect-panel-${activeTab}`} aria-labelledby={`wizard-connect-tab-${activeTab}`}>
         {activeTab === 'connector' ? (
           <StepSource
             state={state}
