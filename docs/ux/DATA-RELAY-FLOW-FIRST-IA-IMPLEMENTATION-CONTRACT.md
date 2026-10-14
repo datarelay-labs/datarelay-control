@@ -1,7 +1,7 @@
 # DataRelay Control — Flow-First IA & Implementation Contract
 
-**Owner decision:** Approved 2026-10-09, UX roadmap #354. Execution owner: existing Work Packet #413 / Draft PR #414.
-**Status:** ARCHITECTURE APPROVED / IMPLEMENTATION PENDING; not a user-test PASS or merge/release approval.
+**Owner decision:** Initial 2026-10-09 design amended by explicit owner instruction 2026-10-14; see sections 9-10 and the complete WBS. Execution owner remains #413 / Draft PR #414 under master roadmap #354.
+**Status:** INTEGRATED_UX_SCOPE_APPROVED / EXCLUSIVE_IMPLEMENTATION_PENDING; documentary registration is not product/user/merge/release PASS.
 **Authority:** Product Charter > UX/Stream Wizard Charters > implementation specifications. This contract refines existing objects and user experience; it creates no new Product/Runtime/Database entity.
 **Initial source baseline:** feat/control-saas-usability-convergence at c64da365e781d2f04e5ec468ee5b18008b8d3bd6. The owner preview on 127.0.0.1:18997 stays pinned to its already built bundle until separately rebuilt.
 
@@ -19,7 +19,7 @@ A prominent Create stream button starts a Wizard before Connector/Destination pr
 | Stream | What do we collect; is it running? | Source/extraction, sampling, scheduling, checkpoint, collection execution |
 | Route | What is done to data on this specific path? | Destination-specific transform/protection/classification/policy, formatter, failure/retry/limits, delivery |
 | Destination | Where is the data sent? | Reusable receiver endpoint, configured receiving capacity when provided |
-| Data Flows *view* | Where are data paths connected, how much data moves, which path is unhealthy? | Read-only lineage/topology/operational triage over existing Stream+Route+Destination |
+| Data Flows workspace | What connects, how is data processed, and what should I do next? | Integrated configure/preview/operate context over existing Stream+Route+Destination; selection itself is non-mutating |
 | Governance | Is the governance operation healthy? | Authorized operational investigation; configuration remains in Stream/Route |
 
 **Event path:** Connector (Source access) → Stream (collection) → one or more Routes (processing/delivery) → each Route's Destination.
@@ -41,7 +41,7 @@ A prominent Create stream button starts a Wizard before Connector/Destination pr
     Administration          existing task-group system settings
 
 - Rename *Routes overview presentation* to Data Flows; keep /routes as the URL and all existing deep links until compatible redirects are available. The user-visible label is not permission to create a new DataFlow backend entity.
-- Preserve Route Edit and Stream Edit as distinct configuration screens reachable from a selected path; no duplicate primary Route-creation menu.
+- Reuse Route Edit and Stream Edit components inside the selected Flow context; preserve their existing deep links as compatible entry points. No duplicate primary builder or Route-creation menu.
 - Replace topmost Create stream CTA with **New Data Flow** only when the guided dependency-aware path is working. No dead-end if Connector/Destination are absent.
 - Existing advanced deep links, navigation role gates, mobile focus rules and reusable configuration pages stay available. Governance #362 exception stays in force.
 - Global search/recent/favorites remain ROI-deferred until real operator evidence supports them.
@@ -64,13 +64,13 @@ A prominent Create stream button starts a Wizard before Connector/Destination pr
     +------------------------------------------------------------------+
 
 - Graph displays only actual positive/valid Source/Stream/Route/Destination IDs returned by existing read APIs. No synthetic edges or fabricated healthy resources.
-- Clicking a Stream focuses its branches; clicking a Route opens the corresponding runtime inspector; clicking a Destination opens its authorized details. The visual selection is **read-only**.
+- Clicking a Stream/Route/Destination selects the correct contextual inspector/form in the same workspace. Selection is non-mutating; explicit authorized edit/test/apply actions operate on that real resource under the current WBS.
 - Retain the searchable/filtered expert Route catalog and an accessible keyboard-operated equivalent of the graph. Scale with grouping and bounded visible nodes; 1440px, 375px and 320px layouts must remain usable.
 - Surface operational snapshot timestamp, selected time-window and stale/error/IDLE/disabled/partial/unknown states clearly; never replace absent measurements with 0 or Healthy.
 - Metrics provenance: Stream EPS = ingest, Route EPS = route-specific delivery/send according to existing API definitions. NEVER add fan-out route egress together as single source ingest.
 - Route outcome: expose observed EPS, failure/retry, success rate, health, activity/latency and policy only when backed by the actual API. A connection test, a preview, an attempted UDP send, and confirmed receiver ingestion are distinct claims.
 - Destination capacity use is available only when an authorized configured limit with compatible units/windows exists. Without a limit: Not configured, not 0% used.
-- No new endpoint/API call per graph node. Reuse getOperationalSnapshot, fetchRoutesList, buildRouteRowsFromOperationalSnapshot and buildRouteFlowTree; no mutation until an authorized Route Edit.
+- Avoid per-node network amplification; reuse existing snapshots and catalogs. Authorized contextual editing reuses existing APIs; bounded missing discovery/preview/apply APIs may be completed under sections 9-10, never a parallel engine.
 - Avoid using a large mental-model banner and multiple redundant tables as the primary viewport: the graph + inspector must occupy the prominent operator work area.
 
 **Route acceptance tests:**
@@ -97,7 +97,7 @@ The global New Data Flow action starts the existing Stream Wizard, not a differe
 - On cancel or failed creation restore the exact parent Step/input/selection without orphan records or double-saving. If exact restoration cannot yet be supported, show an explicit unsaved-draft warning rather than silently discarding changes.
 - No template or preview click may perform a persistent create, activate a Stream, or bypass operator roles.
 - Reuse existing create APIs and source/destination validation; no new permission assumption.
-- Evaluate the five current intent cards by actual distinct configuration, not superficial renaming. Make prerequisites visible within the goal flow. Keep Start from scratch for experts.
+- The five goal/intent cards are retired. New Data Flow opens direct source-first setup, with prerequisites and advanced controls in context, not a second goal selection.
 - The reported simultaneous Healthy header and Offline/local draft message is a P0 source-truth defect to investigate and fix using real auth/API state, not hardcoded labels.
 
 **Onboarding acceptance tests:**
@@ -116,7 +116,7 @@ The global New Data Flow action starts the existing Stream Wizard, not a differe
 - Keep meaningful compact mobile navigation, 320/375 focus and keyboard operations. Do not repeat any previously platform-denied compact-sidebar mutation; only an explicitly authorized safe independent change is allowed.
 - Global search/recent/favorites remain optional and ROI-gated.
 
-## 7. Batch order and exact implementation entry points
+## 7. Historical 2026-10-09 batch order and entry points (superseded by sections 9-10)
 
 | Sequence | Runnable packet | Source entry points (confirm actual code before edits) | Regression gate |
 | --- | --- | --- | --- |
@@ -133,8 +133,30 @@ The global New Data Flow action starts the existing Stream Wizard, not a differe
 
 ## 8. Owner decision vs details to verify in code
 
-**Approved design:** Data Flows operational topology, per-Route inspector, Collections/Streams vs Connections separation, New Data Flow unified onboarding, preservation of existing canonical Route runtime/RBAC and URLs.
+**Original approved design:** Data Flows topology and original onboarding; current accepted expansion is sections 9-10. Canonical Route runtime/RBAC and URL preservation remain.
 
 **Implementation-time checks (not assumptions):** existing Connector and Destination form return-state contracts, destination capacity fields/metric time windows, Route receiver confirmation semantics, exact origin of offline and Healthy status, graph scale and virtualized accessible fallback. Where source evidence is absent display Unknown instead of creating new metrics or claiming success.
 
 **Explicitly deferred:** drag-to-mutate running Routes, additional runtime/engine, Marketplace M29, AI Gateway, enterprise IAM, unaudited production change, command palette/recents/favorites without ROI proof. No release until authenticated Browser reconciliation and same-HEAD Full User E2E satisfy current contracts.
+
+
+## 9. Owner-approved integrated UX delivery amendment — 2026-10-14
+
+Current implementation authority for the owner's complete competitor-informed UX request is the UX/Wizard charter addenda and [Control UX Delivery WBS](CONTROL-UX-DELIVERY-WBS.md): **9 milestones, 61 leaf tasks, 35 retained promises, 10 comparator evidence entries**. The owner explicitly approved placing all previously researched/proposed work in the roadmap as exclusive highest priority until fully delivered. This is no longer an unaccepted same-workspace proposal. Documentation approval does not mean source implementation, user acceptance or release.
+
+The following bounded changes supersede the 2026-10-09 **screen-boundary** restrictions in sections 2-8 and the later three-widget/no-new-backend selection, but preserve the Product Charter, all canonical data/Route semantics and security:
+
+1. **Same Flow workspace:** Configure/Preview/Monitor retain topology, current Flow/Route and draft. Source/Stream/Route/Destination selection opens the relevant existing form/panel in context. Selection itself remains non-mutating; explicit authorized actions save/apply/test. Legacy edit/detail URLs and accessible expert table remain valid. Do not duplicate the backend model or build a disconnected second editor.
+2. **Five logical gates, not forced separate pages:** Connect -> Sample & Record Selection -> Destinations -> Route Processing -> Deploy correctness and required confirmations remain. Destination selection precedes per-Route processing. The five rejected goal cards stay removed. One coherent state/persistence implementation supports direct-source entry and all compatibility paths.
+3. **Supporting backend completion is allowed and required where needed:** actual driver-aware DB metadata discovery, complete per-Route preview, final formatter output, bounded test delivery, and revision-safe apply may reuse/extend existing APIs. The old blanket NO new backend restriction no longer applies to this accepted UX scope. This does not allow another engine, undocumented processing order, unauthorized schema/data mutation, relaxed authentication or fake results.
+4. **Complete preview:** actual Mapping/Transform/Enrichment/Protection/Classification/Policy and destination payload, exact per-Route identity, before/after field diff, inheritance/override/Mixed truth and affected-Route impact. No payload-type/count summary or null output can close the promised outcome. Existing approved privacy/capability controls remain, while permitted synthetic business fields stay inspectable.
+5. **Real operation and delivery:** Preview changes, bounded Send test events and Apply & start are different operations. Reconcile draft/saved/running versions and autosave semantics. Preserve concurrency, explicit partial-failure handling, checkpoints and correct start/stop scope. Source ingest is not summed fan-out output; gateway send is not receiver receipt.
+6. **Readable data-first work area:** shared Foundation visual components, 14-16px essential task text, table/diff before raw JSON, one primary action, contextual help, bounded nesting, keyboard equivalent and 1440/1280/375/320 plus zoom validation. Do not count cosmetics or renamed links as the integrated workflow.
+
+M0 plan/authority checks are separate from 57 product-outcome tasks. Product acceptance requires the row's actual behavior and evidence, native verification, current deployed candidate and real-browser journey. Full Browser reconciliation and independent two-user Full User E2E must pass on the same final candidate before freeze/qualification. Preserve all release gates and prior owner approvals; no merge/production/release authorization is added.
+
+## 10. Exclusive execution and non-omission
+
+Temporary delivery scheduling authority is existing #354/#413 with `UX_EXCLUSIVE_LOCK=ACTIVE`. Execute this WBS before other product work; a blocking dependency is resolved only as the minimum part of its named UX task. If blocked, continue another dependency-ready task **within the same WBS**, never return to unrelated RC41 audits/features. Retain original product backlog in paused state and prior evidence, not erased or marked done. Scope reduction/removal/defer requires explicit owner disposition for the exact promise/WBS ID. Whole-product "complete except E2E" cannot be reported while any promised UX outcome is unimplemented.
+
+The first execution after documentary registration is M1-01 environment binding, then current-condition same-tool retry of M1-02 native seeding and M1-05 native scheduler when prerequisites allow. The first user-visible proof is the HTTP/two-Route slice through masking, final-payload comparison, bounded sends, real receipts and one-Route fault/recovery. Historical sequence/port/HEAD notes in section 7 are retained as evidence only; they no longer select runnable work.

@@ -1,5 +1,7 @@
 # DataRelay Control — Competitor UI/UX Evidence and REA-Assisted P0 Decision
 
+> Current disposition (owner instruction 2026-10-14): this is preserved research/source history. The former exactly-three-widget and NO-new-backend scope is superseded by the [complete exclusive Control UX Delivery WBS](CONTROL-UX-DELIVERY-WBS.md) and current Flow contract sections 9-10. Retain all prior findings as mapped reuse/requirements/dispositions, not as whole-product implementation or authenticated acceptance. No repeat research or arbitrary scope reduction. The WBS maps prior and latest conversation proposals, including StreamSets/n8n/Airbyte, to 61 tasks with verification and PASS criteria.
+
 Date: 2026-10-10 KST
 Authority: Existing [Control roadmap #354](https://github.com/datarelay-labs/datarelay-control/issues/354) and [Flow-First owner packet #413](https://github.com/datarelay-labs/datarelay-control/issues/413); implementation in existing Draft [PR #414](https://github.com/datarelay-labs/datarelay-control/pull/414).
 Method: Official public documentation review + Control source/test inspection + prior *licensed* REA Node-RED pilot. This is **not** a live authenticated competitor tenant audit or an exhaustive feature census.

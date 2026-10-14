@@ -792,3 +792,69 @@ Acceptance (independent release gates):
 Source: docs/ux/DATA-RELAY-FLOW-FIRST-IA-IMPLEMENTATION-CONTRACT.md
 The feature workstream is tracked in existing GitHub roadmap #354 /
 active Work Packet #413; no competing parallel roadmap.
+
+
+==================================================
+OWNER-APPROVED INTEGRATED UX DELIVERY — 2026-10-14 (#354/#413)
+==================================================
+
+This current owner addendum approves the previously proposed complete integrated
+Flow workspace and assigns it exclusive top product-delivery priority until all
+required user outcomes are verified. It supersedes earlier conflicting
+read-only/separate-screen-only UX restrictions, the old three-widget/no-new-backend
+scope reduction, and the retired goal-card entry design **only for this bounded
+Control-v1 UX program**. It does not change the Product Charter identity/model.
+
+Data Flows is one configure/preview/operate workspace over existing objects.
+Source/Stream/Route/Destination selection opens actual contextual configuration
+and results with one preserved draft. Selection alone is non-mutating; explicit
+edit/test/apply uses existing capabilities and server enforcement. Keep existing
+URLs, IDs, expert/keyboard view, Governance #362 exception and reusable resources.
+The five logical gates remain Connect -> Sample & Record Selection -> Destinations
+-> Route Processing -> Deploy; they need not be five disconnected pages. All
+required source/extraction/checkpoint and destination-before-processing checks
+remain; no goal-card chooser or disconnected second builder is reintroduced.
+
+Complete the promised real DB table/column discovery, per-Route actual stage and
+final payload preview, useful field diff, inheritance impact, bounded test send,
+draft/saved/running revisions and selected-path diagnosis. Reuse current APIs and
+canonical engine; add only missing support within the accepted scope. No new
+DataFlow entity, alternate runtime, unauthorized data/permission/credential
+change, fabricated schema/metrics/output or silent reduction to UI summaries.
+
+Delivery inventory: docs/ux/CONTROL-UX-DELIVERY-WBS.md (9 milestones / 61 leaf
+WBS / 35 promise crosswalk rows / 10 comparator references). Every task includes
+implementation boundary, planned test, objective PASS and current outcome state.
+The earlier Source-present/tested features are reuse baselines, not automatic
+completion of a broader promise. The temporary exclusive scheduling lock lives
+in #354/#413; no other product lane may replace an unfinished UX task. Preserve
+other backlog and approvals as paused, not deleted/finished. If blocked, continue
+only a dependency-ready task in this WBS, or report the genuine block.
+
+Proof must include actual data in HTTPS18443, same-candidate UI/API/schema,
+positive and negative native checks, actual browser task traces/screenshots and
+receiver evidence where relevant. Healthy demo Streams target measured 5-20 EPS.
+No product PASS from plan completion, test count, static screenshot or HTTP200.
+Final full Browser reconciliation and independent two-user Full User E2E stay on
+the same candidate. Merge, production, credentials and release still require
+separately necessary owner approval. All generated source/UI/docs remain English.
+
+CURRENT IMPLEMENTATION MILESTONES (all require per-task WBS evidence):
+M0 — Binding requirements and current product authority — 4 leaf tasks
+M1 — Populated, safe HTTPS18443 development demonstration — 7 leaf tasks
+M2 — One Flow workspace from source to destinations — 8 leaf tasks
+M3 — Real per-Route processing and final-payload comparison — 9 leaf tasks
+M4 — Distinct preview, bounded send and revision-safe apply — 6 leaf tasks
+M5 — Same-workspace operations, diagnosis and recovery — 7 leaf tasks
+M6 — Database discovery and complete source-specific workflows — 8 leaf tasks
+M7 — Readable visual system, keyboard and role-safe workflows — 6 leaf tasks
+M8 — Whole-journey acceptance and exclusive-program closure — 6 leaf tasks
+
+Full tasks and every PASS criterion: docs/ux/CONTROL-UX-DELIVERY-WBS.md section 4.
+M0 is documentary binding (4 tasks); product delivery M1-M8 is 57 tasks.
+Initial product accepted outcomes: 0/57; previous component/149-test evidence is
+preserved at its baseline scope and must not be counted as 57 delivered outcomes.
+Execution: M0 -> M1 -> M2/M3/M4/M5 HTTP-two-Route slice with M7 basics -> M6 source
+expansion -> remaining M5/M7 -> M8 full evidence. Keep Main Runtime/Governance/
+Operations milestones in the full product roadmap, paused while this program is
+unfinished; do not recreate, erase or silently reopen already finished base work.

@@ -1,5 +1,7 @@
 # Competitor UI Visual Evidence and Selected Control UX Improvements — 2026-10-11
 
+> Current disposition (owner instruction 2026-10-14): this is preserved research/source history. The former exactly-three-widget and NO-new-backend scope is superseded by the [complete exclusive Control UX Delivery WBS](CONTROL-UX-DELIVERY-WBS.md) and current Flow contract sections 9-10. Retain all prior findings as mapped reuse/requirements/dispositions, not as whole-product implementation or authenticated acceptance. No repeat research or arbitrary scope reduction. The WBS maps prior and latest conversation proposals, including StreamSets/n8n/Airbyte, to 61 tasks with verification and PASS criteria.
+
 Authority: Control Product Charter + UX Charter + Stream Wizard Charter; existing Control roadmap #354, UI Work Packet #413, Draft PR #414.
 Decision sequence: P0A **observe official real product screen and documented operator journey** → lawful REA where useful → Control same-head GAP → ranked three UI selections → only then P0B implementation.
 
