@@ -768,7 +768,10 @@ export function StreamEditWizardPage({
       } else {
         let message = result.errors.join(' · ') || 'Save failed.'
         try {
-          const reconciled = await reconcileWizardAfterPartialPersist(backendStreamId, stateToSave, result.errors)
+          const reconciled = await reconcileWizardAfterPartialPersist(backendStreamId, stateToSave, result.errors, {
+            persistedObjects: result.persistedObjects,
+            notPersistedObjects: result.notPersistedObjects,
+          })
           if (reconciled.note) message = `${message} ${reconciled.note}`
           if (!draftStillMatchesIdentity()) {
             failedAttemptSnapshotRef.current = identitySnapshot
@@ -986,7 +989,7 @@ export function StreamEditWizardPage({
       const result = await startRuntimeStream(backendStreamId)
       setControlMessage(
         result?.message ??
-          'Saved configuration is unchanged, but the runtime start result could not be verified.',
+          'Saved configuration is confirmed, but the Stream start failed or could not be verified. Runtime is not shown as running until live state confirms it.',
       )
       await refreshRuntimeSnapshot()
       const found = await fetchStreamById(backendStreamId)

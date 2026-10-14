@@ -139,6 +139,22 @@ describe('reconcileWizardAfterPartialPersist', () => {
     expect(wizardCreateIsStartEligible(result.state.outcome)).toBe(false)
   })
 
+  it('reports acknowledged versus unconfirmed objects and advances the read-back Stream revision', async () => {
+    const state = draftWithError('mapping-ui: timeout')
+    state.streamUpdatedAt = 'stream-old'
+    const hydrated = buildInitialState()
+    hydrated.stream = { ...hydrated.stream, name: 'Server name' }
+    hydrated.streamUpdatedAt = 'stream-new'
+    const result = await reconcileWizardAfterPartialPersist(9, state, ['stream: later validation failed'], {
+      hydrateStream: vi.fn(async () => hydrated),
+      persistedObjects: ['Stream #9', 'Route #44'],
+      notPersistedObjects: ['Stream #9 Mapping/Enrichment'],
+    })
+    expect(result.state.streamUpdatedAt).toBe('stream-new')
+    expect(result.note).toMatch(/Server acknowledged before the failure: Stream #9, Route #44/)
+    expect(result.note).toMatch(/Not confirmed as persisted: Stream #9 Mapping\/Enrichment/)
+  })
+
   it('does not treat a later materialized stream failure as the first stream read-back', () => {
     expect(multiStreamPartialSaveIsUnconfirmed(2, 1)).toBe(true)
     expect(multiStreamPartialSaveIsUnconfirmed(1, 1)).toBe(false)

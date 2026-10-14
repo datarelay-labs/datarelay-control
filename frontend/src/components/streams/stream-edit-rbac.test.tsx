@@ -689,6 +689,24 @@ describe('StreamEditWizardPage workspace capability visibility', () => {
     expect(within(page).getByText(/save rejected/i)).toBeInTheDocument()
   })
 
+  it('does not claim Running when activation fails after the reviewed save', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    startRuntimeStream.mockResolvedValueOnce(null)
+    vi.mocked(fetchStreamById).mockResolvedValue({ id: 10, name: 'Viewer Stream', status: 'STOPPED' })
+    renderStreamEdit()
+    const page = await screen.findByTestId('edit-stream-wizard')
+    await waitFor(() => expect(within(page).getByTestId('wizard-apply-and-start')).toBeEnabled())
+    await user.click(within(page).getByTestId('wizard-connect-tab-request'))
+    await user.type(within(page).getByPlaceholderText('e.g. Cybereason Malop Stream'), ' activation failure')
+
+    await user.click(within(page).getByTestId('wizard-apply-and-start'))
+
+    await waitFor(() => expect(startRuntimeStream).toHaveBeenCalledWith(10))
+    expect(await within(page).findByText(/start failed or could not be verified/i)).toBeInTheDocument()
+    expect(within(page).getByTestId('stream-lifecycle-runtime')).toHaveTextContent(/^RuntimeStopped/)
+  })
+
   it('keeps a created route id on a newer in-flight draft', async () => {
     const user = userEvent.setup()
     signIn('OPERATOR')
