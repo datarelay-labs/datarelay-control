@@ -170,6 +170,23 @@ describe('RoutesOverviewPage snapshot loading', () => {
     expect(screen.queryByRole('link', { name: 'Create Route' })).not.toBeInTheDocument()
   })
 
+  it('shows Route catalog load failure as an error instead of a false empty catalog', async () => {
+    const routes = await import('../../api/gdcRoutes')
+    vi.mocked(routes.fetchRoutesList).mockResolvedValueOnce(null)
+
+    render(
+      <MemoryRouter>
+        <RoutesOverviewPage />
+      </MemoryRouter>,
+    )
+
+    const alert = await screen.findByTestId('routes-load-error')
+    expect(alert).toHaveAttribute('role', 'alert')
+    expect(alert).toHaveTextContent(/Could not load the Route catalog/i)
+    expect(alert).toHaveTextContent(/retry before making Route decisions/i)
+    expect(screen.queryByText('No routes configured yet.')).not.toBeInTheDocument()
+  })
+
   it('loads operational snapshot on mount and does not fetch per-stream metrics', async () => {
     const snap = await import('../../api/operationalSnapshot')
     const runtime = await import('../../api/gdcRuntime')

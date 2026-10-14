@@ -227,14 +227,19 @@ export function RoutesOverviewPage() {
       try {
         const routes = await fetchRoutesList()
         if (!isCurrent()) return
+        const routeCatalogFailed = routes === null
         setRoutesRaw(routes ?? [])
-        setLoadError(null)
+        setLoadError(routeCatalogFailed ? 'Could not load the Route catalog. Existing operational data may be incomplete; retry before making Route decisions.' : null)
         setLoading(false)
 
         const snapshot = await getOperationalSnapshot()
         if (!isCurrent()) return
         if (snapshot == null) {
-          setLoadError('Could not load operational snapshot.')
+          setLoadError(
+            routeCatalogFailed
+              ? 'Could not load the Route catalog or operational snapshot. Retry before treating this workspace as current.'
+              : 'Could not load operational snapshot.',
+          )
           return
         }
         setOperationalSnapshot((prev) => stabilizeOperationalSnapshot(prev, snapshot))
@@ -454,7 +459,11 @@ export function RoutesOverviewPage() {
   return (
     <div className="flex w-full min-w-0 flex-col gap-4">
       {loadError ? (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] font-medium text-red-900 dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-100">
+        <div
+          role="alert"
+          data-testid="routes-load-error"
+          className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] font-medium text-red-900 dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-100"
+        >
           {loadError}
         </div>
       ) : null}
@@ -766,7 +775,7 @@ export function RoutesOverviewPage() {
                         </tr>
                       ))
                     : null}
-                  {!loading && displayRows.length === 0 ? (
+                  {!loading && !loadError && displayRows.length === 0 ? (
                     <tr className={cn(opTr, opStateRow)}>
                       <td
                         className={cn(opTd, 'py-8 text-center text-[12px] text-slate-500 dark:text-gdc-muted')}
