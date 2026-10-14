@@ -684,7 +684,11 @@ export function StreamEditWizardPage({
         }
         await refreshRuntimeSnapshot()
         onSaved?.()
-        setSaveSuccess(manual ? 'Saved now and applied.' : 'Changes saved.')
+        setSaveSuccess(
+          manual
+            ? 'Saved to the platform. Runtime state was not changed by this save.'
+            : 'Changes saved. Runtime state was not changed by this save.',
+        )
         window.setTimeout(() => setSaveSuccess(null), 3000)
       } else if (draftMovedDuringSave) {
         failedAttemptSnapshotRef.current = identitySnapshot
@@ -937,6 +941,27 @@ export function StreamEditWizardPage({
           ? 'Changes saved'
           : 'Auto-save enabled'
 
+  const savedRevisionToken =
+    typeof state?.streamUpdatedAt === 'string' ? state.streamUpdatedAt.trim() : ''
+  const draftLifecycleLabel = !canMutateWorkspace
+    ? 'Read-only inspection'
+    : isSaving
+      ? 'Saving current draft…'
+      : runtimeVerificationBlocked
+        ? 'Pending changes are not confirmed saved'
+        : 'No pending draft changes'
+  const savedLifecycleLabel = savedRevisionToken
+    ? `Saved configuration · revision ${savedRevisionToken}`
+    : confirmedSavedSnapshotRef.current
+      ? 'Saved configuration confirmed · revision token unavailable'
+      : 'Saved configuration not verified'
+  const runtimeLifecycleLabel =
+    runtimeStatus === 'RUNNING'
+      ? 'Running · exact running revision is not reported by the runtime API'
+      : runtimeStatus === 'STOPPED'
+        ? 'Stopped · no running revision is active'
+        : `${runtimeStatus} · exact running revision is not reported`
+
   if (loading) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center">
@@ -991,12 +1016,29 @@ export function StreamEditWizardPage({
               {saveStateLabel}
             </span>
           </div>
+          <div
+            data-testid="stream-configuration-lifecycle"
+            className="grid gap-2 rounded-lg border border-slate-200/80 bg-slate-50/70 p-2.5 text-[11px] text-slate-600 dark:border-gdc-border dark:bg-gdc-card dark:text-gdc-mutedStrong sm:grid-cols-3"
+          >
+            <p data-testid="stream-lifecycle-draft">
+              <span className="font-semibold text-slate-800 dark:text-slate-200">Draft</span>
+              <span className="mt-0.5 block">{draftLifecycleLabel}</span>
+            </p>
+            <p data-testid="stream-lifecycle-saved">
+              <span className="font-semibold text-slate-800 dark:text-slate-200">Saved</span>
+              <span className="mt-0.5 block">{savedLifecycleLabel}</span>
+            </p>
+            <p data-testid="stream-lifecycle-runtime">
+              <span className="font-semibold text-slate-800 dark:text-slate-200">Runtime</span>
+              <span className="mt-0.5 block">{runtimeLifecycleLabel}</span>
+            </p>
+          </div>
           <p className="max-w-2xl text-sm text-slate-600 dark:text-gdc-muted" data-testid="wizard-stage-purpose">
             {stagePurpose}
           </p>
           <p className="text-xs text-slate-500 dark:text-gdc-muted">
             {canMutateWorkspace
-              ? `Editing ${state.stream.name} · changes auto-save to the platform`
+              ? `Editing ${state.stream.name} · changes auto-save to saved configuration; saving does not start or restart the Stream`
               : `Viewing ${state.stream.name} · read-only`}
           </p>
         </div>

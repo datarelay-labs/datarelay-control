@@ -322,6 +322,14 @@ describe('StreamEditWizardPage workspace capability visibility', () => {
     expect(page.getByRole('button', { name: 'Delete' })).toBeInTheDocument()
     expect(page.getByRole('button', { name: 'Run Now' })).toBeEnabled()
     expect(page.queryByTestId('stream-edit-readonly-banner')).not.toBeInTheDocument()
+    const lifecycle = page.getByTestId('stream-configuration-lifecycle')
+    expect(within(lifecycle).getByTestId('stream-lifecycle-draft')).toHaveTextContent('No pending draft changes')
+    expect(within(lifecycle).getByTestId('stream-lifecycle-saved')).toHaveTextContent('Saved configuration confirmed')
+    expect(within(lifecycle).getByTestId('stream-lifecycle-runtime')).toHaveTextContent(
+      'Stopped · no running revision is active',
+    )
+    expect(lifecycle).not.toHaveTextContent(/applied/i)
+    expect(page.getByText(/saving does not start or restart the Stream/i)).toBeInTheDocument()
 
     const requestTab = page.getByTestId('wizard-connect-tab-request')
     await user.click(requestTab)
