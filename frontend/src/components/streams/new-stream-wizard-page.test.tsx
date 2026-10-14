@@ -1009,6 +1009,15 @@ describe('New Data Flow creation permission guidance', () => {
     },
   )
 
+  it('does not install an unsaved-edit browser prompt for a read-only viewer', () => {
+    asRole('VIEWER', { workspace_mutations: false })
+    render(<MemoryRouter><NewStreamWizardPage /></MemoryRouter>)
+    expect(screen.getByTestId('wizard-create-readonly')).toBeInTheDocument()
+    const before = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(before)
+    expect(before.defaultPrevented).toBe(false)
+  })
+
   it('does not display saved draft configuration to a read-only viewer on a deep link', () => {
     const stored = buildInitialState()
     stored.stream.name = 'Previous account private stream draft'

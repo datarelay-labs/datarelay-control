@@ -1034,7 +1034,7 @@ export function NewStreamWizardPage() {
     }
   }
   useEffect(() => {
-    if (streamCreated) return
+    if (!canCreateStream || streamCreated) return
     // Reload/close cannot use our in-app dialog; the browser owns this prompt.
     const guard = (event: BeforeUnloadEvent) => {
       event.preventDefault()
@@ -1042,7 +1042,7 @@ export function NewStreamWizardPage() {
     }
     window.addEventListener('beforeunload', guard)
     return () => window.removeEventListener('beforeunload', guard)
-  }, [streamCreated])
+  }, [canCreateStream, streamCreated])
 
   const stepGateOpen = canAdvanceFromWizardStep(currentStepKey, state)
   const canAdvance = (!isDeployStep || !streamCreated) && stepGateOpen

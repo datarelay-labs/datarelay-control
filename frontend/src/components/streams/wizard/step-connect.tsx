@@ -40,16 +40,22 @@ export function StepConnect({
 }: StepConnectProps) {
   const [internalTab, setInternalTab] = useState<ConnectTabKey>('connector')
   const hasLinkedSource = wizardHasLinkedSource(state.connector)
-  const activeTab = hasLinkedSource ? controlledTab ?? internalTab : 'connector'
+  // An existing Stream can still expose its stored request configuration for
+  // inspection while its source catalog is unavailable. New creation cannot.
+  const savedStreamId = state.outcome?.streamId
+  const canInspectSavedRequest = connectorReadonly && typeof savedStreamId === 'number'
+    && Number.isSafeInteger(savedStreamId) && savedStreamId > 0
+  const canOpenRequest = hasLinkedSource || canInspectSavedRequest
+  const activeTab = canOpenRequest ? controlledTab ?? internalTab : 'connector'
   const sourcePres = resolveSourceTypePresentation(state.connector.sourceType)
 
   const setTab = useCallback(
     (next: ConnectTabKey) => {
-      if (next !== 'connector' && !hasLinkedSource) return
+      if (next !== 'connector' && !canOpenRequest) return
       if (onTabChange) onTabChange(next)
       else setInternalTab(next)
     },
-    [hasLinkedSource, onTabChange],
+    [canOpenRequest, onTabChange],
   )
 
   const requestLabel =
@@ -85,8 +91,8 @@ export function StepConnect({
                 role="tab"
                 aria-selected={active}
                 data-testid={`wizard-connect-tab-${tab.key}`}
-                disabled={tab.key !== 'connector' && !hasLinkedSource}
-                title={tab.key !== 'connector' && !hasLinkedSource ? 'Select or create a Connector with a linked Source first.' : undefined}
+                disabled={tab.key !== 'connector' && !canOpenRequest}
+                title={tab.key !== 'connector' && !canOpenRequest ? 'Select or create a Connector with a linked Source first.' : undefined}
                 onClick={() => setTab(tab.key)}
                 className={cn(
                   'rounded-md px-3 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50',
@@ -112,8 +118,8 @@ export function StepConnect({
           role="tab"
           aria-selected={activeTab === 'advanced'}
           data-testid="wizard-connect-tab-advanced"
-          disabled={!hasLinkedSource}
-          title={!hasLinkedSource ? 'Select or create a Connector with a linked Source first.' : undefined}
+          disabled={!canOpenRequest}
+          title={!canOpenRequest ? 'Select or create a Connector with a linked Source first.' : undefined}
           onClick={() => setTab('advanced')}
           className={cn(
             'inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50',
@@ -131,7 +137,7 @@ export function StepConnect({
         </button>
       </nav>
 
-      {!hasLinkedSource ? (
+      {!canOpenRequest ? (
         <p role="status" className="text-sm text-slate-600 dark:text-gdc-muted" data-testid="wizard-source-prerequisite">
           Select or create a Connector first. Request settings appear for its linked Source; SQL is only used with a database connection.
         </p>
