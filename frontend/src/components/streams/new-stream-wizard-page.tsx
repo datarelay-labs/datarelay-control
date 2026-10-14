@@ -30,6 +30,7 @@ import { wizardStagePurpose } from './wizard/wizard-stage-guidance'
 import { computeDeployReadiness } from './wizard/wizard-deploy-readiness'
 import {
   WIZARD_STEPS,
+  applyWizardConnectorPatch,
   buildSourceAuthPayload,
   buildInitialState,
   buildSourceConfig,
@@ -288,22 +289,24 @@ export function NewStreamWizardPage() {
     // Keep the entire parent draft in React memory, including sample confirmation.
     // Connector credentials stay in the create form and are never copied into storage.
     clearWizardCatalogSnapshot()
-    setState((current) => ({
-      ...current,
-      connector: {
-        ...current.connector,
+    setOperationalSampleId(null)
+    setState((current) =>
+      applyWizardConnectorPatch(current, {
         connectorId: id,
         sourceId: null,
         registryModuleId: null,
         selectedTemplateIds: [],
-      },
-    }))
+      }),
+    )
     setConnectorCatalogEpoch((n) => n + 1)
     setConnectorCreateOpen(false)
   }, [])
 
   const updateConnector = useCallback((patch: Partial<WizardState['connector']>) => {
-    setState((s) => ({ ...s, connector: { ...s.connector, ...patch } }))
+    if (patch.connectorId !== undefined || patch.sourceId !== undefined || patch.sourceType !== undefined) {
+      setOperationalSampleId(null)
+    }
+    setState((s) => applyWizardConnectorPatch(s, patch))
   }, [])
   const updateStream = useCallback((patch: Partial<WizardState['stream']>) => {
     setState((s) => ({ ...s, stream: { ...s.stream, ...patch } }))

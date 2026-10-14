@@ -912,6 +912,50 @@ export const INITIAL_API_TEST: WizardApiTestState = {
   configFingerprint: null,
 }
 
+export function wizardConnectorIdentityChanged(
+  current: WizardConnectorState,
+  patch: Partial<WizardConnectorState>,
+): boolean {
+  return (
+    (patch.connectorId !== undefined && patch.connectorId !== current.connectorId) ||
+    (patch.sourceId !== undefined && patch.sourceId !== current.sourceId) ||
+    (patch.sourceType !== undefined && patch.sourceType !== current.sourceType)
+  )
+}
+
+/**
+ * Connector/source changes invalidate source-derived evidence, but do not silently
+ * discard operator-authored mapping, checkpoint configuration, Routes, or Destinations.
+ * Those settings remain visible and must be re-confirmed against a fresh sample.
+ */
+export function applyWizardConnectorPatch(
+  state: WizardState,
+  patch: Partial<WizardConnectorState>,
+): WizardState {
+  const identityChanged = wizardConnectorIdentityChanged(state.connector, patch)
+  const next = {
+    ...state,
+    connector: { ...state.connector, ...patch },
+  }
+  if (!identityChanged) return next
+
+  return {
+    ...next,
+    apiTest: { ...INITIAL_API_TEST },
+    stream: {
+      ...state.stream,
+      recordPathConfirmedForApiTestAt: null,
+      eventRootConfirmedForApiTestAt: null,
+      checkpointConfirmedForApiTestAt: null,
+      customExtractionValidatedForApiTestAt: null,
+      customExtractionValidationOk: false,
+      incrementalRequestTestSignature: null,
+      incrementalRequestTestedAt: null,
+      incrementalRequestTestResult: null,
+    },
+  }
+}
+
 export const INITIAL_DESTINATIONS: WizardDestinationsState = {
   routeDrafts: [],
   destinationKindsById: {},
