@@ -104,6 +104,30 @@ describe('TopHeader SaaS shell', () => {
     expect(screen.queryByRole('link', { name: 'New data flow' })).not.toBeInTheDocument()
   })
 
+  it('uses an explicit server workspace capability grant instead of a role allowlist', () => {
+    persistTestSession('GOVERNANCE_OPERATOR')
+    const session = readSession()!
+    persistSession({
+      ...session,
+      user: {
+        ...session.user,
+        capabilities: { ...session.user.capabilities, workspace_mutations: true },
+      },
+    })
+    renderHeader()
+    expect(screen.getByRole('link', { name: 'New data flow' })).toHaveAttribute('href', '/streams/new')
+
+    const granted = readSession()!
+    act(() => persistSession({
+      ...granted,
+      user: {
+        ...granted.user,
+        capabilities: { ...granted.user.capabilities, workspace_mutations: false },
+      },
+    }))
+    expect(screen.queryByRole('link', { name: 'New data flow' })).not.toBeInTheDocument()
+  })
+
   it('updates New data flow after a server capability downgrade and restoration', () => {
     persistTestSession('OPERATOR')
     renderHeader()

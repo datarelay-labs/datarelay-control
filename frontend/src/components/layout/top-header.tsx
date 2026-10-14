@@ -22,8 +22,7 @@ const DATA_FLOW_LANDING_PATHS = new Set([
 function canStartDataFlow(): boolean {
   const session = readSession()
   if (!session || isSessionExpired() || session.user.status !== 'ACTIVE' || session.user.must_change_password) return false
-  return ['ADMINISTRATOR', 'OPERATOR', 'CONNECTOR_OPERATOR'].includes(session.user.role)
-    && getSessionCapabilities().workspace_mutations === true
+  return getSessionCapabilities().workspace_mutations === true
 }
 
 type TopHeaderProps = {

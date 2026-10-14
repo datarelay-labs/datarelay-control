@@ -147,6 +147,35 @@ describe('Sidebar SaaS shell', () => {
     },
   )
 
+  it('honors an explicit server workspace capability grant even when the role fallback is read-only', async () => {
+    persistTestSession('GOVERNANCE_OPERATOR')
+    let session = readSession()!
+    persistSession({
+      ...session,
+      user: {
+        ...session.user,
+        capabilities: { ...session.user.capabilities, workspace_mutations: true },
+      },
+    })
+    const user = userEvent.setup()
+    const { onNavigate } = renderSidebar({ mobileOpen: true })
+
+    const create = screen.getByTestId('sidebar-create-stream')
+    expect(create).toHaveAccessibleName('New data flow')
+    await user.click(create)
+    expect(onNavigate).toHaveBeenCalledExactlyOnceWith('/streams/new')
+
+    session = readSession()!
+    act(() => persistSession({
+      ...session,
+      user: {
+        ...session.user,
+        capabilities: { ...session.user.capabilities, workspace_mutations: false },
+      },
+    }))
+    await waitFor(() => expect(screen.queryByTestId('sidebar-create-stream')).not.toBeInTheDocument())
+  })
+
   it('reacts to an Operator capability downgrade and restoration without navigating', async () => {
     persistTestSession('OPERATOR')
     const user = userEvent.setup()
