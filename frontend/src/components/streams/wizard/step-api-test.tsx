@@ -75,6 +75,49 @@ function mapApiSteps(
   }))
 }
 
+function databaseSampleRows(value: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(value)) return []
+  return value.filter(
+    (row): row is Record<string, unknown> =>
+      row != null && typeof row === 'object' && !Array.isArray(row),
+  )
+}
+
+function databaseSampleFieldTypes(rows: Array<Record<string, unknown>>): Array<{ name: string; type: string }> {
+  const byField = new Map<string, Set<string>>()
+  for (const row of rows.slice(0, 25)) {
+    for (const [name, value] of Object.entries(row)) {
+      const type =
+        value == null
+          ? 'null'
+          : Array.isArray(value)
+            ? 'array'
+            : typeof value === 'object'
+              ? 'object'
+              : typeof value
+      const types = byField.get(name) ?? new Set<string>()
+      types.add(type)
+      byField.set(name, types)
+    }
+  }
+  return [...byField.entries()].map(([name, types]) => ({
+    name,
+    type: types.size === 1 ? [...types][0] ?? 'unknown' : `mixed(${[...types].join('|')})`,
+  }))
+}
+
+function databaseCellDisplay(value: unknown): string {
+  if (value == null) return 'null'
+  if (typeof value === 'string') return value.length > 120 ? `${value.slice(0, 120)}…` : value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  try {
+    const text = JSON.stringify(value)
+    return text.length > 120 ? `${text.slice(0, 120)}…` : text
+  } catch {
+    return '[value unavailable]'
+  }
+}
+
 type HttpFailureStage = 'Request' | 'Connection' | 'Authentication' | 'Response'
 
 type ParsedWebhookPreview = {
@@ -1092,6 +1135,13 @@ export function StepApiTest({
       return '[masked body unavailable]'
     }
   })()
+  const dbRows = isDatabase ? databaseSampleRows(t.parsedJson ?? t.rawResponse) : []
+  const dbFieldTypes = databaseSampleFieldTypes(dbRows)
+  const dbBoundParamCount = Object.keys(state.stream.dbQueryParams ?? {}).length
+  const showDatabaseTestContext = isDatabase && (t.status === 'success' || t.status === 'error')
+  const dbIncremental =
+    state.stream.dbCheckpointMode.trim().toUpperCase() !== 'NONE' ||
+    state.stream.dbCheckpointColumn.trim().length > 0
 
   return (
     <section
@@ -1167,6 +1217,80 @@ export function StepApiTest({
                 data-testid="wizard-webhook-waiting-state"
               >
                 No producer event has to arrive during setup. Waiting is normal, not a connector failure. Save a representative payload preview when you want to validate fields before live traffic.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+        {showDatabaseTestContext ? (
+          <div
+            className="rounded-md border border-sky-200/80 bg-sky-500/[0.04] p-3 text-[11px] dark:border-sky-500/30 dark:bg-sky-500/10"
+            data-testid="wizard-run-test-database-context"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="font-semibold text-slate-800 dark:text-slate-100">Actual database query preview</p>
+              <p className="text-slate-500 dark:text-gdc-mutedStrong">
+                {dbRows.length} returned row{dbRows.length === 1 ? '' : 's'} · preview cap 25 · {dbBoundParamCount} bound parameter{dbBoundParamCount === 1 ? '' : 's'}
+              </p>
+            </div>
+            <pre className="mt-2 max-h-28 overflow-auto whitespace-pre-wrap break-words rounded border border-slate-200 bg-white p-2 font-mono text-[10px] text-slate-700 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200">
+              {state.stream.sqlQuery.trim() || '(SQL query unavailable)'}
+            </pre>
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-slate-600 dark:text-gdc-mutedStrong">
+              <span>
+                <strong>Sync:</strong>{' '}
+                {dbIncremental
+                  ? `Incremental · checkpoint ${state.stream.dbCheckpointColumn.trim() || 'not selected'}`
+                  : 'Full query each poll'}
+              </span>
+              <span><strong>Elapsed:</strong> {elapsedMs == null ? '—' : `${elapsedMs} ms`}</span>
+            </div>
+            <p className="mt-2 text-slate-600 dark:text-gdc-mutedStrong">
+              Preview reads bounded rows only and does not advance the production checkpoint. Incremental sync must be confirmed against the latest sample in Record Selection before apply.
+            </p>
+            {dbFieldTypes.length > 0 ? (
+              <div className="mt-2 flex flex-wrap gap-1.5" aria-label="Database sample field types">
+                <span className="font-semibold text-slate-600 dark:text-gdc-mutedStrong">Sample field types:</span>
+                {dbFieldTypes.map((field) => (
+                  <code
+                    key={field.name}
+                    className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] text-slate-700 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200"
+                  >
+                    {field.name} {field.type}
+                  </code>
+                ))}
+              </div>
+            ) : null}
+            {dbRows.length > 0 ? (
+              <div className="mt-2 overflow-auto rounded border border-slate-200 bg-white dark:border-gdc-border dark:bg-gdc-card">
+                <table className="min-w-full border-collapse text-[10px]" data-testid="wizard-run-test-database-rows">
+                  <thead>
+                    <tr className="border-b border-slate-200 dark:border-gdc-border">
+                      {dbFieldTypes.map((field) => (
+                        <th key={field.name} className="px-2 py-1 text-left font-semibold text-slate-600 dark:text-gdc-mutedStrong">
+                          {field.name}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dbRows.slice(0, 5).map((row, index) => (
+                      <tr key={index} className="border-b border-slate-100 last:border-b-0 dark:border-gdc-border/60">
+                        {dbFieldTypes.map((field) => (
+                          <td key={field.name} className="max-w-56 break-words px-2 py-1 align-top font-mono text-slate-700 dark:text-slate-200">
+                            {databaseCellDisplay(row[field.name])}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="border-t border-slate-200 px-2 py-1 text-slate-500 dark:border-gdc-border dark:text-gdc-muted">
+                  Showing {Math.min(dbRows.length, 5)} of {dbRows.length} returned rows.
+                </p>
+              </div>
+            ) : t.status === 'success' ? (
+              <p className="mt-2 rounded border border-slate-200 bg-white p-2 text-slate-500 dark:border-gdc-border dark:bg-gdc-card dark:text-gdc-muted">
+                Query succeeded with an empty bounded result. Review the filter, table contents, or sync position before apply.
               </p>
             ) : null}
           </div>

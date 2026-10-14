@@ -108,6 +108,43 @@ describe('StepApiTest copy', () => {
     expect(context).not.toHaveTextContent('Bearer secret-value')
   })
 
+  it('shows bounded actual database rows, field types, and incremental checkpoint context without exposing bind values', () => {
+    const state = buildInitialState()
+    state.connector.sourceType = 'DATABASE_QUERY'
+    state.connector.connectorId = 51
+    state.connector.sourceId = 61
+    state.connector.connectorName = 'Saved PostgreSQL'
+    state.stream.sqlQuery = 'SELECT "id", "event_ts" FROM "public"."events" WHERE "severity" = %(ui_filter_1)s'
+    state.stream.dbQueryParams = { ui_filter_1: 'super-sensitive-filter-value' }
+    state.stream.dbCheckpointMode = 'SINGLE_COLUMN'
+    state.stream.dbCheckpointColumn = 'id'
+    state.apiTest.status = 'success'
+    state.apiTest.ok = true
+    state.apiTest.statusCode = 200
+    state.apiTest.eventCount = 2
+    state.apiTest.startedAt = 100
+    state.apiTest.finishedAt = 145
+    state.apiTest.parsedJson = [
+      { id: 1, event_ts: '2026-10-14T01:00:00Z' },
+      { id: 2, event_ts: '2026-10-14T01:00:01Z' },
+    ]
+    state.apiTest.rawResponse = state.apiTest.parsedJson
+
+    renderStep(state)
+
+    const context = screen.getByTestId('wizard-run-test-database-context')
+    expect(context).toHaveTextContent('Actual database query preview')
+    expect(context).toHaveTextContent('2 returned rows')
+    expect(context).toHaveTextContent('preview cap 25')
+    expect(context).toHaveTextContent('1 bound parameter')
+    expect(context).toHaveTextContent('Incremental · checkpoint id')
+    expect(context).toHaveTextContent('45 ms')
+    expect(context).toHaveTextContent('id number')
+    expect(context).toHaveTextContent('event_ts string')
+    expect(screen.getByTestId('wizard-run-test-database-rows')).toHaveTextContent('2026-10-14T01:00:01Z')
+    expect(context).not.toHaveTextContent('super-sensitive-filter-value')
+  })
+
   it('shows the saved webhook receiver identity and auth posture without exposing a secret', () => {
     const state = buildInitialState()
     state.connector.sourceType = 'WEBHOOK_RECEIVER'
