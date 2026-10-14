@@ -62,7 +62,11 @@ import {
 import { RequestPreviewCopyButton, RequestPreviewDrawer } from './request-preview-drawer'
 import { resolveJsonPath } from '../stream-api-test-json-utils'
 import { UnionSchemaStatusCard } from './union-schema-status-card'
-import { buildSampleFieldCoverage } from './sample-field-coverage'
+import {
+  buildSampleFieldCoverage,
+  SAMPLE_FIELD_COVERAGE_MAX_EVENTS,
+  SAMPLE_FIELD_COVERAGE_MAX_FIELDS,
+} from './sample-field-coverage'
 import { checkpointModeFromFieldType } from './wizard-stream-config-sync'
 import type { WizardCheckpointFieldType, WizardConfigState, WizardState } from './wizard-state'
 
@@ -177,6 +181,8 @@ export function RecordSelectionWorkspace({
   )
 
   const fieldCoverage = useMemo(() => buildSampleFieldCoverage(extractedEvents), [extractedEvents])
+  const operationalSampleId = t.responseHeaders?.['x-operational-sample']?.trim() || null
+  const sampleCapturedAt = t.finishedAt != null ? new Date(t.finishedAt).toISOString() : null
 
   /** Extracted event records (event root applied) — used for incremental Test checkpoint values. */
   const checkpointTestRecords = extractedEvents
@@ -557,6 +563,31 @@ export function RecordSelectionWorkspace({
         </div>
 
         <UnionSchemaStatusCard state={state} extractedEventCount={extractedEvents.length} className="mt-2" />
+
+        <section
+          data-testid="record-selection-sample-provenance"
+          aria-label="Sample evidence"
+          className="mt-2 rounded-lg border border-slate-200 bg-white p-3 dark:border-gdc-border dark:bg-gdc-card"
+        >
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-600 dark:text-gdc-mutedStrong">
+            <span>
+              <span className="font-semibold text-slate-800 dark:text-slate-200">Sample ID:</span>{' '}
+              {operationalSampleId ?? 'Not provided by source/API'}
+            </span>
+            <span>
+              <span className="font-semibold text-slate-800 dark:text-slate-200">Captured:</span>{' '}
+              {sampleCapturedAt ?? 'Not recorded'}
+            </span>
+            <span>
+              <span className="font-semibold text-slate-800 dark:text-slate-200">Extracted:</span>{' '}
+              {extractedEvents.length} event{extractedEvents.length === 1 ? '' : 's'}
+            </span>
+            <span>
+              <span className="font-semibold text-slate-800 dark:text-slate-200">Analysis limit:</span>{' '}
+              {SAMPLE_FIELD_COVERAGE_MAX_EVENTS} events / {SAMPLE_FIELD_COVERAGE_MAX_FIELDS} paths
+            </span>
+          </div>
+        </section>
 
         <section
           data-testid="record-selection-sample-field-coverage"

@@ -1,8 +1,8 @@
 import { resolveJsonPath } from '../stream-api-test-json-utils'
 import { flattenSampleFields } from './wizard-json-extract'
 
-const MAX_SAMPLE_EVENTS = 20
-const MAX_SAMPLE_FIELDS = 50
+export const SAMPLE_FIELD_COVERAGE_MAX_EVENTS = 20
+export const SAMPLE_FIELD_COVERAGE_MAX_FIELDS = 50
 const MAX_SAMPLE_DEPTH = 4
 const MAX_DISTINCT_VALUE_CHARS = 128
 
@@ -22,16 +22,16 @@ export type SampleFieldCoverage = {
 
 /** Bounded local sample evidence, never emit sample values or infer whole-production coverage. */
 export function buildSampleFieldCoverage(events: readonly Record<string, unknown>[]): SampleFieldCoverage {
-  const examined = events.slice(0, MAX_SAMPLE_EVENTS)
+  const examined = events.slice(0, SAMPLE_FIELD_COVERAGE_MAX_EVENTS)
   const counts = new Map<string, { presentCount: number; distinct: Set<string> }>()
   let truncatedFields = false
 
   for (const event of examined) {
-    const paths = flattenSampleFields(event, MAX_SAMPLE_FIELDS + 1, MAX_SAMPLE_DEPTH)
-    if (paths.length > MAX_SAMPLE_FIELDS) truncatedFields = true
+    const paths = flattenSampleFields(event, SAMPLE_FIELD_COVERAGE_MAX_FIELDS + 1, MAX_SAMPLE_DEPTH)
+    if (paths.length > SAMPLE_FIELD_COVERAGE_MAX_FIELDS) truncatedFields = true
     for (const path of new Set(paths)) {
       if (!counts.has(path)) {
-        if (counts.size >= MAX_SAMPLE_FIELDS) {
+        if (counts.size >= SAMPLE_FIELD_COVERAGE_MAX_FIELDS) {
           truncatedFields = true
           continue
         }
@@ -52,7 +52,7 @@ export function buildSampleFieldCoverage(events: readonly Record<string, unknown
   return {
     totalCount: events.length,
     examinedCount: examined.length,
-    truncatedEvents: events.length > MAX_SAMPLE_EVENTS,
+    truncatedEvents: events.length > SAMPLE_FIELD_COVERAGE_MAX_EVENTS,
     truncatedFields,
     fields: Array.from(counts, ([path, row]) => ({
       path,
