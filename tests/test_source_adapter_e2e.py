@@ -555,6 +555,53 @@ def test_database_query_discovery_lists_real_fixture_metadata(
     assert "event_ts" in column_names
 
 
+@skip_no_pg_fixture
+def test_database_query_preview_uses_named_bound_filter_params(
+    client: TestClient, db_session: Session
+) -> None:
+    suffix = uuid.uuid4().hex[:8]
+    connector_id, _, _ = _create_db_query_connector_and_stream(
+        client,
+        name_suffix=suffix,
+        stream_config={
+            "query": (
+                "SELECT id, event_id, message, severity, event_ts, ordering_seq "
+                "FROM source_e2e_rows WHERE severity = %(gdc_filter_1)s"
+            ),
+            "query_params": {"gdc_filter_1": "high"},
+            "max_rows_per_run": 250,
+            "checkpoint_mode": "NONE",
+            "query_timeout_seconds": 30,
+        },
+    )
+
+    response = client.post(
+        "/api/v1/runtime/api-test/http",
+        json={
+            "connector_id": connector_id,
+            "source_config": {},
+            "stream_config": {
+                "query": (
+                    "SELECT id, event_id, message, severity, event_ts, ordering_seq "
+                    "FROM source_e2e_rows WHERE severity = %(gdc_filter_1)s"
+                ),
+                "query_params": {"gdc_filter_1": "high"},
+                "max_rows_per_run": 250,
+                "checkpoint_mode": "NONE",
+                "query_timeout_seconds": 30,
+            },
+            "checkpoint": None,
+            "fetch_sample": True,
+        },
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["database_query_row_count"] == 1
+    assert len(body["database_query_sample_rows"]) == 1
+    assert body["database_query_sample_rows"][0]["severity"] == "high"
+    assert body["database_query_sample_rows"][0]["event_id"] == "e2e-db-3"
+
+
 @skip_no_wiremock
 @skip_no_pg_fixture
 def test_database_query_incremental_checkpoint_second_run_empty(
