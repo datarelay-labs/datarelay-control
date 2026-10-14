@@ -515,6 +515,10 @@ export function RoutesOverviewPage() {
         loading={loading}
         selectedStreamId={streamFilter === '__all__' ? null : Number(streamFilter)}
         onSelectStream={(id) => setStreamFilter(String(id))}
+        onRouteSaved={() => {
+          clearOperationalSnapshotCache()
+          setRefreshTick((x) => x + 1)
+        }}
       />
 
       <section aria-label="Route KPI summary" className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6 xl:gap-3">

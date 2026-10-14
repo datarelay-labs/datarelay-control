@@ -144,8 +144,16 @@ function Field({
 const inputCls =
   'h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-[12px] text-slate-900 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100'
 
-export function RouteEditPage() {
-  const { routeId = '' } = useParams<{ routeId: string }>()
+type RouteEditPageProps = {
+  routeIdOverride?: number | null
+  embedded?: boolean
+  onClose?: () => void
+  onSaved?: () => void
+}
+
+export function RouteEditPage({ routeIdOverride = null, embedded = false, onClose, onSaved }: RouteEditPageProps = {}) {
+  const { routeId: routeIdParam = '' } = useParams<{ routeId: string }>()
+  const routeId = routeIdOverride != null ? String(routeIdOverride) : routeIdParam
   const backendRouteId = /^\d+$/.test(routeId) ? Number(routeId) : null
   const isCreateMode = backendRouteId == null
   const caps = useSessionCapabilities()
@@ -308,9 +316,13 @@ export function RouteEditPage() {
   }, [navigate])
 
   const leaveWithoutSaving = useCallback(() => {
+    if (embedded) {
+      onClose?.()
+      return
+    }
     if (backendStreamId != null) navigateAfterConfirmedAction(streamRuntimePath(String(backendStreamId)))
     else navigateAfterConfirmedAction(isCreateMode ? '/routes' : '/streams')
-  }, [backendStreamId, isCreateMode, navigateAfterConfirmedAction])
+  }, [backendStreamId, embedded, isCreateMode, navigateAfterConfirmedAction, onClose])
 
   const cancelPendingNavigation = useCallback(() => {
     const pending = pendingNavigationRef.current
@@ -692,7 +704,17 @@ export function RouteEditPage() {
       setDeliveryBaseline(nextBaseline)
       setRouteUpdatedAt(typeof saved.updated_at === 'string' ? saved.updated_at : null)
       setStaleConflict(false)
-      setSaveSuccess(isCreateMode ? 'Route created. Moving to stream runtime…' : 'Route saved. Moving to stream runtime…')
+      setSaveSuccess(
+        isCreateMode
+          ? 'Route created. Moving to stream runtime…'
+          : embedded
+            ? 'Route saved in this Data Flow.'
+            : 'Route saved. Moving to stream runtime…',
+      )
+      if (embedded) {
+        onSaved?.()
+        return
+      }
       const runtimeStreamId = typeof saved.stream_id === 'number' ? saved.stream_id : backendStreamId
       if (typeof runtimeStreamId === 'number') navigateAfterConfirmedAction(streamRuntimePath(String(runtimeStreamId)))
       else navigateAfterConfirmedAction('/routes')

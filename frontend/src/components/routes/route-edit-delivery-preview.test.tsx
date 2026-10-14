@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { clearSession, persistSession } from '../../auth/session'
 import { RouteEditPage } from './route-edit-page'
 
 const fetchRouteById = vi.fn()
@@ -157,6 +158,8 @@ describe('RouteEditPage delivery preview', () => {
       preview_messages: [{ body: '{}' }],
     })
   })
+
+  afterEach(() => clearSession())
 
   it('shows metadata-only formatted output without disclosing payloads, headers or secrets', async () => {
     runRouteDeliveryPreview.mockResolvedValueOnce({
@@ -315,6 +318,35 @@ describe('RouteEditPage delivery preview', () => {
       expect.stringContaining('Save or discard unsaved edits before preview'),
     )
     expect(runRouteDeliveryPreview).not.toHaveBeenCalled()
+  })
+
+  it('keeps an embedded saved Route editor in the current Flow workspace and reports save/close callbacks', async () => {
+    persistSession({
+      access_token: 'embedded-route-test',
+      refresh_token: 'embedded-route-refresh',
+      expires_at: new Date(Date.now() + 3600_000).toISOString(),
+      user: { username: 'operator', role: 'OPERATOR', status: 'ACTIVE' },
+    })
+    const onSaved = vi.fn()
+    const onClose = vi.fn()
+    updateRoute.mockResolvedValueOnce({ ...savedRoute, description: 'updated in Flow' })
+    render(
+      <MemoryRouter initialEntries={['/routes']}>
+        <RouteEditPage routeIdOverride={42} embedded onSaved={onSaved} onClose={onClose} />
+      </MemoryRouter>,
+    )
+
+    const description = await screen.findByDisplayValue('desc')
+    fireEvent.change(description, { target: { value: 'updated in Flow' } })
+    const save = await screen.findByRole('button', { name: 'Save Route' })
+    fireEvent.click(save)
+    await waitFor(() => expect(updateRoute).toHaveBeenCalledWith(42, expect.objectContaining({ description: 'updated in Flow' })))
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1))
+    expect(screen.getByTestId('route-edit-page')).toBeInTheDocument()
+    expect(screen.getByTestId('route-edit-save-status')).toHaveTextContent('Saved')
+
+    fireEvent.click(screen.getByTestId('route-edit-cancel'))
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 
   it('disables preview in create mode until a route exists', async () => {

@@ -24,6 +24,7 @@ import {
   routePublicId,
 } from './routes-flow-helpers'
 import { RouteFlowFailedAttemptLink } from './routes-flow-failed-attempt-link'
+import { RouteEditPage } from './route-edit-page'
 import { formatFailurePolicy, uiStatusFromOperationalHealth, type RouteConsoleRow } from './routes-overview-helpers'
 
 export type RoutesArchitectureWorkspaceProps = {
@@ -33,6 +34,7 @@ export type RoutesArchitectureWorkspaceProps = {
   requestFailed?: boolean
   selectedStreamId: number | null
   onSelectStream: (id: number) => void
+  onRouteSaved?: () => void
 }
 
 const validId = (value: number | null | undefined): value is number =>
@@ -70,7 +72,8 @@ function collectionHealthBadgeClass(tone: CollectionHealthTone): string {
 /**
  * Route ownership, not another Stream creation flow:
  * Streams collect; each route processes and delivers to one Destination.
- * Read-only topology from the existing operational snapshot. No invented edges.
+ * Runtime topology comes from the existing operational snapshot. No invented edges.
+ * Explicit authorized configuration reuses the existing Route editor in context.
  */
 export function RoutesArchitectureWorkspace({
   snapshot,
@@ -79,6 +82,7 @@ export function RoutesArchitectureWorkspace({
   requestFailed = false,
   selectedStreamId,
   onSelectStream,
+  onRouteSaved,
 }: RoutesArchitectureWorkspaceProps) {
   const canCreateFlow = useSessionCapabilities().workspace_mutations === true
   const groups = useMemo(() => buildRouteFlowTree(snapshot, consoleRows), [snapshot, consoleRows])
@@ -89,6 +93,7 @@ export function RoutesArchitectureWorkspace({
   ), [snapshot?.streams])
   const selectedStream = selectedGroup ? streamsById.get(selectedGroup.streamId) : undefined
   const [inspectedRouteId, setInspectedRouteId] = useState<number | null>(null)
+  const [routeEditorOpen, setRouteEditorOpen] = useState(false)
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('Overview')
   const inspectorTabButtons = useRef<Partial<Record<InspectorTab, HTMLButtonElement | null>>>({})
   const focusInspectorAfterAttention = useRef(false)
@@ -98,6 +103,9 @@ export function RoutesArchitectureWorkspace({
   useEffect(() => {
     setInspectorTab('Overview')
   }, [selectedGroup?.streamId, selectedRoute?.routeId])
+  useEffect(() => {
+    if (!canCreateFlow) setRouteEditorOpen(false)
+  }, [canCreateFlow])
   useEffect(() => {
     if (!focusInspectorAfterAttention.current || selectedRoute?.routeId !== inspectedRouteId) return
     focusInspectorAfterAttention.current = false
@@ -740,17 +748,32 @@ export function RoutesArchitectureWorkspace({
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <Link
-                        to={routeEditPath(String(selectedRoute.routeId))}
-                        className={cn(
-                          'inline-flex min-h-9 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500',
-                          canCreateFlow
-                            ? 'border-violet-600 bg-violet-600 text-white hover:bg-violet-700'
-                            : 'border-slate-200 bg-white text-slate-700 hover:border-violet-300 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100',
-                        )}
-                      >
-                        <Settings2 className="h-3.5 w-3.5" aria-hidden /> {canCreateFlow ? 'Route settings' : 'View Route settings'}
-                      </Link>
+                      {canCreateFlow ? (
+                        <>
+                          <button
+                            type="button"
+                            aria-expanded={routeEditorOpen}
+                            aria-controls="routes-architecture-configuration"
+                            onClick={() => setRouteEditorOpen((open) => !open)}
+                            className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-violet-600 bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500"
+                          >
+                            <Settings2 className="h-3.5 w-3.5" aria-hidden /> Configure Route in workspace
+                          </button>
+                          <Link
+                            to={routeEditPath(String(selectedRoute.routeId))}
+                            className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-violet-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
+                          >
+                            Open full Route editor <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+                          </Link>
+                        </>
+                      ) : (
+                        <Link
+                          to={routeEditPath(String(selectedRoute.routeId))}
+                          className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-violet-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
+                        >
+                          <Settings2 className="h-3.5 w-3.5" aria-hidden /> View Route settings
+                        </Link>
+                      )}
                       <Link to={logsExplorerPath({ route_id: selectedRoute.routeId, stream_id: selectedGroup.streamId, destination_id: selectedRoute.destinationId ?? undefined })} className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-violet-300 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100">
                         Delivery logs <ArrowRight className="h-3.5 w-3.5" aria-hidden />
                       </Link>
@@ -879,6 +902,36 @@ export function RoutesArchitectureWorkspace({
                 </section>
               ) : null}
               </div>
+
+              {routeEditorOpen && canCreateFlow && selectedRoute ? (
+                <section
+                  id="routes-architecture-configuration"
+                  data-testid="routes-architecture-configuration"
+                  aria-label={`Configure Route ${routePublicId(selectedRoute.routeId)} in Data Flow`}
+                  className="min-w-0 space-y-3 rounded-xl border border-violet-200 bg-violet-50/20 p-3 dark:border-violet-500/30 dark:bg-violet-500/[0.04] sm:p-4"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-violet-700 dark:text-violet-300">
+                        Configure · selected delivery path
+                      </p>
+                      <p className="mt-1 text-xs text-slate-600 dark:text-gdc-mutedStrong">
+                        The topology remains visible while this existing Route editor changes Route {routePublicId(selectedRoute.routeId)}.
+                      </p>
+                    </div>
+                    <span className="rounded-full border border-violet-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-violet-800 dark:border-violet-500/30 dark:bg-gdc-card dark:text-violet-200">
+                      Stream #{selectedGroup.streamId} · {selectedRoute.destinationName}
+                    </span>
+                  </div>
+                  <RouteEditPage
+                    key={selectedRoute.routeId}
+                    routeIdOverride={selectedRoute.routeId}
+                    embedded
+                    onClose={() => setRouteEditorOpen(false)}
+                    onSaved={onRouteSaved}
+                  />
+                </section>
+              ) : null}
             </div>
           ) : null}
         </div>

@@ -2,12 +2,21 @@ import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { MemoryRouter } from 'react-router-dom'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { OperationalRouteSnapshot, OperationalSnapshotResponse } from '../../api/operationalSnapshot'
 import { buildRouteRowsFromOperationalSnapshot } from './routes-overview-helpers'
 import { RoutesArchitectureWorkspace } from './routes-architecture-workspace'
 import { persistSession } from '../../auth/session'
 import { clearTestSession, persistTestSession } from '../../lib/governance-rbac'
+
+vi.mock('./route-edit-page', () => ({
+  RouteEditPage: ({ routeIdOverride, embedded, onClose }: { routeIdOverride?: number; embedded?: boolean; onClose?: () => void }) => (
+    <section data-testid="embedded-route-edit-stub">
+      Route editor #{routeIdOverride} · {embedded ? 'embedded' : 'standalone'}
+      <button type="button" onClick={onClose}>Close route editor</button>
+    </section>
+  ),
+}))
 
 const recent = () => new Date().toISOString()
 
@@ -816,13 +825,18 @@ describe('Route Inspector role-appropriate operations', () => {
     expect(within(inspector).getByRole('tab', { name: 'Diagnostics' })).toBeEnabled()
   })
 
-  it.each(['ADMINISTRATOR', 'OPERATOR'] as const)('offers %s the usual Route configuration action', (role) => {
+  it.each(['ADMINISTRATOR', 'OPERATOR'] as const)('opens %s Route configuration inside the selected Flow while preserving the full editor deep link', async (role) => {
     persistTestSession(role)
+    const user = userEvent.setup()
     render(<GraphHarness snapshot={snapshotFor()} />)
     const inspector = screen.getByTestId('routes-architecture-inspector')
-    expect(within(inspector).getByRole('link', { name: 'Route settings' })).toHaveAttribute('href', '/routes/1/edit')
+    expect(within(inspector).getByRole('link', { name: 'Open full Route editor' })).toHaveAttribute('href', '/routes/1/edit')
+    await user.click(within(inspector).getByRole('button', { name: 'Configure Route in workspace' }))
+    expect(screen.getByTestId('routes-architecture-configuration')).toHaveTextContent('Route editor #1 · embedded')
+    expect(screen.getByTestId('routes-architecture-graph')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Close route editor' }))
+    expect(screen.queryByTestId('routes-architecture-configuration')).not.toBeInTheDocument()
     expect(within(inspector).queryByText(/Read-only access.*workspace write permission/i)).not.toBeInTheDocument()
-    expect(within(inspector).queryByRole('link', { name: 'View Route settings' })).not.toBeInTheDocument()
   })
 })
 
@@ -834,14 +848,16 @@ describe('Route Inspector session capability changes', () => {
     persistTestSession('OPERATOR')
     render(<GraphHarness snapshot={snapshotFor()} />)
     const inspector = screen.getByTestId('routes-architecture-inspector')
-    expect(within(inspector).getByRole('link', { name: 'Route settings' })).toBeInTheDocument()
+    expect(within(inspector).getByRole('button', { name: 'Configure Route in workspace' })).toBeInTheDocument()
+    expect(within(inspector).getByRole('link', { name: 'Open full Route editor' })).toHaveAttribute('href', '/routes/1/edit')
     act(() => persistSession({
       access_token: 'test-token',
       refresh_token: 'test-refresh',
       expires_at: new Date(Date.now() + 3600_000).toISOString(),
       user: { username: 'operator', role: 'OPERATOR', status: 'ACTIVE', capabilities: { workspace_mutations: false } },
     }))
-    expect(within(inspector).queryByRole('link', { name: 'Route settings' })).not.toBeInTheDocument()
+    expect(within(inspector).queryByRole('button', { name: 'Configure Route in workspace' })).not.toBeInTheDocument()
+    expect(within(inspector).queryByRole('link', { name: 'Open full Route editor' })).not.toBeInTheDocument()
     expect(within(inspector).getByRole('link', { name: 'View Route settings' })).toBeInTheDocument()
     expect(inspector).toHaveTextContent('Route R-0001')
     expect(within(inspector).getByRole('link', { name: /Delivery logs/ })).toBeInTheDocument()
