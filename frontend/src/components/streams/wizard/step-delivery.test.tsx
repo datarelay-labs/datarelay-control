@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -33,11 +33,13 @@ const fetchDestinationsList = vi.hoisted(() =>
 const invalidateDestinationsListCache = vi.hoisted(() => vi.fn())
 const testDestination = vi.hoisted(() => vi.fn())
 const createDestination = vi.hoisted(() => vi.fn())
+const sendDestinationTestEvents = vi.hoisted(() => vi.fn())
 
 vi.mock('../../../api/gdcDestinations', () => ({
   createDestination: (...args: unknown[]) => createDestination(...args),
   fetchDestinationsList: (...args: unknown[]) => fetchDestinationsList(...args),
   invalidateDestinationsListCache: () => invalidateDestinationsListCache(),
+  sendDestinationTestEvents: (...args: unknown[]) => sendDestinationTestEvents(...args),
   testDestination: (...args: unknown[]) => testDestination(...args),
 }))
 
@@ -53,6 +55,19 @@ describe('StepDelivery', () => {
     createDestination.mockReset()
     testDestination.mockReset()
     testDestination.mockResolvedValue({ success: true, message: 'Endpoint responded', latency_ms: 12.4, tested_at: '2026-10-09T07:00:00Z' })
+    sendDestinationTestEvents.mockReset()
+    sendDestinationTestEvents.mockResolvedValue({
+      success: true,
+      destination_id: 1,
+      destination_name: 'Stellar Syslog',
+      destination_type: 'SYSLOG_UDP',
+      target: '10.0.0.1:514',
+      transport_format: 'SYSLOG_UDP / json',
+      logical_event_count: 10,
+      test_delivery_id: 'td-default',
+      tested_at: '2026-10-14T07:00:00Z',
+      message: 'Sent 10 synthetic logical test events.',
+    })
     fetchDestinationsList.mockReset()
     fetchDestinationsList.mockResolvedValue([
       {
@@ -345,6 +360,138 @@ describe('StepDelivery', () => {
     await user.click(within(b).getByRole('menuitem', { name: 'Test destination' }))
     expect(testDestination).toHaveBeenCalledTimes(2)
     expect(testDestination).toHaveBeenLastCalledWith(2)
+  })
+
+  it('confirms saved target, format and default count before bounded test delivery', async () => {
+    const user = userEvent.setup()
+    const state = buildInitialState()
+    state.destinations.routeDrafts = [{
+      key: 'bounded-test-route',
+      destinationId: 1,
+      enabled: true,
+      failurePolicy: 'RETRY_AND_BACKOFF',
+      rateLimitJson: {},
+    }]
+    const onChange = vi.fn()
+    render(<MemoryRouter><StepDelivery state={state} onChange={onChange} /></MemoryRouter>)
+
+    const card = await screen.findByTestId('destination-route-card-bounded-test-route')
+    await user.click(within(card).getByRole('button', { name: 'Actions for Stellar Syslog' }))
+    await user.click(within(card).getByRole('menuitem', { name: 'Send test events…' }))
+
+    const dialog = await screen.findByTestId('wizard-test-delivery-dialog')
+    expect(dialog).toHaveTextContent('10.0.0.1:514')
+    expect(dialog).toHaveTextContent('SYSLOG_UDP / json')
+    expect(within(dialog).getByRole('spinbutton', { name: 'Test event count' })).toHaveValue(10)
+    await user.click(within(dialog).getByRole('button', { name: 'Send 10 test events' }))
+
+    expect(sendDestinationTestEvents).toHaveBeenCalledTimes(1)
+    expect(sendDestinationTestEvents).toHaveBeenCalledWith(1, 10)
+    const feedback = await within(dialog).findByTestId('wizard-test-delivery-feedback')
+    expect(feedback).toHaveTextContent('Sent 10 synthetic logical test events')
+    expect(feedback).toHaveTextContent('did not run or start the Stream or move its checkpoint')
+    expect(feedback).toHaveTextContent('Test delivery ID: td-default')
+    expect(onChange).not.toHaveBeenCalledWith(expect.objectContaining({ routeDrafts: expect.any(Array) }))
+  })
+
+  it('blocks test delivery outside the 1-100 logical event bound', async () => {
+    const user = userEvent.setup()
+    const state = buildInitialState()
+    state.destinations.routeDrafts = [{
+      key: 'bounded-invalid-route',
+      destinationId: 1,
+      enabled: true,
+      failurePolicy: 'RETRY_AND_BACKOFF',
+      rateLimitJson: {},
+    }]
+    render(<MemoryRouter><StepDelivery state={state} onChange={vi.fn()} /></MemoryRouter>)
+
+    const card = await screen.findByTestId('destination-route-card-bounded-invalid-route')
+    await user.click(within(card).getByRole('button', { name: 'Actions for Stellar Syslog' }))
+    await user.click(within(card).getByRole('menuitem', { name: 'Send test events…' }))
+    const dialog = await screen.findByTestId('wizard-test-delivery-dialog')
+    const count = within(dialog).getByRole('spinbutton', { name: 'Test event count' })
+    await user.clear(count)
+    await user.type(count, '101')
+
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('Enter a whole number from 1 to 100')
+    expect(within(dialog).getByRole('button', { name: /Send .*test events/ })).toBeDisabled()
+    expect(sendDestinationTestEvents).not.toHaveBeenCalled()
+  })
+
+  it('suppresses duplicate bounded sends while the first request is in flight', async () => {
+    const user = userEvent.setup()
+    let release: (value: {
+      success: boolean
+      destination_id: number
+      destination_name: string
+      destination_type: string
+      target: string
+      transport_format: string
+      logical_event_count: number
+      test_delivery_id: string
+      tested_at: string
+      message: string
+    }) => void = () => {}
+    sendDestinationTestEvents.mockImplementationOnce(() => new Promise((resolve) => { release = resolve }))
+
+    const state = buildInitialState()
+    state.destinations.routeDrafts = [{
+      key: 'bounded-duplicate-route',
+      destinationId: 1,
+      enabled: true,
+      failurePolicy: 'RETRY_AND_BACKOFF',
+      rateLimitJson: {},
+    }]
+    render(<MemoryRouter><StepDelivery state={state} onChange={vi.fn()} /></MemoryRouter>)
+
+    const card = await screen.findByTestId('destination-route-card-bounded-duplicate-route')
+    await user.click(within(card).getByRole('button', { name: 'Actions for Stellar Syslog' }))
+    await user.click(within(card).getByRole('menuitem', { name: 'Send test events…' }))
+    const dialog = await screen.findByTestId('wizard-test-delivery-dialog')
+    const send = within(dialog).getByRole('button', { name: 'Send 10 test events' })
+    fireEvent.click(send)
+    fireEvent.click(send)
+
+    expect(sendDestinationTestEvents).toHaveBeenCalledTimes(1)
+    release({
+      success: true,
+      destination_id: 1,
+      destination_name: 'Stellar Syslog',
+      destination_type: 'SYSLOG_UDP',
+      target: '10.0.0.1:514',
+      transport_format: 'SYSLOG_UDP / json',
+      logical_event_count: 10,
+      test_delivery_id: 'td-once',
+      tested_at: '2026-10-14T07:01:00Z',
+      message: 'Sent 10 synthetic logical test events.',
+    })
+    expect(await within(dialog).findByText(/Test delivery ID: td-once/)).toBeInTheDocument()
+  })
+
+  it('shows a safe test-delivery failure without exposing raw transport errors', async () => {
+    const user = userEvent.setup()
+    sendDestinationTestEvents.mockRejectedValueOnce(new Error('https://user:secret@example.test/private token=hidden'))
+    const state = buildInitialState()
+    state.destinations.routeDrafts = [{
+      key: 'bounded-failed-route',
+      destinationId: 2,
+      enabled: true,
+      failurePolicy: 'RETRY_AND_BACKOFF',
+      rateLimitJson: {},
+    }]
+    render(<MemoryRouter><StepDelivery state={state} onChange={vi.fn()} /></MemoryRouter>)
+
+    const card = await screen.findByTestId('destination-route-card-bounded-failed-route')
+    await user.click(within(card).getByRole('button', { name: 'Actions for Backup Webhook' }))
+    await user.click(within(card).getByRole('menuitem', { name: 'Send test events…' }))
+    const dialog = await screen.findByTestId('wizard-test-delivery-dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Send 10 test events' }))
+
+    const feedback = await within(dialog).findByRole('alert')
+    expect(feedback).toHaveTextContent('Test delivery failed')
+    expect(feedback).not.toHaveTextContent('secret')
+    expect(feedback).not.toHaveTextContent('token=hidden')
   })
 
   it('does not expose route delivery tuning controls', async () => {

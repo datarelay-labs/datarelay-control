@@ -205,6 +205,32 @@ export type DestinationTestResult = {
   detail?: Record<string, unknown> | null
 }
 
+export type DestinationTestDeliveryResult = {
+  success: boolean
+  destination_id: number
+  destination_name: string
+  destination_type: DestinationType
+  target: string
+  transport_format: string
+  logical_event_count: number
+  test_delivery_id: string
+  tested_at: string
+  message: string
+}
+
+export async function sendDestinationTestEvents(
+  destinationId: number,
+  count = 10,
+): Promise<DestinationTestDeliveryResult> {
+  return requestJson<DestinationTestDeliveryResult>(
+    GDC_API_PREFIX + '/destinations/' + destinationId + '/test-delivery',
+    {
+      method: 'POST',
+      body: JSON.stringify({ count }),
+    },
+  )
+}
+
 export async function testDestination(destinationId: number): Promise<DestinationTestResult> {
   const result = await requestJson<DestinationTestResult>(`${GDC_API_PREFIX}/destinations/${destinationId}/test`, {
     method: 'POST',

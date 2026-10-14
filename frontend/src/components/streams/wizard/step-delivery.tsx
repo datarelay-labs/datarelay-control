@@ -17,6 +17,7 @@ import {
   createDestination,
   fetchDestinationsList,
   invalidateDestinationsListCache,
+  sendDestinationTestEvents,
   testDestination,
   type DestinationListItem,
   type DestinationType,
@@ -87,17 +88,42 @@ function buildWizardFinalDraftRequest(state: WizardState) {
 function destinationEndpointLine(dest: DestinationListItem): string {
   const cfg = dest.config_json ?? {}
   if (dest.destination_type === 'WEBHOOK_POST') {
-    const u = typeof cfg.url === 'string' ? cfg.url.trim() : ''
-    return u || '—'
+    const raw = typeof cfg.url === 'string' ? cfg.url.trim() : ''
+    if (!raw) return '—'
+    try {
+      const url = new URL(raw)
+      const port = url.port ? ':' + url.port : ''
+      return url.protocol + '//' + url.hostname + port + (url.pathname || '/')
+    } catch {
+      return 'Webhook endpoint configured'
+    }
   }
   const host = typeof cfg.host === 'string' ? cfg.host : '—'
   const port = cfg.port != null ? String(cfg.port) : '514'
   const proto =
     dest.destination_type === 'SYSLOG_TLS' ? 'TLS' : dest.destination_type === 'SYSLOG_TCP' ? 'TCP' : 'UDP'
-  return `${formatWizardSyslogLabel(dest.destination_type)} · ${host}:${port} (${proto})`
+  return formatWizardSyslogLabel(dest.destination_type) + ' · ' + host + ':' + port + ' (' + proto + ')'
+}
+
+function destinationTransportFormat(dest: DestinationListItem): string {
+  if (dest.destination_type === 'WEBHOOK_POST') {
+    return 'WEBHOOK_POST / ' + normalizeWebhookPayloadMode(dest.config_json?.payload_mode)
+  }
+  const formatter = dest.config_json?.formatter_config
+  const messageFormat =
+    formatter && typeof formatter === 'object' && !Array.isArray(formatter) &&
+    typeof (formatter as Record<string, unknown>).message_format === 'string'
+      ? String((formatter as Record<string, unknown>).message_format)
+      : 'json'
+  return dest.destination_type + ' / ' + messageFormat
 }
 
 type DestinationProbeFeedback = { kind: 'success' | 'failed' | 'unavailable'; message: string }
+type DestinationTestDeliveryFeedback = {
+  kind: 'success' | 'failed'
+  message: string
+  testDeliveryId?: string
+}
 
 type InlineDestinationDraft = {
   name: string
@@ -167,6 +193,7 @@ function DestinationRouteCard({
   onRemove,
   onDuplicate,
   onTest,
+  onOpenTestDelivery,
   testBusy,
   testBlocked,
   testFeedback,
@@ -180,6 +207,7 @@ function DestinationRouteCard({
   onRemove: () => void
   onDuplicate: () => void
   onTest: () => void
+  onOpenTestDelivery: () => void
   testBusy: boolean
   testBlocked: boolean
   testFeedback?: DestinationProbeFeedback
@@ -254,6 +282,15 @@ function DestinationRouteCard({
               <hr className="my-1 border-slate-100 dark:border-gdc-border" />
               <button type="button" role="menuitem" className={routeMenuItemCls} onClick={() => { void onTest(); onMenuOpenChange(false) }} disabled={testBlocked}>
                 {testBusy ? 'Testing destination…' : 'Test destination'}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className={routeMenuItemCls}
+                onClick={() => { onOpenTestDelivery(); onMenuOpenChange(false) }}
+                disabled={!destination?.enabled}
+              >
+                Send test events…
               </button>
               <Link
                 role="menuitem"
@@ -331,7 +368,12 @@ export function StepDelivery({
   const [inlineCreateBusy, setInlineCreateBusy] = useState(false)
   const [inlineCreateError, setInlineCreateError] = useState<string | null>(null)
   const [inlineCreateNotice, setInlineCreateNotice] = useState<string | null>(null)
+  const [testDeliveryDestinationId, setTestDeliveryDestinationId] = useState<number | null>(null)
+  const [testDeliveryCount, setTestDeliveryCount] = useState('10')
+  const [testDeliveryBusy, setTestDeliveryBusy] = useState(false)
+  const [testDeliveryFeedback, setTestDeliveryFeedback] = useState<DestinationTestDeliveryFeedback | null>(null)
   const inlineCreateBusyRef = useRef(false)
+  const testDeliveryBusyRef = useRef(false)
   const onChangeRef = useRef(onChange)
   const routeDraftsRef = useRef(state.destinations.routeDrafts)
   const fetchVersionRef = useRef(0)
@@ -444,6 +486,11 @@ export function StepDelivery({
   }, [refreshDestinations, recentlyCreatedDestinationId])
 
   const destById = useMemo(() => new Map(destinations.map((d) => [d.id, d])), [destinations])
+  const testDeliveryDestination =
+    testDeliveryDestinationId != null ? destById.get(testDeliveryDestinationId) : undefined
+  const parsedTestDeliveryCount = Number(testDeliveryCount)
+  const testDeliveryCountValid =
+    Number.isInteger(parsedTestDeliveryCount) && parsedTestDeliveryCount >= 1 && parsedTestDeliveryCount <= 100
 
   const addRouteForDestination = useCallback(
     (destinationId: number) => {
@@ -651,6 +698,54 @@ export function StepDelivery({
     document.getElementById('wizard-destination-library')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   }, [])
 
+  const openTestDelivery = useCallback((destinationId: number) => {
+    const destination = destById.get(destinationId)
+    if (!destination?.enabled) return
+    setTestDeliveryDestinationId(destinationId)
+    setTestDeliveryCount('10')
+    setTestDeliveryFeedback(null)
+  }, [destById])
+
+  const closeTestDelivery = useCallback(() => {
+    if (testDeliveryBusyRef.current) return
+    setTestDeliveryDestinationId(null)
+    setTestDeliveryCount('10')
+    setTestDeliveryFeedback(null)
+  }, [])
+
+  const handleSendTestDelivery = useCallback(async () => {
+    const destinationId = testDeliveryDestinationId
+    const count = Number(testDeliveryCount)
+    if (
+      testDeliveryBusyRef.current ||
+      destinationId == null ||
+      !Number.isInteger(count) ||
+      count < 1 ||
+      count > 100
+    ) return
+
+    testDeliveryBusyRef.current = true
+    setTestDeliveryBusy(true)
+    setTestDeliveryFeedback(null)
+    try {
+      const result = await sendDestinationTestEvents(destinationId, count)
+      setTestDeliveryFeedback({
+        kind: 'success',
+        message:
+          `Sent ${result.logical_event_count} synthetic logical test event${result.logical_event_count === 1 ? '' : 's'} to ${result.target} as ${result.transport_format}. This did not run or start the Stream or move its checkpoint.`,
+        testDeliveryId: result.test_delivery_id,
+      })
+    } catch {
+      setTestDeliveryFeedback({
+        kind: 'failed',
+        message: 'Test delivery failed. Review the Destination and receiver, then retry.',
+      })
+    } finally {
+      testDeliveryBusyRef.current = false
+      setTestDeliveryBusy(false)
+    }
+  }, [testDeliveryCount, testDeliveryDestinationId])
+
   const handleTestDestination = useCallback(async (destinationId: number) => {
     if (testBusyId != null) return
     setTestBusyId(destinationId)
@@ -726,6 +821,105 @@ export function StepDelivery({
           </button>
         </div>
       </div>
+
+      {testDeliveryDestinationId != null && testDeliveryDestination ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="wizard-test-delivery-title"
+          data-testid="wizard-test-delivery-dialog"
+          className="rounded-xl border border-violet-200 bg-violet-50/70 p-4 dark:border-violet-500/40 dark:bg-violet-500/10"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h4 id="wizard-test-delivery-title" className="text-[13px] font-semibold text-slate-900 dark:text-slate-100">
+                Send bounded test events
+              </h4>
+              <p className="mt-1 text-[11px] leading-relaxed text-slate-600 dark:text-gdc-mutedStrong">
+                Sends known synthetic events to this saved Destination only. It does not run or start the Stream,
+                move its checkpoint, or apply this draft.
+              </p>
+            </div>
+            <button type="button" className={btnGhost} onClick={closeTestDelivery} disabled={testDeliveryBusy}>
+              Close
+            </button>
+          </div>
+
+          <dl className="mt-3 grid gap-2 text-[11px] sm:grid-cols-3">
+            <div className="rounded-md border border-slate-200 bg-white p-2 dark:border-gdc-border dark:bg-gdc-card">
+              <dt className="font-semibold text-slate-500 dark:text-gdc-muted">Target</dt>
+              <dd className="mt-1 break-all text-slate-800 dark:text-slate-100">
+                {destinationEndpointLine(testDeliveryDestination)}
+              </dd>
+            </div>
+            <div className="rounded-md border border-slate-200 bg-white p-2 dark:border-gdc-border dark:bg-gdc-card">
+              <dt className="font-semibold text-slate-500 dark:text-gdc-muted">Format</dt>
+              <dd className="mt-1 text-slate-800 dark:text-slate-100">
+                {destinationTransportFormat(testDeliveryDestination)}
+              </dd>
+            </div>
+            <label className="rounded-md border border-slate-200 bg-white p-2 font-semibold text-slate-500 dark:border-gdc-border dark:bg-gdc-card dark:text-gdc-muted">
+              Logical events
+              <input
+                aria-label="Test event count"
+                type="number"
+                min={1}
+                max={100}
+                step={1}
+                value={testDeliveryCount}
+                onChange={(event) => setTestDeliveryCount(event.target.value)}
+                className={cn(inputCls, 'mt-1')}
+                disabled={testDeliveryBusy}
+              />
+            </label>
+          </dl>
+
+          {!testDeliveryCountValid ? (
+            <p role="alert" className="mt-2 text-[11px] font-medium text-red-700 dark:text-red-300">
+              Enter a whole number from 1 to 100.
+            </p>
+          ) : null}
+
+          {testDeliveryFeedback ? (
+            <div
+              role={testDeliveryFeedback.kind === 'success' ? 'status' : 'alert'}
+              data-testid="wizard-test-delivery-feedback"
+              className={cn(
+                'mt-3 rounded-md border px-3 py-2 text-[11px] leading-relaxed',
+                testDeliveryFeedback.kind === 'success'
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-100'
+                  : 'border-red-200 bg-red-50 text-red-900 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-100',
+              )}
+            >
+              <p>{testDeliveryFeedback.message}</p>
+              {testDeliveryFeedback.testDeliveryId ? (
+                <p className="mt-1 font-mono text-[10px]">Test delivery ID: {testDeliveryFeedback.testDeliveryId}</p>
+              ) : null}
+            </div>
+          ) : null}
+
+          <div className="mt-3 flex flex-wrap justify-end gap-2">
+            <button type="button" className={btnGhost} onClick={closeTestDelivery} disabled={testDeliveryBusy}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className={btnPrimarySm}
+              onClick={() => void handleSendTestDelivery()}
+              disabled={testDeliveryBusy || !testDeliveryCountValid || !testDeliveryDestination.enabled}
+            >
+              {testDeliveryBusy ? (
+                <>
+                  <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" aria-hidden />
+                  Sending…
+                </>
+              ) : (
+                `Send ${testDeliveryCountValid ? parsedTestDeliveryCount : ''} test event${parsedTestDeliveryCount === 1 ? '' : 's'}`
+              )}
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {inlineCreateNotice ? (
         <p
@@ -952,6 +1146,7 @@ export function StepDelivery({
                     }}
                     onDuplicate={() => onChange({ routeDrafts: duplicateRouteDraft(drafts, draft.key) })}
                     onTest={() => handleTestDestination(draft.destinationId)}
+                    onOpenTestDelivery={() => openTestDelivery(draft.destinationId)}
                     testBusy={testBusyId === draft.destinationId}
                     testBlocked={testBusyId != null}
                     testFeedback={testFeedbackByDestinationId[draft.destinationId]}
