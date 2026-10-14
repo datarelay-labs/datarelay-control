@@ -164,6 +164,7 @@ def route_policy_stage(
                 "stage": _policy_log_stage(decision),
                 "stream_id": route_ctx.stream_id,
                 "route_id": route_ctx.route_id,
+                "destination_id": route_ctx.destination_id,
                 "decision": decision,
                 "policy_action": decision,
                 "decision_reason": decision_reason,

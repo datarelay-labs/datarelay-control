@@ -9,6 +9,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.logs.models import DeliveryLog
 from app.protection.models import POLICY_ACTION_AUDIT_ONLY, POLICY_ACTION_QUARANTINE, StreamPolicyRule
 from app.protection.policy_engine import PolicyBatchResult, evaluate_injected_policy_batch, evaluate_batch
 from app.quarantine.models import StreamQuarantineEvent
@@ -327,6 +328,38 @@ def test_route_policy_no_rerun_prior_stages(classification_enabled: None) -> Non
         mock_policy.assert_called_once()
         mock_cls.assert_called_once()
         mock_prot.assert_called_once()
+
+
+def test_route_policy_disposition_logs_are_persistable_without_becoming_delivery_failures() -> None:
+    runner = _build_runner(
+        poller=_FakePoller(response={"items": []}),
+        webhook_sender=_FakeWebhookSender(),
+    )
+    expected = {
+        "policy_complete": ("INFO", "OK"),
+        "policy_blocked": ("WARN", "BLOCKED"),
+        "policy_quarantine": ("WARN", "QUARANTINED"),
+        "policy_review_required": ("WARN", "REVIEW_REQUIRED"),
+    }
+    for stage, (level, status) in expected.items():
+        row = runner._build_delivery_log_row(
+            {
+                "stage": stage,
+                "stream_id": 10,
+                "route_id": 20,
+                "destination_id": 30,
+                "decision_reason": "synthetic policy disposition",
+                "policy_action": stage.removeprefix("policy_"),
+            }
+        )
+        assert row is not None
+        assert row.stage == stage
+        assert row.level == level
+        assert row.status == status
+        assert row.stream_id == 10
+        assert row.route_id == 20
+        assert row.destination_id == 30
+        assert row.status != "FAILED"
 
 
 def test_delivery_gate_fan_out(

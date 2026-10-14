@@ -2814,6 +2814,10 @@ class StreamRunner(BaseRunner):
             "classification_complete",
             "protection_complete",
             "policy_evaluation_complete",
+            "policy_complete",
+            "policy_blocked",
+            "policy_quarantine",
+            "policy_review_required",
             "ai_policy_prompt",
             "ai_policy_response",
             "dynamic_routing_complete",
@@ -2879,6 +2883,17 @@ class StreamRunner(BaseRunner):
         elif stage == "classification_complete":
             status = "OK"
         elif stage == "protection_complete":
+            status = "OK"
+        elif stage == "policy_blocked":
+            level = "WARN"
+            status = "BLOCKED"
+        elif stage == "policy_quarantine":
+            level = "WARN"
+            status = "QUARANTINED"
+        elif stage == "policy_review_required":
+            level = "WARN"
+            status = "REVIEW_REQUIRED"
+        elif stage == "policy_complete":
             status = "OK"
         elif stage == "dynamic_routing_complete":
             status = "OK"

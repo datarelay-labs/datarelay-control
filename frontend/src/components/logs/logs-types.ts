@@ -79,6 +79,14 @@ export function pipelineStageLabel(row: LogExplorerRow): string {
   if (st === 'source_fetch' || st === 'source_rate_limit') return 'SOURCE'
   if (st === 'parse') return 'PARSING'
   if (st === 'mapping' || st === 'enrichment') return 'MAPPING'
+  if (
+    st.startsWith('policy_') ||
+    st === 'policy_evaluation_complete' ||
+    st === 'classification_complete' ||
+    st === 'protection_complete' ||
+    st.startsWith('quarantine_event_') ||
+    st.startsWith('schema_drift_policy')
+  ) return 'GOVERNANCE'
   if (st === 'format' || st === 'route') return 'DELIVERY'
   if (st === 'syslog_send' || st === 'webhook_send' || st === 'destination_rate_limited') return 'DELIVERY'
   if (st === 'run_started' || st === 'checkpoint_update' || st === 'run_complete') return 'CHECKPOINT'
@@ -90,6 +98,14 @@ function timelineIndexFromBackendStage(stage: string): number {
   if (s === 'source_fetch' || s === 'source_rate_limit') return 1
   if (s === 'parse') return 2
   if (s === 'mapping' || s === 'enrichment') return 3
+  if (
+    s.startsWith('policy_') ||
+    s === 'policy_evaluation_complete' ||
+    s === 'classification_complete' ||
+    s === 'protection_complete' ||
+    s.startsWith('quarantine_event_') ||
+    s.startsWith('schema_drift_policy')
+  ) return 3
   if (s === 'format' || s === 'route') return 4
   if (s === 'syslog_send' || s === 'webhook_send' || s === 'destination_rate_limited' || s.includes('retry')) return 4
   if (s === 'checkpoint_update' || s === 'run_complete') return 5
