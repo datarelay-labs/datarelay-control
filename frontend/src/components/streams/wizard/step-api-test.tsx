@@ -5,6 +5,7 @@ import { WIZARD_LABEL } from '../../../lib/operator-vocabulary'
 import { cn } from '../../../lib/utils'
 import { validateJsonBodyForApi } from '../../../utils/jsonBodySyntax'
 import {
+  buildFullRequestUrl,
   buildSourceAuthPayload,
   buildSourceConfig,
   buildStreamConfigPayload,
@@ -72,6 +73,45 @@ function mapApiSteps(
     status_code: s.status_code ?? null,
     message: s.message ?? '',
   }))
+}
+
+type HttpFailureStage = 'Request' | 'Connection' | 'Authentication' | 'Response'
+
+function resolveHttpFailureStage(
+  code: string | null,
+  errorType: string | null,
+  targetStatusCode: number | null,
+): HttpFailureStage {
+  const signal = `${code ?? ''} ${errorType ?? ''}`.toLowerCase()
+  if (
+    signal.includes('auth') ||
+    signal.includes('token') ||
+    signal.includes('login') ||
+    signal.includes('unauthorized') ||
+    signal.includes('forbidden') ||
+    signal.includes('session_not_acquired')
+  ) {
+    return 'Authentication'
+  }
+  if (
+    signal.includes('connection') ||
+    signal.includes('network') ||
+    signal.includes('timeout') ||
+    signal.includes('ssl') ||
+    signal.includes('certificate') ||
+    signal.includes('invalid_test_url')
+  ) {
+    return 'Connection'
+  }
+  if (
+    targetStatusCode != null ||
+    signal.includes('response') ||
+    signal.includes('http_error') ||
+    signal.includes('unsupported_content_type')
+  ) {
+    return 'Response'
+  }
+  return 'Request'
 }
 
 export function StepApiTest({
@@ -158,6 +198,7 @@ export function StepApiTest({
   const isRemote = state.connector.sourceType === 'REMOTE_FILE_POLLING'
   const isWebhook = state.connector.sourceType === 'WEBHOOK_RECEIVER'
   const isDatabase = state.connector.sourceType === 'DATABASE_QUERY'
+  const isHttp = !isS3 && !isRemote && !isWebhook && !isDatabase
   const canRunLiveApiTest = useMemo(
     () =>
       state.connector.connectorId != null &&
@@ -873,6 +914,16 @@ export function StepApiTest({
   const t = state.apiTest
   const copy = sourcePres.wizardApiTest
   const elapsedMs = t.startedAt && t.finishedAt ? Math.max(0, t.finishedAt - t.startedAt) : null
+  const showHttpTestContext = isHttp && (t.status === 'success' || t.status === 'error')
+  const testedRequest = t.actualRequestSent
+  const testedMethod = testedRequest?.method ?? t.method ?? state.stream.httpMethod
+  const testedUrl =
+    testedRequest?.url ??
+    t.requestUrl ??
+    buildFullRequestUrl(state.connector.hostBaseUrl, state.stream.endpoint)
+  const testedQueryEntries = testedRequest
+    ? Object.entries(testedRequest.queryParams).map(([key, value]) => `${key}=${String(value)}`)
+    : state.stream.params.filter((row) => row.key.trim()).map((row) => row.key.trim())
 
   return (
     <section
@@ -910,7 +961,36 @@ export function StepApiTest({
         </div>
       </div>
 
-      <div className="mt-4">
+      <div className="mt-4 space-y-3">
+        {showHttpTestContext ? (
+          <div
+            className="rounded-md border border-slate-200/80 bg-slate-50/70 p-3 text-[11px] dark:border-gdc-border dark:bg-gdc-card"
+            data-testid="wizard-run-test-http-context"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="font-semibold text-slate-800 dark:text-slate-100">
+                {testedRequest ? 'Actual tested request' : 'Configured request context'}
+              </p>
+              <p className="text-slate-500 dark:text-gdc-mutedStrong">
+                Authentication inherited from {state.connector.connectorName?.trim() || `Connector #${state.connector.connectorId ?? '—'}`}
+              </p>
+            </div>
+            <p className="mt-2 break-all font-mono text-[11px] text-slate-800 dark:text-slate-100">
+              <span className="font-bold">{testedMethod || '—'}</span> {testedUrl || '(request URL unavailable)'}
+            </p>
+            <div className="mt-2 flex flex-wrap gap-1.5" aria-label="Tested query parameters">
+              <span className="font-semibold text-slate-600 dark:text-gdc-mutedStrong">Query parameters:</span>
+              {testedQueryEntries.length > 0 ? testedQueryEntries.map((entry) => (
+                <code
+                  key={entry}
+                  className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] text-slate-700 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-200"
+                >
+                  {entry}
+                </code>
+              )) : <span className="text-slate-500 dark:text-gdc-muted">none</span>}
+            </div>
+          </div>
+        ) : null}
         {t.status === 'idle' ? (
           <p className="rounded-md border border-slate-200 bg-slate-50 p-4 text-[12px] text-slate-700 dark:border-gdc-border dark:bg-gdc-card dark:text-gdc-mutedStrong">
             {canRunLiveApiTest
@@ -930,6 +1010,7 @@ export function StepApiTest({
             message={t.errorMessage ?? 'Unknown error'}
             targetStatusCode={t.targetStatusCode ?? t.statusCode}
             hint={t.hint}
+            failureStage={isHttp ? resolveHttpFailureStage(t.errorCode, t.errorType, t.targetStatusCode ?? t.statusCode) : null}
           />
         ) : null}
         {t.status === 'success' ? (
@@ -1001,12 +1082,14 @@ function ErrorPanel({
   message,
   targetStatusCode,
   hint,
+  failureStage,
 }: {
   code: string | null
   errorType: string | null
   message: string
   targetStatusCode: number | null
   hint: string | null
+  failureStage: HttpFailureStage | null
 }) {
   return (
     <div className="space-y-3" data-testid="wizard-run-test-error">
@@ -1021,6 +1104,14 @@ function ErrorPanel({
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-700 dark:text-red-300" aria-hidden />
           <div className="min-w-0">
             <p className="font-semibold text-red-800 dark:text-red-200">{code ?? 'API_TEST_FAILED'}</p>
+            {failureStage ? (
+              <p
+                className="mt-1 text-[11px] font-semibold text-red-700 dark:text-red-200"
+                data-testid="wizard-run-test-failure-stage"
+              >
+                Failure stage: {failureStage}
+              </p>
+            ) : null}
             <p className="mt-1 break-words text-red-700 dark:text-red-200">{message}</p>
             {errorType && errorType !== code ? (
               <p className="mt-2 text-[11px] text-red-700 dark:text-red-200">Type: {errorType}</p>

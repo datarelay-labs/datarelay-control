@@ -66,4 +66,60 @@ describe('StepApiTest copy', () => {
     expect(screen.getByText(/Verifies S3 connectivity for the configured bucket/i)).toBeInTheDocument()
     expect(screen.getByText(/how ordering aligns with the checkpoint field/i)).toBeInTheDocument()
   })
+
+  it('shows the actual tested HTTP request beside a successful sample result without exposing raw auth secrets', () => {
+    const state = buildInitialState()
+    state.connector.sourceType = 'HTTP_API_POLLING'
+    state.connector.connectorId = 17
+    state.connector.sourceId = 23
+    state.connector.connectorName = 'Saved HTTP Connector'
+    state.connector.authType = 'BEARER'
+    state.apiTest.status = 'success'
+    state.apiTest.ok = true
+    state.apiTest.eventCount = 2
+    state.apiTest.statusCode = 200
+    state.apiTest.startedAt = 100
+    state.apiTest.finishedAt = 220
+    state.apiTest.actualRequestSent = {
+      method: 'GET',
+      url: 'https://api.example.test/events?tenant=acme',
+      endpoint: '/events',
+      queryParams: { tenant: 'acme', api_key: '***' },
+      headersMasked: { Authorization: '***' },
+      jsonBodyMasked: null,
+      timeoutSeconds: 30,
+    }
+
+    renderStep(state)
+
+    const context = screen.getByTestId('wizard-run-test-http-context')
+    expect(context).toHaveTextContent('GET')
+    expect(context).toHaveTextContent('https://api.example.test/events?tenant=acme')
+    expect(context).toHaveTextContent('tenant=acme')
+    expect(context).toHaveTextContent('api_key=***')
+    expect(context).toHaveTextContent('Authentication inherited from Saved HTTP Connector')
+    expect(context).not.toHaveTextContent('Bearer secret-value')
+  })
+
+  it.each([
+    ['connection_error', null, 'Connection'],
+    ['oauth2_token_failed', 401, 'Authentication'],
+    ['target_401_unauthorized', 401, 'Authentication'],
+    ['invalid_json_response', 200, 'Response'],
+    ['http_error', 500, 'Response'],
+  ] as const)('labels %s with status %s as a %s-stage Run Test failure', (errorType, statusCode, expectedStage) => {
+    const state = buildInitialState()
+    state.connector.sourceType = 'HTTP_API_POLLING'
+    state.apiTest.status = 'error'
+    state.apiTest.ok = false
+    state.apiTest.errorCode = errorType
+    state.apiTest.errorType = errorType
+    state.apiTest.errorMessage = 'Synthetic test failure'
+    state.apiTest.targetStatusCode = statusCode
+    state.apiTest.finishedAt = Date.now()
+
+    renderStep(state)
+
+    expect(screen.getByTestId('wizard-run-test-failure-stage')).toHaveTextContent(expectedStage)
+  })
 })
