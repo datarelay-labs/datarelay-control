@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 import { buildInitialState } from './wizard-state'
@@ -106,6 +106,80 @@ describe('StepApiTest copy', () => {
     expect(requestDetails).toHaveTextContent('"query": "alerts"')
     expect(requestDetails).toHaveTextContent('"access_token": "***"')
     expect(context).not.toHaveTextContent('Bearer secret-value')
+  })
+
+  it('shows the saved webhook receiver identity and auth posture without exposing a secret', () => {
+    const state = buildInitialState()
+    state.connector.sourceType = 'WEBHOOK_RECEIVER'
+    state.connector.connectorId = 31
+    state.connector.sourceId = 41
+    state.connector.webhookReceiverPath = '/api/v1/ingest/webhook/rx-safe'
+    state.connector.webhookAuthMode = 'shared_secret_header'
+    state.connector.webhookAuthHeaderName = 'X-Webhook-Secret'
+    state.connector.webhookSharedSecretConfigured = true
+    state.connector.webhookMaxRequestBytes = 2048
+
+    renderStep(state)
+
+    const context = screen.getByTestId('wizard-run-test-webhook-context')
+    expect(context).toHaveTextContent('/api/v1/ingest/webhook/rx-safe')
+    expect(context).toHaveTextContent('Shared secret header (X-Webhook-Secret) · configured')
+    expect(context).toHaveTextContent('2,048 bytes')
+    expect(context).toHaveTextContent(/waiting for producer/i)
+    expect(context).not.toHaveTextContent('super-secret-value')
+    expect(screen.getByTestId('wizard-webhook-waiting-state')).toHaveTextContent(/not a connector failure/i)
+  })
+
+  it('uses the saved webhook payload preview instead of fabricating a fixed sample', async () => {
+    const state = buildInitialState()
+    state.connector.sourceType = 'WEBHOOK_RECEIVER'
+    state.connector.connectorId = 31
+    state.connector.sourceId = 41
+    state.connector.webhookReceiverPath = '/api/v1/ingest/webhook/rx-safe'
+    state.connector.webhookPayloadPreview = '{"id":"evt-1","message":"first"}\n{"id":"evt-2","message":"second"}'
+    const onChange = vi.fn()
+
+    render(
+      <MemoryRouter>
+        <StepApiTest state={state} onChange={onChange} />
+      </MemoryRouter>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Run Test' }))
+
+    await waitFor(() => {
+      expect(onChange.mock.calls.some(([next]) => next.status === 'success')).toBe(true)
+    })
+    const success = onChange.mock.calls.map(([next]) => next).find((next) => next.status === 'success')
+    expect(success?.apiBacked).toBe(false)
+    expect(success?.eventCount).toBe(2)
+    expect(success?.analysis?.responseSummary.root_type).toBe('ndjson')
+    expect(success?.analysis?.flatPreviewFields).toEqual(expect.arrayContaining(['$.id', '$.message']))
+    expect(success?.rawBody).toContain('evt-2')
+    expect(success?.rawBody).not.toContain('webhook-receiver-ready')
+  })
+
+  it('keeps a saved webhook receiver in a non-error waiting state when no preview payload exists', async () => {
+    const state = buildInitialState()
+    state.connector.sourceType = 'WEBHOOK_RECEIVER'
+    state.connector.connectorId = 31
+    state.connector.sourceId = 41
+    state.connector.webhookReceiverPath = '/api/v1/ingest/webhook/rx-safe'
+    const onChange = vi.fn()
+
+    render(
+      <MemoryRouter>
+        <StepApiTest state={state} onChange={onChange} onAdvanceToRecordSelection={vi.fn()} />
+      </MemoryRouter>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Run Test' }))
+
+    await waitFor(() => {
+      expect(onChange.mock.calls.some(([next]) => next.status === 'success')).toBe(true)
+    })
+    const success = onChange.mock.calls.map(([next]) => next).find((next) => next.status === 'success')
+    expect(success?.eventCount).toBe(0)
+    expect(success?.hint).toMatch(/waiting for a producer event is normal/i)
+    expect(success?.errorCode).toBeNull()
   })
 
   it.each([

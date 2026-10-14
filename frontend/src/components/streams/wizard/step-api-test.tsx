@@ -77,6 +77,95 @@ function mapApiSteps(
 
 type HttpFailureStage = 'Request' | 'Connection' | 'Authentication' | 'Response'
 
+type ParsedWebhookPreview = {
+  payload: Record<string, unknown> | Array<Record<string, unknown>>
+  events: Array<Record<string, unknown>>
+  analysis: WizardHttpApiAnalysis
+}
+
+function parseWebhookPayloadPreview(raw: string): ParsedWebhookPreview {
+  const text = raw.trim()
+  if (!text) throw new Error('No saved sample payload.')
+
+  let payload: unknown
+  let ndjson = false
+  try {
+    payload = JSON.parse(text)
+  } catch {
+    const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+    if (lines.length < 2) throw new Error('Sample must be a JSON object, JSON array, or NDJSON records.')
+    const rows = lines.map((line, index) => {
+      try {
+        const value = JSON.parse(line)
+        if (typeof value !== 'object' || value == null || Array.isArray(value)) {
+          throw new Error('NDJSON line ' + (index + 1) + ' must be a JSON object.')
+        }
+        return value as Record<string, unknown>
+      } catch (error) {
+        if (error instanceof Error && error.message.startsWith('NDJSON line')) throw error
+        throw new Error('Invalid NDJSON at line ' + (index + 1) + '.')
+      }
+    })
+    payload = rows
+    ndjson = true
+  }
+
+  const events =
+    Array.isArray(payload)
+      ? payload.filter((row): row is Record<string, unknown> => typeof row === 'object' && row != null && !Array.isArray(row))
+      : typeof payload === 'object' && payload != null
+        ? [payload as Record<string, unknown>]
+        : []
+
+  if (
+    typeof payload !== 'object' ||
+    payload == null ||
+    (Array.isArray(payload) && events.length !== payload.length)
+  ) {
+    throw new Error('Webhook sample records must be JSON objects.')
+  }
+
+  const sampleEvent = events[0] ?? null
+  const serialized = JSON.stringify(payload)
+  return {
+    payload: payload as Record<string, unknown> | Array<Record<string, unknown>>,
+    events,
+    analysis: {
+      responseSummary: {
+        root_type: Array.isArray(payload) ? (ndjson ? 'ndjson' : 'array') : 'object',
+        approx_size_bytes: serialized.length,
+        top_level_keys: Array.isArray(payload) ? [] : Object.keys(payload as Record<string, unknown>),
+        item_count_root: Array.isArray(payload) ? payload.length : null,
+        truncation: null,
+      },
+      detectedArrays: Array.isArray(payload)
+        ? [{ path: '$', count: events.length, confidence: 1, reason: ndjson ? 'saved webhook NDJSON preview' : 'saved webhook JSON array preview', sample_item_preview: sampleEvent }]
+        : [],
+      detectedCheckpointCandidates: [],
+      sampleEvent,
+      selectedEventArrayDefault: Array.isArray(payload) ? '$' : null,
+      flatPreviewFields: flattenSampleFields(sampleEvent),
+      eventRootCandidates: detectEventRootCandidates(sampleEvent),
+      previewError: null,
+    },
+  }
+}
+
+function webhookAuthSummary(
+  mode: string,
+  headerName: string,
+  sharedSecretConfigured: boolean,
+  bearerTokenConfigured: boolean,
+): string {
+  if (mode === 'shared_secret_header') {
+    return 'Shared secret header (' + (headerName || 'X-GDC-Webhook-Secret') + ') · ' + (sharedSecretConfigured ? 'configured' : 'not configured')
+  }
+  if (mode === 'bearer_token') {
+    return 'Bearer token · ' + (bearerTokenConfigured ? 'configured' : 'not configured')
+  }
+  return 'No auth'
+}
+
 function resolveHttpFailureStage(
   code: string | null,
   errorType: string | null,
@@ -139,6 +228,13 @@ export function StepApiTest({
         filePattern: state.stream.filePattern,
         remoteRecursive: state.stream.remoteRecursive,
         sqlQuery: state.stream.sqlQuery,
+        webhookReceiverPath: state.connector.webhookReceiverPath,
+        webhookAuthMode: state.connector.webhookAuthMode,
+        webhookAuthHeaderName: state.connector.webhookAuthHeaderName,
+        webhookSharedSecretConfigured: state.connector.webhookSharedSecretConfigured,
+        webhookBearerTokenConfigured: state.connector.webhookBearerTokenConfigured,
+        webhookMaxRequestBytes: state.connector.webhookMaxRequestBytes,
+        webhookPayloadPreview: state.connector.webhookPayloadPreview,
       }),
     [
       state.connector.connectorId,
@@ -154,6 +250,13 @@ export function StepApiTest({
       state.stream.filePattern,
       state.stream.remoteRecursive,
       state.stream.sqlQuery,
+      state.connector.webhookReceiverPath,
+      state.connector.webhookAuthMode,
+      state.connector.webhookAuthHeaderName,
+      state.connector.webhookSharedSecretConfigured,
+      state.connector.webhookBearerTokenConfigured,
+      state.connector.webhookMaxRequestBytes,
+      state.connector.webhookPayloadPreview,
     ],
   )
 
@@ -646,22 +749,54 @@ export function StepApiTest({
         errorMessage: null,
       })
       try {
-        const sample = {
-          webhook_receiver: true,
-          items: [{ id: 'sample', message: 'webhook-receiver-ready' }],
+        const sampleText = state.connector.webhookPayloadPreview.trim()
+        if (!sampleText) {
+          commitApiTest(gen, {
+            status: 'success',
+            ok: true,
+            requestUrl: state.connector.webhookReceiverPath || null,
+            method: 'WEBHOOK_RECEIVER',
+            statusCode: null,
+            responseHeaders: {},
+            rawBody: null,
+            parsedJson: null,
+            rawResponse: null,
+            extractedEvents: [],
+            eventCount: 0,
+            unionSchema: null,
+            startedAt,
+            finishedAt: Date.now(),
+            errorCode: null,
+            errorType: null,
+            errorMessage: null,
+            targetStatusCode: null,
+            targetResponseBody: null,
+            hint: 'Receiver configuration is saved. Waiting for a producer event is normal and is not a connector failure. Add a representative payload preview to validate mapping before live traffic.',
+            apiBacked: false,
+            steps: [],
+            responseSample: null,
+            effectiveHeadersMasked: null,
+            actualRequestSent: null,
+            analysis: null,
+            s3ConnectivityPassed: false,
+            remoteProbe: null,
+          })
+          return
         }
+
+        const parsed = parseWebhookPayloadPreview(sampleText)
         commitApiTest(gen, {
           status: 'success',
           ok: true,
-          requestUrl: null,
+          requestUrl: state.connector.webhookReceiverPath || null,
           method: 'WEBHOOK_RECEIVER',
-          statusCode: 200,
+          statusCode: null,
           responseHeaders: {},
-          rawBody: JSON.stringify(sample),
-          parsedJson: sample,
-          rawResponse: sample,
-          extractedEvents: [sample.items[0]],
-          eventCount: 1,
+          rawBody: sampleText,
+          parsedJson: parsed.payload,
+          rawResponse: parsed.payload,
+          extractedEvents: parsed.events,
+          eventCount: parsed.events.length,
           unionSchema: null,
           startedAt,
           finishedAt: Date.now(),
@@ -670,30 +805,45 @@ export function StepApiTest({
           errorMessage: null,
           targetStatusCode: null,
           targetResponseBody: null,
-          hint: 'Inbound receiver is ready. External systems POST to the generated webhook URL after deploy.',
-          apiBacked: true,
+          hint: 'Validated the saved synthetic payload locally. Live producers POST to the saved receiver URL and use the same mapping, Route, and delivery pipeline.',
+          apiBacked: false,
           steps: [],
-          responseSample: sample,
+          responseSample: parsed.payload,
           effectiveHeadersMasked: null,
           actualRequestSent: null,
-          analysis: {
-            responseSummary: {
-              root_type: 'object',
-              approx_size_bytes: JSON.stringify(sample).length,
-              top_level_keys: ['webhook_receiver', 'items'],
-              item_count_root: null,
-              truncation: null,
-            },
-            detectedArrays: [
-              { path: '$.items', count: 1, confidence: 1, reason: 'webhook sample items', sample_item_preview: sample.items[0] },
-            ],
-            detectedCheckpointCandidates: [],
-            sampleEvent: sample.items[0],
-            selectedEventArrayDefault: '$.items',
-            flatPreviewFields: ['id', 'message'],
-            eventRootCandidates: [],
-            previewError: null,
-          },
+          analysis: parsed.analysis,
+          s3ConnectivityPassed: false,
+          remoteProbe: null,
+        })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Webhook sample preview is invalid.'
+        commitApiTest(gen, {
+          status: 'error',
+          ok: false,
+          requestUrl: state.connector.webhookReceiverPath || null,
+          method: 'WEBHOOK_RECEIVER',
+          statusCode: null,
+          responseHeaders: {},
+          rawBody: state.connector.webhookPayloadPreview,
+          parsedJson: null,
+          rawResponse: null,
+          extractedEvents: [],
+          eventCount: 0,
+          unionSchema: null,
+          startedAt,
+          finishedAt: Date.now(),
+          errorCode: 'invalid_webhook_sample',
+          errorType: 'invalid_webhook_sample',
+          errorMessage: message,
+          targetStatusCode: null,
+          targetResponseBody: null,
+          hint: 'Fix the saved webhook payload preview. Runtime accepts a JSON object, JSON array of objects, or NDJSON objects.',
+          apiBacked: false,
+          steps: [],
+          responseSample: null,
+          effectiveHeadersMasked: null,
+          actualRequestSent: null,
+          analysis: null,
           s3ConnectivityPassed: false,
           remoteProbe: null,
         })
@@ -908,6 +1058,17 @@ export function StepApiTest({
   const copy = sourcePres.wizardApiTest
   const elapsedMs = t.startedAt && t.finishedAt ? Math.max(0, t.finishedAt - t.startedAt) : null
   const showHttpTestContext = isHttp && (t.status === 'success' || t.status === 'error')
+  const showWebhookContext = isWebhook && state.connector.connectorId != null && state.connector.sourceId != null
+  const webhookReceiverUrl =
+    state.connector.webhookReceiverPath && typeof window !== 'undefined'
+      ? window.location.origin + state.connector.webhookReceiverPath
+      : state.connector.webhookReceiverPath
+  const webhookAuth = webhookAuthSummary(
+    state.connector.webhookAuthMode,
+    state.connector.webhookAuthHeaderName,
+    state.connector.webhookSharedSecretConfigured,
+    state.connector.webhookBearerTokenConfigured,
+  )
   const testedRequest = t.actualRequestSent
   const testedMethod = testedRequest?.method ?? t.method ?? state.stream.httpMethod
   const testedUrl =
@@ -967,6 +1128,47 @@ export function StepApiTest({
       </div>
 
       <div className="mt-4 space-y-3">
+        {showWebhookContext ? (
+          <div
+            className="rounded-md border border-violet-200/80 bg-violet-500/[0.04] p-3 text-[11px] dark:border-violet-500/30 dark:bg-violet-500/10"
+            data-testid="wizard-run-test-webhook-context"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="font-semibold text-slate-800 dark:text-slate-100">Saved webhook receiver</p>
+              <p className="text-slate-500 dark:text-gdc-mutedStrong">Secrets remain write-only and are never shown here.</p>
+            </div>
+            <dl className="mt-2 grid gap-2 sm:grid-cols-2">
+              <div>
+                <dt className="font-semibold text-slate-600 dark:text-gdc-mutedStrong">Receiver URL</dt>
+                <dd className="mt-0.5 break-all font-mono text-[10px] text-slate-800 dark:text-slate-200">
+                  {webhookReceiverUrl || 'Generated after the receiver is saved'}
+                </dd>
+              </div>
+              <div>
+                <dt className="font-semibold text-slate-600 dark:text-gdc-mutedStrong">Authorization</dt>
+                <dd className="mt-0.5 text-slate-800 dark:text-slate-200">{webhookAuth}</dd>
+              </div>
+              <div>
+                <dt className="font-semibold text-slate-600 dark:text-gdc-mutedStrong">Payload limit</dt>
+                <dd className="mt-0.5 text-slate-800 dark:text-slate-200">{state.connector.webhookMaxRequestBytes.toLocaleString()} bytes</dd>
+              </div>
+              <div>
+                <dt className="font-semibold text-slate-600 dark:text-gdc-mutedStrong">Preview source</dt>
+                <dd className="mt-0.5 text-slate-800 dark:text-slate-200">
+                  {state.connector.webhookPayloadPreview.trim() ? 'Saved synthetic payload' : 'Waiting for producer / no saved sample'}
+                </dd>
+              </div>
+            </dl>
+            {!state.connector.webhookPayloadPreview.trim() ? (
+              <p
+                className="mt-2 rounded border border-slate-200/80 bg-white/70 p-2 text-slate-600 dark:border-gdc-border dark:bg-gdc-card dark:text-gdc-mutedStrong"
+                data-testid="wizard-webhook-waiting-state"
+              >
+                No producer event has to arrive during setup. Waiting is normal, not a connector failure. Save a representative payload preview when you want to validate fields before live traffic.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         {showHttpTestContext ? (
           <div
             className="rounded-md border border-slate-200/80 bg-slate-50/70 p-3 text-[11px] dark:border-gdc-border dark:bg-gdc-card"
@@ -1040,7 +1242,7 @@ export function StepApiTest({
         ) : null}
         {t.status === 'running' ? (
           <p className="rounded-md border border-slate-200 bg-slate-50 p-4 text-[12px] text-slate-700 dark:border-gdc-border dark:bg-gdc-card dark:text-gdc-mutedStrong">
-            Calling source… this can take a few seconds depending on upstream latency.
+            {isWebhook ? 'Validating the saved webhook payload preview…' : 'Calling source… this can take a few seconds depending on upstream latency.'}
           </p>
         ) : null}
         {t.status === 'error' ? (
@@ -1061,8 +1263,14 @@ export function StepApiTest({
               eventCount={t.eventCount}
               statusCode={t.statusCode}
               elapsedMs={elapsedMs}
+              statusLabelOverride={isWebhook && t.eventCount === 0 ? 'Ready · waiting for event' : undefined}
             />
-            {onAdvanceToRecordSelection ? (
+            {isWebhook && t.eventCount === 0 ? (
+              <p className="rounded-md border border-violet-200/80 bg-violet-500/[0.04] p-3 text-[11px] text-slate-700 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-slate-200">
+                The receiver is configured, but there is no sample to map yet. Add a saved synthetic payload or POST a limited test event to the receiver before Record Selection.
+              </p>
+            ) : null}
+            {onAdvanceToRecordSelection && (!isWebhook || t.eventCount > 0) ? (
               <div className="flex justify-end">
                 <button
                   type="button"
@@ -1087,18 +1295,20 @@ function SuccessPanel({
   eventCount,
   statusCode,
   elapsedMs,
+  statusLabelOverride,
 }: {
   apiBacked: boolean
   ok: boolean
   eventCount: number
   statusCode: number | null
   elapsedMs: number | null
+  statusLabelOverride?: string
 }) {
-  const statusLabel = ok
+  const statusLabel = statusLabelOverride ?? (ok
     ? apiBacked
       ? 'Success · API-backed'
       : 'Success · local preview'
-    : 'Completed with warnings'
+    : 'Completed with warnings')
   const httpLabel = statusCode != null ? String(statusCode) : '—'
 
   return (

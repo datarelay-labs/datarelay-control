@@ -411,6 +411,14 @@ export type WizardConnectorState = {
   accessTokenHeaderName: string
   accessTokenHeaderPrefix: string
   tokenTtlSeconds: number
+  /** Saved webhook receiver metadata; secrets remain write-only and are never hydrated. */
+  webhookReceiverPath: string
+  webhookAuthMode: 'no_auth' | 'shared_secret_header' | 'bearer_token' | string
+  webhookAuthHeaderName: string
+  webhookSharedSecretConfigured: boolean
+  webhookBearerTokenConfigured: boolean
+  webhookMaxRequestBytes: number
+  webhookPayloadPreview: string
 }
 
 /** A source-type hint or a saved Connector without a linked Source is not a configured source. */
@@ -1189,6 +1197,13 @@ export function buildInitialState(): WizardState {
       accessTokenHeaderName: 'Authorization',
       accessTokenHeaderPrefix: 'Bearer',
       tokenTtlSeconds: 600,
+      webhookReceiverPath: '',
+      webhookAuthMode: 'no_auth',
+      webhookAuthHeaderName: 'X-GDC-Webhook-Secret',
+      webhookSharedSecretConfigured: false,
+      webhookBearerTokenConfigured: false,
+      webhookMaxRequestBytes: 1048576,
+      webhookPayloadPreview: '',
       sourceType: 'HTTP_API_POLLING',
     },
     stream: {
@@ -1372,6 +1387,13 @@ export function wizardConnectorPatchFromApi(row: ConnectorRead): Partial<WizardC
     accessTokenHeaderName: String(auth.access_token_header_name ?? 'Authorization'),
     accessTokenHeaderPrefix: String(auth.access_token_header_prefix ?? 'Bearer'),
     tokenTtlSeconds: Number(auth.token_ttl_seconds ?? 600),
+    webhookReceiverPath: String(row.receiver_path ?? ''),
+    webhookAuthMode: String(row.webhook_auth_mode ?? 'no_auth'),
+    webhookAuthHeaderName: String(row.webhook_auth_header_name ?? 'X-GDC-Webhook-Secret'),
+    webhookSharedSecretConfigured: Boolean(row.webhook_shared_secret_configured),
+    webhookBearerTokenConfigured: Boolean(row.webhook_bearer_token_configured),
+    webhookMaxRequestBytes: Number(row.max_request_bytes ?? 1048576),
+    webhookPayloadPreview: String(row.payload_preview ?? ''),
   }
 }
 
