@@ -52,3 +52,54 @@ def test_seed_visible_e2e_fixtures_idempotent(db_session, monkeypatch: pytest.Mo
     assert first["webhook_receiver_key"] == VISIBLE_E2E_WEBHOOK_RECEIVER_KEY
     assert len(first["streams"]) == len(second["streams"]) == 5
     assert len(first["connectors"]) == len(second["connectors"]) == 5
+
+
+def test_preview_catalog_requires_explicit_exact_name_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    name = 'datarelay_rue2e_preview_bdd69c53'
+    monkeypatch.setenv('DATABASE_URL', f'postgresql://gdc:gdc@127.0.0.1:55441/{name}')
+    monkeypatch.setenv('APP_ENV', 'development')
+    with pytest.raises(SystemExit):
+        assert_safe_database_url(local_dev_mode=True)
+    assert_safe_database_url(local_dev_mode=True, preview_database=name)
+
+
+@pytest.mark.parametrize('url,env,name,local', [
+    ('postgresql://gdc:gdc@127.0.0.1:55441/datarelay_rue2e_preview_bdd69c53', 'production', 'datarelay_rue2e_preview_bdd69c53', True),
+    ('postgresql://gdc:gdc@127.0.0.1:55441/datarelay_rue2e_preview_bdd69c53', 'development', 'datarelay_rue2e_preview_bdd69c53', False),
+    ('postgresql://gdc:gdc@127.0.0.1:55432/datarelay_rue2e_preview_bdd69c53', 'development', 'datarelay_rue2e_preview_bdd69c53', True),
+    ('postgresql://gdc:gdc@127.0.0.1:55441/gdc', 'development', 'gdc', True),
+    ('postgresql://gdc:gdc@127.0.0.1:55441/datarelay_rue2e_preview_bdd69c53', 'development', 'datarelay_rue2e_preview_00000000', True),
+    ('postgresql://gdc:gdc@10.10.10.50:55441/datarelay_rue2e_preview_bdd69c53', 'development', 'datarelay_rue2e_preview_bdd69c53', True),
+    ('postgresql://other:gdc@127.0.0.1:55441/datarelay_rue2e_preview_bdd69c53', 'development', 'datarelay_rue2e_preview_bdd69c53', True),
+    ('postgresql://gdc:gdc@127.0.0.1:55441/datarelay_rue2e_preview_bdd69c53', '', 'datarelay_rue2e_preview_bdd69c53', True),
+])
+def test_preview_catalog_opt_in_never_expands_to_other_targets(monkeypatch, url, env, name, local):
+    monkeypatch.setenv('DATABASE_URL', url)
+    monkeypatch.setenv('APP_ENV', env)
+    with pytest.raises(SystemExit):
+        assert_safe_database_url(local_dev_mode=local, preview_database=name)
+
+
+@pytest.mark.parametrize("suffix", ["/other", "?host=remote.example", "?port=5432", "#other"])
+def test_preview_catalog_rejects_uri_target_overrides(monkeypatch, suffix):
+    name = "datarelay_rue2e_preview_bdd69c53"
+    monkeypatch.setenv("DATABASE_URL", f"postgresql://gdc:gdc@127.0.0.1:55441/{name}{suffix}")
+    monkeypatch.setenv("APP_ENV", "development")
+    with pytest.raises(SystemExit):
+        assert_safe_database_url(local_dev_mode=True, preview_database=name)
+
+
+@pytest.mark.parametrize("name", ["", "gdc", "datarelay_rue2e_preview_", "datarelay_rue2e_preview_nothex00"])
+def test_preview_catalog_rejects_non_isolated_names(monkeypatch, name):
+    monkeypatch.setenv("DATABASE_URL", f"postgresql://gdc:gdc@127.0.0.1:55441/{name}")
+    monkeypatch.setenv("APP_ENV", "development")
+    with pytest.raises(SystemExit):
+        assert_safe_database_url(local_dev_mode=True, preview_database=name)
+
+
+def test_preview_catalog_rejects_compose_alias_even_when_legacy_flag_enabled(monkeypatch):
+    name = "datarelay_rue2e_preview_bdd69c53"
+    monkeypatch.setenv("DATABASE_URL", f"postgresql://gdc:gdc@postgres:55441/{name}")
+    monkeypatch.setenv("APP_ENV", "development")
+    with pytest.raises(SystemExit):
+        assert_safe_database_url(local_dev_mode=True, allow_compose_catalog_host=True, preview_database=name)

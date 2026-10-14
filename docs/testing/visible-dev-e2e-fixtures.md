@@ -148,3 +148,40 @@ Rebuilding the syslog test image after TLS support was added:
 ```bash
 docker compose -p gdc-platform-test -f docker-compose.test.yml --profile test build syslog-test
 ```
+
+
+## Isolated HTTPS development preview (UX M1-01 / M1-02)
+
+The native seeder can target an existing isolated preview catalog without changing
+its administrator, authentication configuration or operator-owned resources.
+Before seeding, verify the actual HTTPS UI/API source identity, reverse-proxy
+upstreams, loopback PostgreSQL binding and schema. Retain a private catalog backup,
+proxy configuration snapshot, administrator preservation digest and existing object
+IDs. A login-page HTTP 200 is not authenticated browser acceptance.
+
+The preview opt-in requires all of the following: `APP_ENV=development`,
+`--local-dev-mode`, a loopback PostgreSQL host, port `55441`, user `gdc`, and
+`--preview-database` exactly matching a catalog named
+`datarelay_rue2e_preview_<8-to-32 lowercase hex characters>`. URI options,
+fragments, additional path segments, compose aliases and any other database name
+are refused even when legacy compose support is enabled. Missing opt-in keeps the
+existing allowlist unchanged. No production environment is accepted.
+
+```bash
+# DATABASE_URL must already identify the verified isolated preview, not gdc_pytest.
+# Preserve the existing process authentication/encryption environment.
+APP_ENV=development bash scripts/dev-validation/seed-visible-e2e-fixtures.sh \
+  --local-dev-mode --preview-database "$VERIFIED_PREVIEW_DATABASE"
+```
+
+Run the same native command twice and compare Connector/Source/Stream/Route/
+Destination/Mapping/Enrichment/Checkpoint IDs and counts. Both runs must keep the
+same IDs and retain the administrator preservation digest. Resources are labelled
+`[DEV E2E]`; the seed does not reset the catalog or delete operator rows.
+
+Affected verification is `DEV-VALIDATION-EPS-GUARDRAIL` in
+`.engineering/tests.yaml`. Run its pytest command on the dedicated `gdc_pytest`
+catalog, never on the preview catalog. Configured EPS tests do not prove live
+5–20 EPS: UX M1-06 separately requires two consecutive 60-second measurement
+windows with per-Stream input and per-Route receiver reconciliation. Seeding does
+not establish authenticated Browser or independent two-user acceptance.
