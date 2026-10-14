@@ -672,6 +672,36 @@ describe('StreamEditWizardPage workspace capability visibility', () => {
     )
   })
 
+  it('Apply & start never starts a stale reviewed revision when the draft changes during save', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    let releaseSave: (value: { ok: boolean; errors: string[] }) => void = () => {}
+    persistWizardStreamEdits.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseSave = resolve
+        }),
+    )
+    renderStreamEdit()
+    const page = await screen.findByTestId('edit-stream-wizard')
+    await waitFor(() => expect(within(page).getByTestId('wizard-apply-and-start')).toBeEnabled())
+    await user.click(within(page).getByTestId('wizard-connect-tab-request'))
+    const name = within(page).getByPlaceholderText('e.g. Cybereason Malop Stream')
+    await user.clear(name)
+    await user.type(name, 'Reviewed revision')
+
+    await user.click(within(page).getByTestId('wizard-apply-and-start'))
+    await waitFor(() => expect(persistWizardStreamEdits).toHaveBeenCalledTimes(1))
+
+    await user.clear(name)
+    await user.type(name, 'Newer local draft')
+    releaseSave({ ok: true, errors: [] })
+
+    expect(await within(page).findByText(/draft changed while saving/i)).toBeInTheDocument()
+    expect(startRuntimeStream).not.toHaveBeenCalled()
+    expect(name).toHaveValue('Newer local draft')
+  })
+
   it('Apply & start never starts when the explicit platform save fails', async () => {
     const user = userEvent.setup()
     signIn('OPERATOR')

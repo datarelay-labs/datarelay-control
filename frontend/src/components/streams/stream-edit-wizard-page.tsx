@@ -981,6 +981,12 @@ export function StreamEditWizardPage({
     if (hasPendingDraft) {
       const saved = await handleSave({ manual: true })
       if (!saved) return
+      if (runtimeVerificationBlockedNow()) {
+        setControlMessage(
+          'Apply & start stopped because the draft changed while saving. Review the latest draft and apply again.',
+        )
+        return
+      }
     }
 
     setIsStarting(true)
@@ -1004,6 +1010,7 @@ export function StreamEditWizardPage({
     isStarting,
     refreshRuntimeSnapshot,
     runtimeAllowsPlatformSave,
+    runtimeVerificationBlockedNow,
   ])
 
   const executeStreamDelete = useCallback(async () => {
