@@ -917,6 +917,18 @@ export function StepApiTest({
   const testedQueryEntries = testedRequest
     ? Object.entries(testedRequest.queryParams).map(([key, value]) => `${key}=${String(value)}`)
     : state.stream.params.filter((row) => row.key.trim()).map((row) => row.key.trim())
+  const testedHeaderEntries = testedRequest
+    ? Object.entries(testedRequest.headersMasked).map(([key, value]) => `${key}=${value}`)
+    : []
+  const testedBodyPreview = (() => {
+    if (!testedRequest || testedRequest.jsonBodyMasked == null) return null
+    try {
+      const text = JSON.stringify(testedRequest.jsonBodyMasked, null, 2)
+      return text.length > 1600 ? `${text.slice(0, 1600)}…` : text
+    } catch {
+      return '[masked body unavailable]'
+    }
+  })()
 
   return (
     <section
@@ -982,6 +994,41 @@ export function StepApiTest({
                 </code>
               )) : <span className="text-slate-500 dark:text-gdc-muted">none</span>}
             </div>
+            {testedRequest ? (
+              <details
+                className="mt-2 rounded-md border border-slate-200/80 bg-white/70 p-2 dark:border-gdc-border dark:bg-gdc-section"
+                data-testid="wizard-run-test-http-request-details"
+              >
+                <summary className="cursor-pointer font-semibold text-slate-700 dark:text-slate-200">
+                  Tested headers &amp; body · {testedHeaderEntries.length} header{testedHeaderEntries.length === 1 ? '' : 's'} · {testedBodyPreview == null ? 'no body' : 'body configured'}
+                </summary>
+                <div className="mt-2 space-y-2 text-[10px] text-slate-600 dark:text-gdc-mutedStrong">
+                  <div>
+                    <p className="font-semibold">Headers (masked)</p>
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {testedHeaderEntries.length > 0 ? testedHeaderEntries.map((entry) => (
+                        <code
+                          key={entry}
+                          className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 dark:border-gdc-border dark:bg-gdc-card"
+                        >
+                          {entry}
+                        </code>
+                      )) : <span>none</span>}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="font-semibold">JSON body (masked)</p>
+                    {testedBodyPreview == null ? (
+                      <p className="mt-1">none</p>
+                    ) : (
+                      <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded border border-slate-200 bg-slate-50 p-2 font-mono text-[10px] text-slate-700 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200">
+                        {testedBodyPreview}
+                      </pre>
+                    )}
+                  </div>
+                </div>
+              </details>
+            ) : null}
           </div>
         ) : null}
         {t.status === 'idle' ? (

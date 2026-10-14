@@ -81,23 +81,30 @@ describe('StepApiTest copy', () => {
     state.apiTest.startedAt = 100
     state.apiTest.finishedAt = 220
     state.apiTest.actualRequestSent = {
-      method: 'GET',
+      method: 'POST',
       url: 'https://api.example.test/events?tenant=acme',
       endpoint: '/events',
       queryParams: { tenant: 'acme', api_key: '***' },
-      headersMasked: { Authorization: '***' },
-      jsonBodyMasked: null,
+      headersMasked: { Authorization: '***', 'X-Tenant': 'acme' },
+      jsonBodyMasked: { query: 'alerts', access_token: '***' },
       timeoutSeconds: 30,
     }
 
     renderStep(state)
 
     const context = screen.getByTestId('wizard-run-test-http-context')
-    expect(context).toHaveTextContent('GET')
+    expect(context).toHaveTextContent('POST')
     expect(context).toHaveTextContent('https://api.example.test/events?tenant=acme')
     expect(context).toHaveTextContent('tenant=acme')
     expect(context).toHaveTextContent('api_key=***')
     expect(context).toHaveTextContent('Authentication inherited from Saved HTTP Connector')
+    const requestDetails = screen.getByTestId('wizard-run-test-http-request-details')
+    expect(requestDetails).toHaveTextContent('2 headers')
+    expect(requestDetails).toHaveTextContent('body configured')
+    expect(requestDetails).toHaveTextContent('Authorization=***')
+    expect(requestDetails).toHaveTextContent('X-Tenant=acme')
+    expect(requestDetails).toHaveTextContent('"query": "alerts"')
+    expect(requestDetails).toHaveTextContent('"access_token": "***"')
     expect(context).not.toHaveTextContent('Bearer secret-value')
   })
 
