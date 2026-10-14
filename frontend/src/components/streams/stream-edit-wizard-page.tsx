@@ -960,9 +960,18 @@ export function StreamEditWizardPage({
   const handleStart = useCallback(async () => {
     if (!canRuntimeControl || backendStreamId == null || isStarting || runOnceBusy || runtimeVerificationBlockedNow()) return
     setIsStarting(true)
-    await startRuntimeStream(backendStreamId)
-    await refreshRuntimeSnapshot()
-    setIsStarting(false)
+    setControlMessage(null)
+    try {
+      const result = await startRuntimeStream(backendStreamId)
+      setControlMessage(result?.message ?? 'Runtime start result could not be verified.')
+      await refreshRuntimeSnapshot()
+    } catch (error) {
+      setControlMessage(
+        `Runtime start failed · ${error instanceof Error ? error.message : String(error)}`,
+      )
+    } finally {
+      setIsStarting(false)
+    }
   }, [backendStreamId, canRuntimeControl, isStarting, refreshRuntimeSnapshot, runOnceBusy, runtimeVerificationBlockedNow])
 
   const handleApplyAndStart = useCallback(async () => {

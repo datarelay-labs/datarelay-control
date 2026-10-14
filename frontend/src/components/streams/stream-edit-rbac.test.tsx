@@ -361,6 +361,24 @@ describe('StreamEditWizardPage workspace capability visibility', () => {
     expect(page.getByRole('button', { name: 'Run Once' })).toBeInTheDocument()
   })
 
+  it('releases the Deploy start action after a failed runtime start so the operator can retry', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    startRuntimeStream.mockRejectedValueOnce(new Error('scheduler unavailable'))
+    renderStreamEdit()
+
+    const page = await screen.findByTestId('edit-stream-wizard')
+    await user.click(within(page).getByTestId('wizard-stepper-deploy'))
+    const start = await within(page).findByRole('button', { name: 'Start Stream' })
+    await user.click(start)
+
+    expect(await within(page).findByText(/Runtime start failed · scheduler unavailable/i)).toBeInTheDocument()
+    await waitFor(() => expect(within(page).getByRole('button', { name: 'Start Stream' })).toBeEnabled())
+
+    await user.click(within(page).getByRole('button', { name: 'Start Stream' }))
+    await waitFor(() => expect(startRuntimeStream).toHaveBeenCalledTimes(2))
+  })
+
   it('guards leaving the Stream editor for a new destination until unsaved edits are confirmed', async () => {
     const user = userEvent.setup()
     signIn('OPERATOR')
