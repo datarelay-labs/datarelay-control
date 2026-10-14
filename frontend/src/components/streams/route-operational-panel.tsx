@@ -51,6 +51,14 @@ function fmtTs(iso: string | null | undefined): string {
   return iso.slice(0, 19).replace('T', ' ')
 }
 
+function metricsWindowLabel(seconds: number | null | undefined): string {
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds <= 0) return 'window'
+  const rounded = Math.round(seconds)
+  if (rounded % 3600 === 0) return `${rounded / 3600}h`
+  if (rounded % 60 === 0) return `${rounded / 60}m`
+  return `${rounded}s`
+}
+
 function connectivityTone(s: RouteRuntimeConnectivityState): 'success' | 'warning' | 'error' | 'neutral' {
   switch (s) {
     case 'HEALTHY':
@@ -146,6 +154,7 @@ export function RouteOperationalPanel({
   routeActionsReadOnly = false,
 }: RouteOperationalPanelProps) {
   const rows = resolveRouteRuntimeRows(metrics)
+  const windowLabel = metricsWindowLabel(metrics?.metrics_window_seconds)
   // Defense in depth: do not trust the parent route control flag alone for a
   // mutation/edit affordance. Workspace and runtime capabilities both required.
   const routeCaps = useSessionCapabilities()
@@ -233,7 +242,7 @@ export function RouteOperationalPanel({
                 Latency
               </th>
               <th scope="col" className={cn(opTh, 'tabular-nums')}>
-                Retry 1h
+                Retry {windowLabel}
               </th>
               <th scope="col" className={opTh}>
                 Last error
@@ -264,10 +273,10 @@ export function RouteOperationalPanel({
               const hoverDetail = [
                 r.disable_reason ? `Disable reason: ${r.disable_reason}` : null,
                 deliveryOutcomesObserved
-                  ? `Max latency: ${r.max_latency_ms.toFixed(0)} ms · P95: ${r.p95_latency_ms.toFixed(0)} ms`
+                  ? `Average latency: ${r.avg_latency_ms.toFixed(0)} ms · Maximum: ${r.max_latency_ms.toFixed(0)} ms`
                   : 'Delivery latency not observed in this metrics window',
                 r.last_error_code ? `Code: ${r.last_error_code}` : null,
-                `Delivered 1h: ${r.delivered_last_hour} · Failed 1h: ${r.failed_last_hour}`,
+                `Delivered ${windowLabel}: ${r.delivered_last_hour} · Failed ${windowLabel}: ${r.failed_last_hour}`,
               ]
                 .filter(Boolean)
                 .join('\n')
@@ -324,7 +333,9 @@ export function RouteOperationalPanel({
                   <td className={cn(opTd, 'tabular-nums')}>
                     <div className="flex flex-col gap-0.5">
                       <span data-testid={`route-delivery-latency-${r.route_id}`} className="text-[11px] font-semibold text-slate-800 dark:text-slate-100">
-                        {deliveryOutcomesObserved ? `${r.avg_latency_ms.toFixed(0)} / ${r.p95_latency_ms.toFixed(0)} ms` : '—'}
+                        {deliveryOutcomesObserved
+                          ? `avg ${r.avg_latency_ms.toFixed(0)} · max ${r.max_latency_ms.toFixed(0)} ms`
+                          : '—'}
                       </span>
                       {r.latency_trend.length > 1 ? <MiniSparkline values={latSpark} /> : null}
                     </div>

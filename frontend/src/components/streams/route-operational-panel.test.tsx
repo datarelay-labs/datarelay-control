@@ -17,8 +17,8 @@ const route = (override: Partial<RouteRuntimeMetricsRow> = {}): RouteRuntimeMetr
   ...override,
 })
 
-function mount(row: RouteRuntimeMetricsRow, viewer: boolean) {
-  const metrics = { route_runtime: [row] } as StreamRuntimeMetricsResponse
+function mount(row: RouteRuntimeMetricsRow, viewer: boolean, windowSeconds = 3600) {
+  const metrics = { route_runtime: [row], metrics_window_seconds: windowSeconds } as StreamRuntimeMetricsResponse
   const toggle = vi.fn(async () => {})
   const view = render(
     <MemoryRouter>
@@ -72,6 +72,27 @@ describe('Stream Route operator investigation UI', () => {
     expect(screen.getByRole('link', { name: 'Investigate Route #7 delivery logs' }))
       .toHaveAttribute('href', '/logs?route_id=7&stream_id=42&destination_id=11')
     expect(screen.getByTestId('route-delivery-success-7')).toHaveTextContent('75.0%')
+  })
+
+  it('labels route metrics with the actual requested window and does not invent P95 latency', () => {
+    mount(
+      route({
+        delivered_last_hour: 18,
+        failed_last_hour: 2,
+        retry_count_last_hour: 3,
+        success_rate: 90,
+        avg_latency_ms: 25,
+        p95_latency_ms: 80,
+        max_latency_ms: 80,
+      }),
+      true,
+      86_400,
+    )
+    expect(screen.getByRole('columnheader', { name: 'Retry 24h' })).toBeInTheDocument()
+    expect(screen.getByTestId('route-delivery-latency-7')).toHaveTextContent('avg 25 · max 80 ms')
+    const routeRow = screen.getByText('Finance sink').closest('tr')
+    expect(routeRow).toHaveAttribute('title', expect.stringContaining('Delivered 24h: 18 · Failed 24h: 2'))
+    expect(routeRow).not.toHaveAttribute('title', expect.stringContaining('P95'))
   })
 
   it('never displays 100% delivery success when no route delivery outcome was measured', () => {

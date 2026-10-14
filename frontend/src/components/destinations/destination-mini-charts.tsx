@@ -530,10 +530,16 @@ export function CapacityCell({ currentEps, capacityLimitEps, thresholds = DEFAUL
       </div>
     )
   }
-  const pct = capacityLimitEps > 0 ? Math.round(((currentEps ?? 0) / capacityLimitEps) * 100) : null
+  const pct =
+    capacityLimitEps > 0 && currentEps != null
+      ? Math.round((currentEps / capacityLimitEps) * 100)
+      : null
   return (
-    <div className="flex flex-col items-center">
+    <div className="flex flex-col items-center gap-0.5">
       <SemiGauge pct={pct} size={60} strokeWidth={6} thresholds={thresholds} />
+      {currentEps == null ? (
+        <span className="text-[10px] text-slate-400">Current EPS unavailable</span>
+      ) : null}
     </div>
   )
 }
