@@ -154,6 +154,60 @@ def test_pipeline_debug_uses_source_sample_when_raw_event_omitted(
     assert body["mapped_event"]["event_id"] == "wh-1"
 
 
+def test_pipeline_debug_uses_webhook_payload_preview_when_raw_event_omitted(
+    pipeline_debug_client: TestClient,
+    db_session: Session,
+) -> None:
+    seeded = _seed_stream_runtime(db_session)
+    stream_id = int(seeded["stream_id"])
+    stream = db_session.query(Stream).filter_by(id=stream_id).first()
+    assert stream is not None
+    source = stream.source
+    assert source is not None
+    source.config_json = {
+        **dict(source.config_json or {}),
+        "payload_preview": '{"items":[{"id":"wh-preview-1","message":"webhook preview","vendor":"WH"}]}',
+    }
+    db_session.add(source)
+    db_session.commit()
+
+    response = pipeline_debug_client.post(
+        f"/api/v1/runtime/streams/{stream_id}/pipeline-debug",
+        json={},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["mapped_event"]["event_id"] == "wh-preview-1"
+    assert body["errors"] == []
+
+
+def test_pipeline_debug_reports_invalid_webhook_payload_preview(
+    pipeline_debug_client: TestClient,
+    db_session: Session,
+) -> None:
+    seeded = _seed_stream_runtime(db_session)
+    stream_id = int(seeded["stream_id"])
+    stream = db_session.query(Stream).filter_by(id=stream_id).first()
+    assert stream is not None
+    source = stream.source
+    assert source is not None
+    source.config_json = {
+        **dict(source.config_json or {}),
+        "payload_preview": '{"items":',
+    }
+    db_session.add(source)
+    db_session.commit()
+
+    response = pipeline_debug_client.post(
+        f"/api/v1/runtime/streams/{stream_id}/pipeline-debug",
+        json={},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["mapped_event"] is None
+    assert "Webhook payload_preview is not valid JSON or NDJSON." in body["errors"]
+
+
 def test_viewer_may_call_pipeline_debug() -> None:
     from app.auth.route_access import is_viewer_allowed_post
     from app.config import settings
