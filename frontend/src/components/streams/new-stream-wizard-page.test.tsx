@@ -407,7 +407,8 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
       </MemoryRouter>,
     )
 
-    expect(await screen.findByText('No destinations configured yet. Create a destination first.')).toBeInTheDocument()
+    expect(await screen.findByText('No destinations configured yet. Create one here without leaving this Flow.')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Create destination here' }).length).toBeGreaterThan(0)
     expect(screen.getByText(/Destination #91 saved. Choose Add delivery path/)).toBeInTheDocument()
     expect(screen.queryByTestId('wizard-draft-banner')).not.toBeInTheDocument()
     expect(screen.queryByTestId('wizard-intent-picker')).not.toBeInTheDocument()
@@ -467,7 +468,7 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
 
     await user.click(screen.getByTestId('wizard-draft-resume'))
     localStorage.removeItem(WIZARD_DRAFT_KEY_V2)
-    const prerequisite = await screen.findByRole('link', { name: 'Go to Destinations' })
+    const prerequisite = await screen.findByRole('link', { name: 'Manage all destinations' })
     await user.click(prerequisite)
 
     const saved = JSON.parse(localStorage.getItem(WIZARD_DRAFT_KEY_V2) ?? '{}')
@@ -916,7 +917,7 @@ describe('New Data Flow data-router unsaved cross-page navigation', () => {
     const router = renderWizardWithDataRouter()
     await user.click(await screen.findByTestId('wizard-draft-resume'))
     localStorage.removeItem(WIZARD_DRAFT_KEY_V2)
-    await user.click(await screen.findByRole('link', { name: 'Go to Destinations' }))
+    await user.click(await screen.findByRole('link', { name: 'Manage all destinations' }))
     expect(await screen.findByTestId('wizard-destinations-workspace')).toBeInTheDocument()
     expect(screen.queryByTestId('wizard-unsaved-exit-dialog')).not.toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/destinations')
