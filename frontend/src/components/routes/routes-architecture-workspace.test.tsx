@@ -850,7 +850,7 @@ describe('Route Inspector role-appropriate operations', () => {
     expect(within(inspector).queryByText(/Read-only access.*workspace write permission/i)).not.toBeInTheDocument()
   })
 
-  it.each(['ADMINISTRATOR', 'OPERATOR'] as const)('opens %s Stream configuration in the same Flow and keeps only one focused editor open', async (role) => {
+  it.each(['ADMINISTRATOR', 'OPERATOR'] as const)('requires the current embedded editor to close before switching configuration context for %s', async (role) => {
     persistTestSession(role)
     const user = userEvent.setup()
     render(<GraphHarness snapshot={snapshotFor()} />)
@@ -861,13 +861,52 @@ describe('Route Inspector role-appropriate operations', () => {
 
     const inspector = screen.getByTestId('routes-architecture-inspector')
     await user.click(within(inspector).getByRole('button', { name: 'Configure Route in workspace' }))
-    expect(screen.queryByTestId('routes-architecture-stream-configuration')).not.toBeInTheDocument()
+    expect(screen.getByTestId('routes-architecture-stream-configuration')).toBeInTheDocument()
+    expect(screen.queryByTestId('routes-architecture-configuration')).not.toBeInTheDocument()
+    expect(screen.getByTestId('routes-architecture-configuration-selection-notice')).toHaveTextContent(
+      'Close the current Stream configuration before opening Route configuration',
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Close stream editor' }))
+    await user.click(within(inspector).getByRole('button', { name: 'Configure Route in workspace' }))
     expect(screen.getByTestId('routes-architecture-configuration')).toHaveTextContent('Route editor #1 · embedded')
+
+    await user.click(screen.getByRole('button', { name: 'Configure Stream in workspace' }))
+    expect(screen.getByTestId('routes-architecture-configuration')).toBeInTheDocument()
+    expect(screen.queryByTestId('routes-architecture-stream-configuration')).not.toBeInTheDocument()
+    expect(screen.getByTestId('routes-architecture-configuration-selection-notice')).toHaveTextContent(
+      'Close the current Route configuration before opening Stream configuration',
+    )
 
     await user.click(screen.getByRole('button', { name: 'Close route editor' }))
     await user.click(screen.getByRole('button', { name: 'Configure Stream in workspace' }))
     await user.click(screen.getByRole('button', { name: 'Close stream editor' }))
     expect(screen.queryByTestId('routes-architecture-stream-configuration')).not.toBeInTheDocument()
+  })
+
+  it('keeps the selected Stream and Route stable while their embedded configuration is open', async () => {
+    persistTestSession('OPERATOR')
+    const user = userEvent.setup()
+    render(<GraphHarness snapshot={snapshotFor()} />)
+
+    await user.click(screen.getByRole('button', { name: 'Configure Stream in workspace' }))
+    await user.click(screen.getByTestId('routes-architecture-stream-2'))
+    expect(screen.getByTestId('routes-architecture-stream-1')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('routes-architecture-stream-configuration')).toHaveTextContent('Stream editor #1 · embedded')
+    expect(screen.getByTestId('routes-architecture-configuration-selection-notice')).toHaveTextContent(
+      'Close the current Stream configuration before selecting another Stream',
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Close stream editor' }))
+    await user.click(screen.getByTestId('routes-architecture-route-1'))
+    const inspector = screen.getByTestId('routes-architecture-inspector')
+    await user.click(within(inspector).getByRole('button', { name: 'Configure Route in workspace' }))
+    await user.click(screen.getByTestId('routes-architecture-route-2'))
+    expect(screen.getByTestId('routes-architecture-route-1')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('routes-architecture-configuration')).toHaveTextContent('Route editor #1 · embedded')
+    expect(screen.getByTestId('routes-architecture-configuration-selection-notice')).toHaveTextContent(
+      'Close the current Route configuration before selecting another delivery path',
+    )
   })
 })
 

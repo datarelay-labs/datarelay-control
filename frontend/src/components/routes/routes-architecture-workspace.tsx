@@ -96,6 +96,7 @@ export function RoutesArchitectureWorkspace({
   const [inspectedRouteId, setInspectedRouteId] = useState<number | null>(null)
   const [routeEditorOpen, setRouteEditorOpen] = useState(false)
   const [streamEditorOpen, setStreamEditorOpen] = useState(false)
+  const [configurationSelectionNotice, setConfigurationSelectionNotice] = useState<string | null>(null)
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('Overview')
   const inspectorTabButtons = useRef<Partial<Record<InspectorTab, HTMLButtonElement | null>>>({})
   const focusInspectorAfterAttention = useRef(false)
@@ -109,6 +110,7 @@ export function RoutesArchitectureWorkspace({
     if (!canCreateFlow) {
       setRouteEditorOpen(false)
       setStreamEditorOpen(false)
+      setConfigurationSelectionNotice(null)
     }
   }, [canCreateFlow])
   useEffect(() => {
@@ -260,10 +262,27 @@ export function RoutesArchitectureWorkspace({
     inspectorTabButtons.current[next]?.focus()
   }
 
+  function selectionBlockedByEmbeddedEditor(targetStreamId: number, targetRouteId: number | null): boolean {
+    if (streamEditorOpen && selectedGroup?.streamId !== targetStreamId) {
+      setConfigurationSelectionNotice('Close the current Stream configuration before selecting another Stream so its draft is not discarded.')
+      return true
+    }
+    if (
+      routeEditorOpen &&
+      (selectedGroup?.streamId !== targetStreamId || selectedRoute?.routeId !== targetRouteId)
+    ) {
+      setConfigurationSelectionNotice('Close the current Route configuration before selecting another delivery path so its draft is not discarded.')
+      return true
+    }
+    setConfigurationSelectionNotice(null)
+    return false
+  }
+
   function reviewAttention(item: (typeof attention)[number]) {
     // Numeric Route and Stream IDs prevent same-name entities from leaking into each other's inspector.
     const alreadyInspected = selectedGroup?.streamId === item.streamId &&
       selectedRoute?.routeId === item.routeId
+    if (!alreadyInspected && selectionBlockedByEmbeddedEditor(item.streamId, item.routeId)) return
     focusInspectorAfterAttention.current = !alreadyInspected
     if (alreadyInspected) inspectorRef.current?.focus()
     setInspectedRouteId(item.routeId)
@@ -509,7 +528,15 @@ export function RoutesArchitectureWorkspace({
                     aria-pressed={selected}
                     aria-label={`Inspect delivery for ${group.streamName} (Stream #${group.streamId})`}
                     data-testid={`routes-architecture-stream-${group.streamId}`}
-                    onClick={() => { focusInspectorAfterAttention.current = false; setInspectedRouteId(null); setVisiblePathCount(12); setVisibleStreamCount(12); onSelectStream(group.streamId) }}
+                    onClick={() => {
+                      if (selectedGroup?.streamId === group.streamId) return
+                      if (selectionBlockedByEmbeddedEditor(group.streamId, null)) return
+                      focusInspectorAfterAttention.current = false
+                      setInspectedRouteId(null)
+                      setVisiblePathCount(12)
+                      setVisibleStreamCount(12)
+                      onSelectStream(group.streamId)
+                    }}
                     className={cn(
                       'flex min-w-[160px] flex-1 items-center justify-between gap-3 rounded-lg border px-3 py-3 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 xl:min-w-0 xl:flex-none',
                       selected
@@ -582,11 +609,12 @@ export function RoutesArchitectureWorkspace({
                       aria-expanded={streamEditorOpen}
                       aria-controls="routes-architecture-stream-configuration"
                       onClick={() => {
-                        setStreamEditorOpen((open) => {
-                          const next = !open
-                          if (next) setRouteEditorOpen(false)
-                          return next
-                        })
+                        if (routeEditorOpen) {
+                          setConfigurationSelectionNotice('Close the current Route configuration before opening Stream configuration so its draft is not discarded.')
+                          return
+                        }
+                        setConfigurationSelectionNotice(null)
+                        setStreamEditorOpen((open) => !open)
                       }}
                       className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-violet-600 bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500"
                     >
@@ -598,6 +626,16 @@ export function RoutesArchitectureWorkspace({
                   </Link>
                 </div>
               </div>
+
+              {configurationSelectionNotice ? (
+                <p
+                  role="status"
+                  data-testid="routes-architecture-configuration-selection-notice"
+                  className="rounded-lg border border-amber-300/80 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100"
+                >
+                  {configurationSelectionNotice}
+                </p>
+              ) : null}
 
               <div className="grid min-w-0 items-start gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(250px,1fr)]">
               <div className="grid min-w-0 items-start gap-4 sm:grid-cols-[minmax(120px,0.75fr)_minmax(0,2fr)]" data-testid="routes-architecture-graph">
@@ -663,7 +701,12 @@ export function RoutesArchitectureWorkspace({
                               type="button"
                               aria-pressed={selected}
                               aria-controls="routes-architecture-inspector-panel"
-                              onClick={() => { focusInspectorAfterAttention.current = false; setInspectedRouteId(route.routeId) }}
+                              onClick={() => {
+                                if (selectedRoute?.routeId === route.routeId) return
+                                if (selectionBlockedByEmbeddedEditor(selectedGroup.streamId, route.routeId)) return
+                                focusInspectorAfterAttention.current = false
+                                setInspectedRouteId(route.routeId)
+                              }}
                               data-testid={`routes-architecture-route-${route.routeId}`}
                               className={cn(
                                 'min-w-0 rounded-xl border px-3 py-3 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500',
@@ -779,11 +822,12 @@ export function RoutesArchitectureWorkspace({
                             aria-expanded={routeEditorOpen}
                             aria-controls="routes-architecture-configuration"
                             onClick={() => {
-                              setRouteEditorOpen((open) => {
-                                const next = !open
-                                if (next) setStreamEditorOpen(false)
-                                return next
-                              })
+                              if (streamEditorOpen) {
+                                setConfigurationSelectionNotice('Close the current Stream configuration before opening Route configuration so its draft is not discarded.')
+                                return
+                              }
+                              setConfigurationSelectionNotice(null)
+                              setRouteEditorOpen((open) => !open)
                             }}
                             className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-violet-600 bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500"
                           >
@@ -957,7 +1001,10 @@ export function RoutesArchitectureWorkspace({
                     key={selectedGroup.streamId}
                     streamIdOverride={selectedGroup.streamId}
                     embedded
-                    onClose={() => setStreamEditorOpen(false)}
+                    onClose={() => {
+                      setStreamEditorOpen(false)
+                      setConfigurationSelectionNotice(null)
+                    }}
                     onSaved={onRouteSaved}
                   />
                 </section>
@@ -987,7 +1034,10 @@ export function RoutesArchitectureWorkspace({
                     key={selectedRoute.routeId}
                     routeIdOverride={selectedRoute.routeId}
                     embedded
-                    onClose={() => setRouteEditorOpen(false)}
+                    onClose={() => {
+                      setRouteEditorOpen(false)
+                      setConfigurationSelectionNotice(null)
+                    }}
                     onSaved={onRouteSaved}
                   />
                 </section>
