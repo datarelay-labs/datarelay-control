@@ -1,8 +1,11 @@
 import { CheckCircle2, ShieldCheck, Wand2 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { cn } from '../../../lib/utils'
-import type { WizardDataProtectionState, WizardState } from '../wizard/wizard-state'
+import type { WizardDataProtectionState, WizardRouteDraft, WizardState } from '../wizard/wizard-state'
 import { globalProtectionConfigured, globalTransformConfigured } from '../wizard/wizard-state'
+
+import type { DestinationListItem } from '../../../api/gdcDestinations'
+import { WizardSharedRuleImpact } from './wizard-shared-rule-impact'
 
 export type SharedProcessingTab = 'transform' | 'data_protection'
 
@@ -54,6 +57,9 @@ export function WizardSharedProcessingSection({
   onTabChange,
   children,
   routeCount = 0,
+  routeDrafts,
+  destinations = [],
+  onSelectRoute,
 }: {
   state: Pick<
     WizardState,
@@ -68,6 +74,9 @@ export function WizardSharedProcessingSection({
   onTabChange: (tab: SharedProcessingTab) => void
   children?: ReactNode
   routeCount?: number
+  routeDrafts?: readonly WizardRouteDraft[]
+  destinations?: readonly Pick<DestinationListItem, 'id' | 'name'>[]
+  onSelectRoute?: (key: string) => void
 }) {
   const cards = buildSharedCards(state)
 
@@ -89,10 +98,13 @@ export function WizardSharedProcessingSection({
               className="mt-1 text-[10px] font-semibold text-violet-700 dark:text-violet-300"
               data-testid="shared-processing-route-count"
             >
-              Applied to {routeCount} Route{routeCount === 1 ? '' : 's'}
+              {routeCount} Route{routeCount === 1 ? '' : 's'} in this flow
             </p>
           ) : null}
         </div>
+
+        {routeDrafts ? <WizardSharedRuleImpact routes={routeDrafts} destinations={destinations}
+          dataProtection={state.dataProtection} concern={activeTab} onSelectRoute={onSelectRoute} /> : null}
 
         <div className="mt-4 grid gap-2 sm:grid-cols-2">
           {cards.map((card) => {

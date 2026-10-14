@@ -65,7 +65,7 @@ describe('StepRouteProcessing', () => {
     expect(screen.getByTestId('shared-processing-section')).toBeInTheDocument()
     expect(screen.queryByText('Global Processing')).not.toBeInTheDocument()
     expect(screen.getByText('Shared Processing')).toBeInTheDocument()
-    expect(screen.getByTestId('shared-processing-route-count')).toHaveTextContent('Applied to 1 Route')
+    expect(screen.getByTestId('shared-processing-route-count')).toHaveTextContent('1 Route in this flow')
     expect(screen.getByTestId('shared-processing-editor')).toBeInTheDocument()
     expect(screen.getByTestId('route-processing-shared-transform')).toBeInTheDocument()
     expect(screen.queryByTestId('shared-processing-edit-toggle')).not.toBeInTheDocument()

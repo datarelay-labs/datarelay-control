@@ -201,6 +201,9 @@ export function StepRouteProcessing({
         activeTab={sharedTab}
         onTabChange={setSharedTab}
         routeCount={routeDrafts.length}
+        routeDrafts={routeDrafts}
+        destinations={destinations}
+        onSelectRoute={setSelectedRouteKey}
       >
         {sharedTab === 'transform' ? (
           <div className="space-y-4" data-testid="route-processing-shared-transform">
