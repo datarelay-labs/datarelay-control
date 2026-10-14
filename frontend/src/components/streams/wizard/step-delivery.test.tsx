@@ -215,6 +215,71 @@ describe('StepDelivery', () => {
     expect(screen.queryByText('Delivery concepts')).not.toBeInTheDocument()
   })
 
+  it('renders a true read-only destination surface without mutation or validation affordances', async () => {
+    const user = userEvent.setup()
+    const state = buildInitialState()
+    state.destinations.routeDrafts = [{
+      key: 'read-only-route',
+      destinationId: 1,
+      enabled: true,
+      failurePolicy: 'RETRY_AND_BACKOFF',
+      rateLimitJson: {},
+    }]
+
+    render(
+      <MemoryRouter>
+        <StepDelivery state={state} onChange={vi.fn()} readOnly canValidate={false} />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByTestId('wizard-destination-access-note')).toHaveTextContent(/Read-only access/i)
+    await screen.findAllByText('Stellar Syslog')
+    expect(screen.queryByRole('button', { name: 'Create destination here' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add delivery path' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Reset delivery paths/i })).not.toBeInTheDocument()
+
+    const prefixTemplate = document.querySelector('textarea')
+    expect(prefixTemplate).toBeDisabled()
+
+    const card = screen.getByTestId('destination-route-card-read-only-route')
+    await user.click(within(card).getByRole('button', { name: 'Actions for Stellar Syslog' }))
+    expect(within(card).queryByRole('menuitem', { name: 'Duplicate route' })).not.toBeInTheDocument()
+    expect(within(card).queryByRole('menuitem', { name: 'Remove route' })).not.toBeInTheDocument()
+    expect(within(card).queryByRole('menuitem', { name: 'Test destination' })).not.toBeInTheDocument()
+    expect(within(card).queryByRole('menuitem', { name: 'Send test events…' })).not.toBeInTheDocument()
+    expect(within(card).getByRole('menuitem', { name: 'Open destination' })).toBeInTheDocument()
+  })
+
+  it('keeps workspace edits but hides destination validation when validation capability is absent', async () => {
+    const user = userEvent.setup()
+    const state = buildInitialState()
+    state.destinations.routeDrafts = [{
+      key: 'no-validation-route',
+      destinationId: 1,
+      enabled: true,
+      failurePolicy: 'RETRY_AND_BACKOFF',
+      rateLimitJson: {},
+    }]
+
+    render(
+      <MemoryRouter>
+        <StepDelivery state={state} onChange={vi.fn()} canValidate={false} />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByTestId('wizard-destination-access-note')).toHaveTextContent(/validation actions are unavailable/i)
+    await screen.findAllByText('Stellar Syslog')
+    expect(screen.getByRole('button', { name: 'Create destination here' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Add delivery path' })).toHaveLength(1)
+
+    const card = screen.getByTestId('destination-route-card-no-validation-route')
+    await user.click(within(card).getByRole('button', { name: 'Actions for Stellar Syslog' }))
+    expect(within(card).getByRole('menuitem', { name: 'Duplicate route' })).toBeInTheDocument()
+    expect(within(card).getByRole('menuitem', { name: 'Remove route' })).toBeInTheDocument()
+    expect(within(card).queryByRole('menuitem', { name: 'Test destination' })).not.toBeInTheDocument()
+    expect(within(card).queryByRole('menuitem', { name: 'Send test events…' })).not.toBeInTheDocument()
+  })
+
   it('supports Arrow/Home/End menu navigation and returns focus on Escape', async () => {
     const user = userEvent.setup()
     const state = buildInitialState()

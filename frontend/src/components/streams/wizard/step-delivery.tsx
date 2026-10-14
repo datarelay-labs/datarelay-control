@@ -197,6 +197,8 @@ function DestinationRouteCard({
   menuOpen,
   onMenuOpenChange,
   onOpenDestinationPrerequisite,
+  readOnly,
+  canValidate,
 }: {
   routeIndex: number
   draft: WizardRouteDraft
@@ -211,6 +213,8 @@ function DestinationRouteCard({
   menuOpen: boolean
   onMenuOpenChange: (open: boolean) => void
   onOpenDestinationPrerequisite?: () => boolean | void
+  readOnly: boolean
+  canValidate: boolean
 }) {
   const menuRef = useRef<HTMLDivElement>(null)
   const menuButtonRef = useRef<HTMLButtonElement>(null)
@@ -313,30 +317,39 @@ function DestinationRouteCard({
               onKeyDown={handleMenuKeyDown}
               className="absolute right-0 z-30 mt-1 min-w-[200px] rounded-md border border-slate-200 bg-white py-1 shadow-lg dark:border-gdc-border dark:bg-gdc-card"
             >
-              <button type="button" role="menuitem" className={routeMenuItemCls} onClick={() => { onDuplicate(); onMenuOpenChange(false) }}>
-                Duplicate route
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                className={`${routeMenuItemCls} text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/40`}
-                onClick={() => { onRemove(); onMenuOpenChange(false) }}
-              >
-                Remove route
-              </button>
-              <hr className="my-1 border-slate-100 dark:border-gdc-border" />
-              <button type="button" role="menuitem" className={routeMenuItemCls} onClick={() => { void onTest(); onMenuOpenChange(false) }} disabled={testBlocked}>
-                {testBusy ? 'Testing destination…' : 'Test destination'}
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                className={routeMenuItemCls}
-                onClick={() => { onOpenTestDelivery(); onMenuOpenChange(false) }}
-                disabled={!destination?.enabled}
-              >
-                Send test events…
-              </button>
+              {!readOnly ? (
+                <>
+                  <button type="button" role="menuitem" className={routeMenuItemCls} onClick={() => { onDuplicate(); onMenuOpenChange(false) }}>
+                    Duplicate route
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={`${routeMenuItemCls} text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/40`}
+                    onClick={() => { onRemove(); onMenuOpenChange(false) }}
+                  >
+                    Remove route
+                  </button>
+                </>
+              ) : null}
+              {!readOnly && canValidate ? <hr className="my-1 border-slate-100 dark:border-gdc-border" /> : null}
+              {canValidate ? (
+                <>
+                  <button type="button" role="menuitem" className={routeMenuItemCls} onClick={() => { void onTest(); onMenuOpenChange(false) }} disabled={testBlocked}>
+                    {testBusy ? 'Testing destination…' : 'Test destination'}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={routeMenuItemCls}
+                    onClick={() => { onOpenTestDelivery(); onMenuOpenChange(false) }}
+                    disabled={!destination?.enabled}
+                  >
+                    Send test events…
+                  </button>
+                </>
+              ) : null}
+              {(!readOnly || canValidate) ? <hr className="my-1 border-slate-100 dark:border-gdc-border" /> : null}
               <Link
                 role="menuitem"
                 to={destinationDetailPath(String(draft.destinationId))}
@@ -389,6 +402,10 @@ type StepDeliveryProps = {
   showCreateDraftReturnGuidance?: boolean
   /** A saved Destination is offered for explicit route selection, never auto-attached. */
   recentlyCreatedDestinationId?: number | null
+  /** Viewer / governance inspection keeps navigation and read-only evidence, but hides workspace mutations. */
+  readOnly?: boolean
+  /** Destination connectivity/test-delivery actions require validation_mutations independently of workspace edits. */
+  canValidate?: boolean
 }
 
 export function StepDelivery({
@@ -397,6 +414,8 @@ export function StepDelivery({
   onOpenDestinationPrerequisite,
   showCreateDraftReturnGuidance = false,
   recentlyCreatedDestinationId = null,
+  readOnly = false,
+  canValidate = true,
 }: StepDeliveryProps) {
   const [loading, setLoading] = useState(true)
   const [destinations, setDestinations] = useState<DestinationListItem[]>([])
@@ -424,6 +443,17 @@ export function StepDelivery({
   const fetchVersionRef = useRef(0)
   useEffect(() => { onChangeRef.current = onChange }, [onChange])
   useEffect(() => { routeDraftsRef.current = state.destinations.routeDrafts }, [state.destinations.routeDrafts])
+  useEffect(() => {
+    if (readOnly) {
+      setInlineCreateOpen(false)
+      setInlineCreateError(null)
+    }
+    if (!canValidate) {
+      setTestDeliveryDestinationId(null)
+      setTestDeliveryFeedback(null)
+      setMenuKey(null)
+    }
+  }, [canValidate, readOnly])
 
   const fallbackSampleEvent = useMemo(() => {
     const payload = state.apiTest.parsedJson
@@ -539,6 +569,7 @@ export function StepDelivery({
 
   const addRouteForDestination = useCallback(
     (destinationId: number) => {
+      if (readOnly) return
       const currentDrafts = routeDraftsRef.current
       if (currentDrafts.some((draft) => draft.destinationId === destinationId)) return
       const next: WizardRouteDraft = {
@@ -553,15 +584,16 @@ export function StepDelivery({
       routeDraftsRef.current = nextDrafts
       onChange({ routeDrafts: nextDrafts })
     },
-    [onChange],
+    [onChange, readOnly],
   )
 
   const openInlineDestinationCreate = useCallback(() => {
+    if (readOnly) return
     setInlineCreateError(null)
     setInlineCreateNotice(null)
     setInlineDraft({ ...EMPTY_INLINE_DESTINATION })
     setInlineCreateOpen(true)
-  }, [])
+  }, [readOnly])
 
   const cancelInlineDestinationCreate = useCallback(() => {
     if (inlineCreateBusyRef.current) return
@@ -571,7 +603,7 @@ export function StepDelivery({
   }, [])
 
   const saveInlineDestination = useCallback(async () => {
-    if (inlineCreateBusyRef.current) return
+    if (readOnly || inlineCreateBusyRef.current) return
 
     let payload: DestinationWritePayload
     try {
@@ -626,7 +658,7 @@ export function StepDelivery({
       inlineCreateBusyRef.current = false
       setInlineCreateBusy(false)
     }
-  }, [addRouteForDestination, inlineDraft])
+  }, [addRouteForDestination, inlineDraft, readOnly])
 
   const filteredLibrary = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -734,22 +766,23 @@ export function StepDelivery({
   ])
 
   const handleReset = useCallback(() => {
-    if (!drafts.length) return
+    if (readOnly || !drafts.length) return
     if (!window.confirm(`Remove all configured ${WIZARD_LABEL.deliveryPaths.toLowerCase()} for this stream? Destinations themselves will not be deleted.`)) return
     onChange({ routeDrafts: [] })
-  }, [drafts.length, onChange])
+  }, [drafts.length, onChange, readOnly])
 
   const scrollToLibrary = useCallback(() => {
     document.getElementById('wizard-destination-library')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   }, [])
 
   const openTestDelivery = useCallback((destinationId: number) => {
+    if (!canValidate) return
     const destination = destById.get(destinationId)
     if (!destination?.enabled) return
     setTestDeliveryDestinationId(destinationId)
     setTestDeliveryCount('10')
     setTestDeliveryFeedback(null)
-  }, [destById])
+  }, [canValidate, destById])
 
   const closeTestDelivery = useCallback(() => {
     if (testDeliveryBusyRef.current) return
@@ -759,6 +792,7 @@ export function StepDelivery({
   }, [])
 
   const handleSendTestDelivery = useCallback(async () => {
+    if (!canValidate) return
     const destinationId = testDeliveryDestinationId
     const count = Number(testDeliveryCount)
     if (
@@ -789,10 +823,10 @@ export function StepDelivery({
       testDeliveryBusyRef.current = false
       setTestDeliveryBusy(false)
     }
-  }, [testDeliveryCount, testDeliveryDestinationId])
+  }, [canValidate, testDeliveryCount, testDeliveryDestinationId])
 
   const handleTestDestination = useCallback(async (destinationId: number) => {
-    if (testBusyId != null) return
+    if (!canValidate || testBusyId != null) return
     setTestBusyId(destinationId)
     // Do not leave an old success visible while a new test is in flight.
     setTestFeedbackByDestinationId((prev) => {
@@ -827,7 +861,7 @@ export function StepDelivery({
     } finally {
       setTestBusyId(null)
     }
-  }, [testBusyId])
+  }, [canValidate, testBusyId])
 
   return (
     <section className="space-y-4">
@@ -840,7 +874,7 @@ export function StepDelivery({
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
-          {!loading && !catalogLoadFailed && destinations.length > 0 ? (
+          {!readOnly && !loading && !catalogLoadFailed && destinations.length > 0 ? (
             <button
               type="button"
               className={btnGhost}
@@ -859,7 +893,7 @@ export function StepDelivery({
           >
             Refresh destinations
           </button>
-          {drafts.length > 0 ? (
+          {!readOnly && drafts.length > 0 ? (
             <button type="button" className={btnGhost} onClick={handleReset}>
               Reset {WIZARD_LABEL.deliveryPaths.toLowerCase()}
             </button>
@@ -867,7 +901,19 @@ export function StepDelivery({
         </div>
       </div>
 
-      {testDeliveryDestinationId != null && testDeliveryDestination ? (
+      {readOnly || !canValidate ? (
+        <p
+          role="status"
+          data-testid="wizard-destination-access-note"
+          className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-gdc-border dark:bg-gdc-section dark:text-gdc-mutedStrong"
+        >
+          {readOnly
+            ? 'Read-only access: delivery paths and destination settings can be inspected but not changed.'
+            : 'Destination validation actions are unavailable for this session; configuration changes remain available.'}
+        </p>
+      ) : null}
+
+      {canValidate && testDeliveryDestinationId != null && testDeliveryDestination ? (
         <div
           role="dialog"
           aria-modal="true"
@@ -976,7 +1022,7 @@ export function StepDelivery({
         </p>
       ) : null}
 
-      {inlineCreateOpen ? (
+      {!readOnly && inlineCreateOpen ? (
         <form
           data-testid="wizard-inline-destination-form"
           className="rounded-xl border border-violet-200 bg-violet-50/60 p-4 dark:border-violet-500/40 dark:bg-violet-500/10"
@@ -1111,7 +1157,7 @@ export function StepDelivery({
                     ? ' Destination list unavailable; retry loading before selecting a path.'
                     : ' Refresh the catalog if the destination is not visible yet.'}
           </p>
-          {!returnedDestinationHasPath && returnedDestination?.enabled && !loading && !catalogLoadFailed ? (
+          {!readOnly && !returnedDestinationHasPath && returnedDestination?.enabled && !loading && !catalogLoadFailed ? (
             <button
               type="button"
               className={btnPrimarySm}
@@ -1144,12 +1190,18 @@ export function StepDelivery({
         </div>
       ) : destinations.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-300 bg-white p-4 dark:border-gdc-border dark:bg-gdc-card">
-          <p className="text-[12px] text-slate-600 dark:text-gdc-muted">No destinations configured yet. Create one here without leaving this Flow.</p>
+          <p className="text-[12px] text-slate-600 dark:text-gdc-muted">
+            {readOnly
+              ? 'No destinations are configured. This read-only session cannot create or attach delivery paths.'
+              : 'No destinations configured yet. Create one here without leaving this Flow.'}
+          </p>
           <div className="mt-2 flex flex-wrap items-center justify-center gap-3">
-            <button type="button" className={btnPrimarySm} onClick={openInlineDestinationCreate}>
-              <Plus className="mr-1 h-3.5 w-3.5" aria-hidden />
-              Create destination here
-            </button>
+            {!readOnly ? (
+              <button type="button" className={btnPrimarySm} onClick={openInlineDestinationCreate}>
+                <Plus className="mr-1 h-3.5 w-3.5" aria-hidden />
+                Create destination here
+              </button>
+            ) : null}
             <Link
               to={NAV_PATH.destinations}
               state={showCreateDraftReturnGuidance ? { returnToSavedWizardDraft: true } : undefined}
@@ -1198,6 +1250,8 @@ export function StepDelivery({
                     menuOpen={menuKey === draft.key}
                     onMenuOpenChange={(open) => setMenuKey(open ? draft.key : null)}
                     onOpenDestinationPrerequisite={onOpenDestinationPrerequisite}
+                    readOnly={readOnly}
+                    canValidate={canValidate}
                   />
                 ))
               )}
@@ -1215,6 +1269,7 @@ export function StepDelivery({
                 onChange={(e) => onChange({ messagePrefixTemplate: e.target.value })}
                 placeholder={DEFAULT_MESSAGE_PREFIX_TEMPLATE}
                 rows={3}
+                disabled={readOnly}
                 className={textareaCls}
               />
               <MessagePrefixDeliveryPreview request={prefixPreviewRequest} />
@@ -1232,6 +1287,7 @@ export function StepDelivery({
                         <input
                           type="checkbox"
                           checked={checked}
+                          disabled={readOnly}
                           onChange={(e) =>
                             onChange({
                               messagePrefixEnabledByDestinationId: {
@@ -1343,14 +1399,20 @@ export function StepDelivery({
                         <p className="truncate text-[10px] text-slate-500">{formatWizardSyslogLabel(d.destination_type)}</p>
                         <p className="truncate text-[10px] text-slate-400">{destinationEndpointLine(d)}</p>
                       </div>
-                      <button
-                        type="button"
-                        className={btnPrimarySm}
-                        onClick={() => addRouteForDestination(d.id)}
-                        disabled={alreadyAdded}
-                      >
-                        {alreadyAdded ? 'Added' : WIZARD_LABEL.addDeliveryPath}
-                      </button>
+                      {readOnly ? (
+                        <span className="shrink-0 rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-500 dark:border-gdc-border dark:bg-gdc-card dark:text-gdc-mutedStrong">
+                          {alreadyAdded ? 'Selected' : 'Available'}
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          className={btnPrimarySm}
+                          onClick={() => addRouteForDestination(d.id)}
+                          disabled={alreadyAdded}
+                        >
+                          {alreadyAdded ? 'Added' : WIZARD_LABEL.addDeliveryPath}
+                        </button>
+                      )}
                     </li>
                   )
                 })}
