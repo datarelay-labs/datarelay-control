@@ -518,6 +518,43 @@ def test_s3_strict_json_lines_malformed_source_fetch_error(
         assert detail.get("error_code") == "SOURCE_FETCH_FAILED"
 
 
+@skip_no_pg_fixture
+def test_database_query_discovery_lists_real_fixture_metadata(
+    client: TestClient, db_session: Session
+) -> None:
+    suffix = uuid.uuid4().hex[:8]
+    connector_id, _, _ = _create_db_query_connector_and_stream(
+        client,
+        name_suffix=suffix,
+        stream_config={
+            "query": "SELECT id, event_id, message FROM source_e2e_rows",
+            "checkpoint_mode": "NONE",
+            "query_timeout_seconds": 30,
+        },
+    )
+
+    response = client.post(
+        "/api/v1/runtime/api-test/database-discovery",
+        json={"connector_id": connector_id},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["ok"] is True
+    assert body["db_type"] == "POSTGRESQL"
+    assert body["database"] == "gdc_query_fixture"
+    assert "public" in body["schemas"]
+
+    relation = next(
+        item
+        for item in body["tables"]
+        if item["schema_name"] == "public" and item["table_name"] == "source_e2e_rows"
+    )
+    column_names = [item["name"] for item in relation["columns"]]
+    assert "id" in column_names
+    assert "event_id" in column_names
+    assert "event_ts" in column_names
+
+
 @skip_no_wiremock
 @skip_no_pg_fixture
 def test_database_query_incremental_checkpoint_second_run_empty(

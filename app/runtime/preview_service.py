@@ -58,6 +58,7 @@ from app.http.shared_request_builder import (
 from app.routes.models import Route
 from app.streams.models import Stream
 from app.sources.models import Source
+from app.sources.database_query.discovery import discover_postgres_catalog
 from app.sources.database_query.execute import preview_limited_rows, probe_database_connection
 from app.sources.s3_probe import probe_s3_source
 from app.sources.remote_file_probe import probe_remote_file_source
@@ -82,6 +83,8 @@ from app.runtime.response_analysis import build_http_api_test_analysis_dict
 from app.runtime.schemas import (
     ConnectorAuthTestRequest,
     ConnectorAuthTestResponse,
+    DatabaseDiscoveryRequest,
+    DatabaseDiscoveryResponse,
     DeliveryFormatDraftPreviewRequest,
     DeliveryFormatDraftPreviewResponse,
     ExtractionValidateRequest,
@@ -232,6 +235,57 @@ def _load_source_config_for_connector(db: Session, connector_id: int) -> dict[st
     if row is None:
         return None
     return _flatten_any_source_row(row)
+
+
+def run_database_discovery(
+    payload: DatabaseDiscoveryRequest,
+    db: Session,
+) -> DatabaseDiscoveryResponse:
+    """Discover bounded PostgreSQL metadata using only the saved Connector Source."""
+
+    source_config = _load_source_config_for_connector(db, int(payload.connector_id))
+    if source_config is None:
+        raise PreviewRequestError(
+            404,
+            {
+                "ok": False,
+                "error_type": "connector_source_not_found",
+                "message": f"saved connector source not found: {payload.connector_id}",
+            },
+        )
+    if not _is_database_query_connector_auth_config(source_config):
+        raise PreviewRequestError(
+            400,
+            {
+                "ok": False,
+                "error_type": "not_database_query",
+                "message": "database discovery requires a saved DATABASE_QUERY connector",
+            },
+        )
+    try:
+        discovered = discover_postgres_catalog(source_config)
+    except SourceFetchError as exc:
+        raise PreviewRequestError(
+            400,
+            {
+                "ok": False,
+                "error_type": "database_discovery_failed",
+                "message": str(exc),
+                "hint": "Verify the saved PostgreSQL connection and read-only metadata permissions, then retry discovery.",
+            },
+        ) from exc
+
+    tables = list(discovered.get("tables") or [])
+    column_count = sum(len(item.get("columns") or []) for item in tables if isinstance(item, dict))
+    return DatabaseDiscoveryResponse(
+        ok=True,
+        db_type=str(discovered.get("db_type") or "POSTGRESQL"),
+        database=str(discovered.get("database") or ""),
+        schemas=[str(item) for item in (discovered.get("schemas") or [])],
+        tables=tables,
+        truncated=bool(discovered.get("truncated")),
+        message=f"Discovered {len(tables)} relation(s) and {column_count} column(s) visible to the saved database user.",
+    )
 
 
 def _target_suggests_login_redirect(resp: httpx.Response) -> bool:

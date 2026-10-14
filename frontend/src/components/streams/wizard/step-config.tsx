@@ -12,6 +12,7 @@ import {
   type BodyTemplateId,
 } from './wizard-body-templates'
 import { StreamConfigAdvancedPanels } from '../stream-config-advanced-panels'
+import { DatabaseDiscoveryPanel } from './database-discovery-panel'
 
 const inputCls =
   'h-8 w-full rounded-md border border-slate-200/90 bg-white px-2 text-[12px] text-slate-900 focus:border-violet-400 focus:outline-none focus:ring-1 focus:ring-violet-400/30 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100'
@@ -89,10 +90,20 @@ export function StepConfig({ state, section = 'request', onChange }: StepConfigP
       {section === 'request' ? (
         <>
       {isDatabase ? (
-        <p className="mt-2 text-sm text-slate-600 dark:text-gdc-muted" data-testid="wizard-database-source-context">
-          Query data from <strong>{connector.connectorName || `Connector #${connector.connectorId}`}</strong>.
-          {' '}The connection and credentials come from this saved database Connector. Enter a SELECT query, then test it in Sample &amp; Record Selection.
-        </p>
+        <>
+          <p className="mt-2 text-sm text-slate-600 dark:text-gdc-muted" data-testid="wizard-database-source-context">
+            Query data from <strong>{connector.connectorName || `Connector #${connector.connectorId}`}</strong>.
+            {' '}The connection and credentials come from this saved database Connector. Discover visible metadata, then enter a SELECT query and test it in Sample &amp; Record Selection.
+          </p>
+          {connector.connectorId != null ? (
+            <div className="mt-3">
+              <DatabaseDiscoveryPanel
+                connectorId={connector.connectorId}
+                connectorName={connector.connectorName}
+              />
+            </div>
+          ) : null}
+        </>
       ) : null}
       <div className="mt-2 grid gap-2 md:grid-cols-2">
         <Field label="Stream name *">

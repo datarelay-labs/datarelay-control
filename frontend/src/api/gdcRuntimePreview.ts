@@ -191,6 +191,37 @@ export async function runConnectorAuthTest(payload: ConnectorAuthTestRequestPayl
   })
 }
 
+export type DatabaseDiscoveryColumn = {
+  name: string
+  data_type: string
+  nullable: boolean
+  ordinal_position: number
+}
+
+export type DatabaseDiscoveryTable = {
+  schema_name: string
+  table_name: string
+  table_type: string
+  columns: DatabaseDiscoveryColumn[]
+}
+
+export type DatabaseDiscoveryResponse = {
+  ok: boolean
+  db_type: string
+  database: string
+  schemas: string[]
+  tables: DatabaseDiscoveryTable[]
+  truncated: boolean
+  message: string
+}
+
+export async function runDatabaseDiscovery(connectorId: number): Promise<DatabaseDiscoveryResponse> {
+  return requestJson<DatabaseDiscoveryResponse>(`${RT}/api-test/database-discovery`, {
+    method: 'POST',
+    body: JSON.stringify({ connector_id: connectorId }),
+  })
+}
+
 export type MappingDraftPreviewRequest = {
   payload: unknown
   event_array_path?: string | null

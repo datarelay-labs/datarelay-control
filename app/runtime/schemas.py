@@ -1752,6 +1752,37 @@ class HttpApiTestRequest(BaseModel):
     )
 
 
+class DatabaseDiscoveryRequest(BaseModel):
+    connector_id: int = Field(
+        ge=1,
+        description="Saved DATABASE_QUERY connector whose server-side credentials are used for read-only metadata discovery.",
+    )
+
+
+class DatabaseDiscoveryColumn(BaseModel):
+    name: str
+    data_type: str
+    nullable: bool
+    ordinal_position: int
+
+
+class DatabaseDiscoveryTable(BaseModel):
+    schema_name: str
+    table_name: str
+    table_type: str
+    columns: list[DatabaseDiscoveryColumn] = Field(default_factory=list)
+
+
+class DatabaseDiscoveryResponse(BaseModel):
+    ok: bool = True
+    db_type: str
+    database: str
+    schemas: list[str] = Field(default_factory=list)
+    tables: list[DatabaseDiscoveryTable] = Field(default_factory=list)
+    truncated: bool = False
+    message: str
+
+
 class ConnectorAuthTestRequest(BaseModel):
     connector_id: int | None = Field(
         default=None,
