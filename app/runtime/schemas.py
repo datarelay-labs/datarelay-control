@@ -2295,6 +2295,9 @@ class E2EDraftPreviewResponse(BaseModel):
     destination_id: int | None = None
     configuration_state: Literal["draft", "saved"] = "draft"
     stage_previews: dict[str, list[Any]] = Field(default_factory=dict)
+    preview_issues: list[dict[str, Any]] = Field(default_factory=list, max_length=100)
+    preview_issue_count: int = Field(default=0, ge=0)
+    preview_issues_truncated: bool = False
     display_redacted: bool = False
     route_stage_timeline: list[dict[str, Any]] = Field(default_factory=list)
     delivery_allowed: bool | None = None

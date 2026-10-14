@@ -214,3 +214,46 @@ def test_saved_route_evaluation_error_is_actionable_and_not_a_success(db_session
     assert response.status_code == 422
     assert response.json()['detail']['error_code'] == 'ROUTE_PREVIEW_STAGE_FAILED'
     assert 'final_events' not in response.json()
+
+
+@pytest.mark.parametrize('stage', ['mapping', 'enrichment'])
+def test_real_field_warning_is_visible_without_raw_error_or_sample(stage: str, db_session: Session) -> None:
+    from app.route_transform.models import RouteMapping, RouteEnrichment
+    seed = _seed_stream_runtime(db_session)
+    rule = {'rule_id': 'ux-no-match', 'mode': 'regex_extract', 'output_field': 'source_ip',
+        'source_path': '$.message', 'pattern': r'src=(\d+\.\d+\.\d+\.\d+)', 'group': 1}
+    if stage == 'mapping':
+        db_session.add(RouteMapping(route_id=seed['route_ids'][0], field_mappings_json={
+            'message': '$.message', 'transform_rules': [rule]}))
+    else:
+        db_session.add(RouteEnrichment(route_id=seed['route_ids'][0],
+            enrichment_json={'advanced_fields': [rule]}, override_policy='KEEP_EXISTING', enabled=True))
+    db_session.commit()
+    response = TestClient(app).post('/api/v1/runtime/preview/e2e-draft', json=_payload(seed))
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body['preview_issue_count'] == 1
+    assert body['preview_issues_truncated'] is False
+    assert body['preview_issues'] == [{'stage': stage, 'rule_id': 'ux-no-match',
+        'output_field': 'source_ip', 'error_code': 'REGEX_NO_MATCH'}]
+    assert 'sample_value' not in body['preview_issues'][0]
+    assert 'error_message' not in body['preview_issues'][0]
+    assert 'with field warnings' in body['message']
+
+
+def test_many_field_warnings_are_bounded_but_not_declared_complete(db_session: Session) -> None:
+    from app.route_transform.models import RouteMapping
+    seed = _seed_stream_runtime(db_session)
+    rules = [{'rule_id': f'ux-no-match-{index}', 'mode': 'regex_extract', 'output_field': f'field_{index}',
+        'source_path': '$.message', 'pattern': r'src=(\d+)', 'group': 1} for index in range(40)]
+    db_session.add(RouteMapping(route_id=seed['route_ids'][0], field_mappings_json={
+        'message': '$.message', 'transform_rules': rules}))
+    db_session.commit()
+    payload = _payload(seed)
+    payload['payload']['items'] *= 3
+    response = TestClient(app).post('/api/v1/runtime/preview/e2e-draft', json=payload)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body['preview_issue_count'] == 120
+    assert len(body['preview_issues']) == 100
+    assert body['preview_issues_truncated'] is True

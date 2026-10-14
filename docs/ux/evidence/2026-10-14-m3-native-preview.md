@@ -63,3 +63,22 @@ The full draft Route pipeline, server-side revision pinning across concurrent
 configuration writes, remaining field-level warning/provenance coverage, persisted
 tokenization proof and real browser/receiver reconciliation remain open. This
 source slice does not complete M3 or any of the 57 full product acceptance rows.
+
+## M3-04 follow-through — bounded field warnings
+
+Real Regex no-match outcomes were reproduced in both native Mapping and Enrichment.
+Those field errors previously disappeared because no-write previews have no runtime
+log callback. The existing pipeline now provides an explicit preview-only issue
+callback carrying only stage, rule ID, output field and error code; raw exception
+text and sample values are excluded. Capture is bounded to 100 issues and 240
+characters per label, with total count and truncation metadata retained. The same
+secret-value redaction used for stage evidence applies to warning details.
+
+The existing selected-stage view shows field warnings and their rule/code, never
+claims that omitted fields were processed successfully, and clears warnings on
+identity change or failed retry. No persistent log or sender callback was added.
+
+RED: 3 native cases and 2 UI cases. GREEN: 34 affected native tests, 19 affected
+frontend tests; scoped ESLint and TypeScript/Vite build pass. Private logs:
+`m3-field-warning-{native-green,ui-green,lint,build}.log` under the same evidence
+directory. Existing M1/M2 and authenticated-browser denials remain unworked-around.

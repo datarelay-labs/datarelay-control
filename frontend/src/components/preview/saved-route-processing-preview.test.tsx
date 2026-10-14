@@ -102,3 +102,38 @@ describe('M3 preview error privacy', () => {
     expect(screen.queryByText('SYSLOG_UDP · Destination #9')).not.toBeInTheDocument()
   })
 })
+
+
+describe('M3 field-warning inspection', () => {
+  it('shows a real field/rule/code warning in the affected selected stage', async () => {
+    const result = response()
+    result.preview_issue_count = 2
+    result.preview_issues = [
+      { stage: 'mapping', rule_id: 'extract-ip', output_field: 'source_ip', error_code: 'REGEX_NO_MATCH' },
+      { stage: 'enrichment', rule_id: 'extract-action', output_field: 'action', error_code: 'REGEX_NO_MATCH' },
+    ]
+    preview.mockResolvedValue(result)
+    render(<SavedRouteProcessingPreview {...props} />)
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('2 field warnings'))
+    expect(screen.getByTestId('processing-preview-stage-mapping')).toHaveTextContent('1 field warning')
+    fireEvent.click(screen.getByTestId('processing-preview-stage-mapping'))
+    expect(screen.getByTestId('processing-preview-stage-comparison')).toHaveTextContent('source_ip · extract-ip · REGEX_NO_MATCH')
+    fireEvent.click(screen.getByTestId('processing-preview-stage-transform'))
+    expect(screen.getByTestId('processing-preview-stage-comparison')).toHaveTextContent('action · extract-action · REGEX_NO_MATCH')
+  })
+
+  it('explicitly labels partial warning evidence and clears it on the next failed preview', async () => {
+    const result = response()
+    result.preview_issue_count = 120
+    result.preview_issues_truncated = true
+    result.preview_issues = [{ stage: 'mapping', rule_id: 'extract-ip', output_field: 'source_ip', error_code: 'REGEX_NO_MATCH' }]
+    preview.mockResolvedValue(result)
+    render(<SavedRouteProcessingPreview {...props} />)
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('120 field warnings'))
+    expect(screen.getByRole('status')).toHaveTextContent('Showing 1 of 120')
+    preview.mockRejectedValueOnce(new Error('failed'))
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh preview' }))
+    await screen.findByRole('alert')
+    expect(screen.queryByText(/120 field warnings/)).not.toBeInTheDocument()
+  })
+})

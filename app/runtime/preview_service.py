@@ -2938,10 +2938,30 @@ def run_e2e_draft_preview(
                 raise PreviewRequestError(413, {"error_code": "PREVIEW_RESULT_TOO_LARGE", "message": "Stage evidence exceeds 2 MiB; preview fewer or smaller events."})
             stage_previews[stage] = safe
 
+        preview_issues: list[dict[str, Any]] = []
+        preview_issue_count = 0
+        preview_issues_truncated = False
+
+        def capture_issue(stage: str, rule_id: str | None, field: str, code: str) -> None:
+            nonlocal preview_issue_count, preview_issues_truncated, display_redacted
+            preview_issue_count += 1
+            if len(preview_issues) >= 100:
+                preview_issues_truncated = True
+                return
+            # Never expose evaluator error messages or sample values through diagnostics.
+            original = {"stage": stage, "rule_id": rule_id, "output_field": field, "error_code": code}
+            safe = redact_known_literals(mask_config_payload(original))
+            display_redacted = display_redacted or safe != original
+            for key, value in safe.items():
+                if isinstance(value, str) and len(value) > 240:
+                    safe[key] = value[:240] + "…"
+                    preview_issues_truncated = True
+            preview_issues.append(safe)
+
         try:
             result = process_route_pipeline(
                 route_ctx, shared, db=db, send_fn=None, run_id="route-preview",
-                preview_only=True, preview_fn=capture,
+                preview_only=True, preview_fn=capture, preview_issue_fn=capture_issue,
             )
         except PreviewSideEffectRequiredError as exc:
             raise PreviewRequestError(409, {
@@ -2968,9 +2988,12 @@ def run_e2e_draft_preview(
             destination_type=formatted.destination_type, destination_id=formatted.destination_id,
             route_id=int(payload.route_id), stream_id=int(payload.stream_id), configuration_state="saved",
             stage_previews=stage_previews, display_redacted=display_redacted,
+            preview_issues=preview_issues, preview_issue_count=preview_issue_count,
+            preview_issues_truncated=preview_issues_truncated,
             route_stage_timeline=list(result.stage_timeline), delivery_allowed=bool(result.delivery_allowed),
             policy_action=result.policy_result.policy_action if result.policy_result is not None else None,
             message="Saved Route preview uses the native pipeline and saved destination formatter; no events were sent or persisted."
+                + (" Preview completed with field warnings; inspect the affected rules before applying." if preview_issue_count else "")
                 + (" Secret-bearing values are redacted for display." if display_redacted else ""),
         )
 

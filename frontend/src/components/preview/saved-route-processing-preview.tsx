@@ -64,19 +64,31 @@ export function SavedRouteProcessingPreview({ routeId, streamId, events, revisio
     return () => { cancelled = true }
   }, [eligible, identity, refresh, routeId, sampleJson, sessionKey, streamId])
 
+  const issues = result?.preview_issues?.slice(0, 100) ?? []
+  const issueCount = result?.preview_issue_count ?? issues.length
+  const issuesLimited = result?.preview_issues_truncated === true
+
   const stageRows: ProcessingPreviewStage[] = STAGES.map(([id, label], index) => {
     const output = result?.stage_previews?.[id]
     const previous = index === 0 ? output : result?.stage_previews?.[STAGES[index - 1][0]]
     const blocked = result?.delivery_allowed === false && (id === 'policy' || id === 'destination')
     const timeline = result?.route_stage_timeline.findLast((item) => item.stage === id)
     const reason = typeof timeline?.decision_reason === 'string' ? timeline.decision_reason : null
+    const stageIssues = issues.filter((issue) => issue.stage === (id === 'transform' ? 'enrichment' : id))
+    const warningText = stageIssues.slice(0, 5).map((issue) =>
+      `${issue.output_field.slice(0, 240)} · ${(issue.rule_id ?? 'Unnamed rule').slice(0, 240)} · ${issue.error_code.slice(0, 240)}`,
+    ).join('; ')
+    const warningSummary = stageIssues.length > 0 ? `${stageIssues.length}${issuesLimited ? '+' : ''} field warning${stageIssues.length === 1 ? '' : 's'}` : null
+    const baseMessage = blocked ? `Delivery withheld by ${result.policy_action ?? 'policy'}. No destination payload was sent.${reason ? ` ${reason}` : ''}`
+      : id === 'destination' ? 'Formatted with the saved destination settings. No events sent.' : reason
     return {
       id, label, truth: 'Preview',
-      status: blocked ? `${result.policy_action ?? 'Blocked'} · 0 events` : output ? `${output.length} sample event${output.length === 1 ? '' : 's'}` : 'Not evaluated',
+      status: warningSummary ?? (blocked ? `${result.policy_action ?? 'Blocked'} · 0 events` : output ? `${output.length} sample event${output.length === 1 ? '' : 's'}` : 'Not evaluated'),
       before: previous ? previous[0] ?? [] : null,
       after: output ? output[0] ?? [] : null,
-      message: blocked ? `Delivery withheld by ${result.policy_action ?? 'policy'}. No destination payload was sent.${reason ? ` ${reason}` : ''}`
-        : id === 'destination' ? 'Formatted with the saved destination settings. No events sent.' : reason,
+      message: [baseMessage, warningText,
+        stageIssues.length > 5 ? `Showing 5 of ${stageIssues.length} recorded field warnings for this stage. Use a smaller sample to inspect the remaining warnings.` : null,
+      ].filter(Boolean).join(' ') || null,
     }
   })
 
@@ -98,6 +110,10 @@ export function SavedRouteProcessingPreview({ routeId, streamId, events, revisio
             : current?.error ? <p role="alert" className="text-sm text-rose-700 dark:text-rose-200">{current.error}</p>
               : !result ? <p role="status" className="text-sm text-slate-600 dark:text-gdc-muted">Evaluating the saved Route…</p> : null}
     {result?.display_redacted ? <p className="text-sm text-amber-900 dark:text-amber-200">Secret-bearing values are redacted in this display. The formatted preview contains those display redactions.</p> : null}
+    {issueCount > 0 ? <p role="status" className="text-sm text-amber-900 dark:text-amber-200">
+      {issueCount} field warning{issueCount === 1 ? '' : 's'}. Select the affected processing stage to inspect its field, rule and error code.
+      {issuesLimited ? ` Showing ${issues.length} of ${issueCount}; some warning details are omitted or shortened. Preview fewer events to inspect the remaining warnings.` : ''}
+    </p> : null}
     <ProcessingPreviewDock stages={stageRows} />
   </div>
 }

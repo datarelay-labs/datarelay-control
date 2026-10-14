@@ -342,6 +342,9 @@ export type RouteE2EDraftPreviewResponse = {
   configuration_state?: 'draft' | 'saved'
   mapped_events?: Array<Record<string, unknown>>
   stage_previews?: Record<string, unknown[]>
+  preview_issues?: Array<{ stage: string; rule_id: string | null; output_field: string; error_code: string }>
+  preview_issue_count?: number
+  preview_issues_truncated?: boolean
   display_redacted?: boolean
   final_events: Array<Record<string, unknown>>
   preview_messages: unknown[]

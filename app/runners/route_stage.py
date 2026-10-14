@@ -31,6 +31,7 @@ from app.runtime.errors import MappingError
 
 LogFn = Callable[[dict[str, Any]], None]
 PreviewFn = Callable[[str, list[dict[str, Any]]], None]
+PreviewIssueFn = Callable[[str, str | None, str, str], None]
 
 
 def _copy_transport_metadata(raw_events: list[dict[str, Any]], transformed: list[dict[str, Any]]) -> None:
@@ -70,6 +71,7 @@ def _apply_route_transform(
     transform_config: RouteTransformConfig,
     log_fn: LogFn | None = None,
     preview_fn: PreviewFn | None = None,
+    preview_issue_fn: PreviewIssueFn | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Run existing mapping + enrichment engines for one route."""
 
@@ -94,6 +96,8 @@ def _apply_route_transform(
             raise MappingError(err.error_message)
         mapped_events.append(mapping_result.mapped_event)
         for field_err in mapping_result.field_errors:
+            if preview_issue_fn is not None:
+                preview_issue_fn("mapping", field_err.rule_id, field_err.output_field, field_err.error_code)
             if log_fn is not None:
                 log_fn(
                     {
@@ -116,6 +120,8 @@ def _apply_route_transform(
     enriched_events = batch_result.events
     _copy_transport_metadata(raw_events, enriched_events)
     for field_err in batch_result.field_errors:
+        if preview_issue_fn is not None:
+            preview_issue_fn("enrichment", field_err.rule_id, field_err.output_field, field_err.error_code)
         if log_fn is not None:
             log_fn(
                 {
@@ -166,12 +172,13 @@ def process_route_pipeline(
     run_id: str | None = None,
     preview_only: bool = False,
     preview_fn: PreviewFn | None = None,
+    preview_issue_fn: PreviewIssueFn | None = None,
 ) -> RouteStageResult:
     """Execute per-route pipeline: Transform → Protection → Classification → Policy → Delivery."""
 
     if preview_only and (send_fn is not None or log_fn is not None):
         raise ValueError("No-write preview cannot have sender or persistence callbacks")
-    if preview_fn is not None and not preview_only:
+    if (preview_fn is not None or preview_issue_fn is not None) and not preview_only:
         raise ValueError("Preview capture requires explicit no-write preview mode")
     route_ctx.shared_batch_ref = shared_batch
     timeline: list[dict[str, Any]] = []
@@ -211,6 +218,7 @@ def process_route_pipeline(
                 transform_config=transform_config,
                 log_fn=log_fn,
                 **({"preview_fn": preview_fn} if preview_fn is not None else {}),
+                **({"preview_issue_fn": preview_issue_fn} if preview_issue_fn is not None else {}),
             )
             shared_batch.transform_result_cache[cache_key] = current_events
             shared_batch.transform_execution_count += 1
