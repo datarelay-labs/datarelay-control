@@ -328,7 +328,7 @@ export type RouteE2EDraftPreviewRequest = {
   field_mappings: Record<string, unknown>
   enrichment: Record<string, unknown>
   override_policy?: 'KEEP_EXISTING' | 'OVERRIDE' | 'ERROR_ON_CONFLICT'
-  destination_type: 'SYSLOG_UDP' | 'SYSLOG_TCP' | 'SYSLOG_TLS' | 'WEBHOOK_POST'
+  destination_type?: 'SYSLOG_UDP' | 'SYSLOG_TCP' | 'SYSLOG_TLS' | 'WEBHOOK_POST'
   formatter_config?: Record<string, unknown>
   max_events?: number
   stream_id: number
@@ -336,6 +336,13 @@ export type RouteE2EDraftPreviewRequest = {
 }
 
 export type RouteE2EDraftPreviewResponse = {
+  stream_id?: number | null
+  destination_id?: number | null
+  destination_type?: string
+  configuration_state?: 'draft' | 'saved'
+  mapped_events?: Array<Record<string, unknown>>
+  stage_previews?: Record<string, unknown[]>
+  display_redacted?: boolean
   final_events: Array<Record<string, unknown>>
   preview_messages: unknown[]
   route_id: number | null

@@ -65,8 +65,8 @@ from app.connectors.auth.http_common import build_request_url
 from app.connectors.session_login_http import SessionLoginHttpDebug
 from app.connectors.auth.normalize import normalize_connector_auth
 from app.connectors.auth.registry import apply_auth_to_http_request
-from app.runtime.errors import EnrichmentError, MappingError, ParserError, PreviewRequestError, SourceFetchError, SourceFetchError
-from app.security.secrets import mask_http_headers, mask_secrets
+from app.runtime.errors import ProtectionApplicationError, PreviewSideEffectRequiredError, EnrichmentError, MappingError, ParserError, PreviewRequestError, SourceFetchError, SourceFetchError
+from app.security.secrets import MASKED_SECRET_SENTINEL, mask_http_headers, mask_secrets, mask_config_payload
 from app.connectors.auth_execute import (
     _vendor_jwt_validate_credentials,
     build_vendor_token_exchange_auth_headers,
@@ -2841,23 +2841,13 @@ def run_e2e_draft_preview(
     payload: E2EDraftPreviewRequest,
     db: Any | None = None,
 ) -> E2EDraftPreviewResponse:
-    final_preview = run_final_event_draft_preview(
-        FinalEventDraftPreviewRequest(
-            payload=payload.payload,
-            event_array_path=payload.event_array_path,
-            event_root_path=payload.event_root_path,
-            field_mappings=payload.field_mappings,
-            enrichment=payload.enrichment,
-            override_policy=payload.override_policy,
-            max_events=payload.max_events,
-            stream_id=None if payload.route_id is not None else payload.stream_id,
-        ),
-        db=db,
-    )
-    route_stage_timeline: list[dict[str, Any]] = []
-    delivery_allowed: bool | None = None
-    policy_action: str | None = None
-    route_final_events = final_preview.final_events
+    try:
+        sample_bytes = len(json.dumps(payload.payload, allow_nan=False).encode("utf-8"))
+    except (TypeError, ValueError, RecursionError) as exc:
+        raise PreviewRequestError(400, {"error_code": "INVALID_PREVIEW_SAMPLE", "message": "Use a bounded JSON sample."}) from exc
+    if sample_bytes > 1_048_576:
+        raise PreviewRequestError(413, {"error_code": "PREVIEW_SAMPLE_TOO_LARGE", "message": "Preview samples are limited to 1 MiB; select fewer or smaller events."})
+
     if payload.route_id is not None:
         if db is None or payload.stream_id is None:
             raise PreviewRequestError(400, {"code": "ROUTE_PREVIEW_CONTEXT_REQUIRED", "message": "route_id preview requires stream_id and database context"})
@@ -2867,11 +2857,12 @@ def run_e2e_draft_preview(
         from app.sensitive_detection.context import build_sensitive_detection_context
 
         try:
-            route_input_events = extract_events(
+            all_route_input_events = extract_events(
                 payload.payload,
                 payload.event_array_path,
                 payload.event_root_path,
-            )[: payload.max_events]
+            )
+            route_input_events = all_route_input_events[: payload.max_events]
         except (MappingError, ParserError) as exc:
             raise PreviewRequestError(
                 400,
@@ -2901,37 +2892,105 @@ def run_e2e_draft_preview(
                 "governance_rules": list(runtime_stream.get("governance_rules") or []),
             },
         )
-        result = process_route_pipeline(route_ctx, shared, db=db, send_fn=None, run_id="route-preview")
-        route_final_events = list(route_ctx.processing_state.current_events)
-        route_stage_timeline = list(result.stage_timeline)
-        delivery_allowed = bool(result.delivery_allowed)
-        policy_action = result.policy_result.policy_action if result.policy_result is not None else None
 
-    formatted_preview = run_delivery_format_draft_preview(
-        DeliveryFormatDraftPreviewRequest(
-            final_events=route_final_events,
-            destination_type=payload.destination_type,
-            formatter_config=payload.formatter_config,
-            max_events=payload.max_events,
-            payload_mode=payload.payload_mode,
-            webhook_batch_size=payload.webhook_batch_size,
+        stage_previews: dict[str, list[Any]] = {}
+        display_redacted = False
+        captured_bytes = 0
+        secret_values: set[str] = set()
+
+        def collect_secret_strings(original: Any, projected: Any) -> None:
+            if isinstance(original, str) and original and original != projected:
+                secret_values.add(original)
+            elif isinstance(original, dict):
+                for key, value in original.items():
+                    collect_secret_strings(value, projected.get(key) if isinstance(projected, dict) else projected)
+            elif isinstance(original, list):
+                for index, value in enumerate(original):
+                    collect_secret_strings(value, projected[index] if isinstance(projected, list) else projected)
+            if len(secret_values) > 64:
+                raise PreviewRequestError(413, {"error_code": "PREVIEW_SAMPLE_TOO_LARGE", "message": "Select a smaller sample with fewer secret-bearing fields."})
+
+        collect_secret_strings(payload.payload, mask_config_payload(payload.payload))
+        secret_literals = sorted((value for value in secret_values if len(value) >= 8), key=len, reverse=True)
+
+        def redact_known_literals(value: Any) -> Any:
+            # A mapping can rename a credential field. Its display protection must follow
+            # the known source value, without changing actual evaluator input or output.
+            if isinstance(value, str):
+                if value in secret_values:
+                    return MASKED_SECRET_SENTINEL
+                for literal in secret_literals:
+                    value = value.replace(literal, MASKED_SECRET_SENTINEL)
+                return value
+            if isinstance(value, list):
+                return [redact_known_literals(item) for item in value]
+            if isinstance(value, dict):
+                return {redact_known_literals(key): redact_known_literals(item) for key, item in value.items()}
+            return value
+
+        def capture(stage: str, events: list[dict[str, Any]]) -> None:
+            nonlocal display_redacted, captured_bytes
+            # Display projection only; the evaluator always retains its original events.
+            safe = redact_known_literals(mask_config_payload(events[: payload.max_events]))
+            display_redacted = display_redacted or safe != events[: payload.max_events]
+            captured_bytes += len(json.dumps(safe, allow_nan=False).encode("utf-8"))
+            if captured_bytes > 2_097_152:
+                raise PreviewRequestError(413, {"error_code": "PREVIEW_RESULT_TOO_LARGE", "message": "Stage evidence exceeds 2 MiB; preview fewer or smaller events."})
+            stage_previews[stage] = safe
+
+        try:
+            result = process_route_pipeline(
+                route_ctx, shared, db=db, send_fn=None, run_id="route-preview",
+                preview_only=True, preview_fn=capture,
+            )
+        except PreviewSideEffectRequiredError as exc:
+            raise PreviewRequestError(409, {
+                "error_code": "PREVIEW_PERSISTENCE_REQUIRED", "stage": exc.stage,
+                "message": "This protection action requires persisted token state. No token was created and no event was sent. Use a configured test flow to verify tokenization.",
+            }) from exc
+        except (MappingError, EnrichmentError, ParserError, ProtectionApplicationError) as exc:
+            stage = "protection" if isinstance(exc, ProtectionApplicationError) else "transform"
+            raise PreviewRequestError(422, {
+                "error_code": "ROUTE_PREVIEW_STAGE_FAILED", "stage": stage,
+                "message": f"The saved {stage} rules could not evaluate this sample. Correct the rule and retry; no event was sent.",
+            }) from exc
+        final_events = stage_previews.get("policy", [])
+        formatted = run_route_delivery_preview(db, RouteDeliveryPreviewRequest(
+            route_id=int(payload.route_id), events=final_events if result.delivery_allowed else [],
+        ))
+        stage_previews["destination"] = formatted.preview_messages
+        if len(json.dumps(stage_previews, allow_nan=False).encode("utf-8")) > 2_097_152:
+            raise PreviewRequestError(413, {"error_code": "PREVIEW_RESULT_TOO_LARGE", "message": "Stage evidence exceeds 2 MiB; preview fewer or smaller events."})
+        return E2EDraftPreviewResponse(
+            input_event_count=len(all_route_input_events), preview_event_count=len(route_input_events),
+            mapped_events=stage_previews.get("mapping", []), final_events=final_events,
+            preview_messages=formatted.preview_messages, missing_fields=[],
+            destination_type=formatted.destination_type, destination_id=formatted.destination_id,
+            route_id=int(payload.route_id), stream_id=int(payload.stream_id), configuration_state="saved",
+            stage_previews=stage_previews, display_redacted=display_redacted,
+            route_stage_timeline=list(result.stage_timeline), delivery_allowed=bool(result.delivery_allowed),
+            policy_action=result.policy_result.policy_action if result.policy_result is not None else None,
+            message="Saved Route preview uses the native pipeline and saved destination formatter; no events were sent or persisted."
+                + (" Secret-bearing values are redacted for display." if display_redacted else ""),
         )
-    )
+
+    final_preview = run_final_event_draft_preview(FinalEventDraftPreviewRequest(
+        payload=payload.payload, event_array_path=payload.event_array_path, event_root_path=payload.event_root_path,
+        field_mappings=payload.field_mappings, enrichment=payload.enrichment, override_policy=payload.override_policy,
+        max_events=payload.max_events, stream_id=payload.stream_id,
+    ), db=db)
+    formatted = run_delivery_format_draft_preview(DeliveryFormatDraftPreviewRequest(
+        final_events=final_preview.final_events, destination_type=payload.destination_type,
+        formatter_config=payload.formatter_config, max_events=payload.max_events,
+        payload_mode=payload.payload_mode, webhook_batch_size=payload.webhook_batch_size,
+    ))
     return E2EDraftPreviewResponse(
-        input_event_count=final_preview.input_event_count,
-        preview_event_count=final_preview.preview_event_count,
-        mapped_events=final_preview.mapped_events,
-        final_events=route_final_events,
-        preview_messages=formatted_preview.preview_messages,
-        missing_fields=final_preview.missing_fields,
-        destination_type=formatted_preview.destination_type,
-        route_id=payload.route_id,
-        route_stage_timeline=route_stage_timeline,
-        delivery_allowed=delivery_allowed,
-        policy_action=policy_action,
+        input_event_count=final_preview.input_event_count, preview_event_count=final_preview.preview_event_count,
+        mapped_events=final_preview.mapped_events, final_events=final_preview.final_events,
+        preview_messages=formatted.preview_messages, missing_fields=final_preview.missing_fields,
+        destination_type=formatted.destination_type, stream_id=payload.stream_id,
         message="E2E draft preview generated successfully",
     )
-
 
 def run_format_preview(payload: FormatPreviewRequest) -> FormatPreviewResponse:
     if payload.destination_type not in {"SYSLOG_UDP", "SYSLOG_TCP", "SYSLOG_TLS", "WEBHOOK_POST"}:

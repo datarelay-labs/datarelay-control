@@ -2260,7 +2260,7 @@ class E2EDraftPreviewRequest(BaseModel):
     field_mappings: dict[str, Any] = Field(default_factory=dict)
     enrichment: dict[str, Any] = Field(default_factory=dict)
     override_policy: Literal["KEEP_EXISTING", "OVERRIDE", "ERROR_ON_CONFLICT"] = "KEEP_EXISTING"
-    destination_type: Literal["SYSLOG_UDP", "SYSLOG_TCP", "SYSLOG_TLS", "WEBHOOK_POST"]
+    destination_type: Literal["SYSLOG_UDP", "SYSLOG_TCP", "SYSLOG_TLS", "WEBHOOK_POST"] | None = None
     formatter_config: dict[str, Any] = Field(default_factory=dict)
     max_events: int = Field(default=5, ge=1, le=100)
     payload_mode: Literal["SINGLE_EVENT_OBJECT", "BATCH_JSON_ARRAY"] | None = None
@@ -2275,6 +2275,13 @@ class E2EDraftPreviewRequest(BaseModel):
     )
 
 
+    @model_validator(mode="after")
+    def require_draft_destination(self) -> "E2EDraftPreviewRequest":
+        if self.route_id is None and self.destination_type is None:
+            raise ValueError("destination_type is required for an unbound draft preview")
+        return self
+
+
 class E2EDraftPreviewResponse(BaseModel):
     input_event_count: int
     preview_event_count: int
@@ -2284,6 +2291,11 @@ class E2EDraftPreviewResponse(BaseModel):
     missing_fields: list[MappingDraftPreviewMissingFieldItem]
     destination_type: str
     route_id: int | None = None
+    stream_id: int | None = None
+    destination_id: int | None = None
+    configuration_state: Literal["draft", "saved"] = "draft"
+    stage_previews: dict[str, list[Any]] = Field(default_factory=dict)
+    display_redacted: bool = False
     route_stage_timeline: list[dict[str, Any]] = Field(default_factory=list)
     delivery_allowed: bool | None = None
     policy_action: str | None = None

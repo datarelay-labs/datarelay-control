@@ -50,6 +50,14 @@ class ProtectionApplicationError(PlatformError):
         super().__init__(f"protection action failed for {field_path or 'configured field'}{rule}; delivery blocked")
 
 
+class PreviewSideEffectRequiredError(PlatformError):
+    """The real evaluator requires persistence unavailable in a no-write preview."""
+
+    def __init__(self, *, stage: str) -> None:
+        self.stage = stage
+        super().__init__(f"{stage} requires persisted state unavailable in a no-write preview")
+
+
 class QuarantinePersistenceError(PlatformError):
     """A quarantine decision could not be durably recorded."""
 

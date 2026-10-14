@@ -30,6 +30,7 @@ from app.runtime.errors import MappingError
 
 
 LogFn = Callable[[dict[str, Any]], None]
+PreviewFn = Callable[[str, list[dict[str, Any]]], None]
 
 
 def _copy_transport_metadata(raw_events: list[dict[str, Any]], transformed: list[dict[str, Any]]) -> None:
@@ -68,6 +69,7 @@ def _apply_route_transform(
     raw_events: list[dict[str, Any]],
     transform_config: RouteTransformConfig,
     log_fn: LogFn | None = None,
+    preview_fn: PreviewFn | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Run existing mapping + enrichment engines for one route."""
 
@@ -104,6 +106,8 @@ def _apply_route_transform(
                     }
                 )
 
+    if preview_fn is not None:
+        preview_fn("mapping", mapped_events)
     batch_result = apply_enrichments_batch(
         mapped_events,
         transform_config.enrichment,
@@ -160,14 +164,22 @@ def process_route_pipeline(
     db: Session | None = None,
     send_fn: Callable[[RouteRuntimeContext, list[dict[str, Any]]], RouteSendOutcome] | None = None,
     run_id: str | None = None,
+    preview_only: bool = False,
+    preview_fn: PreviewFn | None = None,
 ) -> RouteStageResult:
     """Execute per-route pipeline: Transform → Protection → Classification → Policy → Delivery."""
 
+    if preview_only and (send_fn is not None or log_fn is not None):
+        raise ValueError("No-write preview cannot have sender or persistence callbacks")
+    if preview_fn is not None and not preview_only:
+        raise ValueError("Preview capture requires explicit no-write preview mode")
     route_ctx.shared_batch_ref = shared_batch
     timeline: list[dict[str, Any]] = []
     errors: list[dict[str, Any]] = []
     current_events = list(shared_batch.extracted_events)
     route_ctx.processing_state.current_events = current_events
+    if preview_fn is not None:
+        preview_fn("input", current_events)
 
     transform_config = route_ctx.effective_config.transform
     modified = False
@@ -198,6 +210,7 @@ def process_route_pipeline(
                 raw_events=shared_batch.extracted_events,
                 transform_config=transform_config,
                 log_fn=log_fn,
+                **({"preview_fn": preview_fn} if preview_fn is not None else {}),
             )
             shared_batch.transform_result_cache[cache_key] = current_events
             shared_batch.transform_execution_count += 1
@@ -205,7 +218,11 @@ def process_route_pipeline(
         modified = True
     else:
         timeline.append({"stage": "transform", "status": "skipped", "reason": "no_config"})
+        if preview_fn is not None:
+            preview_fn("mapping", current_events)
 
+    if preview_fn is not None:
+        preview_fn("transform", current_events)
     route_ctx.processing_state.current_events = current_events
 
     # Preserve pre-protection transform output for checkpoint (mask delivery only).
@@ -223,6 +240,7 @@ def process_route_pipeline(
         stream_protection_rules=stream_protection_rules,
         route_protection_rules=_route_protection_rules_from_ctx(route_ctx),
         route_overrides=route_overrides,
+        **({"preview_only": True} if preview_only else {}),
     )
     protection_reused = shared_batch.protection_execution_count == exec_before
     protection_duration_ms = (
@@ -231,6 +249,8 @@ def process_route_pipeline(
         else max(0, int((time.monotonic() - protection_started) * 1000))
     )
     current_events = protected_events
+    if preview_fn is not None:
+        preview_fn("protection", current_events)
     route_ctx.processing_state.current_events = current_events
     if protection_result.rules_applied > 0 or protection_result.masked_field_applications > 0:
         modified = True
@@ -262,6 +282,8 @@ def process_route_pipeline(
     )
     classification_duration_ms = max(0, int((time.monotonic() - classification_started) * 1000))
     current_events = classified_events
+    if preview_fn is not None:
+        preview_fn("classification", current_events)
     route_ctx.processing_state.current_events = current_events
     if classification_result is not None:
         modified = True
@@ -293,9 +315,12 @@ def process_route_pipeline(
         route_policy_rules=_route_policy_rules_from_ctx(route_ctx),
         route_overrides=route_overrides,
         governance_rules=governance_rules,
+        **({"preview_only": True} if preview_only else {}),
     )
     policy_duration_ms = max(0, int((time.monotonic() - policy_started) * 1000))
     current_events = policy_events
+    if preview_fn is not None:
+        preview_fn("policy", current_events)
     route_ctx.processing_state.current_events = current_events
     delivery_allowed = policy_result.delivery_allowed
     timeline.append(
