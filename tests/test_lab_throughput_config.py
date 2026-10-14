@@ -12,9 +12,11 @@ from app.dev_validation_lab.lab_throughput_config import (
     LAB_POLLING_INTERVAL_NEGATIVE,
     apply_lab_http_throughput_config,
     lab_estimated_eps_for_title,
+    lab_estimated_http_eps,
     lab_feed_tick_rates,
     lab_http_endpoint_for_stream,
     lab_http_eps_within_target,
+    lab_http_events_for_path,
     lab_polling_interval_for_title,
     lab_target_eps_for_bare_title,
 )
@@ -79,6 +81,12 @@ def test_lab_http_endpoint_mapping() -> None:
     ) == "/api/v1/e2e-data/empty-array"
 
 
+def test_shared_high_http_stub_stays_within_live_eps_band() -> None:
+    events = lab_http_events_for_path(LAB_HTTP_HIGH_PATH)
+    eps = lab_estimated_http_eps(events_per_poll=events, polling_interval_seconds=1)
+    assert LAB_EPS_MIN <= eps <= LAB_EPS_MAX
+
+
 def test_apply_lab_http_throughput_config() -> None:
     prefix = "[DEV VALIDATION] "
     out = apply_lab_http_throughput_config(
@@ -102,9 +110,22 @@ def test_lab_webhook_destination_uses_batch_delivery() -> None:
     assert out["batch_size"] == LAB_WEBHOOK_BATCH_SIZE
 
 
-def test_feeder_tick_rates_meet_minimum_throughput() -> None:
+def test_feeder_tick_rates_are_per_second_and_bounded() -> None:
     rates = lab_feed_tick_rates(high_volume=True)
-    assert rates["db_rows"] >= LAB_EPS_MIN
-    assert rates["webhook_events"] >= LAB_EPS_MIN
-    assert rates["s3_objects"] >= 1
-    assert rates["remote_files"] >= 1
+    assert LAB_EPS_MIN <= rates["db_rows"] <= LAB_EPS_MAX
+    assert LAB_EPS_MIN <= rates["webhook_events"] <= LAB_EPS_MAX
+    assert 1 <= rates["s3_objects"] <= LAB_EPS_MAX
+    assert 1 <= rates["remote_files"] <= LAB_EPS_MAX
+    assert LAB_EPS_MIN <= rates["remote_visible_lines"] <= LAB_EPS_MAX
+
+
+def test_wiremock_mappings_include_visible_e2e_receiver() -> None:
+    from app.dev_validation_lab.lab_throughput_wiremock import lab_throughput_wiremock_mappings
+
+    receiver = [
+        doc
+        for doc in lab_throughput_wiremock_mappings()
+        if doc.get("request") == {"method": "POST", "urlPath": "/dev-visible-e2e/webhook"}
+    ]
+    assert len(receiver) == 1
+    assert receiver[0]["response"]["status"] == 200

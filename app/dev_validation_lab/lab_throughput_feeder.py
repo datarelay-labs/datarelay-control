@@ -232,6 +232,7 @@ def _upload_remote_file(
     file_pattern_prefix: str,
     parser_suffix: str,
     count: int,
+    visible_lines: int = 0,
 ) -> None:
     if count <= 0 or not password:
         return
@@ -263,7 +264,7 @@ def _upload_remote_file(
             sftp.close()
             transport.close()
         # Keep visible E2E single-file path warm with fresh mtime/content.
-        if file_pattern_prefix == "lab-":
+        if file_pattern_prefix == "lab-" and visible_lines > 0:
             try:
                 transport = paramiko.Transport((host, int(port)))
                 transport.connect(username=username, password=password)
@@ -357,6 +358,7 @@ def run_lab_throughput_feed_tick(*, high_volume: bool = True) -> None:
             file_pattern_prefix="lab-",
             parser_suffix=".ndjson",
             count=rf_count,
+            visible_lines=visible_lines,
         )
     if env.scp_password:
         _upload_remote_file(

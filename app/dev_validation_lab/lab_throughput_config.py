@@ -24,9 +24,9 @@ LAB_POLLING_INTERVAL_MIN = 1
 LAB_POLLING_INTERVAL_MAX = 4
 LAB_POLLING_INTERVAL_NEGATIVE = 120
 
-# Measured StreamRunner cycle (fetch + map + deliver) on lab HTTP streams; EPS must use
-# events / (run_duration + polling_interval), not events / polling_interval alone.
-LAB_EXPECTED_RUN_DURATION_SEC = 14
+# Current isolated StreamRunner cycles complete in a few hundred milliseconds for the lab HTTP path.
+# EPS must use events / (run_duration + polling_interval), not events / polling_interval alone.
+LAB_EXPECTED_RUN_DURATION_SEC = 0.25
 LAB_MAX_EVENTS_PER_POLL = 300
 
 # Lab webhook destinations deliver one HTTP POST per poll batch (not per event).
@@ -345,21 +345,20 @@ _REMOTE_FILE_TITLES: frozenset[str] = frozenset(
 
 
 def lab_feed_db_rows_per_tick() -> int:
-    return max(lab_sustained_events_per_poll_for_bare_title(t) for t in _DB_STREAM_TITLES)
+    # The feeder ticks once per second by default, so generate target EPS here.
+    # Poll-cycle batch sizing belongs to the consumer, not to the producer tick.
+    return _max_target_eps_for(*_DB_STREAM_TITLES)
 
 
 def lab_feed_webhook_events_per_tick() -> int:
-    return lab_sustained_events_per_poll_for_bare_title("Webhook Receiver Stream")
+    return lab_target_eps_for_bare_title("Webhook Receiver Stream")
 
 
 def lab_feed_s3_objects_per_tick() -> int:
     lines_per_object = 4
     return max(
         1,
-        max(
-            math.ceil(lab_sustained_events_per_poll_for_bare_title(t) / lines_per_object)
-            for t in _S3_STREAM_TITLES
-        ),
+        math.ceil(_max_target_eps_for(*_S3_STREAM_TITLES) / lines_per_object),
     )
 
 
@@ -367,10 +366,9 @@ def lab_feed_remote_files_per_tick() -> int:
     lines_per_file = 3
     return max(
         1,
-        max(
-            math.ceil(lab_sustained_events_per_poll_for_bare_title(t) / lines_per_file)
-            for t in _REMOTE_FILE_TITLES
-            if t != "Remote File Stream"
+        math.ceil(
+            _max_target_eps_for(*(t for t in _REMOTE_FILE_TITLES if t != "Remote File Stream"))
+            / lines_per_file
         ),
     )
 
@@ -414,5 +412,5 @@ def lab_feed_tick_rates(*, high_volume: bool = True) -> dict[str, int]:
         "s3_objects": lab_feed_s3_objects_per_tick(),
         "remote_files": lab_feed_remote_files_per_tick(),
         "webhook_events": lab_feed_webhook_events_per_tick(),
-        "remote_visible_lines": lab_sustained_events_per_poll_for_bare_title("Remote File Stream"),
+        "remote_visible_lines": lab_target_eps_for_bare_title("Remote File Stream"),
     }
