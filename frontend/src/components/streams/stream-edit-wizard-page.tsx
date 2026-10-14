@@ -134,8 +134,21 @@ function parseWizardStepQuery(raw: string | null): StreamWizardStepKey | null {
   return raw as StreamWizardStepKey
 }
 
-export function StreamEditWizardPage() {
-  const { streamId = '' } = useParams<{ streamId: string }>()
+type StreamEditWizardPageProps = {
+  streamIdOverride?: number | null
+  embedded?: boolean
+  onClose?: () => void
+  onSaved?: () => void
+}
+
+export function StreamEditWizardPage({
+  streamIdOverride = null,
+  embedded = false,
+  onClose,
+  onSaved,
+}: StreamEditWizardPageProps = {}) {
+  const { streamId: streamIdParam = '' } = useParams<{ streamId: string }>()
+  const streamId = streamIdOverride != null ? String(streamIdOverride) : streamIdParam
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const backendStreamId = /^\d+$/.test(streamId) ? Number(streamId) : null
@@ -670,6 +683,7 @@ export function StreamEditWizardPage() {
           }
         }
         await refreshRuntimeSnapshot()
+        onSaved?.()
         setSaveSuccess(manual ? 'Saved now and applied.' : 'Changes saved.')
         window.setTimeout(() => setSaveSuccess(null), 3000)
       } else if (draftMovedDuringSave) {
@@ -736,7 +750,7 @@ export function StreamEditWizardPage() {
       isSavingRef.current = false
       setIsSaving(false)
     }
-  }, [backendStreamId, canMutateWorkspace, refreshRuntimeSnapshot])
+  }, [backendStreamId, canMutateWorkspace, onSaved, refreshRuntimeSnapshot])
 
   useEffect(() => {
     if (!canMutateWorkspace || !state || backendStreamId == null || isSaving) return
@@ -1009,13 +1023,15 @@ export function StreamEditWizardPage() {
           <button
             type="button"
             onClick={() => {
-              if (confirmEditNavigation()) navigate(streamRuntimePath(streamId))
+              if (!confirmEditNavigation()) return
+              if (embedded) onClose?.()
+              else navigate(streamRuntimePath(streamId))
             }}
             className="inline-flex h-9 items-center rounded-lg border border-slate-200/90 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-200"
           >
-            Back to monitoring
+            {embedded ? 'Close Stream configuration' : 'Back to monitoring'}
           </button>
-          {canMutateWorkspace && backendStreamId != null ? (
+          {canMutateWorkspace && backendStreamId != null && !embedded ? (
             <button
               type="button"
               disabled={runtimeStatus === 'RUNNING'}
@@ -1188,6 +1204,18 @@ export function StreamEditWizardPage() {
               data-testid="wizard-next"
             >
               {nextLabel ?? 'Next'}
+              <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+            </button>
+          ) : embedded ? (
+            <button
+              type="button"
+              onClick={() => {
+                if (confirmEditNavigation()) onClose?.()
+              }}
+              className="inline-flex h-9 items-center gap-1 rounded-lg bg-gdc-primary px-4 text-sm font-semibold text-white hover:bg-violet-700"
+              data-testid="wizard-close-embedded"
+            >
+              Done
               <ChevronRight className="h-3.5 w-3.5" aria-hidden />
             </button>
           ) : (

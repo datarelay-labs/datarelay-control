@@ -170,6 +170,17 @@ function renderStreamEdit() {
   )
 }
 
+function renderEmbeddedStreamEdit(onClose = vi.fn()) {
+  return {
+    onClose,
+    ...render(
+      <MemoryRouter initialEntries={['/routes']}>
+        <StreamEditWizardPage streamIdOverride={10} embedded onClose={onClose} />
+      </MemoryRouter>,
+    ),
+  }
+}
+
 
 function renderStreamEditWithDataRouter(initialEntries: string[] = ['/streams/10/edit'], initialIndex?: number) {
   // Same one-splat RouterProvider and data-router context as the application entrypoint.
@@ -201,6 +212,19 @@ describe('StreamEditWizardPage workspace capability visibility', () => {
 
   afterEach(() => {
     clearSession()
+  })
+
+  it('uses the provided Stream identity in embedded mode and closes without a cross-page navigation', async () => {
+    signIn('OPERATOR')
+    const { onClose } = renderEmbeddedStreamEdit()
+    const page = await screen.findByTestId('edit-stream-wizard')
+
+    expect(fetchStreamById).toHaveBeenCalledWith(10)
+    expect(within(page).getByRole('button', { name: 'Close Stream configuration' })).toBeInTheDocument()
+    expect(within(page).queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
+
+    fireEvent.click(within(page).getByRole('button', { name: 'Close Stream configuration' }))
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 
   it('preserves existing protection settings after Add field in Stream Edit', async () => {

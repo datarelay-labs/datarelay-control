@@ -18,6 +18,15 @@ vi.mock('./route-edit-page', () => ({
   ),
 }))
 
+vi.mock('../streams/stream-edit-page', () => ({
+  StreamEditPage: ({ streamIdOverride, embedded, onClose }: { streamIdOverride?: number; embedded?: boolean; onClose?: () => void }) => (
+    <section data-testid="embedded-stream-edit-stub">
+      Stream editor #{streamIdOverride} · {embedded ? 'embedded' : 'standalone'}
+      <button type="button" onClick={onClose}>Close stream editor</button>
+    </section>
+  ),
+}))
+
 const recent = () => new Date().toISOString()
 
 function route(id: number, streamId: number, destinationId: number, health: OperationalRouteSnapshot['health_status'], enabled = true): OperationalRouteSnapshot {
@@ -822,6 +831,8 @@ describe('Route Inspector role-appropriate operations', () => {
     expect(within(inspector).queryByRole('link', { name: 'Route settings' })).not.toBeInTheDocument()
     expect(within(inspector).getByText(/Read-only access.*workspace write permission/i)).toBeInTheDocument()
     expect(within(inspector).getByRole('link', { name: /Delivery logs/i })).toHaveAttribute('href', expect.stringContaining('/logs?'))
+    expect(screen.queryByRole('button', { name: 'Configure Stream in workspace' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'View Stream runtime' })).toHaveAttribute('href', '/streams/1/runtime')
     expect(within(inspector).getByRole('tab', { name: 'Diagnostics' })).toBeEnabled()
   })
 
@@ -837,6 +848,26 @@ describe('Route Inspector role-appropriate operations', () => {
     await user.click(screen.getByRole('button', { name: 'Close route editor' }))
     expect(screen.queryByTestId('routes-architecture-configuration')).not.toBeInTheDocument()
     expect(within(inspector).queryByText(/Read-only access.*workspace write permission/i)).not.toBeInTheDocument()
+  })
+
+  it.each(['ADMINISTRATOR', 'OPERATOR'] as const)('opens %s Stream configuration in the same Flow and keeps only one focused editor open', async (role) => {
+    persistTestSession(role)
+    const user = userEvent.setup()
+    render(<GraphHarness snapshot={snapshotFor()} />)
+
+    await user.click(screen.getByRole('button', { name: 'Configure Stream in workspace' }))
+    expect(screen.getByTestId('routes-architecture-stream-configuration')).toHaveTextContent('Stream editor #1 · embedded')
+    expect(screen.getByTestId('routes-architecture-graph')).toBeInTheDocument()
+
+    const inspector = screen.getByTestId('routes-architecture-inspector')
+    await user.click(within(inspector).getByRole('button', { name: 'Configure Route in workspace' }))
+    expect(screen.queryByTestId('routes-architecture-stream-configuration')).not.toBeInTheDocument()
+    expect(screen.getByTestId('routes-architecture-configuration')).toHaveTextContent('Route editor #1 · embedded')
+
+    await user.click(screen.getByRole('button', { name: 'Close route editor' }))
+    await user.click(screen.getByRole('button', { name: 'Configure Stream in workspace' }))
+    await user.click(screen.getByRole('button', { name: 'Close stream editor' }))
+    expect(screen.queryByTestId('routes-architecture-stream-configuration')).not.toBeInTheDocument()
   })
 })
 

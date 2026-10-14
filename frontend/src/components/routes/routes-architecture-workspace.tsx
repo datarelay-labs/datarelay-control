@@ -25,6 +25,7 @@ import {
 } from './routes-flow-helpers'
 import { RouteFlowFailedAttemptLink } from './routes-flow-failed-attempt-link'
 import { RouteEditPage } from './route-edit-page'
+import { StreamEditPage } from '../streams/stream-edit-page'
 import { formatFailurePolicy, uiStatusFromOperationalHealth, type RouteConsoleRow } from './routes-overview-helpers'
 
 export type RoutesArchitectureWorkspaceProps = {
@@ -94,6 +95,7 @@ export function RoutesArchitectureWorkspace({
   const selectedStream = selectedGroup ? streamsById.get(selectedGroup.streamId) : undefined
   const [inspectedRouteId, setInspectedRouteId] = useState<number | null>(null)
   const [routeEditorOpen, setRouteEditorOpen] = useState(false)
+  const [streamEditorOpen, setStreamEditorOpen] = useState(false)
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('Overview')
   const inspectorTabButtons = useRef<Partial<Record<InspectorTab, HTMLButtonElement | null>>>({})
   const focusInspectorAfterAttention = useRef(false)
@@ -104,7 +106,10 @@ export function RoutesArchitectureWorkspace({
     setInspectorTab('Overview')
   }, [selectedGroup?.streamId, selectedRoute?.routeId])
   useEffect(() => {
-    if (!canCreateFlow) setRouteEditorOpen(false)
+    if (!canCreateFlow) {
+      setRouteEditorOpen(false)
+      setStreamEditorOpen(false)
+    }
   }, [canCreateFlow])
   useEffect(() => {
     if (!focusInspectorAfterAttention.current || selectedRoute?.routeId !== inspectedRouteId) return
@@ -570,9 +575,28 @@ export function RoutesArchitectureWorkspace({
                   <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">{selectedGroup.streamName}</h3>
                   <p className="mt-1 text-xs text-slate-500 dark:text-gdc-muted">One collection path · {selectedGroup.routes.length} delivery connection{selectedGroup.routes.length === 1 ? '' : 's'}</p>
                 </div>
-                <Link to={streamRuntimePath(String(selectedGroup.streamId))} className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-violet-300 hover:text-violet-700 dark:border-gdc-border dark:text-slate-200 dark:hover:text-violet-300">
-                  View Stream runtime <ArrowRight className="h-3.5 w-3.5" aria-hidden />
-                </Link>
+                <div className="flex flex-wrap items-center gap-2">
+                  {canCreateFlow ? (
+                    <button
+                      type="button"
+                      aria-expanded={streamEditorOpen}
+                      aria-controls="routes-architecture-stream-configuration"
+                      onClick={() => {
+                        setStreamEditorOpen((open) => {
+                          const next = !open
+                          if (next) setRouteEditorOpen(false)
+                          return next
+                        })
+                      }}
+                      className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-violet-600 bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500"
+                    >
+                      <Settings2 className="h-3.5 w-3.5" aria-hidden /> Configure Stream in workspace
+                    </button>
+                  ) : null}
+                  <Link to={streamRuntimePath(String(selectedGroup.streamId))} className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-violet-300 hover:text-violet-700 dark:border-gdc-border dark:text-slate-200 dark:hover:text-violet-300">
+                    View Stream runtime <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+                  </Link>
+                </div>
               </div>
 
               <div className="grid min-w-0 items-start gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(250px,1fr)]">
@@ -754,7 +778,13 @@ export function RoutesArchitectureWorkspace({
                             type="button"
                             aria-expanded={routeEditorOpen}
                             aria-controls="routes-architecture-configuration"
-                            onClick={() => setRouteEditorOpen((open) => !open)}
+                            onClick={() => {
+                              setRouteEditorOpen((open) => {
+                                const next = !open
+                                if (next) setStreamEditorOpen(false)
+                                return next
+                              })
+                            }}
                             className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-violet-600 bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500"
                           >
                             <Settings2 className="h-3.5 w-3.5" aria-hidden /> Configure Route in workspace
@@ -902,6 +932,36 @@ export function RoutesArchitectureWorkspace({
                 </section>
               ) : null}
               </div>
+
+              {streamEditorOpen && canCreateFlow && selectedGroup ? (
+                <section
+                  id="routes-architecture-stream-configuration"
+                  data-testid="routes-architecture-stream-configuration"
+                  aria-label={`Configure Stream #${selectedGroup.streamId} in Data Flow`}
+                  className="min-w-0 space-y-3 rounded-xl border border-violet-200 bg-violet-50/20 p-3 dark:border-violet-500/30 dark:bg-violet-500/[0.04] sm:p-4"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-violet-700 dark:text-violet-300">
+                        Configure · collection Stream
+                      </p>
+                      <p className="mt-1 text-xs text-slate-600 dark:text-gdc-mutedStrong">
+                        The topology remains visible while the existing Stream editor changes source, sample, destinations, processing, and runtime settings.
+                      </p>
+                    </div>
+                    <span className="rounded-full border border-violet-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-violet-800 dark:border-violet-500/30 dark:bg-gdc-card dark:text-violet-200">
+                      Stream #{selectedGroup.streamId} · {selectedGroup.streamName}
+                    </span>
+                  </div>
+                  <StreamEditPage
+                    key={selectedGroup.streamId}
+                    streamIdOverride={selectedGroup.streamId}
+                    embedded
+                    onClose={() => setStreamEditorOpen(false)}
+                    onSaved={onRouteSaved}
+                  />
+                </section>
+              ) : null}
 
               {routeEditorOpen && canCreateFlow && selectedRoute ? (
                 <section
