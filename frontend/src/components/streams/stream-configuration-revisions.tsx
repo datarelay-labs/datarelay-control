@@ -189,17 +189,30 @@ export function StreamConfigurationRevisions({
           ) : !preview.may_submit_to_product_authority ? (
             <p className="text-amber-700 dark:text-amber-200">Current safety review does not authorize this restore.</p>
           ) : null}
-          {canRestore ? (
+          <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              data-testid="stream-revision-restore-confirm"
-              disabled={!restoreAllowed || busy}
-              onClick={() => void restore()}
-              className="rounded-md bg-gdc-primary px-3 py-1.5 font-semibold text-white disabled:opacity-50"
+              onClick={() => {
+                setPreview(null)
+                setError(null)
+              }}
+              disabled={busy}
+              className="rounded-md border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-700 disabled:opacity-50 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-200"
             >
-              {busy ? 'Restoring…' : 'Restore reviewed revision'}
+              Cancel review
             </button>
-          ) : null}
+            {canRestore ? (
+              <button
+                type="button"
+                data-testid="stream-revision-restore-confirm"
+                disabled={!restoreAllowed || busy}
+                onClick={() => void restore()}
+                className="rounded-md bg-gdc-primary px-3 py-1.5 font-semibold text-white disabled:opacity-50"
+              >
+                {busy ? 'Restoring…' : 'Restore reviewed revision'}
+              </button>
+            ) : null}
+          </div>
         </div>
       ) : null}
 

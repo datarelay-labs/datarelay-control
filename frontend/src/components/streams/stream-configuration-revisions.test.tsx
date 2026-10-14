@@ -87,6 +87,8 @@ describe('StreamConfigurationRevisions', () => {
     await waitFor(() => expect(getAdminSafeRollbackPreview).toHaveBeenCalledWith(71, 12, 'after'))
     expect(screen.getByText(/Administrator permission is required to restore/)).toBeInTheDocument()
     expect(screen.queryByTestId('stream-revision-restore-confirm')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Cancel review' }))
+    expect(screen.queryByTestId('stream-revision-restore-preview')).not.toBeInTheDocument()
   })
 
   it('restores a reviewed stopped revision without starting runtime', async () => {
