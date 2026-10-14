@@ -166,6 +166,7 @@ describe('StepDelivery', () => {
     )
     expect(await screen.findByText(/No destinations configured yet/i)).toBeInTheDocument()
     expect(screen.queryByText(/Failed to load destinations/i)).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Create destination here' })).toHaveLength(1)
     await waitFor(() => {
       expect(onChange).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -197,6 +198,21 @@ describe('StepDelivery', () => {
         }),
       )
     })
+  })
+
+  it('keeps destination selection focused on one primary path instead of duplicate add cards', async () => {
+    render(
+      <MemoryRouter>
+        <StepDelivery state={buildInitialState()} onChange={vi.fn()} />
+      </MemoryRouter>,
+    )
+
+    await screen.findByText('Stellar Syslog')
+    expect(screen.getAllByRole('button', { name: 'Create destination here' })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: 'Add delivery path' })).toHaveLength(2)
+    expect(screen.getByRole('button', { name: 'Open destination library' })).toBeInTheDocument()
+    expect(screen.queryByText(/Add another delivery path for this stream/i)).not.toBeInTheDocument()
+    expect(screen.queryByText('Delivery concepts')).not.toBeInTheDocument()
   })
 
   it('shows the destination connectivity check result without claiming Stream delivery', async () => {

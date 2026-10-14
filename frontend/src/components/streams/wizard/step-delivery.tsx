@@ -1,11 +1,8 @@
 import {
-  Activity,
   AlertTriangle,
-  CheckCircle2,
   Filter,
   Loader2,
   MoreVertical,
-  Network,
   Plus,
   Radio,
   Search,
@@ -795,15 +792,17 @@ export function StepDelivery({
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <button
-            type="button"
-            className={btnPrimarySm}
-            onClick={openInlineDestinationCreate}
-            disabled={inlineCreateBusy}
-          >
-            <Plus className="h-3.5 w-3.5" aria-hidden />
-            Create destination here
-          </button>
+          {!loading && !catalogLoadFailed && destinations.length > 0 ? (
+            <button
+              type="button"
+              className={btnGhost}
+              onClick={openInlineDestinationCreate}
+              disabled={inlineCreateBusy}
+            >
+              <Plus className="h-3.5 w-3.5" aria-hidden />
+              Create destination here
+            </button>
+          ) : null}
           <button
             type="button"
             className={btnGhost}
@@ -812,13 +811,11 @@ export function StepDelivery({
           >
             Refresh destinations
           </button>
-          <button type="button" className={btnPrimarySm} onClick={scrollToLibrary}>
-            <Plus className="h-3.5 w-3.5" aria-hidden />
-            {WIZARD_LABEL.addDeliveryPath}
-          </button>
-          <button type="button" className={btnGhost} onClick={handleReset} disabled={!drafts.length}>
-            Reset {WIZARD_LABEL.deliveryPaths.toLowerCase()}
-          </button>
+          {drafts.length > 0 ? (
+            <button type="button" className={btnGhost} onClick={handleReset}>
+              Reset {WIZARD_LABEL.deliveryPaths.toLowerCase()}
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -1158,11 +1155,6 @@ export function StepDelivery({
               )}
             </div>
 
-            <button type="button" className="w-full rounded-lg border border-dashed border-slate-200 py-2 text-[12px] font-medium text-violet-700 hover:bg-violet-500/5 dark:border-gdc-border dark:text-violet-300" onClick={scrollToLibrary}>
-              + {WIZARD_LABEL.addDeliveryPath}
-            </button>
-            <p className="text-center text-[10px] text-slate-500">Add another {WIZARD_LABEL.deliveryPath.toLowerCase()} for this stream.</p>
-
             <div className="rounded-lg border border-slate-200/90 bg-slate-50/50 p-3 dark:border-gdc-border dark:bg-gdc-section">
               <p className="text-[11px] font-semibold text-slate-700 dark:text-slate-200">Message prefix (delivery)</p>
               <p className="text-[10px] text-slate-500 dark:text-gdc-muted">
@@ -1381,41 +1373,6 @@ export function StepDelivery({
         </div>
       )}
 
-      <div className="rounded-xl border border-slate-200/80 bg-white p-3 shadow-sm dark:border-gdc-border dark:bg-gdc-card">
-        <h4 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Delivery concepts</h4>
-        <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-          {[
-            {
-              title: 'Reliable delivery',
-              body: 'Strict failure handling — retries and backoff protect downstream SLAs.',
-              icon: CheckCircle2,
-            },
-            {
-              title: 'Best effort delivery',
-              body: 'Non-blocking behavior — minimize back-pressure when loss is acceptable.',
-              icon: Radio,
-            },
-            {
-              title: 'Failure policies',
-              body: 'Choose pause, retry, disable route, or log-and-continue per route.',
-              icon: Network,
-            },
-            {
-              title: 'Rate limiting',
-              body: 'Cap EPS and burst per route to shield destinations from overload.',
-              icon: Activity,
-            },
-          ].map((c) => (
-            <div key={c.title} className="rounded-lg border border-slate-100 bg-slate-50/60 p-2.5 dark:border-gdc-border dark:bg-gdc-section">
-              <p className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-800 dark:text-slate-100">
-                <c.icon className="h-3.5 w-3.5 text-violet-600 dark:text-violet-400" aria-hidden />
-                {c.title}
-              </p>
-              <p className="mt-1 text-[10px] leading-snug text-slate-600 dark:text-gdc-muted">{c.body}</p>
-            </div>
-          ))}
-        </div>
-      </div>
     </section>
   )
 }
