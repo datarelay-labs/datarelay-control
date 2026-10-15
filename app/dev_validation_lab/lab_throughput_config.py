@@ -356,11 +356,13 @@ def lab_feed_webhook_events_per_tick() -> int:
 
 def lab_feed_s3_objects_per_tick() -> int:
     lines_per_object = 4
+    slow_live_poll_seconds = 10
     # S3 polling has a materially longer live cycle than in-memory HTTP fixtures.
-    # Keep a small rolling set, but guarantee at least 24 events are available per
-    # poll so the slow path can still sustain the 5 EPS acceptance floor.
+    # Keep a bounded rolling set large enough to clear the 5 EPS floor even when
+    # an observed live poll takes ~10 seconds. Thirteen 4-line objects yield 52
+    # events per poll, which also remains below 20 EPS at a 3-second recovery cycle.
     return max(
-        6,
+        math.ceil(LAB_EPS_MIN * slow_live_poll_seconds / lines_per_object),
         math.ceil(_max_target_eps_for(*_S3_STREAM_TITLES) / lines_per_object),
     )
 

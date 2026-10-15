@@ -124,6 +124,17 @@ def test_feeder_tick_rates_are_per_second_and_bounded() -> None:
     )
 
 
+def test_s3_feeder_sustains_acceptance_band_at_slow_live_poll_cycle() -> None:
+    rates = lab_feed_tick_rates(high_volume=True)
+    events_per_visible_poll = rates["s3_objects"] * 4
+
+    # The live S3 source has shown poll cycles as slow as ~10 seconds. The
+    # rolling object set must still clear the 5 EPS floor without creating an
+    # upper-band burst if the source recovers to a 3 second cycle.
+    assert events_per_visible_poll / 10.0 >= LAB_EPS_MIN
+    assert events_per_visible_poll / 3.0 <= LAB_EPS_MAX
+
+
 def test_wiremock_mappings_include_visible_e2e_receiver() -> None:
     from app.dev_validation_lab.lab_throughput_wiremock import lab_throughput_wiremock_mappings
 
