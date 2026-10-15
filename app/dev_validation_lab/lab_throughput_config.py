@@ -427,8 +427,8 @@ def lab_feed_tick_rates(*, high_volume: bool = True) -> dict[str, int]:
         "s3_objects": lab_feed_s3_objects_per_tick(),
         "remote_files": lab_feed_remote_files_per_tick(),
         "webhook_events": lab_feed_webhook_events_per_tick(),
-        # The visible remote-file stream uses an exact-filename fast path, so a
-        # bounded 50-event file clears 5 EPS even at a 10-second cycle while
-        # remaining below 20 EPS at a 3-second recovery cycle.
-        "remote_visible_lines": LAB_EPS_MIN * 10,
+        # The visible remote-file stream uses an exact-filename fast path.
+        # Keep a bounded 40-event file: eight polls per 60-second window clear
+        # 5 EPS, while even 30 polls remain at the 20 EPS ceiling.
+        "remote_visible_lines": LAB_EPS_MIN * 8,
     }

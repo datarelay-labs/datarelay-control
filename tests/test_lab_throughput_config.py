@@ -119,7 +119,7 @@ def test_feeder_tick_rates_are_per_second_and_bounded() -> None:
     assert LAB_EPS_MIN <= rates["webhook_events"] <= LAB_EPS_MAX
     assert 6 <= rates["s3_objects"] <= LAB_EPS_MAX
     assert 1 <= rates["remote_files"] <= LAB_EPS_MAX
-    assert rates["remote_visible_lines"] == LAB_EPS_MIN * 10
+    assert rates["remote_visible_lines"] == LAB_EPS_MIN * 8
 
 
 def test_s3_feeder_sustains_acceptance_band_at_slow_live_poll_cycle() -> None:
@@ -147,11 +147,11 @@ def test_visible_remote_file_feeder_sustains_acceptance_band_at_slow_live_poll_c
     rates = lab_feed_tick_rates(high_volume=True)
     events_per_visible_poll = rates["remote_visible_lines"]
 
-    # Exact-filename lookup avoids the historical full-directory scan. The
-    # bounded file clears the floor at a 10-second cycle and stays below the
-    # ceiling at a 3-second recovery cycle.
-    assert events_per_visible_poll / 10.0 >= LAB_EPS_MIN
-    assert events_per_visible_poll / 3.0 <= LAB_EPS_MAX
+    # Exact-filename lookup avoids the historical full-directory scan.
+    # Eight polls in 60 seconds must clear the floor, while 30 polls must stay
+    # at or below the ceiling.
+    assert events_per_visible_poll * 8 / 60.0 >= LAB_EPS_MIN
+    assert events_per_visible_poll * 30 / 60.0 <= LAB_EPS_MAX
 
 
 def test_wiremock_mappings_include_visible_e2e_receiver() -> None:
