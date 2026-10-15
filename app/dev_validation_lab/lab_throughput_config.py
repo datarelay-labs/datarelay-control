@@ -351,7 +351,11 @@ def lab_feed_db_rows_per_tick() -> int:
 
 
 def lab_feed_webhook_events_per_tick() -> int:
-    return lab_target_eps_for_bare_title("Webhook Receiver Stream")
+    # Live webhook ingestion includes synchronous route processing and can stretch
+    # to ~4 seconds under validation load. Use the bounded 20-event batch so a
+    # slow cycle still clears 5 EPS while the normal 1-second cycle stays at the
+    # acceptance ceiling rather than exceeding it.
+    return LAB_EPS_MAX
 
 
 def lab_feed_s3_objects_per_tick() -> int:
@@ -419,9 +423,9 @@ def lab_feed_tick_rates(*, high_volume: bool = True) -> dict[str, int]:
         "webhook_events": lab_feed_webhook_events_per_tick(),
         # The visible remote-file stream rewrites one deterministic file per feeder
         # cycle. SFTP live cycles are materially slower than in-memory sources, so
-        # keep two upper-band poll batches in that one bounded file. This remains
+        # keep three upper-band poll batches in that one bounded file. This keeps margin
         # well below the 20 EPS acceptance ceiling at the observed poll cadence.
-        "remote_visible_lines": 2
+        "remote_visible_lines": 3
         * lab_events_per_poll_for_target(
             LAB_EPS_MAX,
             LAB_POLLING_INTERVAL_MIN,

@@ -118,7 +118,7 @@ def test_feeder_tick_rates_are_per_second_and_bounded() -> None:
     assert LAB_EPS_MIN <= rates["webhook_events"] <= LAB_EPS_MAX
     assert 6 <= rates["s3_objects"] <= LAB_EPS_MAX
     assert 1 <= rates["remote_files"] <= LAB_EPS_MAX
-    assert rates["remote_visible_lines"] == 2 * lab_events_per_poll_for_target(
+    assert rates["remote_visible_lines"] == 3 * lab_events_per_poll_for_target(
         LAB_EPS_MAX,
         LAB_POLLING_INTERVAL_MIN,
     )
@@ -133,6 +133,26 @@ def test_s3_feeder_sustains_acceptance_band_at_slow_live_poll_cycle() -> None:
     # upper-band burst if the source recovers to a 3 second cycle.
     assert events_per_visible_poll / 10.0 >= LAB_EPS_MIN
     assert events_per_visible_poll / 3.0 <= LAB_EPS_MAX
+
+
+def test_webhook_feeder_sustains_acceptance_band_at_slow_live_post_cycle() -> None:
+    rates = lab_feed_tick_rates(high_volume=True)
+    events_per_post = rates["webhook_events"]
+
+    # A loaded live webhook request can take ~4 seconds end to end. The batch
+    # must still clear 5 EPS without exceeding 20 EPS at the normal 1s cycle.
+    assert events_per_post / 4.0 >= LAB_EPS_MIN
+    assert events_per_post / 1.0 <= LAB_EPS_MAX
+
+
+def test_visible_remote_file_feeder_sustains_acceptance_band_at_slow_live_poll_cycle() -> None:
+    rates = lab_feed_tick_rates(high_volume=True)
+    events_per_visible_poll = rates["remote_visible_lines"]
+
+    # SFTP live runs have shown ~12 second cycles. Keep enough margin above the
+    # 5 EPS floor without crossing the 20 EPS ceiling at a 4 second cycle.
+    assert events_per_visible_poll / 12.0 >= LAB_EPS_MIN
+    assert events_per_visible_poll / 4.0 <= LAB_EPS_MAX
 
 
 def test_wiremock_mappings_include_visible_e2e_receiver() -> None:
