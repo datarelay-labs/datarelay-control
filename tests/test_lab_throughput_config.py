@@ -118,7 +118,7 @@ def test_feeder_tick_rates_are_per_second_and_bounded() -> None:
     assert LAB_EPS_MIN <= rates["webhook_events"] <= LAB_EPS_MAX
     assert 6 <= rates["s3_objects"] <= LAB_EPS_MAX
     assert 1 <= rates["remote_files"] <= LAB_EPS_MAX
-    assert rates["remote_visible_lines"] == 3 * lab_events_per_poll_for_target(
+    assert rates["remote_visible_lines"] == LAB_EPS_MIN + 3 * lab_events_per_poll_for_target(
         LAB_EPS_MAX,
         LAB_POLLING_INTERVAL_MIN,
     )
