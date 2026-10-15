@@ -416,9 +416,11 @@ def lab_feed_tick_rates(*, high_volume: bool = True) -> dict[str, int]:
         "remote_files": lab_feed_remote_files_per_tick(),
         "webhook_events": lab_feed_webhook_events_per_tick(),
         # The visible remote-file stream rewrites one deterministic file per feeder
-        # cycle. Use the upper-band per-poll batch size (20 EPS × expected cycle)
-        # so slower SFTP fetch/parse cycles still clear the 5 EPS live floor.
-        "remote_visible_lines": lab_events_per_poll_for_target(
+        # cycle. SFTP live cycles are materially slower than in-memory sources, so
+        # keep two upper-band poll batches in that one bounded file. This remains
+        # well below the 20 EPS acceptance ceiling at the observed poll cadence.
+        "remote_visible_lines": 2
+        * lab_events_per_poll_for_target(
             LAB_EPS_MAX,
             LAB_POLLING_INTERVAL_MIN,
         ),
