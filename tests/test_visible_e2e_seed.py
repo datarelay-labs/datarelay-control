@@ -103,3 +103,23 @@ def test_preview_catalog_rejects_compose_alias_even_when_legacy_flag_enabled(mon
     monkeypatch.setenv("APP_ENV", "development")
     with pytest.raises(SystemExit):
         assert_safe_database_url(local_dev_mode=True, allow_compose_catalog_host=True, preview_database=name)
+
+
+def test_visible_s3_uses_dedicated_bounded_prefix(db_session, monkeypatch):
+    from app.dev_validation_lab.visible_e2e_seed import VISIBLE_E2E_S3_PREFIX
+    from app.sources.models import Source
+
+    monkeypatch.setenv("DATABASE_URL", os.environ["TEST_DATABASE_URL"])
+    monkeypatch.setenv("WIREMOCK_BASE_URL", "http://127.0.0.1:28080")
+    monkeypatch.setenv("GDC_VISIBLE_E2E_WEBHOOK_BASE_URL", "http://127.0.0.1:18091")
+    monkeypatch.setenv("GDC_VISIBLE_E2E_SYSLOG_HOST", "127.0.0.1")
+    monkeypatch.setenv("SOURCE_E2E_MINIO_ENDPOINT", "http://127.0.0.1:59000")
+    monkeypatch.setenv("SOURCE_E2E_MINIO_BUCKET", "gdc-source-e2e")
+    monkeypatch.setenv("SOURCE_E2E_PG_FIXTURE_HOST", "127.0.0.1")
+    monkeypatch.setenv("SOURCE_E2E_SFTP_HOST", "127.0.0.1")
+
+    seed_visible_e2e_fixtures(db_session, local_dev_mode=False)
+    row = db_session.query(Source).filter(Source.source_type == "S3_OBJECT_POLLING").order_by(Source.id.asc()).first()
+    assert row is not None
+    assert row.config_json["prefix"] == VISIBLE_E2E_S3_PREFIX
+    assert VISIBLE_E2E_S3_PREFIX != "e2e-s3/"

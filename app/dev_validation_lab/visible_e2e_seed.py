@@ -42,6 +42,7 @@ from app.sources.models import Source
 from app.streams.models import Stream
 
 PREFIX = "[DEV E2E] "
+VISIBLE_E2E_S3_PREFIX = "e2e-s3-live/"
 
 # Fixed receiver key for operator docs and ingest smoke (not a production secret).
 VISIBLE_E2E_WEBHOOK_RECEIVER_KEY = "dev-visible-e2e"
@@ -265,7 +266,7 @@ def _load_env() -> VisibleSeedEnv:
         minio_bucket=_env("SOURCE_E2E_MINIO_BUCKET", "gdc-source-e2e"),
         minio_access_key=_env("SOURCE_E2E_MINIO_ACCESS_KEY", "gdcminioaccess"),
         minio_secret_key=_env("SOURCE_E2E_MINIO_SECRET_KEY", "gdcminioaccesssecret12"),
-        minio_prefix="e2e-s3/",
+        minio_prefix=VISIBLE_E2E_S3_PREFIX,
         pg_fixture_host=_env("SOURCE_E2E_PG_FIXTURE_HOST", "127.0.0.1"),
         pg_fixture_port=_env_int("SOURCE_E2E_PG_FIXTURE_PORT", 55433),
         pg_fixture_database=_env("SOURCE_E2E_PG_FIXTURE_DB", "gdc_query_fixture"),
