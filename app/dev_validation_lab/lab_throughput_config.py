@@ -356,8 +356,11 @@ def lab_feed_webhook_events_per_tick() -> int:
 
 def lab_feed_s3_objects_per_tick() -> int:
     lines_per_object = 4
+    # S3 polling has a materially longer live cycle than in-memory HTTP fixtures.
+    # Keep a small rolling set, but guarantee at least 24 events are available per
+    # poll so the slow path can still sustain the 5 EPS acceptance floor.
     return max(
-        1,
+        6,
         math.ceil(_max_target_eps_for(*_S3_STREAM_TITLES) / lines_per_object),
     )
 
@@ -412,5 +415,11 @@ def lab_feed_tick_rates(*, high_volume: bool = True) -> dict[str, int]:
         "s3_objects": lab_feed_s3_objects_per_tick(),
         "remote_files": lab_feed_remote_files_per_tick(),
         "webhook_events": lab_feed_webhook_events_per_tick(),
-        "remote_visible_lines": lab_target_eps_for_bare_title("Remote File Stream"),
+        # The visible remote-file stream rewrites one deterministic file per feeder
+        # cycle. Use the upper-band per-poll batch size (20 EPS × expected cycle)
+        # so slower SFTP fetch/parse cycles still clear the 5 EPS live floor.
+        "remote_visible_lines": lab_events_per_poll_for_target(
+            LAB_EPS_MAX,
+            LAB_POLLING_INTERVAL_MIN,
+        ),
     }
