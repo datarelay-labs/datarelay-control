@@ -24,6 +24,7 @@ export function WizardTransformDataProtectionCard({
   const [internalOpen, setInternalOpen] = useState(false)
   const drawerOpen = controlledOpen ?? internalOpen
   const setDrawerOpen = onDrawerOpenChange ?? setInternalOpen
+  const ownsDrawer = controlledOpen === undefined
 
   const validIntents = validDataProtectionIntents(state.dataProtection.intents)
   const configured = validIntents.length > 0
@@ -80,12 +81,14 @@ export function WizardTransformDataProtectionCard({
         </div>
       </section>
 
-      <WizardDataProtectionDrawer
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        state={state}
-        onChange={onChange}
-      />
+      {ownsDrawer ? (
+        <WizardDataProtectionDrawer
+          open={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+          state={state}
+          onChange={onChange}
+        />
+      ) : null}
     </>
   )
 }

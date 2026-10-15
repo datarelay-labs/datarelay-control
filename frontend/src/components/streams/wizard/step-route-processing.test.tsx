@@ -103,6 +103,29 @@ describe('StepRouteProcessing', () => {
     expect(screen.queryByTestId('route-processing-shared-transform')).not.toBeInTheDocument()
   })
 
+  it('renders one shared data protection drawer and closes it cleanly', async () => {
+    render(
+      <MemoryRouter>
+        <StepRouteProcessing
+          state={readyState()}
+          onChangeMapping={() => {}}
+          onChangeMappingMode={() => {}}
+          onChangeFullEventJsonata={() => {}}
+          onChangeFullEventRegexConfigJson={() => {}}
+          onChangeEnrichment={() => {}}
+          onChangeDataProtection={() => {}}
+          onChangeDestinations={() => {}}
+        />
+      </MemoryRouter>,
+    )
+
+    fireEvent.click(screen.getByTestId('wizard-data-protection-configure'))
+    expect(screen.getAllByTestId('wizard-data-protection-drawer')).toHaveLength(1)
+
+    fireEvent.click(screen.getByTestId('wizard-data-protection-drawer-close'))
+    expect(screen.queryByTestId('wizard-data-protection-drawer')).not.toBeInTheDocument()
+  })
+
   it('shows unified data protection tab in route override mode', async () => {
     const state = readyState()
     state.destinations.routeDrafts[0] = {
