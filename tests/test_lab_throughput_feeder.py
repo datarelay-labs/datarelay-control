@@ -110,12 +110,8 @@ def test_tick_wait_subtracts_work_duration():
     assert feeder._remaining_tick_wait(tick_seconds=1.0, elapsed_seconds=1.4) == 0.0
 
 
-def test_webhook_events_are_posted_concurrently(monkeypatch):
-    import threading
-
-    first_started = threading.Event()
-    second_started = threading.Event()
-    overlapped: list[bool] = []
+def test_webhook_events_are_posted_as_one_batch(monkeypatch):
+    calls: list[list[dict[str, str]]] = []
 
     class Response:
         status_code = 200
@@ -129,13 +125,7 @@ def test_webhook_events_are_posted_concurrently(monkeypatch):
             return False
 
         def post(self, url, *, headers, json):
-            event_id = str(json["id"])
-            if "-0-" in event_id:
-                first_started.set()
-                overlapped.append(second_started.wait(timeout=0.25))
-            else:
-                second_started.set()
-                overlapped.append(first_started.wait(timeout=0.25))
+            calls.append(json)
             return Response()
 
     monkeypatch.setattr(feeder.httpx, "Client", lambda **kwargs: Client())
@@ -144,7 +134,9 @@ def test_webhook_events_are_posted_concurrently(monkeypatch):
 
     feeder._post_webhook_events(env, count=2)
 
-    assert overlapped == [True, True]
+    assert len(calls) == 1
+    assert [row["id"].split("-")[2] for row in calls[0]] == ["0", "1"]
+    assert all(row["severity"] == "LOW" for row in calls[0])
 
 
 def test_s3_feeder_reuses_bounded_rolling_object_keys(monkeypatch):

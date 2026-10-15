@@ -28,7 +28,6 @@ logger = logging.getLogger(__name__)
 _FEEDER_THREADS: dict[str, threading.Thread] = {}
 _FEEDER_STOP = threading.Event()
 _MAX_FEED_FAMILY_WORKERS = 8
-_MAX_WEBHOOK_WORKERS = 8
 _SEQ = 0
 _SEQ_LOCK = threading.Lock()
 
@@ -308,31 +307,27 @@ def _post_webhook_events(env: FeederEnv, *, count: int) -> None:
         "X-GDC-Webhook-Secret": VISIBLE_E2E_WEBHOOK_SHARED_SECRET,
     }
     seq = _next_seq()
-    workers = max(1, min(_MAX_WEBHOOK_WORKERS, count))
-
-    def _send_one(client: httpx.Client, i: int) -> bool:
-        payload = {
+    payload = [
+        {
             "id": f"wh-{seq}-{i}-{uuid.uuid4().hex[:8]}",
             "message": f"lab webhook feed {seq}-{i}",
             "severity": "LOW",
         }
-        r = client.post(url, headers=headers, json=payload)
-        if r.status_code >= 400:
-            logger.debug(
-                "%s",
-                {
-                    "stage": "lab_throughput_feed_webhook_failed",
-                    "status_code": r.status_code,
-                    "body": (r.text or "")[:200],
-                },
-            )
-            return False
-        return True
+        for i in range(count)
+    ]
 
     try:
         with httpx.Client(timeout=15.0) as client:
-            with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="lab-feed-webhook") as pool:
-                list(pool.map(lambda i: _send_one(client, i), range(count)))
+            response = client.post(url, headers=headers, json=payload)
+            if response.status_code >= 400:
+                logger.debug(
+                    "%s",
+                    {
+                        "stage": "lab_throughput_feed_webhook_failed",
+                        "status_code": response.status_code,
+                        "body": (response.text or "")[:200],
+                    },
+                )
     except Exception as exc:
         logger.debug(
             "%s",
