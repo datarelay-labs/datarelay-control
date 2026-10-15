@@ -10,6 +10,12 @@ describe('PlatformLoginPage', () => {
     expect(screen.getByTestId('gdc-login-centered')).toHaveClass('gdc-login-centered')
   })
 
+  it('uses the current Product Charter identity on the sign-in surface', () => {
+    render(<PlatformLoginPage onAuthenticated={vi.fn()} />)
+    expect(screen.getByText('Enterprise Data Control Gateway')).toBeInTheDocument()
+    expect(screen.queryByText('Operational Data Connector Platform')).not.toBeInTheDocument()
+  })
+
   it('uses the shared DataRelay master logo asset', () => {
     render(<PlatformLoginPage onAuthenticated={vi.fn()} />)
 

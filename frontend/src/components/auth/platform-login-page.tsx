@@ -124,7 +124,7 @@ export function PlatformLoginPage({ onAuthenticated }: PlatformLoginPageProps) {
     <div className="gdc-login-centered" data-testid="gdc-login-centered">
       <AuthLayout
       productName="DataRelay"
-      productSubtitle="Operational Data Connector Platform"
+      productSubtitle="Enterprise Data Control Gateway"
       description="Collect. Transform. Deliver. Connect to any source, transform and enrich your data, then deliver it to multiple destinations reliably and securely."
       title="Welcome to DataRelay"
       subtitle="Please sign in to continue."
