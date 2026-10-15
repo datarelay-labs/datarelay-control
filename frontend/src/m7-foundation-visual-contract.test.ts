@@ -18,7 +18,10 @@ describe('M7 Foundation visual adoption contract', () => {
       '@datarelay-labs/product-shell',
       '@datarelay-labs/tokens',
     ]) {
-      expect(packageJson.dependencies?.[name]).toBe('0.1.0-rc.41')
+      const short = name.split('/').at(-1)
+      expect(packageJson.dependencies?.[name]).toBe(
+        `file:../.foundation/packs/datarelay-labs-${short}-0.1.0-rc.50.tgz`,
+      )
     }
   })
 

@@ -7,12 +7,12 @@ Stacked on Control PF-5B [PR #412](https://github.com/datarelay-labs/datarelay-c
 ## Exact wheel provenance
 
 - Package: `datarelay-onprem-security==0.10.0.dev0`
-- Foundation source HEAD: `59b8199d6182e0bed2b25307736edb4dad32a246`
-- Reviewed upstream: [Foundation Draft PR #86](https://github.com/datarelay-labs/datarelay-product-foundation/pull/86), stacked on PF-12C and prior security/operations Draft PRs.
+- Foundation source HEAD: `746e0a78f8dba782c00eba675099f24f647f1f09`
+- Foundation RC50 private handoff from Draft PR #104. Consumer installation is authorized by the current Control owner instruction; merge/publication/stable release remain separately gated.
 - Wheel filename: `datarelay_onprem_security-0.10.0.dev0-py3-none-any.whl`
-- Byte count: 36,276
+- Byte count: 114,868
 - Independently pinned SHA256:
-  `6c7c4c8b425fb181e0c10c61aa7ec4ea47c24121379db2c5230251a3bdbc40db`
+  `f78c3e2b85c8ed2ebab57b5b894dc68e32aff1d446f373911f51a75745a2405b`
 - Original source-tree digest is recorded in `candidate.json`. That JSON
   manifest is unsigned, so the **trusted expected hash is the fixed value
   in this code review and SHA256SUMS**, never automatically taken from the

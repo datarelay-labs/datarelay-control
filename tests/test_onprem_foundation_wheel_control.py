@@ -17,19 +17,19 @@ from app.auth.password_policy import validate_new_platform_password
 ROOT = Path(__file__).resolve().parents[1]
 VENDOR = ROOT / "vendor/onprem-security"
 WHEEL_NAME = "datarelay_onprem_security-0.10.0.dev0-py3-none-any.whl"
-PINNED_SHA256 = "6c7c4c8b425fb181e0c10c61aa7ec4ea47c24121379db2c5230251a3bdbc40db"
+PINNED_SHA256 = "f78c3e2b85c8ed2ebab57b5b894dc68e32aff1d446f373911f51a75745a2405b"
 
 
 def test_wheel_is_the_immutable_shared_foundation_candidate() -> None:
     pkg = VENDOR / WHEEL_NAME
-    assert pkg.stat().st_size == 36276
+    assert pkg.stat().st_size == 114868
     assert hashlib.sha256(pkg.read_bytes()).hexdigest() == PINNED_SHA256
     assert version("datarelay-onprem-security") == "0.10.0.dev0"
     manifest = json.loads((VENDOR / "candidate.json").read_text(encoding="utf-8"))
-    assert manifest["source_head"] == "59b8199d6182e0bed2b25307736edb4dad32a246"
+    assert manifest["source_head"] == "746e0a78f8dba782c00eba675099f24f647f1f09"
     assert manifest["wheel"] == WHEEL_NAME
     assert manifest["wheel_sha256"] == PINNED_SHA256
-    assert manifest["source_tree_sha256"] == "d6cf7b1df97f3f036cee237c80422c0828b3f0e503962fdc5034bce4fa3d5c47"
+    assert manifest["source_tree_sha256"] == "702820f126be2ac62e1cd7673502656f5dec8dd60d1afb73a750199699af115c"
     assert (VENDOR / "SHA256SUMS").read_text(encoding="ascii").strip() == (
         PINNED_SHA256 + "  " + WHEEL_NAME
     )
