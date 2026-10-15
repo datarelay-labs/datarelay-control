@@ -16,7 +16,10 @@ from typing import Any
 
 import httpx
 
-from app.dev_validation_lab.lab_throughput_config import lab_feed_tick_rates
+from app.dev_validation_lab.lab_throughput_config import (
+    LAB_FEED_S3_ROLLING_SLOTS,
+    lab_feed_tick_rates,
+)
 from app.dev_validation_lab.visible_e2e_seed import (
     VISIBLE_E2E_S3_PREFIX,
     VISIBLE_E2E_WEBHOOK_RECEIVER_KEY,
@@ -30,6 +33,8 @@ _FEEDER_STOP = threading.Event()
 _MAX_FEED_FAMILY_WORKERS = 8
 _SEQ = 0
 _SEQ_LOCK = threading.Lock()
+_S3_SLOT_CURSOR = 0
+_S3_SLOT_LOCK = threading.Lock()
 
 
 def lab_throughput_feeder_enabled() -> bool:
@@ -198,8 +203,12 @@ def _s3_client(env: FeederEnv):
 
 
 def _upload_s3_ndjson(env: FeederEnv, *, prefix: str, count: int) -> None:
+    global _S3_SLOT_CURSOR
     if count <= 0 or not env.minio_access_key or not env.minio_secret_key:
         return
+    with _S3_SLOT_LOCK:
+        start_slot = _S3_SLOT_CURSOR
+        _S3_SLOT_CURSOR = (_S3_SLOT_CURSOR + count) % LAB_FEED_S3_ROLLING_SLOTS
     try:
         client = _s3_client(env)
         for bucket in env.minio_buckets:
@@ -209,7 +218,8 @@ def _upload_s3_ndjson(env: FeederEnv, *, prefix: str, count: int) -> None:
                 pass
             seq = _next_seq()
             for i in range(count):
-                key = f"{prefix}lab-feed-slot-{i:03d}.ndjson"
+                slot = (start_slot + i) % LAB_FEED_S3_ROLLING_SLOTS
+                key = f"{prefix}lab-feed-slot-{slot:03d}.ndjson"
                 body = json.dumps(
                     {"id": f"s3-{seq}-{i}", "message": f"s3 lab feed {seq}-{i}", "severity": "info"}
                 ).encode()

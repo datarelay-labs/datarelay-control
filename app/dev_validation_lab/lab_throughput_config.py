@@ -50,6 +50,8 @@ LAB_FEED_DB_ROWS_BASE = 8
 LAB_FEED_DB_ROWS_HIGH = 20
 LAB_FEED_S3_OBJECTS_BASE = 2
 LAB_FEED_S3_OBJECTS_HIGH = 4
+LAB_FEED_S3_RECORDS_PER_OBJECT = 4
+LAB_FEED_S3_ROLLING_SLOTS = 15
 LAB_FEED_REMOTE_FILES_BASE = 2
 LAB_FEED_REMOTE_FILES_HIGH = 4
 LAB_FEED_WEBHOOK_EVENTS_BASE = 8
@@ -365,15 +367,15 @@ def lab_feed_webhook_events_per_tick() -> int:
 
 
 def lab_feed_s3_objects_per_tick() -> int:
-    lines_per_object = 4
-    acceptance_margin_poll_seconds = 12
-    # S3 polling has a materially longer live cycle than in-memory HTTP fixtures.
-    # Keep a bounded rolling set with phase-alignment margin so an arbitrary
-    # 60-second acceptance window remains above 5 EPS. Fifteen 4-line objects
-    # yield 60 events per poll and still cap at 20 EPS on a 3-second recovery cycle.
+    # Update only enough rolling slots per second to stay inside the 20 EPS
+    # ceiling. The larger bounded ring preserves enough changed objects for a
+    # slow poll without continuously saturating MinIO with PUT/GET requests.
     return max(
-        math.ceil(LAB_EPS_MIN * acceptance_margin_poll_seconds / lines_per_object),
-        math.ceil(_max_target_eps_for(*_S3_STREAM_TITLES) / lines_per_object),
+        1,
+        math.ceil(
+            _max_target_eps_for(*_S3_STREAM_TITLES)
+            / LAB_FEED_S3_RECORDS_PER_OBJECT
+        ),
     )
 
 

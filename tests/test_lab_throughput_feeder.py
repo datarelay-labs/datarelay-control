@@ -139,7 +139,7 @@ def test_webhook_events_are_posted_as_one_batch(monkeypatch):
     assert all(row["severity"] == "LOW" for row in calls[0])
 
 
-def test_s3_feeder_reuses_bounded_rolling_object_keys(monkeypatch):
+def test_s3_feeder_reuses_bounded_rotating_object_ring(monkeypatch):
     keys: list[str] = []
 
     class Client:
@@ -155,15 +155,13 @@ def test_s3_feeder_reuses_bounded_rolling_object_keys(monkeypatch):
         minio_buckets=("gdc-source-e2e",),
     )
     monkeypatch.setattr(feeder, "_s3_client", lambda env: Client())
+    monkeypatch.setattr(feeder, "_S3_SLOT_CURSOR", 0)
 
-    feeder._upload_s3_ndjson(env, prefix="bounded/", count=3)
-    first = list(keys)
-    feeder._upload_s3_ndjson(env, prefix="bounded/", count=3)
-    second = keys[3:]
+    for _ in range(4):
+        feeder._upload_s3_ndjson(env, prefix="bounded/", count=5)
 
-    assert first == [
-        "bounded/lab-feed-slot-000.ndjson",
-        "bounded/lab-feed-slot-001.ndjson",
-        "bounded/lab-feed-slot-002.ndjson",
-    ]
-    assert second == first
+    assert keys[:5] == [f"bounded/lab-feed-slot-{i:03d}.ndjson" for i in range(5)]
+    assert keys[5:10] == [f"bounded/lab-feed-slot-{i:03d}.ndjson" for i in range(5, 10)]
+    assert keys[10:15] == [f"bounded/lab-feed-slot-{i:03d}.ndjson" for i in range(10, 15)]
+    assert keys[15:20] == keys[:5]
+    assert len(set(keys)) == 15

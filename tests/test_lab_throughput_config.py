@@ -9,6 +9,8 @@ from app.dev_validation_lab.lab_throughput_config import (
     LAB_HTTP_BASE_PATH,
     LAB_HTTP_HIGH_PATH,
     LAB_HTTP_SINGLE_PATH,
+    LAB_FEED_S3_RECORDS_PER_OBJECT,
+    LAB_FEED_S3_ROLLING_SLOTS,
     LAB_POLLING_INTERVAL_MIN,
     LAB_POLLING_INTERVAL_NEGATIVE,
     apply_lab_http_throughput_config,
@@ -117,19 +119,21 @@ def test_feeder_tick_rates_are_per_second_and_bounded() -> None:
     rates = lab_feed_tick_rates(high_volume=True)
     assert LAB_EPS_MIN <= rates["db_rows"] <= LAB_EPS_MAX
     assert LAB_EPS_MIN <= rates["webhook_events"] <= LAB_EPS_MAX
-    assert 6 <= rates["s3_objects"] <= LAB_EPS_MAX
+    assert LAB_EPS_MIN <= rates["s3_objects"] * LAB_FEED_S3_RECORDS_PER_OBJECT <= LAB_EPS_MAX
     assert 1 <= rates["remote_files"] <= LAB_EPS_MAX
     assert rates["remote_visible_lines"] == LAB_EPS_MIN * 8
 
 
 def test_s3_feeder_sustains_acceptance_band_at_slow_live_poll_cycle() -> None:
     rates = lab_feed_tick_rates(high_volume=True)
-    events_per_visible_poll = rates["s3_objects"] * 4
+    events_per_tick = rates["s3_objects"] * LAB_FEED_S3_RECORDS_PER_OBJECT
+    events_in_rolling_ring = LAB_FEED_S3_ROLLING_SLOTS * LAB_FEED_S3_RECORDS_PER_OBJECT
 
-    # Preserve 20% timing/phase margin beyond the observed ~10-second slow cycle,
-    # while a 3-second recovery cycle must still stay inside the 20 EPS ceiling.
-    assert events_per_visible_poll / 12.0 >= LAB_EPS_MIN
-    assert events_per_visible_poll / 3.0 <= LAB_EPS_MAX
+    # Fast polling stays inside the ceiling; a 12-second slow poll can still
+    # consume a bounded ring with enough changed records to clear the floor.
+    assert LAB_EPS_MIN <= events_per_tick <= LAB_EPS_MAX
+    assert events_in_rolling_ring / 12.0 >= LAB_EPS_MIN
+    assert events_in_rolling_ring / 3.0 <= LAB_EPS_MAX
 
 
 def test_webhook_feeder_sustains_acceptance_band_at_slow_live_post_cycle() -> None:
