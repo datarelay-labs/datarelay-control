@@ -200,3 +200,48 @@ describe('ConnectorDetailPage effective role/capability view', () => {
     expect(updateConnectorMock).not.toHaveBeenCalled()
   })
 })
+
+describe('ConnectorDetailPage Webhook Receiver surface', () => {
+  afterEach(() => {
+    clearTestSession()
+    vi.clearAllMocks()
+  })
+
+  it('does not show outbound HTTP auth-test guidance for an inbound Webhook Receiver', async () => {
+    persistTestSession('OPERATOR')
+    fetchConnectorByIdMock.mockResolvedValue({
+      id: 9,
+      name: 'Webhook receiver',
+      description: '',
+      status: 'STOPPED',
+      connector_type: 'webhook_receiver',
+      source_type: 'WEBHOOK_RECEIVER',
+      source_id: 13,
+      stream_count: 0,
+      host: '',
+      base_url: '',
+      verify_ssl: true,
+      http_proxy: null,
+      common_headers: {},
+      auth_type: 'no_auth',
+      auth: { auth_type: 'no_auth' },
+      receiver_key: 'receiver-fixture',
+      webhook_auth_mode: 'no_auth',
+      webhook_auth_header_name: 'X-GDC-Webhook-Secret',
+      max_request_bytes: 1048576,
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/connectors/9']}>
+        <Routes><Route path="/connectors/:connectorId" element={<ConnectorDetailPage />} /></Routes>
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByDisplayValue('Webhook receiver')).toBeEnabled()
+    expect(screen.getByRole('heading', { name: 'Webhook Receiver' })).toBeInTheDocument()
+    expect(screen.queryByText('Auth Test Request')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Test Authentication' })).not.toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('/connect/api/v1/alerts')).not.toBeInTheDocument()
+    expect(runConnectorAuthTestMock).not.toHaveBeenCalled()
+  })
+})

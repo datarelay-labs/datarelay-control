@@ -532,7 +532,7 @@ export function NewConnectorWizardPage({
         />
       </section>
 
-      {canTestConnectors ? (
+      {canTestConnectors && !isWebhook ? (
       <ConnectorAuthTestPanel
         buildAuthTestPayload={buildAuthTestPayload}
         onTestStart={() => setError(null)}

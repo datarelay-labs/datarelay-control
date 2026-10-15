@@ -507,7 +507,7 @@ export function ConnectorDetailPage() {
       )}
 
       </fieldset>
-      {canTestConnectors ? (
+      {canTestConnectors && !isWebhook ? (
       <ConnectorAuthTestPanel
         buildAuthTestPayload={buildAuthTestPayload}
         onTestStart={() => setError(null)}

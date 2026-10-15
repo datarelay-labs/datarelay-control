@@ -50,7 +50,13 @@ def probe_s3_source(source_config: dict[str, Any], *, preview_key_limit: int = 8
         return out
 
     addressing = "path" if path_style else "virtual"
-    boto_cfg = BotoConfig(signature_version="s3v4", s3={"addressing_style": addressing})
+    boto_cfg = BotoConfig(
+        signature_version="s3v4",
+        s3={"addressing_style": addressing},
+        connect_timeout=3,
+        read_timeout=10,
+        retries={"total_max_attempts": 2, "mode": "standard"},
+    )
 
     try:
         session = boto3.session.Session(

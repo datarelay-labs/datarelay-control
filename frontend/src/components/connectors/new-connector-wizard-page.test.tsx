@@ -107,6 +107,31 @@ describe('NewConnectorWizardPage', () => {
 })
 
 
+describe('NewConnectorWizardPage Webhook Receiver surface', () => {
+  afterEach(() => {
+    clearTestSession()
+    vi.clearAllMocks()
+  })
+
+  it('does not show outbound HTTP auth-test guidance for an inbound Webhook Receiver', async () => {
+    persistTestSession('OPERATOR')
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <NewConnectorWizardPage />
+      </MemoryRouter>,
+    )
+
+    await user.click(screen.getByRole('radio', { name: 'Webhook Receiver' }))
+
+    expect(screen.getByRole('heading', { name: 'Webhook Receiver' })).toBeInTheDocument()
+    expect(screen.queryByText('Auth Test Request')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Test Authentication' })).not.toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('/connect/api/v1/alerts')).not.toBeInTheDocument()
+  })
+})
+
+
 describe('NewConnectorWizardPage effective creation authority', () => {
   beforeEach(() => vi.clearAllMocks())
   afterEach(() => {
