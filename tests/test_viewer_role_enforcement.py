@@ -109,6 +109,32 @@ def test_operator_can_run_stream_but_not_users(client: TestClient) -> None:
     assert r2.json()["detail"]["error_code"] == "ROLE_FORBIDDEN"
 
 
+def test_viewer_user_mutations_fail_authorization_before_payload_validation(client: TestClient) -> None:
+    headers = _bearer("VIEWER", username="viewer-users")
+
+    create = client.post("/api/v1/admin/users", headers=headers, json={})
+    assert create.status_code == 403
+    assert create.json()["detail"]["error_code"] == "ROLE_FORBIDDEN"
+
+    update = client.patch("/api/v1/admin/users/9999", headers=headers, json={})
+    assert update.status_code == 403
+    assert update.json()["detail"]["error_code"] == "ROLE_FORBIDDEN"
+
+    delete = client.delete("/api/v1/admin/users/9999", headers=headers)
+    assert delete.status_code == 403
+    assert delete.json()["detail"]["error_code"] == "ROLE_FORBIDDEN"
+
+
+def test_viewer_cannot_create_administrator(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/admin/users",
+        headers=_bearer("VIEWER", username="viewer-users-valid"),
+        json={"username": "blocked-admin", "password": "valid-pass-12", "role": "ADMINISTRATOR"},
+    )
+    assert response.status_code == 403
+    assert response.json()["detail"]["error_code"] == "ROLE_FORBIDDEN"
+
+
 def test_operator_cannot_modify_retention_policy(client: TestClient) -> None:
     r = client.put(
         "/api/v1/admin/retention-policy",

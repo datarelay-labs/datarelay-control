@@ -1405,6 +1405,13 @@ describe('StreamRuntimeDetailPage diagnosis overview', () => {
   })
 
   it('puts diagnosis ahead of runtime evidence and does not repeat the shell title', async () => {
+    mockFetchStreamById.mockResolvedValue({
+      id: 42,
+      name: 'Stream 42',
+      stream_type: 'HTTP_API_POLLING',
+      connector_id: 1,
+      status: 'RUNNING',
+    })
     renderRuntimePage('42')
     const diagnosis = await screen.findByTestId('stream-diagnosis-overview')
     const evidence = screen.getByTestId('stream-runtime-evidence')
@@ -1412,6 +1419,9 @@ describe('StreamRuntimeDetailPage diagnosis overview', () => {
     expect(screen.queryByRole('heading', { name: 'Stream monitoring' })).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 2, name: 'Stream 42' })).toBeInTheDocument()
     expect(screen.getByTestId('stream-runtime-primary-actions')).toBeInTheDocument()
+    const scheduler = await screen.findByRole('switch', { name: /Stream scheduler: Running/ })
+    expect(scheduler).toBeInTheDocument()
+    expect(scheduler).toHaveTextContent('Stop')
     expect(screen.getByRole('button', { name: 'Run Now' })).toBeInTheDocument()
     expect(screen.getByTestId('stream-runtime-secondary-actions')).toHaveTextContent('Export JSON')
   })

@@ -667,7 +667,11 @@ def read_users(db: Session = Depends(get_db)) -> list[PlatformUserRead]:
 
 
 @router.post("/users", response_model=PlatformUserRead, status_code=status.HTTP_201_CREATED)
-def create_user(payload: PlatformUserCreate, db: Session = Depends(get_db)) -> PlatformUserRead:
+def create_user(
+    payload: PlatformUserCreate,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(require_roles(ROLE_ADMINISTRATOR)),
+) -> PlatformUserRead:
     try:
         username = normalize_username(payload.username)
     except ValueError as exc:
@@ -703,7 +707,12 @@ def create_user(payload: PlatformUserCreate, db: Session = Depends(get_db)) -> P
 
 
 @router.patch("/users/{user_id}", response_model=PlatformUserRead)
-def update_user(user_id: int, payload: PlatformUserUpdate, db: Session = Depends(get_db)) -> PlatformUserRead:
+def update_user(
+    user_id: int,
+    payload: PlatformUserUpdate,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(require_roles(ROLE_ADMINISTRATOR)),
+) -> PlatformUserRead:
     user = get_user_by_id(db, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"error_code": "USER_NOT_FOUND", "message": "user not found"})
@@ -867,7 +876,11 @@ def reset_user_mfa(
 
 
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_user(user_id: int, db: Session = Depends(get_db)) -> None:
+def delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(require_roles(ROLE_ADMINISTRATOR)),
+) -> None:
     user = get_user_by_id(db, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"error_code": "USER_NOT_FOUND", "message": "user not found"})
