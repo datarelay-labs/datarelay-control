@@ -421,10 +421,8 @@ def lab_feed_tick_rates(*, high_volume: bool = True) -> dict[str, int]:
         "s3_objects": lab_feed_s3_objects_per_tick(),
         "remote_files": lab_feed_remote_files_per_tick(),
         "webhook_events": lab_feed_webhook_events_per_tick(),
-        # The visible remote-file stream rewrites one deterministic file per feeder
-        # cycle. The scheduler can land only three successful Remote File polls
-        # inside an arbitrary 60-second acceptance window, so keep a small margin
-        # above the exact 100-event floor. Four polls still remain far below 20 EPS.
-        "remote_visible_lines": LAB_EPS_MIN
-        + math.ceil(LAB_EPS_MIN * 60 / 3),
+        # The visible remote-file stream uses an exact-filename fast path, so a
+        # bounded 50-event file clears 5 EPS even at a 10-second cycle while
+        # remaining below 20 EPS at a 3-second recovery cycle.
+        "remote_visible_lines": LAB_EPS_MIN * 10,
     }
