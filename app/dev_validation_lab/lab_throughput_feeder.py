@@ -17,6 +17,7 @@ from typing import Any
 import httpx
 
 from app.dev_validation_lab.lab_throughput_config import (
+    LAB_FEED_S3_RECORDS_PER_OBJECT,
     LAB_FEED_S3_ROLLING_SLOTS,
     lab_feed_tick_rates,
 )
@@ -223,7 +224,7 @@ def _upload_s3_ndjson(env: FeederEnv, *, prefix: str, count: int) -> None:
                 body = json.dumps(
                     {"id": f"s3-{seq}-{i}", "message": f"s3 lab feed {seq}-{i}", "severity": "info"}
                 ).encode()
-                for j in range(3):
+                for j in range(LAB_FEED_S3_RECORDS_PER_OBJECT - 1):
                     body += b"\n" + json.dumps(
                         {"id": f"s3-{seq}-{i}-line-{j}", "message": "ndjson line", "severity": "low"}
                     ).encode()

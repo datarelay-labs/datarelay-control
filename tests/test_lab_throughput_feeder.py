@@ -141,6 +141,7 @@ def test_webhook_events_are_posted_as_one_batch(monkeypatch):
 
 def test_s3_feeder_reuses_bounded_rotating_object_ring(monkeypatch):
     keys: list[str] = []
+    bodies: list[bytes] = []
 
     class Client:
         def create_bucket(self, **kwargs):
@@ -148,6 +149,7 @@ def test_s3_feeder_reuses_bounded_rotating_object_ring(monkeypatch):
 
         def put_object(self, *, Bucket, Key, Body, ContentType):
             keys.append(Key)
+            bodies.append(Body)
 
     env = SimpleNamespace(
         minio_access_key="dev",
@@ -171,3 +173,4 @@ def test_s3_feeder_reuses_bounded_rotating_object_ring(monkeypatch):
         "bounded/lab-feed-slot-003.ndjson",
     ]
     assert len(set(keys)) == 16
+    assert all(len(body.splitlines()) == feeder.LAB_FEED_S3_RECORDS_PER_OBJECT for body in bodies)
