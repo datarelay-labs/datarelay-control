@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 
+from app.sources import remote_file_ssh as rfs
 from app.sources.adapters import remote_file_polling as rfp
 
 
@@ -78,6 +80,43 @@ def test_normalize_remote_file_transfer_protocol() -> None:
 def test_normalize_remote_file_transfer_protocol_invalid() -> None:
     with pytest.raises(rfp.SourceFetchError):
         rfp.normalize_remote_file_transfer_protocol("ftp")
+
+
+def test_literal_remote_file_candidate_uses_stat_without_directory_listing() -> None:
+    class FakeSftp:
+        def stat(self, path: str) -> SimpleNamespace:
+            assert path == "upload/e2e-remote.ndjson"
+            return SimpleNamespace(st_mode=0o100644, st_mtime=123.5, st_size=42)
+
+        def listdir_attr(self, _path: str) -> list[object]:
+            raise AssertionError("literal filename must not list the whole directory")
+
+    assert rfs.iter_remote_file_candidates(
+        FakeSftp(),  # type: ignore[arg-type]
+        base="upload",
+        pattern="e2e-remote.ndjson",
+        recursive=False,
+    ) == [("upload/e2e-remote.ndjson", 123.5, 42)]
+
+
+def test_glob_remote_file_candidate_keeps_directory_listing_path() -> None:
+    class FakeSftp:
+        def stat(self, _path: str) -> object:
+            raise AssertionError("glob pattern must preserve directory listing")
+
+        def listdir_attr(self, path: str) -> list[SimpleNamespace]:
+            assert path == "upload"
+            return [
+                SimpleNamespace(filename="a.ndjson", st_mode=0o100644, st_mtime=2.0, st_size=20),
+                SimpleNamespace(filename="ignore.txt", st_mode=0o100644, st_mtime=1.0, st_size=10),
+            ]
+
+    assert rfs.iter_remote_file_candidates(
+        FakeSftp(),  # type: ignore[arg-type]
+        base="upload",
+        pattern="*.ndjson",
+        recursive=False,
+    ) == [("upload/a.ndjson", 2.0, 20)]
 
 
 def test_fetch_via_scp_uses_scp_get_not_getfo(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -170,7 +170,43 @@ def iter_remote_file_candidates(
     """Return (full_remote_path, mtime_epoch, size) sorted by (mtime, path)."""
 
     out: list[tuple[str, float, int]] = []
-    stack = [base.rstrip("/")]
+    base_dir = base.rstrip("/")
+
+    # Exact non-recursive filenames do not need a full directory listing.
+    # This matters for long-lived remote directories where unrelated fixture
+    # files may accumulate; preserve the existing listing path for globs and
+    # recursive traversal.
+    literal_filename = (
+        not recursive
+        and "/" not in pattern
+        and not any(ch in pattern for ch in "*?[")
+    )
+    if literal_filename:
+        full = f"{base_dir}/{pattern}"
+        try:
+            attr = sftp.stat(full)
+        except FileNotFoundError:
+            return []
+        except OSError as exc:
+            if getattr(exc, "errno", None) == 2:
+                return []
+            logger.info(
+                "%s",
+                {
+                    "stage": "remote_file_stat_failed",
+                    "path": full,
+                    "error_type": type(exc).__name__,
+                },
+            )
+            raise
+        mode = int(getattr(attr, "st_mode", 0) or 0)
+        if (mode & 0o40000) == 0o40000:
+            return []
+        mtime = float(getattr(attr, "st_mtime", 0) or 0)
+        size = int(getattr(attr, "st_size", 0) or 0)
+        return [(full, mtime, size)]
+
+    stack = [base_dir]
 
     while stack:
         cur = stack.pop()
