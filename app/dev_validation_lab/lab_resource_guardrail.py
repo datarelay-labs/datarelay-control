@@ -103,8 +103,14 @@ def _collect_db_metrics(db: Session) -> dict[str, Any]:
     size_bytes = _scalar_int(db, "SELECT pg_total_relation_size('delivery_logs'::regclass)")
     alert_rows = _approx_table_rows(db, "platform_alert_history")
     replay_rows = _approx_table_rows(db, "stream_replay_events")
-    # Bounded window count is still useful for EPS; keep a statement timeout.
+
+    # Keep the physical stage-row count for observability, but do not use it as
+    # event EPS. One logical run emits many stage rows, and webhook ingress may
+    # emit one run per event; treating those rows as events makes compliant
+    # 5-20 EPS lab traffic pause itself.
     rows_10m: int | None = None
+    lab_run_rows_10m: int | None = None
+    max_stream_input_events_10m: int | None = None
     try:
         db.execute(text("SET LOCAL statement_timeout = '3000ms'"))
         rows_10m = _scalar_int(
@@ -112,18 +118,64 @@ def _collect_db_metrics(db: Session) -> dict[str, Any]:
             "SELECT count(*) FROM delivery_logs "
             "WHERE created_at >= (NOW() AT TIME ZONE 'utc') - INTERVAL '10 minutes'",
         )
+        row = db.execute(
+            text(
+                """
+                WITH recent_lab_runs AS (
+                    SELECT
+                        dl.stream_id,
+                        COUNT(*)::bigint AS run_rows,
+                        COALESCE(
+                            SUM(
+                                CASE
+                                    WHEN json_typeof(dl.payload_sample) = 'object'
+                                         AND COALESCE(dl.payload_sample ->> 'input_events', '') ~ '^[0-9]+$'
+                                    THEN (dl.payload_sample ->> 'input_events')::bigint
+                                    ELSE 0
+                                END
+                            ),
+                            0
+                        )::bigint AS input_events
+                    FROM delivery_logs AS dl
+                    JOIN streams AS s ON s.id = dl.stream_id
+                    WHERE dl.created_at >= (NOW() AT TIME ZONE 'utc') - INTERVAL '10 minutes'
+                      AND dl.stage = 'run_complete'
+                      AND (
+                          s.name LIKE '[DEV VALIDATION] %'
+                          OR s.name LIKE '[DEV E2E] %'
+                      )
+                    GROUP BY dl.stream_id
+                )
+                SELECT
+                    COALESCE(SUM(run_rows), 0)::bigint,
+                    COALESCE(MAX(input_events), 0)::bigint
+                FROM recent_lab_runs
+                """
+            )
+        ).one()
+        lab_run_rows_10m = int(row[0] or 0)
+        max_stream_input_events_10m = int(row[1] or 0)
     except Exception:
         try:
             db.rollback()
         except Exception:
             pass
-        rows_10m = None
+        # Fail closed to the historical physical-row approximation when the
+        # richer lab accounting query is unavailable.
+        lab_run_rows_10m = None
+        max_stream_input_events_10m = None
+
     recent_eps = None
-    if rows_10m is not None:
+    if max_stream_input_events_10m is not None:
+        recent_eps = round(float(max_stream_input_events_10m) / 600.0, 4)
+    elif rows_10m is not None:
         recent_eps = round(float(rows_10m) / 600.0, 4)
+
     return {
         "delivery_logs_rows": rows_total,
         "delivery_logs_rows_last_10m": rows_10m,
+        "lab_run_rows_last_10m": lab_run_rows_10m,
+        "max_stream_input_events_last_10m": max_stream_input_events_10m,
         "delivery_logs_estimated_size": size_bytes,
         "recent_eps": recent_eps,
         "alert_history_rows": alert_rows,
@@ -217,6 +269,8 @@ def evaluate_lab_resource_budget(
         "limits": {k: v for k, v in limits.items() if k != "enabled"},
         "delivery_logs_rows": None,
         "delivery_logs_rows_last_10m": None,
+        "lab_run_rows_last_10m": None,
+        "max_stream_input_events_last_10m": None,
         "delivery_logs_estimated_size": None,
         "recent_eps": None,
         "alert_history_rows": None,
@@ -259,6 +313,8 @@ def evaluate_lab_resource_budget(
     for key in (
         "delivery_logs_rows",
         "delivery_logs_rows_last_10m",
+        "lab_run_rows_last_10m",
+        "max_stream_input_events_last_10m",
         "delivery_logs_estimated_size",
         "recent_eps",
         "alert_history_rows",
@@ -314,11 +370,23 @@ def evaluate_lab_resource_budget(
         limits["max_recent_eps"],
         f"recent_eps>{limits['max_recent_eps']}",
     )
-    _over(
-        base.get("delivery_logs_rows_last_10m"),
-        limits["max_rows_per_10m"],
-        f"delivery_logs_rows_last_10m>{limits['max_rows_per_10m']}",
-    )
+    # The 10-minute activity budget historically used every delivery stage row,
+    # which multiplies one logical event into many rows. Live collection now
+    # supplies run-complete activity; metrics_override callers without the new
+    # field retain the historical fallback for compatibility/fail-closed tests.
+    lab_run_rows = base.get("lab_run_rows_last_10m")
+    if lab_run_rows is not None:
+        _over(
+            lab_run_rows,
+            limits["max_rows_per_10m"],
+            f"lab_run_rows_last_10m>{limits['max_rows_per_10m']}",
+        )
+    else:
+        _over(
+            base.get("delivery_logs_rows_last_10m"),
+            limits["max_rows_per_10m"],
+            f"delivery_logs_rows_last_10m>{limits['max_rows_per_10m']}",
+        )
 
     journal = base.get("wiremock_journal_entries")
     max_j = int(limits["max_wiremock_journal_entries"])
