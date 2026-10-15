@@ -127,13 +127,19 @@ def test_feeder_tick_rates_are_per_second_and_bounded() -> None:
 def test_s3_feeder_sustains_acceptance_band_at_slow_live_poll_cycle() -> None:
     rates = lab_feed_tick_rates(high_volume=True)
     events_per_tick = rates["s3_objects"] * LAB_FEED_S3_RECORDS_PER_OBJECT
-    events_in_rolling_ring = LAB_FEED_S3_ROLLING_SLOTS * LAB_FEED_S3_RECORDS_PER_OBJECT
 
-    # Fast polling stays inside the ceiling; a 12-second slow poll can still
-    # consume a bounded ring with enough changed records to clear the floor.
+    # Fast polling stays inside the ceiling. The rotating ring keeps one extra
+    # slot of phase margin so a 12-second slow poll remains above the 5 EPS floor.
     assert LAB_EPS_MIN <= events_per_tick <= LAB_EPS_MAX
-    assert events_in_rolling_ring / 12.0 >= LAB_EPS_MIN
-    assert events_in_rolling_ring / 3.0 <= LAB_EPS_MAX
+    for poll_seconds in (1, 2, 3, 4, 12):
+        changed_slots = min(
+            LAB_FEED_S3_ROLLING_SLOTS,
+            rates["s3_objects"] * poll_seconds,
+        )
+        eps = changed_slots * LAB_FEED_S3_RECORDS_PER_OBJECT / poll_seconds
+        assert eps <= LAB_EPS_MAX
+        if poll_seconds == 12:
+            assert eps > LAB_EPS_MIN
 
 
 def test_webhook_feeder_sustains_acceptance_band_at_slow_live_post_cycle() -> None:

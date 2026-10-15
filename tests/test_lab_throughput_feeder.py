@@ -163,5 +163,11 @@ def test_s3_feeder_reuses_bounded_rotating_object_ring(monkeypatch):
     assert keys[:5] == [f"bounded/lab-feed-slot-{i:03d}.ndjson" for i in range(5)]
     assert keys[5:10] == [f"bounded/lab-feed-slot-{i:03d}.ndjson" for i in range(5, 10)]
     assert keys[10:15] == [f"bounded/lab-feed-slot-{i:03d}.ndjson" for i in range(10, 15)]
-    assert keys[15:20] == keys[:5]
-    assert len(set(keys)) == 15
+    assert keys[15:20] == [
+        "bounded/lab-feed-slot-015.ndjson",
+        "bounded/lab-feed-slot-000.ndjson",
+        "bounded/lab-feed-slot-001.ndjson",
+        "bounded/lab-feed-slot-002.ndjson",
+        "bounded/lab-feed-slot-003.ndjson",
+    ]
+    assert len(set(keys)) == 16
