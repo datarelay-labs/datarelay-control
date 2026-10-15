@@ -87,6 +87,7 @@ def test_shared_high_http_stub_stays_within_live_eps_band() -> None:
     events = lab_http_events_for_path(LAB_HTTP_HIGH_PATH)
     eps = lab_estimated_http_eps(events_per_poll=events, polling_interval_seconds=1)
     assert LAB_EPS_MIN <= eps <= LAB_EPS_MAX
+    assert events * 13 / 60.0 >= LAB_EPS_MIN
 
 
 def test_apply_lab_http_throughput_config() -> None:

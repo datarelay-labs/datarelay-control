@@ -204,7 +204,13 @@ def lab_http_events_for_path(path: str) -> int:
     matching = [bare for bare in LAB_ACTIVE_STREAM_TITLES if lab_http_path_for_bare_title(bare) == path]
     if not matching:
         return lab_events_per_poll_for_target(LAB_EPS_MIN, LAB_POLLING_INTERVAL_MIN)
-    return max(lab_http_events_for_bare_title(bare) for bare in matching)
+    events = max(lab_http_events_for_bare_title(bare) for bare in matching)
+    if path == LAB_HTTP_HIGH_PATH:
+        # Under full lab scheduler load an arbitrary 60-second window can contain
+        # only 13 completed visible HTTP runs. Twenty-four events keeps that
+        # window above 5 EPS while the normal 1.25-second cycle remains <=20 EPS.
+        events = max(events, math.ceil(LAB_EPS_MIN * 60 / 13))
+    return events
 
 
 def lab_http_events_for_bare_title(bare: str) -> int:
