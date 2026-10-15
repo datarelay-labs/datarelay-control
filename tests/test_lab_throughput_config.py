@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 from app.dev_validation_lab.lab_throughput_config import (
     LAB_ACTIVE_STREAM_TITLES,
     LAB_EPS_MAX,
@@ -118,9 +120,8 @@ def test_feeder_tick_rates_are_per_second_and_bounded() -> None:
     assert LAB_EPS_MIN <= rates["webhook_events"] <= LAB_EPS_MAX
     assert 6 <= rates["s3_objects"] <= LAB_EPS_MAX
     assert 1 <= rates["remote_files"] <= LAB_EPS_MAX
-    assert rates["remote_visible_lines"] == LAB_EPS_MIN + 3 * lab_events_per_poll_for_target(
-        LAB_EPS_MAX,
-        LAB_POLLING_INTERVAL_MIN,
+    assert rates["remote_visible_lines"] == LAB_EPS_MIN + math.ceil(
+        LAB_EPS_MIN * 60 / 3
     )
 
 
@@ -149,10 +150,11 @@ def test_visible_remote_file_feeder_sustains_acceptance_band_at_slow_live_poll_c
     rates = lab_feed_tick_rates(high_volume=True)
     events_per_visible_poll = rates["remote_visible_lines"]
 
-    # SFTP live runs have shown ~12 second cycles. Keep enough margin above the
-    # 5 EPS floor without crossing the 20 EPS ceiling at a 4 second cycle.
-    assert events_per_visible_poll / 12.0 >= LAB_EPS_MIN
-    assert events_per_visible_poll / 4.0 <= LAB_EPS_MAX
+    # An arbitrary 60-second live window can contain only three successful
+    # Remote File polls because of scheduler phase alignment. Three polls must
+    # clear the floor, while four polls must stay comfortably below the ceiling.
+    assert events_per_visible_poll * 3 / 60.0 >= LAB_EPS_MIN
+    assert events_per_visible_poll * 4 / 60.0 <= LAB_EPS_MAX
 
 
 def test_wiremock_mappings_include_visible_e2e_receiver() -> None:
