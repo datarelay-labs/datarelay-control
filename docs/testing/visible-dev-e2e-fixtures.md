@@ -100,6 +100,45 @@ The script **refuses** cloud-looking hosts and `APP_ENV=production` / `prod`.
 | `SOURCE_E2E_SFTP_*` | SFTP remote file source | see same |
 | `SOURCE_E2E_PG_FIXTURE_*` | Fixture DB for `DATABASE_QUERY` | see same |
 
+## Remote File live EPS ceiling (M1-06)
+
+The visible [DEV E2E] Remote File Stream reads one bounded 40-event NDJSON
+fixture by exact filename. A one-second polling interval permitted 31+ actual
+completed polls per minute, exceeding 20 ingested EPS even though the
+configuration's generic estimate was inside the 5-20 band. The isolated
+validation fixture therefore uses a **two-second minimum polling interval**.
+All other validation sources keep their existing cadence.
+
+After the changed implementation is installed on the isolated preview, update
+only the exact owned [DEV E2E] Remote File Stream configuration through the
+guarded development fixture path. Verify two consecutive 60-second windows
+using run_complete.input_events; compare each enabled Route's receipts by
+run ID, and preserve operator-created objects and credentials. This native
+test does not substitute for authenticated Browser acceptance.
+
+## Feeder endpoint readiness (M1-07)
+
+The development feeder sends synthetic Webhook Receiver events to
+LAB_THROUGHPUT_API_BASE_URL. Before starting or restarting, identify the
+currently served development API and verify /health on that exact address.
+A previous preview port can disappear without warning. The collector being
+healthy does not prove the inbound Webhook source is receiving fresh events.
+
+Start the feeder using the existing development/fixture environment:
+
+    LAB_THROUGHPUT_API_BASE_URL=http://CURRENT_DEV_API_HOST:CURRENT_API_PORT \
+      ./scripts/dev-validation/start-lab-throughput-feeder.sh --tick-seconds 1
+
+The launcher rejects an unreachable API before it generates fixture traffic.
+Before restarting an already-running feeder, verify its owned process PID,
+worktree, APP_ENV=development and isolated preview catalog; stop only that
+feeder, not the scheduler or API. Never put credentials in durable evidence
+files or alter unrelated operator resources. Afterwards, verify a test-only
+Webhook POST and two non-overlapping 60-second windows of real
+run_complete.input_events and per-Route delivery receipts. Count ingested
+events once per Stream, not once per Route. Keep final authenticated Browser
+acceptance separate from these native runtime checks.
+
 ## Syslog TLS listener
 
 The `syslog-test` image exposes:
@@ -148,3 +187,40 @@ Rebuilding the syslog test image after TLS support was added:
 ```bash
 docker compose -p gdc-platform-test -f docker-compose.test.yml --profile test build syslog-test
 ```
+
+
+## Isolated HTTPS development preview (UX M1-01 / M1-02)
+
+The native seeder can target an existing isolated preview catalog without changing
+its administrator, authentication configuration or operator-owned resources.
+Before seeding, verify the actual HTTPS UI/API source identity, reverse-proxy
+upstreams, loopback PostgreSQL binding and schema. Retain a private catalog backup,
+proxy configuration snapshot, administrator preservation digest and existing object
+IDs. A login-page HTTP 200 is not authenticated browser acceptance.
+
+The preview opt-in requires all of the following: `APP_ENV=development`,
+`--local-dev-mode`, a loopback PostgreSQL host, port `55441`, user `gdc`, and
+`--preview-database` exactly matching a catalog named
+`datarelay_rue2e_preview_<8-to-32 lowercase hex characters>`. URI options,
+fragments, additional path segments, compose aliases and any other database name
+are refused even when legacy compose support is enabled. Missing opt-in keeps the
+existing allowlist unchanged. No production environment is accepted.
+
+```bash
+# DATABASE_URL must already identify the verified isolated preview, not gdc_pytest.
+# Preserve the existing process authentication/encryption environment.
+APP_ENV=development bash scripts/dev-validation/seed-visible-e2e-fixtures.sh \
+  --local-dev-mode --preview-database "$VERIFIED_PREVIEW_DATABASE"
+```
+
+Run the same native command twice and compare Connector/Source/Stream/Route/
+Destination/Mapping/Enrichment/Checkpoint IDs and counts. Both runs must keep the
+same IDs and retain the administrator preservation digest. Resources are labelled
+`[DEV E2E]`; the seed does not reset the catalog or delete operator rows.
+
+Affected verification is `DEV-VALIDATION-EPS-GUARDRAIL` in
+`.engineering/tests.yaml`. Run its pytest command on the dedicated `gdc_pytest`
+catalog, never on the preview catalog. Configured EPS tests do not prove live
+5–20 EPS: UX M1-06 separately requires two consecutive 60-second measurement
+windows with per-Stream input and per-Route receiver reconciliation. Seeding does
+not establish authenticated Browser or independent two-user acceptance.

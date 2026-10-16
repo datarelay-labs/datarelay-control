@@ -70,6 +70,7 @@ import { formatCheckpointValueForConsole, mapBackendStreamStatus } from '../../a
 import { createRefreshCycleSnapshotId, resetRefreshCycleSnapshotId } from '../../api/runtimeSnapshotSync'
 import { visualizationSummary } from '../../api/visualizationMeta'
 import { cn } from '../../lib/utils'
+import { formatTimestampWithResolvedTimezone } from '../../lib/platform-timestamps'
 import { useSessionCapabilities } from '../../lib/rbac'
 import { governanceWorkspacePath, logsExplorerPath, logsPath, NAV_PATH, streamEditPath, streamMappingPath } from '../../config/nav-paths'
 import { useGovernanceCapabilities } from '../../lib/governance-rbac'
@@ -171,11 +172,21 @@ export function StreamRuntimeDetailPage() {
   const navigate = useNavigate()
   const { isGovernance } = usePersonaMode()
   const data = useMemo(() => emptyStreamRuntimeDetail(streamId), [streamId])
-  const [timelineRunHistory, setTimelineRunHistory] = useState<RunHistoryRow[] | null>(null)
-  const [timelineRecentLogs, setTimelineRecentLogs] = useState<RecentLogLine[] | null>(null)
-  const [timelineRunIdHint, setTimelineRunIdHint] = useState<string | null>(null)
-  const [runtimeStats, setRuntimeStats] = useState<StreamRuntimeStatsResponse | null>(null)
-  const [runtimeHealth, setRuntimeHealth] = useState<StreamHealthResponse | null>(null)
+  // Preserve path diagnosis between compact Overview and full Events, but never
+  // carry a Route ID into a different Stream after navigation.
+  const [recentRouteScope, setRecentRouteScope] = useState<{ streamId: string; routeId: number | null }>({
+    streamId,
+    routeId: null,
+  })
+  const recentSelectedRouteId = recentRouteScope.streamId === streamId ? recentRouteScope.routeId : null
+  const [timelineRunHistoryStored, setTimelineRunHistory] = useState<RunHistoryRow[] | null>(null)
+  const [timelineRecentLogsStored, setTimelineRecentLogs] = useState<RecentLogLine[] | null>(null)
+  const [timelineRunIdHintStored, setTimelineRunIdHint] = useState<string | null>(null)
+  const [timelineSourceStreamId, setTimelineSourceStreamId] = useState<number | null>(null)
+  const [timelineLoadStateStored, setTimelineLoadState] = useState<'loaded' | 'unavailable' | null>(null)
+  const [runtimeStatsStored, setRuntimeStats] = useState<StreamRuntimeStatsResponse | null>(null)
+  const [runtimeHealthStored, setRuntimeHealth] = useState<StreamHealthResponse | null>(null)
+  const [runtimeStatsSourceStreamId, setRuntimeStatsSourceStreamId] = useState<number | null>(null)
   const [controlBusy, setControlBusy] = useState(false)
   const [routeToggleBusyId, setRouteToggleBusyId] = useState<number | null>(null)
   const [controlMessage, setControlMessage] = useState<string | null>(null)
@@ -193,7 +204,10 @@ export function StreamRuntimeDetailPage() {
   const [streamMetaError, setStreamMetaError] = useState<string | null>(null)
   const [connectorProductGroup, setConnectorProductGroup] = useState<string | null>(null)
   const [connectorDisplayName, setConnectorDisplayName] = useState<string | null>(null)
-  const [runtimeMetrics, setRuntimeMetrics] = useState<StreamRuntimeMetricsResponse | null>(null)
+  const [runtimeMetricsStored, setRuntimeMetrics] = useState<{
+    window: MetricsWindow
+    data: StreamRuntimeMetricsResponse
+  } | null>(null)
   const [metricsLoading, setMetricsLoading] = useState(false)
   const [metricsError, setMetricsError] = useState<string | null>(null)
   const metricsGenerationRef = useRef(0)
@@ -241,6 +255,20 @@ export function StreamRuntimeDetailPage() {
   const canClone = caps.backup_clone === true
 
   const backendStreamId = useMemo(() => (/^\d+$/.test(streamId) ? Number(streamId) : undefined), [streamId])
+  // React Router can reuse this component when the Stream URL changes.
+  // Never present an old Stream's evidence under a new Stream ID while
+  // pending requests settle: it can create false Route-specific diagnostics.
+  // Metrics are scoped to both the Stream and the requested time range.
+  // Never display a previous range's counts under newly selected controls.
+  const runtimeMetrics = runtimeMetricsStored?.data.stream.id === backendStreamId &&
+    runtimeMetricsStored.window === metricsWindow ? runtimeMetricsStored.data : null
+  const timelineScopeValid = timelineSourceStreamId === backendStreamId
+  const timelineLoadState = timelineScopeValid ? timelineLoadStateStored : null
+  const timelineRecentLogs = timelineScopeValid ? timelineRecentLogsStored : null
+  const timelineRunHistory = timelineScopeValid ? timelineRunHistoryStored : null
+  const timelineRunIdHint = timelineScopeValid ? timelineRunIdHintStored : null
+  const runtimeStats = runtimeStatsSourceStreamId === backendStreamId ? runtimeStatsStored : null
+  const runtimeHealth = runtimeStatsSourceStreamId === backendStreamId ? runtimeHealthStored : null
 
   useEffect(() => {
     priorDeliveryProofRef.current = null
@@ -353,7 +381,7 @@ export function StreamRuntimeDetailPage() {
       const m = await fetchStreamRuntimeMetrics(backendStreamId, metricsWindow, { snapshot_id }, fetchOpts)
       if (!isCurrent()) return
       if (m) {
-        setRuntimeMetrics(m)
+        setRuntimeMetrics({ window: metricsWindow, data: m })
       } else {
         setMetricsError('Metrics API unavailable')
       }
@@ -417,6 +445,7 @@ export function StreamRuntimeDetailPage() {
       setTimelineRunHistory(null)
       setTimelineRecentLogs(null)
       setTimelineRunIdHint(null)
+      setTimelineLoadState(null)
       setRuntimeStats(null)
       setRuntimeHealth(null)
       setCheckpointHistory(null)
@@ -455,7 +484,11 @@ export function StreamRuntimeDetailPage() {
         sourceFailureAuthorityRevisionRef.current = null
         setRunOnceError((current) => (currentSourceRunFailureMessage(current) ? null : current))
       }
-      if (res?.items?.length) {
+      // The response is a read of a particular Stream, not reusable global data.
+      setTimelineSourceStreamId(backendStreamId)
+      setTimelineLoadState(res?.stream_id === backendStreamId && Array.isArray(res.items) ? 'loaded' : 'unavailable')
+      setRuntimeStatsSourceStreamId(backendStreamId)
+      if (res?.stream_id === backendStreamId && res.items?.length) {
         const items = res.items
         const last = items[items.length - 1]
         const rid = typeof last.run_id === 'string' && last.run_id.trim() !== '' ? last.run_id : null
@@ -473,7 +506,7 @@ export function StreamRuntimeDetailPage() {
         .then((metrics) => {
           if (!isCurrent()) return
           if (metrics) {
-            setRuntimeMetrics(metrics)
+            setRuntimeMetrics({ window: metricsWindow, data: metrics })
             setMetricsError(null)
           } else {
             setMetricsError('Metrics API unavailable')
@@ -758,6 +791,11 @@ export function StreamRuntimeDetailPage() {
     return [v, v, v, v, v, v, v]
   }, [runtimeMetrics, numericOverlay.events1h])
 
+  // Reuse the same modern-first Route Metrics adapter as FlowMap/Route panel.
+  const observedRuntimeRoutes = useMemo(() => resolveRouteRuntimeRows(runtimeMetrics), [runtimeMetrics])
+  const routeFailureCountBasis = runtimeMetrics?.route_runtime?.length
+    ? 'last-hour' as const : 'legacy-aggregate' as const
+
   const deliveryPct = numericOverlay.deliveryPct
   const deliveryLabel = numericOverlay.deliveryLabel
 
@@ -959,7 +997,7 @@ export function StreamRuntimeDetailPage() {
     const next = new Date(Date.parse(lastAt) + intervalSec * 1000)
     if (!Number.isFinite(next.getTime())) return null
     if (next.getTime() <= Date.now()) return 'Now'
-    return next.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+    return formatTimestampWithResolvedTimezone(next.toISOString())
   }, [displayStatus, runtimeMetrics?.stream.last_run_at, streamEntity?.polling_interval])
 
   const schemaVersionDisplay = useMemo(() => {
@@ -1353,9 +1391,22 @@ export function StreamRuntimeDetailPage() {
             streamId={streamId}
             backendStreamId={backendStreamId}
             recentLogs={recentLogLines}
+            timelineLoadState={timelineLoadState}
+            observedRouteIds={observedRuntimeRoutes.map((route) => route.route_id)}
+            routeMetrics={observedRuntimeRoutes.map((route) => ({
+              routeId: route.route_id,
+              enabled: route.enabled,
+              failedCount: route.failed_last_hour,
+              destinationName: route.destination_name,
+            }))}
+            metricsGeneratedAt={runtimeMetrics?.generated_at}
+            metricsWindowSeconds={runtimeMetrics?.metrics_window_seconds}
+            failureCountBasis={routeFailureCountBasis}
             runHistory={runHistoryRows}
             logsHref={logsExplorerDrilldown ?? logsPath(streamId)}
             variant="compact"
+            selectedRouteId={recentSelectedRouteId}
+            onSelectedRouteIdChange={(routeId) => setRecentRouteScope({ streamId, routeId })}
           />
         </div>
         <div className="flex flex-col gap-4 lg:col-span-4">
@@ -1364,7 +1415,7 @@ export function StreamRuntimeDetailPage() {
             streamName={streamDisplayName}
             streamGroup={connectorProductGroup ?? connectorDisplayName}
             status={diagnosticDisplayStatus}
-            createdAt={streamEntity?.created_at ? streamEntity.created_at.slice(0, 19).replace('T', ' ') : null}
+            createdAt={streamEntity?.created_at ? formatTimestampWithResolvedTimezone(streamEntity.created_at) : null}
             lastRun={lastRunDisplay}
             nextRun={nextRunDisplay}
             schemaVersion={schemaVersionDisplay}
@@ -1460,8 +1511,21 @@ export function StreamRuntimeDetailPage() {
           streamId={streamId}
           backendStreamId={backendStreamId}
           recentLogs={recentLogLines}
+          timelineLoadState={timelineLoadState}
+          observedRouteIds={observedRuntimeRoutes.map((route) => route.route_id)}
+          routeMetrics={observedRuntimeRoutes.map((route) => ({
+            routeId: route.route_id,
+            enabled: route.enabled,
+            failedCount: route.failed_last_hour,
+            destinationName: route.destination_name,
+          }))}
+          metricsGeneratedAt={runtimeMetrics?.generated_at}
+          metricsWindowSeconds={runtimeMetrics?.metrics_window_seconds}
+          failureCountBasis={routeFailureCountBasis}
           runHistory={runHistoryRows}
           logsHref={logsExplorerDrilldown ?? logsPath(streamId)}
+          selectedRouteId={recentSelectedRouteId}
+          onSelectedRouteIdChange={(routeId) => setRecentRouteScope({ streamId, routeId })}
         />
       ) : null}
 
@@ -1474,15 +1538,22 @@ export function StreamRuntimeDetailPage() {
                 Field mapping and enrichment define the output schema for this stream.
               </p>
             </div>
-            <Link
-              to={streamMappingPath(streamId)}
-              className="inline-flex h-8 items-center rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white hover:bg-violet-700"
-            >
-              Open mapping
-            </Link>
+            {canMutateWorkspace ? (
+              <Link
+                to={streamMappingPath(streamId)}
+                className="inline-flex min-h-10 items-center rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white hover:bg-violet-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500"
+              >
+                Open mapping
+              </Link>
+            ) : (
+              <span className="inline-flex min-h-10 items-center text-xs font-medium text-slate-500 dark:text-gdc-mutedStrong">
+                Read-only Stream schema
+              </span>
+            )}
           </div>
           <StreamDetailDeliveryPanel
             streamId={streamId}
+            canConfigure={canMutateWorkspace}
             connectorName={connectorDisplayName ?? data.connectorName}
             connectorProductGroup={connectorProductGroup}
             sourceLabel={runtimeSourceUi.displayName}
@@ -1540,7 +1611,7 @@ export function StreamRuntimeDetailPage() {
                       className="flex flex-wrap items-start gap-x-3 gap-y-1 rounded-md border border-slate-100 bg-slate-50/50 px-2 py-1.5 dark:border-gdc-divider dark:bg-gdc-elevated/60"
                     >
                       <span className="shrink-0 font-mono text-[10px] text-slate-500 dark:text-gdc-muted">
-                        {it.created_at.slice(0, 19).replace('T', ' ')}
+                        {formatTimestampWithResolvedTimezone(it.created_at)}
                       </span>
                       <span className="rounded border border-slate-200 bg-slate-50 px-1 py-px font-mono text-[10px] dark:border-gdc-border dark:bg-gdc-elevated">
                         {it.update_reason ?? '—'}
@@ -1585,7 +1656,7 @@ export function StreamRuntimeDetailPage() {
       ) : null}
 
       {backendStreamId != null ? (
-        <StreamFlowMap streamId={backendStreamId} streamName={runtimeMetrics?.stream.name || streamEntity?.name || `Stream #${backendStreamId}`} routes={resolveRouteRuntimeRows(runtimeMetrics)} loading={metricsLoading && !runtimeMetrics} />
+        <StreamFlowMap streamId={backendStreamId} streamName={runtimeMetrics?.stream.name || streamEntity?.name || `Stream #${backendStreamId}`} routes={observedRuntimeRoutes} loading={metricsLoading && !runtimeMetrics} />
       ) : null}
 
       <section aria-label="Delivery path operational panel">
@@ -1620,7 +1691,9 @@ export function StreamRuntimeDetailPage() {
             loading={metricsLoading && !runtimeMetrics}
             routeToggleBusyId={routeToggleBusyId}
             onToggleEnabled={onToggleRouteEnabled}
-            routeActionsReadOnly={!canRuntimeControl}
+            // Route edit/probe UI requires workspace mutation authority as well as
+            // runtime control; inconsistent capability claims must fail closed.
+            routeActionsReadOnly={!canRuntimeControl || !canMutateWorkspace}
           />
         </div>
       </section>
@@ -1641,14 +1714,24 @@ export function StreamRuntimeDetailPage() {
         <div className="mb-2">
           <h3 className="text-[12px] font-semibold text-slate-900 dark:text-slate-100">Run History</h3>
           <p className="text-[11px] text-slate-600 dark:text-gdc-muted">Recent pipeline runs from runtime metrics and timeline APIs.</p>
+          {runHistoryRows.some((row) => row.countsVerified === false) ? (
+            <p data-testid="stream-run-history-timeline-basis" className="mt-1 text-xs text-slate-600 dark:text-gdc-muted">
+              Timeline-only run evidence: event, delivery and failure totals are not verified by runtime metrics.
+            </p>
+          ) : null}
+          {runHistoryRows.some((row) => row.idBasis === 'completion-record') ? (
+            <p data-testid="stream-run-history-metrics-record-basis" className="mt-1 text-xs text-slate-600 dark:text-gdc-muted">
+              Metrics completion labels are log record references, not verified run IDs. Open scoped completion logs to investigate.
+            </p>
+          ) : null}
         </div>
         <div className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm dark:border-gdc-border dark:bg-gdc-card">
           <div className="overflow-x-auto p-2">
             <table className={opTable}>
               <thead>
                 <tr className={opThRow}>
-                  <th scope="col" className={opTh}>Run ID</th>
-                  <th scope="col" className={opTh}>Started At</th>
+                  <th scope="col" className={opTh}>Run / Record</th>
+                  <th scope="col" className={opTh}>Observed At</th>
                   <th scope="col" className={opTh}>Duration</th>
                   <th scope="col" className={opTh}>Status</th>
                   <th scope="col" className={opTh}>Events</th>
@@ -1658,11 +1741,33 @@ export function StreamRuntimeDetailPage() {
                 </tr>
               </thead>
               <tbody>
+                {!metricsLoading && runHistoryRows.length === 0 ? (
+                  <tr className={opTr} data-testid="stream-run-history-unverified">
+                    <td colSpan={8} className={cn(opTd, 'px-4 py-5 text-sm text-slate-600 dark:text-gdc-muted')}>
+                      No run records verified in the loaded runtime evidence — this is not proof that no runs occurred.
+                      {backendStreamId != null ? (
+                        <Link
+                          to={logsExplorerPath({ stream_id: backendStreamId })}
+                          className="ml-2 font-semibold text-violet-700 hover:underline dark:text-violet-300"
+                        >
+                          Inspect Stream logs
+                        </Link>
+                      ) : null}
+                    </td>
+                  </tr>
+                ) : null}
                 {runHistoryRows.map((row) => {
-                  const failed = row.failed > 0
+                  const countsVerified = row.countsVerified !== false
+                  const failed = countsVerified && row.failed > 0
                   const partial = row.status === 'Partial'
+                  const isCompletionRecord = row.idBasis === 'completion-record'
                   const runLogsHref =
-                    backendStreamId != null ? logsExplorerPath({ stream_id: backendStreamId, run_id: row.runId }) : null
+                    backendStreamId != null && !isCompletionRecord && row.runId.trim().length >= 8
+                      ? logsExplorerPath({ stream_id: backendStreamId, run_id: row.runId })
+                      : null
+                  const completionLogsHref = backendStreamId != null && isCompletionRecord
+                    ? logsExplorerPath({ stream_id: backendStreamId, stage: 'run_complete' })
+                    : null
                   return (
                     <tr
                       key={row.runId}
@@ -1678,7 +1783,9 @@ export function StreamRuntimeDetailPage() {
                             {row.runId}
                           </Link>
                         ) : (
-                          <span className="font-mono text-[11px] font-semibold text-slate-700 dark:text-gdc-mutedStrong">{row.runId}</span>
+                          <span className="font-mono text-[11px] font-semibold text-slate-700 dark:text-gdc-mutedStrong">
+                            {isCompletionRecord ? `Completion record ${row.runId}` : row.runId}
+                          </span>
                         )}
                       </td>
                       <td className={cn(opTd, 'whitespace-nowrap tabular-nums text-slate-700 dark:text-gdc-mutedStrong')}>{row.startedAt}</td>
@@ -1689,21 +1796,27 @@ export function StreamRuntimeDetailPage() {
                             <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden />
                           ) : row.status === 'Failed' ? (
                             <XCircle className="h-3.5 w-3.5 text-red-600 dark:text-red-400" aria-hidden />
-                          ) : (
+                          ) : row.status === 'Partial' ? (
                             <AlertTriangle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" aria-hidden />
+                          ) : (
+                            <History className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" aria-hidden />
                           )}
                           <span className="text-[11px] font-semibold text-slate-800 dark:text-slate-200">{row.status}</span>
                         </span>
                       </td>
-                      <td className={cn(opTd, 'tabular-nums font-medium text-slate-800 dark:text-slate-100')}>{row.events.toLocaleString()}</td>
-                      <td className={cn(opTd, 'tabular-nums text-slate-700 dark:text-gdc-mutedStrong')}>{row.delivered.toLocaleString()}</td>
+                      <td className={cn(opTd, 'tabular-nums font-medium text-slate-800 dark:text-slate-100')}>{countsVerified ? row.events.toLocaleString() : '—'}</td>
+                      <td className={cn(opTd, 'tabular-nums text-slate-700 dark:text-gdc-mutedStrong')}>{countsVerified ? row.delivered.toLocaleString() : '—'}</td>
                       <td className={cn(opTd, 'tabular-nums font-semibold', failed ? 'text-red-600 dark:text-red-400' : 'text-slate-700 dark:text-gdc-mutedStrong')}>
-                        {row.failed.toLocaleString()}
+                        {countsVerified ? row.failed.toLocaleString() : '—'}
                       </td>
                       <td className={cn(opTd, 'text-right')}>
                         {runLogsHref ? (
                           <Link to={runLogsHref} className="inline-flex text-[11px] font-semibold text-violet-700 hover:underline dark:text-violet-300">
                             Logs
+                          </Link>
+                        ) : completionLogsHref ? (
+                          <Link to={completionLogsHref} className="inline-flex text-[11px] font-semibold text-violet-700 hover:underline dark:text-violet-300">
+                            Browse completion logs
                           </Link>
                         ) : (
                           <span className="text-[11px] text-slate-400 dark:text-slate-500">—</span>

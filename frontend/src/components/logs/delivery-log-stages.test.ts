@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { GOVERNANCE_LOG_DRILLDOWN_STAGES, rowMatchesStageFilter } from './delivery-log-stages'
+import {
+  GOVERNANCE_LOG_DRILLDOWN_STAGES,
+  governanceOutcomePresentation,
+  rowMatchesStageFilter,
+} from './delivery-log-stages'
 import type { LogExplorerRow } from './logs-types'
 
 function rowWithStage(stage: string): LogExplorerRow {
@@ -34,5 +38,22 @@ describe('delivery-log-stages', () => {
     const row = rowWithStage('mapping')
     expect(rowMatchesStageFilter(row, 'MAPPING', undefined)).toBe(true)
     expect(rowMatchesStageFilter(row, 'DELIVERY', undefined)).toBe(false)
+  })
+
+  it('classifies policy dispositions as governance outcomes instead of delivery failures', () => {
+    expect(governanceOutcomePresentation('policy_blocked')).toMatchObject({
+      kind: 'workspace',
+      label: 'Review blocked policy decision',
+    })
+    expect(governanceOutcomePresentation('policy_blocked')?.summary).toMatch(/not a receiver delivery failure/i)
+    expect(governanceOutcomePresentation('policy_review_required')).toMatchObject({
+      kind: 'workspace',
+      label: 'Review required in Governance',
+    })
+    expect(governanceOutcomePresentation('policy_quarantine')).toMatchObject({
+      kind: 'quarantine',
+      label: 'Open Quarantine',
+    })
+    expect(governanceOutcomePresentation('route_send_failed')).toBeNull()
   })
 })

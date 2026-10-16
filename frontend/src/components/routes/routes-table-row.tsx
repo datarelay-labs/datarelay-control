@@ -9,6 +9,7 @@ import {
   streamRuntimePath,
 } from '../../config/nav-paths'
 import { formatOperationalPercent, formatThroughputEps } from '../../lib/observability-format'
+import { useSessionCapabilities } from '../../lib/rbac'
 import { cn } from '../../lib/utils'
 import { opTd, opTr } from '../dashboard/widgets/operational-table-styles'
 import { StatusBadge } from '../shell/status-badge'
@@ -101,6 +102,9 @@ function RoutesTableRowInner({
   })
   const streamId = row.stream?.id
   const destId = row.destination?.id ?? row.route.destination_id
+  const capabilities = useSessionCapabilities()
+  const canEditRoute = capabilities.workspace_mutations === true
+  const canTestRoute = capabilities.validation_mutations === true
 
   return (
     <tr
@@ -175,20 +179,22 @@ function RoutesTableRowInner({
       ) : null}
       <td className={cn(opTd, 'text-right')} onClick={(e) => e.stopPropagation()}>
         <div className="inline-flex items-center justify-end gap-0.5">
-          <button
-            type="button"
-            disabled={row.destination == null || testBusyId === row.route.id}
-            onClick={() => void onTestRoute(row.route.id, row.destination?.id ?? row.route.destination_id ?? null)}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100 disabled:opacity-40 dark:text-gdc-mutedStrong dark:hover:bg-gdc-rowHover"
-            aria-label={`Test route ${routePublicId(row.route.id)}`}
-            title="Test Route"
-          >
-            {testBusyId === row.route.id ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-            ) : (
-              <Play className="h-3.5 w-3.5" aria-hidden />
-            )}
-          </button>
+          {canTestRoute ? (
+            <button
+              type="button"
+              disabled={row.destination == null || testBusyId === row.route.id}
+              onClick={() => void onTestRoute(row.route.id, row.destination?.id ?? row.route.destination_id ?? null)}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100 disabled:opacity-40 dark:text-gdc-mutedStrong dark:hover:bg-gdc-rowHover"
+              aria-label={`Test route ${routePublicId(row.route.id)}`}
+              title="Test Route"
+            >
+              {testBusyId === row.route.id ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+              ) : (
+                <Play className="h-3.5 w-3.5" aria-hidden />
+              )}
+            </button>
+          ) : null}
           <Link
             to={logsHref}
             className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100 dark:text-gdc-mutedStrong dark:hover:bg-gdc-rowHover"
@@ -221,7 +227,7 @@ function RoutesTableRowInner({
                   className="block px-3 py-1.5 font-medium text-slate-800 hover:bg-slate-50 dark:text-slate-100 dark:hover:bg-gdc-rowHover"
                   onClick={onCloseMoreMenu}
                 >
-                  Edit Route
+                  {canEditRoute ? 'Edit Route' : 'View Route settings'}
                 </Link>
                 <Link
                   to={runtimeOverviewPath({

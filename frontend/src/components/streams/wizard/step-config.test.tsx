@@ -141,4 +141,18 @@ describe('StepConfig', () => {
     expect(patch.requestBody).toContain('"high"')
     expect(patch.requestBody).toContain('"critical"')
   })
+
+  it('exposes only checkpoint-driven pagination controls that affect runtime requests', () => {
+    const state = buildInitialState()
+    state.stream.paginationType = 'Cursor based'
+    state.stream.paginationCursorParam = 'cursor'
+    render(<StepConfig state={state} section="advanced" onChange={vi.fn()} />)
+
+    expect(screen.getByDisplayValue('Cursor based')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('e.g. cursor, page, or offset')).toHaveValue('cursor')
+    expect(screen.getByText(/checkpoint-driven/i)).toBeInTheDocument()
+    expect(screen.getByText('{{checkpoint.next_cursor}}')).toBeInTheDocument()
+    expect(screen.queryByText('Page size (limit)')).not.toBeInTheDocument()
+    expect(screen.queryByText('Max pages (optional)')).not.toBeInTheDocument()
+  })
 })

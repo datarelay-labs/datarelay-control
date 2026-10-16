@@ -1,6 +1,7 @@
 import { StrictMode, useEffect, useReducer, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter } from 'react-router-dom'
+import { createBrowserRouter, RouterProvider } from 'react-router-dom'
+import { DataRouterEnabledContext } from './router/data-router-enabled'
 import './foundation-semantic-tokens.css'
 import '@datarelay-labs/ui/styles.css'
 import '@datarelay-labs/product-shell/styles.css'
@@ -137,10 +138,22 @@ function PlatformSessionRoot() {
   return <App />
 }
 
+// A data router enables the native blocker for in-app Link/Back/Forward
+// navigations. App's existing nested <Routes> and every canonical URL remain
+// unchanged; this one splat root preserves their descendant route matching.
+const router = createBrowserRouter([
+  {
+    path: '/*',
+    element: (
+      <DataRouterEnabledContext.Provider value>
+        <PlatformSessionRoot />
+      </DataRouterEnabledContext.Provider>
+    ),
+  },
+])
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <BrowserRouter>
-      <PlatformSessionRoot />
-    </BrowserRouter>
+    <RouterProvider router={router} />
   </StrictMode>,
 )

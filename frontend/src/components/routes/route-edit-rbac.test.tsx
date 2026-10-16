@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { createMemoryRouter, Link, MemoryRouter, Route, RouterProvider, Routes } from 'react-router-dom'
+import { DataRouterEnabledContext } from '../../router/data-router-enabled'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearSession, persistSession, type SessionRole } from '../../auth/session'
 import { RouteEditPage } from './route-edit-page'
@@ -277,6 +278,26 @@ function renderRouteEdit(path = '/routes/42/edit') {
   )
 }
 
+
+function renderRouteEditWithDataRouter(initialEntries: string[] = ['/routes/42/edit'], initialIndex?: number) {
+  const router = createMemoryRouter([{
+    path: '/*',
+    element: (
+      <DataRouterEnabledContext.Provider value>
+        <nav><Link to="/monitoring" data-testid="route-external-nav">Dashboard</Link></nav>
+        <Routes>
+          <Route path="/routes/:routeId/edit" element={<RouteEditPage />} />
+          <Route path="/routes/new" element={<RouteEditPage />} />
+          <Route path="/monitoring" element={<p data-testid="route-dashboard">Dashboard workspace</p>} />
+          <Route path="/streams/:streamId/runtime" element={<p data-testid="route-stream-runtime">Stream runtime</p>} />
+        </Routes>
+      </DataRouterEnabledContext.Provider>
+    ),
+  }], { initialEntries, initialIndex })
+  render(<RouterProvider router={router} />)
+  return router
+}
+
 describe('RouteEditPage workspace capability visibility', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -517,5 +538,106 @@ describe('RouteEditPage workspace capability visibility', () => {
     expect(await screen.findByTestId('route-edit-save')).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: /Route Name/i })).toBeEnabled()
     expect(screen.queryByTestId('route-edit-readonly-banner')).not.toBeInTheDocument()
+  })
+
+  it('keeps unsaved Route edits on sidebar navigation until explicit discard, preserving the original destination', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    const router = renderRouteEditWithDataRouter()
+    const name = await screen.findByRole('textbox', { name: /Route Name/i })
+    await waitFor(() => expect(name).toHaveValue('Route A'))
+    fireEvent.change(name, { target: { value: 'Edited unsaved route' } })
+    expect(screen.getByTestId('route-edit-unsaved-hint')).toBeInTheDocument()
+
+    await user.click(screen.getByTestId('route-external-nav'))
+    expect(router.state.location.pathname).toBe('/routes/42/edit')
+    expect(await screen.findByTestId('route-edit-discard-dialog')).toBeInTheDocument()
+
+    await user.click(screen.getByTestId('route-edit-discard-dialog-cancel'))
+    expect(router.state.location.pathname).toBe('/routes/42/edit')
+    expect(screen.getByRole('textbox', { name: /Route Name/i })).toHaveValue('Edited unsaved route')
+
+    await user.click(screen.getByTestId('route-external-nav'))
+    await user.click(await screen.findByTestId('route-edit-discard-dialog-confirm'))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/monitoring'))
+    expect(screen.getByTestId('route-dashboard')).toBeInTheDocument()
+  })
+
+  it('blocks browser Back from losing unsaved Route edits and follows the original history on explicit discard', async () => {
+    signIn('OPERATOR')
+    const router = renderRouteEditWithDataRouter(['/monitoring', '/routes/42/edit'], 1)
+    const name = await screen.findByRole('textbox', { name: /Route Name/i })
+    await waitFor(() => expect(name).toHaveValue('Route A'))
+    fireEvent.change(name, { target: { value: 'Unsaved browser history' } })
+
+    await router.navigate(-1)
+    expect(router.state.location.pathname).toBe('/routes/42/edit')
+    expect(await screen.findByTestId('route-edit-discard-dialog')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('route-edit-discard-dialog-confirm'))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/monitoring'))
+  })
+
+
+  it('preserves the existing in-editor Cancel confirmation and leaves only after discard', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    const router = renderRouteEditWithDataRouter()
+    const name = await screen.findByRole('textbox', { name: /Route Name/i })
+    await waitFor(() => expect(name).toHaveValue('Route A'))
+    fireEvent.change(name, { target: { value: 'Discarded change' } })
+    await user.click(screen.getByTestId('route-edit-cancel'))
+    expect(await screen.findByTestId('route-edit-discard-dialog')).toBeInTheDocument()
+
+    await user.click(screen.getByTestId('route-edit-discard-dialog-cancel'))
+    expect(router.state.location.pathname).toBe('/routes/42/edit')
+    expect(name).toHaveValue('Discarded change')
+
+    await user.click(screen.getByTestId('route-edit-cancel'))
+    await user.click(screen.getByTestId('route-edit-discard-dialog-confirm'))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/streams/10/runtime'))
+  })
+
+  it('does not abandon an in-flight Route save when clicking an external navigation link', async () => {
+    const user = userEvent.setup()
+    let resolveSave: ((value: typeof savedRoute) => void) | null = null
+    updateRoute.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveSave = resolve
+    }))
+    signIn('OPERATOR')
+    const router = renderRouteEditWithDataRouter()
+    const name = await screen.findByRole('textbox', { name: /Route Name/i })
+    await waitFor(() => expect(name).toHaveValue('Route A'))
+    fireEvent.change(name, { target: { value: 'Saving route edit' } })
+    await user.click(screen.getByTestId('route-edit-save'))
+    await waitFor(() => expect(updateRoute).toHaveBeenCalledTimes(1))
+    await user.click(screen.getByTestId('route-external-nav'))
+
+    expect(router.state.location.pathname).toBe('/routes/42/edit')
+    expect(screen.queryByTestId('route-edit-discard-dialog')).not.toBeInTheDocument()
+    expect(screen.getByTestId('route-edit-navigation-saving-notice')).toHaveTextContent('Finish saving')
+    if (resolveSave == null) throw new Error('Route save promise did not begin')
+    resolveSave({ ...savedRoute, name: 'Saving route edit' })
+    await waitFor(() => expect(router.state.location.pathname).toBe('/streams/10/runtime'))
+  })
+
+  it('does not block a successful Route save from navigating to Stream monitoring', async () => {
+    signIn('OPERATOR')
+    const router = renderRouteEditWithDataRouter()
+    const name = await screen.findByRole('textbox', { name: /Route Name/i })
+    await waitFor(() => expect(name).toHaveValue('Route A'))
+    fireEvent.change(name, { target: { value: 'Route B' } })
+    fireEvent.click(screen.getByTestId('route-edit-save'))
+    await waitFor(() => expect(updateRoute).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/streams/10/runtime'))
+  })
+
+  it('allows an authenticated read-only Viewer to navigate away without a discard dialog', async () => {
+    const user = userEvent.setup()
+    signIn('VIEWER')
+    const router = renderRouteEditWithDataRouter()
+    await screen.findByTestId('route-edit-readonly-banner')
+    await user.click(screen.getByTestId('route-external-nav'))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/monitoring'))
+    expect(screen.queryByTestId('route-edit-discard-dialog')).not.toBeInTheDocument()
   })
 })

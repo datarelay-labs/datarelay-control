@@ -4,7 +4,7 @@ import { IncrementalFetchCompatibilityHints } from '../incremental-fetch-compati
 import { cn } from '../../../lib/utils'
 import { wizardIncrementalFetchGuidanceComplete } from './wizard-step-gates'
 import type { StreamConfigHeaderRow, StreamConfigParamRow, WizardConfigState, WizardState } from './wizard-state'
-import { buildFullRequestUrl, effectiveRequestHeaders } from './wizard-state'
+import { buildFullRequestUrl, effectiveRequestHeaders, wizardHasLinkedSource } from './wizard-state'
 import {
   BODY_TEMPLATES,
   BODY_TEMPLATE_VARIABLES,
@@ -12,6 +12,7 @@ import {
   type BodyTemplateId,
 } from './wizard-body-templates'
 import { StreamConfigAdvancedPanels } from '../stream-config-advanced-panels'
+import { DatabaseDiscoveryPanel } from './database-discovery-panel'
 
 const inputCls =
   'h-8 w-full rounded-md border border-slate-200/90 bg-white px-2 text-[12px] text-slate-900 focus:border-violet-400 focus:outline-none focus:ring-1 focus:ring-violet-400/30 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100'
@@ -68,6 +69,10 @@ export function StepConfig({ state, section = 'request', onChange }: StepConfigP
           : 'Connector has no base URL'
         : ''
 
+  if (isDatabase && !wizardHasLinkedSource(connector)) {
+    return <p role="status" className="text-sm text-slate-600 dark:text-gdc-muted">Select a saved database Connector and its Source before configuring a SQL query.</p>
+  }
+
   return (
     <section
       className="rounded-md border border-slate-200/80 bg-white p-3 shadow-sm dark:border-gdc-border dark:bg-gdc-card"
@@ -75,7 +80,7 @@ export function StepConfig({ state, section = 'request', onChange }: StepConfigP
     >
       <div className="flex items-baseline justify-between gap-3">
         <h3 className="text-[13px] font-semibold text-slate-900 dark:text-slate-100">
-          {section === 'request' ? 'Request Configuration' : 'Advanced Settings'}
+          {section === 'request' ? isDatabase ? 'Database query' : 'Request Configuration' : 'Advanced Settings'}
         </h3>
         {isRemote && section === 'request' ? (
           <p className="text-[11px] text-slate-500 dark:text-gdc-muted">REMOTE_FILE_POLLING stream</p>
@@ -84,6 +89,26 @@ export function StepConfig({ state, section = 'request', onChange }: StepConfigP
 
       {section === 'request' ? (
         <>
+      {isDatabase ? (
+        <>
+          <p className="mt-2 text-sm text-slate-600 dark:text-gdc-muted" data-testid="wizard-database-source-context">
+            Query data from <strong>{connector.connectorName || `Connector #${connector.connectorId}`}</strong>.
+            {' '}The connection and credentials come from this saved database Connector. Discover visible metadata, then enter a SELECT query and test it in Sample &amp; Record Selection.
+          </p>
+          {connector.connectorId != null ? (
+            <div className="mt-3">
+              <DatabaseDiscoveryPanel
+                connectorId={connector.connectorId}
+                connectorName={connector.connectorName}
+                sqlQuery={c.sqlQuery}
+                queryParams={c.dbQueryParams}
+                checkpointColumn={c.dbCheckpointColumn}
+                onApplySelection={(patch) => onChange(patch)}
+              />
+            </div>
+          ) : null}
+        </>
+      ) : null}
       <div className="mt-2 grid gap-2 md:grid-cols-2">
         <Field label="Stream name *">
           <input
@@ -144,11 +169,11 @@ export function StepConfig({ state, section = 'request', onChange }: StepConfigP
           </div>
         ) : isDatabase ? (
           <>
-            <Field label="SQL query *">
+            <Field label="Custom SQL / generated SELECT *">
               <textarea
                 value={c.sqlQuery}
-                onChange={(e) => onChange({ sqlQuery: e.target.value })}
-                placeholder="SELECT id, event_id, message, email FROM source_e2e_orders"
+                onChange={(e) => onChange({ sqlQuery: e.target.value, dbQueryParams: {} })}
+                placeholder="SELECT columns FROM your_table"
                 rows={5}
                 className={`${inputCls} h-auto min-h-[6rem] py-2 font-mono text-[11px] md:col-span-1`}
                 data-testid="wizard-database-sql-query"
@@ -170,7 +195,7 @@ export function StepConfig({ state, section = 'request', onChange }: StepConfigP
                 />
               </Field>
               <p className="text-[11px] text-slate-500 dark:text-gdc-muted">
-                SELECT-only queries. Leave checkpoint empty for NONE mode, or set a monotonic column for incremental fetch.
+                SELECT-only queries. Builder filter values are stored as bound query parameters; editing Custom SQL clears generated filter binds. Leave checkpoint empty for full polling, or set a monotonic column for incremental fetch.
               </p>
             </div>
           </>
@@ -335,6 +360,10 @@ export function StepConfig({ state, section = 'request', onChange }: StepConfigP
             {c.remoteDirectory.trim() || '(set remote directory)'} · {c.filePattern || '*'} · {c.parserType}
           </p>
         </div>
+      ) : isDatabase ? (
+        <p className="mt-3 text-[11px] text-slate-600 dark:text-gdc-muted">
+          This stream collects the rows returned by the query. Preview the result before creating or starting the stream.
+        </p>
       ) : (
         <p className="mt-3 text-[11px] text-slate-600 dark:text-gdc-muted">
           Webhook receiver: runtime ingestion starts when producers POST to the generated receiver URL.
@@ -450,7 +479,7 @@ export function StepConfig({ state, section = 'request', onChange }: StepConfigP
                   Include file metadata (gdc_remote_* fields on each event)
                 </label>
               </>
-            ) : !isS3 && !isWebhook ? (
+            ) : !isS3 && !isWebhook && !isDatabase ? (
               <div className="md:col-span-2">
                 <StreamConfigAdvancedPanels stream={c} onChange={onChange} />
               </div>

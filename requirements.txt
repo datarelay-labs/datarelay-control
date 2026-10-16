@@ -24,3 +24,7 @@ paramiko>=3.4.0,<4
 scp>=0.14.0,<1
 PyYAML>=6.0,<7
 packaging>=23.0,<26
+# Product Foundation PF-9 common Python security wheel; exact byte hash verified
+# by vendor/onprem-security/SHA256SUMS in the API Docker build and native tests.
+# Offline candidate only; not a published production package.
+./vendor/onprem-security/datarelay_onprem_security-0.10.0.dev0-py3-none-any.whl

@@ -5,6 +5,7 @@ import json
 import httpx
 import pytest
 
+from app.http.shared_request_builder import build_shared_http_request
 from app.pollers.http_poller import HttpPoller
 from app.pollers.http_query_params import (
     coerce_stream_body_fields_to_json_objects,
@@ -29,6 +30,21 @@ def test_drop_placeholder_keeps_all_params_when_cursor_pagination_enabled():
     stream_config = {"pagination": {"type": "Cursor based"}}
     params = {"cursor": "{{checkpoint.cursor}}"}
     assert drop_placeholder_pagination_params(stream_config, params) == params
+
+
+def test_api_test_pagination_param_uses_explicit_next_cursor_checkpoint():
+    plan = build_shared_http_request(
+        source_config={"base_url": "https://example.test"},
+        stream_config={
+            "method": "GET",
+            "endpoint": "/events",
+            "params": {"tenant": "acme", "cursor": "{{checkpoint.next_cursor}}"},
+            "pagination": {"type": "Cursor based", "cursor_param": "cursor"},
+        },
+        mode="api_test",
+        api_test_checkpoint={"next_cursor": "cursor-42"},
+    )
+    assert plan.params == {"tenant": "acme", "cursor": "cursor-42"}
 
 
 def test_http_poller_sends_json_body_on_get(monkeypatch: pytest.MonkeyPatch):

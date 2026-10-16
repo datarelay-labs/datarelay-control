@@ -100,8 +100,16 @@ class PlatformUserRead(BaseModel):
     created_at: datetime
     last_login_at: datetime | None = None
     timezone: str | None = None
+    mfa_enabled: bool = False
 
     model_config = {"from_attributes": True}
+
+
+class PlatformUserMfaResetRequest(BaseModel):
+    """Explicitly acknowledge the target and reauthenticate the administrator."""
+
+    confirm_username: str = Field(min_length=1, max_length=128)
+    current_password: str = Field(min_length=1, max_length=256)
 
 
 class PlatformUserCreate(BaseModel):
@@ -327,6 +335,27 @@ class ConfigVersionCompareResponse(BaseModel):
     entity_type: str
     entity_id: int
     diff: list[ConfigJsonChangeItem] = Field(default_factory=list)
+
+
+class ConfigSafeRollbackChange(BaseModel):
+    path: str
+    before: str | None = None
+    after: str | None = None
+
+
+class ConfigSafeRollbackPreviewResponse(BaseModel):
+    entity_type: str
+    source_version_row_id: int
+    source_version: int
+    current_version: int
+    expected_version: int
+    target: Literal["before", "after"]
+    changed_fields: list[ConfigSafeRollbackChange] = Field(default_factory=list)
+    from_fingerprint: str
+    to_fingerprint: str
+    blockers: list[str] = Field(default_factory=list)
+    may_submit_to_product_authority: bool = False
+    product_apply_required: bool = True
 
 
 class ConfigSnapshotApplyRequest(BaseModel):

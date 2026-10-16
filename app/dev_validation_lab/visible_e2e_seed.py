@@ -42,6 +42,7 @@ from app.sources.models import Source
 from app.streams.models import Stream
 
 PREFIX = "[DEV E2E] "
+VISIBLE_E2E_S3_PREFIX = "e2e-s3-live/"
 
 # Fixed receiver key for operator docs and ingest smoke (not a production secret).
 VISIBLE_E2E_WEBHOOK_RECEIVER_KEY = "dev-visible-e2e"
@@ -166,7 +167,12 @@ def apply_visible_e2e_env_from_settings(settings_obj: Any) -> None:
         os.environ.setdefault("SOURCE_E2E_SFTP_PASSWORD", sftp_pw)
 
 
-def assert_safe_database_url(*, local_dev_mode: bool, allow_compose_catalog_host: bool = False) -> None:
+def assert_safe_database_url(
+    *,
+    local_dev_mode: bool,
+    allow_compose_catalog_host: bool = False,
+    preview_database: str | None = None,
+) -> None:
     """Abort unless DATABASE_URL targets an allow-listed local PostgreSQL catalog."""
 
     raw = (os.environ.get("DATABASE_URL") or "").strip()
@@ -199,6 +205,27 @@ def assert_safe_database_url(*, local_dev_mode: bool, allow_compose_catalog_host
 
     if user != "gdc":
         raise SystemExit(f"DATABASE_URL user must be 'gdc' for this seed (got {user!r}).")
+
+    # Explicit preview opt-in is narrower than the legacy catalog allowlist.
+    # Never let compose aliases, URI options or a name prefix choose another DB.
+    if preview_database is not None:
+        if (
+            not local_dev_mode
+            or app_env != "development"
+            or not re.fullmatch(r"datarelay_rue2e_preview_[0-9a-f]{8,32}", preview_database)
+            or host not in loopback_hosts
+            or port != 55441
+            or db_name != preview_database
+            or u.path != f"/{preview_database}"
+            or u.query
+            or u.fragment
+        ):
+            raise SystemExit(
+                "Preview seeding requires --local-dev-mode, APP_ENV=development, "
+                "and the exact opted-in datarelay_rue2e_preview_<hex> catalog "
+                "on loopback port 55441 without URI options."
+            )
+        return
 
     allowed = {"gdc", "gdc_e2e_test", "gdc_pytest"}
     if local_dev_mode:
@@ -239,7 +266,7 @@ def _load_env() -> VisibleSeedEnv:
         minio_bucket=_env("SOURCE_E2E_MINIO_BUCKET", "gdc-source-e2e"),
         minio_access_key=_env("SOURCE_E2E_MINIO_ACCESS_KEY", "gdcminioaccess"),
         minio_secret_key=_env("SOURCE_E2E_MINIO_SECRET_KEY", "gdcminioaccesssecret12"),
-        minio_prefix="e2e-s3/",
+        minio_prefix=VISIBLE_E2E_S3_PREFIX,
         pg_fixture_host=_env("SOURCE_E2E_PG_FIXTURE_HOST", "127.0.0.1"),
         pg_fixture_port=_env_int("SOURCE_E2E_PG_FIXTURE_PORT", 55433),
         pg_fixture_database=_env("SOURCE_E2E_PG_FIXTURE_DB", "gdc_query_fixture"),
@@ -798,10 +825,12 @@ def seed_visible_e2e_fixtures(
     local_dev_mode: bool,
     allow_compose_catalog_host: bool = False,
     allow_compose_service_hosts: bool = False,
+    preview_database: str | None = None,
 ) -> dict[str, Any]:
     assert_safe_database_url(
         local_dev_mode=local_dev_mode,
         allow_compose_catalog_host=allow_compose_catalog_host,
+        preview_database=preview_database,
     )
     env = _load_env()
     _assert_local_service_urls(env, allow_compose_service_hosts=allow_compose_service_hosts)
@@ -980,18 +1009,27 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument(
         "--local-dev-mode",
         action="store_true",
-        help="Allow DATABASE_URL database name 'gdc' on loopback (explicit local disposable catalog only).",
+        help="Allow the legacy disposable 'datarelay' catalog or explicitly opted-in isolated preview catalog.",
+    )
+    p.add_argument(
+        "--preview-database",
+        metavar="EXACT_NAME",
+        help="Opt in to one isolated preview catalog on loopback port 55441; requires --local-dev-mode and APP_ENV=development.",
     )
     args = p.parse_args(argv)
 
-    from app.database import SessionLocal
+    assert_safe_database_url(
+        local_dev_mode=bool(args.local_dev_mode), preview_database=args.preview_database
+    )
 
-    assert_safe_database_url(local_dev_mode=bool(args.local_dev_mode))
+    from app.database import SessionLocal
     _assert_local_service_urls(_load_env())
 
     db = SessionLocal()
     try:
-        out = seed_visible_e2e_fixtures(db, local_dev_mode=bool(args.local_dev_mode))
+        out = seed_visible_e2e_fixtures(
+            db, local_dev_mode=bool(args.local_dev_mode), preview_database=args.preview_database
+        )
         print(out)
         return 0
     except Exception as exc:

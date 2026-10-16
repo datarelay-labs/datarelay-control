@@ -105,6 +105,7 @@ describe('Route catalog creation requires an explicit Stream', () => {
         stream_id: 11,
         destination_id: 5,
         name: 'New Route',
+        failure_policy: 'RETRY_AND_BACKOFF',
       }))
     })
     expect(await screen.findByText('Stream runtime opened')).toBeInTheDocument()

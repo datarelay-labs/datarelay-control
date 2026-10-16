@@ -15,6 +15,7 @@ import { formatStreamLabel } from '../../utils/entityLabels'
 import { resolveStreamSourceTestShellTitle } from '../../utils/sourceTypePresentation'
 import { loadColorScheme, persistColorScheme, STORAGE_KEYS } from '../../localPreferences'
 import { RouteErrorBoundary } from './route-error-boundary'
+import { useShellRuntimeStatus } from '../../hooks/use-shell-runtime-status'
 
 function PlaceholderPage({ title }: { title: string }) {
   return (
@@ -174,6 +175,19 @@ export function AppShellLayout() {
   )
 
   const breadcrumb = useMemo(() => {
+    if (location.pathname === '/help' || location.pathname.startsWith('/help/')) {
+      return (
+        <nav className="flex flex-wrap items-center gap-1" aria-label="Breadcrumb">
+          <Link to="/help" className="font-medium text-violet-700 hover:underline dark:text-violet-300">Help Center</Link>
+          {location.pathname !== '/help' ? (
+            <>
+              <span className="text-slate-400 dark:text-gdc-muted" aria-hidden="true">/</span>
+              <span className="font-semibold text-slate-800 dark:text-slate-200">Workflow guide</span>
+            </>
+          ) : null}
+        </nav>
+      )
+    }
     if (newStreamMatch) {
       return (
         <nav className="flex flex-wrap items-center gap-1" aria-label="Breadcrumb">
@@ -183,7 +197,7 @@ export function AppShellLayout() {
           <span className="text-slate-400 dark:text-gdc-muted" aria-hidden>
             /
           </span>
-          <span className="font-semibold text-slate-800 dark:text-slate-200">New Stream</span>
+          <span className="font-semibold text-slate-800 dark:text-slate-200">New data flow</span>
         </nav>
       )
     }
@@ -390,7 +404,7 @@ export function AppShellLayout() {
             /
           </span>
           <Link to={NAV_PATH.routes} className="font-medium text-violet-700 hover:underline dark:text-violet-300">
-            Routes
+            Data Flows
           </Link>
           <span className="text-slate-400 dark:text-gdc-muted" aria-hidden>
             /
@@ -540,10 +554,12 @@ export function AppShellLayout() {
     location.pathname,
   ])
 
-  const headerTitle = location.pathname.startsWith('/validation')
+  const headerTitle = location.pathname.startsWith('/help')
+    ? 'Help Center'
+    : location.pathname.startsWith('/validation')
     ? PAGE_TITLE.validation
     : newStreamMatch
-        ? 'Stream Creation Wizard'
+        ? 'New data flow'
         : streamEditMatch
           ? 'Edit Stream'
           : apiTestMatch
@@ -569,25 +585,13 @@ export function AppShellLayout() {
   }, [headerTitle])
 
   const entityStatus = shellLabels.stream?.status ?? shellLabels.connector?.status
-  const runtimeHealthy = (
-    location.pathname.startsWith('/validation') ||
-    newStreamMatch ||
-    streamEditMatch ||
-    apiTestMatch ||
-    enrichmentMatch ||
-    routeEditMatch ||
-    mappingEditMatch ||
-    logsStreamMatch ||
-    destinationMatch
-  )
-    ? true
-    : entityStatus
-      ? entityStatus.toUpperCase() === 'RUNNING'
-      : activeNav !== 'logs'
-  const runtimeSummary = location.pathname.startsWith('/validation')
+  const operationalHeader = useShellRuntimeStatus(!location.pathname.startsWith('/help'))
+  const runtimeSummary = location.pathname.startsWith('/help')
+    ? 'In-product workflow guidance. Preview and configuration do not replace runtime verification.'
+    : location.pathname.startsWith('/validation')
     ? 'Runtime verification runs on live configuration; use alongside stream runtime, logs, and delivery health.'
     : newStreamMatch
-      ? 'Draft stream wizard — configuration is not applied to runtime until the stream is saved and enabled.'
+      ? 'New data flow — configure a Stream, its Routes and Destinations. Runtime delivery is not proven until the Stream is saved, enabled, and run.'
       : streamEditMatch
         ? /^\d+$/.test(streamEditMatch.params.streamId ?? '')
           ? 'Edit stream configuration — loads saved stream from the API.'
@@ -660,9 +664,12 @@ export function AppShellLayout() {
         header={
           <TopHeader
             title={headerTitle}
+            showRuntimeStatus={!location.pathname.startsWith('/help')}
             breadcrumb={breadcrumb}
             runtimeSummary={runtimeSummary}
-            runtimeHealthy={runtimeHealthy}
+            runtimeHealthy={operationalHeader.healthy}
+            runtimeStatusLabel={operationalHeader.label}
+            runtimeStatusEvidence={operationalHeader.evidence}
             isDark={isDark}
             onToggleTheme={toggleTheme}
             mobileNavOpen={mobileNavOpen}

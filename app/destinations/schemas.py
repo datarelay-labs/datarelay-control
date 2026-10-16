@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 DestinationTypeLiteral = Literal["SYSLOG_UDP", "SYSLOG_TCP", "SYSLOG_TLS", "WEBHOOK_POST", "AI_PROVIDER_POST"]
@@ -93,3 +93,24 @@ class DestinationTestResult(BaseModel):
     message: str
     tested_at: str
     detail: dict | None = None
+
+
+class DestinationTestDeliveryRequest(BaseModel):
+    """Bounded synthetic delivery request. Arbitrary operator payloads are intentionally unsupported."""
+
+    count: int = Field(default=10, ge=1, le=100)
+
+
+class DestinationTestDeliveryResult(BaseModel):
+    """Result of a bounded synthetic delivery to one saved Destination."""
+
+    success: bool
+    destination_id: int
+    destination_name: str
+    destination_type: DestinationTypeLiteral
+    target: str
+    transport_format: str
+    logical_event_count: int
+    test_delivery_id: str
+    tested_at: str
+    message: str

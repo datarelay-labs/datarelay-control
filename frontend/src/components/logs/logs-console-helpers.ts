@@ -1,5 +1,12 @@
 import type { LogExplorerRow } from './logs-types'
 
+/** Never turn manually pasted URL identities into false-empty delivery evidence. */
+export function safeOperationalResourceId(raw: string | null | undefined): number | undefined {
+  if (raw == null || !/^\d+$/.test(raw)) return undefined
+  const id = Number(raw)
+  return Number.isSafeInteger(id) && id > 0 ? id : undefined
+}
+
 export type HistogramBucket = { bucket: string; error: number; warn: number; info: number }
 
 export function metricsWindowFromTimeRangeLabel(label: string): '15m' | '1h' | '6h' | '24h' {
@@ -186,4 +193,15 @@ export function buildRetryTimelineEntries(row: LogExplorerRow): RetryTimelineEnt
     })
   }
   return out
+}
+
+/** Show operational log time in one explicit basis; never imply a zone for an unzoned string. */
+export function formatLogTimeUtc(timeIso: string): string {
+  const raw = timeIso.trim()
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(raw) || !/(?:Z|[+-]\d{2}:\d{2})$/i.test(raw)) {
+    return 'Time basis unavailable'
+  }
+  const epoch = Date.parse(raw)
+  if (!Number.isFinite(epoch)) return 'Timestamp unavailable'
+  return `${new Date(epoch).toISOString().slice(0, 23).replace('T', ' ')} UTC`
 }

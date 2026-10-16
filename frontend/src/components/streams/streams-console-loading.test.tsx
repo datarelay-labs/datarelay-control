@@ -3,6 +3,9 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { StreamsConsole } from './streams-console'
+import { persistTestSession, clearTestSession } from '../../lib/governance-rbac'
+import { persistSession, readSession } from '../../auth/session'
+import { act } from 'react'
 import { GDC_AUTH_REQUIRED_MESSAGE } from '../../api/gdcStreams'
 
 vi.mock('../../api/gdcStreams', async (importOriginal) => {
@@ -62,6 +65,36 @@ describe('StreamsConsole loading states', () => {
   afterEach(() => {
     vi.clearAllMocks()
     clearStreamsConsoleSnapshot()
+    clearTestSession()
+  })
+
+  it.each(['VIEWER', 'GOVERNANCE_AUDITOR'] as const)(
+    'does not offer Stream creation to %s in the verified empty state',
+    async (role) => {
+      persistTestSession(role)
+      vi.mocked(fetchStreamsListResult).mockResolvedValue({ ok: true, status: 200, data: [] })
+      render(<MemoryRouter><StreamsConsole /></MemoryRouter>)
+      await screen.findByTestId('streams-empty-state')
+      expect(screen.queryByRole('link', { name: 'New Stream' })).not.toBeInTheDocument()
+      expect(screen.queryByTestId('streams-create-first')).not.toBeInTheDocument()
+    },
+  )
+
+  it('hides Stream creation immediately when the server revokes Operator workspace mutations', async () => {
+    persistTestSession('OPERATOR')
+    const session = readSession()!
+    expect(session).not.toBeNull()
+    vi.mocked(fetchStreamsListResult).mockResolvedValue({ ok: true, status: 200, data: [] })
+    render(<MemoryRouter><StreamsConsole /></MemoryRouter>)
+    await screen.findByTestId('streams-empty-state')
+    expect(screen.getByRole('link', { name: 'New Stream' })).toBeInTheDocument()
+    expect(screen.getByTestId('streams-create-first')).toBeInTheDocument()
+    act(() => persistSession({
+      ...session,
+      user: { ...session.user, capabilities: { ...session.user.capabilities, workspace_mutations: false } },
+    }))
+    expect(screen.queryByRole('link', { name: 'New Stream' })).not.toBeInTheDocument()
+    expect(screen.queryByTestId('streams-create-first')).not.toBeInTheDocument()
   })
 
   it('stops loading and shows auth message on 401', async () => {

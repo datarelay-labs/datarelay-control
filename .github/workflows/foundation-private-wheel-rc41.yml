@@ -1,0 +1,58 @@
+name: Foundation pinned local consumer
+
+on:
+  pull_request:
+    branches: [main-v2]
+    paths:
+      - ".github/workflows/foundation-private-wheel-rc41.yml"
+      - "scripts/ci/verify-foundation-local-consumer.py"
+      - ".foundation/packs/**"
+      - "frontend/foundation.lock.json"
+      - "frontend/package.json"
+      - "frontend/package-lock.json"
+      - "frontend/src/m7-foundation-visual-contract.test.ts"
+      - "frontend/src/foundation-semantic-tokens.test.ts"
+      - "vendor/onprem-security/**"
+      - "tests/test_onprem_foundation_wheel_control.py"
+      - "app/auth/password_policy.py"
+      - "requirements.txt"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pinned-local-foundation-consumer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # RC50 is a private, unpublished handoff. Validate exactly what Control
+      # consumes; do not claim publisher signature or registry publication.
+      - name: Verify pinned local Foundation artifacts and provenance
+        run: python3 scripts/ci/verify-foundation-local-consumer.py
+
+      - name: Install exact local Foundation frontend packages
+        run: npm --prefix frontend ci --ignore-scripts --no-audit --no-fund
+
+      - name: Verify Foundation package scope and semantic-token contract
+        run: node --test scripts/foundation-package-scope.test.mjs scripts/foundation-semantic-token-contract.test.mjs
+
+      - name: Verify Control Foundation visual compatibility
+        run: npm --prefix frontend run test -- --run src/m7-foundation-visual-contract.test.ts src/foundation-semantic-tokens.test.ts
+
+      - name: Install existing Control backend dependencies
+        run: python3 -m pip install --no-cache-dir -r requirements.txt
+
+      - name: Verify actual pinned Foundation wheel in Control
+        env:
+          PYTHONPATH: vendor/onprem-security/datarelay_onprem_security-0.10.0.dev0-py3-none-any.whl:.
+        run: python3 -m pytest -q tests/test_onprem_foundation_wheel_control.py

@@ -658,7 +658,7 @@ export function StreamConsoleDetailPanel({
 
   return (
     <div
-      className="sticky top-0 self-start flex w-[400px] min-w-[340px] shrink-0 flex-col overflow-hidden border-l border-slate-200/80 bg-white dark:border-gdc-border dark:bg-gdc-card"
+      className="flex w-full min-w-0 max-w-full shrink-0 flex-col overflow-hidden border-t border-slate-200/80 bg-white dark:border-gdc-border dark:bg-gdc-card lg:sticky lg:top-0 lg:self-start lg:w-[400px] lg:min-w-[340px] lg:border-l lg:border-t-0"
       style={{ marginTop: topOffset > 0 ? topOffset : undefined, maxHeight: '100vh' }}
       data-testid="stream-console-detail-panel"
       aria-label={`Stream detail: ${stream.name}`}

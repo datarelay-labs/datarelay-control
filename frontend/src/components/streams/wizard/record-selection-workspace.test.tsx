@@ -20,6 +20,8 @@ function renderWorkspace(
     checkpointSourcePath?: string
     payload?: unknown
     recordSelectionMode?: 'basic' | 'advanced'
+    finishedAt?: number | null
+    operationalSampleId?: string
   } = {},
 ) {
   const state = buildInitialState()
@@ -27,6 +29,10 @@ function renderWorkspace(
   state.apiTest.ok = true
   state.apiTest.parsedJson = overrides.payload ?? ROOT_ARRAY
   state.apiTest.rawResponse = overrides.payload ?? ROOT_ARRAY
+  state.apiTest.finishedAt = overrides.finishedAt ?? null
+  state.apiTest.responseHeaders = overrides.operationalSampleId
+    ? { 'x-operational-sample': overrides.operationalSampleId }
+    : {}
   state.stream.eventArrayPath = overrides.eventArrayPath ?? '$'
   state.stream.eventRootPath = overrides.eventRootPath ?? ''
   state.stream.checkpointSourcePath = overrides.checkpointSourcePath ?? ''
@@ -59,6 +65,37 @@ describe('RecordSelectionWorkspace', () => {
     expect(screen.getByTestId('summary-preview')).toHaveTextContent('$[0]')
     expect(screen.getByTestId('summary-runtime')).toHaveTextContent('$[*]')
     expect(screen.getByTestId('summary-records')).toHaveTextContent('2')
+  })
+
+  it('shows truthful bounded sample provenance without inventing a live sample id', () => {
+    renderWorkspace({ finishedAt: Date.UTC(2026, 9, 14, 6, 0, 0) })
+    const evidence = screen.getByTestId('record-selection-sample-provenance')
+    expect(evidence).toHaveTextContent('Sample ID: Not provided by source/API')
+    expect(evidence).toHaveTextContent('Captured: 2026-10-14T06:00:00.000Z')
+    expect(evidence).toHaveTextContent('Extracted: 2 events')
+    expect(evidence).toHaveTextContent('Analysis limit: 20 events / 50 paths')
+  })
+
+  it('shows the real operational sample id when the sample provides one', () => {
+    renderWorkspace({ operationalSampleId: 'aws_cloudtrail' })
+    expect(screen.getByTestId('record-selection-sample-provenance')).toHaveTextContent(
+      'Sample ID: aws_cloudtrail',
+    )
+  })
+
+  it('shows bounded per-field sample coverage with no secret sample values in the summary', () => {
+    renderWorkspace({ payload: [
+      { id: 'a', nested: { email: 'secret1@example.test' } },
+      { id: 'b' },
+      { id: 'b', nested: { email: 'secret2@example.test' } },
+    ] })
+    const coverage = screen.getByTestId('record-selection-sample-field-coverage')
+    expect(coverage).toHaveTextContent('3 sample events')
+    expect(coverage).toHaveTextContent('Sample only')
+    expect(coverage).toHaveTextContent('$.nested.email')
+    expect(coverage).toHaveTextContent('2 / 3')
+    expect(coverage).not.toHaveTextContent('secret1@example.test')
+    expect(coverage).not.toHaveTextContent('secret2@example.test')
   })
 
   it('shows CloudTrail-style extraction summary', () => {

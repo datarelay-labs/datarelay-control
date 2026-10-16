@@ -1,7 +1,7 @@
 import { fetchStreamClassificationRules } from '../../../api/gdcClassification'
 import { fetchStreamPolicyRules } from '../../../api/gdcPolicy'
 import { fetchStreamProtectionRules } from '../../../api/gdcProtection'
-import { createRoute, deleteRoute, updateRoute, updateRouteWithFreshToken } from '../../../api/gdcRoutes'
+import { createRoute, deleteRoute, fetchRouteByIdFresh, updateRoute, updateRouteWithFreshToken } from '../../../api/gdcRoutes'
 import { fetchStreamGovernance } from '../../../api/gdcStreamGovernance'
 import {
   fetchRouteTransformEffective,
@@ -9,7 +9,7 @@ import {
   saveRouteMappingUiConfig,
 } from '../../../api/gdcRouteTransform'
 import { saveStreamMappingUiConfigStrict } from '../../../api/gdcRuntimeUi'
-import { fetchStreamById, updateStream } from '../../../api/gdcStreams'
+import { fetchStreamByIdFresh, updateStream } from '../../../api/gdcStreams'
 import {
   applyExplicitCheckpointClear,
   applyExplicitEventPathClear,
@@ -48,6 +48,10 @@ export type WizardStreamPersistResult = {
   routeUpdatedAtByDraftKey?: Record<string, string>
   /** True when this call created Data Protection rules that must become the confirmed concern. */
   dataProtectionPersisted?: boolean
+  /** Server-acknowledged objects before an eventual later failure. */
+  persistedObjects: string[]
+  /** Objects or concerns that were not confirmed by this save attempt. */
+  notPersistedObjects: string[]
 }
 
 export type SyncRoutesResult = {
@@ -55,6 +59,13 @@ export type SyncRoutesResult = {
   /** Server route id keyed by draft key (existing `route-N` or newly created). */
   routeIdsByDraftKey: Record<string, number>
   routeUpdatedAtByDraftKey: Record<string, string>
+  persistedObjects: string[]
+  notPersistedObjects: string[]
+}
+
+export type ReviewedRevisionPreflightResult = {
+  errors: string[]
+  stream: Awaited<ReturnType<typeof fetchStreamByIdFresh>>
 }
 
 function routeKeyToId(key: string): number | null {
@@ -64,8 +75,78 @@ function routeKeyToId(key: string): number | null {
   return Number.isFinite(id) ? id : null
 }
 
-export async function syncRoutes(streamId: number, state: WizardState): Promise<SyncRoutesResult> {
+function normalizedRevision(value: string | null | undefined): string | null {
+  const revision = typeof value === 'string' ? value.trim() : ''
+  return revision || null
+}
+
+/**
+ * Validate every reviewed server-owned revision before the first write.
+ * This closes the gap where a fresh GET token could silently turn an old browser
+ * draft into a current write and catches stale multi-Route edits before an earlier
+ * object has already been persisted. Server-side row locks remain authoritative
+ * for races that occur after this preflight.
+ */
+export async function preflightWizardReviewedRevision(
+  streamId: number,
+  state: WizardState,
+  confirmedState?: WizardState | null,
+): Promise<ReviewedRevisionPreflightResult> {
   const errors: string[] = []
+  const reviewedStreamToken = normalizedRevision(state.streamUpdatedAt)
+  const stream = await fetchStreamByIdFresh(streamId)
+  if (stream == null) {
+    errors.push(`stream ${streamId}: current server revision could not be read; reviewed configuration was not applied.`)
+  } else if (!reviewedStreamToken) {
+    errors.push(`stream ${streamId}: reviewed revision token is missing; reviewed configuration was not applied.`)
+  } else if (normalizedRevision(stream.updated_at) !== reviewedStreamToken) {
+    errors.push(
+      `stream ${streamId}: STREAM_STALE_WRITE — reviewed revision ${reviewedStreamToken} no longer matches the current server revision. Refresh before applying.`,
+    )
+  }
+
+  const reviewedRoutes = new Map<number, WizardRouteDraft>()
+  for (const draft of [...(confirmedState?.destinations.routeDrafts ?? []), ...state.destinations.routeDrafts]) {
+    const routeId = routeKeyToId(draft.key)
+    if (routeId != null) reviewedRoutes.set(routeId, draft)
+  }
+  for (const [routeId, draft] of reviewedRoutes) {
+    const reviewedToken = normalizedRevision(draft.updatedAt)
+    if (!reviewedToken) {
+      errors.push(`route ${routeId}: reviewed concurrency token is missing; no configuration was written.`)
+      continue
+    }
+    const current = await fetchRouteByIdFresh(routeId)
+    if (current == null) {
+      errors.push(`route ${routeId}: current server revision could not be read; no configuration was written.`)
+      continue
+    }
+    if (
+      (current.stream_id != null && current.stream_id !== streamId) ||
+      (current.destination_id != null && current.destination_id !== draft.destinationId)
+    ) {
+      errors.push(
+        `route ${routeId}: reviewed dependency changed (Stream/Destination mismatch); refresh before applying.`,
+      )
+      continue
+    }
+    if (normalizedRevision(current.updated_at) !== reviewedToken) {
+      errors.push(
+        `route ${routeId}: ROUTE_STALE_WRITE — reviewed revision ${reviewedToken} no longer matches the current server revision. Refresh before applying.`,
+      )
+    }
+  }
+  return { errors, stream }
+}
+
+export async function syncRoutes(
+  streamId: number,
+  state: WizardState,
+  options?: { confirmedState?: WizardState | null },
+): Promise<SyncRoutesResult> {
+  const errors: string[] = []
+  const persistedObjects: string[] = []
+  const notPersistedObjects: string[] = []
   const routeIdsByDraftKey: Record<string, number> = {}
   const routeUpdatedAtByDraftKey: Record<string, string> = {}
   const payloads = buildRouteCreatePayloads(streamId, state.destinations)
@@ -94,13 +175,16 @@ export async function syncRoutes(streamId: number, state: WizardState): Promise<
           expected_updated_at: draft.updatedAt,
         })
         routeIdsByDraftKey[draft.key] = routeId
+        persistedObjects.push(`Route #${routeId}`)
         if (updated.updated_at) routeUpdatedAtByDraftKey[draft.key] = updated.updated_at
       } else {
         const created = await createRoute(payload)
         routeIdsByDraftKey[draft.key] = created.id
+        persistedObjects.push(`Route #${created.id}`)
       }
     } catch (err) {
       errors.push(`route ${draft.destinationId}: ${err instanceof Error ? err.message : String(err)}`)
+      notPersistedObjects.push(routeId == null ? `Route for Destination #${draft.destinationId}` : `Route #${routeId}`)
     }
   }
 
@@ -110,26 +194,50 @@ export async function syncRoutes(streamId: number, state: WizardState): Promise<
     if (existingId != null) protectedIds.add(existingId)
   }
   const keptIds = new Set(Object.values(routeIdsByDraftKey))
-  for (const priorId of state.outcome?.routeIds ?? []) {
+  const priorRouteIds = options?.confirmedState != null
+    ? options.confirmedState.destinations.routeDrafts
+        .map((draft) => routeKeyToId(draft.key))
+        .filter((routeId): routeId is number => routeId != null)
+    : (state.outcome?.routeIds ?? [])
+  for (const priorId of priorRouteIds) {
     if (keptIds.has(priorId) || protectedIds.has(priorId)) continue
+    const reviewedPrior = options?.confirmedState?.destinations.routeDrafts.find(
+      (candidate) => routeKeyToId(candidate.key) === priorId,
+    )
     try {
-      await updateRouteWithFreshToken(priorId, {
-        stream_id: streamId,
-        enabled: false,
-        status: 'DISABLED',
-      })
+      if (reviewedPrior?.updatedAt) {
+        await updateRoute(priorId, {
+          stream_id: streamId,
+          enabled: false,
+          status: 'DISABLED',
+          expected_updated_at: reviewedPrior.updatedAt,
+        })
+      } else if (options?.confirmedState != null) {
+        throw new Error(`reviewed concurrency token is missing for Route #${priorId}`)
+      } else {
+        // Standalone/create compatibility path. Stream Edit always supplies confirmedState
+        // and therefore never upgrades a reviewed deletion to a fresh-token write.
+        await updateRouteWithFreshToken(priorId, {
+          stream_id: streamId,
+          enabled: false,
+          status: 'DISABLED',
+        })
+      }
     } catch (err) {
       errors.push(`disable route ${priorId}: ${err instanceof Error ? err.message : String(err)}`)
+      notPersistedObjects.push(`Route #${priorId} removal`)
       continue
     }
     try {
       await deleteRoute(priorId)
+      persistedObjects.push(`Route #${priorId} removal`)
     } catch (err) {
       errors.push(`delete route ${priorId}: ${err instanceof Error ? err.message : String(err)}`)
+      notPersistedObjects.push(`Route #${priorId} removal`)
     }
   }
 
-  return { errors, routeIdsByDraftKey, routeUpdatedAtByDraftKey }
+  return { errors, routeIdsByDraftKey, routeUpdatedAtByDraftKey, persistedObjects, notPersistedObjects }
 }
 
 export function applyPersistedRevisions(
@@ -321,17 +429,36 @@ export async function persistWizardStreamEdits(
       routeIdsByDraftKey: {},
       routeUpdatedAtByDraftKey: {},
       dataProtectionPersisted: false,
+      persistedObjects: [],
+      notPersistedObjects: ['Stream configuration'],
     }
   }
 
   const confirmed = options?.confirmedState ?? null
+  const persistedObjects: string[] = []
+  const notPersistedObjects: string[] = []
+  const preflight = await preflightWizardReviewedRevision(streamId, state, confirmed)
+  if (preflight.errors.length > 0) {
+    return {
+      ok: false,
+      errors: preflight.errors,
+      routeIdsByDraftKey: {},
+      routeUpdatedAtByDraftKey: {},
+      streamUpdatedAt: state.streamUpdatedAt ?? null,
+      dataProtectionPersisted: false,
+      persistedObjects: [],
+      notPersistedObjects: ['Reviewed Stream/Route configuration'],
+    }
+  }
+
   let persistedConfigJson: Record<string, unknown> | null = null
   let streamUpdatedAt: string | null = null
   try {
-    const existing = await fetchStreamById(streamId)
-    const token = existing?.updated_at
-    if (typeof token !== 'string' || !token) {
-      errors.push('stream: concurrency token is missing, so this draft was not written.')
+    const existing = preflight.stream
+    const token = normalizedRevision(state.streamUpdatedAt)
+    if (existing == null || !token) {
+      errors.push('stream: reviewed concurrency token is missing, so this draft was not written.')
+      notPersistedObjects.push(`Stream #${streamId}`)
     } else {
       const existingConfig =
         existing?.config_json && typeof existing.config_json === 'object' && !Array.isArray(existing.config_json)
@@ -370,9 +497,11 @@ export async function persistWizardStreamEdits(
       })
       persistedConfigJson = config_json
       streamUpdatedAt = updated.updated_at ?? token
+      persistedObjects.push(`Stream #${streamId}`)
     }
   } catch (err) {
     errors.push(`stream: ${err instanceof Error ? err.message : String(err)}`)
+    notPersistedObjects.push(`Stream #${streamId}`)
   }
 
   const fieldMappings = buildWizardFieldMappingsPayload(state)
@@ -434,41 +563,50 @@ export async function persistWizardStreamEdits(
               }
             : null,
       })
+      persistedObjects.push(`Stream #${streamId} Mapping/Enrichment`)
     } catch (err) {
       errors.push(`mapping-ui: ${err instanceof Error ? err.message : String(err)}`)
+      notPersistedObjects.push(`Stream #${streamId} Mapping/Enrichment`)
     }
   }
 
-  const synced = await syncRoutes(streamId, state)
+  const synced = await syncRoutes(streamId, state, { confirmedState: confirmed })
   errors.push(...synced.errors)
+  persistedObjects.push(...synced.persistedObjects)
+  notPersistedObjects.push(...synced.notPersistedObjects)
+  // Only routes whose broad reviewed-revision sync succeeded may receive downstream
+  // Transform/Governance writes. Helpers intentionally support `route-N` fallback for
+  // create/standalone callers, so the reviewed edit flow filters failed routes first.
   const routeIdsByDraftKey: Record<string, number> = { ...synced.routeIdsByDraftKey }
-  for (const draft of state.destinations.routeDrafts) {
-    if (routeIdsByDraftKey[draft.key]) continue
-    const fromKey = routeKeyToId(draft.key)
-    if (fromKey != null) routeIdsByDraftKey[draft.key] = fromKey
+  const persistedRouteDrafts = state.destinations.routeDrafts.filter(
+    (draft) => routeIdsByDraftKey[draft.key] != null,
+  )
+  const routeSafeState: WizardState = {
+    ...state,
+    destinations: { ...state.destinations, routeDrafts: persistedRouteDrafts },
   }
   errors.push(
-    ...(await persistWizardRouteTransformOverrides(state.destinations.routeDrafts, routeIdsByDraftKey)),
+    ...(await persistWizardRouteTransformOverrides(persistedRouteDrafts, routeIdsByDraftKey)),
   )
   errors.push(
-    ...(await verifyWizardRouteTransformEffective(state.destinations.routeDrafts, routeIdsByDraftKey)),
+    ...(await verifyWizardRouteTransformEffective(persistedRouteDrafts, routeIdsByDraftKey)),
   )
   errors.push(
-    ...(await persistWizardRouteGovernanceBundles(state.destinations.routeDrafts, routeIdsByDraftKey)),
+    ...(await persistWizardRouteGovernanceBundles(persistedRouteDrafts, routeIdsByDraftKey)),
   )
 
   const protection = await persistEditDataProtection(streamId, state, confirmed)
   if (protection.error) errors.push(protection.error)
 
   try {
-    const governanceResult = await persistWizardStreamGovernance(streamId, state, routeIdsByDraftKey)
+    const governanceResult = await persistWizardStreamGovernance(streamId, routeSafeState, routeIdsByDraftKey)
     if (!governanceResult.saved) errors.push(...governanceResult.errors)
   } catch (err) {
     errors.push(`governance: ${err instanceof Error ? err.message : String(err)}`)
   }
   errors.push(
     ...(await verifyWizardRouteGovernanceEffective(
-      state.destinations.routeDrafts,
+      persistedRouteDrafts,
       routeIdsByDraftKey,
       state.dataProtection,
     )),
@@ -478,13 +616,21 @@ export async function persistWizardStreamEdits(
     try {
       const driftResult = await persistWizardSchemaDriftPolicy(streamId, state.dataProtection, {
         existingConfigJson: persistedConfigJson,
+        expectedUpdatedAt: streamUpdatedAt,
       })
       if (!driftResult.saved) errors.push(...driftResult.errors)
+      else if (driftResult.streamUpdatedAt) streamUpdatedAt = driftResult.streamUpdatedAt
     } catch (err) {
       errors.push(`schema-drift-policy: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 
+  if (errors.length > 0) {
+    for (const error of errors) {
+      const label = error.split(':', 1)[0]?.trim()
+      if (label && !notPersistedObjects.includes(label)) notPersistedObjects.push(label)
+    }
+  }
   return {
     ok: errors.length === 0,
     errors,
@@ -492,6 +638,8 @@ export async function persistWizardStreamEdits(
     routeUpdatedAtByDraftKey: synced.routeUpdatedAtByDraftKey,
     streamUpdatedAt,
     dataProtectionPersisted: protection.persisted,
+    persistedObjects: [...new Set(persistedObjects)],
+    notPersistedObjects: [...new Set(notPersistedObjects)],
   }
 }
 

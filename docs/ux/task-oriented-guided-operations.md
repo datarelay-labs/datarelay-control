@@ -4,6 +4,12 @@ Status: Derived, non-normative implementation guidance for roadmap #354 / packet
 
 Authority remains with `docs/architecture/source-of-truth-index.md` and the current documents it designates, especially the Product Charter, Data Relay UX Charter, Stream Wizard UX Charter, Governance UX Charter, and Governance Workspace contracts. This note summarizes the accepted implementation direction and must not override those authorities; any conflict fails closed and is resolved in the authoritative sources first.
 
+## Current owner-approved Flow-First IA (2026-10-09, #354)
+
+The existing A–G source integrations remain historical implementation accomplishments, but the owner has **not accepted the earlier NOC-like task usability**. The approved correction is **Data Flows** (existing Routes overview, not a new runtime entity) as the primary graph of real Stream → Route Processing → Destination paths and their metrics. Streams own collection/execution; Connections groups reusable Connectors/Destinations; the global entry is **New Data Flow**. Existing Wizard stages and permissions stay canonical, with Connector/Destination created contextually if missing and the exact draft/step preserved. No invented delivery acknowledgment or capacity ratio.
+
+Authoritative UX changes are in the designated UX Charter and Stream Wizard Charter; detailed acceptance and code entry points: [`DATA-RELAY-FLOW-FIRST-IA-IMPLEMENTATION-CONTRACT.md`](DATA-RELAY-FLOW-FIRST-IA-IMPLEMENTATION-CONTRACT.md). #362 Governance top-level exception remains in force. The goal is a visually meaningful operating console, not extra cards or a second Stream creation flow.
+
 ## Product intent
 
 DataRelay Control is a Data Delivery Gateway with optional Data Protection.
@@ -75,17 +81,17 @@ The UI must teach this model through tasks and runtime truth instead of requirin
 - Lead with current EPS, authoritative capacity/limit if available, connected paths, recent delivery issues, and test/diagnose actions.
 - Never fabricate utilization where no authoritative limit exists.
 
-### Routes
-- Primary question: "How is this Stream delivered to this Destination?"
-- Visualize Stream -> Route Processing -> Destination.
-- Treat Transform / Protection / Classification / Policy as destination-specific Route Processing.
-- Provide before/after sample preview and stage-specific preview where supported.
+### Data Flows (successor to Routes overview)
+- Primary question: "Where does data go, on which path, and what are the actual current delivery outcomes?"
+- Make Connector/source access -> Stream collection -> one/many Route Processing -> Destination edges the main operator viewport; keep a filtered expert Route table fallback.
+- Show real Route EPS, delivery success/failure/retry, freshness and Destination capacity **only** with compatible source-provided values. Distinguish unknown, IDLE, preview, send and acknowledged reception.
+- Route Edit remains the destination-specific Transform/Protection/Classification/Policy configuration screen, reached from the selected path's inspector. The Data Flows graph itself is read-only.
 
-### Stream Wizard
-- Primary question: "What are you trying to collect and where should it go?"
-- Add intent/template entry where it reduces blank-form complexity.
-- Preserve Source -> Sample Data -> Select Destinations -> Route Processing -> Deploy.
-- Verify effective delivery after deploy.
+### New Data Flow (existing Stream Wizard)
+- Primary question: "What data do you need to collect, and where should each delivery path go?"
+- Start from useful intent and available Connector/Destination prerequisites; create missing ones in the setup context and restore the draft after return.
+- Preserve Source -> Sample Data -> Select Destinations -> Route Processing -> Deploy, explicit validations, permissions and actual post-deploy runtime verification.
+- Do not expose superficial template choices that merely rename the same flow without useful defaults. Keep expert Start from scratch.
 
 ### Governance Dashboard
 - Primary question: "Is governance healthy, and what needs attention?"
@@ -117,17 +123,17 @@ Layer 3: full documentation link when a published page-specific document exists.
 
 Do not invent broken documentation URLs. Full-documentation links are added only when the target page exists.
 
-## Navigation conflict
+## Navigation authority resolution
 
-The general UX Charter says Governance should not be a top-level menu, while the Governance UX charters define a dedicated Governance operations surface. They have equal authority in the current authority map. Do not silently remove or relocate Governance navigation until an explicit product decision resolves this conflict.
+Governance had an equal-authority conflict between the general UX Charter and Governance UX Charter. The owner resolved it with **Option A (#362, 2026-10-09)**: a single Governance primary group, with Governance Dashboard as entry and authorized investigation paths retained. The newly approved Data Flows / Connections navigation does not replace or override that separate Governance decision.
 
-## Delivery order
+## Current implementation order (owner-approved correction)
 
-1. Shared page-purpose/help foundation + Governance clarity.
-2. Dashboard + Streams task-oriented operations.
-3. Destinations + Routes visual delivery path.
-4. Wizard intent/templates + processing preview.
-5. Cross-page contextual help content and published documentation links.
-6. Optional isolated demo/sample learning path.
-7. Fresh Browser Feature Scenario Reconciliation.
-8. Full User E2E and release closure.
+Previous foundation A–G implementation batches are source history, **not owner-visible UX acceptance**. New P0 order is:
+
+1. **Data Flows** primary operational graph/selected Route inspector using real runtime truth and expert table fallback.
+2. **New Data Flow** prerequisite-aware contextual Connector/Destination creation with draft-safe return; same existing five-stage Wizard.
+3. **Navigation**: Dashboard / Data Flows / Streams / Connections (Connectors and Destinations) / Governance / Administration and truthful status messaging.
+4. Real owner-visible authenticated visual acceptance at 1440/375/320; only then full mandatory Browser reconciliation (20 BFS / 97 capability-control census) and same-HEAD two-user Full User E2E.
+
+Search/Recent/Favorites remain ROI-deferred. No automatic merge or release.

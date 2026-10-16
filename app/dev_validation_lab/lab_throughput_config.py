@@ -24,9 +24,9 @@ LAB_POLLING_INTERVAL_MIN = 1
 LAB_POLLING_INTERVAL_MAX = 4
 LAB_POLLING_INTERVAL_NEGATIVE = 120
 
-# Measured StreamRunner cycle (fetch + map + deliver) on lab HTTP streams; EPS must use
-# events / (run_duration + polling_interval), not events / polling_interval alone.
-LAB_EXPECTED_RUN_DURATION_SEC = 14
+# Current isolated StreamRunner cycles complete in a few hundred milliseconds for the lab HTTP path.
+# EPS must use events / (run_duration + polling_interval), not events / polling_interval alone.
+LAB_EXPECTED_RUN_DURATION_SEC = 0.25
 LAB_MAX_EVENTS_PER_POLL = 300
 
 # Lab webhook destinations deliver one HTTP POST per poll batch (not per event).
@@ -50,6 +50,8 @@ LAB_FEED_DB_ROWS_BASE = 8
 LAB_FEED_DB_ROWS_HIGH = 20
 LAB_FEED_S3_OBJECTS_BASE = 2
 LAB_FEED_S3_OBJECTS_HIGH = 4
+LAB_FEED_S3_RECORDS_PER_OBJECT = 20
+LAB_FEED_S3_ROLLING_SLOTS = 16
 LAB_FEED_REMOTE_FILES_BASE = 2
 LAB_FEED_REMOTE_FILES_HIGH = 4
 LAB_FEED_WEBHOOK_EVENTS_BASE = 8
@@ -204,7 +206,13 @@ def lab_http_events_for_path(path: str) -> int:
     matching = [bare for bare in LAB_ACTIVE_STREAM_TITLES if lab_http_path_for_bare_title(bare) == path]
     if not matching:
         return lab_events_per_poll_for_target(LAB_EPS_MIN, LAB_POLLING_INTERVAL_MIN)
-    return max(lab_http_events_for_bare_title(bare) for bare in matching)
+    events = max(lab_http_events_for_bare_title(bare) for bare in matching)
+    if path == LAB_HTTP_HIGH_PATH:
+        # Under full lab scheduler load an arbitrary 60-second window can contain
+        # only 13 completed visible HTTP runs. Twenty-four events keeps that
+        # window above 5 EPS while the normal 1.25-second cycle remains <=20 EPS.
+        events = max(events, math.ceil(LAB_EPS_MIN * 60 / 13))
+    return events
 
 
 def lab_http_events_for_bare_title(bare: str) -> int:
@@ -345,20 +353,28 @@ _REMOTE_FILE_TITLES: frozenset[str] = frozenset(
 
 
 def lab_feed_db_rows_per_tick() -> int:
-    return max(lab_sustained_events_per_poll_for_bare_title(t) for t in _DB_STREAM_TITLES)
+    # The feeder ticks once per second by default, so generate target EPS here.
+    # Poll-cycle batch sizing belongs to the consumer, not to the producer tick.
+    return _max_target_eps_for(*_DB_STREAM_TITLES)
 
 
 def lab_feed_webhook_events_per_tick() -> int:
-    return lab_sustained_events_per_poll_for_bare_title("Webhook Receiver Stream")
+    # Live webhook ingestion includes synchronous route processing and can stretch
+    # to ~4 seconds under validation load. Use the bounded 20-event batch so a
+    # slow cycle still clears 5 EPS while the normal 1-second cycle stays at the
+    # acceptance ceiling rather than exceeding it.
+    return LAB_EPS_MAX
 
 
 def lab_feed_s3_objects_per_tick() -> int:
-    lines_per_object = 4
+    # Update only enough rolling slots per second to stay inside the 20 EPS
+    # ceiling. The larger bounded ring preserves enough changed objects for a
+    # slow poll without continuously saturating MinIO with PUT/GET requests.
     return max(
         1,
-        max(
-            math.ceil(lab_sustained_events_per_poll_for_bare_title(t) / lines_per_object)
-            for t in _S3_STREAM_TITLES
+        math.ceil(
+            _max_target_eps_for(*_S3_STREAM_TITLES)
+            / LAB_FEED_S3_RECORDS_PER_OBJECT
         ),
     )
 
@@ -367,10 +383,9 @@ def lab_feed_remote_files_per_tick() -> int:
     lines_per_file = 3
     return max(
         1,
-        max(
-            math.ceil(lab_sustained_events_per_poll_for_bare_title(t) / lines_per_file)
-            for t in _REMOTE_FILE_TITLES
-            if t != "Remote File Stream"
+        math.ceil(
+            _max_target_eps_for(*(t for t in _REMOTE_FILE_TITLES if t != "Remote File Stream"))
+            / lines_per_file
         ),
     )
 
@@ -378,6 +393,10 @@ def lab_feed_remote_files_per_tick() -> int:
 def lab_sustained_events_per_poll_for_bare_title(bare: str) -> int:
     """Events ingested per stream poll cycle used for interval tuning."""
 
+    # The visible Remote File fixture is an exact-name 40-event NDJSON file.
+    # Account for its real batch size, not a smaller generic target estimate.
+    if bare == "Remote File Stream":
+        return LAB_EPS_MIN * 8
     target = lab_target_eps_for_bare_title(bare)
     interval = LAB_POLLING_INTERVAL_MIN
     return lab_events_per_poll_for_target(target, interval)
@@ -386,6 +405,11 @@ def lab_sustained_events_per_poll_for_bare_title(bare: str) -> int:
 def lab_polling_interval_for_bare_title(bare: str) -> int:
     if bare in NEGATIVE_VALIDATION_STREAM_TITLES:
         return LAB_POLLING_INTERVAL_NEGATIVE
+    if bare == "Remote File Stream":
+        # The 40-event fixture can run 31+ times per minute at interval=1,
+        # producing >20 input EPS. At interval=2 the scheduler performs at most
+        # 30 polls/minute; the real processing time reduces the rate further.
+        return 2
     return LAB_POLLING_INTERVAL_MIN
 
 
@@ -414,5 +438,8 @@ def lab_feed_tick_rates(*, high_volume: bool = True) -> dict[str, int]:
         "s3_objects": lab_feed_s3_objects_per_tick(),
         "remote_files": lab_feed_remote_files_per_tick(),
         "webhook_events": lab_feed_webhook_events_per_tick(),
-        "remote_visible_lines": lab_sustained_events_per_poll_for_bare_title("Remote File Stream"),
+        # The visible remote-file stream uses an exact-filename fast path.
+        # Keep a bounded 40-event file: eight polls per 60-second window clear
+        # 5 EPS, while even 30 polls remain at the 20 EPS ceiling.
+        "remote_visible_lines": LAB_EPS_MIN * 8,
     }

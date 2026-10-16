@@ -1,0 +1,13 @@
+{
+  "candidate_only": true,
+  "project": "datarelay-onprem-security",
+  "repository": "datarelay-labs/datarelay-product-foundation",
+  "schema_version": 1,
+  "source_date_epoch": 1792039559,
+  "source_head": "746e0a78f8dba782c00eba675099f24f647f1f09",
+  "source_tree_sha256": "702820f126be2ac62e1cd7673502656f5dec8dd60d1afb73a750199699af115c",
+  "version": "0.10.0.dev0",
+  "wheel": "datarelay_onprem_security-0.10.0.dev0-py3-none-any.whl",
+  "wheel_bytes": 114868,
+  "wheel_sha256": "f78c3e2b85c8ed2ebab57b5b894dc68e32aff1d446f373911f51a75745a2405b"
+}

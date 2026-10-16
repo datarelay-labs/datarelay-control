@@ -1,7 +1,9 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { persistSession } from '../../auth/session'
+import { clearTestSession, persistTestSession } from '../../lib/governance-rbac'
 import { RoutesOverviewPage } from './routes-overview-page'
 import type { OperationalSnapshotResponse } from '../../api/operationalSnapshot'
 
@@ -98,6 +100,7 @@ vi.mock('../../api/gdcStreams', () => ({
 }))
 
 describe('RoutesOverviewPage snapshot loading', () => {
+  afterEach(() => clearTestSession())
   beforeEach(async () => {
     vi.clearAllMocks()
     const snap = await import('../../api/operationalSnapshot')
@@ -138,6 +141,52 @@ describe('RoutesOverviewPage snapshot loading', () => {
     vi.mocked(runtime.fetchStreamRuntimeMetrics).mockResolvedValue(null)
   })
 
+  it.each(['VIEWER', 'GOVERNANCE_AUDITOR'] as const)('does not offer %s the global Create Route action', async (role) => {
+    persistTestSession(role)
+    render(<MemoryRouter><RoutesOverviewPage /></MemoryRouter>)
+    expect(await screen.findByTestId('routes-architecture-inspector')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Create Route' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'View Route settings' })).toBeInTheDocument()
+  })
+
+  it.each(['ADMINISTRATOR', 'OPERATOR'] as const)('offers %s the global Create Route action', async (role) => {
+    persistTestSession(role)
+    render(<MemoryRouter><RoutesOverviewPage /></MemoryRouter>)
+    expect(await screen.findByTestId('routes-architecture-inspector')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Create Route' })).toHaveAttribute('href', '/routes/new/edit')
+  })
+
+  it('removes the global creation action on live capability downgrade', async () => {
+    persistTestSession('OPERATOR')
+    render(<MemoryRouter><RoutesOverviewPage /></MemoryRouter>)
+    expect(await screen.findByTestId('routes-architecture-inspector')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Create Route' })).toBeInTheDocument()
+    act(() => persistSession({
+      access_token: 'test-token',
+      refresh_token: 'test-refresh',
+      expires_at: new Date(Date.now() + 3600_000).toISOString(),
+      user: { username: 'operator', role: 'OPERATOR', status: 'ACTIVE', capabilities: { workspace_mutations: false } },
+    }))
+    expect(screen.queryByRole('link', { name: 'Create Route' })).not.toBeInTheDocument()
+  })
+
+  it('shows Route catalog load failure as an error instead of a false empty catalog', async () => {
+    const routes = await import('../../api/gdcRoutes')
+    vi.mocked(routes.fetchRoutesList).mockResolvedValueOnce(null)
+
+    render(
+      <MemoryRouter>
+        <RoutesOverviewPage />
+      </MemoryRouter>,
+    )
+
+    const alert = await screen.findByTestId('routes-load-error')
+    expect(alert).toHaveAttribute('role', 'alert')
+    expect(alert).toHaveTextContent(/Could not load the Route catalog/i)
+    expect(alert).toHaveTextContent(/retry before making Route decisions/i)
+    expect(screen.queryByText('No routes configured yet.')).not.toBeInTheDocument()
+  })
+
   it('loads operational snapshot on mount and does not fetch per-stream metrics', async () => {
     const snap = await import('../../api/operationalSnapshot')
     const runtime = await import('../../api/gdcRuntime')
@@ -151,11 +200,34 @@ describe('RoutesOverviewPage snapshot loading', () => {
     await waitFor(() => {
       expect(snap.getOperationalSnapshot).toHaveBeenCalled()
     })
+    // The read path always returns one current gateway snapshot, not metrics
+    // for a user-selected 15m/1h/6h/24h window.
+    expect(screen.queryByRole('combobox', { name: 'Metrics window' })).not.toBeInTheDocument()
+    expect(screen.getByRole('note', { name: 'Metrics time basis' })).toHaveTextContent(
+      'Metrics basis: 5m gateway snapshot',
+    )
     expect(screen.getByTestId('routes-purpose-header')).toHaveTextContent(/destination-specific path/i)
     expect(screen.getByTestId('routes-mental-model')).toHaveTextContent('Stream')
     expect(screen.getByTestId('routes-mental-model')).toHaveTextContent('Route Processing')
     expect(screen.getByTestId('routes-mental-model')).toHaveTextContent('Destination')
     expect(screen.getByTestId('routes-mental-model')).toHaveTextContent(/fan out through many Routes/i)
+    expect(await screen.findByTestId('routes-architecture-workspace')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Delivery architecture' })).toBeInTheDocument()
+    expect(screen.getByTestId('routes-architecture-stream-1')).toHaveTextContent('S1')
+    expect(screen.getByTestId('routes-architecture-route-5')).toHaveTextContent('Route')
+    expect(screen.getByTestId('routes-architecture-destination-2')).toHaveTextContent('D1')
+    expect(screen.getByTestId('routes-architecture-graph')).toHaveTextContent('Connector #1')
+    expect(screen.getByTestId('routes-architecture-graph')).toHaveTextContent('Source #1')
+    const inspector = screen.getByTestId('routes-architecture-inspector')
+    expect(inspector).toHaveTextContent('Receiver-confirmed ingestion')
+    expect(inspector).toHaveTextContent('Not verified by this snapshot')
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('tab', { name: 'Delivery' }))
+    expect(inspector).toHaveTextContent('Retry rate (5m)')
+    await user.click(screen.getByRole('tab', { name: 'Diagnostics' }))
+    expect(inspector).toHaveTextContent('Failed output (1m)')
+    expect(inspector).toHaveTextContent('Log and Continue')
+    expect(screen.getByTestId('routes-architecture-inspector')).toHaveTextContent('Stale')
     expect(screen.getByText('Route Flow')).toBeInTheDocument()
     expect(screen.getByText('All Routes (1)')).toBeInTheDocument()
     expect(screen.getAllByText('S1').length).toBeGreaterThan(0)
@@ -223,7 +295,49 @@ describe('RoutesOverviewPage snapshot loading', () => {
 
     await user.selectOptions(streamSelect, '2')
 
-    expect(await screen.findByTestId('stream-flow-map-2')).toBeInTheDocument()
-    expect(screen.queryByTestId('stream-flow-map-1')).not.toBeInTheDocument()
+    expect(await screen.findByTestId('routes-architecture-graph')).toHaveTextContent('Stream #2')
+    expect(screen.getByTestId('routes-architecture-route-6')).toBeInTheDocument()
+    expect(screen.queryByTestId('routes-architecture-route-5')).not.toBeInTheDocument()
+    expect(screen.getByTestId('routes-architecture-inspector')).toHaveTextContent('R-0006')
+    expect(screen.getByTestId('routes-architecture-stream-1')).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('restores the exact Stream and Route selection from a Data Flows investigation deep link', async () => {
+    const snap = await import('../../api/operationalSnapshot')
+    const deepLinkSnapshot: OperationalSnapshotResponse = {
+      ...operationalSnapshot,
+      global: {
+        ...operationalSnapshot.global,
+        total_routes: 2,
+        enabled_routes: 2,
+      },
+      streams: [
+        {
+          ...operationalSnapshot.streams[0]!,
+          route_count: 2,
+        },
+      ],
+      routes: [
+        operationalSnapshot.routes[0]!,
+        {
+          ...operationalSnapshot.routes[0]!,
+          route_id: 6,
+          stream_id: 1,
+          stream_name: 'S1',
+        },
+      ],
+    }
+    vi.mocked(snap.getOperationalSnapshot).mockResolvedValue(deepLinkSnapshot)
+
+    render(
+      <MemoryRouter initialEntries={['/routes?stream_id=1&route_id=6']}>
+        <RoutesOverviewPage />
+      </MemoryRouter>,
+    )
+
+    const inspector = await screen.findByTestId('routes-architecture-inspector')
+    expect(inspector).toHaveTextContent('R-0006')
+    expect(screen.getByTestId('routes-architecture-route-6')).toBeInTheDocument()
+    expect(screen.getByTestId('routes-architecture-stream-1')).toHaveAttribute('aria-pressed', 'true')
   })
 })

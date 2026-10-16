@@ -17,10 +17,14 @@ from app.destinations.schemas import (
     DestinationPreviewTest,
     DestinationRead,
     DestinationRouteUsage,
+    DestinationTestDeliveryRequest,
+    DestinationTestDeliveryResult,
     DestinationTestResult,
     DestinationUpdate,
 )
+from app.destinations.test_delivery_service import run_bounded_destination_test_delivery
 from app.destinations.test_service import run_destination_connectivity_probe, run_destination_connectivity_test
+from app.runtime.errors import DestinationSendError
 from app.dynamic_routing.models import StreamDynamicRoute
 from app.failover_routing.models import StreamFailoverRoute
 from app.platform_admin import journal
@@ -185,6 +189,75 @@ async def test_destination(destination_id: int, request: Request, db: Session = 
     db.commit()
     db.refresh(row)
     return DestinationTestResult.model_validate(raw)
+
+
+@router.post("/{destination_id}/test-delivery", response_model=DestinationTestDeliveryResult)
+async def bounded_test_delivery(
+    destination_id: int,
+    payload: DestinationTestDeliveryRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> DestinationTestDeliveryResult:
+    """Send 1-100 known synthetic events to one saved Destination without running a Stream."""
+
+    row = db.query(Destination).filter(Destination.id == destination_id).first()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error_code": "DESTINATION_NOT_FOUND", "message": f"destination not found: {destination_id}"},
+        )
+    if not row.enabled:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error_code": "DESTINATION_TEST_DELIVERY_DISABLED",
+                "message": "Enable the Destination before sending test events.",
+            },
+        )
+
+    try:
+        raw = run_bounded_destination_test_delivery(row, count=payload.count)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"error_code": "DESTINATION_TEST_DELIVERY_INVALID", "message": str(exc)},
+        ) from exc
+    except DestinationSendError as exc:
+        journal.record_audit_event(
+            db,
+            action="DESTINATION_TEST_DELIVERY_FAILED",
+            entity_type="DESTINATION",
+            entity_id=int(row.id),
+            entity_name=str(row.name),
+            result="failure",
+            details={"destination_type": str(row.destination_type), "logical_event_count": payload.count},
+            request=request,
+        )
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "error_code": "DESTINATION_TEST_DELIVERY_FAILED",
+                "message": "Test delivery failed. Review the Destination settings and receiver status, then retry.",
+            },
+        ) from exc
+
+    journal.record_audit_event(
+        db,
+        action="DESTINATION_TEST_DELIVERY_SENT",
+        entity_type="DESTINATION",
+        entity_id=int(row.id),
+        entity_name=str(row.name),
+        result="success",
+        details={
+            "destination_type": str(row.destination_type),
+            "logical_event_count": payload.count,
+            "test_delivery_id": raw.get("test_delivery_id"),
+        },
+        request=request,
+    )
+    db.commit()
+    return DestinationTestDeliveryResult.model_validate(raw)
 
 
 @router.get("/{destination_id}", response_model=DestinationRead)

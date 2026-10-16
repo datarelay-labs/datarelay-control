@@ -5,6 +5,8 @@ import {
   buildDestinationRouteMetrics,
   buildProblemRoutes,
   buildRouteFlowTree,
+  listRouteFlowAttention,
+  isRouteSnapshotStale,
   aggregateGlobalErrorRateFromRoutes,
 } from './routes-flow-helpers'
 
@@ -203,6 +205,68 @@ describe('routes-flow-helpers', () => {
     expect(tree[1]?.routes).toHaveLength(1)
   })
 
+  it('orders cross-Stream attention by snapshot-backed severity and stable ID, excluding disabled paths', () => {
+    const routes = [
+      { ...snapshot.routes[0]!, route_id: 41, health_status: 'DEGRADED' as const },
+      { ...snapshot.routes[1]!, route_id: 42, health_status: 'ERROR' as const },
+      { ...snapshot.routes[2]!, route_id: 43, health_status: 'ERROR' as const, enabled: false },
+    ]
+    const changed = { ...snapshot, routes }
+    const items = listRouteFlowAttention(buildRouteFlowTree(changed, buildRouteRowsFromOperationalSnapshot(changed)))
+    expect(items.map((item) => [item.status, item.streamId, item.routeId])).toEqual([
+      ['Error', 1, 42],
+      ['Warning', 1, 41],
+    ])
+  })
+
+  it('includes snapshot-backed Destination faults without mislabeling a Healthy Route as failed', () => {
+    const changed: OperationalSnapshotResponse = {
+      ...snapshot,
+      routes: [
+        { ...snapshot.routes[0]!, health_status: 'HEALTHY' },
+        { ...snapshot.routes[1]!, health_status: 'DEGRADED' },
+      ],
+      destinations: [
+        { ...snapshot.destinations[0]!, health_status: 'ERROR' },
+        { ...snapshot.destinations[1]!, health_status: 'DEGRADED' },
+      ],
+    }
+    const tree = buildRouteFlowTree(changed, buildRouteRowsFromOperationalSnapshot(changed))
+    expect(listRouteFlowAttention(tree, changed.destinations)).toMatchObject([
+      { routeId: 1, status: 'Error', subject: 'Destination' },
+      { routeId: 2, status: 'Warning', subject: 'Route' },
+    ])
+    const missingDestination = { ...changed, destinations: [] }
+    const missingTree = buildRouteFlowTree(missingDestination, buildRouteRowsFromOperationalSnapshot(missingDestination))
+    expect(listRouteFlowAttention(missingTree, missingDestination.destinations)).toMatchObject([
+      { routeId: 2, status: 'Warning', subject: 'Route' },
+    ])
+    const disabledDestination = {
+      ...changed,
+      routes: [changed.routes[0]!],
+      destinations: [{ ...changed.destinations[0]!, enabled: false }],
+    }
+    const disabledTree = buildRouteFlowTree(disabledDestination, buildRouteRowsFromOperationalSnapshot(disabledDestination))
+    expect(listRouteFlowAttention(disabledTree, disabledDestination.destinations)).toEqual([])
+  })
+
+  it('uses explicit destination-disabled snapshot state rather than a synthetic enabled placeholder', () => {
+    const changed: OperationalSnapshotResponse = {
+      ...snapshot,
+      routes: [{ ...snapshot.routes[0]!, enabled: true, health_status: 'HEALTHY' }],
+      destinations: [{ ...snapshot.destinations[0]!, enabled: false }],
+    }
+    const rows = buildRouteRowsFromOperationalSnapshot(changed)
+    expect(rows).toHaveLength(1)
+    // The Route itself remains configured as enabled. Its effective delivery
+    // path is disabled because the observed receiving Destination is disabled.
+    expect(rows[0]?.route.enabled).toBe(true)
+    expect(rows[0]?.uiStatus).toBe('Disabled')
+    const tree = buildRouteFlowTree(changed, rows)
+    expect(tree[0]?.routes[0]).toMatchObject({ health: 'Disabled', enabled: false })
+    expect(listRouteFlowAttention(tree)).toEqual([])
+  })
+
   it('does not substitute delivered route EPS when stream ingest EPS is unavailable', () => {
     const snapshotWithoutStreamEps: OperationalSnapshotResponse = {
       ...snapshot,
@@ -215,6 +279,34 @@ describe('routes-flow-helpers', () => {
     const office365 = tree.find((group) => group.streamId === 1)
     expect(office365?.totalEps).toBeNull()
     expect(office365?.routes.map((route) => route.eps)).toEqual(expect.arrayContaining([3.2, 2.4]))
+  })
+
+  it('only connects positive, unique Route and Stream identities', () => {
+    const withMalformedIds: OperationalSnapshotResponse = {
+      ...snapshot,
+      routes: [
+        { ...snapshot.routes[0]!, route_id: -9 },
+        { ...snapshot.routes[0]!, route_id: 1, stream_id: 0 },
+        { ...snapshot.routes[0]!, destination_id: -5 },
+        { ...snapshot.routes[0]!, route_id: 1, destination_id: 13 },
+      ],
+    }
+    const rows = buildRouteRowsFromOperationalSnapshot(withMalformedIds)
+    const tree = buildRouteFlowTree(withMalformedIds, rows)
+    expect(tree).toHaveLength(1)
+    expect(tree[0]?.routes).toHaveLength(1)
+    expect(tree[0]?.routes[0]?.destinationId).toBeNull()
+    expect(tree[0]?.connectorId).toBe(1)
+    expect(tree[0]?.sourceId).toBe(1)
+  })
+
+  it('never treats an absent, future or aged snapshot as current health proof', () => {
+    const now = Date.parse('2026-10-09T12:00:00Z')
+    expect(isRouteSnapshotStale(null, now)).toBe(true)
+    expect(isRouteSnapshotStale('invalid', now)).toBe(true)
+    expect(isRouteSnapshotStale('2026-10-09T12:00:30Z', now)).toBe(false)
+    expect(isRouteSnapshotStale('2026-10-09T11:57:59Z', now)).toBe(true)
+    expect(isRouteSnapshotStale('2026-10-09T12:05:00Z', now)).toBe(true)
   })
 
   it('flags warning routes in problem panel', () => {

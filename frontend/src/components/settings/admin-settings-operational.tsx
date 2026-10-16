@@ -20,6 +20,7 @@ import {
   getAdminAlertSettings,
   getAdminAuditLog,
   getAdminConfigVersions,
+  getAdminSafeRollbackPreview,
   getAdminHealthSummary,
   postAdminAlertTest,
   putAdminAlertSettings,
@@ -29,6 +30,8 @@ import {
   type AlertSettingsDto,
   type AuditLogListDto,
   type ConfigVersionListDto,
+  type ConfigVersionDto,
+  type ConfigSafeRollbackPreviewDto,
   type HealthMetricDto,
 } from '../../api/gdcAdmin'
 import { isPlatformAlertingUiEnabled } from '../../lib/feature-flags'
@@ -77,6 +80,9 @@ type Props = {
 export function AdminOperationalDashboard({ reloadToken, readOnly, busy, setBusy, setPageMsg, setPageErr }: Props) {
   const [audit, setAudit] = useState<AuditLogListDto | null>(null)
   const [versions, setVersions] = useState<ConfigVersionListDto | null>(null)
+  const [safePreview, setSafePreview] = useState<ConfigSafeRollbackPreviewDto | null>(null)
+  const [safePreviewError, setSafePreviewError] = useState<string | null>(null)
+  const [safePreviewBusyId, setSafePreviewBusyId] = useState<number | null>(null)
   const [health, setHealth] = useState<AdminHealthSummaryDto | null>(null)
   const [healthErr, setHealthErr] = useState<string | null>(null)
   const [versionsErr, setVersionsErr] = useState<string | null>(null)
@@ -94,6 +100,8 @@ export function AdminOperationalDashboard({ reloadToken, readOnly, busy, setBusy
   const [alertDraft, setAlertDraft] = useState<AlertSettingsDto | null>(null)
 
   const load = useCallback(async () => {
+    setSafePreview(null)
+    setSafePreviewError(null)
     setAuditErr(null)
     setVersionsErr(null)
     setHealthErr(null)
@@ -160,6 +168,38 @@ export function AdminOperationalDashboard({ reloadToken, readOnly, busy, setBusy
     } catch (e) {
       setAuditErr(e instanceof Error ? e.message : String(e))
       setAuditFull({ total: 0, items: [] })
+    }
+  }
+
+  const previewSafeConfig = async (version: ConfigVersionDto) => {
+    setSafePreview(null)
+    setSafePreviewError(null)
+    setSafePreviewBusyId(version.id)
+    try {
+      // Read the current *entity* tip; global configuration history can advance
+      // independently of the target Stream, Route or Destination.
+      const latest = await getAdminConfigVersions({
+        entity_type: version.entity_type,
+        entity_id: version.entity_id,
+        limit: 1,
+      })
+      const current = latest.items[0]
+      if (!current || current.entity_type !== version.entity_type ||
+          current.entity_id !== version.entity_id || !Number.isSafeInteger(current.version)) {
+        throw new Error('Invalid current configuration revision')
+      }
+      const result = await getAdminSafeRollbackPreview(version.id, current.version, 'before')
+      if (result.source_version_row_id !== version.id ||
+          result.current_version !== current.version ||
+          result.entity_type !== version.entity_type) {
+        throw new Error('Configuration preview no longer matches selected revision')
+      }
+      setSafePreview(result)
+    } catch {
+      // API errors might include internal platform settings or URLs.
+      setSafePreviewError('Safe configuration preview is unavailable. Refresh the history and try again.')
+    } finally {
+      setSafePreviewBusyId(null)
     }
   }
 
@@ -464,12 +504,16 @@ export function AdminOperationalDashboard({ reloadToken, readOnly, busy, setBusy
                           <td className="px-2 py-2 text-right">
                             <button
                               type="button"
-                              disabled
-                              title="Rollback and deep compare are planned."
-                              className="inline-flex items-center gap-1 text-[11px] font-semibold text-gdc-muted"
+                              disabled={
+                                safePreviewBusyId !== null ||
+                                !['STREAM_CONFIG', 'ROUTE_CONFIG', 'DESTINATION_CONFIG'].includes(v.entity_type)
+                              }
+                              title="Read-only, allowlisted configuration diff and safety blockers; no rollback action."
+                              onClick={() => void previewSafeConfig(v)}
+                              className="inline-flex items-center gap-1 text-[11px] font-semibold text-gdc-primary hover:underline disabled:cursor-not-allowed disabled:text-gdc-muted disabled:no-underline"
                             >
                               <GitCompare className="h-3.5 w-3.5" aria-hidden />
-                              Compare
+                              Preview safe changes
                             </button>
                           </td>
                         </tr>
@@ -477,7 +521,46 @@ export function AdminOperationalDashboard({ reloadToken, readOnly, busy, setBusy
                     </tbody>
                   </table>
                 </div>
-                <p className="mt-2 text-[11px] text-gdc-muted">Rollback: planned (not available in this release).</p>
+                {safePreviewError ? (
+                  <p role="alert" data-testid="admin-safe-config-preview-error"
+                    className="mt-3 text-xs text-amber-700 dark:text-amber-200">
+                    {safePreviewError}
+                  </p>
+                ) : null}
+                {safePreview ? (
+                  <section data-testid="admin-safe-config-preview"
+                    aria-label="Safe configuration change preview"
+                    className="mt-3 space-y-3 rounded-lg border border-slate-200 p-3 text-xs dark:border-gdc-border">
+                    <div className="font-semibold text-slate-900 dark:text-slate-100">
+                      Read-only comparison · Source v{safePreview.source_version} · Current v{safePreview.current_version}
+                    </div>
+                    <p className={gdcUi.textMuted}>
+                      Only approved non-sensitive configuration fields are shown. This is not a rollback authorization.
+                    </p>
+                    <dl className="grid gap-2">
+                      {safePreview.changed_fields.length === 0 ? (
+                        <p className={gdcUi.textMuted}>No changes in the supported safe fields.</p>
+                      ) : safePreview.changed_fields.map((change) => (
+                        <div key={change.path} className="grid gap-1 rounded-md bg-slate-50 p-2 dark:bg-gdc-rowHover/30 sm:grid-cols-3">
+                          <dt className="font-mono font-semibold">{change.path}</dt>
+                          <dd>Before: {change.before ?? '—'}</dd>
+                          <dd>After: {change.after ?? '—'}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                    <div>
+                      <div className="font-semibold">Safety blockers</div>
+                      <ul className="mt-1 list-inside list-disc text-slate-600 dark:text-gdc-muted">
+                        {safePreview.blockers.length === 0
+                          ? <li>Independent authorization and recovery checks are still required.</li>
+                          : safePreview.blockers.map((blocker) => (
+                              <li key={blocker}>{blocker.replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase())}</li>
+                            ))}
+                      </ul>
+                    </div>
+                  </section>
+                ) : null}
+                <p className="mt-2 text-[11px] text-gdc-muted">Rollback execution remains unavailable here. This view only explains safe differences and blockers.</p>
               </div>
             ) : null}
           </div>

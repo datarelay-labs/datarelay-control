@@ -28,6 +28,7 @@ _LAB_MAPPING_IDS: tuple[str, ...] = (
     "b2000001-0001-4000-8000-000000000003",
     "b2000001-0001-4000-8000-000000000004",
     "b2000001-0001-4000-8000-000000000005",
+    "b2000001-0001-4000-8000-000000000006",
 )
 
 
@@ -117,6 +118,19 @@ def _okta_logs_mapping(*, mapping_id: str, url_path: str, count: int) -> dict[st
     }
 
 
+def _visible_e2e_receiver_mapping(*, mapping_id: str) -> dict[str, Any]:
+    return {
+        "id": mapping_id,
+        "priority": 1,
+        "request": {"method": "POST", "urlPath": "/dev-visible-e2e/webhook"},
+        "response": {
+            "status": 200,
+            "headers": {"Content-Type": "application/json"},
+            "jsonBody": {"ok": True, "receiver": "dev-visible-e2e-wiremock"},
+        },
+    }
+
+
 def resolve_lab_wiremock_base_url(*, configured: str) -> str:
     """Return the first healthy WireMock admin base URL (configured, then platform fallback)."""
 
@@ -164,6 +178,7 @@ def lab_throughput_wiremock_mappings() -> list[dict[str, Any]]:
             url_path=LAB_HTTP_OKTA_LOGS_PATH,
             count=lab_http_events_for_path(LAB_HTTP_OKTA_LOGS_PATH),
         ),
+        _visible_e2e_receiver_mapping(mapping_id=_LAB_MAPPING_IDS[5]),
     ]
 
 

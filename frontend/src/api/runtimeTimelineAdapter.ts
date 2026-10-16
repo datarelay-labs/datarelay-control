@@ -1,7 +1,7 @@
 import type { RecentLogLine, RunHistoryRow } from '../components/streams/stream-runtime-detail-model'
 import { toOperatorEventLabel } from '../lib/stream-governance-snapshot'
 import type { RuntimeTimelineItem } from './types/gdcApi'
-import { formatTimestampWithResolvedTimezone, parseApiTimestampMs, resolveDisplayTimezone } from '../lib/platform-timestamps'
+import { formatTimestampWithResolvedTimezone, getTimezoneAbbreviation, parseApiTimestampMs, resolveDisplayTimezone } from '../lib/platform-timestamps'
 import { getDisplayTimezoneCache } from '../lib/display-timezone-cache'
 
 function safeNonNegInt(n: unknown): number {
@@ -28,13 +28,15 @@ function formatClockTime(iso: string | null | undefined): string {
   if (t == null) return '—'
   const tz = resolveDisplayTimezone(getDisplayTimezoneCache())
   try {
-    return new Intl.DateTimeFormat('en-GB', {
+    const at = new Date(t)
+    const clock = new Intl.DateTimeFormat('en-GB', {
       timeZone: tz,
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
       hour12: false,
-    }).format(new Date(t))
+    }).format(at)
+    return `${clock} ${getTimezoneAbbreviation(tz, at)}`
   } catch {
     return '—'
   }
@@ -47,31 +49,46 @@ function formatLatencyMs(ms: number | null | undefined): string {
   return `${safeNonNegInt(n)} ms`
 }
 
-/** Maps timeline delivery rows into the Run History table shape (one row per timeline event). */
+/**
+ * Timeline fallback for Run History. A pipeline event is not a Run.
+ * Only a nonblank authoritative run_id on a lifecycle event can identify a run.
+ * A timeline cannot establish processed/delivered event counts, so those stay unverified.
+ */
 export function timelineItemsToRunHistoryRows(items: readonly RuntimeTimelineItem[] | null | undefined): RunHistoryRow[] {
   if (!items?.length) return []
-  return items.map((t) => {
-    const level = String(t.level ?? '').toUpperCase()
-    const st = String(t.status ?? '').toLowerCase()
-    let status: RunHistoryRow['status'] = 'Success'
-    if (level === 'ERROR' || st.includes('fail') || st === 'error') status = 'Failed'
-    else if (level === 'WARN' || st.includes('partial')) status = 'Partial'
 
-    const failed = status === 'Failed' ? 1 : 0
-    const delivered = status === 'Success' ? 1 : 0
+  type RunEvidence = { runId: string; started: RuntimeTimelineItem | null; terminal: RuntimeTimelineItem | null }
+  const byRun = new Map<string, RunEvidence>()
 
-    const idPart = t.id != null && Number.isFinite(Number(t.id)) ? String(t.id) : '—'
+  for (const item of items) {
+    const runId = typeof item.run_id === 'string' ? item.run_id.trim() : ''
+    const stage = String(item.stage ?? '').trim().toLowerCase()
+    if (!runId || (stage !== 'run_started' && stage !== 'run_complete' && stage !== 'run_failed')) continue
 
-    return {
-      runId: `evt-${idPart}`,
-      startedAt: formatTimelineTimestamp(t.created_at),
-      duration: formatLatencyMs(t.latency_ms),
-      status,
-      events: 1,
-      delivered,
-      failed,
+    let evidence = byRun.get(runId)
+    if (!evidence) {
+      evidence = { runId, started: null, terminal: null }
+      byRun.set(runId, evidence)
     }
-  })
+    if (stage === 'run_started' && evidence.started === null) evidence.started = item
+    if (stage === 'run_complete' || stage === 'run_failed') evidence.terminal = item
+  }
+
+  // The timeline source is ascending; show most recently observed runs first.
+  return [...byRun.values()].reverse().map(({ runId, started, terminal }): RunHistoryRow => ({
+    runId,
+    startedAt: started ? formatTimelineTimestamp(started.created_at) : '—',
+    duration: '—',
+    status: terminal?.stage?.toLowerCase() === 'run_failed'
+      ? 'Failed'
+      : terminal?.stage?.toLowerCase() === 'run_complete'
+        ? 'Completed'
+        : 'Started',
+    events: 0,
+    delivered: 0,
+    failed: 0,
+    countsVerified: false,
+  }))
 }
 
 /** Sidebar recent log lines derived from the ASC timeline payload, newest first. */
@@ -88,6 +105,9 @@ export function timelineItemsToRecentLogLines(items: readonly RuntimeTimelineIte
       rawMessage: raw.length > 140 ? `${raw.slice(0, 137)}…` : raw,
       errorCode: t.error_code,
       stage: t.stage,
+      runId: t.run_id,
+      routeId: t.route_id,
+      destinationId: t.destination_id,
       duration: formatLatencyMs(t.latency_ms),
     }
   })

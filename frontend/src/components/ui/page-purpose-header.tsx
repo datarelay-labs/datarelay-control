@@ -178,7 +178,7 @@ export function PagePurposeHeader({
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 text-sm font-semibold text-violet-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/40 dark:text-violet-300"
                 >
-                  Read full documentation
+                  {help.docsHref.startsWith('/help/') ? 'Open step-by-step guide' : 'Read full documentation'}
                   <ExternalLink className="h-3.5 w-3.5" aria-hidden />
                 </a>
               </div>

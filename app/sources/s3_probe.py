@@ -50,7 +50,13 @@ def probe_s3_source(source_config: dict[str, Any], *, preview_key_limit: int = 8
         return out
 
     addressing = "path" if path_style else "virtual"
-    boto_cfg = BotoConfig(signature_version="s3v4", s3={"addressing_style": addressing})
+    boto_cfg = BotoConfig(
+        signature_version="s3v4",
+        s3={"addressing_style": addressing},
+        connect_timeout=3,
+        read_timeout=10,
+        retries={"total_max_attempts": 2, "mode": "standard"},
+    )
 
     try:
         session = boto3.session.Session(
@@ -100,8 +106,9 @@ def probe_s3_source(source_config: dict[str, Any], *, preview_key_limit: int = 8
 
     keys: list[str] = []
     count = 0
+    max_keys = max(1, min(int(preview_key_limit), 1000))
     try:
-        resp = client.list_objects_v2(Bucket=bucket, Prefix=prefix, MaxKeys=1000)
+        resp = client.list_objects_v2(Bucket=bucket, Prefix=prefix, MaxKeys=max_keys)
         for item in resp.get("Contents") or []:
             key = str(item.get("Key") or "")
             if not key or key.endswith("/"):
@@ -124,5 +131,5 @@ def probe_s3_source(source_config: dict[str, Any], *, preview_key_limit: int = 8
 
     out["s3_object_count_preview"] = count
     out["s3_sample_keys"] = keys
-    out["s3_message"] = f"Listed up to 1000 keys under prefix {prefix!r}; preview shows first {len(keys)} keys."
+    out["s3_message"] = f"Listed up to {max_keys} keys under prefix {prefix!r}; preview shows first {len(keys)} keys."
     return out

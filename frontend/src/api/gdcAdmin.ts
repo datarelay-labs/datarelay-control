@@ -34,6 +34,27 @@ export type HttpsSettingsSaveDto = {
   proxy_fallback_to_http: boolean
 }
 
+export type ManagementAccessPreviewDraft = {
+  web: { enabled: boolean; sources: Array<{ cidr: string }> }
+  ssh: { enabled: boolean; sources: Array<{ cidr: string }> }
+  rollback_seconds: number
+}
+
+export type ManagementAccessPreviewDto = {
+  mode: 'PREVIEW_ONLY'
+  apply_available: false
+  ssh_enforcement_available: false
+  web_enforcement_available: false
+  observed_api_source: string | null
+  web_reason: string
+  web_source_matches: boolean
+  ssh_reason: string
+  blockers: string[]
+  candidate_web_enabled: boolean
+  candidate_ssh_enabled: boolean
+  rollback_seconds: number
+}
+
 export type NetworkSettingsDto = {
   http_port: number
   https_port: number
@@ -64,6 +85,7 @@ export type PlatformUserDto = {
   created_at: string
   last_login_at: string | null
   timezone?: string | null
+  mfa_enabled?: boolean
 }
 
 export type DisplaySettingsDto = {
@@ -169,6 +191,29 @@ export type ConfigVersionListDto = {
   items: ConfigVersionDto[]
 }
 
+export type ConfigSafeRollbackPreviewDto = {
+  entity_type: string
+  source_version_row_id: number
+  source_version: number
+  current_version: number
+  expected_version: number
+  target: 'before' | 'after'
+  changed_fields: Array<{ path: string; before: string | null; after: string | null }>
+  from_fingerprint: string
+  to_fingerprint: string
+  blockers: string[]
+  may_submit_to_product_authority: boolean
+  product_apply_required: boolean
+}
+
+export type ConfigSnapshotApplyDto = {
+  applied_target: 'before' | 'after'
+  source_version_row_id: number
+  source_monotonic_version: number
+  new_monotonic_version: number
+  message: string
+}
+
 export type HealthMetricDto = {
   key: string
   label: string
@@ -265,8 +310,14 @@ export type TokenBundleDto = {
   user: SessionUserDto
 }
 
+export type MfaChallengeDto = {
+  mfa_required: true
+  challenge_token: string
+  expires_at: string
+}
+
 /** Alias kept for backwards compatibility with existing callers. */
-export type LoginResponseDto = TokenBundleDto
+export type LoginResponseDto = TokenBundleDto | MfaChallengeDto
 
 export async function getAdminHttpsSettings(): Promise<HttpsSettingsDto> {
   return requestJson<HttpsSettingsDto>(`${GDC_API_PREFIX}/admin/https-settings`)
@@ -286,6 +337,15 @@ export async function putAdminHttpsSettings(body: {
       ...body,
       regenerate_certificate: body.regenerate_certificate ?? true,
     }),
+  })
+}
+
+export async function postAdminManagementAclPreview(
+  draft: ManagementAccessPreviewDraft,
+): Promise<ManagementAccessPreviewDto> {
+  return requestJson<ManagementAccessPreviewDto>(`${GDC_API_PREFIX}/admin/management-access/preview`, {
+    method: 'POST',
+    body: JSON.stringify(draft),
   })
 }
 
@@ -334,6 +394,16 @@ export async function deleteAdminUser(userId: number): Promise<void> {
   await requestJson(`${GDC_API_PREFIX}/admin/users/${userId}`, { method: 'DELETE' })
 }
 
+export async function postAdminUserMfaReset(
+  userId: number,
+  body: { confirm_username: string; current_password: string },
+): Promise<void> {
+  await requestJson(`${GDC_API_PREFIX}/admin/users/${userId}/mfa/reset`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
 export async function postAdminPasswordChange(body: {
   username: string
   current_password: string
@@ -380,12 +450,43 @@ export async function getAdminAuditLog(params?: { limit?: number; offset?: numbe
   return requestJson<AuditLogListDto>(`${GDC_API_PREFIX}/admin/audit-log${suffix}`)
 }
 
-export async function getAdminConfigVersions(params?: { limit?: number; offset?: number }): Promise<ConfigVersionListDto> {
+export async function getAdminConfigVersions(params?: {
+  limit?: number
+  offset?: number
+  entity_type?: string
+  entity_id?: number
+}): Promise<ConfigVersionListDto> {
   const q = new URLSearchParams()
   if (params?.limit != null) q.set('limit', String(params.limit))
   if (params?.offset != null) q.set('offset', String(params.offset))
+  if (params?.entity_type != null) q.set('entity_type', params.entity_type)
+  if (params?.entity_id != null) q.set('entity_id', String(params.entity_id))
   const suffix = q.toString() ? `?${q.toString()}` : ''
   return requestJson<ConfigVersionListDto>(`${GDC_API_PREFIX}/admin/config-versions${suffix}`)
+}
+
+export async function getAdminSafeRollbackPreview(
+  rowId: number,
+  expectedVersion: number,
+  target: 'before' | 'after' = 'before',
+): Promise<ConfigSafeRollbackPreviewDto> {
+  const q = new URLSearchParams({ expected_version: String(expectedVersion), target })
+  return requestJson<ConfigSafeRollbackPreviewDto>(
+    `${GDC_API_PREFIX}/admin/config-versions/${rowId}/safe-rollback-preview?${q.toString()}`,
+  )
+}
+
+export async function applyAdminConfigSnapshot(
+  rowId: number,
+  body: { target: 'before' | 'after'; expected_version: number },
+): Promise<ConfigSnapshotApplyDto> {
+  return requestJson<ConfigSnapshotApplyDto>(
+    `${GDC_API_PREFIX}/admin/config-versions/${rowId}/apply-snapshot`,
+    {
+      method: 'POST',
+      body: JSON.stringify(body),
+    },
+  )
 }
 
 export async function getAdminHealthSummary(): Promise<AdminHealthSummaryDto> {
@@ -502,10 +603,41 @@ export async function patchAuthProfile(body: { timezone?: string | null }): Prom
   })
 }
 
-export async function postAuthLogin(body: { username: string; password: string }): Promise<TokenBundleDto> {
-  return requestJson<TokenBundleDto>(`${GDC_API_PREFIX}/auth/login`, {
+export async function postAuthLogin(body: { username: string; password: string }): Promise<LoginResponseDto> {
+  return requestJson<LoginResponseDto>(`${GDC_API_PREFIX}/auth/login`, {
     method: 'POST',
     body: JSON.stringify(body),
+  })
+}
+
+export async function postAuthMfaVerify(body: {
+  challenge_token: string
+  totp?: string
+  recovery_code?: string
+}): Promise<TokenBundleDto> {
+  return requestJson<TokenBundleDto>(`${GDC_API_PREFIX}/auth/mfa/verify`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export async function getAuthMfaStatus(): Promise<{ enabled: boolean }> {
+  return requestJson<{ enabled: boolean }>(`${GDC_API_PREFIX}/auth/mfa/status`)
+}
+
+export async function postAuthMfaEnrollStart(current_password: string): Promise<{
+  secret: string; otpauth_uri: string; expires_at: string
+}> {
+  return requestJson(`${GDC_API_PREFIX}/auth/mfa/enroll/start`, {
+    method: 'POST', body: JSON.stringify({ current_password }),
+  })
+}
+
+export async function postAuthMfaEnrollConfirm(totp: string): Promise<{
+  enabled: boolean; recovery_codes: string[]
+}> {
+  return requestJson(`${GDC_API_PREFIX}/auth/mfa/enroll/confirm`, {
+    method: 'POST', body: JSON.stringify({ totp }),
   })
 }
 

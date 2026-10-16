@@ -193,8 +193,8 @@ describe('ViolationCenterPage', () => {
       expect(screen.getByTestId('violation-detail-drawer')).toBeInTheDocument()
     })
     expect(detailSpy).toHaveBeenCalledWith('q-42', expect.any(String))
-    expect(screen.getByTestId('violation-matched-rule')).toBeInTheDocument()
-    expect(screen.getByTestId('violation-open-quarantine')).toBeInTheDocument()
+    expect(await screen.findByTestId('violation-matched-rule')).toBeInTheDocument()
+    expect(await screen.findByTestId('violation-open-quarantine')).toBeInTheDocument()
   })
 
   it('supports keyboard activation of a violation row', async () => {

@@ -1,6 +1,7 @@
 import { Loader2, RefreshCw, Shield } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
+import { NAV_PATH } from '../../config/nav-paths'
 import {
   fetchGovernanceWorkspaceSnapshot,
   type GovernanceWorkspaceSnapshot,
@@ -271,6 +272,13 @@ export function GovernanceWorkspacePage() {
           <p className="mt-1 text-[11px] text-slate-500 dark:text-gdc-muted">
             Read-only overview of stream and route governance configuration — protection, classification, policy, and transform inheritance.
           </p>
+          <Link
+            to={NAV_PATH.governance}
+            aria-label="Back to Governance Dashboard"
+            className="mt-2 inline-flex min-h-9 items-center rounded-lg text-xs font-semibold text-violet-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 dark:text-violet-300"
+          >
+            ← Back to Governance Dashboard
+          </Link>
           {activeContext ? (
             <p
               className="mt-2 text-[12px] font-semibold text-violet-800 dark:text-violet-200"

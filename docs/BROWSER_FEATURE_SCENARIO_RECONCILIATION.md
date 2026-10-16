@@ -56,6 +56,9 @@ CONTRACT_FULL_READ_REQUIRED=YES
 PRIMARY_PERSONA_EXECUTOR=CHATGPT_CHAT
 SCRIPTED_USER_SCENARIO_EXECUTION=FORBIDDEN
 WRAPPER_SCRIPT_AS_PERSONA=FORBIDDEN
+RBAC_AUTHORITY_MODE=REQUIRE_AUTH_TRUE_OR_EXPLICIT_BEARER_ON_EVERY_PROBE
+UNAUTHENTICATED_DEV_FALLBACK_RBAC_EVIDENCE=INVALID
+ROLE_SWITCH_CONTROL_CENSUS_REQUIRED=YES
 AUTOMATED_HARNESS_ROLE=SUPPLEMENTAL_ONLY
 PARALLEL_EXECUTION=MAXIMUM_SAFE
 SERIAL_IDLE_WITH_RUNNABLE_WORK=FORBIDDEN
@@ -295,9 +298,10 @@ For a fresh reconciliation run:
 7. start API/scheduler processes bound to the disposable audit database;
 8. start Chromium through the repository Playwright dependencies;
 9. seed/use a disposable audit administrator/session according to the existing test harness without writing raw credentials to durable evidence;
-10. verify API `/health` and browser login before scenario execution;
-11. verify the served frontend/backend build identity belongs to the exact audit HEAD when the product exposes build identity;
-12. write audit-HEAD/build identity into evidence before the first mutable user action.
+10. for any RBAC/role-differentiation scenario, run the audit API with `REQUIRE_AUTH=true`; if a bounded forensic API probe must instead run against an auth-optional lab, attach the exact authenticated browser principal's Bearer token to every such probe and record that transport. An unauthenticated request that falls back to the development `anonymous_admin` compatibility identity is invalid RBAC evidence and MUST NOT create a security finding;
+11. verify API `/health` and browser login before scenario execution;
+12. verify the served frontend/backend build identity belongs to the exact audit HEAD when the product exposes build identity;
+13. write audit-HEAD/build identity into evidence before the first mutable user action.
 
 Useful existing assets include:
 
@@ -496,7 +500,7 @@ READ_ONLY_RBAC
 MUTATING_RBAC
 ~~~
 
-At each state, enumerate visible actionable elements from the rendered browser DOM/accessibility surface, including at minimum:
+At each state, enumerate visible actionable elements from the rendered browser DOM/accessibility surface, including at minimum. A native `<button role="switch">` MUST be classified by its explicit accessibility role (`switch`), not discarded because it is not returned by a `getByRole('button')` query:
 
 ~~~text
 button
@@ -900,13 +904,17 @@ Required:
 
 ## 21. RBAC and role visibility
 
+RBAC evidence has an authentication-transport hard gate. The role under test must be the principal that the backend actually authenticates. Prefer `REQUIRE_AUTH=true` for the disposable Browser audit lab. If an auth-optional lab is used for a bounded forensic API check, copy the browser's real Bearer authorization transport into that check. A raw same-origin `fetch()` without Authorization in a `REQUIRE_AUTH=false` lab may intentionally resolve to the development `anonymous_admin` compatibility identity; its 2xx/4xx response is **not evidence about the logged-in Viewer/Operator** and cannot support a P0/P1 RBAC finding.
+
+Before classifying an RBAC defect, record the backend-observed auth source/role (or equivalent verified whoami/Authorization evidence) for the exact request.
+
 For representative roles:
 
 1. verify page visibility;
 2. verify control visibility;
 3. verify disabled versus hidden policy;
 4. attempt direct URL access where safe;
-5. attempt API action only as authorization verification, not user-action substitution.
+5. attempt API action only as authorization verification, not user-action substitution, using the same authenticated role transport required above.
 
 Expected:
 
@@ -1077,6 +1085,8 @@ No false-success state is allowed.
 ### BFS-014 — Stop / start / repeated action semantics
 
 Stop through browser → prove scheduler delivery stops → verify explicit manual behavior according to current contract → start through browser → prove recovery.
+
+The canonical lifecycle action may be a stateful `role=switch` control rather than separate `Stop` / `Start` text buttons. Before declaring a missing lifecycle control, enumerate visible switches and inspect their accessible name, `aria-checked`, visible state label, disabled state, and tooltip/help. A control such as `Stream scheduler: Running` with `aria-checked=true` that actually toggles to the stopped state is a valid browser Stop path; after the state changes, the same control is a valid Start path. Searching only for labels matching `Stop|Start|Pause|Disable` is insufficient and produces invalid evidence.
 
 Probe repeated/double Start/Stop safely for duplicate or inconsistent state.
 

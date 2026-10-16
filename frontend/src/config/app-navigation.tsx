@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
-import { Cable, Database, Home, LayoutDashboard, Route, Settings, Shield, Truck, Workflow } from 'lucide-react'
+import { Cable, Database, Home, LayoutDashboard, Route, Settings, Shield, Workflow } from 'lucide-react'
 
 /** Primary sidebar leaf keys (DATA-RELAY-UX-CHARTER navigation). */
 export type SidebarNavKey =
@@ -9,10 +9,9 @@ export type SidebarNavKey =
   | 'destinations'
   | 'routes'
   | 'governance'
-  | 'governanceWorkspace'
   | 'administration'
 
-export type SidebarGroupId = 'dataSources' | 'delivery' | 'governance'
+export type SidebarGroupId = 'connections' | 'governance'
 
 /** All routable workspace keys (includes legacy + in-page governance/admin sections). */
 export type AppNavKey =
@@ -70,24 +69,31 @@ const DASHBOARD_ITEM: SidebarTopItem = {
   icon: Home,
 }
 
-const DATA_SOURCES_GROUP: SidebarGroupItem = {
-  id: 'dataSources',
-  label: 'Data Sources',
+// Organize by operator task rather than by the internal collection/delivery engines.
+const CONNECTIONS_GROUP: SidebarGroupItem = {
+  id: 'connections',
+  label: 'Connections',
   icon: Cable,
   items: [
     { key: 'connectors', label: 'Connectors', path: '/connectors', icon: Cable },
-    { key: 'streams', label: 'Streams', path: '/streams', icon: Workflow },
+    { key: 'destinations', label: 'Destinations', path: '/destinations', icon: Database },
   ],
 }
 
-const DELIVERY_GROUP: SidebarGroupItem = {
-  id: 'delivery',
-  label: 'Delivery',
-  icon: Truck,
-  items: [
-    { key: 'destinations', label: 'Destinations', path: '/destinations', icon: Database },
-    { key: 'routes', label: 'Routes', path: '/routes', icon: Route },
-  ],
+const STREAMS_ITEM: SidebarTopItem = {
+  key: 'streams',
+  label: 'Streams',
+  path: '/streams',
+  icon: Workflow,
+}
+
+// Data Flows is the existing read-only Stream → Route → Destination workspace,
+// not another pipeline object or routing engine.
+const DATA_FLOWS_ITEM: SidebarTopItem = {
+  key: 'routes',
+  label: 'Data Flows',
+  path: '/routes',
+  icon: Route,
 }
 
 const GOVERNANCE_GROUP: SidebarGroupItem = {
@@ -95,8 +101,7 @@ const GOVERNANCE_GROUP: SidebarGroupItem = {
   label: 'Governance',
   icon: Shield,
   items: [
-    { key: 'governance', label: 'Dashboard', path: '/governance', icon: LayoutDashboard },
-    { key: 'governanceWorkspace', label: 'Governance Workspace', path: '/governance/workspace', icon: Shield },
+    { key: 'governance', label: 'Governance Dashboard', path: '/governance', icon: LayoutDashboard },
   ],
 }
 
@@ -110,8 +115,9 @@ const ADMINISTRATION_ITEM: SidebarTopItem = {
 /** Grouped sidebar structure (DATA-RELAY-UX-CHARTER). */
 export const SIDEBAR_STRUCTURE: readonly SidebarNavEntry[] = [
   { type: 'item', item: DASHBOARD_ITEM },
-  { type: 'group', group: DATA_SOURCES_GROUP },
-  { type: 'group', group: DELIVERY_GROUP },
+  { type: 'group', group: CONNECTIONS_GROUP },
+  { type: 'item', item: STREAMS_ITEM },
+  { type: 'item', item: DATA_FLOWS_ITEM },
   { type: 'group', group: GOVERNANCE_GROUP },
   { type: 'item', item: ADMINISTRATION_ITEM },
 ] as const
@@ -119,8 +125,9 @@ export const SIDEBAR_STRUCTURE: readonly SidebarNavEntry[] = [
 /** @deprecated Use SIDEBAR_STRUCTURE. Flat list for tests and gradual migration. */
 export const SIDEBAR_TOP_ITEMS: readonly SidebarTopItem[] = [
   DASHBOARD_ITEM,
-  ...DATA_SOURCES_GROUP.items,
-  ...DELIVERY_GROUP.items,
+  ...CONNECTIONS_GROUP.items,
+  STREAMS_ITEM,
+  DATA_FLOWS_ITEM,
   ...GOVERNANCE_GROUP.items,
   ADMINISTRATION_ITEM,
 ] as const
@@ -155,12 +162,12 @@ export const PAGE_TITLE: Record<AppNavKey, string> = {
   streams: 'Streams',
   logs: 'Logs',
   alerts: 'Operational alerts',
-  governance: 'Governance',
+  governance: 'Governance Dashboard',
   administration: 'Administration',
   connectors: 'Connectors',
   mappings: 'Mappings',
   destinations: 'Destinations',
-  routes: 'Routes',
+  routes: 'Data Flows',
   runtime: 'Runtime overview',
   topology: 'Topology',
   analytics: 'Delivery Analytics',

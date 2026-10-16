@@ -8,6 +8,9 @@ import {
   destinationIssuesForListRow,
   destinationUiHealthForListRow,
   listRuntimeMetricsForDestination,
+  routeMetricsFromSnapshot,
+  failureCountFromAnalytics,
+  computeDestinationSuccessRate,
 } from './destination-runtime-metrics'
 
 function catalogRow(id: number, enabled = true): DestinationListItem {
@@ -69,6 +72,61 @@ function healthRow(overrides: Partial<DestinationHealthRow> = {}): DestinationHe
     ...overrides,
   }
 }
+
+describe('Route success-rate snapshot window integrity', () => {
+  it('exposes a measured failed-only 5m rate as 0% instead of hiding it as unknown', () => {
+    const r = {
+      route_id: 41, success_rate_5m: 0, delivered_eps_1m: 0, failed_eps_1m: 2,
+      enabled: true, health_status: 'ERROR', failure_policy: 'LOG_AND_CONTINUE',
+    } as OperationalSnapshotResponse['routes'][number]
+    const metrics = routeMetricsFromSnapshot(41, [r], [])
+    expect(metrics.successRate5m).toBe(0)
+    expect(metrics).not.toHaveProperty('successRate24h')
+  })
+
+  it('does not invent historical or measured success where no Route snapshot or recent sample exists', () => {
+    expect(routeMetricsFromSnapshot(41, [], []).successRate5m).toBeNull()
+    const r = {
+      route_id: 41, success_rate_5m: 0, delivered_eps_1m: 0, failed_eps_1m: 0,
+      enabled: true, health_status: 'IDLE', failure_policy: 'LOG_AND_CONTINUE',
+    } as OperationalSnapshotResponse['routes'][number]
+    expect(routeMetricsFromSnapshot(41, [r], []).successRate5m).toBeNull()
+  })
+})
+
+describe('Destination historical success-rate window integrity', () => {
+  const liveSnapshot = {
+    destination_id: 9, inbound_eps_1m: 90, failed_eps_1m: 10,
+    enabled: true, health_status: 'HEALTHY',
+  } as OperationalSnapshotResponse['destinations'][number]
+
+  it('derives selected 24h success percentage from historical outcome events, never 1m snapshot', () => {
+    const outcomes = { destination_id: 9, success_events: 2, failure_events: 8 }
+    expect(computeDestinationSuccessRate(null, outcomes, liveSnapshot)).toBe(20)
+  })
+
+  it('falls back only to window-aligned 24h health counts when outcomes are unavailable', () => {
+    const historical = healthRow()
+    historical.metrics = { ...historical.metrics, success_count: 3, failure_count: 1 }
+    expect(computeDestinationSuccessRate(historical, null, liveSnapshot)).toBe(75)
+  })
+
+  it('refuses to claim historical success from 1m snapshot when no historical response is available', () => {
+    expect(computeDestinationSuccessRate(null, null, liveSnapshot)).toBeNull()
+    expect(computeDestinationSuccessRate(null, {destination_id:9,success_events:0,failure_events:0},liveSnapshot))
+      .toBeNull()
+  })
+})
+
+describe('Historical Destination failure evidence availability', () => {
+  it('distinguishes unavailable 24h failure analytics from observed zero failures', () => {
+    expect(failureCountFromAnalytics(null)).toBeNull()
+    const observedZero = {
+      totals: { failure_events: 0 },
+    } as unknown as NonNullable<Parameters<typeof failureCountFromAnalytics>[0]>
+    expect(failureCountFromAnalytics(observedZero)).toBe(0)
+  })
+})
 
 describe('destination-runtime-metrics', () => {
   it('builds list runtime metrics from health API for the selected window', () => {

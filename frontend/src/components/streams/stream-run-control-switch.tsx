@@ -16,6 +16,10 @@ export function streamSchedulerStatusLabel(status: StreamRuntimeStatus, active: 
   return 'Stopped'
 }
 
+export function streamSchedulerActionLabel(active: boolean): 'Stop' | 'Start' {
+  return active ? 'Stop' : 'Start'
+}
+
 type StreamRunControlSwitchProps = {
   status: StreamRuntimeStatus
   busy?: boolean
@@ -39,6 +43,7 @@ export function StreamRunControlSwitch({
 }: StreamRunControlSwitchProps) {
   const active = isStreamSchedulerActive(status)
   const statusLabel = streamSchedulerStatusLabel(status, active)
+  const actionLabel = streamSchedulerActionLabel(active)
   const height = size === 'sm' ? 'h-8' : 'h-9'
 
   const title = tooltipExtra
@@ -88,8 +93,9 @@ export function StreamRunControlSwitch({
           active ? 'text-emerald-800 dark:text-emerald-200' : 'text-slate-600 dark:text-gdc-muted',
         )}
       >
-        {busy ? 'Updating…' : statusLabel}
+        {busy ? 'Updating…' : actionLabel}
       </span>
+      <span className="sr-only">Current status: {statusLabel}</span>
     </button>
   )
 }

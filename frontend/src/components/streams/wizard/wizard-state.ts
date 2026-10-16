@@ -36,6 +36,8 @@ import {
   buildAdvancedStreamConfigJsonPatch,
   mergeStreamConfigJson,
 } from './wizard-stream-config-sync'
+import { buildPersistParams, normalizePaginationLabel } from '../stream-edit-request-params'
+import { wizardDestinationGateReady } from './wizard-step-gates'
 
 /** Top-level wizard steps (Stream Wizard UX Charter v5.2 — P1 structure MVP). */
 export const WIZARD_STEP_KEYS = [
@@ -409,6 +411,20 @@ export type WizardConnectorState = {
   accessTokenHeaderName: string
   accessTokenHeaderPrefix: string
   tokenTtlSeconds: number
+  /** Saved webhook receiver metadata; secrets remain write-only and are never hydrated. */
+  webhookReceiverPath: string
+  webhookAuthMode: 'no_auth' | 'shared_secret_header' | 'bearer_token' | string
+  webhookAuthHeaderName: string
+  webhookSharedSecretConfigured: boolean
+  webhookBearerTokenConfigured: boolean
+  webhookMaxRequestBytes: number
+  webhookPayloadPreview: string
+}
+
+/** A source-type hint or a saved Connector without a linked Source is not a configured source. */
+export function wizardHasLinkedSource(connector: Pick<WizardConnectorState, 'connectorId' | 'sourceId'>): boolean {
+  return typeof connector.connectorId === 'number' && Number.isSafeInteger(connector.connectorId) && connector.connectorId > 0
+    && typeof connector.sourceId === 'number' && Number.isSafeInteger(connector.sourceId) && connector.sourceId > 0
 }
 
 export type StreamConfigHeaderRow = { id: string; key: string; value: string }
@@ -493,6 +509,8 @@ export type WizardConfigState = {
   includeFileMetadata: boolean
   /** DATABASE_QUERY: SELECT-only SQL text persisted as config_json.query. */
   sqlQuery: string
+  /** DATABASE_QUERY named/positional values persisted separately from SQL text. */
+  dbQueryParams: Record<string, string | number | boolean | null>
   /** DATABASE_QUERY checkpoint column (optional; NONE mode when empty). */
   dbCheckpointColumn: string
   dbCheckpointMode: string
@@ -849,6 +867,7 @@ export const INITIAL_CONFIG: WizardConfigState = {
   lineEventField: 'line',
   includeFileMetadata: false,
   sqlQuery: '',
+  dbQueryParams: {},
   dbCheckpointColumn: '',
   dbCheckpointMode: 'NONE',
   incrementalRequestPattern: 'none',
@@ -894,6 +913,50 @@ export const INITIAL_API_TEST: WizardApiTestState = {
   s3ConnectivityPassed: false,
   remoteProbe: null,
   configFingerprint: null,
+}
+
+export function wizardConnectorIdentityChanged(
+  current: WizardConnectorState,
+  patch: Partial<WizardConnectorState>,
+): boolean {
+  return (
+    (patch.connectorId !== undefined && patch.connectorId !== current.connectorId) ||
+    (patch.sourceId !== undefined && patch.sourceId !== current.sourceId) ||
+    (patch.sourceType !== undefined && patch.sourceType !== current.sourceType)
+  )
+}
+
+/**
+ * Connector/source changes invalidate source-derived evidence, but do not silently
+ * discard operator-authored mapping, checkpoint configuration, Routes, or Destinations.
+ * Those settings remain visible and must be re-confirmed against a fresh sample.
+ */
+export function applyWizardConnectorPatch(
+  state: WizardState,
+  patch: Partial<WizardConnectorState>,
+): WizardState {
+  const identityChanged = wizardConnectorIdentityChanged(state.connector, patch)
+  const next = {
+    ...state,
+    connector: { ...state.connector, ...patch },
+  }
+  if (!identityChanged) return next
+
+  return {
+    ...next,
+    apiTest: { ...INITIAL_API_TEST },
+    stream: {
+      ...state.stream,
+      recordPathConfirmedForApiTestAt: null,
+      eventRootConfirmedForApiTestAt: null,
+      checkpointConfirmedForApiTestAt: null,
+      customExtractionValidatedForApiTestAt: null,
+      customExtractionValidationOk: false,
+      incrementalRequestTestSignature: null,
+      incrementalRequestTestedAt: null,
+      incrementalRequestTestResult: null,
+    },
+  }
 }
 
 export const INITIAL_DESTINATIONS: WizardDestinationsState = {
@@ -1181,6 +1244,13 @@ export function buildInitialState(): WizardState {
       accessTokenHeaderName: 'Authorization',
       accessTokenHeaderPrefix: 'Bearer',
       tokenTtlSeconds: 600,
+      webhookReceiverPath: '',
+      webhookAuthMode: 'no_auth',
+      webhookAuthHeaderName: 'X-GDC-Webhook-Secret',
+      webhookSharedSecretConfigured: false,
+      webhookBearerTokenConfigured: false,
+      webhookMaxRequestBytes: 1048576,
+      webhookPayloadPreview: '',
       sourceType: 'HTTP_API_POLLING',
     },
     stream: {
@@ -1364,6 +1434,13 @@ export function wizardConnectorPatchFromApi(row: ConnectorRead): Partial<WizardC
     accessTokenHeaderName: String(auth.access_token_header_name ?? 'Authorization'),
     accessTokenHeaderPrefix: String(auth.access_token_header_prefix ?? 'Bearer'),
     tokenTtlSeconds: Number(auth.token_ttl_seconds ?? 600),
+    webhookReceiverPath: String(row.receiver_path ?? ''),
+    webhookAuthMode: String(row.webhook_auth_mode ?? 'no_auth'),
+    webhookAuthHeaderName: String(row.webhook_auth_header_name ?? 'X-GDC-Webhook-Secret'),
+    webhookSharedSecretConfigured: Boolean(row.webhook_shared_secret_configured),
+    webhookBearerTokenConfigured: Boolean(row.webhook_bearer_token_configured),
+    webhookMaxRequestBytes: Number(row.max_request_bytes ?? 1048576),
+    webhookPayloadPreview: String(row.payload_preview ?? ''),
   }
 }
 
@@ -1418,7 +1495,9 @@ function aggregateCompletion(statuses: StepCompletion[]): StepCompletion {
 
 /** Per legacy sub-step completion (internal; review/deploy edit shortcuts). */
 export function computeLegacySubstepCompletion(state: WizardState): WizardLegacySubstepCompletion {
-  const connectorReady = state.connector.connectorId != null && state.connector.sourceId != null
+  const connectorReady =
+    Number.isSafeInteger(state.connector.connectorId) && state.connector.connectorId! > 0 &&
+    Number.isSafeInteger(state.connector.sourceId) && state.connector.sourceId! > 0
   const isS3 = state.connector.sourceType === 'S3_OBJECT_POLLING'
   const isRemote = state.connector.sourceType === 'REMOTE_FILE_POLLING'
   const isWebhook = state.connector.sourceType === 'WEBHOOK_RECEIVER'
@@ -1457,7 +1536,8 @@ export function computeLegacySubstepCompletion(state: WizardState): WizardLegacy
     ((isRemote || isWebhook) && state.unmappedFieldsPolicy === 'pass_through')
   const enrichmentReady = state.enrichment.length === 0 || state.enrichment.every((e) => e.fieldName.trim().length > 0)
   const enrichmentHasRows = state.enrichment.length > 0
-  const destinationsReady = state.destinations.routeDrafts.some((r) => r.enabled)
+  // Completion reflects the same required delivery-path validity as the Deploy gate.
+  const destinationsReady = wizardDestinationGateReady(state)
   const dataProtectionReady = wizardDataProtectionStepComplete(state.dataProtection)
   const reviewReady =
     connectorReady &&
@@ -1630,6 +1710,9 @@ export function buildStreamConfigPayload(state: WizardState): Record<string, unk
       checkpoint_mode: ckMode,
       query_timeout_seconds: state.stream.timeoutSec,
     }
+    if (Object.keys(state.stream.dbQueryParams ?? {}).length > 0) {
+      out.query_params = { ...state.stream.dbQueryParams }
+    }
     if (ckCol) out.checkpoint_column = ckCol
     return out
   }
@@ -1653,6 +1736,12 @@ export function buildStreamConfigPayload(state: WizardState): Record<string, unk
   for (const row of state.stream.params) {
     if (row.key.trim()) baseParams[row.key.trim()] = row.value
   }
+  const paginationParams = buildPersistParams({
+    paginationType: state.stream.paginationType,
+    cursorParam: state.stream.paginationCursorParam,
+  })
+  const params = { ...baseParams, ...paginationParams }
+  const paginationType = normalizePaginationLabel(state.stream.paginationType)
   const rawEndpoint = state.stream.endpoint.trim()
   let endpoint = rawEndpoint
   if (/^https?:\/\//i.test(rawEndpoint)) {
@@ -1667,9 +1756,15 @@ export function buildStreamConfigPayload(state: WizardState): Record<string, unk
     method: state.stream.httpMethod,
     endpoint,
     headers,
-    params: baseParams,
+    params,
     body: state.stream.requestBody.trim() || undefined,
     timeout_seconds: state.stream.timeoutSec,
+    pagination: {
+      type: paginationType === 'None' ? 'none' : paginationType,
+      cursor_param: state.stream.paginationCursorParam.trim(),
+      page_size: state.stream.paginationPageSize > 0 ? state.stream.paginationPageSize : undefined,
+      max_pages: state.stream.paginationMaxPages > 0 ? state.stream.paginationMaxPages : undefined,
+    },
   }
   if (!state.stream.useWholeResponseAsEvent) {
     const eap = state.stream.eventArrayPath.trim()

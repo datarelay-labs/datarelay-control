@@ -90,12 +90,16 @@ def test_successful_run_persists_fewer_low_value_delivery_log_rows(db_session: S
     stages = [row.stage for row in rows]
     assert "route_send_success" in stages
     assert "run_complete" in stages
+    assert stages.count("policy_evaluation_complete") == 1
     assert "route" not in stages
     assert stages.count("mapping") == 0
     assert stages.count("enrichment") == 0
-    # Route Processing emits protection/classification/policy complete + route_send +
-    # route_processing_loop + checkpoint + run lifecycle (≤11 rows on the happy path).
-    assert len(rows) <= 11
+    # Route Processing emits durable protection/classification/policy evidence,
+    # one policy-evaluation row consumed by cumulative metrics/governance drill-down,
+    # route_send + route_processing_loop + dynamic routing + checkpoint + run lifecycle.
+    # The optimization target is removal of redundant per-event mapping/enrichment/route
+    # rows, not deletion of the single durable policy-evaluation evidence row.
+    assert len(rows) <= 12
 
 
 def test_run_complete_checkpoint_payload_is_slim(db_session: Session) -> None:

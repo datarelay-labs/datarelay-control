@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.checkpoints.models import Checkpoint
+from app.failover_routing.operator_workflow import create_failover_route
 from app.database import get_db
 from app.main import app
 from app.templates.registry import clear_template_cache
@@ -405,3 +406,131 @@ def test_e2e_syslog_tcp_retry_success_advances_checkpoint(
 
     ev = wait_for_syslog_message(syslog_tcp_receiver, lambda j: j.get("event_id") == "single-root-1")
     assert_syslog_contains_mapped_and_enrichment(ev)
+
+
+@skip_no_wiremock
+@pytest.mark.e2e_delivery
+@pytest.mark.e2e_checkpoint
+def test_e2e_multi_route_healthy_tcp_and_paused_failure_checkpoint_is_unchanged(
+    client: TestClient,
+    db_session: Session,
+    syslog_tcp_receiver: Any,
+) -> None:
+    """One Stream must deliver to a healthy Route but not commit a cursor for a failed required Route."""
+    base = DEFAULT_WIREMOCK.rstrip("/")
+    ensure_template_wiremock_mappings(base)
+    reset_wiremock_scenarios(base)
+    reset_wiremock_journal(base)
+
+    good_id = create_syslog_tcp_destination(
+        client, syslog_tcp_receiver.host, syslog_tcp_receiver.port,
+    )
+    out = _instantiate_generic_syslog(
+        client, base, good_id,
+        connector_name=f"E2E mixed delivery {uuid.uuid4().hex[:8]}",
+    )
+    stream_id, healthy_route_id = int(out["stream_id"]), int(out["route_id"])
+    bad_id = create_syslog_tcp_destination(client, "127.0.0.1", _unused_local_tcp_port())
+    bad_route = client.post(
+        "/api/v1/routes/",
+        json={
+            "stream_id": stream_id,
+            "destination_id": bad_id,
+            "enabled": True,
+            "failure_policy": "PAUSE_STREAM_ON_FAILURE",
+            "formatter_config_json": {"message_format": "json"},
+            "rate_limit_json": {"max_events": 500, "per_seconds": 1},
+            "status": "ENABLED",
+        },
+    )
+    assert bad_route.status_code == 201, bad_route.text
+    failed_route_id = int(bad_route.json()["id"])
+    checkpoint_id = int(out["checkpoint_id"])
+    cp = db_session.get(Checkpoint, checkpoint_id)
+    assert cp is not None
+    checkpoint_before = dict(cp.checkpoint_value_json or {})
+
+    _apply_single_object_mapping_and_endpoint(client, stream_id)
+    enable_stream_for_run(client, stream_id)
+    run = client.post(f"/api/v1/runtime/streams/{stream_id}/run-once")
+    assert run.status_code == 200, run.text
+    result = run.json()
+    assert result.get("transaction_committed") is True
+    assert result.get("checkpoint_updated") is False
+    assert int(result.get("extracted_event_count") or 0) >= 1
+
+    # A successful Route is truly received; another required Route's failure is still visible.
+    event = wait_for_syslog_message(
+        syslog_tcp_receiver, lambda item: item.get("event_id") == "single-root-1",
+    )
+    assert_syslog_contains_mapped_and_enrichment(event)
+    db_session.expire_all()
+    success = delivery_logs_by_stage(db_session, stream_id, "route_send_success")
+    failure = delivery_logs_by_stage(db_session, stream_id, "route_send_failed")
+    assert any(r.route_id == healthy_route_id for r in success)
+    assert any(r.route_id == failed_route_id for r in failure)
+    assert "checkpoint_update" not in delivery_log_stages(db_session, stream_id)
+    _assert_run_id_on_stages(
+        db_session, stream_id, ("route_send_success", "route_send_failed", "run_complete"),
+    )
+    checkpoint_after = db_session.get(Checkpoint, checkpoint_id)
+    assert checkpoint_after is not None
+    assert dict(checkpoint_after.checkpoint_value_json or {}) == checkpoint_before
+
+
+@skip_no_wiremock
+@pytest.mark.e2e_delivery
+@pytest.mark.e2e_checkpoint
+def test_e2e_real_webhook_failover_primary_500_backup_receives_and_checkpoint_advances(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    """Real HTTP 500 primary, real HTTP 200 backup: only actual standby receipt commits cursor."""
+    base = DEFAULT_WIREMOCK.rstrip("/")
+    ensure_template_wiremock_mappings(base)
+    reset_wiremock_scenarios(base)
+    reset_wiremock_journal(base)
+
+    primary_id = create_webhook_destination(
+        client, base, path="/wiremock-integration/receiver-fail", retry_count=0,
+    )
+    out = _instantiate_generic_syslog(
+        client, base, primary_id,
+        connector_name=f"E2E failover webhook {uuid.uuid4().hex[:8]}",
+    )
+    stream_id = int(out["stream_id"])
+    backup_id = create_webhook_destination(client, base, path="/receiver/webhook", retry_count=0)
+    create_failover_route(
+        db_session,
+        stream_id=stream_id,
+        primary_destination_id=primary_id,
+        secondary_destination_id=backup_id,
+        enabled=True,
+    )
+    db_session.commit()
+
+    _apply_single_object_mapping_and_endpoint(client, stream_id)
+    enable_stream_for_run(client, stream_id)
+    run = client.post(f"/api/v1/runtime/streams/{stream_id}/run-once")
+    assert run.status_code == 200, run.text
+    summary = run.json()
+    assert summary.get("transaction_committed") is True
+    assert summary.get("checkpoint_updated") is True
+
+    # Both HTTP requests are actually observed in the isolated receiver journal.
+    primary_requests = wiremock_received_json_bodies(
+        base, path_contains="/wiremock-integration/receiver-fail",
+    )
+    backup_requests = wiremock_received_json_bodies(base, path_contains="/receiver/webhook")
+    assert primary_requests, "actual primary request must have failed at receiver"
+    assert backup_requests, "actual backup receipt required before cursor update"
+    assert backup_requests[-1].get("event_id") == "single-root-1"
+
+    stages = delivery_log_stages(db_session, stream_id)
+    assert "route_send_failed" in stages
+    assert "failover_route_send_success" in stages
+    assert_run_observability_core(db_session, stream_id, expect_checkpoint_update=True)
+    _assert_run_id_on_stages(
+        db_session, stream_id,
+        ("route_send_failed", "failover_route_send_success", "checkpoint_update", "run_complete"),
+    )

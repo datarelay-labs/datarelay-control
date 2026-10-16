@@ -20,11 +20,27 @@ import { S3ConnectorFields } from './s3-connector-fields'
 import { DatabaseConnectorFields } from './database-connector-fields'
 import { RemoteFileConnectorFields } from './remote-file-connector-fields'
 import { WebhookReceiverFields } from './webhook-receiver-fields'
+import { getSessionCapabilities, useSessionCapabilities } from '../../lib/rbac'
 
-export function NewConnectorWizardPage() {
+export function NewConnectorWizardPage({
+  onCreated,
+  onCancel,
+  onBusyChange,
+}: {
+  /** Contextual creation keeps the owning Wizard and all in-memory inputs mounted. */
+  onCreated?: (connectorId: number) => void
+  onCancel?: () => void
+  /** Lets a contextual parent guard navigation until the create request settles. */
+  onBusyChange?: (busy: boolean) => void
+} = {}) {
   const navigate = useNavigate()
   const location = useLocation()
+  const canMutateConnectors = useSessionCapabilities().workspace_mutations === true
+  const canTestConnectors = useSessionCapabilities().validation_mutations === true
   const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    onBusyChange?.(busy)
+  }, [busy, onBusyChange])
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [form, setForm] = useState<ConnectorWritePayload>({
@@ -102,6 +118,7 @@ export function NewConnectorWizardPage() {
 
   const onApproveImport = useCallback(
     (draft: CurlImportDraft) => {
+      if (getSessionCapabilities().workspace_mutations !== true) return
       navigateToConnectorWizardWithDraft(navigate, draft)
     },
     [navigate],
@@ -289,6 +306,7 @@ export function NewConnectorWizardPage() {
   }
 
   async function onSubmit() {
+    if (getSessionCapabilities().workspace_mutations !== true) return
     const msg = validate()
     if (msg) {
       setError(msg)
@@ -311,6 +329,15 @@ export function NewConnectorWizardPage() {
                 : 'generic_http',
         auth_type: isS3 || isDb || isRemote || isWebhook ? 'no_auth' : form.auth_type,
       })
+      if (!Number.isSafeInteger(created.id) || created.id <= 0) {
+        throw new Error(
+          'Connector creation response could not be verified. Check the Connector catalog before attempting another save.',
+        )
+      }
+      if (onCreated) {
+        onCreated(created.id)
+        return
+      }
       const streamDraft = pendingStreamDraftRef.current
       if (streamDraft && isHttp) {
         navigateToStreamWizardWithDraft(navigate, created.id, streamDraft)
@@ -323,6 +350,17 @@ export function NewConnectorWizardPage() {
     } finally {
       setBusy(false)
     }
+  }
+
+  if (!canMutateConnectors) {
+    return (
+      <div className="space-y-3" role="status">
+        <p className="text-sm text-slate-700 dark:text-slate-200">Connector creation is not available for your account.</p>
+        <button type="button" className={cn('h-9 px-3', gdcUi.secondaryBtn)} onClick={() => onCancel ? onCancel() : navigate('/connectors')}>
+          Back to connectors
+        </button>
+      </div>
+    )
   }
 
   return (
@@ -494,14 +532,16 @@ export function NewConnectorWizardPage() {
         />
       </section>
 
+      {canTestConnectors && !isWebhook ? (
       <ConnectorAuthTestPanel
         buildAuthTestPayload={buildAuthTestPayload}
         onTestStart={() => setError(null)}
         mode={isS3 ? 's3' : isDb ? 'database' : isRemote ? 'remote_file' : 'http'}
       />
+      ) : null}
 
       <div className="flex gap-2">
-        <button type="button" disabled={busy} onClick={() => navigate('/connectors')} className={cn('h-9 px-3', gdcUi.secondaryBtn)}>
+        <button type="button" disabled={busy} onClick={() => onCancel ? onCancel() : navigate('/connectors')} className={cn('h-9 px-3', gdcUi.secondaryBtn)}>
           Cancel
         </button>
         <button type="button" disabled={busy} onClick={() => void onSubmit()} className={cn('h-9 px-3', gdcUi.primaryBtn)}>

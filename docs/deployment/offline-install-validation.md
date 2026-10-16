@@ -34,7 +34,8 @@ sudo scripts/install-docker-offline.sh
 docker --version
 docker compose version
 
-# Wipe prior install (fresh VM: still safe to run)
+# DESTRUCTIVE: only on a verified fresh/empty VM or with separate authorized recovery plan
+# Do NOT run when preserving any existing database/credentials
 scripts/reset-production-data.sh
 
 # Install platform
@@ -123,7 +124,7 @@ docker compose -f configs/docker-compose.offline.yml --env-file configs/.env log
 
 ## 7. `reset-production-data.sh` impact scope
 
-Running `scripts/reset-production-data.sh` (or `install-offline.sh` without `--skip-reset`) removes **only** the Data Relay compose project resources below.
+Running `scripts/reset-production-data.sh` (or explicitly running `install-offline.sh --reset-existing-data` and typing `YES`) removes **only** the Data Relay compose project resources below. Normal `install-offline.sh` preserves existing volumes; `--skip-reset` is an optional compatibility flag.
 
 ### Deleted — containers
 

@@ -12,11 +12,14 @@ from app.governance_notifications.email_sender import EmailSender, get_email_sen
 from app.governance_notifications.models import (
     EVENT_TYPE_TO_CATEGORY,
     GovernanceNotificationConfig,
+    GovernanceNotificationDeliveryJob,
     GovernanceNotificationEvent,
     NOTIFICATION_EVENT_TYPES,
+    NOTIFICATION_STATUS_FAILED,
     NOTIFICATION_STATUS_PENDING,
     NOTIFICATION_STATUS_SENT,
 )
+from app.governance_notifications.outbox import durable_outbox_enabled, enqueue_delivery_jobs
 from app.governance_notifications.schemas import (
     GovernanceNotificationConfigResponse,
     GovernanceNotificationConfigUpdateRequest,
@@ -133,6 +136,10 @@ class NotificationService:
         )
         db.add(row)
         db.flush()
+        if durable_outbox_enabled() and enqueue_delivery_jobs(db, config, row) == 0:
+            # Enabled but unconfigured channels cannot leave orphan PENDING jobs.
+            row.status = NOTIFICATION_STATUS_FAILED
+            row.sent_at = _utc_now()
         return row
 
     @staticmethod
@@ -142,6 +149,10 @@ class NotificationService:
         email_sender: EmailSender | None = None,
         webhook_sender: WebhookSender | None = None,
     ) -> int:
+        # Outbox jobs must be processed after the caller transaction commits.
+        # Never send from an in-flight write transaction when opt-in is enabled.
+        if durable_outbox_enabled():
+            return 0
         config = NotificationService.get_or_create_config(db)
         pending = list(
             db.execute(
@@ -198,7 +209,10 @@ class NotificationService:
             return GovernanceNotificationTestResponse(
                 channel="email",
                 success=ok,
-                message="Test email sent." if ok else "Test email delivery failed.",
+                message=(
+                    "SMTP relay accepted the test message; inbox delivery is not verified."
+                    if ok else "SMTP test not accepted; check configured transport and relay."
+                ),
             )
 
         if ch == "webhook":
@@ -220,7 +234,10 @@ class NotificationService:
             return GovernanceNotificationTestResponse(
                 channel="webhook",
                 success=ok,
-                message="Test webhook delivered." if ok else "Test webhook delivery failed.",
+                message=(
+                    "Webhook endpoint returned success; downstream processing is not verified."
+                    if ok else "Webhook test not accepted; check configured transport and endpoint."
+                ),
             )
 
         raise NotificationServiceError(f"unsupported channel: {channel!r}")
@@ -248,10 +265,38 @@ class NotificationService:
                 GovernanceNotificationEvent.status == NOTIFICATION_STATUS_SENT
             )
         )
+        counts: dict[str, int] = {}
+        scheduled_retries = 0
+        outbox_active = durable_outbox_enabled()
+        if outbox_active:
+            # Legacy deployments may not yet have the opt-in migration.
+            # Default-OFF path does not touch the new table at all.
+            counts = {
+                str(status): int(count)
+                for status, count in db.execute(
+                    select(
+                        GovernanceNotificationDeliveryJob.status,
+                        func.count(GovernanceNotificationDeliveryJob.id),
+                    ).group_by(GovernanceNotificationDeliveryJob.status)
+                ).all()
+            }
+            scheduled_retries = int(db.scalar(
+                select(func.count())
+                .select_from(GovernanceNotificationDeliveryJob)
+                .where(
+                    GovernanceNotificationDeliveryJob.status == "PENDING",
+                    GovernanceNotificationDeliveryJob.attempt_count > 0,
+                )
+            ) or 0)
         return GovernanceNotificationHealthResponse(
             pending_notifications=pending,
             failed_notifications=failed,
             last_delivery_time=last_sent,
+            durable_outbox_enabled=durable_outbox_enabled(),
+            pending_delivery_jobs=counts.get("PENDING", 0),
+            leased_delivery_jobs=counts.get("LEASED", 0),
+            retry_scheduled_delivery_jobs=scheduled_retries,
+            dead_letter_delivery_jobs=counts.get("DEAD", 0),
         )
 
     @staticmethod

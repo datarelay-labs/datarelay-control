@@ -267,13 +267,15 @@ test.describe('Record Selection smoke', () => {
       console.log('[smoke] Deploy step gated (expected without destination attach); continuing via nav')
     }
 
-    // Destination + Route operational screens (nav), then Streams run control.
-    await page.getByRole('complementary', { name: 'Primary navigation' }).getByRole('button', { name: 'Destinations' }).click()
+    // Task-first IA: reusable connections together, operational Data Flows top-level.
+    const primaryNav = page.getByRole('complementary', { name: 'Primary navigation' })
+    await primaryNav.getByRole('button', { name: 'Connections' }).click()
+    await primaryNav.getByRole('button', { name: 'Destinations' }).click()
     await expect(page.getByRole('heading', { name: /Destination/i }).first()).toBeVisible({ timeout: 15_000 })
-    await page.getByRole('complementary', { name: 'Primary navigation' }).getByRole('button', { name: 'Routes' }).click()
+    await primaryNav.getByRole('button', { name: 'Data Flows' }).click()
     await expect(page.getByRole('heading', { name: /Route/i }).first()).toBeVisible({ timeout: 15_000 })
 
-    await page.getByRole('complementary', { name: 'Primary navigation' }).getByRole('button', { name: 'Streams' }).click()
+    await primaryNav.getByRole('button', { name: 'Streams' }).click()
     await expect(page.getByRole('link', { name: 'New Stream' })).toBeVisible({ timeout: 15_000 })
     const firstGroup = page.getByRole('button', { name: /\[DEV VALIDATION\]/i }).first()
     await firstGroup.click()

@@ -104,7 +104,7 @@ Choose where events will be delivered. Each destination becomes a **route** on t
 
 ### Actions
 
-1. Select one or more **Destinations** (create under **Delivery → Destinations** first if needed).
+1. Select one or more **Destinations** (create under **Connections → Destinations** first if needed).
 2. Configure per-route delivery settings (enabled, failure policy, formatter).
 3. Review route drafts in the list.
 

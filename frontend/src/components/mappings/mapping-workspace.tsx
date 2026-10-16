@@ -16,7 +16,7 @@ import {
   suggestOutputField,
   validateMappingRowsLocal,
 } from '../../utils/mappingValidation'
-import { toEventRootRelativePath } from '../streams/wizard/wizard-json-extract'
+import { toExtractedEventRelativePath } from '../streams/wizard/wizard-json-extract'
 import { MappingJsonTree, PanelChrome } from '../streams/mapping-json-tree'
 import { UnionSchemaTreeDetailLayout } from '../streams/union-schema-tree-detail-layout'
 import type { MappingRowModel } from '../streams/stream-mapping-model'
@@ -213,9 +213,13 @@ export function MappingWorkspace({
     )
   }, [rows, mappingSearch])
 
+  const treePathsAreEventRelative = Boolean(sample?.unionSchema || sample?.extractedEvents?.length)
+
   const handlePickPath = useCallback(
     (jsonPath: string) => {
-      const rel = toEventRootRelativePath(jsonPath, eventRootPath || '$')
+      const rel = treePathsAreEventRelative
+        ? jsonPath.trim()
+        : toExtractedEventRelativePath(jsonPath, eventArrayPath || '$', eventRootPath || '')
       let duplicate = false
       updateRows(
         rows.some((r) => r.sourceJsonPath === rel)
@@ -236,7 +240,7 @@ export function MappingWorkspace({
         window.setTimeout(() => setDupNotice(null), 2800)
       }
     },
-    [eventRootPath, rows, updateRows],
+    [eventArrayPath, eventRootPath, rows, treePathsAreEventRelative, updateRows],
   )
 
   const handleReorder = useCallback(

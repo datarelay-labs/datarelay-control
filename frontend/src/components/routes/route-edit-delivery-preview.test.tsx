@@ -1,6 +1,7 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { clearSession, persistSession } from '../../auth/session'
 import { RouteEditPage } from './route-edit-page'
 
 const fetchRouteById = vi.fn()
@@ -118,6 +119,13 @@ function renderRouteEdit(path = '/routes/42/edit') {
   )
 }
 
+async function clickReadyDeliveryPreview() {
+  const button = await screen.findByTestId('route-edit-preview-delivery')
+  await waitFor(() => expect(button).toBeEnabled())
+  fireEvent.click(button)
+  return button
+}
+
 const savedRoute = {
   id: 42,
   name: 'Route A',
@@ -151,11 +159,113 @@ describe('RouteEditPage delivery preview', () => {
     })
   })
 
+  afterEach(() => clearSession())
+
+  it('shows metadata-only formatted output without disclosing payloads, headers or secrets', async () => {
+    runRouteDeliveryPreview.mockResolvedValueOnce({
+      route_id: 42,
+      destination_id: 5,
+      destination_type: 'WEBHOOK_POST',
+      message_count: 2,
+      preview_messages: [
+        { body: 'synthetic_secret_123', headers: { Authorization: 'Bearer hidden_token_123' } },
+        { body: { password: 'do_not_disclose_123', api_key: 'key_secret_123' } },
+      ],
+    })
+    renderRouteEdit()
+    await clickReadyDeliveryPreview()
+    const panel = await screen.findByTestId('route-edit-delivery-preview-output')
+    expect(panel).toHaveTextContent('Formatted output metadata — no send')
+    expect(panel).toHaveTextContent('Message 1')
+    expect(panel).toHaveTextContent('Message 2')
+    expect(panel).toHaveTextContent('Text body')
+    expect(panel).toHaveTextContent('Structured body')
+    expect(panel).not.toHaveTextContent(/synthetic_secret_123|Bearer hidden_token_123|do_not_disclose_123|key_secret_123/)
+    expect(screen.getByTestId('route-edit-delivery-preview-status')).toHaveTextContent('no events were sent')
+  })
+
+  it('bounds large preview message lists to three summaries without implying delivery success', async () => {
+    runRouteDeliveryPreview.mockResolvedValueOnce({
+      route_id: 42,
+      destination_id: 5,
+      destination_type: 'WEBHOOK_POST',
+      message_count: 8,
+      preview_messages: Array.from({ length: 8 }, (_, index) => ({ body: 'private-' + index })),
+    })
+    renderRouteEdit()
+    await clickReadyDeliveryPreview()
+    const panel = await screen.findByTestId('route-edit-delivery-preview-output')
+    expect(panel).toHaveTextContent('Showing 3 of 8 formatted messages')
+    expect(panel).toHaveTextContent('Message 3')
+    expect(panel).not.toHaveTextContent('Message 4')
+    expect(panel).not.toHaveTextContent('private-0')
+    expect(panel).toHaveTextContent('not receiver-confirmed')
+  })
+
+  it('clears any previous success output if a later no-send preview fails', async () => {
+    renderRouteEdit()
+    const button = await screen.findByTestId('route-edit-preview-delivery')
+    await waitFor(() => expect(button).toBeEnabled())
+    fireEvent.click(button)
+    expect(await screen.findByTestId('route-edit-delivery-preview-output')).toBeInTheDocument()
+    runRouteDeliveryPreview.mockRejectedValueOnce(new Error('preview unavailable'))
+    fireEvent.click(button)
+    await waitFor(() => {
+      expect(screen.getByTestId('route-edit-delivery-preview-status')).toHaveTextContent('preview unavailable')
+      expect(screen.queryByTestId('route-edit-delivery-preview-output')).not.toBeInTheDocument()
+    })
+  })
+
+  it('rejects mismatched route preview evidence without displaying output', async () => {
+    runRouteDeliveryPreview.mockResolvedValueOnce({
+      route_id: 99,
+      destination_id: 5,
+      destination_type: 'WEBHOOK_POST',
+      message_count: 1,
+      preview_messages: [{ body: { token: 'hidden' } }],
+    })
+    renderRouteEdit()
+    await clickReadyDeliveryPreview()
+    // The status element exists during the pending network operation.
+    // Wait for the terminal fail-closed identity rejection, not its first render.
+    await waitFor(() => {
+      expect(screen.getByTestId('route-edit-delivery-preview-status')).toHaveTextContent(
+        'did not match the saved Route and Destination',
+      )
+      expect(screen.queryByTestId('route-edit-delivery-preview-output')).not.toBeInTheDocument()
+    })
+  })
+
+  it('hides prior no-send output whenever the persisted Route has unsaved edits', async () => {
+    renderRouteEdit()
+    await clickReadyDeliveryPreview()
+    expect(await screen.findByTestId('route-edit-delivery-preview-output')).toBeInTheDocument()
+    fireEvent.change(await screen.findByDisplayValue('Route A'), { target: { value: 'Edited route' } })
+    expect(await screen.findByTestId('route-edit-unsaved-hint')).toBeInTheDocument()
+    expect(screen.queryByTestId('route-edit-delivery-preview-output')).not.toBeInTheDocument()
+  })
+
+  it('disables no-send delivery preview until the saved Route and Destination identity loads', async () => {
+    let resolveRoute: (route: typeof savedRoute) => void = () => {}
+    fetchRouteById.mockImplementationOnce(() => new Promise<typeof savedRoute>((resolve) => {
+      resolveRoute = resolve
+    }))
+    renderRouteEdit()
+    const button = await screen.findByTestId('route-edit-preview-delivery')
+    expect(button).toBeDisabled()
+    expect(button).toHaveAttribute('title', expect.stringContaining('saved Route and Destination'))
+    fireEvent.click(button)
+    expect(runRouteDeliveryPreview).not.toHaveBeenCalled()
+
+    await act(async () => resolveRoute(savedRoute))
+    await waitFor(() => expect(button).toBeEnabled())
+  })
+
   it('runs route-delivery preview and reports no-send success', async () => {
     renderRouteEdit()
     const button = await screen.findByTestId('route-edit-preview-delivery')
     expect(button).toHaveTextContent('Preview Delivery')
-    expect(button).not.toBeDisabled()
+    await waitFor(() => expect(button).not.toBeDisabled())
 
     fireEvent.click(button)
 
@@ -172,15 +282,17 @@ describe('RouteEditPage delivery preview', () => {
     })
 
     const status = await screen.findByTestId('route-edit-delivery-preview-status')
-    expect(status).toHaveTextContent(/Delivery preview ready — no events were sent/)
-    expect(status).toHaveTextContent(/WEBHOOK_POST/)
-    expect(status).not.toHaveTextContent(/delivery succeeded/i)
+    await waitFor(() => {
+      expect(status).toHaveTextContent(/Delivery preview ready — no events were sent/)
+      expect(status).toHaveTextContent(/WEBHOOK_POST/)
+      expect(status).not.toHaveTextContent(/delivery succeeded/i)
+    })
   })
 
   it('shows actionable failure text when preview API fails', async () => {
     runRouteDeliveryPreview.mockRejectedValueOnce(new Error('400: [ROUTE_DISABLED] route is disabled'))
     renderRouteEdit()
-    fireEvent.click(await screen.findByTestId('route-edit-preview-delivery'))
+    await clickReadyDeliveryPreview()
 
     const status = await screen.findByTestId('route-edit-delivery-preview-status')
     await waitFor(() => {
@@ -206,6 +318,35 @@ describe('RouteEditPage delivery preview', () => {
       expect.stringContaining('Save or discard unsaved edits before preview'),
     )
     expect(runRouteDeliveryPreview).not.toHaveBeenCalled()
+  })
+
+  it('keeps an embedded saved Route editor in the current Flow workspace and reports save/close callbacks', async () => {
+    persistSession({
+      access_token: 'embedded-route-test',
+      refresh_token: 'embedded-route-refresh',
+      expires_at: new Date(Date.now() + 3600_000).toISOString(),
+      user: { username: 'operator', role: 'OPERATOR', status: 'ACTIVE' },
+    })
+    const onSaved = vi.fn()
+    const onClose = vi.fn()
+    updateRoute.mockResolvedValueOnce({ ...savedRoute, description: 'updated in Flow' })
+    render(
+      <MemoryRouter initialEntries={['/routes']}>
+        <RouteEditPage routeIdOverride={42} embedded onSaved={onSaved} onClose={onClose} />
+      </MemoryRouter>,
+    )
+
+    const description = await screen.findByDisplayValue('desc')
+    fireEvent.change(description, { target: { value: 'updated in Flow' } })
+    const save = await screen.findByRole('button', { name: 'Save Route' })
+    fireEvent.click(save)
+    await waitFor(() => expect(updateRoute).toHaveBeenCalledWith(42, expect.objectContaining({ description: 'updated in Flow' })))
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1))
+    expect(screen.getByTestId('route-edit-page')).toBeInTheDocument()
+    expect(screen.getByTestId('route-edit-save-status')).toHaveTextContent('Saved')
+
+    fireEvent.click(screen.getByTestId('route-edit-cancel'))
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 
   it('disables preview in create mode until a route exists', async () => {

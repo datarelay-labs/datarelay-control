@@ -183,25 +183,31 @@ export function DataModeBadge({ isFixtureMode }: { isFixtureMode: boolean }) {
 export function OverallHealthHero({
   health,
   basisLabel,
+  stale = false,
 }: {
   health: OverallHealthCounts
   basisLabel: string
+  /** Counts may be last reported; never style an aged snapshot as verified green. */
+  stale?: boolean
 }) {
   return (
     <section
       aria-label="Overall health"
       data-testid="dashboard-overall-health-hero"
-      className={cn('relative overflow-hidden rounded-lg border px-4 py-4', postureHeroClass(health.posture))}
+      className={cn(
+        'relative overflow-hidden rounded-lg border px-4 py-4',
+        stale ? 'border-amber-300/70 bg-amber-50/40 dark:border-amber-700/60 dark:bg-amber-950/20' : postureHeroClass(health.posture),
+      )}
     >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-3">
-          {health.posture === 'healthy' ? (
+          {!stale && health.posture === 'healthy' ? (
             <CheckCircle2 className="h-6 w-6 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
           ) : (
             <AlertTriangle
               className={cn(
                 'h-6 w-6 shrink-0',
-                health.posture === 'critical'
+                !stale && health.posture === 'critical'
                   ? 'text-red-600 dark:text-red-400'
                   : 'text-amber-600 dark:text-amber-400',
               )}
@@ -213,17 +219,21 @@ export function OverallHealthHero({
             <p
               className={cn(
                 'text-2xl font-semibold leading-tight tracking-tight',
-                health.posture === 'critical'
-                  ? 'text-red-700 dark:text-red-300'
-                  : health.posture === 'warning'
-                    ? 'text-amber-700 dark:text-amber-300'
-                    : 'text-emerald-700 dark:text-emerald-300',
+                stale
+                  ? 'text-amber-800 dark:text-amber-200'
+                  : health.posture === 'critical'
+                    ? 'text-red-700 dark:text-red-300'
+                    : health.posture === 'warning'
+                      ? 'text-amber-700 dark:text-amber-300'
+                      : 'text-emerald-700 dark:text-emerald-300',
               )}
               data-testid="dashboard-overall-posture-label"
             >
-              {postureLabel(health.posture)}
+              {stale ? 'Not verified' : postureLabel(health.posture)}
             </p>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{basisLabel}</p>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              {stale ? 'Last reported · ' : ''}{basisLabel}
+            </p>
           </div>
         </div>
 
@@ -250,9 +260,10 @@ export function OverallHealthHero({
               <p
                 className={cn(
                   'mt-1 text-xl font-semibold tabular-nums leading-none',
-                  tone === 'healthy' && 'text-emerald-700 dark:text-emerald-300',
-                  tone === 'warning' && 'text-amber-700 dark:text-amber-300',
-                  tone === 'critical' && 'text-red-700 dark:text-red-300',
+                  stale && 'text-slate-500 dark:text-slate-400',
+                  !stale && tone === 'healthy' && 'text-emerald-700 dark:text-emerald-300',
+                  !stale && tone === 'warning' && 'text-amber-700 dark:text-amber-300',
+                  !stale && tone === 'critical' && 'text-red-700 dark:text-red-300',
                 )}
               >
                 {formatMetricCount(count)}
@@ -1667,12 +1678,15 @@ export function StreamGroupHealthPanel({
 /** Charter Traffic Overview — Incoming / Outgoing / Delivery Gap / Delivery Success Rate. */
 export function TrafficOverviewPanel({
   traffic,
+  stale = false,
 }: {
   traffic: import('./dashboard-charter-metrics').TrafficOverviewMetrics
+  stale?: boolean
 }) {
   const rate = traffic.deliverySuccessRatePct
-  const rateTone =
-    rate == null ? 'text-slate-700 dark:text-slate-200' : rate >= 99 ? 'text-emerald-700 dark:text-emerald-300' : 'text-amber-700 dark:text-amber-300'
+  const rateTone = stale
+    ? 'text-slate-600 dark:text-gdc-mutedStrong'
+    : rate == null ? 'text-slate-700 dark:text-slate-200' : rate >= 99 ? 'text-emerald-700 dark:text-emerald-300' : 'text-amber-700 dark:text-amber-300'
   const deliveryGap =
     traffic.incomingEvents != null && traffic.outgoingEvents != null
       ? Math.max(0, traffic.incomingEvents - traffic.outgoingEvents)
@@ -1695,7 +1709,11 @@ export function TrafficOverviewPanel({
           View streams
         </Link>
       </div>
-      <p className="mt-1 text-sm text-slate-500 dark:text-gdc-muted">Snapshot window {traffic.windowLabel}</p>
+      <p data-testid="dashboard-traffic-evidence-caption" className="mt-1 text-sm text-slate-500 dark:text-gdc-muted">
+        {stale
+          ? `Last reported ${traffic.windowLabel} snapshot — current traffic and Route delivery are not verified.`
+          : `Snapshot window ${traffic.windowLabel}`}
+      </p>
       <div className="mt-3 divide-y divide-slate-200 rounded-lg border border-slate-200 dark:divide-gdc-divider dark:border-gdc-border">
         <Link
           to={NAV_PATH.streams}
@@ -1836,9 +1854,11 @@ const ISSUE_DRILLDOWN_HREF: Record<IssueKey, string> = {
 export function OperationalIssuesPanel({
   issues,
   className,
+  stale = false,
 }: {
   issues: import('./dashboard-charter-metrics').OperationalIssueCounts
   className?: string
+  stale?: boolean
 }) {
   const rows: Array<{ key: IssueKey; label: string; count: number | null; testId: string; action: string }> = [
     { key: 'no-data', label: 'No Data Streams', count: issues.noDataStreams, testId: 'dashboard-issue-no-data', action: 'Review streams' },
@@ -1862,6 +1882,12 @@ export function OperationalIssuesPanel({
       ? 'No open operational signals.'
       : `${totalIssues} open signal${totalIssues === 1 ? '' : 's'} need attention.`
 
+  const evidenceSummary = !stale ? summary : (
+    totalIssues > 0
+      ? `Last reported issue counts: ${totalIssues} signal${totalIssues === 1 ? '' : 's'}. Current status not verified.`
+      : 'Last reported issue counts: no signals in saved snapshot. Current status not verified.'
+  ) + (stale && hasUnavailableIssueData ? ' Some issue sources unavailable.' : '')
+
   return (
     <section
       aria-label="Operational issues"
@@ -1871,7 +1897,7 @@ export function OperationalIssuesPanel({
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">Operational Issues</h2>
-          <p className="mt-1 text-sm text-slate-500 dark:text-gdc-muted">{summary}</p>
+          <p data-testid="dashboard-issues-evidence-caption" className="mt-1 text-sm text-slate-500 dark:text-gdc-muted">{evidenceSummary}</p>
         </div>
         <Link
           to={NAV_PATH.streams}
@@ -1898,7 +1924,7 @@ export function OperationalIssuesPanel({
                     {row.label}
                   </span>
                   <span className={cn('block text-[11px]', hot ? 'text-violet-700 dark:text-violet-300' : 'text-slate-400 dark:text-gdc-placeholder')}>
-                    {!known ? 'Data unavailable' : hot ? row.action : 'No issue'}
+                    {!known ? 'Data unavailable' : stale ? hot ? 'Last reported — review' : 'Last reported — no issue' : hot ? row.action : 'No issue'}
                   </span>
                 </span>
                 <span

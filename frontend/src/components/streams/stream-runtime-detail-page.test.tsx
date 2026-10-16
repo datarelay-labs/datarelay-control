@@ -1,13 +1,15 @@
 import { useState } from 'react'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { StreamRuntimeDetailPage } from './stream-runtime-detail-page'
 import { getUrl, jsonResponse } from '../../test/fetchMock'
 import * as gdcRuntime from '../../api/gdcRuntime'
 import * as gdcBackfill from '../../api/gdcBackfill'
 import * as streamGovernanceSnapshot from '../../lib/stream-governance-snapshot'
+import { setDisplayTimezoneCache } from '../../lib/display-timezone-cache'
+import { formatPlatformTimestamp } from '../../lib/platform-timestamps'
 import {
   persistRuntimeRefreshEvery,
   persistStreamRuntimeMetricsAutoRefresh,
@@ -509,6 +511,345 @@ describe('StreamRuntimeDetailPage M17.2 layout', () => {
     expect(screen.getByTestId('stream-information-panel')).toBeInTheDocument()
   })
 
+  it('distinguishes an unavailable runtime timeline from genuine zero recent events', async () => {
+    vi.mocked(gdcRuntime.fetchStreamRuntimeTimeline).mockResolvedValueOnce(null)
+    const user = userEvent.setup()
+    renderRuntimePage('42')
+    const compact = await screen.findByTestId('stream-recent-events-panel')
+    expect(await within(compact).findByText(/Recent timeline unavailable/)).toBeInTheDocument()
+    expect(compact).not.toHaveTextContent('No recent events.')
+    await user.click(screen.getByTestId('stream-detail-tab-events'))
+    const full = screen.getByTestId('stream-recent-events-panel')
+    expect(full).toHaveTextContent('Recent timeline unavailable')
+    expect(within(full).getByRole('link', { name: 'View all logs' })).toHaveAttribute(
+      'href', '/logs?stream_id=42',
+    )
+    expect(full).not.toHaveTextContent('No recent events.')
+  })
+
+  it('shows a real empty timeline as zero recent events, not an API failure', async () => {
+    vi.mocked(gdcRuntime.fetchStreamRuntimeTimeline).mockResolvedValueOnce({
+      stream_id: 42, total: 0, items: [],
+    })
+    renderRuntimePage('42')
+    const panel = await screen.findByTestId('stream-recent-events-panel')
+    await waitFor(() => expect(gdcRuntime.fetchStreamRuntimeTimeline).toHaveBeenCalled())
+    expect(await within(panel).findByText('No recent events.')).toBeInTheDocument()
+    expect(panel).not.toHaveTextContent('Recent timeline unavailable')
+  })
+
+  it('lets operators investigate a modern route_runtime-only path with no legacy route_health row', async () => {
+    vi.mocked(gdcRuntime.fetchStreamRuntimeTimeline).mockResolvedValueOnce(null)
+    vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mockImplementationOnce(async (_id, _window, params) => ({
+      ...streamRuntimeMetricsFixture(params),
+      route_health: [],
+      route_runtime: [{
+        route_id: 501,
+        destination_id: 601,
+        destination_name: 'Modern SIEM',
+        destination_type: 'SYSLOG_UDP',
+        enabled: false,
+        route_status: 'DISABLED',
+        success_rate: 0,
+        events_last_hour: 2,
+        delivered_last_hour: 0,
+        failed_last_hour: 2,
+        avg_latency_ms: 100,
+        p95_latency_ms: 100,
+        max_latency_ms: 100,
+        eps_current: 0,
+        retry_count_last_hour: 1,
+        last_success_at: null,
+        last_failure_at: '2026-10-11T09:00:00Z',
+        last_error_message: 'Gateway transport error',
+        last_error_code: 'TIMEOUT',
+        failure_policy: 'RETRY_AND_BACKOFF',
+        connectivity_state: 'DISABLED',
+        disable_reason: 'Paused by operator',
+        latency_trend: [],
+        success_rate_trend: [],
+      }],
+    }))
+    const user = userEvent.setup()
+    renderRuntimePage('42')
+    const panel = await screen.findByTestId('stream-recent-events-panel')
+    const selector = await within(panel).findByLabelText('Filter recent events by Route')
+    await user.selectOptions(selector, '501')
+    const evidence = within(panel).getByRole('region', { name: 'Selected Route evidence' })
+    expect(evidence).toHaveTextContent('Route #501')
+    expect(evidence).toHaveTextContent('Last reported Route state: Disabled')
+    expect(evidence).toHaveTextContent('Metrics-reported failed attempts (last hour): 2')
+    expect(evidence).toHaveTextContent('Destination Modern SIEM')
+    expect(evidence).toHaveTextContent('Timeline sample unavailable · Route event count not verified')
+    expect(evidence).toHaveTextContent('Gateway outcome not verified in this sample')
+    expect(within(evidence).getByRole('link', { name: 'Inspect recorded Route failures' })).toHaveAttribute(
+      'href', '/logs?route_id=501&stream_id=42&status=failed',
+    )
+    expect(within(evidence).getByRole('link', { name: 'Analyze Route failure trend (24h)' })).toHaveAttribute(
+      'href', '/monitoring/analytics?window=24h&stream_id=42&route_id=501',
+    )
+  })
+
+  it('lets operators inspect a Route reported by Metrics even with no recent Route event', async () => {
+    vi.mocked(gdcRuntime.fetchStreamRuntimeTimeline).mockResolvedValueOnce(null)
+    const user = userEvent.setup()
+    renderRuntimePage('42')
+    const panel = await screen.findByTestId('stream-recent-events-panel')
+    const selector = await within(panel).findByLabelText('Filter recent events by Route')
+    expect(within(selector).getByRole('option', { name: /^Route #101 — Stellar Syslog/ })).toBeInTheDocument()
+    await user.selectOptions(selector, '101')
+    expect(within(panel).getByRole('region', { name: 'Selected Route evidence' })).toHaveTextContent(
+      'Gateway outcome not verified in this sample',
+    )
+    expect(within(panel).getByRole('link', { name: 'View all →' })).toHaveAttribute(
+      'href', '/logs?route_id=101&stream_id=42',
+    )
+  })
+
+  it('never carries prior-window Route metrics into a newly requested time range', async () => {
+    const user = userEvent.setup()
+    let resolve24h!: (metrics: ReturnType<typeof streamRuntimeMetricsFixture>) => void
+    const pending24h = new Promise<ReturnType<typeof streamRuntimeMetricsFixture>>((resolve) => {
+      resolve24h = resolve
+    })
+    const metricWithFailures = (
+      params: { snapshot_id?: string } | undefined,
+      failedCount: number,
+    ) => {
+      const base = streamRuntimeMetricsFixture(params)
+      return {
+        ...base,
+        metrics_window_seconds: failedCount === 13 ? 3600 : 86400,
+        route_health: base.route_health.map((row) => ({ ...row, failed_count: failedCount })),
+      }
+    }
+    vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mockImplementation(async (_id, window, params) => {
+      if (window === '24h') return pending24h
+      return metricWithFailures(params, 13)
+    })
+    renderRuntimePage('42')
+    const panel = await screen.findByTestId('stream-recent-events-panel')
+    const selector = await within(panel).findByLabelText('Filter recent events by Route')
+    await user.selectOptions(selector, '101')
+    expect(within(panel).getByText('Metrics-reported failed attempts: 13')).toBeInTheDocument()
+
+    await user.selectOptions(screen.getByTestId('stream-runtime-time-range'), '24h')
+    await waitFor(() => expect(gdcRuntime.fetchStreamRuntimeMetrics).toHaveBeenCalledWith(
+      42, '24h', expect.any(Object), expect.any(Object),
+    ))
+    expect(panel).not.toHaveTextContent('Metrics-reported failed attempts: 13')
+
+    resolve24h(metricWithFailures(undefined, 2))
+    const reloadedSelector = await within(panel).findByLabelText('Filter recent events by Route')
+    await user.selectOptions(reloadedSelector, '101')
+    expect(await within(panel).findByText('Metrics-reported failed attempts: 2')).toBeInTheDocument()
+  })
+
+  it('retains the actual selected Route investigation across Overview and Events tabs', async () => {
+    vi.mocked(gdcRuntime.fetchStreamRuntimeTimeline).mockResolvedValueOnce({
+      stream_id: 42,
+      total: 2,
+      items: [
+        {
+          id: 1001,
+          created_at: '2026-10-11T09:00:00Z',
+          stream_id: 42,
+          route_id: 17,
+          destination_id: 71,
+          run_id: 'run-17-observed',
+          stage: 'route_send_failed',
+          level: 'ERROR',
+          status: 'FAILED',
+          message: 'Gateway route 17 failure',
+          error_code: 'TIMEOUT',
+          retry_count: 0,
+          http_status: null,
+          latency_ms: 22,
+        },
+        {
+          id: 1002,
+          created_at: '2026-10-11T09:01:00Z',
+          stream_id: 42,
+          route_id: 23,
+          destination_id: 73,
+          run_id: 'run-23-observed',
+          stage: 'route_send_success',
+          level: 'INFO',
+          status: 'SUCCESS',
+          message: 'Gateway route 23 success',
+          error_code: null,
+          retry_count: 0,
+          http_status: null,
+          latency_ms: 13,
+        },
+      ],
+    })
+    const user = userEvent.setup()
+    renderRuntimePage('42')
+    const compact = await screen.findByTestId('stream-recent-events-panel')
+    const picker = await within(compact).findByLabelText('Filter recent events by Route')
+    await user.selectOptions(picker, '17')
+    expect(within(compact).getByRole('region', { name: 'Selected Route evidence' })).toHaveTextContent('Route #17')
+
+    await user.click(screen.getByTestId('stream-detail-tab-events'))
+    const detailed = await screen.findByTestId('stream-recent-events-panel')
+    expect(within(detailed).getByLabelText('Filter recent events by Route')).toHaveValue('17')
+    expect(within(detailed).getByRole('region', { name: 'Selected Route evidence' })).toHaveTextContent('Gateway failure records: 1')
+    expect(within(detailed).getByRole('link', { name: 'View all logs' })).toHaveAttribute(
+      'href', '/logs?route_id=17&stream_id=42',
+    )
+
+    await user.click(screen.getByTestId('stream-detail-tab-overview'))
+    const returned = await screen.findByTestId('stream-recent-events-panel')
+    expect(within(returned).getByLabelText('Filter recent events by Route')).toHaveValue('17')
+    expect(within(returned).getByRole('link', { name: 'View all →' })).toHaveAttribute(
+      'href', '/logs?route_id=17&stream_id=42',
+    )
+  })
+
+  it('ignores an API Metrics or Timeline response scoped to a different Stream identity', async () => {
+    let resolveMetrics!: (value: Awaited<ReturnType<typeof gdcRuntime.fetchStreamRuntimeMetrics>>) => void
+    const metricsPending = new Promise<Awaited<ReturnType<typeof gdcRuntime.fetchStreamRuntimeMetrics>>>(
+      (resolve) => { resolveMetrics = resolve },
+    )
+    vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mockImplementationOnce(async () => metricsPending)
+    vi.mocked(gdcRuntime.fetchStreamRuntimeTimeline).mockResolvedValueOnce({
+      stream_id: 99, // bad identity: requested Stream 42
+      total: 1,
+      items: [{
+        id: 401,
+        created_at: '2026-10-11T06:00:00Z',
+        stream_id: 99,
+        route_id: 91,
+        destination_id: 88,
+        run_id: 'other-stream-run',
+        stage: 'route_send_failed',
+        level: 'ERROR',
+        status: 'FAILED',
+        message: 'Another Stream route failure',
+        error_code: 'TIMEOUT',
+        retry_count: 0,
+        http_status: null,
+        latency_ms: 9,
+      }],
+    })
+    renderRuntimePage('42')
+    await waitFor(() => expect(gdcRuntime.fetchStreamRuntimeMetrics).toHaveBeenCalled())
+    const mismatched = streamRuntimeMetricsFixture()
+    await act(async () => {
+      resolveMetrics({
+        ...mismatched,
+        stream: { ...mismatched.stream, id: 99 },
+      })
+    })
+    const panel = screen.getByTestId('stream-recent-events-panel')
+    expect(within(panel).queryByLabelText('Filter recent events by Route')).not.toBeInTheDocument()
+    expect(panel).not.toHaveTextContent('Another Stream route failure')
+    expect(within(panel).getByRole('link', { name: 'View all →' })).toHaveAttribute(
+      'href', '/logs?stream_id=42',
+    )
+  })
+
+  it('does not carry pending previous-Stream route evidence into a new Stream investigation', async () => {
+    const neverResolveTimeline = new Promise<null>(() => {})
+    const neverResolveMetrics = new Promise<null>(() => {})
+    vi.mocked(gdcRuntime.fetchStreamRuntimeTimeline).mockImplementation(async (id) => {
+      if (id !== 42) return neverResolveTimeline
+      return {
+        stream_id: 42,
+        total: 1,
+        items: [{
+          id: 9001,
+          created_at: '2026-10-11T07:00:00Z',
+          stream_id: 42,
+          route_id: 17,
+          destination_id: 71,
+          run_id: 'run-stream-42-only',
+          stage: 'route_send_failed',
+          level: 'ERROR',
+          status: 'FAILED',
+          message: 'Stream 42 old Route 17 gateway timeout',
+          error_code: 'TIMEOUT',
+          retry_count: 0,
+          http_status: null,
+          latency_ms: 42,
+        }],
+      }
+    })
+    vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mockImplementation(async (id, _window, params) =>
+      id === 42 ? streamRuntimeMetricsFixture(params) : neverResolveMetrics
+    )
+    function NavigateBetweenStreams() {
+      const navigate = useNavigate()
+      return <button type="button" onClick={() => navigate('/streams/99/runtime')}>Open Stream 99</button>
+    }
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter initialEntries={['/streams/42/runtime']}>
+        <NavigateBetweenStreams />
+        <Routes>
+          <Route path="/streams/:streamId/runtime" element={<StreamRuntimeDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+    const oldPanel = await screen.findByTestId('stream-recent-events-panel')
+    expect(await within(oldPanel).findByLabelText('Filter recent events by Route')).toBeInTheDocument()
+    expect(oldPanel).toHaveTextContent('Stream 42 old Route 17 gateway timeout')
+    await user.selectOptions(within(oldPanel).getByLabelText('Filter recent events by Route'), '17')
+    expect(within(oldPanel).getByRole('region', { name: 'Selected Route evidence' })).toHaveTextContent('Route #17')
+
+    await user.click(screen.getByRole('button', { name: 'Open Stream 99' }))
+    await screen.findByRole('heading', { name: 'Stream 99' })
+    const newPanel = screen.getByTestId('stream-recent-events-panel')
+    expect(within(newPanel).queryByLabelText('Filter recent events by Route')).not.toBeInTheDocument()
+    expect(newPanel).not.toHaveTextContent('Stream 42 old Route 17 gateway timeout')
+    expect(within(newPanel).getByRole('link', { name: 'View all →' })).toHaveAttribute('href', '/logs?stream_id=99')
+  })
+
+  it('does not carry a selected Route investigation into a different Stream', async () => {
+    vi.mocked(gdcRuntime.fetchStreamRuntimeTimeline).mockImplementation(async (id) => ({
+      stream_id: Number(id),
+      total: 1,
+      items: [{
+        id: 7000,
+        created_at: '2026-10-11T09:00:00Z',
+        stream_id: Number(id),
+        route_id: 17, // intentionally same route number to catch stale cross-Stream scope
+        destination_id: 71,
+        run_id: 'run-source-switch',
+        stage: 'route_send_failed',
+        level: 'ERROR',
+        status: 'FAILED',
+        message: 'Observed route sample',
+        error_code: 'TIMEOUT',
+        retry_count: 0,
+        http_status: null,
+        latency_ms: 22,
+      }],
+    }))
+    function Navigation() {
+      const navigate = useNavigate()
+      return <button type="button" onClick={() => navigate('/streams/99/runtime')}>Open different Stream</button>
+    }
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter initialEntries={['/streams/42/runtime']}>
+        <Navigation />
+        <Routes>
+          <Route path="/streams/:streamId/runtime" element={<StreamRuntimeDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+    const selector = await screen.findByLabelText('Filter recent events by Route')
+    await user.selectOptions(selector, '17')
+    expect(selector).toHaveValue('17')
+    await user.click(screen.getByRole('button', { name: 'Open different Stream' }))
+    await screen.findByRole('heading', { name: 'Stream 99' })
+    const nextSelector = await screen.findByLabelText('Filter recent events by Route')
+    expect(nextSelector).toHaveValue('all')
+    expect(screen.queryByRole('region', { name: 'Selected Route evidence' })).not.toBeInTheDocument()
+  })
+
   it('shows run history inside observability without placeholder tabs', async () => {
     const user = userEvent.setup()
     renderRuntimePage('42')
@@ -517,6 +858,145 @@ describe('StreamRuntimeDetailPage M17.2 layout', () => {
     expect(screen.getByTestId('stream-monitoring-observability')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Configuration' })).not.toBeInTheDocument()
     expect(screen.queryByText(/No additional tab-specific data/i)).not.toBeInTheDocument()
+  })
+
+  it('links real timeline Run IDs and labels unavailable counts without inventing delivery evidence', async () => {
+    const actualRunId = 'run-20261011-confirmed'
+    const event = (id: number, stage: string, time: string) => ({
+      id,
+      created_at: time,
+      stream_id: 42,
+      route_id: null,
+      destination_id: null,
+      run_id: actualRunId,
+      stage,
+      level: 'INFO',
+      status: stage === 'run_complete' ? 'COMPLETED' : 'OK',
+      message: stage,
+      error_code: null,
+      retry_count: 0,
+      http_status: null,
+      latency_ms: null,
+    })
+    vi.mocked(gdcRuntime.fetchStreamRuntimeTimeline).mockResolvedValueOnce({
+      stream_id: 42,
+      total: 3,
+      items: [
+        event(1, 'run_started', '2026-10-11T09:00:00Z'),
+        event(2, 'source_fetch', '2026-10-11T09:00:01Z'),
+        event(3, 'run_complete', '2026-10-11T09:02:00Z'),
+      ],
+    })
+    const user = userEvent.setup()
+    renderRuntimePage('42')
+    await user.click(await screen.findByTestId('stream-detail-tab-audit'))
+    const history = screen.getByRole('region', { name: 'Run history' })
+    const link = await within(history).findByRole('link', { name: actualRunId })
+    expect(link).toHaveAttribute('href', '/logs?stream_id=42&run_id=run-20261011-confirmed')
+    const row = link.closest('tr')
+    expect(row).not.toBeNull()
+    expect(within(row!).getByText('Completed')).toBeInTheDocument()
+    expect(within(row!).getAllByText('—')).toHaveLength(4)
+    expect(screen.getByTestId('stream-run-history-timeline-basis')).toHaveTextContent(/not verified by runtime metrics/i)
+    expect(within(history).queryByText(/^evt-/)).not.toBeInTheDocument()
+  })
+
+  it('explains unobserved Run history without calling the empty evidence healthy or complete', async () => {
+    vi.mocked(gdcRuntime.fetchStreamRuntimeTimeline).mockResolvedValueOnce(null)
+    vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mockImplementationOnce(async (_id, _window, params) => ({
+      ...streamRuntimeMetricsFixture(params),
+      recent_runs: [],
+    }))
+    const user = userEvent.setup()
+    renderRuntimePage('42')
+    await user.click(await screen.findByTestId('stream-detail-tab-audit'))
+    const history = screen.getByRole('region', { name: 'Run history' })
+    const empty = await within(history).findByTestId('stream-run-history-unverified')
+    expect(empty).toHaveTextContent('No run records verified in the loaded runtime evidence')
+    expect(empty).toHaveTextContent('not proof that no runs occurred')
+    expect(within(empty).getByRole('link', { name: 'Inspect Stream logs' })).toHaveAttribute(
+      'href', '/logs?stream_id=42',
+    )
+  })
+
+  it('does not show a verified Healthy chip in the violations pane without delivery outcomes', async () => {
+    vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mockResolvedValueOnce(null)
+    const user = userEvent.setup()
+    renderRuntimePage('42')
+    await user.click(await screen.findByTestId('stream-detail-tab-violations'))
+    const issueRail = await screen.findByTestId('stream-issue-rail')
+    await waitFor(() => {
+      expect(issueRail).toHaveTextContent('Not verified')
+      expect(issueRail).toHaveTextContent(/(Delivery outcomes not verified|Stream runtime status is not verified)/)
+    })
+    expect(within(issueRail).queryByText('Healthy')).not.toBeInTheDocument()
+    expect(issueRail).not.toHaveTextContent('No active issues')
+  })
+
+  it('keeps the Recent Issues rail neutral without confirmed runtime or governance evidence', async () => {
+    vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mockResolvedValueOnce(null)
+    renderRuntimePage('42')
+    const panel = await screen.findByTestId('stream-recent-issues-panel')
+    await waitFor(() => {
+      expect(panel).toHaveTextContent('Delivery outcomes not verified')
+      expect(panel).toHaveTextContent('Schema drift summary not verified')
+      expect(panel).toHaveTextContent('Sensitive findings summary not verified')
+    })
+    expect(panel).not.toHaveTextContent('No delivery failures')
+    expect(panel.querySelectorAll('[data-evidence-status="unknown"]').length).toBeGreaterThanOrEqual(3)
+    expect(within(panel).getByRole('link', { name: /View all/ })).toBeInTheDocument()
+  })
+
+  it('renders a no-events Metrics completion neutrally, without Partial warnings', async () => {
+    vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mockImplementationOnce(async (_id, _window, params) => ({
+      ...streamRuntimeMetricsFixture(params),
+      recent_runs: [{
+        run_id: 'run-777',
+        started_at: '2026-10-11T10:00:00Z',
+        duration_ms: 0,
+        status: 'NO_EVENTS',
+        events: 0,
+        delivered: 0,
+        failed: 0,
+      }],
+    }))
+    const user = userEvent.setup()
+    renderRuntimePage('42')
+    await user.click(await screen.findByTestId('stream-detail-tab-audit'))
+    const history = screen.getByRole('region', { name: 'Run history' })
+    const completionLabel = await within(history).findByText('Completion record run-777')
+    const row = completionLabel.closest('tr')
+    expect(row).not.toBeNull()
+    expect(within(row!).getByText('No events')).toBeInTheDocument()
+    expect(within(row!).queryByText('Partial')).not.toBeInTheDocument()
+    expect(row).not.toHaveClass('bg-amber-500/[0.04]')
+  })
+
+  it('never deep-links a Metrics completion-record label as an exact run_id', async () => {
+    vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mockImplementationOnce(async (_id, _window, params) => ({
+      ...streamRuntimeMetricsFixture(params),
+      recent_runs: [{
+        run_id: 'run-123456',
+        started_at: '2026-10-11T10:00:00Z',
+        duration_ms: 0,
+        status: 'SUCCESS',
+        events: 8,
+        delivered: 7,
+        failed: 1,
+      }],
+    }))
+    const user = userEvent.setup()
+    renderRuntimePage('42')
+    await user.click(await screen.findByTestId('stream-detail-tab-audit'))
+    const history = screen.getByRole('region', { name: 'Run history' })
+    expect(await within(history).findByText('Completion record run-123456')).toBeInTheDocument()
+    expect(within(history).queryByRole('link', { name: 'run-123456' })).not.toBeInTheDocument()
+    expect(within(history).getByRole('link', { name: 'Browse completion logs' })).toHaveAttribute(
+      'href', '/logs?stream_id=42&stage=run_complete',
+    )
+    expect(history).toHaveTextContent('8')
+    expect(screen.getByTestId('stream-run-history-metrics-record-basis')).toHaveTextContent(/not verified run IDs/i)
+    expect(within(history).getByRole('columnheader', { name: 'Observed At' })).toBeInTheDocument()
   })
 
   it('shows error state instead of monitoring shell when stream metadata fails to load', async () => {
@@ -558,6 +1038,7 @@ describe('StreamRuntimeDetailPage lifecycle cleanup', () => {
     vi.useRealTimers()
     persistStreamRuntimeMetricsAutoRefresh(false)
     persistRuntimeRefreshEvery('off')
+    setDisplayTimezoneCache({ userTimezone: null, platformDefaultTimezone: null })
   })
 
   it('runs initial runtime refresh once after stream metadata resolves', async () => {
@@ -605,6 +1086,73 @@ describe('StreamRuntimeDetailPage lifecycle cleanup', () => {
     resolveTimeline(null)
     await waitFor(() => {
       expect(governanceSpy).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('shows Stream creation time in the resolved explicit timezone, not an offset-stripped clock', async () => {
+    setDisplayTimezoneCache({ userTimezone: 'UTC' })
+    mockFetchStreamById.mockImplementationOnce(async (id) => ({
+      id,
+      name: `Stream ${id}`,
+      connector_id: 1,
+      stream_type: 'HTTP_API_POLLING',
+      created_at: '2026-10-10T18:00:00+09:00',
+    }))
+
+    renderRuntimePage('42')
+    const information = await screen.findByTestId('stream-information-panel')
+    await waitFor(() => {
+      expect(information).toHaveTextContent('2026-10-10 09:00 UTC')
+    })
+  })
+
+  it('shows checkpoint history timestamps with their resolved time basis', async () => {
+    setDisplayTimezoneCache({ userTimezone: 'UTC' })
+    vi.mocked(gdcRuntime.fetchStreamCheckpointHistory).mockResolvedValueOnce({
+      stream_id: 42,
+      items: [{
+        log_id: 1001,
+        run_id: 'run-timestamp-probe',
+        created_at: '2026-10-10T18:00:00+09:00',
+        checkpoint_type: 'TIMESTAMP',
+        update_reason: 'DELIVERY_SUCCEEDED',
+        partial_success: false,
+        checkpoint_after_preview: '123',
+      }],
+    })
+
+    const user = userEvent.setup()
+    renderRuntimePage('42')
+    await user.click(await screen.findByTestId('stream-detail-tab-audit'))
+    const trace = await screen.findByRole('region', { name: 'Sync position trace' })
+    await waitFor(() => {
+      expect(trace).toHaveTextContent('2026-10-10 09:00 UTC')
+    })
+  })
+
+  it('uses the configured user timezone for the next scheduled run', async () => {
+    const observedAt = new Date(Date.now() - 60_000).toISOString()
+    const expectedNextAt = new Date(Date.parse(observedAt) + 3_600_000).toISOString()
+    setDisplayTimezoneCache({ userTimezone: 'Pacific/Honolulu', platformDefaultTimezone: 'UTC' })
+    mockFetchStreamById.mockImplementationOnce(async (id) => ({
+      id,
+      name: `Stream ${id}`,
+      connector_id: 1,
+      stream_type: 'HTTP_API_POLLING',
+      status: 'RUNNING',
+      polling_interval: 3600,
+    }))
+    vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mockImplementation(async (_id, _window, params) => {
+      const response = streamRuntimeMetricsFixture(params)
+      return { ...response, stream: { ...response.stream, last_run_at: observedAt } }
+    })
+
+    renderRuntimePage('42')
+    const information = await screen.findByTestId('stream-information-panel')
+    const expected = formatPlatformTimestamp(expectedNextAt, 'Pacific/Honolulu')
+    await waitFor(() => {
+      expect(information).toHaveTextContent('Next Run')
+      expect(information).toHaveTextContent(expected)
     })
   })
 
@@ -760,7 +1308,7 @@ describe('StreamRuntimeDetailPage lifecycle cleanup', () => {
       expect(governanceSpy).toHaveBeenCalledTimes(1)
     })
     await screen.findByTestId('stream-recent-issues-panel')
-    expect(screen.getByText('No drift detected')).toBeInTheDocument()
+    expect(await screen.findByText('No open schema drift findings in loaded summary')).toBeInTheDocument()
 
     notifyStreamGovernanceChanged(42)
 
@@ -857,6 +1405,13 @@ describe('StreamRuntimeDetailPage diagnosis overview', () => {
   })
 
   it('puts diagnosis ahead of runtime evidence and does not repeat the shell title', async () => {
+    mockFetchStreamById.mockResolvedValue({
+      id: 42,
+      name: 'Stream 42',
+      stream_type: 'HTTP_API_POLLING',
+      connector_id: 1,
+      status: 'RUNNING',
+    })
     renderRuntimePage('42')
     const diagnosis = await screen.findByTestId('stream-diagnosis-overview')
     const evidence = screen.getByTestId('stream-runtime-evidence')
@@ -864,6 +1419,9 @@ describe('StreamRuntimeDetailPage diagnosis overview', () => {
     expect(screen.queryByRole('heading', { name: 'Stream monitoring' })).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 2, name: 'Stream 42' })).toBeInTheDocument()
     expect(screen.getByTestId('stream-runtime-primary-actions')).toBeInTheDocument()
+    const scheduler = await screen.findByRole('switch', { name: /Stream scheduler: Running/ })
+    expect(scheduler).toBeInTheDocument()
+    expect(scheduler).toHaveTextContent('Stop')
     expect(screen.getByRole('button', { name: 'Run Now' })).toBeInTheDocument()
     expect(screen.getByTestId('stream-runtime-secondary-actions')).toHaveTextContent('Export JSON')
   })
@@ -971,12 +1529,28 @@ describe('StreamRuntimeDetailPage diagnosis overview', () => {
       expires_at: new Date(Date.now() + 3600_000).toISOString(),
       user: { username: 'viewer', role: 'VIEWER', status: 'ACTIVE' },
     })
+    // Keep the test's Viewer session valid: this component test does not mount
+    // PlatformSessionRoot, which otherwise redirects after a 401 response.
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse([])))
     renderRuntimePage('42')
     expect(await screen.findByText(/Read-only monitoring session/i)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Run Now' })).not.toBeInTheDocument()
     expect(screen.queryByTestId('stream-run-backfill-open')).not.toBeInTheDocument()
     expect(screen.getByText('Edit').closest('span')).toHaveAttribute('title', 'Viewer role cannot edit stream configuration.')
     expect(screen.queryByTestId('stream-runtime-governance-workspace-link')).not.toBeInTheDocument()
+    const user = userEvent.setup()
+    await user.click(screen.getByTestId('stream-detail-tab-schema'))
+    expect(screen.getByTestId('stream-detail-delivery-panel')).toBeInTheDocument()
+    const { getSessionCapabilities } = await import('../../lib/rbac')
+    const { readSession } = await import('../../auth/session')
+    expect(readSession()?.user.role).toBe('VIEWER')
+    expect(getSessionCapabilities().workspace_mutations).toBe(false)
+    expect(screen.queryByRole('link', { name: 'Open mapping' })).not.toBeInTheDocument()
+    expect(screen.getByText('Read-only Stream schema')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Inspect Stream delivery logs' }))
+      .toHaveAttribute('href', '/logs?stream_id=42')
+    expect(screen.getByRole('link', { name: 'Inspect Stream delivery trends (24h)' }))
+      .toHaveAttribute('href', '/monitoring/analytics?window=24h&stream_id=42')
   })
 })
 

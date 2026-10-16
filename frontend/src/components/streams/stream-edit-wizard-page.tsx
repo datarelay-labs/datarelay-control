@@ -24,6 +24,7 @@ import { StepConnect } from './wizard/step-connect'
 import { StepSample } from './wizard/step-sample'
 import { StepDelivery } from './wizard/step-delivery'
 import { StreamEditDeliveryPanel } from './stream-edit-delivery-panel'
+import { StreamConfigurationRevisions } from './stream-configuration-revisions'
 import { StepRouteProcessing } from './wizard/step-route-processing'
 import { StepDeploy } from './wizard/step-deploy'
 import { WizardStepper } from './wizard/wizard-stepper'
@@ -32,7 +33,7 @@ import { hydrateWizardStateFromStream, refreshWizardDestinationsFromStream } fro
 import { reconcileWizardAfterPartialPersist } from './wizard/wizard-partial-save-reconcile'
 import { proveStreamRunOnce } from './wizard/prove-stream-run-once'
 import { deliveryProofLines, nextDeliveryProofPrior, type ExactRunDeliveryProof, type PriorDeliveryProof } from './wizard/deploy-delivery-proof'
-import { confirmDeliveryPanelServerFields, editRuntimeVerificationBlocked, mergeDeliveryPanelRouteDrafts, persistedWizardConfigSnapshot, replacePersistedConcernSnapshot, shouldScheduleEditAutosave } from './wizard/wizard-edit-runtime-gate'
+import { confirmDeliveryPanelServerFields, editRuntimeVerificationBlocked, mergeDeliveryPanelRouteDrafts, persistedWizardConfigSnapshot, replacePersistedConcernSnapshot } from './wizard/wizard-edit-runtime-gate'
 import { applyCreatedRouteIdentity, applyPersistedRevisions, persistWizardStreamEdits } from './wizard/wizard-stream-persist'
 import {
   WIZARD_STEPS,
@@ -62,6 +63,13 @@ import {
 } from '../../utils/eventExtractionPaths'
 import { normalizeCheckpointRelativePath } from '../../utils/recordSelectionPaths'
 import { StreamDeleteConfirmDialog } from './stream-delete-confirm-dialog'
+import { WizardRouteLeaveGuard, type WizardBlockedNavigation } from './wizard/wizard-route-leave-guard'
+import {
+  clearStreamEditDraft,
+  loadStreamEditDraft,
+  restoreStreamEditDraft,
+  saveStreamEditDraft,
+} from './wizard/wizard-edit-draft'
 import { useSessionCapabilities } from '../../lib/rbac'
 
 const EDIT_NEXT_STEP_LABEL: Partial<Record<WizardStepKey, string>> = {
@@ -133,8 +141,21 @@ function parseWizardStepQuery(raw: string | null): StreamWizardStepKey | null {
   return raw as StreamWizardStepKey
 }
 
-export function StreamEditWizardPage() {
-  const { streamId = '' } = useParams<{ streamId: string }>()
+type StreamEditWizardPageProps = {
+  streamIdOverride?: number | null
+  embedded?: boolean
+  onClose?: () => void
+  onSaved?: () => void
+}
+
+export function StreamEditWizardPage({
+  streamIdOverride = null,
+  embedded = false,
+  onClose,
+  onSaved,
+}: StreamEditWizardPageProps = {}) {
+  const { streamId: streamIdParam = '' } = useParams<{ streamId: string }>()
+  const streamId = streamIdOverride != null ? String(streamIdOverride) : streamIdParam
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const backendStreamId = /^\d+$/.test(streamId) ? Number(streamId) : null
@@ -151,6 +172,8 @@ export function StreamEditWizardPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null)
+  const [localDraftStatus, setLocalDraftStatus] = useState<'clean' | 'saving' | 'saved' | 'restored' | 'stale' | 'failed'>('clean')
+  const [exitNavigationBlocked, setExitNavigationBlocked] = useState(false)
   const [runtimeStatus, setRuntimeStatus] = useState<StreamRuntimeStatus>('UNKNOWN')
   const [controlBusy, setControlBusy] = useState(false)
   const [runOnceBusy, setRunOnceBusy] = useState(false)
@@ -174,6 +197,7 @@ export function StreamEditWizardPage() {
   const isSavingRef = useRef(false)
   const saveErrorRef = useRef<string | null>(null)
   const priorDeliveryProofRef = useRef<PriorDeliveryProof | null>(null)
+  const allowedNextPathRef = useRef<string | null>(null)
   saveErrorRef.current = saveError
   const appliedQueryStepRef = useRef<StreamWizardStepKey | null>(null)
 
@@ -203,11 +227,27 @@ export function StreamEditWizardPage() {
         return
       }
       const next = applySampleConfirmationToWizardState(hydrated)
-      setState(next)
       confirmedStateRef.current = next
       confirmedSavedSnapshotRef.current = persistedWizardConfigSnapshot(next)
       failedAttemptSnapshotRef.current = null
       priorDeliveryProofRef.current = null
+
+      const localDraft = canMutateWorkspace ? loadStreamEditDraft(backendStreamId) : null
+      const restoredDraft = localDraft ? restoreStreamEditDraft(next, localDraft) : null
+      if (restoredDraft) {
+        setState(restoredDraft)
+        setStepIndex(wizardStepIndexForKey(WIZARD_STEPS, localDraft!.stepKey))
+        setLocalDraftStatus(
+          persistedWizardConfigSnapshot(restoredDraft) === confirmedSavedSnapshotRef.current ? 'clean' : 'restored',
+        )
+        if (persistedWizardConfigSnapshot(restoredDraft) === confirmedSavedSnapshotRef.current) {
+          clearStreamEditDraft(backendStreamId)
+        }
+      } else {
+        setState(next)
+        setLocalDraftStatus(localDraft ? 'stale' : 'clean')
+      }
+
       setLoading(false)
       const found = await fetchStreamById(backendStreamId)
       if (!cancelled && found?.status) {
@@ -217,7 +257,7 @@ export function StreamEditWizardPage() {
     return () => {
       cancelled = true
     }
-  }, [backendStreamId])
+  }, [backendStreamId, canMutateWorkspace])
 
   const wizardSteps = useMemo(() => {
     if (!state) return WIZARD_STEPS
@@ -459,9 +499,11 @@ export function StreamEditWizardPage() {
     if (!canMutateWorkspaceRef.current) return
     setState((prev) => (prev ? { ...prev, unmappedFieldsPolicy } : prev))
   }, [])
-  const setDataProtection = useCallback((dataProtection: WizardState['dataProtection']) => {
+  const setDataProtection = useCallback((patch: Partial<WizardState['dataProtection']>) => {
     if (!canMutateWorkspaceRef.current) return
-    setState((prev) => (prev ? { ...prev, dataProtection } : prev))
+    setState((prev) => (
+      prev ? { ...prev, dataProtection: { ...prev.dataProtection, ...patch } } : prev
+    ))
   }, [])
   const setDestinations = useCallback((patch: Partial<WizardState['destinations']>) => {
     if (!canMutateWorkspaceRef.current) return
@@ -544,10 +586,45 @@ export function StreamEditWizardPage() {
     })
   }, [backendStreamId])
 
-  const handleSave = useCallback(async (opts?: { manual?: boolean }) => {
+  const runtimeAllowsPlatformSave = runtimeStatus === 'STOPPED' || runtimeStatus === 'IDLE'
+
+  const reloadAfterRevisionRestore = useCallback(async () => {
+    if (backendStreamId == null) return
+    const hydrated = await hydrateWizardStateFromStream(backendStreamId)
+    if (!hydrated) {
+      setSaveError('The revision was restored, but the Stream could not be reloaded. Refresh before editing.')
+      return
+    }
+    const next = applySampleConfirmationToWizardState(hydrated)
+    confirmedStateRef.current = next
+    confirmedSavedSnapshotRef.current = persistedWizardConfigSnapshot(next)
+    failedAttemptSnapshotRef.current = null
+    latestStateRef.current = next
+    setState(next)
+    clearStreamEditDraft(backendStreamId)
+    setLocalDraftStatus('clean')
+    setSaveError(null)
+    setSaveSuccess('Saved revision restored. The Stream remains stopped until you start it.')
+    setDeliveryProjectionRevision((revision) => revision + 1)
+    await refreshRuntimeSnapshot()
+  }, [backendStreamId, refreshRuntimeSnapshot])
+
+  const handleSave = useCallback(async (opts?: { manual?: boolean }): Promise<boolean> => {
     const manual = opts?.manual === true
     const stateToSave = latestStateRef.current
-    if (!canMutateWorkspace || !stateToSave || backendStreamId == null || isSavingRef.current) return
+    if (!canMutateWorkspace || !stateToSave || backendStreamId == null || isSavingRef.current) return false
+    if (!runtimeAllowsPlatformSave) {
+      try {
+        saveStreamEditDraft(backendStreamId, stateToSave, currentStepKey)
+        setLocalDraftStatus('saved')
+      } catch {
+        setLocalDraftStatus('failed')
+      }
+      setSaveError(
+        'Stop the Stream before saving configuration changes to the platform. Your local draft is preserved; the running configuration was not changed.',
+      )
+      return false
+    }
     if (manual && saveTimerRef.current != null) {
       window.clearTimeout(saveTimerRef.current)
       saveTimerRef.current = null
@@ -556,6 +633,7 @@ export function StreamEditWizardPage() {
     setIsSaving(true)
     setSaveError(null)
     setSaveSuccess(null)
+    let saveConfirmed = false
     const submittedSnapshot = persistedWizardConfigSnapshot(stateToSave)
     const draftStillMatches = () => {
       const current = latestStateRef.current
@@ -664,8 +742,25 @@ export function StreamEditWizardPage() {
             })
           }
         }
+        saveConfirmed = true
+        const latestAfterSave = latestStateRef.current
+        if (
+          latestAfterSave &&
+          persistedWizardConfigSnapshot(latestAfterSave) === confirmedSavedSnapshotRef.current
+        ) {
+          clearStreamEditDraft(backendStreamId)
+          setLocalDraftStatus('clean')
+        } else if (latestAfterSave) {
+          try {
+            saveStreamEditDraft(backendStreamId, latestAfterSave, currentStepKey)
+            setLocalDraftStatus('saved')
+          } catch {
+            setLocalDraftStatus('failed')
+          }
+        }
         await refreshRuntimeSnapshot()
-        setSaveSuccess(manual ? 'Saved now and applied.' : 'Changes saved.')
+        onSaved?.()
+        setSaveSuccess('Saved to the platform. The Stream remains stopped until you start it.')
         window.setTimeout(() => setSaveSuccess(null), 3000)
       } else if (draftMovedDuringSave) {
         failedAttemptSnapshotRef.current = identitySnapshot
@@ -673,7 +768,10 @@ export function StreamEditWizardPage() {
       } else {
         let message = result.errors.join(' · ') || 'Save failed.'
         try {
-          const reconciled = await reconcileWizardAfterPartialPersist(backendStreamId, stateToSave, result.errors)
+          const reconciled = await reconcileWizardAfterPartialPersist(backendStreamId, stateToSave, result.errors, {
+            persistedObjects: result.persistedObjects,
+            notPersistedObjects: result.notPersistedObjects,
+          })
           if (reconciled.note) message = `${message} ${reconciled.note}`
           if (!draftStillMatchesIdentity()) {
             failedAttemptSnapshotRef.current = identitySnapshot
@@ -731,16 +829,34 @@ export function StreamEditWizardPage() {
       isSavingRef.current = false
       setIsSaving(false)
     }
-  }, [backendStreamId, canMutateWorkspace, refreshRuntimeSnapshot])
+    return saveConfirmed
+  }, [
+    backendStreamId,
+    canMutateWorkspace,
+    currentStepKey,
+    onSaved,
+    refreshRuntimeSnapshot,
+    runtimeAllowsPlatformSave,
+  ])
 
   useEffect(() => {
     if (!canMutateWorkspace || !state || backendStreamId == null || isSaving) return
     const snapshot = persistedWizardConfigSnapshot(state)
-    if (!shouldScheduleEditAutosave(snapshot, confirmedSavedSnapshotRef.current, failedAttemptSnapshotRef.current)) return
+    if (snapshot === confirmedSavedSnapshotRef.current) {
+      clearStreamEditDraft(backendStreamId)
+      setLocalDraftStatus('clean')
+      return
+    }
     if (saveTimerRef.current != null) window.clearTimeout(saveTimerRef.current)
+    setLocalDraftStatus('saving')
     saveTimerRef.current = window.setTimeout(() => {
       saveTimerRef.current = null
-      void handleSave()
+      try {
+        saveStreamEditDraft(backendStreamId, state, currentStepKey)
+        setLocalDraftStatus('saved')
+      } catch {
+        setLocalDraftStatus('failed')
+      }
     }, 1200)
     return () => {
       if (saveTimerRef.current != null) {
@@ -748,9 +864,9 @@ export function StreamEditWizardPage() {
         saveTimerRef.current = null
       }
     }
-  }, [backendStreamId, canMutateWorkspace, handleSave, isSaving, state])
+  }, [backendStreamId, canMutateWorkspace, currentStepKey, isSaving, state])
 
-  // Flush pending autosave on leave so debounce window cannot silently drop route edits.
+  // Preserve pending edits locally on leave. Never turn an unmount into a hidden platform apply.
   useEffect(() => {
     return () => {
       if (!canMutateWorkspace) return
@@ -760,12 +876,17 @@ export function StreamEditWizardPage() {
       }
       const latest = latestStateRef.current
       if (!latest || backendStreamId == null) return
-      const snapshot = persistedWizardConfigSnapshot(latest)
-      if (!shouldScheduleEditAutosave(snapshot, confirmedSavedSnapshotRef.current, failedAttemptSnapshotRef.current)) return
-      if (isSavingRef.current) return
-      void persistWizardStreamEdits(backendStreamId, latest, { confirmedState: confirmedStateRef.current })
+      if (persistedWizardConfigSnapshot(latest) === confirmedSavedSnapshotRef.current) {
+        clearStreamEditDraft(backendStreamId)
+        return
+      }
+      try {
+        saveStreamEditDraft(backendStreamId, latest, currentStepKey)
+      } catch {
+        // beforeunload/route guards still protect the authoritative server configuration.
+      }
     }
-  }, [backendStreamId, canMutateWorkspace])
+  }, [backendStreamId, canMutateWorkspace, currentStepKey])
 
   const runtimeVerificationBlockedNow = useCallback(() => {
     const latest = latestStateRef.current
@@ -785,17 +906,24 @@ export function StreamEditWizardPage() {
       if (action === 'start' && (runOnceBusy || runtimeVerificationBlockedNow())) return
       setControlBusy(true)
       setControlMessage(null)
-      const res =
-        action === 'start' ? await startRuntimeStream(backendStreamId) : await stopRuntimeStream(backendStreamId)
-      if (res) {
-        setControlMessage(res.message)
-        await refreshRuntimeSnapshot()
-        const found = await fetchStreamById(backendStreamId)
-        if (found?.status) setRuntimeStatus(mapBackendStreamStatus(found.status))
-      } else {
-        setControlMessage('Runtime API unavailable · control action not applied.')
+      try {
+        const res =
+          action === 'start' ? await startRuntimeStream(backendStreamId) : await stopRuntimeStream(backendStreamId)
+        if (res) {
+          setControlMessage(res.message)
+          await refreshRuntimeSnapshot()
+          const found = await fetchStreamById(backendStreamId)
+          if (found?.status) setRuntimeStatus(mapBackendStreamStatus(found.status))
+        } else {
+          setControlMessage('Runtime API unavailable · control action not applied.')
+        }
+      } catch (error) {
+        setControlMessage(
+          `Runtime ${action} failed · ${error instanceof Error ? error.message : String(error)}`,
+        )
+      } finally {
+        setControlBusy(false)
       }
-      setControlBusy(false)
     },
     [backendStreamId, canRuntimeControl, controlBusy, refreshRuntimeSnapshot, runOnceBusy, runtimeVerificationBlockedNow],
   )
@@ -832,10 +960,67 @@ export function StreamEditWizardPage() {
   const handleStart = useCallback(async () => {
     if (!canRuntimeControl || backendStreamId == null || isStarting || runOnceBusy || runtimeVerificationBlockedNow()) return
     setIsStarting(true)
-    await startRuntimeStream(backendStreamId)
-    await refreshRuntimeSnapshot()
-    setIsStarting(false)
+    setControlMessage(null)
+    try {
+      const result = await startRuntimeStream(backendStreamId)
+      setControlMessage(result?.message ?? 'Runtime start result could not be verified.')
+      await refreshRuntimeSnapshot()
+    } catch (error) {
+      setControlMessage(
+        `Runtime start failed · ${error instanceof Error ? error.message : String(error)}`,
+      )
+    } finally {
+      setIsStarting(false)
+    }
   }, [backendStreamId, canRuntimeControl, isStarting, refreshRuntimeSnapshot, runOnceBusy, runtimeVerificationBlockedNow])
+
+  const handleApplyAndStart = useCallback(async () => {
+    if (
+      !canRuntimeControl ||
+      backendStreamId == null ||
+      isStarting ||
+      isSavingRef.current ||
+      !runtimeAllowsPlatformSave
+    ) return
+
+    const latest = latestStateRef.current
+    if (!latest) return
+    const hasPendingDraft =
+      persistedWizardConfigSnapshot(latest) !== confirmedSavedSnapshotRef.current
+    if (hasPendingDraft) {
+      const saved = await handleSave({ manual: true })
+      if (!saved) return
+      if (runtimeVerificationBlockedNow()) {
+        setControlMessage(
+          'Apply & start stopped because the draft changed while saving. Review the latest draft and apply again.',
+        )
+        return
+      }
+    }
+
+    setIsStarting(true)
+    setControlMessage(null)
+    try {
+      const result = await startRuntimeStream(backendStreamId)
+      setControlMessage(
+        result?.message ??
+          'Saved configuration is confirmed, but the Stream start failed or could not be verified. Runtime is not shown as running until live state confirms it.',
+      )
+      await refreshRuntimeSnapshot()
+      const found = await fetchStreamById(backendStreamId)
+      if (found?.status) setRuntimeStatus(mapBackendStreamStatus(found.status))
+    } finally {
+      setIsStarting(false)
+    }
+  }, [
+    backendStreamId,
+    canRuntimeControl,
+    handleSave,
+    isStarting,
+    refreshRuntimeSnapshot,
+    runtimeAllowsPlatformSave,
+    runtimeVerificationBlockedNow,
+  ])
 
   const executeStreamDelete = useCallback(async () => {
     if (!canMutateWorkspace || backendStreamId == null) return
@@ -845,6 +1030,8 @@ export function StreamEditWizardPage() {
     setStreamDeleteError(null)
     try {
       await deleteStream(backendStreamId)
+      // The operator explicitly confirmed deletion; do not block its completed exit.
+      allowedNextPathRef.current = NAV_PATH.streams
       navigate(NAV_PATH.streams)
     } catch (e) {
       setStreamDeleteError(e instanceof Error ? e.message : 'Delete failed.')
@@ -879,15 +1066,79 @@ export function StreamEditWizardPage() {
         confirmedSavedSnapshot: confirmedSavedSnapshotRef.current,
       })
 
+  const handleBlockedEditNavigation = useCallback((pending: WizardBlockedNavigation) => {
+    // An asynchronous unmount flush is not a verified save. Remain in the editor.
+    pending.reset()
+    setExitNavigationBlocked(true)
+  }, [])
+
+  useEffect(() => {
+    if (loading || state == null || !canMutateWorkspace || !runtimeVerificationBlocked) return
+    const guard = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', guard)
+    return () => window.removeEventListener('beforeunload', guard)
+  }, [loading, state, canMutateWorkspace, runtimeVerificationBlocked])
+
+  const confirmEditNavigation = () => {
+    // A fire-and-forget unmount save is not authoritative persistence evidence.
+    // Guard in-editor exit actions until the existing save contract is fulfilled.
+    if (canMutateWorkspace && runtimeVerificationBlocked) {
+      setExitNavigationBlocked(true)
+      return false
+    }
+    setExitNavigationBlocked(false)
+    return true
+  }
+
   const saveStateLabel = !canMutateWorkspace
     ? 'Read-only'
     : isSaving
-      ? 'Auto-saving…'
+      ? 'Saving to platform…'
       : saveError
-        ? 'Auto-save failed'
+        ? 'Platform save blocked or failed'
         : saveSuccess
           ? 'Changes saved'
-          : 'Auto-save enabled'
+          : localDraftStatus === 'saving'
+            ? 'Saving local draft…'
+            : localDraftStatus === 'saved' || localDraftStatus === 'restored'
+              ? 'Local draft saved'
+              : localDraftStatus === 'stale'
+                ? 'Stale local draft not restored'
+                : localDraftStatus === 'failed'
+                  ? 'Local draft save failed'
+                  : 'Saved configuration'
+
+  const savedRevisionToken =
+    typeof state?.streamUpdatedAt === 'string' ? state.streamUpdatedAt.trim() : ''
+  const draftLifecycleLabel = !canMutateWorkspace
+    ? 'Read-only inspection'
+    : isSaving
+      ? 'Saving explicit platform configuration…'
+      : localDraftStatus === 'saving'
+        ? 'Saving local draft…'
+        : localDraftStatus === 'saved' || localDraftStatus === 'restored'
+          ? 'Local draft saved · not applied'
+          : localDraftStatus === 'stale'
+            ? 'Local draft from an older saved revision was not restored'
+            : localDraftStatus === 'failed'
+              ? 'Local draft save failed'
+              : runtimeVerificationBlocked
+                ? 'Pending local changes · not applied'
+                : 'No pending draft changes'
+  const savedLifecycleLabel = savedRevisionToken
+    ? `Saved configuration · revision ${savedRevisionToken}`
+    : confirmedSavedSnapshotRef.current
+      ? 'Saved configuration confirmed · revision token unavailable'
+      : 'Saved configuration not verified'
+  const runtimeLifecycleLabel =
+    runtimeStatus === 'RUNNING'
+      ? 'Running · exact running revision is not reported by the runtime API'
+      : runtimeStatus === 'STOPPED'
+        ? 'Stopped · no running revision is active'
+        : `${runtimeStatus} · exact running revision is not reported`
 
   if (loading) {
     return (
@@ -910,6 +1161,12 @@ export function StreamEditWizardPage() {
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-5 pb-8" data-testid="edit-stream-wizard">
+      <WizardRouteLeaveGuard
+        active={canMutateWorkspace && runtimeVerificationBlocked}
+        allowedNextPathRef={allowedNextPathRef}
+        allowSamePathname
+        onBlocked={handleBlockedEditNavigation}
+      />
       {!canMutateWorkspace || !canRuntimeControl ? (
         <p
           role="status"
@@ -937,12 +1194,38 @@ export function StreamEditWizardPage() {
               {saveStateLabel}
             </span>
           </div>
+          <div
+            data-testid="stream-configuration-lifecycle"
+            className="grid gap-2 rounded-lg border border-slate-200/80 bg-slate-50/70 p-2.5 text-[11px] text-slate-600 dark:border-gdc-border dark:bg-gdc-card dark:text-gdc-mutedStrong sm:grid-cols-3"
+          >
+            <p data-testid="stream-lifecycle-draft">
+              <span className="font-semibold text-slate-800 dark:text-slate-200">Draft</span>
+              <span className="mt-0.5 block">{draftLifecycleLabel}</span>
+            </p>
+            <p data-testid="stream-lifecycle-saved">
+              <span className="font-semibold text-slate-800 dark:text-slate-200">Saved</span>
+              <span className="mt-0.5 block">{savedLifecycleLabel}</span>
+            </p>
+            <p data-testid="stream-lifecycle-runtime">
+              <span className="font-semibold text-slate-800 dark:text-slate-200">Runtime</span>
+              <span className="mt-0.5 block">{runtimeLifecycleLabel}</span>
+            </p>
+          </div>
+          {backendStreamId != null ? (
+            <StreamConfigurationRevisions
+              streamId={backendStreamId}
+              runtimeStatus={runtimeStatus}
+              canRestore={caps.admin_config_snapshot_apply === true}
+              restoreBlocked={runtimeVerificationBlocked}
+              onRestored={reloadAfterRevisionRestore}
+            />
+          ) : null}
           <p className="max-w-2xl text-sm text-slate-600 dark:text-gdc-muted" data-testid="wizard-stage-purpose">
             {stagePurpose}
           </p>
           <p className="text-xs text-slate-500 dark:text-gdc-muted">
             {canMutateWorkspace
-              ? `Editing ${state.stream.name} · changes auto-save to the platform`
+              ? `Editing ${state.stream.name} · changes auto-save only to this browser; Save now writes platform configuration only while the Stream is stopped; saving does not start or restart the Stream`
               : `Viewing ${state.stream.name} · read-only`}
           </p>
         </div>
@@ -968,12 +1251,16 @@ export function StreamEditWizardPage() {
           ) : null}
           <button
             type="button"
-            onClick={() => navigate(streamRuntimePath(streamId))}
+            onClick={() => {
+              if (!confirmEditNavigation()) return
+              if (embedded) onClose?.()
+              else navigate(streamRuntimePath(streamId))
+            }}
             className="inline-flex h-9 items-center rounded-lg border border-slate-200/90 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-200"
           >
-            Back to monitoring
+            {embedded ? 'Close Stream configuration' : 'Back to monitoring'}
           </button>
-          {canMutateWorkspace && backendStreamId != null ? (
+          {canMutateWorkspace && backendStreamId != null && !embedded ? (
             <button
               type="button"
               disabled={runtimeStatus === 'RUNNING'}
@@ -995,6 +1282,19 @@ export function StreamEditWizardPage() {
       {saveError ? (
         <p className="rounded-md border border-red-200/80 bg-red-500/[0.06] p-3 text-[12px] font-medium text-red-700 dark:border-red-500/40 dark:text-red-300">
           {saveError}
+        </p>
+      ) : null}
+      {exitNavigationBlocked && runtimeVerificationBlocked ? (
+        <p
+          role="status"
+          data-testid="edit-navigation-notice"
+          className="rounded-lg border border-amber-300/80 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100"
+        >
+          {saveError
+            ? 'The last save failed. Correct the error and choose Save now before leaving this Stream.'
+            : isSaving
+              ? 'Your changes are still saving. Leave after Changes saved appears.'
+              : 'This Stream has unsaved changes. Choose Save now below, then leave after Changes saved appears.'}
         </p>
       ) : null}
       {controlMessage ? <p className="text-[11px] font-medium text-slate-600 dark:text-gdc-mutedStrong">{controlMessage}</p> : null}
@@ -1065,7 +1365,11 @@ export function StreamEditWizardPage() {
         {currentStepKey === 'destinations' ? (
           <div className="space-y-6" data-testid="edit-stream-destinations">
             <ReadonlyInspectionFrame readOnly={!canMutateWorkspace}>
-              <StepDelivery state={state} onChange={setDestinations} />
+              <StepDelivery
+                state={state}
+                onChange={setDestinations}
+                onOpenDestinationPrerequisite={confirmEditNavigation}
+              />
             </ReadonlyInspectionFrame>
             {backendStreamId != null ? (
               <StreamEditDeliveryPanel
@@ -1114,11 +1418,32 @@ export function StreamEditWizardPage() {
             <button
               type="button"
               onClick={() => void handleSave({ manual: true })}
-              disabled={isSaving}
+              disabled={isSaving || !runtimeAllowsPlatformSave}
+              title={
+                runtimeAllowsPlatformSave
+                  ? 'Save the current local draft to platform configuration without starting the Stream.'
+                  : 'Stop the Stream before saving platform configuration. Local draft changes stay in this browser.'
+              }
               className="inline-flex h-9 items-center rounded-lg border border-slate-200/90 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200"
               data-testid="wizard-save-now"
             >
               {isSaving ? 'Saving…' : 'Save now'}
+            </button>
+          ) : null}
+          {canMutateWorkspace && canRuntimeControl ? (
+            <button
+              type="button"
+              onClick={() => void handleApplyAndStart()}
+              disabled={isSaving || isStarting || !runtimeAllowsPlatformSave}
+              title={
+                runtimeAllowsPlatformSave
+                  ? 'Save pending configuration, then start the Stream with the saved configuration.'
+                  : 'Stop the Stream before applying a new saved configuration.'
+              }
+              className="inline-flex h-9 items-center rounded-lg bg-gdc-primary px-3 text-sm font-semibold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
+              data-testid="wizard-apply-and-start"
+            >
+              {isStarting ? 'Starting…' : 'Apply & start'}
             </button>
           ) : null}
           {stepIndex < wizardSteps.length - 1 ? (
@@ -1131,9 +1456,24 @@ export function StreamEditWizardPage() {
               {nextLabel ?? 'Next'}
               <ChevronRight className="h-3.5 w-3.5" aria-hidden />
             </button>
+          ) : embedded ? (
+            <button
+              type="button"
+              onClick={() => {
+                if (confirmEditNavigation()) onClose?.()
+              }}
+              className="inline-flex h-9 items-center gap-1 rounded-lg bg-gdc-primary px-4 text-sm font-semibold text-white hover:bg-violet-700"
+              data-testid="wizard-close-embedded"
+            >
+              Done
+              <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+            </button>
           ) : (
             <Link
               to={streamRuntimePath(streamId)}
+              onClick={(event) => {
+                if (!confirmEditNavigation()) event.preventDefault()
+              }}
               className="inline-flex h-9 items-center gap-1 rounded-lg bg-gdc-primary px-4 text-sm font-semibold text-white hover:bg-violet-700"
               data-testid="wizard-open-monitoring"
             >

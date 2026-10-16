@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  applyWizardConnectorPatch,
   buildSourceAuthPayload,
   buildInitialState,
   buildSourceConfig,
@@ -48,6 +49,81 @@ function withConfirmedSample(state: ReturnType<typeof buildInitialState>) {
   state.stream.checkpointConfirmedForApiTestAt = finishedAt
   return state
 }
+
+describe('applyWizardConnectorPatch', () => {
+  it('invalidates source-derived evidence on connector/source switch without deleting operator configuration', () => {
+    const state = buildInitialState()
+    state.connector.connectorId = 11
+    state.connector.sourceId = 21
+    state.connector.sourceType = 'HTTP_API_POLLING'
+    state.apiTest.status = 'success'
+    state.apiTest.ok = true
+    state.apiTest.finishedAt = 1234
+    state.apiTest.parsedJson = { id: 'old-event' }
+    state.apiTest.eventCount = 1
+    state.stream.eventArrayPath = '$.items'
+    state.stream.eventRootPath = '$'
+    state.stream.checkpointSourcePath = '$.id'
+    state.stream.recordPathConfirmedForApiTestAt = 1234
+    state.stream.eventRootConfirmedForApiTestAt = 1234
+    state.stream.checkpointConfirmedForApiTestAt = 1234
+    state.stream.customExtractionValidatedForApiTestAt = 1234
+    state.stream.customExtractionValidationOk = true
+    state.stream.incrementalRequestTestSignature = 'old-source'
+    state.stream.incrementalRequestTestedAt = 1234
+    state.stream.incrementalRequestTestResult = { ok: true, message: 'old source test' }
+    state.mapping = [{ id: 'keep-map', outputField: 'event.id', sourceJsonPath: '$.id' }]
+    state.destinations.routeDrafts = [{
+      key: 'keep-route',
+      destinationId: 77,
+      enabled: true,
+      failurePolicy: 'LOG_AND_CONTINUE',
+      rateLimitJson: {},
+      inherit: { ...DEFAULT_ROUTE_PROCESSING_INHERIT },
+    }]
+
+    const next = applyWizardConnectorPatch(state, {
+      connectorId: 12,
+      sourceId: null,
+    })
+
+    expect(next.connector.connectorId).toBe(12)
+    expect(next.connector.sourceId).toBeNull()
+    expect(next.apiTest.status).toBe('idle')
+    expect(next.apiTest.parsedJson).toBeNull()
+    expect(next.apiTest.eventCount).toBe(0)
+    expect(next.stream.recordPathConfirmedForApiTestAt).toBeNull()
+    expect(next.stream.eventRootConfirmedForApiTestAt).toBeNull()
+    expect(next.stream.checkpointConfirmedForApiTestAt).toBeNull()
+    expect(next.stream.customExtractionValidatedForApiTestAt).toBeNull()
+    expect(next.stream.customExtractionValidationOk).toBe(false)
+    expect(next.stream.incrementalRequestTestSignature).toBeNull()
+    expect(next.stream.incrementalRequestTestedAt).toBeNull()
+    expect(next.stream.incrementalRequestTestResult).toBeNull()
+
+    expect(next.stream.eventArrayPath).toBe('$.items')
+    expect(next.stream.eventRootPath).toBe('$')
+    expect(next.stream.checkpointSourcePath).toBe('$.id')
+    expect(next.mapping).toEqual(state.mapping)
+    expect(next.destinations).toEqual(state.destinations)
+  })
+
+  it('keeps current sample evidence when connector metadata refresh does not change identity', () => {
+    const state = buildInitialState()
+    state.connector.connectorId = 11
+    state.connector.sourceId = 21
+    state.apiTest.status = 'success'
+    state.apiTest.ok = true
+    state.apiTest.finishedAt = 1234
+    state.apiTest.eventCount = 1
+
+    const next = applyWizardConnectorPatch(state, { connectorName: 'Renamed connector' })
+
+    expect(next.connector.connectorName).toBe('Renamed connector')
+    expect(next.apiTest.status).toBe('success')
+    expect(next.apiTest.eventCount).toBe(1)
+  })
+})
 
 describe('wizard-state computeLegacySubstepCompletion', () => {
   it('flags connector step incomplete until connector + source are selected', () => {
@@ -352,6 +428,46 @@ describe('wizard-state buildStreamConfigPayload', () => {
     const payload = buildStreamConfigPayload(state) as Record<string, unknown>
     expect(payload).not.toHaveProperty('event_array_path')
   })
+
+  it('binds checkpoint-driven pagination to the actual request params used by Run Test and runtime', () => {
+    const state = buildInitialState()
+    state.stream.params = [{ id: 'tenant', key: 'tenant', value: 'acme' }]
+    state.stream.paginationType = 'Cursor based'
+    state.stream.paginationCursorParam = 'cursor'
+    state.stream.paginationPageSize = 250
+    state.stream.paginationMaxPages = 4
+
+    const payload = buildStreamConfigPayload(state) as {
+      params: Record<string, string>
+      pagination: Record<string, unknown>
+    }
+
+    expect(payload.params).toEqual({
+      tenant: 'acme',
+      cursor: '{{checkpoint.next_cursor}}',
+    })
+    expect(payload.pagination).toEqual({
+      type: 'Cursor based',
+      cursor_param: 'cursor',
+      page_size: 250,
+      max_pages: 4,
+    })
+  })
+
+  it('does not inject a checkpoint pagination param when pagination is disabled', () => {
+    const state = buildInitialState()
+    state.stream.params = [{ id: 'tenant', key: 'tenant', value: 'acme' }]
+    state.stream.paginationType = 'None'
+    state.stream.paginationCursorParam = 'cursor'
+
+    const payload = buildStreamConfigPayload(state) as {
+      params: Record<string, string>
+      pagination: Record<string, unknown>
+    }
+
+    expect(payload.params).toEqual({ tenant: 'acme' })
+    expect(payload.pagination).toMatchObject({ type: 'none', cursor_param: 'cursor' })
+  })
 })
 
 describe('wizard-state buildStreamCreatePayload', () => {
@@ -390,14 +506,16 @@ describe('wizard-state buildStreamCreatePayload', () => {
     state.connector.sourceId = 22
     state.connector.sourceType = 'DATABASE_QUERY'
     state.stream.name = 'DB stream'
-    state.stream.sqlQuery = 'SELECT id, message FROM source_e2e_orders'
+    state.stream.sqlQuery = 'SELECT id, message FROM source_e2e_orders WHERE message = %(ui_filter_1)s'
+    state.stream.dbQueryParams = { ui_filter_1: 'warning' }
     state.stream.dbCheckpointColumn = 'id'
     state.stream.dbCheckpointMode = 'SINGLE_COLUMN'
     const payload = buildStreamCreatePayload(state)
     expect(payload?.stream_type).toBe('DATABASE_QUERY')
     expect(payload?.enabled).toBe(false)
     expect(payload?.config_json).toMatchObject({
-      query: 'SELECT id, message FROM source_e2e_orders',
+      query: 'SELECT id, message FROM source_e2e_orders WHERE message = %(ui_filter_1)s',
+      query_params: { ui_filter_1: 'warning' },
       checkpoint_mode: 'SINGLE_COLUMN',
       checkpoint_column: 'id',
     })

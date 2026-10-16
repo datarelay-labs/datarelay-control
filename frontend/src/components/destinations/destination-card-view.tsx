@@ -15,6 +15,8 @@ type DestinationCardViewProps = {
   onEditRow: (row: DestinationOverviewRow) => void
   onDeleteRow: (row: DestinationOverviewRow) => void
   onTestRow: (row: DestinationOverviewRow) => void
+  canEdit: boolean
+  canTest: boolean
 }
 
 function typeLabel(t: string): string {
@@ -40,9 +42,9 @@ function DestinationCard({
 }: {
   row: DestinationOverviewRow
   onSelect: () => void
-  onEdit: () => void
-  onDelete: () => void
-  onTest: () => void
+  onEdit?: () => void
+  onDelete?: () => void
+  onTest?: () => void
 }) {
   const rt = row.runtime
   const { limitEps, thresholds } = extractCapacityConfig(row)
@@ -59,13 +61,15 @@ function DestinationCard({
       tabIndex={0}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelect() }}
     >
-      {/* Kebab menu */}
-      <div
-        className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <DestinationCardMenu onEdit={onEdit} onDelete={onDelete} onTest={onTest} />
-      </div>
+      {/* Kebab menu is for authorized operations only; read-only cards open their detail directly. */}
+      {(onEdit || onTest || onDelete) ? (
+        <div
+          className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <DestinationCardMenu onEdit={onEdit} onDelete={onDelete} onTest={onTest} />
+        </div>
+      ) : null}
 
       {/* Header */}
       <div className="flex items-start gap-2 pr-6">
@@ -124,9 +128,9 @@ function DestinationCardMenu({
   onDelete,
   onTest,
 }: {
-  onEdit: () => void
-  onDelete: () => void
-  onTest: () => void
+  onEdit?: () => void
+  onDelete?: () => void
+  onTest?: () => void
 }) {
   const [open, setOpen] = useState(false)
 
@@ -145,9 +149,9 @@ function DestinationCardMenu({
           onMouseLeave={() => setOpen(false)}
         >
           {[
-            { label: 'Edit', action: onEdit },
-            { label: 'Test delivery', action: onTest },
-            { label: 'Delete', action: onDelete, danger: true },
+            ...(onEdit ? [{ label: 'Edit', action: onEdit }] : []),
+            ...(onTest ? [{ label: 'Test delivery', action: onTest }] : []),
+            ...(onDelete ? [{ label: 'Delete', action: onDelete, danger: true }] : []),
           ].map(({ label, action, danger }) => (
             <button
               key={label}
@@ -171,7 +175,7 @@ function DestinationCardMenu({
 
 import { useState } from 'react'
 
-export function DestinationCardView({ rows, onSelectRow, onEditRow, onDeleteRow, onTestRow }: DestinationCardViewProps) {
+export function DestinationCardView({ rows, onSelectRow, onEditRow, onDeleteRow, onTestRow, canEdit, canTest }: DestinationCardViewProps) {
   if (rows.length === 0) {
     return (
       <div className="py-16 text-center text-[12px] text-slate-500">
@@ -187,9 +191,9 @@ export function DestinationCardView({ rows, onSelectRow, onEditRow, onDeleteRow,
           key={row.id}
           row={row}
           onSelect={() => onSelectRow(row)}
-          onEdit={() => onEditRow(row)}
-          onDelete={() => onDeleteRow(row)}
-          onTest={() => onTestRow(row)}
+          onEdit={canEdit ? () => onEditRow(row) : undefined}
+          onDelete={canEdit ? () => onDeleteRow(row) : undefined}
+          onTest={canTest ? () => onTestRow(row) : undefined}
         />
       ))}
     </div>

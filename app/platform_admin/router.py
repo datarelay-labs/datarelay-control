@@ -19,8 +19,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth.security import get_password_hash, verify_password
+from app.auth.login_throttle import (
+    check_login_allowed, client_ip_from_request, record_login_failure,
+)
 from app.config import settings
-from app.database import get_db
+from app.database import get_db, get_db_read_bounded
 from app.platform_admin.cert_service import (
     backup_tls_pem_files,
     generate_self_signed_certificate,
@@ -37,14 +40,18 @@ from app.platform_admin.alert_service import (
     deliver_alert,
     list_alert_history,
 )
-from app.platform_admin.models import PlatformUser
+from app.platform_admin.models import PlatformUser, PlatformUserMfa, PlatformMfaChallenge
 from app.database import utcnow
 from app.platform_admin import journal
 from app.platform_admin.dev_validation_lab_admin import build_dev_validation_admin_status
 from app.platform_admin.health_summary import build_admin_health_summary
 from app.platform_admin.maintenance_health import build_maintenance_health
 from app.platform_admin.config_json_diff import diff_json
-from app.platform_admin.config_rollback_service import ConfigSnapshotApplyError, apply_versioned_snapshot
+from app.platform_admin.config_rollback_service import (
+    ConfigSnapshotApplyError, _capture_live, apply_versioned_snapshot,
+    current_entity_config_version,
+)
+from app.platform_admin.config_safe_rollback_preview import build_safe_rollback_readiness
 from app.security.secrets import mask_config_payload
 from app.platform_admin.repository import (
     count_administrators,
@@ -78,6 +85,7 @@ from app.platform_admin.schemas import (
     DisplaySettingsUpdate,
     ConfigJsonChangeItem,
     ConfigSnapshotApplyRequest,
+    ConfigSafeRollbackPreviewResponse,
     ConfigSnapshotApplyResponse,
     ConfigVersionCompareResponse,
     ConfigVersionDetailResponse,
@@ -95,6 +103,7 @@ from app.platform_admin.schemas import (
     HttpsSettingsUpdate,
     PlatformUserCreate,
     PlatformUserRead,
+    PlatformUserMfaResetRequest,
     PlatformUserUpdate,
     RetentionCleanupOutcomeItem,
     RetentionCleanupRunRequest,
@@ -120,7 +129,7 @@ from app.platform_admin.nginx_runtime import (
 from app.platform_admin.validation import normalize_username, validate_dns_sans, validate_ip_sans
 from app.scheduler.runtime_state import scheduler_uptime_seconds
 from app.admin.support_bundle import build_support_bundle_zip_bytes
-from app.auth.role_guard import ROLE_ADMINISTRATOR, require_roles
+from app.auth.role_guard import ROLE_ADMINISTRATOR, require_roles, resolve_auth_context
 
 router = APIRouter()
 
@@ -639,11 +648,30 @@ def update_https_settings(payload: HttpsSettingsUpdate, request: Request, db: Se
 
 @router.get("/users", response_model=list[PlatformUserRead])
 def read_users(db: Session = Depends(get_db)) -> list[PlatformUserRead]:
-    return [PlatformUserRead.model_validate(u) for u in list_users(db)]
+    users = list_users(db)
+    if not users:
+        return []
+    enabled_ids = {
+        int(row.user_id)
+        for row in db.query(PlatformUserMfa).filter(
+            PlatformUserMfa.user_id.in_([int(u.id) for u in users]),
+            PlatformUserMfa.required.is_(True),
+        ).all()
+    }
+    return [
+        PlatformUserRead.model_validate(u).model_copy(
+            update={"mfa_enabled": int(u.id) in enabled_ids},
+        )
+        for u in users
+    ]
 
 
 @router.post("/users", response_model=PlatformUserRead, status_code=status.HTTP_201_CREATED)
-def create_user(payload: PlatformUserCreate, db: Session = Depends(get_db)) -> PlatformUserRead:
+def create_user(
+    payload: PlatformUserCreate,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(require_roles(ROLE_ADMINISTRATOR)),
+) -> PlatformUserRead:
     try:
         username = normalize_username(payload.username)
     except ValueError as exc:
@@ -679,7 +707,12 @@ def create_user(payload: PlatformUserCreate, db: Session = Depends(get_db)) -> P
 
 
 @router.patch("/users/{user_id}", response_model=PlatformUserRead)
-def update_user(user_id: int, payload: PlatformUserUpdate, db: Session = Depends(get_db)) -> PlatformUserRead:
+def update_user(
+    user_id: int,
+    payload: PlatformUserUpdate,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(require_roles(ROLE_ADMINISTRATOR)),
+) -> PlatformUserRead:
     user = get_user_by_id(db, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"error_code": "USER_NOT_FOUND", "message": "user not found"})
@@ -731,8 +764,123 @@ def update_user(user_id: int, payload: PlatformUserUpdate, db: Session = Depends
     return PlatformUserRead.model_validate(user)
 
 
+@router.post("/users/{user_id}/mfa/reset", status_code=status.HTTP_204_NO_CONTENT)
+def reset_user_mfa(
+    user_id: int,
+    payload: PlatformUserMfaResetRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> None:
+    """Privileged, password-confirmed recovery for a lost authenticator.
+
+    Unlike self enrollment, this is an administrator-only user-management
+    operation. It NEVER returns a seed or recovery code and cannot silently
+    downgrade an account using an expired JWT.
+    """
+    ctx = resolve_auth_context(request)
+    if ctx.source != "jwt" or ctx.role != ROLE_ADMINISTRATOR or ctx.user_id is None:
+        raise HTTPException(status_code=401, detail={
+            "error_code": "AUTH_REQUIRED",
+            "message": "An authenticated Administrator session is required.",
+        })
+    actor_id = int(ctx.user_id)
+    # Deterministic user-row ordering avoids deadlocks for simultaneous
+    # cross-administrator resets. Challenge verification also acquires the
+    # target user row before its MFA row.
+    locked_users: dict[int, PlatformUser | None] = {}
+    for ident in sorted({actor_id, int(user_id)}):
+        locked_users[ident] = db.query(PlatformUser).filter(
+            PlatformUser.id == ident,
+        ).with_for_update().populate_existing().one_or_none()
+    actor = locked_users[actor_id]
+    target = locked_users[int(user_id)]
+    if (
+        actor is None or actor.status != "ACTIVE"
+        or actor.role != ROLE_ADMINISTRATOR
+        or ctx.token_version is None
+        or int(actor.token_version or 1) != ctx.token_version
+    ):
+        db.rollback()
+        raise HTTPException(status_code=401, detail={
+            "error_code": "AUTH_TOKEN_REVOKED", "message": "Sign in again.",
+        })
+    if target is None:
+        db.rollback()
+        raise HTTPException(status_code=404, detail={
+            "error_code": "USER_NOT_FOUND", "message": "User not found.",
+        })
+    if payload.confirm_username.strip() != target.username:
+        db.rollback()
+        raise HTTPException(status_code=400, detail={
+            "error_code": "MFA_RESET_CONFIRMATION_MISMATCH",
+            "message": "Type the exact account username to confirm.",
+        })
+    actor_mfa = db.query(PlatformUserMfa).filter(
+        PlatformUserMfa.user_id == actor_id,
+    ).one_or_none()
+    if actor_mfa and actor_mfa.required and not ctx.mfa_verified:
+        db.rollback()
+        raise HTTPException(status_code=403, detail={
+            "error_code": "MFA_REQUIRED", "message": "Sign in with MFA first.",
+        })
+    ip = client_ip_from_request(request)
+    check_login_allowed(username=actor.username, ip=ip)
+    if not verify_password(payload.current_password, actor.password_hash):
+        record_login_failure(username=actor.username, ip=ip)
+        db.rollback()
+        raise HTTPException(status_code=400, detail={
+            "error_code": "MFA_RESET_DENIED",
+            "message": "Administrator password verification failed.",
+        })
+    target_mfa = db.query(PlatformUserMfa).filter(
+        PlatformUserMfa.user_id == int(user_id),
+    ).with_for_update().one_or_none()
+    if target_mfa is None or not target_mfa.required:
+        db.rollback()
+        raise HTTPException(status_code=409, detail={
+            "error_code": "MFA_NOT_ENABLED",
+            "message": "The target account does not have MFA enabled.",
+        })
+    target_mfa.required = False
+    target_mfa.secret_ciphertext = None
+    target_mfa.pending_secret_ciphertext = None
+    target_mfa.pending_expires_at = None
+    target_mfa.last_counter = -1
+    target_mfa.recovery_hashes_json = []
+    target_mfa.failed_attempts = 0
+    target_mfa.failure_window_started_at = None
+    target_mfa.locked_until = None
+    target.token_version = int(target.token_version or 1) + 1
+    # Challenge users may be verifying in another transaction. Skip those
+    # locked challenge rows to avoid the proof->user row-lock inversion;
+    # the token-version bump and MFA-off state invalidate them regardless.
+    free_hashes = [
+        token_hash for (token_hash,) in db.query(PlatformMfaChallenge.token_hash).filter(
+            PlatformMfaChallenge.user_id == int(user_id),
+        ).with_for_update(skip_locked=True).all()
+    ]
+    if free_hashes:
+        db.query(PlatformMfaChallenge).filter(
+            PlatformMfaChallenge.token_hash.in_(free_hashes),
+        ).delete(synchronize_session=False)
+    journal.record_audit_event(
+        db, action="MFA_ADMIN_RESET", actor_username=actor.username,
+        actor_user_id=int(actor.id), entity_type="PLATFORM_USER",
+        entity_id=int(target.id), entity_name=target.username,
+        details={"mfa_disabled": True, "token_version_bumped": True,
+                 "reason": "administrator_recovery"},
+        request=request,
+    )
+    db.commit()
+    return None
+
+
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_user(user_id: int, db: Session = Depends(get_db)) -> None:
+def delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(require_roles(ROLE_ADMINISTRATOR)),
+) -> None:
     user = get_user_by_id(db, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"error_code": "USER_NOT_FOUND", "message": "user not found"})
@@ -966,6 +1114,81 @@ def compare_config_versions(
         entity_type=str(left.entity_type),
         entity_id=int(left.entity_id),
         diff=[ConfigJsonChangeItem.model_validate(x) for x in changes],
+    )
+
+
+@router.get(
+    "/config-versions/{row_id}/safe-rollback-preview",
+    response_model=ConfigSafeRollbackPreviewResponse,
+)
+def read_safe_config_rollback_preview(
+    row_id: int,
+    request: Request,
+    expected_version: int = Query(..., ge=1),
+    target: Literal["before", "after"] = Query("before"),
+    db: Session = Depends(get_db_read_bounded),
+) -> ConfigSafeRollbackPreviewResponse:
+    """Advisory PF-12A safe scalar diff; never changes configuration or audit."""
+    row = get_config_version_by_id(db, row_id)
+    if row is None:
+        raise _http_error(
+            "CONFIG_VERSION_NOT_FOUND",
+            "Configuration version was not found.", status.HTTP_404_NOT_FOUND,
+        )
+    source = row.snapshot_before_json if target == "before" else row.snapshot_after_json
+    if not isinstance(source, dict):
+        raise _http_error(
+            "CONFIG_SNAPSHOT_UNAVAILABLE",
+            "This history row does not provide the requested snapshot.",
+            HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    current_version = current_entity_config_version(
+        db, entity_type=str(row.entity_type), entity_id=int(row.entity_id),
+    )
+    if current_version is None:
+        raise _http_error(
+            "CONFIG_CURRENT_REVISION_UNKNOWN",
+            "Cannot verify the authoritative live revision.",
+            status.HTTP_409_CONFLICT,
+        )
+    try:
+        current = _capture_live(db, str(row.entity_type), int(row.entity_id))
+        principal = getattr(getattr(request, "state", None), "auth", None)
+        trusted_admin = bool(
+            principal and getattr(principal, "source", None) == "jwt"
+            and getattr(principal, "role", None) == "ADMINISTRATOR"
+        )
+        facts = build_safe_rollback_readiness(
+            entity_type=str(row.entity_type),
+            current_version=current_version,
+            expected_version=expected_version,
+            target_version=int(row.version),
+            target_side=target,
+            current_snapshot=current,
+            target_snapshot=source,
+            current_created_at=int(datetime.now(timezone.utc).timestamp()),
+            target_created_at=int(row.created_at.timestamp()),
+            actor_authorized=trusted_admin,
+            recent_mfa_verified=bool(
+                trusted_admin and getattr(principal, "mfa_verified", None) is True
+            ),
+        )
+    except ConfigSnapshotApplyError as exc:
+        raise _http_error(
+            exc.error_code, str(exc), exc.http_status,
+            extra=exc.details or None,
+        ) from exc
+    except (TypeError, ValueError) as exc:
+        # Never echo untrusted snapshots or stored configuration values.
+        raise _http_error(
+            "CONFIG_SAFE_PREVIEW_UNAVAILABLE",
+            "Current or historical configuration is not eligible for a safe scalar preview.",
+            HTTP_422_UNPROCESSABLE_CONTENT,
+        ) from exc
+    return ConfigSafeRollbackPreviewResponse(
+        source_version_row_id=int(row.id),
+        target=target,
+        **facts,
     )
 
 

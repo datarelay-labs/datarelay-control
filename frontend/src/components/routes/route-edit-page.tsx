@@ -16,7 +16,7 @@ import {
   ROUTE_DELIVERY_PREVIEW_SAMPLE_EVENT,
   runRouteDeliveryPreview,
 } from '../../api/gdcRuntimePreview'
-import { ROUTE_EDIT_DEFAULTS, type RouteDeliveryMode, type RouteFailurePolicy, type RouteRetryBackoff } from './route-edit-defaults'
+import { ROUTE_EDIT_DEFAULTS, routeFailurePolicyToApi, type RouteDeliveryMode, type RouteFailurePolicy, type RouteRetryBackoff } from './route-edit-defaults'
 import {
   defaultsRouteDeliveryFormState,
   isRouteDeliveryDirty,
@@ -35,8 +35,29 @@ import { listAuditLogs } from '../../api/gdcAudit'
 import { HelpTooltip } from '../ui/help-tooltip'
 import { HELP_COPY } from '../ui/help-tooltip-copy'
 import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
+import { WizardRouteLeaveGuard, type WizardBlockedNavigation } from '../streams/wizard/wizard-route-leave-guard'
 
 type DeliveryPreviewStatus = 'idle' | 'pending' | 'success' | 'failure'
+
+type SafeFormattedPreview = {
+  routeId: number
+  destinationId: number
+  messageCount: number
+  messageKinds: string[]
+}
+
+const MAX_FORMATTED_PREVIEW_ROWS = 3
+
+function previewBodyKind(value: unknown): string {
+  const body = value && typeof value === 'object' && !Array.isArray(value) && 'body' in value
+    ? value.body
+    : value
+  if (typeof body === 'string') return 'Text body'
+  if (Array.isArray(body)) return 'Array body'
+  if (body != null && typeof body === 'object') return 'Structured body'
+  if (body == null) return 'No body'
+  return 'Scalar body'
+}
 
 type RouteEditTab = 'delivery' | 'transform' | 'protection' | 'classification' | 'policy'
 
@@ -123,8 +144,16 @@ function Field({
 const inputCls =
   'h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-[12px] text-slate-900 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100'
 
-export function RouteEditPage() {
-  const { routeId = '' } = useParams<{ routeId: string }>()
+type RouteEditPageProps = {
+  routeIdOverride?: number | null
+  embedded?: boolean
+  onClose?: () => void
+  onSaved?: () => void
+}
+
+export function RouteEditPage({ routeIdOverride = null, embedded = false, onClose, onSaved }: RouteEditPageProps = {}) {
+  const { routeId: routeIdParam = '' } = useParams<{ routeId: string }>()
+  const routeId = routeIdOverride != null ? String(routeIdOverride) : routeIdParam
   const backendRouteId = /^\d+$/.test(routeId) ? Number(routeId) : null
   const isCreateMode = backendRouteId == null
   const caps = useSessionCapabilities()
@@ -188,6 +217,11 @@ export function RouteEditPage() {
   const [streamLabel, setStreamLabel] = useState('—')
   const [deliveryPreviewStatus, setDeliveryPreviewStatus] = useState<DeliveryPreviewStatus>('idle')
   const [deliveryPreviewMessage, setDeliveryPreviewMessage] = useState<string | null>(null)
+  const [safeFormattedPreview, setSafeFormattedPreview] = useState<SafeFormattedPreview | null>(null)
+  const previewRequestToken = useRef(0)
+  const pendingNavigationRef = useRef<WizardBlockedNavigation | null>(null)
+  const allowedNextPathRef = useRef<string | null>(null)
+  const [exitSaveBusyNotice, setExitSaveBusyNotice] = useState(false)
   const destinationLabel = useMemo(() => {
     const found = destinationOptions.find((o) => o.id === backendDestinationId)
     return found?.label ?? '—'
@@ -236,12 +270,22 @@ export function RouteEditPage() {
     if (isCreateMode || backendRouteId == null) {
       return 'Create and save the route before running a delivery preview.'
     }
+    if (deliveryBaseline == null || backendDestinationId == null || !Number.isSafeInteger(backendDestinationId) || backendDestinationId <= 0) {
+      return 'Wait for the saved Route and Destination to load before preview.'
+    }
     if (hasUnsavedChanges) {
       return 'Save or discard unsaved edits before preview. Preview uses the last persisted route configuration only.'
     }
     return null
-  }, [backendRouteId, hasUnsavedChanges, isCreateMode])
+  }, [backendDestinationId, backendRouteId, deliveryBaseline, hasUnsavedChanges, isCreateMode])
   const deliveryPreviewBusy = deliveryPreviewStatus === 'pending'
+  // Reset on a different Route identity, not on delayed destination hydration.
+  useEffect(() => {
+    previewRequestToken.current += 1
+    setSafeFormattedPreview(null)
+    setDeliveryPreviewMessage(null)
+    setDeliveryPreviewStatus('idle')
+  }, [routeId])
 
   const applyDeliveryForm = useCallback((form: RouteDeliveryFormState) => {
     setRouteName(form.routeName)
@@ -261,28 +305,63 @@ export function RouteEditPage() {
     setBatchSize(form.batchSize)
   }, [])
 
+  const navigateAfterConfirmedAction = useCallback((path: string) => {
+    // The explicit save/discard must navigate despite the still-dirty render snapshot.
+    allowedNextPathRef.current = path
+    navigate(path)
+    // Do not retain an exemption if the destination navigation was cancelled.
+    window.setTimeout(() => {
+      if (allowedNextPathRef.current === path) allowedNextPathRef.current = null
+    }, 0)
+  }, [navigate])
+
   const leaveWithoutSaving = useCallback(() => {
-    if (backendStreamId != null) navigate(streamRuntimePath(String(backendStreamId)))
-    else navigate(isCreateMode ? '/routes' : '/streams')
-  }, [backendStreamId, isCreateMode, navigate])
+    if (embedded) {
+      onClose?.()
+      return
+    }
+    if (backendStreamId != null) navigateAfterConfirmedAction(streamRuntimePath(String(backendStreamId)))
+    else navigateAfterConfirmedAction(isCreateMode ? '/routes' : '/streams')
+  }, [backendStreamId, embedded, isCreateMode, navigateAfterConfirmedAction, onClose])
+
+  const cancelPendingNavigation = useCallback(() => {
+    const pending = pendingNavigationRef.current
+    pendingNavigationRef.current = null
+    pending?.reset()
+  }, [])
+
+  const handleBlockedNavigation = useCallback((pending: WizardBlockedNavigation) => {
+    if (isSaving) {
+      pending.reset()
+      setExitSaveBusyNotice(true)
+      return
+    }
+    pendingNavigationRef.current = pending
+    setExitSaveBusyNotice(false)
+    setDiscardOpen(true)
+  }, [isSaving])
 
   const requestLeave = useCallback(() => {
+    if (isSaving) {
+      setExitSaveBusyNotice(true)
+      return
+    }
     if (hasUnsavedChanges) {
       setDiscardOpen(true)
       return
     }
     leaveWithoutSaving()
-  }, [hasUnsavedChanges, leaveWithoutSaving])
+  }, [hasUnsavedChanges, isSaving, leaveWithoutSaving])
 
   useEffect(() => {
-    if (!hasUnsavedChanges) return
+    if (!canMutateWorkspace || (!hasUnsavedChanges && !isSaving)) return
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault()
       event.returnValue = ''
     }
     window.addEventListener('beforeunload', onBeforeUnload)
     return () => window.removeEventListener('beforeunload', onBeforeUnload)
-  }, [hasUnsavedChanges])
+  }, [canMutateWorkspace, hasUnsavedChanges, isSaving])
 
   const processingStatusGenRef = useRef(0)
   const refreshProcessingStatus = useCallback(async (routeId: number) => {
@@ -509,6 +588,8 @@ export function RouteEditPage() {
       return
     }
     if (backendRouteId == null) return
+    const requestToken = ++previewRequestToken.current
+    setSafeFormattedPreview(null)
     setDeliveryPreviewStatus('pending')
     setDeliveryPreviewMessage('Running delivery preview (no send)…')
     try {
@@ -516,11 +597,24 @@ export function RouteEditPage() {
         route_id: backendRouteId,
         events: [ROUTE_DELIVERY_PREVIEW_SAMPLE_EVENT],
       })
+      if (requestToken !== previewRequestToken.current) return
+      if (result.route_id !== backendRouteId || result.destination_id !== backendDestinationId) {
+        throw new Error('Preview result did not match the saved Route and Destination.')
+      }
+      const returned = Array.isArray(result.preview_messages) ? result.preview_messages : []
+      setSafeFormattedPreview({
+        routeId: backendRouteId,
+        destinationId: result.destination_id,
+        messageCount: returned.length,
+        messageKinds: returned.slice(0, MAX_FORMATTED_PREVIEW_ROWS).map(previewBodyKind),
+      })
       setDeliveryPreviewStatus('success')
       setDeliveryPreviewMessage(
         `Delivery preview ready — no events were sent. Formatted ${result.message_count} message(s) for ${result.destination_type} (destination #${result.destination_id}).`,
       )
     } catch (err) {
+      if (requestToken !== previewRequestToken.current) return
+      setSafeFormattedPreview(null)
       const message = err instanceof Error ? err.message : 'Delivery preview failed.'
       setDeliveryPreviewStatus('failure')
       setDeliveryPreviewMessage(`Delivery preview failed: ${message}`)
@@ -549,14 +643,7 @@ export function RouteEditPage() {
     setSaveSuccess(null)
     setStaleConflict(false)
     try {
-      const policy =
-        failurePolicy === 'Retry'
-          ? 'retry'
-          : failurePolicy === 'Log and Continue'
-            ? 'log_and_continue'
-            : failurePolicy === 'Pause Stream'
-              ? 'pause_stream'
-              : 'disable_route'
+      const policy = routeFailurePolicyToApi(failurePolicy)
       const routePayload = {
         name: routeName,
         description,
@@ -617,10 +704,20 @@ export function RouteEditPage() {
       setDeliveryBaseline(nextBaseline)
       setRouteUpdatedAt(typeof saved.updated_at === 'string' ? saved.updated_at : null)
       setStaleConflict(false)
-      setSaveSuccess(isCreateMode ? 'Route created. Moving to stream runtime…' : 'Route saved. Moving to stream runtime…')
+      setSaveSuccess(
+        isCreateMode
+          ? 'Route created. Moving to stream runtime…'
+          : embedded
+            ? 'Route saved in this Data Flow.'
+            : 'Route saved. Moving to stream runtime…',
+      )
+      if (embedded) {
+        onSaved?.()
+        return
+      }
       const runtimeStreamId = typeof saved.stream_id === 'number' ? saved.stream_id : backendStreamId
-      if (typeof runtimeStreamId === 'number') navigate(streamRuntimePath(String(runtimeStreamId)))
-      else navigate('/routes')
+      if (typeof runtimeStreamId === 'number') navigateAfterConfirmedAction(streamRuntimePath(String(runtimeStreamId)))
+      else navigateAfterConfirmedAction('/routes')
     } catch (err) {
       if (isRouteStaleWriteError(err)) {
         setStaleConflict(true)
@@ -638,6 +735,12 @@ export function RouteEditPage() {
     }
   }
 
+  // Confirmation identifies the persisted Route, not a draft name or the create-form placeholder.
+  const persistedRouteLabel = deliveryBaseline?.routeName?.trim() ?? ''
+  const confirmationTargetName = isCreateMode
+    ? routeName.trim() || 'New Route'
+    : `Route #${backendRouteId}${persistedRouteLabel && persistedRouteLabel !== ROUTE_EDIT_DEFAULTS.routeName ? ` — ${persistedRouteLabel}` : ''}`
+
   const saveStatusLabel = !canMutateWorkspace
     ? 'Read-only'
     : isSaving
@@ -653,6 +756,11 @@ export function RouteEditPage() {
             : 'Saved'
   return (
     <div className="w-full min-w-0 space-y-3" data-testid="route-edit-page">
+      <WizardRouteLeaveGuard
+        active={canMutateWorkspace && (hasUnsavedChanges || isSaving)}
+        allowedNextPathRef={allowedNextPathRef}
+        onBlocked={handleBlockedNavigation}
+      />
       {!canMutateWorkspace ? (
         <p
           role="status"
@@ -774,6 +882,11 @@ export function RouteEditPage() {
           ) : null}
         </div>
       </header>
+      {exitSaveBusyNotice && isSaving ? (
+        <p role="status" className="text-[11px] text-amber-800 dark:text-amber-200" data-testid="route-edit-navigation-saving-notice">
+          Finish saving this Route before leaving the editor.
+        </p>
+      ) : null}
       {hasUnsavedChanges ? (
         <p className="text-[11px] text-amber-800 dark:text-amber-200" data-testid="route-edit-unsaved-hint">
           Unsaved edits are local only. Runtime continues using the last persisted route configuration until Save succeeds.
@@ -796,6 +909,39 @@ export function RouteEditPage() {
         >
           {deliveryPreviewMessage}
         </p>
+      ) : null}
+      {deliveryPreviewStatus === 'success' && !hasUnsavedChanges && safeFormattedPreview &&
+      safeFormattedPreview.routeId === backendRouteId && safeFormattedPreview.destinationId === backendDestinationId ? (
+        <section
+          data-testid="route-edit-delivery-preview-output"
+          aria-label="Formatted delivery preview metadata"
+          className="min-w-0 rounded-lg border border-violet-200 bg-violet-50/40 p-3 dark:border-violet-500/30 dark:bg-violet-500/5"
+        >
+          <h3 className="text-xs font-semibold text-slate-900 dark:text-slate-100">
+            Formatted output metadata — no send
+          </h3>
+          <p className="mt-1 text-xs text-slate-600 dark:text-gdc-mutedStrong">
+            Sample formatting only; not receiver-confirmed. Body values, headers and credentials are intentionally hidden.
+          </p>
+          {safeFormattedPreview.messageCount > MAX_FORMATTED_PREVIEW_ROWS ? (
+            <p className="mt-1 text-xs text-slate-600 dark:text-gdc-mutedStrong">
+              Showing {MAX_FORMATTED_PREVIEW_ROWS} of {safeFormattedPreview.messageCount} formatted messages.
+            </p>
+          ) : null}
+          {safeFormattedPreview.messageKinds.length ? (
+            <ol className="mt-2 grid gap-1 sm:grid-cols-2">
+              {safeFormattedPreview.messageKinds.map((kind, i) => (
+                <li key={i} className="min-w-0 rounded-md border border-slate-200 bg-white p-2 text-xs dark:border-gdc-border dark:bg-gdc-card">
+                  <span className="font-semibold">Message {i + 1}</span> · {kind}
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="mt-2 text-xs text-slate-600 dark:text-gdc-mutedStrong">
+              No formatted messages returned by the no-send preview.
+            </p>
+          )}
+        </section>
       ) : null}
       {staleConflict ? (
         <div
@@ -1197,10 +1343,13 @@ export function RouteEditPage() {
         <DangerousActionDialog
           open
           onOpenChange={(open) => {
-            if (!open) setDiscardOpen(false)
+            if (!open) {
+              cancelPendingNavigation()
+              setDiscardOpen(false)
+            }
           }}
           title="Discard unsaved route changes?"
-          targetName={routeName.trim() || (isCreateMode ? 'New Route' : `Route #${backendRouteId}`)}
+          targetName={confirmationTargetName}
           risk="medium"
           impactBullets={[
             'Local delivery and transform edits that were not saved will be discarded.',
@@ -1209,10 +1358,13 @@ export function RouteEditPage() {
           reversibility="Unsaved edits cannot be recovered after discard."
           primaryLabel="Discard changes"
           onConfirm={() => {
+            const pending = pendingNavigationRef.current
+            pendingNavigationRef.current = null
             setDiscardOpen(false)
             if (deliveryBaseline) applyDeliveryForm(deliveryBaseline)
             setTransformDirty(false)
-            leaveWithoutSaving()
+            if (pending) pending.proceed()
+            else leaveWithoutSaving()
           }}
           dataTestId="route-edit-discard-dialog"
         />
@@ -1224,7 +1376,7 @@ export function RouteEditPage() {
             if (!open) setRefreshConfirmOpen(false)
           }}
           title="Refresh and discard unsaved route changes?"
-          targetName={routeName.trim() || `Route #${backendRouteId}`}
+          targetName={confirmationTargetName}
           risk="medium"
           impactBullets={[
             'Your unsaved local edits will be discarded.',

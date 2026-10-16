@@ -40,7 +40,14 @@ export function StreamIssueRail({
   const product = resolveSourceProductLabel(ctx.connectorName, { product_group: ctx.connectorProductGroup })
   const why = issueWhySummary(ctx)
   const chip = issueChipLabel(ctx)
-  const hasIssue = ctx.status === 'ERROR' || ctx.status === 'DEGRADED' || ctx.routesError > 0
+  const hasIssue = ctx.status === 'ERROR' || ctx.status === 'DEGRADED' || ctx.routesError > 0 ||
+    (ctx.deliveryPctKnown && ctx.deliveryPct < 90)
+  const verifiedHealthy = chip === 'Healthy'
+  const lifecycleTone = ctx.status === 'ERROR'
+    ? 'error'
+    : ctx.status === 'DEGRADED' || (ctx.deliveryPctKnown && ctx.deliveryPct < 90)
+      ? 'warning'
+      : verifiedHealthy ? 'success' : 'neutral'
 
   return (
     <div className="space-y-3" data-testid="stream-issue-rail">
@@ -48,7 +55,7 @@ export function StreamIssueRail({
         <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500 dark:text-gdc-muted">{OP_LABEL.whatHappened}</p>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <StatusBadge
-            tone={ctx.status === 'ERROR' ? 'error' : ctx.status === 'DEGRADED' ? 'warning' : 'success'}
+            tone={lifecycleTone}
             className="font-bold uppercase"
           >
             {ctx.status}
@@ -58,7 +65,9 @@ export function StreamIssueRail({
               'rounded-full border px-2 py-0.5 text-[10px] font-semibold',
               hasIssue
                 ? 'border-amber-300/80 bg-amber-50 text-amber-900 dark:border-amber-500/35 dark:bg-amber-500/10 dark:text-amber-100'
-                : 'border-emerald-300/80 bg-emerald-50 text-emerald-900 dark:border-emerald-500/35 dark:bg-emerald-500/10 dark:text-emerald-100',
+                : verifiedHealthy
+                  ? 'border-emerald-300/80 bg-emerald-50 text-emerald-900 dark:border-emerald-500/35 dark:bg-emerald-500/10 dark:text-emerald-100'
+                  : 'border-slate-300/80 bg-slate-50 text-slate-700 dark:border-slate-500/35 dark:bg-slate-500/10 dark:text-slate-200',
             )}
           >
             {chip}

@@ -3,7 +3,7 @@
  * Uses existing loaded-window and observability totals only; does not invent delivery semantics.
  */
 
-import { AlertTriangle, CheckCircle2, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, HelpCircle, XCircle } from 'lucide-react'
 import { cn } from '../../lib/utils'
 
 export type LogsDiagnosisSnapshot = {
@@ -18,7 +18,7 @@ export type LogsDiagnosisSnapshot = {
   windowLabel: string
 }
 
-type Posture = 'healthy' | 'warning' | 'critical'
+type Posture = 'healthy' | 'warning' | 'critical' | 'unknown'
 
 function postureFromSnapshot(s: LogsDiagnosisSnapshot): Posture {
   if (s.loadedFailedDeliveries > 0 || (s.globalFailed != null && s.globalFailed > 0 && s.errorRows > 0)) {
@@ -26,6 +26,10 @@ function postureFromSnapshot(s: LogsDiagnosisSnapshot): Posture {
   }
   if (s.errorRows > 0 || s.warningRows > 0 || (s.globalFailed != null && s.globalFailed > 0)) {
     return 'warning'
+  }
+  // An absence of delivery outcomes is not evidence of successful delivery.
+  if (s.loadedSuccessfulDeliveries === 0 && (s.globalSuccess ?? 0) === 0) {
+    return 'unknown'
   }
   return 'healthy'
 }
@@ -37,16 +41,25 @@ function postureShellClass(posture: Posture): string {
   if (posture === 'warning') {
     return 'border-amber-300/80 bg-amber-50 dark:border-amber-500/35 dark:bg-amber-950/25'
   }
+  if (posture === 'unknown') {
+    return 'border-slate-300/80 bg-slate-50 dark:border-gdc-border dark:bg-gdc-section'
+  }
   return 'border-emerald-300/80 bg-emerald-50 dark:border-emerald-500/35 dark:bg-emerald-950/25'
 }
 
 function postureLabel(posture: Posture): string {
   if (posture === 'critical') return 'Needs recovery'
   if (posture === 'warning') return 'Needs diagnosis'
+  if (posture === 'unknown') return 'Not verified'
   return 'Clear'
 }
 
 function postureDescription(s: LogsDiagnosisSnapshot, posture: Posture): string {
+  if (posture === 'unknown') {
+    return s.loadedRows === 0
+      ? 'No delivery evidence loaded — check filters or wait for runtime activity'
+      : 'Loaded logs have no confirmed delivery outcomes — delivery health is not verified'
+  }
   if (posture === 'critical') {
     if (s.loadedFailedDeliveries > 0) {
       return `${s.loadedFailedDeliveries} failed deliver${s.loadedFailedDeliveries === 1 ? 'y' : 'ies'} in the loaded sample — open a row to diagnose and recover`
@@ -112,7 +125,7 @@ export function LogsDiagnosisOverview({
   }
 
   const posture = postureFromSnapshot(snapshot)
-  const Icon = posture === 'healthy' ? CheckCircle2 : posture === 'critical' ? XCircle : AlertTriangle
+  const Icon = posture === 'healthy' ? CheckCircle2 : posture === 'critical' ? XCircle : posture === 'unknown' ? HelpCircle : AlertTriangle
 
   return (
     <section
@@ -128,6 +141,7 @@ export function LogsDiagnosisOverview({
               posture === 'healthy' && 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
               posture === 'warning' && 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
               posture === 'critical' && 'bg-red-500/15 text-red-700 dark:text-red-300',
+              posture === 'unknown' && 'bg-slate-500/10 text-slate-600 dark:text-slate-300',
             )}
           >
             <Icon className="h-5 w-5" aria-hidden />

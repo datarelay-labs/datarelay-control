@@ -31,9 +31,9 @@ function formatPct(rate: number): string {
 }
 
 function parseOptionalInt(raw: string | null): number | undefined {
-  if (raw == null || raw.trim() === '') return undefined
-  const n = Number.parseInt(raw, 10)
-  return Number.isFinite(n) ? n : undefined
+  if (raw == null || !/^\d+$/.test(raw)) return undefined
+  const n = Number(raw)
+  return Number.isSafeInteger(n) && n > 0 ? n : undefined
 }
 
 function KpiCard({
@@ -69,6 +69,14 @@ export function RuntimeAnalyticsPage() {
   const streamId = parseOptionalInt(searchParams.get('stream_id'))
   const routeId = parseOptionalInt(searchParams.get('route_id'))
   const destinationId = parseOptionalInt(searchParams.get('destination_id'))
+  const invalidAnalyticsFilters = [
+    { key: 'stream_id', label: 'Stream' },
+    { key: 'route_id', label: 'Route' },
+    { key: 'destination_id', label: 'Destination' },
+  ].filter(({ key }) => {
+    const raw = searchParams.get(key)
+    return raw != null && raw !== '' && parseOptionalInt(raw) == null
+  })
 
   const [failures, setFailures] = useState<RouteFailuresAnalyticsResponse | null>(null)
   const [observability, setObservability] = useState<ObservabilitySummaryResponse | null>(null)
@@ -167,6 +175,14 @@ export function RuntimeAnalyticsPage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {routeId != null ? (
+              <Link
+                to={logsExplorerPath({ route_id: routeId, stream_id: streamId, destination_id: destinationId })}
+                className="inline-flex min-h-9 items-center rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-1.5 text-[11px] font-semibold text-violet-800 hover:bg-violet-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:border-violet-900/40 dark:bg-violet-950/20 dark:text-violet-200"
+              >
+                Back to Route #{routeId} logs
+              </Link>
+            ) : null}
             <Link
               to={runtimeOverviewPath()}
               className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200 dark:hover:bg-gdc-rowHover"
@@ -218,7 +234,7 @@ export function RuntimeAnalyticsPage() {
                 const v = e.target.value.trim()
                 const next = new URLSearchParams(searchParams)
                 if (v === '') next.delete('stream_id')
-                else if (Number.isFinite(Number.parseInt(v, 10))) next.set('stream_id', v)
+                else if (parseOptionalInt(v) != null) next.set('stream_id', v)
                 setSearchParams(next, { replace: true })
               }}
             />
@@ -236,7 +252,7 @@ export function RuntimeAnalyticsPage() {
                 const v = e.target.value.trim()
                 const next = new URLSearchParams(searchParams)
                 if (v === '') next.delete('route_id')
-                else if (Number.isFinite(Number.parseInt(v, 10))) next.set('route_id', v)
+                else if (parseOptionalInt(v) != null) next.set('route_id', v)
                 setSearchParams(next, { replace: true })
               }}
             />
@@ -254,7 +270,7 @@ export function RuntimeAnalyticsPage() {
                 const v = e.target.value.trim()
                 const next = new URLSearchParams(searchParams)
                 if (v === '') next.delete('destination_id')
-                else if (Number.isFinite(Number.parseInt(v, 10))) next.set('destination_id', v)
+                else if (parseOptionalInt(v) != null) next.set('destination_id', v)
                 setSearchParams(next, { replace: true })
               }}
             />
@@ -262,8 +278,30 @@ export function RuntimeAnalyticsPage() {
         </div>
       </header>
 
+      {invalidAnalyticsFilters.length > 0 ? (
+        <div
+          role="status"
+          aria-label="Invalid analytics filters"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200"
+        >
+          <span>
+            {invalidAnalyticsFilters.map(({ label }) => `Invalid ${label} ID ignored`).join(' · ')}. Use positive, whole-number IDs; invalid values were not applied.
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              const next = new URLSearchParams(searchParams)
+              for (const { key } of invalidAnalyticsFilters) next.delete(key)
+              setSearchParams(next, { replace: true })
+            }}
+            className="min-h-9 shrink-0 rounded-md border border-amber-400 px-3 py-1.5 text-xs font-semibold hover:bg-amber-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-600 dark:border-amber-700 dark:hover:bg-amber-950/50"
+          >
+            Clear invalid IDs
+          </button>
+        </div>
+      ) : null}
       {error ? (
-        <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-900 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-100">
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-900 dark:border-rose-900/50 dark:text-rose-100">
           {error}
         </div>
       ) : null}

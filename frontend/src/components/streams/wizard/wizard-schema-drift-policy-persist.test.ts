@@ -27,6 +27,7 @@ describe('wizard schema drift policy persist', () => {
     vi.mocked(updateStream).mockResolvedValueOnce({
       id: 42,
       config_json: {},
+      updated_at: 'stream-next',
     } as never)
 
     const state = buildInitialState()
@@ -35,6 +36,7 @@ describe('wizard schema drift policy persist', () => {
 
     const result = await persistWizardSchemaDriftPolicy(42, state.dataProtection, {
       existingConfigJson: { endpoint: '/events' },
+      expectedUpdatedAt: 'stream-reviewed',
     })
 
     expect(result.saved).toBe(true)
@@ -48,7 +50,9 @@ describe('wizard schema drift policy persist', () => {
           },
         },
       },
+      expected_updated_at: 'stream-reviewed',
     })
+    expect(result.streamUpdatedAt).toBe('stream-next')
   })
 
   it('persistWizardSchemaDriftPolicy fetches existing config when not provided', async () => {
