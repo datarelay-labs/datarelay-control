@@ -100,6 +100,22 @@ The script **refuses** cloud-looking hosts and `APP_ENV=production` / `prod`.
 | `SOURCE_E2E_SFTP_*` | SFTP remote file source | see same |
 | `SOURCE_E2E_PG_FIXTURE_*` | Fixture DB for `DATABASE_QUERY` | see same |
 
+## Remote File live EPS ceiling (M1-06)
+
+The visible [DEV E2E] Remote File Stream reads one bounded 40-event NDJSON
+fixture by exact filename. A one-second polling interval permitted 31+ actual
+completed polls per minute, exceeding 20 ingested EPS even though the
+configuration's generic estimate was inside the 5-20 band. The isolated
+validation fixture therefore uses a **two-second minimum polling interval**.
+All other validation sources keep their existing cadence.
+
+After the changed implementation is installed on the isolated preview, update
+only the exact owned [DEV E2E] Remote File Stream configuration through the
+guarded development fixture path. Verify two consecutive 60-second windows
+using run_complete.input_events; compare each enabled Route's receipts by
+run ID, and preserve operator-created objects and credentials. This native
+test does not substitute for authenticated Browser acceptance.
+
 ## Feeder endpoint readiness (M1-07)
 
 The development feeder sends synthetic Webhook Receiver events to

@@ -393,6 +393,10 @@ def lab_feed_remote_files_per_tick() -> int:
 def lab_sustained_events_per_poll_for_bare_title(bare: str) -> int:
     """Events ingested per stream poll cycle used for interval tuning."""
 
+    # The visible Remote File fixture is an exact-name 40-event NDJSON file.
+    # Account for its real batch size, not a smaller generic target estimate.
+    if bare == "Remote File Stream":
+        return LAB_EPS_MIN * 8
     target = lab_target_eps_for_bare_title(bare)
     interval = LAB_POLLING_INTERVAL_MIN
     return lab_events_per_poll_for_target(target, interval)
@@ -401,6 +405,11 @@ def lab_sustained_events_per_poll_for_bare_title(bare: str) -> int:
 def lab_polling_interval_for_bare_title(bare: str) -> int:
     if bare in NEGATIVE_VALIDATION_STREAM_TITLES:
         return LAB_POLLING_INTERVAL_NEGATIVE
+    if bare == "Remote File Stream":
+        # The 40-event fixture can run 31+ times per minute at interval=1,
+        # producing >20 input EPS. At interval=2 the scheduler performs at most
+        # 30 polls/minute; the real processing time reduces the rate further.
+        return 2
     return LAB_POLLING_INTERVAL_MIN
 
 

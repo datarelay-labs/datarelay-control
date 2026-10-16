@@ -153,6 +153,29 @@ def test_webhook_feeder_sustains_acceptance_band_at_slow_live_post_cycle() -> No
     assert events_per_post / 1.0 <= LAB_EPS_MAX
 
 
+def test_visible_remote_file_polling_respects_live_20_eps_ceiling() -> None:
+    from app.dev_validation_lab.lab_throughput_config import (
+        lab_polling_interval_for_bare_title,
+        lab_sustained_events_per_poll_for_bare_title,
+    )
+
+    visible = "Remote File Stream"
+    interval = lab_polling_interval_for_bare_title(visible)
+    events = lab_sustained_events_per_poll_for_bare_title(visible)
+    assert interval == 2
+    assert events == lab_feed_tick_rates(high_volume=True)["remote_visible_lines"] == 40
+    # Under the old 1s cadence, 31 completed polls could exceed 20 EPS.
+    assert events * 31 / 60.0 > LAB_EPS_MAX
+    # The new minimum wait guarantees <= 30 polls per 60s window.
+    assert events * (60 / interval) / 60.0 <= LAB_EPS_MAX
+    assert LAB_EPS_MIN <= lab_estimated_eps_for_title(
+        "[DEV E2E] Remote File Stream", prefix="[DEV E2E] "
+    ) <= LAB_EPS_MAX
+    # No other source family has its polling cadence increased.
+    assert lab_polling_interval_for_bare_title("Remote File SFTP E2E") == LAB_POLLING_INTERVAL_MIN
+    assert lab_polling_interval_for_bare_title("HTTP API Stream") == LAB_POLLING_INTERVAL_MIN
+
+
 def test_visible_remote_file_feeder_sustains_acceptance_band_at_slow_live_poll_cycle() -> None:
     rates = lab_feed_tick_rates(high_volume=True)
     events_per_visible_poll = rates["remote_visible_lines"]
