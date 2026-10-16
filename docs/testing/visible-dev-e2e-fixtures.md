@@ -100,6 +100,29 @@ The script **refuses** cloud-looking hosts and `APP_ENV=production` / `prod`.
 | `SOURCE_E2E_SFTP_*` | SFTP remote file source | see same |
 | `SOURCE_E2E_PG_FIXTURE_*` | Fixture DB for `DATABASE_QUERY` | see same |
 
+## Feeder endpoint readiness (M1-07)
+
+The development feeder sends synthetic Webhook Receiver events to
+LAB_THROUGHPUT_API_BASE_URL. Before starting or restarting, identify the
+currently served development API and verify /health on that exact address.
+A previous preview port can disappear without warning. The collector being
+healthy does not prove the inbound Webhook source is receiving fresh events.
+
+Start the feeder using the existing development/fixture environment:
+
+    LAB_THROUGHPUT_API_BASE_URL=http://CURRENT_DEV_API_HOST:CURRENT_API_PORT \
+      ./scripts/dev-validation/start-lab-throughput-feeder.sh --tick-seconds 1
+
+The launcher rejects an unreachable API before it generates fixture traffic.
+Before restarting an already-running feeder, verify its owned process PID,
+worktree, APP_ENV=development and isolated preview catalog; stop only that
+feeder, not the scheduler or API. Never put credentials in durable evidence
+files or alter unrelated operator resources. Afterwards, verify a test-only
+Webhook POST and two non-overlapping 60-second windows of real
+run_complete.input_events and per-Route delivery receipts. Count ingested
+events once per Stream, not once per Route. Keep final authenticated Browser
+acceptance separate from these native runtime checks.
+
 ## Syslog TLS listener
 
 The `syslog-test` image exposes:

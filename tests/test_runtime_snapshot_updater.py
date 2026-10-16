@@ -124,7 +124,7 @@ def _log(
             level="INFO",
             status="OK",
             message="delivery",
-            payload_sample={"event_count": 1},
+            payload_sample={"input_events": 1} if stage == "run_complete" else {"event_count": 1},
             retry_count=0,
             latency_ms=50,
             created_at=created_at,
@@ -163,6 +163,15 @@ def test_recompute_upserts_stream_route_destination_snapshots(db_session: Sessio
         route_id=h["route_id"],
         destination_id=h["destination_id"],
         stage="route_send_success",
+        created_at=now - timedelta(seconds=20),
+    )
+    _log(
+        db_session,
+        connector_id=h["connector_id"],
+        stream_id=h["stream_id"],
+        route_id=h["route_id"],
+        destination_id=h["destination_id"],
+        stage="run_complete",
         created_at=now - timedelta(seconds=20),
     )
     db_session.commit()
@@ -277,6 +286,15 @@ def test_api_reads_physical_read_model_when_populated(
         route_id=h["route_id"],
         destination_id=h["destination_id"],
         stage="route_send_success",
+        created_at=now - timedelta(seconds=30),
+    )
+    _log(
+        db_session,
+        connector_id=h["connector_id"],
+        stream_id=h["stream_id"],
+        route_id=h["route_id"],
+        destination_id=h["destination_id"],
+        stage="run_complete",
         created_at=now - timedelta(seconds=30),
     )
     db_session.commit()

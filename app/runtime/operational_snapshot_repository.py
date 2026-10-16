@@ -6,7 +6,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import Integer, case, cast, func, text
+from sqlalchemy import BigInteger, Integer, case, cast, func, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
@@ -207,6 +207,41 @@ def fetch_stream_window_aggregates(
         .all()
     )
     return {int(r.group_id): _row_to_window_aggregate(r) for r in rows}
+
+
+def fetch_stream_input_window_counts(
+    db: Session, *, since: datetime, until: datetime
+) -> dict[int, int]:
+    """Count source-ingested events once per Stream run, never once per Route.
+
+    Each run_complete payload records input_events after extraction for polling
+    and webhook sources alike. Route delivery logs are emitted for each Route,
+    so summing delivery successes inflates Stream EPS on fan-out. Ignore legacy
+    records without a valid numeric input count rather than inferring source
+    activity from delivery fan-out.
+    """
+
+    raw_count = DeliveryLog.payload_sample.op("->>")("input_events")
+    safe_count = case(
+        (raw_count.op("~")(r"^[0-9]{1,15}$"), cast(raw_count, BigInteger)),
+        else_=0,
+    )
+    rows = (
+        db.query(
+            DeliveryLog.stream_id.label("stream_id"),
+            func.coalesce(func.sum(safe_count), 0).label("input_count"),
+        )
+        .filter(
+            DeliveryLog.created_at >= since,
+            DeliveryLog.created_at < until,
+            DeliveryLog.stage == "run_complete",
+            DeliveryLog.stream_id.isnot(None),
+            func.upper(func.coalesce(DeliveryLog.level, "")) != "DEBUG",
+        )
+        .group_by(DeliveryLog.stream_id)
+        .all()
+    )
+    return {int(r.stream_id): max(0, int(r.input_count or 0)) for r in rows}
 
 
 def fetch_route_window_aggregates(
@@ -564,6 +599,8 @@ class OperationalSnapshotBulkData:
     routes_per_destination: dict[int, int]
     stream_agg_1m: dict[int, WindowAggregateRow]
     stream_agg_5m: dict[int, WindowAggregateRow]
+    stream_input_1m: dict[int, int]
+    stream_input_5m: dict[int, int]
     route_agg_1m: dict[int, WindowAggregateRow]
     route_agg_5m: dict[int, WindowAggregateRow]
     destination_agg_1m: dict[int, WindowAggregateRow]
@@ -597,6 +634,8 @@ def load_operational_snapshot_bulk_data(db: Session) -> OperationalSnapshotBulkD
         routes_per_destination=count_routes_per_destination(db),
         stream_agg_1m=fetch_stream_window_aggregates(db, since=since_1m, until=now),
         stream_agg_5m=fetch_stream_window_aggregates(db, since=since_5m, until=now),
+        stream_input_1m=fetch_stream_input_window_counts(db, since=since_1m, until=now),
+        stream_input_5m=fetch_stream_input_window_counts(db, since=since_5m, until=now),
         route_agg_1m=fetch_route_window_aggregates(db, since=since_1m, until=now),
         route_agg_5m=fetch_route_window_aggregates(db, since=since_5m, until=now),
         destination_agg_1m=fetch_destination_window_aggregates(db, since=since_1m, until=now),

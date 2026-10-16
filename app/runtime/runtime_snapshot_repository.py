@@ -31,6 +31,7 @@ from app.runtime.operational_snapshot_repository import (
     fetch_route_window_aggregates,
     fetch_stream_last_outcomes,
     fetch_stream_window_aggregates,
+    fetch_stream_input_window_counts,
     load_all_destinations,
     load_all_routes,
     load_all_streams,
@@ -279,6 +280,8 @@ def recompute_and_upsert_snapshots(
 
     stream_agg_1m = fetch_stream_window_aggregates(db, since=since_1m, until=now)
     stream_agg_5m = fetch_stream_window_aggregates(db, since=since_5m, until=now)
+    stream_input_1m = fetch_stream_input_window_counts(db, since=since_1m, until=now)
+    stream_input_5m = fetch_stream_input_window_counts(db, since=since_5m, until=now)
     route_agg_1m = fetch_route_window_aggregates(db, since=since_1m, until=now)
     route_agg_5m = fetch_route_window_aggregates(db, since=since_5m, until=now)
     destination_agg_1m = fetch_destination_window_aggregates(db, since=since_1m, until=now)
@@ -430,8 +433,8 @@ def recompute_and_upsert_snapshots(
                 "stream_id": stream.id,
                 "enabled": stream.enabled,
                 "health_status": health,
-                "eps_1m": _eps(agg_1m.success_count if agg_1m else 0, 60),
-                "eps_5m": _eps(agg_5m.success_count if agg_5m else 0, 300),
+                "eps_1m": _eps(stream_input_1m.get(stream.id, 0), 60),
+                "eps_5m": _eps(stream_input_5m.get(stream.id, 0), 300),
                 "success_rate_5m": success_rate_5m,
                 "failure_rate_5m": failure_rate_5m,
                 "retry_rate_5m": retry_rate_5m,
