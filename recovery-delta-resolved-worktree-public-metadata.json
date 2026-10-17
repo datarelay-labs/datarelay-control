@@ -1,0 +1,12 @@
+{
+  "source_worktree": "/tmp/control-pf328-rollback-v2",
+  "head": "32ee9078e546b3ef8b450eb36d1f0c2ca26c3b92",
+  "status_changed_count": 11,
+  "tracked_diff_sha256": "b9bb91ee914a8fdfb6962e77f27930abd4f7d091dea3677266eec6d9de80bc87",
+  "encrypted": true,
+  "artifacts": "uncommitted tracked diff only; no secret values printed",
+  "date": "2026-10-17T03:20:11.566933+00:00",
+  "cipher_sha256": "7a0f08f5420403b4e157789550c32d33b4503e47c3f265bffe3e43fda4fc784c",
+  "cipher_file": "recovery-delta-resolved-worktree-20261017.tar.gz.aes256gcm",
+  "key_storage": "DEV_HOST_ONLY_NEVER_GIT"
+}
