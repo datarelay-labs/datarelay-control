@@ -1,0 +1,18 @@
+{
+  "type": "encrypted_recovery_snapshot_not_product_candidate",
+  "created_utc": "2026-10-17T03:02:17.324114+00:00",
+  "origin_repo": "datarelay-labs/datarelay-control",
+  "audit_head": "397050ea44fe2c3b971ba113671bfaca5073e8c0",
+  "dirty_worktrees_scanned": 65,
+  "status_unknown_worktrees_scanned": 2,
+  "tracked_patch_entries": 63,
+  "selected_untracked_source_files": 47,
+  "excluded_large_binary_generated_untracked_items": 353,
+  "original_plaintext_source_sha256": "68e4e0561f4f35c70030db9cb2d12f3935906094bb866b1478343cd04a0c72ab",
+  "encrypted_blob_sha256": "54ca47d1aa49720f6b4b447f2dec1d6310505bf58b90b320fbdedf96b923a734",
+  "encrypted_blob_bytes": 404116,
+  "algorithm": "AES-256-GCM",
+  "key_storage": "dev-drcontrol:/home/aella/.local/state/drcontrol-cleanup-20261017/keys/pretest-recovery-20261017.aes256.key (0600, NEVER COMMITTED)",
+  "scope_limits": "Untracked large binary/screenshots/test reports and generated caches not included; preserve original dirty worktrees",
+  "pass_claim": false
+}
