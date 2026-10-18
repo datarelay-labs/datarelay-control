@@ -360,3 +360,76 @@ describe('RouteEditPage delivery preview', () => {
     expect(runRouteDeliveryPreview).not.toHaveBeenCalled()
   })
 })
+
+describe('RouteEditPage RFC5425 profile persistence', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    clearSession()
+    persistSession({
+      access_token: 'route-wire-test',
+      refresh_token: 'route-wire-test-refresh',
+      expires_at: new Date(Date.now() + 3600_000).toISOString(),
+      user: { username: 'operator', role: 'OPERATOR', status: 'ACTIVE' },
+    })
+    fetchRouteById.mockResolvedValue({
+      ...savedRoute,
+      formatter_config_json: { delivery_mode: 'Reliable', syslog_wire_mode: 'legacy' },
+    })
+    fetchRouteByIdFresh.mockResolvedValue({
+      ...savedRoute,
+      formatter_config_json: { delivery_mode: 'Reliable', syslog_wire_mode: 'legacy' },
+    })
+    fetchStreamById.mockResolvedValue({ id: 10, name: 'Stream A', connector_id: 1 })
+    fetchConnectorById.mockResolvedValue({ id: 1, name: 'Connector A' })
+    fetchDestinationsList.mockResolvedValue([{ id: 5, name: 'Syslog TLS', destination_type: 'SYSLOG_TLS' }])
+    updateRoute.mockImplementation(async (_id: number, payload: Record<string, unknown>) => ({
+      ...savedRoute,
+      ...payload,
+      updated_at: '2026-10-18T14:00:00Z',
+    }))
+  })
+
+  afterEach(() => clearSession())
+
+  it('persists explicit RFC 5425 opt-in to existing Route formatter config', async () => {
+    renderRouteEdit()
+    const field = await screen.findByLabelText('Syslog wire format')
+    expect(field).toHaveValue('legacy')
+    fireEvent.change(field, { target: { value: 'rfc5425' } })
+    expect(field).toHaveValue('rfc5425')
+    const save = screen.getByRole('button', { name: 'Save Route' })
+    fireEvent.click(save)
+    await waitFor(() => {
+      expect(updateRoute).toHaveBeenCalledWith(42, expect.objectContaining({
+        expected_updated_at: '2026-09-21T10:00:00Z',
+        formatter_config_json: expect.objectContaining({ syslog_wire_mode: 'rfc5425' }),
+      }))
+    })
+  })
+
+  it('blocks RFC mode when a persisted custom legacy prefix is still configured', async () => {
+    fetchRouteById.mockResolvedValue({
+      ...savedRoute,
+      formatter_config_json: {
+        delivery_mode: 'Reliable',
+        message_prefix_enabled: true,
+        message_prefix_template: '<13> {{event.device}}:',
+        syslog_wire_mode: 'legacy',
+      },
+    })
+    renderRouteEdit()
+    const field = await screen.findByLabelText('Syslog wire format')
+    fireEvent.change(field, { target: { value: 'rfc5425' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save Route' }))
+    expect(await screen.findByText(/RFC 5425 cannot use a legacy custom Message Prefix/)).toBeInTheDocument()
+    expect(updateRoute).not.toHaveBeenCalled()
+  })
+
+  it('does not show the RFC 5425 picker for a Webhook Destination', async () => {
+    fetchDestinationsList.mockResolvedValue([{ id: 5, name: 'Webhook', destination_type: 'WEBHOOK_POST' }])
+    renderRouteEdit()
+    await screen.findByDisplayValue('Route A')
+    await waitFor(() => expect(fetchDestinationsList).toHaveBeenCalled())
+    expect(screen.queryByLabelText('Syslog wire format')).not.toBeInTheDocument()
+  })
+})

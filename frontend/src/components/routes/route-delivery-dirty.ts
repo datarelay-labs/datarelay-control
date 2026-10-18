@@ -16,6 +16,7 @@ export type RouteDeliveryFormState = {
   enabled: boolean
   destinationId: number | null
   deliveryMode: RouteDeliveryMode
+  syslogWireMode?: 'legacy' | 'rfc5425'
   failurePolicy: RouteFailurePolicy
   maxRetry: number
   retryBackoff: RouteRetryBackoff
@@ -36,6 +37,7 @@ export function defaultsRouteDeliveryFormState(): RouteDeliveryFormState {
     enabled: d.status === 'ENABLED',
     destinationId: null,
     deliveryMode: d.deliveryMode,
+    syslogWireMode: 'legacy',
     failurePolicy: d.failurePolicy,
     maxRetry: d.maxRetry,
     retryBackoff: d.retryBackoff,
@@ -57,6 +59,7 @@ export function normalizeRouteDeliveryFormState(state: RouteDeliveryFormState): 
     enabled: Boolean(state.enabled),
     destinationId: state.destinationId == null || !Number.isFinite(state.destinationId) ? null : Number(state.destinationId),
     deliveryMode: state.deliveryMode === 'Best Effort' ? 'Best Effort' : 'Reliable',
+    syslogWireMode: state.syslogWireMode === 'rfc5425' ? 'rfc5425' : 'legacy',
     failurePolicy: state.failurePolicy,
     maxRetry: Number(state.maxRetry) || 0,
     retryBackoff: state.retryBackoff === 'Linear' ? 'Linear' : 'Exponential',

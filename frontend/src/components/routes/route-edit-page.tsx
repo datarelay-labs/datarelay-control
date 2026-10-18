@@ -76,6 +76,7 @@ function applyRouteDeliveryFields(found: {
 }): {
   failurePolicy: RouteFailurePolicy
   deliveryMode: RouteDeliveryMode
+  syslogWireMode: 'legacy' | 'rfc5425'
   rateLimitEnabled: boolean
   perSecond: number
   burstSize: number
@@ -100,6 +101,7 @@ function applyRouteDeliveryFields(found: {
         ? failurePolicyFromApi(found.failure_policy)
         : d.failurePolicy,
     deliveryMode,
+    syslogWireMode: formatter.syslog_wire_mode === 'rfc5425' ? 'rfc5425' : 'legacy',
     rateLimitEnabled: rateEnabled,
     perSecond: typeof rate.per_second === 'number' ? rate.per_second : d.perSecond,
     burstSize: typeof rate.burst_size === 'number' ? rate.burst_size : d.burstSize,
@@ -173,6 +175,8 @@ export function RouteEditPage({ routeIdOverride = null, embedded = false, onClos
   const [description, setDescription] = useState(d.description)
   const [enabled, setEnabled] = useState(d.status === 'ENABLED')
   const [deliveryMode, setDeliveryMode] = useState<RouteDeliveryMode>(d.deliveryMode)
+  const [syslogWireMode, setSyslogWireMode] = useState<'legacy' | 'rfc5425'>('legacy')
+  const [savedFormatterConfig, setSavedFormatterConfig] = useState<Record<string, unknown>>({})
   const [failurePolicy, setFailurePolicy] = useState<RouteFailurePolicy>(d.failurePolicy)
   const [maxRetry, setMaxRetry] = useState(d.maxRetry)
   const [retryBackoff, setRetryBackoff] = useState<RouteRetryBackoff>(d.retryBackoff)
@@ -199,7 +203,11 @@ export function RouteEditPage({ routeIdOverride = null, embedded = false, onClos
   const [streamCatalogEmpty, setStreamCatalogEmpty] = useState(false)
   const [streamCatalogError, setStreamCatalogError] = useState<string | null>(null)
   const [backendDestinationId, setBackendDestinationId] = useState<number | null>(null)
-  const [destinationOptions, setDestinationOptions] = useState<Array<{ id: number; label: string }>>([])
+  const [destinationOptions, setDestinationOptions] = useState<Array<{
+    id: number
+    label: string
+    destinationType: string
+  }>>([])
   const [destinationSource, setDestinationSource] = useState<'api' | 'empty'>('empty')
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -226,6 +234,7 @@ export function RouteEditPage({ routeIdOverride = null, embedded = false, onClos
     const found = destinationOptions.find((o) => o.id === backendDestinationId)
     return found?.label ?? '—'
   }, [destinationOptions, backendDestinationId])
+  const selectedDestinationType = destinationOptions.find((option) => option.id === backendDestinationId)?.destinationType ?? ''
 
   const currentDeliveryForm = useMemo<RouteDeliveryFormState>(
     () => ({
@@ -234,6 +243,7 @@ export function RouteEditPage({ routeIdOverride = null, embedded = false, onClos
       enabled,
       destinationId: backendDestinationId,
       deliveryMode,
+      syslogWireMode,
       failurePolicy,
       maxRetry,
       retryBackoff,
@@ -251,6 +261,7 @@ export function RouteEditPage({ routeIdOverride = null, embedded = false, onClos
       enabled,
       backendDestinationId,
       deliveryMode,
+      syslogWireMode,
       failurePolicy,
       maxRetry,
       retryBackoff,
@@ -294,6 +305,7 @@ export function RouteEditPage({ routeIdOverride = null, embedded = false, onClos
     setBackendDestinationId(form.destinationId)
     setFailurePolicy(form.failurePolicy)
     setDeliveryMode(form.deliveryMode)
+    setSyslogWireMode(form.syslogWireMode === 'rfc5425' ? 'rfc5425' : 'legacy')
     setRateLimitEnabled(form.rateLimitEnabled)
     setPerSecond(form.perSecond)
     setBurstSize(form.burstSize)
@@ -398,6 +410,7 @@ export function RouteEditPage({ routeIdOverride = null, embedded = false, onClos
         enabled: typeof found.enabled === 'boolean' ? found.enabled : d.status === 'ENABLED',
         destinationId: typeof found.destination_id === 'number' ? found.destination_id : null,
         deliveryMode: delivery.deliveryMode,
+        syslogWireMode: delivery.syslogWireMode,
         failurePolicy: delivery.failurePolicy,
         maxRetry: delivery.maxRetry,
         retryBackoff: delivery.retryBackoff,
@@ -410,6 +423,7 @@ export function RouteEditPage({ routeIdOverride = null, embedded = false, onClos
         burstSize: delivery.burstSize,
       }
       if (typeof found.stream_id === 'number') setBackendStreamId(found.stream_id)
+      setSavedFormatterConfig({ ...(found.formatter_config_json ?? {}) })
       applyDeliveryForm(form)
       setDeliveryBaseline(form)
       setRouteUpdatedAt(typeof found.updated_at === 'string' ? found.updated_at : null)
@@ -448,6 +462,7 @@ export function RouteEditPage({ routeIdOverride = null, embedded = false, onClos
       setClassificationEffective(null)
       setPolicyEffective(null)
       setDeliveryBaseline(defaultsRouteDeliveryFormState())
+      setSavedFormatterConfig({})
       setRouteUpdatedAt(null)
       setTransformDirty(false)
       setStaleConflict(false)
@@ -559,7 +574,7 @@ export function RouteEditPage({ routeIdOverride = null, embedded = false, onClos
       const rows = await fetchDestinationsList()
       if (cancelled) return
       if (rows?.length) {
-        const next = rows.map((row) => ({ id: row.id, label: (row.name ?? '').trim() || `Destination #${row.id}` }))
+        const next = rows.map((row) => ({ id: row.id, label: (row.name ?? '').trim() || `Destination #${row.id}` , destinationType: row.destination_type }))
         setDestinationOptions(next)
         setDestinationSource('api')
         setBackendDestinationId((prev) => {
@@ -638,6 +653,18 @@ export function RouteEditPage({ routeIdOverride = null, embedded = false, onClos
       setSaveSuccess(null)
       return
     }
+    if (syslogWireMode === 'rfc5425' && selectedDestinationType !== 'SYSLOG_TLS') {
+      setSaveError('RFC 5425 octet-counting is supported only for a Syslog TLS Destination.')
+      setSaveSuccess(null)
+      return
+    }
+    if (syslogWireMode === 'rfc5425' &&
+      (savedFormatterConfig.message_prefix_enabled === true ||
+       typeof savedFormatterConfig.message_prefix_template === 'string')) {
+      setSaveError('RFC 5425 cannot use a legacy custom Message Prefix. Disable and clear the custom prefix before changing the wire format.')
+      setSaveSuccess(null)
+      return
+    }
     setIsSaving(true)
     setSaveError(null)
     setSaveSuccess(null)
@@ -653,7 +680,9 @@ export function RouteEditPage({ routeIdOverride = null, embedded = false, onClos
         failure_policy: policy,
         status: enabled ? 'ENABLED' : 'DISABLED',
         formatter_config_json: {
+          ...savedFormatterConfig,
           delivery_mode: deliveryMode,
+          syslog_wire_mode: selectedDestinationType === 'SYSLOG_TLS' ? syslogWireMode : 'legacy',
         },
         rate_limit_json: rateLimitEnabled
           ? {
@@ -689,6 +718,7 @@ export function RouteEditPage({ routeIdOverride = null, embedded = false, onClos
         enabled: typeof saved.enabled === 'boolean' ? saved.enabled : enabled,
         destinationId: typeof saved.destination_id === 'number' ? saved.destination_id : backendDestinationId,
         deliveryMode: delivery.deliveryMode,
+        syslogWireMode: delivery.syslogWireMode,
         failurePolicy: delivery.failurePolicy,
         maxRetry: delivery.maxRetry,
         retryBackoff: delivery.retryBackoff,
@@ -700,6 +730,7 @@ export function RouteEditPage({ routeIdOverride = null, embedded = false, onClos
         perSecond: delivery.perSecond,
         burstSize: delivery.burstSize,
       }
+      setSavedFormatterConfig({ ...(saved.formatter_config_json ?? routePayload.formatter_config_json) })
       applyDeliveryForm(nextBaseline)
       setDeliveryBaseline(nextBaseline)
       setRouteUpdatedAt(typeof saved.updated_at === 'string' ? saved.updated_at : null)
@@ -1148,7 +1179,13 @@ export function RouteEditPage({ routeIdOverride = null, embedded = false, onClos
               >
                 <select
                   value={backendDestinationId ?? ''}
-                  onChange={(e) => setBackendDestinationId(Number(e.target.value))}
+                  onChange={(e) => {
+                    const chosen = Number(e.target.value)
+                    setBackendDestinationId(chosen)
+                    if (destinationOptions.find((item) => item.id === chosen)?.destinationType !== 'SYSLOG_TLS') {
+                      setSyslogWireMode('legacy')
+                    }
+                  }}
                   className={inputCls}
                 >
                   {destinationOptions.map((opt) => (
@@ -1169,6 +1206,19 @@ export function RouteEditPage({ routeIdOverride = null, embedded = false, onClos
                   <option value="Best Effort">Best Effort</option>
                 </select>
               </Field>
+              {selectedDestinationType === 'SYSLOG_TLS' ? (
+                <Field label="Syslog wire format" hint="Must match the receiver's supported framing">
+                  <select
+                    aria-label="Syslog wire format"
+                    value={syslogWireMode}
+                    onChange={(e) => setSyslogWireMode(e.target.value as 'legacy' | 'rfc5425')}
+                    className={inputCls}
+                  >
+                    <option value="legacy">Legacy — newline-delimited JSON</option>
+                    <option value="rfc5425">RFC 5424/5425 — TLS octet-counted</option>
+                  </select>
+                </Field>
+              ) : null}
               <Field
                 label="Failure Policy *"
                 hint="Retry on failure with backoff"
