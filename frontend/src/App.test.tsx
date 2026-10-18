@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -6,6 +6,7 @@ import App from './App'
 import { DataRouterEnabledContext } from './router/data-router-enabled'
 import { clearTestSession, persistTestSession } from './lib/governance-rbac'
 import { getSessionRole, isSessionExpired } from './auth/session'
+import { fetchRouteFailuresAnalytics } from './api/gdcRuntimeAnalytics'
 import { clearWizardCatalogSnapshot } from './components/streams/wizard/wizard-catalog-cache'
 
 vi.mock('./api/operationalSnapshot', () => ({
@@ -359,6 +360,15 @@ vi.mock('./api/gdcRuntimeAnalytics', () => ({
       generated_at: DASHBOARD_SNAPSHOT,
     },
     rows: [],
+    filters: { stream_id: 2, route_id: 2, destination_id: null },
+    totals: { failure_events: 0, success_events: 0, overall_failure_rate: 0 },
+    outcomes_by_route: [],
+    failures_by_destination: [],
+    failures_by_stream: [],
+    failure_trend: [],
+    top_error_codes: [],
+    top_failed_stages: [],
+    unstable_routes: [],
   })),
   fetchDeliveryOutcomesByDestination: vi.fn(async () => ({
     time: {
@@ -382,6 +392,12 @@ vi.mock('./api/gdcRuntimeAnalytics', () => ({
     retry_success_events: 0,
     retry_failed_events: 0,
     retry_column_sum: 0,
+  })),
+  fetchStreamRetriesAnalytics: vi.fn(async () => ({
+    time: { window: '24h', since: '2026-01-01T00:00:00Z', until: DASHBOARD_SNAPSHOT, snapshot_id: DASHBOARD_SNAPSHOT },
+    filters: { stream_id: 2, route_id: 2, destination_id: null },
+    retry_heavy_streams: [],
+    retry_heavy_routes: [],
   })),
 }))
 
@@ -748,6 +764,23 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     expect(await screen.findByTestId('dashboard-overall-health-hero', {}, { timeout: 15000 })).toBeInTheDocument()
     expect(await screen.findByTestId('dashboard-traffic-overview')).toBeInTheDocument()
     expect(await screen.findByTestId('dashboard-operational-issues')).toBeInTheDocument()
+  })
+
+  it('opens scoped delivery analytics instead of losing Route filters on Dashboard', async () => {
+    vi.mocked(fetchRouteFailuresAnalytics).mockClear()
+    renderApp('/monitoring/analytics?window=24h&stream_id=2&route_id=2')
+    expect(await screen.findByRole('heading', { level: 1, name: 'Delivery analytics' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Back to Route #2 logs' })).toHaveAttribute('href', expect.stringContaining('route_id=2'))
+    expect(screen.queryByTestId('dashboard-overall-health-hero')).not.toBeInTheDocument()
+    await waitFor(() => expect(fetchRouteFailuresAnalytics).toHaveBeenCalledWith(expect.objectContaining({
+      window: '24h', stream_id: 2, route_id: 2,
+    })))
+  })
+
+  it('keeps legacy /runtime/analytics links routed to the same scoped analytics page', async () => {
+    renderApp('/runtime/analytics?window=1h&stream_id=2&route_id=2')
+    expect(await screen.findByRole('heading', { level: 1, name: 'Delivery analytics' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Window')).toHaveValue('1h')
   })
 
   it('renders Backup & Import workspace at /operations/backup', async () => {
