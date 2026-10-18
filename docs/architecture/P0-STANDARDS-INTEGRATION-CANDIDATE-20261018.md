@@ -9,13 +9,13 @@
 
 ## Known limits and acceptance risks
 - Historical `$.a.b` could mean literal `"a.b"` or nested `a.b`; saved paths, Privacy rules and Identity Vault keys cannot be auto-migrated without evidence.
-- `jsonpath-ng 1.8.0` is not fully RFC 9535-compliant. Two strict XFAIL tests remain (negative out-of-bounds index and escaped newline member).
+- `jsonpath-ng 1.8.0` is not fully RFC 9535-compliant. The two captured boundary cases are now handled by a bounded compatibility layer: out-of-bounds negative index returns no match, and Protection decodes escaped quoted member names. Full RFC 9535 compliance remains an independently tracked limitation.
 - Mandatory Protection rule misses, target-specific route payload safety and full persisted field-path migrations require more product-level evidence.
 - Existing StreamRunner holds same-Stream thread and host locks. Parent-row database locking is extra protection but needs real Stream/DB integration and lock-order review.
 - RFC 5424 subset uses NIL structured data only. Config persistence/UI, vendor TLS collector and checkpoint/retry E2E are still required.
 - OCSF 1.9.0/ECS 9.5.0 profile validators are research-only and are **not** complete schema or product integrations.
 
 ## Selected verification
-213 PASS / 2 strict XFAIL in focused backend suites; 35 PASS / 2 SKIP in additional Mapping/Protection/TLS tests. Prior disposable PostgreSQL 16 and local TLS 1.3 research runs were independent and do not replace exact-candidate public Browser and Full User E2E.
+225 PASS / 0 FAIL in focused backend suites; 35 PASS / 2 SKIP in additional Mapping/Protection/TLS tests. Prior disposable PostgreSQL 16 and local TLS 1.3 research runs were independent and do not replace exact-candidate public Browser and Full User E2E.
 
 Do not merge to `main-v2` or the older `main` until the candidate's actual affected tests, CI review, Browser and Full User E2E release gates and applicable owner acceptance pass. Do not deploy Production as part of this scope.

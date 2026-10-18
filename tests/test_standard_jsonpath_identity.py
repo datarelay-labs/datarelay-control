@@ -212,13 +212,6 @@ def test_mapping_first_match_negative_index_is_consistent() -> None:
     assert result == {"last": "d", "also_last": "d", "arr": ["a", "b", "c"], "keep": True}
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Known jsonpath-ng dependency gap: RFC 9535 requires out-of-range "
-        "negative index to return no matches, but the current parser raises IndexError"
-    ),
-)
 def test_nonexistent_negative_index_leaves_event_intact() -> None:
     source = {"arr": ["a", "b"], "keep": True}
     assert build_residual_after_mapping(source, ("$.arr[-9]",)) == source
@@ -234,4 +227,24 @@ def test_negative_index_query_returns_concrete_nonnegative_selection() -> None:
     assert _selected_concrete_paths(source, ("$.arr[-1]",)) == {("arr", 3)}
     assert _selected_concrete_paths(source, ("$.arr[-3]", "$.arr[1]")) == {
         ("arr", 1),
+    }
+
+def test_negative_out_of_bounds_is_no_match_through_public_extractor() -> None:
+    from app.parsers.jsonpath_parser import extract_one, extract_all
+    source = {"arr": ["first", "second"]}
+    missing = object()
+    assert extract_one(source, "$.arr[-9]", default=missing) is missing
+    assert extract_all(source, "$.arr[-9]") == []
+
+
+def test_negative_out_of_bounds_is_no_match_through_basic_mapping() -> None:
+    event = {"arr": ["first", "second"], "keep": "retained"}
+    mappings = compile_mappings({"selected": "$.arr[-9]"})
+    result = apply_compiled_mapping(
+        event, mappings, source_json_paths=("$.arr[-9]",),
+    )
+    assert result == {
+        "selected": None,
+        "arr": ["first", "second"],
+        "keep": "retained",
     }

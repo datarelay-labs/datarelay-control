@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from jsonpath_ng.jsonpath import Child, Fields, Index, Root, Slice
-from app.parsers.jsonpath_parser import compile_jsonpath
-
 import time
+
+from app.protection.field_path_parser import parse_protection_path
 from app.runtime.copy_utils import copy_event_dict, copy_events
 from dataclasses import dataclass, field
 from typing import Any
@@ -49,68 +48,9 @@ def protection_enabled() -> bool:
     return bool(settings.GDC_PROTECTION_ENABLED)
 
 
-def _legacy_schema_array_to_wildcard(path: str) -> str:
-    """Translate old unquoted [] schema patterns without rewriting quoted keys."""
-    output: list[str] = []
-    quote: str | None = None
-    escaped = False
-    pos = 0
-    while pos < len(path):
-        ch = path[pos]
-        if quote is not None:
-            output.append(ch)
-            if escaped:
-                escaped = False
-            elif ch == "\\\\":
-                escaped = True
-            elif ch == quote:
-                quote = None
-            pos += 1
-        elif ch in ("'", '"'):
-            quote = ch
-            output.append(ch)
-            pos += 1
-        elif path[pos : pos + 2] == "[]":
-            output.append("[*]")
-            pos += 2
-        else:
-            output.append(ch)
-            pos += 1
-    return "".join(output)
-
-
-def _field_atoms(path: Any) -> list[Any]:
-    if isinstance(path, Child):
-        return _field_atoms(path.left) + _field_atoms(path.right)
-    if isinstance(path, Root):
-        return []
-    return [path]
-
-
 def parse_field_path_segments(field_path: str) -> list[str | int]:
-    """Interpret persisted legacy patterns and quoted field names consistently.
-
-    Empty array selectors in legacy Schema Observation paths signify a
-    wildcard, not a literal. Quoted field tokens remain intact. Numeric indexes
-    are typed integers, not components of a dotted field name.
-    """
-    path = str(field_path).strip()
-    if not path:
-        return []
-    if not path.startswith("$"):
-        path = "$." + path
-    path = _legacy_schema_array_to_wildcard(path)
-    result: list[str | int] = []
-    for atom in _field_atoms(compile_jsonpath(path)):
-        if isinstance(atom, Fields) and len(atom.fields) == 1:
-            result.append(atom.fields[0])
-        elif isinstance(atom, Index) and len(atom.indices) == 1:
-            result.append(atom.indices[0])
-        elif isinstance(atom, Slice) and atom.start is None and atom.end is None and atom.step is None:
-            result.append("[]")
-        else:
-            raise ValueError(f"Unsupported protection field pattern: {type(atom).__name__}")
-    return result
+    """Decode a definite Protection field path without losing escaped keys."""
+    return parse_protection_path(field_path)
 
 
 def _hmac_key_for_stream(stream_id: int) -> bytes:
@@ -122,7 +62,7 @@ def _hmac_key_for_stream(stream_id: int) -> bytes:
 
 def _collect_leaf_values_at_segments(
     node: Any,
-    segments: list[str],
+    segments: list[str | int],
     seg_index: int,
 ) -> list[Any]:
     if seg_index >= len(segments):
@@ -209,7 +149,7 @@ def collect_tokenization_targets(
 
 def _drop_at_segments(
     node: Any,
-    segments: list[str],
+    segments: list[str | int],
     seg_index: int,
 ) -> int:
     if seg_index >= len(segments):
@@ -259,7 +199,7 @@ def _drop_at_segments(
 
 def _apply_at_segments(
     node: Any,
-    segments: list[str],
+    segments: list[str | int],
     seg_index: int,
     *,
     mode: str,

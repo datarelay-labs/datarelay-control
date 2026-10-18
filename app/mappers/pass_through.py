@@ -12,7 +12,7 @@ from typing import Any, Iterable
 
 from jsonpath_ng.jsonpath import Child, Fields, Index, Root
 
-from app.parsers.jsonpath_parser import compile_jsonpath
+from app.parsers.jsonpath_parser import compile_jsonpath, find_matches_compiled
 from app.runtime.copy_utils import copy_json_value
 
 
@@ -92,7 +92,7 @@ def _selected_concrete_paths(
         expr = compile_jsonpath(path)
         # Basic Mapping's extract_one_compiled() consumes only the first match.
         # Retain every unconsumed wildcard/union match in pass-through.
-        matches = expr.find(source_event)
+        matches = find_matches_compiled(expr, source_event)
         if matches:
             selected.add(_concrete_tokens(matches[0].full_path, source_event=source_event))
     return selected

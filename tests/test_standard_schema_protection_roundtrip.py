@@ -93,10 +93,6 @@ def test_type_merge_does_not_mix_literal_and_nested_field():
     assert paths["$.x.y"]=="integer"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="jsonpath-ng 1.8.0 does not consistently decode RFC 9535 escaped control-character member names",
-)
 def test_escaped_newline_key_requires_full_rfc_conformance():
     event={"a\nb":"synthetic-secret"}
     paths=collect_paths_from_event(event,max_depth=4,max_paths=30)
@@ -104,3 +100,26 @@ def test_escaped_newline_key_requires_full_rfc_conformance():
     assert path in paths
     n,w,out=apply(event,path)
     assert n==1 and w is None and out["a\nb"]=="********"
+
+def test_rfc_unicode_surrogate_pair_literal_key_is_masked() -> None:
+    event = {"session😀": "synthetic-secret", "unrelated": "safe"}
+    path = "$['session\\uD83D\\uDE00']"
+    n, warning, result = apply(event, path)
+    assert n == 1 and warning is None
+    assert result == {"session😀": "********", "unrelated": "safe"}
+
+
+@pytest.mark.parametrize("invalid", [
+    "$['[]']",
+    "$['a\\x']",
+    "$['a\\uD800']",
+    "$['a\\uDC00']",
+    "$['a\\uD800\\uD800']",
+    "$['unterminated'",
+    "$['raw\\nline']".replace("\\n", "\n"),
+])
+def test_invalid_or_ambiguous_protection_name_warns_without_mutation(invalid: str) -> None:
+    event = {"[]": "synthetic-secret", "a\nline": "another", "keep": "safe"}
+    n, warning, result = apply(event, invalid)
+    assert n == 0 and warning is not None
+    assert result == event

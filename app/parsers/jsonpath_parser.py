@@ -52,6 +52,19 @@ def compile_jsonpath(path: str | None) -> Any:
     return _compile(normalized)
 
 
+def find_matches_compiled(compiled_expr: Any, data: Any) -> list[Any]:
+    """Return JSONPath matches; an out-of-range negative index matches nothing.
+
+    jsonpath-ng 1.8.0 leaks IndexError for array[-N] when N > array length.
+    RFC 9535 requires a missing index to produce an empty nodelist instead.
+    Preserve invalid-selector ParserError behavior and other evaluation errors.
+    """
+    try:
+        return compiled_expr.find(data)
+    except IndexError:
+        return []
+
+
 def find_values(root: Any, path: str | None) -> list[Any]:
     """Evaluate a normalized JSONPath against any JSON-serializable root.
 
@@ -64,7 +77,7 @@ def find_values(root: Any, path: str | None) -> list[Any]:
     """
 
     expr = compile_jsonpath(path)
-    return [match.value for match in expr.find(root)]
+    return [match.value for match in find_matches_compiled(expr, root)]
 
 
 def extract_one(data: dict[str, Any], path: str | None, default: Any = None) -> Any:
@@ -137,7 +150,7 @@ def extract_one_compiled(compiled_expr: Any, data: dict[str, Any], default: Any 
     if not isinstance(data, dict):
         raise MappingError("extract_one_compiled requires root data to be a dict")
 
-    matches = compiled_expr.find(data)
+    matches = find_matches_compiled(compiled_expr, data)
     if not matches:
         return default
     return matches[0].value
