@@ -7,6 +7,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -19,6 +20,7 @@ from app.schema_observation.drift_detection import (
     update_type_change_streaks,
 )
 from app.schema_observation.models import StreamObservedSchema
+from app.schema_observation.occurrence_tracking import collect_occurrence_batch
 from app.schema_observation.path_walker import collect_paths_from_events, merge_inferred_types
 
 logger = logging.getLogger(__name__)
@@ -46,11 +48,52 @@ def _paths_from_row(paths_json: dict[str, Any] | None) -> dict[str, dict[str, An
                 "add_confirm_runs": int(meta.get("add_confirm_runs") or 0),
                 "type_change_confirm_runs": int(meta.get("type_change_confirm_runs") or 0),
             }
+            # Missing means legacy history is unscorable; do not backfill it
+            # from the historically inflated observation_count field.
+            if "occurrence_count" in meta:
+                out[path]["occurrence_count"] = int(meta["occurrence_count"])
     return out
 
 
-def _serialize_paths(paths: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    return {"paths": deepcopy(paths)}
+def _serialize_paths(
+    paths: dict[str, dict[str, Any]],
+    *,
+    source: dict[str, Any] | None = None,
+    counting: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Preserve additive metadata across runtime and explicit baseline resets."""
+    raw = source if isinstance(source, dict) else {}
+    out = {key: deepcopy(value) for key, value in raw.items() if key != "paths"}
+    out["paths"] = deepcopy(paths)
+    if counting is not None:
+        out["counting_v1"] = deepcopy(counting)
+    return out
+
+
+def _next_counting_epoch(
+    previous: dict[str, Any] | None,
+    *,
+    old_total_events: int,
+    sample_events: int,
+    batch_complete: bool,
+    batch_warnings: tuple[str, ...],
+) -> dict[str, Any]:
+    """Start a verifiable count epoch without rewriting untrusted legacy counts."""
+    old = (previous or {}).get("counting_v1")
+    if isinstance(old, dict) and old.get("version") == 1:
+        epoch = deepcopy(old)
+    else:
+        epoch = {
+            "version": 1,
+            "sampled_events": 0,
+            "historical_events_excluded": old_total_events,
+            "complete": True,
+            "warnings": [],
+        }
+    epoch["sampled_events"] = int(epoch["sampled_events"]) + sample_events
+    epoch["complete"] = bool(epoch["complete"]) and batch_complete
+    epoch["warnings"] = sorted(set(epoch.get("warnings") or []).union(batch_warnings))
+    return epoch
 
 
 def merge_path_inventories(
@@ -58,21 +101,34 @@ def merge_path_inventories(
     batch_paths: dict[str, str],
     *,
     events_in_batch: int,
+    batch_occurrence_counts: dict[str, int] | None = None,
 ) -> dict[str, dict[str, Any]]:
     merged = deepcopy(existing)
+    if batch_occurrence_counts is not None:
+        for entry in merged.values():
+            # Absent in historical data: count starts in the new tracking epoch.
+            entry.setdefault("occurrence_count", 0)
     for path, typ in batch_paths.items():
         entry = merged.get(path)
+        exact = int((batch_occurrence_counts or {}).get(path, 0))
+        if batch_occurrence_counts is not None and not 0 <= exact <= events_in_batch:
+            raise ValueError("Field occurrence count must be a per-event presence count")
         if entry is None:
             merged[path] = {
                 "type": typ,
+                # Retain the historical field for current API/backward compatibility.
                 "observation_count": events_in_batch,
                 "runs_since_seen": 0,
                 "add_confirm_runs": 0,
                 "type_change_confirm_runs": 0,
             }
+            if batch_occurrence_counts is not None:
+                merged[path]["occurrence_count"] = exact
         else:
             entry["type"] = merge_inferred_types(str(entry.get("type")), typ)
             entry["observation_count"] = int(entry.get("observation_count") or 0) + events_in_batch
+            if batch_occurrence_counts is not None:
+                entry["occurrence_count"] = int(entry.get("occurrence_count") or 0) + exact
     return merged
 
 
@@ -93,7 +149,8 @@ def observe_extracted_events(
     max_paths = max(100, int(settings.GDC_SCHEMA_OBSERVATION_MAX_PATHS))
     max_depth = max(4, int(settings.GDC_SCHEMA_OBSERVATION_MAX_DEPTH))
 
-    sample = [ev for ev in events if isinstance(ev, dict)][:max_events]
+    valid = [ev for ev in events if isinstance(ev, dict)]
+    sample = valid[:max_events]
     if not sample:
         return
 
@@ -103,25 +160,51 @@ def observe_extracted_events(
         max_paths=max_paths,
         max_events=max_events,
     )
-    if not batch_paths:
-        return
+    evidence = collect_occurrence_batch(
+        sample,
+        batch_paths=batch_paths,
+        max_depth=max_depth,
+        max_paths=max_paths,
+        event_sample_truncated=len(valid) > len(sample),
+        invalid_event_objects=len(valid) != len(events),
+    )
 
     now = datetime.now(timezone.utc)
-    row = db.get(StreamObservedSchema, stream_id)
+    # Canonical per-Stream lock order: parent Stream BEFORE observed schema.
+    # The parent always exists for valid observations, even when the observed
+    # schema row has not been created. This serializes first inserts and
+    # existing-row updates without an absent-row SELECT race.
+    owner = db.execute(
+        text("SELECT id FROM streams WHERE id = :stream_id FOR UPDATE"),
+        {"stream_id": stream_id},
+    ).scalar_one_or_none()
+    if owner is None:
+        raise ValueError("Observed-schema Stream owner does not exist")
+    # Force a DB refresh even if the Session previously loaded a stale row.
+    row = db.get(
+        StreamObservedSchema, stream_id, with_for_update=True,
+        populate_existing=True,
+    )
+    previous_payload = row.paths_json if row is not None else None
+    epoch = _next_counting_epoch(
+        previous_payload,
+        old_total_events=int(row.total_events_observed or 0) if row is not None else 0,
+        sample_events=evidence.sampled_events,
+        batch_complete=evidence.complete,
+        batch_warnings=evidence.warnings,
+    )
     if row is None:
-        initial_paths = {
-            p: {
-                "type": t,
-                "observation_count": len(sample),
-                "runs_since_seen": 0,
-                "add_confirm_runs": 1,
-                "type_change_confirm_runs": 0,
-            }
-            for p, t in batch_paths.items()
-        }
+        initial_paths = merge_path_inventories(
+            {},
+            batch_paths,
+            events_in_batch=len(sample),
+            batch_occurrence_counts=evidence.present_by_path,
+        )
+        for meta in initial_paths.values():
+            meta["add_confirm_runs"] = 1
         row = StreamObservedSchema(
             stream_id=stream_id,
-            paths_json=_serialize_paths(initial_paths),
+            paths_json=_serialize_paths(initial_paths, counting=epoch),
             total_events_observed=len(sample),
             observation_run_count=1,
             last_observation_at=now,
@@ -131,8 +214,13 @@ def observe_extracted_events(
         return
 
     existing_paths = _paths_from_row(row.paths_json)
-    merged_paths = merge_path_inventories(existing_paths, batch_paths, events_in_batch=len(sample))
-    row.paths_json = _serialize_paths(merged_paths)
+    merged_paths = merge_path_inventories(
+        existing_paths,
+        batch_paths,
+        events_in_batch=len(sample),
+        batch_occurrence_counts=evidence.present_by_path,
+    )
+    row.paths_json = _serialize_paths(merged_paths, source=previous_payload, counting=epoch)
     row.total_events_observed = int(row.total_events_observed or 0) + len(sample)
     row.observation_run_count = int(row.observation_run_count or 0) + 1
     row.last_observation_at = now
@@ -157,7 +245,7 @@ def _finalize_observation_row(
     baseline_paths = baseline_raw.get("paths") if isinstance(baseline_raw.get("paths"), dict) else {}
     ensure_pending_add_tracking(merged_paths, baseline_paths, batch_paths)
     update_type_change_streaks(merged_paths, baseline_paths, batch_paths)
-    row.paths_json = _serialize_paths(merged_paths)
+    row.paths_json = _serialize_paths(merged_paths, source=row.paths_json)
     try:
         detect_field_changes(
             db,
@@ -199,14 +287,25 @@ def build_observed_schema_read_model(
 ) -> dict[str, Any]:
     paths_map = _paths_from_row(row.paths_json if row is not None else None)
     entries = [
-        {"path": path, "type": meta["type"], "observation_count": meta.get("observation_count", 0)}
+        {
+            "path": path,
+            "type": meta["type"],
+            "observation_count": meta.get("observation_count", 0),
+            "occurrence_count": meta.get("occurrence_count"),
+        }
         for path, meta in sorted(paths_map.items(), key=lambda item: item[0])
     ]
+    raw_counting = ((row.paths_json or {}).get("counting_v1") if row is not None else None)
+    counting = raw_counting if isinstance(raw_counting, dict) and raw_counting.get("version") == 1 else None
     return {
         "stream_id": stream_id,
         "observation_enabled": schema_observation_enabled(),
         "paths": entries,
         "path_count": len(entries),
+        "occurrence_sampled_events": int(counting["sampled_events"]) if counting else None,
+        "occurrence_complete": bool(counting["complete"]) if counting else None,
+        "occurrence_warnings": list(counting.get("warnings") or []) if counting else [],
+        "historical_events_excluded": int(counting["historical_events_excluded"]) if counting else None,
         "total_events_observed": int(row.total_events_observed) if row is not None else 0,
         "observation_run_count": int(row.observation_run_count) if row is not None else 0,
         "last_observation_at": row.last_observation_at if row is not None else None,

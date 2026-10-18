@@ -204,7 +204,8 @@ def reset_schema_baseline(
         meta["add_confirm_runs"] = 0
         meta["type_change_confirm_runs"] = 0
         meta.pop("type_change_last_batch_type", None)
-    row.paths_json = _serialize_paths(observed_paths)
+    # A baseline reset must not erase independent occurrence-count epoch data.
+    row.paths_json = _serialize_paths(observed_paths, source=row.paths_json)
     row.updated_at = now
 
     open_findings = list_field_drifts(db, stream_id, status_filter="open")
