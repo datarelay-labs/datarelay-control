@@ -3,6 +3,8 @@
  * Used by Record Selection → Transform as the source-of-truth field tree.
  */
 
+import { appendObservedFieldPath, parseObservedSchemaPath } from './observedSchemaPaths'
+
 export type UnionSchemaField = {
   field_path: string
   field_type: string
@@ -70,7 +72,7 @@ function walkEventFields(
 
   if (valueType === 'object' && value !== null && typeof value === 'object' && !Array.isArray(value)) {
     for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-      const childPath = path === '$' ? `$.${key}` : `${path}.${key}`
+      const childPath = appendObservedFieldPath(path, key)
       walkEventFields(child, childPath, depth + 1, out)
       if (out.size >= MAX_PATHS) return
     }
@@ -85,7 +87,7 @@ function walkEventFields(
     for (const item of value.slice(0, 3)) {
       if (item !== null && typeof item === 'object' && !Array.isArray(item)) {
         for (const [key, child] of Object.entries(item as Record<string, unknown>)) {
-          walkEventFields(child, `${arrayPath}.${key}`, depth + 1, out)
+          walkEventFields(child, appendObservedFieldPath(arrayPath, key), depth + 1, out)
           if (out.size >= MAX_PATHS) return
         }
       } else {
@@ -99,7 +101,7 @@ function walkEventFields(
 function collectPathsFromEvent(event: Record<string, unknown>): Map<string, { type: string; samples: unknown[] }> {
   const out = new Map<string, { type: string; samples: unknown[] }>()
   for (const [key, value] of Object.entries(event)) {
-    walkEventFields(value, `$.${key}`, 0, out)
+    walkEventFields(value, appendObservedFieldPath('$', key), 0, out)
     if (out.size >= MAX_PATHS) break
   }
   return out
@@ -172,38 +174,48 @@ export function formatUnionOccurrence(field: UnionSchemaField, schema: UnionSche
   return `${field.occurrence_count}/${schema.total_events}`
 }
 
-/** Merge union schema sample values into a representative nested object for JSON view. */
+/** Assign a literal JSON member, including "__proto__", without prototype mutation. */
+function setLiteralMember(target: Record<string, unknown>, key: string, value: unknown): void {
+  Object.defineProperty(target, key, {
+    value,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  })
+}
+
+function getOwnMember(target: Record<string, unknown>, key: string): unknown {
+  return Object.prototype.hasOwnProperty.call(target, key) ? target[key] : undefined
+}
+
+/** Merge sample leaf values into a representative nested object for JSON view.
+ *
+ * The representative preview preserves the legacy behavior of collapsing
+ * array wildcard positions; it must never split a literal quoted key on '.'
+ * or treat '__proto__' and other inherited names as object prototypes.
+ */
 export function buildRepresentativeEventFromUnionSchema(schema: UnionSchema): Record<string, unknown> {
   const root: Record<string, unknown> = {}
   for (const field of schema.fields) {
-    const path = field.field_path
-    if (!path.startsWith('$.')) continue
-    const rawSegments = path.slice(2).split('.')
-    const segments: string[] = []
-    for (const seg of rawSegments) {
-      if (!seg) continue
-      if (seg.endsWith('[]')) {
-        const base = seg.replace(/\[\]$/, '')
-        if (base) segments.push(base)
-        continue
-      }
-      segments.push(seg.replace(/\[\d+\]/g, ''))
-    }
+    const parsed = parseObservedSchemaPath(field.field_path)
+    if (!parsed) continue
+    const segments = parsed
+      .filter((segment): segment is { kind: 'field'; key: string } => segment.kind === 'field')
+      .map((segment) => segment.key)
     if (segments.length === 0) continue
     const sample = field.sample_values[0]
     if (!isPrimitiveSample(sample)) continue
     let cur: Record<string, unknown> = root
     for (let i = 0; i < segments.length; i++) {
       const seg = segments[i]
-      if (seg === '[]') continue
       if (i === segments.length - 1) {
-        cur[seg] = sample
+        setLiteralMember(cur, seg, sample)
       } else {
-        const next = cur[seg]
+        const next = getOwnMember(cur, seg)
         if (!next || typeof next !== 'object' || Array.isArray(next)) {
-          cur[seg] = {}
+          setLiteralMember(cur, seg, {})
         }
-        cur = cur[seg] as Record<string, unknown>
+        cur = getOwnMember(cur, seg) as Record<string, unknown>
       }
     }
   }

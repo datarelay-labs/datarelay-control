@@ -23,6 +23,20 @@ describe('route delivery dirty comparator', () => {
     expect(isRouteDeliveryDirty(baseline, { ...edited, routeName: baseline.routeName })).toBe(false)
   })
 
+  it('treats an explicit RFC5425 opt-in as a delivery change and tracks revert', () => {
+    const baseline = { ...defaultsRouteDeliveryFormState(), destinationId: 27, syslogWireMode: 'legacy' as const }
+    const changed = { ...baseline, syslogWireMode: 'rfc5425' as const }
+    expect(isRouteDeliveryDirty(baseline, changed)).toBe(true)
+    expect(isRouteDeliveryDirty(baseline, { ...changed, syslogWireMode: 'legacy' })).toBe(false)
+  })
+
+  it('treats an omitted saved syslog mode as unchanged legacy behavior', () => {
+    const original = { ...defaultsRouteDeliveryFormState(), syslogWireMode: undefined }
+    const saved = { ...original, syslogWireMode: 'legacy' as const }
+    expect(routeDeliveryFormFingerprint(original)).toBe(routeDeliveryFormFingerprint(saved))
+    expect(isRouteDeliveryDirty(original, saved)).toBe(false)
+  })
+
   it('includes destination and rate-limit fields in dirty detection', () => {
     const baseline = { ...defaultsRouteDeliveryFormState(), destinationId: 10, rateLimitEnabled: true, perSecond: 100 }
     expect(isRouteDeliveryDirty(baseline, { ...baseline, destinationId: 11 })).toBe(true)
