@@ -11,7 +11,8 @@
 #   - No DB reset, no deletes of user entities, no internet access required.
 #
 # Usage:
-#   ./scripts/dev-validation/seed-visible-e2e-fixtures.sh [--local-dev-mode]
+#   ./scripts/dev-validation/seed-visible-e2e-fixtures.sh [--local-dev-mode] [--preview-database EXACT_NAME]
+#   Preview opt-in also requires APP_ENV=development and loopback port 55441.
 #
 # Integrated with the validation lab: `./scripts/validation-lab/start.sh` runs this
 # automatically after migrations (unless SKIP_VISIBLE_E2E_SEED=1). You can still run
@@ -26,9 +27,18 @@ cd "$ROOT"
 export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
 
 EXTRA=()
-for arg in "$@"; do
+while (($#)); do
+  arg="$1"
   case "$arg" in
   --local-dev-mode) EXTRA+=("--local-dev-mode") ;;
+  --preview-database)
+    if [[ $# -lt 2 || "$2" == --* || -z "$2" ]]; then
+      echo "--preview-database requires an exact catalog name" >&2
+      exit 1
+    fi
+    EXTRA+=("--preview-database" "$2")
+    shift
+    ;;
   -h | --help)
     sed -n '1,35p' "$0"
     exit 0
@@ -38,6 +48,7 @@ for arg in "$@"; do
     exit 1
     ;;
   esac
+  shift
 done
 
 export DATABASE_URL="${DATABASE_URL:-postgresql://gdc:gdc@127.0.0.1:${GDC_DEV_VALIDATION_POSTGRES_HOST_PORT:-55442}/gdc}"

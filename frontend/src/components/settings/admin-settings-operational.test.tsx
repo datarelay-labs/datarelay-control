@@ -7,6 +7,7 @@ import {
   getAdminAlertSettings,
   getAdminAuditLog,
   getAdminConfigVersions,
+  getAdminSafeRollbackPreview,
   getAdminHealthSummary,
 } from '../../api/gdcAdmin'
 import { isPlatformAlertingUiEnabled } from '../../lib/feature-flags'
@@ -15,6 +16,7 @@ import { AdminOperationalDashboard } from './admin-settings-operational'
 vi.mock('../../api/gdcAdmin', () => ({
   getAdminAuditLog: vi.fn(),
   getAdminConfigVersions: vi.fn(),
+  getAdminSafeRollbackPreview: vi.fn(),
   getAdminHealthSummary: vi.fn(),
   getAdminAlertSettings: vi.fn(),
   getAdminAlertHistory: vi.fn(),
@@ -176,6 +178,61 @@ describe('AdminOperationalDashboard operations workspace', () => {
     expect(screen.queryByTestId('admin-alerting-panel')).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Alerting' })).not.toBeInTheDocument()
     expect(getAdminAlertSettings).not.toHaveBeenCalled()
+  })
+
+  it('previews historical safe configuration differences without any apply control', async () => {
+    const user = userEvent.setup()
+    const row = { ...versionsFixture.items[0], id: 71, version: 7, entity_type: 'STREAM_CONFIG', entity_id: 11 }
+    vi.mocked(getAdminConfigVersions).mockImplementation(async (params) =>
+      params?.entity_type
+        ? { total: 1, items: [{ ...row, id: 89, version: 10 }] }
+        : { total: 1, items: [row] },
+    )
+    vi.mocked(getAdminSafeRollbackPreview).mockResolvedValue({
+      entity_type: 'STREAM_CONFIG',
+      source_version_row_id: 71,
+      source_version: 7,
+      current_version: 10,
+      expected_version: 10,
+      target: 'before',
+      changed_fields: [{ path: 'polling_interval', before: '60', after: '120' }],
+      from_fingerprint: 'a'.repeat(64),
+      to_fingerprint: 'b'.repeat(64),
+      blockers: ['mfa_required', 'backup_missing', 'unsupported'],
+      may_submit_to_product_authority: false,
+      product_apply_required: true,
+    })
+    renderDash(true)
+    await screen.findByTestId('admin-config-version-section')
+    await user.click(screen.getByTestId('admin-config-evidence-toggle'))
+    await user.click(screen.getByRole('button', { name: 'Preview safe changes' }))
+    const preview = await screen.findByTestId('admin-safe-config-preview')
+    expect(preview).toHaveTextContent('polling_interval')
+    expect(preview).toHaveTextContent('60')
+    expect(preview).toHaveTextContent('120')
+    expect(preview).toHaveTextContent(/MFA required/i)
+    expect(preview).toHaveTextContent(/Backup missing/i)
+    expect(preview).toHaveTextContent(/Read-only/i)
+    expect(preview.querySelectorAll('button')).toHaveLength(0)
+    expect(getAdminConfigVersions).toHaveBeenCalledWith({
+      entity_type: 'STREAM_CONFIG', entity_id: 11, limit: 1,
+    })
+    expect(getAdminSafeRollbackPreview).toHaveBeenCalledWith(71, 10, 'before')
+    expect(screen.queryByText(/Ready to apply/i)).not.toBeInTheDocument()
+  })
+
+  it('keeps version history visible when safe preview is unavailable or unsupported', async () => {
+    const user = userEvent.setup()
+    vi.mocked(getAdminConfigVersions).mockResolvedValue({
+      total: 1,
+      items: [{ ...versionsFixture.items[0], entity_type: 'MAPPING_CONFIG' }],
+    })
+    renderDash()
+    await screen.findByTestId('admin-config-version-section')
+    await user.click(screen.getByTestId('admin-config-evidence-toggle'))
+    expect(screen.getByRole('button', { name: 'Preview safe changes' })).toBeDisabled()
+    expect(getAdminSafeRollbackPreview).not.toHaveBeenCalled()
+    expect(screen.getByTestId('admin-config-evidence-body')).toBeInTheDocument()
   })
 
   it('shows Alerting when the feature flag is enabled and disables manage for read-only', async () => {

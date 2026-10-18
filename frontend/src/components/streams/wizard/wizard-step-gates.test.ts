@@ -12,6 +12,7 @@ import {
   wizardRecordPathConfirmed,
   wizardRecordPathReady,
   wizardRecordPathStale,
+  wizardRouteProcessingStepBlockReason,
   wizardIncrementalFetchGuidanceComplete,
   wizardSampleStepBlockReason,
   wizardSampleStepGateReady,
@@ -23,6 +24,8 @@ import { buildInitialState } from './wizard-state'
 
 function sampleReadyState() {
   const state = buildInitialState()
+  state.connector.connectorId = 1
+  state.connector.sourceId = 2
   const finishedAt = Date.now()
   state.apiTest.status = 'success'
   state.apiTest.ok = true
@@ -127,6 +130,44 @@ describe('wizard-step-gates', () => {
     state.destinations.routeDrafts[0]!.enabled = true
     expect(wizardDestinationGateReady(state)).toBe(true)
     expect(canAdvanceFromWizardStep('route_processing', state)).toBe(true)
+  })
+
+  it('does not unlock Deploy for an enabled route with an invalid destination id', () => {
+    const state = sampleReadyState()
+    for (const invalidId of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      state.destinations.routeDrafts = [{
+        key: 'invalid-destination',
+        destinationId: invalidId,
+        enabled: true,
+        failurePolicy: 'RETRY_AND_BACKOFF',
+        rateLimitJson: {},
+      }]
+      expect(wizardDestinationGateReady(state)).toBe(false)
+      expect(wizardRouteProcessingStepBlockReason(state)).toContain('valid destination')
+      expect(canAdvanceFromWizardStep('route_processing', state)).toBe(false)
+      expect(wizardStepReachable('deploy', state)).toBe(false)
+    }
+    state.destinations.routeDrafts.push({
+      key: 'valid-destination',
+      destinationId: 42,
+      enabled: true,
+      failurePolicy: 'RETRY_AND_BACKOFF',
+      rateLimitJson: {},
+    })
+    // One valid Route must not hide another enabled Route with a broken destination.
+    expect(wizardDestinationGateReady(state)).toBe(false)
+    expect(wizardStepReachable('deploy', state)).toBe(false)
+    expect(wizardRouteProcessingStepBlockReason(state)).toContain('valid destination')
+
+    // An invalid, disabled Route is excluded from the intended delivery paths.
+    state.destinations.routeDrafts[0]!.enabled = false
+    expect(wizardDestinationGateReady(state)).toBe(true)
+    expect(wizardStepReachable('deploy', state)).toBe(true)
+
+    // Restoring the route is only safe once its destination is valid.
+    state.destinations.routeDrafts[0]!.enabled = true
+    state.destinations.routeDrafts[0]!.destinationId = 7
+    expect(wizardDestinationGateReady(state)).toBe(true)
   })
 
   it('allows advancing from destinations without enabled routes', () => {
@@ -241,6 +282,8 @@ describe('wizard-step-gates', () => {
 
   it('does not require HTTP record path / checkpoint for REMOTE_FILE_POLLING after a successful probe', () => {
     const state = buildInitialState()
+    state.connector.connectorId = 1
+    state.connector.sourceId = 2
     state.connector.sourceType = 'REMOTE_FILE_POLLING'
     state.stream.remoteDirectory = '/data'
     state.apiTest.status = 'success'
@@ -279,5 +322,23 @@ describe('wizard-step-gates', () => {
     state.apiTest.finishedAt = Date.now()
     expect(wizardSourceRequiresHttpRecordSelection(state)).toBe(true)
     expect(wizardSampleStepGateReady(state)).toBe(false)
+  })
+})
+
+
+describe('Connect prerequisite', () => {
+  it('does not unlock sampling for a source-type hint without a saved Connector and linked Source', () => {
+    const state = buildInitialState()
+    state.connector.sourceType = 'DATABASE_QUERY'
+    expect(canAdvanceFromWizardStep('connect', state)).toBe(false)
+    expect(wizardStepReachable('sample', state)).toBe(false)
+    state.connector.connectorId = 5
+    expect(wizardStepReachable('sample', state)).toBe(false)
+    state.connector.sourceId = 7
+    expect(wizardStepReachable('sample', state)).toBe(true)
+    for (const invalid of [0, -1, 1.5, NaN, Infinity]) {
+      state.connector.sourceId = invalid
+      expect(wizardStepReachable('sample', state)).toBe(false)
+    }
   })
 })

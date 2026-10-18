@@ -19,7 +19,6 @@ import {
   connectorDetailPath,
   logsExplorerPath,
   NAV_PATH,
-  runtimeOverviewPath,
   streamEditPath,
   streamRuntimePath,
 } from '../../../config/nav-paths'
@@ -916,10 +915,10 @@ function DeployCreatedPanel({
                   </Link>
                 ) : null}
                 <Link
-                  to={runtimeOverviewPath({ stream_id: streamNumericId })}
+                  to={NAV_PATH.routes}
                   className="inline-flex h-9 items-center rounded-md border border-slate-200/90 bg-white px-3 text-[12px] font-semibold text-slate-700 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200"
                 >
-                  Delivery paths
+                  Inspect Data Flows
                 </Link>
               </>
             ) : null}
@@ -931,6 +930,12 @@ function DeployCreatedPanel({
               Back to Route Processing
             </button>
           </div>
+          {streamNumericId != null ? (
+            <p className="text-[11px] leading-5 text-slate-600 dark:text-gdc-mutedStrong" data-testid="deploy-data-flows-guidance">
+              Inspect Data Flows for the saved Stream → Route → Destination topology.
+              Gateway status does not confirm receiver ingestion; check Runtime and delivery logs for evidence.
+            </p>
+          ) : null}
           {displayedRunError ? (
             <p className="text-[11px] font-medium text-red-700 dark:text-red-300">{displayedRunError}</p>
           ) : null}

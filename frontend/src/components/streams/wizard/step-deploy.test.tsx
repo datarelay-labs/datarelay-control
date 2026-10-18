@@ -412,6 +412,28 @@ function traceSuccess(runId: string, stage = 'route_send_success') {
   }
 }
 
+describe('StepDeploy Flow-First next actions', () => {
+  it('links a created Stream to the Data Flows topology without substituting it for runtime verification', () => {
+    render(
+      <MemoryRouter>
+        <StepDeploy state={createdDeployState()} onStart={vi.fn()} onNavigateToLegacySubstep={vi.fn()} />
+      </MemoryRouter>,
+    )
+    expect(screen.getByRole('link', { name: 'Inspect Data Flows' })).toHaveAttribute('href', '/routes')
+    expect(screen.getByRole('link', { name: 'Open runtime' })).toHaveAttribute('href', '/streams/42/runtime')
+    expect(screen.getByTestId('deploy-data-flows-guidance')).toHaveTextContent('does not confirm receiver ingestion')
+  })
+
+  it('does not offer saved delivery-path inspection before the Stream exists', () => {
+    render(
+      <MemoryRouter>
+        <StepDeploy state={readyState()} onStart={vi.fn()} onNavigateToLegacySubstep={vi.fn()} />
+      </MemoryRouter>,
+    )
+    expect(screen.queryByRole('link', { name: 'Inspect Data Flows' })).not.toBeInTheDocument()
+  })
+})
+
 describe('StepDeploy exact-run delivery proof', () => {
   beforeEach(() => {
     runStreamOnce.mockReset()

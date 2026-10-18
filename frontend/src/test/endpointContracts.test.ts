@@ -39,6 +39,7 @@ const TASK_REQUIRED_RUNTIME_PATHS = [
   '/api/v1/runtime/streams/{id}/pipeline-debug',
   '/api/v1/runtime/api-test/http',
   '/api/v1/runtime/api-test/connector-auth',
+  '/api/v1/runtime/api-test/database-discovery',
   '/api/v1/runtime/preview/mapping',
   '/api/v1/runtime/preview/format',
   '/api/v1/runtime/preview/route-delivery',

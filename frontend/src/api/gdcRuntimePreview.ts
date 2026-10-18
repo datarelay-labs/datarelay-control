@@ -191,6 +191,37 @@ export async function runConnectorAuthTest(payload: ConnectorAuthTestRequestPayl
   })
 }
 
+export type DatabaseDiscoveryColumn = {
+  name: string
+  data_type: string
+  nullable: boolean
+  ordinal_position: number
+}
+
+export type DatabaseDiscoveryTable = {
+  schema_name: string
+  table_name: string
+  table_type: string
+  columns: DatabaseDiscoveryColumn[]
+}
+
+export type DatabaseDiscoveryResponse = {
+  ok: boolean
+  db_type: string
+  database: string
+  schemas: string[]
+  tables: DatabaseDiscoveryTable[]
+  truncated: boolean
+  message: string
+}
+
+export async function runDatabaseDiscovery(connectorId: number): Promise<DatabaseDiscoveryResponse> {
+  return requestJson<DatabaseDiscoveryResponse>(`${RT}/api-test/database-discovery`, {
+    method: 'POST',
+    body: JSON.stringify({ connector_id: connectorId }),
+  })
+}
+
 export type MappingDraftPreviewRequest = {
   payload: unknown
   event_array_path?: string | null
@@ -328,7 +359,7 @@ export type RouteE2EDraftPreviewRequest = {
   field_mappings: Record<string, unknown>
   enrichment: Record<string, unknown>
   override_policy?: 'KEEP_EXISTING' | 'OVERRIDE' | 'ERROR_ON_CONFLICT'
-  destination_type: 'SYSLOG_UDP' | 'SYSLOG_TCP' | 'SYSLOG_TLS' | 'WEBHOOK_POST'
+  destination_type?: 'SYSLOG_UDP' | 'SYSLOG_TCP' | 'SYSLOG_TLS' | 'WEBHOOK_POST'
   formatter_config?: Record<string, unknown>
   max_events?: number
   stream_id: number
@@ -336,6 +367,16 @@ export type RouteE2EDraftPreviewRequest = {
 }
 
 export type RouteE2EDraftPreviewResponse = {
+  stream_id?: number | null
+  destination_id?: number | null
+  destination_type?: string
+  configuration_state?: 'draft' | 'saved'
+  mapped_events?: Array<Record<string, unknown>>
+  stage_previews?: Record<string, unknown[]>
+  preview_issues?: Array<{ stage: string; rule_id: string | null; output_field: string; error_code: string }>
+  preview_issue_count?: number
+  preview_issues_truncated?: boolean
+  display_redacted?: boolean
   final_events: Array<Record<string, unknown>>
   preview_messages: unknown[]
   route_id: number | null

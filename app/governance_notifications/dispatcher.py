@@ -23,8 +23,24 @@ def _event_subject(event: GovernanceNotificationEvent) -> str:
     return f"[Governance] {event.event_type.replace('_', ' ').title()}"
 
 
-def _event_body(event: GovernanceNotificationEvent) -> str:
+def _external_event_identifiers(event: GovernanceNotificationEvent) -> dict[str, int]:
+    """Transmit only verified opaque IDs; leave raw event details in Control.
+
+    A notification can be sent outside the tenant. Comments, error messages,
+    URL/headers, credentials and arbitrary nested payloads are not safe to
+    copy into email or Webhook, even when internal event audit retains them.
+    """
     payload = event.payload_json if isinstance(event.payload_json, dict) else {}
+    id_keys = ("policy_id", "replay_event_id", "stream_id", "route_id", "destination_id")
+    return {
+        key: value for key in id_keys
+        if isinstance((value := payload.get(key)), int) and
+        not isinstance(value, bool) and 0 < value <= 2**63 - 1
+    }
+
+
+def _event_body(event: GovernanceNotificationEvent) -> str:
+    payload = _external_event_identifiers(event)
     lines = [
         f"Event: {event.event_type}",
         f"Category: {event.event_category}",
@@ -43,7 +59,7 @@ def _webhook_payload(event: GovernanceNotificationEvent) -> dict[str, Any]:
         "event_type": event.event_type,
         "severity": event.severity,
         "timestamp": event.created_at.isoformat(),
-        "payload": event.payload_json if isinstance(event.payload_json, dict) else {},
+        "payload": _external_event_identifiers(event),
     }
 
 

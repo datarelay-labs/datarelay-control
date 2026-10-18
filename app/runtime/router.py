@@ -188,6 +188,8 @@ from app.runtime.schemas import (
     FormatPreviewResponse,
     ConnectorAuthTestRequest,
     ConnectorAuthTestResponse,
+    DatabaseDiscoveryRequest,
+    DatabaseDiscoveryResponse,
     DeliveryPrefixFormatPreviewRequest,
     DeliveryPrefixFormatPreviewResponse,
     HttpApiTestRequest,
@@ -3989,6 +3991,19 @@ async def api_test_http(payload: HttpApiTestRequest, request: Request, db: Sessi
 
     try:
         return preview_service.run_http_api_test(payload, db, api_origin=str(request.base_url).rstrip("/"))
+    except PreviewRequestError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@router.post("/api-test/database-discovery", response_model=DatabaseDiscoveryResponse)
+async def api_test_database_discovery(
+    payload: DatabaseDiscoveryRequest,
+    db: Session = Depends(get_db),
+) -> DatabaseDiscoveryResponse:
+    """Discover read-only schema/table/column metadata for a saved PostgreSQL connector."""
+
+    try:
+        return preview_service.run_database_discovery(payload, db)
     except PreviewRequestError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 

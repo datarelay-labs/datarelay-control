@@ -138,6 +138,21 @@ def effective_message_prefix_template(route_formatter: dict[str, Any]) -> str:
     return DEFAULT_MESSAGE_PREFIX_TEMPLATE
 
 
+def _escape_syslog_prefix_controls(prefix: str) -> str:
+    """Keep source-derived prefix data from creating extra Syslog records.
+
+    This is only applied to the *computed prefix*, not the underlying JSON
+    event. Escape CR, LF, NUL, C0, DEL and Unicode line separators as visible
+    literal code-point sequences before framing.
+    """
+    return "".join(
+        f"\\u{ord(char):04x}"
+        if ord(char) < 32 or ord(char) in {127, 0x85, 0x2028, 0x2029}
+        else char
+        for char in prefix
+    )
+
+
 def format_single_delivery_line(
     event: dict[str, Any],
     route_formatter: dict[str, Any] | None,
@@ -153,6 +168,8 @@ def format_single_delivery_line(
         return payload
     template = effective_message_prefix_template(rf)
     resolved = resolve_message_prefix_template(template, event=event, context=prefix_context)
+    if str(destination_type or "").upper().startswith("SYSLOG"):
+        resolved = _escape_syslog_prefix_controls(resolved)
     return f"{resolved.rstrip()} {payload}"
 
 

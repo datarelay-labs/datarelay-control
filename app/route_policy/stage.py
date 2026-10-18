@@ -52,6 +52,7 @@ def route_policy_stage(
     route_policy_rules: list[Any] | None = None,
     route_overrides: list[dict[str, Any]] | None = None,
     governance_rules: list[dict[str, Any]] | None = None,
+    preview_only: bool = False,
 ) -> tuple[list[dict[str, Any]], RoutePolicyResult, RoutePolicyConfig]:
     """Evaluate policy on post-classification route events; gate delivery per route."""
 
@@ -84,7 +85,8 @@ def route_policy_stage(
     quarantine_recorded = False
     quarantine_event_id: int | None = None
 
-    if decision == "quarantine" and input_events:
+    # Preview evaluates the same decision but must never persist quarantine records.
+    if decision == "quarantine" and input_events and not preview_only:
         drift_only = (
             not should_quarantine_batch(policy_batch_result)
             and config.resolution.drift_quarantine_required
@@ -162,6 +164,7 @@ def route_policy_stage(
                 "stage": _policy_log_stage(decision),
                 "stream_id": route_ctx.stream_id,
                 "route_id": route_ctx.route_id,
+                "destination_id": route_ctx.destination_id,
                 "decision": decision,
                 "policy_action": decision,
                 "decision_reason": decision_reason,

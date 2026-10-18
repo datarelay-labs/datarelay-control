@@ -133,3 +133,83 @@ def test_http_api_test_actual_request_sent_keeps_body_size_with_query_limit(monk
     assert "limit" not in captured["kwargs"]["json"]
     assert body["actual_request_sent"]["query_params"]["limit"] == "10"
     assert body["actual_request_sent"]["json_body_masked"]["size"] == 1
+
+
+def test_s3_api_test_returns_bounded_actual_object_records_without_checkpoint_mutation(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def _fetch(self, source_config, stream_config, checkpoint):  # noqa: ANN001
+        captured["source_config"] = dict(source_config)
+        captured["stream_config"] = dict(stream_config)
+        captured["checkpoint"] = checkpoint
+        return [
+            {"id": "evt-1", "message": "first", "s3_key": "logs/a.ndjson"},
+            {"id": "evt-2", "message": "second", "s3_key": "logs/a.ndjson"},
+        ]
+
+    monkeypatch.setattr(
+        "app.sources.adapters.s3_object_polling.S3ObjectPollingAdapter.fetch",
+        _fetch,
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/runtime/api-test/http",
+        json={
+            "source_config": {
+                "source_type": "S3_OBJECT_POLLING",
+                "endpoint_url": "http://minio.example.test:9000",
+                "bucket": "security-logs",
+                "prefix": "logs/",
+                "access_key": "test-access",
+                "secret_key": "test-secret",
+            },
+            "stream_config": {"max_objects_per_run": 20},
+            "fetch_sample": True,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["request"]["method"] == "S3_OBJECT_POLLING"
+    assert body["request"]["url"] == "s3://security-logs/logs/"
+    assert body["response"]["parsed_json"][0]["id"] == "evt-1"
+    assert body["response"]["parsed_json"][1]["message"] == "second"
+    assert body["analysis"]["sample_event"]["id"] == "evt-1"
+    assert captured["stream_config"]["max_objects_per_run"] == 3
+    assert captured["checkpoint"] is None
+
+
+def test_s3_api_test_reports_object_parse_failure_distinct_from_connectivity(monkeypatch) -> None:
+    from app.runtime.errors import SourceFetchError
+
+    def _fetch(self, source_config, stream_config, checkpoint):  # noqa: ANN001
+        raise SourceFetchError("S3 object 'logs/bad.ndjson': invalid JSON on line 2")
+
+    monkeypatch.setattr(
+        "app.sources.adapters.s3_object_polling.S3ObjectPollingAdapter.fetch",
+        _fetch,
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/runtime/api-test/http",
+        json={
+            "source_config": {
+                "source_type": "S3_OBJECT_POLLING",
+                "endpoint_url": "http://minio.example.test:9000",
+                "bucket": "security-logs",
+                "access_key": "test-access",
+                "secret_key": "test-secret",
+            },
+            "stream_config": {"max_objects_per_run": 3},
+            "fetch_sample": True,
+        },
+    )
+
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert detail["error_type"] == "s3_sample_fetch_failed"
+    assert detail["error_code"] == "s3_sample_fetch_failed"
+    assert "invalid JSON on line 2" in detail["message"]

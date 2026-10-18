@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import json
 from typing import Any
 
 from sqlalchemy.orm import Session, joinedload
@@ -52,11 +53,30 @@ def _copy_source_metadata(raw_event: dict[str, Any], enriched_event: dict[str, A
             enriched_event[key] = raw_event[key]
 
 
-def _stored_sample_payload(source_config: dict[str, Any]) -> Any | None:
+def _stored_sample_payload(source_config: dict[str, Any]) -> tuple[Any | None, str | None]:
     for key in ("sample_payload", "raw_sample_payload"):
         if key in source_config and source_config[key] is not None:
-            return source_config[key]
-    return None
+            return source_config[key], None
+
+    preview = source_config.get("payload_preview")
+    if preview is None:
+        return None, None
+    if not isinstance(preview, str):
+        return preview, None
+
+    text = preview.strip()
+    if not text:
+        return None, None
+    try:
+        return json.loads(text), None
+    except json.JSONDecodeError:
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        if len(lines) > 1:
+            try:
+                return [json.loads(line) for line in lines], None
+            except json.JSONDecodeError:
+                pass
+    return None, "Webhook payload_preview is not valid JSON or NDJSON."
 
 
 def _resolve_raw_response(
@@ -68,11 +88,14 @@ def _resolve_raw_response(
 ) -> Any | None:
     if raw_event is not None:
         return raw_event
-    stored = _stored_sample_payload(source_config)
+    stored, stored_error = _stored_sample_payload(source_config)
+    if stored_error is not None:
+        errors.append(stored_error)
+        return None
     if stored is not None:
         return stored
     errors.append(
-        "No raw_event provided and no source sample_payload/raw_sample_payload is configured. "
+        "No raw_event provided and no source sample_payload/raw_sample_payload/payload_preview is configured. "
         "Provide raw_event or configure a webhook sample payload on the source."
     )
     return None

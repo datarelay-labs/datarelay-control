@@ -33,6 +33,11 @@ export const LazyNewStreamWizardPage = suspend(
 export const LazyDashboardOverview = suspend(
   lazyNamed(() => import('../components/dashboard/dashboard-overview'), 'DashboardOverview'),
 )
+// In-product operator guides (served by the authenticated app shell, no external site dependency)
+export const LazyHelpCenterPage = suspend(
+  lazyNamed(() => import('../components/help/help-center-page'), 'HelpCenterPage'),
+)
+
 // Stream runtime detail
 export const LazyStreamRuntimeDetailPage = suspend(
   lazyNamed(() => import('../components/streams/stream-runtime-detail-page'), 'StreamRuntimeDetailPage'),

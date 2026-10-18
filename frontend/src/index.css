@@ -81,6 +81,42 @@ a {
   outline-color: #1473e6;
 }
 
+/*
+ * Control UX readability floor (M7-02).
+ * Foundation exposes 12/14/16px semantic typography. Product surfaces may
+ * remain dense, but user-operable controls and primary table data must not
+ * depend on legacy 9-11px utilities. Dense code/technical metadata may use
+ * the 12px supporting floor.
+ */
+html[data-dr-theme] :where(
+  [class~="text-[9px]"],
+  [class~="text-[10px]"],
+  [class~="text-[11px]"]
+) {
+  font-size: var(--dr-font-size-xs);
+  line-height: 1.4;
+}
+
+html[data-dr-theme] :where(
+  button,
+  input,
+  select,
+  textarea,
+  label,
+  a,
+  [role="button"],
+  [role="tab"],
+  th,
+  td
+) {
+  font-size: var(--dr-font-size-base);
+}
+
+html[data-dr-theme] :where(code, pre) {
+  font-size: var(--dr-font-size-xs);
+  line-height: 1.45;
+}
+
 /* Thin, neutral scrollbars reduce visual noise in dense operator workspaces. */
 * {
   scrollbar-width: thin;
@@ -206,7 +242,18 @@ a {
 }
 
 @media (max-width: 640px) {
+  /* Compact help links ahead of sign-in without reversing DOM/keyboard order. */
   .gdc-login-centered .dr-auth-layout__resources {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0;
+    margin-top: 4px;
+  }
+
+  .gdc-login-centered .dr-auth-layout__resources a {
+    padding: 4px 6px;
+  }
+
+  .gdc-login-centered .dr-auth-layout__resources small {
+    display: none;
   }
 }

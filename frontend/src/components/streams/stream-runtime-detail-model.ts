@@ -19,10 +19,14 @@ export type RunHistoryRow = {
   runId: string
   startedAt: string
   duration: string
-  status: 'Success' | 'Failed' | 'Partial'
+  status: 'Success' | 'Failed' | 'Partial' | 'Started' | 'Completed' | 'No events' | 'Unknown'
   events: number
   delivered: number
   failed: number
+  /** false for timeline-only run evidence: event/delivery totals were not reported by runtime metrics. */
+  countsVerified?: boolean
+  /** Current metrics API labels are run_complete log references, not authoritative run_id values. */
+  idBasis?: 'run' | 'completion-record'
 }
 
 export type RecentLogLine = {
@@ -33,6 +37,10 @@ export type RecentLogLine = {
   rawMessage?: string
   errorCode?: string | null
   stage?: string
+  /** IDs observed on the actual runtime timeline event, not inferred from labels. */
+  runId?: string | null
+  routeId?: number | null
+  destinationId?: number | null
   duration: string
 }
 

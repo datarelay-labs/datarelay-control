@@ -18,6 +18,10 @@ Presence in this directory is not, by itself, an authority rule. The index defin
 | Governance / Transform policy | `DATA-RELAY-GOVERNANCE-AND-TRANSFORM-POLICY-DRAFT-v1.1-FINAL.txt` | 1.1 | 1.0 (Draft) | **status/version metadata mismatch; content retained unchanged** |
 | Union Schema UX spec | `DATA-RELAY-UNION-SCHEMA-UX-SPEC-v1.1-FINAL.txt` | 1.1 | 1.0 | **metadata mismatch — do not infer a version rewrite** |
 
+## Owner-approved UX content changes (2026-10-09)
+
+The owner approved the Flow-First navigation and New Data Flow creation direction in roadmap #354. The existing designated UX Charter, Stream Wizard UX Charter, and Master WBS now contain explicitly dated, bounded amendments. Their filename and internal version/header metadata remain **unchanged**, including the intentional mismatches listed above. The change does not promote a new Source-of-Truth file, override the Product Charter, alter existing runtime objects, or constitute implementation/user acceptance. The authority map records this approved scope and points to the subordinate implementation contract.
+
 ## Rules
 
 - The Product Charter is the top-level product authority.

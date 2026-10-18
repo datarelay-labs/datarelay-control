@@ -1,7 +1,7 @@
 # Data Relay Control Authority Map
 
 **Role:** Canonical registry of repository authority; this file is not itself a replacement Product Charter.
-**Last reviewed:** 2026-09-21
+**Last reviewed:** 2026-10-09
 **Canonical product-document directory:** `docs/source-of-truth/`
 
 ## Current Data Relay Control product scope
@@ -88,6 +88,28 @@ Route Processing is the only supported product runtime. An explicit `GDC_ROUTE_P
 3. Treat code/runtime divergence as implementation drift, not an automatic requirement rewrite.
 4. If two artifacts at the same authority layer conflict, fail closed and create an explicit product/specification decision.
 5. Do not resolve conflicts from filename version, commit date, or AI inference alone.
+
+### Owner-approved Flow-First information architecture (#354/#413, 2026-10-09)
+
+The owner explicitly approved a **Data Flows operational topology** (existing Routes overview, **no new backend DataFlow model**) as the primary place to understand actual Stream -> per-Route Processing -> Destination edges and their runtime-backed metrics. Streams retain source/collection/execution ownership. Reusable Connectors and Destinations are grouped under Connections; the global CTA becomes **New Data Flow**, which reuses the canonical five-stage Stream Wizard and lets an authorized operator create missing Connector/Destination prerequisites **without losing the draft**. Existing Route Edit, Stream, Connector, Destination and Governance deep links remain compatible. Origin/receiver evidence and unknown metrics must not be invented.
+
+The current designated **UX Charter §4/§5/§21/§26/§29/§31** and **Stream Wizard UX Charter owner addendum** implement this expressly approved design, while **Master WBS owner-approved UX convergence** records the still-pending implementation work. The Product Charter scope is unchanged: no alternate runtime, database entity, Marketplace M29, AI Gateway or Enterprise feature. Historical pre-approval navigation recommendations are superseded only within this bounded UX decision. Governance navigation remains governed by separate #362 exception below.
+
+Detailed source-to-code implementation contract: [`docs/ux/DATA-RELAY-FLOW-FIRST-IA-IMPLEMENTATION-CONTRACT.md`](../ux/DATA-RELAY-FLOW-FIRST-IA-IMPLEMENTATION-CONTRACT.md), subordinate to current source-of-truth documents. Execution remains in existing [roadmap #354](https://github.com/datarelay-labs/datarelay-control/issues/354) / [packet #413](https://github.com/datarelay-labs/datarelay-control/issues/413) / Draft PR #414; no new competing roadmap. Document approval does **not** equal source implementation, authenticated browser PASS, two-user E2E PASS, merge or release authorization.
+
+### Owner-approved exclusive integrated UX program (#354/#413, 2026-10-14)
+
+The owner has now explicitly approved adding **all previously researched UI outcomes and promised implementation** to the product roadmap with exclusive priority until completion. Current UX/Wizard charter and Master WBS owner addenda authorize the same-workspace configure/preview/operate design and the [complete 61-task WBS](../ux/CONTROL-UX-DELIVERY-WBS.md), refining [Flow contract sections 9-10](../ux/DATA-RELAY-FLOW-FIRST-IA-IMPLEMENTATION-CONTRACT.md). This is no longer pending a generic second approval.
+
+This bounded amendment supersedes prior Data-Flows-read-only/separate-editor-only UI restrictions, the five redundant goal cards and the old blanket NO new backend implementation restriction. Required five **logical** validation stages remain, as do Stream/Route/Destination identity/ownership, canonical processing order, RBAC, preserved URLs/data and Governance #362. Authorized contextual editing uses existing forms/APIs; bounded missing discovery/preview/revision/test-send support belongs to the same product and may be completed. No new DataFlow entity/runtime, auth relaxation, release permission or unrelated repository scope is inferred.
+
+The authoritative delivery inventory has 9 milestones, 61 leaf WBS (4 plan/57 product), 35 promise and 10 comparator crosswalk rows. #354 is still the complete product roadmap; #413 selects the current UX task under UX_EXCLUSIVE_LOCK=ACTIVE. No promised outcome is silently removed or replaced by small widgets. Prior history/source evidence remains preserved, not current instruction or broad completion. Documentary registration and source existence are not installed/browser/receiver acceptance.
+
+### Owner-approved Governance navigation exception (#362, 2026-10-09)
+
+The owner expressly selected **Option A** to resolve the same-layer conflict between the general UX Charter and Governance UX Charter. In Data Relay Control, a single `Governance` primary group remains an approved operational exception to the general top-level navigation anti-pattern. `Governance Dashboard` is its entry point; Violations, Quarantine, Approvals, Audit, Replay and Notifications stay operational drill-downs. `Governance Workspace` is an advanced, contextual, read-only Stream/Route view rather than an equally prominent primary menu entry, with existing authorized routes preserved. Policy configuration stays in Stream/Route/Wizard ownership.
+
+Decision: [GitHub #362](https://github.com/datarelay-labs/datarelay-control/issues/362). Implementation: [Draft PR #414](https://github.com/datarelay-labs/datarelay-control/pull/414). This decision does **not** confer Browser BFS, two-user Full User E2E, merge or release approval; both user-test gates remain required on one final HEAD. The Source-of-Truth charters retain their original text; this explicit owner disposition resolves the bounded navigation conflict without changing unrelated UX authority.
 
 ## Historical / superseded material
 

@@ -1,7 +1,8 @@
+import { useSyncExternalStore } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { AdminTaskCatalog, type AdminTask } from '@datarelay-labs/system-admin-ui'
 import { NAV_PATH, SETTINGS_SECTION_PATH } from '../../config/nav-paths'
-import { isAdminUiOperator, isAdminUiReadOnly, readAdminUiRole } from '../../lib/gdc-ui-tokens'
+import { isSessionExpired, onSessionChange, readSession, type SessionRole } from '../../auth/session'
 import { PagePurposeHeader, type PageHelpContent } from '../ui/page-purpose-header'
 
 type HubDestination = {
@@ -113,6 +114,7 @@ const FOUNDATION_ADMIN_PATH = new Map(
 )
 
 const ADMINISTRATION_HELP: PageHelpContent = {
+  docsHref: '/help/administration',
   title: 'Administration',
   intro: 'Administration is for platform access, security, network, lifecycle, recovery, and audit settings. Data-flow configuration stays with Connectors, Streams, Routes, and Destinations.',
   sections: [
@@ -136,14 +138,40 @@ const ADMINISTRATION_HELP: PageHelpContent = {
   ],
 }
 
-function foundationTasksForGroup(group: HubTaskGroup): readonly AdminTask[] {
-  return group.destinations.map((destination) => ({
-    id: destination.testId,
-    label: destination.title,
-    description: destination.description,
-    group: group.title,
-    availability: 'supported' as const,
-  }))
+// The JWT-backed platform session, not legacy UI role hints, drives link visibility.
+// Product server route guards remain the authority for actual access.
+function activeSessionRole(): SessionRole | null {
+  const session = readSession()
+  if (!session || isSessionExpired() || session.user.status !== 'ACTIVE' || session.user.must_change_password) {
+    return null
+  }
+  return session.user.role
+}
+
+const READ_ONLY_TASKS = new Set(['admin-hub-audit', 'admin-hub-backup'])
+const ADMIN_VIEW_TASKS = new Set(['admin-hub-audit', 'admin-hub-system-health'])
+
+function canViewAdministration(role: SessionRole | null): boolean {
+  return role === 'OPERATOR' || role === 'VIEWER' || role === 'CONNECTOR_OPERATOR'
+}
+
+function mayOpenAdministrationTask(role: SessionRole | null, taskId: string): boolean {
+  return role === 'ADMINISTRATOR' || (canViewAdministration(role) && READ_ONLY_TASKS.has(taskId))
+}
+
+function foundationTasksForGroup(group: HubTaskGroup, role: SessionRole | null): readonly AdminTask[] {
+  const administrator = role === 'ADMINISTRATOR'
+  return group.destinations
+    .filter((destination) => mayOpenAdministrationTask(role, destination.testId))
+    .map((destination) => ({
+      id: destination.testId,
+      label: destination.title,
+      description: destination.description,
+      group: group.title,
+      availability: administrator && !ADMIN_VIEW_TASKS.has(destination.testId)
+        ? 'supported' as const
+        : 'read_only' as const,
+    }))
 }
 
 function roleLabel(role: string | null): string {
@@ -153,10 +181,9 @@ function roleLabel(role: string | null): string {
   return 'Unknown session'
 }
 
-function AccessContextBanner() {
-  const role = readAdminUiRole()
-  const readOnly = isAdminUiReadOnly()
-  const operator = isAdminUiOperator()
+function AccessContextBanner({ role }: { role: SessionRole | null }) {
+  const readOnly = role === 'VIEWER'
+  const operator = role === 'OPERATOR' || role === 'CONNECTOR_OPERATOR'
 
   if (readOnly) {
     return (
@@ -167,8 +194,8 @@ function AccessContextBanner() {
       >
         <p className="font-semibold">Viewer session — read-only.</p>
         <p className="mt-1 text-sm leading-relaxed opacity-90">
-          Mutating Administration actions stay disabled in the UI and are rejected by the backend role guard. Sign in as
-          Operator or Administrator to make changes.
+          Read-only Audit and Backup views remain available. Only Administrators can change Administration settings;
+          the backend role guard rejects unauthorized changes.
         </p>
       </div>
     )
@@ -207,6 +234,8 @@ function AccessContextBanner() {
 
 export function AdministrationHubPage() {
   const navigate = useNavigate()
+  const role = useSyncExternalStore(onSessionChange, activeSessionRole, () => null)
+  const canOpenSettings = role === 'ADMINISTRATOR'
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-6" data-testid="administration-hub-page">
@@ -216,7 +245,7 @@ export function AdministrationHubPage() {
         purpose="What needs configuring on this platform? Choose an Administration task for access, security, network, lifecycle, recovery, or audit; data-flow setup stays in its operational workspace."
         help={ADMINISTRATION_HELP}
         testId="administration-purpose-header"
-        actions={
+        actions={canOpenSettings ? (
           <Link
             to={NAV_PATH.settings}
             data-testid="admin-hub-open-all-settings"
@@ -224,13 +253,16 @@ export function AdministrationHubPage() {
           >
             Browse all settings
           </Link>
-        }
+        ) : undefined}
       />
 
-      <AccessContextBanner />
+      <AccessContextBanner role={role} />
 
       <div className="flex flex-col gap-8" data-testid="admin-hub-task-groups">
-        {TASK_GROUPS.map((group) => (
+        {TASK_GROUPS.map((group) => ({
+          group,
+          tasks: foundationTasksForGroup(group, role),
+        })).filter(({ tasks }) => tasks.length > 0).map(({ group, tasks }) => (
           <section
             key={group.id}
             aria-labelledby={`${group.id}-heading`}
@@ -248,8 +280,9 @@ export function AdministrationHubPage() {
             </div>
             <div data-testid={`${group.testId}-catalog`}>
               <AdminTaskCatalog
-                tasks={foundationTasksForGroup(group)}
+                tasks={tasks}
                 onOpen={(task) => {
+                  if (!mayOpenAdministrationTask(activeSessionRole(), task.id)) return
                   const path = FOUNDATION_ADMIN_PATH.get(task.id)
                   if (path) navigate(path)
                 }}

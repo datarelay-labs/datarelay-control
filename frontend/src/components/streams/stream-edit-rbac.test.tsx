@@ -1,11 +1,17 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { createMemoryRouter, Link, MemoryRouter, Route, RouterProvider, Routes } from 'react-router-dom'
+import { DataRouterEnabledContext } from '../../router/data-router-enabled'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fetchStreamById } from '../../api/gdcStreams'
 import { fetchStreamMappingUiConfig } from '../../api/gdcRuntime'
 import { clearSession, persistSession, type SessionRole } from '../../auth/session'
 import { StreamEditWizardPage } from './stream-edit-wizard-page'
+import {
+  loadStreamEditDraft,
+  saveStreamEditDraft,
+  streamEditDraftStorageKey,
+} from './wizard/wizard-edit-draft'
 import { buildInitialState } from './wizard/wizard-state'
 
 const persistWizardStreamEdits = vi.hoisted(() => vi.fn())
@@ -88,6 +94,12 @@ vi.mock('../../api/gdcRoutes', () => ({
   updateRouteWithFreshToken: (...args: unknown[]) => updateRouteWithFreshToken(...args),
 }))
 
+vi.mock('../../api/gdcAdmin', () => ({
+  getAdminConfigVersions: vi.fn(async () => ({ total: 0, items: [] })),
+  getAdminSafeRollbackPreview: vi.fn(),
+  applyAdminConfigSnapshot: vi.fn(),
+}))
+
 vi.mock('../../api/gdcDestinations', () => ({
   fetchDestinationsList: vi.fn(async () => [{ id: 5, name: 'Dest A', destination_type: 'WEBHOOK_POST', config_json: {} }]),
   testDestination: vi.fn(),
@@ -162,21 +174,99 @@ function renderStreamEdit() {
     <MemoryRouter initialEntries={['/streams/10/edit']}>
       <Routes>
         <Route path="/streams/:streamId/edit" element={<StreamEditWizardPage />} />
+        <Route path="/destinations" element={<p>Destination management workspace</p>} />
+        <Route path="/streams/:streamId/runtime" element={<p>Stream monitoring workspace</p>} />
       </Routes>
     </MemoryRouter>,
   )
+}
+
+function renderEmbeddedStreamEdit(onClose = vi.fn()) {
+  return {
+    onClose,
+    ...render(
+      <MemoryRouter initialEntries={['/routes']}>
+        <StreamEditWizardPage streamIdOverride={10} embedded onClose={onClose} />
+      </MemoryRouter>,
+    ),
+  }
+}
+
+
+function renderStreamEditWithDataRouter(initialEntries: string[] = ['/streams/10/edit'], initialIndex?: number) {
+  // Same one-splat RouterProvider and data-router context as the application entrypoint.
+  const router = createMemoryRouter([{
+    path: '/*',
+    element: (
+      <DataRouterEnabledContext.Provider value>
+        <nav><Link to="/monitoring" data-testid="edit-external-nav">Dashboard</Link></nav>
+        <Routes>
+          <Route path="/streams/:streamId/edit" element={<StreamEditWizardPage />} />
+          <Route path="/streams/:streamId/runtime" element={<p>Stream monitoring workspace</p>} />
+          <Route path="/destinations" element={<p>Destination management workspace</p>} />
+          <Route path="/monitoring" element={<p>Dashboard workspace</p>} />
+        </Routes>
+      </DataRouterEnabledContext.Provider>
+    ),
+  }], { initialEntries, initialIndex })
+  render(<RouterProvider router={router} />)
+  return router
 }
 
 describe('StreamEditWizardPage workspace capability visibility', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     clearSession()
+    localStorage.removeItem(streamEditDraftStorageKey(10))
     hydrateHolder.factory = () => hydratedStream()
+    vi.mocked(fetchStreamById).mockResolvedValue({ id: 10, name: 'Viewer Stream', status: 'STOPPED' })
     persistWizardStreamEdits.mockResolvedValue({ ok: true, errors: [] })
+    startRuntimeStream.mockResolvedValue({ message: 'stream started' })
+    stopRuntimeStream.mockResolvedValue({ message: 'stream stopped', status: 'STOPPED', terminal: true })
   })
 
   afterEach(() => {
+    localStorage.removeItem(streamEditDraftStorageKey(10))
     clearSession()
+  })
+
+  it('uses the provided Stream identity in embedded mode and closes without a cross-page navigation', async () => {
+    signIn('OPERATOR')
+    const { onClose } = renderEmbeddedStreamEdit()
+    const page = await screen.findByTestId('edit-stream-wizard')
+
+    expect(fetchStreamById).toHaveBeenCalledWith(10)
+    expect(within(page).getByRole('button', { name: 'Close Stream configuration' })).toBeInTheDocument()
+    expect(within(page).queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
+
+    fireEvent.click(within(page).getByRole('button', { name: 'Close Stream configuration' }))
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('preserves existing protection settings after Add field in Stream Edit', async () => {
+    signIn('OPERATOR')
+    hydrateHolder.factory = () => {
+      const result = hydratedStream()
+      result.destinations.routeDrafts = [{
+        key: 'route-1',
+        destinationId: 5,
+        enabled: true,
+        failurePolicy: 'LOG_AND_CONTINUE',
+        rateLimitJson: {},
+        inherit: { transform: true, protection: true, classification: true, policy: true },
+      }]
+      return result
+    }
+    renderStreamEdit()
+    const page = await screen.findByTestId('edit-stream-wizard')
+    fireEvent.click(within(page).getByTestId('wizard-stepper-route_processing'))
+    fireEvent.click(await within(page).findByTestId('shared-processing-tab-data_protection'))
+    const add = await within(page).findByTestId('data-protection-add-row')
+    fireEvent.click(add)
+    expect(within(page).getByPlaceholderText('$.email')).toBeInTheDocument()
+    expect(within(page).getByTestId('wizard-save-now')).toBeEnabled()
+    fireEvent.click(within(page).getByTestId('wizard-stepper-deploy'))
+    expect(within(page).getByTestId('deploy-created-panel')).toBeInTheDocument()
   })
 
   it('lets a viewer inspect stream edit sections without mutation requests', async () => {
@@ -248,6 +338,14 @@ describe('StreamEditWizardPage workspace capability visibility', () => {
     expect(page.getByRole('button', { name: 'Delete' })).toBeInTheDocument()
     expect(page.getByRole('button', { name: 'Run Now' })).toBeEnabled()
     expect(page.queryByTestId('stream-edit-readonly-banner')).not.toBeInTheDocument()
+    const lifecycle = page.getByTestId('stream-configuration-lifecycle')
+    expect(within(lifecycle).getByTestId('stream-lifecycle-draft')).toHaveTextContent('No pending draft changes')
+    expect(within(lifecycle).getByTestId('stream-lifecycle-saved')).toHaveTextContent('Saved configuration confirmed')
+    expect(within(lifecycle).getByTestId('stream-lifecycle-runtime')).toHaveTextContent(
+      'Stopped · no running revision is active',
+    )
+    expect(lifecycle).not.toHaveTextContent(/applied/i)
+    expect(page.getByText(/saving does not start or restart the Stream/i)).toBeInTheDocument()
 
     const requestTab = page.getByTestId('wizard-connect-tab-request')
     await user.click(requestTab)
@@ -261,6 +359,143 @@ describe('StreamEditWizardPage workspace capability visibility', () => {
     await user.click(page.getByTestId('wizard-stepper-deploy'))
     expect(await page.findByRole('button', { name: 'Start Stream' })).toBeInTheDocument()
     expect(page.getByRole('button', { name: 'Run Once' })).toBeInTheDocument()
+  })
+
+  it('releases the Deploy start action after a failed runtime start so the operator can retry', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    startRuntimeStream.mockRejectedValueOnce(new Error('scheduler unavailable'))
+    renderStreamEdit()
+
+    const page = await screen.findByTestId('edit-stream-wizard')
+    await user.click(within(page).getByTestId('wizard-stepper-deploy'))
+    const start = await within(page).findByRole('button', { name: 'Start Stream' })
+    await user.click(start)
+
+    expect(await within(page).findByText(/Runtime start failed · scheduler unavailable/i)).toBeInTheDocument()
+    await waitFor(() => expect(within(page).getByRole('button', { name: 'Start Stream' })).toBeEnabled())
+
+    await user.click(within(page).getByRole('button', { name: 'Start Stream' }))
+    await waitFor(() => expect(startRuntimeStream).toHaveBeenCalledTimes(2))
+  })
+
+  it('guards leaving the Stream editor for a new destination until unsaved edits are confirmed', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    renderStreamEdit()
+    const page = await screen.findByTestId('edit-stream-wizard')
+    await user.click(within(page).getByTestId('wizard-connect-tab-request'))
+    const name = within(page).getByPlaceholderText('e.g. Cybereason Malop Stream')
+    await user.clear(name)
+    await user.type(name, 'Edited stream awaiting save')
+    await user.click(within(page).getByTestId('wizard-stepper-destinations'))
+    const manage = await within(page).findByRole('link', { name: 'Manage all destinations' })
+    expect(within(page).queryByTestId('wizard-destination-resume-guidance')).not.toBeInTheDocument()
+    await user.click(manage)
+    expect(screen.getByTestId('edit-stream-wizard')).toBeInTheDocument()
+    expect(screen.queryByText('Destination management workspace')).not.toBeInTheDocument()
+    expect(within(page).getByTestId('edit-navigation-notice')).toHaveTextContent(/Save now/)
+    expect(persistWizardStreamEdits).not.toHaveBeenCalled()
+
+    await user.click(within(page).getByTestId('wizard-save-now'))
+    await waitFor(() => expect(persistWizardStreamEdits).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(within(page).getByText('Changes saved')).toBeInTheDocument())
+    await user.click(within(page).getByRole('link', { name: 'Manage all destinations' }))
+    expect(await screen.findByText('Destination management workspace')).toBeInTheDocument()
+  })
+
+  it('keeps the editor open while an explicit save request is still in flight', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    let resolveSave: (value: { ok: boolean; errors: string[] }) => void = () => {}
+    persistWizardStreamEdits.mockImplementationOnce(() =>
+      new Promise((resolve) => {
+        resolveSave = resolve
+      }),
+    )
+    renderStreamEdit()
+    const page = await screen.findByTestId('edit-stream-wizard')
+    await user.click(within(page).getByTestId('wizard-connect-tab-request'))
+    const name = within(page).getByPlaceholderText('e.g. Cybereason Malop Stream')
+    await user.clear(name)
+    await user.type(name, 'Saving stream edits')
+    await user.click(within(page).getByTestId('wizard-save-now'))
+    await waitFor(() => expect(persistWizardStreamEdits).toHaveBeenCalledTimes(1))
+    await user.click(within(page).getByTestId('wizard-stepper-destinations'))
+    await user.click(await within(page).findByRole('link', { name: 'Manage all destinations' }))
+    expect(screen.getByTestId('edit-stream-wizard')).toBeInTheDocument()
+    expect(within(page).getByTestId('edit-navigation-notice')).toHaveTextContent('still saving')
+    expect(screen.queryByText('Destination management workspace')).not.toBeInTheDocument()
+
+    resolveSave({ ok: true, errors: [] })
+    await waitFor(() => expect(within(page).getByText('Changes saved')).toBeInTheDocument())
+    await user.click(within(page).getByRole('link', { name: 'Manage all destinations' }))
+    expect(await screen.findByText('Destination management workspace')).toBeInTheDocument()
+  })
+
+  it('blocks Back to monitoring until an edited Stream is confirmed saved', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    renderStreamEdit()
+    const page = await screen.findByTestId('edit-stream-wizard')
+    await user.click(within(page).getByTestId('wizard-connect-tab-request'))
+    await user.type(within(page).getByPlaceholderText('e.g. Cybereason Malop Stream'), ' unsaved')
+    await user.click(within(page).getByRole('button', { name: 'Back to monitoring' }))
+    expect(screen.getByTestId('edit-stream-wizard')).toBeInTheDocument()
+    expect(within(page).getByTestId('edit-navigation-notice')).toHaveTextContent(/Save now/)
+    expect(screen.queryByText('Stream monitoring workspace')).not.toBeInTheDocument()
+    await user.click(within(page).getByTestId('wizard-save-now'))
+    await waitFor(() => expect(within(page).getByText('Changes saved')).toBeInTheDocument())
+    await user.click(within(page).getByRole('button', { name: 'Back to monitoring' }))
+    expect(await screen.findByText('Stream monitoring workspace')).toBeInTheDocument()
+  })
+
+  it('blocks Review Open monitoring navigation while changes are unconfirmed', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    renderStreamEdit()
+    const page = await screen.findByTestId('edit-stream-wizard')
+    await user.click(within(page).getByTestId('wizard-connect-tab-request'))
+    await user.type(within(page).getByPlaceholderText('e.g. Cybereason Malop Stream'), ' unsaved')
+    await user.click(within(page).getByTestId('wizard-stepper-deploy'))
+    await user.click(within(page).getByTestId('wizard-open-monitoring'))
+    expect(screen.getByTestId('edit-stream-wizard')).toBeInTheDocument()
+    expect(within(page).getByTestId('edit-navigation-notice')).toHaveTextContent(/Save now/)
+    expect(screen.queryByText('Stream monitoring workspace')).not.toBeInTheDocument()
+    await user.click(within(page).getByTestId('wizard-save-now'))
+    await waitFor(() => expect(within(page).getByText('Changes saved')).toBeInTheDocument())
+    await user.click(within(page).getByTestId('wizard-open-monitoring'))
+    expect(await screen.findByText('Stream monitoring workspace')).toBeInTheDocument()
+  })
+
+  it('allows read-only Stream inspection to navigate to destination management without a write', async () => {
+    const user = userEvent.setup()
+    signIn('VIEWER')
+    renderStreamEdit()
+    const page = await screen.findByTestId('edit-stream-wizard')
+    await user.click(within(page).getByTestId('wizard-stepper-destinations'))
+    await user.click(await within(page).findByRole('link', { name: 'Manage all destinations' }))
+    expect(await screen.findByText('Destination management workspace')).toBeInTheDocument()
+    expect(persistWizardStreamEdits).not.toHaveBeenCalled()
+  })
+
+  it('retains the editor after a failed explicit save instead of navigating away', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    persistWizardStreamEdits.mockResolvedValue({ ok: false, errors: ['destination configuration was not saved'] })
+    renderStreamEdit()
+    const page = await screen.findByTestId('edit-stream-wizard')
+    await user.click(within(page).getByTestId('wizard-connect-tab-request'))
+    const name = within(page).getByPlaceholderText('e.g. Cybereason Malop Stream')
+    await user.clear(name)
+    await user.type(name, 'Unconfirmed destination edit')
+    await user.click(within(page).getByTestId('wizard-save-now'))
+    expect(await within(page).findByText(/destination configuration was not saved/i)).toBeInTheDocument()
+    await user.click(within(page).getByTestId('wizard-stepper-destinations'))
+    await user.click(await within(page).findByRole('link', { name: 'Manage all destinations' }))
+    expect(screen.getByTestId('edit-stream-wizard')).toBeInTheDocument()
+    expect(within(page).getByTestId('edit-navigation-notice')).toHaveTextContent(/save failed/i)
+    expect(screen.queryByText('Destination management workspace')).not.toBeInTheDocument()
   })
 
   it('refreshes the route projection after a partial save that may have persisted routes', async () => {
@@ -351,12 +586,173 @@ describe('StreamEditWizardPage workspace capability visibility', () => {
     expect(startRuntimeStream).not.toHaveBeenCalled()
   })
 
+  it('releases the runtime control after a failed Stop so the operator can retry', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    vi.mocked(fetchStreamById).mockResolvedValue({ id: 10, name: 'Viewer Stream', status: 'RUNNING' })
+    stopRuntimeStream.mockRejectedValueOnce(new Error('receiver busy'))
+    renderStreamEdit()
+
+    const toggle = await screen.findByTestId('stream-run-control-switch')
+    await waitFor(() => expect(toggle).toHaveTextContent('Running'))
+    await user.click(toggle)
+
+    expect(await screen.findByText(/Runtime stop failed · receiver busy/i)).toBeInTheDocument()
+    await waitFor(() => expect(toggle).toBeEnabled())
+
+    await user.click(toggle)
+    await waitFor(() => expect(stopRuntimeStream).toHaveBeenCalledTimes(2))
+    expect(startRuntimeStream).not.toHaveBeenCalled()
+  })
+
   it('does not autosave a hydrated stream before the operator edits it', async () => {
     signIn('OPERATOR')
     renderStreamEdit()
     await screen.findByTestId('wizard-save-now')
     await new Promise((resolve) => window.setTimeout(resolve, 1500))
     expect(persistWizardStreamEdits).not.toHaveBeenCalled()
+    expect(loadStreamEditDraft(10)).toBeNull()
+  })
+
+  it('auto-preserves dirty Stream edits only in the per-Stream local draft', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    renderStreamEdit()
+    const page = await screen.findByTestId('edit-stream-wizard')
+    await user.click(within(page).getByTestId('wizard-connect-tab-request'))
+    const name = within(page).getByPlaceholderText('e.g. Cybereason Malop Stream')
+    await user.clear(name)
+    await user.type(name, 'Locally preserved edit')
+
+    await waitFor(() => {
+      expect(loadStreamEditDraft(10)?.state.stream.name).toBe('Locally preserved edit')
+    }, { timeout: 3000 })
+
+    expect(persistWizardStreamEdits).not.toHaveBeenCalled()
+    expect(within(page).getByTestId('stream-lifecycle-draft')).toHaveTextContent(
+      'Local draft saved · not applied',
+    )
+    expect(within(page).getByText(/auto-save only to this browser/i)).toBeInTheDocument()
+  })
+
+  it('restores a matching per-Stream local draft without replacing server identity', async () => {
+    const draft = hydratedStream()
+    draft.stream.name = 'Restored local Stream name'
+    saveStreamEditDraft(10, draft, 'destinations')
+
+    signIn('OPERATOR')
+    renderStreamEdit()
+    const page = await screen.findByTestId('edit-stream-wizard')
+
+    expect(await within(page).findByTestId('edit-stream-destinations')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(within(page).getByTestId('stream-lifecycle-draft')).toHaveTextContent(
+        'Local draft saved · not applied',
+      )
+    }, { timeout: 3000 })
+    expect(persistWizardStreamEdits).not.toHaveBeenCalled()
+  })
+
+  it('does not write a dirty running Stream and keeps the local draft while Stop remains available', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    vi.mocked(fetchStreamById).mockResolvedValue({ id: 10, name: 'Viewer Stream', status: 'RUNNING' })
+    renderStreamEdit()
+    const page = await screen.findByTestId('edit-stream-wizard')
+    await waitFor(() => expect(within(page).getByTestId('stream-run-control-switch')).toHaveTextContent('Running'))
+    await user.click(within(page).getByTestId('wizard-connect-tab-request'))
+    await user.type(within(page).getByPlaceholderText('e.g. Cybereason Malop Stream'), ' local-only')
+
+    await waitFor(() => expect(loadStreamEditDraft(10)).not.toBeNull(), { timeout: 3000 })
+    expect(within(page).getByTestId('wizard-save-now')).toBeDisabled()
+    expect(within(page).getByTestId('wizard-apply-and-start')).toBeDisabled()
+    expect(within(page).getByTestId('stream-run-control-switch')).toBeEnabled()
+    expect(persistWizardStreamEdits).not.toHaveBeenCalled()
+  })
+
+  it('Apply & start saves the reviewed draft before starting the Stream', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    renderStreamEdit()
+    const page = await screen.findByTestId('edit-stream-wizard')
+    await waitFor(() => expect(within(page).getByTestId('wizard-apply-and-start')).toBeEnabled())
+    await user.click(within(page).getByTestId('wizard-connect-tab-request'))
+    const name = within(page).getByPlaceholderText('e.g. Cybereason Malop Stream')
+    await user.clear(name)
+    await user.type(name, 'Apply then start')
+
+    await user.click(within(page).getByTestId('wizard-apply-and-start'))
+
+    await waitFor(() => expect(persistWizardStreamEdits).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(startRuntimeStream).toHaveBeenCalledWith(10))
+    expect(persistWizardStreamEdits.mock.invocationCallOrder[0]).toBeLessThan(
+      startRuntimeStream.mock.invocationCallOrder[0]!,
+    )
+  })
+
+  it('Apply & start never starts a stale reviewed revision when the draft changes during save', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    let releaseSave: (value: { ok: boolean; errors: string[] }) => void = () => {}
+    persistWizardStreamEdits.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseSave = resolve
+        }),
+    )
+    renderStreamEdit()
+    const page = await screen.findByTestId('edit-stream-wizard')
+    await waitFor(() => expect(within(page).getByTestId('wizard-apply-and-start')).toBeEnabled())
+    await user.click(within(page).getByTestId('wizard-connect-tab-request'))
+    const name = within(page).getByPlaceholderText('e.g. Cybereason Malop Stream')
+    await user.clear(name)
+    await user.type(name, 'Reviewed revision')
+
+    await user.click(within(page).getByTestId('wizard-apply-and-start'))
+    await waitFor(() => expect(persistWizardStreamEdits).toHaveBeenCalledTimes(1))
+
+    await user.clear(name)
+    await user.type(name, 'Newer local draft')
+    releaseSave({ ok: true, errors: [] })
+
+    expect(await within(page).findByText(/draft changed while saving/i)).toBeInTheDocument()
+    expect(startRuntimeStream).not.toHaveBeenCalled()
+    expect(name).toHaveValue('Newer local draft')
+  })
+
+  it('Apply & start never starts when the explicit platform save fails', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    persistWizardStreamEdits.mockResolvedValueOnce({ ok: false, errors: ['save rejected'] })
+    renderStreamEdit()
+    const page = await screen.findByTestId('edit-stream-wizard')
+    await waitFor(() => expect(within(page).getByTestId('wizard-apply-and-start')).toBeEnabled())
+    await user.click(within(page).getByTestId('wizard-connect-tab-request'))
+    await user.type(within(page).getByPlaceholderText('e.g. Cybereason Malop Stream'), ' failed apply')
+
+    await user.click(within(page).getByTestId('wizard-apply-and-start'))
+
+    await waitFor(() => expect(persistWizardStreamEdits).toHaveBeenCalledTimes(1))
+    expect(startRuntimeStream).not.toHaveBeenCalled()
+    expect(within(page).getByText(/save rejected/i)).toBeInTheDocument()
+  })
+
+  it('does not claim Running when activation fails after the reviewed save', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    startRuntimeStream.mockResolvedValueOnce(null)
+    vi.mocked(fetchStreamById).mockResolvedValue({ id: 10, name: 'Viewer Stream', status: 'STOPPED' })
+    renderStreamEdit()
+    const page = await screen.findByTestId('edit-stream-wizard')
+    await waitFor(() => expect(within(page).getByTestId('wizard-apply-and-start')).toBeEnabled())
+    await user.click(within(page).getByTestId('wizard-connect-tab-request'))
+    await user.type(within(page).getByPlaceholderText('e.g. Cybereason Malop Stream'), ' activation failure')
+
+    await user.click(within(page).getByTestId('wizard-apply-and-start'))
+
+    await waitFor(() => expect(startRuntimeStream).toHaveBeenCalledWith(10))
+    expect(await within(page).findByText(/start failed or could not be verified/i)).toBeInTheDocument()
+    expect(within(page).getByTestId('stream-lifecycle-runtime')).toHaveTextContent(/^RuntimeStopped/)
   })
 
   it('keeps a created route id on a newer in-flight draft', async () => {
@@ -428,8 +824,13 @@ describe('StreamEditWizardPage workspace capability visibility', () => {
     )
     renderStreamEdit()
     await waitFor(() => expect(screen.getByTestId('stream-run-control-switch')).toHaveTextContent('Running'))
-    fireEvent.click(screen.getByRole('button', { name: 'Run Now' }))
-    expect(await screen.findByRole('button', { name: 'Running…' })).toBeDisabled()
+    const runNow = screen.getByRole('button', { name: 'Run Now' })
+    await waitFor(() => expect(runNow).toBeEnabled(), { timeout: 5_000 })
+    fireEvent.click(runNow)
+    await waitFor(
+      () => expect(screen.getByRole('button', { name: 'Running…' })).toBeDisabled(),
+      { timeout: 5_000 },
+    )
     expect(screen.getByTestId('stream-run-control-switch')).toBeEnabled()
     fireEvent.click(screen.getByTestId('stream-run-control-switch'))
     await waitFor(() => expect(stopRuntimeStream).toHaveBeenCalledWith(10))
@@ -468,5 +869,80 @@ describe('StreamEditWizardPage workspace capability visibility', () => {
     })
     expect(await page.findByTestId('deploy-delivery-proof')).toBeInTheDocument()
     expect(runStreamOnce).toHaveBeenCalledTimes(1)
+  })
+
+  it('blocks an external sidebar route while Stream edits are unconfirmed and allows it after a verified save', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    const router = renderStreamEditWithDataRouter()
+    const page = await screen.findByTestId('edit-stream-wizard')
+    await user.click(within(page).getByTestId('wizard-connect-tab-request'))
+    await user.type(within(page).getByPlaceholderText('e.g. Cybereason Malop Stream'), ' pending edit')
+
+    await user.click(screen.getByTestId('edit-external-nav'))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/streams/10/edit'))
+    expect(within(page).getByTestId('edit-navigation-notice')).toHaveTextContent(/Save now/)
+    expect(screen.queryByText('Dashboard workspace')).not.toBeInTheDocument()
+
+    await user.click(within(page).getByTestId('wizard-save-now'))
+    await waitFor(() => expect(within(page).getByText('Changes saved')).toBeInTheDocument())
+    await user.click(screen.getByTestId('edit-external-nav'))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/monitoring'))
+  })
+
+  it('rejects browser Back with unsaved Stream edits without breaking same-page wizard query navigation', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    const router = renderStreamEditWithDataRouter(['/monitoring', '/streams/10/edit'], 1)
+    const page = await screen.findByTestId('edit-stream-wizard')
+    await user.click(within(page).getByTestId('wizard-connect-tab-request'))
+    await user.type(within(page).getByPlaceholderText('e.g. Cybereason Malop Stream'), ' unsaved back')
+
+    await router.navigate('/streams/10/edit?step=destinations')
+    expect(router.state.location.pathname).toBe('/streams/10/edit')
+    expect(router.state.location.search).toBe('?step=destinations')
+
+    await router.navigate(-1)
+    expect(router.state.location.pathname).toBe('/streams/10/edit')
+    await router.navigate(-1)
+    await waitFor(() => expect(router.state.location.pathname).toBe('/streams/10/edit'))
+    await waitFor(() => expect(within(page).getByTestId('edit-navigation-notice')).toHaveTextContent(/Save now/))
+
+    await user.click(within(page).getByTestId('wizard-save-now'))
+    await waitFor(() => expect(within(page).getByText('Changes saved')).toBeInTheDocument())
+    await router.navigate(-1)
+    await waitFor(() => expect(router.state.location.pathname).toBe('/monitoring'))
+  })
+
+  it('prevents hard reload only while an editable Stream has unconfirmed changes', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    renderStreamEditWithDataRouter()
+    const page = await screen.findByTestId('edit-stream-wizard')
+    const cleanUnload = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(cleanUnload)
+    expect(cleanUnload.defaultPrevented).toBe(false)
+
+    await user.click(within(page).getByTestId('wizard-connect-tab-request'))
+    await user.type(within(page).getByPlaceholderText('e.g. Cybereason Malop Stream'), ' unsaved reload')
+    const dirtyUnload = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(dirtyUnload)
+    expect(dirtyUnload.defaultPrevented).toBe(true)
+
+    await user.click(within(page).getByTestId('wizard-save-now'))
+    await waitFor(() => expect(within(page).getByText('Changes saved')).toBeInTheDocument())
+    const savedUnload = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(savedUnload)
+    expect(savedUnload.defaultPrevented).toBe(false)
+  })
+
+  it('does not restrict Viewer navigation away from a read-only Stream', async () => {
+    const user = userEvent.setup()
+    signIn('VIEWER')
+    const router = renderStreamEditWithDataRouter()
+    await screen.findByTestId('edit-stream-wizard')
+    await user.click(screen.getByTestId('edit-external-nav'))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/monitoring'))
+    expect(persistWizardStreamEdits).not.toHaveBeenCalled()
   })
 })

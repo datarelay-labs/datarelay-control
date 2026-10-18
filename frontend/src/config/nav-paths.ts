@@ -113,6 +113,22 @@ export function governanceWorkspacePath(context?: {
   return qs ? `${NAV_PATH.governanceWorkspace}?${qs}` : NAV_PATH.governanceWorkspace
 }
 
+/** Data Flows workspace with optional initial Stream/Route selection. */
+export function dataFlowsPath(context?: {
+  stream_id?: number | null
+  route_id?: number | null
+}): string {
+  const q = new URLSearchParams()
+  if (context?.stream_id != null && Number.isSafeInteger(context.stream_id) && context.stream_id > 0) {
+    q.set('stream_id', String(context.stream_id))
+  }
+  if (context?.route_id != null && Number.isSafeInteger(context.route_id) && context.route_id > 0) {
+    q.set('route_id', String(context.route_id))
+  }
+  const qs = q.toString()
+  return qs ? `${NAV_PATH.routes}?${qs}` : NAV_PATH.routes
+}
+
 /** Logs explorer scoped to a stream (slug → label resolved in UI). */
 export function logsPath(streamSlug?: string): string {
   if (!streamSlug || streamSlug.trim() === '') return '/logs'
@@ -130,9 +146,15 @@ export function logsExplorerPath(filters?: {
   status?: string
 }): string {
   const q = new URLSearchParams()
-  if (filters?.route_id != null && Number.isFinite(filters.route_id)) q.set('route_id', String(filters.route_id))
-  if (filters?.stream_id != null && Number.isFinite(filters.stream_id)) q.set('stream_id', String(filters.stream_id))
-  if (filters?.destination_id != null && Number.isFinite(filters.destination_id)) {
+  // Never create an active diagnosis filter for a missing or unresolvable ID.
+  // Invalid IDs must not turn unknown telemetry into an apparent empty result.
+  if (filters?.route_id != null && Number.isSafeInteger(filters.route_id) && filters.route_id > 0) {
+    q.set('route_id', String(filters.route_id))
+  }
+  if (filters?.stream_id != null && Number.isSafeInteger(filters.stream_id) && filters.stream_id > 0) {
+    q.set('stream_id', String(filters.stream_id))
+  }
+  if (filters?.destination_id != null && Number.isSafeInteger(filters.destination_id) && filters.destination_id > 0) {
     q.set('destination_id', String(filters.destination_id))
   }
   if (filters?.run_id != null && String(filters.run_id).trim() !== '') q.set('run_id', String(filters.run_id).trim())
@@ -153,9 +175,9 @@ export function runtimeAnalyticsPath(filters?: {
 }): string {
   const q = new URLSearchParams()
   if (filters?.window != null && filters.window.trim() !== '') q.set('window', filters.window.trim())
-  if (filters?.stream_id != null && Number.isFinite(filters.stream_id)) q.set('stream_id', String(filters.stream_id))
-  if (filters?.route_id != null && Number.isFinite(filters.route_id)) q.set('route_id', String(filters.route_id))
-  if (filters?.destination_id != null && Number.isFinite(filters.destination_id)) {
+  if (filters?.stream_id != null && Number.isSafeInteger(filters.stream_id) && filters.stream_id > 0) q.set('stream_id', String(filters.stream_id))
+  if (filters?.route_id != null && Number.isSafeInteger(filters.route_id) && filters.route_id > 0) q.set('route_id', String(filters.route_id))
+  if (filters?.destination_id != null && Number.isSafeInteger(filters.destination_id) && filters.destination_id > 0) {
     q.set('destination_id', String(filters.destination_id))
   }
   const qs = q.toString()
@@ -170,9 +192,9 @@ export function runtimeOverviewPath(filters?: {
   run_id?: string
 }): string {
   const q = new URLSearchParams()
-  if (filters?.stream_id != null && Number.isFinite(filters.stream_id)) q.set('stream_id', String(filters.stream_id))
-  if (filters?.route_id != null && Number.isFinite(filters.route_id)) q.set('route_id', String(filters.route_id))
-  if (filters?.destination_id != null && Number.isFinite(filters.destination_id)) {
+  if (filters?.stream_id != null && Number.isSafeInteger(filters.stream_id) && filters.stream_id > 0) q.set('stream_id', String(filters.stream_id))
+  if (filters?.route_id != null && Number.isSafeInteger(filters.route_id) && filters.route_id > 0) q.set('route_id', String(filters.route_id))
+  if (filters?.destination_id != null && Number.isSafeInteger(filters.destination_id) && filters.destination_id > 0) {
     q.set('destination_id', String(filters.destination_id))
   }
   if (filters?.run_id != null && String(filters.run_id).trim() !== '') q.set('run_id', String(filters.run_id).trim())

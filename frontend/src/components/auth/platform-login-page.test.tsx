@@ -5,9 +5,11 @@ import { readSession } from '../../auth/session'
 import { PlatformLoginPage } from './platform-login-page'
 
 describe('PlatformLoginPage', () => {
-  it('centers the Foundation sign-in layout in the viewport', () => {
+  it('centers the Foundation sign-in layout and preserves the current product identity', () => {
     render(<PlatformLoginPage onAuthenticated={vi.fn()} />)
     expect(screen.getByTestId('gdc-login-centered')).toHaveClass('gdc-login-centered')
+    expect(screen.getByText('Enterprise Data Control Gateway')).toBeInTheDocument()
+    expect(screen.queryByText('Operational Data Connector Platform')).not.toBeInTheDocument()
   })
 
   it('uses the shared DataRelay master logo asset', () => {

@@ -133,7 +133,7 @@ def _log(
             level="INFO",
             status="OK",
             message=message,
-            payload_sample={"event_count": 1},
+            payload_sample={"input_events": 1} if stage == "run_complete" else {"event_count": 1},
             retry_count=0,
             latency_ms=latency_ms,
             created_at=created_at,
@@ -217,6 +217,15 @@ def test_operational_snapshot_delivery_log_aggregates(
         stage="route_send_failed",
         created_at=now - timedelta(minutes=2),
         message="send failed",
+    )
+    _log(
+        db_session,
+        connector_id=h["connector_id"],
+        stream_id=h["stream_id"],
+        route_id=h["route_id"],
+        destination_id=h["destination_id"],
+        stage="run_complete",
+        created_at=now - timedelta(seconds=30),
     )
     db_session.commit()
 

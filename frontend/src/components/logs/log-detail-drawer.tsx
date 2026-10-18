@@ -7,6 +7,8 @@ import type { CheckpointTraceResponse, DeliveryLogReplayResponse, RuntimeTraceRe
 import {
   connectorDetailPath,
   destinationDetailPath,
+  governanceWorkspacePath,
+  NAV_PATH,
   routeEditPath,
   runtimeOverviewPath,
   streamApiTestPath,
@@ -24,6 +26,7 @@ import {
   safeCtxInt,
   stageChipText,
 } from './logs-console-helpers'
+import { governanceOutcomePresentation } from './delivery-log-stages'
 import { LevelBadge } from './logs-level-badge'
 import { getEventPreview, getHost, getRequestId, getWorker, pipelineStageLabel, type LogExplorerRow } from './logs-types'
 
@@ -85,6 +88,14 @@ function traceSectionTitle(stage: string): string {
   if (s === 'parse') return 'Parse'
   if (s === 'mapping') return 'Mapping'
   if (s === 'enrichment') return 'Enrichment'
+  if (
+    s.startsWith('policy_') ||
+    s === 'policy_evaluation_complete' ||
+    s === 'classification_complete' ||
+    s === 'protection_complete' ||
+    s.startsWith('quarantine_event_') ||
+    s.startsWith('schema_drift_policy')
+  ) return 'Governance'
   if (s === 'route') return 'Route Fan-out'
   if (
     s.startsWith('route_send') ||
@@ -467,6 +478,17 @@ export function LogDetailDrawer({
   const runIdStr = typeof row.contextJson.run_id === 'string' && row.contextJson.run_id.trim() !== '' ? row.contextJson.run_id : null
 
   const stageRaw = String(row.contextJson.stage ?? '').toLowerCase()
+  const streamId = safeCtxInt(row.contextJson, 'stream_id')
+  const quarantineEventId = safeCtxInt(row.contextJson, 'quarantine_event_id')
+  const governanceAction = governanceOutcomePresentation(stageRaw)
+  const governanceHref =
+    governanceAction?.kind === 'quarantine'
+      ? quarantineEventId != null && quarantineEventId > 0
+        ? `${NAV_PATH.governanceQuarantine}?id=${encodeURIComponent(String(quarantineEventId))}`
+        : NAV_PATH.governanceQuarantine
+      : governanceAction
+        ? governanceWorkspacePath({ stream_id: streamId, route_id: routeId })
+        : null
   const replayEligible =
     logDbId != null &&
     row.level === 'ERROR' &&
@@ -573,6 +595,34 @@ export function LogDetailDrawer({
                 </p>
               ) : null}
             </section>
+
+            {governanceAction && governanceHref ? (
+              <section
+                data-testid="log-detail-governance-context"
+                className="rounded-xl border border-violet-200 bg-violet-50/70 px-4 py-3 dark:border-violet-800/50 dark:bg-violet-950/25"
+              >
+                <p className="text-xs font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-200">
+                  Governance outcome
+                </p>
+                <p className="mt-1 text-sm leading-snug text-slate-700 dark:text-slate-200">
+                  {governanceAction.summary}
+                </p>
+                {typeof row.contextJson.decision_reason === 'string' && row.contextJson.decision_reason.trim() !== '' ? (
+                  <p className="mt-1 text-xs text-slate-600 dark:text-gdc-muted">
+                    Reason: {row.contextJson.decision_reason}
+                  </p>
+                ) : null}
+                <Link
+                  to={governanceHref}
+                  onClick={onClose}
+                  data-testid="log-detail-governance-action"
+                  className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-violet-300 bg-white px-3 py-2 text-sm font-semibold text-violet-800 hover:bg-violet-100 dark:border-violet-700 dark:bg-gdc-card dark:text-violet-200"
+                >
+                  {governanceAction.label}
+                  <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+                </Link>
+              </section>
+            ) : null}
 
             <dl className="grid grid-cols-[104px_1fr] gap-x-3 gap-y-2.5 text-sm">
               <DetailDt>Stage</DetailDt>

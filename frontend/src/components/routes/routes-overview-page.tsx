@@ -8,7 +8,7 @@ import {
   Search,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { testDestination } from '../../api/gdcDestinations'
 import {
   clearOperationalSnapshotCache,
@@ -19,9 +19,9 @@ import {
   fetchRoutesList,
   type RouteRead,
 } from '../../api/gdcRoutes'
-import { type MetricsWindow } from '../../api/gdcRuntime'
 import type { StreamRead } from '../../api/types/gdcApi'
 import { routeEditPath } from '../../config/nav-paths'
+import { useSessionCapabilities } from '../../lib/rbac'
 import {
   aggregateDeliverySuccessRateFromSnapshot,
   formatOperationalEps,
@@ -53,17 +53,11 @@ import { RoutesProblemRoutesPanel } from './routes-problem-routes-panel'
 import { RuntimeFixtureModeBanner } from '../runtime/runtime-fixture-mode-banner'
 import { ROUTES_TABLE_ROW_HEIGHT, ROUTES_VIRTUAL_SCROLL_THRESHOLD, RoutesTableRow } from './routes-table-row'
 import { PagePurposeHeader, type PageHelpContent } from '../ui/page-purpose-header'
-import { StreamFlowMap } from '../flow/stream-flow-map'
-
-const WINDOW_OPTIONS: { value: MetricsWindow; label: string }[] = [
-  { value: '15m', label: 'Last 15 minutes' },
-  { value: '1h', label: 'Last 1 hour' },
-  { value: '6h', label: 'Last 6 hours' },
-  { value: '24h', label: 'Last 24 hours' },
-]
+import { RoutesArchitectureWorkspace } from './routes-architecture-workspace'
 
 const ROUTES_HELP: PageHelpContent = {
-  title: 'Routes',
+  docsHref: '/help/delivery',
+  title: 'Data Flows',
   intro: 'A Route is the destination-specific delivery path from one Stream to one Destination. Use Routes when the same Stream needs different processing or delivery behavior for different destinations.',
   sections: [
     {
@@ -152,8 +146,17 @@ function SelectField({
   )
 }
 
+function safePositiveId(raw: string | null): number | null {
+  if (raw == null || raw.trim() === '') return null
+  const value = Number(raw)
+  return Number.isSafeInteger(value) && value > 0 ? value : null
+}
+
 export function RoutesOverviewPage() {
-  const [metricsWindow, setMetricsWindow] = useState<MetricsWindow>('1h')
+  const canCreateRoute = useSessionCapabilities().workspace_mutations === true
+  const [searchParams] = useSearchParams()
+  const initialStreamId = safePositiveId(searchParams.get('stream_id'))
+  const initialRouteId = safePositiveId(searchParams.get('route_id'))
   const [refreshTick, setRefreshTick] = useState(0)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -163,7 +166,7 @@ export function RoutesOverviewPage() {
   const destinationsRaw: never[] = []
   const [operationalSnapshot, setOperationalSnapshot] = useState<StabilizedOperationalSnapshot | null>(null)
   const [search, setSearch] = useState('')
-  const [streamFilter, setStreamFilter] = useState('__all__')
+  const [streamFilter, setStreamFilter] = useState(initialStreamId == null ? '__all__' : String(initialStreamId))
   const [destinationFilter, setDestinationFilter] = useState('__all__')
   const [statusFilter, setStatusFilter] = useState('__all__')
   const [policyFilter, setPolicyFilter] = useState('__all__')
@@ -224,14 +227,19 @@ export function RoutesOverviewPage() {
       try {
         const routes = await fetchRoutesList()
         if (!isCurrent()) return
+        const routeCatalogFailed = routes === null
         setRoutesRaw(routes ?? [])
-        setLoadError(null)
+        setLoadError(routeCatalogFailed ? 'Could not load the Route catalog. Existing operational data may be incomplete; retry before making Route decisions.' : null)
         setLoading(false)
 
         const snapshot = await getOperationalSnapshot()
         if (!isCurrent()) return
         if (snapshot == null) {
-          setLoadError('Could not load operational snapshot.')
+          setLoadError(
+            routeCatalogFailed
+              ? 'Could not load the Route catalog or operational snapshot. Retry before treating this workspace as current.'
+              : 'Could not load operational snapshot.',
+          )
           return
         }
         setOperationalSnapshot((prev) => stabilizeOperationalSnapshot(prev, snapshot))
@@ -451,18 +459,22 @@ export function RoutesOverviewPage() {
   return (
     <div className="flex w-full min-w-0 flex-col gap-4">
       {loadError ? (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] font-medium text-red-900 dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-100">
+        <div
+          role="alert"
+          data-testid="routes-load-error"
+          className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] font-medium text-red-900 dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-100"
+        >
           {loadError}
         </div>
       ) : null}
       <RuntimeFixtureModeBanner surface="routes" />
       <PagePurposeHeader
-        title="Routes"
+        title="Data Flows"
         showTitle={false}
         purpose="How does each Stream reach each Destination? A Route is the destination-specific path that applies processing, delivery, retry, and rate-limit behavior before data is sent."
         help={ROUTES_HELP}
         testId="routes-purpose-header"
-        actions={
+        actions={canCreateRoute ? (
           <Link
             to={routeEditPath('new')}
             className="inline-flex h-9 items-center gap-1.5 rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white shadow-sm hover:bg-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500/40"
@@ -470,7 +482,7 @@ export function RoutesOverviewPage() {
             <Plus className="h-3.5 w-3.5" aria-hidden />
             Create Route
           </Link>
-        }
+        ) : undefined}
       />
 
       <div className="flex flex-wrap items-center justify-end gap-2" aria-label="Route runtime controls">
@@ -495,13 +507,13 @@ export function RoutesOverviewPage() {
         ) : (
           <span className="text-[11px] text-slate-500">Runtime status unavailable</span>
         )}
-        <SelectField
-          id="routes-window"
-          label="Metrics window"
-          value={metricsWindow}
-          options={WINDOW_OPTIONS}
-          onChange={(v) => setMetricsWindow(v as MetricsWindow)}
-        />
+        <span
+          role="note"
+          aria-label="Metrics time basis"
+          className="rounded-md border border-slate-200/90 bg-slate-50 px-2.5 py-1.5 text-[11px] font-medium text-slate-600 dark:border-gdc-border dark:bg-gdc-card dark:text-gdc-mutedStrong"
+        >
+          Metrics basis: 5m gateway snapshot
+        </span>
         <button
           type="button"
           onClick={() => {
@@ -515,36 +527,18 @@ export function RoutesOverviewPage() {
         </button>
       </div>
 
-      <section
-        className="rounded-xl border border-violet-200/70 bg-violet-50/40 px-4 py-3 dark:border-violet-500/20 dark:bg-violet-500/[0.06]"
-        data-testid="routes-mental-model"
-        aria-label="DataRelay delivery model"
-      >
-        <p className="text-xs font-semibold uppercase tracking-wide text-violet-800 dark:text-violet-200">How delivery works</p>
-        <div className="mt-2 flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
-          <span className="rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-gdc-border dark:bg-gdc-card">Stream</span>
-          <ChevronRight className="h-4 w-4 text-slate-400" aria-hidden />
-          <span className="rounded-lg border border-violet-200 bg-white px-3 py-2 dark:border-violet-500/30 dark:bg-gdc-card">Route Processing</span>
-          <ChevronRight className="h-4 w-4 text-slate-400" aria-hidden />
-          <span className="rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-gdc-border dark:bg-gdc-card">Destination</span>
-        </div>
-        <p className="mt-2 text-xs leading-relaxed text-slate-600 dark:text-gdc-muted">
-          One Stream can fan out through many Routes to many Destinations. Use each Route for destination-specific processing and delivery behavior instead of duplicating the Stream.
-        </p>
-      </section>
-
-      {operationalSnapshot && streamFilter !== '__all__' ? (
-        <section aria-label="Selected Stream delivery flow" className="space-y-3" data-testid="routes-flow-maps">
-          {operationalSnapshot.streams.filter((stream) => String(stream.stream_id) === streamFilter).map((stream) => (
-            <StreamFlowMap
-              key={stream.stream_id}
-              streamId={stream.stream_id}
-              streamName={stream.stream_name || `Stream #${stream.stream_id}`}
-              routes={consoleRows.filter((row) => row.route.stream_id === stream.stream_id && row.metrics != null).map((row) => row.metrics!)}
-            />
-          ))}
-        </section>
-      ) : null}
+      <RoutesArchitectureWorkspace
+        snapshot={operationalSnapshot}
+        consoleRows={consoleRows}
+        loading={loading}
+        selectedStreamId={streamFilter === '__all__' ? null : Number(streamFilter)}
+        initialRouteId={initialRouteId}
+        onSelectStream={(id) => setStreamFilter(String(id))}
+        onRouteSaved={() => {
+          clearOperationalSnapshotCache()
+          setRefreshTick((x) => x + 1)
+        }}
+      />
 
       <section aria-label="Route KPI summary" className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6 xl:gap-3">
         <div className="rounded-lg border border-slate-200/70 bg-white/90 px-3 py-2 dark:border-gdc-border/90 dark:bg-gdc-card">
@@ -595,7 +589,15 @@ export function RoutesOverviewPage() {
         </div>
       </section>
 
-      <RoutesFlowTreeTable snapshot={operationalSnapshot} consoleRows={consoleRows} loading={loading} />
+      <details className="overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-sm dark:border-gdc-border dark:bg-gdc-card">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-50 dark:text-slate-100 dark:hover:bg-gdc-rowHover">
+          Advanced: expanded Route Flow table
+          <span className="ml-2 text-xs font-normal text-slate-500 dark:text-gdc-muted">Complete hierarchy and runtime metrics</span>
+        </summary>
+        <div className="border-t border-slate-200/90 dark:border-gdc-border">
+          <RoutesFlowTreeTable snapshot={operationalSnapshot} consoleRows={consoleRows} loading={loading} />
+        </div>
+      </details>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <RoutesProblemRoutesPanel consoleRows={consoleRows} />
@@ -773,7 +775,7 @@ export function RoutesOverviewPage() {
                         </tr>
                       ))
                     : null}
-                  {!loading && displayRows.length === 0 ? (
+                  {!loading && !loadError && displayRows.length === 0 ? (
                     <tr className={cn(opTr, opStateRow)}>
                       <td
                         className={cn(opTd, 'py-8 text-center text-[12px] text-slate-500 dark:text-gdc-muted')}

@@ -8,6 +8,16 @@ import ssl
 import sys
 
 
+def _drain_tls_connection(tls: ssl.SSLSocket, addr: object) -> None:
+    """Keep a pooled syslog TLS connection open until the client closes it."""
+
+    while True:
+        data = tls.recv(65535)
+        if not data:
+            return
+        print(f"TLS {addr!r} bytes={len(data)}", flush=True)
+
+
 def _serve_tls(*, certfile: str, keyfile: str, host: str = "0.0.0.0", port: int = 6514) -> None:
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.minimum_version = ssl.TLSVersion.TLSv1_2
@@ -25,8 +35,7 @@ def _serve_tls(*, certfile: str, keyfile: str, host: str = "0.0.0.0", port: int 
             conn.close()
             continue
         try:
-            data = tls.recv(65535)
-            print(f"TLS {addr!r} bytes={len(data)}", flush=True)
+            _drain_tls_connection(tls, addr)
         finally:
             try:
                 tls.unwrap()

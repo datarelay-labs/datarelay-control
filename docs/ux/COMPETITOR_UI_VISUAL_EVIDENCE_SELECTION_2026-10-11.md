@@ -1,0 +1,152 @@
+# Competitor UI Visual Evidence and Selected Control UX Improvements — 2026-10-11
+
+> Current disposition (owner instruction 2026-10-14): this is preserved research/source history. The former exactly-three-widget and NO-new-backend scope is superseded by the [complete exclusive Control UX Delivery WBS](CONTROL-UX-DELIVERY-WBS.md) and current Flow contract sections 9-10. Retain all prior findings as mapped reuse/requirements/dispositions, not as whole-product implementation or authenticated acceptance. No repeat research or arbitrary scope reduction. The WBS maps prior and latest conversation proposals, including StreamSets/n8n/Airbyte, to 61 tasks with verification and PASS criteria.
+
+Authority: Control Product Charter + UX Charter + Stream Wizard Charter; existing Control roadmap #354, UI Work Packet #413, Draft PR #414.
+Decision sequence: P0A **observe official real product screen and documented operator journey** → lawful REA where useful → Control same-head GAP → ranked three UI selections → only then P0B implementation.
+
+Source inspected: `feat/control-saas-usability-convergence@ab01d50f993d79de2784881bd21223d57395f744`. Source evidence is not a genuine authenticated browser/user acceptance test. Screenshot and product walkthrough evidence **DOES NOT** mean this audit logged into the vendor's tenant. No product proprietary source was downloaded or reverse-engineered. Design patterns may be independently implemented; do not copy proprietary UI artwork/source.
+
+## P0A-1: Five actual vendor UI screen references and operator journeys
+
+| Product / official visual reference | What the published screen actually shows | Vendor UI operator journey supported by docs | Evidence type and limitation | Control at pinned HEAD / actionable gap |
+| --- | --- | --- | --- | --- |
+| **Cribl Stream / QuickConnect** — screenshot [QuickConnect canvas](https://docs.cribl.io/images/quickconnect-basic.2c18224e6b.png), [4.19 documented interface](https://docs.cribl.io/stream/4.19/quickconnect/), [Stream Tour](https://docs.cribl.io/stream/tour/) | Colored Source and Destination tiles connected by lines with add-connection affordances. | A user chooses QuickConnect, filters Sources/Destinations, connects endpoints, optionally adds processing; detailed Routing is a different mode. | **OFFICIAL_SCREEN / DOCUMENTED.** Screenshot on older docs path, behavior referenced in 4.19 guide; no live session. QuickConnect *can bypass Routes*: not permitted in Control. | Control's read-only Stream→Route→Destination architecture is present, operator quick-find and first-run Wizard already implemented. **Do not duplicate draggable data-plane wiring or bypass Route Processing**. Group/edge focus and contextual action visibility are reusable ideas, but no new Graph canvas selected. |
+| **Datadog Observability Pipelines** — [official pipeline canvas](https://www.datadoghq.com/blog/observability-pipelines-transform-and-enrich-logs/), [current setup workflow](https://docs.datadoghq.com/observability_pipelines/configuration/set_up_pipelines/) | Source card, ordered Processor stack with editable controls, distinct Destination cards and validation indicators on a connected canvas. | Template → Source → Destinations → edit/validate Processors using Pipeline Simulation → Worker installation. | **OFFICIAL_SCREEN / DOCUMENTED**; official blog visualization, product edition not proven by screenshot; no authorized tenant session. | Control already has intent templates, 5-stage Wizard and per-Route ProcessingPreviewDock. Adding another graph/builder/simulator would duplicate runtime semantics. **Retain existing stage truth; defer a second builder.** |
+| **Splunk Edge Processor** — [official SPL2 editor and preview screenshot](https://www.splunk.com/en_us/blog/platform/introducing-edge-processor-next-gen-data-transformation.html), [current path preview guide](https://help.splunk.com/en/data-management/process-data-at-the-edge/use-edge-processors-for-splunk-cloud-platform/route-data-using-pipelines/process-a-subset-of-data-using-an-edge-processor) | Adjacent SPL2 pipeline code/actions and sample output preview table, making intermediate output inspectable without a live send. | Operator enters sample events, selects a routing branch/destination in Preview Pipeline, inspects transformed example before deployment. | **OFFICIAL_SCREEN / DOCUMENTED**. Screenshot from 2023 official blog, 2026 behavior separately documented. No claimed authenticated control of current tenant. | Existing Route Edit `/routes/:id/edit` calls `runRouteDeliveryPreview` with a synthetic safe event and receives `preview_messages` but currently discards the formatted output; it shows only count and destination. **SELECT P0B-2**: bounded no-send formatted-output details, secrets and credential headers never exposed. |
+| **Confluent Cloud Stream Lineage** — [official graph/inspector screenshot](https://docs.confluent.io/cloud/current/_images/dg-dl-on-topic-drilldown.png), [official lineage workflow](https://docs.confluent.io/cloud/current/stream-governance/stream-lineage.html) | A selected graph node opens a side-detail panel with Overview/Messages/Schema/Query tabs and metrics for the selected node; graph remains visible. | Operator searches a stream, selects a graph node or edge, inspects detail/context/timeline in a side panel, navigates back; some historical time-window options depend on product tier. | **OFFICIAL_SCREEN / DOCUMENTED**. Privileged tenant RBAC not observed. Documented lineage includes a rolling 10-minute activity window; advanced historical ranges are tier-dependent. | Control Data Flows has a selected Route inspector with snapshot health/rates and deep links, but metrics/details are packed into one long card with **no contextual read-only tabs**. **SELECT P0B-1**: split existing selected Route inspector into accessible Overview/Delivery/Diagnostics tabs preserving source timestamps, Stream/Route/Destination ID, no new read/API or fabricated receiver ACK. |
+| **Elastic Kibana Discover** — [official field-statistics screenshot](https://www.elastic.co/docs/explore-analyze/images/kibana-field-statistics-view.png), [current field-statistics workflow](https://www.elastic.co/docs/explore-analyze/discover/show-field-statistics) | Indexed document histogram and per-field table of document coverage and distinct-value counts; expanding a field exposes distribution. | Search/filter data, open Field statistics, inspect missingness, uniqueness and anomalies to understand data shape. | **OFFICIAL_SCREEN / DOCUMENTED**, screenshot of product field-statistics view, not a sampled Control Source or authenticated UI. Control has no query/indexed census parity. | Existing Control Sample/Record Selection only displays the selected extracted record's fields and count; no field-coverage summary across available sample records. **SELECT P0B-3**: safe per-sample field presence counts and approximate distinct counts only for bounded in-memory extractedEvents, clearly sample-limited and without raw field-value disclosure or production inference. |
+
+### Evidence quality and red lines
+
+- These are **screens actually visible in vendors' official published image/video pages** with workflow steps confirmed by linked official docs, **not authenticated hands-on tenant observations**. No vendor account credentials or UI-driving session was available; role-specific, mobile/keyboard and production editions are **UNKNOWN** except explicitly documented. Retest interactive behavior only if lawfully accessible; never mislabel screenshots as own user-E2E.
+- Current Control features are source-present and have native CI; they are not authenticated-browser accepted. Same exact installed Control HEAD Browser BFS 20/97 and two genuine users' Full User E2E remain NOT PASS.
+- No Cribl bypass routing, no extra Stream/Route data plane, no copy of Datadog canvas, no Splunk SPL2 engine, no Confluent Kafka lineage engine, no Elasticsearch indexed statistics service.
+
+## P0A-2: REA on licensed UI behavior — actual second run
+
+**Target:** Node-RED `@node-red/editor-client@5.0.7`, from the previously licensed npm artifact, **Apache-2.0** (`package/LICENSE`). New UI mechanism inspected: **`public/red/tours/first-flow.js`** (4,786 bytes, SHA256 `af595bc937bc55ad7c2770ef599071308e4444d836968e31456be7f56d7633d4`). Reuse the existing previous licensed Search/Sidebar/View REA pilot in `REA_NODE_RED_FLOW_SEARCH_PILOT_2026-10-10.md`; no proprietary competitor artifacts inspected.
+
+**Actual dev-atlas command:** existing `rea-agents@6.3.0` `rea analyze-javascript-application <read-only licensed staging> --artifact-format directory --format json`; staged source parsed statically, never executed. New evidence `ev_711c8197cb96e803252046ac47314de2522c199eab5ae9fd688f8c76111ad739`, raw JSON SHA256 `bef9f1d6b592f0d932a27f4a39c03f591512040a61360db5e9f1b3d7413aa2c3`, private evidence at `dev-atlas:/tmp/drcontrol-rea-guided-firstflow-20261011/evidence/rea-firstflow.raw.json`. Machine-derived: **1 JavaScript parsed, 0 parse failures, 296 AST nodes, 55 semantic nodes, 16 relations, 6 function fingerprints, 19 unresolved dynamic relationships**. Source-level manual read shows **6 tour step definitions and 5 waits**, including two DOM event and three Node-RED event waits, to guide actual node creation/canvas interactions. This **does not prove dynamic browser behavior**; REA semantic coverage is partial/unknown and did not run target code.
+
+**Control decision:** The REA-confirmed *wait-for-user-action before advancing* pattern is already covered by Control's 5-step Wizard validation/reachability, explicit sample confirmation, draft preservation and role-safe guided entry. A new Node-RED tour framework is **DEFER / duplicate**, not selected for P0B. Existing selection/search REA pilot already informed Control's Route quick-find; no reason to duplicate those features.
+
+## P0A-3: Selected P0B implementation roadmap — ranked, NO new backend
+
+| Rank and operator value | Selected UI improvement and grounded gap | Minimal Control changes / acceptance tests | License/authority boundary |
+| --- | --- | --- | --- |
+| **P0B-1 HIGH** — faster failure diagnosis without leaving the flow map | **Contextual Route Inspector tabs** patterned after Confluent lineage node drilldown; Control currently has a single long read-only snapshot metrics card. | `routes-architecture-workspace.tsx`: keep selected Stream/Route identity and shortcuts always visible, add accessible **Overview / Delivery / Diagnostics** switch using *only existing* snapshot and Route metadata; ensure switching selected Route does not show a prior Route's evidence, time labels remain exact and stale/unverified/disabled never become green. RED tests for selected Route, tab navigation, keyboard, missing/stale metrics and mobile/narrow screen containment. | Independently implement generic tabs; do not copy screenshot markup/code, Kafka lineage model or a new historical-time API. Do not modify previously platform-denied `routes-overview-page.tsx` title/window operation. |
+| **P0B-2 HIGH** — inspect no-send formatted sender output before rollout | **Route-specific delivery preview result drawer** patterned after Splunk Edge Processor preview results. `RouteDeliveryPreviewResponse.preview_messages` currently ignored in Route Edit success. | `route-edit-page.tsx`: reuse existing no-send preview and persisted Route guard; show bounded, privacy-safe output information, destination formatter/type and message count; do not expose raw request headers, secrets, credentials, sensitive values or claim actual delivery. RED cases for saved/unsaved, route selection, API failure, multiple results, no-send proof boundary. Investigate safe payload redaction before showing body; failing secrecy gate means only metadata, not unsafe string rendering. | Reuse existing preview API and safe sample, not Splunk SPL2 or proprietary screenshots. No live sending or auth modifications. |
+| **P0B-3 MEDIUM–HIGH** — validate a Source sample before mapping | **Sample-only field coverage table** inspired by Elastic Discover Field statistics; Control currently shows one selected record's fields without bounded multi-event coverage. | Existing Record Selection workspace: from already extracted bounded in-memory events, compute per-field presence and cardinality (sample-count-relative only), show no raw sensitive field values; cap field count/event count, flag sample too small, preserve existing Record Selection and Union Schema gates. Unit/UX RED cases for mixed/missing field shapes, nested keys, no sample, single record, large payload and mobile keyboard. | Never imply indexed global document statistics or production data quality from a bounded Source sample. No Elasticsearch service, new collector API or backend change. |
+
+**Exit of P0A (public/authorized visual evidence + bounded licensed REA + selections): SOURCE EVIDENCE COMPLETE / AUTHENTICATED COMPETITOR UI NOT OBSERVED.** The user-visible real product Browser/FUE and competitor account hands-on remain independent, explicitly NOT PASS. **Only after this matrix is committed should P0B-1 implementation begin.** All approved scopes must preserve protected dirty worktrees, Source of Truth, original #413/#414 and previous safety denials.
+
+
+## P0A-4 — Third licensed REA expansion: Node-RED selected-node Inspector (2026-10-11)
+
+This new bounded analysis follows, rather than repeats, the Search/Sidebar/View and First-Flow REA passes. Published screenshots are NOT authenticated vendor use and static REA is NOT a dynamic browser test.
+
+**Rights and provenance.** OpenJS Foundation Node-RED @node-red/editor-client version 5.0.7, Apache-2.0, pinned Git commit d9644c41beb0d90d1cbf9375646e4259551182af (https://github.com/node-red/node-red/tree/d9644c41beb0d90d1cbf9375646e4259551182af). Package LICENSE SHA256 876efc5b0ea06ac893b0d5f88bba8abfc050d82d157d65a95453abcb4dd6b0e0, tgz SHA256 974f584d943da8d6c76ab90b4313e456728e2ab0b6726ad82f5a8b86a0163e7c. Examined only:
+- src/js/ui/tab-info.js (24,325 bytes; SHA256 0b0e558f21d28e733201d8e43f3bd15dc5b34cd7fe6fe7dd27e028071eebf8c9), https://github.com/node-red/node-red/blob/d9644c41beb0d90d1cbf9375646e4259551182af/packages/node_modules/%40node-red/editor-client/src/js/ui/tab-info.js
+- src/js/ui/tab-info-outliner.js (31,092 bytes; SHA256 7747715c8925f60659ec1552a5b357a79e8ea4ff07e015b9bb5ef99672abb10e), https://github.com/node-red/node-red/blob/d9644c41beb0d90d1cbf9375646e4259551182af/packages/node_modules/%40node-red/editor-client/src/js/ui/tab-info-outliner.js
+
+**Real execution.** dev-atlas existing rea-agents@6.3.0 analyzed a separately staged read-only source directory (files 0444, directory 0555) using:
+    /tmp/drcontrol-rea-nodered.J3FCkd/tool/node_modules/.bin/rea analyze-javascript-application /tmp/drcontrol-rea-inspector-20261011/licensed --artifact-format directory --format json
+Result: 2/2 JavaScript parsed, 0 failures; 6,656 visited AST nodes; semantic 4,381 nodes / 3,139 relations / 79 fingerprints / 1,797 unresolved unknowns. Evidence ID ev_efca131040e4c93969aaa3207f28052345b3101d407e957b210234b0fb036bf9; staged root SHA256 053a0847951250607722b7e4dab1fb498420fb574c1b3f9d3087838421b9e1af; full 12,702,299-byte evidence SHA256 a3e8a576087588c7a9cb416bfbd03fac1805f79170c10d95bc0a158cdd02c2e9 (retained privately on dev-atlas:/tmp/drcontrol-rea-inspector-20261011/evidence/rea-inspector.raw.json, NOT committed). Application-inventory coverage is complete only for the two selected files; semantic graph coverage is UNKNOWN/PARTIAL, not execution proof. Source was parsed inertly, never booted.
+
+**Observable source mechanism.** tab-info.js lines 522–558 subscribe to view:selection-changed, resolve zero/one/multiple selected objects and refresh/clear details. tab-info-outliner.js lines 334–355 register node, flow and workspace change handlers. These are STATIC source facts, not verified running UI. Confluent's documented public Stream Lineage selected-node panel (https://docs.confluent.io/cloud/current/stream-governance/stream-lineage.html) provides the independent product-screen context; no Confluent proprietary code or assets were inspected or reused.
+
+**Reaffirmed Control current-HEAD gap and top-three ranking (before P0B source changes).**
+
+| Rank | Existing Control gap | Concrete acceptance |
+| --- | --- | --- |
+| P0B-1 Route Inspector | Selected Route currently packs health and delivery/diagnostic metrics into one snapshot-backed panel. | Add independent Overview/Delivery/Diagnostics tab controls and panels, preserving Route ID/Stream ID, deep links, native keyboard Arrow/Home/End, reset on selected Route/Stream change and stale/failed/disabled truth. Continue pre-existing 78-line RED tests. |
+| P0B-2 Route no-send preview | Route Edit receives preview_messages but does not display safe formatted output. | Reuse existing no-send preview, expose bounded privacy-safe result only if redaction proven; metadata-only fallback, no new API, no live delivery, RED success/failure/multi-message/secrecy cases. |
+| P0B-3 Sample-only field coverage | Record Selection displays selected sample fields but not bounded multi-record field coverage. | Derived in-memory presence and sampled distinct counts, zero raw sensitive values and zero whole-production inference, RED empty/missing/nested/large/multi-event cases. |
+
+**Block 1 source-evidence exit:** Existing five official published-vendor UI references, verified Control source GAP and exactly three selected patterns are complete, with three separately executed bounded licensed static Node-RED REA passes. Authenticated competitor UI is NOT_OBSERVED. Control Browser BFS 20/97 and two-user same-head Full User E2E are NOT PASS. Proceed to Block 2 only in selected priority order; keep Draft PR #414 and preserved Sidebar/Route test worktrees.
+
+
+## Implementation-only checkpoint — 2026-10-12 (testing deferred by owner)
+
+The prior P0A official published-vendor UI comparison, lawful Node-RED static REA, and ranked P0B selections remain the approved *pattern selection*. They are not evidence of hands-on use of any proprietary competitor tenant. On current Control source branch `feat/control-saas-usability-convergence`, all **three selected independent P0B implementations** are present:
+
+| Selected pattern | Current Control-owned source | Source implementation disposition |
+| --- | --- | --- |
+| **P0B-1 Confluent-informed Route inspector** | `frontend/src/components/routes/routes-architecture-workspace.tsx` Overview / Delivery / Diagnostics panels; `routes-architecture-workspace.test.tsx` | Implemented in code (commit `64abbf37`), actual authenticated browser acceptance deferred |
+| **P0B-2 Splunk-informed no-send Route preview** | `frontend/src/components/routes/route-edit-page.tsx` privacy-limited formatted-output metadata; `route-edit-delivery-preview.test.tsx` | Implemented in code (commit `8d77e253`), no actual delivery implied |
+| **P0B-3 Elastic-informed sample field coverage** | `frontend/src/components/streams/wizard/record-selection-workspace.tsx` with bounded in-memory presence and distinct counts; `sample-field-coverage.ts` | Implemented in code (commit `44e2e3a9`), never indexed/production statistics |
+
+The task-first **Connections / Streams / Data Flows** navigation and global **New data flow** CTA have also been implemented in `app-navigation.tsx`, `top-header.tsx` and the existing five-stage Wizard (commit `ab01d50f`). The Wizard's existing saved-draft handoff opens Destination creation context, and a successful saved Destination returns to the saved Destinations step with positive saved ID, **without auto-creating a Route**. The following source completion removes a remaining post-return dead end:
+
+- On returning with `createdDestinationId`, `step-delivery.tsx` invalidates the Destination catalog TTL before the initial read; the newly saved item is not hidden by a cached empty list.
+- An enabled Destination verified in the refreshed catalog receives an explicit, keyboard-accessible **Add delivery path** button within the return notice; operator activation alone attaches the Route draft. An absent, disabled, failed-to-load or already-attached Destination is not presented as an unverified success or automatically connected.
+- Focused regression cases in `step-delivery.test.tsx` are authored. Owner requested tests later: **these new tests and full authenticated Browser BFS / two-real-user Full User E2E have not been executed for this addition**. The required frontend production build ran separately; final exact-head CI requires a fresh check after publication.
+
+**Remaining distinctions, not silently marked as implemented:** A protected unrelated staged Sidebar session-state guard (two files) and the previously platform-denied parent Route overview title/metrics-window edit are still outside this change; do not replace or move those edits through another worktree. Source code, actual login/session authority, real 1440/375/320 role-specific Chromium workflows, end-to-end route delivery, unmerged Draft PR integration and owner release are different gates. The current owner explicitly deferred exhaustive user testing; no Browser/FUE PASS is claimed.
+
+
+### Source follow-on — Data Flows metrics truth and naming (2026-10-12)
+
+The source-only Data Flows (`/routes`) page still exposed a 15m/1h/6h/24h **Metrics window** picker whose selected value was never sent to, or used by, its sole `getOperationalSnapshot()` read. The same UI separately labeled operational KPI evidence as a **5-minute snapshot**. Letting operators change a selector without changing the underlying evidence could falsely imply historical metric-window support.
+
+The Control-owned follow-on changes only `routes-overview-page.tsx`: removes the nonfunctional picker and dead window state, replaces it with a read-only **Metrics basis: 5m gateway snapshot** label, and aligns the page/help identity with the existing **Data Flows** global navigation. Existing Route-specific metric labels, runtime reads and source timestamp semantics are retained. It does not introduce a new historical metrics API, query, receiver acknowledgment or backend change.
+
+A regression assertion has been authored in `routes-overview-page.test.tsx` requiring no selectable Metrics window and the fixed truthful label. **The owner deferred tests**, so the new assertion, authenticated role/browser, and two-user Full User E2E remain NOT RUN, not PASS. The earlier platform denial for this page was retried using the original authorized Remote Desktop Commander tool directly on dev-drcontrol and this bounded source edit succeeded without an alternate provider. The unrelated staged Sidebar session-state changes remain preserved, not integrated or called complete.
+
+
+### Current source integration — session-reactive Sidebar (2026-10-12)
+
+The two originally protected staged files `frontend/src/components/layout/sidebar.tsx` and `sidebar.test.tsx` were first committed in their **original** dev-drcontrol worktree, preserving their exact existing contents as immutable commit `45d26411` (archived staged diff SHA256 `5d7e20e44b19d3f97929b08304763d4de43c3645893b13900f3166321ae4f537`). They were subsequently cherry-picked without semantic modification into the existing Control Draft #414 as `b0151bf5`, using ordinary non-force Git operations. The original worktree and current candidate are clean.
+
+Sidebar's legacy role-only "Create stream" button now reflects an active, unexpired, password-change-complete authenticated session through the existing `onSessionChange` subscription and rechecks the same conditions on activation. A role-only local hint or stale UI must not imply authority; backend remains responsible for authorization. The previously staged 4 regression scenarios were preserved in source. No actual authenticated browser persona, host ACL or real-user E2E is implied; the owner deferred those tests until source implementation finishes.
+
+
+## Implementation-only completion checkpoint — task-first navigation labels (2026-10-12)
+
+The previously implemented **New data flow** global header CTA and **Data Flows** primary navigation link both use the existing product model and URLs: the Stream Wizard at `/streams/new` and the read-only Route operations workspace at `/routes`. This follow-on fixes remaining mismatched user-facing UI labels without inventing an additional flow backend entity or changing saved resource semantics:
+
+- The Sidebar's session-authorized creation button displays and exposes accessible name **New data flow** (same destination and RBAC guard as before, `/streams/new`).
+- The initial no-Stream Dashboard next action displays **New data flow** after required resources are known, preserving its existing prerequisite checks and link.
+- The application shell's canonical title and document title for `/routes` are **Data Flows**, consistent with primary navigation. Technical Route editing remains Route-specific; its breadcrumb identifies the parent operational workspace as **Data Flows**.
+
+The existing native component test expectations have been updated or extended. **User-directed test deferral is retained:** this source-only batch is not an authenticated Browser BFS or Full User E2E pass; exact-head CI/source validation must be distinguished from installed-user acceptance. No Product Charter schema, Router, RBAC, APIs, runtime, provider workflow, database or production state was modified.
+
+
+## 2026-10-12 — First-run enabled Destination readiness (implementation follow-on)
+
+**Observed source-level UX gap:** The Dashboard first-flow checklist previously passed the *total registered* Connector/Destination counts to a control that presented **Ready to start** and an actionable Stream Wizard entry whenever both totals were positive. Registered receiving Destinations may be **disabled**, or API records may lack valid positive safe-integer identifiers, so registered is not equivalent to selectable for a new Route. The Wizard's independent `summarizeResourceReadiness` already requires valid, enabled Destinations.
+
+**Source change:** The existing dashboard deferred catalog (not a new API) supplies separately verified registered Destination count and enabled Destination count. The first-run panel distinguishes **N registered · none enabled** from **N registered · M enabled**, routes the operator to **Review Destinations** when none is usable, and offers `New data flow` only when existing allowed Connector prerequisites and an enabled receiving Destination are known. Malformed catalog IDs fail closed as **Not verified**, and unavailable reads never become zero. Registered Connector count remains a readiness prerequisite, **not proof that source connectivity or an individual Source is verified**; Wizard validation still owns those downstream checks.
+
+**Boundaries:** Native regression cases are scoped to the prior CI test title change, standalone first-flow disabled/unknown views, and the actual parent Dashboard disabled-Destination catalog case. No runtime, API, schema, additional network call, automatic Route, role permission or delivery claim. Full authenticated Browser BFS 20/97 and genuine two-user Full User E2E remain user-deferred, NOT PASS; code/native validation/CI must be assessed on the eventual exact candidate HEAD separately.
+
+
+## 2026-10-14 — Owner correction: direct source-first creation
+
+The owner rejected the five goal cards because they all entered the same Stream
+Wizard with only small defaults changed. The entire intent picker and unused
+preset module are removed. `New data flow` now opens Connect directly; the
+existing five stages, contextual Connector creation, saved-draft resume, RBAC,
+and explicit discard/save-before-leaving protections remain.
+
+Request and advanced sections stay disabled until a saved Connector has a valid
+linked Source. A database-type hint alone never exposes SQL fields. SQL is only
+for the selected database connection: the Stream stores the SELECT statement it
+will execute there, with sample testing in Sample & Record Selection. Switching
+Connectors clears the prior Source link while the new detail is loading. The
+incorrect Webhook helper on database requests and fixture-table placeholder are
+removed. Sampling cannot be entered without a linked source.
+
+This corrects a poor user journey; the old goal-card design must no longer be
+counted as an improvement merely because it was inspired by a vendor template.
+The previously implemented Route Inspector tabs, privacy-limited no-send
+preview, and sample-only field coverage are distinct features elsewhere, not
+proof that this creation journey was usable or that all competitor UX was
+applied. Their real-user acceptance remains separate.
+
+Development preview readiness also requires populated, explicitly named local
+test resources and actual receiver evidence. An empty catalog or HTTP 200 on a
+login page is not a working data-flow demonstration. No mock metrics, frontend
+placeholders, admin password resets, production writes or broad safety-guard
+removal may substitute for the requested real demo traffic.

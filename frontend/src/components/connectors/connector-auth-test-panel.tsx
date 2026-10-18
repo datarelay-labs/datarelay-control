@@ -5,6 +5,7 @@ import {
   type ConnectorAuthTestResponse,
 } from '../../api/gdcRuntimePreview'
 import { redactConnectorAuthTestResponseForDisplay, RemoteFileProbeSummary } from './remote-file-probe-summary'
+import { getSessionCapabilities } from '../../lib/rbac'
 
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const
 export type AuthTestHttpMethod = (typeof METHODS)[number]
@@ -79,6 +80,7 @@ export function ConnectorAuthTestPanel({ buildAuthTestPayload, onTestStart, mode
   const [authDetail, setAuthDetail] = useState<string | null>(null)
 
   const onTestAuthentication = useCallback(async () => {
+    if (getSessionCapabilities().validation_mutations !== true) return
     onTestStart?.()
     setAuthBusy(true)
     setAuthDetail(null)

@@ -9,6 +9,7 @@ from app.formatters.message_prefix import route_formatter_without_prefix_keys
 _FORMATTER_TOP_KEYS = frozenset(
     {
         "message_format",
+        "syslog_wire_mode",
         "syslog",
         "facility",
         "severity",

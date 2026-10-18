@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react'
+import { handleTablistKeyDown } from '../../../lib/tablist-keyboard'
 import { cn } from '../../../lib/utils'
 import { RecordSelectionWorkspace, scrollRecordSelectionWorkspaceToTop } from './record-selection-workspace'
 import { StepApiTest } from './step-api-test'
@@ -76,6 +77,8 @@ export function StepSample({
       <nav
         className="flex flex-wrap gap-1 rounded-lg border border-slate-200/80 bg-slate-50/80 p-1 dark:border-gdc-border dark:bg-gdc-card"
         aria-label="Sample sections"
+        aria-orientation="horizontal"
+        role="tablist"
         data-testid="wizard-sample-tabs"
       >
         {TAB_DEFS.map((tab) => {
@@ -85,9 +88,13 @@ export function StepSample({
               key={tab.key}
               type="button"
               role="tab"
+              id={`wizard-sample-tab-${tab.key}`}
+              aria-controls={`wizard-sample-panel-${tab.key}`}
               aria-selected={active}
+              tabIndex={active ? 0 : -1}
               data-testid={`wizard-sample-tab-${tab.key}`}
               onClick={() => handleTabChange(tab.key)}
+              onKeyDown={handleTablistKeyDown}
               className={cn(
                 'rounded-md px-3 py-2 text-sm font-semibold transition-colors',
                 active
@@ -101,7 +108,7 @@ export function StepSample({
         })}
       </nav>
 
-      <div role="tabpanel">
+      <div role="tabpanel" id={`wizard-sample-panel-${activeTab}`} aria-labelledby={`wizard-sample-tab-${activeTab}`}>
         {activeTab === 'run_test' ? (
           <StepApiTest
             state={state}

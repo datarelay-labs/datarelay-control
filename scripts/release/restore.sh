@@ -15,6 +15,7 @@ usage() {
   echo "  GDC_RELEASE_COMPOSE_FILE  (default: docker-compose.platform.yml)" >&2
   echo "  GDC_RESTORE_DB_NAME       (default: POSTGRES_DB from compose; allowlist: gdc, datarelay)" >&2
   echo "  GDC_RESTORE_DB_USER       (default: gdc)" >&2
+  echo "  ALLOW_UNVERIFIED_LEGACY_DUMP=yes  (only legacy archives without digest)" >&2
   exit 2
 }
 
@@ -28,12 +29,53 @@ if [[ -z "$DUMP" ]]; then
   echo "Dump file missing: ${DUMP:-}" >&2
   usage
 fi
+# Preserve the original operator path for symlink screening: realpath resolves links.
+if [[ -L "$DUMP" ]]; then
+  echo "Refusing restore: archive symlink is not trusted." >&2
+  exit 6
+fi
 if command -v realpath >/dev/null 2>&1; then
   DUMP="$(realpath "$DUMP")"
 fi
 if [[ ! -f "$DUMP" ]]; then
   echo "Dump file missing or not a file: ${DUMP:-}" >&2
   usage
+fi
+
+# Validate the exact archive bytes before contacting Docker/PostgreSQL.
+# A SHA256 receipt proves file integrity only, not encryption or signing.
+DIGEST_FILE="${DUMP}.sha256"
+if [[ -L "$DUMP" || -L "$DIGEST_FILE" ]]; then
+  echo "Refusing restore: archive/checksum symlink is not trusted." >&2
+  exit 6
+fi
+if [[ -f "$DIGEST_FILE" ]]; then
+  if [[ ! -s "$DUMP" || ! -s "$DIGEST_FILE" || "$(wc -c < "$DIGEST_FILE")" -gt 256 ]]; then
+    echo "Refusing restore: empty archive or invalid checksum receipt." >&2
+    exit 6
+  fi
+  mapfile -t digest_lines < "$DIGEST_FILE"
+  if [[ "${#digest_lines[@]}" -ne 1 ]]       || [[ ! "${digest_lines[0]}" =~ ^([0-9a-fA-F]{64})[[:space:]][[:space:]]([^/[:space:]]+)$ ]]; then
+    echo "Refusing restore: malformed checksum receipt." >&2
+    exit 6
+  fi
+  recorded_digest="${BASH_REMATCH[1]}"
+  recorded_archive="${BASH_REMATCH[2]}"
+  if [[ "$recorded_archive" != "$(basename "$DUMP")" ]]; then
+    echo "Refusing restore: checksum receipt references a different archive." >&2
+    exit 6
+  fi
+  actual_digest="$(sha256sum "$DUMP" | awk '{print $1}')"
+  if [[ "${recorded_digest,,}" != "$actual_digest" ]]; then
+    echo "Refusing restore: checksum mismatch; archive bytes have changed." >&2
+    exit 6
+  fi
+  echo "Checksum verified for $(basename "$DUMP") (integrity only, not a signature)."
+elif [[ "${ALLOW_UNVERIFIED_LEGACY_DUMP:-}" == "yes" ]]; then
+  echo "WARNING: legacy restore lacks a SHA256 checksum; verification explicitly waived." >&2
+else
+  echo "Refusing restore: checksum receipt missing. Set ALLOW_UNVERIFIED_LEGACY_DUMP=yes only for an approved legacy archive." >&2
+  exit 6
 fi
 
 if ! command -v docker >/dev/null 2>&1; then

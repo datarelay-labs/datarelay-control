@@ -1,9 +1,11 @@
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { act, cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
+import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
+import { DataRouterEnabledContext } from './router/data-router-enabled'
 import { clearTestSession, persistTestSession } from './lib/governance-rbac'
+import { getSessionRole, isSessionExpired } from './auth/session'
 import { clearWizardCatalogSnapshot } from './components/streams/wizard/wizard-catalog-cache'
 
 vi.mock('./api/operationalSnapshot', () => ({
@@ -150,6 +152,9 @@ vi.mock('./api/gdcAdmin', () => ({
   getAuthWhoAmI: vi.fn(() =>
     Promise.resolve({ username: 'tester', role: 'ADMINISTRATOR', authenticated: true }),
   ),
+  // Preserve the existing read-only MFA account state when the Settings page
+  // mounts in this component-only shell test; no real auth request is issued.
+  getAuthMfaStatus: vi.fn(async () => ({ enabled: false })),
   getAdminMaintenanceHealth: vi.fn(() =>
     Promise.resolve({
       generated_at: '2026-01-01T00:00:00Z',
@@ -486,6 +491,35 @@ function renderApp(initialPath = '/') {
   )
 }
 
+it('keeps the canonical lazy Data Flows and New data flow paths under the production data-router root', async () => {
+  const router = createMemoryRouter([{
+    path: '/*',
+    element: (
+      <DataRouterEnabledContext.Provider value>
+        <App />
+      </DataRouterEnabledContext.Provider>
+    ),
+  }], { initialEntries: ['/routes'] })
+  render(<RouterProvider router={router} />)
+  expect(await screen.findByTestId('routes-architecture-workspace', {}, { timeout: 15000 })).toBeInTheDocument()
+  await act(async () => { await router.navigate('/streams/new') })
+  expect(await screen.findByTestId('wizard-step-connect', {}, { timeout: 15000 })).toBeInTheDocument()
+  expect(router.state.location.pathname).toBe('/streams/new')
+})
+
+// Unmocked API reads must never contact a live service or clear another test's
+// session on an accidental 401. A fail-closed fallback preserves negative truth.
+beforeEach(() => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', {
+    status: 503,
+    headers: { 'Content-Type': 'application/json' },
+  })))
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
 describe('DataRelay sidebar branding', () => {
   afterEach(() => {
     vi.unstubAllEnvs()
@@ -535,16 +569,23 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     localStorage.removeItem('gdc-platform-governance-mode')
   })
 
-  it('renders core nav for CONNECTOR_OPERATOR (M20 RBAC)', () => {
+  it('exposes the full role-allowed nav through expandable groups for CONNECTOR_OPERATOR', async () => {
+    const user = userEvent.setup()
     persistTestSession('CONNECTOR_OPERATOR')
     renderApp()
     const nav = screen.getByRole('complementary', { name: 'Primary navigation' })
-    for (const label of ['Connectors', 'Streams', 'Destinations', 'Routes', 'Administration']) {
+    for (const group of ['Connections', 'Governance']) {
+      const toggle = within(nav).getByRole('button', { name: group })
+      await user.click(toggle)
+      expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    }
+    for (const label of ['Connectors', 'Destinations', 'Streams', 'Data Flows', 'Administration']) {
       expect(within(nav).getByRole('button', { name: label })).toBeInTheDocument()
     }
     expect(within(nav).getAllByRole('button', { name: 'Dashboard' }).length).toBeGreaterThanOrEqual(1)
     expect(nav).toHaveTextContent('Governance')
-    expect(within(nav).getByRole('button', { name: 'Governance Workspace' })).toBeInTheDocument()
+    expect(within(nav).getByRole('button', { name: 'Governance Dashboard' })).toBeInTheDocument()
+    expect(within(nav).queryByRole('button', { name: 'Governance Workspace' })).not.toBeInTheDocument()
     for (const removed of [
       'Operations',
       'Operations Center',
@@ -562,8 +603,8 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     ]) {
       expect(within(nav).queryByRole('button', { name: removed })).not.toBeInTheDocument()
     }
-    expect(nav).toHaveTextContent('Data Sources')
-    expect(nav).toHaveTextContent('Delivery')
+    expect(nav).toHaveTextContent('Connections')
+    expect(nav).toHaveTextContent('Data Flows')
   })
 
   it('hides Governance nav for VIEWER (M20 RBAC)', () => {
@@ -574,12 +615,14 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     expect(within(nav).getAllByRole('button', { name: 'Dashboard' })).toHaveLength(1)
   })
 
-  it('renders Governance nav for GOVERNANCE_OPERATOR (M20 RBAC)', () => {
+  it('renders Governance nav for GOVERNANCE_OPERATOR (M20 RBAC)', async () => {
+    const user = userEvent.setup()
     persistTestSession('GOVERNANCE_OPERATOR')
     renderApp()
     const nav = screen.getByRole('complementary', { name: 'Primary navigation' })
-    expect(nav).toHaveTextContent('Governance')
-    expect(within(nav).getByRole('button', { name: 'Governance Workspace' })).toBeInTheDocument()
+    await user.click(within(nav).getByRole('button', { name: 'Governance' }))
+    expect(within(nav).getByRole('button', { name: 'Governance Dashboard' })).toBeInTheDocument()
+    expect(within(nav).queryByRole('button', { name: 'Governance Workspace' })).not.toBeInTheDocument()
   })
 
   it('logo links to Dashboard home', () => {
@@ -589,9 +632,10 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     expect(home).toHaveAttribute('href', '/monitoring')
   })
 
-  it('renders Destinations via Delivery sidebar entry', async () => {
+  it('renders Destinations via Connections sidebar entry', async () => {
     const user = userEvent.setup()
     renderApp()
+    await user.click(screen.getByRole('button', { name: 'Connections' }))
     await user.click(screen.getByRole('button', { name: 'Destinations' }))
     expect(
       await screen.findByText(
@@ -632,9 +676,10 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     expect(screen.getByTestId('shell-environment-status')).toBeInTheDocument()
   })
 
-  it('renders Connectors via Data Sources sidebar entry', async () => {
+  it('renders Connectors via Connections sidebar entry', async () => {
     const user = userEvent.setup()
     renderApp()
+    await user.click(screen.getByRole('button', { name: 'Connections' }))
     await user.click(screen.getByRole('button', { name: 'Connectors' }))
     expect(
       await screen.findByText(/Which source connection needs attention\? Connectors manage reusable source access/i, {}, { timeout: 15000 }),
@@ -735,9 +780,13 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Streams' })).toBeInTheDocument()
   })
 
-  it('renders Administration hub at /admin with task groups', async () => {
+  it('renders the full Administration task groups for an authenticated Administrator', async () => {
+    persistTestSession('ADMINISTRATOR')
+    expect(getSessionRole()).toBe('ADMINISTRATOR')
+    expect(isSessionExpired()).toBe(false)
     renderApp('/admin')
     expect(await screen.findByTestId('administration-hub-page', {}, { timeout: 8000 })).toBeInTheDocument()
+    expect(getSessionRole()).toBe('ADMINISTRATOR')
     expect(screen.getAllByRole('heading', { name: 'Administration' })).toHaveLength(1)
     expect(screen.queryByRole('navigation', { name: 'Breadcrumb' })).not.toBeInTheDocument()
     expect(within(screen.getByRole('main')).queryByRole('heading', { name: /^Administration$/ })).not.toBeInTheDocument()
@@ -745,8 +794,19 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     expect(screen.getByRole('heading', { name: 'Access & security' })).toBeInTheDocument()
     expect(screen.getByText('HTTPS')).toBeInTheDocument()
     expect(screen.getByText('Backup & Import')).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: 'Manage' })).toHaveLength(9)
+    expect(screen.getAllByRole('button', { name: 'Manage' })).toHaveLength(7)
+    expect(screen.getAllByRole('button', { name: 'View' })).toHaveLength(2)
     expect(screen.queryByRole('heading', { name: 'Admin settings' })).not.toBeInTheDocument()
+  }, 20000)
+
+  it('restricts the authenticated Connector Operator hub to the two supported view tasks', async () => {
+    renderApp('/admin')
+    expect(await screen.findByTestId('administration-hub-page', {}, { timeout: 8000 })).toBeInTheDocument()
+    expect(screen.queryByTestId('admin-hub-open-all-settings')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Manage' })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'View' })).toHaveLength(2)
+    expect(screen.getByText('Audit')).toBeInTheDocument()
+    expect(screen.getByText('Backup & Import')).toBeInTheDocument()
   }, 20000)
 
   it('renders Admin settings at /settings with preserved sections', async () => {
@@ -779,11 +839,13 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     localStorage.setItem('gdc-platform-persona', 'connector')
     renderApp('/streams/new')
     expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 1, name: 'Stream Creation Wizard' })).toBeInTheDocument()
-    expect(await screen.findByTestId('wizard-intent-picker', {}, { timeout: 15000 })).toBeInTheDocument()
-    expect(screen.getByTestId('wizard-intent-scratch')).toBeInTheDocument()
-    expect(screen.getByTestId('wizard-intent-api-logs-siem')).toBeInTheDocument()
-    expect(screen.queryByTestId('wizard-stepper')).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'New data flow' })).toBeInTheDocument()
+    expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toHaveTextContent('Streams')
+    expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toHaveTextContent('New data flow')
+    expect(await screen.findByTestId('wizard-step-connect', {}, { timeout: 15000 })).toBeInTheDocument()
+    expect(screen.queryByTestId('wizard-intent-scratch')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('wizard-intent-picker')).not.toBeInTheDocument()
+    expect(screen.getByTestId('wizard-stepper')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { level: 2, name: 'Stream Onboarding Wizard' })).not.toBeInTheDocument()
     expect(await screen.findByTestId('wizard-stage-purpose', {}, { timeout: 15000 })).toHaveTextContent(
       'Can I connect to the source?',
@@ -851,14 +913,14 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     expect(screen.getByTestId('stream-monitoring-observability')).toBeInTheDocument()
   }, 25000)
 
-  it('renders Routes operational console at /routes', async () => {
+  it('renders Data Flows operational console at /routes', async () => {
     renderApp('/routes')
-    expect(await screen.findByRole('heading', { level: 1, name: 'Routes' }, { timeout: 8000 })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Data Flows' }, { timeout: 8000 })).toBeInTheDocument()
     // LazyRoutesOverviewPage loads asynchronously; wait for page chrome before title assertions.
     expect(await screen.findByRole('region', { name: 'Route KPI summary' }, { timeout: 15000 })).toBeInTheDocument()
-    expect(screen.getAllByRole('heading', { name: 'Routes' })).toHaveLength(1)
-    expect(screen.queryByRole('heading', { level: 2, name: 'Routes' })).not.toBeInTheDocument()
-    expect(within(screen.getByRole('main')).queryByRole('heading', { name: 'Routes' })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('heading', { name: 'Data Flows' })).toHaveLength(1)
+    expect(screen.queryByRole('heading', { level: 2, name: 'Data Flows' })).not.toBeInTheDocument()
+    expect(within(screen.getByRole('main')).queryByRole('heading', { name: 'Data Flows' })).not.toBeInTheDocument()
     expect(screen.getByText(/How does each Stream reach each Destination\? A Route is the destination-specific path/i)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Create Route' })).toBeInTheDocument()
   }, 20000)
@@ -880,6 +942,15 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     expect(screen.getByTestId('governance-nav-violations')).toBeInTheDocument()
     expect(screen.queryByTestId('governance-read-only-banner')).not.toBeInTheDocument()
   })
+
+  it('retains the authorized Governance Workspace deep link after demoting its primary nav entry', async () => {
+    persistTestSession('GOVERNANCE_OPERATOR')
+    renderApp('/governance/workspace?stream_id=10')
+    expect(await screen.findByTestId('governance-workspace-page', {}, { timeout: 15000 })).toBeInTheDocument()
+    const nav = screen.getByRole('complementary', { name: 'Primary navigation' })
+    expect(within(nav).queryByRole('button', { name: 'Governance Workspace' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Back to Governance Dashboard' })).toHaveAttribute('href', '/governance')
+  }, 20000)
 
   it('shows an explicit 404 page for unknown URLs instead of redirecting to /streams', async () => {
     renderApp('/this-route-does-not-exist-xyz')

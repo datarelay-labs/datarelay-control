@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { runMappingDraftPreview, runTransformPreview } from '../../../api/gdcRuntimePreview'
 import { cn } from '../../../lib/utils'
+import { handleTablistKeyDown } from '../../../lib/tablist-keyboard'
 import { defaultAdvancedRule, type AdvancedTransformRuleDraft } from '../../../types/advancedTransform'
 import { buildFieldMappingsWithTransformRules } from '../../../utils/advancedTransformConfig'
 import { AdvancedTransformWorkspace } from '../../transform/advanced-transform-workspace'
@@ -387,6 +388,8 @@ export function StepMappingCombined({
                 type="button"
                 role="tab"
                 aria-selected={modeTab === 'basic'}
+                tabIndex={modeTab === 'basic' ? 0 : -1}
+                onKeyDown={handleTablistKeyDown}
                 className={`-mb-px border-b-2 px-3 pb-2 text-[12px] font-semibold ${modeTabClass('basic')}`}
                 onClick={() => {
                   setModeTab('basic')
@@ -399,6 +402,8 @@ export function StepMappingCombined({
                 type="button"
                 role="tab"
                 aria-selected={modeTab === 'advanced'}
+                tabIndex={modeTab === 'advanced' ? 0 : -1}
+                onKeyDown={handleTablistKeyDown}
                 className={`-mb-px border-b-2 px-3 pb-2 text-[12px] font-semibold ${modeTabClass('advanced')}`}
                 onClick={() => {
                   setModeTab('advanced')
@@ -411,6 +416,8 @@ export function StepMappingCombined({
                 type="button"
                 role="tab"
                 aria-selected={modeTab === 'expert'}
+                tabIndex={modeTab === 'expert' ? 0 : -1}
+                onKeyDown={handleTablistKeyDown}
                 className={`-mb-px border-b-2 px-3 pb-2 text-[12px] font-semibold ${modeTabClass('expert')}`}
                 onClick={() => {
                   setModeTab('expert')

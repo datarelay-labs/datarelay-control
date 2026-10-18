@@ -30,7 +30,7 @@ from tests.e2e_syslog_helpers import (
     wait_for_syslog_json_duck,
     wait_for_syslog_message,
 )
-from tests.e2e_runtime_helpers import seed_isolated_s3_objects, upload_sftp_file
+from tests.e2e_runtime_helpers import reset_pg_fixture_seed, seed_isolated_s3_objects, upload_sftp_file
 from tests.e2e_wiremock_helpers import (
     assert_run_observability_core,
     create_webhook_destination,
@@ -518,11 +518,97 @@ def test_s3_strict_json_lines_malformed_source_fetch_error(
         assert detail.get("error_code") == "SOURCE_FETCH_FAILED"
 
 
+@skip_no_pg_fixture
+def test_database_query_discovery_lists_real_fixture_metadata(
+    client: TestClient, db_session: Session
+) -> None:
+    suffix = uuid.uuid4().hex[:8]
+    connector_id, _, _ = _create_db_query_connector_and_stream(
+        client,
+        name_suffix=suffix,
+        stream_config={
+            "query": "SELECT id, event_id, message FROM source_e2e_rows",
+            "checkpoint_mode": "NONE",
+            "query_timeout_seconds": 30,
+        },
+    )
+
+    response = client.post(
+        "/api/v1/runtime/api-test/database-discovery",
+        json={"connector_id": connector_id},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["ok"] is True
+    assert body["db_type"] == "POSTGRESQL"
+    assert body["database"] == "gdc_query_fixture"
+    assert "public" in body["schemas"]
+
+    relation = next(
+        item
+        for item in body["tables"]
+        if item["schema_name"] == "public" and item["table_name"] == "source_e2e_rows"
+    )
+    column_names = [item["name"] for item in relation["columns"]]
+    assert "id" in column_names
+    assert "event_id" in column_names
+    assert "event_ts" in column_names
+
+
+@skip_no_pg_fixture
+def test_database_query_preview_uses_named_bound_filter_params(
+    client: TestClient, db_session: Session
+) -> None:
+    reset_pg_fixture_seed()
+    suffix = uuid.uuid4().hex[:8]
+    connector_id, _, _ = _create_db_query_connector_and_stream(
+        client,
+        name_suffix=suffix,
+        stream_config={
+            "query": (
+                "SELECT id, event_id, message, severity, event_ts, ordering_seq "
+                "FROM source_e2e_rows WHERE severity = %(gdc_filter_1)s"
+            ),
+            "query_params": {"gdc_filter_1": "high"},
+            "max_rows_per_run": 250,
+            "checkpoint_mode": "NONE",
+            "query_timeout_seconds": 30,
+        },
+    )
+
+    response = client.post(
+        "/api/v1/runtime/api-test/http",
+        json={
+            "connector_id": connector_id,
+            "source_config": {},
+            "stream_config": {
+                "query": (
+                    "SELECT id, event_id, message, severity, event_ts, ordering_seq "
+                    "FROM source_e2e_rows WHERE severity = %(gdc_filter_1)s"
+                ),
+                "query_params": {"gdc_filter_1": "high"},
+                "max_rows_per_run": 250,
+                "checkpoint_mode": "NONE",
+                "query_timeout_seconds": 30,
+            },
+            "checkpoint": None,
+            "fetch_sample": True,
+        },
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["database_query_row_count"] == 1
+    assert len(body["database_query_sample_rows"]) == 1
+    assert body["database_query_sample_rows"][0]["severity"] == "high"
+    assert body["database_query_sample_rows"][0]["event_id"] == "e2e-db-3"
+
+
 @skip_no_wiremock
 @skip_no_pg_fixture
 def test_database_query_incremental_checkpoint_second_run_empty(
     client: TestClient, db_session: Session
 ) -> None:
+    reset_pg_fixture_seed()
     ensure_source_e2e_webhook_stub(WIREMOCK_BASE)
     reset_wiremock_journal(WIREMOCK_BASE)
     suffix = uuid.uuid4().hex[:8]
@@ -756,6 +842,7 @@ def test_s3_ndjson_to_syslog_tls(client: TestClient, db_session: Session, tmp_pa
 def test_database_query_to_syslog_udp(
     client: TestClient, db_session: Session, syslog_udp_receiver: Any
 ) -> None:
+    reset_pg_fixture_seed()
     suffix = uuid.uuid4().hex[:8]
     _, _, stream_id = _create_db_query_connector_and_stream(
         client,
@@ -788,6 +875,7 @@ def test_database_query_to_syslog_udp(
 def test_database_query_to_syslog_tcp(
     client: TestClient, db_session: Session, syslog_tcp_receiver: Any
 ) -> None:
+    reset_pg_fixture_seed()
     suffix = uuid.uuid4().hex[:8]
     _, _, stream_id = _create_db_query_connector_and_stream(
         client,
@@ -818,6 +906,7 @@ def test_database_query_to_syslog_tcp(
 
 @skip_no_pg_fixture
 def test_database_query_to_syslog_tls(client: TestClient, db_session: Session, tmp_path: Path) -> None:
+    reset_pg_fixture_seed()
     cert = write_self_signed_cert(
         tmp_path / "db-syslog-tls",
         common_name="localhost",

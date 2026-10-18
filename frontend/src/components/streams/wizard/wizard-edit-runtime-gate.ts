@@ -36,6 +36,7 @@ const PERSISTED_STREAM_FIELDS = [
   'lineEventField',
   'includeFileMetadata',
   'sqlQuery',
+  'dbQueryParams',
   'dbCheckpointColumn',
   'dbCheckpointMode',
   'incrementalRequestPattern',

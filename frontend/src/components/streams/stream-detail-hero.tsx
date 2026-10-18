@@ -13,7 +13,7 @@ import { cn } from '../../lib/utils'
 
 function heroTone(headline: StreamHeroHeadline): 'success' | 'warning' | 'error' | 'neutral' {
   if (headline === 'Stream Healthy') return 'success'
-  if (headline === 'Stream Stopped') return 'neutral'
+  if (headline === 'Stream Stopped' || headline === 'Stream Idle' || headline === 'Health Not Verified') return 'neutral'
   if (headline === 'Protection Violations Detected') return 'warning'
   return 'error'
 }

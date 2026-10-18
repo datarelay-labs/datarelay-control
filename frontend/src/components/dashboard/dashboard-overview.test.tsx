@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
@@ -367,7 +367,9 @@ vi.mock('../../api/operationalSnapshot', () => ({
         last_seen_at: null,
       },
     ],
-    updated_at: '2026-01-01T00:00:00Z',
+    // Ordinary source fixtures represent a just-retrieved operational snapshot.
+    // Explicit regression scenarios below supply their own stale timestamp.
+    updated_at: new Date().toISOString(),
   })),
 }))
 
@@ -455,6 +457,25 @@ describe('DashboardOverview', () => {
     expect(screen.queryByText(/All times shown in UTC/i)).not.toBeInTheDocument()
   })
 
+  it('prioritizes exact unhealthy resources over generic catalog navigation', async () => {
+    render(
+      <MemoryRouter>
+        <main><DashboardOverview /></main>
+      </MemoryRouter>,
+    )
+    const firstLevel = await within(mainRegion()).findByTestId('dashboard-first-level')
+    const attention = within(firstLevel).getByTestId('dashboard-action-needed')
+    const prioritized = await within(attention).findByTestId('dashboard-priority-investigations')
+    const stream = within(prioritized).getByTestId('dashboard-investigation-stream-1')
+    const destination = within(prioritized).getByTestId('dashboard-investigation-destination-2')
+    expect(stream).toHaveTextContent('Payment API Stream')
+    expect(stream).toHaveAttribute('href', '/streams/1/runtime')
+    expect(destination).toHaveTextContent('Delivery Warning Only')
+    expect(destination).toHaveAttribute('href', '/destinations/2')
+    expect(within(attention).getByTestId('dashboard-next-action')).toHaveAttribute('href', '/streams/1/runtime')
+    expect(within(attention).getByTestId('dashboard-next-step-description')).toHaveTextContent('Payment API Stream')
+  })
+
   it('makes page purpose, action-needed priority, and contextual help explicit', async () => {
     const user = userEvent.setup()
     render(
@@ -480,6 +501,12 @@ describe('DashboardOverview', () => {
     expect(within(actionNeeded).getByRole('link', { name: /Destinations needing health review/i })).toHaveAttribute(
       'href',
       '/destinations',
+    )
+    expect(within(actionNeeded).getByTestId('dashboard-next-action')).toHaveAttribute('href', '/streams/1/runtime')
+    expect(within(actionNeeded).getByTestId('dashboard-next-action')).toHaveTextContent('Review issue')
+    expect(within(actionNeeded).getByTestId('dashboard-create-stream')).toHaveAttribute('href', '/streams/new')
+    expect(within(actionNeeded).getByTestId('dashboard-next-step-description')).toHaveTextContent(
+      'Investigate Payment API Stream — health error reported.',
     )
 
     await user.click(screen.getByRole('button', { name: 'Help' }))
@@ -592,6 +619,94 @@ describe('DashboardOverview', () => {
     expect(capacity).toHaveTextContent('—')
   })
 
+  it('does not claim no action is needed when the only missing evidence is a destination catalog', async () => {
+    const snapshotApi = await import('../../api/operationalSnapshot')
+    const baseline = await snapshotApi.getOperationalSnapshot()
+    const healthyStream = baseline?.streams.find((stream) => stream.health_status === 'HEALTHY')
+    if (!baseline || !healthyStream) throw new Error('Missing healthy Stream test fixture')
+
+    vi.mocked(snapshotApi.getOperationalSnapshot).mockResolvedValueOnce({
+      ...baseline,
+      global: {
+        ...baseline.global,
+        health_status: 'HEALTHY',
+        total_streams: 1,
+        enabled_streams: 1,
+        running_streams: 1,
+        error_streams: 0,
+      },
+      streams: [healthyStream],
+      routes: [],
+      destinations: [],
+      problems: [],
+    })
+    const runtimeApi = await import('../../api/gdcRuntime')
+    vi.mocked(runtimeApi.fetchRuntimeDashboardSummary).mockResolvedValueOnce({
+      ...sampleDashboard(),
+      open_schema_field_drift_count: 0,
+    })
+    const destinationApi = await import('../../api/gdcDestinations')
+    vi.mocked(destinationApi.fetchDestinationsList).mockResolvedValueOnce(null)
+
+    render(
+      <MemoryRouter>
+        <main>
+          <DashboardOverview />
+        </main>
+      </MemoryRouter>,
+    )
+
+    const firstLevel = await within(mainRegion()).findByTestId('dashboard-first-level')
+    const issues = within(firstLevel).getByTestId('dashboard-operational-issues')
+    await waitFor(() =>
+      expect(within(issues).getByTestId('dashboard-issue-destination-capacity')).toHaveTextContent('Data unavailable'),
+    )
+    const attention = within(firstLevel).getByTestId('dashboard-action-needed')
+    expect(within(attention).getByRole('heading', { name: 'Status partially available' })).toBeInTheDocument()
+    expect(within(attention).queryByRole('heading', { name: 'No action needed' })).not.toBeInTheDocument()
+    expect(within(attention).getByTestId('dashboard-next-action')).toHaveTextContent('Open Streams')
+  })
+
+  it('does not promise no action needed when the alerts service fails despite a clean runtime snapshot', async () => {
+    const snapshotApi = await import('../../api/operationalSnapshot')
+    const baseline = await snapshotApi.getOperationalSnapshot()
+    const healthy = baseline?.streams.find((stream) => stream.health_status === 'HEALTHY')
+    if (!baseline || !healthy) throw new Error('Missing healthy runtime fixture')
+    vi.mocked(snapshotApi.getOperationalSnapshot).mockResolvedValueOnce({
+      ...baseline,
+      global: {
+        ...baseline.global,
+        health_status: 'HEALTHY',
+        total_streams: 1,
+        enabled_streams: 1,
+        running_streams: 1,
+        error_streams: 0,
+        total_routes: 0,
+        enabled_routes: 0,
+        total_destinations: 0,
+        enabled_destinations: 0,
+      },
+      streams: [{ ...healthy, eps_1m: 20, eps_5m: 20, status: 'RUNNING', enabled: true }],
+      routes: [],
+      destinations: [],
+      problems: [],
+    })
+    const runtime = await import('../../api/gdcRuntime')
+    vi.mocked(runtime.fetchRuntimeDashboardSummary).mockResolvedValueOnce({
+      ...sampleDashboard(),
+      open_schema_field_drift_count: 0,
+    })
+    vi.mocked(runtime.fetchRuntimeAlertSummary).mockRejectedValueOnce(new Error('alerts unavailable'))
+
+    render(<MemoryRouter><main><DashboardOverview /></main></MemoryRouter>)
+    const first = await within(mainRegion()).findByTestId('dashboard-first-level')
+    const action = within(first).getByTestId('dashboard-action-needed')
+    await waitFor(() => expect(within(action).getByRole('heading', { name: 'Status partially available' })).toBeInTheDocument())
+    expect(within(action).queryByRole('heading', { name: 'No action needed' })).not.toBeInTheDocument()
+    expect(within(action).getByTestId('dashboard-unknown-signal-source')).toHaveTextContent('Alert feed unavailable')
+    expect(within(action).getByTestId('dashboard-next-action')).toHaveAttribute('href', '/streams')
+  })
+
   it('exposes drill-down links to existing operational surfaces', async () => {
     render(
       <MemoryRouter>
@@ -601,12 +716,201 @@ describe('DashboardOverview', () => {
       </MemoryRouter>,
     )
     expect(await within(mainRegion()).findByTestId('dashboard-drilldown-streams')).toHaveAttribute('href', '/streams')
+    expect(within(mainRegion()).getByTestId('dashboard-drilldown-data-flows')).toHaveAttribute('href', '/routes')
     expect(within(mainRegion()).getByTestId('dashboard-drilldown-destinations')).toHaveAttribute('href', '/destinations')
     expect(within(mainRegion()).getByTestId('dashboard-drilldown-logs')).toHaveAttribute('href', '/logs')
     expect(within(mainRegion()).getByTestId('dashboard-drilldown-governance')).toHaveAttribute('href', '/governance')
   })
 
-  it('shows fresh-install empty state with create-first-stream action', async () => {
+  it('expires a formerly current Dashboard snapshot with auto-refresh Off, without another API fetch', async () => {
+    const api = await import('../../api/operationalSnapshot')
+    const baseline = await api.getOperationalSnapshot()
+    if (!baseline) throw new Error('Missing operational snapshot fixture')
+    vi.mocked(api.getOperationalSnapshot).mockResolvedValueOnce({
+      ...baseline,
+      // Initially source-verified; expire naturally while the page stays open.
+      updated_at: new Date(Date.now() - 88_000).toISOString(),
+    })
+    render(<MemoryRouter><main><DashboardOverview /></main></MemoryRouter>)
+    const main = mainRegion()
+    await within(main).findByTestId('dashboard-first-level')
+    expect(within(main).queryByTestId('dashboard-snapshot-stale')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Auto refresh interval')).toHaveValue('off')
+    const callsAfterLoad = vi.mocked(api.getOperationalSnapshot).mock.calls.length
+
+    // The clock invalidates evidence at 90s. A throttled CI runner may delay
+    // timers, so trigger the supported tab-focus recheck instead of wall-clock waiting.
+    const mockedNow = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 91_000)
+    try {
+      act(() => window.dispatchEvent(new Event('focus')))
+      expect(within(main).getByTestId('dashboard-snapshot-stale')).toBeInTheDocument()
+    } finally {
+      mockedNow.mockRestore()
+    }
+    expect(within(main).getByTestId('dashboard-running-badge')).toHaveTextContent('Unknown')
+    expect(within(main).getByTestId('dashboard-overall-posture-label')).toHaveTextContent('Not verified')
+    expect(within(main).getByTestId('dashboard-traffic-evidence-caption')).toHaveTextContent('Last reported')
+    expect(within(main).getByTestId('dashboard-issues-evidence-caption')).toHaveTextContent('Last reported')
+    expect(vi.mocked(api.getOperationalSnapshot).mock.calls.length).toBe(callsAfterLoad)
+  }, 8_000)
+
+  it('re-evaluates evidence on tab focus after background timer throttling', async () => {
+    const api = await import('../../api/operationalSnapshot')
+    const baseline = await api.getOperationalSnapshot()
+    if (!baseline) throw new Error('Missing operational snapshot fixture')
+    const observedNow = Date.now()
+    vi.mocked(api.getOperationalSnapshot).mockResolvedValueOnce({
+      ...baseline,
+      updated_at: new Date(observedNow).toISOString(),
+    })
+    render(<MemoryRouter><main><DashboardOverview /></main></MemoryRouter>)
+    const main = mainRegion()
+    await within(main).findByTestId('dashboard-first-level')
+    expect(within(main).queryByTestId('dashboard-snapshot-stale')).not.toBeInTheDocument()
+    const mockedNow = vi.spyOn(Date, 'now').mockReturnValue(observedNow + 91_000)
+    try {
+      act(() => window.dispatchEvent(new Event('focus')))
+      expect(within(main).getByTestId('dashboard-snapshot-stale')).toBeInTheDocument()
+      expect(within(main).getByTestId('dashboard-running-badge')).toHaveTextContent('Unknown')
+    } finally {
+      mockedNow.mockRestore()
+    }
+  })
+
+  it('marks old operational snapshots as last reported, rather than asserting live status', async () => {
+    const snap = await import('../../api/operationalSnapshot')
+    const baseline = await snap.getOperationalSnapshot()
+    if (!baseline) throw new Error('Missing snapshot fixture')
+    vi.mocked(snap.getOperationalSnapshot).mockResolvedValueOnce({
+      ...baseline,
+      updated_at: '2026-01-01T00:00:00Z',
+    })
+    render(<MemoryRouter><main><DashboardOverview /></main></MemoryRouter>)
+    const main = mainRegion()
+    const banner = await within(main).findByTestId('dashboard-snapshot-stale')
+    expect(banner).toHaveTextContent('last reported')
+    const section = await within(main).findByTestId('dashboard-action-needed')
+    expect(within(section).queryByText('Live operations')).not.toBeInTheDocument()
+    expect(within(section).getByText('Last reported operations')).toBeInTheDocument()
+    expect(within(main).getByTestId('dashboard-running-badge')).toHaveTextContent('Unknown')
+    expect(within(main).getByTestId('dashboard-running-badge')).not.toHaveTextContent('All Systems Operational')
+    expect(within(main).getByTestId('dashboard-overall-posture-label')).toHaveTextContent('Not verified')
+    const traffic = within(main).getByTestId('dashboard-traffic-overview')
+    expect(within(traffic).getByTestId('dashboard-traffic-evidence-caption'))
+      .toHaveTextContent('Last reported 5m snapshot')
+    expect(within(traffic).getByTestId('dashboard-traffic-success')).not.toHaveClass('text-emerald-700')
+    const issues = within(main).getByTestId('dashboard-operational-issues')
+    expect(within(issues).getByTestId('dashboard-issues-evidence-caption'))
+      .toHaveTextContent('Last reported issue counts')
+    expect(within(issues).queryByText('No issue')).not.toBeInTheDocument()
+  })
+
+  it('does not declare a stale zero-Stream snapshot to be a verified fresh installation', async () => {
+    const snap = await import('../../api/operationalSnapshot')
+    const baseline = await snap.getOperationalSnapshot()
+    if (!baseline) throw new Error('Missing operational snapshot fixture')
+    vi.mocked(snap.getOperationalSnapshot).mockResolvedValueOnce({
+      ...baseline,
+      global: { ...baseline.global, health_status: 'HEALTHY', total_streams: 0,
+        enabled_streams: 0, running_streams: 0, error_streams: 0, total_routes: 0, enabled_routes: 0 },
+      streams: [], routes: [], destinations: [], problems: [],
+      updated_at: '2026-01-01T00:00:00Z',
+    })
+    render(<MemoryRouter><main><DashboardOverview /></main></MemoryRouter>)
+    const main = mainRegion()
+    expect(await within(main).findByTestId('dashboard-snapshot-stale')).toBeInTheDocument()
+    expect(within(main).queryByTestId('dashboard-empty-state')).not.toBeInTheDocument()
+    expect(await within(main).findByTestId('dashboard-first-level')).toBeInTheDocument()
+  })
+
+  it.each([
+    ['nonzero reported Routes', 'count'],
+    ['an actual Route row', 'route'],
+    ['an actual Stream row', 'stream'],
+  ] as const)('does not claim a fresh installation with contradictory %s', async (_name, kind) => {
+    const snap = await import('../../api/operationalSnapshot')
+    const baseline = await snap.getOperationalSnapshot()
+    if (!baseline || baseline.streams.length === 0) {
+      throw new Error('Missing Stream/Route test fixture')
+    }
+    const orphanedRoute = {
+      route_id: 900, stream_id: 1, stream_name: 'Orphaned Stream',
+      destination_id: 5, destination_name: 'Receiver', destination_type: 'SYSLOG_TCP',
+      enabled: true, failure_policy: 'RETRY_AND_BACKOFF', health_status: 'HEALTHY',
+      delivered_eps_1m: 0, failed_eps_1m: 0, success_rate_5m: 0, retry_rate_5m: 0,
+      avg_latency_ms: null, last_success_at: null, last_error_at: null, last_error_message: null,
+    } as const
+    vi.mocked(snap.getOperationalSnapshot).mockResolvedValueOnce({
+      ...baseline,
+      global: {
+        ...baseline.global,
+        total_streams: 0,
+        enabled_streams: 0,
+        running_streams: 0,
+        total_routes: kind === 'count' ? 1 : 0,
+        enabled_routes: 0,
+      },
+      streams: kind === 'stream' ? [baseline.streams[0]!] : [],
+      routes: kind === 'route' ? [orphanedRoute] : [],
+      destinations: [],
+      problems: [],
+      updated_at: new Date().toISOString(),
+    })
+    render(<MemoryRouter><main><DashboardOverview /></main></MemoryRouter>)
+    const main = mainRegion()
+    expect(await within(main).findByTestId('dashboard-first-level')).toBeInTheDocument()
+    expect(within(main).queryByTestId('dashboard-empty-state')).not.toBeInTheDocument()
+  })
+
+  it('does not claim No action needed when a healthy snapshot is too old to prove current health', async () => {
+    const snap = await import('../../api/operationalSnapshot')
+    const baseline = await snap.getOperationalSnapshot()
+    const healthy = baseline?.streams.find((stream) => stream.health_status === 'HEALTHY')
+    if (!baseline || !healthy) throw new Error('Missing healthy fixture')
+    vi.mocked(snap.getOperationalSnapshot).mockResolvedValueOnce({
+      ...baseline,
+      global: { ...baseline.global, health_status: 'HEALTHY', total_streams: 1,
+        enabled_streams: 1, running_streams: 1, error_streams: 0, total_routes: 0,
+        enabled_routes: 0, total_destinations: 0, enabled_destinations: 0 },
+      streams: [{ ...healthy, eps_1m: 100, eps_5m: 100, enabled: true, status: 'RUNNING' }],
+      routes: [], destinations: [], problems: [],
+      updated_at: '2026-01-01T00:00:00Z',
+    })
+    const runtime = await import('../../api/gdcRuntime')
+    vi.mocked(runtime.fetchRuntimeDashboardSummary).mockResolvedValueOnce({
+      ...sampleDashboard(), open_schema_field_drift_count: 0,
+    })
+    const dest = await import('../../api/gdcDestinations')
+    vi.mocked(dest.fetchDestinationsList).mockResolvedValueOnce([])
+    render(<MemoryRouter><main><DashboardOverview /></main></MemoryRouter>)
+    const first = await within(mainRegion()).findByTestId('dashboard-first-level')
+    const action = within(first).getByTestId('dashboard-action-needed')
+    await waitFor(() => expect(within(action).getByRole('heading', { name: 'Status partially available' })).toBeInTheDocument())
+    expect(within(action).queryByRole('heading', { name: 'No action needed' })).not.toBeInTheDocument()
+    expect(within(mainRegion()).getByTestId('dashboard-snapshot-stale')).toHaveTextContent('last reported')
+    expect(within(action).getByTestId('dashboard-next-action')).toHaveAttribute('href', '/streams')
+  })
+
+  it('preserves ordinary snapshot labels on a freshly observed operational Dashboard', async () => {
+    const snap = await import('../../api/operationalSnapshot')
+    const baseline = await snap.getOperationalSnapshot()
+    if (!baseline) throw new Error('Missing operational snapshot fixture')
+    vi.mocked(snap.getOperationalSnapshot).mockResolvedValueOnce({
+      ...baseline, updated_at: new Date().toISOString(),
+    })
+    render(<MemoryRouter><main><DashboardOverview /></main></MemoryRouter>)
+    const main = mainRegion()
+    const traffic = await within(main).findByTestId('dashboard-traffic-overview')
+    expect(within(traffic).getByTestId('dashboard-traffic-evidence-caption'))
+      .toHaveTextContent('Snapshot window 5m')
+    expect(within(traffic).getByTestId('dashboard-traffic-evidence-caption'))
+      .not.toHaveTextContent('Last reported')
+    const issues = within(main).getByTestId('dashboard-operational-issues')
+    expect(within(issues).getByTestId('dashboard-issues-evidence-caption'))
+      .not.toHaveTextContent('Last reported')
+  })
+
+  it('shows resource-aware first-run steps without skipping the connector/destination catalog', async () => {
     const snap = await import('../../api/operationalSnapshot')
     vi.mocked(snap.getOperationalSnapshot).mockResolvedValueOnce({
       global: {
@@ -628,7 +932,7 @@ describe('DashboardOverview', () => {
       routes: [],
       destinations: [],
       problems: [],
-      updated_at: '2026-01-01T00:00:00Z',
+      updated_at: new Date().toISOString(),
     } as Awaited<ReturnType<typeof snap.getOperationalSnapshot>>)
     const streams = await import('../../api/gdcStreams')
     vi.mocked(streams.fetchStreamsList).mockResolvedValueOnce([])
@@ -642,13 +946,87 @@ describe('DashboardOverview', () => {
     )
     const empty = await within(mainRegion()).findByTestId('dashboard-empty-state')
     expect(within(empty).getByText(/Welcome to Data Relay/i)).toBeInTheDocument()
-    expect(within(empty).getByRole('link', { name: /Create First Stream/i })).toHaveAttribute('href', '/streams/new')
+    expect(within(empty).getByRole('heading', { name: /Set up your first data flow/i })).toBeInTheDocument()
+    expect(within(empty).getByRole('link', { name: 'Review Connectors' })).toHaveAttribute('href', '/connectors')
+    expect(within(empty).getByRole('link', { name: 'Review Destinations' })).toHaveAttribute('href', '/destinations')
+    await waitFor(() => {
+      expect(within(empty).getByTestId('dashboard-first-flow-source-state')).toHaveTextContent('2 registered')
+      expect(within(empty).getByTestId('dashboard-first-flow-destination-state')).toHaveTextContent('2 registered')
+      expect(within(empty).getByTestId('dashboard-first-flow-next')).toHaveAttribute('href', '/streams/new')
+    })
     expect(screen.queryByTestId('dashboard-first-level')).not.toBeInTheDocument()
   })
 
-  it('shows load error when operational snapshot is unavailable', async () => {
+  it('does not treat disabled saved receivers as ready for a first Data Flow', async () => {
+    const snapshotApi = await import('../../api/operationalSnapshot')
+    const baseline = await snapshotApi.getOperationalSnapshot()
+    if (!baseline) throw new Error('Missing operational snapshot fixture')
+    vi.mocked(snapshotApi.getOperationalSnapshot).mockResolvedValueOnce({
+      ...baseline,
+      global: {
+        ...baseline.global,
+        total_streams: 0,
+        enabled_streams: 0,
+        running_streams: 0,
+        error_streams: 0,
+        total_routes: 0,
+        enabled_routes: 0,
+      },
+      streams: [],
+      routes: [],
+      destinations: [],
+      problems: [],
+      updated_at: new Date().toISOString(),
+    })
+    const destinationsApi = await import('../../api/gdcDestinations')
+    const saved = await destinationsApi.fetchDestinationsList()
+    if (!saved?.length) throw new Error('Missing saved destinations in test fixture')
+    vi.mocked(destinationsApi.fetchDestinationsList).mockResolvedValueOnce(
+      saved.map((row) => ({ ...row, enabled: false })),
+    )
+
+    render(<MemoryRouter><main><DashboardOverview /></main></MemoryRouter>)
+    const empty = await within(mainRegion()).findByTestId('dashboard-empty-state')
+    await waitFor(() => {
+      expect(within(empty).getByTestId('dashboard-first-flow-destination-state'))
+        .toHaveTextContent('none enabled')
+    })
+    expect(within(empty).getByTestId('dashboard-first-flow-next')).toHaveAttribute('href', '/destinations')
+    expect(within(empty).queryByRole('link', { name: 'Open Stream Wizard from setup checklist' }))
+      .not.toBeInTheDocument()
+  })
+
+  it('fails closed on a malformed Connector catalog item instead of crashing first-run guidance', async () => {
+    const snapshotApi = await import('../../api/operationalSnapshot')
+    const baseline = await snapshotApi.getOperationalSnapshot()
+    if (!baseline) throw new Error('Missing operational snapshot fixture')
+    vi.mocked(snapshotApi.getOperationalSnapshot).mockResolvedValueOnce({
+      ...baseline,
+      global: { ...baseline.global, total_streams: 0, enabled_streams: 0, running_streams: 0, error_streams: 0,
+        total_routes: 0, enabled_routes: 0 },
+      streams: [], routes: [], destinations: [], problems: [],
+      updated_at: new Date().toISOString(),
+    })
+    const connectorsApi = await import('../../api/gdcConnectors')
+    vi.mocked(connectorsApi.fetchConnectorsList).mockResolvedValueOnce(
+      [null] as unknown as Awaited<ReturnType<typeof connectorsApi.fetchConnectorsList>>,
+    )
+
+    render(<MemoryRouter><main><DashboardOverview /></main></MemoryRouter>)
+    const firstRun = await within(mainRegion()).findByTestId('dashboard-empty-state')
+    await waitFor(() => {
+      expect(within(firstRun).getByTestId('dashboard-first-flow-source-state'))
+        .toHaveTextContent('Not verified')
+    })
+    expect(within(firstRun).getByTestId('dashboard-first-flow-next')).toHaveAttribute('href', '/connectors')
+    expect(within(firstRun).queryByRole('link', { name: 'Open Stream Wizard from setup checklist' }))
+      .not.toBeInTheDocument()
+  })
+
+  it('does not misrepresent an unavailable snapshot as a fresh install or healthy status', async () => {
     const snap = await import('../../api/operationalSnapshot')
     vi.mocked(snap.getOperationalSnapshot).mockResolvedValueOnce(null)
+    const user = userEvent.setup()
 
     render(
       <MemoryRouter>
@@ -658,6 +1036,14 @@ describe('DashboardOverview', () => {
       </MemoryRouter>,
     )
     expect(await within(mainRegion()).findByTestId('dashboard-load-error')).toHaveTextContent(/operational snapshot/i)
+    const unavailable = await within(mainRegion()).findByTestId('dashboard-snapshot-unavailable')
+    expect(within(unavailable).getByText(/Stream count, health and delivery status have not been verified/i)).toBeInTheDocument()
+    expect(within(mainRegion()).queryByTestId('dashboard-empty-state')).not.toBeInTheDocument()
+    expect(within(mainRegion()).queryByTestId('dashboard-first-level')).not.toBeInTheDocument()
+
+    await user.click(within(unavailable).getByRole('button', { name: 'Retry status' }))
+    expect(await within(mainRegion()).findByTestId('dashboard-first-level')).toBeInTheDocument()
+    expect(within(mainRegion()).queryByTestId('dashboard-snapshot-unavailable')).not.toBeInTheDocument()
   })
 
   it('allows manual refresh from the toolbar', async () => {

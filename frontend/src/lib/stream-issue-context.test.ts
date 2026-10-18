@@ -29,6 +29,20 @@ describe('stream-issue-context', () => {
     expect(why).toBe('Destination timeout')
   })
 
+  it('does not infer Healthy or no issues from missing delivery evidence', () => {
+    const unknown = { ...base, deliveryPctKnown: false, deliveryPct: 0 }
+    expect(issueChipLabel(unknown)).toBe('Not verified')
+    expect(issueWhySummary(unknown)).toBe('Delivery outcomes not verified in loaded runtime evidence.')
+    expect(deriveStreamHeroHeadline('RUNNING', 0, false, 0)).toBe('Health Not Verified')
+  })
+
+  it('does not mislabel STOPPED, IDLE or UNKNOWN Stream lifecycle as Healthy', () => {
+    expect(issueChipLabel({ ...base, status: 'STOPPED' })).toBe('Stopped')
+    expect(issueChipLabel({ ...base, status: 'IDLE' })).toBe('Idle')
+    expect(issueChipLabel({ ...base, status: 'UNKNOWN' })).toBe('Not verified')
+    expect(issueWhySummary({ ...base, status: 'STOPPED' })).toContain('stopped')
+  })
+
   it('labels healthy chip', () => {
     expect(issueChipLabel(base)).toBe('Healthy')
   })

@@ -43,9 +43,69 @@ export const GOVERNANCE_LOG_DRILLDOWN_STAGES = {
   classification: 'classification_complete',
   protection: 'protection_complete',
   policy: 'policy_evaluation_complete',
+  policyComplete: 'policy_complete',
+  policyBlocked: 'policy_blocked',
+  policyQuarantine: 'policy_quarantine',
+  policyReviewRequired: 'policy_review_required',
   quarantine: 'quarantine_event_created',
   replay: 'replay_event_replayed',
 } as const
+
+export type GovernanceOutcomeKind = 'workspace' | 'quarantine'
+
+export type GovernanceOutcomePresentation = {
+  kind: GovernanceOutcomeKind
+  label: string
+  summary: string
+}
+
+/**
+ * Product-stage interpretation only. This never changes policy or delivery state.
+ * Policy dispositions occur before destination delivery and must not be described
+ * as receiver failures.
+ */
+export function governanceOutcomePresentation(
+  stageToken: string | null | undefined,
+): GovernanceOutcomePresentation | null {
+  const stage = String(stageToken ?? '').trim().toLowerCase()
+  if (stage === 'policy_blocked') {
+    return {
+      kind: 'workspace',
+      label: 'Review blocked policy decision',
+      summary: 'Policy blocked this Route before destination delivery. This is a governance disposition, not a receiver delivery failure.',
+    }
+  }
+  if (stage === 'policy_review_required' || stage === 'schema_drift_policy_review_required') {
+    return {
+      kind: 'workspace',
+      label: 'Review required in Governance',
+      summary: 'Delivery is waiting on a governance review decision. No receiver delivery is claimed for this outcome.',
+    }
+  }
+  if (stage === 'policy_quarantine' || stage.startsWith('quarantine_event_')) {
+    return {
+      kind: 'quarantine',
+      label: 'Open Quarantine',
+      summary: 'Events were routed to quarantine before destination delivery. Quarantine is a governance outcome, not a delivery failure.',
+    }
+  }
+  if (
+    stage === 'classification_complete' ||
+    stage === 'protection_complete' ||
+    stage === 'policy_evaluation_complete' ||
+    stage === 'policy_complete' ||
+    stage === 'schema_drift_policy' ||
+    stage === 'schema_drift_policy_auto_protect_applied' ||
+    stage === 'schema_drift_policy_path_resolution_failed'
+  ) {
+    return {
+      kind: 'workspace',
+      label: 'Open Governance context',
+      summary: 'This row records governance-stage processing. Review the effective Stream and Route policy context in Governance.',
+    }
+  }
+  return null
+}
 
 export type GovernanceLogDrilldownStage =
   (typeof GOVERNANCE_LOG_DRILLDOWN_STAGES)[keyof typeof GOVERNANCE_LOG_DRILLDOWN_STAGES]
@@ -60,6 +120,10 @@ export const STREAM_RUNNER_DELIVERY_LOG_STAGES = [
   'classification_complete',
   'protection_complete',
   'policy_evaluation_complete',
+  'policy_complete',
+  'policy_blocked',
+  'policy_quarantine',
+  'policy_review_required',
   'dynamic_routing_complete',
   'dynamic_route_send_success',
   'dynamic_route_send_failed',
@@ -108,6 +172,10 @@ const STAGE_DISPLAY_LABELS: Record<string, string> = {
   classification_complete: 'Classification complete',
   protection_complete: 'Protection complete',
   policy_evaluation_complete: 'Policy evaluation complete',
+  policy_complete: 'Policy audit complete',
+  policy_blocked: 'Policy blocked delivery',
+  policy_quarantine: 'Policy quarantined events',
+  policy_review_required: 'Policy review required',
   quarantine_event_created: 'Quarantine event created',
   replay_event_replayed: 'Replay event replayed',
   route_send_success: 'Route send success',

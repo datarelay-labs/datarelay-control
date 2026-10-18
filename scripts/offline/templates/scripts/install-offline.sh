@@ -14,7 +14,7 @@ ENV_FILE="$(offline_env_file)"
 ENV_TEMPLATE="$(offline_env_template)"
 IMAGES_DIR="$OFFLINE_PACKAGE_ROOT/images"
 
-SKIP_RESET=0
+SKIP_RESET=1  # Preserve all existing production volumes by default.
 SKIP_LOAD=0
 SKIP_VERIFY=0
 SKIP_DOCKER_INSTALL=0
@@ -28,7 +28,8 @@ Usage: install-offline.sh [OPTION]...
 Fresh offline install for air-gapped production hosts.
 
 Options:
-  --skip-reset          Do not remove existing DB volumes before install.
+  --skip-reset          Preserve existing volumes (default; compatibility flag).
+  --reset-existing-data Wipe existing volumes after interactive YES confirmation.
   --skip-load           Assume Docker images are already loaded.
   --skip-verify         Skip post-install checks/verify-install.sh.
   --skip-docker-install Fail if Docker is missing (do not auto-install from .deb bundle).
@@ -49,6 +50,7 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --skip-reset) SKIP_RESET=1; shift ;;
+    --reset-existing-data) SKIP_RESET=0; shift ;;
     --skip-load) SKIP_LOAD=1; shift ;;
     --skip-verify) SKIP_VERIFY=1; shift ;;
     --skip-docker-install) SKIP_DOCKER_INSTALL=1; shift ;;
@@ -180,10 +182,11 @@ if [[ "${GDC_INSTALL_GENERATE_TLS:-}" == "1" && -f "$OFFLINE_PACKAGE_ROOT/app/sc
 fi
 
 if [[ "$SKIP_RESET" -eq 0 ]]; then
-  echo "[$(offline_ts)] Removing existing platform containers and volumes..."
-  offline_compose down -v --remove-orphans 2>/dev/null || true
+  offline_confirm_destructive "Type YES to delete existing offline platform data:"
+  echo "[$(offline_ts)] Removing existing platform containers and volumes by explicit request..."
+  offline_compose down -v --remove-orphans
 else
-  echo "[$(offline_ts)] Keeping existing volumes (--skip-reset)"
+  echo "[$(offline_ts)] Keeping existing volumes (safe default; no reset requested)"
 fi
 
 cd "$OFFLINE_PACKAGE_ROOT"

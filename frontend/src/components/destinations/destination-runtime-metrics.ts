@@ -185,13 +185,22 @@ export function resolveDestinationUiHealth(
   return selectDestinationKpi(snapshot).health.label
 }
 
+/** Historical success counts are fetched for the selected 24h window.
+ * Instantaneous 1m Destination EPS cannot legitimately stand in for 24h success.
+ */
 export function computeDestinationSuccessRate(
-  _health: DestinationHealthRow | null,
-  _outcome: DestinationDeliveryOutcomeRow | null,
-  snapshot: OperationalDestinationSnapshot | null,
+  health: DestinationHealthRow | null,
+  outcome: DestinationDeliveryOutcomeRow | null,
+  _snapshot: OperationalDestinationSnapshot | null,
 ): number | null {
-  if (snapshot == null) return null
-  return selectDestinationKpi(snapshot).successRatePct
+  const success = outcome != null ? outcome.success_events : health?.metrics?.success_count
+  const failures = outcome != null ? outcome.failure_events : health?.metrics?.failure_count
+  if (typeof success !== 'number' || typeof failures !== 'number' ||
+      !Number.isFinite(success) || !Number.isFinite(failures) || success < 0 || failures < 0) {
+    return null
+  }
+  const total = success + failures
+  return Number.isFinite(total) && total > 0 ? Math.round((10000 * success) / total) / 100 : null
 }
 
 export function computeDestinationCurrentEps(snapshot: OperationalDestinationSnapshot | null): number | null {
@@ -262,23 +271,32 @@ export function connectedStreamIdsFromRoutes(routes: DestinationListItem['routes
 }
 
 export function mapLogToDeliveryActivity(log: RuntimeLogSearchItem, routeNameById: Map<number, string>) {
-  const statusRaw = String(log.status ?? '').toUpperCase()
-  let status: 'SUCCESS' | 'RETRY' | 'FAILED' = 'SUCCESS'
-  if (statusRaw.includes('FAIL') || log.level === 'ERROR') status = 'FAILED'
-  else if (statusRaw.includes('RETRY') || (log.retry_count ?? 0) > 0) status = 'RETRY'
+  // A retry counter is not the final delivery outcome. Only a stated
+  // outcome is success: unknown/queued records must not become green.
+  const statusRaw = String(log.status ?? '').trim().toUpperCase()
+  let status: 'SUCCESS' | 'RETRY' | 'FAILED' | 'UNKNOWN' = 'UNKNOWN'
+  if (statusRaw === 'FAILED' || statusRaw === 'FAILURE' || statusRaw.endsWith('_FAILED') || log.level?.toUpperCase() === 'ERROR') {
+    status = 'FAILED'
+  } else if (statusRaw === 'RETRY' || statusRaw === 'RETRYING' || statusRaw === 'RETRY_PENDING') {
+    status = 'RETRY'
+  } else if (statusRaw === 'OK' || statusRaw === 'SUCCESS' || statusRaw === 'SUCCEEDED' || statusRaw === 'DELIVERED') {
+    status = 'SUCCESS'
+  }
 
-  const routeLabel =
-    log.route_id != null
-      ? routeNameById.get(log.route_id) ?? `Route #${log.route_id}`
-      : '—'
+  const routeId = log.route_id != null && Number.isSafeInteger(log.route_id) && log.route_id > 0 ? log.route_id : null
+  const streamId = log.stream_id != null && Number.isSafeInteger(log.stream_id) && log.stream_id > 0 ? log.stream_id : null
+  const routeLabel = routeId != null ? routeNameById.get(routeId) ?? `Route #${routeId}` : '—'
 
   return {
     id: String(log.id),
     time: log.created_at?.slice(0, 19).replace('T', ' ') ?? '—',
+    routeId,
+    streamId,
     routeName: routeLabel,
     status,
     events: 1,
-    latencyMs: log.latency_ms != null ? Math.round(log.latency_ms) : 0,
+    latencyMs: typeof log.latency_ms === 'number' && Number.isFinite(log.latency_ms) && log.latency_ms >= 0
+      ? Math.round(log.latency_ms) : null,
     message: (log.message ?? log.error_code ?? '—').trim() || '—',
   }
 }
@@ -288,16 +306,17 @@ export function mapLogToRecentFailure(log: RuntimeLogSearchItem, routeNameById: 
   const allowed = ['TIMEOUT', 'CONN_REFUSED', 'RATE_LIMIT', 'TLS_HANDSHAKE'] as const
   const normalized = allowed.includes(code as (typeof allowed)[number])
     ? (code as (typeof allowed)[number])
-    : ('TIMEOUT' as const)
+    : ('UNCLASSIFIED' as const)
 
+  const routeId = log.route_id != null && Number.isSafeInteger(log.route_id) && log.route_id > 0 ? log.route_id : null
+  const streamId = log.stream_id != null && Number.isSafeInteger(log.stream_id) && log.stream_id > 0 ? log.stream_id : null
   return {
     id: String(log.id),
     at: log.created_at?.slice(0, 19).replace('T', ' ') ?? '—',
     code: normalized,
-    routeName:
-      log.route_id != null
-        ? routeNameById.get(log.route_id) ?? `Route #${log.route_id}`
-        : '—',
+    routeId,
+    streamId,
+    routeName: routeId != null ? routeNameById.get(routeId) ?? `Route #${routeId}` : '—',
     failedEvents: 1,
     message: (log.message ?? '').trim(),
   }
@@ -309,15 +328,22 @@ export function routeMetricsFromSnapshot(
   problems: OperationalSnapshotResponse['problems'] | null | undefined,
 ): {
   epsAvg: number
-  successRate24h: number
+  /** 5-minute operational snapshot, not a 24-hour historical success metric. */
+  successRate5m: number | null
   status: 'ACTIVE' | 'PAUSED' | 'ERROR'
   deliveryMode: string
 } {
   const snap = (snapshotRoutes ?? []).find((r) => r.route_id === routeId)
   if (snap == null) {
-    return { epsAvg: 0, successRate24h: 0, status: 'ACTIVE', deliveryMode: '—' }
+    return { epsAvg: 0, successRate5m: null, status: 'ACTIVE', deliveryMode: '—' }
   }
   const kpi = selectRouteKpi(snap, problems ?? [])
+  // A reported 0% with no recent outcome sample is ambiguous: never render it
+  // as verified failed-only delivery. Keep a genuine 0% where failures exist.
+  const hasRecentSample = (Number.isFinite(snap.delivered_eps_1m) && snap.delivered_eps_1m > 0) ||
+    (Number.isFinite(snap.failed_eps_1m) && snap.failed_eps_1m > 0)
+  const successRate5m = kpi.successRatePct == null || (kpi.successRatePct === 0 && !hasRecentSample)
+    ? null : kpi.successRatePct
 
   let status: 'ACTIVE' | 'PAUSED' | 'ERROR' = 'ACTIVE'
   if (!snap.enabled) status = 'PAUSED'
@@ -325,7 +351,7 @@ export function routeMetricsFromSnapshot(
 
   return {
     epsAvg: snap.delivered_eps_1m ?? 0,
-    successRate24h: kpi.successRatePct ?? 0,
+    successRate5m,
     status,
     deliveryMode: snap.failure_policy?.trim() || '—',
   }
@@ -343,7 +369,10 @@ export function routeMetricsFromHealthAndSnapshot(
   return routeMetricsFromSnapshot(routeId, snapshotRoutes, problems)
 }
 
-export function failureCountFromAnalytics(failures: RouteFailuresAnalyticsResponse | null): number {
-  if (failures?.totals == null) return 0
-  return failures.totals.failure_events ?? 0
+export function failureCountFromAnalytics(failures: RouteFailuresAnalyticsResponse | null): number | null {
+  // Missing/failed historical analytics is not evidence of zero delivery failures.
+  const count = failures?.totals?.failure_events
+  return typeof count === 'number' && Number.isFinite(count) && count >= 0
+    ? Math.floor(count)
+    : null
 }

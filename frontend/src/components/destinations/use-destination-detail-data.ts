@@ -31,11 +31,15 @@ import type { DestinationHealthState } from './destination-detail-model'
 
 const RUNTIME_WINDOW = '24h' as const
 
+export type DestinationRecentLogsState = 'pending' | 'verified' | 'unavailable'
+
 export type DestinationDetailRuntimeBundle = {
   destination: DestinationRead | null
   listRow: DestinationListItem | null
   uiHealth: DestinationUiHealth
   healthState: DestinationHealthState
+  /** Observation time of the snapshot supplying the Route status and EPS. */
+  snapshotUpdatedAt: string | null
   connectedStreams: { streamId: number; streamName: string }[]
   connectedRoutes: {
     routeId: string
@@ -45,16 +49,18 @@ export type DestinationDetailRuntimeBundle = {
     deliveryMode: string
     status: 'ACTIVE' | 'PAUSED' | 'ERROR'
     epsAvg: number
-    successRate24h: number
+    successRate5m: number | null
   }[]
   successRatePct: number | null
   currentEps: number | null
-  failed24h: number
+  failed24h: number | null
   avgLatencyMs: number | null
   lastDeliveryAt: string | null
   lastErrorMessage: string | null
   recentActivity: ReturnType<typeof mapLogToDeliveryActivity>[]
   recentFailures: ReturnType<typeof mapLogToRecentFailure>[]
+  /** A settled API search is not equivalent to an empty result from a failed API. */
+  recentLogsState: DestinationRecentLogsState
   healthRow: DestinationHealthRow | null
   failuresAnalytics: RouteFailuresAnalyticsResponse | null
   loading: boolean
@@ -107,7 +113,9 @@ export function useDestinationDetailData(destinationId: number | null): Destinat
   const [outcomeRow, setOutcomeRow] = useState<DestinationDeliveryOutcomeRow | null>(null)
   const [failuresAnalytics, setFailuresAnalytics] = useState<RouteFailuresAnalyticsResponse | null>(null)
   const [snapshotRoutes, setSnapshotRoutes] = useState<OperationalSnapshotResponse['routes']>([])
+  const [snapshotUpdatedAt, setSnapshotUpdatedAt] = useState<string | null>(null)
   const [recentLogs, setRecentLogs] = useState<RuntimeLogSearchItem[]>([])
+  const [recentLogsState, setRecentLogsState] = useState<DestinationRecentLogsState>('pending')
   const [loading, setLoading] = useState(true)
   const [runtimeLoading, setRuntimeLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -130,6 +138,8 @@ export function useDestinationDetailData(destinationId: number | null): Destinat
     loadAbortRef.current = abort
     setLoading(true)
     setRuntimeLoading(true)
+    setRecentLogsState('pending')
+    setSnapshotUpdatedAt(null)
     setError(null)
     try {
       const detail = await fetchDestinationById(destinationId)
@@ -185,7 +195,9 @@ export function useDestinationDetailData(destinationId: number | null): Destinat
       setOutcomeRow(oRow)
       setFailuresAnalytics(failuresVal)
       setSnapshotRoutes(scopedRoutes)
+      setSnapshotUpdatedAt(snapshotVal?.updated_at ?? null)
       setRecentLogs(logsVal?.logs ?? [])
+      setRecentLogsState(logsVal != null && Array.isArray(logsVal.logs) ? 'verified' : 'unavailable')
 
       if (snapshotVal == null && healthListVal == null && failuresVal == null && outcomesVal == null) {
         setError((prev) => prev ?? 'Runtime APIs unavailable for this destination.')
@@ -201,7 +213,9 @@ export function useDestinationDetailData(destinationId: number | null): Destinat
         setOutcomeRow(null)
         setFailuresAnalytics(null)
         setSnapshotRoutes([])
+        setSnapshotUpdatedAt(null)
         setRecentLogs([])
+        setRecentLogsState('unavailable')
       }
     } finally {
       if (gen === loadGenRef.current) {
@@ -255,7 +269,7 @@ export function useDestinationDetailData(destinationId: number | null): Destinat
         deliveryMode: metrics.deliveryMode,
         status: r.route_enabled === false ? ('PAUSED' as const) : metrics.status,
         epsAvg: metrics.epsAvg,
-        successRate24h: metrics.successRate24h,
+        successRate5m: metrics.successRate5m,
       }
     })
   }, [listRow?.routes, snapshotRoutes])
@@ -322,6 +336,7 @@ export function useDestinationDetailData(destinationId: number | null): Destinat
     listRow,
     uiHealth,
     healthState: healthStateFromUi(uiHealth),
+    snapshotUpdatedAt,
     connectedStreams,
     connectedRoutes,
     successRatePct,
@@ -332,6 +347,7 @@ export function useDestinationDetailData(destinationId: number | null): Destinat
     lastErrorMessage,
     recentActivity,
     recentFailures,
+    recentLogsState,
     healthRow,
     failuresAnalytics,
     loading,

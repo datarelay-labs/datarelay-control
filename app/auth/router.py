@@ -16,6 +16,11 @@ from pydantic import BaseModel, Field, ValidationInfo, field_validator
 from sqlalchemy.orm import Session
 
 from app.auth.password_policy import validate_new_platform_password
+from app.auth.mfa import (
+    begin_password_challenge, confirm_enrollment, start_enrollment,
+    state_for_user, verify_password_challenge,
+)
+from datarelay_onprem_security import PasswordResult
 from app.auth.jwt_service import (
     AuthTokenError,
     TOKEN_TYPE_REFRESH,
@@ -31,7 +36,6 @@ from app.auth.login_throttle import (
 from app.auth.route_access import build_capabilities
 from app.auth.role_guard import (
     KNOWN_ROLES,
-    ROLE_ADMINISTRATOR,
     resolve_auth_context,
 )
 from app.auth.token_bundle import TokenBundle, build_token_bundle
@@ -39,6 +43,7 @@ from app.auth.security import get_password_hash, verify_password
 from app.config import settings
 from app.database import get_db
 from app.platform_admin import journal
+from app.platform_admin.models import PlatformUser
 from app.platform_admin.repository import get_display_settings_row, get_user_by_id, get_user_by_username
 
 logger = logging.getLogger(__name__)
@@ -49,6 +54,36 @@ router = APIRouter()
 class LoginRequest(BaseModel):
     username: str = Field(min_length=1, max_length=128)
     password: str = Field(min_length=1, max_length=256)
+
+
+class MfaChallengeResponse(BaseModel):
+    mfa_required: bool = True
+    challenge_token: str
+    expires_at: str
+
+
+class MfaVerifyRequest(BaseModel):
+    challenge_token: str = Field(min_length=20, max_length=128)
+    totp: str = Field(default="", max_length=16)
+    recovery_code: str = Field(default="", max_length=80)
+
+
+class MfaEnrollStartRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=256)
+
+
+class MfaEnrollConfirmRequest(BaseModel):
+    totp: str = Field(min_length=6, max_length=6)
+
+
+class MfaEnrollConfirmResponse(BaseModel):
+    enabled: bool = True
+    recovery_codes: list[str]
+
+
+class MfaStatusResponse(BaseModel):
+    enabled: bool
+    enrollment_pending: bool = False
 
 
 class RefreshRequest(BaseModel):
@@ -106,8 +141,18 @@ def _utcnow() -> datetime:
 
 
 def _normalize_role(raw: str | None) -> str:
+    """Only a persisted, currently supported role may create a session.
+
+    Never escalate an unknown or malformed DB role to Administrator. Legacy
+    implicit development identities are handled separately by role_guard.
+    """
     v = (raw or "").strip().upper()
-    return v if v in KNOWN_ROLES else ROLE_ADMINISTRATOR
+    if v not in KNOWN_ROLES:
+        raise HTTPException(status_code=403, detail={
+            "error_code": "AUTH_ROLE_INVALID",
+            "message": "Account role is not recognized. Contact an administrator.",
+        })
+    return v
 
 
 def _auth_error(code: str, message: str, http_status: int = status.HTTP_401_UNAUTHORIZED) -> HTTPException:
@@ -118,10 +163,13 @@ def _auth_error(code: str, message: str, http_status: int = status.HTTP_401_UNAU
     )
 
 
-@router.post("/login", response_model=TokenBundle)
-def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)) -> TokenBundle:
-    """Verify credentials and return an access + refresh JWT pair.
+@router.post("/login", response_model=TokenBundle | MfaChallengeResponse)
+def login(
+    payload: LoginRequest, request: Request, db: Session = Depends(get_db),
+) -> TokenBundle | MfaChallengeResponse:
+    """Verify credentials, then require a separate proof for enrolled MFA users.
 
+    No access/refresh JWT is created while a second factor is pending.
     On failure we always return ``USER_AUTH_FAILED`` with HTTP 400 so the
     client cannot tell whether the username exists.  Successful logins record
     a ``USER_LOGIN`` audit event and update ``last_login_at``.
@@ -150,6 +198,18 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
         )
 
     role = _normalize_role(user.role)
+    state = state_for_user(db, user)
+    if state.after_verified_password() is PasswordResult.MFA_REQUIRED:
+        # Critical: do not issue any usable access/refresh JWT or clear MFA
+        # brute-force counters until the separate OTP/recovery stage succeeds.
+        return MfaChallengeResponse(
+            **begin_password_challenge(db, user, request),
+        )
+    if state.after_verified_password() is PasswordResult.MFA_ENROLLMENT_REQUIRED:
+        raise HTTPException(status_code=503, detail={
+            "error_code": "MFA_ENROLLMENT_REQUIRED",
+            "message": "MFA setup requires a recovery administrator.",
+        })
     user.last_login_at = _utcnow()
     token_version = int(getattr(user, "token_version", 1) or 1)
     must_change = bool(getattr(user, "must_change_password", False))
@@ -176,14 +236,88 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
     )
 
 
+@router.post("/mfa/verify", response_model=TokenBundle)
+def verify_mfa_login(
+    payload: MfaVerifyRequest, request: Request, db: Session = Depends(get_db),
+) -> TokenBundle:
+    """Verify the pre-auth challenge before creating either JWT type."""
+    user = verify_password_challenge(
+        db, payload.challenge_token, payload.totp, payload.recovery_code, request,
+    )
+    return build_token_bundle(
+        user_id=int(user.id), username=str(user.username),
+        role=_normalize_role(user.role),
+        token_version=int(user.token_version or 1),
+        user_status=str(user.status),
+        must_change_password=bool(user.must_change_password),
+        mfa_verified=True,
+    )
+
+
+def _current_mfa_actor(request: Request, db: Session, *, lock_user: bool = False):
+    ctx = resolve_auth_context(request)
+    if ctx.source != "jwt" or ctx.user_id is None:
+        raise _auth_error("AUTH_REQUIRED", "Sign in to manage your MFA.")
+    if lock_user:
+        # Serialize enrollment epoch rotation with refresh/password updates.
+        # populate_existing avoids accepting a stale identity-map user after
+        # a concurrent transaction has advanced the token version.
+        user = db.query(PlatformUser).filter(
+            PlatformUser.id == int(ctx.user_id),
+        ).with_for_update().populate_existing().one_or_none()
+    else:
+        user = get_user_by_id(db, int(ctx.user_id))
+    if (user is None or user.status != "ACTIVE"
+            or _normalize_role(user.role) != ctx.role
+            or int(user.token_version or 1) != int(ctx.token_version or 0)):
+        raise _auth_error("AUTH_TOKEN_REVOKED", "Sign in again.")
+    if bool(user.must_change_password):
+        raise _auth_error("PASSWORD_CHANGE_REQUIRED", "Change your password first.", 403)
+    return user
+
+
+@router.get("/mfa/status", response_model=MfaStatusResponse)
+def mfa_status(request: Request, db: Session = Depends(get_db)) -> MfaStatusResponse:
+    user = _current_mfa_actor(request, db)
+    state = state_for_user(db, user)
+    return MfaStatusResponse(enabled=state.required)
+
+
+@router.post("/mfa/enroll/start")
+def mfa_enroll_start(
+    payload: MfaEnrollStartRequest, request: Request, db: Session = Depends(get_db),
+) -> dict[str, object]:
+    user = _current_mfa_actor(request, db)
+    ip = client_ip_from_request(request)
+    # A stolen pre-MFA bearer token must not enable unlimited password guesses
+    # through the setup endpoint. Share the normal login failure budget.
+    check_login_allowed(username=str(user.username), ip=ip)
+    if not verify_password(payload.current_password, user.password_hash):
+        record_login_failure(username=str(user.username), ip=ip)
+        raise HTTPException(status_code=400, detail={
+            "error_code": "MFA_SETUP_DENIED",
+            "message": "Current password is incorrect.",
+        })
+    return start_enrollment(db, user)
+
+
+@router.post("/mfa/enroll/confirm", response_model=MfaEnrollConfirmResponse)
+def mfa_enroll_confirm(
+    payload: MfaEnrollConfirmRequest, request: Request, db: Session = Depends(get_db),
+) -> MfaEnrollConfirmResponse:
+    user = _current_mfa_actor(request, db, lock_user=True)
+    codes = confirm_enrollment(db, user, payload.totp)
+    return MfaEnrollConfirmResponse(recovery_codes=list(codes))
+
+
 @router.post("/refresh", response_model=TokenBundle)
 def refresh(payload: RefreshRequest, db: Session = Depends(get_db)) -> TokenBundle:
     """Exchange a valid refresh JWT for a fresh access + refresh pair.
 
     Refresh tokens are single-use: a successful refresh bumps
     ``platform_users.token_version`` so the presented refresh JWT cannot be
-    replayed. Access-token middleware still honors access TTL without a live
-    ``token_version`` check (existing product contract).
+    replayed. Protected API access also checks the current product user
+    security state when authentication is required.
     """
 
     try:
@@ -191,12 +325,16 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)) -> TokenBund
     except AuthTokenError as exc:
         raise _auth_error(exc.code, exc.message) from exc
 
-    user = get_user_by_id(db, claims.user_id)
+    # Lock the epoch row: simultaneous refreshes of one token must not both
+    # pass the pre-rotation version check and mint sibling sessions.
+    user = db.query(PlatformUser).filter(PlatformUser.id == claims.user_id).with_for_update().one_or_none()
     if user is None or user.status != "ACTIVE":
         raise _auth_error("AUTH_USER_INACTIVE", "Account is inactive or removed.")
     if int(getattr(user, "token_version", 1) or 1) != claims.token_version:
         raise _auth_error("AUTH_TOKEN_REVOKED", "Refresh token was already used or revoked; please sign in again.")
 
+    if state_for_user(db, user).required and not claims.mfa_verified:
+        raise _auth_error("MFA_REQUIRED", "A new MFA sign-in is required.")
     role = _normalize_role(user.role)
     must_change = bool(getattr(user, "must_change_password", False))
     # Consume this refresh token (and any sibling refresh JWTs at the same tv).
@@ -219,6 +357,7 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)) -> TokenBund
         token_version=new_tv,
         user_status=str(user.status),
         must_change_password=must_change,
+        mfa_verified=claims.mfa_verified,
     )
 
 
@@ -240,21 +379,35 @@ def logout(
     ctx = resolve_auth_context(request)
     revoke_all = bool(payload.revoke_all) if payload else False
     if ctx.source == "jwt" and ctx.user_id is not None:
-        user = get_user_by_id(db, ctx.user_id)
-        if user is not None:
-            details = {"revoke_all": revoke_all, "role": ctx.role}
-            if revoke_all:
-                user.token_version = int(getattr(user, "token_version", 1) or 1) + 1
-            journal.record_audit_event(
-                db,
-                action="USER_LOGOUT",
-                actor_username=str(user.username),
-                entity_type="PLATFORM_USER",
-                entity_id=int(user.id),
-                entity_name=str(user.username),
-                details=details,
-            )
-            db.commit()
+        query = db.query(PlatformUser).filter(PlatformUser.id == int(ctx.user_id))
+        # Logout is an unguarded /auth endpoint by design. When revoke_all
+        # mutates the live epoch, protect against stale-JWT replay and races
+        # with concurrent refresh/password/MFA epoch rotations.
+        user = (query.with_for_update() if revoke_all else query).one_or_none()
+        stored_role = (user.role or "").strip().upper() if user else ""
+        if (
+            user is None or user.status != "ACTIVE"
+            or stored_role not in KNOWN_ROLES
+            or ctx.role != stored_role
+            or ctx.token_version is None
+            or int(user.token_version or 1) != int(ctx.token_version)
+            or (state_for_user(db, user).required and not ctx.mfa_verified)
+        ):
+            db.rollback()
+            return None  # Idempotent response; never mutate from a stale JWT.
+        details = {"revoke_all": revoke_all, "role": ctx.role}
+        if revoke_all:
+            user.token_version = int(user.token_version or 1) + 1
+        journal.record_audit_event(
+            db,
+            action="USER_LOGOUT",
+            actor_username=str(user.username),
+            entity_type="PLATFORM_USER",
+            entity_id=int(user.id),
+            entity_name=str(user.username),
+            details=details,
+        )
+        db.commit()
     return None
 
 

@@ -128,6 +128,12 @@ export function fetchStreamById(streamId: number, options?: GdcSignalOptions): P
   )
 }
 
+/** Bypass catalog TTL so reviewed-revision preflight sees the authoritative token. */
+export async function fetchStreamByIdFresh(streamId: number, options?: GdcSignalOptions): Promise<StreamRead | null> {
+  clearSharedRequestCache(STREAM_BY_ID_CACHE_NS, String(streamId))
+  return fetchStreamById(streamId, options)
+}
+
 export async function createStream(payload: StreamWritePayload): Promise<StreamRead> {
   const created = await requestJson<StreamRead>(`${GDC_API_PREFIX}/streams/`, {
     method: 'POST',

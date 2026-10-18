@@ -12,6 +12,7 @@ class ObservedFieldEntry(BaseModel):
     path: str
     type: str
     observation_count: int = 0
+    occurrence_count: int | None = None
 
 
 class StreamObservedSchemaResponse(BaseModel):
@@ -19,6 +20,10 @@ class StreamObservedSchemaResponse(BaseModel):
     observation_enabled: bool
     paths: list[ObservedFieldEntry] = Field(default_factory=list)
     path_count: int = 0
+    occurrence_sampled_events: int | None = None
+    occurrence_complete: bool | None = None
+    occurrence_warnings: list[str] = Field(default_factory=list)
+    historical_events_excluded: int | None = None
     total_events_observed: int = 0
     observation_run_count: int = 0
     last_observation_at: datetime | None = None

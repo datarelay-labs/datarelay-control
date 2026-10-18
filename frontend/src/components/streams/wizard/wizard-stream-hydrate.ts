@@ -148,6 +148,9 @@ function sourceSpecificStreamPatch(cfg: Record<string, unknown>): Partial<Wizard
   if (typeof cfg.include_file_metadata === 'boolean') patch.includeFileMetadata = cfg.include_file_metadata
   if (typeof cfg.max_objects_per_run === 'number') patch.maxObjectsPerRun = cfg.max_objects_per_run
   if (typeof cfg.query === 'string') patch.sqlQuery = cfg.query
+  if (cfg.query_params && typeof cfg.query_params === 'object' && !Array.isArray(cfg.query_params)) {
+    patch.dbQueryParams = { ...(cfg.query_params as Record<string, string | number | boolean | null>) }
+  }
   if (typeof cfg.checkpoint_column === 'string') patch.dbCheckpointColumn = cfg.checkpoint_column
   if (typeof cfg.checkpoint_mode === 'string') patch.dbCheckpointMode = cfg.checkpoint_mode
   return patch

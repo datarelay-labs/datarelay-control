@@ -2,23 +2,11 @@ import { fetchConnectorsList } from './gdcConnectors'
 import { fetchSourcesList } from './gdcSources'
 
 /**
- * Connector / Source catalog discovery for the new-stream wizard.
- *
- * Backend constraints:
- *   - `GET /api/v1/connectors/` and `GET /api/v1/sources/` are still placeholders
- *     (see `app/connectors/router.py`, `app/sources/router.py`) — they return
- *     `{ "message": ... }` instead of a list. We must not invent new endpoints.
- *   - Real metadata is reachable per-id via:
- *       `GET /api/v1/runtime/connectors/{id}/ui/config`
- *       `GET /api/v1/runtime/sources/{id}/ui/config`
- *   - Existing `Stream` rows from `GET /api/v1/streams/` carry `connector_id`
- *     and `source_id`, so we use them as a discovery seed.
- *
- * Strategy:
- *   1. Pull existing streams (already DB-backed).
- *   2. Collect unique `connector_id`s referenced by those streams.
- *   3. Fetch connector + source detail per id in parallel.
- *   4. If none of the above yields results → callers fall back to demo data.
+ * Stream Wizard Connector/Source catalog from the existing list endpoints.
+ * A successful empty list is a legitimate first-run state. Null/rejected
+ * reads are unverified, must not be reported as zero configured resources,
+ * and must never be replaced with synthetic operator configuration.
+ * Connector and Source remain separate persisted entities.
  */
 
 export type CatalogConnector = {
@@ -43,26 +31,29 @@ export type CatalogSource = {
 export type CatalogSnapshot = {
   connectors: CatalogConnector[]
   sources: CatalogSource[]
-  /** True when at least one connector/source was loaded via real API. */
+  /** True only when both Connector and Source catalogs responded successfully, including valid empty catalogs. */
   apiBacked: boolean
 }
 
 /**
- * Best-effort connector + source catalog. Returns empty arrays + apiBacked=false
- * when no real backend rows are reachable; callers are expected to render the
- * mock catalog from `new-stream-wizard-mock-data.ts` in that case.
+ * Best-effort Connector + Source catalog. Empty successful catalogs are
+ * distinguishable from inaccessible/failed catalogs. Never treat an API
+ * failure as proof that the operator has zero configured Connectors.
  */
 export async function fetchCatalogSnapshot(): Promise<CatalogSnapshot> {
-  const [connectorsRaw, sourcesRaw] = await Promise.all([fetchConnectorsList(), fetchSourcesList()])
-  if (!connectorsRaw?.length || !sourcesRaw?.length) {
-    return { connectors: [], sources: [], apiBacked: false }
-  }
+  const [connectorResult, sourceResult] = await Promise.allSettled([fetchConnectorsList(), fetchSourcesList()])
+  const connectorsRaw = connectorResult.status === 'fulfilled' ? connectorResult.value : null
+  const sourcesRaw = sourceResult.status === 'fulfilled' ? sourceResult.value : null
+  const connectorCatalogReady = Array.isArray(connectorsRaw)
+  const sourceCatalogReady = Array.isArray(sourcesRaw)
+  const connectorsLoaded = connectorCatalogReady ? connectorsRaw : []
+  const sourcesLoaded = sourceCatalogReady ? sourcesRaw : []
   const sourceCountByConnector = new Map<number, number>()
-  for (const source of sourcesRaw) {
+  for (const source of sourcesLoaded) {
     const cid = Number(source.connector_id ?? 0)
     sourceCountByConnector.set(cid, (sourceCountByConnector.get(cid) ?? 0) + 1)
   }
-  const connectors: CatalogConnector[] = connectorsRaw.map((c) => ({
+  const connectors: CatalogConnector[] = connectorsLoaded.map((c) => ({
     id: c.id,
     name: c.name ?? `Connector #${c.id}`,
     description: c.description ?? null,
@@ -70,7 +61,7 @@ export async function fetchCatalogSnapshot(): Promise<CatalogSnapshot> {
     source_count: sourceCountByConnector.get(c.id) ?? 0,
     stream_count: 0,
   }))
-  const sources: CatalogSource[] = sourcesRaw.map((s) => {
+  const sources: CatalogSource[] = sourcesLoaded.map((s) => {
     const owner = connectors.find((c) => c.id === s.connector_id)
     return {
       id: s.id,
@@ -85,6 +76,6 @@ export async function fetchCatalogSnapshot(): Promise<CatalogSnapshot> {
   return {
     connectors,
     sources,
-    apiBacked: connectors.length > 0 && sources.length > 0,
+    apiBacked: connectorCatalogReady && sourceCatalogReady,
   }
 }

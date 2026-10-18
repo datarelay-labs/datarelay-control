@@ -17,12 +17,16 @@ export type WizardMappingOutputAsideProps = {
   state: WizardState
   onChangeUnmappedFieldsPolicy?: (policy: WizardUnmappedFieldsPolicy) => void
   className?: string
+  previewScope?: string
+  onPreviewEvidence?: (scope: string, evidence: FinalEventDraftPreviewResponse | null) => void
 }
 
 export function WizardMappingOutputAside({
   state,
   onChangeUnmappedFieldsPolicy,
   className,
+  previewScope = 'shared',
+  onPreviewEvidence,
 }: WizardMappingOutputAsideProps) {
   const [previewTab, setPreviewTab] = useState<'preview' | 'raw_final'>('preview')
   const [runtimePreview, setRuntimePreview] = useState<FinalEventDraftPreviewResponse | null>(null)
@@ -45,6 +49,8 @@ export function WizardMappingOutputAside({
   useEffect(() => {
     const requestId = ++requestIdRef.current
     let cancelled = false
+    // Invalidate earlier data after draft edits or route changes.
+    onPreviewEvidence?.(previewScope, null)
     if (!transformSample) {
       setRuntimePreview(null)
       setRuntimeError(null)
@@ -69,10 +75,12 @@ export function WizardMappingOutputAside({
         .then((response) => {
           if (cancelled || requestId !== requestIdRef.current) return
           setRuntimePreview(response)
+          onPreviewEvidence?.(previewScope, response)
         })
         .catch((error) => {
           if (cancelled || requestId !== requestIdRef.current) return
           setRuntimePreview(null)
+          onPreviewEvidence?.(previewScope, null)
           setRuntimeError(error instanceof Error ? error.message : 'Runtime preview failed')
         })
         .finally(() => {
@@ -92,6 +100,8 @@ export function WizardMappingOutputAside({
     state.enrichmentEnabled,
     state.enrichmentOverridePolicy,
     refreshTick,
+    previewScope,
+    onPreviewEvidence,
   ])
 
   const runtimeFinalEvent = runtimePreview?.final_events?.[0] ?? null

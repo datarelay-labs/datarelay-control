@@ -22,7 +22,6 @@ import { loadMappingWorkspaceContext } from '../../utils/mappingSourceSample'
 import {
   runEnrichmentExecPreview,
   runMappingDraftPreview,
-  runRouteE2EDraftPreview,
 } from '../../api/gdcRuntimePreview'
 import type { AdvancedTransformRuleDraft } from '../../types/advancedTransform'
 import type { MappingRowModel } from '../streams/stream-mapping-model'
@@ -35,7 +34,7 @@ import { EnrichmentRulesEditor } from '../streams/wizard/enrichment-rules-editor
 import { AdvancedTransformWorkspace } from '../transform/advanced-transform-workspace'
 import { MappingWorkspace } from '../mappings/mapping-workspace'
 import { PanelChrome } from '../streams/mapping-json-tree'
-import { ProcessingPreviewDock } from '../preview/processing-preview-dock'
+import { SavedRouteProcessingPreview } from '../preview/saved-route-processing-preview'
 import { isRouteTransformDirty, routeTransformFormFingerprint } from './route-delivery-dirty'
 
 type Props = {
@@ -147,10 +146,7 @@ export function RouteEditTransformPanel({
   const [routeRawPayloadMode, setRouteRawPayloadMode] = useState<string | null>(null)
   const [savedSnapshot, setSavedSnapshot] = useState<string | null>(null)
   const [sourceSample, setSourceSample] = useState<unknown>(null)
-  const [effectivePreview, setEffectivePreview] = useState<Array<Record<string, unknown>>>([])
-  const [effectivePreviewMessage, setEffectivePreviewMessage] = useState<string | null>(null)
-  const [routeStageTimeline, setRouteStageTimeline] = useState<Array<Record<string, unknown>>>([])
-  const [routePolicyAction, setRoutePolicyAction] = useState<string | null>(null)
+  const [sampleScope, setSampleScope] = useState<string | null>(null)
   const loadGenRef = useRef(0)
   const refreshEffective = useCallback(async () => {
     const effective = await fetchRouteTransformEffective(routeId)
@@ -214,6 +210,7 @@ export function RouteEditTransformPanel({
       setEventRootPath(nextRoot)
 
       if (ctx) {
+        setSampleScope(`${routeId}:${streamId}`)
         setStreamTitle(ctx.cfg.stream_name || ctx.stream.name || `Stream ${streamId}`)
         setConnectorLabel(ctx.connectorName)
         setSourceType(ctx.cfg.source_type ?? ctx.stream.stream_type ?? null)
@@ -505,44 +502,7 @@ export function RouteEditTransformPanel({
     return () => window.removeEventListener('beforeunload', onBeforeUnload)
   }, [hasUnsavedChanges])
 
-  useEffect(() => {
-    let cancelled = false
-    if (sourceSample == null || initialEffective == null) {
-      setEffectivePreview([])
-      setEffectivePreviewMessage(null)
-      return
-    }
-    void runRouteE2EDraftPreview({
-      payload: sourceSample,
-      stream_id: streamId as number,
-      route_id: routeId,
-      destination_type: 'WEBHOOK_POST',
-      formatter_config: {},
-      field_mappings: { ...(initialEffective.effective_field_mappings ?? {}) },
-      enrichment: initialEffective.effective_enrichment ?? {},
-      override_policy: (['KEEP_EXISTING', 'OVERRIDE', 'ERROR_ON_CONFLICT'].includes(initialEffective.effective_override_policy)
-        ? initialEffective.effective_override_policy
-        : 'KEEP_EXISTING') as 'KEEP_EXISTING' | 'OVERRIDE' | 'ERROR_ON_CONFLICT',
-      max_events: 3,
-    })
-      .then((result) => {
-        if (cancelled) return
-        setEffectivePreview(result.final_events)
-        setRouteStageTimeline(result.route_stage_timeline ?? [])
-        setRoutePolicyAction(result.policy_action ?? null)
-        setEffectivePreviewMessage(result.message)
-      })
-      .catch((error) => {
-        if (cancelled) return
-        setEffectivePreview([])
-        setRouteStageTimeline([])
-        setRoutePolicyAction(null)
-        setEffectivePreviewMessage(error instanceof Error ? error.message : String(error))
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [initialEffective, routeId, sourceSample, streamId])
+
 
   const handleSave = async () => {
     if (readOnly || saving || streamId == null || !hasUnsavedChanges) return
@@ -716,45 +676,12 @@ export function RouteEditTransformPanel({
         </div>
       </PanelChrome>
 
-      <ProcessingPreviewDock stages={[
-        { id: 'input', label: 'Input', truth: 'Preview', status: sourceSample == null ? 'No source sample' : 'Sample loaded', before: sourceSample, after: sourceSample },
-        { id: 'mapping', label: 'Mapping', truth: hasUnsavedChanges ? 'Preview' : 'Saved configuration', status: inheritMapping ? 'Inherited from Stream' : 'Route-specific', before: sourceExtractedEvents[0] ?? sourceSample, after: routeMappedSample },
-        { id: 'transform', label: 'Enrichment / Transform', truth: hasUnsavedChanges ? 'Preview' : 'Saved configuration', status: routeEnrichmentDraftError ? 'Preview has errors' : inheritEnrichment ? 'Inherited from Stream' : 'Route-specific', before: routeMappedSample, after: routeEnrichmentDraftPreview ?? routeMappedSample, message: routeEnrichmentDraftError },
-        { id: 'policy', label: 'Protection / Policy', truth: 'Preview', status: routePolicyAction ? `Policy: ${routePolicyAction}` : 'No policy action reported', before: routeEnrichmentDraftPreview ?? routeMappedSample, after: effectivePreview[0] ?? null },
-        { id: 'destination', label: 'Destination Payload', truth: 'Preview', status: effectivePreviewMessage || 'No-send preview only', before: effectivePreview[0] ?? null, after: effectivePreview[0] ?? null },
-      ]} />
+      <SavedRouteProcessingPreview routeId={routeId} streamId={streamId}
+        events={sourceExtractedEvents} revision={savedSnapshot ?? ''}
+        ready={!loading && sampleScope === `${routeId}:${streamId}`} dirty={hasUnsavedChanges} />
 
       <div>
-        <section className="rounded-lg border border-violet-200/80 bg-violet-50/40 p-3 dark:border-violet-500/30 dark:bg-violet-500/[0.06]" data-testid="route-effective-final-event-preview">
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <p className="text-[11px] font-semibold text-violet-900 dark:text-violet-100">Effective Final Event</p>
-            <p className="mt-0.5 text-[10px] text-slate-600 dark:text-gdc-muted">
-              Persisted effective mapping + enrichment resolved for this Route ({initialEffective?.processing_status ?? '—'}).
-            </p>
-          </div>
-          <span className="rounded-full border border-violet-200 bg-white px-2 py-0.5 text-[9px] font-semibold text-violet-700 dark:border-violet-500/30 dark:bg-gdc-card dark:text-violet-200">
-            Runtime-resolved config
-          </span>
-        </div>
-        {routeStageTimeline.length > 0 ? (
-          <div className="mt-2 flex flex-wrap gap-1" data-testid="route-effective-stage-timeline">
-            {routeStageTimeline.map((stage, index) => (
-              <span key={index} className="rounded-full border border-violet-200 bg-white px-2 py-0.5 text-[9px] text-violet-800 dark:border-violet-500/30 dark:bg-gdc-card dark:text-violet-200">
-                {String(stage.stage ?? 'stage')}: {String(stage.status ?? stage.decision ?? 'completed')}
-              </span>
-            ))}
-            {routePolicyAction ? <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[9px] text-amber-800">Policy: {routePolicyAction}</span> : null}
-          </div>
-        ) : null}
-        {effectivePreview.length > 0 ? (
-          <pre className="mt-2 max-h-56 overflow-auto rounded-md bg-slate-950 p-2 text-[10px] leading-relaxed text-slate-100" data-testid="route-effective-final-event-json">
-            {JSON.stringify(effectivePreview[0], null, 2)}
-          </pre>
-        ) : (
-          <p className="mt-2 text-[10px] text-slate-500">{effectivePreviewMessage || 'Load a source sample to preview the effective Final Event.'}</p>
-        )}
-      </section>
+
 
       {inheritEnrichment ? (
         <section

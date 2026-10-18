@@ -7,6 +7,8 @@ import { CATALOG_CONNECTORS_LIST_KEY } from '../../api/catalogListCache'
 import { clearSharedRequestCache } from '../../api/requestCache'
 import { CONNECTORS_RETRY_BUTTON_MS, CONNECTORS_SLOW_LOADING_MS } from '../../hooks/use-connectors-overview-data'
 import { clearConnectorsOverviewSnapshot } from './connectors-overview-cache'
+import { persistTestSession, clearTestSession } from '../../lib/governance-rbac'
+import { persistSession, readSession } from '../../auth/session'
 import { ConnectorsOverviewPage } from './connectors-overview-page'
 
 const fetchConnectorsListResultMock = vi.fn()
@@ -526,5 +528,86 @@ describe('ConnectorsOverviewPage — Test Auth visibility', () => {
     const failure = await screen.findByText('Invalid bearer token')
     expect(failure).toHaveAttribute('data-testid', 'connector-row-auth-result')
     expect(failure.className).not.toMatch(/\bsr-only\b/)
+  })
+})
+
+describe('ConnectorsOverviewPage — server-effective action capabilities', () => {
+  beforeEach(() => {
+    resetConnectorMocks()
+    fetchConnectorsListResultMock.mockResolvedValue({
+      ok: true, status: 200, data: [fakeConnector(12, 'Production Okta')],
+    })
+  })
+  afterEach(() => clearTestSession())
+
+  it.each(['VIEWER', 'GOVERNANCE_AUDITOR'] as const)(
+    'keeps connector inspection but hides create, validation, and destructive actions for %s',
+    async (role) => {
+      persistTestSession(role)
+      const user = userEvent.setup()
+      render(<MemoryRouter><ConnectorsOverviewPage /></MemoryRouter>)
+      expect(await screen.findByText('Production Okta')).toBeInTheDocument()
+      expect(screen.queryByRole('link', { name: 'Create Connector' })).not.toBeInTheDocument()
+      await user.click(screen.getByText('Advanced setup & validation'))
+      expect(screen.queryByRole('button', { name: 'Import from cURL / Postman' })).not.toBeInTheDocument()
+      expect(screen.getByRole('link', { name: 'View connector' })).toBeInTheDocument()
+      await user.click(screen.getByLabelText('Connector actions'))
+      expect(screen.getByRole('menuitem', { name: 'View Streams' })).toBeInTheDocument()
+      for (const name of ['Test Auth', 'Test Query', 'Delete']) {
+        expect(screen.queryByRole('menuitem', { name })).not.toBeInTheDocument()
+      }
+    },
+  )
+
+  it('hides the empty-state Create Connector link for a read-only Viewer', async () => {
+    persistTestSession('VIEWER')
+    fetchConnectorsListResultMock.mockResolvedValue({ ok: true, status: 200, data: [] })
+    render(<MemoryRouter><ConnectorsOverviewPage /></MemoryRouter>)
+    expect(await screen.findByTestId('connectors-empty-state')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Create Connector' })).not.toBeInTheDocument()
+  })
+
+  it('separates Operator validation from server-denied workspace mutations', async () => {
+    persistTestSession('OPERATOR')
+    const session = readSession()!
+    persistSession({
+      ...session,
+      user: { ...session.user, capabilities: {
+        ...session.user.capabilities, workspace_mutations: false, validation_mutations: true,
+      } },
+    })
+    const user = userEvent.setup()
+    render(<MemoryRouter><ConnectorsOverviewPage /></MemoryRouter>)
+    expect(await screen.findByText('Production Okta')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Create Connector' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'View connector' })).toBeInTheDocument()
+    await user.click(screen.getByLabelText('Connector actions'))
+    expect(screen.getByRole('menuitem', { name: 'Test Auth' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Test Query' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Delete' })).not.toBeInTheDocument()
+  })
+
+  it('reacts to server capability downgrade while keeping read-only data available', async () => {
+    persistTestSession('OPERATOR')
+    const user = userEvent.setup()
+    render(<MemoryRouter><ConnectorsOverviewPage /></MemoryRouter>)
+    expect(await screen.findByText('Production Okta')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Create Connector' })).toBeInTheDocument()
+    await user.click(screen.getByLabelText('Connector actions'))
+    expect(screen.getByRole('menuitem', { name: 'Delete' })).toBeInTheDocument()
+    const session = readSession()!
+    act(() => persistSession({
+      ...session,
+      user: { ...session.user, capabilities: {
+        ...session.user.capabilities, workspace_mutations: false, validation_mutations: false,
+      } },
+    }))
+    expect(screen.queryByRole('link', { name: 'Create Connector' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'View connector' })).toBeInTheDocument()
+    expect(screen.getByText('Production Okta')).toBeInTheDocument()
+    await user.click(screen.getByLabelText('Connector actions'))
+    expect(screen.queryByRole('menuitem', { name: 'Delete' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Test Auth' })).not.toBeInTheDocument()
+    expect(deleteConnectorMock).not.toHaveBeenCalled()
   })
 })

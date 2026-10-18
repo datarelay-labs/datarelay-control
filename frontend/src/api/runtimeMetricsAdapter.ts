@@ -59,9 +59,11 @@ export function breakdownSlicesFromMetrics(metrics: StreamRuntimeMetricsResponse
 
 function mapRunStatus(s: string): RunHistoryRow['status'] {
   const u = s.toUpperCase()
+  if (u === 'SUCCESS') return 'Success'
   if (u === 'FAILED') return 'Failed'
-  if (u === 'PARTIAL' || u === 'NO_EVENTS') return 'Partial'
-  return 'Success'
+  if (u === 'NO_EVENTS') return 'No events'
+  if (u === 'PARTIAL') return 'Partial'
+  return 'Unknown'
 }
 
 export function runHistoryFromMetricsRecentRuns(metrics: StreamRuntimeMetricsResponse | null): RunHistoryRow[] {
@@ -71,6 +73,9 @@ export function runHistoryFromMetricsRecentRuns(metrics: StreamRuntimeMetricsRes
     const ms = safeNonNegInt(r.duration_ms)
     return {
       runId: r.run_id,
+      // Backend metrics_service and snapshot reader currently synthesize run-${delivery_log.id}.
+      // Do not promote that completion record label to an exact run_id filter.
+      idBasis: 'completion-record',
       startedAt: formatIsoShort(r.started_at),
       duration: ms > 0 ? `${ms} ms` : '—',
       status: mapRunStatus(r.status),

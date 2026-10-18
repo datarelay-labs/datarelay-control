@@ -18,7 +18,7 @@ from app.runners.route_context import RouteRuntimeContext, SharedBatchContext
 from app.runners.route_transform_config import transform_config_cache_key
 from app.runners.stream_runner_db import stage_persistence_session
 from app.runtime.copy_utils import copy_events
-from app.runtime.errors import ProtectionApplicationError
+from app.runtime.errors import ProtectionApplicationError, PreviewSideEffectRequiredError
 
 
 LogFn = Callable[[dict[str, Any]], None]
@@ -105,6 +105,7 @@ def route_protection_stage(
     stream_protection_rules: list[Any] | None = None,
     route_protection_rules: list[Any] | None = None,
     route_overrides: list[dict[str, Any]] | None = None,
+    preview_only: bool = False,
 ) -> tuple[list[dict[str, Any]], ProtectBatchResult, RouteProtectionConfig]:
     """Apply per-route protection using resolved config and shared ephemeral rules."""
 
@@ -145,6 +146,9 @@ def route_protection_stage(
         started = time.monotonic()
         all_rules = [*list(protection_config.rules), *(merged_ephemeral or [])]
         requires_persistence = _requires_protection_persistence(input_events, all_rules)
+        if preview_only and requires_persistence:
+            # Do not mint/store a token or fabricate a successfully tokenized value.
+            raise PreviewSideEffectRequiredError(stage="protection")
         try:
             with stage_persistence_session(db, required=requires_persistence) as protection_db:
                 result = protect_batch(

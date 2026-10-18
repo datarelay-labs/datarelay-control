@@ -58,6 +58,7 @@ export function applyStreamReadBack(state: WizardState, hydrated: WizardState): 
   return {
     ...state,
     stream: hydrated.stream,
+    streamUpdatedAt: hydrated.streamUpdatedAt,
   }
 }
 
@@ -94,6 +95,8 @@ export async function reconcileWizardAfterPartialPersist(
     refreshDestinations?: (id: number) => Promise<WizardDestinationsRefresh | null>
     hydrateStream?: (id: number) => Promise<WizardState | null>
     readMapping?: (id: number) => Promise<WizardState | null>
+    persistedObjects?: string[]
+    notPersistedObjects?: string[]
   } = {},
 ): Promise<{
   state: WizardState
@@ -153,7 +156,16 @@ export async function reconcileWizardAfterPartialPersist(
     reconstructable.length > 0
   const unconfirmed = concerns.has('unconfirmed') || readerFailed || (reconstructable.length > 0 && !reconstructed)
   const applied = appliedDestinations || appliedStream || appliedMapping
-  const note = unconfirmed ? (readerFailed && !applied ? READ_BACK_UNAVAILABLE : READ_BACK_UNCONFIRMED) : applied ? READ_BACK_APPLIED : READ_BACK_UNCONFIRMED
+  const baseNote = unconfirmed ? (readerFailed && !applied ? READ_BACK_UNAVAILABLE : READ_BACK_UNCONFIRMED) : applied ? READ_BACK_APPLIED : READ_BACK_UNCONFIRMED
+  const progress = [
+    readers.persistedObjects?.length
+      ? `Server acknowledged before the failure: ${[...new Set(readers.persistedObjects)].join(', ')}.`
+      : '',
+    readers.notPersistedObjects?.length
+      ? `Not confirmed as persisted: ${[...new Set(readers.notPersistedObjects)].join(', ')}.`
+      : '',
+  ].filter(Boolean).join(' ')
+  const note = progress ? `${baseNote} ${progress}` : baseNote
   if (next.outcome && note) {
     next = { ...next, outcome: { ...next.outcome, reconciliationNote: note, errors } }
   }

@@ -417,9 +417,14 @@ export function nextDeliveryProofPrior(
 }
 
 export function deliveryProofLines(proof: ExactRunDeliveryProof): string[] {
+  // Route send success is gateway evidence, not proof that a receiver ingested it.
+  const receiverBoundary = proof.routes.some((route) => route.status === 'proven')
+    ? ['Gateway send success does not confirm receiver ingestion; check receiver logs for arrival.']
+    : []
   return [
     deliveryProofStatusLabel(proof.status),
     proof.reason,
+    ...receiverBoundary,
     `Run id: ${proof.runtimeRunId ?? '—'}`,
     `Evidence: ${proof.evidenceAt ?? 'none'}`,
     ...proof.routes.map(

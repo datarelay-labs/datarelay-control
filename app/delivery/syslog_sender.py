@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import select
 import socket
@@ -13,6 +14,8 @@ from typing import Any
 from app.delivery.syslog_tls import SyslogTlsConfig, build_syslog_tls_context, normalize_syslog_tls_config
 from app.formatters.config_resolver import resolve_formatter_config
 from app.formatters.message_prefix import MessagePrefixResolveContext, format_delivery_lines_syslog
+from app.formatters.rfc5425_format import rfc5424_json, rfc5425_frame
+from app.rate_limit.process_destination_limiter import get_process_destination_rate_limiter
 from app.runtime.errors import DestinationSendError
 
 
@@ -160,6 +163,24 @@ class SyslogSender:
             message_format = formatter_cfg.get("message_format", "json")
             if message_format != "json":
                 raise ValueError(f"Unsupported message_format for syslog delivery: {message_format}")
+            syslog_wire_mode = str(formatter_cfg.get("syslog_wire_mode", "legacy")).strip().lower()
+            if syslog_wire_mode not in {"legacy", "rfc5425"}:
+                raise ValueError(f"Unsupported Syslog wire mode: {syslog_wire_mode}")
+            if syslog_wire_mode == "rfc5425":
+                if protocol != "tls":
+                    raise ValueError("RFC 5425 mode requires SYSLOG_TLS transport")
+                if formatter_override and (
+                    formatter_override.get("message_prefix_enabled") is True
+                    or "message_prefix_template" in formatter_override
+                ):
+                    raise ValueError("RFC 5425 mode cannot combine with legacy message_prefix templates")
+                stamp = (prefix_context or {}).get("timestamp_iso")
+                payloads = [
+                    rfc5424_json(event, formatter_cfg, timestamp_iso=stamp)
+                    for event in events
+                ]
+                self._send_tls(payloads, config, octet_counting=True)
+                return
             # Callers may omit ``destination_type`` (legacy); prefix defaults treat SYSLOG kinds alike.
             dt_for_prefix = str(destination_type or "").strip() or "SYSLOG_UDP"
             lines = format_delivery_lines_syslog(
@@ -185,6 +206,24 @@ class SyslogSender:
         if not host:
             raise DestinationSendError("Syslog destination requires host")
 
+        # Private, runtime-only Route pacing policy. Keep existing legacy
+        # max_events/per_seconds batch gating unchanged and never persist this.
+        udp_pacing = config.get("_route_udp_event_rate") if protocol == "udp" else None
+        udp_limiter = None
+        if udp_pacing is not None:
+            try:
+                route_id = int(udp_pacing["route_id"])
+                per_second = float(udp_pacing["per_second"])
+                burst_size = int(udp_pacing["burst_size"])
+                if (
+                    route_id == 0 or not math.isfinite(per_second) or per_second <= 0 or
+                    burst_size <= 0 or float(udp_pacing["burst_size"]) != burst_size
+                ):
+                    raise ValueError("invalid UDP pacing parameters")
+            except (TypeError, KeyError, ValueError, OverflowError) as exc:
+                raise DestinationSendError("Invalid UDP Route rate-limit policy") from exc
+            udp_limiter = get_process_destination_rate_limiter()
+
         pool_key = f"syslog-tcp:{host}:{port}"
         try:
             if protocol == "udp":
@@ -196,6 +235,15 @@ class SyslogSender:
                     sock.settimeout(timeout)
                     sock.connect((host, port))
                     for payload in payloads:
+                        if udp_limiter is not None:
+                            wait = udp_limiter.reserve_event(
+                                route_id,
+                                per_second=per_second,
+                                burst_size=burst_size,
+                                now=time.monotonic(),
+                            )
+                            if wait > 0:
+                                time.sleep(wait)
                         sock.send(payload)
                     time.sleep(min(0.05, max(timeout, 0.0)))
                     err = sock.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
@@ -211,7 +259,13 @@ class SyslogSender:
                 _invalidate_tcp_socket(pool_key)
             raise DestinationSendError(f"Syslog send failed: {exc}") from exc
 
-    def _send_tls(self, payloads: list[bytes], config: dict[str, Any]) -> None:
+    def _send_tls(
+        self,
+        payloads: list[bytes],
+        config: dict[str, Any],
+        *,
+        octet_counting: bool = False,
+    ) -> None:
         """TLS-wrapped TCP delivery using a per-call ``ssl.SSLContext``.
 
         Connection or handshake failures map to :class:`DestinationSendError` so that
@@ -234,7 +288,9 @@ class SyslogSender:
             tls_sock = _borrow_tls_socket(pool_key=pool_key, tls_cfg=tls_cfg, ctx=ctx)
             tls_sock.settimeout(tls_cfg.write_timeout)
             for payload in payloads:
-                tls_sock.sendall(payload + b"\n")
+                # Legacy stays newline-framed. RFC 5425 explicitly opts into
+                # MSG-LEN SP SYSLOG-MSG (octets, including UTF-8 BOM).
+                tls_sock.sendall(rfc5425_frame(payload) if octet_counting else payload + b"\n")
         except ssl.CertificateError as exc:
             _invalidate_tcp_socket(pool_key)
             raise DestinationSendError(f"Syslog TLS certificate error: {exc}") from exc

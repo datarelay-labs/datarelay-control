@@ -1,11 +1,12 @@
 import { useCallback, useState } from 'react'
 import type { FieldImportance } from '../../../lib/field-importance'
+import { handleTablistKeyDown } from '../../../lib/tablist-keyboard'
 import { cn } from '../../../lib/utils'
 import { resolveSourceTypePresentation } from '../../../utils/sourceTypePresentation'
 import { FieldImportanceBadge } from './field-importance-badge'
 import { StepConfig } from './step-config'
 import { StepSource } from './step-source'
-import type { WizardState } from './wizard-state'
+import { wizardHasLinkedSource, type WizardState } from './wizard-state'
 
 export type ConnectTabKey = 'connector' | 'request' | 'advanced'
 
@@ -14,6 +15,7 @@ export type StepConnectProps = {
   activeTab?: ConnectTabKey
   onTabChange?: (tab: ConnectTabKey) => void
   connectorReadonly?: boolean
+  onCreateConnector?: () => void
   onConnectorChange: (patch: Partial<WizardState['connector']>) => void
   onStreamChange: (patch: Partial<WizardState['stream']>) => void
 }
@@ -33,23 +35,32 @@ export function StepConnect({
   activeTab: controlledTab,
   onTabChange,
   connectorReadonly = false,
+  onCreateConnector,
   onConnectorChange,
   onStreamChange,
 }: StepConnectProps) {
   const [internalTab, setInternalTab] = useState<ConnectTabKey>('connector')
-  const activeTab = controlledTab ?? internalTab
+  const hasLinkedSource = wizardHasLinkedSource(state.connector)
+  // An existing Stream can still expose its stored request configuration for
+  // inspection while its source catalog is unavailable. New creation cannot.
+  const savedStreamId = state.outcome?.streamId
+  const canInspectSavedRequest = connectorReadonly && typeof savedStreamId === 'number'
+    && Number.isSafeInteger(savedStreamId) && savedStreamId > 0
+  const canOpenRequest = hasLinkedSource || canInspectSavedRequest
+  const activeTab = canOpenRequest ? controlledTab ?? internalTab : 'connector'
   const sourcePres = resolveSourceTypePresentation(state.connector.sourceType)
 
   const setTab = useCallback(
     (next: ConnectTabKey) => {
+      if (next !== 'connector' && !canOpenRequest) return
       if (onTabChange) onTabChange(next)
       else setInternalTab(next)
     },
-    [onTabChange],
+    [canOpenRequest, onTabChange],
   )
 
   const requestLabel =
-    sourcePres.wizard.streamStepTitle === 'HTTP Request' ? 'Request Configuration' : sourcePres.wizard.streamStepTitle
+    !hasLinkedSource || sourcePres.wizard.streamStepTitle === 'HTTP Request' ? 'Request Configuration' : sourcePres.wizard.streamStepTitle
 
   const primaryTabs = TAB_DEFS.filter((tab) => tab.key !== 'advanced').map((tab) =>
     tab.key === 'request' ? { ...tab, label: requestLabel } : tab,
@@ -69,6 +80,8 @@ export function StepConnect({
       <nav
         className="flex flex-wrap items-center gap-2"
         aria-label="Connect sections"
+        aria-orientation="horizontal"
+        role="tablist"
         data-testid="wizard-connect-tabs"
       >
         <div className="flex flex-wrap gap-1 rounded-lg border border-slate-200/80 bg-slate-50/80 p-1 dark:border-gdc-border dark:bg-gdc-card">
@@ -79,11 +92,17 @@ export function StepConnect({
                 key={tab.key}
                 type="button"
                 role="tab"
+                id={`wizard-connect-tab-${tab.key}`}
+                aria-controls={`wizard-connect-panel-${tab.key}`}
                 aria-selected={active}
+                tabIndex={active ? 0 : -1}
                 data-testid={`wizard-connect-tab-${tab.key}`}
+                disabled={tab.key !== 'connector' && !canOpenRequest}
+                title={tab.key !== 'connector' && !canOpenRequest ? 'Select or create a Connector with a linked Source first.' : undefined}
                 onClick={() => setTab(tab.key)}
+                onKeyDown={handleTablistKeyDown}
                 className={cn(
-                  'rounded-md px-3 py-2 text-sm font-semibold transition-colors',
+                  'rounded-md px-3 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50',
                   active
                     ? 'bg-white text-slate-900 shadow-sm dark:bg-gdc-section dark:text-slate-50'
                     : 'text-slate-600 hover:bg-white/70 hover:text-slate-900 dark:text-gdc-mutedStrong dark:hover:bg-gdc-rowHover dark:hover:text-slate-100',
@@ -104,11 +123,17 @@ export function StepConnect({
         <button
           type="button"
           role="tab"
+          id="wizard-connect-tab-advanced"
+          aria-controls="wizard-connect-panel-advanced"
           aria-selected={activeTab === 'advanced'}
+          tabIndex={activeTab === 'advanced' ? 0 : -1}
           data-testid="wizard-connect-tab-advanced"
+          disabled={!canOpenRequest}
+          title={!canOpenRequest ? 'Select or create a Connector with a linked Source first.' : undefined}
           onClick={() => setTab('advanced')}
+          onKeyDown={handleTablistKeyDown}
           className={cn(
-            'inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
+            'inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50',
             activeTab === 'advanced'
               ? 'border-slate-300 bg-white text-slate-800 shadow-sm dark:border-gdc-border dark:bg-gdc-section dark:text-slate-100'
               : 'border-dashed border-slate-300/90 bg-transparent text-slate-500 hover:border-slate-400 hover:text-slate-700 dark:border-gdc-border dark:text-gdc-muted dark:hover:text-slate-200',
@@ -123,12 +148,18 @@ export function StepConnect({
         </button>
       </nav>
 
-      <div role="tabpanel">
+      {!canOpenRequest ? (
+        <p role="status" className="text-sm text-slate-600 dark:text-gdc-muted" data-testid="wizard-source-prerequisite">
+          Select or create a Connector first. Request settings appear for its linked Source; SQL is only used with a database connection.
+        </p>
+      ) : null}
+      <div role="tabpanel" id={`wizard-connect-panel-${activeTab}`} aria-labelledby={`wizard-connect-tab-${activeTab}`}>
         {activeTab === 'connector' ? (
           <StepSource
             state={state}
             section="connector"
             connectorReadonly={connectorReadonly}
+            onCreateConnector={onCreateConnector}
             onChange={onConnectorChange}
             onOpenRequestConfiguration={() => setTab('request')}
             requestConfigurationLabel={requestLabel}

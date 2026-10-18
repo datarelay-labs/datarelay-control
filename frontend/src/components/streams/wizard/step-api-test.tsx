@@ -5,6 +5,7 @@ import { WIZARD_LABEL } from '../../../lib/operator-vocabulary'
 import { cn } from '../../../lib/utils'
 import { validateJsonBodyForApi } from '../../../utils/jsonBodySyntax'
 import {
+  buildFullRequestUrl,
   buildSourceAuthPayload,
   buildSourceConfig,
   buildStreamConfigPayload,
@@ -74,6 +75,177 @@ function mapApiSteps(
   }))
 }
 
+function databaseSampleRows(value: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(value)) return []
+  return value.filter(
+    (row): row is Record<string, unknown> =>
+      row != null && typeof row === 'object' && !Array.isArray(row),
+  )
+}
+
+function databaseSampleFieldTypes(rows: Array<Record<string, unknown>>): Array<{ name: string; type: string }> {
+  const byField = new Map<string, Set<string>>()
+  for (const row of rows.slice(0, 25)) {
+    for (const [name, value] of Object.entries(row)) {
+      const type =
+        value == null
+          ? 'null'
+          : Array.isArray(value)
+            ? 'array'
+            : typeof value === 'object'
+              ? 'object'
+              : typeof value
+      const types = byField.get(name) ?? new Set<string>()
+      types.add(type)
+      byField.set(name, types)
+    }
+  }
+  return [...byField.entries()].map(([name, types]) => ({
+    name,
+    type: types.size === 1 ? [...types][0] ?? 'unknown' : `mixed(${[...types].join('|')})`,
+  }))
+}
+
+function databaseCellDisplay(value: unknown): string {
+  if (value == null) return 'null'
+  if (typeof value === 'string') return value.length > 120 ? `${value.slice(0, 120)}…` : value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  try {
+    const text = JSON.stringify(value)
+    return text.length > 120 ? `${text.slice(0, 120)}…` : text
+  } catch {
+    return '[value unavailable]'
+  }
+}
+
+type HttpFailureStage = 'Request' | 'Connection' | 'Authentication' | 'Response'
+
+type ParsedWebhookPreview = {
+  payload: Record<string, unknown> | Array<Record<string, unknown>>
+  events: Array<Record<string, unknown>>
+  analysis: WizardHttpApiAnalysis
+}
+
+function parseWebhookPayloadPreview(raw: string): ParsedWebhookPreview {
+  const text = raw.trim()
+  if (!text) throw new Error('No saved sample payload.')
+
+  let payload: unknown
+  let ndjson = false
+  try {
+    payload = JSON.parse(text)
+  } catch {
+    const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+    if (lines.length < 2) throw new Error('Sample must be a JSON object, JSON array, or NDJSON records.')
+    const rows = lines.map((line, index) => {
+      try {
+        const value = JSON.parse(line)
+        if (typeof value !== 'object' || value == null || Array.isArray(value)) {
+          throw new Error('NDJSON line ' + (index + 1) + ' must be a JSON object.')
+        }
+        return value as Record<string, unknown>
+      } catch (error) {
+        if (error instanceof Error && error.message.startsWith('NDJSON line')) throw error
+        throw new Error('Invalid NDJSON at line ' + (index + 1) + '.')
+      }
+    })
+    payload = rows
+    ndjson = true
+  }
+
+  const events =
+    Array.isArray(payload)
+      ? payload.filter((row): row is Record<string, unknown> => typeof row === 'object' && row != null && !Array.isArray(row))
+      : typeof payload === 'object' && payload != null
+        ? [payload as Record<string, unknown>]
+        : []
+
+  if (
+    typeof payload !== 'object' ||
+    payload == null ||
+    (Array.isArray(payload) && events.length !== payload.length)
+  ) {
+    throw new Error('Webhook sample records must be JSON objects.')
+  }
+
+  const sampleEvent = events[0] ?? null
+  const serialized = JSON.stringify(payload)
+  return {
+    payload: payload as Record<string, unknown> | Array<Record<string, unknown>>,
+    events,
+    analysis: {
+      responseSummary: {
+        root_type: Array.isArray(payload) ? (ndjson ? 'ndjson' : 'array') : 'object',
+        approx_size_bytes: serialized.length,
+        top_level_keys: Array.isArray(payload) ? [] : Object.keys(payload as Record<string, unknown>),
+        item_count_root: Array.isArray(payload) ? payload.length : null,
+        truncation: null,
+      },
+      detectedArrays: Array.isArray(payload)
+        ? [{ path: '$', count: events.length, confidence: 1, reason: ndjson ? 'saved webhook NDJSON preview' : 'saved webhook JSON array preview', sample_item_preview: sampleEvent }]
+        : [],
+      detectedCheckpointCandidates: [],
+      sampleEvent,
+      selectedEventArrayDefault: Array.isArray(payload) ? '$' : null,
+      flatPreviewFields: flattenSampleFields(sampleEvent),
+      eventRootCandidates: detectEventRootCandidates(sampleEvent),
+      previewError: null,
+    },
+  }
+}
+
+function webhookAuthSummary(
+  mode: string,
+  headerName: string,
+  sharedSecretConfigured: boolean,
+  bearerTokenConfigured: boolean,
+): string {
+  if (mode === 'shared_secret_header') {
+    return 'Shared secret header (' + (headerName || 'X-GDC-Webhook-Secret') + ') · ' + (sharedSecretConfigured ? 'configured' : 'not configured')
+  }
+  if (mode === 'bearer_token') {
+    return 'Bearer token · ' + (bearerTokenConfigured ? 'configured' : 'not configured')
+  }
+  return 'No auth'
+}
+
+function resolveHttpFailureStage(
+  code: string | null,
+  errorType: string | null,
+  targetStatusCode: number | null,
+): HttpFailureStage {
+  const signal = `${code ?? ''} ${errorType ?? ''}`.toLowerCase()
+  if (
+    signal.includes('auth') ||
+    signal.includes('token') ||
+    signal.includes('login') ||
+    signal.includes('unauthorized') ||
+    signal.includes('forbidden') ||
+    signal.includes('session_not_acquired')
+  ) {
+    return 'Authentication'
+  }
+  if (
+    signal.includes('connection') ||
+    signal.includes('network') ||
+    signal.includes('timeout') ||
+    signal.includes('ssl') ||
+    signal.includes('certificate') ||
+    signal.includes('invalid_test_url')
+  ) {
+    return 'Connection'
+  }
+  if (
+    targetStatusCode != null ||
+    signal.includes('response') ||
+    signal.includes('http_error') ||
+    signal.includes('unsupported_content_type')
+  ) {
+    return 'Response'
+  }
+  return 'Request'
+}
+
 export function StepApiTest({
   state,
   onChange,
@@ -99,6 +271,14 @@ export function StepApiTest({
         filePattern: state.stream.filePattern,
         remoteRecursive: state.stream.remoteRecursive,
         sqlQuery: state.stream.sqlQuery,
+        dbQueryParams: state.stream.dbQueryParams,
+        webhookReceiverPath: state.connector.webhookReceiverPath,
+        webhookAuthMode: state.connector.webhookAuthMode,
+        webhookAuthHeaderName: state.connector.webhookAuthHeaderName,
+        webhookSharedSecretConfigured: state.connector.webhookSharedSecretConfigured,
+        webhookBearerTokenConfigured: state.connector.webhookBearerTokenConfigured,
+        webhookMaxRequestBytes: state.connector.webhookMaxRequestBytes,
+        webhookPayloadPreview: state.connector.webhookPayloadPreview,
       }),
     [
       state.connector.connectorId,
@@ -114,6 +294,14 @@ export function StepApiTest({
       state.stream.filePattern,
       state.stream.remoteRecursive,
       state.stream.sqlQuery,
+      state.stream.dbQueryParams,
+      state.connector.webhookReceiverPath,
+      state.connector.webhookAuthMode,
+      state.connector.webhookAuthHeaderName,
+      state.connector.webhookSharedSecretConfigured,
+      state.connector.webhookBearerTokenConfigured,
+      state.connector.webhookMaxRequestBytes,
+      state.connector.webhookPayloadPreview,
     ],
   )
 
@@ -158,6 +346,7 @@ export function StepApiTest({
   const isRemote = state.connector.sourceType === 'REMOTE_FILE_POLLING'
   const isWebhook = state.connector.sourceType === 'WEBHOOK_RECEIVER'
   const isDatabase = state.connector.sourceType === 'DATABASE_QUERY'
+  const isHttp = !isS3 && !isRemote && !isWebhook && !isDatabase
   const canRunLiveApiTest = useMemo(
     () =>
       state.connector.connectorId != null &&
@@ -202,6 +391,7 @@ export function StepApiTest({
         unionSchema: null,
         analysis: null,
       })
+      let connectivityPassed = false
       try {
         const res = await runConnectorAuthTest({
           connector_id: state.connector.connectorId ?? undefined,
@@ -240,48 +430,27 @@ export function StepApiTest({
           })
           return
         }
-        const sample: Record<string, unknown> = {
-          id: 's3-wizard-preview',
-          message: 'Use a field path from your NDJSON or JSON objects (e.g. $.id, $.message).',
-          severity: '1',
-        }
-        const analysisModel: WizardHttpApiAnalysis = {
-          responseSummary: {
-            root_type: 'object',
-            approx_size_bytes: JSON.stringify(sample).length,
-            top_level_keys: Object.keys(sample),
-            item_count_root: 1,
-            truncation: null,
-          },
-          detectedArrays: [],
-          detectedCheckpointCandidates: [],
-          sampleEvent: sample,
-          selectedEventArrayDefault: null,
-          flatPreviewFields: Object.keys(sample).map((k) => `$.${k}`),
-          eventRootCandidates: detectEventRootCandidates(sample),
-          previewError: null,
-        }
+        connectivityPassed = true
+        const sampleRes = await runHttpApiTest({
+          connector_id: state.connector.connectorId ?? undefined,
+          source_config: { ...buildSourceConfig(state), ...buildSourceAuthPayload(state) },
+          stream_config: buildStreamConfigPayload(state),
+          checkpoint: null,
+          fetch_sample: true,
+        })
+        const parsedBody = sampleRes.response?.parsed_json ?? null
+        const analysisModel = sampleRes.analysis ? mapApiAnalysis(sampleRes.analysis) : null
         commitApiTest(gen, {
           status: 'success',
           ok: true,
-          requestUrl: state.connector.hostBaseUrl || null,
-          method: 'S3_PROBE',
-          statusCode: null,
-          responseHeaders: {},
-          rawBody: JSON.stringify(
-            {
-              s3_bucket_exists: res.s3_bucket_exists,
-              s3_object_count_preview: res.s3_object_count_preview,
-              s3_sample_keys: res.s3_sample_keys,
-              s3_endpoint_reachable: res.s3_endpoint_reachable,
-              s3_auth_ok: res.s3_auth_ok,
-            },
-            null,
-            2,
-          ),
-          parsedJson: null,
-          rawResponse: res,
-          ...buildApiTestSuccessPatch(sample, analysisModel),
+          requestUrl: sampleRes.request.url,
+          method: sampleRes.request.method,
+          statusCode: sampleRes.response?.status_code ?? 200,
+          responseHeaders: sampleRes.response?.headers ?? {},
+          rawBody: sampleRes.response?.raw_body ?? null,
+          parsedJson: parsedBody,
+          rawResponse: parsedBody ?? sampleRes.response?.raw_body ?? null,
+          ...buildApiTestSuccessPatch(parsedBody, analysisModel),
           startedAt,
           finishedAt: Date.now(),
           errorCode: null,
@@ -289,17 +458,30 @@ export function StepApiTest({
           errorMessage: null,
           targetStatusCode: null,
           targetResponseBody: null,
-          hint: null,
+          hint:
+            res.s3_object_count_preview === 0
+              ? 'S3 connectivity is healthy, but no matching objects were available for the sample.'
+              : 'S3 connectivity verified and sample fields were parsed from actual matching object data.',
           apiBacked: true,
-          steps: [],
-          responseSample: res,
-          effectiveHeadersMasked: null,
-          actualRequestSent: null,
+          steps: mapApiSteps(sampleRes.steps),
+          responseSample: parsedBody,
+          effectiveHeadersMasked: sampleRes.request.headers_masked ?? null,
+          actualRequestSent: sampleRes.actual_request_sent
+            ? {
+                method: sampleRes.actual_request_sent.method,
+                url: sampleRes.actual_request_sent.url,
+                endpoint: sampleRes.actual_request_sent.endpoint ?? null,
+                queryParams: sampleRes.actual_request_sent.query_params ?? {},
+                headersMasked: sampleRes.actual_request_sent.headers_masked ?? {},
+                jsonBodyMasked: sampleRes.actual_request_sent.json_body_masked ?? null,
+                timeoutSeconds: sampleRes.actual_request_sent.timeout_seconds,
+              }
+            : null,
           analysis: analysisModel,
           s3ConnectivityPassed: true,
         })
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'S3 probe failed.'
+        const message = err instanceof Error ? err.message : connectivityPassed ? 'S3 sample fetch failed.' : 'S3 probe failed.'
         commitApiTest(gen, {
           status: 'error',
           ok: false,
@@ -532,26 +714,26 @@ export function StepApiTest({
         const message = err instanceof Error ? err.message : 'Remote file sample fetch failed.'
         if (lastProbe?.ok) {
           commitApiTest(gen, {
-            status: 'success',
-            ok: true,
+            status: 'error',
+            ok: false,
             requestUrl: null,
             method: 'REMOTE_FILE_POLLING',
-            statusCode: 200,
+            statusCode: null,
             responseHeaders: {},
             rawBody: null,
-            parsedJson: lastProbe,
+            parsedJson: null,
             rawResponse: lastProbe,
             extractedEvents: [],
             eventCount: 0,
             unionSchema: null,
             startedAt,
             finishedAt: Date.now(),
-            errorCode: null,
-            errorType: null,
-            errorMessage: null,
+            errorCode: 'remote_file_sample_fetch_failed',
+            errorType: 'remote_file_sample_fetch_failed',
+            errorMessage: message,
             targetStatusCode: null,
             targetResponseBody: null,
-            hint: message,
+            hint: 'SSH/SFTP connectivity succeeded. Verify directory, file pattern, parser format, and file contents before retrying.',
             apiBacked: true,
             steps: [],
             responseSample: lastProbe,
@@ -612,22 +794,54 @@ export function StepApiTest({
         errorMessage: null,
       })
       try {
-        const sample = {
-          webhook_receiver: true,
-          items: [{ id: 'sample', message: 'webhook-receiver-ready' }],
+        const sampleText = state.connector.webhookPayloadPreview.trim()
+        if (!sampleText) {
+          commitApiTest(gen, {
+            status: 'success',
+            ok: true,
+            requestUrl: state.connector.webhookReceiverPath || null,
+            method: 'WEBHOOK_RECEIVER',
+            statusCode: null,
+            responseHeaders: {},
+            rawBody: null,
+            parsedJson: null,
+            rawResponse: null,
+            extractedEvents: [],
+            eventCount: 0,
+            unionSchema: null,
+            startedAt,
+            finishedAt: Date.now(),
+            errorCode: null,
+            errorType: null,
+            errorMessage: null,
+            targetStatusCode: null,
+            targetResponseBody: null,
+            hint: 'Receiver configuration is saved. Waiting for a producer event is normal and is not a connector failure. Add a representative payload preview to validate mapping before live traffic.',
+            apiBacked: false,
+            steps: [],
+            responseSample: null,
+            effectiveHeadersMasked: null,
+            actualRequestSent: null,
+            analysis: null,
+            s3ConnectivityPassed: false,
+            remoteProbe: null,
+          })
+          return
         }
+
+        const parsed = parseWebhookPayloadPreview(sampleText)
         commitApiTest(gen, {
           status: 'success',
           ok: true,
-          requestUrl: null,
+          requestUrl: state.connector.webhookReceiverPath || null,
           method: 'WEBHOOK_RECEIVER',
-          statusCode: 200,
+          statusCode: null,
           responseHeaders: {},
-          rawBody: JSON.stringify(sample),
-          parsedJson: sample,
-          rawResponse: sample,
-          extractedEvents: [sample.items[0]],
-          eventCount: 1,
+          rawBody: sampleText,
+          parsedJson: parsed.payload,
+          rawResponse: parsed.payload,
+          extractedEvents: parsed.events,
+          eventCount: parsed.events.length,
           unionSchema: null,
           startedAt,
           finishedAt: Date.now(),
@@ -636,30 +850,45 @@ export function StepApiTest({
           errorMessage: null,
           targetStatusCode: null,
           targetResponseBody: null,
-          hint: 'Inbound receiver is ready. External systems POST to the generated webhook URL after deploy.',
-          apiBacked: true,
+          hint: 'Validated the saved synthetic payload locally. Live producers POST to the saved receiver URL and use the same mapping, Route, and delivery pipeline.',
+          apiBacked: false,
           steps: [],
-          responseSample: sample,
+          responseSample: parsed.payload,
           effectiveHeadersMasked: null,
           actualRequestSent: null,
-          analysis: {
-            responseSummary: {
-              root_type: 'object',
-              approx_size_bytes: JSON.stringify(sample).length,
-              top_level_keys: ['webhook_receiver', 'items'],
-              item_count_root: null,
-              truncation: null,
-            },
-            detectedArrays: [
-              { path: '$.items', count: 1, confidence: 1, reason: 'webhook sample items', sample_item_preview: sample.items[0] },
-            ],
-            detectedCheckpointCandidates: [],
-            sampleEvent: sample.items[0],
-            selectedEventArrayDefault: '$.items',
-            flatPreviewFields: ['id', 'message'],
-            eventRootCandidates: [],
-            previewError: null,
-          },
+          analysis: parsed.analysis,
+          s3ConnectivityPassed: false,
+          remoteProbe: null,
+        })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Webhook sample preview is invalid.'
+        commitApiTest(gen, {
+          status: 'error',
+          ok: false,
+          requestUrl: state.connector.webhookReceiverPath || null,
+          method: 'WEBHOOK_RECEIVER',
+          statusCode: null,
+          responseHeaders: {},
+          rawBody: state.connector.webhookPayloadPreview,
+          parsedJson: null,
+          rawResponse: null,
+          extractedEvents: [],
+          eventCount: 0,
+          unionSchema: null,
+          startedAt,
+          finishedAt: Date.now(),
+          errorCode: 'invalid_webhook_sample',
+          errorType: 'invalid_webhook_sample',
+          errorMessage: message,
+          targetStatusCode: null,
+          targetResponseBody: null,
+          hint: 'Fix the saved webhook payload preview. Runtime accepts a JSON object, JSON array of objects, or NDJSON objects.',
+          apiBacked: false,
+          steps: [],
+          responseSample: null,
+          effectiveHeadersMasked: null,
+          actualRequestSent: null,
+          analysis: null,
           s3ConnectivityPassed: false,
           remoteProbe: null,
         })
@@ -873,6 +1102,46 @@ export function StepApiTest({
   const t = state.apiTest
   const copy = sourcePres.wizardApiTest
   const elapsedMs = t.startedAt && t.finishedAt ? Math.max(0, t.finishedAt - t.startedAt) : null
+  const showHttpTestContext = isHttp && (t.status === 'success' || t.status === 'error')
+  const showWebhookContext = isWebhook && state.connector.connectorId != null && state.connector.sourceId != null
+  const webhookReceiverUrl =
+    state.connector.webhookReceiverPath && typeof window !== 'undefined'
+      ? window.location.origin + state.connector.webhookReceiverPath
+      : state.connector.webhookReceiverPath
+  const webhookAuth = webhookAuthSummary(
+    state.connector.webhookAuthMode,
+    state.connector.webhookAuthHeaderName,
+    state.connector.webhookSharedSecretConfigured,
+    state.connector.webhookBearerTokenConfigured,
+  )
+  const testedRequest = t.actualRequestSent
+  const testedMethod = testedRequest?.method ?? t.method ?? state.stream.httpMethod
+  const testedUrl =
+    testedRequest?.url ??
+    t.requestUrl ??
+    buildFullRequestUrl(state.connector.hostBaseUrl, state.stream.endpoint)
+  const testedQueryEntries = testedRequest
+    ? Object.entries(testedRequest.queryParams).map(([key, value]) => `${key}=${String(value)}`)
+    : state.stream.params.filter((row) => row.key.trim()).map((row) => row.key.trim())
+  const testedHeaderEntries = testedRequest
+    ? Object.entries(testedRequest.headersMasked).map(([key, value]) => `${key}=${value}`)
+    : []
+  const testedBodyPreview = (() => {
+    if (!testedRequest || testedRequest.jsonBodyMasked == null) return null
+    try {
+      const text = JSON.stringify(testedRequest.jsonBodyMasked, null, 2)
+      return text.length > 1600 ? `${text.slice(0, 1600)}…` : text
+    } catch {
+      return '[masked body unavailable]'
+    }
+  })()
+  const dbRows = isDatabase ? databaseSampleRows(t.parsedJson ?? t.rawResponse) : []
+  const dbFieldTypes = databaseSampleFieldTypes(dbRows)
+  const dbBoundParamCount = Object.keys(state.stream.dbQueryParams ?? {}).length
+  const showDatabaseTestContext = isDatabase && (t.status === 'success' || t.status === 'error')
+  const dbIncremental =
+    state.stream.dbCheckpointMode.trim().toUpperCase() !== 'NONE' ||
+    state.stream.dbCheckpointColumn.trim().length > 0
 
   return (
     <section
@@ -910,7 +1179,186 @@ export function StepApiTest({
         </div>
       </div>
 
-      <div className="mt-4">
+      <div className="mt-4 space-y-3">
+        {showWebhookContext ? (
+          <div
+            className="rounded-md border border-violet-200/80 bg-violet-500/[0.04] p-3 text-[11px] dark:border-violet-500/30 dark:bg-violet-500/10"
+            data-testid="wizard-run-test-webhook-context"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="font-semibold text-slate-800 dark:text-slate-100">Saved webhook receiver</p>
+              <p className="text-slate-500 dark:text-gdc-mutedStrong">Secrets remain write-only and are never shown here.</p>
+            </div>
+            <dl className="mt-2 grid gap-2 sm:grid-cols-2">
+              <div>
+                <dt className="font-semibold text-slate-600 dark:text-gdc-mutedStrong">Receiver URL</dt>
+                <dd className="mt-0.5 break-all font-mono text-[10px] text-slate-800 dark:text-slate-200">
+                  {webhookReceiverUrl || 'Generated after the receiver is saved'}
+                </dd>
+              </div>
+              <div>
+                <dt className="font-semibold text-slate-600 dark:text-gdc-mutedStrong">Authorization</dt>
+                <dd className="mt-0.5 text-slate-800 dark:text-slate-200">{webhookAuth}</dd>
+              </div>
+              <div>
+                <dt className="font-semibold text-slate-600 dark:text-gdc-mutedStrong">Payload limit</dt>
+                <dd className="mt-0.5 text-slate-800 dark:text-slate-200">{state.connector.webhookMaxRequestBytes.toLocaleString()} bytes</dd>
+              </div>
+              <div>
+                <dt className="font-semibold text-slate-600 dark:text-gdc-mutedStrong">Preview source</dt>
+                <dd className="mt-0.5 text-slate-800 dark:text-slate-200">
+                  {state.connector.webhookPayloadPreview.trim() ? 'Saved synthetic payload' : 'Waiting for producer / no saved sample'}
+                </dd>
+              </div>
+            </dl>
+            {!state.connector.webhookPayloadPreview.trim() ? (
+              <p
+                className="mt-2 rounded border border-slate-200/80 bg-white/70 p-2 text-slate-600 dark:border-gdc-border dark:bg-gdc-card dark:text-gdc-mutedStrong"
+                data-testid="wizard-webhook-waiting-state"
+              >
+                No producer event has to arrive during setup. Waiting is normal, not a connector failure. Save a representative payload preview when you want to validate fields before live traffic.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+        {showDatabaseTestContext ? (
+          <div
+            className="rounded-md border border-sky-200/80 bg-sky-500/[0.04] p-3 text-[11px] dark:border-sky-500/30 dark:bg-sky-500/10"
+            data-testid="wizard-run-test-database-context"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="font-semibold text-slate-800 dark:text-slate-100">Actual database query preview</p>
+              <p className="text-slate-500 dark:text-gdc-mutedStrong">
+                {dbRows.length} returned row{dbRows.length === 1 ? '' : 's'} · preview cap 25 · {dbBoundParamCount} bound parameter{dbBoundParamCount === 1 ? '' : 's'}
+              </p>
+            </div>
+            <pre className="mt-2 max-h-28 overflow-auto whitespace-pre-wrap break-words rounded border border-slate-200 bg-white p-2 font-mono text-[10px] text-slate-700 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200">
+              {state.stream.sqlQuery.trim() || '(SQL query unavailable)'}
+            </pre>
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-slate-600 dark:text-gdc-mutedStrong">
+              <span>
+                <strong>Sync:</strong>{' '}
+                {dbIncremental
+                  ? `Incremental · checkpoint ${state.stream.dbCheckpointColumn.trim() || 'not selected'}`
+                  : 'Full query each poll'}
+              </span>
+              <span><strong>Elapsed:</strong> {elapsedMs == null ? '—' : `${elapsedMs} ms`}</span>
+            </div>
+            <p className="mt-2 text-slate-600 dark:text-gdc-mutedStrong">
+              Preview reads bounded rows only and does not advance the production checkpoint. Incremental sync must be confirmed against the latest sample in Record Selection before apply.
+            </p>
+            {dbFieldTypes.length > 0 ? (
+              <div className="mt-2 flex flex-wrap gap-1.5" aria-label="Database sample field types">
+                <span className="font-semibold text-slate-600 dark:text-gdc-mutedStrong">Sample field types:</span>
+                {dbFieldTypes.map((field) => (
+                  <code
+                    key={field.name}
+                    className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] text-slate-700 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200"
+                  >
+                    {field.name} {field.type}
+                  </code>
+                ))}
+              </div>
+            ) : null}
+            {dbRows.length > 0 ? (
+              <div className="mt-2 overflow-auto rounded border border-slate-200 bg-white dark:border-gdc-border dark:bg-gdc-card">
+                <table className="min-w-full border-collapse text-[10px]" data-testid="wizard-run-test-database-rows">
+                  <thead>
+                    <tr className="border-b border-slate-200 dark:border-gdc-border">
+                      {dbFieldTypes.map((field) => (
+                        <th key={field.name} className="px-2 py-1 text-left font-semibold text-slate-600 dark:text-gdc-mutedStrong">
+                          {field.name}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dbRows.slice(0, 5).map((row, index) => (
+                      <tr key={index} className="border-b border-slate-100 last:border-b-0 dark:border-gdc-border/60">
+                        {dbFieldTypes.map((field) => (
+                          <td key={field.name} className="max-w-56 break-words px-2 py-1 align-top font-mono text-slate-700 dark:text-slate-200">
+                            {databaseCellDisplay(row[field.name])}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="border-t border-slate-200 px-2 py-1 text-slate-500 dark:border-gdc-border dark:text-gdc-muted">
+                  Showing {Math.min(dbRows.length, 5)} of {dbRows.length} returned rows.
+                </p>
+              </div>
+            ) : t.status === 'success' ? (
+              <p className="mt-2 rounded border border-slate-200 bg-white p-2 text-slate-500 dark:border-gdc-border dark:bg-gdc-card dark:text-gdc-muted">
+                Query succeeded with an empty bounded result. Review the filter, table contents, or sync position before apply.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+        {showHttpTestContext ? (
+          <div
+            className="rounded-md border border-slate-200/80 bg-slate-50/70 p-3 text-[11px] dark:border-gdc-border dark:bg-gdc-card"
+            data-testid="wizard-run-test-http-context"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="font-semibold text-slate-800 dark:text-slate-100">
+                {testedRequest ? 'Actual tested request' : 'Configured request context'}
+              </p>
+              <p className="text-slate-500 dark:text-gdc-mutedStrong">
+                Authentication inherited from {state.connector.connectorName?.trim() || `Connector #${state.connector.connectorId ?? '—'}`}
+              </p>
+            </div>
+            <p className="mt-2 break-all font-mono text-[11px] text-slate-800 dark:text-slate-100">
+              <span className="font-bold">{testedMethod || '—'}</span> {testedUrl || '(request URL unavailable)'}
+            </p>
+            <div className="mt-2 flex flex-wrap gap-1.5" aria-label="Tested query parameters">
+              <span className="font-semibold text-slate-600 dark:text-gdc-mutedStrong">Query parameters:</span>
+              {testedQueryEntries.length > 0 ? testedQueryEntries.map((entry) => (
+                <code
+                  key={entry}
+                  className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] text-slate-700 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-200"
+                >
+                  {entry}
+                </code>
+              )) : <span className="text-slate-500 dark:text-gdc-muted">none</span>}
+            </div>
+            {testedRequest ? (
+              <details
+                className="mt-2 rounded-md border border-slate-200/80 bg-white/70 p-2 dark:border-gdc-border dark:bg-gdc-section"
+                data-testid="wizard-run-test-http-request-details"
+              >
+                <summary className="cursor-pointer font-semibold text-slate-700 dark:text-slate-200">
+                  Tested headers &amp; body · {testedHeaderEntries.length} header{testedHeaderEntries.length === 1 ? '' : 's'} · {testedBodyPreview == null ? 'no body' : 'body configured'}
+                </summary>
+                <div className="mt-2 space-y-2 text-[10px] text-slate-600 dark:text-gdc-mutedStrong">
+                  <div>
+                    <p className="font-semibold">Headers (masked)</p>
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {testedHeaderEntries.length > 0 ? testedHeaderEntries.map((entry) => (
+                        <code
+                          key={entry}
+                          className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 dark:border-gdc-border dark:bg-gdc-card"
+                        >
+                          {entry}
+                        </code>
+                      )) : <span>none</span>}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="font-semibold">JSON body (masked)</p>
+                    {testedBodyPreview == null ? (
+                      <p className="mt-1">none</p>
+                    ) : (
+                      <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded border border-slate-200 bg-slate-50 p-2 font-mono text-[10px] text-slate-700 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200">
+                        {testedBodyPreview}
+                      </pre>
+                    )}
+                  </div>
+                </div>
+              </details>
+            ) : null}
+          </div>
+        ) : null}
         {t.status === 'idle' ? (
           <p className="rounded-md border border-slate-200 bg-slate-50 p-4 text-[12px] text-slate-700 dark:border-gdc-border dark:bg-gdc-card dark:text-gdc-mutedStrong">
             {canRunLiveApiTest
@@ -920,7 +1368,7 @@ export function StepApiTest({
         ) : null}
         {t.status === 'running' ? (
           <p className="rounded-md border border-slate-200 bg-slate-50 p-4 text-[12px] text-slate-700 dark:border-gdc-border dark:bg-gdc-card dark:text-gdc-mutedStrong">
-            Calling source… this can take a few seconds depending on upstream latency.
+            {isWebhook ? 'Validating the saved webhook payload preview…' : 'Calling source… this can take a few seconds depending on upstream latency.'}
           </p>
         ) : null}
         {t.status === 'error' ? (
@@ -930,6 +1378,7 @@ export function StepApiTest({
             message={t.errorMessage ?? 'Unknown error'}
             targetStatusCode={t.targetStatusCode ?? t.statusCode}
             hint={t.hint}
+            failureStage={isHttp ? resolveHttpFailureStage(t.errorCode, t.errorType, t.targetStatusCode ?? t.statusCode) : null}
           />
         ) : null}
         {t.status === 'success' ? (
@@ -940,8 +1389,14 @@ export function StepApiTest({
               eventCount={t.eventCount}
               statusCode={t.statusCode}
               elapsedMs={elapsedMs}
+              statusLabelOverride={isWebhook && t.eventCount === 0 ? 'Ready · waiting for event' : undefined}
             />
-            {onAdvanceToRecordSelection ? (
+            {isWebhook && t.eventCount === 0 ? (
+              <p className="rounded-md border border-violet-200/80 bg-violet-500/[0.04] p-3 text-[11px] text-slate-700 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-slate-200">
+                The receiver is configured, but there is no sample to map yet. Add a saved synthetic payload or POST a limited test event to the receiver before Record Selection.
+              </p>
+            ) : null}
+            {onAdvanceToRecordSelection && (!isWebhook || t.eventCount > 0) ? (
               <div className="flex justify-end">
                 <button
                   type="button"
@@ -966,18 +1421,20 @@ function SuccessPanel({
   eventCount,
   statusCode,
   elapsedMs,
+  statusLabelOverride,
 }: {
   apiBacked: boolean
   ok: boolean
   eventCount: number
   statusCode: number | null
   elapsedMs: number | null
+  statusLabelOverride?: string
 }) {
-  const statusLabel = ok
+  const statusLabel = statusLabelOverride ?? (ok
     ? apiBacked
       ? 'Success · API-backed'
       : 'Success · local preview'
-    : 'Completed with warnings'
+    : 'Completed with warnings')
   const httpLabel = statusCode != null ? String(statusCode) : '—'
 
   return (
@@ -1001,12 +1458,14 @@ function ErrorPanel({
   message,
   targetStatusCode,
   hint,
+  failureStage,
 }: {
   code: string | null
   errorType: string | null
   message: string
   targetStatusCode: number | null
   hint: string | null
+  failureStage: HttpFailureStage | null
 }) {
   return (
     <div className="space-y-3" data-testid="wizard-run-test-error">
@@ -1021,6 +1480,14 @@ function ErrorPanel({
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-700 dark:text-red-300" aria-hidden />
           <div className="min-w-0">
             <p className="font-semibold text-red-800 dark:text-red-200">{code ?? 'API_TEST_FAILED'}</p>
+            {failureStage ? (
+              <p
+                className="mt-1 text-[11px] font-semibold text-red-700 dark:text-red-200"
+                data-testid="wizard-run-test-failure-stage"
+              >
+                Failure stage: {failureStage}
+              </p>
+            ) : null}
             <p className="mt-1 break-words text-red-700 dark:text-red-200">{message}</p>
             {errorType && errorType !== code ? (
               <p className="mt-2 text-[11px] text-red-700 dark:text-red-200">Type: {errorType}</p>

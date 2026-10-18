@@ -20,6 +20,7 @@ export type SchemaDriftPolicyPersistPayload = {
 export type SchemaDriftPolicyPersistResult = {
   saved: boolean
   errors: string[]
+  streamUpdatedAt?: string | null
 }
 
 export function buildSchemaDriftPolicyPersistPayload(
@@ -54,7 +55,10 @@ export function mergeSchemaDriftPolicyIntoConfigJson(
 export async function persistWizardSchemaDriftPolicy(
   streamId: number,
   dataProtection: Pick<WizardDataProtectionState, 'unknownNormalFieldPolicy' | 'unknownSensitiveFieldPolicy'>,
-  options?: { existingConfigJson?: Record<string, unknown> | null },
+  options?: {
+    existingConfigJson?: Record<string, unknown> | null
+    expectedUpdatedAt?: string | null
+  },
 ): Promise<SchemaDriftPolicyPersistResult> {
   let existing = options?.existingConfigJson
   if (existing === undefined) {
@@ -67,10 +71,11 @@ export async function persistWizardSchemaDriftPolicy(
   const mergedConfigJson = mergeSchemaDriftPolicyIntoConfigJson(existing, dataProtection)
 
   try {
-    await updateStream(streamId, {
+    const updated = await updateStream(streamId, {
       config_json: mergedConfigJson,
+      ...(options?.expectedUpdatedAt ? { expected_updated_at: options.expectedUpdatedAt } : {}),
     })
-    return { saved: true, errors: [] }
+    return { saved: true, errors: [], streamUpdatedAt: updated.updated_at ?? options?.expectedUpdatedAt ?? null }
   } catch (err) {
     return {
       saved: false,

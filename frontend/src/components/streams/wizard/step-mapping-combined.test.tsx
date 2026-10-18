@@ -124,6 +124,32 @@ describe('StepMappingCombined v3 Transform (206f0f7 mapping UI)', () => {
     mockedTransformPreview.mockReset()
   })
 
+  it('supports Arrow/Home/End keyboard navigation across Transform editor tabs', async () => {
+    const user = userEvent.setup()
+    render(<TransformHarness initialState={readyTransformState()} />)
+
+    const basic = screen.getByRole('tab', { name: /Fields · Basic/i })
+    const advanced = screen.getByRole('tab', { name: /JSONata · Advanced/i })
+    const expert = screen.getByRole('tab', { name: /Regex · Expert/i })
+    expect(screen.getByRole('tablist', { name: 'Transform editor' })).toBeInTheDocument()
+    expect(basic).toHaveAttribute('tabindex', '0')
+    expect(advanced).toHaveAttribute('tabindex', '-1')
+    expect(expert).toHaveAttribute('tabindex', '-1')
+
+    basic.focus()
+    await user.keyboard('{ArrowRight}')
+    expect(advanced).toHaveAttribute('aria-selected', 'true')
+    expect(document.activeElement).toBe(advanced)
+
+    await user.keyboard('{End}')
+    expect(expert).toHaveAttribute('aria-selected', 'true')
+    expect(document.activeElement).toBe(expert)
+
+    await user.keyboard('{Home}')
+    expect(basic).toHaveAttribute('aria-selected', 'true')
+    expect(document.activeElement).toBe(basic)
+  })
+
   it('renders a task-first launcher and secondary editor tabs', () => {
     render(<StepMappingCombined {...combinedProps(readyTransformState())} />)
 

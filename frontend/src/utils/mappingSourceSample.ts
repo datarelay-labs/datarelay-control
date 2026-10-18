@@ -53,12 +53,33 @@ function applyPersistedUnionSchema(stream: StreamRead, result: MappingSourceSamp
   }
 }
 
-function pickWebhookSample(sourceConfig: Record<string, unknown>): unknown {
+function pickWebhookSample(
+  sourceConfig: Record<string, unknown>,
+): { sample: unknown; error: string | null } {
   const sp = sourceConfig.sample_payload
-  if (sp !== undefined && sp !== null) return sp
+  if (sp !== undefined && sp !== null) return { sample: sp, error: null }
   const raw = sourceConfig.raw_sample_payload
-  if (raw !== undefined && raw !== null) return raw
-  return null
+  if (raw !== undefined && raw !== null) return { sample: raw, error: null }
+
+  const preview = sourceConfig.payload_preview
+  if (preview === undefined || preview === null) return { sample: null, error: null }
+  if (typeof preview !== 'string') return { sample: preview, error: null }
+
+  const text = preview.trim()
+  if (!text) return { sample: null, error: null }
+  try {
+    return { sample: JSON.parse(text), error: null }
+  } catch {
+    const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+    if (lines.length > 1) {
+      try {
+        return { sample: lines.map((line) => JSON.parse(line)), error: null }
+      } catch {
+        // Fall through to an actionable validation error.
+      }
+    }
+    return { sample: null, error: 'Saved webhook payload preview is not valid JSON or NDJSON.' }
+  }
 }
 
 function eventPathsFromCfg(cfg: MappingUIConfigResponse): { eventArrayPath: string; eventRootPath: string } {
@@ -191,7 +212,24 @@ export async function fetchMappingSourceSample(streamId: number): Promise<Mappin
   const fetchedAt = new Date().toISOString().slice(0, 19).replace('T', ' ')
 
   if (sourceType === 'WEBHOOK_RECEIVER') {
-    const sample = pickWebhookSample(cfg.source_config ?? {})
+    const picked = pickWebhookSample(cfg.source_config ?? {})
+    if (picked.error) {
+      return {
+        ok: false,
+        sourceType,
+        rawPayload: null,
+        treeDocument: {},
+        extractedEvents: [],
+        unionSchema: null,
+        eventArrayPath,
+        eventRootPath,
+        sampleEventIndex: 0,
+        message: picked.error,
+        recordsLabel: '—',
+        fetchedAt,
+      }
+    }
+    const sample = picked.sample
     if (sample === null) {
       return {
         ok: false,
@@ -199,11 +237,11 @@ export async function fetchMappingSourceSample(streamId: number): Promise<Mappin
         rawPayload: null,
         treeDocument: {},
         extractedEvents: [],
-      unionSchema: null,
+        unionSchema: null,
         eventArrayPath,
         eventRootPath,
         sampleEventIndex: 0,
-        message: 'No webhook sample_payload configured on the source. Add a sample payload in source settings.',
+        message: 'No webhook sample payload configured on the source. Add a payload preview in Connector settings.',
         recordsLabel: '—',
         fetchedAt,
       }

@@ -24,6 +24,7 @@ import { CurlImportPanel, PostmanImportPanel } from './http-import-panel'
 import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
 import { formatOperationalCount, formatThroughputEps } from '../../lib/observability-format'
 import { isDevValidationLabUiEnabled } from '../../lib/feature-flags'
+import { getSessionCapabilities, useSessionCapabilities } from '../../lib/rbac'
 import { PagePurposeHeader, type PageHelpContent } from '../ui/page-purpose-header'
 
 function formatEventsToday(n: number): string {
@@ -37,6 +38,7 @@ function formatEps(eps: number): string {
 }
 
 const CONNECTORS_HELP: PageHelpContent = {
+  docsHref: '/help/start',
   title: 'Connectors',
   intro:
     'Connectors hold reusable source access and authentication. Streams use a Connector to collect a specific data flow, then Routes deliver that Stream to Destinations.',
@@ -62,6 +64,7 @@ const CONNECTORS_HELP: PageHelpContent = {
 
 export function ConnectorsOverviewPage() {
   const navigate = useNavigate()
+  const canMutateConnectors = useSessionCapabilities().workspace_mutations === true
   const {
     rows,
     loading,
@@ -99,12 +102,14 @@ export function ConnectorsOverviewPage() {
 
   const onApproveImport = useCallback(
     (draft: CurlImportDraft) => {
+      if (getSessionCapabilities().workspace_mutations !== true) return
       navigateToConnectorWizardWithDraft(navigate, draft)
     },
     [navigate],
   )
 
   async function executeDelete(row: ConnectorDashboardRow) {
+    if (getSessionCapabilities().workspace_mutations !== true) return
     try {
       setDeleteError(null)
       setDeleteBusy(true)
@@ -142,10 +147,12 @@ export function ConnectorsOverviewPage() {
               <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} aria-hidden />
               Refresh
             </button>
+            {canMutateConnectors ? (
             <Link to="/connectors/new" className="inline-flex h-9 items-center gap-1.5 rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white hover:bg-violet-700">
               <Plus className="h-3.5 w-3.5" />
               Create Connector
             </Link>
+            ) : null}
           </>
         }
       />
@@ -171,6 +178,7 @@ export function ConnectorsOverviewPage() {
               <span className="ml-1 rounded bg-amber-100 px-1 font-mono text-[10px] text-amber-900 dark:bg-amber-900/60 dark:text-amber-50">{labCount}</span>
             </label>
           ) : null}
+          {canMutateConnectors ? (
           <button
             type="button"
             onClick={() => setShowImport((v) => !v)}
@@ -178,8 +186,9 @@ export function ConnectorsOverviewPage() {
           >
             {showImport ? 'Hide import' : 'Import from cURL / Postman'}
           </button>
+          ) : null}
         </div>
-        {showImport ? (
+        {showImport && canMutateConnectors ? (
           <div className="grid gap-4 border-t border-slate-200/80 p-3 dark:border-gdc-divider lg:grid-cols-2">
             <CurlImportPanel onApprove={onApproveImport} />
             <PostmanImportPanel onApprove={onApproveImport} />
@@ -295,6 +304,7 @@ export function ConnectorsOverviewPage() {
             <p className="max-w-md text-[12px] text-slate-600 dark:text-gdc-muted">
               Create your first connector to start collecting data.
             </p>
+            {canMutateConnectors ? (
             <Link
               to="/connectors/new"
               className="inline-flex h-9 items-center gap-1.5 rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white shadow-sm hover:bg-violet-700"
@@ -302,6 +312,7 @@ export function ConnectorsOverviewPage() {
               <Plus className="h-3.5 w-3.5" />
               Create Connector
             </Link>
+            ) : null}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -510,7 +521,7 @@ export function ConnectorsOverviewPage() {
                             onAuthCheckComplete={(connectorId, patch) => {
                               patchConnector(connectorId, patch)
                             }}
-                            onDelete={() => setDeleteDialogRow(row)}
+                            onDelete={() => { if (getSessionCapabilities().workspace_mutations === true) setDeleteDialogRow(row) }}
                             onViewStreams={() => navigate(connectorStreamsFilterPath(row.id, row.name))}
                           />
                         </td>
@@ -535,7 +546,7 @@ export function ConnectorsOverviewPage() {
           </div>
         )}
       </div>
-      {deleteDialogRow ? (
+      {deleteDialogRow && canMutateConnectors ? (
         <DangerousActionDialog
           open
           onOpenChange={(open) => {

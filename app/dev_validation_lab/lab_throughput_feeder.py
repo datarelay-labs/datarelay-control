@@ -8,24 +8,34 @@ import os
 import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
 import httpx
 
-from app.dev_validation_lab.lab_throughput_config import lab_feed_tick_rates
+from app.dev_validation_lab.lab_throughput_config import (
+    LAB_FEED_S3_RECORDS_PER_OBJECT,
+    LAB_FEED_S3_ROLLING_SLOTS,
+    lab_feed_tick_rates,
+)
 from app.dev_validation_lab.visible_e2e_seed import (
+    VISIBLE_E2E_S3_PREFIX,
     VISIBLE_E2E_WEBHOOK_RECEIVER_KEY,
     VISIBLE_E2E_WEBHOOK_SHARED_SECRET,
 )
 
 logger = logging.getLogger(__name__)
 
-_FEEDER_THREAD: threading.Thread | None = None
+_FEEDER_THREADS: dict[str, threading.Thread] = {}
 _FEEDER_STOP = threading.Event()
+_MAX_FEED_FAMILY_WORKERS = 8
 _SEQ = 0
 _SEQ_LOCK = threading.Lock()
+_S3_SLOT_CURSOR = 0
+_S3_SLOT_LOCK = threading.Lock()
 
 
 def lab_throughput_feeder_enabled() -> bool:
@@ -92,7 +102,7 @@ def _load_feeder_env() -> FeederEnv:
         minio_buckets=buckets,
         minio_access_key=str(settings.MINIO_ACCESS_KEY).strip(),
         minio_secret_key=str(settings.MINIO_SECRET_KEY).strip(),
-        minio_prefix_visible="e2e-s3/",
+        minio_prefix_visible=VISIBLE_E2E_S3_PREFIX,
         minio_prefix_validation="security/",
         pg_fixture_url=pg,
         mysql_fixture_url=f"mysql+pymysql://gdc_fixture:gdc_fixture_pw@{my_host}:{my_port}/gdc_query_fixture",
@@ -194,8 +204,12 @@ def _s3_client(env: FeederEnv):
 
 
 def _upload_s3_ndjson(env: FeederEnv, *, prefix: str, count: int) -> None:
+    global _S3_SLOT_CURSOR
     if count <= 0 or not env.minio_access_key or not env.minio_secret_key:
         return
+    with _S3_SLOT_LOCK:
+        start_slot = _S3_SLOT_CURSOR
+        _S3_SLOT_CURSOR = (_S3_SLOT_CURSOR + count) % LAB_FEED_S3_ROLLING_SLOTS
     try:
         client = _s3_client(env)
         for bucket in env.minio_buckets:
@@ -205,11 +219,12 @@ def _upload_s3_ndjson(env: FeederEnv, *, prefix: str, count: int) -> None:
                 pass
             seq = _next_seq()
             for i in range(count):
-                key = f"{prefix}lab-feed-{seq}-{i}-{uuid.uuid4().hex[:8]}.ndjson"
+                slot = (start_slot + i) % LAB_FEED_S3_ROLLING_SLOTS
+                key = f"{prefix}lab-feed-slot-{slot:03d}.ndjson"
                 body = json.dumps(
                     {"id": f"s3-{seq}-{i}", "message": f"s3 lab feed {seq}-{i}", "severity": "info"}
                 ).encode()
-                for j in range(3):
+                for j in range(LAB_FEED_S3_RECORDS_PER_OBJECT - 1):
                     body += b"\n" + json.dumps(
                         {"id": f"s3-{seq}-{i}-line-{j}", "message": "ndjson line", "severity": "low"}
                     ).encode()
@@ -232,6 +247,7 @@ def _upload_remote_file(
     file_pattern_prefix: str,
     parser_suffix: str,
     count: int,
+    visible_lines: int = 0,
 ) -> None:
     if count <= 0 or not password:
         return
@@ -263,7 +279,7 @@ def _upload_remote_file(
             sftp.close()
             transport.close()
         # Keep visible E2E single-file path warm with fresh mtime/content.
-        if file_pattern_prefix == "lab-":
+        if file_pattern_prefix == "lab-" and visible_lines > 0:
             try:
                 transport = paramiko.Transport((host, int(port)))
                 transport.connect(username=username, password=password)
@@ -302,25 +318,27 @@ def _post_webhook_events(env: FeederEnv, *, count: int) -> None:
         "X-GDC-Webhook-Secret": VISIBLE_E2E_WEBHOOK_SHARED_SECRET,
     }
     seq = _next_seq()
+    payload = [
+        {
+            "id": f"wh-{seq}-{i}-{uuid.uuid4().hex[:8]}",
+            "message": f"lab webhook feed {seq}-{i}",
+            "severity": "LOW",
+        }
+        for i in range(count)
+    ]
+
     try:
         with httpx.Client(timeout=15.0) as client:
-            for i in range(count):
-                payload = {
-                    "id": f"wh-{seq}-{i}-{uuid.uuid4().hex[:8]}",
-                    "message": f"lab webhook feed {seq}-{i}",
-                    "severity": "LOW",
-                }
-                r = client.post(url, headers=headers, json=payload)
-                if r.status_code >= 400:
-                    logger.debug(
-                        "%s",
-                        {
-                            "stage": "lab_throughput_feed_webhook_failed",
-                            "status_code": r.status_code,
-                            "body": (r.text or "")[:200],
-                        },
-                    )
-                    break
+            response = client.post(url, headers=headers, json=payload)
+            if response.status_code >= 400:
+                logger.debug(
+                    "%s",
+                    {
+                        "stage": "lab_throughput_feed_webhook_failed",
+                        "status_code": response.status_code,
+                        "body": (response.text or "")[:200],
+                    },
+                )
     except Exception as exc:
         logger.debug(
             "%s",
@@ -328,10 +346,7 @@ def _post_webhook_events(env: FeederEnv, *, count: int) -> None:
         )
 
 
-def run_lab_throughput_feed_tick(*, high_volume: bool = True) -> None:
-    """One feeder cycle: DB rows, S3 objects, remote files, webhook events."""
-
-    env = _load_feeder_env()
+def _feed_family_jobs(env: FeederEnv, *, high_volume: bool) -> dict[str, object]:
     rates = lab_feed_tick_rates(high_volume=high_volume)
     db_rows = int(rates["db_rows"])
     s3_count = int(rates["s3_objects"])
@@ -339,15 +354,24 @@ def run_lab_throughput_feed_tick(*, high_volume: bool = True) -> None:
     wh_count = int(rates["webhook_events"])
     visible_lines = int(rates["remote_visible_lines"])
 
-    _insert_postgres_rows(env.pg_fixture_url, table="security_events", count=db_rows)
-    _insert_postgres_rows(env.pg_fixture_url, table="source_e2e_rows", count=db_rows)
+    def _postgres_bundle() -> None:
+        _insert_postgres_rows(env.pg_fixture_url, table="security_events", count=db_rows)
+        _insert_postgres_rows(env.pg_fixture_url, table="source_e2e_rows", count=db_rows)
 
-    _insert_mysql_rows(env.mysql_fixture_url, count=db_rows)
-    _insert_mysql_rows(env.mariadb_fixture_url, count=db_rows)
-    _upload_s3_ndjson(env, prefix=env.minio_prefix_visible, count=s3_count)
-    _upload_s3_ndjson(env, prefix=env.minio_prefix_validation, count=s3_count)
+    def _s3_bundle() -> None:
+        _upload_s3_ndjson(env, prefix=env.minio_prefix_visible, count=s3_count)
+        _upload_s3_ndjson(env, prefix=env.minio_prefix_validation, count=s3_count)
+
+    jobs: dict[str, object] = {
+        "postgres": _postgres_bundle,
+        "mysql": partial(_insert_mysql_rows, env.mysql_fixture_url, count=db_rows),
+        "mariadb": partial(_insert_mysql_rows, env.mariadb_fixture_url, count=db_rows),
+        "s3": _s3_bundle,
+        "webhook": partial(_post_webhook_events, env, count=wh_count),
+    }
     if env.sftp_password:
-        _upload_remote_file(
+        jobs["sftp"] = partial(
+            _upload_remote_file,
             env,
             host=env.sftp_host,
             port=env.sftp_port,
@@ -357,9 +381,11 @@ def run_lab_throughput_feed_tick(*, high_volume: bool = True) -> None:
             file_pattern_prefix="lab-",
             parser_suffix=".ndjson",
             count=rf_count,
+            visible_lines=visible_lines,
         )
     if env.scp_password:
-        _upload_remote_file(
+        jobs["scp"] = partial(
+            _upload_remote_file,
             env,
             host=env.scp_host,
             port=env.scp_port,
@@ -370,44 +396,96 @@ def run_lab_throughput_feed_tick(*, high_volume: bool = True) -> None:
             parser_suffix=".json",
             count=rf_count,
         )
-    _post_webhook_events(env, count=wh_count)
+    return jobs
+
+
+def _remaining_tick_wait(*, tick_seconds: float, elapsed_seconds: float) -> float:
+    return max(0.0, float(tick_seconds) - max(0.0, float(elapsed_seconds)))
+
+def run_lab_throughput_feed_tick(*, high_volume: bool = True) -> None:
+    """Run one bounded feed cycle with independent fixture families in parallel."""
+
+    env = _load_feeder_env()
+    jobs = _feed_family_jobs(env, high_volume=high_volume)
+    if not jobs:
+        return
+    workers = max(1, min(_MAX_FEED_FAMILY_WORKERS, len(jobs)))
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="lab-feed-family") as pool:
+        futures = [pool.submit(job) for job in jobs.values()]
+        for future in futures:
+            future.result()
+
+
+def _feed_family_loop(*, name: str, job: object, tick_seconds: float) -> None:
+    logger.info("%s", {"stage": "lab_throughput_feeder_family_started", "family": name, "tick_seconds": tick_seconds})
+    while not _FEEDER_STOP.is_set():
+        started = time.monotonic()
+        try:
+            job()
+        except Exception as exc:  # pragma: no cover - individual helpers are fail-open
+            logger.warning(
+                "%s",
+                {
+                    "stage": "lab_throughput_feeder_family_tick_failed",
+                    "family": name,
+                    "error_type": type(exc).__name__,
+                    "message": str(exc),
+                },
+            )
+        elapsed = time.monotonic() - started
+        wait_seconds = _remaining_tick_wait(tick_seconds=tick_seconds, elapsed_seconds=elapsed)
+        if _FEEDER_STOP.wait(timeout=wait_seconds):
+            break
+    logger.info("%s", {"stage": "lab_throughput_feeder_family_stopped", "family": name})
+
+
+def _start_feeder_family_threads(*, tick_seconds: float) -> None:
+    global _FEEDER_THREADS
+    env = _load_feeder_env()
+    jobs = _feed_family_jobs(env, high_volume=True)
+    _FEEDER_THREADS = {}
+    for name, job in jobs.items():
+        thread = threading.Thread(
+            target=_feed_family_loop,
+            kwargs={"name": name, "job": job, "tick_seconds": tick_seconds},
+            name=f"lab-throughput-{name}",
+            daemon=True,
+        )
+        _FEEDER_THREADS[name] = thread
+        thread.start()
 
 
 def _feeder_loop() -> None:
     tick = max(0.5, float(os.environ.get("LAB_THROUGHPUT_FEEDER_TICK_SECONDS", "1") or "1"))
     logger.info("%s", {"stage": "lab_throughput_feeder_started", "tick_seconds": tick})
-    while not _FEEDER_STOP.wait(timeout=tick):
-        try:
-            run_lab_throughput_feed_tick(high_volume=True)
-        except Exception as exc:  # pragma: no cover - fail-open
-            logger.warning(
-                "%s",
-                {"stage": "lab_throughput_feeder_tick_failed", "error_type": type(exc).__name__, "message": str(exc)},
-            )
+    _start_feeder_family_threads(tick_seconds=tick)
+    while not _FEEDER_STOP.wait(timeout=1.0):
+        if _FEEDER_THREADS and not any(thread.is_alive() for thread in _FEEDER_THREADS.values()):
+            break
     logger.info("%s", {"stage": "lab_throughput_feeder_stopped"})
 
 
 def start_lab_throughput_feeder_background() -> bool:
-    """Start daemon thread feeder (idempotent)."""
+    """Start one process-local set of independent daemon family feeders (idempotent)."""
 
-    global _FEEDER_THREAD
     if not lab_throughput_feeder_enabled():
         logger.info("%s", {"stage": "lab_throughput_feeder_skipped", "reason": "disabled"})
         return False
-    if _FEEDER_THREAD is not None and _FEEDER_THREAD.is_alive():
+    if any(thread.is_alive() for thread in _FEEDER_THREADS.values()):
         return True
     _FEEDER_STOP.clear()
-    _FEEDER_THREAD = threading.Thread(target=_feeder_loop, name="lab-throughput-feeder", daemon=True)
-    _FEEDER_THREAD.start()
+    tick = max(0.5, float(os.environ.get("LAB_THROUGHPUT_FEEDER_TICK_SECONDS", "1") or "1"))
+    _start_feeder_family_threads(tick_seconds=tick)
     return True
 
 
 def stop_lab_throughput_feeder_background() -> None:
-    global _FEEDER_THREAD
+    global _FEEDER_THREADS
     _FEEDER_STOP.set()
-    if _FEEDER_THREAD is not None and _FEEDER_THREAD.is_alive():
-        _FEEDER_THREAD.join(timeout=5.0)
-    _FEEDER_THREAD = None
+    for thread in list(_FEEDER_THREADS.values()):
+        if thread.is_alive():
+            thread.join(timeout=5.0)
+    _FEEDER_THREADS = {}
 
 
 def main() -> int:

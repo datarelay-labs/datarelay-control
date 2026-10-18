@@ -16,6 +16,16 @@ def _serve_udp() -> None:
         print(f"UDP {addr!r} bytes={len(data)}", flush=True)
 
 
+def _drain_tcp_connection(conn: socket.socket, addr: object) -> None:
+    """Keep a pooled syslog TCP connection open until the client closes it."""
+
+    while True:
+        data = conn.recv(65535)
+        if not data:
+            return
+        print(f"TCP {addr!r} bytes={len(data)}", flush=True)
+
+
 def _serve_tcp() -> None:
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -24,8 +34,7 @@ def _serve_tcp() -> None:
     while True:
         conn, addr = s.accept()
         try:
-            data = conn.recv(65535)
-            print(f"TCP {addr!r} bytes={len(data)}", flush=True)
+            _drain_tcp_connection(conn, addr)
         finally:
             conn.close()
 

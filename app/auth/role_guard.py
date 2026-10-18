@@ -25,6 +25,7 @@ import logging
 from dataclasses import dataclass
 
 from fastapi import HTTPException, Request, status
+from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse
 
 from app.auth.jwt_service import (
@@ -65,20 +66,23 @@ KNOWN_ROLES = frozenset(
 
 _API = settings.API_PREFIX.rstrip("/")
 
-# Bypass = no role enforcement at all.  Authentication endpoints, OpenAPI/docs,
-# and health checks always pass through.
-_BYPASS_PREFIXES: tuple[str, ...] = (
+# Auth bypass is limited to actual public route shapes/methods, not the
+# descendants of arbitrary parent paths. Ingest receivers enforce their own
+# receiver credential, while authentication endpoints do not require a JWT.
+_BYPASS_POST_PATHS = frozenset({
     f"{_API}/auth/login",
+    f"{_API}/auth/mfa/verify",
     f"{_API}/auth/refresh",
     f"{_API}/auth/logout",
-    f"{_API}/ingest/webhook",
-    f"{_API}/ingest/ai",
+})
+_BYPASS_GET_PATHS = frozenset({
     "/health",
     "/api/openapi.json",
     "/docs",
+    "/docs/oauth2-redirect",
     "/redoc",
     "/openapi.json",
-)
+})
 
 
 @dataclass(frozen=True)
@@ -92,6 +96,7 @@ class AuthContext:
     token_version: int | None = None
     claims: TokenClaims | None = None
     must_change_password: bool = False
+    mfa_verified: bool = False
 
 
 def _normalize_role(raw: str | None) -> str:
@@ -103,8 +108,31 @@ def _normalize_role(raw: str | None) -> str:
     return v
 
 
-def _is_bypass(path: str) -> bool:
-    return any(path == p or path.startswith(p) for p in _BYPASS_PREFIXES)
+def _is_bypass(path: str, method: str) -> bool:
+    """Match exact public endpoint paths and HTTP verbs.
+
+    The method is mandatory: no path-only caller can accidentally broaden an
+    authentication exemption. Dynamic ingress route shapes are bounded below.
+    """
+    verb = method.upper()
+    if verb == "POST" and path in _BYPASS_POST_PATHS:
+        return True
+    if verb in {"GET", "HEAD"} and path in _BYPASS_GET_PATHS:
+        return True
+    if verb != "POST":
+        return False
+
+    webhook_prefix = f"{_API}/ingest/webhook/"
+    if path.startswith(webhook_prefix):
+        key = path[len(webhook_prefix):]
+        return bool(key) and "/" not in key
+
+    ai_prefix = f"{_API}/ingest/ai/"
+    if path.startswith(ai_prefix):
+        slug, sep, suffix = path[len(ai_prefix):].partition("/")
+        return bool(slug) and bool(sep) and suffix == "v1/chat/completions"
+
+    return False
 
 
 def _must_change_password_bypass(path: str) -> bool:
@@ -117,7 +145,9 @@ def _must_change_password_bypass(path: str) -> bool:
         f"{base}/auth/whoami",
         f"{base}/auth/change-password",
     )
-    return any(path == p or path.startswith(p) for p in prefixes)
+    # These are concrete authentication endpoints, not prefixes that may
+    # authorize arbitrary sibling paths during mandatory password rotation.
+    return path in prefixes
 
 
 def _extract_bearer(request: Request) -> str | None:
@@ -134,10 +164,9 @@ def resolve_auth_context(request: Request) -> AuthContext:
 
     The result is also cached on ``request.state.auth`` so route handlers can
     read it without re-decoding the JWT.  This function validates signature,
-    issuer, expiry, and token type only.  Live ``token_version`` checks against
-    ``platform_users`` happen in selected auth routes (``/auth/refresh``,
-    ``/auth/whoami``, ``/auth/change-password``); other API routes trust the
-    JWT until it expires (bounded by ``ACCESS_TOKEN_EXPIRE_MINUTES``).
+    issuer, expiry, and token type only. The authenticated middleware separately
+    confirms current DB token epoch, role, account status and MFA factor for
+    guarded product access. A cached context is never itself a DB check.
     """
 
     cached = getattr(request.state, "auth", None)
@@ -167,6 +196,7 @@ def resolve_auth_context(request: Request) -> AuthContext:
             token_version=claims.token_version,
             claims=claims,
             must_change_password=bool(getattr(claims, "must_change_password", False)),
+            mfa_verified=bool(getattr(claims, "mfa_verified", False)),
         )
         request.state.auth = ctx
         return ctx
@@ -200,6 +230,39 @@ def resolve_request_username(request: Request) -> str:
     return resolve_auth_context(request).username
 
 
+def _verify_live_jwt_authority(ctx: AuthContext) -> bool:
+    """Current product DB epoch, role and MFA factor must match signed JWT.
+
+    Run off the event loop. A DB error fails CLOSED instead of trusting a
+    once-valid token after an admin enables MFA or changes a user's role.
+    """
+    from app.database import SessionLocal
+    from app.platform_admin.models import PlatformUser, PlatformUserMfa
+
+    if ctx.user_id is None or ctx.token_version is None:
+        return False
+    try:
+        with SessionLocal() as db:
+            user = db.query(PlatformUser).filter(
+                PlatformUser.id == int(ctx.user_id),
+            ).one_or_none()
+            # Reject malformed persisted roles outright. Converting an
+            # unknown DB role to Viewer is unsafe even when the JWT says
+            # Viewer; no role should be inferred for a real account.
+            if (user is None or user.status != "ACTIVE"
+                    or (user.role or "").strip().upper() not in KNOWN_ROLES
+                    or int(user.token_version or 1) != ctx.token_version
+                    or _normalize_role(user.role) != ctx.role):
+                return False
+            row = db.query(PlatformUserMfa).filter(
+                PlatformUserMfa.user_id == int(ctx.user_id),
+            ).one_or_none()
+            return not (row and row.required and not ctx.mfa_verified)
+    except Exception:
+        logger.warning("JWT current security state unavailable; refusing request")
+        return False
+
+
 async def role_guard_middleware(request: Request, call_next):
     """ASGI middleware enforcing JWT-derived role rules."""
 
@@ -211,7 +274,7 @@ async def role_guard_middleware(request: Request, call_next):
     if method == "OPTIONS":
         return await call_next(request)
 
-    if _is_bypass(path):
+    if _is_bypass(path, method=method):
         return await call_next(request)
 
     ctx = resolve_auth_context(request)
@@ -234,7 +297,7 @@ async def role_guard_middleware(request: Request, call_next):
     if (
         ctx.source == "anonymous_admin"
         and settings.REQUIRE_AUTH
-        and not _is_bypass(path)
+        and not _is_bypass(path, method=method)
     ):
         return JSONResponse(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -246,6 +309,18 @@ async def role_guard_middleware(request: Request, call_next):
             },
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    if ctx.source == "jwt" and (
+        settings.REQUIRE_AUTH or bool(settings.GDC_MFA_ENCRYPTION_KEY_HEX)
+    ):
+        if not await run_in_threadpool(_verify_live_jwt_authority, ctx):
+            return JSONResponse(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                content={"detail": {
+                    "error_code": "AUTH_TOKEN_REVOKED",
+                    "message": "Reauthenticate before accessing this resource.",
+                }},
+            )
 
     if ctx.source == "jwt" and ctx.must_change_password and not _must_change_password_bypass(path):
         return JSONResponse(

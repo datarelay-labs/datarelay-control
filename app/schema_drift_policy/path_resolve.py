@@ -42,11 +42,14 @@ def path_exists_on_event(event: dict[str, Any], field_path: str) -> bool:
     normalized = normalize_protection_json_path(field_path)
     if not normalized or normalized == "$":
         return False
+    absent = object()
     try:
-        value = extract_one(event, normalized)
+        value = extract_one(event, normalized, default=absent)
     except Exception:
         return False
-    return value is not None
+    # JSON null is a present value. Do not silently misclassify it as absent
+    # when validating observed schema or protection path references.
+    return value is not absent
 
 
 def path_exists_in_batch(events: list[dict[str, Any]], field_path: str) -> bool:

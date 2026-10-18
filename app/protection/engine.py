@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import time
+
+from app.protection.field_path_parser import parse_protection_path
 from app.runtime.copy_utils import copy_event_dict, copy_events
 from dataclasses import dataclass, field
 from typing import Any
@@ -46,39 +48,9 @@ def protection_enabled() -> bool:
     return bool(settings.GDC_PROTECTION_ENABLED)
 
 
-def parse_field_path_segments(field_path: str) -> list[str]:
-    if field_path == "$":
-        return []
-    if field_path.startswith("$."):
-        remainder = field_path[2:]
-    elif field_path.startswith("$"):
-        remainder = field_path[1:].lstrip(".")
-    else:
-        remainder = field_path
-    segments: list[str] = []
-    buf = ""
-    idx = 0
-    while idx < len(remainder):
-        if remainder[idx : idx + 2] == "[]":
-            if buf:
-                segments.append(buf)
-                buf = ""
-            segments.append("[]")
-            idx += 2
-            if idx < len(remainder) and remainder[idx] == ".":
-                idx += 1
-            continue
-        if remainder[idx] == ".":
-            if buf:
-                segments.append(buf)
-                buf = ""
-            idx += 1
-            continue
-        buf += remainder[idx]
-        idx += 1
-    if buf:
-        segments.append(buf)
-    return segments
+def parse_field_path_segments(field_path: str) -> list[str | int]:
+    """Decode a definite Protection field path without losing escaped keys."""
+    return parse_protection_path(field_path)
 
 
 def _hmac_key_for_stream(stream_id: int) -> bytes:
@@ -90,7 +62,7 @@ def _hmac_key_for_stream(stream_id: int) -> bytes:
 
 def _collect_leaf_values_at_segments(
     node: Any,
-    segments: list[str],
+    segments: list[str | int],
     seg_index: int,
 ) -> list[Any]:
     if seg_index >= len(segments):
@@ -98,6 +70,13 @@ def _collect_leaf_values_at_segments(
 
     seg = segments[seg_index]
     is_last = seg_index == len(segments) - 1
+
+    if isinstance(seg, int):
+        if not isinstance(node, list) or not -len(node) <= seg < len(node):
+            return []
+        item = node[seg]
+        return [item] if is_last else _collect_leaf_values_at_segments(item, segments, seg_index + 1)
+
 
     if seg == "[]":
         if not isinstance(node, list):
@@ -125,7 +104,7 @@ def _collect_leaf_values_at_segments(
             values.extend(_collect_leaf_values_at_segments(item, segments, seg_index + 2))
         return values
 
-    if isinstance(child, dict):
+    if isinstance(child, (dict, list)):
         return _collect_leaf_values_at_segments(child, segments, seg_index + 1)
     return []
 
@@ -154,6 +133,10 @@ def collect_tokenization_targets(
             segments = parse_field_path_segments(str(rule.field_path))
             if not segments:
                 continue
+            # Never prefetch or mint an identity token for an ambiguous legacy
+            # path that will be rejected by Protection on final Route output.
+            if _legacy_path_has_literal_dotted_member(raw, str(rule.field_path), segments):
+                continue
             for value in _collect_leaf_values_at_segments(raw, segments, 0):
                 if not isinstance(value, str):
                     continue
@@ -170,7 +153,7 @@ def collect_tokenization_targets(
 
 def _drop_at_segments(
     node: Any,
-    segments: list[str],
+    segments: list[str | int],
     seg_index: int,
 ) -> int:
     if seg_index >= len(segments):
@@ -178,6 +161,15 @@ def _drop_at_segments(
 
     seg = segments[seg_index]
     is_last = seg_index == len(segments) - 1
+
+    if isinstance(seg, int):
+        if not isinstance(node, list) or not -len(node) <= seg < len(node):
+            return 0
+        if is_last:
+            node.pop(seg)
+            return 1
+        return _drop_at_segments(node[seg], segments, seg_index + 1)
+
 
     if seg == "[]":
         if not isinstance(node, list):
@@ -211,7 +203,7 @@ def _drop_at_segments(
 
 def _apply_at_segments(
     node: Any,
-    segments: list[str],
+    segments: list[str | int],
     seg_index: int,
     *,
     mode: str,
@@ -226,6 +218,22 @@ def _apply_at_segments(
 
     seg = segments[seg_index]
     is_last = seg_index == len(segments) - 1
+
+    if isinstance(seg, int):
+        if not isinstance(node, list) or not -len(node) <= seg < len(node):
+            return 0
+        if is_last:
+            node[seg] = apply_protection_mode(
+                node[seg], mode, stream_id=stream_id, hmac_key=hmac_key,
+                db=db, field_path=field_path, token_map=token_map,
+            )
+            return 1
+        return _apply_at_segments(
+            node[seg], segments, seg_index + 1,
+            mode=mode, stream_id=stream_id, hmac_key=hmac_key,
+            db=db, field_path=field_path, token_map=token_map,
+        )
+
 
     if seg == "[]":
         if not isinstance(node, list):
@@ -282,7 +290,7 @@ def _apply_at_segments(
             )
         return total
 
-    if isinstance(child, dict):
+    if isinstance(child, (dict, list)):
         return _apply_at_segments(
             child,
             segments,
@@ -297,6 +305,103 @@ def _apply_at_segments(
     return 0
 
 
+def _quoted_selector_flags(field_path: str) -> list[bool]:
+    """Mark selector tokens that explicitly quote object-member boundaries.
+
+    Parsing and field value validation remain owned by parse_protection_path.
+    This secondary lexical scan only records whether each segment was quoted;
+    it does not interpret the member value, Unicode escapes, or array indexes.
+    """
+    value = str(field_path).strip()
+    if not value.startswith("$"):
+        value = "$." + value
+    i = 1
+    flags: list[bool] = []
+    while i < len(value):
+        if value[i] == ".":
+            i += 1
+            while i < len(value) and value[i] not in ".[":
+                i += 1
+            flags.append(False)
+        elif value[i] == "[":
+            if i + 1 < len(value) and value[i + 1] in ("'", '"'):
+                quote = value[i + 1]
+                i += 2
+                while i < len(value):
+                    if value[i] == '\\':
+                        i += 2
+                    elif value[i] == quote:
+                        i += 1
+                        break
+                    else:
+                        i += 1
+                if i >= len(value) or value[i] != "]":
+                    raise ValueError("Malformed quoted Protection selector")
+                i += 1
+                flags.append(True)
+            else:
+                end = value.find("]", i + 1)
+                if end < 0:
+                    raise ValueError("Unclosed Protection selector")
+                i = end + 1
+                flags.append(False)
+        else:
+            raise ValueError("Unexpected Protection selector boundary")
+    return flags
+
+
+def _legacy_path_has_literal_dotted_member(
+    event: dict[str, Any],
+    field_path: str,
+    segments: list[str | int],
+) -> bool:
+    """Detect lossy historical unquoted paths before applying policy.
+
+    A stored legacy path like $.user.email may have originated from either a
+    literal key "user.email" or nested user→email. If either representation
+    could match a literal dotted key, never guess and silently deliver data.
+    Explicit RFC-quoted selectors have unambiguous intent and are exempt.
+    """
+    flags = _quoted_selector_flags(field_path)
+    if len(flags) != len(segments):
+        # A validated selector should always yield the same number of tokens.
+        # Refuse ambiguous cases instead of guessing a lossy interpretation.
+        raise ValueError("Protection selector boundary mismatch")
+
+    def could_alias(node: Any, index: int) -> bool:
+        if index >= len(segments):
+            return False
+        head = segments[index]
+        if head == "[]":
+            return isinstance(node, list) and any(
+                could_alias(item, index + 1) for item in node
+            )
+        if isinstance(head, int):
+            return (
+                isinstance(node, list)
+                and -len(node) <= head < len(node)
+                and could_alias(node[head], index + 1)
+            )
+        if not isinstance(node, dict):
+            return False
+        parts: list[str] = []
+        if not flags[index]:
+            for offset in range(index, len(segments)):
+                segment = segments[offset]
+                # Only adjacent *unquoted* dotted selectors could have been
+                # generated by the historical lossy field-path walker.
+                if not isinstance(segment, str) or segment == "[]" or flags[offset]:
+                    break
+                parts.append(segment)
+                if len(parts) >= 2 and ".".join(parts) in node:
+                    return True
+        if head in node:
+            return could_alias(node[head], index + 1)
+        return False
+
+    return could_alias(event, 0)
+
+
 def apply_rule_to_event(
     event: dict[str, Any],
     rule: StreamProtectionRule | Any,
@@ -304,12 +409,28 @@ def apply_rule_to_event(
     db: Session | None = None,
     token_map: dict[tuple[str, str], str] | None = None,
 ) -> tuple[int, ProtectionFieldWarning | None]:
-    segments = parse_field_path_segments(str(rule.field_path))
+    try:
+        segments = parse_field_path_segments(str(rule.field_path))
+    except Exception as exc:
+        return 0, ProtectionFieldWarning(
+            field_path=str(rule.field_path),
+            rule_id=int(getattr(rule, "id", 0) or 0) or None,
+            error_message=str(exc),
+        )
     if not segments:
         return 0, ProtectionFieldWarning(
             field_path=str(rule.field_path),
             rule_id=int(getattr(rule, "id", 0) or 0) or None,
             error_message="empty field_path segments",
+        )
+    if _legacy_path_has_literal_dotted_member(event, str(rule.field_path), segments):
+        return 0, ProtectionFieldWarning(
+            field_path=str(rule.field_path),
+            rule_id=int(getattr(rule, "id", 0) or 0) or None,
+            error_message=(
+                "ambiguous legacy field path: literal dotted member could "
+                "bypass protection; use explicit quoted selector"
+            ),
         )
     hmac_key = _hmac_key_for_stream(int(rule.stream_id))
     try:

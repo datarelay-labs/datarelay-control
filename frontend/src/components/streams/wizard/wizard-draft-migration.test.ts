@@ -7,6 +7,7 @@ import {
   computeLegacySubstepCompletion,
   computeStepCompletion,
   buildInitialState,
+  DEFAULT_ROUTE_PROCESSING_INHERIT,
 } from './wizard-state'
 import {
   parseWizardDraftV2,
@@ -82,6 +83,53 @@ describe('computeStepCompletion v3 aggregation', () => {
     expect(v3.sample).toBe('complete')
     expect(v3.destinations).toBe('in_progress')
     expect(v3.route_processing).toBe('in_progress')
+  })
+
+  it('does not mark a missing or malformed source identifier complete', () => {
+    const state = buildInitialState()
+    for (const [connectorId, sourceId] of [[0, 2], [1, -1], [Number.NaN, 2], [1.5, 2]]) {
+      state.connector.connectorId = connectorId
+      state.connector.sourceId = sourceId
+      expect(computeLegacySubstepCompletion(state).connector).not.toBe('complete')
+    }
+
+    state.connector.connectorId = 1
+    state.connector.sourceId = 2
+    expect(computeLegacySubstepCompletion(state).connector).toBe('complete')
+  })
+
+  it('does not count Destinations complete when any enabled Route lacks a valid destination', () => {
+    const state = buildInitialState()
+    state.connector.connectorId = 1
+    state.connector.sourceId = 2
+    state.connector.sourceType = 'WEBHOOK_RECEIVER'
+    state.stream.name = 'Webhook Stream'
+    state.apiTest.status = 'success'
+    state.apiTest.ok = true
+    state.destinations.routeDrafts = [
+      {
+        key: 'valid',
+        destinationId: 10,
+        enabled: true,
+        failurePolicy: 'RETRY_AND_BACKOFF',
+        rateLimitJson: {},
+        inherit: { ...DEFAULT_ROUTE_PROCESSING_INHERIT },
+      },
+      {
+        key: 'invalid',
+        destinationId: 0,
+        enabled: true,
+        failurePolicy: 'RETRY_AND_BACKOFF',
+        rateLimitJson: {},
+        inherit: { ...DEFAULT_ROUTE_PROCESSING_INHERIT },
+      },
+    ]
+    expect(computeLegacySubstepCompletion(state).destinations).not.toBe('complete')
+    expect(computeStepCompletion(state).destinations).not.toBe('complete')
+
+    state.destinations.routeDrafts[1]!.enabled = false
+    expect(computeLegacySubstepCompletion(state).destinations).toBe('complete')
+    expect(computeStepCompletion(state).destinations).toBe('complete')
   })
 })
 

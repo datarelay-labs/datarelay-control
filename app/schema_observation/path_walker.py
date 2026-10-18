@@ -3,6 +3,25 @@
 from __future__ import annotations
 
 from typing import Any
+import re
+
+_PLAIN_MEMBER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _append_field_path(parent: str, key: str) -> str:
+    """Legacy-compatible field pattern that preserves literal member identity.
+
+    Plain ASCII member names retain their historical dot spelling. All names
+    that could be interpreted as a path expression are bracket-quoted, making
+    literal punctuation distinguishable from nested object structure.
+    """
+    if _PLAIN_MEMBER_RE.fullmatch(key):
+        return f"{parent}.{key}"
+    escapes = {"\\": r"\\", "'": r"\'", "\b": r"\b", "\f": r"\f",
+               "\n": r"\n", "\r": r"\r", "\t": r"\t"}
+    encoded = "".join(escapes.get(ch, f"\\u{ord(ch):04x}" if ord(ch) < 32 else ch) for ch in key)
+    return parent + "['" + encoded + "']"
+
 
 # Coarse types for observation (not drift signals).
 TYPE_NULL = "null"
@@ -69,7 +88,7 @@ def walk_event_fields(
         for key, child in value.items():
             if not isinstance(key, str):
                 continue
-            child_path = f"{path}.{key}" if path != "$" else f"$.{key}"
+            child_path = _append_field_path(path, key)
             walk_event_fields(
                 child,
                 path=child_path,
@@ -88,7 +107,7 @@ def walk_event_fields(
                 for key, child in item.items():
                     if not isinstance(key, str):
                         continue
-                    child_path = f"{array_path}.{key}"
+                    child_path = _append_field_path(array_path, key)
                     walk_event_fields(
                         child,
                         path=child_path,
@@ -138,7 +157,7 @@ def collect_paths_from_event(
             continue
         walk_event_fields(
             value,
-            path=f"$.{key}",
+            path=_append_field_path("$", key),
             depth=0,
             max_depth=max_depth,
             out=paths,
