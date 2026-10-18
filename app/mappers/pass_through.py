@@ -8,12 +8,12 @@ After mapped fields are extracted, unmapped source structure is preserved:
 
 from __future__ import annotations
 
-import re
 from typing import Any, Iterable
 
-from app.runtime.copy_utils import copy_json_value
+from jsonpath_ng.jsonpath import Child, Fields, Index, Root
 
-_SEGMENT_RE = re.compile(r"[^.\[]+")
+from app.parsers.jsonpath_parser import compile_jsonpath
+from app.runtime.copy_utils import copy_json_value
 
 
 def maps_whole_event(source_json_paths: Iterable[str]) -> bool:
@@ -23,38 +23,156 @@ def maps_whole_event(source_json_paths: Iterable[str]) -> bool:
     return False
 
 
+def _jsonpath_atoms(expression: Any) -> tuple[Any, ...]:
+    """Flatten the parser AST without interpreting key punctuation as syntax."""
+    if isinstance(expression, Child):
+        return (*_jsonpath_atoms(expression.left), *_jsonpath_atoms(expression.right))
+    if isinstance(expression, Root):
+        return ()
+    return (expression,)
+
+
+def _concrete_tokens(
+    expression: Any,
+    *,
+    source_event: dict[str, Any] | None = None,
+) -> tuple[str | int, ...]:
+    """Return tokens for exactly one materialized JSONPath result.
+
+    With the immutable source event, normalize negative array indices to their
+    concrete nonnegative locations, *before* deduplicating or deleting paths.
+    This is a required distinction between query index and RFC 9535 normalized
+    node identity. Bracket-delimited field names remain opaque literal keys.
+    """
+    tokens: list[str | int] = []
+    node: Any = source_event
+    for atom in _jsonpath_atoms(expression):
+        if isinstance(atom, Fields) and len(atom.fields) == 1:
+            key = atom.fields[0]
+            if source_event is not None:
+                if not isinstance(node, dict) or key not in node:
+                    raise ValueError("JSONPath materialized field was not found")
+                node = node[key]
+            tokens.append(key)
+        elif isinstance(atom, Index) and len(atom.indices) == 1:
+            index = atom.indices[0]
+            if not isinstance(index, int):
+                raise ValueError("A JSONPath concrete index must be numeric")
+            if source_event is not None:
+                if not isinstance(node, list):
+                    raise ValueError("JSONPath materialized index is not an array")
+                index = index if index >= 0 else len(node) + index
+                if not 0 <= index < len(node):
+                    raise ValueError("JSONPath materialized index is out of bounds")
+                node = node[index]
+            tokens.append(index)
+        else:
+            raise ValueError(
+                f"Not an unambiguous concrete JSONPath: {type(atom).__name__}"
+            )
+    return tuple(tokens)
+
+
 def parse_jsonpath_segments(path: str) -> list[str | int]:
-    """Parse ``$.user.name`` / ``$.items[0].tag`` into navigable segments."""
+    """Parse definite paths via the same JSONPath compiler as extraction.
 
-    p = path.strip()
-    if p in ("$", ""):
-        return []
-    if p.startswith("$."):
-        remainder = p[2:]
-    elif p.startswith("$"):
-        remainder = p[1:].lstrip(".")
-    else:
-        remainder = p
+    Non-definite expressions raise rather than masquerading as the root.
+    The mapping engine may use multi-match queries; their matches are
+    materialized separately by _selected_concrete_paths().
+    """
+    return list(_concrete_tokens(compile_jsonpath(path)))
 
-    segments: list[str | int] = []
-    i = 0
-    while i < len(remainder):
-        if remainder[i] == ".":
-            i += 1
-            continue
-        if remainder[i] == "[":
-            end = remainder.index("]", i)
-            raw = remainder[i + 1 : end].strip()
-            if raw.isdigit():
-                segments.append(int(raw))
-            i = end + 1
-            continue
-        match = _SEGMENT_RE.match(remainder, i)
-        if not match:
-            break
-        segments.append(match.group(0))
-        i = match.end()
-    return segments
+
+def _selected_concrete_paths(
+    source_event: dict[str, Any],
+    source_json_paths: Iterable[str],
+) -> set[tuple[str | int, ...]]:
+    selected: set[tuple[str | int, ...]] = set()
+    for path in source_json_paths:
+        expr = compile_jsonpath(path)
+        # Basic Mapping's extract_one_compiled() consumes only the first match.
+        # Retain every unconsumed wildcard/union match in pass-through.
+        matches = expr.find(source_event)
+        if matches:
+            selected.add(_concrete_tokens(matches[0].full_path, source_event=source_event))
+    return selected
+
+
+def _remove_concrete_path(root: dict[str, Any], tokens: tuple[str | int, ...]) -> None:
+    if not tokens:
+        root.clear()
+        return
+
+    node: Any = root
+    for part in tokens[:-1]:
+        if isinstance(part, int):
+            if not isinstance(node, list) or not -len(node) <= part < len(node):
+                return
+            node = node[part]
+        elif isinstance(node, dict) and part in node:
+            node = node[part]
+        else:
+            return
+
+    last = tokens[-1]
+    if isinstance(last, int):
+        if isinstance(node, list) and -len(node) <= last < len(node):
+            node.pop(last)
+    elif isinstance(node, dict):
+        node.pop(last, None)
+
+
+def _apply_selected_removals(
+    root: dict[str, Any], selected: set[tuple[str | int, ...]]
+) -> None:
+    if not selected:
+        return
+    if () in selected:
+        root.clear()
+        return
+
+    # Mark ONLY containers on consumed paths. Existing unrelated empty objects,
+    # arrays, and their ancestors are not candidates for accidental pruning.
+    affected: dict[int, dict[str, Any] | list[Any]] = {}
+    for path in selected:
+        cursor: Any = root
+        for part in path[:-1]:
+            if isinstance(part, int):
+                if not isinstance(cursor, list) or not -len(cursor) <= part < len(cursor):
+                    break
+                cursor = cursor[part]
+            elif isinstance(cursor, dict) and part in cursor:
+                cursor = cursor[part]
+            else:
+                break
+            if isinstance(cursor, (dict, list)):
+                affected[id(cursor)] = cursor
+
+    def ordering(tokens: tuple[str | int, ...]) -> tuple[Any, ...]:
+        # Deep selections before ancestor selections. For a shared array parent,
+        # delete high indexes before low ones to avoid moving later targets.
+        return (
+            len(tokens),
+            tuple((1, item) if isinstance(item, int) else (0, item) for item in tokens),
+        )
+
+    for tokens in sorted(selected, key=ordering, reverse=True):
+        _remove_concrete_path(root, tokens)
+
+    def prune_only_affected(node: Any) -> None:
+        if isinstance(node, dict):
+            for key, child in list(node.items()):
+                prune_only_affected(child)
+                if id(child) in affected and isinstance(child, (dict, list)) and not child:
+                    del node[key]
+        elif isinstance(node, list):
+            for index in range(len(node) - 1, -1, -1):
+                child = node[index]
+                prune_only_affected(child)
+                if id(child) in affected and isinstance(child, (dict, list)) and not child:
+                    node.pop(index)
+
+    prune_only_affected(root)
 
 
 def _is_empty_container(value: Any) -> bool:
@@ -81,41 +199,12 @@ def _prune_empty_containers(node: Any) -> None:
 
 
 def remove_at_jsonpath(root: dict[str, Any], path: str) -> None:
-    """Remove the value at ``path`` from ``root`` and prune empty parents."""
+    """Remove only the fields matched by the actual JSONPath query.
 
-    segments = parse_jsonpath_segments(path)
-    if not segments:
-        root.clear()
-        return
-
-    def remove_at(parent: Any, remaining: list[str | int]) -> None:
-        if not remaining:
-            return
-        key = remaining[0]
-        rest = remaining[1:]
-
-        if isinstance(key, int):
-            if not isinstance(parent, list) or key < 0 or key >= len(parent):
-                return
-            if not rest:
-                parent.pop(key)
-                return
-            remove_at(parent[key], rest)
-            if _is_empty_container(parent[key]):
-                parent.pop(key)
-            return
-
-        if not isinstance(parent, dict) or key not in parent:
-            return
-        if not rest:
-            del parent[key]
-            return
-        remove_at(parent[key], rest)
-        if _is_empty_container(parent[key]):
-            del parent[key]
-
-    remove_at(root, segments)
-    _prune_empty_containers(root)
+    An unmatched or malformed non-root path must never erase the entire event.
+    """
+    selected = _selected_concrete_paths(root, (path,))
+    _apply_selected_removals(root, selected)
 
 
 def deep_merge_pass_through(output: dict[str, Any], residual: dict[str, Any]) -> dict[str, Any]:
@@ -151,11 +240,15 @@ def deep_merge_pass_through(output: dict[str, Any], residual: dict[str, Any]) ->
     return merged
 
 
-def build_residual_after_mapping(event: dict[str, Any], source_json_paths: Iterable[str]) -> dict[str, Any]:
+def build_residual_after_mapping(
+    event: dict[str, Any], source_json_paths: Iterable[str]
+) -> dict[str, Any]:
     residual = copy_json_value(event)
-    for path in source_json_paths:
-        remove_at_jsonpath(residual, path)
-    _prune_empty_containers(residual)
+    # Resolve ALL selections against the original event before any removal.
+    # Parent deletion, overlapping paths, and array index shifts then cannot
+    # silently alter which source fields were considered mapped.
+    selected = _selected_concrete_paths(event, source_json_paths)
+    _apply_selected_removals(residual, selected)
     return residual
 
 
@@ -183,9 +276,9 @@ def merge_unknown_field_pass_through(
 def mapped_top_level_keys(source_json_paths: Iterable[str]) -> set[str]:
     roots: set[str] = set()
     for path in source_json_paths:
-        segments = parse_jsonpath_segments(path)
-        if segments and isinstance(segments[0], str):
-            roots.add(segments[0])
+        atoms = _jsonpath_atoms(compile_jsonpath(path))
+        if atoms and isinstance(atoms[0], Fields) and len(atoms[0].fields) == 1:
+            roots.add(atoms[0].fields[0])
     return roots
 
 

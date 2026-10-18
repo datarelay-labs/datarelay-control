@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from jsonpath_ng.jsonpath import Child, Fields, Index, Root, Slice
+from app.parsers.jsonpath_parser import compile_jsonpath
+
 import time
 from app.runtime.copy_utils import copy_event_dict, copy_events
 from dataclasses import dataclass, field
@@ -46,39 +49,68 @@ def protection_enabled() -> bool:
     return bool(settings.GDC_PROTECTION_ENABLED)
 
 
-def parse_field_path_segments(field_path: str) -> list[str]:
-    if field_path == "$":
+def _legacy_schema_array_to_wildcard(path: str) -> str:
+    """Translate old unquoted [] schema patterns without rewriting quoted keys."""
+    output: list[str] = []
+    quote: str | None = None
+    escaped = False
+    pos = 0
+    while pos < len(path):
+        ch = path[pos]
+        if quote is not None:
+            output.append(ch)
+            if escaped:
+                escaped = False
+            elif ch == "\\\\":
+                escaped = True
+            elif ch == quote:
+                quote = None
+            pos += 1
+        elif ch in ("'", '"'):
+            quote = ch
+            output.append(ch)
+            pos += 1
+        elif path[pos : pos + 2] == "[]":
+            output.append("[*]")
+            pos += 2
+        else:
+            output.append(ch)
+            pos += 1
+    return "".join(output)
+
+
+def _field_atoms(path: Any) -> list[Any]:
+    if isinstance(path, Child):
+        return _field_atoms(path.left) + _field_atoms(path.right)
+    if isinstance(path, Root):
         return []
-    if field_path.startswith("$."):
-        remainder = field_path[2:]
-    elif field_path.startswith("$"):
-        remainder = field_path[1:].lstrip(".")
-    else:
-        remainder = field_path
-    segments: list[str] = []
-    buf = ""
-    idx = 0
-    while idx < len(remainder):
-        if remainder[idx : idx + 2] == "[]":
-            if buf:
-                segments.append(buf)
-                buf = ""
-            segments.append("[]")
-            idx += 2
-            if idx < len(remainder) and remainder[idx] == ".":
-                idx += 1
-            continue
-        if remainder[idx] == ".":
-            if buf:
-                segments.append(buf)
-                buf = ""
-            idx += 1
-            continue
-        buf += remainder[idx]
-        idx += 1
-    if buf:
-        segments.append(buf)
-    return segments
+    return [path]
+
+
+def parse_field_path_segments(field_path: str) -> list[str | int]:
+    """Interpret persisted legacy patterns and quoted field names consistently.
+
+    Empty array selectors in legacy Schema Observation paths signify a
+    wildcard, not a literal. Quoted field tokens remain intact. Numeric indexes
+    are typed integers, not components of a dotted field name.
+    """
+    path = str(field_path).strip()
+    if not path:
+        return []
+    if not path.startswith("$"):
+        path = "$." + path
+    path = _legacy_schema_array_to_wildcard(path)
+    result: list[str | int] = []
+    for atom in _field_atoms(compile_jsonpath(path)):
+        if isinstance(atom, Fields) and len(atom.fields) == 1:
+            result.append(atom.fields[0])
+        elif isinstance(atom, Index) and len(atom.indices) == 1:
+            result.append(atom.indices[0])
+        elif isinstance(atom, Slice) and atom.start is None and atom.end is None and atom.step is None:
+            result.append("[]")
+        else:
+            raise ValueError(f"Unsupported protection field pattern: {type(atom).__name__}")
+    return result
 
 
 def _hmac_key_for_stream(stream_id: int) -> bytes:
@@ -98,6 +130,13 @@ def _collect_leaf_values_at_segments(
 
     seg = segments[seg_index]
     is_last = seg_index == len(segments) - 1
+
+    if isinstance(seg, int):
+        if not isinstance(node, list) or not -len(node) <= seg < len(node):
+            return []
+        item = node[seg]
+        return [item] if is_last else _collect_leaf_values_at_segments(item, segments, seg_index + 1)
+
 
     if seg == "[]":
         if not isinstance(node, list):
@@ -125,7 +164,7 @@ def _collect_leaf_values_at_segments(
             values.extend(_collect_leaf_values_at_segments(item, segments, seg_index + 2))
         return values
 
-    if isinstance(child, dict):
+    if isinstance(child, (dict, list)):
         return _collect_leaf_values_at_segments(child, segments, seg_index + 1)
     return []
 
@@ -179,6 +218,15 @@ def _drop_at_segments(
     seg = segments[seg_index]
     is_last = seg_index == len(segments) - 1
 
+    if isinstance(seg, int):
+        if not isinstance(node, list) or not -len(node) <= seg < len(node):
+            return 0
+        if is_last:
+            node.pop(seg)
+            return 1
+        return _drop_at_segments(node[seg], segments, seg_index + 1)
+
+
     if seg == "[]":
         if not isinstance(node, list):
             return 0
@@ -226,6 +274,22 @@ def _apply_at_segments(
 
     seg = segments[seg_index]
     is_last = seg_index == len(segments) - 1
+
+    if isinstance(seg, int):
+        if not isinstance(node, list) or not -len(node) <= seg < len(node):
+            return 0
+        if is_last:
+            node[seg] = apply_protection_mode(
+                node[seg], mode, stream_id=stream_id, hmac_key=hmac_key,
+                db=db, field_path=field_path, token_map=token_map,
+            )
+            return 1
+        return _apply_at_segments(
+            node[seg], segments, seg_index + 1,
+            mode=mode, stream_id=stream_id, hmac_key=hmac_key,
+            db=db, field_path=field_path, token_map=token_map,
+        )
+
 
     if seg == "[]":
         if not isinstance(node, list):
@@ -282,7 +346,7 @@ def _apply_at_segments(
             )
         return total
 
-    if isinstance(child, dict):
+    if isinstance(child, (dict, list)):
         return _apply_at_segments(
             child,
             segments,
@@ -304,7 +368,14 @@ def apply_rule_to_event(
     db: Session | None = None,
     token_map: dict[tuple[str, str], str] | None = None,
 ) -> tuple[int, ProtectionFieldWarning | None]:
-    segments = parse_field_path_segments(str(rule.field_path))
+    try:
+        segments = parse_field_path_segments(str(rule.field_path))
+    except Exception as exc:
+        return 0, ProtectionFieldWarning(
+            field_path=str(rule.field_path),
+            rule_id=int(getattr(rule, "id", 0) or 0) or None,
+            error_message=str(exc),
+        )
     if not segments:
         return 0, ProtectionFieldWarning(
             field_path=str(rule.field_path),
