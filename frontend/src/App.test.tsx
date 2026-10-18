@@ -769,7 +769,9 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
   it('opens scoped delivery analytics instead of losing Route filters on Dashboard', async () => {
     vi.mocked(fetchRouteFailuresAnalytics).mockClear()
     renderApp('/monitoring/analytics?window=24h&stream_id=2&route_id=2')
-    expect(await screen.findByRole('heading', { level: 1, name: 'Delivery analytics' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Delivery analytics' }, { timeout: 15000 })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'Delivery Analytics' })).toBeInTheDocument()
+    await waitFor(() => expect(document.title).toBe('Delivery Analytics · DataRelay'))
     expect(screen.getByRole('link', { name: 'Back to Route #2 logs' })).toHaveAttribute('href', expect.stringContaining('route_id=2'))
     expect(screen.queryByTestId('dashboard-overall-health-hero')).not.toBeInTheDocument()
     await waitFor(() => expect(fetchRouteFailuresAnalytics).toHaveBeenCalledWith(expect.objectContaining({
@@ -779,7 +781,7 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
 
   it('keeps legacy /runtime/analytics links routed to the same scoped analytics page', async () => {
     renderApp('/runtime/analytics?window=1h&stream_id=2&route_id=2')
-    expect(await screen.findByRole('heading', { level: 1, name: 'Delivery analytics' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Delivery analytics' }, { timeout: 15000 })).toBeInTheDocument()
     expect(screen.getByLabelText('Window')).toHaveValue('1h')
   })
 

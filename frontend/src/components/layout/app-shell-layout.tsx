@@ -554,7 +554,9 @@ export function AppShellLayout() {
     location.pathname,
   ])
 
-  const headerTitle = location.pathname.startsWith('/help')
+  const headerTitle = location.pathname === NAV_PATH.analytics
+    ? 'Delivery Analytics'
+    : location.pathname.startsWith('/help')
     ? 'Help Center'
     : location.pathname.startsWith('/validation')
     ? PAGE_TITLE.validation
