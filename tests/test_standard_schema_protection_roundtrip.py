@@ -41,8 +41,11 @@ def test_dotted_literal_and_nested_name_are_distinct_and_both_protectable():
     assert n==1 and w is None
     assert out=={"user.email":"********","user":{"email":"nested-secret"}}
     n,w,out=apply(event,"$.user.email")
-    assert n==1 and w is None
-    assert out=={"user.email":"literal-secret","user":{"email":"********"}}
+    # Old unquoted syntax is ambiguous when both literal and nested members
+    # are present. Refuse all modifications rather than silently misprotect.
+    assert n==0 and w is not None
+    assert "ambiguous legacy field path" in w.error_message
+    assert out == event
 
 
 @pytest.mark.parametrize(

@@ -86,10 +86,17 @@ def test_full_mask_applies_only_correct_synthetic_fields(
 ):
     event=deepcopy(input_event)
     count, warning=apply_rule_to_event(event, Rule(query))
-    assert count==expected_applied
-    assert warning is None
-    assert event==expected
-    assert input_event!=event
+    if query == "$.user.email" and "user.email" in input_event:
+        # The historical unquoted selector aliases a literal top-level key.
+        # Never mask only the nested value and silently leave the literal key.
+        assert count == 0 and warning is not None
+        assert "ambiguous legacy field path" in warning.error_message
+        assert event == input_event
+    else:
+        assert count==expected_applied
+        assert warning is None
+        assert event==expected
+        assert input_event!=event
 
 
 def test_syntactically_invalid_selector_gives_explicit_warning():
