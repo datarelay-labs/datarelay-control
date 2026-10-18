@@ -38,6 +38,11 @@ export const LazyHelpCenterPage = suspend(
   lazyNamed(() => import('../components/help/help-center-page'), 'HelpCenterPage'),
 )
 
+// Delivery analytics remains route/stream scoped; keep it independently lazy.
+export const LazyRuntimeAnalyticsPage = suspend(
+  lazyNamed(() => import('../components/runtime/runtime-analytics-page'), 'RuntimeAnalyticsPage'),
+)
+
 // Stream runtime detail
 export const LazyStreamRuntimeDetailPage = suspend(
   lazyNamed(() => import('../components/streams/stream-runtime-detail-page'), 'StreamRuntimeDetailPage'),

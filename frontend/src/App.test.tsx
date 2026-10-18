@@ -770,6 +770,13 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     expect(screen.getByRole('searchbox', { name: 'Search templates' })).toBeInTheDocument()
   })
 
+  it('opens route-scoped delivery analytics rather than the generic Dashboard redirect', async () => {
+    renderApp('/monitoring/analytics?window=24h&stream_id=2&route_id=2')
+    expect(await screen.findByRole('heading', { name: 'Delivery analytics' }, { timeout: 15000 })).toBeInTheDocument()
+    expect(screen.queryByTestId('dashboard-overall-health-hero')).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Back to Route #2 logs/i })).toBeInTheDocument()
+  })
+
   it('redirects /runtime to /monitoring Dashboard', async () => {
     renderApp('/runtime')
     expect(await screen.findByTestId('dashboard-overall-health-hero', {}, { timeout: 15000 })).toBeInTheDocument()

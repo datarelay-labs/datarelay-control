@@ -33,6 +33,7 @@ import {
   LazyQuarantineCenterPage,
   LazyReplayCenterPage,
   LazyRouteEditPage,
+  LazyRuntimeAnalyticsPage,
   LazyRoutesOverviewPage,
   LazyStreamApiTestPage,
   LazyStreamEnrichmentPage,
@@ -75,7 +76,7 @@ export default function App() {
         <Route path="alerts" element={<LazyOperationalAlertsPage />} />
         <Route path="monitoring/streams" element={<PreserveSearchRedirect to={NAV_PATH.streams} />} />
         <Route path="monitoring/topology" element={<PreserveSearchRedirect to={NAV_PATH.dashboard} />} />
-        <Route path="monitoring/analytics" element={<PreserveSearchRedirect to={NAV_PATH.dashboard} />} />
+        <Route path="monitoring/analytics" element={<LazyRuntimeAnalyticsPage />} />
         <Route path="runtime" element={<PreserveSearchRedirect to={NAV_PATH.dashboard} />} />
         <Route path="runtime/topology" element={<PreserveSearchRedirect to={NAV_PATH.dashboard} />} />
         <Route path="runtime/analytics" element={<PreserveSearchRedirect to={NAV_PATH.dashboard} />} />
