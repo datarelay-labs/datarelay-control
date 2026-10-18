@@ -30,7 +30,7 @@ import {
   type WizardState,
 } from './wizard-state'
 import { persistWizardDataProtectionIntents } from './wizard-data-protection-persist'
-import { persistWizardSchemaDriftPolicy } from './wizard-schema-drift-policy-persist'
+import { mergeSchemaDriftPolicyIntoConfigJson } from './wizard-schema-drift-policy-persist'
 import { persistWizardStreamGovernance } from './wizard-governance-persist'
 import {
   persistWizardRouteGovernanceBundles,
@@ -451,7 +451,6 @@ export async function persistWizardStreamEdits(
     }
   }
 
-  let persistedConfigJson: Record<string, unknown> | null = null
   let streamUpdatedAt: string | null = null
   try {
     const existing = preflight.stream
@@ -476,7 +475,7 @@ export async function persistWizardStreamEdits(
         ),
       )
       const eventPaths = applyExplicitEventPathClear(mergedConfig, confirmed?.stream, state.stream)
-      const config_json = eventPaths.config
+      const config_json = mergeSchemaDriftPolicyIntoConfigJson(eventPaths.config, state.dataProtection)
       if (
         (eventPaths.clearArray || eventPaths.clearRoot) &&
         !wizardFieldMappingsReady(state) &&
@@ -495,7 +494,6 @@ export async function persistWizardStreamEdits(
         rate_limit_json: payload.rate_limit_json,
         expected_updated_at: token,
       })
-      persistedConfigJson = config_json
       streamUpdatedAt = updated.updated_at ?? token
       persistedObjects.push(`Stream #${streamId}`)
     }
@@ -601,6 +599,7 @@ export async function persistWizardStreamEdits(
   try {
     const governanceResult = await persistWizardStreamGovernance(streamId, routeSafeState, routeIdsByDraftKey)
     if (!governanceResult.saved) errors.push(...governanceResult.errors)
+    else if (governanceResult.streamUpdatedAt) streamUpdatedAt = governanceResult.streamUpdatedAt
   } catch (err) {
     errors.push(`governance: ${err instanceof Error ? err.message : String(err)}`)
   }
@@ -611,19 +610,6 @@ export async function persistWizardStreamEdits(
       state.dataProtection,
     )),
   )
-
-  if (persistedConfigJson) {
-    try {
-      const driftResult = await persistWizardSchemaDriftPolicy(streamId, state.dataProtection, {
-        existingConfigJson: persistedConfigJson,
-        expectedUpdatedAt: streamUpdatedAt,
-      })
-      if (!driftResult.saved) errors.push(...driftResult.errors)
-      else if (driftResult.streamUpdatedAt) streamUpdatedAt = driftResult.streamUpdatedAt
-    } catch (err) {
-      errors.push(`schema-drift-policy: ${err instanceof Error ? err.message : String(err)}`)
-    }
-  }
 
   if (errors.length > 0) {
     for (const error of errors) {
