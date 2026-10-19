@@ -66,7 +66,8 @@ vi.mock('./wizard-data-protection-persist', () => ({
   persistWizardDataProtectionIntents: vi.fn(async () => ({ saved: true, errors: [] })),
 }))
 
-vi.mock('./wizard-schema-drift-policy-persist', () => ({
+vi.mock('./wizard-schema-drift-policy-persist', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./wizard-schema-drift-policy-persist')>()),
   persistWizardSchemaDriftPolicy: vi.fn(async (_streamId: number, _policy: unknown, options?: { expectedUpdatedAt?: string | null }) => ({
     saved: true,
     errors: [],
@@ -155,7 +156,7 @@ vi.mock('../../../api/gdcRoutePolicy', () => ({
 }))
 
 import { persistWizardDataProtectionIntents } from './wizard-data-protection-persist'
-import { persistWizardSchemaDriftPolicy } from './wizard-schema-drift-policy-persist'
+import { buildSchemaDriftPolicyPersistPayload, persistWizardSchemaDriftPolicy } from './wizard-schema-drift-policy-persist'
 import { saveStreamMappingUiConfigStrict } from '../../../api/gdcRuntimeUi'
 import {
   applyCreatedRouteIdentity,
@@ -1336,15 +1337,25 @@ describe('wizard-stream-persist route sync + transform', () => {
     expect(result.notPersistedObjects).toContain('Route #5')
   })
 
-  it('chains the Stream revision returned by schema-drift into the final confirmed revision', async () => {
+  it('writes Schema Drift in the first guarded Stream CAS before Governance changes its revision', async () => {
+    const { persistWizardStreamGovernance } = await import('./wizard-governance-persist')
+    vi.mocked(persistWizardStreamGovernance).mockResolvedValueOnce({
+      saved: true, errors: [], warnings: [], streamUpdatedAt: 'stream-c',
+    })
     const state = editState((s) => { s.stream.name = 'Revision chain' })
     const result = await persistWizardStreamEdits(100, state, { confirmedState: editState(() => undefined) })
-    expect(persistWizardSchemaDriftPolicy).toHaveBeenCalledWith(
-      100,
-      state.dataProtection,
-      expect.objectContaining({ expectedUpdatedAt: 'stream-b' }),
-    )
-    expect(result.streamUpdatedAt).toBe('stream-b-drift')
+    expect(result.ok).toBe(true)
+    expect(updateStream).toHaveBeenCalledTimes(1)
+    expect(updateStream).toHaveBeenCalledWith(100, expect.objectContaining({
+      expected_updated_at: 'stream-a',
+      config_json: expect.objectContaining({
+        governance: expect.objectContaining({
+          schema_drift_policy: buildSchemaDriftPolicyPersistPayload(state.dataProtection),
+        }),
+      }),
+    }))
+    expect(persistWizardSchemaDriftPolicy).not.toHaveBeenCalled()
+    expect(result.streamUpdatedAt).toBe('stream-c')
   })
 
   it('refuses a broad route update that has no hydrated concurrency token', async () => {
