@@ -1,11 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MappingUIConfigResponse } from '../../../api/types/gdcApi'
+import type { StreamGovernanceResponse } from '../../../api/gdcStreamGovernance'
+import type { WizardRouteDraft } from './wizard-state'
 
 const fetchStreamById = vi.fn()
 const fetchStreamMappingUiConfig = vi.fn()
 const fetchRoutesList = vi.fn()
 const fetchDestinationsList = vi.fn()
 const fetchStreamProtectionRules = vi.fn()
+const fetchStreamGovernance = vi.fn()
 
 vi.mock('../../../api/gdcStreams', () => ({
   fetchStreamById: (...args: unknown[]) => fetchStreamById(...args),
@@ -32,7 +35,7 @@ vi.mock('../../../api/gdcConnectors', () => ({
 }))
 
 vi.mock('../../../api/gdcStreamGovernance', () => ({
-  fetchStreamGovernance: vi.fn(async () => null),
+  fetchStreamGovernance: (...args: unknown[]) => fetchStreamGovernance(...args),
 }))
 
 function mappingConfig(overrides: Partial<MappingUIConfigResponse> = {}): MappingUIConfigResponse {
@@ -58,6 +61,57 @@ function mappingConfig(overrides: Partial<MappingUIConfigResponse> = {}): Mappin
   }
 }
 
+describe('Stream edit persisted Route classification floors', () => {
+  const routes = [{ key: 'route-3' }, { key: 'route-7' }] as WizardRouteDraft[]
+  const governance = (route_overrides: StreamGovernanceResponse['route_overrides']): StreamGovernanceResponse => ({
+    stream_id: 9, enabled: true, updated_at: 'stream-server-revision',
+    rules: [], route_overrides,
+  })
+
+  it('rehydrates an actual server Route floor instead of incorrectly showing Shared', async () => {
+    const { hydrateStreamClassificationFloors } = await import('./wizard-stream-hydrate')
+    expect(hydrateStreamClassificationFloors(governance([
+      {
+        route_id: 3, field_path: null, classification_level: 'CONFIDENTIAL',
+        protection_action: null, delivery_behavior: null, enabled: true,
+      },
+    ]), routes)).toEqual([{
+      key: 'persisted-classification-route-3', routeDraftKey: 'route-3',
+      classificationLevel: 'CONFIDENTIAL', enabled: true,
+    }])
+  })
+
+  it('excludes unrelated, disabled, and field-specific foreign Governance overrides', async () => {
+    const { hydrateStreamClassificationFloors } = await import('./wizard-stream-hydrate')
+    expect(hydrateStreamClassificationFloors(governance([
+      { route_id: 23, classification_level: 'RESTRICTED', enabled: true },
+      { route_id: 7, classification_level: 'PUBLIC', enabled: false },
+      { route_id: 3, field_path: '$.email', classification_level: 'RESTRICTED', enabled: true },
+      { route_id: 3, classification_level: 'INTERNAL', protection_action: 'audit', enabled: true },
+      { route_id: 3, classification_level: 'CONFIDENTIAL', enabled: true },
+    ]), routes)).toEqual([{
+      key: 'persisted-classification-route-3', routeDraftKey: 'route-3',
+      classificationLevel: 'CONFIDENTIAL', enabled: true,
+    }])
+  })
+
+  it('fails closed on conflicting or invalid active Route classification floors', async () => {
+    const { hydrateStreamClassificationFloors } = await import('./wizard-stream-hydrate')
+    expect(hydrateStreamClassificationFloors(governance([
+      { route_id: 3, classification_level: 'INTERNAL', enabled: true },
+      { route_id: 3, classification_level: 'CONFIDENTIAL', enabled: true },
+    ]), routes)).toBeNull()
+    expect(hydrateStreamClassificationFloors(governance([
+      { route_id: 3, classification_level: 'UNRECOGNIZED', enabled: true },
+    ]), routes)).toBeNull()
+  })
+
+  it('keeps the unavailable Governance snapshot separate from invented success', async () => {
+    const { hydrateStreamClassificationFloors } = await import('./wizard-stream-hydrate')
+    expect(hydrateStreamClassificationFloors(null, routes)).toBeNull()
+  })
+})
+
 describe('edit hydrate fidelity', () => {
   beforeEach(() => {
     fetchStreamById.mockReset()
@@ -66,6 +120,8 @@ describe('edit hydrate fidelity', () => {
     fetchDestinationsList.mockReset()
     fetchStreamProtectionRules.mockReset()
     fetchStreamProtectionRules.mockResolvedValue({ stream_id: 9, protection_enabled: true, rules: [], rule_count: 0 })
+    fetchStreamGovernance.mockReset()
+    fetchStreamGovernance.mockResolvedValue({ stream_id: 9, enabled: false, rules: [], route_overrides: [] })
     fetchRoutesList.mockResolvedValue([])
     fetchDestinationsList.mockResolvedValue([])
     fetchStreamById.mockResolvedValue({
@@ -82,6 +138,14 @@ describe('edit hydrate fidelity', () => {
     fetchStreamMappingUiConfig.mockResolvedValue(null)
     const { hydrateWizardStateFromStream } = await import('./wizard-stream-hydrate')
     await expect(hydrateWizardStateFromStream(9)).resolves.toBeNull()
+  })
+
+  it('fails closed when Governance is unreadable instead of showing every Route as Shared', async () => {
+    fetchStreamMappingUiConfig.mockResolvedValue(mappingConfig())
+    fetchStreamGovernance.mockResolvedValue(null)
+    const { hydrateWizardStateFromStream } = await import('./wizard-stream-hydrate')
+    await expect(hydrateWizardStateFromStream(9)).resolves.toBeNull()
+    expect(fetchStreamGovernance).toHaveBeenCalledWith(9)
   })
 
   it('accepts an explicit empty mapping response and restores persisted source and schema-drift config', async () => {
