@@ -139,6 +139,35 @@ describe('AdministrationHubPage modernization', () => {
     expect(screen.queryByRole('button', { name: /^View / })).not.toBeInTheDocument()
   })
 
+  it('identifies the Connector Operator role accurately in the access banner', () => {
+    signInAs('CONNECTOR_OPERATOR')
+    renderHub()
+    expect(screen.getByTestId('admin-hub-access-context')).toHaveTextContent('Connector Operator session.')
+    expect(screen.queryByRole('button', { name: /^Manage / })).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['GOVERNANCE_OPERATOR', 'Governance Operator'],
+    ['GOVERNANCE_REVIEWER', 'Governance Reviewer'],
+    ['GOVERNANCE_APPROVER', 'Governance Approver'],
+    ['GOVERNANCE_AUDITOR', 'Governance Auditor'],
+  ] as const)('explains why %s has no Administration task actions', (role, label) => {
+    signInAs(role)
+    renderHub()
+    const banner = screen.getByTestId('admin-hub-access-context')
+    expect(banner).toHaveTextContent(label)
+    expect(banner).toHaveTextContent('No Administration tasks are available')
+    expect(screen.queryByRole('button', { name: /^Manage |^View / })).not.toBeInTheDocument()
+  })
+
+  it('does not claim to be signed in when the session is absent', () => {
+    localStorage.clear()
+    renderHub()
+    const banner = screen.getByTestId('admin-hub-access-context')
+    expect(banner).toHaveTextContent('current, active session')
+    expect(banner).not.toHaveTextContent('Signed in as')
+  })
+
   it('does not reveal settings during forced password change or disabled account status', () => {
     signInAs('ADMINISTRATOR', { mustChangePassword: true })
     const first = renderHub()

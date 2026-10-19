@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { AdministrationHub, type AdministrationCoreTask, type AdministrationCoreGroupId } from '@datarelay-labs/system-admin-ui'
 import { NAV_PATH, SETTINGS_SECTION_PATH } from '../../config/nav-paths'
 import { isSessionExpired, onSessionChange, readSession, type SessionRole } from '../../auth/session'
+import { sessionRoleLabel } from '../../auth/role-labels'
 import { PagePurposeHeader, type PageHelpContent } from '../ui/page-purpose-header'
 
 type HubDestination = {
@@ -178,16 +179,22 @@ function foundationTasksForGroup(group: HubTaskGroup, role: SessionRole | null):
     }))
 }
 
-function roleLabel(role: string | null): string {
-  if (role === 'ADMINISTRATOR') return 'Administrator'
-  if (role === 'OPERATOR') return 'Operator'
-  if (role === 'VIEWER') return 'Viewer'
-  return 'Unknown session'
-}
-
 function AccessContextBanner({ role }: { role: SessionRole | null }) {
   const readOnly = role === 'VIEWER'
   const operator = role === 'OPERATOR' || role === 'CONNECTOR_OPERATOR'
+
+  if (role === null) {
+    return (
+      <div
+        role="status"
+        data-testid="admin-hub-access-context"
+        className="rounded-xl border border-slate-200/90 bg-slate-50/70 px-4 py-3 text-sm text-slate-700 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-200"
+      >
+        <p className="font-semibold">Administration requires a current, active session.</p>
+        <p className="mt-1 text-sm leading-relaxed">Sign in or complete required account actions to continue.</p>
+      </div>
+    )
+  }
 
   if (readOnly) {
     return (
@@ -212,11 +219,24 @@ function AccessContextBanner({ role }: { role: SessionRole | null }) {
         data-testid="admin-hub-access-context"
         className="rounded-xl border border-amber-500/25 bg-amber-500/[0.07] px-4 py-3 text-sm text-amber-950 dark:border-amber-500/35 dark:bg-amber-500/10 dark:text-amber-100"
       >
-        <p className="font-semibold">Operator session.</p>
+        <p className="font-semibold">{sessionRoleLabel(role)} session.</p>
         <p className="mt-1 text-sm leading-relaxed opacity-90">
           Admin and security settings (HTTPS, accounts, retention policy, alert settings) remain restricted to
           Administrators. Operational destinations stay available according to current product rules.
         </p>
+      </div>
+    )
+  }
+
+  if (role !== 'ADMINISTRATOR') {
+    return (
+      <div
+        role="status"
+        data-testid="admin-hub-access-context"
+        className="rounded-xl border border-slate-200/90 bg-slate-50/70 px-4 py-3 text-sm text-slate-700 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-200"
+      >
+        <p className="font-semibold">Signed in as {sessionRoleLabel(role)}.</p>
+        <p className="mt-1 text-sm leading-relaxed">No Administration tasks are available for this role. Continue with your permitted operational or Governance workspace.</p>
       </div>
     )
   }
@@ -227,7 +247,7 @@ function AccessContextBanner({ role }: { role: SessionRole | null }) {
       data-testid="admin-hub-access-context"
       className="rounded-xl border border-slate-200/90 bg-slate-50/70 px-4 py-3 text-sm text-slate-700 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-200"
     >
-      <p className="font-semibold">Signed in as {roleLabel(role)}.</p>
+      <p className="font-semibold">Signed in as {sessionRoleLabel(role)}.</p>
       <p className="mt-1 text-sm leading-relaxed text-slate-600 dark:text-gdc-muted">
         Choose a task group below. High-risk changes still use the existing confirmation and apply workflows inside
         Settings.

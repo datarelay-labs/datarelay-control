@@ -1,3 +1,4 @@
+import { sessionRoleLabel } from '../../auth/role-labels'
 import {
   ChevronRight,
   Download,
@@ -84,11 +85,6 @@ function roleBadgeClass(role: string) {
   return 'border-slate-300/80 bg-slate-100 text-slate-700 dark:border-gdc-borderStrong dark:bg-gdc-elevated dark:text-slate-200'
 }
 
-function roleLabel(role: string) {
-  if (role === 'ADMINISTRATOR') return 'Administrator'
-  if (role === 'OPERATOR') return 'Operator'
-  return 'Viewer'
-}
 
 function formatTs(iso: string | null) {
   if (!iso) return '—'
@@ -1031,7 +1027,7 @@ export function AdminSettingsPage() {
                                 roleBadgeClass(u.role),
                               )}
                             >
-                              {roleLabel(u.role)}
+                              {sessionRoleLabel(u.role)}
                             </span>
                           </td>
                           <td className="px-3 py-3">
