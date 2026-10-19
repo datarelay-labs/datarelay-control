@@ -98,6 +98,32 @@ describe('RuntimeAnalyticsPage', () => {
     expect(await screen.findByText(/No delivery outcomes in this window/i)).toBeInTheDocument()
   })
 
+  it('uses scoped failure and retry totals rather than global snapshot totals for a Route deep link', async () => {
+    const analytics = await import('../../api/gdcRuntimeAnalytics')
+    vi.mocked(analytics.fetchRouteFailuresAnalytics).mockImplementationOnce(async (params?: { snapshot_id?: string }) => ({
+      ...emptyFailures(snapshotParam(params)),
+      totals: { failure_events: 20, success_events: 80, overall_failure_rate: 0.2 },
+    }))
+    vi.mocked(analytics.fetchRetriesSummary).mockImplementationOnce(async (params?: { snapshot_id?: string }) => ({
+      ...emptyRetries(snapshotParam(params)),
+      retry_success_events: 4,
+      retry_failed_events: 2,
+      total_retry_outcome_events: 6,
+    }))
+    render(
+      <MemoryRouter initialEntries={['/monitoring/analytics?window=24h&stream_id=2&route_id=2']}>
+        <RuntimeAnalyticsPage />
+      </MemoryRouter>,
+    )
+    const failed = await screen.findByText('Failed delivery outcomes')
+    expect(failed.parentElement).toHaveTextContent('20')
+    expect(failed.parentElement).toHaveTextContent('Successful deliveries 80')
+    expect(screen.getByText('Delivery failure rate').parentElement).toHaveTextContent('20.0%')
+    const retries = screen.getByText('Retry outcomes')
+    expect(retries.parentElement).toHaveTextContent('6')
+    expect(retries.parentElement).toHaveTextContent('ok 4 · failed 2')
+  })
+
   it('does not silently interpret malformed analytics URL IDs as valid narrow-scoped outcomes', async () => {
     const mod = await import('../../api/gdcRuntimeAnalytics')
     render(

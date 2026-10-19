@@ -69,6 +69,7 @@ export function RuntimeAnalyticsPage() {
   const streamId = parseOptionalInt(searchParams.get('stream_id'))
   const routeId = parseOptionalInt(searchParams.get('route_id'))
   const destinationId = parseOptionalInt(searchParams.get('destination_id'))
+  const hasSpecificScope = streamId != null || routeId != null || destinationId != null
   const invalidAnalyticsFilters = [
     { key: 'stream_id', label: 'Stream' },
     { key: 'route_id', label: 'Route' },
@@ -324,9 +325,9 @@ export function RuntimeAnalyticsPage() {
           <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
             <KpiCard
               label="Failed delivery outcomes"
-              value={String(observability?.totals.delivery_failed_events ?? failures.totals.failure_events)}
+              value={String(hasSpecificScope ? failures.totals.failure_events : (observability?.totals.delivery_failed_events ?? failures.totals.failure_events))}
               hint={`${metricDescription(observability?.metric_meta ?? failures.metric_meta, 'delivery_outcomes.failure')} · Successful deliveries ${
-                observability?.totals.delivery_success_events ?? failures.totals.success_events
+                hasSpecificScope ? failures.totals.success_events : (observability?.totals.delivery_success_events ?? failures.totals.success_events)
               }`}
               tone="rose"
             />
@@ -344,12 +345,12 @@ export function RuntimeAnalyticsPage() {
             <KpiCard
               label="Retry outcomes"
               value={String(
-                observability != null
+                !hasSpecificScope && observability != null
                   ? observability.totals.retry_success_events + observability.totals.retry_failed_events
                   : retries.total_retry_outcome_events,
               )}
-              hint={`ok ${observability?.totals.retry_success_events ?? retries.retry_success_events} · failed ${
-                observability?.totals.retry_failed_events ?? retries.retry_failed_events
+              hint={`ok ${hasSpecificScope ? retries.retry_success_events : (observability?.totals.retry_success_events ?? retries.retry_success_events)} · failed ${
+                hasSpecificScope ? retries.retry_failed_events : (observability?.totals.retry_failed_events ?? retries.retry_failed_events)
               } · ${metricDescription(retries.metric_meta, 'delivery_outcomes.window')} · ${metricSnapshotLabel(retries.metric_meta, 'delivery_outcomes.window', retries.time.window)}`}
             />
           </div>

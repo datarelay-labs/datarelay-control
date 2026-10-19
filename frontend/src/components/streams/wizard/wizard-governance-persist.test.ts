@@ -225,6 +225,7 @@ describe('wizard-governance-persist', () => {
   })
 
   it('persists governance via PUT after route mapping', async () => {
+    putStreamGovernance.mockResolvedValueOnce({ updated_at: 'gov-2' })
     const state = buildInitialState()
     state.dataProtection.intents = [
       {
@@ -241,6 +242,7 @@ describe('wizard-governance-persist', () => {
     const result = await persistWizardStreamGovernance(42, state, { r1: 900 })
 
     expect(result.saved).toBe(true)
+    expect(result.streamUpdatedAt).toBe('gov-2')
     expect(putStreamGovernance).toHaveBeenCalledWith(
       42,
       expect.objectContaining({

@@ -27,6 +27,7 @@ export type GovernancePersistResult = {
   saved: boolean
   errors: string[]
   warnings: string[]
+  streamUpdatedAt?: string | null
 }
 
 /**
@@ -361,8 +362,10 @@ export async function persistWizardStreamGovernance(
     return { saved: true, errors: [], warnings }
   }
 
+  let governanceWrittenAt: string | null = null
   try {
-    await putStreamGovernance(streamId, { ...payload, expected_updated_at: current.updated_at })
+    const written = await putStreamGovernance(streamId, { ...payload, expected_updated_at: current.updated_at })
+    governanceWrittenAt = written.updated_at ?? null
   } catch (err) {
     return {
       saved: false,
@@ -392,5 +395,5 @@ export async function persistWizardStreamGovernance(
   if (readBackErrors.length > 0) {
     return { saved: false, errors: readBackErrors, warnings }
   }
-  return { saved: true, errors: [], warnings }
+  return { saved: true, errors: [], warnings, streamUpdatedAt: governanceWrittenAt }
 }
