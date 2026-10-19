@@ -12,12 +12,16 @@ import hashlib
 import json
 from pathlib import Path, PurePosixPath
 import re
+import subprocess
 import tarfile
 
 UPSTREAM_NAMES = {
     "@datarelay-labs/control-clone": "datarelay-labs-control-clone-0.1.0-dev.tgz",
     "@datarelay-labs/foundation": "datarelay-labs-foundation-0.1.0-dev-canonical.tgz",
 }
+CONTROL_SOURCE_REPO = "datarelay-labs/datarelay-control"
+SHA40 = re.compile(r"[0-9a-f]{40}")
+SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
 def fail(code: str) -> None:
@@ -39,6 +43,99 @@ def digest(path: Path) -> str:
         for chunk in iter(lambda: src.read(1024 * 1024), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def clone_source_manifest(archive: Path) -> dict:
+    """Validate the declared Control code-copy lineage, not runtime acceptance."""
+    with tarfile.open(archive, "r:gz") as bundle:
+        try:
+            member = bundle.getmember("package/control-source-manifest.json")
+        except KeyError:
+            fail("control-source-manifest-missing")
+        if not member.isfile() or not 0 < member.size <= 1_000_000:
+            fail("control-source-manifest-size")
+        stream = bundle.extractfile(member)
+        if stream is None:
+            fail("control-source-manifest-unreadable")
+        try:
+            data = json.load(stream)
+        except (UnicodeError, json.JSONDecodeError):
+            fail("control-source-manifest-json")
+    if not isinstance(data, dict):
+        fail("control-source-manifest-type")
+    if data.get("source_repository") != CONTROL_SOURCE_REPO:
+        fail("control-source-repository")
+    pin = data.get("pinned_commit")
+    if not isinstance(pin, str) or not SHA40.fullmatch(pin):
+        fail("control-source-pin")
+    rows = data.get("source_files")
+    if (not isinstance(rows, list) or not 1 <= len(rows) <= 1000
+            or type(data.get("source_file_count")) is not int
+            or data["source_file_count"] != len(rows)):
+        fail("control-source-count")
+    adapter_paths = data.get("native_adapter_only_diffs")
+    if not isinstance(adapter_paths, list) or not all(isinstance(p, str) for p in adapter_paths):
+        fail("control-source-adapter-list")
+    seen: set[str] = set()
+    actual_adapters: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            fail("control-source-row")
+        path = row.get("path")
+        if not isinstance(path, str) or not path or "\\" in path or "\x00" in path:
+            fail("control-source-path")
+        pure = PurePosixPath(path)
+        if not pure.parts or pure.is_absolute() or ".." in pure.parts or str(pure) != path or path in seen:
+            fail("control-source-path")
+        seen.add(path)
+        upstream, local, same = (row.get("upstream_sha256"),
+                                 row.get("local_sha256"),
+                                 row.get("identical_to_control"))
+        if (not isinstance(upstream, str) or not SHA256.fullmatch(upstream)
+                or not isinstance(local, str) or not SHA256.fullmatch(local)
+                or type(same) is not bool or same != (upstream == local)):
+            fail("control-source-digest-fidelity")
+        if not same:
+            actual_adapters.add(path)
+    if len(adapter_paths) != len(set(adapter_paths)) or set(adapter_paths) != actual_adapters:
+        fail("control-source-adapter-declaration")
+    return data
+
+
+def require_exact_control_source(archive: Path, root: Path, expected_head: str) -> None:
+    """Optional *installation* gate against an immutable Control Git commit.
+
+    Source-only CI must not call this to claim a newer Control product install.
+    """
+    if not SHA40.fullmatch(expected_head):
+        fail("current-control-head-invalid")
+    result = subprocess.run(
+        ["git", "-C", str(root), "cat-file", "-t", expected_head],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+    )
+    if result.returncode != 0 or result.stdout.strip() != b"commit":
+        fail("current-control-head-unavailable")
+    manifest = clone_source_manifest(archive)
+    matching = 0
+    missing = 0
+    for row in manifest["source_files"]:
+        path = "frontend/src/" + row["path"]
+        content = subprocess.run(
+            ["git", "-C", str(root), "show", f"{expected_head}:{path}"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
+        if content.returncode != 0:
+            missing += 1
+        elif hashlib.sha256(content.stdout).hexdigest() == row["upstream_sha256"]:
+            matching += 1
+    total = len(manifest["source_files"])
+    print(f"CONTROL_FIRST_DECLARED_SOURCE_MATCH={matching}/{total} MISSING={missing}")
+    print("CONTROL_FIRST_SOURCE_REFERENCE=" + manifest["pinned_commit"])
+    print("CONTROL_FIRST_TARGET_CONTROL_HEAD=" + expected_head)
+    if matching != total or missing or manifest["pinned_commit"] != expected_head:
+        fail("control-clone-stale-or-incomplete")
+    print("CONTROL_FIRST_DECLARED_SOURCE_PARITY=PASS")
+    print("CONTROL_FIRST_INSTALLED_PRODUCT_ACCEPTANCE=NOT_QUALIFIED")
 
 
 def validate_tarball(archive: Path, name: str, version: str) -> None:
@@ -68,6 +165,7 @@ def validate_tarball(archive: Path, name: str, version: str) -> None:
                             "package/dist/styles.css", "package/control-source-manifest.json"}
                 if not required.issubset(seen):
                     fail(f"control-clone-dist-incomplete:{name}")
+                clone_source_manifest(archive)
             elif name == "@datarelay-labs/foundation":
                 if manifest.get("dependencies") != {"@datarelay-labs/control-clone": version}:
                     fail("facade-dependency")
@@ -157,12 +255,23 @@ def main() -> int:
     parser.add_argument("--expected-head", required=True)
     parser.add_argument("--expected-clone-sha256", required=True)
     parser.add_argument("--expected-facade-sha256", required=True)
+    parser.add_argument("--require-exact-control-head",
+                        help="Optional strict native-install gate; never infer this from a mutable branch name.")
     a = parser.parse_args()
     try:
         validate(a.root.resolve(), a.expected_head, a.expected_clone_sha256, a.expected_facade_sha256)
     except (ValueError, OSError, KeyError, TypeError, json.JSONDecodeError) as error:
         print(f"CONTROL_FIRST_SOURCE_CANDIDATE=FAIL reason={error}")
         return 2
+    if a.require_exact_control_head:
+        try:
+            require_exact_control_source(
+                a.root / ".foundation/packs" / UPSTREAM_NAMES["@datarelay-labs/control-clone"],
+                a.root.resolve(), a.require_exact_control_head,
+            )
+        except (ValueError, OSError, KeyError, TypeError, json.JSONDecodeError) as error:
+            print(f"CONTROL_FIRST_NATIVE_SOURCE_PARITY=BLOCK reason={error}")
+            return 2
     return 0
 
 
