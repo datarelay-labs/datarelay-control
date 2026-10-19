@@ -79,6 +79,10 @@ import {
 
 const KPI_WINDOW_LABEL = '1h'
 
+function logsTimeRangeFromUrl(value: string | null): string {
+  return TIME_RANGE_OPTIONS.find((label) => metricsWindowFromTimeRangeLabel(label) === value) ?? TIME_RANGE_OPTIONS[1]
+}
+
 /** Disambiguate operator filters by saved identity, not duplicate display names. */
 function entityFilterLabels(
   labels: ReadonlyMap<number, string>,
@@ -360,7 +364,10 @@ export function LogsExplorerPage() {
   ].filter(({ key, id }) => (searchParams.get(key)?.trim() ?? '') !== '' && id == null)
 
   const [search, setSearch] = useState('')
-  const [timeRange, setTimeRange] = useState<string>(TIME_RANGE_OPTIONS[1])
+  const [timeRange, setTimeRange] = useState<string>(() => logsTimeRangeFromUrl(searchParams.get('time_range')))
+  useEffect(() => {
+    setTimeRange(logsTimeRangeFromUrl(searchParams.get('time_range')))
+  }, [searchParams])
   const [streamFilter, setStreamFilter] = useState<string>(ALL_STREAMS_LABEL)
   const [routeFilter, setRouteFilter] = useState<string>(ALL_ROUTES_LABEL)
   const [levelFilter, setLevelFilter] = useState<string>(() => {
@@ -758,6 +765,15 @@ export function LogsExplorerPage() {
   // Changing its Stream/Route selector must change the backend query as well,
   // otherwise the old URL ID intersects with the newly selected name and hides
   // legitimate delivery evidence.
+  function changeTimeRange(label: string) {
+    setTimeRange(label)
+    const next = new URLSearchParams(searchParams)
+    const window = metricsWindowFromTimeRangeLabel(label)
+    if (window === '1h') next.delete('time_range')
+    else next.set('time_range', window)
+    setSearchParams(next, { replace: true })
+  }
+
   function changeStreamFilter(label: string) {
     const selectedId = filterEntityId(label, streamDisplayLabels, entityLabels.streams)
     const next = new URLSearchParams(searchParams)
@@ -1091,6 +1107,11 @@ export function LogsExplorerPage() {
     if (item.stageFilter) setStageFilter(item.stageFilter)
     if (item.statusFilter) setStatusFilter(item.statusFilter)
     const next = new URLSearchParams(searchParams)
+    if (item.timeRange) {
+      const window = metricsWindowFromTimeRangeLabel(item.timeRange)
+      if (window === '1h') next.delete('time_range')
+      else next.set('time_range', window)
+    }
     if (item.statusUrl) next.set('status', item.statusUrl)
     else next.delete('status')
     if (item.levelFilter && item.levelFilter !== 'All Levels') next.set('level', item.levelFilter)
@@ -1486,7 +1507,7 @@ export function LogsExplorerPage() {
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
             <div className="flex min-w-[140px] flex-1 items-center gap-1 rounded-lg border border-slate-200/90 bg-white px-2 shadow-sm dark:border-gdc-inputBorder dark:bg-gdc-input">
               <Clock className="h-4 w-4 shrink-0 text-slate-400 dark:text-gdc-muted" aria-hidden />
-              <SelectField id="logs-time-range" label="Time range" value={timeRange} options={TIME_RANGE_OPTIONS} onChange={setTimeRange} />
+              <SelectField id="logs-time-range" label="Time range" value={timeRange} options={TIME_RANGE_OPTIONS} onChange={changeTimeRange} />
             </div>
             <SelectField id="logs-level" label="Level" value={levelFilter} options={LEVEL_FILTER_OPTIONS} onChange={setLevelFilter} />
             <SelectField id="logs-stream" label="Stream" value={streamFilter} options={streamFilterOptions} onChange={changeStreamFilter} />

@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as gdcRuntime from '../../api/gdcRuntime'
 import { LogsExplorerPage } from './logs-explorer-page'
@@ -366,5 +366,39 @@ describe('Logs Explorer narrow viewport source integration', () => {
     } finally {
       vi.unstubAllGlobals()
     }
+  })
+})
+
+
+function UrlSearchProbe() {
+  const location = useLocation()
+  return <span data-testid="logs-url-search">{location.search}</span>
+}
+
+describe('Logs Explorer time window deep-link persistence', () => {
+  it('preserves a selected 24h time range with Route scope and restores it after reload', async () => {
+    const user = userEvent.setup()
+    setup([row(72, 2, 42, 'Route 42 delivery evidence')])
+    const { unmount } = render(
+      <MemoryRouter initialEntries={['/logs?route_id=42']}>
+        <LogsExplorerPage />
+        <UrlSearchProbe />
+      </MemoryRouter>,
+    )
+    await user.selectOptions(screen.getByLabelText('Time range'), 'Last 24 hours')
+    expect(screen.getByLabelText('Time range')).toHaveValue('Last 24 hours')
+    await waitFor(() => {
+      const query = screen.getByTestId('logs-url-search').textContent ?? ''
+      expect(query).toContain('route_id=42')
+      expect(query).toContain('time_range=24h')
+    })
+    unmount()
+    render(
+      <MemoryRouter initialEntries={['/logs?route_id=42&time_range=24h']}>
+        <LogsExplorerPage />
+        <UrlSearchProbe />
+      </MemoryRouter>,
+    )
+    expect(screen.getByLabelText('Time range')).toHaveValue('Last 24 hours')
   })
 })
