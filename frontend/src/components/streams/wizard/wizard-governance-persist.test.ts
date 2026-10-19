@@ -673,4 +673,92 @@ describe('wizard-governance-persist', () => {
       { route_id: 800, classification_level: 'RESTRICTED', enabled: true },
     ])
   })
+
+  it('preserves existing classification delivery semantics when the Wizard changes a Route floor', () => {
+    const state = buildInitialState()
+    state.dataProtection.routeClassificationOverrides = [
+      { key: 'floor-3', routeDraftKey: 'r3', classificationLevel: 'RESTRICTED', enabled: true },
+    ]
+    state.destinations.routeDrafts = [
+      { key: 'r3', destinationId: 10, enabled: true, failurePolicy: 'LOG_AND_CONTINUE', rateLimitJson: {} },
+    ]
+    const merged = mergeStreamGovernanceDocument(
+      {
+        enabled: true,
+        rules: [],
+        route_overrides: [{
+          override_key: 'foreign-classification-3',
+          field_path: null,
+          route_id: 3,
+          protection_action: null,
+          classification_level: 'INTERNAL',
+          delivery_behavior: 'continue',
+          enabled: true,
+        }],
+      },
+      buildStreamGovernancePayload(
+        state.dataProtection,
+        buildRouteDraftKeyToIdMap(state.destinations.routeDrafts, { r3: 3 }),
+      ),
+      state.destinations.routeDrafts,
+      { r3: 3 },
+    )
+    expect(merged.route_overrides).toEqual([{
+      override_key: 'foreign-classification-3',
+      field_path: null,
+      route_id: 3,
+      protection_action: null,
+      classification_level: 'RESTRICTED',
+      delivery_behavior: 'continue',
+      enabled: true,
+    }])
+  })
+
+  it('preserves foreign field classification and override identity when a field protection action changes', () => {
+    const state = buildInitialState()
+    state.dataProtection.routeOverrides = [
+      {
+        key: 'email-protection',
+        fieldPath: '$.email',
+        routeDraftKey: 'r3',
+        protectionAction: 'mask_full',
+        deliveryBehavior: 'quarantine',
+        enabled: true,
+      },
+    ]
+    state.destinations.routeDrafts = [
+      { key: 'r3', destinationId: 10, enabled: true, failurePolicy: 'LOG_AND_CONTINUE', rateLimitJson: {} },
+    ]
+    const merged = mergeStreamGovernanceDocument(
+      {
+        enabled: true,
+        rules: [],
+        route_overrides: [{
+          override_key: 'foreign-field-3-email',
+          field_path: '$.email',
+          route_id: 3,
+          classification_level: 'RESTRICTED',
+          protection_action: 'mask_partial',
+          delivery_behavior: 'continue',
+          enabled: true,
+        }],
+      },
+      buildStreamGovernancePayload(
+        state.dataProtection,
+        buildRouteDraftKeyToIdMap(state.destinations.routeDrafts, { r3: 3 }),
+      ),
+      state.destinations.routeDrafts,
+      { r3: 3 },
+    )
+    expect(merged.route_overrides).toEqual([{
+      override_key: 'foreign-field-3-email',
+      field_path: '$.email',
+      route_id: 3,
+      classification_level: 'RESTRICTED',
+      protection_action: 'mask_full',
+      delivery_behavior: 'quarantine',
+      enabled: true,
+    }])
+  })
+
 })

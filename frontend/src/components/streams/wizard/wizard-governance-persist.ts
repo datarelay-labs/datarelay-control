@@ -204,7 +204,9 @@ function mergeByStableKey<T>(
     seen.add(key)
     const replacement = incomingByKey.get(key)
     if (replacement) {
-      merged.push(replacement)
+      // Preserve persisted override identity and non-Wizard facets (e.g.
+      // classification on a field protection row, delivery on a Route floor).
+      merged.push({ ...item, ...replacement })
       incomingByKey.delete(key)
     } else {
       merged.push(item)
