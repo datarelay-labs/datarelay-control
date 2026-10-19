@@ -52,6 +52,18 @@ def source_lineage() -> dict:
     }
 
 
+def clone_payload(lineage):
+    """Small synthetic package with real source bytes matching each declared hash."""
+    return {
+        "package/dist/index.js": b"x",
+        "package/dist/index.d.ts": b"y",
+        "package/dist/styles.css": b"z",
+        "package/control-source-manifest.json": json.dumps(lineage).encode(),
+        "package/src/control/api/gdcAdmin.ts": CONTROL_FILES["api/gdcAdmin.ts"],
+        "package/src/control/components/settings/admin-settings-page.tsx": b"test-adapted-settings-v1\n",
+    }
+
+
 def write_json(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, indent=2) + "\n")
@@ -99,9 +111,7 @@ class ControlFirstCandidateVerifier(unittest.TestCase):
         facade = "datarelay-labs-foundation-0.1.0-dev-canonical.tgz"
         self.lineage = source_lineage()
         archive(self.packroot / clone, "@datarelay-labs/control-clone", "0.1.0-dev",
-                {"package/dist/index.js": b"x", "package/dist/index.d.ts": b"y",
-                 "package/dist/styles.css": b"z",
-                 "package/control-source-manifest.json": json.dumps(self.lineage).encode()})
+                clone_payload(self.lineage))
         archive(self.packroot / facade, "@datarelay-labs/foundation", "0.1.0-dev",
                 {"package/index.js": b'export * from "@datarelay-labs/control-clone";\n'})
         self.clone_sha = module.digest(self.packroot / clone)
@@ -139,12 +149,13 @@ class ControlFirstCandidateVerifier(unittest.TestCase):
     def verify(self, head=CANONICAL_HEAD, clone_sha=None, facade_sha=None):
         return module.validate(self.root, head, clone_sha or self.clone_sha, facade_sha or self.facade_sha)
 
-    def rewrite_clone_lineage(self):
+    def rewrite_clone_lineage(self, source_overrides=None, missing_sources=()):
         clone = self.packroot / self.candidate["packages"][0]["filename"]
-        archive(clone, "@datarelay-labs/control-clone", "0.1.0-dev",
-                {"package/dist/index.js": b"x", "package/dist/index.d.ts": b"y",
-                 "package/dist/styles.css": b"z",
-                 "package/control-source-manifest.json": json.dumps(self.lineage).encode()})
+        payload = clone_payload(self.lineage)
+        payload.update(source_overrides or {})
+        for source in missing_sources:
+            payload.pop(source)
+        archive(clone, "@datarelay-labs/control-clone", "0.1.0-dev", payload)
         self.clone_sha = module.digest(clone)
         self.candidate["packages"][0]["archive_sha256"] = self.clone_sha
         self.save()
@@ -227,6 +238,27 @@ class ControlFirstCandidateVerifier(unittest.TestCase):
         self.assertEqual(parsed["source_file_count"], 2)
         self.assertEqual(parsed["native_adapter_only_diffs"],
                          ["components/settings/admin-settings-page.tsx"])
+
+    def test_embedded_original_source_tamper_rejected_even_if_outer_hash_updated(self):
+        self.rewrite_clone_lineage(source_overrides={
+            "package/src/control/api/gdcAdmin.ts": b"changed-original-source",
+        })
+        with self.assertRaisesRegex(ValueError, "control-source-embedded-digest"):
+            self.verify()
+
+    def test_embedded_native_adapter_tamper_rejected_even_if_outer_hash_updated(self):
+        self.rewrite_clone_lineage(source_overrides={
+            "package/src/control/components/settings/admin-settings-page.tsx": b"changed-adapter",
+        })
+        with self.assertRaisesRegex(ValueError, "control-source-embedded-digest"):
+            self.verify()
+
+    def test_manifest_declared_but_absent_source_rejected_even_if_outer_hash_updated(self):
+        self.rewrite_clone_lineage(missing_sources=(
+            "package/src/control/api/gdcAdmin.ts",
+        ))
+        with self.assertRaisesRegex(ValueError, "control-source-embedded-missing"):
+            self.verify()
 
     def test_wrong_control_source_repository_rejected_despite_valid_archive_hash(self):
         self.lineage["source_repository"] = "untrusted/control"

@@ -99,6 +99,23 @@ def clone_source_manifest(archive: Path) -> dict:
             actual_adapters.add(path)
     if len(adapter_paths) != len(set(adapter_paths)) or set(adapter_paths) != actual_adapters:
         fail("control-source-adapter-declaration")
+    # Match each declared local hash to the bytes that would actually be
+    # installed. A self-consistent manifest is insufficient if src/control
+    # files inside a re-packed archive have changed.
+    with tarfile.open(archive, "r:gz") as bundle:
+        for row in rows:
+            embedded_path = "package/src/control/" + row["path"]
+            try:
+                embedded = bundle.getmember(embedded_path)
+            except KeyError:
+                fail("control-source-embedded-missing")
+            if not embedded.isfile() or embedded.size > 2_000_000:
+                fail("control-source-embedded-invalid")
+            content = bundle.extractfile(embedded)
+            if content is None:
+                fail("control-source-embedded-invalid")
+            if hashlib.sha256(content.read()).hexdigest() != row["local_sha256"]:
+                fail("control-source-embedded-digest")
     return data
 
 
