@@ -51,8 +51,9 @@ describe('AdministrationHubPage modernization', () => {
     expect(screen.getByTestId('administration-purpose-header')).toHaveTextContent(/What needs configuring/i)
     expect(screen.getByTestId('admin-hub-access-context')).toBeInTheDocument()
     expect(screen.getByTestId('admin-hub-task-groups')).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: 'Manage' })).toHaveLength(7)
-    expect(screen.getAllByRole('button', { name: 'View' })).toHaveLength(2)
+    expect(screen.getByTestId('foundation-administration-hub')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /^Manage / })).toHaveLength(7)
+    expect(screen.getAllByRole('button', { name: /^View / })).toHaveLength(2)
     expect(screen.getByRole('heading', { name: 'Access & security' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Platform & network' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Lifecycle & recovery' })).toBeInTheDocument()
@@ -78,7 +79,7 @@ describe('AdministrationHubPage modernization', () => {
       const card = screen.getByText(item.title).closest('.dr-card')
       expect(card).toBeTruthy()
       const action = item.title === 'Audit' || item.title === 'System Health' ? 'View' : 'Manage'
-      await user.click(within(card as HTMLElement).getByRole('button', { name: action }))
+      await user.click(within(card as HTMLElement).getByRole('button', { name: `${action} ${item.title}` }))
       expect(screen.getByTestId('location-probe')).toHaveTextContent(item.path)
       view.unmount()
     }
@@ -118,11 +119,11 @@ describe('AdministrationHubPage modernization', () => {
       ]) {
         const view = renderHub()
         expect(screen.queryByTestId('admin-hub-open-all-settings')).not.toBeInTheDocument()
-        expect(screen.queryByRole('button', { name: 'Manage' })).not.toBeInTheDocument()
-        expect(screen.getAllByRole('button', { name: 'View' })).toHaveLength(2)
+        expect(screen.queryByRole('button', { name: /^Manage / })).not.toBeInTheDocument()
+        expect(screen.getAllByRole('button', { name: /^View / })).toHaveLength(2)
         const card = screen.getByText(item.title).closest('.dr-card')
         expect(card).toBeTruthy()
-        await user.click(within(card as HTMLElement).getByRole('button', { name: 'View' }))
+        await user.click(within(card as HTMLElement).getByRole('button', { name: /^View / }))
         expect(screen.getByTestId('location-probe')).toHaveTextContent(item.path)
         view.unmount()
       }
@@ -134,29 +135,29 @@ describe('AdministrationHubPage modernization', () => {
     localStorage.setItem('gdc_platform_ui_role', 'ADMINISTRATOR')
     renderHub()
     expect(screen.queryByTestId('admin-hub-open-all-settings')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Manage' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'View' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Manage / })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^View / })).not.toBeInTheDocument()
   })
 
   it('does not reveal settings during forced password change or disabled account status', () => {
     signInAs('ADMINISTRATOR', { mustChangePassword: true })
     const first = renderHub()
     expect(screen.queryByTestId('admin-hub-open-all-settings')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Manage' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Manage / })).not.toBeInTheDocument()
     first.unmount()
     signInAs('ADMINISTRATOR', { status: 'DISABLED' })
     renderHub()
-    expect(screen.queryByRole('button', { name: 'Manage' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Manage / })).not.toBeInTheDocument()
   })
 
   it('removes privileged links when the authenticated session changes while the page is mounted', async () => {
     renderHub()
-    expect(screen.getAllByRole('button', { name: 'Manage' })).toHaveLength(7)
+    expect(screen.getAllByRole('button', { name: /^Manage / })).toHaveLength(7)
     act(() => signInAs('VIEWER'))
     await waitFor(() => {
       expect(screen.queryByTestId('admin-hub-open-all-settings')).not.toBeInTheDocument()
-      expect(screen.queryByRole('button', { name: 'Manage' })).not.toBeInTheDocument()
-      expect(screen.getAllByRole('button', { name: 'View' })).toHaveLength(2)
+      expect(screen.queryByRole('button', { name: /^Manage / })).not.toBeInTheDocument()
+      expect(screen.getAllByRole('button', { name: /^View / })).toHaveLength(2)
     })
   })
 
@@ -165,8 +166,8 @@ describe('AdministrationHubPage modernization', () => {
     localStorage.setItem('gdc_platform_ui_role', 'ADMINISTRATOR')
     renderHub()
     expect(screen.queryByTestId('admin-hub-open-all-settings')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Manage' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'View' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Manage / })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^View / })).not.toBeInTheDocument()
   })
 
   it('supports keyboard-accessible navigation to all settings', async () => {
