@@ -215,7 +215,7 @@ def validate(root: Path, head: str, expected_clone_sha: str, expected_facade_sha
         and candidate.get("baseline_version") == baseline.get("version") == "0.1.0-rc.50"
         and baseline.get("schema_version") == 1
         and candidate.get("release_acceptance") is False
-        and candidate.get("original_archive_transferred") is False
+        and type(candidate.get("original_archive_transferred")) is bool
         and candidate.get("original_wheel_installed") is False
         and original_wheel.get("source_head") == baseline.get("source_head")
     )
@@ -264,6 +264,7 @@ def validate(root: Path, head: str, expected_clone_sha: str, expected_facade_sha
     print(f"CONTROL_FIRST_SOURCE_CANDIDATE=PASS SOURCE_HEAD={head} CANONICAL_NPM=2/2")
     print("CONTROL_FIRST_PRODUCT_NATIVE_ACCEPTANCE=NOT_QUALIFIED")
     print("CONTROL_FIRST_PRIVATE_ORIGINAL_WHEEL=NOT_INSTALLED")
+    print("CONTROL_FIRST_ARCHIVE_RECEIPT=NOT_VERIFIED_BY_SOURCE_ONLY_GATE")
 
 
 def main() -> int:

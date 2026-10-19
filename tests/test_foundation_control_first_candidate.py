@@ -181,6 +181,24 @@ class ControlFirstCandidateVerifier(unittest.TestCase):
     def test_source_only_success_does_not_mark_product_acceptance(self):
         self.verify()
 
+    def test_trusted_original_archive_receipt_does_not_promote_source_to_installed(self):
+        # Receipt is separate from installed-product and release qualification.
+        from contextlib import redirect_stdout
+        import io
+        self.candidate["original_archive_transferred"] = True
+        self.save()
+        captured = io.StringIO()
+        with redirect_stdout(captured):
+            self.verify()
+        self.assertIn("CONTROL_FIRST_PRODUCT_NATIVE_ACCEPTANCE=NOT_QUALIFIED", captured.getvalue())
+        self.assertIn("CONTROL_FIRST_ARCHIVE_RECEIPT=NOT_VERIFIED_BY_SOURCE_ONLY_GATE", captured.getvalue())
+
+    def test_archive_receipt_must_be_explicit_boolean(self):
+        self.candidate["original_archive_transferred"] = "true"
+        self.save()
+        with self.assertRaisesRegex(ValueError, "source-state-or-baseline-conflict"):
+            self.verify()
+
     def test_different_external_source_head_rejected(self):
         with self.assertRaisesRegex(ValueError, "source-state-or-baseline-conflict"):
             self.verify(head="a" * 40)
