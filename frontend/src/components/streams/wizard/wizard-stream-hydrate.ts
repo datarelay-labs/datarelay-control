@@ -9,6 +9,7 @@ import {
 } from '../../../api/gdcRouteTransform'
 import { fetchStreamMappingUiConfig } from '../../../api/gdcRuntime'
 import { fetchStreamById } from '../../../api/gdcStreams'
+import { fetchStreamGovernance, type StreamGovernanceResponse } from '../../../api/gdcStreamGovernance'
 import { fetchStreamProtectionRules, type ProtectionMode } from '../../../api/gdcProtection'
 import type { MappingUIConfigResponse, MappingUIConfigRouteItem, StreamRead } from '../../../api/types/gdcApi'
 import { resolveStreamEndpointPath } from '../../../utils/streamHttpConfigFromStreamRead'
@@ -43,6 +44,8 @@ import {
   type StreamConfigHeaderRow,
   type WizardMappingRow,
   type WizardRouteDraft,
+  type WizardRouteClassificationOverride,
+  type WizardClassificationLevel,
   type WizardRouteTransformOverride,
   type WizardState,
 } from './wizard-state'
@@ -676,6 +679,50 @@ function streamConfigPatchFromRead(
   }
 }
 
+const CLASSIFICATION_LEVELS = new Set<WizardClassificationLevel>([
+  'PUBLIC', 'INTERNAL', 'CONFIDENTIAL', 'RESTRICTED',
+])
+
+/**
+ * Restore only the Route-level classification floor rows owned by this Wizard.
+ * Field-specific or foreign Governance overrides remain untouched by the
+ * existing server-side merge; an ambiguous duplicate must not be edited as
+ * one authoritative Route override.
+ */
+export function hydrateStreamClassificationFloors(
+  governance: StreamGovernanceResponse | null,
+  routeDrafts: readonly WizardRouteDraft[],
+): WizardRouteClassificationOverride[] | null {
+  // An unavailable Governance read is not evidence that every Route inherits defaults.
+  if (governance == null) return null
+  if (!Array.isArray(governance.route_overrides)) return null
+  const byId = new Map(routeDrafts.flatMap((draft) => {
+    const match = /^route-(\d+)$/.exec(draft.key)
+    const id = match == null ? NaN : Number(match[1])
+    return Number.isSafeInteger(id) && id > 0 ? [[id, draft.key] as const] : []
+  }))
+  const seen = new Set<number>()
+  const restored: WizardRouteClassificationOverride[] = []
+  for (const override of governance.route_overrides) {
+    if (override.enabled === false || !byId.has(override.route_id)) continue
+    const level = override.classification_level
+    if (!level || (override.field_path ?? '').trim() !== '' ||
+        (override.protection_action ?? '').trim() !== '' ||
+        (override.delivery_behavior ?? '').trim() !== '') continue
+    if (!CLASSIFICATION_LEVELS.has(level as WizardClassificationLevel) || seen.has(override.route_id)) {
+      return null
+    }
+    seen.add(override.route_id)
+    restored.push({
+      key: `persisted-classification-route-${override.route_id}`,
+      routeDraftKey: byId.get(override.route_id)!,
+      classificationLevel: level as WizardClassificationLevel,
+      enabled: true,
+    })
+  }
+  return restored
+}
+
 export async function hydrateWizardStateFromStream(streamId: number): Promise<WizardState | null> {
   const [found, mapping, allRoutes, destinations] = await Promise.all([
     fetchStreamById(streamId),
@@ -718,7 +765,15 @@ export async function hydrateWizardStateFromStream(streamId: number): Promise<Wi
     }
   }
 
-  const protectionRules = await fetchStreamProtectionRules(streamId, true)
+  const [protectionRules, streamGovernance] = await Promise.all([
+    fetchStreamProtectionRules(streamId, true),
+    fetchStreamGovernance(streamId).catch(() => null),
+  ])
+  const routeClassificationOverrides = hydrateStreamClassificationFloors(
+    streamGovernance,
+    hydratedDestinations.routeDrafts,
+  )
+  if (routeClassificationOverrides == null) return null
 
   const fieldMappings = (mapping?.mapping?.field_mappings ?? {}) as Record<string, unknown>
   const mappingMode = mappingModeFromFieldMappings(fieldMappings)
@@ -759,6 +814,7 @@ export async function hydrateWizardStateFromStream(streamId: number): Promise<Wi
     dataProtection: {
       ...base.dataProtection,
       ...(schemaDrift.policy ?? {}),
+      routeClassificationOverrides,
       intents: (protectionRules?.rules ?? []).filter((rule) => rule.enabled).map((rule) => ({
         key: 'persisted-protection-' + rule.id,
         detectedField: rule.field_path,
