@@ -551,7 +551,7 @@ class PhysicalOperationalRows:
 
 
 def load_physical_operational_rows(db: Session) -> PhysicalOperationalRows | None:
-    """Load physical read model when populated; None triggers virtual aggregate fallback."""
+    """Load a fresh, complete physical model; otherwise use bounded aggregates."""
 
     from app.config import settings
     from app.runtime.models import (
@@ -559,14 +559,14 @@ def load_physical_operational_rows(db: Session) -> PhysicalOperationalRows | Non
         RuntimeRouteSnapshot,
         RuntimeStreamSnapshot,
     )
-    from app.runtime.runtime_snapshot_repository import read_model_is_populated
+    from app.runtime.runtime_snapshot_repository import read_model_is_current
 
     if not bool(getattr(settings, "GDC_RUNTIME_OPERATIONAL_SNAPSHOT_READ_MODEL_ENABLED", True)):
         return None
-    if not read_model_is_populated(db):
+    now = snapshot_now()
+    if not read_model_is_current(db, now=now):
         return None
 
-    now = snapshot_now()
     streams = load_all_streams(db)
     routes = load_all_routes(db)
     destinations = load_all_destinations(db)
@@ -622,7 +622,7 @@ def load_operational_snapshot_bulk_data(db: Session) -> OperationalSnapshotBulkD
     stream_ids = [s.id for s in streams]
     route_ids = [r.id for r in routes]
     destination_ids = [d.id for d in destinations]
-    return OperationalSnapshotBulkData(
+    bulk = OperationalSnapshotBulkData(
         now=now,
         since_1m=since_1m,
         since_5m=since_5m,
@@ -644,3 +644,27 @@ def load_operational_snapshot_bulk_data(db: Session) -> OperationalSnapshotBulkD
         route_last=fetch_route_last_outcomes(db, group_ids=route_ids),
         destination_last=fetch_destination_last_outcomes(db, group_ids=destination_ids),
     )
+
+    # Window metrics expire; last outcomes are historical metadata. Retain older
+    # outcomes beyond the bounded log scan, but always prefer newer log evidence.
+    from app.config import settings
+    from app.runtime.runtime_snapshot_repository import (
+        _load_existing_destination_last_outcomes,
+        _load_existing_route_last_outcomes,
+        _load_existing_stream_last_outcomes,
+        _merge_last_outcome,
+        read_model_is_populated,
+    )
+
+    if bool(getattr(settings, "GDC_RUNTIME_OPERATIONAL_SNAPSHOT_READ_MODEL_ENABLED", True)) and read_model_is_populated(db):
+        histories = (
+            (streams, bulk.stream_last, _load_existing_stream_last_outcomes(db)),
+            (routes, bulk.route_last, _load_existing_route_last_outcomes(db)),
+            (destinations, bulk.destination_last, _load_existing_destination_last_outcomes(db)),
+        )
+        for entities, current, retained in histories:
+            for entity in entities:
+                merged = _merge_last_outcome(retained.get(entity.id), current.get(entity.id))
+                if merged is not None:
+                    current[entity.id] = merged
+    return bulk

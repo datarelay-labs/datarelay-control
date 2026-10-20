@@ -22,6 +22,9 @@ from app.runtime.read_service import (
     _compute_stream_health,
     _dashboard_snapshot_id,
     _dashboard_snapshot_time,
+    _load_snapshot_outcome_metadata,
+    _merge_health_outcome_metadata,
+    _merge_stats_outcome_metadata,
     _recent_log_items,
     _route_last_failure,
     _route_last_success,
@@ -106,15 +109,13 @@ def _last_event_at(last_seen: StreamRuntimeLastSeen | None) -> datetime | None:
     return max(present) if present else None
 
 
-def _derive_issue(*, health: StreamHealthResponse | None, last_error_message: str | None) -> str | None:
+def _derive_issue(*, health: StreamHealthResponse | None) -> str | None:
     if health is None:
-        return last_error_message
+        return None
     if health.health in ("UNHEALTHY", "DEGRADED"):
         for route in health.routes:
-            if route.last_error_message:
+            if route.health in ("UNHEALTHY", "DEGRADED") and route.last_error_message:
                 return route.last_error_message
-        if last_error_message:
-            return last_error_message
         return f"stream health {health.health.lower()}"
     return None
 
@@ -360,19 +361,13 @@ def _entry_from_bundle(
     health = bundle.health
     last_seen = stats.last_seen
     eps = round(float(events_window) / max(1, window_seconds), 6) if events_window > 0 else 0.0
-    last_error_message = None
-    if health.routes:
-        for route in health.routes:
-            if route.last_error_message:
-                last_error_message = route.last_error_message
-                break
     return StreamStatsHealthBulkEntry(
         events_per_second=eps,
         events_1h=events_window,
         events_24h=events_24h,
         health=_health_label(health.health),
         last_event_at=_last_event_at(last_seen),
-        issue=_derive_issue(health=health, last_error_message=last_error_message),
+        issue=_derive_issue(health=health),
         stats=stats,
         health_detail=health,
     )
@@ -413,6 +408,7 @@ def _build_from_delivery_logs_bulk(
         per_stream_limit=recent_log_cap,
     )
 
+    stream_last, route_last = _load_snapshot_outcome_metadata(db, stream_ids)
     streams_out: dict[str, StreamStatsHealthBulkEntry] = {}
     for sid in stream_ids:
         stream = stream_by_id.get(sid)
@@ -461,6 +457,8 @@ def _build_from_delivery_logs_bulk(
             summary=health_summary,
             routes=route_items,
         )
+        stats = _merge_stats_outcome_metadata(stats, stream_last.get(sid), route_last)
+        health = _merge_health_outcome_metadata(health, route_last)
         bundle = StreamRuntimeStatsHealthBundleResponse(stats=stats, health=health)
         streams_out[str(sid)] = _entry_from_bundle(
             bundle=bundle,
@@ -536,15 +534,14 @@ def _build_from_runtime_snapshots(
     window: str,
     snapshot_id: str | None,
 ) -> BulkStreamStatsHealthResponse:
+    """Use the physical model selected once by the request entry point."""
+
     from app.runtime.models import RuntimeRouteSnapshot, RuntimeStreamSnapshot
     from app.runtime.runtime_analytics_bucket_read_repository import (
         fetch_stream_processed_events_from_buckets,
         historical_analytics_available,
     )
-    from app.runtime.runtime_snapshot_analytics_repository import _int_events, _operational_scale, snapshot_analytics_available
-
-    if not snapshot_analytics_available(db):
-        raise RuntimeError("runtime snapshot read model unavailable")
+    from app.runtime.runtime_snapshot_analytics_repository import _int_events, _operational_scale
 
     until = _safe_bulk_until(snapshot_id)
     token_td = parse_metrics_window(window)
@@ -600,12 +597,12 @@ def _build_from_runtime_snapshots(
         send_success = int(round(send_success * scale))
         send_failed = int(round(send_failed * scale))
 
-        processed_window = window_processed.get(sid, 0)
-        if processed_window <= 0 and snap is not None:
-            processed_window = int(round(_int_events(float(snap.eps_5m), 300) * scale))
-        processed_24h = day_processed.get(sid, 0)
-        if processed_24h <= 0 and snap is not None:
-            processed_24h = int(round(_int_events(float(snap.eps_5m), 300) * day_scale))
+        processed_window = window_processed.get(sid)
+        if processed_window is None:
+            processed_window = int(round(_int_events(float(snap.eps_5m), 300) * scale)) if snap is not None else 0
+        processed_24h = day_processed.get(sid)
+        if processed_24h is None:
+            processed_24h = int(round(_int_events(float(snap.eps_5m), 300) * day_scale)) if snap is not None else 0
 
         summary = StreamRuntimeSummary(
             processed_events=processed_window,
