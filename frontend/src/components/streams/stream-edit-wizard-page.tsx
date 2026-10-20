@@ -1211,15 +1211,6 @@ export function StreamEditWizardPage({
               <span className="mt-0.5 block">{runtimeLifecycleLabel}</span>
             </p>
           </div>
-          {backendStreamId != null ? (
-            <StreamConfigurationRevisions
-              streamId={backendStreamId}
-              runtimeStatus={runtimeStatus}
-              canRestore={caps.admin_config_snapshot_apply === true}
-              restoreBlocked={runtimeVerificationBlocked}
-              onRestored={reloadAfterRevisionRestore}
-            />
-          ) : null}
           <p className="max-w-2xl text-sm text-slate-600 dark:text-gdc-muted" data-testid="wizard-stage-purpose">
             {stagePurpose}
           </p>
@@ -1278,6 +1269,16 @@ export function StreamEditWizardPage({
           ) : null}
         </div>
       </div>
+
+      {backendStreamId != null ? (
+        <StreamConfigurationRevisions
+          streamId={backendStreamId}
+          runtimeStatus={runtimeStatus}
+          canRestore={caps.admin_config_snapshot_apply === true}
+          restoreBlocked={runtimeVerificationBlocked}
+          onRestored={reloadAfterRevisionRestore}
+        />
+      ) : null}
 
       {saveError ? (
         <p className="rounded-md border border-red-200/80 bg-red-500/[0.06] p-3 text-[12px] font-medium text-red-700 dark:border-red-500/40 dark:text-red-300">

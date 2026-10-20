@@ -85,10 +85,58 @@ describe('StreamConfigurationRevisions', () => {
     await user.click(screen.getByRole('button', { name: 'Review v10' }))
 
     await waitFor(() => expect(getAdminSafeRollbackPreview).toHaveBeenCalledWith(71, 12, 'after'))
+    expect(screen.getByText('Reviewed revision → Current configuration')).toBeInTheDocument()
+    expect(screen.getByText('polling_interval: 30 → 60')).toBeInTheDocument()
     expect(screen.getByText(/Administrator permission is required to restore/)).toBeInTheDocument()
     expect(screen.queryByTestId('stream-revision-restore-confirm')).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Cancel review' }))
     expect(screen.queryByTestId('stream-revision-restore-preview')).not.toBeInTheDocument()
+  })
+
+  it('explains an empty scoped comparison and preserves the observed restore blockers', async () => {
+    const user = userEvent.setup()
+    const onRestored = vi.fn()
+    vi.mocked(getAdminSafeRollbackPreview).mockResolvedValue({
+      ...safePreview,
+      changed_fields: [],
+      blockers: [
+        'unsupported',
+        'unauthorized',
+        'mfa_required',
+        'backup_missing',
+        'recovery_unavailable',
+        'out_of_band_required',
+        'audit_unavailable',
+      ],
+      may_submit_to_product_authority: false,
+    })
+    render(
+      <StreamConfigurationRevisions
+        streamId={10}
+        runtimeStatus="STOPPED"
+        canRestore
+        restoreBlocked={false}
+        onRestored={onRestored}
+      />,
+    )
+
+    await screen.findByText(/Current saved revision v12/)
+    await user.click(screen.getByRole('button', { name: 'Review v10' }))
+
+    expect(await screen.findByText(/This review compares only Enabled and Polling interval/)).toBeInTheDocument()
+    expect(screen.getByText(/Names and other Stream settings are not compared/)).toBeInTheDocument()
+    expect(screen.getByText('No differences in the compared settings. Other settings may still differ.')).toBeInTheDocument()
+    expect(screen.queryByText('Reviewed revision → Current configuration')).not.toBeInTheDocument()
+    expect(screen.getByText(/Restore blocked: unsupported, unauthorized, mfa required/)).toBeInTheDocument()
+    expect(screen.getByText('Current safety review does not authorize this restore.')).toBeInTheDocument()
+    const restore = screen.getByTestId('stream-revision-restore-confirm')
+    expect(restore).toBeDisabled()
+    await user.click(restore)
+    await user.click(screen.getByRole('button', { name: 'Cancel review' }))
+
+    expect(screen.queryByTestId('stream-revision-restore-preview')).not.toBeInTheDocument()
+    expect(applyAdminConfigSnapshot).not.toHaveBeenCalled()
+    expect(onRestored).not.toHaveBeenCalled()
   })
 
   it('restores a reviewed stopped revision without starting runtime', async () => {

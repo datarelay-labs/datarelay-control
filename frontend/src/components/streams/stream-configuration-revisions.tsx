@@ -105,7 +105,7 @@ export function StreamConfigurationRevisions({
   return (
     <section
       data-testid="stream-configuration-revisions"
-      className="rounded-lg border border-slate-200/80 bg-white p-3 text-xs dark:border-gdc-border dark:bg-gdc-section"
+      className="rounded-lg border border-slate-200/80 bg-white p-3 text-xs text-slate-700 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-200"
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
@@ -170,11 +170,21 @@ export function StreamConfigurationRevisions({
           <p className="text-slate-600 dark:text-gdc-muted">
             Preview or restore never starts the Stream or delivers data.
           </p>
-          {preview.changed_fields.map((change) => (
-            <p key={change.path} className="font-mono text-[11px]">
-              {change.path}: {change.before ?? '—'} → {change.after ?? '—'}
-            </p>
-          ))}
+          <p className="text-slate-600 dark:text-gdc-muted">
+            This review compares only Enabled and Polling interval. Names and other Stream settings are not compared.
+          </p>
+          {preview.changed_fields.length === 0 ? (
+            <p>No differences in the compared settings. Other settings may still differ.</p>
+          ) : (
+            <div className="space-y-1">
+              <p className="font-semibold">Reviewed revision → Current configuration</p>
+              {preview.changed_fields.map((change) => (
+                <p key={change.path} className="font-mono text-[11px]">
+                  {change.path}: {change.before ?? '—'} → {change.after ?? '—'}
+                </p>
+              ))}
+            </div>
+          )}
           {preview.blockers.length > 0 ? (
             <p role="status" className="text-amber-700 dark:text-amber-200">
               Restore blocked: {preview.blockers.join(', ').replaceAll('_', ' ')}
