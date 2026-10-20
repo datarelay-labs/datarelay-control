@@ -376,7 +376,7 @@ function UrlSearchProbe() {
 }
 
 describe('Logs Explorer time window deep-link persistence', () => {
-  it('preserves a selected 24h time range with Route scope and restores it after reload', async () => {
+  it('keeps diagnosis and chart labels aligned with selected and restored time ranges', async () => {
     const user = userEvent.setup()
     setup([row(72, 2, 42, 'Route 42 delivery evidence')])
     const { unmount } = render(
@@ -387,6 +387,8 @@ describe('Logs Explorer time window deep-link persistence', () => {
     )
     await user.selectOptions(screen.getByLabelText('Time range'), 'Last 24 hours')
     expect(screen.getByLabelText('Time range')).toHaveValue('Last 24 hours')
+    expect(await screen.findByTestId('logs-diagnosis-window-hint')).toHaveTextContent('full 24h window')
+    expect(screen.getByTestId('logs-histogram-panel')).toHaveAttribute('aria-label', 'Logs over time (24h)')
     await waitFor(() => {
       const query = screen.getByTestId('logs-url-search').textContent ?? ''
       expect(query).toContain('route_id=42')
@@ -400,5 +402,13 @@ describe('Logs Explorer time window deep-link persistence', () => {
       </MemoryRouter>,
     )
     expect(screen.getByLabelText('Time range')).toHaveValue('Last 24 hours')
+    expect(await screen.findByTestId('logs-diagnosis-window-hint')).toHaveTextContent('full 24h window')
+    expect(screen.getByTestId('logs-histogram-panel')).toHaveAttribute('aria-label', 'Logs over time (24h)')
+
+    for (const [label, window] of [['Last 15 minutes', '15m'], ['Last 1 hour', '1h']]) {
+      await user.selectOptions(screen.getByLabelText('Time range'), label)
+      expect(await screen.findByTestId('logs-diagnosis-window-hint')).toHaveTextContent(`full ${window} window`)
+      expect(screen.getByTestId('logs-histogram-panel')).toHaveAttribute('aria-label', `Logs over time (${window})`)
+    }
   })
 })

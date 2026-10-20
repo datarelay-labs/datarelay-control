@@ -77,8 +77,6 @@ import {
   statusUrlParamFromUiLabel,
 } from './delivery-log-status-url'
 
-const KPI_WINDOW_LABEL = '1h'
-
 function logsTimeRangeFromUrl(value: string | null): string {
   return TIME_RANGE_OPTIONS.find((label) => metricsWindowFromTimeRangeLabel(label) === value) ?? TIME_RANGE_OPTIONS[1]
 }
@@ -1044,9 +1042,9 @@ export function LogsExplorerPage() {
       globalFailed: observabilitySummary?.totals.delivery_failed_events ?? null,
       globalSuccess: observabilitySummary?.totals.delivery_success_events ?? null,
       lifecycleRows: observabilitySummary?.totals.lifecycle_rows ?? deliveryOutcomes.lifecycleInfo,
-      windowLabel: KPI_WINDOW_LABEL,
+      windowLabel: metricsWindow,
     }
-  }, [deliveryOutcomes, errorCount, warnCount, kpi.total, observabilitySummary])
+  }, [deliveryOutcomes, errorCount, warnCount, kpi.total, observabilitySummary, metricsWindow])
 
   function exportJson() {
     const blob = new Blob([JSON.stringify(filteredRowsBase, null, 2)], { type: 'application/json' })
@@ -1658,7 +1656,7 @@ export function LogsExplorerPage() {
       </div>
 
       <section
-        aria-label={`Logs over time (${KPI_WINDOW_LABEL})`}
+        aria-label={`Logs over time (${metricsWindow})`}
         className="rounded-xl border border-slate-200/70 bg-white px-4 py-3 shadow-sm dark:border-gdc-border dark:bg-gdc-card"
         data-testid="logs-histogram-panel"
       >
