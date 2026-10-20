@@ -104,6 +104,27 @@ describe('computeDeployReadiness', () => {
     expect(summary.transformLabel).toBe('Override: 1')
   })
 
+  it('allows HTTP delivery without explicit mappings when unmapped fields pass through', () => {
+    const state = readyState()
+    state.connector.sourceType = 'HTTP_API_POLLING'
+    state.mapping = []
+    state.unmappedFieldsPolicy = 'pass_through'
+    const snapshot = computeDeployReadiness(state, { ok: true, failed: false, unknown: false })
+    expect(snapshot.categories.find((c) => c.key === 'transform')?.tone).toBe('ok')
+    expect(snapshot.categories.find((c) => c.key === 'route_processing')?.tone).toBe('ok')
+    expect(snapshot.canCreate).toBe(true)
+  })
+
+  it('keeps empty HTTP mapping blocked when unmapped fields are dropped', () => {
+    const state = readyState()
+    state.connector.sourceType = 'HTTP_API_POLLING'
+    state.mapping = []
+    state.unmappedFieldsPolicy = 'drop'
+    const snapshot = computeDeployReadiness(state, { ok: true, failed: false, unknown: false })
+    expect(snapshot.categories.find((c) => c.key === 'transform')?.tone).toBe('err')
+    expect(snapshot.canCreate).toBe(false)
+  })
+
   it('returns NEEDS ATTENTION when required steps are incomplete', () => {
     const state = buildInitialState()
     const snapshot = computeDeployReadiness(state)

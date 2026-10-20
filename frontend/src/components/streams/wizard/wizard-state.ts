@@ -1533,7 +1533,8 @@ export function computeLegacySubstepCompletion(state: WizardState): WizardLegacy
   const mappingReady =
     wizardMappingContentReady(state) ||
     state.transformRules.some((r) => r.outputField.trim()) ||
-    ((isRemote || isWebhook) && state.unmappedFieldsPolicy === 'pass_through')
+    ((isRemote || isWebhook || state.connector.sourceType === 'HTTP_API_POLLING') &&
+      state.unmappedFieldsPolicy === 'pass_through')
   const enrichmentReady = state.enrichment.length === 0 || state.enrichment.every((e) => e.fieldName.trim().length > 0)
   const enrichmentHasRows = state.enrichment.length > 0
   // Completion reflects the same required delivery-path validity as the Deploy gate.

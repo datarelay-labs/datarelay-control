@@ -356,7 +356,8 @@ export function computeDeployReadiness(
   const mappingReady =
     wizardMappingContentReady(state) ||
     state.transformRules.some((r) => r.outputField.trim()) ||
-    (!httpRecordSelection && state.unmappedFieldsPolicy === 'pass_through')
+    (state.unmappedFieldsPolicy === 'pass_through' &&
+      (!httpRecordSelection || state.connector.sourceType === 'HTTP_API_POLLING'))
   const enrichmentDupes = countDuplicateEnrichmentKeys(state.enrichment)
   const enrichmentValid =
     state.enrichment.length === 0 || state.enrichment.every((e) => e.fieldName.trim().length > 0)
