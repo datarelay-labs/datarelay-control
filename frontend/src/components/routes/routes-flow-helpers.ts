@@ -5,6 +5,7 @@ import {
   formatOperationalSuccessRate,
   selectDestinationKpi,
   selectRouteKpi,
+  resolveLastActivityAt,
 } from '../../lib/operational-snapshot-selectors'
 import {
   formatEps,
@@ -201,13 +202,31 @@ function problemSeverity(issue: string): number {
   }
 }
 
-function detectRouteIssue(row: RouteConsoleRow): string | null {
+function hasRecentMetricActivity(row: RouteConsoleRow, nowMs: number): boolean {
+  const metrics = row.metrics
+  if (!metrics) return false
+  if (row.hasDeliveryActivity1m === true ||
+    (Number.isFinite(metrics.eps_current) && metrics.eps_current > 0)) return true
+  // Success rate covers five minutes. Zero one-minute EPS cannot rule out
+  // deliveries earlier in that window, while retained historical timestamps
+  // do not prove a current metric problem.
+  return [metrics.last_success_at, metrics.last_failure_at].some((stamp) => {
+    if (!stamp) return false
+    const observedAt = Date.parse(stamp)
+    const ageMs = nowMs - observedAt
+    return Number.isFinite(observedAt) && ageMs >= -60_000 && ageMs <= 5 * 60_000
+  })
+}
+
+function detectRouteIssue(row: RouteConsoleRow, nowMs: number): string | null {
+  if (row.uiStatus === 'Disabled' || row.route.enabled === false || row.destination?.enabled === false) return null
+  // Explicit current health remains actionable even when delivery has stopped.
   if (row.uiStatus === 'Error') return 'Error'
   if (row.uiStatus === 'Warning') return 'Warning'
   const m = row.metrics
-  if (!m) return null
-  if (m.success_rate < LOW_SUCCESS_RATE_PCT) return 'Low Success Rate'
-  if (m.avg_latency_ms > HIGH_LATENCY_MS) return 'High Latency'
+  if (!m || !hasRecentMetricActivity(row, nowMs)) return null
+  if (Number.isFinite(m.success_rate) && m.success_rate >= 0 && m.success_rate < LOW_SUCCESS_RATE_PCT) return 'Low Success Rate'
+  if (Number.isFinite(m.avg_latency_ms) && m.avg_latency_ms > HIGH_LATENCY_MS) return 'High Latency'
   return null
 }
 
@@ -215,10 +234,11 @@ function detectRouteIssue(row: RouteConsoleRow): string | null {
 export function buildProblemRoutes(
   consoleRows: readonly RouteConsoleRow[],
   limit = PROBLEM_ROUTES_LIMIT,
+  nowMs = Date.now(),
 ): ProblemRouteRow[] {
   const problems: ProblemRouteRow[] = []
   for (const row of consoleRows) {
-    const issue = detectRouteIssue(row)
+    const issue = detectRouteIssue(row, nowMs)
     if (issue == null) continue
     const m = row.metrics
     problems.push({
@@ -229,7 +249,7 @@ export function buildProblemRoutes(
       issue,
       severity: problemSeverity(issue),
       throughputEps: m?.eps_current ?? null,
-      since: m?.last_failure_at ?? m?.last_success_at ?? null,
+      since: resolveLastActivityAt(m?.last_success_at ?? null, m?.last_failure_at ?? null),
     })
   }
   return problems

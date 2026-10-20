@@ -24,6 +24,8 @@ export type RouteConsoleRow = {
   stream: StreamRead | null
   destination: DestinationListItem | DestinationRead | null
   metrics: RouteRuntimeMetricsRow | null
+  /** Positive activity evidence from raw snapshot EPS, before legacy count rounding. */
+  hasDeliveryActivity1m?: boolean
   uiStatus: RouteUiStatus
   routeLabel: string
 }
@@ -222,6 +224,8 @@ export function buildRouteRowsFromOperationalSnapshot(
       stream,
       destination,
       metrics: metricsFromOperationalRoute(snap, problems),
+      hasDeliveryActivity1m: [snap.delivered_eps_1m, snap.failed_eps_1m]
+        .some((eps) => Number.isFinite(eps) && eps > 0),
       uiStatus,
       routeLabel,
     }

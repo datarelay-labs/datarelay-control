@@ -21,7 +21,7 @@ export function RoutesProblemRoutesPanel({ consoleRows, limit }: RoutesProblemRo
       <div className="border-b border-slate-200/80 px-3 py-2 dark:border-gdc-border">
         <h3 className="text-[13px] font-semibold text-slate-900 dark:text-slate-100">Problem Routes</h3>
         <p className="text-[11px] text-slate-500 dark:text-gdc-muted">
-          Warning, error, high latency, or low success rate
+          Current health warnings and errors, plus recent delivery metric issues
         </p>
       </div>
       <div className="overflow-x-auto">
@@ -33,7 +33,7 @@ export function RoutesProblemRoutesPanel({ consoleRows, limit }: RoutesProblemRo
               <th className={opTh}>Destination</th>
               <th className={opTh}>Issue</th>
               <th className={opTh}>Throughput</th>
-              <th className={opTh}>Since</th>
+              <th className={opTh}>Last activity</th>
             </tr>
           </thead>
           <tbody>
