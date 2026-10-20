@@ -3,7 +3,7 @@
 This repository follows the canonical Data Relay Labs Engineering System:
 https://github.com/datarelay-labs/engineering-system
 
-Adoption baseline: Engineering System version 1.7.0 at immutable commit `1e12573f5d24f93d5498dea3580f2a87bcb518d6`.
+Adoption baseline: Engineering System version 1.7.0 at immutable commit `141bd3fcad6f95d3a382e91fdc351ae0a54819a4`.
 
 ## Minimum context first
 
@@ -56,7 +56,7 @@ Historical or explicitly retired behavior is not protected by no-regression poli
 
 ## Execution rules
 
-- For `project.user_facing: true`, require Surface Reconciliation and Full User E2E on the same exact candidate. Before either named gate, read its entire current repository-local contract and execute it as the applicable User/Operator/Admin persona on the actual public surface. Drivers and scripts may support real actions, never substitute synthetic PASS. Follow `standards/USER_ACCEPTANCE.md`; do not restart the complete gate after every individual fix. Close findings with affected reruns, then one fresh complete confirmation.
+- For `project.user_facing: true`, require Surface Reconciliation and Full User E2E on the same exact candidate. Before either named gate, read its entire current repository-local contract. The default `AI_DIRECT` acting user is the selected ChatGPT runtime; only with the current owner's explicit opt-in may the human owner physically operate the real public surface under `HUMAN_OWNER_WITH_CHATGPT_AUDIT`, with ChatGPT still independently auditing evidence. No caller-authored receipt or script grants real user-gate PASS. Drivers/scripts cannot substitute synthetic PASS. Follow `standards/USER_ACCEPTANCE.md`; close findings with affected reruns, then one fresh complete confirmation.
 - **Next-chat bootstrap fast path:** perform one bounded lookup when resuming durable work. With no ACTIVE packet, inspect current roadmap/Git/PR facts once and enter safe owner-authorized work; create or repair one packet when continuity needs it, not as a permission prerequisite. `NO_ACTIVE_PACKET` is a scheduling input, not a blocker.
 - **DataRelay Atlas context bootstrap:** When the bound repository is under `datarelay-labs/` and a connected MCP/app named `DataRelay Atlas` exposes `bootstrap_datarelay_context`, perform one bounded bootstrap after resolving the exact repository and any current Work Packet relied on, before substantive implementation on a repository-level continue/resume or first entry into a durable workstream. Pass the exact repository and the workstream only when known. Reuse a fresh same-repository/workstream result in the current chat; do not repeat per turn, commit, or status check. Atlas is derived context only and never grants execution, permission, completion, or release authority. If the connector/tool is absent, authentication fails, the result is stale/`UNKNOWN`, or the call fails, continue immediately from canonical Git/GitHub/local evidence without retry loops, runtime switching, or asking the owner to repair Atlas. Direct Atlas/MCP-only questions may call the requested scoped tool without this bootstrap.
 - **Verified next-chat resume:** re-read the current Issue and mutable repo/worktree/HEAD/profile once; if unchanged, enter the persisted Next Action immediately. Do not replay handoff validation, rewrite unchanged state or reconstruct transcripts. Revalidate only changed facts.
