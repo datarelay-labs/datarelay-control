@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -300,6 +300,35 @@ describe('RoutesOverviewPage snapshot loading', () => {
     expect(screen.queryByTestId('routes-architecture-route-5')).not.toBeInTheDocument()
     expect(screen.getByTestId('routes-architecture-inspector')).toHaveTextContent('R-0006')
     expect(screen.getByTestId('routes-architecture-stream-1')).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it.each([
+    { latency: null, expected: '—' },
+    { latency: 0, expected: '0 ms' },
+    { latency: 180.4, expected: '180 ms' },
+  ])('preserves unavailable and measured catalog latency ($latency)', async ({ latency, expected }) => {
+    const user = userEvent.setup()
+    const snap = await import('../../api/operationalSnapshot')
+    const lastSuccessAt = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString()
+    vi.mocked(snap.getOperationalSnapshot).mockResolvedValue({
+      ...operationalSnapshot,
+      routes: [{
+        ...operationalSnapshot.routes[0]!,
+        avg_latency_ms: latency,
+        last_success_at: lastSuccessAt,
+      }],
+    })
+
+    render(<MemoryRouter><RoutesOverviewPage /></MemoryRouter>)
+    await screen.findByText('All Routes (1)')
+    await user.click(screen.getByRole('button', { name: /All Routes \(1\)/i }))
+
+    const row = await screen.findByTestId('routes-table-row-5')
+    const table = row.closest('table')!
+    const headers = within(table).getAllByRole('columnheader').map((cell) => cell.textContent?.trim())
+    const cells = within(row).getAllByRole('cell')
+    expect(cells[headers.indexOf('Avg Latency')]?.textContent?.trim()).toBe(expected)
+    expect(cells[headers.indexOf('Last Activity')]).toHaveTextContent(/^4h ago$/)
   })
 
   it('restores the exact Stream and Route selection from a Data Flows investigation deep link', async () => {
