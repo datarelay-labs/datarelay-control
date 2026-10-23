@@ -94,7 +94,12 @@ export async function preflightWizardReviewedRevision(
 ): Promise<ReviewedRevisionPreflightResult> {
   const errors: string[] = []
   const reviewedStreamToken = normalizedRevision(state.streamUpdatedAt)
-  const stream = await fetchStreamByIdFresh(streamId)
+  let stream: Awaited<ReturnType<typeof fetchStreamByIdFresh>> = null
+  try {
+    stream = await fetchStreamByIdFresh(streamId)
+  } catch {
+    // An unavailable revision read is not authorization to write against stale state.
+  }
   if (stream == null) {
     errors.push(`stream ${streamId}: current server revision could not be read; reviewed configuration was not applied.`)
   } else if (!reviewedStreamToken) {
@@ -116,7 +121,12 @@ export async function preflightWizardReviewedRevision(
       errors.push(`route ${routeId}: reviewed concurrency token is missing; no configuration was written.`)
       continue
     }
-    const current = await fetchRouteByIdFresh(routeId)
+    let current: Awaited<ReturnType<typeof fetchRouteByIdFresh>> = null
+    try {
+      current = await fetchRouteByIdFresh(routeId)
+    } catch {
+      // A failed Route preflight must preserve all reviewed configuration without writes.
+    }
     if (current == null) {
       errors.push(`route ${routeId}: current server revision could not be read; no configuration was written.`)
       continue

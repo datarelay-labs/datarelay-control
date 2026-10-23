@@ -1311,6 +1311,40 @@ describe('wizard-stream-persist route sync + transform', () => {
     expect(createRoute).not.toHaveBeenCalled()
   })
 
+  it('fails closed when the fresh Stream revision read rejects before any write', async () => {
+    fetchStreamByIdFresh.mockRejectedValueOnce(new Error('network unavailable'))
+    const state = editState((s) => { s.stream.name = 'Pending name' })
+
+    const result = await persistWizardStreamEdits(100, state, { confirmedState: state })
+
+    expect(result.ok).toBe(false)
+    expect(result.errors.join(' ')).toMatch(/stream 100: current server revision could not be read/i)
+    expect(result.notPersistedObjects).toContain('Reviewed Stream/Route configuration')
+    expect(updateStream).not.toHaveBeenCalled()
+    expect(saveStreamMappingUiConfigStrict).not.toHaveBeenCalled()
+    expect(createRoute).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when a fresh Route revision read rejects before any write', async () => {
+    const state = editState((s) => {
+      s.destinations.routeDrafts = [{
+        key: 'route-5', destinationId: 7, enabled: true,
+        failurePolicy: 'LOG_AND_CONTINUE', rateLimitJson: {},
+        inherit: { ...DEFAULT_ROUTE_PROCESSING_INHERIT }, updatedAt: 'route-a',
+      }]
+      s.outcome = { ...s.outcome!, routeId: 5, routeIds: [5] }
+    })
+    fetchRouteByIdFresh.mockRejectedValueOnce(new Error('network unavailable'))
+
+    const result = await persistWizardStreamEdits(100, state, { confirmedState: state })
+
+    expect(result.ok).toBe(false)
+    expect(result.errors.join(' ')).toMatch(/route 5: current server revision could not be read/i)
+    expect(updateStream).not.toHaveBeenCalled()
+    expect(updateRoute).not.toHaveBeenCalled()
+    expect(saveStreamMappingUiConfigStrict).not.toHaveBeenCalled()
+  })
+
   it('preflights every reviewed Route token before writing the Stream', async () => {
     const state = editState((s) => {
       s.destinations.routeDrafts = [{
