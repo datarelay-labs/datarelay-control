@@ -180,6 +180,9 @@ export async function syncRoutes(
       } else {
         const created = await createRoute(payload)
         routeIdsByDraftKey[draft.key] = created.id
+        // Callers remap the local draft key to route-{id} before applying
+        // server revisions, so the new Route token must use that final key.
+        if (created.updated_at) routeUpdatedAtByDraftKey[`route-${created.id}`] = created.updated_at
         persistedObjects.push(`Route #${created.id}`)
       }
     } catch (err) {

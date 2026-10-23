@@ -160,6 +160,7 @@ import { buildSchemaDriftPolicyPersistPayload, persistWizardSchemaDriftPolicy } 
 import { saveStreamMappingUiConfigStrict } from '../../../api/gdcRuntimeUi'
 import {
   applyCreatedRouteIdentity,
+  applyPersistedRevisions,
   persistWizardRouteTransformOverrides,
   persistWizardStreamEdits,
   syncRoutes,
@@ -263,6 +264,31 @@ describe('wizard-stream-persist route sync + transform', () => {
         message: 'ok',
       }
     })
+  })
+
+  it('retains the server revision when a new Route receives its persisted ID', async () => {
+    createRoute.mockResolvedValue({ id: 22, stream_id: 100, destination_id: 20, updated_at: 'created-token' })
+    const state = editState((s) => {
+      s.outcome = { ...s.outcome!, routeId: null, routeIds: [] }
+      s.destinations.routeDrafts = [{
+        key: 'wr-new-dest-b',
+        destinationId: 20,
+        enabled: true,
+        failurePolicy: 'LOG_AND_CONTINUE',
+        rateLimitJson: {},
+        inherit: { ...DEFAULT_ROUTE_PROCESSING_INHERIT },
+      }]
+    })
+    const result = await syncRoutes(100, state, { confirmedState: state })
+    expect(result.errors).toEqual([])
+    const withIdentity = applyCreatedRouteIdentity(state, result.routeIdsByDraftKey)
+    const updated = applyPersistedRevisions(withIdentity, {
+      streamUpdatedAt: 'stream-b',
+      routeUpdatedAtByDraftKey: result.routeUpdatedAtByDraftKey,
+    })
+    expect(updated.destinations.routeDrafts).toHaveLength(1)
+    expect(updated.destinations.routeDrafts[0].key).toBe('route-22')
+    expect(updated.destinations.routeDrafts[0].updatedAt).toBe('created-token')
   })
 
   it('captures newly created route ids and applies transform to the new route only', async () => {
