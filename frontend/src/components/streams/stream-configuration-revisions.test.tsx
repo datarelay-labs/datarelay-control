@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -67,6 +67,23 @@ describe('StreamConfigurationRevisions', () => {
       new_monotonic_version: 13,
       message: 'restored',
     })
+  })
+
+  it('ignores late revision responses from the previously selected stream', async () => {
+    let finishOld!: (value: typeof versions) => void
+    const oldPending = new Promise<typeof versions>((resolve) => { finishOld = resolve })
+    vi.mocked(getAdminConfigVersions)
+      .mockImplementationOnce(() => oldPending)
+      .mockResolvedValueOnce({ total: 0, items: [] })
+    const props = { runtimeStatus: 'STOPPED' as const, canRestore: false, restoreBlocked: false, onRestored: vi.fn() }
+    const { rerender } = render(<StreamConfigurationRevisions streamId={10} {...props} />)
+    await waitFor(() => expect(getAdminConfigVersions).toHaveBeenCalledTimes(1))
+    rerender(<StreamConfigurationRevisions streamId={11} {...props} />)
+    await waitFor(() => expect(getAdminConfigVersions).toHaveBeenCalledTimes(2))
+    expect(await screen.findByText('No saved Stream revisions are available yet.')).toBeInTheDocument()
+    await act(async () => { finishOld(versions) })
+    expect(screen.queryByText('Review v10')).not.toBeInTheDocument()
+    expect(screen.getByText('No saved Stream revisions are available yet.')).toBeInTheDocument()
   })
 
   it('shows saved history and keeps restore administrator-only', async () => {

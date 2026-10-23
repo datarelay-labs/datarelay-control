@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   applyAdminConfigSnapshot,
   getAdminConfigVersions,
@@ -23,6 +23,7 @@ export function StreamConfigurationRevisions({
   restoreBlocked,
   onRestored,
 }: Props) {
+  const historyRequestRef = useRef(0)
   const [versions, setVersions] = useState<ConfigVersionDto[]>([])
   const [historyError, setHistoryError] = useState<string | null>(null)
   const [preview, setPreview] = useState<ConfigSafeRollbackPreviewDto | null>(null)
@@ -31,15 +32,18 @@ export function StreamConfigurationRevisions({
   const [error, setError] = useState<string | null>(null)
 
   const loadVersions = useCallback(async () => {
+    const request = ++historyRequestRef.current
     try {
       const result = await getAdminConfigVersions({
         limit: 8,
         entity_type: 'STREAM_CONFIG',
         entity_id: streamId,
       })
+      if (request !== historyRequestRef.current) return
       setVersions([...result.items].sort((a, b) => b.version - a.version))
       setHistoryError(null)
     } catch (cause) {
+      if (request !== historyRequestRef.current) return
       setVersions([])
       setHistoryError(cause instanceof Error ? cause.message : String(cause))
     }
@@ -47,6 +51,8 @@ export function StreamConfigurationRevisions({
 
   useEffect(() => {
     setPreview(null)
+    setVersions([])
+    setHistoryError(null)
     setMessage(null)
     setError(null)
     void loadVersions()
