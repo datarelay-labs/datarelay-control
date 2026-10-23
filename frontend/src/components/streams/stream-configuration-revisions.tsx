@@ -24,6 +24,7 @@ export function StreamConfigurationRevisions({
   onRestored,
 }: Props) {
   const historyRequestRef = useRef(0)
+  const previewRequestRef = useRef(0)
   const [versions, setVersions] = useState<ConfigVersionDto[]>([])
   const [historyError, setHistoryError] = useState<string | null>(null)
   const [preview, setPreview] = useState<ConfigSafeRollbackPreviewDto | null>(null)
@@ -50,6 +51,8 @@ export function StreamConfigurationRevisions({
   }, [streamId])
 
   useEffect(() => {
+    ++previewRequestRef.current
+    setBusy(false)
     setPreview(null)
     setVersions([])
     setHistoryError(null)
@@ -74,21 +77,26 @@ export function StreamConfigurationRevisions({
 
   const review = async (version: ConfigVersionDto) => {
     if (busy || currentVersion <= 0) return
+    const request = ++previewRequestRef.current
     setBusy(true)
     setError(null)
     setMessage(null)
     try {
-      setPreview(await getAdminSafeRollbackPreview(version.id, currentVersion, 'after'))
+      const result = await getAdminSafeRollbackPreview(version.id, currentVersion, 'after')
+      if (request !== previewRequestRef.current) return
+      setPreview(result)
     } catch (cause) {
+      if (request !== previewRequestRef.current) return
       setPreview(null)
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
-      setBusy(false)
+      if (request === previewRequestRef.current) setBusy(false)
     }
   }
 
   const restore = async () => {
     if (!preview || !restoreAllowed || busy) return
+    const request = ++previewRequestRef.current
     setBusy(true)
     setError(null)
     setMessage(null)
@@ -97,14 +105,17 @@ export function StreamConfigurationRevisions({
         target: 'after',
         expected_version: preview.current_version,
       })
+      if (request !== previewRequestRef.current) return
       setMessage(`Restored as saved revision v${result.new_monotonic_version}. Runtime was not started.`)
       setPreview(null)
       await loadVersions()
+      if (request !== previewRequestRef.current) return
       await onRestored()
     } catch (cause) {
+      if (request !== previewRequestRef.current) return
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
-      setBusy(false)
+      if (request === previewRequestRef.current) setBusy(false)
     }
   }
 

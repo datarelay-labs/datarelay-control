@@ -86,6 +86,51 @@ describe('StreamConfigurationRevisions', () => {
     expect(screen.getByText('No saved Stream revisions are available yet.')).toBeInTheDocument()
   })
 
+  it('does not show a stale review preview after switching Streams', async () => {
+    const user = userEvent.setup()
+    let resolveOld!: (value: typeof safePreview) => void
+    const pendingReview = new Promise<typeof safePreview>((resolve) => { resolveOld = resolve })
+    vi.mocked(getAdminConfigVersions)
+      .mockResolvedValueOnce(versions)
+      .mockResolvedValueOnce({ total: 0, items: [] })
+    vi.mocked(getAdminSafeRollbackPreview).mockImplementationOnce(() => pendingReview)
+    const props = { runtimeStatus: 'STOPPED' as const, canRestore: true, restoreBlocked: false, onRestored: vi.fn() }
+    const { rerender } = render(<StreamConfigurationRevisions streamId={10} {...props} />)
+    await screen.findByText(/Current saved revision v12/)
+    await user.click(screen.getByRole('button', { name: 'Review v10' }))
+    await waitFor(() => expect(getAdminSafeRollbackPreview).toHaveBeenCalledTimes(1))
+    rerender(<StreamConfigurationRevisions streamId={11} {...props} />)
+    expect(await screen.findByText('No saved Stream revisions are available yet.')).toBeInTheDocument()
+    await act(async () => { resolveOld(safePreview) })
+    expect(screen.queryByTestId('stream-revision-restore-preview')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('stream-revision-restore-confirm')).not.toBeInTheDocument()
+  })
+
+  it('does not display an earlier Stream restore result after switching Streams', async () => {
+    const user = userEvent.setup()
+    let resolveRestore!: (value: { applied_target: string; source_version_row_id: number; source_monotonic_version: number; new_monotonic_version: number; message: string }) => void
+    const pendingRestore = new Promise<Awaited<ReturnType<typeof applyAdminConfigSnapshot>>>((resolve) => { resolveRestore = resolve })
+    vi.mocked(applyAdminConfigSnapshot).mockImplementationOnce(() => pendingRestore)
+    vi.mocked(getAdminConfigVersions)
+      .mockResolvedValueOnce(versions)
+      .mockResolvedValueOnce({ total: 0, items: [] })
+    const onRestored = vi.fn()
+    const props = { runtimeStatus: 'STOPPED' as const, canRestore: true, restoreBlocked: false, onRestored }
+    const { rerender } = render(<StreamConfigurationRevisions streamId={10} {...props} />)
+    await screen.findByText(/Current saved revision v12/)
+    await user.click(screen.getByRole('button', { name: 'Review v10' }))
+    const confirm = await screen.findByTestId('stream-revision-restore-confirm')
+    await user.click(confirm)
+    await waitFor(() => expect(applyAdminConfigSnapshot).toHaveBeenCalledTimes(1))
+    rerender(<StreamConfigurationRevisions streamId={11} {...props} />)
+    expect(await screen.findByText('No saved Stream revisions are available yet.')).toBeInTheDocument()
+    await act(async () => {
+      resolveRestore({ applied_target: 'after', source_version_row_id: 71, source_monotonic_version: 10, new_monotonic_version: 13, message: 'restored' })
+    })
+    expect(screen.queryByText(/Restored as saved revision v13/)).not.toBeInTheDocument()
+    expect(onRestored).not.toHaveBeenCalled()
+  })
+
   it('shows saved history and keeps restore administrator-only', async () => {
     const user = userEvent.setup()
     render(
