@@ -502,6 +502,22 @@ export async function persistWizardStreamEdits(
     notPersistedObjects.push(`Stream #${streamId}`)
   }
 
+  // A Stream CAS can fail after the preflight GET if another writer advances
+  // its revision. Without a confirmed Stream save, do not persist Mapping,
+  // Route or Governance fragments of this now-stale draft.
+  if (streamUpdatedAt == null) {
+    return {
+      ok: false,
+      errors,
+      routeIdsByDraftKey: {},
+      routeUpdatedAtByDraftKey: {},
+      streamUpdatedAt: state.streamUpdatedAt ?? null,
+      dataProtectionPersisted: false,
+      persistedObjects,
+      notPersistedObjects,
+    }
+  }
+
   const fieldMappings = buildWizardFieldMappingsPayload(state)
   const enrichmentDict = enrichmentDictFromRows(state.enrichment, {
     advancedPassthrough: state.enrichmentPassthrough,

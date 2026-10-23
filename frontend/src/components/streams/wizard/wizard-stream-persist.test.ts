@@ -1254,6 +1254,37 @@ describe('wizard-stream-persist route sync + transform', () => {
     expect(saveStreamMappingUiConfigStrict).not.toHaveBeenCalled()
   })
 
+  it('stops downstream writes if the Stream CAS fails after a valid preflight', async () => {
+    const state = editState((s) => {
+      s.stream.name = 'Edited during another write'
+      s.destinations.routeDrafts = [{
+        key: 'route-5',
+        destinationId: 7,
+        enabled: true,
+        failurePolicy: 'LOG_AND_CONTINUE',
+        rateLimitJson: {},
+        inherit: { ...DEFAULT_ROUTE_PROCESSING_INHERIT },
+        updatedAt: 'route-a',
+      }]
+      s.outcome = { ...s.outcome!, routeId: 5, routeIds: [5] }
+    })
+    // The server changes between preflight GET and the first CAS update.
+    fetchRouteByIdFresh.mockResolvedValue({
+      id: 5, stream_id: 100, destination_id: 7, updated_at: 'route-a',
+    })
+    updateStream.mockRejectedValueOnce(new Error('409 STREAM_STALE_WRITE'))
+
+    const result = await persistWizardStreamEdits(100, state, { confirmedState: state })
+
+    expect(result.ok).toBe(false)
+    expect(result.errors.join(' ')).toMatch(/STREAM_STALE_WRITE/)
+    expect(result.notPersistedObjects).toContain('Stream #100')
+    expect(result.persistedObjects).toEqual([])
+    expect(saveStreamMappingUiConfigStrict).not.toHaveBeenCalled()
+    expect(updateRoute).not.toHaveBeenCalled()
+    expect(createRoute).not.toHaveBeenCalled()
+  })
+
   it('preflights every reviewed Route token before writing the Stream', async () => {
     const state = editState((s) => {
       s.destinations.routeDrafts = [{
