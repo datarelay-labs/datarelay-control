@@ -1,4 +1,4 @@
-import { Position, type Edge, type Node } from '@xyflow/react'
+import { MarkerType, Position, type Edge, type Node } from '@xyflow/react'
 import type { OperationalSnapshotResponse, OperationalHealthStatus } from '../../api/operationalSnapshot'
 import { destinationDetailPath, routeEditPath, streamRuntimePath } from '../../config/nav-paths'
 
@@ -64,7 +64,44 @@ function edge(
     className: active ? 'control-runtime-flow-edge--active' : 'control-runtime-flow-edge--static',
     selectable: true,
     interactionWidth: 22,
+    markerEnd: { type: MarkerType.ArrowClosed, width: 12, height: 12 },
   }
+}
+
+export const MAX_MOVING_GATEWAY_PATHS = 16
+
+/**
+ * Keep animation bounded and entirely coupled to verified rate-positive edges.
+ * The remaining Route edges and their numeric evidence stay visible and selectable.
+ * Frozen/hidden/reduced-motion views never retain a glowing active edge class.
+ */
+export function selectRuntimeMotionEdges(
+  edges: readonly Edge<FlowEdgeData>[],
+  allowMotion: boolean,
+  selectedRouteId: number | null = null,
+): Edge<FlowEdgeData>[] {
+  const eligible = edges.filter((item) =>
+    item.animated === true && item.data?.gatewayOnly === true &&
+    typeof item.data.observedEps === 'number' &&
+    Number.isFinite(item.data.observedEps) && item.data.observedEps > 0)
+    .sort((a, b) =>
+      Number(b.data?.routeId === selectedRouteId) - Number(a.data?.routeId === selectedRouteId) ||
+      (b.data?.observedEps ?? 0) - (a.data?.observedEps ?? 0) ||
+      a.id.localeCompare(b.id))
+  const moving = new Set(
+    allowMotion ? eligible.slice(0, MAX_MOVING_GATEWAY_PATHS).map((item) => item.id) : [],
+  )
+  return edges.map((item) => {
+    const isMoving = moving.has(item.id)
+    return {
+      ...item,
+      type: item.data?.gatewayOnly ? 'runtime-delivery' : 'default',
+      animated: isMoving,
+      className: isMoving
+        ? 'control-runtime-flow-edge--active'
+        : 'control-runtime-flow-edge--static',
+    }
+  })
 }
 
 /**

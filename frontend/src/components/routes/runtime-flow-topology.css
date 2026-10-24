@@ -52,12 +52,27 @@
   filter: drop-shadow(0 0 5px rgb(139 92 246 / 0.7));
   stroke-dasharray: 7 9;
 }
+.control-runtime-flow-canvas .control-runtime-flow-particles .control-runtime-flow-trail {
+  fill: #a78bfa;
+  opacity: 0.38;
+  filter: drop-shadow(0 0 8px rgb(139 92 246 / 0.85));
+}
+.control-runtime-flow-canvas .control-runtime-flow-particles .control-runtime-flow-particle {
+  fill: #ffffff;
+  stroke: #a78bfa;
+  stroke-width: 1;
+  filter: drop-shadow(0 0 6px rgb(139 92 246 / 0.9));
+}
+.dark .control-runtime-flow-canvas .control-runtime-flow-particles .control-runtime-flow-particle {
+  fill: #e9d5ff;
+}
 .control-runtime-flow-canvas .react-flow__edge.selected .react-flow__edge-path { stroke-width: 4.4; }
 .control-runtime-flow-canvas .react-flow__controls {
   overflow: hidden;
   border-radius: 9px;
 }
 @media (prefers-reduced-motion: reduce) {
+  .control-runtime-flow-canvas .control-runtime-flow-particles { display: none !important; }
   .control-runtime-flow-canvas .react-flow__edge.animated .react-flow__edge-path,
   .control-runtime-flow-canvas .react-flow__edge.control-runtime-flow-edge--active .react-flow__edge-path {
     animation: none !important;

@@ -7,7 +7,31 @@ import type { OperationalSnapshotResponse } from '../../api/operationalSnapshot'
 import { routeEditPath } from '../../config/nav-paths'
 import { useDocumentVisible } from '../../hooks/use-document-visible'
 import { useOperationalEvidenceClock } from '../../hooks/use-operational-evidence-clock'
-import { buildRuntimeFlowTopology, type FlowEdgeData, type FlowNodeData } from './runtime-flow-graph-model'
+import {
+  buildRuntimeFlowTopology,
+  selectRuntimeMotionEdges,
+  MAX_MOVING_GATEWAY_PATHS,
+  type FlowEdgeData,
+  type FlowNodeData,
+} from './runtime-flow-graph-model'
+import { RuntimeFlowDeliveryEdge } from './runtime-flow-delivery-edge'
+
+const runtimeEdgeTypes = { 'runtime-delivery': RuntimeFlowDeliveryEdge }
+
+function useReducedMotionPreference(): boolean {
+  const [reduced, setReduced] = useState(() =>
+    typeof window !== 'undefined' &&
+    window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true)
+  useEffect(() => {
+    const media = window.matchMedia?.('(prefers-reduced-motion: reduce)')
+    if (!media) return
+    const check = () => setReduced(media.matches)
+    check()
+    media.addEventListener?.('change', check)
+    return () => media.removeEventListener?.('change', check)
+  }, [])
+  return reduced
+}
 
 export type RuntimeFlowTopologyProps = {
   snapshot: OperationalSnapshotResponse | null
@@ -21,6 +45,7 @@ export function RuntimeFlowTopology({
 }: RuntimeFlowTopologyProps) {
   useOperationalEvidenceClock(snapshot?.updated_at)
   const documentVisible = useDocumentVisible()
+  const reducedMotion = useReducedMotionPreference()
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [onScreen, setOnScreen] = useState(true)
   const [inspectedId, setInspectedId] = useState<string | null>(null)
@@ -39,10 +64,10 @@ export function RuntimeFlowTopology({
   // Do not animate outdated/failed reads, hidden windows, or offscreen graphs.
   const topology = buildRuntimeFlowTopology(snapshot, selectedStreamId, selectedRouteId)
   if (requestFailed) topology.stale = true
-  const canAnimate = !topology.stale && documentVisible && onScreen
-  const edges: Edge<FlowEdgeData>[] = topology.edges.map((item) => ({
-    ...item, animated: Boolean(canAnimate && item.animated),
-  }))
+  const canAnimate = !topology.stale && !reducedMotion && documentVisible && onScreen
+  const edges: Edge<FlowEdgeData>[] = selectRuntimeMotionEdges(
+    topology.edges, canAnimate, selectedRouteId,
+  )
   const nodes: Node<FlowNodeData>[] = topology.nodes
   const inspectedEdge = edges.find((item) => item.id === inspectedId)
   const inspectedNode = nodes.find((item) => item.id === inspectedId)
@@ -50,6 +75,9 @@ export function RuntimeFlowTopology({
   if (!snapshot || topology.totalRoutes === 0 || nodes.length === 0) return null
 
   const routeEdges = edges.filter((item) => item.data?.gatewayOnly === true)
+  const ratePositive = topology.edges.filter((item) =>
+    item.data?.gatewayOnly === true && item.animated === true).length
+  const movingCount = routeEdges.filter((item) => item.animated).length
   return (
     <section
       ref={containerRef}
@@ -82,6 +110,7 @@ export function RuntimeFlowTopology({
         <ReactFlow<Node<FlowNodeData>, Edge<FlowEdgeData>>
           nodes={nodes}
           edges={edges}
+          edgeTypes={runtimeEdgeTypes}
           fitView
           fitViewOptions={{ padding: 0.15, maxZoom: 1.05 }}
           minZoom={0.2}
@@ -120,7 +149,10 @@ export function RuntimeFlowTopology({
       ) : null}
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-slate-600 dark:text-gdc-mutedStrong">
-          {routeEdges.filter((item) => item.animated).length} moving gateway-delivery paths · receiver status not implied
+          {movingCount} animated of {ratePositive} rate-positive gateway paths
+          {ratePositive > MAX_MOVING_GATEWAY_PATHS ? ` · visual cap ${MAX_MOVING_GATEWAY_PATHS}` : ''}
+          {reducedMotion ? ' · Reduced motion' : ''}
+          {' · receiver status not implied'}
         </p>
         <button type="button" aria-expanded={showList} onClick={() => setShowList((v) => !v)}
           className="min-h-9 rounded-md border border-slate-300 px-3 py-2 text-xs font-semibold text-violet-700 hover:bg-violet-50 dark:border-gdc-border dark:text-violet-300 dark:hover:bg-gdc-rowHover">
