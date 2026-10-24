@@ -33,6 +33,26 @@ function useReducedMotionPreference(): boolean {
   return reduced
 }
 
+function currentProductColorMode(): 'light' | 'dark' {
+  if (typeof document === 'undefined') return 'light'
+  return document.documentElement.getAttribute('data-dr-theme') === 'dark' ||
+    document.documentElement.classList.contains('dark') ? 'dark' : 'light'
+}
+
+/** The product's manually selected scheme, not the operating-system scheme. */
+function useProductColorMode(): 'light' | 'dark' {
+  const [mode, setMode] = useState(currentProductColorMode)
+  useEffect(() => {
+    const root = document.documentElement
+    const refresh = () => setMode(currentProductColorMode())
+    const observer = new MutationObserver(refresh)
+    observer.observe(root, { attributes: true, attributeFilter: ['data-dr-theme', 'class'] })
+    refresh()
+    return () => observer.disconnect()
+  }, [])
+  return mode
+}
+
 export type RuntimeFlowTopologyProps = {
   snapshot: OperationalSnapshotResponse | null
   selectedStreamId: number | null
@@ -46,6 +66,7 @@ export function RuntimeFlowTopology({
   useOperationalEvidenceClock(snapshot?.updated_at)
   const documentVisible = useDocumentVisible()
   const reducedMotion = useReducedMotionPreference()
+  const colorMode = useProductColorMode()
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [onScreen, setOnScreen] = useState(true)
   const [inspectedId, setInspectedId] = useState<string | null>(null)
@@ -124,7 +145,7 @@ export function RuntimeFlowTopology({
           onNodeClick={(_, item) => setInspectedId(item.id)}
           onEdgeClick={(_, item) => setInspectedId(item.id)}
           ariaLabelConfig={{ 'node.a11yDescription.default': 'Select a node for runtime detail' }}
-          colorMode="system"
+          colorMode={colorMode}
           proOptions={{ hideAttribution: false }}
         >
           <Background gap={24} size={1} color="var(--gdc-border, #64748b)" />
