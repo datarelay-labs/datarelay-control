@@ -169,3 +169,14 @@ describe('Flow topology node/edge selection integration', () => {
     expect(screen.getByTestId('runtime-data-flow-inspector')).not.toHaveTextContent('Route #100')
   })
 })
+
+describe('readable graph at constrained desktop width', () => {
+  it('offers keyboard-focusable internal horizontal scrolling while retaining a bounded Route page', () => {
+    render(<MemoryRouter><RuntimeFlowTopology snapshot={snapshot(103)} selectedStreamId={1} /></MemoryRouter>)
+    const scrollRegion = screen.getByRole('region', { name: 'Scrollable data flow graph' })
+    expect(scrollRegion).toHaveAttribute('tabindex', '0')
+    expect(scrollRegion.querySelector('[data-testid="runtime-data-flow-canvas"]')).toBeInTheDocument()
+    expect(screen.getByTestId('paginated-graph-nodes')).toHaveTextContent('route:100')
+    expect(screen.getByText(/Routes 1–3 of 103/)).toBeInTheDocument()
+  })
+})

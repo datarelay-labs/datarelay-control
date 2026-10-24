@@ -1,6 +1,17 @@
 /* Runtime-backed topology only. Animation is absent for zero, stale, hidden and unverified delivery. */
+/* Keep actual graph labels readable at high zoom/narrow desktops without page-level overflow. */
+.control-runtime-flow-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+.control-runtime-flow-scroll:focus-visible {
+  outline: 2px solid #8b5cf6;
+  outline-offset: 2px;
+}
 .control-runtime-flow-canvas {
   width: 100%;
+  min-width: 880px;
   height: clamp(480px, 50vw, 660px);
   border-radius: 14px;
   border: 1px solid rgb(148 163 184 / 0.35);

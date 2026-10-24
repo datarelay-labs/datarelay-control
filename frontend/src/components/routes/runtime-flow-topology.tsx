@@ -162,8 +162,9 @@ export function RuntimeFlowTopology({
         ) : null}
         <span>Updated: {Number.isFinite(Date.parse(snapshot.updated_at)) ? new Date(snapshot.updated_at).toLocaleString() : 'Unknown'}</span>
       </div>
-      <div className="control-runtime-flow-canvas" data-testid="runtime-data-flow-canvas">
-        <ReactFlow<Node<FlowNodeData>, Edge<FlowEdgeData>>
+      <div className="control-runtime-flow-scroll" role="region" aria-label="Scrollable data flow graph" tabIndex={0}>
+        <div className="control-runtime-flow-canvas" data-testid="runtime-data-flow-canvas">
+          <ReactFlow<Node<FlowNodeData>, Edge<FlowEdgeData>>
           key={`${selectedStreamId}:${topology.routePage}`}
           nodes={nodes}
           edges={edges}
@@ -198,7 +199,8 @@ export function RuntimeFlowTopology({
         >
           <Background gap={24} size={1} color="var(--gdc-border, #64748b)" />
           <Controls showInteractive={false} />
-        </ReactFlow>
+          </ReactFlow>
+        </div>
       </div>
       {(inspectedEdge || inspectedNode) ? (
         <div className="mt-3 rounded-lg border border-violet-300/70 bg-white px-3 py-2.5 text-xs dark:border-violet-500/40 dark:bg-gdc-card" data-testid="runtime-data-flow-inspector">
