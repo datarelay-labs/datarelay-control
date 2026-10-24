@@ -161,6 +161,24 @@ describe('runtime data-flow topology projection', () => {
     expect(delivery(graph)).toHaveLength(1)
     expect(graph.edges.some((e) => e.source === 'route:11' && e.target.startsWith('destination:'))).toBe(false)
   })
+  it('lays out three nonoverlapping readable fanout rows with compact columns', () => {
+    const data = sample()
+    data.routes.push({
+      ...data.routes[1]!, route_id: 13, destination_id: 23,
+    })
+    data.destinations.push({
+      ...data.destinations[1]!, destination_id: 23,
+    })
+    const graph = buildRuntimeFlowTopology(data, 1, null, NOW)
+    expect(graph.shownRoutes).toBe(3)
+    expect(graph.nodes.find((item) => item.data.kind === 'source')?.position.x).toBe(0)
+    expect(graph.nodes.find((item) => item.data.kind === 'stream')?.position.x).toBe(180)
+    expect(graph.nodes.filter((item) => item.data.kind === 'route').map((item) => item.position))
+      .toEqual([{ x: 360, y: 0 }, { x: 360, y: 160 }, { x: 360, y: 320 }])
+    expect(graph.nodes.filter((item) => item.data.kind === 'destination')
+      .every((item) => item.position.x === 540)).toBe(true)
+  })
+
   it('caps large Route graphs but retains an inspected Route outside the default slice', () => {
     const snapshot = sample()
     snapshot.routes = Array.from({ length: 75 }, (_, index) => ({
@@ -168,7 +186,7 @@ describe('runtime data-flow topology projection', () => {
     }))
     const graph = buildRuntimeFlowTopology(snapshot, 1, 174, NOW)
     expect(graph.shownRoutes).toBe(3)
-    expect(graph.routePage).toBe(12)
+    expect(graph.routePage).toBe(24)
     expect(graph.totalRoutes).toBe(75)
     expect(graph.nodes.some((n) => n.id === 'route:174')).toBe(true)
   })

@@ -71,7 +71,7 @@ function edge(
 
 export const MAX_MOVING_GATEWAY_PATHS = 16
 /** A readable viewport replaces one unusably compressed 40-Route diagram. */
-export const MAX_VISIBLE_FLOW_ROUTES = 6
+export const MAX_VISIBLE_FLOW_ROUTES = 3
 
 /**
  * Keep animation bounded and entirely coupled to verified rate-positive edges.
@@ -152,9 +152,9 @@ export function buildRuntimeFlowTopology(
 
   const nodes: Node<FlowNodeData>[] = []
   const edges: Edge<FlowEdgeData>[] = []
-  const centerY = Math.max(0, (visible.length - 1) * 96 / 2)
+  const centerY = Math.max(0, (visible.length - 1) * 160 / 2)
   const streamNodeId = `stream:${stream.stream_id}`
-  nodes.push(node(streamNodeId, 242, centerY, {
+  nodes.push(node(streamNodeId, 180, centerY, {
     kind: 'stream',
     label: stream.stream_name || `Stream #${stream.stream_id}`,
     detail: `Stream #${stream.stream_id} · ${evidenceLabel(stream.enabled ? stream.health_status : 'Disabled')}`,
@@ -184,9 +184,9 @@ export function buildRuntimeFlowTopology(
     .map((d) => [d.destination_id, d]))
 
   visible.forEach((route, index) => {
-    const routeY = index * 96
+    const routeY = index * 160
     const routeNodeId = `route:${route.route_id}`
-    nodes.push(node(routeNodeId, 510, routeY, {
+    nodes.push(node(routeNodeId, 360, routeY, {
       kind: 'route', label: `Route #${route.route_id}`,
       detail: evidenceLabel(route.enabled ? route.health_status : 'Disabled'),
       href: routeEditPath(String(route.route_id)),
@@ -226,7 +226,7 @@ export function buildRuntimeFlowTopology(
   for (const [destinationId, ys] of destinationIds) {
     const destination = byDestination.get(destinationId)
     const y = ys.reduce((sum, value) => sum + value, 0) / ys.length
-    nodes.push(node(`destination:${destinationId}`, 804, y, {
+    nodes.push(node(`destination:${destinationId}`, 540, y, {
       kind: 'destination', label: destination?.destination_name ||
         visible.find((route) => route.destination_id === destinationId)?.destination_name ||
         `Destination #${destinationId}`,
