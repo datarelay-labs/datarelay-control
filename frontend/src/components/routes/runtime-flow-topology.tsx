@@ -11,6 +11,7 @@ import {
   buildRuntimeFlowTopology,
   selectRuntimeMotionEdges,
   MAX_MOVING_GATEWAY_PATHS,
+  MAX_VISIBLE_FLOW_ROUTES,
   type FlowEdgeData,
   type FlowNodeData,
 } from './runtime-flow-graph-model'
@@ -71,6 +72,11 @@ export function RuntimeFlowTopology({
   const [onScreen, setOnScreen] = useState(true)
   const [inspectedId, setInspectedId] = useState<string | null>(null)
   const [showList, setShowList] = useState(false)
+  const [pageChoice, setPageChoice] = useState<{
+    streamId: number | null
+    routeId: number | null
+    page: number
+  } | null>(null)
 
   useEffect(() => {
     const el = containerRef.current
@@ -83,7 +89,11 @@ export function RuntimeFlowTopology({
   }, [snapshot, selectedStreamId])
 
   // Do not animate outdated/failed reads, hidden windows, or offscreen graphs.
-  const topology = buildRuntimeFlowTopology(snapshot, selectedStreamId, selectedRouteId)
+  const manualPage = pageChoice?.streamId === selectedStreamId &&
+    pageChoice?.routeId === selectedRouteId ? pageChoice.page : null
+  const topology = buildRuntimeFlowTopology(
+    snapshot, selectedStreamId, selectedRouteId, Date.now(), manualPage,
+  )
   if (requestFailed) topology.stale = true
   const canAnimate = !topology.stale && !reducedMotion && documentVisible && onScreen
   const edges: Edge<FlowEdgeData>[] = selectRuntimeMotionEdges(
@@ -96,6 +106,7 @@ export function RuntimeFlowTopology({
   if (!snapshot || topology.totalRoutes === 0 || nodes.length === 0) return null
 
   const routeEdges = edges.filter((item) => item.data?.gatewayOnly === true)
+  const visibleRouteNodes = nodes.filter((item) => item.data.kind === 'route')
   const ratePositive = topology.edges.filter((item) =>
     item.data?.gatewayOnly === true && item.animated === true).length
   const movingCount = routeEdges.filter((item) => item.animated).length
@@ -121,14 +132,32 @@ export function RuntimeFlowTopology({
           {topology.stale ? 'Unavailable / stale evidence · no motion' : 'Runtime snapshot · 1m delivery rate'}
         </span>
       </div>
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 dark:text-gdc-muted">
-        <span>{topology.shownRoutes} of {topology.totalRoutes} routes visualized
-          {topology.shownRoutes < topology.totalRoutes ? ' · select or inspect a hidden Route to include it' : ''}
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600 dark:text-gdc-mutedStrong">
+        <span aria-live="polite" data-testid="runtime-data-flow-page-range">
+          Routes {topology.routePage * MAX_VISIBLE_FLOW_ROUTES + 1}–{topology.routePage * MAX_VISIBLE_FLOW_ROUTES + topology.shownRoutes} of {topology.totalRoutes} visible
         </span>
+        {topology.totalRoutes > MAX_VISIBLE_FLOW_ROUTES ? (
+          <nav aria-label="Data flow Route pages" className="flex flex-wrap items-center gap-2">
+            <button type="button" aria-label="Previous Routes"
+              disabled={topology.routePage === 0}
+              onClick={() => setPageChoice({ streamId: selectedStreamId, routeId: selectedRouteId, page: topology.routePage - 1 })}
+              className="min-h-9 rounded-md border border-slate-300 px-3 py-1.5 font-semibold text-violet-700 disabled:opacity-40 dark:border-gdc-border dark:text-violet-300">
+              Previous
+            </button>
+            <span>Page {topology.routePage + 1} of {Math.ceil(topology.totalRoutes / MAX_VISIBLE_FLOW_ROUTES)}</span>
+            <button type="button" aria-label="Next Routes"
+              disabled={(topology.routePage + 1) * MAX_VISIBLE_FLOW_ROUTES >= topology.totalRoutes}
+              onClick={() => setPageChoice({ streamId: selectedStreamId, routeId: selectedRouteId, page: topology.routePage + 1 })}
+              className="min-h-9 rounded-md border border-slate-300 px-3 py-1.5 font-semibold text-violet-700 disabled:opacity-40 dark:border-gdc-border dark:text-violet-300">
+              Next
+            </button>
+          </nav>
+        ) : null}
         <span>Updated: {Number.isFinite(Date.parse(snapshot.updated_at)) ? new Date(snapshot.updated_at).toLocaleString() : 'Unknown'}</span>
       </div>
       <div className="control-runtime-flow-canvas" data-testid="runtime-data-flow-canvas">
         <ReactFlow<Node<FlowNodeData>, Edge<FlowEdgeData>>
+          key={`${selectedStreamId}:${topology.routePage}`}
           nodes={nodes}
           edges={edges}
           edgeTypes={runtimeEdgeTypes}
@@ -183,16 +212,20 @@ export function RuntimeFlowTopology({
       {showList ? (
         <ul aria-label="Data paths with runtime evidence" data-testid="runtime-data-flow-list"
           className="mt-3 max-h-64 space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-white p-3 text-xs dark:border-gdc-border dark:bg-gdc-card">
-          {routeEdges.map((item) => (
-            <li key={item.id} className="flex flex-wrap items-baseline gap-2 border-b border-slate-100 py-1.5 last:border-0 dark:border-gdc-border">
-              {item.data?.routeId ? (
-                <Link to={routeEditPath(String(item.data.routeId))} className="font-semibold text-violet-700 hover:underline dark:text-violet-300">
-                  Route #{item.data.routeId}
+          {visibleRouteNodes.map((routeNode) => {
+            const routeId = Number(routeNode.id.slice('route:'.length))
+            const deliveryEdge = routeEdges.find((item) => item.data?.routeId === routeId)
+            return (
+              <li key={routeNode.id} className="flex flex-wrap items-baseline gap-2 border-b border-slate-100 py-1.5 last:border-0 dark:border-gdc-border">
+                <Link to={routeEditPath(String(routeId))} className="font-semibold text-violet-700 hover:underline dark:text-violet-300">
+                  Route #{routeId}
                 </Link>
-              ) : 'Route unknown'}
-              <span className="text-slate-600 dark:text-gdc-mutedStrong">{item.data?.evidence}</span>
-            </li>
-          ))}
+                <span className="text-slate-600 dark:text-gdc-mutedStrong">
+                  {deliveryEdge?.data?.evidence ?? 'Destination not configured · no delivery path'}
+                </span>
+              </li>
+            )
+          })}
         </ul>
       ) : null}
     </section>

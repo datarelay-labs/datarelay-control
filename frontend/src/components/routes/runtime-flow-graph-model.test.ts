@@ -141,7 +141,8 @@ describe('runtime data-flow topology projection', () => {
       ...snapshot.routes[0]!, route_id: 100 + index,
     }))
     const graph = buildRuntimeFlowTopology(snapshot, 1, 174, NOW)
-    expect(graph.shownRoutes).toBe(40)
+    expect(graph.shownRoutes).toBe(3)
+    expect(graph.routePage).toBe(12)
     expect(graph.totalRoutes).toBe(75)
     expect(graph.nodes.some((n) => n.id === 'route:174')).toBe(true)
   })

@@ -20,6 +20,7 @@ export type RuntimeFlowTopology = {
   edges: Edge<FlowEdgeData>[]
   shownRoutes: number
   totalRoutes: number
+  routePage: number
   stale: boolean
 }
 
@@ -69,6 +70,8 @@ function edge(
 }
 
 export const MAX_MOVING_GATEWAY_PATHS = 16
+/** A readable viewport replaces one unusably compressed 40-Route diagram. */
+export const MAX_VISIBLE_FLOW_ROUTES = 6
 
 /**
  * Keep animation bounded and entirely coupled to verified rate-positive edges.
@@ -114,9 +117,10 @@ export function buildRuntimeFlowTopology(
   selectedStreamId: number | null,
   selectedRouteId: number | null = null,
   nowMs = Date.now(),
+  routePage: number | null = null,
 ): RuntimeFlowTopology {
   const empty: RuntimeFlowTopology = {
-    nodes: [], edges: [], shownRoutes: 0, totalRoutes: 0, stale: true,
+    nodes: [], edges: [], shownRoutes: 0, totalRoutes: 0, routePage: 0, stale: true,
   }
   if (!snapshot || !safeId(selectedStreamId)) return empty
   const stream = snapshot.streams.find((candidate) => candidate.stream_id === selectedStreamId)
@@ -130,13 +134,17 @@ export function buildRuntimeFlowTopology(
   const allRoutes = snapshot.routes
     .filter((route) => safeId(route.route_id) && route.stream_id === selectedStreamId)
     .sort((a, b) => a.route_id - b.route_id)
-  const maxRoutes = 40
-  const visible = allRoutes.slice(0, maxRoutes)
-  const requested = allRoutes.find((route) => route.route_id === selectedRouteId)
-  if (requested && !visible.some((route) => route.route_id === selectedRouteId)) {
-    visible[maxRoutes - 1] = requested
-    visible.sort((a, b) => a.route_id - b.route_id)
-  }
+  const totalPages = Math.max(1, Math.ceil(allRoutes.length / MAX_VISIBLE_FLOW_ROUTES))
+  const selectedRouteIndex = allRoutes.findIndex((route) => route.route_id === selectedRouteId)
+  const selectedPage = selectedRouteIndex >= 0
+    ? Math.floor(selectedRouteIndex / MAX_VISIBLE_FLOW_ROUTES) : 0
+  // An explicit page comes only from the operator's page controls; otherwise
+  // automatically show the page containing the selected workspace Route.
+  const page = routePage !== null && Number.isSafeInteger(routePage) && routePage >= 0
+    ? Math.min(routePage, totalPages - 1) : selectedPage
+  const visible = allRoutes.slice(
+    page * MAX_VISIBLE_FLOW_ROUTES, (page + 1) * MAX_VISIBLE_FLOW_ROUTES,
+  )
 
   const nodes: Node<FlowNodeData>[] = []
   const edges: Edge<FlowEdgeData>[] = []
@@ -225,5 +233,6 @@ export function buildRuntimeFlowTopology(
       status: destination ? (destination.enabled ? destination.health_status : 'Disabled') : 'Unknown',
     }, stateClass(destination?.health_status || 'IDLE', destination?.enabled === true)))
   }
-  return { nodes, edges, shownRoutes: visible.length, totalRoutes: allRoutes.length, stale: !fresh }
+  return { nodes, edges, shownRoutes: visible.length, totalRoutes: allRoutes.length,
+    routePage: page, stale: !fresh }
 }
