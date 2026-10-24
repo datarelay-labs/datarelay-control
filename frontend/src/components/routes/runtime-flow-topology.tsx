@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { ReactFlow, Background, Controls, type Edge, type Node } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
@@ -119,6 +119,32 @@ export function RuntimeFlowTopology({
     setInspectedId(identity)
   }
 
+  /** Mirror mouse inspection when focused React Flow nodes/edges are activated.
+   * Only react to the exact focused selectable element, not child controls or
+   * internal scrolling keyboard events.
+   */
+  function handleGraphKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    const target = event.target
+    if (!(target instanceof Element)) return
+    const focused = target.closest('.react-flow__node[data-id], .react-flow__edge[data-id]')
+    if (!focused || focused !== target || !event.currentTarget.contains(focused)) return
+    const id = focused.getAttribute('data-id')
+    if (!id) return
+    const selectedNode = nodes.find((item) => item.id === id)
+    const selectedEdge = edges.find((item) => item.id === id)
+    if (!selectedNode && !selectedEdge) return
+    event.preventDefault()
+    event.stopPropagation()
+    if (selectedNode?.data.kind === 'route') {
+      inspectRoute(Number(id.slice('route:'.length)), id)
+    } else if (typeof selectedEdge?.data?.routeId === 'number') {
+      inspectRoute(selectedEdge.data.routeId, id)
+    } else {
+      setInspectedId(id)
+    }
+  }
+
   if (!snapshot || topology.totalRoutes === 0 || nodes.length === 0) return null
 
   const routeEdges = edges.filter((item) => item.data?.gatewayOnly === true)
@@ -172,7 +198,8 @@ export function RuntimeFlowTopology({
         <span>Updated: {Number.isFinite(Date.parse(snapshot.updated_at)) ? new Date(snapshot.updated_at).toLocaleString() : 'Unknown'}</span>
       </div>
       <div className="control-runtime-flow-workspace">
-        <div className="control-runtime-flow-scroll" role="region" aria-label="Scrollable data flow graph" tabIndex={0}>
+        <div className="control-runtime-flow-scroll" role="region" aria-label="Scrollable data flow graph"
+          tabIndex={0} onKeyDownCapture={handleGraphKeyDown}>
           <div className="control-runtime-flow-canvas" data-testid="runtime-data-flow-canvas">
         <ReactFlow<Node<FlowNodeData>, Edge<FlowEdgeData>>
           key={`${selectedStreamId}:${topology.routePage}`}
