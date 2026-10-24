@@ -1,82 +1,199 @@
-/* Runtime-backed topology only. Animation is absent for zero, stale, hidden and unverified delivery. */
+/* Read-only runtime topology. All glow and motion require fresh gateway evidence. */
+.control-runtime-flow-root {
+  --flow-ink: var(--dr-text-primary, #182b40);
+  --flow-muted: var(--dr-text-secondary, #475569);
+  --flow-border: var(--dr-border-default, #d5e1ef);
+  --flow-surface: var(--dr-surface-card, #fff);
+  --flow-highlight: #0ea5e9;
+  --flow-cyan: #178aca;
+  --flow-green: #047857;
+  --flow-muted-chip: #52647c;
+}
+[data-dr-theme="dark"] .control-runtime-flow-root,
+.dark .control-runtime-flow-root {
+  --flow-ink: #eaf4ff;
+  --flow-muted: #adc2d9;
+  --flow-border: #274563;
+  --flow-surface: #0c2038;
+  --flow-highlight: #50d5ff;
+  --flow-cyan: #42bfff;
+  --flow-green: #39dfaf;
+  --flow-muted-chip: #90a5bb;
+}
+.control-runtime-flow-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+}
+@media (min-width: 1400px) {
+  .control-runtime-flow-workspace {
+    grid-template-columns: minmax(0, 1fr) 282px;
+    align-items: stretch;
+  }
+}
 .control-runtime-flow-canvas {
   width: 100%;
-  height: clamp(320px, 38vw, 560px);
-  border-radius: 14px;
-  border: 1px solid rgb(148 163 184 / 0.35);
-  background: radial-gradient(circle at 25% 10%, rgb(139 92 246 / 0.10), transparent 48%),
-    linear-gradient(145deg, rgb(248 250 252 / 0.95), rgb(241 245 249 / 0.92));
+  height: clamp(400px, 43vw, 690px);
+  min-width: 0;
+  border-radius: 15px;
+  border: 1px solid var(--flow-border);
+  background:
+    radial-gradient(ellipse at 22% 30%, rgb(45 146 230 / 0.12), transparent 45%),
+    radial-gradient(ellipse at 75% 80%, rgb(14 165 233 / 0.07), transparent 42%),
+    linear-gradient(150deg, #f8fcff, #edf5fc);
   overflow: hidden;
+  position: relative;
+  isolation: isolate;
 }
+[data-dr-theme="dark"] .control-runtime-flow-canvas,
 .dark .control-runtime-flow-canvas {
-  border-color: var(--gdc-border, #334155);
-  background: radial-gradient(circle at 27% 7%, rgb(139 92 246 / 0.13), transparent 50%),
-    linear-gradient(145deg, var(--gdc-panel, #131622), var(--gdc-card, #1e2230));
+  background:
+    radial-gradient(ellipse at 21% 22%, rgb(26 111 226 / 0.20), transparent 47%),
+    radial-gradient(ellipse at 70% 73%, rgb(9 117 151 / 0.14), transparent 44%),
+    linear-gradient(135deg, #061428 2%, #081b32 60%, #07172b);
 }
-.control-runtime-flow-canvas .react-flow__node-default.control-runtime-flow-node {
-  width: 194px;
-  max-width: 194px;
-  overflow-wrap: anywhere;
-  border: 1px solid rgb(148 163 184 / 0.65);
-  border-left: 4px solid rgb(148 163 184);
-  border-radius: 12px;
-  background: rgb(255 255 255 / 0.95);
-  color: #172033;
-  padding: 15px 9px;
-  font-size: 14px;
-  line-height: 1.4;
-  font-weight: 650;
-  box-shadow: 0 12px 26px rgb(15 23 42 / 0.08);
+.control-runtime-flow-canvas .react-flow__pane { cursor: grab; }
+.control-runtime-flow-canvas .react-flow__pane:active { cursor: grabbing; }
+.control-runtime-flow-canvas .react-flow__background { opacity: .42; }
+.control-runtime-flow-canvas .react-flow__node.control-runtime-flow-node {
+  width: 216px;
+  min-width: 216px;
+  border: 0;
+  border-radius: 13px;
+  padding: 0;
+  color: var(--flow-ink);
+  background: transparent;
+  text-align: left;
+  box-shadow: none;
 }
-.dark .control-runtime-flow-canvas .react-flow__node-default.control-runtime-flow-node {
-  background: var(--gdc-card, #1e2230);
-  color: #f1f5f9;
+.control-runtime-flow-card {
+  position: relative;
+  overflow: visible;
+  width: 216px;
+  min-height: 96px;
+  border: 1px solid var(--flow-border);
+  border-radius: 13px;
+  background: var(--flow-surface);
+  box-shadow: 0 12px 28px rgb(7 25 50 / 0.11);
+  transition: border-color .16s ease, box-shadow .16s ease;
 }
-.control-runtime-flow-canvas .react-flow__node.control-runtime-flow-node--healthy { border-left-color: #22c55e; }
-.control-runtime-flow-canvas .react-flow__node.control-runtime-flow-node--warning { border-left-color: #f59e0b; }
-.control-runtime-flow-canvas .react-flow__node.control-runtime-flow-node--error { border-left-color: #ef4444; }
-.control-runtime-flow-canvas .react-flow__node.control-runtime-flow-node--disabled {
-  border-left-color: #94a3b8;
-  opacity: 0.70;
+[data-dr-theme="dark"] .control-runtime-flow-card,
+.dark .control-runtime-flow-card {
+  background: linear-gradient(160deg, #123050 0%, #0c233e 54%, #091b32 100%);
+  box-shadow: 0 12px 26px rgb(0 5 15 / .40), inset 0 1px 0 rgb(178 221 255 / .06);
 }
-.control-runtime-flow-canvas .react-flow__node.selected {
-  outline: 2px solid #8b5cf6;
-  outline-offset: 4px;
+.control-runtime-flow-node--healthy .control-runtime-flow-card { border-left: 3px solid #20c997; }
+.control-runtime-flow-node--warning .control-runtime-flow-card { border-left: 3px solid #eead36; }
+.control-runtime-flow-node--error .control-runtime-flow-card { border-left: 3px solid #f87171; }
+.control-runtime-flow-node--disabled .control-runtime-flow-card { border-left: 3px solid #94a3b8; opacity: .73; }
+.control-runtime-flow-node.selected .control-runtime-flow-card,
+.control-runtime-flow-card--selected {
+  border-color: var(--flow-highlight);
+  box-shadow: 0 0 0 2px rgb(14 165 233 / .22), 0 12px 28px rgb(5 35 65 / .26);
 }
-.control-runtime-flow-canvas .react-flow__edge-path {
-  stroke: #64748b;
-  stroke-width: 2.2;
+.control-runtime-flow-card-main {
+  padding: 12px 13px 11px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
+.control-runtime-flow-icon {
+  width: 35px;
+  height: 35px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  color: #06649b;
+  background: rgb(14 165 233 / .12);
+  border: 1px solid rgb(14 165 233 / .18);
+}
+.control-runtime-flow-icon--route { color: #2757c5; background: rgb(59 130 246 / .10); }
+.control-runtime-flow-icon--destination { color: #087a66; background: rgb(20 184 166 / .12); }
+.control-runtime-flow-icon--source { color: #ae7715; background: rgb(245 158 11 / .12); }
+[data-dr-theme="dark"] .control-runtime-flow-icon,
+.dark .control-runtime-flow-icon { color: #79d6ff; background: #12496b; border-color: #255b80; }
+[data-dr-theme="dark"] .control-runtime-flow-icon--destination,
+.dark .control-runtime-flow-icon--destination { color: #65eec9; background: #124941; border-color: #1d6f5a; }
+.control-runtime-flow-card-copy { min-width: 0; display: flex; flex-direction: column; gap: 3px; flex: 1; }
+.control-runtime-flow-kind { color: var(--flow-muted); text-transform: uppercase; font-size: 10px; letter-spacing: .09em; font-weight: 600; }
+.control-runtime-flow-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 680; color: var(--flow-ink); }
+.control-runtime-flow-indicator { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--flow-muted-chip); }
+.control-runtime-flow-node--healthy .control-runtime-flow-indicator { background: #1edda9; box-shadow: 0 0 8px #1edda988; }
+.control-runtime-flow-node--warning .control-runtime-flow-indicator { background: #f3ac39; }
+.control-runtime-flow-node--error .control-runtime-flow-indicator { background: #f57070; }
+.control-runtime-flow-card-footer { border-top: 1px solid var(--flow-border); display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 31px; padding: 6px 12px; }
+.control-runtime-flow-status { min-width: 0; font-size: 10px; color: var(--flow-muted); font-weight: 630; }
+.control-runtime-flow-rate { font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 700; color: var(--flow-cyan); }
+.control-runtime-flow-handle.react-flow__handle {
+  width: 7px; height: 7px; background: var(--flow-highlight); border: 1px solid var(--flow-surface);
+}
+.control-runtime-flow-canvas .react-flow__edge-path { stroke: #7692a9; stroke-width: 1.75; }
 .control-runtime-flow-canvas .react-flow__edge.control-runtime-flow-edge--active .react-flow__edge-path {
-  stroke: #8b5cf6;
-  stroke-width: 3.1;
-  filter: drop-shadow(0 0 5px rgb(139 92 246 / 0.7));
-  stroke-dasharray: 7 9;
+  stroke-width: 2.7; stroke-dasharray: 7 11;
+  filter: drop-shadow(0 0 4px rgb(19 177 244 / .55));
 }
-.control-runtime-flow-canvas .control-runtime-flow-particles .control-runtime-flow-trail {
-  fill: #a78bfa;
-  opacity: 0.38;
-  filter: drop-shadow(0 0 8px rgb(139 92 246 / 0.85));
+.control-runtime-flow-canvas .control-runtime-flow-glow {
+  stroke-width: 11; stroke-linecap: round; opacity: .32;
+  filter: blur(5px);
 }
-.control-runtime-flow-canvas .control-runtime-flow-particles .control-runtime-flow-particle {
-  fill: #ffffff;
-  stroke: #a78bfa;
-  stroke-width: 1;
-  filter: drop-shadow(0 0 6px rgb(139 92 246 / 0.9));
+.control-runtime-flow-canvas .control-runtime-flow-trail {
+  fill: #42caff; opacity: .36; filter: drop-shadow(0 0 7px rgb(42 203 247 / .85));
 }
-.dark .control-runtime-flow-canvas .control-runtime-flow-particles .control-runtime-flow-particle {
-  fill: #e9d5ff;
+.control-runtime-flow-canvas .control-runtime-flow-particle {
+  fill: #ecfeff; stroke: #2cbdf1; stroke-width: 1;
+  filter: drop-shadow(0 0 7px rgb(55 195 255 / .90));
 }
-.control-runtime-flow-canvas .react-flow__edge.selected .react-flow__edge-path { stroke-width: 4.4; }
+.control-runtime-flow-canvas .control-runtime-flow-spark { fill: #a9fff0; }
+.control-runtime-flow-canvas .react-flow__edge.selected .react-flow__edge-path { stroke-width: 4; }
 .control-runtime-flow-canvas .react-flow__controls {
-  overflow: hidden;
-  border-radius: 9px;
+  overflow: hidden; border-radius: 9px; border: 1px solid var(--flow-border);
 }
+.control-runtime-flow-inspector {
+  min-width: 0;
+  border-radius: 14px;
+  padding: 17px;
+  border: 1px solid var(--flow-border);
+  color: var(--flow-ink);
+  background: var(--flow-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+[data-dr-theme="dark"] .control-runtime-flow-inspector,
+.dark .control-runtime-flow-inspector {
+  background: linear-gradient(170deg, #102844, #091b31);
+}
+.control-runtime-flow-inspector-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.control-runtime-flow-inspector-eyebrow { font-size: 10px; letter-spacing: .1em; font-weight: 750; color: var(--flow-muted); }
+.control-runtime-flow-inspector-status { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; color: var(--flow-muted); }
+.control-runtime-flow-inspector-status-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--flow-highlight); }
+.control-runtime-flow-inspector-title { font-size: 17px; font-weight: 690; color: var(--flow-ink); overflow-wrap: anywhere; }
+.control-runtime-flow-inspector-description { font-size: 11px; color: var(--flow-muted); line-height: 1.55; overflow-wrap: anywhere; }
+.control-runtime-flow-inspector-stats { display: grid; gap: 9px; }
+.control-runtime-flow-inspector-stat {
+  border: 1px solid var(--flow-border); border-radius: 10px;
+  padding: 10px; display: flex; align-items: flex-start; gap: 10px;
+}
+.control-runtime-flow-inspector-stat svg { color: var(--flow-cyan); flex: none; }
+.control-runtime-flow-inspector-stat div { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.control-runtime-flow-inspector-stat span { font-size: 10px; color: var(--flow-muted); }
+.control-runtime-flow-inspector-stat strong { font-size: 17px; font-variant-numeric: tabular-nums; color: var(--flow-ink); }
+.control-runtime-flow-inspector-stat small { font-size: 10px; font-weight: 550; }
+.control-runtime-flow-inspector-route { border-top: 1px solid var(--flow-border); padding-top: 13px; display: flex; flex-direction: column; gap: 8px; }
+.control-runtime-flow-inspector-route strong { font-size: 12px; color: var(--flow-ink); }
+.control-runtime-flow-inspector-route > span:not(.control-runtime-flow-inspector-eyebrow) { font-size: 10px; line-height: 1.5; color: var(--flow-muted); }
+.control-runtime-flow-inspector-error { color: #f97070; font-size: 11px; line-height: 1.5; display: flex; gap: 5px; align-items: flex-start; }
+.control-runtime-flow-inspector-link { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 36px; border-radius: 8px; padding: 8px 12px; background: #0a69b3; color: #fff; font-size: 12px; font-weight: 690; margin-top: 4px; }
+.control-runtime-flow-inspector-link:hover { background: #075995; color: #fff; }
+.control-runtime-flow-inspector-hint { font-size: 11px; color: var(--flow-muted); line-height: 1.5; }
+.control-runtime-flow-inspector-footnote { border-top: 1px solid var(--flow-border); padding-top: 12px; margin-top: auto; font-size: 10px; color: var(--flow-muted); line-height: 1.6; }
 @media (prefers-reduced-motion: reduce) {
-  .control-runtime-flow-canvas .control-runtime-flow-particles { display: none !important; }
+  .control-runtime-flow-canvas .control-runtime-flow-particles,
+  .control-runtime-flow-canvas .control-runtime-flow-glow { display: none !important; }
   .control-runtime-flow-canvas .react-flow__edge.animated .react-flow__edge-path,
-  .control-runtime-flow-canvas .react-flow__edge.control-runtime-flow-edge--active .react-flow__edge-path {
-    animation: none !important;
-    stroke-dasharray: none;
-  }
+  .control-runtime-flow-canvas .react-flow__edge.control-runtime-flow-edge--active .react-flow__edge-path { animation: none !important; stroke-dasharray: none; }
+  .control-runtime-flow-card { transition: none !important; }
 }

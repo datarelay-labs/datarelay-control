@@ -16,8 +16,14 @@ import {
   type FlowNodeData,
 } from './runtime-flow-graph-model'
 import { RuntimeFlowDeliveryEdge } from './runtime-flow-delivery-edge'
+import { RuntimeFlowNode } from './runtime-flow-node'
+import { RuntimeFlowInspector } from './runtime-flow-inspector'
 
 const runtimeEdgeTypes = { 'runtime-delivery': RuntimeFlowDeliveryEdge }
+const runtimeNodeTypes = {
+  source: RuntimeFlowNode, stream: RuntimeFlowNode,
+  route: RuntimeFlowNode, destination: RuntimeFlowNode,
+}
 
 function useReducedMotionPreference(): boolean {
   const [reduced, setReduced] = useState(() =>
@@ -154,12 +160,14 @@ export function RuntimeFlowTopology({
         ) : null}
         <span>Updated: {Number.isFinite(Date.parse(snapshot.updated_at)) ? new Date(snapshot.updated_at).toLocaleString() : 'Unknown'}</span>
       </div>
-      <div className="control-runtime-flow-canvas" data-testid="runtime-data-flow-canvas">
+      <div className="control-runtime-flow-workspace">
+        <div className="control-runtime-flow-canvas" data-testid="runtime-data-flow-canvas">
         <ReactFlow<Node<FlowNodeData>, Edge<FlowEdgeData>>
           key={`${selectedStreamId}:${topology.routePage}`}
           nodes={nodes}
           edges={edges}
           edgeTypes={runtimeEdgeTypes}
+          nodeTypes={runtimeNodeTypes}
           fitView
           fitViewOptions={{ padding: 0.15, maxZoom: 1.05 }}
           minZoom={0.2}
@@ -180,22 +188,16 @@ export function RuntimeFlowTopology({
           <Controls showInteractive={false} />
         </ReactFlow>
       </div>
-      {(inspectedEdge || inspectedNode) ? (
-        <div className="mt-3 rounded-lg border border-violet-300/70 bg-white px-3 py-2.5 text-xs dark:border-violet-500/40 dark:bg-gdc-card" data-testid="runtime-data-flow-inspector">
-          <strong className="font-semibold text-slate-900 dark:text-slate-100">
-            {inspectedEdge ? 'Selected delivery relation' : inspectedNode?.data.label}
-          </strong>
-          <p className="mt-1 text-slate-600 dark:text-gdc-mutedStrong">
-            {inspectedEdge?.data?.evidence || inspectedNode?.data.detail}
-          </p>
-          {inspectedEdge?.data?.routeId ? (
-            <Link className="mt-1 inline-block font-semibold text-violet-700 underline-offset-2 hover:underline dark:text-violet-300"
-              to={routeEditPath(String(inspectedEdge.data.routeId))}>Inspect Route #{inspectedEdge.data.routeId}</Link>
-          ) : inspectedNode?.data.href ? (
-            <Link className="mt-1 inline-block font-semibold text-violet-700 underline-offset-2 hover:underline dark:text-violet-300" to={inspectedNode.data.href}>Open details</Link>
-          ) : null}
-        </div>
-      ) : null}
+        <RuntimeFlowInspector
+          snapshot={snapshot}
+          selectedStreamId={selectedStreamId!}
+          selectedNode={inspectedNode}
+          selectedEdge={inspectedEdge}
+          shownRoutes={topology.shownRoutes}
+          totalRoutes={topology.totalRoutes}
+          stale={topology.stale}
+        />
+      </div>
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-slate-600 dark:text-gdc-mutedStrong">
           {movingCount} animated of {ratePositive} rate-positive gateway paths
