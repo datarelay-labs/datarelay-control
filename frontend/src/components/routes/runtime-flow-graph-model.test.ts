@@ -61,6 +61,16 @@ describe('runtime data-flow topology projection', () => {
     expect(buildRuntimeFlowTopology(null, 1, null, NOW).nodes).toEqual([])
     expect(buildRuntimeFlowTopology(sample(), 999, null, NOW).edges).toEqual([])
   })
+  it('exposes keyboard-actionable names for graph nodes and delivery edges', () => {
+    const graph = buildRuntimeFlowTopology(sample(), 1, null, NOW)
+    const route = graph.nodes.find((item) => item.id === 'route:11')
+    expect(route?.ariaRole).toBe('button')
+    expect(route?.ariaLabel).toMatch(/^Inspect Route #11/)
+    const delivery = graph.edges.find((item) => item.id === 'route:11->destination:21')
+    expect(delivery?.ariaRole).toBe('button')
+    expect(delivery?.ariaLabel).toContain('Route #11 relation')
+  })
+
   it('renders exact Source → Stream → Route → Destination identities and fanout', () => {
     const graph = buildRuntimeFlowTopology(sample(), 1, null, NOW)
     expect(graph.nodes.map((n) => n.id).sort()).toEqual([

@@ -51,6 +51,8 @@ function node(
     draggable: false,
     connectable: false,
     selectable: true,
+    ariaRole: 'button',
+    ariaLabel: `Inspect ${data.label}. ${data.detail}`,
     sourcePosition: Position.Right,
     targetPosition: Position.Left,
     className: `control-runtime-flow-node ${statusClass}`,
@@ -64,6 +66,10 @@ function edge(
     id, source, target, data: evidence, type: 'default', animated: active,
     className: active ? 'control-runtime-flow-edge--active' : 'control-runtime-flow-edge--static',
     selectable: true,
+    ariaRole: 'button',
+    ariaLabel: evidence.routeId != null
+      ? `Inspect Route #${evidence.routeId} relation. ${evidence.evidence}`
+      : `Inspect ${evidence.evidence}`,
     interactionWidth: 22,
     markerEnd: { type: MarkerType.ArrowClosed, width: 12, height: 12 },
   }

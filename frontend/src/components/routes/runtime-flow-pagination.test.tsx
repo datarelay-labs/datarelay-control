@@ -26,6 +26,14 @@ vi.mock('@xyflow/react', async (importOriginal) => {
         <output data-testid="paginated-graph-nodes" data-mount-id={mountId}>
           {nodes.map((node) => node.id).join(',')}
         </output>
+        {nodes.map((node) => (
+          <div key={`focus-${node.id}`} data-testid={`graph-focus-node-${node.id}`}
+            className="react-flow__node" data-id={node.id} tabIndex={0}>{node.id}</div>
+        ))}
+        {edges.map((edge) => (
+          <div key={`focus-${edge.id}`} data-testid={`graph-focus-edge-${edge.id}`}
+            className="react-flow__edge" data-id={edge.id} tabIndex={0}>{edge.id}</div>
+        ))}
         {nodes.filter((node) => node.data?.kind === 'route').map((node) => (
           <button type="button" key={node.id} data-testid={`graph-node-${node.id}`}
             onClick={() => onNodeClick?.(null, node)}>Node {node.id}</button>
@@ -167,6 +175,34 @@ describe('Flow topology node/edge selection integration', () => {
     expect(choose).toHaveBeenLastCalledWith(100)
     expect(screen.getByTestId('runtime-data-flow-inspector')).toHaveTextContent('Selected delivery relation')
     expect(screen.getByTestId('runtime-data-flow-inspector')).not.toHaveTextContent('Route #100')
+  })
+})
+
+describe('Real keyboard activation of selectable graph entities', () => {
+  it('Enter and Space inspect the focused Route node or edge; guard preserves selection', () => {
+    const choose = vi.fn((_routeId: number) => true)
+    render(<MemoryRouter>
+      <RuntimeFlowTopology snapshot={snapshot(10)} selectedStreamId={1} onInspectRoute={choose} />
+    </MemoryRouter>)
+
+    const node = screen.getByTestId('graph-focus-node-route:101')
+    node.focus()
+    fireEvent.keyDown(node, { key: 'Enter' })
+    expect(choose).toHaveBeenLastCalledWith(101)
+    expect(screen.getByTestId('runtime-data-flow-inspector')).toHaveTextContent('Route #101')
+
+    const edge = screen.getByTestId('graph-focus-edge-route:102->destination:13')
+    edge.focus()
+    fireEvent.keyDown(edge, { key: ' ' })
+    expect(choose).toHaveBeenLastCalledWith(102)
+    expect(screen.getByTestId('runtime-data-flow-inspector')).toHaveTextContent('Selected delivery relation')
+
+    choose.mockReturnValue(false)
+    const denied = screen.getByTestId('graph-focus-node-route:100')
+    denied.focus()
+    fireEvent.keyDown(denied, { key: ' ' })
+    expect(choose).toHaveBeenLastCalledWith(100)
+    expect(screen.getByTestId('runtime-data-flow-inspector')).toHaveTextContent('Selected delivery relation')
   })
 })
 
