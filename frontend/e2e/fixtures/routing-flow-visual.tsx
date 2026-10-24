@@ -73,6 +73,24 @@ const snapshot: OperationalSnapshotResponse = {
   problems: [],
 }
 
+// Test-only visual states. Never applied to product runtime or operator data.
+if (scenario === 'error') {
+  snapshot.routes[0]!.health_status = 'ERROR'
+  snapshot.destinations[0]!.health_status = 'ERROR'
+} else if (scenario === 'warning') {
+  snapshot.routes[0]!.health_status = 'DEGRADED'
+  snapshot.destinations[0]!.health_status = 'DEGRADED'
+} else if (scenario === 'disabled') {
+  snapshot.routes[0]!.enabled = false
+} else if (scenario === 'zero') {
+  snapshot.routes[0]!.delivered_eps_1m = 0
+  snapshot.destinations[0]!.inbound_eps_1m = 0
+} else if (scenario === 'long-name') {
+  snapshot.streams[0]!.stream_name = 'Microsoft Security Event Hub Collector '.repeat(5)
+  snapshot.destinations[0]!.destination_name = 'SentinelOne EDR Production Receiver With Long Route Path '.repeat(5)
+  snapshot.routes[0]!.destination_name = snapshot.destinations[0]!.destination_name
+}
+
 document.documentElement.setAttribute('data-dr-theme', 'dark')
 document.documentElement.classList.add('dark')
 document.body.style.background = '#051323'

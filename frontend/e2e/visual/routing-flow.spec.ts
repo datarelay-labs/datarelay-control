@@ -99,6 +99,39 @@ test('real Chromium Enter and Space inspect Route nodes and delivery edges witho
   await expect(inspector).toContainText('Route #12')
 })
 
+for (const [scenario, stateClass, shouldMove] of [
+  ['error', 'error', false],
+  ['warning', 'warning', true],
+  ['disabled', 'disabled', false],
+  ['zero', 'healthy', false],
+] as const) {
+  test('Chromium '+ scenario +' Route state retains honest evidence and visual status', async ({ page }) => {
+    await page.goto('/e2e/fixtures/routing-flow-visual.html?scenario=' + scenario)
+    const routeNode = page.locator('.react-flow__node[data-id="route:12"]')
+    const deliveryEdge = page.locator('.react-flow__edge[data-id="route:12->destination:23"]')
+    await expect(routeNode).toHaveClass(new RegExp('control-runtime-flow-node--' + stateClass))
+    await expect(deliveryEdge.locator('.control-runtime-flow-particles')).toHaveCount(shouldMove ? 1 : 0)
+    if (scenario === 'zero') {
+      await expect(routeNode.getByTestId('runtime-flow-card-route')).toContainText('0 evt/s')
+    }
+    await expect(page.getByTestId('runtime-data-flow-evidence')).toContainText('Runtime snapshot')
+    await expect(page.getByTestId('runtime-flow-card-stream')).toHaveCount(1)
+  })
+}
+
+test('Chromium long source and destination names remain compact with a full-name tooltip and no page overflow', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.goto('/e2e/fixtures/routing-flow-visual.html?scenario=long-name')
+  const stream = page.locator('.react-flow__node[data-id="stream:7"] .control-runtime-flow-name')
+  const destination = page.locator('.react-flow__node[data-id="destination:23"] .control-runtime-flow-name')
+  await expect(stream).toBeVisible()
+  await expect(destination).toBeVisible()
+  expect((await destination.textContent())!.length).toBeLessThanOrEqual(48)
+  expect((await destination.getAttribute('title'))).toContain('SentinelOne EDR Production Receiver')
+  await expect(page.getByTestId('runtime-data-flow-inspector')).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+})
+
 test('later Route page displays truthful zero traffic without motion', async ({ page }) => {
   await page.goto('/e2e/fixtures/routing-flow-visual.html?scenario=healthy')
   await expect(page.getByTestId('runtime-flow-card-route')).toHaveCount(3)
