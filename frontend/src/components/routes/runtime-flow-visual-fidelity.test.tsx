@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 import type { Node, NodeProps } from '@xyflow/react'
@@ -78,7 +78,8 @@ describe('runtime flow visual fidelity and evidence', () => {
     expect(screen.getByTestId('runtime-flow-card-route')).toHaveClass('control-runtime-flow-card--selected')
     expect(screen.getAllByTestId('read-only-flow-handle')).toHaveLength(2)
     expect(formatFlowRate(null)).toBe('—')
-    expect(formatFlowRate(12400)).toBe('12K')
+    expect(formatFlowRate(12400)).toBe('12.4K')
+    expect(formatFlowRate(1200000)).toBe('1.2M')
   })
 
   it('provides the selected Route diagnostics and retains unknown receiver proof', () => {
@@ -99,6 +100,23 @@ describe('runtime flow visual fidelity and evidence', () => {
     expect(screen.getByText('12 ms')).toBeInTheDocument()
     expect(screen.getByText(/receiver receipt not verified/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Inspect Route' })).toHaveAttribute('href', '/routes/12/edit')
+  })
+
+  it('selects an existing Route inside its owning workspace instead of navigating away from drafts', () => {
+    const onInspectRoute = vi.fn()
+    const routeNode: Node<FlowNodeData> = {
+      id: 'route:12', type: 'route', position: { x: 0, y: 0 },
+      data: { kind: 'route', label: 'Route #12', detail: 'Healthy',
+        status: 'HEALTHY', href: '/routes/12' },
+    }
+    render(<MemoryRouter>
+      <RuntimeFlowInspector snapshot={snapshot()} selectedStreamId={1}
+        selectedNode={routeNode} shownRoutes={1} totalRoutes={1} stale={false}
+        onInspectRoute={onInspectRoute} />
+    </MemoryRouter>)
+    fireEvent.click(screen.getByRole('button', { name: 'Inspect in workspace' }))
+    expect(onInspectRoute).toHaveBeenCalledWith(12)
+    expect(screen.queryByRole('link', { name: 'Inspect Route' })).not.toBeInTheDocument()
   })
 
   it('labels stale evidence rather than suggesting current health', () => {

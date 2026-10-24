@@ -14,6 +14,8 @@ type Props = {
   shownRoutes: number
   totalRoutes: number
   stale: boolean
+  /** When embedded in a Route workspace, select locally without losing drafts. */
+  onInspectRoute?: (routeId: number) => void
 }
 
 function formatPercent(value: number | null | undefined): string {
@@ -27,7 +29,7 @@ function formatLatency(value: number | null | undefined): string {
 }
 
 export function RuntimeFlowInspector({
-  snapshot, selectedStreamId, selectedNode, selectedEdge, shownRoutes, totalRoutes, stale,
+  snapshot, selectedStreamId, selectedNode, selectedEdge, shownRoutes, totalRoutes, stale, onInspectRoute,
 }: Props) {
   const nodeRoute = selectedNode?.data.kind === 'route'
     ? Number(selectedNode.id.slice('route:'.length)) : null
@@ -57,6 +59,9 @@ export function RuntimeFlowInspector({
           {status}
         </span>
       </div>
+      {selectedEdge ? (
+        <p className="control-runtime-flow-inspector-eyebrow">Selected delivery relation</p>
+      ) : null}
       <h4 className="control-runtime-flow-inspector-title">{selectionLabel}</h4>
       <p className="control-runtime-flow-inspector-description">
         {detail ?? (totalRoutes + ' Route paths · ' + shownRoutes + ' shown. Select a node or path to inspect it.')}
@@ -93,9 +98,16 @@ export function RuntimeFlowInspector({
             <p className="control-runtime-flow-inspector-error"><CircleAlert size={14} aria-hidden="true" />
               {route.last_error_message}</p>
           ) : null}
-          <Link to={routeEditPath(String(route.route_id))} className="control-runtime-flow-inspector-link">
-            Inspect Route <ArrowUpRight size={15} aria-hidden="true" />
-          </Link>
+          {onInspectRoute ? (
+            <button type="button" className="control-runtime-flow-inspector-link"
+              onClick={() => onInspectRoute(route.route_id)}>
+              Inspect in workspace <ArrowUpRight size={15} aria-hidden="true" />
+            </button>
+          ) : (
+            <Link to={routeEditPath(String(route.route_id))} className="control-runtime-flow-inspector-link">
+              Inspect Route <ArrowUpRight size={15} aria-hidden="true" />
+            </Link>
+          )}
         </div>
       ) : selectedNode?.data.href ? (
         <Link to={selectedNode.data.href} className="control-runtime-flow-inspector-link">
