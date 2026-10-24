@@ -86,6 +86,10 @@ export function buildRuntimeFlowTopology(
   if (!stream) return empty
 
   const fresh = snapshotIsFresh(snapshot.updated_at, nowMs)
+  const streamKnownStopped = ['STOPPED', 'STOPPING', 'PAUSED', 'DISABLED', 'ERROR', 'FAILED']
+    .includes((stream.status || '').trim().toUpperCase())
+  const streamCanDeliver = stream.enabled && !streamKnownStopped &&
+    (stream.health_status === 'HEALTHY' || stream.health_status === 'DEGRADED')
   const allRoutes = snapshot.routes
     .filter((route) => safeId(route.route_id) && route.stream_id === selectedStreamId)
     .sort((a, b) => a.route_id - b.route_id)
@@ -151,13 +155,18 @@ export function buildRuntimeFlowTopology(
     const destination = byDestination.get(route.destination_id)
     const reportedRate = Number.isFinite(route.delivered_eps_1m) && route.delivered_eps_1m >= 0
       ? route.delivered_eps_1m : null
-    const flowing = fresh && route.enabled && destination?.enabled === true &&
+    const destinationCanReceive = destination?.enabled === true &&
+      (destination.health_status === 'HEALTHY' || destination.health_status === 'DEGRADED')
+    const flowing = fresh && streamCanDeliver && route.enabled && destinationCanReceive &&
       (route.health_status === 'HEALTHY' || route.health_status === 'DEGRADED') &&
       reportedRate !== null && reportedRate > 0
     const evidence = !fresh ? 'Stale snapshot · delivery activity unknown'
-      : !route.enabled ? 'Disabled Route · no active delivery claim'
-        : destination?.enabled !== true ? 'Destination unavailable or disabled'
-          : reportedRate === null ? 'Delivery rate unavailable'
+      : !streamCanDeliver ? 'Stream stopped, disabled or unhealthy · current delivery not verified'
+        : !route.enabled ? 'Disabled Route · no active delivery claim'
+          : route.health_status === 'ERROR' ? 'Route error · current delivery not verified'
+            : destination?.enabled !== true ? 'Destination unavailable or disabled'
+              : !destinationCanReceive ? 'Destination error or idle · current delivery not verified'
+                : reportedRate === null ? 'Delivery rate unavailable'
             : reportedRate === 0 ? '0 gateway-reported delivered EPS in 1m window'
               : `${reportedRate.toFixed(2)} gateway-reported delivered EPS · 1m · receiver unverified`
     edges.push(edge(`${routeNodeId}->${destinationNodeId}`, routeNodeId, destinationNodeId, {

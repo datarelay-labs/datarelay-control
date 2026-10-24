@@ -93,6 +93,29 @@ describe('runtime data-flow topology projection', () => {
     snapshot.routes[0]!.health_status = 'ERROR'
     expect(delivery(buildRuntimeFlowTopology(snapshot, 1, null, NOW))[0]?.animated).toBe(false)
   })
+  it('does not animate a disabled or stopped Stream with residual 1m delivery readings', () => {
+    const snapshot = sample()
+    snapshot.streams[0]!.enabled = false
+    expect(delivery(buildRuntimeFlowTopology(snapshot, 1, null, NOW))[0]?.animated).toBe(false)
+    snapshot.streams[0]!.enabled = true
+    snapshot.streams[0]!.status = 'STOPPED'
+    expect(delivery(buildRuntimeFlowTopology(snapshot, 1, null, NOW))[0]?.animated).toBe(false)
+    snapshot.streams[0]!.status = 'PAUSED'
+    expect(delivery(buildRuntimeFlowTopology(snapshot, 1, null, NOW))[0]?.animated).toBe(false)
+  })
+  it('does not animate delivery into a Destination reporting ERROR even when enabled', () => {
+    const snapshot = sample()
+    snapshot.destinations[0]!.health_status = 'ERROR'
+    expect(delivery(buildRuntimeFlowTopology(snapshot, 1, null, NOW))[0]?.animated).toBe(false)
+    expect(delivery(buildRuntimeFlowTopology(snapshot, 1, null, NOW))[0]?.data?.evidence)
+      .toMatch(/Destination.*error/i)
+  })
+  it('does not animate a Stream reporting an ERROR despite fresh Route EPS', () => {
+    const snapshot = sample()
+    snapshot.streams[0]!.health_status = 'ERROR'
+    expect(delivery(buildRuntimeFlowTopology(snapshot, 1, null, NOW))[0]?.animated).toBe(false)
+  })
+
   it('shows missing Destination identity without inventing a verified receiver', () => {
     const snapshot = sample()
     snapshot.destinations = []
