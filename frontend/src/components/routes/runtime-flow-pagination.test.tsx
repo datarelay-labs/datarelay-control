@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
-import type { Node } from '@xyflow/react'
+import type { Edge, Node } from '@xyflow/react'
 import type { OperationalSnapshotResponse } from '../../api/operationalSnapshot'
 import { RuntimeFlowTopology } from './runtime-flow-topology'
 import { buildRuntimeFlowTopology, MAX_VISIBLE_FLOW_ROUTES } from './runtime-flow-graph-model'
@@ -13,11 +13,28 @@ vi.mock('@xyflow/react', async (importOriginal) => {
   const original = await importOriginal<typeof import('@xyflow/react')>()
   return {
     ...original,
-    ReactFlow: ({ nodes }: { nodes: Node[] }) => {
+    ReactFlow: ({
+      nodes, edges, onNodeClick, onEdgeClick,
+    }: {
+      nodes: Node[]
+      edges: Edge[]
+      onNodeClick?: (event: unknown, item: Node) => void
+      onEdgeClick?: (event: unknown, item: Edge) => void
+    }) => {
       const [mountId] = useState(() => ++mountSequence)
-      return <output data-testid="paginated-graph-nodes" data-mount-id={mountId}>
-        {nodes.map((node) => node.id).join(',')}
-      </output>
+      return <div>
+        <output data-testid="paginated-graph-nodes" data-mount-id={mountId}>
+          {nodes.map((node) => node.id).join(',')}
+        </output>
+        {nodes.filter((node) => node.data?.kind === 'route').map((node) => (
+          <button type="button" key={node.id} data-testid={`graph-node-${node.id}`}
+            onClick={() => onNodeClick?.(null, node)}>Node {node.id}</button>
+        ))}
+        {edges.filter((edge) => edge.data?.gatewayOnly).map((edge) => (
+          <button type="button" key={edge.id} data-testid={`graph-edge-${edge.id}`}
+            onClick={() => onEdgeClick?.(null, edge)}>Edge {edge.id}</button>
+        ))}
+      </div>
     },
     Background: () => null,
     Controls: () => null,
@@ -125,5 +142,30 @@ describe('bounded, keyboard-operable runtime data-flow route paging', () => {
     expect(routes).toHaveTextContent('Destination not configured')
     expect(routes.querySelectorAll('li')).toHaveLength(MAX_VISIBLE_FLOW_ROUTES)
     expect(screen.getByRole('link', { name: 'Route #100' })).toBeInTheDocument()
+  })
+})
+
+
+describe('Flow topology node/edge selection integration', () => {
+  it('selects real Route IDs from graph nodes and delivery edges but respects owner refusal', () => {
+    const choose = vi.fn((_routeId: number) => true)
+    render(
+      <MemoryRouter>
+        <RuntimeFlowTopology snapshot={snapshot(10)} selectedStreamId={1} onInspectRoute={choose} />
+      </MemoryRouter>,
+    )
+    fireEvent.click(screen.getByTestId('graph-node-route:102'))
+    expect(choose).toHaveBeenLastCalledWith(102)
+    expect(screen.getByTestId('runtime-data-flow-inspector')).toHaveTextContent('Route #102')
+
+    fireEvent.click(screen.getByTestId('graph-edge-route:103->destination:14'))
+    expect(choose).toHaveBeenLastCalledWith(103)
+    expect(screen.getByTestId('runtime-data-flow-inspector')).toHaveTextContent('Selected delivery relation')
+
+    choose.mockReturnValue(false)
+    fireEvent.click(screen.getByTestId('graph-node-route:104'))
+    expect(choose).toHaveBeenLastCalledWith(104)
+    expect(screen.getByTestId('runtime-data-flow-inspector')).toHaveTextContent('Selected delivery relation')
+    expect(screen.getByTestId('runtime-data-flow-inspector')).not.toHaveTextContent('Route #104')
   })
 })

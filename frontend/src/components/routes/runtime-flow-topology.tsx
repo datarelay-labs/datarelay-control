@@ -59,10 +59,12 @@ export type RuntimeFlowTopologyProps = {
   selectedStreamId: number | null
   selectedRouteId?: number | null
   requestFailed?: boolean
+  /** Select an existing Route in the owning Flow inspector without mutating it. */
+  onInspectRoute?: (routeId: number) => boolean
 }
 
 export function RuntimeFlowTopology({
-  snapshot, selectedStreamId, selectedRouteId = null, requestFailed = false,
+  snapshot, selectedStreamId, selectedRouteId = null, requestFailed = false, onInspectRoute,
 }: RuntimeFlowTopologyProps) {
   useOperationalEvidenceClock(snapshot?.updated_at)
   const documentVisible = useDocumentVisible()
@@ -101,6 +103,12 @@ export function RuntimeFlowTopology({
   const nodes: Node<FlowNodeData>[] = topology.nodes
   const inspectedEdge = edges.find((item) => item.id === inspectedId)
   const inspectedNode = nodes.find((item) => item.id === inspectedId)
+
+  function inspectRoute(routeId: number, identity: string) {
+    if (!Number.isSafeInteger(routeId) || routeId <= 0) return
+    if (onInspectRoute?.(routeId) === false) return
+    setInspectedId(identity)
+  }
 
   if (!snapshot || topology.totalRoutes === 0 || nodes.length === 0) return null
 
@@ -170,8 +178,20 @@ export function RuntimeFlowTopology({
           edgesReconnectable={false}
           elementsSelectable
           zoomOnDoubleClick={false}
-          onNodeClick={(_, item) => setInspectedId(item.id)}
-          onEdgeClick={(_, item) => setInspectedId(item.id)}
+          onNodeClick={(_, item) => {
+            if (item.data.kind === 'route') {
+              inspectRoute(Number(item.id.slice('route:'.length)), item.id)
+            } else {
+              setInspectedId(item.id)
+            }
+          }}
+          onEdgeClick={(_, item) => {
+            if (typeof item.data?.routeId === 'number') {
+              inspectRoute(item.data.routeId, item.id)
+            } else {
+              setInspectedId(item.id)
+            }
+          }}
           ariaLabelConfig={{ 'node.a11yDescription.default': 'Select a node for runtime detail' }}
           colorMode={colorMode}
           proOptions={{ hideAttribution: false }}
@@ -216,9 +236,19 @@ export function RuntimeFlowTopology({
             const deliveryEdge = routeEdges.find((item) => item.data?.routeId === routeId)
             return (
               <li key={routeNode.id} className="flex flex-wrap items-baseline gap-2 border-b border-slate-100 py-1.5 last:border-0 dark:border-gdc-border">
-                <Link to={routeEditPath(String(routeId))} className="font-semibold text-violet-700 hover:underline dark:text-violet-300">
-                  Route #{routeId}
-                </Link>
+                {onInspectRoute ? (
+                  <button type="button"
+                    aria-label={`Inspect Route #${routeId} in workspace`}
+                    aria-pressed={selectedRouteId === routeId}
+                    onClick={() => inspectRoute(routeId, routeNode.id)}
+                    className="font-semibold text-violet-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 dark:text-violet-300">
+                    Route #{routeId}
+                  </button>
+                ) : (
+                  <Link to={routeEditPath(String(routeId))} className="font-semibold text-violet-700 hover:underline dark:text-violet-300">
+                    Route #{routeId}
+                  </Link>
+                )}
                 <span className="text-slate-600 dark:text-gdc-mutedStrong">
                   {deliveryEdge?.data?.evidence ?? 'Destination not configured · no delivery path'}
                 </span>

@@ -281,6 +281,16 @@ export function RoutesArchitectureWorkspace({
     return false
   }
 
+  function reviewTopologyRoute(routeId: number): boolean {
+    if (!selectedGroup?.routes.some((route) => route.routeId === routeId)) return false
+    const alreadyInspected = selectedRoute?.routeId === routeId
+    if (!alreadyInspected && selectionBlockedByEmbeddedEditor(selectedGroup.streamId, routeId)) return false
+    focusInspectorAfterAttention.current = !alreadyInspected
+    if (alreadyInspected) inspectorRef.current?.focus()
+    setInspectedRouteId(routeId)
+    return true
+  }
+
   function reviewAttention(item: (typeof attention)[number]) {
     // Numeric Route and Stream IDs prevent same-name entities from leaking into each other's inspector.
     const alreadyInspected = selectedGroup?.streamId === item.streamId &&
@@ -464,6 +474,7 @@ export function RoutesArchitectureWorkspace({
         selectedStreamId={selectedGroup?.streamId ?? null}
         selectedRouteId={selectedRoute?.routeId ?? null}
         requestFailed={requestFailed}
+        onInspectRoute={reviewTopologyRoute}
       />
 
       {!snapshot ? (
