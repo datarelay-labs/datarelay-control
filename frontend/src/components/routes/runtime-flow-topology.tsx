@@ -79,6 +79,8 @@ export function RuntimeFlowTopology({
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [onScreen, setOnScreen] = useState(true)
   const [inspectedId, setInspectedId] = useState<string | null>(null)
+  // A parent-selected Route supersedes stale local inspection when context changes.
+  useEffect(() => setInspectedId(null), [selectedStreamId, selectedRouteId])
   const [showList, setShowList] = useState(false)
   const [pageChoice, setPageChoice] = useState<{
     streamId: number | null
@@ -170,7 +172,8 @@ export function RuntimeFlowTopology({
         <span>Updated: {Number.isFinite(Date.parse(snapshot.updated_at)) ? new Date(snapshot.updated_at).toLocaleString() : 'Unknown'}</span>
       </div>
       <div className="control-runtime-flow-workspace">
-        <div className="control-runtime-flow-canvas" data-testid="runtime-data-flow-canvas">
+        <div className="control-runtime-flow-scroll" role="region" aria-label="Scrollable data flow graph" tabIndex={0}>
+          <div className="control-runtime-flow-canvas" data-testid="runtime-data-flow-canvas">
         <ReactFlow<Node<FlowNodeData>, Edge<FlowEdgeData>>
           key={`${selectedStreamId}:${topology.routePage}`}
           nodes={nodes}
@@ -178,7 +181,7 @@ export function RuntimeFlowTopology({
           edgeTypes={runtimeEdgeTypes}
           nodeTypes={runtimeNodeTypes}
           fitView
-          fitViewOptions={{ padding: 0.15, maxZoom: 1.05 }}
+          fitViewOptions={{ padding: 0.07, maxZoom: 1.05 }}
           minZoom={0.2}
           maxZoom={1.5}
           panOnScroll={false}
@@ -208,7 +211,8 @@ export function RuntimeFlowTopology({
           <Background gap={24} size={1} color="var(--gdc-border, #64748b)" />
           <Controls showInteractive={false} />
         </ReactFlow>
-      </div>
+          </div>
+        </div>
         <RuntimeFlowInspector
           snapshot={snapshot}
           selectedStreamId={selectedStreamId!}

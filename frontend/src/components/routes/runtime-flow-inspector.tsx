@@ -41,13 +41,26 @@ export function RuntimeFlowInspector({
   const destination = route
     ? snapshot.destinations.find((candidate) => candidate.destination_id === route.destination_id)
     : undefined
+  const selectedKind = selectedNode?.data.kind
+  const selectedDestination = selectedKind === 'destination'
+    ? snapshot.destinations.find((candidate) => selectedNode.id === 'destination:' + candidate.destination_id)
+    : undefined
+  const relationOnly = selectedEdge != null && selectedEdge.data?.gatewayOnly !== true
   const selectionLabel = route ? 'Route #' + route.route_id
     : selectedNode?.data.label ?? (selectedEdge ? 'Data path' : 'Flow overview')
   const status = stale ? 'Unknown · last reported'
     : route ? (route.enabled ? route.health_status : 'Disabled')
-      : selectedNode?.data.status ?? (stream?.health_status ?? 'Unknown')
-  const rate = route ? route.delivered_eps_1m : stream?.eps_1m ?? null
-  const rateBasis = route ? 'Gateway delivery · 1 min' : 'Stream ingest · 1 min'
+      : relationOnly ? 'Configuration only'
+        : selectedNode?.data.status ?? (stream?.health_status ?? 'Unknown')
+  const rate = route ? route.delivered_eps_1m
+    : relationOnly || selectedKind === 'source' ? null
+      : selectedKind === 'destination' ? (selectedDestination?.inbound_eps_1m ?? null)
+        : (stream?.eps_1m ?? null)
+  const rateBasis = route ? 'Gateway delivery · 1 min'
+    : relationOnly ? 'Configured path · rate not observed'
+      : selectedKind === 'source' ? 'Upstream source · rate not observed'
+        : selectedKind === 'destination' ? 'Gateway destination inbound · 1 min'
+          : 'Stream ingest · 1 min'
   const detail = selectedEdge?.data?.evidence ?? selectedNode?.data.detail
   return (
     <aside className="control-runtime-flow-inspector" aria-label="Selected flow details"

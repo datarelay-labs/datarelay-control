@@ -119,6 +119,36 @@ describe('runtime flow visual fidelity and evidence', () => {
     expect(screen.queryByRole('link', { name: 'Inspect Route' })).not.toBeInTheDocument()
   })
 
+  it('does not attribute Stream ingestion telemetry to an unverified upstream Source', () => {
+    const sourceNode: Node<FlowNodeData> = {
+      id: 'source:2', type: 'source', position: { x: 0, y: 0 },
+      data: { kind: 'source', label: 'Source #2', detail: 'Topology relation only',
+        status: 'Topology only', metricEps: null, href: null },
+    }
+    render(<MemoryRouter>
+      <RuntimeFlowInspector snapshot={snapshot()} selectedStreamId={1}
+        selectedNode={sourceNode} shownRoutes={1} totalRoutes={1} stale={false} />
+    </MemoryRouter>)
+    const rateRow = screen.getByText('Upstream source · rate not observed').parentElement
+    expect(rateRow?.querySelector('strong')).toHaveTextContent('—')
+    expect(rateRow?.querySelector('strong')).not.toHaveTextContent('24.4')
+  })
+
+  it('shows Destination-specific gateway rate instead of Stream ingest EPS', () => {
+    const destinationNode: Node<FlowNodeData> = {
+      id: 'destination:27', type: 'destination', position: { x: 0, y: 0 },
+      data: { kind: 'destination', label: 'Syslog UDP', detail: 'Gateway destination',
+        status: 'HEALTHY', metricEps: 12.4, href: '/destinations/27' },
+    }
+    render(<MemoryRouter>
+      <RuntimeFlowInspector snapshot={snapshot()} selectedStreamId={1}
+        selectedNode={destinationNode} shownRoutes={1} totalRoutes={1} stale={false} />
+    </MemoryRouter>)
+    const rateRow = screen.getByText('Gateway destination inbound · 1 min').parentElement
+    expect(rateRow?.querySelector('strong')).toHaveTextContent('12.4')
+    expect(rateRow?.querySelector('strong')).not.toHaveTextContent('24.4')
+  })
+
   it('labels stale evidence rather than suggesting current health', () => {
     render(<MemoryRouter>
       <RuntimeFlowInspector snapshot={snapshot()} selectedStreamId={1}
