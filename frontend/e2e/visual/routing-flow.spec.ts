@@ -83,6 +83,22 @@ for (const width of [1280, 1024, 640]) {
   })
 }
 
+test('real Chromium Enter and Space inspect Route nodes and delivery edges without pointer input', async ({ page }) => {
+  await page.goto('/e2e/fixtures/routing-flow-visual.html?scenario=healthy')
+  const inspector = page.getByTestId('runtime-data-flow-inspector')
+  const node = page.locator('.react-flow__node[data-id="route:13"]')
+  await expect(node).toBeVisible()
+  await node.focus()
+  await page.keyboard.press('Enter')
+  await expect(inspector).toContainText('Route #13')
+  const edge = page.locator('.react-flow__edge[data-id="route:12->destination:23"]')
+  await expect(edge).toBeVisible()
+  await edge.focus()
+  await page.keyboard.press('Space')
+  await expect(inspector).toContainText('Selected delivery relation')
+  await expect(inspector).toContainText('Route #12')
+})
+
 test('later Route page displays truthful zero traffic without motion', async ({ page }) => {
   await page.goto('/e2e/fixtures/routing-flow-visual.html?scenario=healthy')
   await expect(page.getByTestId('runtime-flow-card-route')).toHaveCount(3)
