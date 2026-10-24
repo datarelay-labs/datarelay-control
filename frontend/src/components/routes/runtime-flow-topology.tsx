@@ -16,14 +16,18 @@ import {
   type FlowNodeData,
 } from './runtime-flow-graph-model'
 import { RuntimeFlowDeliveryEdge } from './runtime-flow-delivery-edge'
+import { RuntimeFlowNode } from './runtime-flow-node'
+import { RuntimeFlowInspector } from './runtime-flow-inspector'
 
 const runtimeEdgeTypes = { 'runtime-delivery': RuntimeFlowDeliveryEdge }
+const runtimeNodeTypes = {
+  source: RuntimeFlowNode, stream: RuntimeFlowNode,
+  route: RuntimeFlowNode, destination: RuntimeFlowNode,
+}
 const MAX_GRAPH_NODE_LABEL_LENGTH = 48
 
-/** Bound only the rendered text: original resource names stay intact in
- * graph identity, screen-reader labels and the selected inspector.
- * Unbounded names make fitted Route rows overlap and shrink all graph text.
- */
+/** Render a bounded caption, preserving full resource names in ariaLabel,
+ * custom node tooltip and the source-linked inspector. */
 function compactGraphNodeLabel(fullName: string): string {
   const characters = Array.from(fullName)
   return characters.length <= MAX_GRAPH_NODE_LABEL_LENGTH
@@ -85,6 +89,8 @@ export function RuntimeFlowTopology({
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [onScreen, setOnScreen] = useState(true)
   const [inspectedId, setInspectedId] = useState<string | null>(null)
+  // A parent-selected Route supersedes stale local inspection when context changes.
+  useEffect(() => setInspectedId(null), [selectedStreamId, selectedRouteId])
   const [showList, setShowList] = useState(false)
   const [pageChoice, setPageChoice] = useState<{
     streamId: number | null
@@ -115,10 +121,11 @@ export function RuntimeFlowTopology({
   const nodes: Node<FlowNodeData>[] = topology.nodes
   const visualNodes: Node<FlowNodeData>[] = nodes.map((item) => ({
     ...item,
-    data: { ...item.data, label: compactGraphNodeLabel(item.data.label) },
+    data: { ...item.data, fullLabel: item.data.label, label: compactGraphNodeLabel(item.data.label) },
   }))
   const inspectedEdge = edges.find((item) => item.id === inspectedId)
-  const inspectedNode = nodes.find((item) => item.id === inspectedId)
+  const inspectedNode = nodes.find((item) => item.id === inspectedId) ??
+    (selectedRouteId !== null ? nodes.find((item) => item.id === 'route:' + selectedRouteId) : undefined)
 
   function inspectRoute(routeId: number, identity: string) {
     if (!Number.isSafeInteger(routeId) || routeId <= 0) return
@@ -126,9 +133,9 @@ export function RuntimeFlowTopology({
     setInspectedId(identity)
   }
 
-  /** React Flow's focused graph elements only toggle its internal selection on
-   * Enter/Space. Mirror mouse inspection in the owning Flow without introducing
-   * a second editor, mutating a Route or swallowing the scroll region's keys.
+  /** Mirror mouse inspection when focused React Flow nodes/edges are activated.
+   * Only react to the exact focused selectable element, not child controls or
+   * internal scrolling keyboard events.
    */
   function handleGraphKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key !== 'Enter' && event.key !== ' ') return
@@ -204,16 +211,18 @@ export function RuntimeFlowTopology({
         ) : null}
         <span>Updated: {Number.isFinite(Date.parse(snapshot.updated_at)) ? new Date(snapshot.updated_at).toLocaleString() : 'Unknown'}</span>
       </div>
-      <div className="control-runtime-flow-scroll" role="region" aria-label="Scrollable data flow graph"
-        tabIndex={0} onKeyDownCapture={handleGraphKeyDown}>
-        <div className="control-runtime-flow-canvas" data-testid="runtime-data-flow-canvas">
-          <ReactFlow<Node<FlowNodeData>, Edge<FlowEdgeData>>
+      <div className="control-runtime-flow-workspace">
+        <div className="control-runtime-flow-scroll" role="region" aria-label="Scrollable data flow graph"
+          tabIndex={0} onKeyDownCapture={handleGraphKeyDown}>
+          <div className="control-runtime-flow-canvas" data-testid="runtime-data-flow-canvas">
+        <ReactFlow<Node<FlowNodeData>, Edge<FlowEdgeData>>
           key={`${selectedStreamId}:${topology.routePage}`}
           nodes={visualNodes}
           edges={edges}
           edgeTypes={runtimeEdgeTypes}
+          nodeTypes={runtimeNodeTypes}
           fitView
-          fitViewOptions={{ padding: 0.15, maxZoom: 1.05 }}
+          fitViewOptions={{ padding: 0.07, maxZoom: 1.05 }}
           minZoom={0.2}
           maxZoom={1.5}
           panOnScroll={false}
@@ -242,25 +251,20 @@ export function RuntimeFlowTopology({
         >
           <Background gap={24} size={1} color="var(--gdc-border, #64748b)" />
           <Controls showInteractive={false} />
-          </ReactFlow>
+        </ReactFlow>
+          </div>
         </div>
+        <RuntimeFlowInspector
+          snapshot={snapshot}
+          selectedStreamId={selectedStreamId!}
+          selectedNode={inspectedNode}
+          selectedEdge={inspectedEdge}
+          shownRoutes={topology.shownRoutes}
+          totalRoutes={topology.totalRoutes}
+          stale={topology.stale}
+          onInspectRoute={onInspectRoute ? (routeId) => inspectRoute(routeId, 'route:' + routeId) : undefined}
+        />
       </div>
-      {(inspectedEdge || inspectedNode) ? (
-        <div className="mt-3 rounded-lg border border-violet-300/70 bg-white px-3 py-2.5 text-xs dark:border-violet-500/40 dark:bg-gdc-card" data-testid="runtime-data-flow-inspector">
-          <strong className="font-semibold text-slate-900 dark:text-slate-100">
-            {inspectedEdge ? 'Selected delivery relation' : inspectedNode?.data.label}
-          </strong>
-          <p className="mt-1 text-slate-600 dark:text-gdc-mutedStrong">
-            {inspectedEdge?.data?.evidence || inspectedNode?.data.detail}
-          </p>
-          {inspectedEdge?.data?.routeId ? (
-            <Link className="mt-1 inline-block font-semibold text-violet-700 underline-offset-2 hover:underline dark:text-violet-300"
-              to={routeEditPath(String(inspectedEdge.data.routeId))}>Inspect Route #{inspectedEdge.data.routeId}</Link>
-          ) : inspectedNode?.data.href ? (
-            <Link className="mt-1 inline-block font-semibold text-violet-700 underline-offset-2 hover:underline dark:text-violet-300" to={inspectedNode.data.href}>Open details</Link>
-          ) : null}
-        </div>
-      ) : null}
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-slate-600 dark:text-gdc-mutedStrong">
           {movingCount} animated of {ratePositive} rate-positive gateway paths
