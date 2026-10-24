@@ -12,7 +12,7 @@
 .control-runtime-flow-canvas {
   width: 100%;
   min-width: 880px;
-  height: clamp(480px, 50vw, 660px);
+  height: clamp(560px, 50vw, 660px);
   border-radius: 14px;
   border: 1px solid rgb(148 163 184 / 0.35);
   background: radial-gradient(circle at 25% 10%, rgb(139 92 246 / 0.10), transparent 48%),

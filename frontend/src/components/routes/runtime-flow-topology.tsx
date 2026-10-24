@@ -18,6 +18,18 @@ import {
 import { RuntimeFlowDeliveryEdge } from './runtime-flow-delivery-edge'
 
 const runtimeEdgeTypes = { 'runtime-delivery': RuntimeFlowDeliveryEdge }
+const MAX_GRAPH_NODE_LABEL_LENGTH = 48
+
+/** Bound only the rendered text: original resource names stay intact in
+ * graph identity, screen-reader labels and the selected inspector.
+ * Unbounded names make fitted Route rows overlap and shrink all graph text.
+ */
+function compactGraphNodeLabel(fullName: string): string {
+  const characters = Array.from(fullName)
+  return characters.length <= MAX_GRAPH_NODE_LABEL_LENGTH
+    ? fullName
+    : `${characters.slice(0, MAX_GRAPH_NODE_LABEL_LENGTH - 1).join('')}…`
+}
 
 function useReducedMotionPreference(): boolean {
   const [reduced, setReduced] = useState(() =>
@@ -101,6 +113,10 @@ export function RuntimeFlowTopology({
     topology.edges, canAnimate, selectedRouteId,
   )
   const nodes: Node<FlowNodeData>[] = topology.nodes
+  const visualNodes: Node<FlowNodeData>[] = nodes.map((item) => ({
+    ...item,
+    data: { ...item.data, label: compactGraphNodeLabel(item.data.label) },
+  }))
   const inspectedEdge = edges.find((item) => item.id === inspectedId)
   const inspectedNode = nodes.find((item) => item.id === inspectedId)
 
@@ -193,7 +209,7 @@ export function RuntimeFlowTopology({
         <div className="control-runtime-flow-canvas" data-testid="runtime-data-flow-canvas">
           <ReactFlow<Node<FlowNodeData>, Edge<FlowEdgeData>>
           key={`${selectedStreamId}:${topology.routePage}`}
-          nodes={nodes}
+          nodes={visualNodes}
           edges={edges}
           edgeTypes={runtimeEdgeTypes}
           fitView

@@ -34,9 +34,14 @@ vi.mock('@xyflow/react', async (importOriginal) => {
           <div key={`focus-${edge.id}`} data-testid={`graph-focus-edge-${edge.id}`}
             className="react-flow__edge" data-id={edge.id} tabIndex={0}>{edge.id}</div>
         ))}
-        {nodes.filter((node) => node.data?.kind === 'route').map((node) => (
+        {nodes.map((node) => (
           <button type="button" key={node.id} data-testid={`graph-node-${node.id}`}
             onClick={() => onNodeClick?.(null, node)}>Node {node.id}</button>
+        ))}
+        {nodes.map((node) => (
+          <output key={`label-${node.id}`} data-testid={`graph-visible-label-${node.id}`}>
+            {String(node.data?.label ?? '')}
+          </output>
         ))}
         {edges.filter((edge) => edge.data?.gatewayOnly).map((edge) => (
           <button type="button" key={edge.id} data-testid={`graph-edge-${edge.id}`}
@@ -203,6 +208,24 @@ describe('Real keyboard activation of selectable graph entities', () => {
     fireEvent.keyDown(denied, { key: ' ' })
     expect(choose).toHaveBeenLastCalledWith(100)
     expect(screen.getByTestId('runtime-data-flow-inspector')).toHaveTextContent('Selected delivery relation')
+  })
+})
+
+describe('long-name safety without discarding actual resource identity', () => {
+  it('shows bounded graph labels while preserving complete names in the real inspector and ARIA identity', () => {
+    const data = snapshot(3)
+    const fullName = 'SentinelOne Endpoint On-Premises Collector / Cloud SIEM Managed Events '.repeat(4)
+    data.destinations[1]!.destination_name = fullName
+    data.streams[0]!.stream_name = 'Microsoft Security Event Hub Collector '.repeat(4)
+    const graph = buildRuntimeFlowTopology(data, 1)
+    expect(graph.nodes.find((item) => item.id === 'destination:12')?.ariaLabel).toContain(fullName)
+    render(<MemoryRouter><RuntimeFlowTopology snapshot={data} selectedStreamId={1} /></MemoryRouter>)
+    const destinationLabel = screen.getByTestId('graph-visible-label-destination:12')
+    expect(destinationLabel.textContent?.length).toBeLessThanOrEqual(48)
+    expect(destinationLabel.textContent).toMatch(/…$/)
+    expect(screen.getByTestId('graph-visible-label-stream:1').textContent?.length).toBeLessThanOrEqual(48)
+    fireEvent.click(screen.getByTestId('graph-node-destination:12'))
+    expect(screen.getByTestId('runtime-data-flow-inspector')).toHaveTextContent(fullName)
   })
 })
 
