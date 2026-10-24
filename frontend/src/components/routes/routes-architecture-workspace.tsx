@@ -26,6 +26,7 @@ import {
 import { RouteFlowFailedAttemptLink } from './routes-flow-failed-attempt-link'
 import { RouteEditPage } from './route-edit-page'
 import { StreamEditPage } from '../streams/stream-edit-page'
+import { RuntimeFlowTopology } from './runtime-flow-topology'
 import { formatFailurePolicy, uiStatusFromOperationalHealth, type RouteConsoleRow } from './routes-overview-helpers'
 
 export type RoutesArchitectureWorkspaceProps = {
@@ -280,6 +281,16 @@ export function RoutesArchitectureWorkspace({
     return false
   }
 
+  function reviewTopologyRoute(routeId: number): boolean {
+    if (!selectedGroup?.routes.some((route) => route.routeId === routeId)) return false
+    const alreadyInspected = selectedRoute?.routeId === routeId
+    if (!alreadyInspected && selectionBlockedByEmbeddedEditor(selectedGroup.streamId, routeId)) return false
+    focusInspectorAfterAttention.current = !alreadyInspected
+    if (alreadyInspected) inspectorRef.current?.focus()
+    setInspectedRouteId(routeId)
+    return true
+  }
+
   function reviewAttention(item: (typeof attention)[number]) {
     // Numeric Route and Stream IDs prevent same-name entities from leaking into each other's inspector.
     const alreadyInspected = selectedGroup?.streamId === item.streamId &&
@@ -457,6 +468,14 @@ export function RoutesArchitectureWorkspace({
           ) : null}
         </section>
       ) : null}
+
+      <RuntimeFlowTopology
+        snapshot={snapshot}
+        selectedStreamId={selectedGroup?.streamId ?? null}
+        selectedRouteId={selectedRoute?.routeId ?? null}
+        requestFailed={requestFailed}
+        onInspectRoute={reviewTopologyRoute}
+      />
 
       {!snapshot ? (
         <div className="px-6 py-12 text-center text-sm text-slate-600 dark:text-gdc-muted" role="status">

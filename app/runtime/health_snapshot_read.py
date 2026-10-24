@@ -24,7 +24,7 @@ from app.runtime.health_service import (
 )
 from app.runtime.metric_contract import metric_meta_map
 from app.runtime.models import RuntimeDestinationSnapshot, RuntimeRouteSnapshot, RuntimeStreamSnapshot
-from app.runtime.runtime_snapshot_repository import read_model_is_populated
+from app.runtime.runtime_snapshot_repository import read_model_is_current
 from app.runtime.aggregate_summaries import summarize_route_posture_config
 from app.runtime import health_repository as repo
 from app.runtime.analytics_service import resolve_analytics_window
@@ -38,7 +38,7 @@ _WINDOW_SECONDS = 300
 def snapshot_health_available(db: Session) -> bool:
     if not bool(getattr(settings, "GDC_RUNTIME_OPERATIONAL_SNAPSHOT_READ_MODEL_ENABLED", True)):
         return False
-    return read_model_is_populated(db)
+    return read_model_is_current(db)
 
 
 def _events_from_eps(eps: float | None, window_seconds: int) -> int:

@@ -220,7 +220,7 @@ def build_stream_stats_health_from_snapshot(
             stream_id=stream_id,
             window_seconds=window_seconds,
         )
-    if processed_window <= 0 and stream_snap is not None:
+    elif stream_snap is not None:
         processed_window = int(round(_int_events(float(stream_snap.eps_5m), 300) * scale))
 
     summary = StreamRuntimeSummary(
@@ -526,9 +526,6 @@ def _build_metrics_from_buckets(
         stream_id=int(stream.id),
         window_seconds=window_seconds,
     )
-    if processed_events <= 0 and stream_snap is not None:
-        scale = _operational_scale(window_seconds)
-        processed_events = int(round(_int_events(float(stream_snap.eps_5m), 300) * scale))
 
     route_bucket_stats = {
         row.route_id: row
@@ -555,8 +552,6 @@ def _build_metrics_from_buckets(
         destination_id=None,
         window_seconds=window_seconds,
     )
-    if stream_snap is not None and stream_snap.avg_latency_ms is not None and avg_latency_ms is None:
-        avg_latency_ms = float(stream_snap.avg_latency_ms)
 
     kpis = StreamRuntimeKpis(
         events_last_hour=int(processed_events),

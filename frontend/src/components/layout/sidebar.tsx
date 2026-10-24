@@ -1,3 +1,4 @@
+import { sessionRoleLabel } from '../../auth/role-labels'
 import { ChevronDown, LogOut, PanelLeftClose, PanelLeftOpen, Plus } from 'lucide-react'
 import { useEffect, useState, useSyncExternalStore, type ComponentType } from 'react'
 import { Link } from 'react-router-dom'
@@ -52,13 +53,6 @@ function userInitials(name: string): string {
   if (parts.length === 0) return trimmed.slice(0, 2).toUpperCase()
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
   return (parts[0][0] + parts[1][0]).toUpperCase()
-}
-
-function roleLabel(role: string): string {
-  if (role === 'ADMINISTRATOR') return 'Administrator'
-  if (role === 'OPERATOR') return 'Operator'
-  if (role === 'VIEWER') return 'Viewer'
-  return role
 }
 
 function isGroupActive(pathname: string, items: readonly SidebarTopItem[]): boolean {
@@ -391,7 +385,7 @@ function SidebarUserPanel() {
         </div>
         <div className="min-w-0 flex-1 leading-tight">
           <p className="truncate text-sm font-medium text-slate-900 dark:text-gdc-foreground">{username}</p>
-          <p className="truncate text-xs text-slate-500 dark:text-gdc-muted">{roleLabel(role)}</p>
+          <p className="truncate text-xs text-slate-500 dark:text-gdc-muted">{sessionRoleLabel(role)}</p>
         </div>
       </div>
       <button
@@ -413,7 +407,7 @@ function SidebarUserPanelCollapsed() {
   const role = session?.user.role ?? 'VIEWER'
   return (
     <div className="space-y-1">
-      <div className="flex justify-center py-0.5" title={`${username} (${roleLabel(role)})`}>
+      <div className="flex justify-center py-0.5" title={`${username} (${sessionRoleLabel(role)})`}>
         <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200/90 text-[10px] font-semibold text-slate-700 dark:bg-gdc-rowHover dark:text-gdc-foreground">
           {userInitials(username)}
         </div>

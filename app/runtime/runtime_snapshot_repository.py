@@ -223,6 +223,52 @@ def read_model_is_populated(db: Session) -> bool:
     return db.query(func.count(RuntimeStreamSnapshot.stream_id)).scalar() > 0
 
 
+def read_model_is_current(db: Session, *, now: datetime | None = None) -> bool:
+    """Require a fresh snapshot for every current entity in one bounded query.
+
+    Allow two updater ticks, capped at the one-minute rate window. A fresh row
+    elsewhere or the updater cursor cannot make a stale/missing entity current.
+    """
+
+    from app.config import settings
+
+    current_time = now or snapshot_now()
+    tick_seconds = max(
+        5.0,
+        float(getattr(settings, "GDC_RUNTIME_OPERATIONAL_SNAPSHOT_UPDATER_INTERVAL_SECONDS", 30.0)),
+    )
+    since = current_time - timedelta(seconds=min(60.0, 2 * tick_seconds))
+    return bool(
+        db.execute(
+            text(
+                """
+                SELECT
+                    EXISTS (
+                        SELECT 1 FROM streams e
+                        JOIN runtime_stream_snapshot s ON s.stream_id = e.id
+                    )
+                    AND NOT EXISTS (
+                        SELECT 1 FROM streams e
+                        LEFT JOIN runtime_stream_snapshot s ON s.stream_id = e.id
+                        WHERE s.updated_at IS NULL OR s.updated_at < :since OR s.updated_at > :now
+                    )
+                    AND NOT EXISTS (
+                        SELECT 1 FROM routes e
+                        LEFT JOIN runtime_route_snapshot s ON s.route_id = e.id
+                        WHERE s.updated_at IS NULL OR s.updated_at < :since OR s.updated_at > :now
+                    )
+                    AND NOT EXISTS (
+                        SELECT 1 FROM destinations e
+                        LEFT JOIN runtime_destination_snapshot s ON s.destination_id = e.id
+                        WHERE s.updated_at IS NULL OR s.updated_at < :since OR s.updated_at > :now
+                    )
+                """
+            ),
+            {"since": since, "now": current_time},
+        ).scalar()
+    )
+
+
 def load_updater_state(db: Session) -> RuntimeSnapshotUpdaterState:
     state = db.get(RuntimeSnapshotUpdaterState, 1)
     if state is None:

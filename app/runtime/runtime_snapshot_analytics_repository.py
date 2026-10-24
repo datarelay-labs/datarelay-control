@@ -1,7 +1,7 @@
 """Operational analytics reads from physical ``runtime_*_snapshot`` tables only.
 
 No ``delivery_logs`` aggregates on this module's request path. When the read model
-is empty, callers fall back to legacy aggregate paths in ``read_service`` /
+is empty, incomplete or stale, callers fall back to legacy aggregate paths in ``read_service`` /
 ``analytics_service``.
 """
 
@@ -32,7 +32,7 @@ from app.runtime.read_service import (
     _runtime_engine_status,
     degraded_validation_operational_summary,
 )
-from app.runtime.runtime_snapshot_repository import read_model_is_populated
+from app.runtime.runtime_snapshot_repository import read_model_is_current
 from app.runtime.schemas import (
     DashboardOutcomeBucket,
     DashboardOutcomeTimeseriesResponse,
@@ -53,13 +53,13 @@ _OPERATIONAL_WINDOW_SECONDS = 300  # 5m snapshot window semantics for KPI fields
 
 
 def snapshot_analytics_available(db: Session) -> bool:
-    """True when physical operational snapshots are populated and enabled."""
+    """True when enabled physical snapshots are fresh and complete."""
 
     from app.config import settings
 
     if not bool(getattr(settings, "GDC_RUNTIME_OPERATIONAL_SNAPSHOT_READ_MODEL_ENABLED", True)):
         return False
-    return read_model_is_populated(db)
+    return read_model_is_current(db)
 
 
 def _operational_scale(window_seconds: int) -> float:

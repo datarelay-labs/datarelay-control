@@ -1,5 +1,5 @@
 import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react'
-import { useLayoutEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useLayoutEffect, useMemo, useState } from 'react'
 import { loadDashboardRefreshMs, persistDashboardRefreshMs } from '../../localPreferences'
 import { Link } from 'react-router-dom'
 import { NAV_PATH, newStreamPath } from '../../config/nav-paths'
@@ -25,6 +25,9 @@ import {
 import { useDashboardOverviewData } from './use-dashboard-overview-data'
 import { RuntimeFixtureModeBanner } from '../runtime/runtime-fixture-mode-banner'
 import { PagePurposeHeader, type PageHelpContent } from '../ui/page-purpose-header'
+
+const DashboardLiveFlowsPanel = lazy(() => import('./dashboard-live-flows-panel')
+  .then((module) => ({ default: module.DashboardLiveFlowsPanel })))
 
 const REFRESH_OPTIONS: { label: string; ms: number | null }[] = [
   { label: 'Off', ms: null },
@@ -440,6 +443,17 @@ export function DashboardOverview() {
               </div>
             </div>
           </section>
+
+          {bundle?.operationalSnapshot?.routes.length ? (
+            <Suspense fallback={
+              <p className="text-xs text-slate-500 dark:text-gdc-muted" role="status">Loading observed data paths…</p>
+            }>
+              <DashboardLiveFlowsPanel
+                snapshot={bundle.operationalSnapshot}
+                requestFailed={Boolean(loadError)}
+              />
+            </Suspense>
+          ) : null}
 
           <OverallHealthHero health={overallHealth} basisLabel={SNAPSHOT_KPI_BASIS_LABEL} stale={snapshotStale} />
 

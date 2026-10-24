@@ -41,6 +41,7 @@ from app.formatters.config_resolver import resolve_formatter_config
 from app.formatters.message_prefix import effective_message_prefix_enabled, effective_message_prefix_template
 from app.runtime.metrics_window import bucket_seconds_for_window, max_buckets_for_window, normalize_metrics_window_token, parse_metrics_window
 from app.runtime.health_repository import clamp_health_aggregate_window
+from app.runtime.operational_snapshot_repository import LastOutcomeRow
 from app.runtime.metric_contract import metric_meta_map
 from app.runtime.visualization_contract import bucket_meta, visualization_meta_map
 from app.runtime.aggregate_summaries import (
@@ -824,6 +825,94 @@ def _load_stream_recent_logs_and_routes(
     return stream, logs, routes
 
 
+def _load_snapshot_outcome_metadata(
+    db: Session, stream_ids: list[int]
+) -> tuple[dict[int, LastOutcomeRow], dict[int, LastOutcomeRow]]:
+    """Load retained history in two projections, never window metrics."""
+
+    from app.config import settings
+    from app.runtime.models import RuntimeRouteSnapshot, RuntimeStreamSnapshot
+
+    if not stream_ids or not bool(getattr(settings, "GDC_RUNTIME_OPERATIONAL_SNAPSHOT_READ_MODEL_ENABLED", True)):
+        return {}, {}
+    maps: list[dict[int, LastOutcomeRow]] = []
+    for model, key in (
+        (RuntimeStreamSnapshot, RuntimeStreamSnapshot.stream_id),
+        (RuntimeRouteSnapshot, RuntimeRouteSnapshot.route_id),
+    ):
+        rows = (
+            db.query(key, model.last_success_at, model.last_error_at, model.last_error_message)
+            .filter(model.stream_id.in_(stream_ids))
+            .all()
+        )
+        maps.append({
+            int(row[0]): LastOutcomeRow(
+                group_id=int(row[0]),
+                last_success_at=row[1],
+                last_failure_at=row[2],
+                last_error_message=row[3],
+            )
+            for row in rows
+        })
+    return maps[0], maps[1]
+
+
+def _latest_outcome_at(*values: datetime | None) -> datetime | None:
+    return max(
+        (value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+         for value in values if value is not None),
+        default=None,
+    )
+
+
+def _merge_stats_outcome_metadata(
+    stats: StreamRuntimeStatsResponse,
+    stream_last: LastOutcomeRow | None,
+    route_last: dict[int, LastOutcomeRow],
+) -> StreamRuntimeStatsResponse:
+    """Preserve history without changing counts or the requested metric window."""
+
+    last_seen = stats.last_seen
+    if stream_last is not None:
+        last_seen = last_seen.model_copy(update={
+            "success_at": _latest_outcome_at(last_seen.success_at, stream_last.last_success_at),
+            "failure_at": _latest_outcome_at(last_seen.failure_at, stream_last.last_failure_at),
+        })
+    routes = []
+    for route in stats.routes:
+        cached = route_last.get(route.route_id)
+        if cached is not None:
+            route = route.model_copy(update={
+                "last_success_at": _latest_outcome_at(route.last_success_at, cached.last_success_at),
+                "last_failure_at": _latest_outcome_at(route.last_failure_at, cached.last_failure_at),
+            })
+        routes.append(route)
+    return stats.model_copy(update={"last_seen": last_seen, "routes": routes})
+
+
+def _merge_health_outcome_metadata(
+    health: StreamHealthResponse,
+    route_last: dict[int, LastOutcomeRow],
+) -> StreamHealthResponse:
+    """Merge outcome timestamps/messages, preserving window-based health scoring."""
+
+    routes = []
+    for route in health.routes:
+        cached = route_last.get(route.route_id)
+        if cached is not None:
+            current_error_at = _latest_outcome_at(route.last_failure_at, route.last_rate_limited_at)
+            cached_error_at = _latest_outcome_at(cached.last_failure_at)
+            updates: dict[str, Any] = {
+                "last_success_at": _latest_outcome_at(route.last_success_at, cached.last_success_at),
+                "last_failure_at": _latest_outcome_at(route.last_failure_at, cached.last_failure_at),
+            }
+            if cached_error_at is not None and (current_error_at is None or cached_error_at > current_error_at):
+                updates.update(last_error_message=cached.last_error_message, last_error_code=None)
+            route = route.model_copy(update=updates)
+        routes.append(route)
+    return health.model_copy(update={"routes": routes})
+
+
 def get_stream_runtime_stats(
     db: Session,
     stream_id: int,
@@ -878,7 +967,7 @@ def get_stream_runtime_stats(
         summary = _compute_summary(logs)
         route_stats = _build_route_stats_items(routes, logs)
 
-    return StreamRuntimeStatsResponse(
+    stats = StreamRuntimeStatsResponse(
         stream_id=int(stream.id),
         stream_status=str(stream.status),
         checkpoint=checkpoint_out,
@@ -887,6 +976,11 @@ def get_stream_runtime_stats(
         routes=route_stats,
         recent_logs=_recent_log_items(logs[-limit:] if len(logs) > limit else logs),
     )
+
+    if window is not None:
+        stream_last, route_last = _load_snapshot_outcome_metadata(db, [stream_id])
+        stats = _merge_stats_outcome_metadata(stats, stream_last.get(stream_id), route_last)
+    return stats
 
 
 def _count_delivery_logs_in_window(
@@ -1053,7 +1147,7 @@ def get_stream_runtime_health(
     route_items, summary = _build_route_health_items(logs, routes)
     stream_health = _compute_stream_health(logs, routes)
 
-    return StreamHealthResponse(
+    health = StreamHealthResponse(
         stream_id=int(stream.id),
         stream_status=str(stream.status),
         health=type_cast(StreamHealthState, stream_health),
@@ -1061,6 +1155,11 @@ def get_stream_runtime_health(
         summary=summary,
         routes=route_items,
     )
+
+    if window is not None:
+        _, route_last = _load_snapshot_outcome_metadata(db, [stream_id])
+        health = _merge_health_outcome_metadata(health, route_last)
+    return health
 
 
 def get_stream_runtime_stats_and_health(
@@ -1160,6 +1259,10 @@ def _build_stream_runtime_stats_and_health(
         summary=summary,
         routes=route_items,
     )
+    if window is not None:
+        stream_last, route_last = _load_snapshot_outcome_metadata(db, [stream_id])
+        stats = _merge_stats_outcome_metadata(stats, stream_last.get(stream_id), route_last)
+        health = _merge_health_outcome_metadata(health, route_last)
     return StreamRuntimeStatsHealthBundleResponse(stats=stats, health=health)
 
 
@@ -1430,23 +1533,18 @@ def _historical_dashboard_summary_from_buckets(
     window: str,
     snapshot_id: str | None = None,
 ) -> DashboardSummaryResponse:
-    """7d/30d dashboard summary from ``runtime_analytics_bucket_*`` (no delivery_logs scan)."""
+    """Historical bucket counts with a fresh or bounded 24h operational view."""
 
     from app.runtime import runtime_analytics_bucket_read_repository as bucket_read
-    from app.runtime.runtime_snapshot_analytics_repository import (
-        load_runtime_dashboard_summary as _snapshot_dashboard_summary,
-        snapshot_analytics_available,
-    )
 
     token = normalize_metrics_window_token(window)
     td = parse_metrics_window(token)
     generated_at = _dashboard_snapshot_time(snapshot_id)
     since = generated_at - td
 
-    if not snapshot_analytics_available(db):
-        raise RuntimeError("snapshot read model required for historical dashboard shell")
-
-    base = _snapshot_dashboard_summary(db, limit, window="24h", snapshot_id=snapshot_id)
+    base = get_runtime_dashboard_summary(
+        db, limit, window="24h", snapshot_id=_dashboard_snapshot_id(generated_at)
+    )
     rows = bucket_read.fetch_platform_outcome_buckets(
         db, since=since, until=generated_at, window_seconds=int(td.total_seconds())
     )
@@ -1464,11 +1562,13 @@ def _historical_dashboard_summary_from_buckets(
             "delivery_failure_events": failed,
         }
     )
-    warnings: list[str] = []
-    read_status: Literal["ok", "partial", "degraded", "stale"] = "ok"
+    warnings = list(base.warnings)
+    read_status: Literal["ok", "partial", "degraded", "stale"] = (
+        "ok" if base.read_status == "ok" else "partial"
+    )
     if not rows:
         read_status = "partial"
-        warnings.append(f"no analytics buckets for {token} window; stream/route posture from 24h snapshot")
+        warnings.append(f"no analytics buckets for {token} window; stream/route posture from bounded 24h view")
 
     return base.model_copy(
         update={
