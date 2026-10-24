@@ -506,6 +506,64 @@ def test_classification_level_route_override_persisted(
     assert levels[route_b] == "RESTRICTED"
 
 
+def test_route_classification_floor_preserves_foreign_delivery_readback_and_rejects_invalid_combination(
+    governance_client: TestClient,
+    db_session: Session,
+) -> None:
+    """The real API preserves non-Wizard delivery/identity and fails closed on a mixed invalid floor."""
+    fixture = _seed_stream_runtime(db_session)
+    stream_id = fixture["stream_id"]
+    route_id = fixture["route_ids"][0]
+    endpoint = f"/api/v1/runtime/streams/{stream_id}/governance"
+
+    original = {
+        "override_key": "foreign-route-classification-floor",
+        "field_path": None,
+        "route_id": route_id,
+        "classification_level": "INTERNAL",
+        "delivery_behavior": "continue",
+        "enabled": True,
+    }
+    first = _put_governance(
+        governance_client, stream_id,
+        {"enabled": True, "rules": [], "route_overrides": [original]},
+    )
+    assert first.status_code == 200, first.text
+    read_before = governance_client.get(endpoint)
+    assert read_before.status_code == 200
+    assert len(read_before.json()["route_overrides"]) == 1
+    assert read_before.json()["route_overrides"][0]["override_key"] == original["override_key"]
+
+    revised = {**original, "classification_level": "RESTRICTED"}
+    second = _put_governance(
+        governance_client, stream_id,
+        {"enabled": True, "rules": [], "route_overrides": [revised]},
+    )
+    assert second.status_code == 200, second.text
+    read_after = governance_client.get(endpoint)
+    assert read_after.status_code == 200
+    final_row = read_after.json()["route_overrides"][0]
+    assert final_row["override_key"] == original["override_key"]
+    assert final_row["classification_level"] == "RESTRICTED"
+    assert final_row["delivery_behavior"] == "continue"
+    assert final_row["protection_action"] is None
+    stored = db_session.query(Stream).filter(Stream.id == stream_id).one()
+    assert stored.config_json["governance"]["route_overrides"][0] == final_row
+
+    # An old combined no-field classification/protection row is not silently
+    # rewritten into a different rule shape; rejected writes must leave the
+    # previously accepted document and its revision untouched.
+    invalid = {**revised, "protection_action": "audit"}
+    denied = _put_governance(
+        governance_client, stream_id,
+        {"enabled": True, "rules": [], "route_overrides": [invalid]},
+    )
+    assert denied.status_code == 422, denied.text
+    still = governance_client.get(endpoint)
+    assert still.status_code == 200
+    assert still.json() == read_after.json()
+
+
 def test_invalid_classification_level_rejected(
     governance_client: TestClient,
     db_session: Session,
