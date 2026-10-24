@@ -92,9 +92,8 @@ export function RuntimeFlowTopology({
   const manualPage = pageChoice?.streamId === selectedStreamId &&
     pageChoice?.routeId === selectedRouteId ? pageChoice.page : null
   const topology = buildRuntimeFlowTopology(
-    snapshot, selectedStreamId, selectedRouteId, Date.now(), manualPage,
+    snapshot, selectedStreamId, selectedRouteId, Date.now(), manualPage, requestFailed,
   )
-  if (requestFailed) topology.stale = true
   const canAnimate = !topology.stale && !reducedMotion && documentVisible && onScreen
   const edges: Edge<FlowEdgeData>[] = selectRuntimeMotionEdges(
     topology.edges, canAnimate, selectedRouteId,

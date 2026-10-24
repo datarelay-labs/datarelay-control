@@ -118,6 +118,7 @@ export function buildRuntimeFlowTopology(
   selectedRouteId: number | null = null,
   nowMs = Date.now(),
   routePage: number | null = null,
+  requestFailed = false,
 ): RuntimeFlowTopology {
   const empty: RuntimeFlowTopology = {
     nodes: [], edges: [], shownRoutes: 0, totalRoutes: 0, routePage: 0, stale: true,
@@ -126,11 +127,14 @@ export function buildRuntimeFlowTopology(
   const stream = snapshot.streams.find((candidate) => candidate.stream_id === selectedStreamId)
   if (!stream) return empty
 
-  const fresh = snapshotIsFresh(snapshot.updated_at, nowMs)
-  const streamKnownStopped = ['STOPPED', 'STOPPING', 'PAUSED', 'DISABLED', 'ERROR', 'FAILED']
-    .includes((stream.status || '').trim().toUpperCase())
-  const streamCanDeliver = stream.enabled && !streamKnownStopped &&
+  const fresh = snapshotIsFresh(snapshot.updated_at, nowMs) && !requestFailed
+  // The canonical backend runtime eligibility requires enabled + exact RUNNING.
+  // Residual 1m EPS must not animate CREATED, STARTING or unknown states.
+  const streamCanDeliver = stream.enabled && stream.status === 'RUNNING' &&
     (stream.health_status === 'HEALTHY' || stream.health_status === 'DEGRADED')
+  const evidenceLabel = (status: string) => fresh ? status : `Last reported (${status})`
+  const evidenceClass = (status: OperationalHealthStatus | string, enabled: boolean) =>
+    fresh ? stateClass(status, enabled) : 'control-runtime-flow-node--unknown'
   const allRoutes = snapshot.routes
     .filter((route) => safeId(route.route_id) && route.stream_id === selectedStreamId)
     .sort((a, b) => a.route_id - b.route_id)
@@ -153,10 +157,10 @@ export function buildRuntimeFlowTopology(
   nodes.push(node(streamNodeId, 242, centerY, {
     kind: 'stream',
     label: stream.stream_name || `Stream #${stream.stream_id}`,
-    detail: `Stream #${stream.stream_id} · ${stream.enabled ? stream.health_status : 'Disabled'}`,
+    detail: `Stream #${stream.stream_id} · ${evidenceLabel(stream.enabled ? stream.health_status : 'Disabled')}`,
     href: streamRuntimePath(String(stream.stream_id)),
-    status: stream.enabled ? stream.health_status : 'Disabled',
-  }, stateClass(stream.health_status, stream.enabled)))
+    status: evidenceLabel(stream.enabled ? stream.health_status : 'Disabled'),
+  }, evidenceClass(stream.health_status, stream.enabled)))
 
   const sourceId = safeId(stream.source_id) ? `source:${stream.source_id}`
     : safeId(stream.connector_id) ? `connector:${stream.connector_id}` : null
@@ -184,10 +188,10 @@ export function buildRuntimeFlowTopology(
     const routeNodeId = `route:${route.route_id}`
     nodes.push(node(routeNodeId, 510, routeY, {
       kind: 'route', label: `Route #${route.route_id}`,
-      detail: route.enabled ? route.health_status : 'Disabled',
+      detail: evidenceLabel(route.enabled ? route.health_status : 'Disabled'),
       href: routeEditPath(String(route.route_id)),
-      status: route.enabled ? route.health_status : 'Disabled',
-    }, stateClass(route.health_status, route.enabled)))
+      status: evidenceLabel(route.enabled ? route.health_status : 'Disabled'),
+    }, evidenceClass(route.health_status, route.enabled)))
     edges.push(edge(`${streamNodeId}->${routeNodeId}`, streamNodeId, routeNodeId, {
       routeId: route.route_id, evidence: 'Configured Stream → Route processing path',
       observedEps: null, gatewayOnly: false,
@@ -206,7 +210,7 @@ export function buildRuntimeFlowTopology(
       (route.health_status === 'HEALTHY' || route.health_status === 'DEGRADED') &&
       reportedRate !== null && reportedRate > 0
     const evidence = !fresh ? 'Stale snapshot · delivery activity unknown'
-      : !streamCanDeliver ? 'Stream stopped, disabled or unhealthy · current delivery not verified'
+      : !streamCanDeliver ? 'Stream not running, disabled or unhealthy · current delivery not verified'
         : !route.enabled ? 'Disabled Route · no active delivery claim'
           : route.health_status === 'ERROR' ? 'Route error · current delivery not verified'
             : destination?.enabled !== true ? 'Destination unavailable or disabled'
@@ -227,11 +231,11 @@ export function buildRuntimeFlowTopology(
         visible.find((route) => route.destination_id === destinationId)?.destination_name ||
         `Destination #${destinationId}`,
       detail: destination
-        ? `${destination.destination_type || 'Destination'} · ${destination.enabled ? destination.health_status : 'Disabled'}`
+        ? `${destination.destination_type || 'Destination'} · ${evidenceLabel(destination.enabled ? destination.health_status : 'Disabled')}`
         : 'Destination metadata unavailable',
       href: destination ? destinationDetailPath(String(destinationId)) : null,
-      status: destination ? (destination.enabled ? destination.health_status : 'Disabled') : 'Unknown',
-    }, stateClass(destination?.health_status || 'IDLE', destination?.enabled === true)))
+      status: destination ? evidenceLabel(destination.enabled ? destination.health_status : 'Disabled') : 'Unknown',
+    }, evidenceClass(destination?.health_status || 'IDLE', destination?.enabled === true)))
   }
   return { nodes, edges, shownRoutes: visible.length, totalRoutes: allRoutes.length,
     routePage: page, stale: !fresh }

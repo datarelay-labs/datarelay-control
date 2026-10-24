@@ -82,6 +82,21 @@ describe('runtime data-flow topology projection', () => {
     expect(snapshotIsFresh(new Date(NOW + 1).toISOString(), NOW)).toBe(false)
     expect(snapshotIsFresh('not a timestamp', NOW)).toBe(false)
   })
+  it('downgrades health cues to last-reported when observation expires or its read fails', () => {
+    const old = sample()
+    old.updated_at = new Date(NOW - 120_000).toISOString()
+    for (const graph of [
+      buildRuntimeFlowTopology(old, 1, null, NOW),
+      buildRuntimeFlowTopology(sample(), 1, null, NOW, null, true),
+    ]) {
+      expect(graph.stale).toBe(true)
+      const entities = graph.nodes.filter((item) => item.data.kind !== 'source')
+      expect(entities.every((item) => item.className?.includes('--unknown'))).toBe(true)
+      expect(entities.every((item) => item.data.detail.includes('Last reported'))).toBe(true)
+      expect(delivery(graph).every((item) => !item.animated)).toBe(true)
+    }
+  })
+
   it('does not claim delivery when a Route, Destination or health is blocked', () => {
     const snapshot = sample()
     snapshot.routes[0]!.enabled = false
@@ -93,6 +108,17 @@ describe('runtime data-flow topology projection', () => {
     snapshot.routes[0]!.health_status = 'ERROR'
     expect(delivery(buildRuntimeFlowTopology(snapshot, 1, null, NOW))[0]?.animated).toBe(false)
   })
+  it.each(['CREATED', 'STARTING', 'IDLE', 'UNKNOWN', '', null])(
+    'never shows live delivery for a non-RUNNING Stream state %s despite residual EPS',
+    (status) => {
+      const snapshot = sample()
+      snapshot.streams[0]!.status = status
+      const output = delivery(buildRuntimeFlowTopology(snapshot, 1, null, NOW))
+      expect(output[0]?.animated).toBe(false)
+      expect(output[0]?.data?.evidence).toMatch(/Stream not running/i)
+    },
+  )
+
   it('does not animate a disabled or stopped Stream with residual 1m delivery readings', () => {
     const snapshot = sample()
     snapshot.streams[0]!.enabled = false
