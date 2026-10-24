@@ -75,7 +75,8 @@ describe('Runtime delivery particle SVG', () => {
   it('draws bounded smooth particles for measured, animated delivery', () => {
     const { container } = draw(true, 8)
     expect(screen.getByTestId('runtime-flow-moving-route:11->destination:22')).toBeInTheDocument()
-    expect(container.querySelectorAll('animateMotion')).toHaveLength(2)
+    expect(container.querySelectorAll('animateMotion')).toHaveLength(3)
+    expect(container.querySelectorAll('.control-runtime-flow-glow')).toHaveLength(1)
     expect(container.querySelectorAll('.react-flow__edge-path')).toHaveLength(1)
   })
   it('renders a static path, not packets, for zero or paused delivery', () => {

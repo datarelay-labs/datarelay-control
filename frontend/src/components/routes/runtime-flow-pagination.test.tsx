@@ -216,3 +216,26 @@ describe('readable graph at constrained desktop width', () => {
     expect(screen.getByText(/Routes 1–3 of 103/)).toBeInTheDocument()
   })
 })
+
+
+describe('external workspace selection takes precedence over stale visual inspection', () => {
+  it('updates Inspector when the owning Route changes on the same graph page', () => {
+    const data = snapshot(10)
+    const onInspectRoute = vi.fn((_routeId: number) => true)
+    const view = (routeId: number) => (
+      <MemoryRouter>
+        <RuntimeFlowTopology snapshot={data} selectedStreamId={1}
+          selectedRouteId={routeId} onInspectRoute={onInspectRoute} />
+      </MemoryRouter>
+    )
+    const { rerender } = render(view(101))
+    const inspector = screen.getByTestId('runtime-data-flow-inspector')
+    expect(inspector).toHaveTextContent('Route #101')
+    fireEvent.click(screen.getByTestId('graph-node-route:102'))
+    expect(onInspectRoute).toHaveBeenCalledWith(102)
+    expect(inspector).toHaveTextContent('Route #102')
+    rerender(view(103))
+    expect(inspector).toHaveTextContent('Route #103')
+    expect(inspector).not.toHaveTextContent('Route #102')
+  })
+})

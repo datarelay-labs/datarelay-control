@@ -171,7 +171,7 @@ describe('runtime data-flow topology projection', () => {
     expect(delivery(graph)).toHaveLength(1)
     expect(graph.edges.some((e) => e.source === 'route:11' && e.target.startsWith('destination:'))).toBe(false)
   })
-  it('lays out three nonoverlapping readable fanout rows with compact columns', () => {
+  it('lays out three nonoverlapping full-size custom Route cards in four columns', () => {
     const data = sample()
     data.routes.push({
       ...data.routes[1]!, route_id: 13, destination_id: 23,
@@ -182,11 +182,15 @@ describe('runtime data-flow topology projection', () => {
     const graph = buildRuntimeFlowTopology(data, 1, null, NOW)
     expect(graph.shownRoutes).toBe(3)
     expect(graph.nodes.find((item) => item.data.kind === 'source')?.position.x).toBe(0)
-    expect(graph.nodes.find((item) => item.data.kind === 'stream')?.position.x).toBe(180)
+    // These are full-size 216px custom cards, not upstream 160px default nodes.
+    // Maintain at least 24px horizontal separation and 29px between Route rows.
+    expect(graph.nodes.find((item) => item.data.kind === 'stream')?.position.x).toBe(242)
     expect(graph.nodes.filter((item) => item.data.kind === 'route').map((item) => item.position))
-      .toEqual([{ x: 360, y: 0 }, { x: 360, y: 160 }, { x: 360, y: 320 }])
+      .toEqual([{ x: 484, y: 0 }, { x: 484, y: 145 }, { x: 484, y: 290 }])
     expect(graph.nodes.filter((item) => item.data.kind === 'destination')
-      .every((item) => item.position.x === 540)).toBe(true)
+      .every((item) => item.position.x === 726)).toBe(true)
+    const columns = [0, 242, 484, 726]
+    expect(columns.slice(1).every((x, i) => x - columns[i]! >= 216 + 24)).toBe(true)
   })
 
   it('caps large Route graphs but retains an inspected Route outside the default slice', () => {
