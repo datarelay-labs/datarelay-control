@@ -90,6 +90,8 @@ export function listRouteFlowAttention(
   )
 }
 
+export type RouteEvidenceState = 'current' | 'stale' | 'unavailable'
+
 export type ProblemRouteRow = {
   routeId: number
   routeLabel: string

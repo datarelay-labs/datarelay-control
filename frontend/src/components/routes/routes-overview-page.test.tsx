@@ -187,6 +187,101 @@ describe('RoutesOverviewPage snapshot loading', () => {
     expect(screen.queryByText('No routes configured yet.')).not.toBeInTheDocument()
   })
 
+  it('labels retained Route metrics as last reported when the snapshot is stale', async () => {
+    const snapshots = await import('../../api/operationalSnapshot')
+    vi.mocked(snapshots.getOperationalSnapshot).mockResolvedValue({
+      ...operationalSnapshot,
+      routes: [{ ...operationalSnapshot.routes[0]!, success_rate_5m: 40 }],
+    })
+
+    render(<MemoryRouter><RoutesOverviewPage /></MemoryRouter>)
+
+    const evidence = await screen.findByTestId('routes-snapshot-evidence')
+    expect(evidence).toHaveTextContent('Stale snapshot · last reported')
+    const problemRoutes = screen.getByRole('region', { name: 'Problem routes' })
+    expect(problemRoutes).toHaveTextContent('Last reported Route conditions')
+    expect(problemRoutes).toHaveTextContent('Last reported Low Success Rate')
+    expect(screen.getByRole('region', { name: 'Route metrics by destination' }))
+      .toHaveTextContent('Last reported destination metrics')
+    expect(screen.getByTestId('routes-architecture-selected-collection-health'))
+      .toHaveTextContent('Stale')
+  })
+
+  it('does not present a fresh-looking snapshot when Route catalog refresh failed', async () => {
+    const snapshots = await import('../../api/operationalSnapshot')
+    const routes = await import('../../api/gdcRoutes')
+    vi.mocked(snapshots.getOperationalSnapshot).mockResolvedValue({
+      ...operationalSnapshot,
+      updated_at: new Date().toISOString(),
+      routes: [{
+        ...operationalSnapshot.routes[0]!,
+        health_status: 'DEGRADED',
+      }],
+    })
+    vi.mocked(routes.fetchRoutesList).mockResolvedValueOnce(null)
+
+    render(<MemoryRouter><RoutesOverviewPage /></MemoryRouter>)
+
+    await screen.findByTestId('routes-load-error')
+    const evidence = await screen.findByTestId('routes-snapshot-evidence')
+    expect(evidence).toHaveTextContent('Unverified · last reported')
+    expect(screen.getByTestId('routes-architecture-selected-collection-health'))
+      .toHaveTextContent('Stale')
+    expect(screen.getByRole('region', { name: 'Problem routes' }))
+      .toHaveTextContent('Last reported Route conditions')
+  })
+
+  it('uses an unverified empty state without a snapshot, then restores current evidence on refresh', async () => {
+    const snapshots = await import('../../api/operationalSnapshot')
+    vi.mocked(snapshots.getOperationalSnapshot)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ ...operationalSnapshot, updated_at: new Date().toISOString() })
+
+    render(<MemoryRouter><RoutesOverviewPage /></MemoryRouter>)
+
+    await screen.findByTestId('routes-load-error')
+    expect(screen.getByRole('region', { name: 'Problem routes' }))
+      .toHaveTextContent('Route issues not verified · runtime snapshot unavailable.')
+    expect(screen.getByRole('region', { name: 'Route metrics by destination' }))
+      .toHaveTextContent('Destination delivery not verified · runtime snapshot unavailable.')
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Refresh' }))
+    const evidence = await screen.findByTestId('routes-snapshot-evidence')
+    expect(evidence).toHaveTextContent('SNAPSHOT')
+    expect(screen.queryByTestId('routes-load-error')).not.toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Problem routes' }))
+      .toHaveTextContent('Current health warnings and errors')
+  })
+
+  it('expires the current snapshot evidence at 90 seconds without a network refresh', async () => {
+    const snapshots = await import('../../api/operationalSnapshot')
+    const observedAt = Date.now()
+    const dateNow = vi.spyOn(Date, 'now').mockReturnValue(observedAt)
+    try {
+      vi.mocked(snapshots.getOperationalSnapshot).mockResolvedValue({
+        ...operationalSnapshot,
+        updated_at: new Date(observedAt).toISOString(),
+      })
+      render(<MemoryRouter><RoutesOverviewPage /></MemoryRouter>)
+      const evidence = await screen.findByTestId('routes-snapshot-evidence')
+      expect(evidence).toHaveTextContent('SNAPSHOT')
+      expect(screen.getByRole('region', { name: 'Problem routes' }))
+        .toHaveTextContent('Current health warnings and errors')
+
+      act(() => {
+        dateNow.mockReturnValue(observedAt + 90_001)
+        window.dispatchEvent(new Event('focus'))
+      })
+
+      expect(evidence).toHaveTextContent('Stale snapshot · last reported')
+      expect(screen.getByRole('region', { name: 'Problem routes' }))
+        .toHaveTextContent('Last reported Route conditions')
+      expect(snapshots.getOperationalSnapshot).toHaveBeenCalledTimes(1)
+    } finally {
+      dateNow.mockRestore()
+    }
+  })
+
   it('loads operational snapshot on mount and does not fetch per-stream metrics', async () => {
     const snap = await import('../../api/operationalSnapshot')
     const runtime = await import('../../api/gdcRuntime')

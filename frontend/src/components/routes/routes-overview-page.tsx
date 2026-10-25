@@ -31,6 +31,7 @@ import {
 import { cn } from '../../lib/utils'
 import { useDebouncedValue } from '../../hooks/use-debounced-value'
 import { useDocumentVisible } from '../../hooks/use-document-visible'
+import { useOperationalEvidenceClock } from '../../hooks/use-operational-evidence-clock'
 import { useVirtualWindow } from '../../hooks/use-virtual-window'
 import { stabilizeOperationalSnapshot, type StabilizedOperationalSnapshot } from '../../lib/snapshot-stabilize'
 import { GDC_HEADER_REFRESH_EVENT } from '../layout/header-refresh-event'
@@ -46,7 +47,7 @@ import {
   formatFailurePolicy,
   relativeShort,
 } from './routes-overview-helpers'
-import { aggregateGlobalErrorRateFromRoutes } from './routes-flow-helpers'
+import { aggregateGlobalErrorRateFromRoutes, isRouteSnapshotStale } from './routes-flow-helpers'
 import { RoutesDestinationMetricsPanel } from './routes-destination-metrics-panel'
 import { RoutesFlowTreeTable } from './routes-flow-tree-table'
 import { RoutesProblemRoutesPanel } from './routes-problem-routes-panel'
@@ -188,6 +189,9 @@ export function RoutesOverviewPage() {
   const snapshotRef = useRef<OperationalSnapshotResponse | null>(null)
   const wasHiddenRef = useRef(false)
   const documentVisible = useDocumentVisible()
+  useOperationalEvidenceClock(operationalSnapshot?.updated_at)
+  const evidenceState = operationalSnapshot === null ? 'unavailable'
+    : loadError || isRouteSnapshotStale(operationalSnapshot.updated_at) ? 'stale' : 'current'
 
   const columnsRef = useRef<HTMLDivElement | null>(null)
   const moreMenuRef = useRef<HTMLDivElement | null>(null)
@@ -488,13 +492,17 @@ export function RoutesOverviewPage() {
       <div className="flex flex-wrap items-center justify-end gap-2" aria-label="Route runtime controls">
         {operationalSnapshot ? (
           <div
+            data-testid="routes-snapshot-evidence"
             className={cn(
               'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold',
-              'border-emerald-500/30 bg-emerald-500/10 text-emerald-900 dark:text-emerald-100',
+              evidenceState === 'current'
+                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-900 dark:text-emerald-100'
+                : 'border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-100',
             )}
           >
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden />
-            SNAPSHOT
+            <span className={cn('h-1.5 w-1.5 rounded-full', evidenceState === 'current' ? 'bg-emerald-500' : 'bg-amber-500')} aria-hidden />
+            {evidenceState === 'current' ? 'SNAPSHOT'
+              : loadError ? 'Unverified · last reported' : 'Stale snapshot · last reported'}
             <span className="font-normal opacity-80">
               Updated {relativeShort(operationalSnapshot.updated_at)}
             </span>
@@ -531,6 +539,7 @@ export function RoutesOverviewPage() {
         snapshot={operationalSnapshot}
         consoleRows={consoleRows}
         loading={loading}
+        requestFailed={loadError !== null}
         selectedStreamId={streamFilter === '__all__' ? null : Number(streamFilter)}
         initialRouteId={initialRouteId}
         onSelectStream={(id) => setStreamFilter(String(id))}
@@ -600,8 +609,8 @@ export function RoutesOverviewPage() {
       </details>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-        <RoutesProblemRoutesPanel consoleRows={consoleRows} />
-        <RoutesDestinationMetricsPanel snapshot={operationalSnapshot} consoleRows={consoleRows} />
+        <RoutesProblemRoutesPanel consoleRows={consoleRows} evidenceState={evidenceState} />
+        <RoutesDestinationMetricsPanel snapshot={operationalSnapshot} consoleRows={consoleRows} evidenceState={evidenceState} />
       </div>
 
       <section className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm dark:border-gdc-border dark:bg-gdc-card">
