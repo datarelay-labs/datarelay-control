@@ -345,7 +345,7 @@ describe('RoutesOverviewPage snapshot loading', () => {
     // for a user-selected 15m/1h/6h/24h window.
     expect(screen.queryByRole('combobox', { name: 'Metrics window' })).not.toBeInTheDocument()
     expect(screen.getByRole('note', { name: 'Metrics time basis' })).toHaveTextContent(
-      'Metrics basis: 5m gateway snapshot',
+      'Metrics basis: gateway throughput/errors 1m · delivery success 5m (weighted by 1m ingest) · latency 5m',
     )
     expect(screen.getByTestId('routes-purpose-header')).toHaveTextContent(/destination-specific path/i)
     expect(screen.getByTestId('routes-mental-model')).toHaveTextContent('Stream')

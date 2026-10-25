@@ -520,7 +520,7 @@ export function RoutesOverviewPage() {
           aria-label="Metrics time basis"
           className="rounded-md border border-slate-200/90 bg-slate-50 px-2.5 py-1.5 text-[11px] font-medium text-slate-600 dark:border-gdc-border dark:bg-gdc-card dark:text-gdc-mutedStrong"
         >
-          Metrics basis: 5m gateway snapshot
+          Metrics basis: gateway throughput/errors 1m · delivery success 5m (weighted by 1m ingest) · latency 5m
         </span>
         <button
           type="button"
