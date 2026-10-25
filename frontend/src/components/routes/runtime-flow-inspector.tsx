@@ -49,15 +49,15 @@ export function RuntimeFlowInspector({
   const selectionLabel = route ? 'Route #' + route.route_id
     : selectedNode?.data.label ?? (selectedEdge ? 'Data path' : 'Flow overview')
   const status = stale ? 'Unknown · last reported'
-    : route ? (route.enabled ? route.health_status : 'Disabled')
-      : relationOnly ? 'Configuration only'
+    : relationOnly ? 'Configuration only'
+      : route ? (route.enabled ? route.health_status : 'Disabled')
         : selectedNode?.data.status ?? (stream?.health_status ?? 'Unknown')
-  const rate = route ? route.delivered_eps_1m
-    : relationOnly || selectedKind === 'source' ? null
+  const rate = relationOnly || selectedKind === 'source' ? null
+    : route ? route.delivered_eps_1m
       : selectedKind === 'destination' ? (selectedDestination?.inbound_eps_1m ?? null)
         : (stream?.eps_1m ?? null)
-  const rateBasis = route ? 'Gateway delivery · 1 min'
-    : relationOnly ? 'Configured path · rate not observed'
+  const rateBasis = relationOnly ? 'Configured path · rate not observed'
+    : route ? 'Gateway delivery · 1 min'
       : selectedKind === 'source' ? 'Upstream source · rate not observed'
         : selectedKind === 'destination' ? 'Gateway destination inbound · 1 min'
           : 'Stream ingest · 1 min'
@@ -73,7 +73,9 @@ export function RuntimeFlowInspector({
         </span>
       </div>
       {selectedEdge ? (
-        <p className="control-runtime-flow-inspector-eyebrow">Selected delivery relation</p>
+        <p className="control-runtime-flow-inspector-eyebrow">
+          {relationOnly ? 'Selected configuration relation' : 'Selected delivery relation'}
+        </p>
       ) : null}
       <h4 className="control-runtime-flow-inspector-title">{selectionLabel}</h4>
       <p className="control-runtime-flow-inspector-description">
@@ -91,14 +93,14 @@ export function RuntimeFlowInspector({
           <ShieldCheck aria-hidden="true" size={17} />
           <div>
             <span>Delivery success · 5 min</span>
-            <strong>{route ? formatPercent(route.success_rate_5m) : '—'}</strong>
+            <strong>{route && !relationOnly ? formatPercent(route.success_rate_5m) : '—'}</strong>
           </div>
         </div>
         <div className="control-runtime-flow-inspector-stat">
           <Gauge aria-hidden="true" size={17} />
           <div>
             <span>Route average latency</span>
-            <strong>{route ? formatLatency(route.avg_latency_ms) : '—'}</strong>
+            <strong>{route && !relationOnly ? formatLatency(route.avg_latency_ms) : '—'}</strong>
           </div>
         </div>
       </div>

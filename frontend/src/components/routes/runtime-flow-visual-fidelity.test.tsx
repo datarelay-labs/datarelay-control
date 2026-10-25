@@ -182,6 +182,22 @@ describe('runtime flow visual fidelity and evidence', () => {
     expect(rateRow?.querySelector('strong')).not.toHaveTextContent('24.4')
   })
 
+  it('does not claim Route delivery evidence for a configuration-only Stream to Route link', () => {
+    const data = snapshot()
+    const graph = buildRuntimeFlowTopology(data, 1, null, Date.parse('2026-10-24T12:00:10Z'))
+    const relation = graph.edges.find((edge) => edge.id === 'stream:1->route:12')
+    expect(relation?.data?.gatewayOnly).toBe(false)
+    render(<MemoryRouter>
+      <RuntimeFlowInspector snapshot={data} selectedStreamId={1}
+        selectedEdge={relation} shownRoutes={1} totalRoutes={1} stale={false} />
+    </MemoryRouter>)
+    expect(screen.getByText('Configuration only')).toBeInTheDocument()
+    const rateRow = screen.getByText('Configured path · rate not observed').parentElement
+    expect(rateRow?.querySelector('strong')).toHaveTextContent('—')
+    expect(screen.queryByText('99.8%')).not.toBeInTheDocument()
+    expect(screen.queryByText('12 ms')).not.toBeInTheDocument()
+  })
+
   it('shows Destination-specific gateway rate instead of Stream ingest EPS', () => {
     const destinationNode: Node<FlowNodeData> = {
       id: 'destination:27', type: 'destination', position: { x: 0, y: 0 },
