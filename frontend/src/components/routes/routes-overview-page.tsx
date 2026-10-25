@@ -415,10 +415,10 @@ export function RoutesOverviewPage() {
     [operationalSnapshot],
   )
 
-  const totalEps = globalKpi?.eps1m ?? 0
-  const throughputSpark = useMemo(() => [totalEps], [totalEps])
+  const totalEps = globalKpi?.eps1m ?? null
+  const throughputSpark = useMemo(() => (totalEps === null ? [] : [totalEps]), [totalEps])
   const successSpark = useMemo(
-    () => (deliverySuccessRate != null ? [deliverySuccessRate] : [0]),
+    () => (deliverySuccessRate != null ? [deliverySuccessRate] : []),
     [deliverySuccessRate],
   )
 
@@ -550,51 +550,61 @@ export function RoutesOverviewPage() {
       />
 
       <section aria-label="Route KPI summary" className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6 xl:gap-3">
+        {evidenceState !== 'current' ? (
+          <p className="col-span-2 text-xs text-slate-600 dark:text-gdc-mutedStrong sm:col-span-3 xl:col-span-6">
+            {evidenceState === 'stale' ? 'Last reported metrics · current values not verified'
+              : loading ? 'Loading runtime metrics…' : 'Runtime metrics not verified · snapshot unavailable'}
+          </p>
+        ) : null}
         <div className="rounded-lg border border-slate-200/70 bg-white/90 px-3 py-2 dark:border-gdc-border/90 dark:bg-gdc-card">
           <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500 dark:text-gdc-muted">Total Streams</p>
           <p className="mt-0.5 text-lg font-semibold tabular-nums leading-none text-slate-900 dark:text-slate-50">
-            {globalKpi?.totalStreams ?? 0}
+            {globalKpi?.totalStreams ?? '—'}
           </p>
-          <p className="mt-1 text-[11px] text-slate-500">{globalKpi?.runningStreams ?? 0} running</p>
+          <p className="mt-1 text-[11px] text-slate-500">{globalKpi ? `${globalKpi.runningStreams} running` : 'Not verified'}</p>
         </div>
         <div className="rounded-lg border border-slate-200/70 bg-white/90 px-3 py-2 dark:border-gdc-border/90 dark:bg-gdc-card">
           <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500 dark:text-gdc-muted">Total Routes</p>
           <p className="mt-0.5 text-lg font-semibold tabular-nums leading-none text-slate-900 dark:text-slate-50">
-            {globalKpi?.totalRoutes ?? routesRaw.length}
+            {globalKpi?.totalRoutes ?? '—'}
           </p>
-          <p className="mt-1 text-[11px] text-slate-500">{globalKpi?.enabledRoutes ?? 0} enabled</p>
+          <p className="mt-1 text-[11px] text-slate-500">{globalKpi ? `${globalKpi.enabledRoutes} enabled` : 'Not verified'}</p>
         </div>
         <div className="rounded-lg border border-slate-200/70 bg-white/90 px-3 py-2 dark:border-gdc-border/90 dark:bg-gdc-card">
           <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500 dark:text-gdc-muted">Total Throughput</p>
           <p className="mt-0.5 text-lg font-semibold tabular-nums leading-none text-slate-900 dark:text-slate-50">
             {formatOperationalEps(globalKpi?.eps1m)}
           </p>
-          <div className="mt-1.5 text-violet-600 dark:text-violet-400">
-            <MiniSparkline values={throughputSpark} />
-          </div>
+          {totalEps !== null ? (
+            <div className="mt-1.5 text-violet-600 dark:text-violet-400">
+              <MiniSparkline values={throughputSpark} />
+            </div>
+          ) : null}
         </div>
         <div className="rounded-lg border border-slate-200/70 bg-white/90 px-3 py-2 dark:border-gdc-border/90 dark:bg-gdc-card">
           <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500 dark:text-gdc-muted">Delivery Success Rate</p>
           <p className="mt-0.5 text-lg font-semibold tabular-nums leading-none text-slate-900 dark:text-slate-50">
             {formatOperationalSuccessRate(deliverySuccessRate)}
           </p>
-          <ThinProgress pct={deliverySuccessRate ?? 0} toneClass="bg-emerald-500" />
+          {deliverySuccessRate !== null ? <ThinProgress pct={deliverySuccessRate} toneClass="bg-emerald-500" /> : null}
         </div>
         <div className="rounded-lg border border-slate-200/70 bg-white/90 px-3 py-2 dark:border-gdc-border/90 dark:bg-gdc-card">
           <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500 dark:text-gdc-muted">Error Rate</p>
           <p className="mt-0.5 text-lg font-semibold tabular-nums leading-none text-slate-900 dark:text-slate-50">
             {formatOperationalSuccessRate(globalErrorRate)}
           </p>
-          <div className="mt-1.5 text-red-500 dark:text-red-400">
-            <MiniSparkline values={successSpark.map((v) => 100 - v)} />
-          </div>
+          {deliverySuccessRate !== null ? (
+            <div className="mt-1.5 text-red-500 dark:text-red-400">
+              <MiniSparkline values={successSpark.map((v) => 100 - v)} />
+            </div>
+          ) : null}
         </div>
         <div className="rounded-lg border border-slate-200/70 bg-white/90 px-3 py-2 dark:border-gdc-border/90 dark:bg-gdc-card">
           <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500 dark:text-gdc-muted">Avg Latency</p>
           <p className="mt-0.5 text-lg font-semibold tabular-nums leading-none text-slate-900 dark:text-slate-50">
             {globalKpi?.avgLatencyMs != null ? `${Math.round(globalKpi.avgLatencyMs)} ms` : '—'}
           </p>
-          <p className="mt-1 text-[11px] text-slate-500">Operational snapshot · 5m window</p>
+          <p className="mt-1 text-[11px] text-slate-500">{evidenceState === 'current' ? 'Operational snapshot · 5m window' : evidenceState === 'stale' ? 'Last reported · latency unverified' : 'Latency not verified'}</p>
         </div>
       </section>
 
@@ -626,7 +636,7 @@ export function RoutesOverviewPage() {
             ) : (
               <ChevronRight className="h-4 w-4 text-slate-500" aria-hidden />
             )}
-            <h3 className="text-[13px] font-semibold text-slate-900 dark:text-slate-100">All Routes ({consoleRows.length})</h3>
+            <h3 className="text-[13px] font-semibold text-slate-900 dark:text-slate-100">All Routes ({operationalSnapshot ? consoleRows.length : '—'})</h3>
           </div>
           <span className="text-[11px] text-slate-500 dark:text-gdc-muted">
             {allRoutesExpanded ? 'Collapse' : 'Expand'} catalog table

@@ -198,6 +198,8 @@ describe('RoutesOverviewPage snapshot loading', () => {
 
     const evidence = await screen.findByTestId('routes-snapshot-evidence')
     expect(evidence).toHaveTextContent('Stale snapshot · last reported')
+    expect(screen.getByRole('region', { name: 'Route KPI summary' }))
+      .toHaveTextContent('Last reported metrics · current values not verified')
     const problemRoutes = screen.getByRole('region', { name: 'Problem routes' })
     expect(problemRoutes).toHaveTextContent('Last reported Route conditions')
     expect(problemRoutes).toHaveTextContent('Last reported Low Success Rate')
@@ -229,6 +231,50 @@ describe('RoutesOverviewPage snapshot loading', () => {
       .toHaveTextContent('Stale')
     expect(screen.getByRole('region', { name: 'Problem routes' }))
       .toHaveTextContent('Last reported Route conditions')
+  })
+
+  it('does not report zero Streams or Routes when the runtime snapshot cannot be read', async () => {
+    const snapshots = await import('../../api/operationalSnapshot')
+    vi.mocked(snapshots.getOperationalSnapshot).mockResolvedValueOnce(null)
+
+    render(<MemoryRouter><RoutesOverviewPage /></MemoryRouter>)
+
+    await screen.findByTestId('routes-load-error')
+    const kpis = screen.getByRole('region', { name: 'Route KPI summary' })
+    expect(kpis).toHaveTextContent('Runtime metrics not verified')
+    const streamCard = within(kpis).getByText('Total Streams').parentElement
+    const routeCard = within(kpis).getByText('Total Routes').parentElement
+    expect(streamCard).toHaveTextContent('—')
+    expect(streamCard).toHaveTextContent('Not verified')
+    expect(streamCard).not.toHaveTextContent('0 running')
+    expect(routeCard).toHaveTextContent('—')
+    expect(routeCard).not.toHaveTextContent('0 enabled')
+    expect(kpis).not.toHaveTextContent('0 /s')
+    expect(kpis.querySelector('svg')).toBeNull()
+    expect(screen.getByText('All Routes (—)')).toBeInTheDocument()
+  })
+
+  it('retains measured zero counts when an empty runtime snapshot is fresh', async () => {
+    const snapshots = await import('../../api/operationalSnapshot')
+    vi.mocked(snapshots.getOperationalSnapshot).mockResolvedValueOnce({
+      ...operationalSnapshot,
+      updated_at: new Date().toISOString(),
+      global: { ...operationalSnapshot.global, total_streams: 0,
+        enabled_streams: 0, running_streams: 0, total_routes: 0, enabled_routes: 0,
+        total_destinations: 0, enabled_destinations: 0, total_eps_1m: 0, total_eps_5m: 0 },
+      streams: [], routes: [], destinations: [], problems: [],
+    })
+    vi.mocked((await import('../../api/gdcRoutes')).fetchRoutesList).mockResolvedValueOnce([])
+
+    render(<MemoryRouter><RoutesOverviewPage /></MemoryRouter>)
+
+    await screen.findByTestId('routes-snapshot-evidence')
+    const kpis = screen.getByRole('region', { name: 'Route KPI summary' })
+    expect(within(kpis).getByText('Total Streams').parentElement).toHaveTextContent('0 running')
+    expect(within(kpis).getByText('Total Routes').parentElement).toHaveTextContent('0 enabled')
+    expect(kpis).not.toHaveTextContent('Runtime metrics not verified')
+    expect(screen.getByText('All Routes (0)')).toBeInTheDocument()
+    expect(screen.getByTestId('routes-snapshot-evidence')).toHaveTextContent('SNAPSHOT')
   })
 
   it('uses an unverified empty state without a snapshot, then restores current evidence on refresh', async () => {
