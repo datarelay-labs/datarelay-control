@@ -734,8 +734,8 @@ export async function hydrateWizardStateFromStream(streamId: number): Promise<Wi
   const schemaDrift = readSchemaDriftPolicy((found.config_json ?? {}) as Record<string, unknown>)
   if (!schemaDrift.ok) return null
 
-  const streamRoutes = (allRoutes ?? []).filter((route) => route.stream_id === streamId)
-  if (destinations === null) return null
+  if (allRoutes == null || destinations === null) return null
+  const streamRoutes = allRoutes.filter((route) => route.stream_id === streamId)
   const hydratedDestinations = await withHydratedRouteTransforms(
     streamId,
     buildWizardDestinationsFromRouteSources(mapping?.routes ?? [], streamRoutes, destinations),

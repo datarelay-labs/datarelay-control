@@ -140,6 +140,15 @@ describe('edit hydrate fidelity', () => {
     await expect(hydrateWizardStateFromStream(9)).resolves.toBeNull()
   })
 
+  it('fails closed when the Route catalog cannot be read instead of showing no Routes', async () => {
+    fetchStreamMappingUiConfig.mockResolvedValue(mappingConfig())
+    // null means a failed API/catalog read; [] means the server confirmed no Routes.
+    fetchRoutesList.mockResolvedValue(null)
+    const { hydrateWizardStateFromStream } = await import('./wizard-stream-hydrate')
+    await expect(hydrateWizardStateFromStream(9)).resolves.toBeNull()
+    expect(fetchRoutesList).toHaveBeenCalled()
+  })
+
   it('fails closed when Governance is unreadable instead of showing every Route as Shared', async () => {
     fetchStreamMappingUiConfig.mockResolvedValue(mappingConfig())
     fetchStreamGovernance.mockResolvedValue(null)

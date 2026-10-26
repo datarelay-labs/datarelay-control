@@ -218,7 +218,7 @@ export function StreamEditWizardPage({
     setLoading(true)
     setLoadError(null)
     void (async () => {
-      const hydrated = await hydrateWizardStateFromStream(backendStreamId)
+      const hydrated = await hydrateWizardStateFromStream(backendStreamId).catch(() => null)
       if (cancelled) return
       if (!hydrated) {
         setLoadError('Could not load stream configuration.')
