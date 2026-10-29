@@ -13,6 +13,10 @@ from app.destinations.models import Destination
 from app.enrichments.models import Enrichment
 from app.main import app
 from app.mappings.models import Mapping
+from app.route_classification.models import RouteClassificationRule
+from app.route_policy.models import RoutePolicyRule
+from app.route_protection.models import RouteProtectionRule
+from app.route_transform.models import RouteEnrichment, RouteMapping
 from app.routes.models import Route
 from app.sources.models import Source
 from app.streams.models import Stream
@@ -619,3 +623,124 @@ def test_import_apply_never_binds_foreign_destination_ids(
         assert "IMPORT_ROUTE_DESTINATION_UNMAPPED" in str(exc.value)
     # Local destination must remain unbound by the foreign route.
     assert db_session.query(Route).filter(Route.destination_id == int(local.id)).count() == 0
+
+
+def _seed_route_processing_state(db: Session, route_id: int) -> None:
+    db.add_all(
+        [
+            RouteProtectionRule(
+                route_id=route_id,
+                field_path="$.user.email",
+                sensitivity_class="pii",
+                protection_mode="hash",
+                enabled=True,
+                created_by="seed",
+            ),
+            RouteClassificationRule(
+                route_id=route_id,
+                name="high-severity",
+                enabled=True,
+                condition_json={"field": "severity", "equals": "high"},
+                classification_level="CONFIDENTIAL",
+            ),
+            RoutePolicyRule(
+                route_id=route_id,
+                name="drop-low",
+                enabled=True,
+                condition_json={"field": "severity", "equals": "low"},
+                action_type="drop",
+            ),
+            RouteMapping(route_id=route_id, field_mappings_json={"a": "$.x"}, raw_payload_mode=None),
+            RouteEnrichment(
+                route_id=route_id,
+                enrichment_json={"vendor": "acme"},
+                override_policy="KEEP_EXISTING",
+                enabled=True,
+            ),
+        ]
+    )
+    db.flush()
+
+
+def test_clone_stream_copies_route_protection_and_processing_rules(client: TestClient, db_session: Session) -> None:
+    """A cloned Stream keeps its Destinations, so it must keep the Route-level data protection too."""
+    ids = _seed_connector_graph(db_session)
+    orig = db_session.query(Route).filter(Route.stream_id == ids["stream_id"]).one()
+    _seed_route_processing_state(db_session, int(orig.id))
+
+    res = client.post(f"/api/v1/backup/streams/{ids['stream_id']}/clone", json={})
+    assert res.status_code == 200
+    new_sid = res.json()["stream_ids"][0]
+    cloned = db_session.query(Route).filter(Route.stream_id == new_sid).one()
+    assert int(cloned.id) != int(orig.id)
+
+    prot = db_session.query(RouteProtectionRule).filter(RouteProtectionRule.route_id == cloned.id).all()
+    assert [(r.field_path, r.sensitivity_class, r.protection_mode, r.enabled) for r in prot] == [
+        ("$.user.email", "pii", "hash", True)
+    ]
+    assert prot[0].source_finding_id is None
+    cls = db_session.query(RouteClassificationRule).filter(RouteClassificationRule.route_id == cloned.id).all()
+    assert [(r.name, r.classification_level, r.condition_json) for r in cls] == [
+        ("high-severity", "CONFIDENTIAL", {"field": "severity", "equals": "high"})
+    ]
+    pol = db_session.query(RoutePolicyRule).filter(RoutePolicyRule.route_id == cloned.id).all()
+    assert [(r.name, r.action_type) for r in pol] == [("drop-low", "drop")]
+    rm = db_session.query(RouteMapping).filter(RouteMapping.route_id == cloned.id).one()
+    assert rm.field_mappings_json == {"a": "$.x"}
+    re_ = db_session.query(RouteEnrichment).filter(RouteEnrichment.route_id == cloned.id).one()
+    assert re_.enrichment_json == {"vendor": "acme"}
+
+    # The source Stream keeps exactly its own rows (the clone must copy, not move or share).
+    assert db_session.query(RouteProtectionRule).filter(RouteProtectionRule.route_id == orig.id).count() == 1
+    assert db_session.query(RouteClassificationRule).filter(RouteClassificationRule.route_id == orig.id).count() == 1
+    assert db_session.query(RoutePolicyRule).filter(RoutePolicyRule.route_id == orig.id).count() == 1
+
+
+def test_clone_stream_without_route_state_still_clones(client: TestClient, db_session: Session) -> None:
+    ids = _seed_connector_graph(db_session)
+    res = client.post(f"/api/v1/backup/streams/{ids['stream_id']}/clone", json={})
+    assert res.status_code == 200
+    new_sid = res.json()["stream_ids"][0]
+    cloned = db_session.query(Route).filter(Route.stream_id == new_sid).one()
+    assert db_session.query(RouteProtectionRule).filter(RouteProtectionRule.route_id == cloned.id).count() == 0
+
+
+def test_clone_stream_remaps_governance_route_overrides_to_cloned_routes(
+    client: TestClient, db_session: Session
+) -> None:
+    ids = _seed_connector_graph(db_session)
+    orig_route = db_session.query(Route).filter(Route.stream_id == ids["stream_id"]).one()
+    stream = db_session.get(Stream, ids["stream_id"])
+    assert stream is not None
+    stream.config_json = {
+        **(stream.config_json or {}),
+        "governance": {
+            "enabled": True,
+            "route_overrides": [
+                {"override_key": "ovr-route", "route_id": int(orig_route.id), "protection_action": "hash"},
+                {"override_key": "ovr-stream-wide", "route_id": None, "protection_action": "mask"},
+                {"override_key": "ovr-foreign", "route_id": int(orig_route.id) + 100000, "protection_action": "hash"},
+            ],
+        },
+    }
+    db_session.flush()
+
+    res = client.post(f"/api/v1/backup/streams/{ids['stream_id']}/clone", json={})
+    assert res.status_code == 200
+    new_sid = res.json()["stream_ids"][0]
+    cloned_route = db_session.query(Route).filter(Route.stream_id == new_sid).one()
+    cloned_stream = db_session.get(Stream, new_sid)
+    assert cloned_stream is not None
+    overrides = cloned_stream.config_json["governance"]["route_overrides"]
+    by_key = {o["override_key"]: o for o in overrides}
+    assert by_key["ovr-route"]["route_id"] == int(cloned_route.id)
+    assert by_key["ovr-route"]["protection_action"] == "hash"
+    assert by_key["ovr-stream-wide"]["route_id"] is None
+    # An override that pointed at a Route outside the source Stream is dropped rather than copied.
+    assert "ovr-foreign" not in by_key
+
+    # The source Stream keeps pointing at its own Route.
+    db_session.refresh(stream)
+    src = {o["override_key"]: o for o in stream.config_json["governance"]["route_overrides"]}
+    assert src["ovr-route"]["route_id"] == int(orig_route.id)
+    assert "ovr-foreign" in src
