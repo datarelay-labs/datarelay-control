@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   applyIncrementalRequestTemplate,
   availableIncrementalPatterns,
+  buildApiTestCheckpointPayload,
   buildIncrementalRequestPlan,
   buildIncrementalRequestTestSignature,
   calculateIncrementalRequestTestCheckpoint,
@@ -154,6 +155,41 @@ describe('calculateIncrementalRequestTestCheckpoint', () => {
     expect(calculateIncrementalRequestTestCheckpoint(values, 'TIMESTAMP')).toMatchObject({
       kind: 'ok',
       usedFallback: true,
+    })
+  })
+
+  it('keeps the raw ISO checkpoint for the API test request (runtime parity)', () => {
+    const values = ['2026-10-29T12:00:00Z', '2026-10-29T12:01:00Z', '2026-10-29T12:02:00Z']
+    const result = calculateIncrementalRequestTestCheckpoint(values, 'TIMESTAMP')
+    expect(result).toMatchObject({
+      kind: 'ok',
+      value: Date.parse('2026-10-29T12:01:00Z'),
+      requestValue: '2026-10-29T12:01:00Z',
+      displayValue: '2026-10-29T12:01:00Z',
+      usedFallback: false,
+      valueKind: 'timestamp',
+    })
+    if (result.kind !== 'ok') throw new Error('expected ok')
+    expect(buildApiTestCheckpointPayload(result)).toEqual({
+      last_timestamp: '2026-10-29T12:01:00Z',
+      last_timestamp_ms: String(Date.parse('2026-10-29T12:01:00Z')),
+    })
+  })
+
+  it('formats the one-hour fallback in the sample checkpoint representation', () => {
+    expect(calculateIncrementalRequestTestCheckpoint(['2026-10-29T12:01:00Z'], 'TIMESTAMP')).toMatchObject({
+      kind: 'ok',
+      usedFallback: true,
+      requestValue: '2026-10-29T11:01:00Z',
+    })
+    expect(calculateIncrementalRequestTestCheckpoint(['2026-10-29T12:01:00.250Z'], 'TIMESTAMP')).toMatchObject({
+      requestValue: '2026-10-29T11:01:00.250Z',
+    })
+    expect(calculateIncrementalRequestTestCheckpoint([1_700_000_000], 'TIMESTAMP')).toMatchObject({
+      requestValue: String(1_700_000_000 - 3600),
+    })
+    expect(calculateIncrementalRequestTestCheckpoint([1_700_000_000_000], 'TIMESTAMP')).toMatchObject({
+      requestValue: String(1_700_000_000_000 - 3_600_000),
     })
   })
 

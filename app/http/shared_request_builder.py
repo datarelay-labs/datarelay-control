@@ -170,19 +170,40 @@ def render_runtime_checkpoint_templates(value: Any, checkpoint: dict[str, Any] |
     return value
 
 
-def api_test_checkpoint_replacements(checkpoint: dict[str, Any] | None) -> dict[str, str]:
-    """Placeholders for onboarding API test / JSON preview incremental request tests."""
+def _utc_now_seconds() -> float:
+    return time.time()
 
-    now_ms = int(time.time() * 1000)
+
+def time_template_replacements() -> dict[str, str]:
+    """Time placeholders shared by runtime requests and the onboarding API test."""
+
+    now = _utc_now_seconds()
+    now_ms = int(now * 1000)
     window_ms = 86400000
-    now_iso = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-    replacements = {
+    now_iso = datetime.fromtimestamp(now, timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return {
         "{{now}}": now_iso,
         "{{runtime.now_ms}}": str(now_ms),
         "{{runtime.now_iso}}": now_iso,
         "{{start_ms}}": str(now_ms - window_ms),
         "{{end_ms}}": str(now_ms),
     }
+
+
+def render_runtime_request_templates(
+    value: Any,
+    checkpoint: dict[str, Any] | None,
+    time_replacements: dict[str, str],
+) -> Any:
+    """Render time placeholders, then ``{{checkpoint.*}}``, in the same order as the API test."""
+
+    return render_runtime_checkpoint_templates(apply_api_test_templates(value, time_replacements), checkpoint)
+
+
+def api_test_checkpoint_replacements(checkpoint: dict[str, Any] | None) -> dict[str, str]:
+    """Placeholders for onboarding API test / JSON preview incremental request tests."""
+
+    replacements = time_template_replacements()
 
     if checkpoint:
         ck = checkpoint
@@ -304,9 +325,11 @@ def build_shared_http_request(
             checkpoint_value,
             stream_config,
         )
-        ep_rendered = render_runtime_checkpoint_templates(ep, runtime_checkpoint_ctx)
+        runtime_time_repl = time_template_replacements()
+        ep_rendered = render_runtime_request_templates(ep, runtime_checkpoint_ctx, runtime_time_repl)
     else:
         runtime_checkpoint_ctx = None
+        runtime_time_repl = {}
         ep_rendered = ep
 
     request_url = join_base_url_endpoint(base_url, ep_rendered)
@@ -317,11 +340,26 @@ def build_shared_http_request(
     params_raw = drop_placeholder_pagination_params(stream_config, dict(params_raw))
 
     if mode == "runtime":
-        connector_headers = render_runtime_checkpoint_templates(dict(common_src), runtime_checkpoint_ctx) if common_src else {}
-        params = dict(render_runtime_checkpoint_templates(dict(params_raw), runtime_checkpoint_ctx) if params_raw else {})
+        connector_headers = (
+            render_runtime_request_templates(dict(common_src), runtime_checkpoint_ctx, runtime_time_repl)
+            if common_src
+            else {}
+        )
+        params = dict(
+            render_runtime_request_templates(dict(params_raw), runtime_checkpoint_ctx, runtime_time_repl)
+            if params_raw
+            else {}
+        )
         repl = None
     else:
-        repl = api_test_checkpoint_replacements(api_test_checkpoint)
+        # Resolve checkpoint aliases (e.g. from ``last_success_event``) exactly like the runtime so the
+        # API test substitutes the same ``{{checkpoint.*}}`` representation the poller will send.
+        api_test_ctx = (
+            build_runtime_checkpoint_template_context(api_test_checkpoint, stream_config)
+            if api_test_checkpoint
+            else api_test_checkpoint
+        )
+        repl = api_test_checkpoint_replacements(api_test_ctx)
         connector_headers = {str(k): str(v) for k, v in apply_api_test_templates(dict(common_src), repl).items()} if common_src else {}
         params = dict(apply_api_test_templates(dict(params_raw), repl)) if params_raw else {}
 
@@ -335,7 +373,7 @@ def build_shared_http_request(
     if raw_body is None:
         normalized_body = None
     elif mode == "runtime":
-        normalized_body = render_runtime_checkpoint_templates(raw_body, runtime_checkpoint_ctx) if raw_body is not None else None
+        normalized_body = render_runtime_request_templates(raw_body, runtime_checkpoint_ctx, runtime_time_repl)
     else:
         body = raw_body
         repl_eff = repl or {}
@@ -359,7 +397,12 @@ def build_shared_http_request(
     stream_headers_rendered: dict[str, str]
     if mode == "runtime":
         stream_headers_rendered = (
-            {str(k): str(v) for k, v in render_runtime_checkpoint_templates(dict(stream_hdr), runtime_checkpoint_ctx).items()}
+            {
+                str(k): str(v)
+                for k, v in render_runtime_request_templates(
+                    dict(stream_hdr), runtime_checkpoint_ctx, runtime_time_repl
+                ).items()
+            }
             if stream_hdr
             else {}
         )
@@ -443,4 +486,6 @@ __all__ = [
     "merge_shared_header_layers",
     "normalize_http_method",
     "render_runtime_checkpoint_templates",
+    "render_runtime_request_templates",
+    "time_template_replacements",
 ]

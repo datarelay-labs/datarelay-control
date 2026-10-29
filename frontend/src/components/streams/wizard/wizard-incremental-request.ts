@@ -407,6 +407,8 @@ export type IncrementalRequestTestCheckpointResult =
       kind: 'ok'
       value: string | number
       displayValue: string
+      /** Value substituted for `{{checkpoint.last_timestamp}}` — same representation the runtime stores. */
+      requestValue?: string
       usedFallback: boolean
       latestExcluded?: string
       valueKind: 'timestamp' | 'numeric' | 'string'
@@ -512,6 +514,14 @@ function parseTimestampMs(value: unknown): number | null {
     if (!Number.isNaN(parsed)) return parsed
   }
   return null
+}
+
+/** Format epoch ms in the same representation as a sample checkpoint value (epoch s/ms or ISO-8601). */
+function formatTimestampLikeSample(ms: number, sample: unknown): string {
+  const numeric = parseNumericValue(sample)
+  if (numeric != null) return numeric >= 1e12 ? String(ms) : String(Math.floor(ms / 1000))
+  const iso = new Date(ms).toISOString()
+  return /\.\d+/.test(String(sample)) ? iso : iso.replace(/\.\d{3}Z$/, 'Z')
 }
 
 function parseNumericValue(value: unknown): number | null {
@@ -763,18 +773,23 @@ export function calculateIncrementalRequestTestCheckpoint(
 
   const classified = coerced.map((value) => ({ value, kind: classifyCheckpointValue(value) }))
 
-  const timestampMs = classified
-    .map((row) => parseTimestampMs(row.value))
-    .filter((ms): ms is number => ms != null)
-  if (timestampMs.length) {
-    const sorted = uniqueSortedNumbers(timestampMs)
+  // Order by parsed time, but keep the raw sample so the request uses the runtime checkpoint representation.
+  const rawByMs = new Map<number, unknown>()
+  for (const row of classified) {
+    const ms = parseTimestampMs(row.value)
+    if (ms != null && !rawByMs.has(ms)) rawByMs.set(ms, row.value)
+  }
+  if (rawByMs.size) {
+    const sorted = uniqueSortedNumbers([...rawByMs.keys()])
     if (sorted.length >= 2) {
       const testMs = sorted[sorted.length - 2]
       const latestMs = sorted[sorted.length - 1]
+      const requestValue = String(rawByMs.get(testMs))
       return {
         kind: 'ok',
         value: testMs,
-        displayValue: String(testMs),
+        displayValue: requestValue,
+        requestValue,
         usedFallback: false,
         latestExcluded: String(latestMs),
         valueKind: 'timestamp',
@@ -782,10 +797,12 @@ export function calculateIncrementalRequestTestCheckpoint(
     }
     const only = sorted[0]
     const fallbackMs = only - HOUR_MS
+    const requestValue = formatTimestampLikeSample(fallbackMs, rawByMs.get(only))
     return {
       kind: 'ok',
       value: fallbackMs,
-      displayValue: String(fallbackMs),
+      displayValue: requestValue,
+      requestValue,
       usedFallback: true,
       valueKind: 'timestamp',
     }
@@ -855,7 +872,7 @@ export function buildApiTestCheckpointPayload(
   if (test.valueKind === 'timestamp') {
     const ms = typeof test.value === 'number' ? test.value : Number(test.value)
     return {
-      last_timestamp: String(test.value),
+      last_timestamp: test.requestValue ?? String(test.value),
       last_timestamp_ms: String(ms),
     }
   }
