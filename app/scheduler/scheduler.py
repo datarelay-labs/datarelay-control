@@ -546,7 +546,7 @@ class Scheduler:
             return False
 
         try:
-            confirmed = bool(run_with_db(_confirm))
+            confirmed = bool(run_with_db(_confirm, commit=True))
             if confirmed:
                 logger.info(
                     "%s",
