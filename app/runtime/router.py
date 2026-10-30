@@ -1378,23 +1378,30 @@ async def get_stream_runtime_health(
     stream_id: int,
     db: Session = Depends(get_db_read_bounded),
     limit: int = Query(100, ge=1, le=1000),
-    window: str = Query(
-        "1h",
-        description="Rolling window for snapshot-backed health (15m, 1h, 6h, 24h).",
+    window: str | None = Query(
+        None,
+        description=(
+            "Optional rolling window (15m, 1h, 6h, 24h); snapshot-backed when the read model is populated. "
+            "Without a window, counts come from the last `limit` delivery logs, same as /streams/{id}/stats-health."
+        ),
     ),
     snapshot_id: str | None = Query(
         None,
         description="Optional ISO-8601 aggregate snapshot timestamp shared across runtime widgets.",
     ),
 ) -> StreamHealthResponse:
-    """Per-route and stream health (snapshot-backed when read model is populated)."""
+    """Per-route and stream health; identical to ``health`` of /streams/{id}/stats-health for the same query."""
 
+    try:
+        w = normalize_metrics_window_token(window) if window is not None else None
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     try:
         return read_service.get_stream_runtime_health(
             db,
             stream_id,
             limit,
-            window=window,
+            window=w,
             snapshot_id=snapshot_id,
         )
     except read_service.StreamNotFoundError as exc:

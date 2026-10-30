@@ -478,53 +478,13 @@ def _build_from_delivery_logs_bulk(
 def _route_health_from_snapshots(
     routes: list[Route],
     route_snaps: dict[int, object],
+    route_counts: dict[int, RouteRuntimeCounts] | None = None,
 ) -> tuple[list[RouteHealthItem], StreamHealthSummary]:
-    bucket = {"HEALTHY": 0, "DEGRADED": 0, "UNHEALTHY": 0, "DISABLED": 0, "IDLE": 0}
-    items: list[RouteHealthItem] = []
-    for route in routes:
-        snap = route_snaps.get(int(route.id))
-        dest = route.destination
-        dest_type = str(dest.destination_type or "").strip().upper() if dest is not None else ""
-        dest_enabled = bool(dest.enabled) if dest is not None else False
-        if not bool(route.enabled):
-            health_key = "DISABLED"
-        elif snap is None:
-            health_key = "IDLE"
-        else:
-            health_key = str(snap.health_status or "IDLE").upper()
-            if health_key not in bucket:
-                health_key = "IDLE"
-        bucket[health_key] += 1
-        items.append(
-            RouteHealthItem(
-                route_id=int(route.id),
-                destination_id=int(route.destination_id),
-                destination_type=dest_type,
-                route_enabled=bool(route.enabled),
-                destination_enabled=dest_enabled,
-                failure_policy=str(route.failure_policy),
-                route_status=str(route.status),
-                health=cast(RouteHealthState, health_key),
-                success_count=0,
-                failure_count=0,
-                rate_limited_count=0,
-                consecutive_failure_count=0,
-                last_success_at=snap.last_success_at if snap is not None else None,
-                last_failure_at=snap.last_error_at if snap is not None else None,
-                last_rate_limited_at=None,
-                last_error_code=None,
-                last_error_message=snap.last_error_message if snap is not None else None,
-            )
-        )
-    summary = StreamHealthSummary(
-        total_routes=len(routes),
-        healthy_routes=bucket["HEALTHY"],
-        degraded_routes=bucket["DEGRADED"],
-        unhealthy_routes=bucket["UNHEALTHY"],
-        disabled_routes=bucket["DISABLED"],
-        idle_routes=bucket["IDLE"],
-    )
-    return items, summary
+    """Same mapping as the single-stream snapshot read (ERROR -> UNHEALTHY, stats counts)."""
+
+    from app.runtime.stream_runtime_snapshot_read import _route_health_from_snapshots as _single
+
+    return _single(routes, route_snaps, route_counts)
 
 
 def _build_from_runtime_snapshots(
@@ -646,10 +606,14 @@ def _build_from_runtime_snapshots(
             routes=route_stats,
             recent_logs=[],
         )
-        route_items, health_summary = _route_health_from_snapshots(routes, route_snaps)
-        stream_health = snap.health_status if snap is not None else "IDLE"
-        if stream_health not in ("HEALTHY", "DEGRADED", "UNHEALTHY", "IDLE"):
-            stream_health = "IDLE"
+        from app.runtime.stream_runtime_snapshot_read import runtime_health_from_operational
+
+        route_items, health_summary = _route_health_from_snapshots(
+            routes,
+            route_snaps,
+            {item.route_id: item.counts for item in route_stats},
+        )
+        stream_health = runtime_health_from_operational(snap.health_status if snap is not None else "IDLE")
         health = StreamHealthResponse(
             stream_id=sid,
             stream_status=str(stream.status),

@@ -687,6 +687,27 @@ def _consecutive_failure_count(route_logs_newest_first: list[DeliveryLog]) -> in
     return count
 
 
+def route_health_counts_from_stats(counts: RouteRuntimeCounts) -> tuple[int, int, int]:
+    """Health ``(success_count, failure_count, rate_limited_count)`` for one Route.
+
+    Canonical definition shared by GET /runtime/health/stream/{id} and
+    GET /runtime/stats/stream/{id}: health counts are the delivery outcomes of the
+    stats ``routes[].counts`` for the same window, grouped by the health stage sets
+    (success = send + retry success; failure = send + retry failure + unknown failure
+    policy; rate limited = destination rate limited). Health therefore never reports
+    its own independent tally; whatever source the stats endpoint uses for the window
+    (operational snapshot or windowed delivery_logs) is the single source of truth.
+    """
+
+    success = int(counts.route_send_success) + int(counts.route_retry_success)
+    failure = (
+        int(counts.route_send_failed)
+        + int(counts.route_retry_failed)
+        + int(counts.route_unknown_failure_policy)
+    )
+    return success, failure, int(counts.destination_rate_limited)
+
+
 def _classify_enabled_route_health(route_logs: list[DeliveryLog]) -> str:
     if not route_logs:
         return "IDLE"
@@ -727,7 +748,18 @@ def _compute_stream_health(logs: list[DeliveryLog], routes: list[Route]) -> str:
     return "IDLE"
 
 
-def _build_route_health_items(logs: list[DeliveryLog], routes: list[Route]) -> tuple[list[RouteHealthItem], StreamHealthSummary]:
+def _build_route_health_items(
+    logs: list[DeliveryLog],
+    routes: list[Route],
+    *,
+    window_counts: dict[int, RouteRuntimeCounts] | None = None,
+) -> tuple[list[RouteHealthItem], StreamHealthSummary]:
+    """Route health from sampled logs; counts come from ``window_counts`` when given.
+
+    ``window_counts`` carries the stats ``routes[].counts`` for the requested window
+    so health and stats report the same totals (see route_health_counts_from_stats).
+    """
+
     bucket = {"HEALTHY": 0, "DEGRADED": 0, "UNHEALTHY": 0, "DISABLED": 0, "IDLE": 0}
     items: list[RouteHealthItem] = []
 
@@ -735,7 +767,12 @@ def _build_route_health_items(logs: list[DeliveryLog], routes: list[Route]) -> t
         rid = int(route.id)
         route_logs = _logs_for_route(logs, rid)
         route_logs_nf = _logs_newest_first(route_logs)
-        success_c, failure_c, rl_c = _route_success_failure_rl_counts(route_logs)
+        if window_counts is not None:
+            success_c, failure_c, rl_c = route_health_counts_from_stats(
+                window_counts.get(rid) or RouteRuntimeCounts()
+            )
+        else:
+            success_c, failure_c, rl_c = _route_success_failure_rl_counts(route_logs)
         last_err_code, last_err_msg = _last_error_fields(route_logs)
         consec = _consecutive_failure_count(route_logs_nf)
 
@@ -824,6 +861,39 @@ def _load_stream_recent_logs_and_routes(
         .all()
     )
     return stream, logs, routes
+
+
+def _stats_window_bounds(window: str, snapshot_id: str | None) -> tuple[datetime, datetime]:
+    """``(since, until)`` used by stats route counts for a requested window."""
+
+    until = _dashboard_snapshot_time(snapshot_id)
+    return until - parse_metrics_window(window), until
+
+
+def _stream_health_from_logs(
+    stream: Stream,
+    logs: list[DeliveryLog],
+    routes: list[Route],
+    limit: int,
+    *,
+    window_counts: dict[int, RouteRuntimeCounts] | None,
+) -> StreamHealthResponse:
+    """Delivery-logs health shared by GET /runtime/health/stream and GET /streams/{id}/stats-health.
+
+    Both endpoints must load ``logs`` via _load_stream_recent_logs_and_routes with the same
+    ``limit``/``window`` and pass the same ``window_counts`` (stats ``routes[].counts`` when a
+    window is requested, otherwise ``None`` for last-N-log counts) so their health is identical.
+    """
+
+    route_items, summary = _build_route_health_items(logs, routes, window_counts=window_counts)
+    return StreamHealthResponse(
+        stream_id=int(stream.id),
+        stream_status=str(stream.status),
+        health=type_cast(StreamHealthState, _compute_stream_health(logs, routes)),
+        limit=limit,
+        summary=summary,
+        routes=route_items,
+    )
 
 
 def _load_snapshot_outcome_metadata(
@@ -952,9 +1022,7 @@ def get_stream_runtime_stats(
         )
 
     if window is not None:
-        token_td = parse_metrics_window(window)
-        until = _dashboard_snapshot_time(snapshot_id)
-        since = until - token_td
+        since, until = _stats_window_bounds(window, snapshot_id)
         summary = _compute_summary_for_window(db, stream_id, start_at=since, end_at=until)
         route_stats = _build_route_stats_items_for_window(
             db,
@@ -1128,9 +1196,11 @@ def get_stream_runtime_health(
     stream_id: int,
     limit: int,
     *,
-    window: str | None = "1h",
+    window: str | None = None,
     snapshot_id: str | None = None,
 ) -> StreamHealthResponse:
+    """Same ``health`` as GET /streams/{id}/stats-health for the same limit/window/snapshot_id."""
+
     if window is not None:
         from app.runtime.stream_runtime_snapshot_read import build_stream_stats_health_from_snapshot
 
@@ -1144,18 +1214,29 @@ def get_stream_runtime_health(
         if bundle is not None:
             return bundle.health
 
-    stream, logs, routes = _load_stream_recent_logs_and_routes(db, stream_id, limit)
-    route_items, summary = _build_route_health_items(logs, routes)
-    stream_health = _compute_stream_health(logs, routes)
-
-    health = StreamHealthResponse(
-        stream_id=int(stream.id),
-        stream_status=str(stream.status),
-        health=type_cast(StreamHealthState, stream_health),
-        limit=limit,
-        summary=summary,
-        routes=route_items,
+    stream, logs, routes = _load_stream_recent_logs_and_routes(
+        db,
+        stream_id,
+        limit,
+        window=window,
+        snapshot_id=snapshot_id,
     )
+    window_counts: dict[int, RouteRuntimeCounts] | None = None
+    if window is not None:
+        # Counts must match GET /runtime/stats for the same window; reuse its builder.
+        since, until = _stats_window_bounds(window, snapshot_id)
+        window_counts = {
+            item.route_id: item.counts
+            for item in _build_route_stats_items_for_window(
+                db,
+                routes,
+                stream_id=stream_id,
+                start_at=since,
+                end_at=until,
+                log_sample=logs,
+            )
+        }
+    health = _stream_health_from_logs(stream, logs, routes, limit, window_counts=window_counts)
 
     if window is not None:
         _, route_last = _load_snapshot_outcome_metadata(db, [stream_id])
@@ -1225,9 +1306,7 @@ def _build_stream_runtime_stats_and_health(
         )
 
     if window is not None:
-        token_td = parse_metrics_window(window)
-        until = _dashboard_snapshot_time(snapshot_id)
-        since = until - token_td
+        since, until = _stats_window_bounds(window, snapshot_id)
         summary = _compute_summary_for_window(db, stream_id, start_at=since, end_at=until)
         route_stats = _build_route_stats_items_for_window(
             db,
@@ -1250,15 +1329,12 @@ def _build_stream_runtime_stats_and_health(
         routes=route_stats,
         recent_logs=_recent_log_items(logs[-limit:] if len(logs) > limit else logs),
     )
-    route_items, summary = _build_route_health_items(logs, routes)
-    stream_health = _compute_stream_health(logs, routes)
-    health = StreamHealthResponse(
-        stream_id=int(stream.id),
-        stream_status=str(stream.status),
-        health=type_cast(StreamHealthState, stream_health),
-        limit=limit,
-        summary=summary,
-        routes=route_items,
+    health = _stream_health_from_logs(
+        stream,
+        logs,
+        routes,
+        limit,
+        window_counts={item.route_id: item.counts for item in route_stats} if window is not None else None,
     )
     if window is not None:
         stream_last, route_last = _load_snapshot_outcome_metadata(db, [stream_id])

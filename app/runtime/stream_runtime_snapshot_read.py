@@ -31,6 +31,7 @@ from app.runtime.read_service import (
     StreamNotFoundError,
     _dashboard_snapshot_id,
     _dashboard_snapshot_time,
+    route_health_counts_from_stats,
 )
 from app.runtime.runtime_analytics_bucket_read_repository import (
     RouteTrendBucketStatsRow,
@@ -100,10 +101,56 @@ def _checkpoint_payload(row: Checkpoint | None) -> CheckpointStatsPayload | None
     )
 
 
+# Operational snapshot vocabulary (ERROR/DEGRADED/HEALTHY/IDLE) -> runtime health API
+# vocabulary. ERROR is what the dashboard reports as "Route N delivery failing"; it
+# must surface as UNHEALTHY here and never fall through to IDLE.
+_OPERATIONAL_TO_RUNTIME_HEALTH = {
+    "ERROR": "UNHEALTHY",
+    "UNHEALTHY": "UNHEALTHY",
+    "DEGRADED": "DEGRADED",
+    "HEALTHY": "HEALTHY",
+    "IDLE": "IDLE",
+}
+
+
+def runtime_health_from_operational(status: str | None) -> str:
+    """Map an operational snapshot health status onto StreamHealthState/RouteHealthState."""
+
+    return _OPERATIONAL_TO_RUNTIME_HEALTH.get(str(status or "IDLE").strip().upper(), "IDLE")
+
+
+def snapshot_route_health_key(snap: Any) -> str:
+    """Re-classify an enabled Route from snapshot posture fields, like the dashboard.
+
+    The operational snapshot read (``_assemble_snapshot_from_physical``) re-runs
+    ``classify_route_health`` on read, so this uses the same inputs and classifier
+    instead of trusting a possibly stale stored ``health_status``.
+    """
+
+    from app.runtime.operational_snapshot_service import classify_route_health
+
+    status = classify_route_health(
+        enabled=True,
+        last_success_at=snap.last_success_at,
+        last_error_at=snap.last_error_at,
+        failed_eps_1m=float(snap.failed_eps_1m or 0.0),
+        retry_rate_5m=float(snap.retry_rate_5m or 0.0),
+    )
+    return runtime_health_from_operational(status)
+
+
 def _route_health_from_snapshots(
     routes: list[Route],
-    route_snaps: dict[int, RuntimeRouteSnapshot],
+    route_snaps: dict[int, Any],
+    route_counts: dict[int, RouteRuntimeCounts] | None = None,
 ) -> tuple[list[RouteHealthItem], StreamHealthSummary]:
+    """Route health rows from operational snapshots.
+
+    ``route_counts`` are the stats ``routes[].counts`` for the same window; health
+    counts are derived from them (see read_service.route_health_counts_from_stats)
+    so GET /runtime/health and GET /runtime/stats agree.
+    """
+
     bucket = {"HEALTHY": 0, "DEGRADED": 0, "UNHEALTHY": 0, "DISABLED": 0, "IDLE": 0}
     items: list[RouteHealthItem] = []
     for route in routes:
@@ -116,10 +163,10 @@ def _route_health_from_snapshots(
         elif snap is None:
             health_key = "IDLE"
         else:
-            health_key = str(snap.health_status or "IDLE").upper()
-            if health_key not in bucket:
-                health_key = "IDLE"
+            health_key = snapshot_route_health_key(snap)
         bucket[health_key] += 1
+        counts = (route_counts or {}).get(int(route.id)) or RouteRuntimeCounts()
+        success_c, failure_c, rl_c = route_health_counts_from_stats(counts)
         items.append(
             RouteHealthItem(
                 route_id=int(route.id),
@@ -130,9 +177,9 @@ def _route_health_from_snapshots(
                 failure_policy=str(route.failure_policy),
                 route_status=str(route.status),
                 health=cast(RouteHealthState, health_key),
-                success_count=0,
-                failure_count=0,
-                rate_limited_count=0,
+                success_count=success_c,
+                failure_count=failure_c,
+                rate_limited_count=rl_c,
                 consecutive_failure_count=0,
                 last_success_at=snap.last_success_at if snap is not None else None,
                 last_failure_at=snap.last_error_at if snap is not None else None,
@@ -261,10 +308,14 @@ def build_stream_stats_health_from_snapshot(
         routes=route_stats,
         recent_logs=[],
     )
-    route_items, health_summary = _route_health_from_snapshots(routes, route_snaps)
-    stream_health = stream_snap.health_status if stream_snap is not None else "IDLE"
-    if stream_health not in ("HEALTHY", "DEGRADED", "UNHEALTHY", "IDLE"):
-        stream_health = "IDLE"
+    route_items, health_summary = _route_health_from_snapshots(
+        routes,
+        route_snaps,
+        {item.route_id: item.counts for item in route_stats},
+    )
+    stream_health = runtime_health_from_operational(
+        stream_snap.health_status if stream_snap is not None else "IDLE"
+    )
     health = StreamHealthResponse(
         stream_id=int(stream.id),
         stream_status=str(stream.status),
