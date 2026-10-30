@@ -282,6 +282,97 @@ def test_deliver_dynamic_routes_without_aligned_fingerprints_is_unchanged() -> N
     assert "dyn:9" not in runner._route_delivery_fingerprints
 
 
+# --- dynamic route key hygiene (R2 follow-up) --------------------------------------------
+
+
+def test_select_dynamic_route_state_keys_drops_unmatched_and_ignores_base_keys() -> None:
+    """Old code: ImportError (no dynamic key selection existed)."""
+
+    from app.checkpoints.route_delivery_state import select_dynamic_route_state_keys
+
+    keys = {"1": ["a"], "dyn:1": ["b"], "dyn:2": ["c"]}
+    assert select_dynamic_route_state_keys(keys, matched_keys={"dyn:2", "dyn:9"}) == {"dyn:2"}
+    assert select_dynamic_route_state_keys(keys, matched_keys=set()) == set()
+    # Not evaluated this run: no evidence, nothing dropped for not matching.
+    assert select_dynamic_route_state_keys(keys) == {"dyn:1", "dyn:2"}
+
+
+def test_select_dynamic_route_state_keys_cap_prefers_touched_then_newest_id() -> None:
+    from app.checkpoints.route_delivery_state import (
+        MAX_DYNAMIC_ROUTE_STATE_KEYS,
+        select_dynamic_route_state_keys,
+    )
+
+    keys = [f"dyn:{i}" for i in range(1, MAX_DYNAMIC_ROUTE_STATE_KEYS + 11)]
+    kept = select_dynamic_route_state_keys(keys, touched_keys=["dyn:1", "dyn:2"])
+    assert len(kept) == MAX_DYNAMIC_ROUTE_STATE_KEYS
+    # Touched keys always win, the rest is filled by highest dynamic route id.
+    assert {"dyn:1", "dyn:2"} <= kept
+    assert f"dyn:{MAX_DYNAMIC_ROUTE_STATE_KEYS + 10}" in kept
+    assert "dyn:3" not in kept and "dyn:12" not in kept
+    assert "dyn:13" in kept
+    # Deterministic: same input, same output.
+    assert select_dynamic_route_state_keys(list(reversed(keys)), touched_keys=["dyn:1", "dyn:2"]) == kept
+
+
+def test_route_delivery_state_payload_drops_dynamic_keys_not_matched_this_run() -> None:
+    """Old code: ``dyn:1`` (route deleted / no longer matching) stayed in the stored state."""
+
+    events = [{"id": "e1"}]
+    sender = _RecordingDynamicSender()
+    runner, result = _dynamic_runner(sender, events)
+    runner._route_delivery_fingerprints = {"3": ["a"], "dyn:1": ["stale"]}
+    stream = {"id": 5, "name": "s", "routes": [{"id": 3}]}
+
+    runner._deliver_dynamic_routes(stream, events, dynamic_routing=result, skip_destination_ids=set())
+    payload = runner._route_delivery_state_payload(stream_id=5, runtime_stream=stream)
+
+    assert payload is not None
+    assert payload["route_delivery_state"]["routes"] == {"3": ["a"], "dyn:9": event_fingerprints(events)}
+
+
+def test_route_delivery_state_payload_prunes_stale_dynamic_keys_without_new_delivery() -> None:
+    """Evaluated with no matches: the stale key is pruned even though nothing was sent.
+
+    Old code: payload was None (not dirty), so ``dyn:1`` stayed until the checkpoint advanced.
+    """
+
+    from app.dynamic_routing.dynamic_routing_engine import DynamicRoutingBatchResult
+
+    runner = _runner_with_fingerprints({"3": ["a"], "dyn:1": ["stale"]})
+    runner._route_delivery_dirty = False
+    stream = {"id": 5, "name": "s", "routes": [{"id": 3}]}
+
+    assert runner._deliver_dynamic_routes(
+        stream, [{"id": "e1"}], dynamic_routing=DynamicRoutingBatchResult(matches=[]), skip_destination_ids=set()
+    ) == 0
+    payload = runner._route_delivery_state_payload(stream_id=5, runtime_stream=stream)
+
+    assert payload is not None
+    assert payload["route_delivery_state"]["routes"] == {"3": ["a"]}
+
+
+def test_route_delivery_state_payload_caps_dynamic_keys() -> None:
+    """Old code: every ``dyn:<id>`` key was kept (no cap)."""
+
+    from app.checkpoints.route_delivery_state import MAX_DYNAMIC_ROUTE_STATE_KEYS
+
+    count = MAX_DYNAMIC_ROUTE_STATE_KEYS + 5
+    runner = _runner_with_fingerprints({f"dyn:{i}": [f"fp-{i}"] for i in range(1, count + 1)})
+    runner._record_route_delivered("dyn:1", ["fp-new"])
+    base_ids = {str(i) for i in range(1, 4)}
+    runner._route_delivery_fingerprints.update({key: ["b"] for key in base_ids})
+    payload = runner._route_delivery_state_payload(
+        stream_id=5, runtime_stream={"routes": [{"id": int(i)} for i in base_ids]}
+    )
+
+    routes = payload["route_delivery_state"]["routes"]
+    dyn_keys = {key for key in routes if key.startswith("dyn:")}
+    assert len(dyn_keys) == MAX_DYNAMIC_ROUTE_STATE_KEYS
+    assert "dyn:1" in dyn_keys  # most recently touched wins over a higher id
+    assert base_ids <= set(routes)  # base Route keys are not counted against the cap
+
+
 # --- webhook partial progress ----------------------------------------------------------
 
 

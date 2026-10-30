@@ -21,6 +21,7 @@ from app.checkpoints.route_delivery_state import (
     is_dynamic_route_state_key,
     load_route_fingerprints,
     merge_fingerprints,
+    select_dynamic_route_state_keys,
     split_route_delivery_state,
 )
 from app.checkpoints.service import CheckpointService
@@ -176,6 +177,10 @@ class StreamRunner(BaseRunner):
         self._route_delivery_fingerprints: dict[str, list[str]] = {}
         self._route_delivery_dirty = False
         self._route_delivery_batch_fps: tuple[int, list[str]] | None = None
+        # ``dyn:<id>`` keys matched by dynamic routing this run (None = not evaluated) and
+        # ``dyn:<id>`` keys recorded this run in touch order (oldest first).
+        self._route_delivery_dyn_matched: set[str] | None = None
+        self._route_delivery_dyn_touched: dict[str, None] = {}
         self._pending_route_delivery_state: dict[str, Any] | None = None
 
     @staticmethod
@@ -1041,7 +1046,30 @@ class StreamRunner(BaseRunner):
             self._route_delivery_fingerprints.get(key, []),
             fingerprints,
         )
+        if is_dynamic_route_state_key(key):
+            self._route_delivery_dyn_touched.pop(key, None)
+            self._route_delivery_dyn_touched[key] = None
         self._route_delivery_dirty = True
+
+    def _kept_dynamic_route_state_keys(self) -> set[str]:
+        return select_dynamic_route_state_keys(
+            self._route_delivery_fingerprints,
+            matched_keys=self._route_delivery_dyn_matched,
+            touched_keys=list(self._route_delivery_dyn_touched),
+        )
+
+    def _note_dynamic_route_matches(self, matches: list[Any]) -> None:
+        """Record dynamic routes matched this run so stale ``dyn:<id>`` keys get pruned."""
+
+        if self._route_delivery_dyn_matched is None:
+            self._route_delivery_dyn_matched = set()
+        self._route_delivery_dyn_matched.update(
+            dynamic_route_state_key(int(getattr(match, "dynamic_route_id", 0))) for match in matches
+        )
+        stored = {key for key in self._route_delivery_fingerprints if is_dynamic_route_state_key(key)}
+        if stored - self._kept_dynamic_route_state_keys():
+            # Persist the pruned state even when nothing new was delivered this run.
+            self._route_delivery_dirty = True
 
     def _load_route_delivery_state(
         self,
@@ -1073,8 +1101,9 @@ class StreamRunner(BaseRunner):
         if not (self._route_delivery_enabled and self._route_delivery_dirty and self._route_delivery_anchor):
             return None
         route_ids = {str(int(_get(r, "id", 0))) for r in list(_get(runtime_stream, "routes", []) or [])}
-        # Dynamic-route progress is kept for the held window (cleared when it advances).
-        route_ids.update(key for key in self._route_delivery_fingerprints if is_dynamic_route_state_key(key))
+        # Dynamic-route progress is kept for the held window (cleared when it advances), only
+        # for dynamic routes matched this run and capped (see select_dynamic_route_state_keys).
+        route_ids.update(self._kept_dynamic_route_state_keys())
         return {
             "stream_id": stream_id,
             "checkpoint_type": str(self._route_delivery_checkpoint_type or "CUSTOM_FIELD"),
@@ -2396,9 +2425,10 @@ class StreamRunner(BaseRunner):
     ) -> int:
         """Send to matched dynamic-route destinations (LOG_AND_CONTINUE; does not affect checkpoint)."""
 
+        matches = list(getattr(dynamic_routing, "matches", []) or [])
+        self._note_dynamic_route_matches(matches)
         if not events:
             return 0
-        matches = list(getattr(dynamic_routing, "matches", []) or [])
         if not matches:
             return 0
 

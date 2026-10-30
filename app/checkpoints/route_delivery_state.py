@@ -35,6 +35,9 @@ MAX_FINGERPRINTS_PER_ROUTE = 5000
 # Dynamic routes share the ``routes`` map under a prefixed key so they never collide
 # with numeric Route ids (e.g. ``"dyn:7"`` vs ``"7"``).
 DYNAMIC_ROUTE_STATE_KEY_PREFIX = "dyn:"
+# Hard cap on ``dyn:<id>`` keys kept in one held window. Dropping a key can only cause a
+# re-send to that dynamic route (at-least-once), never a lost event.
+MAX_DYNAMIC_ROUTE_STATE_KEYS = 200
 
 _FINGERPRINT_HEX_LEN = 32
 # Runtime-injected metadata (e.g. stream dedup queue ids) differs between runs.
@@ -80,6 +83,44 @@ def dynamic_route_state_key(dynamic_route_id: int) -> str:
 
 def is_dynamic_route_state_key(key: Any) -> bool:
     return isinstance(key, str) and key.startswith(DYNAMIC_ROUTE_STATE_KEY_PREFIX)
+
+
+def _dynamic_route_id(key: str) -> int:
+    try:
+        return int(key[len(DYNAMIC_ROUTE_STATE_KEY_PREFIX) :])
+    except ValueError:
+        return -1
+
+
+def select_dynamic_route_state_keys(
+    keys: Any,
+    *,
+    matched_keys: set[str] | None = None,
+    touched_keys: list[str] | None = None,
+) -> set[str]:
+    """Return the ``dyn:<id>`` keys to keep in the stored state (base Route keys ignored).
+
+    - ``matched_keys`` is the set of dynamic routes matched in the current run. When given,
+      keys for dynamic routes that no longer exist or no longer match are dropped. ``None``
+      means dynamic routing was not evaluated this run (no evidence), so nothing is dropped
+      for that reason.
+    - At most ``MAX_DYNAMIC_ROUTE_STATE_KEYS`` keys are kept. Deterministic rule: keys
+      touched (recorded) in this run win first, most recently touched first (``touched_keys``
+      is in touch order, oldest first); the rest follow by highest dynamic route id (newest
+      route), then by key text.
+    """
+
+    candidates = {str(key) for key in keys if is_dynamic_route_state_key(key)}
+    if matched_keys is not None:
+        candidates &= set(matched_keys)
+    touch_rank = {key: idx for idx, key in enumerate(touched_keys or [])}
+
+    def _order(key: str) -> tuple[int, int, str]:
+        if key in touch_rank:
+            return (0, -touch_rank[key], key)
+        return (1, -_dynamic_route_id(key), key)
+
+    return set(sorted(candidates, key=_order)[:MAX_DYNAMIC_ROUTE_STATE_KEYS])
 
 
 def checkpoint_anchor(base_checkpoint: Any) -> str:
