@@ -53,6 +53,20 @@ _STORED_CHECKPOINT: dict[str, Any] = {
 }
 
 
+# No log-metadata keys and a top-level event without id/timestamp keys: slim_checkpoint_for_log
+# used to fall back to a full copy of this checkpoint.
+_NO_META_CHECKPOINT: dict[str, Any] = {
+    "last_success_event": {"user": {"email": _PII_EMAIL, "name": _PII_NAME}, "message": f"login by {_PII_EMAIL}"},
+    "delivery_checkpoint": {
+        "last_success_event": copy.deepcopy(_RAW_EVENT),
+        "cursor": "2026-10-30T01:02:03Z",
+    },
+    "cursor": "2026-10-30T01:02:03Z",
+}
+
+_PREVIEW = {"id": "evt-c8-1", "@timestamp": "2026-10-30T01:02:03Z"}
+
+
 def _assert_reduced(value: Any) -> None:
     dumped = json.dumps(value, default=str)
     assert _PII_EMAIL not in dumped
@@ -71,7 +85,12 @@ def client(db_session: Session) -> TestClient:
         clear_runtime_test_db_overrides()
 
 
-def _seed_stream_with_raw_checkpoint(db: Session) -> dict[str, int]:
+def _seed_stream_with_raw_checkpoint(
+    db: Session,
+    *,
+    checkpoint_value: dict[str, Any] | None = None,
+    stream_config: dict[str, Any] | None = None,
+) -> dict[str, int]:
     connector = Connector(name="c8-connector", description=None, status="RUNNING")
     db.add(connector)
     db.flush()
@@ -89,7 +108,7 @@ def _seed_stream_with_raw_checkpoint(db: Session) -> dict[str, int]:
         source_id=source.id,
         name="c8-stream",
         stream_type="HTTP_API_POLLING",
-        config_json={},
+        config_json=copy.deepcopy(stream_config or {}),
         polling_interval=60,
         enabled=True,
         status="RUNNING",
@@ -101,7 +120,7 @@ def _seed_stream_with_raw_checkpoint(db: Session) -> dict[str, int]:
         Checkpoint(
             stream_id=stream.id,
             checkpoint_type="EVENT_ID",
-            checkpoint_value_json=copy.deepcopy(_STORED_CHECKPOINT),
+            checkpoint_value_json=copy.deepcopy(_STORED_CHECKPOINT if checkpoint_value is None else checkpoint_value),
         )
     )
     db.commit()
@@ -270,5 +289,200 @@ def test_checkpoint_trace_and_history_reduce_legacy_raw_log_payloads(
     hbody = hist.json()
     _assert_reduced(hbody)
     assert hbody["items"][0]["checkpoint_after_preview"] == "evt-c8-1"
+
+    assert _stored_checkpoint_value(db_session, sid) == _STORED_CHECKPOINT
+
+
+# --- Log snapshot fallback (C8b) ------------------------------------------------
+
+
+def test_slim_checkpoint_for_log_fallback_reduces_raw_events() -> None:
+    # Old code: with no metadata keys and no id-preview, the fallback returned a full copy
+    # (top-level and nested raw events) -> _assert_reduced fails.
+    from app.runtime.copy_utils import slim_checkpoint_for_log
+
+    source = copy.deepcopy(_NO_META_CHECKPOINT)
+    slim = slim_checkpoint_for_log(source)
+    assert slim is not None
+    _assert_reduced(slim)
+    assert "last_success_event" not in slim
+    assert slim["delivery_checkpoint"] == {"last_success_event": _PREVIEW, "cursor": "2026-10-30T01:02:03Z"}
+    assert slim["cursor"] == "2026-10-30T01:02:03Z"
+    assert source == _NO_META_CHECKPOINT
+
+    # Old code: returned {"last_success_event": {"email": ...}} unchanged.
+    only_raw = slim_checkpoint_for_log({"last_success_event": {"email": _PII_EMAIL}})
+    _assert_reduced(only_raw)
+    assert not only_raw
+
+
+# --- Stream configuration view (C8b) ---------------------------------------------
+
+
+def test_stream_configuration_view_never_displays_raw_checkpoint_event(
+    client: TestClient, db_session: Session
+) -> None:
+    # Old code: "Last Checkpoint"/"Current Checkpoint" rendered the full slim fallback copy,
+    # including the raw event (email/name/message) -> _assert_reduced fails.
+    sid = _seed_stream_with_raw_checkpoint(db_session, checkpoint_value=_NO_META_CHECKPOINT)["stream_id"]
+
+    res = client.get(f"/api/v1/runtime/streams/{sid}/configuration")
+    assert res.status_code == 200, res.text
+    body = res.json()
+    _assert_reduced(body)
+    assert "evt-c8-1" in json.dumps(body)
+
+    assert _stored_checkpoint_value(db_session, sid) == _NO_META_CHECKPOINT
+
+
+def test_checkpoint_display_does_not_fall_back_to_raw_checkpoint() -> None:
+    # Old code: an empty slim result fell back to the raw checkpoint dict -> PII in the display string.
+    from app.runtime.stream_configuration_service import NOT_CONFIGURED, _checkpoint_display
+
+    shown = _checkpoint_display({"last_success_event": {"email": _PII_EMAIL}})
+    _assert_reduced(shown)
+    assert shown == NOT_CONFIGURED
+
+
+# --- Checkpoint manage endpoints (C8b) -------------------------------------------
+
+
+def test_checkpoint_manage_get_legacy_mode_returns_reduced_checkpoint(
+    client: TestClient, db_session: Session
+) -> None:
+    # Old code: legacy_checkpoint was the full stored checkpoint (raw top-level and nested events).
+    sid = _seed_stream_with_raw_checkpoint(db_session)["stream_id"]
+
+    res = client.get(f"/api/v1/runtime/streams/{sid}/checkpoint")
+    assert res.status_code == 200, res.text
+    body = res.json()
+    _assert_reduced(body)
+    assert body["framework_enabled"] is False
+    assert body["checkpoint_type"] == "EVENT_ID"
+    _assert_preview_and_metadata(body["legacy_checkpoint"])
+    assert body["checkpoint_value"]["last_success_event"] == _PREVIEW
+
+    assert _stored_checkpoint_value(db_session, sid) == _STORED_CHECKPOINT
+
+
+def test_checkpoint_manage_get_framework_mode_returns_reduced_delivery_checkpoint(
+    client: TestClient, db_session: Session
+) -> None:
+    # Old code: delivery_checkpoint carried the nested raw last_success_event.
+    sid = _seed_stream_with_raw_checkpoint(
+        db_session,
+        stream_config={"incremental_fetch": {"strategy": "timestamp_watermark", "watermark_field": "$.timestamp"}},
+    )["stream_id"]
+
+    res = client.get(f"/api/v1/runtime/streams/{sid}/checkpoint")
+    assert res.status_code == 200, res.text
+    body = res.json()
+    _assert_reduced(body)
+    assert body["framework_enabled"] is True
+    assert body["delivery_checkpoint"] == {"last_success_event": _PREVIEW, "cursor": "2026-10-30T01:02:03Z"}
+    assert body["fetch_checkpoint"]["cursor"] == "2026-10-30T01:02:03Z"
+
+    assert _stored_checkpoint_value(db_session, sid) == _STORED_CHECKPOINT
+
+
+def _audit_details(db: Session, action: str, stream_id: int) -> dict[str, Any]:
+    from app.platform_admin.models import PlatformAuditEvent
+
+    db.expire_all()
+    row = (
+        db.query(PlatformAuditEvent)
+        .filter(PlatformAuditEvent.action == action, PlatformAuditEvent.entity_id == stream_id)
+        .order_by(PlatformAuditEvent.id.desc())
+        .first()
+    )
+    assert row is not None
+    return dict(row.details_json or {})
+
+
+def test_checkpoint_manage_put_stores_full_value_and_returns_reduced_view(
+    client: TestClient, db_session: Session
+) -> None:
+    # Old code: the PUT response and the audit previous/new values echoed the raw event.
+    sid = _seed_stream_with_raw_checkpoint(db_session, checkpoint_value={"cursor": "old"})["stream_id"]
+
+    res = client.put(
+        f"/api/v1/runtime/streams/{sid}/checkpoint",
+        json={"checkpoint_type": "EVENT_ID", "checkpoint_value": _STORED_CHECKPOINT},
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    _assert_reduced(body)
+    _assert_preview_and_metadata(body["legacy_checkpoint"])
+
+    # The write path is unchanged: the full value is stored for the runner.
+    assert _stored_checkpoint_value(db_session, sid) == _STORED_CHECKPOINT
+    details = _audit_details(db_session, "STREAM_CHECKPOINT_UPDATED", sid)
+    _assert_reduced(details)
+    assert details["new_value"]["last_success_event"] == _PREVIEW
+
+
+def test_checkpoint_manage_reset_audit_previous_value_is_reduced(
+    client: TestClient, db_session: Session
+) -> None:
+    # Old code: the reset audit previous_value.legacy_checkpoint held the raw stored event.
+    sid = _seed_stream_with_raw_checkpoint(db_session)["stream_id"]
+
+    res = client.post(f"/api/v1/runtime/streams/{sid}/checkpoint/reset", json={"reason": "c8b"})
+    assert res.status_code == 200, res.text
+    _assert_reduced(res.json())
+
+    details = _audit_details(db_session, "STREAM_CHECKPOINT_RESET", sid)
+    _assert_reduced(details)
+    _assert_preview_and_metadata(details["previous_value"]["legacy_checkpoint"])
+
+
+# --- Incremental fetch status and incremental test (C8b) ----------------------------
+
+
+def test_incremental_fetch_status_returns_reduced_delivery_checkpoint(
+    client: TestClient, db_session: Session
+) -> None:
+    # Old code: delivery_checkpoint was the nested stored blob with the raw event.
+    sid = _seed_stream_with_raw_checkpoint(db_session)["stream_id"]
+
+    res = client.get(f"/api/v1/runtime/streams/{sid}/incremental-fetch")
+    assert res.status_code == 200, res.text
+    body = res.json()
+    _assert_reduced(body)
+    assert body["delivery_checkpoint"] == {"last_success_event": _PREVIEW, "cursor": "2026-10-30T01:02:03Z"}
+    assert body["last_delivery_at"] == "2026-10-30T01:02:04Z"
+
+    assert _stored_checkpoint_value(db_session, sid) == _STORED_CHECKPOINT
+
+
+def test_incremental_test_without_events_returns_reduced_stored_checkpoint(
+    client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Old code: with no fetched events, next_checkpoint_preview was the stored checkpoint and
+    # delivery_checkpoint the nested stored blob, both carrying the raw event.
+    from app.runtime.schemas import HttpApiTestAnalysis, HttpApiTestResponse, HttpApiTestResponseMeta
+
+    def _fake_api_test(*_args: Any, **_kwargs: Any) -> HttpApiTestResponse:
+        return HttpApiTestResponse(
+            ok=True,
+            request={"method": "GET", "url": "http://example.test", "headers_masked": {}},
+            response=HttpApiTestResponseMeta(status_code=200, latency_ms=1, headers={}, raw_body="[]", parsed_json=[]),
+            analysis=HttpApiTestAnalysis(
+                response_summary={"root_type": "array", "approx_size_bytes": 2, "top_level_keys": []},
+                sample_event=None,
+            ),
+        )
+
+    monkeypatch.setattr("app.runtime.stream_configuration_service.run_http_api_test", _fake_api_test)
+    sid = _seed_stream_with_raw_checkpoint(db_session)["stream_id"]
+
+    res = client.post(f"/api/v1/runtime/streams/{sid}/incremental-test", json={})
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["fetched"] == 0
+    assert body["preview_events"] == []
+    _assert_reduced(body)
+    _assert_preview_and_metadata(body["next_checkpoint_preview"])
+    assert body["delivery_checkpoint"] == {"last_success_event": _PREVIEW, "cursor": "2026-10-30T01:02:03Z"}
 
     assert _stored_checkpoint_value(db_session, sid) == _STORED_CHECKPOINT

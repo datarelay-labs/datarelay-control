@@ -71,9 +71,10 @@ def slim_checkpoint_for_log(checkpoint: dict[str, Any] | None) -> dict[str, Any]
 
     if out:
         return out
-    # Per-Route delivery fingerprints are runtime bookkeeping, never log payload.
+    # Per-Route delivery fingerprints are runtime bookkeeping, never log payload; the fallback
+    # copy still never carries raw delivered events (top-level or nested delivery_checkpoint).
     base = strip_route_delivery_state(checkpoint)
-    return copy_json_value(base) if isinstance(base, dict) else None
+    return checkpoint_read_view(base) if isinstance(base, dict) else None
 
 
 def _event_id_preview(event: Any) -> dict[str, Any] | None:

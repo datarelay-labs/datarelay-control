@@ -16,7 +16,7 @@ from app.backfill.schemas import BackfillReplayRequest
 from app.backfill import service as backfill_service
 from app.checkpoints.models import Checkpoint
 from app.checkpoints.repository import get_checkpoint_by_stream_id, upsert_checkpoint
-from app.checkpoints.route_delivery_state import reduce_route_delivery_state, strip_route_delivery_state
+from app.checkpoints.route_delivery_state import strip_route_delivery_state
 from app.connectors.models import Connector
 from app.destinations.repository import get_destination_by_id
 from app.enrichments.models import Enrichment
@@ -24,7 +24,7 @@ from app.logs.models import DeliveryLog
 from app.mappings.models import Mapping
 from app.protection.operator_workflow import list_protection_rules
 from app.routes.models import Route
-from app.runtime.copy_utils import slim_checkpoint_for_log
+from app.runtime.copy_utils import checkpoint_read_view, slim_checkpoint_for_log
 from app.runtime.preview_service import run_http_api_test
 from app.http.shared_request_builder import build_shared_http_request
 from app.runtime.incremental_fetch import (
@@ -136,7 +136,8 @@ def _auth_type_label(auth_json: dict[str, Any]) -> str:
 def _checkpoint_display(checkpoint: dict[str, Any] | None) -> str:
     if not checkpoint:
         return NOT_CONFIGURED
-    preview = slim_checkpoint_for_log(checkpoint) or checkpoint
+    # Never fall back to the raw checkpoint: it may hold a full delivered event.
+    preview = slim_checkpoint_for_log(checkpoint) or {}
     return _display_json(preview)
 
 
@@ -823,7 +824,7 @@ def get_stream_incremental_fetch(db: Session, stream_id: int) -> StreamIncrement
         framework_enabled=parsed.framework_enabled,
         fetch_watermark=display.fetch_watermark,
         connector_cursor=display.connector_cursor,
-        delivery_checkpoint=display.delivery_checkpoint,
+        delivery_checkpoint=checkpoint_read_view(display.delivery_checkpoint) or None,
         last_fetch_at=display.last_fetch_at,
         last_delivery_at=display.last_delivery_at,
         fetch_window=(
@@ -1016,7 +1017,12 @@ def run_stream_incremental_test(
         warning_code=warning_code,
         newer_record_count=newer_record_count,
         preview_events=events[:10],
-        next_checkpoint_preview=next_checkpoint_preview,
+        # Without fetched events this is the stored checkpoint; expose only its read view.
+        next_checkpoint_preview=(
+            checkpoint_read_view(next_checkpoint_preview)
+            if isinstance(next_checkpoint_preview, dict)
+            else next_checkpoint_preview
+        ),
         checkpoint_unchanged=unchanged,
         substituted_request_body=(
             json.dumps(result.actual_request_sent.json_body_masked, default=str)
@@ -1034,7 +1040,7 @@ def run_stream_incremental_test(
         watermark_field=inc_display.watermark_field,
         cursor_field=inc_display.cursor_field,
         fetch_watermark=inc_display.fetch_watermark,
-        delivery_checkpoint=inc_display.delivery_checkpoint,
+        delivery_checkpoint=checkpoint_read_view(inc_display.delivery_checkpoint) or None,
         stability_lag_seconds=inc_display.stability_lag_seconds,
         fetch_window=fetch_window_dict,
         query_preview=query_preview,
@@ -1265,9 +1271,10 @@ def get_stream_checkpoint_manage(db: Session, stream_id: int) -> StreamCheckpoin
     stream_id_out = int(stream.id)
     stream_cfg = dict(stream.config_json or {})
     checkpoint_type = str(checkpoint_row.checkpoint_type) if checkpoint_row is not None else None
-    # Per-Route delivery fingerprints are exposed only as per-Route counts.
-    value = reduce_route_delivery_state(
-        copy.deepcopy(checkpoint_row.checkpoint_value_json)
+    # Read view: per-Route delivery fingerprints become per-Route counts and raw delivered
+    # events become an id/timestamp preview (the stored checkpoint is unchanged).
+    value = (
+        checkpoint_read_view(checkpoint_row.checkpoint_value_json)
         if checkpoint_row is not None and isinstance(checkpoint_row.checkpoint_value_json, dict)
         else None
     )
