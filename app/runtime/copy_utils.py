@@ -66,3 +66,37 @@ def slim_checkpoint_for_log(checkpoint: dict[str, Any] | None) -> dict[str, Any]
     if out:
         return out
     return copy_json_value(checkpoint)
+
+
+def _event_id_preview(event: Any) -> dict[str, Any] | None:
+    if not isinstance(event, dict):
+        return None
+    preview = {
+        key: event[key]
+        for key in _EVENT_ID_PREVIEW_KEYS
+        if key in event and (event[key] is None or isinstance(event[key], (str, int, float, bool)))
+    }
+    return preview or None
+
+
+def checkpoint_read_view(checkpoint: Any) -> dict[str, Any]:
+    """Return an API-safe checkpoint copy without raw delivered event payloads.
+
+    The stored checkpoint keeps the full ``last_success_event`` for incremental fetch; read
+    APIs expose only checkpoint metadata and an event-id/timestamp preview of that event.
+    """
+
+    if not isinstance(checkpoint, dict):
+        return {}
+
+    out: dict[str, Any] = {}
+    for key, value in checkpoint.items():
+        if key == "last_success_event":
+            preview = _event_id_preview(value)
+            if preview is not None:
+                out[key] = preview
+        elif key == "delivery_checkpoint" and isinstance(value, dict):
+            out[key] = checkpoint_read_view(value)
+        else:
+            out[key] = copy_json_value(value)
+    return out

@@ -29,6 +29,7 @@ from app.runtime.read_service import (
     _route_last_failure,
     _route_last_success,
 )
+from app.runtime.copy_utils import checkpoint_read_view
 from app.runtime.schemas import (
     BulkStreamStatsHealthResponse,
     CheckpointStatsPayload,
@@ -346,7 +347,7 @@ def _checkpoint_payload(checkpoint: Checkpoint | None) -> CheckpointStatsPayload
         return None
     return CheckpointStatsPayload(
         type=checkpoint.checkpoint_type,
-        value=checkpoint.checkpoint_value_json or {},
+        value=checkpoint_read_view(checkpoint.checkpoint_value_json),
     )
 
 

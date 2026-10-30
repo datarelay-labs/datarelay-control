@@ -46,6 +46,7 @@ from app.runtime.runtime_snapshot_analytics_repository import (
     _int_events,
     _operational_scale,
 )
+from app.runtime.copy_utils import checkpoint_read_view
 from app.runtime.schemas import (
     CheckpointStatsPayload,
     RecentRouteErrorItem,
@@ -95,7 +96,7 @@ def _checkpoint_payload(row: Checkpoint | None) -> CheckpointStatsPayload | None
         return None
     return CheckpointStatsPayload(
         type=row.checkpoint_type,
-        value=dict(row.checkpoint_value_json or {}),
+        value=checkpoint_read_view(row.checkpoint_value_json),
     )
 
 
@@ -575,7 +576,7 @@ def _build_metrics_from_buckets(
     last_cp: StreamMetricsCheckpoint | None = None
     checkpoint_history: list[StreamMetricsCheckpointHistoryItem] = []
     if checkpoint_row is not None:
-        val = dict(checkpoint_row.checkpoint_value_json or {})
+        val = checkpoint_read_view(checkpoint_row.checkpoint_value_json)
         last_cp = StreamMetricsCheckpoint(type=str(checkpoint_row.checkpoint_type), value=val)
         checkpoint_history.append(
             StreamMetricsCheckpointHistoryItem(
@@ -790,7 +791,7 @@ def _build_metrics_from_operational_snapshot(
     last_cp: StreamMetricsCheckpoint | None = None
     checkpoint_history: list[StreamMetricsCheckpointHistoryItem] = []
     if checkpoint_row is not None:
-        val = dict(checkpoint_row.checkpoint_value_json or {})
+        val = checkpoint_read_view(checkpoint_row.checkpoint_value_json)
         last_cp = StreamMetricsCheckpoint(type=str(checkpoint_row.checkpoint_type), value=val)
         checkpoint_history.append(
             StreamMetricsCheckpointHistoryItem(

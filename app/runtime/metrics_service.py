@@ -36,6 +36,7 @@ from app.runtime.query_boundary import materialize_live_aggregate_snapshot
 from app.runtime.visualization_contract import bucket_meta, visualization_meta_map
 from app.runtime.models import RuntimeStreamSnapshot
 from app.runtime.read_service import StreamNotFoundError
+from app.runtime.copy_utils import checkpoint_read_view
 from app.runtime.schemas import (
     RecentRouteErrorItem,
     RouteRuntimeLatencyTrendPoint,
@@ -265,7 +266,7 @@ def _build_stream_runtime_metrics(
     last_cp: StreamMetricsCheckpoint | None = None
     checkpoint_history: list[StreamMetricsCheckpointHistoryItem] = []
     if checkpoint_row is not None:
-        val = dict(checkpoint_row.checkpoint_value_json or {})
+        val = checkpoint_read_view(checkpoint_row.checkpoint_value_json)
         last_cp = StreamMetricsCheckpoint(type=str(checkpoint_row.checkpoint_type), value=val)
         checkpoint_history.append(
             StreamMetricsCheckpointHistoryItem(

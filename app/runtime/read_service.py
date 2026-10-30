@@ -50,6 +50,7 @@ from app.runtime.aggregate_summaries import (
     summarize_processed_events,
     summarize_runtime_current,
 )
+from app.runtime.copy_utils import checkpoint_read_view
 from app.runtime.schemas import (
     CheckpointHistoryItem,
     CheckpointHistoryResponse,
@@ -947,7 +948,7 @@ def get_stream_runtime_stats(
     if checkpoint_row is not None:
         checkpoint_out = CheckpointStatsPayload(
             type=checkpoint_row.checkpoint_type,
-            value=checkpoint_row.checkpoint_value_json or {},
+            value=checkpoint_read_view(checkpoint_row.checkpoint_value_json),
         )
 
     if window is not None:
@@ -1220,7 +1221,7 @@ def _build_stream_runtime_stats_and_health(
     if checkpoint_row is not None:
         checkpoint_out = CheckpointStatsPayload(
             type=checkpoint_row.checkpoint_type,
-            value=checkpoint_row.checkpoint_value_json or {},
+            value=checkpoint_read_view(checkpoint_row.checkpoint_value_json),
         )
 
     if window is not None:
@@ -2124,10 +2125,16 @@ def _row_payload(row: DeliveryLog | None) -> dict[str, Any]:
     return dict(raw) if isinstance(raw, dict) else {}
 
 
+def _logged_checkpoint_view(val: Any) -> dict[str, Any] | None:
+    # Older delivery_logs rows may still carry a full checkpoint with the raw delivered event.
+    return checkpoint_read_view(val) if isinstance(val, dict) else None
+
+
 def _checkpoint_after_preview(val: Any) -> str | None:
     if val is None:
         return None
     if isinstance(val, dict):
+        val = checkpoint_read_view(val)
         lse = val.get("last_success_event")
         if isinstance(lse, dict):
             for k in ("event_id", "id", "@timestamp", "timestamp"):
@@ -2151,8 +2158,8 @@ def _runtime_checkpoint_event_from_row(r: DeliveryLog) -> RuntimeTraceCheckpoint
     return RuntimeTraceCheckpointEvent(
         checkpoint_type=str(ps["checkpoint_type"]) if ps.get("checkpoint_type") is not None else None,
         message=r.message,
-        checkpoint_before=ps.get("checkpoint_before") if isinstance(ps.get("checkpoint_before"), dict) else None,
-        checkpoint_after=ps.get("checkpoint_after") if isinstance(ps.get("checkpoint_after"), dict) else None,
+        checkpoint_before=_logged_checkpoint_view(ps.get("checkpoint_before")),
+        checkpoint_after=_logged_checkpoint_view(ps.get("checkpoint_after")),
         processed_events=_maybe_int("processed_events"),
         delivered_events=_maybe_int("delivered_events"),
         failed_events=_maybe_int("failed_events"),
@@ -2306,8 +2313,8 @@ def _build_checkpoint_trace_response(db: Session, rows: list[DeliveryLog], run_i
         stream_name=stream_name,
         connector_name=connector_name,
         checkpoint_type=checkpoint_type,
-        checkpoint_before=before if isinstance(before, dict) else None,
-        checkpoint_after=after,
+        checkpoint_before=_logged_checkpoint_view(before),
+        checkpoint_after=_logged_checkpoint_view(after),
         processed_events=int(processed) if isinstance(processed, int) else None,
         delivered_events=int(delivered) if isinstance(delivered, int) else None,
         failed_events=int(failed) if isinstance(failed, int) else None,
