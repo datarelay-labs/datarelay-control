@@ -477,6 +477,13 @@ def build_fetch_window(
         if lower_raw is None:
             lower_raw = checkpoint.get("last_timestamp") or checkpoint.get("last_timestamp_ms")
     lower_dt = _parse_iso(lower_raw)
+    if lower_dt is None and lower_raw is not None:
+        # last_timestamp_ms is numeric epoch ms; never drop the stored window by treating it as unparseable.
+        from app.http.shared_request_builder import checkpoint_timestamp_ms
+
+        lower_ms_raw = checkpoint_timestamp_ms(lower_raw)
+        if lower_ms_raw is not None:
+            lower_dt = datetime.fromtimestamp(lower_ms_raw / 1000, timezone.utc)
     if lower_dt is None:
         lower_dt = current - timedelta(seconds=config.initial_lookback_seconds)
     if lower_dt > upper:
@@ -547,6 +554,11 @@ def prepare_fetch_checkpoint_context(
         fetch_ctx[_FETCH_WATERMARK_KEY] = fetch_watermark
         fetch_ctx.setdefault("last_timestamp", fetch_watermark)
         fetch_ctx.setdefault("last_timestamp_ms", fetch_watermark)
+    if "last_timestamp_ms" in fetch_ctx:
+        # Numeric epoch ms like the API Test; also converts ISO values stored before that rule (read-time only).
+        from app.http.shared_request_builder import normalize_checkpoint_timestamp_ms
+
+        fetch_ctx["last_timestamp_ms"] = normalize_checkpoint_timestamp_ms(fetch_ctx["last_timestamp_ms"])
     if connector_cursor is not None:
         fetch_ctx[_CONNECTOR_CURSOR_KEY] = connector_cursor
         fetch_ctx.setdefault("cursor", connector_cursor)
@@ -820,6 +832,11 @@ def build_delivery_checkpoint_update(
         for key, val in delivery_blob.items():
             if key != "last_success_event":
                 merged.setdefault(key, val)
+        if "last_timestamp_ms" in merged:
+            # A preserved pre-fix ISO value must not be re-written as ISO.
+            from app.http.shared_request_builder import normalize_checkpoint_timestamp_ms
+
+            merged["last_timestamp_ms"] = normalize_checkpoint_timestamp_ms(merged["last_timestamp_ms"])
 
     return merged
 

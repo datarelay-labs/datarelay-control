@@ -6,7 +6,7 @@ import json
 import re
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
 import httpx
@@ -114,11 +114,69 @@ def _resolve_checkpoint_value_from_event(*, last_event: dict[str, Any], stream_c
     return None
 
 
+# Epoch values at or above this are milliseconds; at or above _EPOCH_SECONDS_MIN they are seconds.
+# Same thresholds as the API Test (parseTimestampMs in wizard-incremental-request.ts).
+_CHECKPOINT_EPOCH_MS_MIN = 1_000_000_000_000
+_CHECKPOINT_EPOCH_SECONDS_MIN = 1_000_000_000
+_NUMERIC_TEXT = re.compile(r"^-?\d+(\.\d+)?$")
+
+
+def checkpoint_timestamp_ms(value: Any) -> int | None:
+    """Epoch milliseconds for a timestamp-like checkpoint value, or None when it is not a timestamp.
+
+    Mirrors the API Test checkpoint: numbers (or numeric strings) >= 1e12 are epoch ms, >= 1e9 epoch seconds,
+    smaller numbers are plain numeric cursors; other strings are parsed as ISO-8601 (naive = UTC). Sub-millisecond
+    precision is floored so the derived window never starts after the stored checkpoint.
+    """
+
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        number = float(value)
+    else:
+        text = str(value).strip()
+        if not text:
+            return None
+        if _NUMERIC_TEXT.match(text):
+            number = float(text)
+        else:
+            try:
+                parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+            except ValueError:
+                return None
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            delta = parsed - datetime(1970, 1, 1, tzinfo=timezone.utc)
+            return delta // timedelta(milliseconds=1)
+    if number != number or number in (float("inf"), float("-inf")):
+        return None
+    if number >= _CHECKPOINT_EPOCH_MS_MIN:
+        return int(number // 1)
+    if number >= _CHECKPOINT_EPOCH_SECONDS_MIN:
+        return int((number * 1000) // 1)
+    return None
+
+
+def normalize_checkpoint_timestamp_ms(value: Any) -> Any:
+    """``last_timestamp_ms`` representation: epoch ms (int) for timestamp-like values, otherwise unchanged.
+
+    Used on write (new checkpoints store numeric epoch ms) and on read (checkpoints written before this fix stored
+    the ISO raw sample in ``last_timestamp_ms``; they are converted in memory, never migrated).
+    """
+
+    ms = checkpoint_timestamp_ms(value)
+    return ms if ms is not None else value
+
+
 def build_runtime_checkpoint_template_context(
     checkpoint: dict[str, Any] | None,
     stream_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Flatten runtime checkpoint aliases consumed by ``{{checkpoint.*}}`` templates."""
+    """Flatten runtime checkpoint aliases consumed by ``{{checkpoint.*}}`` templates.
+
+    ``last_timestamp`` keeps the canonical raw sample value (e.g. ISO); ``last_timestamp_ms`` is numeric epoch
+    milliseconds when the value is timestamp-like, matching the API Test checkpoint payload.
+    """
 
     context = dict(checkpoint or {})
     last_event = context.get("last_success_event")
@@ -135,6 +193,9 @@ def build_runtime_checkpoint_template_context(
         context.setdefault("next_cursor", cursor_value)
         context.setdefault("last_timestamp", cursor_value)
         context.setdefault("last_timestamp_ms", cursor_value)
+
+    if "last_timestamp_ms" in context:
+        context["last_timestamp_ms"] = normalize_checkpoint_timestamp_ms(context["last_timestamp_ms"])
 
     return context
 
@@ -380,6 +441,8 @@ def build_shared_http_request(
 
     method = normalize_http_method(_lookup(stream_config, ["method"], _lookup(stream_config, ["http_method"], "GET")))
 
+    api_test_ctx: dict[str, Any] | None = None
+    repl: dict[str, str] | None = None
     if mode == "runtime":
         runtime_checkpoint_ctx = build_runtime_checkpoint_template_context(
             checkpoint_value,
@@ -390,7 +453,17 @@ def build_shared_http_request(
     else:
         runtime_checkpoint_ctx = None
         runtime_time_repl = {}
-        ep_rendered = ep
+        # Resolve checkpoint aliases (e.g. from ``last_success_event``) exactly like the runtime so the
+        # API test substitutes the same ``{{checkpoint.*}}`` representation the poller will send.
+        api_test_ctx = (
+            build_runtime_checkpoint_template_context(api_test_checkpoint, stream_config)
+            if api_test_checkpoint
+            else api_test_checkpoint
+        )
+        repl = api_test_checkpoint_replacements(api_test_ctx)
+        # Same renderer as the runtime path (time placeholders, then ``{{checkpoint.*}}``); ``repl`` carries the
+        # time_template_replacements values, so the path matches the params/body rendered below.
+        ep_rendered = render_runtime_request_templates(ep, api_test_ctx, repl)
 
     request_url = join_base_url_endpoint(base_url, ep_rendered)
 
@@ -410,16 +483,7 @@ def build_shared_http_request(
             if params_raw
             else {}
         )
-        repl = None
     else:
-        # Resolve checkpoint aliases (e.g. from ``last_success_event``) exactly like the runtime so the
-        # API test substitutes the same ``{{checkpoint.*}}`` representation the poller will send.
-        api_test_ctx = (
-            build_runtime_checkpoint_template_context(api_test_checkpoint, stream_config)
-            if api_test_checkpoint
-            else api_test_checkpoint
-        )
-        repl = api_test_checkpoint_replacements(api_test_ctx)
         connector_headers = {str(k): str(v) for k, v in apply_api_test_templates(dict(common_src), repl).items()} if common_src else {}
         params = dict(apply_api_test_templates(dict(params_raw), repl)) if params_raw else {}
 
@@ -542,8 +606,10 @@ __all__ = [
     "build_outbound_debug_detail",
     "build_shared_http_request",
     "build_runtime_checkpoint_template_context",
+    "checkpoint_timestamp_ms",
     "join_base_url_endpoint",
     "merge_shared_header_layers",
+    "normalize_checkpoint_timestamp_ms",
     "normalize_http_method",
     "render_runtime_checkpoint_templates",
     "render_runtime_request_templates",
