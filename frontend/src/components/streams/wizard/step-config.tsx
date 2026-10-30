@@ -1,6 +1,11 @@
 import { Plus, Trash2 } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { IncrementalFetchCompatibilityHints } from '../incremental-fetch-compatibility-hints'
+import {
+  applyIncrementalRequestTemplate,
+  incrementalPatternDisplayLabel,
+  incrementalTemplateDefaults,
+} from './wizard-incremental-request'
 import { cn } from '../../../lib/utils'
 import { wizardIncrementalFetchGuidanceComplete } from './wizard-step-gates'
 import type { StreamConfigHeaderRow, StreamConfigParamRow, WizardConfigState, WizardState } from './wizard-state'
@@ -42,6 +47,24 @@ export function StepConfig({ state, section = 'request', onChange }: StepConfigP
   const additionalHeaderRows = c.headers.filter((r) => r.key.trim())
   const sessionLogin = connector.authType === 'SESSION_LOGIN'
   const incrementalGuidanceComplete = wizardIncrementalFetchGuidanceComplete(state)
+
+  // The saved request is the base request plus the incremental template (same merge as persist),
+  // so the summary and compatibility hints must read the effective request, not the base alone.
+  const incrementalApplied = c.incrementalRequestPattern !== 'none' && c.incrementalRequestDraft.trim().length > 0
+  const effectiveRequest = useMemo(
+    () =>
+      applyIncrementalRequestTemplate(
+        {
+          method: c.httpMethod,
+          params: Object.fromEntries(c.params.filter((r) => r.key.trim()).map((r) => [r.key.trim(), r.value])),
+          body: c.requestBody,
+        },
+        c.incrementalRequestPattern,
+        c.incrementalRequestDraft,
+        incrementalTemplateDefaults(c.incrementalRequestPattern, c.checkpointSourcePath),
+      ),
+    [c.httpMethod, c.params, c.requestBody, c.incrementalRequestPattern, c.incrementalRequestDraft, c.checkpointSourcePath],
+  )
 
   const [selectedBodyTemplate, setSelectedBodyTemplate] = useState<BodyTemplateId>(DEFAULT_BODY_TEMPLATE_ID)
 
@@ -324,11 +347,25 @@ export function StepConfig({ state, section = 'request', onChange }: StepConfigP
             </code>
           ))}
         </div>
+        {incrementalApplied ? (
+          <div
+            className="mt-3 rounded-md border border-violet-200/80 bg-violet-50/60 px-2.5 py-2 text-[11px] dark:border-violet-500/30 dark:bg-violet-500/10"
+            data-testid="wizard-connect-incremental-request"
+          >
+            <p className="font-semibold text-slate-700 dark:text-slate-200">
+              Incremental request · {incrementalPatternDisplayLabel(c.incrementalRequestPattern)}
+            </p>
+            <p className="mt-0.5 text-[10px] text-slate-600 dark:text-gdc-muted">
+              Saved incremental template applied on top of the request above. Edit it in Record Selection.
+            </p>
+            <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded bg-slate-950 p-2 font-mono text-[11px] text-emerald-200">
+              {c.incrementalRequestDraft.trim()}
+            </pre>
+          </div>
+        ) : null}
         <IncrementalFetchCompatibilityHints
-          requestBodyText={c.requestBody}
-          queryParams={Object.fromEntries(
-            c.params.filter((r) => r.key.trim()).map((r) => [r.key.trim(), r.value]),
-          )}
+          requestBodyText={effectiveRequest.body ?? ''}
+          queryParams={effectiveRequest.params}
           guidanceComplete={incrementalGuidanceComplete}
           className="mt-1.5"
         />
@@ -342,10 +379,10 @@ export function StepConfig({ state, section = 'request', onChange }: StepConfigP
           <li>Inherited connector headers: {inheritedRows.length}</li>
           <li>Additional stream headers: {additionalHeaderRows.length}</li>
           <li>Effective headers: {Object.keys(mergedHeaders).length}</li>
-          <li>Body: {c.requestBody.trim() ? 'configured' : 'none'}</li>
+          <li>Body: {effectiveRequest.body?.trim() ? 'configured' : 'none'}</li>
           <li>Auth: {connector.authType}</li>
           <li>Session login: {sessionLogin ? 'yes' : 'no'}</li>
-          <li>Query parameters: {c.params.filter((r) => r.key.trim()).length}</li>
+          <li>Query parameters: {Object.keys(effectiveRequest.params).length}</li>
         </ul>
       </div>
         </>

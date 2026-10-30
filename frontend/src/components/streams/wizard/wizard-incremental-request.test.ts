@@ -13,6 +13,7 @@ import {
   facetNameFromCheckpointPath,
   incrementalPatternDisplayLabel,
   incrementalPreviewKind,
+  incrementalTemplateDefaults,
   incrementalPreviewKindLabel,
   inferIncrementalRequestPattern,
   incrementalRequestTestWarning,
@@ -660,6 +661,54 @@ describe('countRecordsNewerThanTestCheckpoint', () => {
 })
 
 describe('applyIncrementalRequestTemplate', () => {
+  // C5: the old merge let the generated template limit=100 overwrite the user's limit=20.
+  it('keeps a user-entered query param over the untouched template default', () => {
+    const defaults = incrementalTemplateDefaults('query_params', '$.creationTime')
+    expect(defaults?.params?.limit).toBe('100')
+    const draft = buildIncrementalRequestPlan('query_params', '$.creationTime')?.preview ?? ''
+    const merged = applyIncrementalRequestTemplate(
+      { method: 'GET', params: { limit: '20' } },
+      'query_params',
+      draft,
+      defaults,
+    )
+    expect(merged.params.limit).toBe('20')
+    expect(merged.params.creationTime_gt).toBe('{{checkpoint.last_timestamp}}')
+  })
+
+  it('applies the template default when the user has not set the param', () => {
+    const merged = applyIncrementalRequestTemplate(
+      { method: 'GET', params: {} },
+      'query_params',
+      buildIncrementalRequestPlan('query_params', '$.creationTime')?.preview ?? '',
+      incrementalTemplateDefaults('query_params', '$.creationTime'),
+    )
+    expect(merged.params.limit).toBe('100')
+  })
+
+  it('lets a value the user edited in the draft win over the request', () => {
+    const merged = applyIncrementalRequestTemplate(
+      { method: 'GET', params: { limit: '20' } },
+      'query_params',
+      'creationTime_gt={{checkpoint.last_timestamp}}\nlimit=50',
+      incrementalTemplateDefaults('query_params', '$.creationTime'),
+    )
+    expect(merged.params.limit).toBe('50')
+  })
+
+  it('keeps a user-entered JSON body limit over the untouched template default', () => {
+    const defaults = incrementalTemplateDefaults('json_body', '$.creationTime')
+    const merged = applyIncrementalRequestTemplate(
+      { method: 'POST', params: {}, body: '{"limit":20}' },
+      'json_body',
+      defaults?.body ?? '',
+      defaults,
+    )
+    const body = JSON.parse(merged.body ?? '{}')
+    expect(body.limit).toBe(20)
+    expect(body.from).toBe('{{checkpoint.last_timestamp}}')
+  })
+
   it('keeps template placeholders in saved stream body', () => {
     const draft = JSON.stringify({
       from: '{{checkpoint.last_timestamp}}',

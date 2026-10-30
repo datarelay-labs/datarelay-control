@@ -30,6 +30,7 @@ import {
 } from '../../../utils/messagePrefixDefaults'
 import {
   applyIncrementalRequestTemplate,
+  incrementalTemplateDefaults,
   type IncrementalRequestPattern,
 } from './wizard-incremental-request'
 import {
@@ -1808,6 +1809,7 @@ export function buildPersistedStreamConfigPayload(state: WizardState): Record<st
     },
     state.stream.incrementalRequestPattern,
     state.stream.incrementalRequestDraft,
+    incrementalTemplateDefaults(state.stream.incrementalRequestPattern, state.stream.checkpointSourcePath),
   )
   const runtimeUi =
     base.runtime_ui && typeof base.runtime_ui === 'object' && !Array.isArray(base.runtime_ui)

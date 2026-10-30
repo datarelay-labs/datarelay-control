@@ -31,6 +31,44 @@ describe('StepConfig', () => {
     vi.restoreAllMocks()
   })
 
+  // C7: on the old code the Edit page Request tab analyzed only the base request (limit=20, no body)
+  // of a stream whose saved request is incremental, showed "Body: none" and raised a false
+  // CHECKPOINT_VARIABLE_MISSING / FULL_FETCH_RISK warning.
+  describe('saved incremental request (C7)', () => {
+    function incrementalState(pattern: WizardConfigState['incrementalRequestPattern'], draft: string): WizardState {
+      const state = buildInitialState()
+      return {
+        ...state,
+        stream: {
+          ...state.stream,
+          httpMethod: 'POST',
+          params: [{ id: 'p1', key: 'limit', value: '20' }],
+          requestBody: '',
+          checkpointSourcePath: '$.creationTime',
+          incrementalRequestPattern: pattern,
+          incrementalRequestDraft: draft,
+        },
+      }
+    }
+
+    it('shows the saved incremental request and does not warn about a missing checkpoint variable', () => {
+      const draft = '{\n  "from": "{{checkpoint.last_timestamp}}",\n  "to": "{{now}}"\n}'
+      render(<StepConfig state={incrementalState('json_body', draft)} onChange={vi.fn()} />)
+
+      expect(screen.getByTestId('wizard-connect-incremental-request')).toHaveTextContent('{{checkpoint.last_timestamp}}')
+      expect(screen.getByText('Body: configured')).toBeInTheDocument()
+      expect(screen.queryByText('CHECKPOINT_VARIABLE_MISSING')).not.toBeInTheDocument()
+      expect(screen.queryByText('FULL_FETCH_RISK')).not.toBeInTheDocument()
+    })
+
+    it('still warns when the saved request really lacks a checkpoint variable', () => {
+      render(<StepConfig state={incrementalState('custom', '{"from":"2024-01-01T00:00:00Z"}')} onChange={vi.fn()} />)
+
+      expect(screen.getByText('CHECKPOINT_VARIABLE_MISSING')).toBeInTheDocument()
+      expect(screen.getByText('FULL_FETCH_RISK')).toBeInTheDocument()
+    })
+  })
+
   it('does not ask event array/checkpoint before API test', () => {
     const state = buildInitialState()
     render(<StepConfig state={state} onChange={vi.fn()} />)

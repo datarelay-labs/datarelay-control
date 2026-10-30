@@ -375,15 +375,51 @@ export function looksLikeQueryParams(draft: string): boolean {
   return true
 }
 
+function parseJsonObject(text: string | undefined): Record<string, unknown> | null {
+  if (!text?.trim()) return null
+  try {
+    const parsed: unknown = JSON.parse(text)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Keep top-level body values the user already set when the draft still carries the
+ * untouched generated default for that key (e.g. `limit`). Returns the draft unchanged otherwise.
+ */
+function preferUserBodyValues(draft: string, baseBody: string | undefined, defaultBody: string | undefined): string {
+  const draftObj = parseJsonObject(draft)
+  const baseObj = parseJsonObject(baseBody)
+  const defaultObj = parseJsonObject(defaultBody)
+  if (!draftObj || !baseObj || !defaultObj) return draft
+  let changed = false
+  const next = { ...draftObj }
+  for (const [key, value] of Object.entries(draftObj)) {
+    if (!(key in baseObj) || !(key in defaultObj)) continue
+    if (JSON.stringify(value) !== JSON.stringify(defaultObj[key])) continue
+    if (JSON.stringify(baseObj[key]) === JSON.stringify(value)) continue
+    next[key] = baseObj[key]
+    changed = true
+  }
+  return changed ? JSON.stringify(next, null, 2) : draft
+}
+
 /**
  * Apply an incremental-request template to an in-progress HTTP request payload.
  * Pure helper used at create-stream payload time so the user does not have to bounce
  * back to the HTTP Request step. `none`/empty drafts are no-ops.
+ *
+ * `templateDefaults` is the generated template for the pattern. A draft value that still equals
+ * the generated default does not override a value the user already set in the request (for
+ * example `limit=20`); values the user edited in the draft always win.
  */
 export function applyIncrementalRequestTemplate(
   base: { method: string; params: Record<string, string>; body?: string },
   pattern: IncrementalRequestPattern,
   draft: string,
+  templateDefaults?: { params?: Readonly<Record<string, string>>; body?: string },
 ): { method: string; params: Record<string, string>; body?: string } {
   const trimmed = (draft ?? '').trim()
   if (pattern === 'none' || !trimmed) return base
@@ -391,15 +427,32 @@ export function applyIncrementalRequestTemplate(
   if (treatAsQuery) {
     const merged: Record<string, string> = { ...base.params }
     for (const p of parseQueryParamsDraft(trimmed)) {
-      if (p.key) merged[p.key] = p.value
+      if (!p.key) continue
+      const userValue = base.params[p.key]
+      const isUntouchedDefault = templateDefaults?.params?.[p.key] === p.value
+      if (isUntouchedDefault && userValue != null && String(userValue).trim() !== '') continue
+      merged[p.key] = p.value
     }
     return { method: 'GET', params: merged, body: base.body }
   }
   return {
     method: base.method === 'GET' ? 'POST' : base.method,
     params: { ...base.params },
-    body: trimmed,
+    body: preferUserBodyValues(trimmed, base.body, templateDefaults?.body),
   }
+}
+
+/** Generated template defaults for `applyIncrementalRequestTemplate`. */
+export function incrementalTemplateDefaults(
+  pattern: IncrementalRequestPattern,
+  checkpointSourcePath: string,
+): { params?: Record<string, string>; body?: string } | undefined {
+  const plan = buildIncrementalRequestPlan(pattern, checkpointSourcePath)
+  if (!plan) return undefined
+  if (plan.pattern === 'query_params') {
+    return { params: Object.fromEntries(plan.params.map((p) => [p.key, p.value])) }
+  }
+  return { body: plan.body }
 }
 
 export type IncrementalRequestTestCheckpointResult =
