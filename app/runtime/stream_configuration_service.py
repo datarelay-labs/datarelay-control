@@ -650,11 +650,29 @@ def _sample_data_from_config(cfg: dict[str, Any], mapping: Mapping | None) -> St
             sample_blob.get("record_path")
             or (mapping.event_array_path if mapping is not None else None)
         ),
-        checkpoint_test_result=incremental.get("checkpoint_test_result") if incremental else None,
+        # Rows stored before the reduction may still hold raw events: reduce on read too.
+        checkpoint_test_result=(
+            _reduced_checkpoint_test_result(incremental.get("checkpoint_test_result")) if incremental else None
+        ),
         incremental_test_result=incremental.get("result") if incremental else None,
         saved_at=sample_blob.get("saved_at"),
         message="Sample data loaded successfully" if (events or union_schema or last_test) else "No sample data saved yet",
     )
+
+
+def _reduced_checkpoint_test_result(value: Any) -> Any:
+    """Incremental test copy kept in stream config: checkpoints as read views (no raw events).
+
+    The real stream checkpoint is never read from or written through this copy.
+    """
+
+    if not isinstance(value, dict):
+        return value
+    out = copy.deepcopy(value)
+    for key in ("input_checkpoint", "next_checkpoint_preview"):
+        if isinstance(out.get(key), dict):
+            out[key] = checkpoint_read_view(out[key])
+    return out
 
 
 def get_stream_sample_data(db: Session, stream_id: int) -> StreamSampleDataResponse:
@@ -691,7 +709,7 @@ def save_stream_sample_data(db: Session, stream_id: int, payload: StreamSampleDa
         if payload.incremental_test_result is not None:
             inc_blob["result"] = copy.deepcopy(payload.incremental_test_result)
         if payload.checkpoint_test_result is not None:
-            inc_blob["checkpoint_test_result"] = copy.deepcopy(payload.checkpoint_test_result)
+            inc_blob["checkpoint_test_result"] = _reduced_checkpoint_test_result(payload.checkpoint_test_result)
         inc_blob["tested_at"] = _utcnow().isoformat()
         cfg[_INCREMENTAL_TEST_KEY] = inc_blob
 
@@ -997,11 +1015,13 @@ def run_stream_incremental_test(
             else None
         ),
     }
-    inc_store["checkpoint_test_result"] = {
-        "input_checkpoint": checkpoint_override,
-        "next_checkpoint_preview": next_checkpoint_preview,
-        "checkpoint_unchanged": unchanged,
-    }
+    inc_store["checkpoint_test_result"] = _reduced_checkpoint_test_result(
+        {
+            "input_checkpoint": checkpoint_override,
+            "next_checkpoint_preview": next_checkpoint_preview,
+            "checkpoint_unchanged": unchanged,
+        }
+    )
     inc_store["tested_at"] = _utcnow().isoformat()
     cfg[_INCREMENTAL_TEST_KEY] = inc_store
     stream.config_json = cfg

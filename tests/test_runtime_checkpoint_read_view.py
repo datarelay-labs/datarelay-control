@@ -176,6 +176,48 @@ def test_checkpoint_read_view_preview_keeps_only_scalar_ids() -> None:
     assert view == {"last_success_event": {"event_id": "e-1", "timestamp": 17}}
 
 
+_S3_EVENT: dict[str, Any] = {
+    "s3_key": "logs/2026/10/30/part-0001.json.gz",
+    "gdc_remote_path": "/exports/2026-10-30/part-0001.json.gz",
+    "remote_path": {"path": "not-a-scalar"},
+    "user": {"email": _PII_EMAIL, "name": _PII_NAME},
+    "message": f"login by {_PII_EMAIL}",
+}
+_S3_PREVIEW = {
+    "s3_key": "logs/2026/10/30/part-0001.json.gz",
+    "gdc_remote_path": "/exports/2026-10-30/part-0001.json.gz",
+}
+
+
+def test_checkpoint_read_view_preview_keeps_object_locators() -> None:
+    # Old code: the event had no id/timestamp keys, so the preview was dropped entirely and
+    # the console lost the S3 key / remote path display.
+    from app.runtime.copy_utils import checkpoint_read_view
+
+    view = checkpoint_read_view(
+        {
+            "last_success_event": copy.deepcopy(_S3_EVENT),
+            "delivery_checkpoint": {"last_success_event": {**_S3_EVENT, "id": "e-9"}},
+        }
+    )
+    _assert_reduced(view)
+    assert view["last_success_event"] == _S3_PREVIEW
+    assert view["delivery_checkpoint"]["last_success_event"] == {**_S3_PREVIEW, "id": "e-9"}
+
+
+def test_slim_checkpoint_for_log_preview_keeps_object_locators() -> None:
+    # Old code: the log preview held only "id" (no s3_key / gdc_remote_path).
+    from app.runtime.copy_utils import slim_checkpoint_for_log
+
+    slim = slim_checkpoint_for_log(
+        {"last_processed_key": "logs/2026/10/30/part-0001.json.gz", "last_success_event": {**_S3_EVENT, "id": "e-9"}}
+    )
+    assert slim is not None
+    _assert_reduced(slim)
+    assert slim["last_success_event"] == {**_S3_PREVIEW, "id": "e-9"}
+    assert slim["last_processed_key"] == "logs/2026/10/30/part-0001.json.gz"
+
+
 def test_checkpoint_read_view_non_dict_is_empty() -> None:
     from app.runtime.copy_utils import checkpoint_read_view
 
@@ -486,3 +528,127 @@ def test_incremental_test_without_events_returns_reduced_stored_checkpoint(
     assert body["delivery_checkpoint"] == {"last_success_event": _PREVIEW, "cursor": "2026-10-30T01:02:03Z"}
 
     assert _stored_checkpoint_value(db_session, sid) == _STORED_CHECKPOINT
+
+
+# --- Persisted incremental test copy (stream config) -----------------------------------
+
+
+def _fake_api_test_returning(events: list[dict[str, Any]]) -> Any:
+    from app.runtime.schemas import HttpApiTestAnalysis, HttpApiTestResponse, HttpApiTestResponseMeta
+
+    def _fake(*_args: Any, **_kwargs: Any) -> HttpApiTestResponse:
+        return HttpApiTestResponse(
+            ok=True,
+            request={"method": "GET", "url": "http://example.test", "headers_masked": {}},
+            response=HttpApiTestResponseMeta(
+                status_code=200,
+                latency_ms=1,
+                headers={},
+                raw_body=json.dumps(events),
+                parsed_json=copy.deepcopy(events),
+            ),
+            analysis=HttpApiTestAnalysis(
+                response_summary={"root_type": "array", "approx_size_bytes": 2, "top_level_keys": []},
+                sample_event=None,
+            ),
+        )
+
+    return _fake
+
+
+def _stored_checkpoint_test_result(db: Session, stream_id: int) -> dict[str, Any]:
+    db.expire_all()
+    stream = db.get(Stream, stream_id)
+    assert stream is not None
+    return dict((stream.config_json or {})["incremental_test"]["checkpoint_test_result"])
+
+
+def test_incremental_test_stores_reduced_checkpoint_test_result_without_events(
+    client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Old code: input_checkpoint and next_checkpoint_preview were the stored checkpoint with the
+    # raw event, persisted in stream config and returned by GET sample-data.
+    monkeypatch.setattr("app.runtime.stream_configuration_service.run_http_api_test", _fake_api_test_returning([]))
+    sid = _seed_stream_with_raw_checkpoint(db_session)["stream_id"]
+
+    res = client.post(f"/api/v1/runtime/streams/{sid}/incremental-test", json={})
+    assert res.status_code == 200, res.text
+
+    stored = _stored_checkpoint_test_result(db_session, sid)
+    _assert_reduced(stored)
+    _assert_preview_and_metadata(stored["input_checkpoint"])
+    _assert_preview_and_metadata(stored["next_checkpoint_preview"])
+    assert "checkpoint_unchanged" in stored
+
+    sample = client.get(f"/api/v1/runtime/streams/{sid}/sample-data")
+    assert sample.status_code == 200, sample.text
+    _assert_reduced(sample.json()["checkpoint_test_result"])
+
+    # The real stream checkpoint (what the runner reads) is unchanged.
+    assert _stored_checkpoint_value(db_session, sid) == _STORED_CHECKPOINT
+
+
+def test_incremental_test_stores_reduced_next_checkpoint_preview_with_events(
+    client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Old code: next_checkpoint_preview stored the full last fetched event (email/name/message).
+    monkeypatch.setattr(
+        "app.runtime.stream_configuration_service.run_http_api_test",
+        _fake_api_test_returning([copy.deepcopy(_RAW_EVENT)]),
+    )
+    sid = _seed_stream_with_raw_checkpoint(db_session)["stream_id"]
+
+    res = client.post(f"/api/v1/runtime/streams/{sid}/incremental-test", json={})
+    assert res.status_code == 200, res.text
+    assert res.json()["next_checkpoint_preview"] == {"last_success_event": _PREVIEW}
+
+    stored = _stored_checkpoint_test_result(db_session, sid)
+    _assert_reduced(stored)
+    assert stored["next_checkpoint_preview"] == {"last_success_event": _PREVIEW}
+    assert _stored_checkpoint_value(db_session, sid) == _STORED_CHECKPOINT
+
+
+def test_sample_data_save_and_get_reduce_checkpoint_test_result(client: TestClient, db_session: Session) -> None:
+    # Old code: a client-submitted checkpoint_test_result was stored and echoed verbatim.
+    sid = _seed_stream_with_raw_checkpoint(db_session)["stream_id"]
+    submitted = {
+        "input_checkpoint": copy.deepcopy(_STORED_CHECKPOINT),
+        "next_checkpoint_preview": {"last_success_event": copy.deepcopy(_RAW_EVENT)},
+        "checkpoint_unchanged": True,
+    }
+
+    res = client.put(f"/api/v1/runtime/streams/{sid}/sample-data", json={"checkpoint_test_result": submitted})
+    assert res.status_code == 200, res.text
+    returned = res.json()["checkpoint_test_result"]
+    _assert_reduced(returned)
+    _assert_preview_and_metadata(returned["input_checkpoint"])
+    assert returned["next_checkpoint_preview"] == {"last_success_event": _PREVIEW}
+    assert returned["checkpoint_unchanged"] is True
+
+    stored = _stored_checkpoint_test_result(db_session, sid)
+    _assert_reduced(stored)
+    assert stored == returned
+    assert _stored_checkpoint_value(db_session, sid) == _STORED_CHECKPOINT
+
+
+def test_sample_data_get_reduces_legacy_stored_checkpoint_test_result(
+    client: TestClient, db_session: Session
+) -> None:
+    # Old code: rows written before the reduction returned the raw events on GET.
+    legacy = {
+        "incremental_test": {
+            "checkpoint_test_result": {
+                "input_checkpoint": copy.deepcopy(_STORED_CHECKPOINT),
+                "next_checkpoint_preview": {"last_success_event": copy.deepcopy(_RAW_EVENT)},
+                "checkpoint_unchanged": True,
+            }
+        }
+    }
+    sid = _seed_stream_with_raw_checkpoint(db_session, stream_config=legacy)["stream_id"]
+
+    res = client.get(f"/api/v1/runtime/streams/{sid}/sample-data")
+    assert res.status_code == 200, res.text
+    returned = res.json()["checkpoint_test_result"]
+    _assert_reduced(returned)
+    _assert_preview_and_metadata(returned["input_checkpoint"])
+    assert returned["next_checkpoint_preview"] == {"last_success_event": _PREVIEW}

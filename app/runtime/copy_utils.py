@@ -27,6 +27,13 @@ _CHECKPOINT_LOG_META_KEYS = frozenset(
     }
 )
 _EVENT_ID_PREVIEW_KEYS = ("event_id", "id", "@timestamp", "timestamp")
+# S3 / remote-file object locators (object paths, not payload data); the console uses them
+# to display the checkpoint position. Kept only as scalar strings.
+_EVENT_LOCATOR_PREVIEW_KEYS = ("s3_key", "gdc_remote_path", "remote_path")
+
+
+def _locator_preview(event: dict[str, Any]) -> dict[str, Any]:
+    return {key: event[key] for key in _EVENT_LOCATOR_PREVIEW_KEYS if isinstance(event.get(key), str)}
 
 
 def copy_json_value(value: Any) -> Any:
@@ -66,6 +73,7 @@ def slim_checkpoint_for_log(checkpoint: dict[str, Any] | None) -> dict[str, Any]
     last_success = checkpoint.get("last_success_event")
     if isinstance(last_success, dict):
         preview = {key: last_success[key] for key in _EVENT_ID_PREVIEW_KEYS if key in last_success}
+        preview.update(_locator_preview(last_success))
         if preview:
             out["last_success_event"] = preview
 
@@ -85,6 +93,7 @@ def _event_id_preview(event: Any) -> dict[str, Any] | None:
         for key in _EVENT_ID_PREVIEW_KEYS
         if key in event and (event[key] is None or isinstance(event[key], (str, int, float, bool)))
     }
+    preview.update(_locator_preview(event))
     return preview or None
 
 
