@@ -53,7 +53,10 @@ function buildStatusRows(
         },
   )
 
-  const errorRateIssue = issues.find((i) => i.key === 'low-success' || i.label.toLowerCase().includes('error'))
+  // Never reuse the issue already shown in the destination row (e.g. a lone low-success issue).
+  const errorRateIssue = issues.find(
+    (i) => i !== destIssue && (i.key === 'low-success' || i.label.toLowerCase().includes('error')),
+  )
   rows.push(
     errorRateIssue
       ? issueToStatusRow(errorRateIssue)
