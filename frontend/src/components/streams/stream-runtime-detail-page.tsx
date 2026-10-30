@@ -107,7 +107,7 @@ import { RuntimeChartCard } from '../shell/runtime-chart-card'
 import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
 import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
 import type { RecentLogLine, RunHistoryRow } from './stream-runtime-detail-model'
-import { emptyStreamRuntimeDetail } from './stream-runtime-detail-model'
+import { emptyStreamRuntimeDetail, runHistoryRowKeys } from './stream-runtime-detail-model'
 import { useMountAbortController } from '../../hooks/use-mount-abort-signal'
 import { isRequestAborted } from '../../lib/request-abort'
 import type {
@@ -825,6 +825,7 @@ export function StreamRuntimeDetailPage() {
     if (fromMetrics.length > 0) return fromMetrics
     return timelineRunHistory ?? []
   }, [runtimeMetrics, timelineRunHistory])
+  const runHistoryKeys = useMemo(() => runHistoryRowKeys(runHistoryRows), [runHistoryRows])
 
   const hasRuntimeObsApi = runtimeStats != null || runtimeHealth != null || runtimeMetrics != null
 
@@ -1756,7 +1757,7 @@ export function StreamRuntimeDetailPage() {
                     </td>
                   </tr>
                 ) : null}
-                {runHistoryRows.map((row) => {
+                {runHistoryRows.map((row, index) => {
                   const countsVerified = row.countsVerified !== false
                   const failed = countsVerified && row.failed > 0
                   const partial = row.status === 'Partial'
@@ -1770,7 +1771,7 @@ export function StreamRuntimeDetailPage() {
                     : null
                   return (
                     <tr
-                      key={row.runId}
+                      key={runHistoryKeys[index]}
                       className={cn(
                         opTr,
                         row.status === 'Failed' && 'bg-red-500/[0.04] dark:bg-red-500/[0.06]',

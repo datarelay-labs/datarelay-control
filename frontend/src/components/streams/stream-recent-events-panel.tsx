@@ -6,7 +6,7 @@ import { formatTimestampWithResolvedTimezone, parseApiTimestampMs } from '../../
 import { logsExplorerPath, runtimeAnalyticsPath } from '../../config/nav-paths'
 import { toOperatorEventLabel } from '../../lib/stream-governance-snapshot'
 import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
-import type { RecentLogLine, RunHistoryRow } from './stream-runtime-detail-model'
+import { runHistoryRowKeys, type RecentLogLine, type RunHistoryRow } from './stream-runtime-detail-model'
 
 export type RecentEventsTab = 'events' | 'errors' | 'delivery'
 
@@ -302,6 +302,7 @@ export function StreamRecentEventsPanel({
   const deliveryRuns = useMemo(() =>
     activeRouteId == null ? runHistory.filter((r) => r.delivered > 0 || r.failed > 0) : [],
   [runHistory, activeRouteId])
+  const deliveryRunKeys = useMemo(() => runHistoryRowKeys(deliveryRuns), [deliveryRuns])
   const validStreamScope = typeof backendStreamId === 'number' &&
     Number.isSafeInteger(backendStreamId) && backendStreamId > 0
   const scopedLogsHref = !validStreamScope
@@ -509,8 +510,8 @@ export function StreamRecentEventsPanel({
                       </tr>
                     </thead>
                     <tbody>
-                      {deliveryRuns.slice(0, 5).map((row) => (
-                        <tr key={row.runId} className={opTr}>
+                      {deliveryRuns.slice(0, 5).map((row, index) => (
+                        <tr key={deliveryRunKeys[index]} className={opTr}>
                           <td className={cn(opTd, 'font-mono text-[11px]')}>
                             {row.idBasis === 'completion-record' ? `Completion record ${row.runId}` : row.runId}
                           </td>
