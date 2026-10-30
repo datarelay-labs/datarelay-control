@@ -149,8 +149,6 @@ def test_runtime_checkpoint_and_unknown_placeholders_keep_existing_behavior() ->
             "after": "{{checkpoint.cursor}}",
             "missing_ts": "{{checkpoint.last_timestamp}}",
             "missing_custom": "{{checkpoint.custom_field}}",
-            "start_ts": "{{start_ts}}",
-            "end_ts": "{{end_ts}}",
             "unknown": "{{something.else}}",
         },
     }
@@ -164,10 +162,120 @@ def test_runtime_checkpoint_and_unknown_placeholders_keep_existing_behavior() ->
         "after": "tok-1",
         "missing_ts": "0",
         "missing_custom": "",
-        "start_ts": "{{start_ts}}",
-        "end_ts": "{{end_ts}}",
         "unknown": "{{something.else}}",
     }
+
+
+# --- {{start_ts}} / {{end_ts}} (advertised by the wizard variable chips) ---
+# Old code left both placeholders literal in runtime and API test requests, so every assertion below on a
+# rendered start_ts/end_ts value fails on the old code (the param equals "{{start_ts}}" / "{{end_ts}}").
+
+_FROZEN_START_FALLBACK_ISO = "2026-10-28T12:39:44Z"  # _FROZEN_ISO minus 24 hours
+
+_WINDOW_STREAM = {
+    "endpoint": "/events",
+    "method": "POST",
+    "headers": {"X-Window-End": "{{end_ts}}"},
+    "params": {"from": "{{start_ts}}", "to": "{{end_ts}}"},
+    "body": '{"range":{"gt":"{{start_ts}}","lte":"{{end_ts}}"}}',
+}
+
+
+def _window_plans(checkpoint: dict | None):
+    runtime = build_shared_http_request(
+        source_config=_SRC, stream_config=_WINDOW_STREAM, mode="runtime", checkpoint_value=checkpoint
+    )
+    api_test = build_shared_http_request(
+        source_config=_SRC, stream_config=_WINDOW_STREAM, mode="api_test", api_test_checkpoint=checkpoint
+    )
+    return runtime, api_test
+
+
+def _body(plan) -> dict:
+    body = plan.normalized_json_body
+    return json.loads(body) if isinstance(body, str) else body
+
+
+def test_start_end_ts_render_from_iso_checkpoint_identically_in_runtime_and_api_test() -> None:
+    runtime, api_test = _window_plans({"last_timestamp": "2026-10-29T12:01:00.123Z"})
+    expected_params = {"from": "2026-10-29T12:01:00.123Z", "to": _FROZEN_ISO}
+    assert runtime.params == expected_params
+    assert api_test.params == expected_params
+    assert runtime.stream_headers == api_test.stream_headers == {"X-Window-End": _FROZEN_ISO}
+    expected_body = {"range": {"gt": "2026-10-29T12:01:00.123Z", "lte": _FROZEN_ISO}}
+    assert _body(runtime) == expected_body
+    assert _body(api_test) == expected_body
+
+
+def test_end_ts_equals_now() -> None:
+    stm = {"endpoint": "/events", "method": "GET", "params": {"now": "{{now}}", "end": "{{end_ts}}"}}
+    plan = build_shared_http_request(source_config=_SRC, stream_config=stm, mode="runtime", checkpoint_value={})
+    assert plan.params["end"] == plan.params["now"] == _FROZEN_ISO
+
+
+def test_start_ts_without_checkpoint_falls_back_to_24h_window_in_both_paths() -> None:
+    for checkpoint in (None, {}, {"cursor": "tok-1"}, {"last_timestamp": "not-a-time"}, {"last_timestamp": "0"}):
+        runtime, api_test = _window_plans(checkpoint)
+        assert runtime.params == {"from": _FROZEN_START_FALLBACK_ISO, "to": _FROZEN_ISO}, checkpoint
+        assert api_test.params == runtime.params, checkpoint
+        assert "{{" not in json.dumps(_body(runtime)) and "{{" not in json.dumps(_body(api_test))
+
+
+def test_start_ts_converts_epoch_checkpoint_to_iso() -> None:
+    for checkpoint in (
+        {"last_timestamp_ms": "1793275260000"},
+        {"last_timestamp": 1793275260000},
+        {"last_timestamp": "1793275260"},
+    ):
+        runtime, api_test = _window_plans(checkpoint)
+        assert runtime.params["from"] == "2026-10-29T12:01:00Z", checkpoint
+        assert api_test.params == runtime.params, checkpoint
+
+
+def test_start_ts_resolves_last_success_event_checkpoint_like_runtime() -> None:
+    stm = {
+        **_WINDOW_STREAM,
+        "event_array_path": "$.items",
+        "checkpoint": {"mode": "Timestamp", "cursor_path": "$.items[*].timestamp"},
+    }
+    checkpoint = {"last_success_event": {"id": "e1", "timestamp": "2026-10-29T12:01:00Z"}}
+    runtime = build_shared_http_request(source_config=_SRC, stream_config=stm, mode="runtime", checkpoint_value=checkpoint)
+    api_test = build_shared_http_request(source_config=_SRC, stream_config=stm, mode="api_test", api_test_checkpoint=checkpoint)
+    assert runtime.params == {"from": "2026-10-29T12:01:00Z", "to": _FROZEN_ISO}
+    assert api_test.params == runtime.params
+
+
+def test_start_ts_does_not_re_render_placeholders_from_checkpoint_values() -> None:
+    runtime, api_test = _window_plans({"last_timestamp": "{{now}}"})
+    assert runtime.params["from"] == _FROZEN_START_FALLBACK_ISO
+    assert api_test.params["from"] == _FROZEN_START_FALLBACK_ISO
+
+
+def test_http_poller_sends_rendered_start_end_ts(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: list[httpx.Request] = []
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        return httpx.Response(200, json=[])
+
+    transport = httpx.MockTransport(_handler)
+    real_client = httpx.Client
+
+    def _client_factory(*args, **kwargs):
+        kwargs.pop("proxy", None)
+        kwargs.pop("proxies", None)
+        kwargs["transport"] = transport
+        return real_client(*args, **kwargs)
+
+    monkeypatch.setattr(httpx, "Client", _client_factory)
+
+    stm = {"endpoint": "/events", "method": "GET", "params": {"from": "{{start_ts}}", "to": "{{end_ts}}"}}
+    HttpPoller().fetch({"base_url": "https://api.example"}, stm, {"last_timestamp": "2026-10-29T12:01:00Z"})
+    assert captured, "poller did not send a request"
+    query = parse_qs(urlsplit(str(captured[-1].url)).query)
+    assert query["from"] == ["2026-10-29T12:01:00Z"]
+    assert query["to"] == [_FROZEN_ISO]
+    assert "{{" not in str(captured[-1].url) and "%7B%7B" not in str(captured[-1].url)
 
 
 def test_runtime_does_not_re_render_placeholders_inside_checkpoint_values() -> None:

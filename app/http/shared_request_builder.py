@@ -174,19 +174,79 @@ def _utc_now_seconds() -> float:
     return time.time()
 
 
-def time_template_replacements() -> dict[str, str]:
-    """Time placeholders shared by runtime requests and the onboarding API test."""
+_DEFAULT_TIME_WINDOW_MS = 86400000
+# Epoch values above this are milliseconds (1973-03-03 in ms); below it they are seconds.
+_EPOCH_MS_THRESHOLD = 100_000_000_000
+
+
+def _iso_z_from_seconds(seconds: float) -> str:
+    return datetime.fromtimestamp(int(seconds), timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _canonical_start_ts(raw: Any) -> str | None:
+    """Return the checkpoint timestamp as an ISO UTC string, or None when it is not a usable timestamp.
+
+    ISO strings are returned exactly as stored (the same value ``{{checkpoint.last_timestamp}}`` renders,
+    keeping any sub-second precision). Epoch seconds/milliseconds are converted to ``YYYY-MM-DDTHH:MM:SSZ``,
+    floored to the second so the window never starts after the checkpoint.
+    """
+
+    if raw is None or isinstance(raw, bool):
+        return None
+    if isinstance(raw, int | float):
+        number = float(raw)
+    else:
+        text = str(raw).strip()
+        if not text:
+            return None
+        try:
+            number = float(text)
+        except ValueError:
+            try:
+                datetime.fromisoformat(text.replace("Z", "+00:00"))
+            except ValueError:
+                return None
+            return text
+    if number <= 0:
+        return None
+    seconds = number / 1000 if number >= _EPOCH_MS_THRESHOLD else number
+    try:
+        return _iso_z_from_seconds(seconds)
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
+def time_template_replacements(checkpoint: dict[str, Any] | None = None) -> dict[str, str]:
+    """Time placeholders shared by runtime requests and the onboarding API test.
+
+    ``checkpoint`` is the resolved checkpoint template context (see
+    :func:`build_runtime_checkpoint_template_context` / ``prepare_fetch_checkpoint_context``); both the runtime and
+    the API test pass the same context so the incremental window renders identically.
+
+    * ``{{end_ts}}`` is the run time, identical to ``{{now}}`` (same clock, ISO UTC ``...Z``).
+    * ``{{start_ts}}`` is the incremental window start: the checkpoint ``last_timestamp`` (or
+      ``last_timestamp_ms``) in ISO UTC form. When there is no usable checkpoint timestamp yet (first run, cursor-only
+      checkpoint, unparseable value) it falls back to ``end_ts`` minus 24 hours, the same default window as
+      ``{{start_ms}}``, so the request never carries the literal placeholder or an open-ended lower bound.
+    """
 
     now = _utc_now_seconds()
     now_ms = int(now * 1000)
-    window_ms = 86400000
+    window_ms = _DEFAULT_TIME_WINDOW_MS
     now_iso = datetime.fromtimestamp(now, timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    ctx = checkpoint if isinstance(checkpoint, dict) else {}
+    start_ts = _canonical_start_ts(ctx.get("last_timestamp")) or _canonical_start_ts(ctx.get("last_timestamp_ms"))
+    if start_ts is None:
+        start_ts = _iso_z_from_seconds((now_ms - window_ms) / 1000)
     return {
         "{{now}}": now_iso,
         "{{runtime.now_ms}}": str(now_ms),
         "{{runtime.now_iso}}": now_iso,
         "{{start_ms}}": str(now_ms - window_ms),
         "{{end_ms}}": str(now_ms),
+        "{{end_ts}}": now_iso,
+        # Last: replacements apply in order, so a checkpoint-derived value is never re-rendered.
+        "{{start_ts}}": start_ts,
     }
 
 
@@ -203,7 +263,7 @@ def render_runtime_request_templates(
 def api_test_checkpoint_replacements(checkpoint: dict[str, Any] | None) -> dict[str, str]:
     """Placeholders for onboarding API test / JSON preview incremental request tests."""
 
-    replacements = time_template_replacements()
+    replacements = time_template_replacements(checkpoint)
 
     if checkpoint:
         ck = checkpoint
@@ -325,7 +385,7 @@ def build_shared_http_request(
             checkpoint_value,
             stream_config,
         )
-        runtime_time_repl = time_template_replacements()
+        runtime_time_repl = time_template_replacements(runtime_checkpoint_ctx)
         ep_rendered = render_runtime_request_templates(ep, runtime_checkpoint_ctx, runtime_time_repl)
     else:
         runtime_checkpoint_ctx = None
