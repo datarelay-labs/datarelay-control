@@ -16,7 +16,9 @@ from app.config import settings
 from app.checkpoints.route_delivery_state import (
     build_route_delivery_state,
     checkpoint_anchor,
+    dynamic_route_state_key,
     event_fingerprints,
+    is_dynamic_route_state_key,
     load_route_fingerprints,
     merge_fingerprints,
     split_route_delivery_state,
@@ -1021,7 +1023,19 @@ class StreamRunner(BaseRunner):
             return None
         return cached[1]
 
-    def _record_route_delivered(self, route_id: int, fingerprints: list[str]) -> None:
+    def _dynamic_route_event_fingerprints(self, events: list[dict[str, Any]]) -> list[str] | None:
+        """Source-event fingerprints aligned 1:1 with dynamic-route ``events`` (None = do not track)."""
+
+        if not self._route_delivery_enabled:
+            return None
+        cached = self._route_delivery_batch_fps
+        if cached is None or len(cached[1]) != len(events):
+            # Dynamic routes send the per-event pipeline payloads of this batch; without a
+            # 1:1 shape the alignment is unknown, so never skip or record.
+            return None
+        return cached[1]
+
+    def _record_route_delivered(self, route_id: int | str, fingerprints: list[str]) -> None:
         key = str(route_id)
         self._route_delivery_fingerprints[key] = merge_fingerprints(
             self._route_delivery_fingerprints.get(key, []),
@@ -1059,6 +1073,8 @@ class StreamRunner(BaseRunner):
         if not (self._route_delivery_enabled and self._route_delivery_dirty and self._route_delivery_anchor):
             return None
         route_ids = {str(int(_get(r, "id", 0))) for r in list(_get(runtime_stream, "routes", []) or [])}
+        # Dynamic-route progress is kept for the held window (cleared when it advances).
+        route_ids.update(key for key in self._route_delivery_fingerprints if is_dynamic_route_state_key(key))
         return {
             "stream_id": stream_id,
             "checkpoint_type": str(self._route_delivery_checkpoint_type or "CUSTOM_FIELD"),
@@ -2389,6 +2405,7 @@ class StreamRunner(BaseRunner):
         stream_id = int(_get(stream, "id"))
         stream_name = str(_get(stream, "name", "") or "")
         deliveries_sent = 0
+        fingerprints = self._dynamic_route_event_fingerprints(events)
 
         for match in matches:
             dest_id = int(getattr(match, "destination_id", 0))
@@ -2415,6 +2432,29 @@ class StreamRunner(BaseRunner):
                     }
                 )
                 continue
+
+            # Held checkpoint window: send only events this dynamic route has not received yet.
+            state_key = dynamic_route_state_key(route_id)
+            send_events = events
+            pending_fps: list[str] = []
+            if fingerprints is not None:
+                delivered = set(self._route_delivery_fingerprints.get(state_key, ()))
+                pending = [idx for idx, fp in enumerate(fingerprints) if fp not in delivered]
+                if not pending:
+                    self._log(
+                        {
+                            "stage": "dynamic_route_send_skip",
+                            "stream_id": stream_id,
+                            "dynamic_route_id": route_id,
+                            "destination_id": dest_id,
+                            "skip_reason": "already_delivered",
+                            "already_delivered_event_count": len(fingerprints),
+                        }
+                    )
+                    continue
+                if len(pending) != len(events):
+                    send_events = [events[idx] for idx in pending]
+                pending_fps = [fingerprints[idx] for idx in pending]
 
             limiter_key = -route_id
             rate_limit_json = dict(getattr(match, "rate_limit_json", {}) or {})
@@ -2443,7 +2483,7 @@ class StreamRunner(BaseRunner):
             try:
                 self._send_to_destination(
                     destination_type,
-                    events,
+                    send_events,
                     _udp_paced_destination_config(
                         destination_type,
                         destination_config,
@@ -2454,6 +2494,8 @@ class StreamRunner(BaseRunner):
                     prefix_context=prefix_context,
                 )
                 latency_ms = max(0, int((time.monotonic() - send_started) * 1000))
+                if pending_fps:
+                    self._record_route_delivered(state_key, pending_fps)
                 self._log(
                     {
                         "stage": "dynamic_route_send_success",
@@ -2461,13 +2503,22 @@ class StreamRunner(BaseRunner):
                         "dynamic_route_id": route_id,
                         "destination_id": dest_id,
                         "destination_type": destination_type,
-                        "event_count": len(events),
+                        "event_count": len(send_events),
                         "latency_ms": latency_ms,
                     }
                 )
                 deliveries_sent += 1
             except Exception as exc:
                 latency_ms = max(0, int((time.monotonic() - send_started) * 1000))
+                # Still LOG_AND_CONTINUE; keep the leading events the receiver accepted so the
+                # next poll of the held window resumes after them.
+                delivered_prefix = 0
+                if pending_fps:
+                    reported = getattr(exc, "delivered_event_count", None)
+                    if isinstance(reported, int) and not isinstance(reported, bool):
+                        delivered_prefix = max(0, min(reported, len(pending_fps)))
+                    if delivered_prefix:
+                        self._record_route_delivered(state_key, pending_fps[:delivered_prefix])
                 self._log(
                     {
                         "stage": "dynamic_route_send_failed",
@@ -2483,7 +2534,7 @@ class StreamRunner(BaseRunner):
                 self._maybe_record_replay_event(
                     stream=stream,
                     route=None,
-                    events=events,
+                    events=send_events[delivered_prefix:],
                     destination_id=dest_id,
                     destination_type=destination_type,
                     formatter_override=None,

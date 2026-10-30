@@ -10,7 +10,8 @@ checkpoint window.
 Stored shape under ``checkpoint_value[ROUTE_DELIVERY_STATE_KEY]``::
 
     {"version": 1, "anchor": "<hash of the checkpoint value without this key>",
-     "routes": {"<route_id>": ["<fingerprint>", ...]}}
+     "routes": {"<route_id>": ["<fingerprint>", ...],
+                "dyn:<dynamic_route_id>": ["<fingerprint>", ...]}}
 
 - Fingerprints only (truncated SHA-256 of canonical JSON); raw events are never stored.
 - ``anchor`` binds the state to the exact checkpoint window it was recorded in. Any other
@@ -31,6 +32,9 @@ from typing import Any
 ROUTE_DELIVERY_STATE_KEY = "route_delivery_state"
 ROUTE_DELIVERY_STATE_VERSION = 1
 MAX_FINGERPRINTS_PER_ROUTE = 5000
+# Dynamic routes share the ``routes`` map under a prefixed key so they never collide
+# with numeric Route ids (e.g. ``"dyn:7"`` vs ``"7"``).
+DYNAMIC_ROUTE_STATE_KEY_PREFIX = "dyn:"
 
 _FINGERPRINT_HEX_LEN = 32
 # Runtime-injected metadata (e.g. stream dedup queue ids) differs between runs.
@@ -66,6 +70,16 @@ def strip_route_delivery_state(checkpoint: Any) -> Any:
     """Return the checkpoint as seen by readers that predate the route delivery key."""
 
     return split_route_delivery_state(checkpoint)[0]
+
+
+def dynamic_route_state_key(dynamic_route_id: int) -> str:
+    """State key for a dynamic route (distinct from base Route keys)."""
+
+    return f"{DYNAMIC_ROUTE_STATE_KEY_PREFIX}{int(dynamic_route_id)}"
+
+
+def is_dynamic_route_state_key(key: Any) -> bool:
+    return isinstance(key, str) and key.startswith(DYNAMIC_ROUTE_STATE_KEY_PREFIX)
 
 
 def checkpoint_anchor(base_checkpoint: Any) -> str:

@@ -122,6 +122,166 @@ def test_read_view_and_log_snapshot_do_not_expose_fingerprints() -> None:
     assert fps[0] not in json.dumps(slim_checkpoint_for_log(stored))
 
 
+# --- dynamic route keys (R2b) ------------------------------------------------------------
+
+
+def test_dynamic_route_state_key_never_collides_with_route_ids() -> None:
+    """Old code: ImportError (no dynamic-route key helpers existed)."""
+
+    from app.checkpoints.route_delivery_state import dynamic_route_state_key, is_dynamic_route_state_key
+
+    assert dynamic_route_state_key(7) == "dyn:7"
+    assert dynamic_route_state_key(7) != "7"
+    assert is_dynamic_route_state_key("dyn:7") is True
+    assert is_dynamic_route_state_key("7") is False
+    assert is_dynamic_route_state_key(7) is False
+
+
+def test_dynamic_route_keys_survive_load_and_read_views() -> None:
+    """Readers are key-agnostic: ``dyn:`` keys load, summarize and stay hidden from cursors (guard)."""
+
+    fps = event_fingerprints([{"id": "e1"}, {"id": "e2"}])
+    state = _state_for(_BASE, {"7": fps[:1], "dyn:7": fps})
+    assert load_route_fingerprints(state, checkpoint_anchor(_BASE)) == {"7": fps[:1], "dyn:7": fps}
+
+    stored = {**_BASE, ROUTE_DELIVERY_STATE_KEY: state}
+    assert split_route_delivery_state(stored) == (_BASE, state)
+    view = checkpoint_read_view(stored)
+    assert view[ROUTE_DELIVERY_STATE_KEY] == {"route_delivered_event_counts": {"7": 1, "dyn:7": 2}}
+    assert fps[0] not in json.dumps(view)
+
+
+def _runner_with_fingerprints(fingerprints: dict[str, list[str]]) -> Any:
+    from app.runners.stream_runner import StreamRunner
+
+    runner = StreamRunner()
+    runner._route_delivery_enabled = True
+    runner._route_delivery_dirty = True
+    runner._route_delivery_anchor = checkpoint_anchor(_BASE)
+    runner._route_delivery_checkpoint_type = "EVENT_ID"
+    runner._route_delivery_fingerprints = fingerprints
+    return runner
+
+
+def test_route_delivery_state_payload_keeps_dynamic_route_progress() -> None:
+    """Held-window persistence keeps ``dyn:<id>`` entries and still prunes removed base Routes.
+
+    Old code: ``keep_route_ids`` held only base Route ids, so ``dyn:1`` was dropped and the
+    next poll re-sent every event to the dynamic route.
+    """
+
+    runner = _runner_with_fingerprints({"1": ["a"], "2": ["b"], "dyn:1": ["c"]})
+    payload = runner._route_delivery_state_payload(stream_id=5, runtime_stream={"routes": [{"id": 1}]})
+
+    assert payload is not None
+    assert payload["route_delivery_state"]["routes"] == {"1": ["a"], "dyn:1": ["c"]}
+
+
+def test_dynamic_route_progress_respects_size_cap() -> None:
+    """Same per-key bound as base Routes.
+
+    Old code: the ``dyn:3`` entry was pruned entirely (``route_delivery_state`` is None).
+    """
+
+    runner = _runner_with_fingerprints({})
+    runner._record_route_delivered("dyn:3", [f"fp-{i}" for i in range(MAX_FINGERPRINTS_PER_ROUTE + 10)])
+    payload = runner._route_delivery_state_payload(stream_id=5, runtime_stream={"routes": []})
+
+    kept = payload["route_delivery_state"]["routes"]["dyn:3"]
+    assert len(kept) == MAX_FINGERPRINTS_PER_ROUTE
+    assert kept[-1] == f"fp-{MAX_FINGERPRINTS_PER_ROUTE + 9}"
+
+
+class _RecordingDynamicSender:
+    def __init__(self, accept: int | None = None) -> None:
+        self.accept = accept
+        self.calls: list[list[str]] = []
+
+    def send(self, events: list[dict[str, Any]], config: dict[str, Any], *_a: Any, **_kw: Any) -> None:
+        self.calls.append([str(e.get("id")) for e in events])
+        if self.accept is not None:
+            raise DestinationSendError("dynamic receiver failed", delivered_event_count=self.accept)
+
+
+def _dynamic_runner(sender: _RecordingDynamicSender, events: list[dict[str, Any]]) -> Any:
+    from app.dynamic_routing.dynamic_routing_engine import DynamicRouteMatch, DynamicRoutingBatchResult
+
+    class _AllowAll:
+        def allow(self, *_a: Any, **_k: Any) -> bool:
+            return True
+
+    runner = _runner_with_fingerprints({})
+    runner._route_delivery_dirty = False
+    runner.destination_limiter = _AllowAll()
+    runner._maybe_record_replay_event = lambda **_kw: None  # no DB in unit scope
+    runner.destination_registry.get = lambda _type: sender  # type: ignore[method-assign]
+    runner._route_delivery_batch_fps = (0, event_fingerprints(events))
+    result = DynamicRoutingBatchResult(
+        matches=[
+            DynamicRouteMatch(
+                dynamic_route_id=9,
+                dynamic_route_name="d",
+                destination_id=99,
+                destination_name="dyn",
+                destination_type="WEBHOOK_POST",
+                destination_config={"url": "https://dyn.example.com"},
+                rate_limit_json={},
+                destination_enabled=True,
+            )
+        ]
+    )
+    return runner, result
+
+
+def test_deliver_dynamic_routes_records_and_skips_delivered_events() -> None:
+    """Old code: no ``dyn:9`` entry recorded and the second call re-sent e1, e2."""
+
+    events = [{"id": "e1"}, {"id": "e2"}]
+    sender = _RecordingDynamicSender()
+    runner, result = _dynamic_runner(sender, events)
+    stream = {"id": 5, "name": "s", "routes": []}
+
+    assert runner._deliver_dynamic_routes(stream, events, dynamic_routing=result, skip_destination_ids=set()) == 1
+    assert runner._route_delivery_fingerprints["dyn:9"] == event_fingerprints(events)
+    assert runner._route_delivery_dirty is True
+
+    assert runner._deliver_dynamic_routes(stream, events, dynamic_routing=result, skip_destination_ids=set()) == 0
+    assert sender.calls == [["e1", "e2"]]
+
+
+def test_deliver_dynamic_routes_partial_failure_records_prefix_and_stays_log_and_continue() -> None:
+    """Old code: nothing recorded on a partial failure, so e1 was re-sent next time."""
+
+    events = [{"id": "e1"}, {"id": "e2"}, {"id": "e3"}]
+    sender = _RecordingDynamicSender(accept=1)
+    runner, result = _dynamic_runner(sender, events)
+    stream = {"id": 5, "name": "s", "routes": []}
+
+    # LOG_AND_CONTINUE: the failure is not raised to the caller.
+    assert runner._deliver_dynamic_routes(stream, events, dynamic_routing=result, skip_destination_ids=set()) == 0
+    assert runner._route_delivery_fingerprints["dyn:9"] == event_fingerprints(events)[:1]
+
+    sender.accept = None
+    runner._deliver_dynamic_routes(stream, events, dynamic_routing=result, skip_destination_ids=set())
+    assert sender.calls == [["e1", "e2", "e3"], ["e2", "e3"]]
+
+
+def test_deliver_dynamic_routes_without_aligned_fingerprints_is_unchanged() -> None:
+    """Unknown alignment (or tracking disabled) never skips or records (guard)."""
+
+    events = [{"id": "e1"}, {"id": "e2"}]
+    sender = _RecordingDynamicSender()
+    runner, result = _dynamic_runner(sender, events)
+    runner._route_delivery_batch_fps = (0, event_fingerprints(events[:1]))
+    stream = {"id": 5, "name": "s", "routes": []}
+
+    runner._deliver_dynamic_routes(stream, events, dynamic_routing=result, skip_destination_ids=set())
+    runner._deliver_dynamic_routes(stream, events, dynamic_routing=result, skip_destination_ids=set())
+
+    assert sender.calls == [["e1", "e2"], ["e1", "e2"]]
+    assert "dyn:9" not in runner._route_delivery_fingerprints
+
+
 # --- webhook partial progress ----------------------------------------------------------
 
 

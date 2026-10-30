@@ -401,3 +401,137 @@ def test_manual_checkpoint_change_invalidates_route_delivery_state(harness: Any)
 
     _poll(db, runner, sid)
     assert sender.accepted[_url(0)] == ["e1", "e1"]
+
+
+# --- dynamic routes (R2b) ----------------------------------------------------------------
+
+_DYN_URL = "https://r2-dynamic-receiver.example.com/events"
+
+
+def _add_dynamic_match(db: Session, runner: StreamRunner, *, dynamic_route_id: int) -> None:
+    """Every poll matches one dynamic route whose destination is not a base Route destination."""
+
+    from app.dynamic_routing.dynamic_routing_engine import DynamicRouteMatch, DynamicRoutingBatchResult
+
+    destination = Destination(
+        name=f"pytest-r2-dyn-{uuid.uuid4().hex[:10]}",
+        destination_type="WEBHOOK_POST",
+        config_json={"url": _DYN_URL},
+        rate_limit_json={},
+        enabled=True,
+    )
+    db.add(destination)
+    db.commit()
+    match = DynamicRouteMatch(
+        dynamic_route_id=dynamic_route_id,
+        dynamic_route_name="pytest-dyn",
+        destination_id=int(destination.id),
+        destination_name=str(destination.name),
+        destination_type="WEBHOOK_POST",
+        destination_config={"url": _DYN_URL},
+        rate_limit_json={},
+        destination_enabled=True,
+    )
+
+    def _evaluate(*, stream_id: int, enriched_events: list[dict[str, Any]]) -> Any:
+        return DynamicRoutingBatchResult(
+            matches=[match],
+            dynamic_route_count=1,
+            matched_dynamic_route_count=1,
+            selected_destination_count=1,
+        )
+
+    runner._evaluate_dynamic_routes = _evaluate  # type: ignore[method-assign]
+
+
+def test_dynamic_route_is_not_resent_delivered_events_while_base_route_keeps_failing(harness: Any) -> None:
+    """A base Route is down for 3 polls; the matched dynamic route gets each event once.
+
+    Old code: the dynamic receiver accepted e1..e3 on every poll (3 copies each) and no
+    ``dyn:<id>`` state was recorded.
+    """
+
+    db, runner, poller, sender = harness
+    seeded = _seed(db, failure_policies=["LOG_AND_CONTINUE", "RETRY_AND_BACKOFF"])
+    sid = seeded["stream_id"]
+    route_a = seeded["route_ids"][0]
+    # Same numeric id as base Route A: the state keys must not collide.
+    _add_dynamic_match(db, runner, dynamic_route_id=route_a)
+    before = _checkpoint(db, sid)
+    poller.items = _events("e1", "e2", "e3")
+    sender.fail_urls = {_url(1)}
+
+    for _ in range(3):
+        _poll(db, runner, sid)
+
+    assert sender.accepted[_DYN_URL] == ["e1", "e2", "e3"]
+    assert sender.attempts[_DYN_URL] == [["e1", "e2", "e3"]]
+    assert sender.accepted[_url(0)] == ["e1", "e2", "e3"]
+
+    after = _checkpoint(db, sid)
+    assert strip_route_delivery_state(after) == before
+    state = after[ROUTE_DELIVERY_STATE_KEY]
+    assert set(state["routes"]) == {str(route_a), f"dyn:{route_a}"}
+    assert "msg-" not in json.dumps(state)
+    assert checkpoint_read_view(after)[ROUTE_DELIVERY_STATE_KEY] == {
+        "route_delivered_event_counts": {str(route_a): 3, f"dyn:{route_a}": 3}
+    }
+
+    # Recovery: the held window plus one new event; dynamic route gets only the new one.
+    sender.fail_urls = set()
+    poller.items = _events("e1", "e2", "e3", "e4")
+    summary = _poll(db, runner, sid)
+
+    assert sender.accepted[_DYN_URL] == ["e1", "e2", "e3", "e4"]
+    assert sender.attempts[_DYN_URL][-1] == ["e4"]
+    assert summary["checkpoint_updated"] is True
+    advanced = _checkpoint(db, sid)
+    assert advanced["last_success_event"]["event_id"] == "e4"
+    # Checkpoint advance clears dynamic-route state as well.
+    assert ROUTE_DELIVERY_STATE_KEY not in advanced
+
+
+def test_dynamic_route_failing_mid_batch_resumes_from_first_undelivered_event(harness: Any) -> None:
+    """Dynamic route accepts e1,e2 then fails; next poll of the held window sends only e3,e4.
+
+    Old code: the next poll re-sent e1..e4, so the dynamic receiver accepted e1,e2 twice.
+    """
+
+    db, runner, poller, sender = harness
+    seeded = _seed(db, failure_policies=["LOG_AND_CONTINUE", "RETRY_AND_BACKOFF"])
+    sid = seeded["stream_id"]
+    _add_dynamic_match(db, runner, dynamic_route_id=4242)
+    poller.items = _events("e1", "e2", "e3", "e4")
+    sender.fail_urls = {_url(1)}  # hold the checkpoint
+    sender.partial_once = {_DYN_URL: 2}
+    _poll(db, runner, sid)
+    assert sender.accepted[_DYN_URL] == ["e1", "e2"]
+    assert _checkpoint(db, sid)[ROUTE_DELIVERY_STATE_KEY]["routes"]["dyn:4242"]
+
+    sender.fail_urls = set()
+    summary = _poll(db, runner, sid)
+
+    assert sender.attempts[_DYN_URL][-1] == ["e3", "e4"]
+    assert sender.accepted[_DYN_URL] == ["e1", "e2", "e3", "e4"]
+    assert summary["checkpoint_updated"] is True
+    assert ROUTE_DELIVERY_STATE_KEY not in _checkpoint(db, sid)
+
+
+def test_dynamic_route_failure_never_holds_the_checkpoint(harness: Any) -> None:
+    """Dynamic delivery stays LOG_AND_CONTINUE: base Routes succeed => checkpoint advances (guard)."""
+
+    db, runner, poller, sender = harness
+    seeded = _seed(db, failure_policies=["LOG_AND_CONTINUE", "RETRY_AND_BACKOFF"])
+    sid = seeded["stream_id"]
+    _add_dynamic_match(db, runner, dynamic_route_id=4243)
+    poller.items = _events("e1", "e2")
+    sender.fail_urls = {_DYN_URL}
+
+    summary = _poll(db, runner, sid)
+
+    assert summary["checkpoint_updated"] is True
+    assert sender.accepted[_url(0)] == ["e1", "e2"]
+    assert sender.accepted[_url(1)] == ["e1", "e2"]
+    after = _checkpoint(db, sid)
+    assert after["last_success_event"]["event_id"] == "e2"
+    assert ROUTE_DELIVERY_STATE_KEY not in after
