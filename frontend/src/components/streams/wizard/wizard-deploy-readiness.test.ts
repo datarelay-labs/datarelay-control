@@ -5,7 +5,7 @@ import {
   computeRouteDeployReadiness,
   routeProcessingStatusToDeployMode,
 } from './wizard-deploy-readiness'
-import { buildInitialState } from './wizard-state'
+import { buildInitialState, DEFAULT_ROUTE_PROCESSING_INHERIT } from './wizard-state'
 
 function readyState() {
   const state = buildInitialState()
@@ -39,6 +39,7 @@ function readyState() {
       enabled: true,
       failurePolicy: 'RETRY_THEN_DLQ',
       rateLimitJson: '{}',
+      inherit: { ...DEFAULT_ROUTE_PROCESSING_INHERIT },
     },
   ]
   return state
@@ -128,6 +129,80 @@ describe('computeDeployReadiness', () => {
     const snapshot = computeDeployReadiness(state, { ok: true, failed: false, unknown: false })
     expect(snapshot.categories.find((c) => c.key === 'protection')?.tone).toBe('ok')
     expect(snapshot.canCreate).toBe(true)
+  })
+
+  // C2: the old checklist only read shared dataProtection.intents, so a stream whose Routes carry
+  // their own protection rules was reported as "No data protection intent configured".
+  describe('protection checklist reads Route protection rules (C2)', () => {
+    function protectionSummary(state: ReturnType<typeof readyState>) {
+      return computeDeployReadiness(state, { ok: true, failed: false, unknown: false }).categories.find(
+        (c) => c.key === 'protection',
+      )?.summary
+    }
+
+    it('reports Route override protection rules instead of "no intent"', () => {
+      const state = readyState()
+      state.destinations.routeDrafts[0] = {
+        ...state.destinations.routeDrafts[0]!,
+        inherit: { transform: true, protection: false, classification: true, policy: true },
+        overrides: {
+          protection: {
+            intents: [
+              { key: 'rp1', detectedField: '$.email', protectionAction: 'mask_partial', deliveryBehavior: 'continue' },
+            ],
+            unknownNormalFieldPolicy: 'pass_through',
+            unknownSensitiveFieldPolicy: 'auto_protect',
+          },
+        },
+      }
+      const summary = protectionSummary(state)
+      expect(summary).not.toBe('No data protection intent configured')
+      expect(summary).toContain('Route protection rules on 1 route')
+    })
+
+    it('reports enabled governance route overrides', () => {
+      const state = readyState()
+      state.dataProtection.routeOverrides = [
+        {
+          key: 'o1',
+          routeDraftKey: 'r1',
+          fieldPath: '$.email',
+          protectionAction: 'mask_partial',
+          deliveryBehavior: 'continue',
+          enabled: true,
+        },
+      ]
+      expect(protectionSummary(state)).toContain('Route protection rules on 1 route')
+    })
+
+    it('still says no intent when Routes have no usable protection rules', () => {
+      const state = readyState()
+      // Inheriting Route with stale override intents, plus a disabled governance override.
+      state.destinations.routeDrafts[0] = {
+        ...state.destinations.routeDrafts[0]!,
+        inherit: { transform: true, protection: true, classification: true, policy: true },
+        overrides: {
+          protection: {
+            intents: [
+              { key: 'rp1', detectedField: '$.email', protectionAction: 'mask_partial', deliveryBehavior: 'continue' },
+            ],
+            unknownNormalFieldPolicy: 'pass_through',
+            unknownSensitiveFieldPolicy: 'auto_protect',
+          },
+        },
+      }
+      state.dataProtection.routeOverrides = [
+        {
+          key: 'o1',
+          routeDraftKey: 'r1',
+          fieldPath: '$.email',
+          protectionAction: 'mask_partial',
+          deliveryBehavior: 'continue',
+          enabled: false,
+        },
+      ]
+      expect(protectionSummary(state)).toBe('No data protection intent configured')
+    })
   })
 
   it('returns NEEDS ATTENTION when delivery paths are disabled', () => {

@@ -334,6 +334,27 @@ export function computeRouteDeployReadiness(
   }
 }
 
+/**
+ * Routes that carry their own protection rules: a Route Protection override with at least one
+ * ready intent, saved Route rules kept as passthrough on edit, or an enabled per-Route
+ * governance protection override.
+ */
+export function countRoutesWithProtectionRules(state: Pick<WizardState, 'destinations' | 'dataProtection'>): number {
+  return state.destinations.routeDrafts.filter((route) => {
+    if (route.governanceLoad?.protection === 'passthrough') return true
+    const routeIntents =
+      route.inherit?.protection === false ? route.overrides?.protection?.intents ?? [] : []
+    if (routeIntents.some(wizardDataProtectionIntentReady)) return true
+    return state.dataProtection.routeOverrides.some(
+      (override) => override.enabled && override.routeDraftKey === route.key,
+    )
+  }).length
+}
+
+function formatRouteProtectionCount(count: number): string {
+  return `Route protection rules on ${count} route${count === 1 ? '' : 's'}`
+}
+
 function categoryTone(ok: boolean, warn: boolean): DeployChecklistTone {
   if (ok) return 'ok'
   if (warn) return 'warn'
@@ -409,6 +430,7 @@ export function computeDeployReadiness(
     (intent) => intent.detectedField.trim().length > 0 && !wizardDataProtectionIntentReady(intent),
   )
   const protectionPreview = buildDataProtectionPersistPreview(state.dataProtection)
+  const routeProtectionRouteCount = countRoutesWithProtectionRules(state)
   const protectionOk =
     validProtectionIntents.length === 0 ||
     (!incompleteProtectionRows && !protectionPreview.enforcementIncomplete)
@@ -512,9 +534,13 @@ export function computeDeployReadiness(
       tone: protectionTone,
       summary: incompleteProtectionRows
         ? 'Complete detected field paths for all protection rows'
-          : validProtectionIntents.length === 0
-          ? 'No data protection intent configured'
-          : `${validProtectionIntents.length} field intent${validProtectionIntents.length === 1 ? '' : 's'} — policy, classification, and protection rules deploy together`,
+        : validProtectionIntents.length === 0
+          ? routeProtectionRouteCount > 0
+            ? `No shared intent · ${formatRouteProtectionCount(routeProtectionRouteCount)}`
+            : 'No data protection intent configured'
+          : `${validProtectionIntents.length} field intent${validProtectionIntents.length === 1 ? '' : 's'} — policy, classification, and protection rules deploy together${
+              routeProtectionRouteCount > 0 ? ` · ${formatRouteProtectionCount(routeProtectionRouteCount)}` : ''
+            }`,
       detail:
         incompleteProtectionRows
           ? 'Each protection row needs a JSONPath starting with $.'
