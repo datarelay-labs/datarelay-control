@@ -29,6 +29,7 @@ from app.runtime.preview_service import run_http_api_test
 from app.http.shared_request_builder import build_shared_http_request
 from app.runtime.incremental_fetch import (
     build_fetch_window,
+    count_records_newer_than_checkpoint,
     get_incremental_display_state,
     normalize_incremental_fetch_config,
     parse_incremental_fetch_config,
@@ -900,10 +901,11 @@ def run_stream_incremental_test(
     if payload.request_body is not None:
         stream_config["body"] = payload.request_body
 
+    request_checkpoint = fetch_ctx if inc_config.framework_enabled else checkpoint_override
     test_req = HttpApiTestRequest(
         source_config=dict(source.config_json or {}),
         stream_config=stream_config,
-        checkpoint=fetch_ctx if inc_config.framework_enabled else checkpoint_override,
+        checkpoint=request_checkpoint,
         connector_id=int(stream.connector_id),
         fetch_sample=True,
     )
@@ -942,6 +944,14 @@ def run_stream_incremental_test(
         events.append(result.analysis.sample_event)
 
     fetched_count = len(events)
+    # A successful request that only returns records at or before the checkpoint does not prove the incremental
+    # filter works (the runtime would not advance), so report it as a warning instead of plain success.
+    newer_record_count = count_records_newer_than_checkpoint(
+        events, checkpoint=request_checkpoint, stream_config=stream_config
+    )
+    no_newer_records = bool(result.ok) and fetched_count > 0 and newer_record_count == 0
+    test_status = "error" if not result.ok else ("warning" if no_newer_records else "success")
+    warning_code = "NO_NEWER_RECORDS" if no_newer_records else None
     dedup_events, dedup_summary = apply_stream_dedup(
         events,
         stream_config=cfg,
@@ -962,12 +972,23 @@ def run_stream_incremental_test(
 
     unchanged = checkpoint_unchanged(db, stream_id, before_checkpoint)
 
+    if no_newer_records:
+        message = (
+            f"Incremental test returned {fetched_count} record(s), but none is newer than the checkpoint. "
+            "Verify the request applies the checkpoint filter before relying on it."
+        )
+    else:
+        message = str(result.message or ("Incremental test completed" if result.ok else "Incremental test failed"))
+
     inc_blob = cfg.get(_INCREMENTAL_TEST_KEY)
     inc_store: dict[str, Any] = copy.deepcopy(inc_blob) if isinstance(inc_blob, dict) else {}
     inc_store["result"] = {
         "ok": bool(result.ok),
+        "status": test_status,
+        "warning_code": warning_code,
+        "newer_record_count": newer_record_count,
         "http_status": result.response.status_code if result.response is not None else None,
-        "message": result.message,
+        "message": message if no_newer_records else result.message,
         "returned_record_count": len(events),
         "substituted_request_body": (
             result.actual_request_sent.json_body_masked
@@ -990,7 +1011,10 @@ def run_stream_incremental_test(
         stream_id=int(stream.id),
         ok=bool(result.ok),
         http_status=result.response.status_code if result.response is not None else None,
-        message=str(result.message or ("Incremental test completed" if result.ok else "Incremental test failed")),
+        message=message,
+        status=test_status,
+        warning_code=warning_code,
+        newer_record_count=newer_record_count,
         preview_events=events[:10],
         next_checkpoint_preview=next_checkpoint_preview,
         checkpoint_unchanged=unchanged,

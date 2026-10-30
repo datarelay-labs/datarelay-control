@@ -701,6 +701,55 @@ export function readCheckpointFromExtractedEvent(
   )
 }
 
+/** Read the checkpoint value from an extracted record the same way incremental Test collects it. */
+export function readCheckpointFromTestRecord(
+  record: Record<string, unknown>,
+  checkpointSourcePath: string,
+  eventArrayPath: string,
+  eventRootPath = '',
+): unknown {
+  return eventRootPath.trim()
+    ? readCheckpointFromExtractedEvent(record, checkpointSourcePath, eventArrayPath, eventRootPath)
+    : readCheckpointFromEventSourceRecord(
+        record,
+        resolveCheckpointPathForRecord(checkpointSourcePath, eventArrayPath) || checkpointSourcePath,
+        eventRootPath,
+      )
+}
+
+/**
+ * Count returned record checkpoint values strictly newer than the tested checkpoint.
+ * Returns null when no value can be compared (blank / non-scalar / different kind), so callers do not warn
+ * on an unknown result.
+ */
+export function countRecordsNewerThanTestCheckpoint(
+  recordValues: unknown[],
+  test: Extract<IncrementalRequestTestCheckpointResult, { kind: 'ok' }>,
+): number | null {
+  let compared = 0
+  let newer = 0
+  for (const raw of recordValues) {
+    const value = coerceCheckpointScalarValue(raw)
+    if (isBlankValue(value) || typeof value === 'object') continue
+    let diff: number | null = null
+    if (test.valueKind === 'timestamp') {
+      const ms = parseTimestampMs(value)
+      const base = typeof test.value === 'number' ? test.value : parseTimestampMs(test.value)
+      if (ms != null && base != null) diff = ms - base
+    } else if (test.valueKind === 'numeric') {
+      const n = parseNumericValue(value)
+      const base = parseNumericValue(test.value)
+      if (n != null && base != null) diff = n - base
+    } else if (typeof value === 'string') {
+      diff = value.localeCompare(String(test.value))
+    }
+    if (diff == null) continue
+    compared += 1
+    if (diff > 0) newer += 1
+  }
+  return compared > 0 ? newer : null
+}
+
 /** Collect checkpoint values for incremental Test — uses extracted records + preview/fallback. */
 export function collectCheckpointValuesForIncrementalTest(input: {
   records: Array<Record<string, unknown>>
@@ -716,13 +765,7 @@ export function collectCheckpointValuesForIncrementalTest(input: {
   if (!checkpointSourcePath.trim()) return []
 
   const readOn = (record: Record<string, unknown>) =>
-    eventRootPath.trim()
-      ? readCheckpointFromExtractedEvent(record, checkpointSourcePath, eventArrayPath, eventRootPath)
-      : readCheckpointFromEventSourceRecord(
-          record,
-          resolveCheckpointPathForRecord(checkpointSourcePath, eventArrayPath) || checkpointSourcePath,
-          eventRootPath,
-        )
+    readCheckpointFromTestRecord(record, checkpointSourcePath, eventArrayPath, eventRootPath)
 
   const fromRecords = records
     .map(readOn)

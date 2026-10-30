@@ -1158,6 +1158,9 @@ function lastTestStatusLabel(
   if (result.status === 'success') {
     return result.httpStatus != null ? `Success · ${result.httpStatus}` : 'Success'
   }
+  if (result.status === 'warning') {
+    return result.httpStatus != null ? `Warning · ${result.httpStatus}` : 'Warning'
+  }
   return result.httpStatus != null ? `Failed · ${result.httpStatus}` : 'Failed'
 }
 

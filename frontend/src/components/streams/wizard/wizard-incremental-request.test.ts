@@ -9,6 +9,7 @@ import {
   collectCheckpointValuesForIncrementalTest,
   collectCheckpointValuesFromEventSource,
   coerceCheckpointScalarValue,
+  countRecordsNewerThanTestCheckpoint,
   facetNameFromCheckpointPath,
   incrementalPatternDisplayLabel,
   incrementalPreviewKind,
@@ -621,6 +622,40 @@ describe('incrementalRequestTestWarning', () => {
       lastSuccessAt: Date.now(),
     })
     expect(warn.level).toBe('warning')
+  })
+})
+
+// New helper (did not exist on old code): the incremental Test verdict depends on it.
+describe('countRecordsNewerThanTestCheckpoint', () => {
+  const tsTest = calculateIncrementalRequestTestCheckpoint(
+    ['2026-10-29T11:00:00Z', '2026-10-29T12:00:00Z'],
+    'TIMESTAMP',
+  )
+
+  it('counts only values strictly newer than the tested timestamp', () => {
+    if (tsTest.kind !== 'ok') throw new Error('expected ok checkpoint')
+    expect(
+      countRecordsNewerThanTestCheckpoint(
+        ['2026-10-29T10:00:00Z', '2026-10-29T11:00:00Z', '2026-10-29T11:30:00Z', 1793275201000],
+        tsTest,
+      ),
+    ).toBe(2)
+  })
+
+  it('returns 0 when every returned value is at or before the checkpoint', () => {
+    if (tsTest.kind !== 'ok') throw new Error('expected ok checkpoint')
+    expect(countRecordsNewerThanTestCheckpoint(['2026-10-29T10:00:00Z', '2026-10-29T11:00:00Z'], tsTest)).toBe(0)
+  })
+
+  it('returns null when nothing is comparable', () => {
+    if (tsTest.kind !== 'ok') throw new Error('expected ok checkpoint')
+    expect(countRecordsNewerThanTestCheckpoint([undefined, null, '', { nested: true }], tsTest)).toBeNull()
+  })
+
+  it('compares numeric checkpoints numerically', () => {
+    const numTest = calculateIncrementalRequestTestCheckpoint([10, 20], 'OFFSET')
+    if (numTest.kind !== 'ok') throw new Error('expected ok checkpoint')
+    expect(countRecordsNewerThanTestCheckpoint([5, 10, 15], numTest)).toBe(1)
   })
 })
 

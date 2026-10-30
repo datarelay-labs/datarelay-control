@@ -2593,9 +2593,16 @@ class StreamIncrementalTestRequest(BaseModel):
 
 class StreamIncrementalTestResponse(BaseModel):
     stream_id: int
+    # ``ok`` keeps its original meaning (the HTTP request succeeded); ``status`` adds the incremental verdict.
     ok: bool
     http_status: int | None = None
     message: str
+    status: Literal["success", "warning", "error"] = "success"
+    # NO_NEWER_RECORDS: records were returned but none is newer than the checkpoint used for the request.
+    warning_code: Literal["NO_NEWER_RECORDS"] | None = None
+    # Returned records strictly newer than the checkpoint; None when it cannot be compared (no checkpoint value,
+    # opaque cursor, or no record exposes the checkpoint field).
+    newer_record_count: int | None = None
     preview_events: list[dict[str, Any]] = Field(default_factory=list)
     next_checkpoint_preview: dict[str, Any] | None = None
     checkpoint_unchanged: bool = True

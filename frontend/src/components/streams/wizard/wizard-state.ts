@@ -543,10 +543,14 @@ export type WizardConfigState = {
 }
 
 export type WizardIncrementalRequestTestResult = {
-  status: 'success' | 'error'
+  /** `warning`: the request succeeded and returned records, but none is newer than the tested checkpoint. */
+  status: 'success' | 'warning' | 'error'
   httpStatus: number | null
   durationMs: number | null
   returnedRecordCount: number
+  /** Returned records newer than the tested checkpoint; null/undefined when it could not be compared. */
+  newerRecordCount?: number | null
+  warningCode?: 'NO_NEWER_RECORDS' | null
   testedCheckpointDisplay: string
   substitutedRequestBody: string
   sampleRecords: Array<Record<string, unknown>>
