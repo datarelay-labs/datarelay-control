@@ -34,6 +34,9 @@ class RouteSendOutcome:
     failover_attempted: bool = False
     failover_succeeded: bool = False
     failover_secondary_send_attempted: bool = False
+    # When success is False: leading events confirmed delivered before the failure
+    # (0 when unknown). Drives per-Route resume within a held checkpoint window.
+    delivered_event_count: int = 0
 
 
 @dataclass(frozen=True, slots=True)

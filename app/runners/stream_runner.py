@@ -13,6 +13,14 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.checkpoints.route_delivery_state import (
+    build_route_delivery_state,
+    checkpoint_anchor,
+    event_fingerprints,
+    load_route_fingerprints,
+    merge_fingerprints,
+    split_route_delivery_state,
+)
 from app.checkpoints.service import CheckpointService
 from app.delivery.syslog_sender import SyslogSender
 from app.delivery.webhook_sender import WebhookSender
@@ -155,6 +163,18 @@ class StreamRunner(BaseRunner):
         self._pending_disabled_routes: set[int] = set()
         self._pending_checkpoint: dict[str, Any] | None = None
         self._dedup_summary: Any = None
+        self._reset_route_delivery_state()
+
+    def _reset_route_delivery_state(self) -> None:
+        # Per-Route delivered fingerprints for the current held checkpoint window.
+        self._route_delivery_enabled = False
+        self._route_delivery_anchor: str | None = None
+        self._route_delivery_cursor_absent = False
+        self._route_delivery_checkpoint_type: str | None = None
+        self._route_delivery_fingerprints: dict[str, list[str]] = {}
+        self._route_delivery_dirty = False
+        self._route_delivery_batch_fps: tuple[int, list[str]] | None = None
+        self._pending_route_delivery_state: dict[str, Any] | None = None
 
     @staticmethod
     def _db_read(fn: Any) -> Any:
@@ -192,6 +212,7 @@ class StreamRunner(BaseRunner):
         self._pending_disabled_routes = set()
         self._pending_checkpoint = None
         self._dedup_summary = None
+        self._reset_route_delivery_state()
         should_commit = False
         persist_to_db = True
         run_started_committed = False
@@ -264,6 +285,12 @@ class StreamRunner(BaseRunner):
             checkpoint_type, checkpoint = self._resolve_checkpoint(
                 runtime_checkpoint=runtime_checkpoint,
                 stream_id=stream_id,
+            )
+            # Sources, templates and log snapshots never see per-Route delivery bookkeeping.
+            checkpoint = self._load_route_delivery_state(
+                checkpoint=checkpoint,
+                checkpoint_type=checkpoint_type,
+                run_opts=run_opts,
             )
             checkpoint_before_snapshot: dict[str, Any] | None = (
                 slim_checkpoint_for_log(checkpoint) if checkpoint is not None else None
@@ -577,6 +604,9 @@ class StreamRunner(BaseRunner):
                                 }
                             )
                             summary["checkpoint_updated"] = True
+                    # Held window: keep per-Route progress so the next poll does not re-send
+                    # delivered events. An advanced checkpoint is a fresh value (state cleared).
+                    self._stage_route_delivery_state(stream_id=stream_id, runtime_stream=runtime_stream)
 
                     complete_reason = (
                         "skipped_due_to_failure"
@@ -624,10 +654,14 @@ class StreamRunner(BaseRunner):
             # already-committed run_started and write run_failed out-of-band.
             self._pending_log_payloads.clear()
             self._pending_checkpoint = None
+            self._pending_route_delivery_state = None
             self._pending_stream_status.clear()
             self._pending_disabled_routes.clear()
             self._pending_delivery_log_rows.clear()
             should_commit = False
+            # Deliveries that already happened stay true even if the run failed later;
+            # keep them so the next poll does not re-send them (checkpoint stays held).
+            self._persist_route_delivery_state_out_of_band(stream_id=stream_id, runtime_stream=runtime_stream)
             error_code = "RUNTIME_INTERNAL_ERROR"
             if isinstance(exc, SourceFetchError):
                 error_code = "SOURCE_FETCH_FAILED"
@@ -674,6 +708,7 @@ class StreamRunner(BaseRunner):
                 self._run_timing = None
                 self._pending_delivery_log_rows.clear()
                 self._pending_log_payloads.clear()
+                self._reset_route_delivery_state()
                 if cross_lock_acquired:
                     stream_runtime_lock.release("run", stream_id)
                 if lock_acquired:
@@ -735,6 +770,12 @@ class StreamRunner(BaseRunner):
             schema_drift_policy_result=self._schema_drift_policy_result,
             checkpoint_cursor_before=checkpoint_before,
         )
+        if self._route_delivery_enabled:
+            # Fingerprint source events before any Route stage can touch the shared batch.
+            self._route_delivery_batch_fps = (
+                id(shared_batch.extracted_events),
+                event_fingerprints(shared_batch.extracted_events),
+            )
         route_contexts, build_metrics = build_route_runtime_contexts(runtime_stream)
         pipeline = process_routes(
             route_contexts,
@@ -920,12 +961,137 @@ class StreamRunner(BaseRunner):
         route = next((r for r in routes if int(_get(r, "id", 0)) == route_id), None)
         if route is None:
             return RouteSendOutcome(success=False, latency_ms=0, error="route not found", adapter_stage="route_send_failed")
-        return self._send_route_events(
+        fingerprints = self._route_event_fingerprints(route_ctx, route_events)
+        if fingerprints is None:
+            return self._send_route_events(
+                stream,
+                route,
+                route_events,
+                record_replay_on_failure=True,
+            )
+
+        # Held checkpoint window: send only events this Route has not received yet.
+        delivered = set(self._route_delivery_fingerprints.get(str(route_id), ()))
+        pending = [idx for idx, fp in enumerate(fingerprints) if fp not in delivered]
+        skipped = len(fingerprints) - len(pending)
+        if skipped:
+            self._emit_obs(
+                {
+                    "stage": "route_delivery_resume",
+                    "stream_id": route_ctx.stream_id,
+                    "route_id": route_id,
+                    "already_delivered_event_count": skipped,
+                    "pending_event_count": len(pending),
+                }
+            )
+        if not pending:
+            return RouteSendOutcome(success=True, latency_ms=0, adapter_stage="route_send_already_delivered")
+
+        outcome = self._send_route_events(
             stream,
             route,
-            route_events,
+            [route_events[idx] for idx in pending] if skipped else route_events,
             record_replay_on_failure=True,
         )
+        if outcome.success:
+            delivered_count = len(pending)
+        else:
+            delivered_count = max(0, min(int(outcome.delivered_event_count or 0), len(pending)))
+        if delivered_count:
+            self._record_route_delivered(route_id, [fingerprints[idx] for idx in pending[:delivered_count]])
+        return outcome
+
+    def _route_event_fingerprints(
+        self,
+        route_ctx: RouteRuntimeContext,
+        route_events: list[dict[str, Any]],
+    ) -> list[str] | None:
+        """Source-event fingerprints aligned 1:1 with ``route_events`` (None = do not track)."""
+
+        if not self._route_delivery_enabled:
+            return None
+        shared_batch = getattr(route_ctx, "shared_batch_ref", None)
+        source_events = getattr(shared_batch, "extracted_events", None)
+        if not isinstance(source_events, list) or len(source_events) != len(route_events):
+            # Route stages are 1:1 per event today; never guess an alignment.
+            return None
+        cached = self._route_delivery_batch_fps
+        if cached is None or cached[0] != id(source_events):
+            # Unknown batch (not prepared by _execute_route_pipeline): do not track.
+            return None
+        return cached[1]
+
+    def _record_route_delivered(self, route_id: int, fingerprints: list[str]) -> None:
+        key = str(route_id)
+        self._route_delivery_fingerprints[key] = merge_fingerprints(
+            self._route_delivery_fingerprints.get(key, []),
+            fingerprints,
+        )
+        self._route_delivery_dirty = True
+
+    def _load_route_delivery_state(
+        self,
+        *,
+        checkpoint: Any,
+        checkpoint_type: str,
+        run_opts: StreamRunOptions,
+    ) -> Any:
+        """Split per-Route delivery state off the checkpoint; return the cursor checkpoint."""
+
+        base, raw_state = split_route_delivery_state(checkpoint)
+        # Replay/backfill, dry runs and non-persisting runs must not skip or record.
+        self._route_delivery_enabled = bool(
+            run_opts.persist_checkpoint
+            and not run_opts.dry_run
+            and run_opts.replay_start is None
+            and run_opts.replay_end is None
+        )
+        if not self._route_delivery_enabled:
+            return base
+        anchor = checkpoint_anchor(base)
+        self._route_delivery_anchor = anchor
+        self._route_delivery_cursor_absent = base is None
+        self._route_delivery_checkpoint_type = checkpoint_type
+        self._route_delivery_fingerprints = load_route_fingerprints(raw_state, anchor)
+        return base
+
+    def _route_delivery_state_payload(self, *, stream_id: int, runtime_stream: Any) -> dict[str, Any] | None:
+        if not (self._route_delivery_enabled and self._route_delivery_dirty and self._route_delivery_anchor):
+            return None
+        route_ids = {str(int(_get(r, "id", 0))) for r in list(_get(runtime_stream, "routes", []) or [])}
+        return {
+            "stream_id": stream_id,
+            "checkpoint_type": str(self._route_delivery_checkpoint_type or "CUSTOM_FIELD"),
+            "anchor": self._route_delivery_anchor,
+            "route_delivery_state": build_route_delivery_state(
+                self._route_delivery_anchor,
+                self._route_delivery_fingerprints,
+                keep_route_ids=route_ids,
+                cursor_absent=self._route_delivery_cursor_absent,
+            ),
+        }
+
+    def _stage_route_delivery_state(self, *, stream_id: int, runtime_stream: Any) -> None:
+        """Stage per-Route progress for flush when the stream checkpoint stays held."""
+
+        if self._pending_checkpoint is not None:
+            # Advanced checkpoint is a fresh value without the key: state is cleared.
+            self._pending_route_delivery_state = None
+            return
+        self._pending_route_delivery_state = self._route_delivery_state_payload(
+            stream_id=stream_id,
+            runtime_stream=runtime_stream,
+        )
+
+    def _persist_route_delivery_state_out_of_band(self, *, stream_id: int, runtime_stream: Any) -> None:
+        payload = self._route_delivery_state_payload(stream_id=stream_id, runtime_stream=runtime_stream)
+        save = getattr(self.checkpoint_service, "save_route_delivery_state", None)
+        if payload is None or not callable(save):
+            return
+        try:
+            self._db_write(lambda db: save(db=db, **payload))
+        except Exception:
+            logger.exception("route_delivery_state_persist_failed stream_id=%s", stream_id)
 
     def _send_route_events(
         self,
@@ -1027,6 +1193,15 @@ class StreamRunner(BaseRunner):
 
             if isinstance(exc, AiPolicyEnforcementError):
                 self._record_ai_policy_block(exc)
+            # Chunked senders report the leading events already accepted by the receiver;
+            # retries/replay records cover only the undelivered tail.
+            delivered_prefix = getattr(exc, "delivered_event_count", None)
+            delivered_prefix = (
+                max(0, min(int(delivered_prefix), len(route_events)))
+                if isinstance(delivered_prefix, int) and not isinstance(delivered_prefix, bool)
+                else 0
+            )
+            undelivered_events = route_events[delivered_prefix:]
             failure_policy = str(_get(route, "failure_policy", "LOG_AND_CONTINUE")).upper()
             # Always record primary failure before Active/Standby failover.
             self._log(
@@ -1077,7 +1252,7 @@ class StreamRunner(BaseRunner):
                 recovered = self._apply_failure_policy(
                     stream,
                     route,
-                    route_events,
+                    undelivered_events,
                     exc,
                     attempt_latency_ms=latency_ms,
                     emit_failure_log=False,
@@ -1120,7 +1295,7 @@ class StreamRunner(BaseRunner):
                     self._maybe_record_replay_event(
                         stream=stream,
                         route=route,
-                        events=route_events,
+                        events=undelivered_events,
                         destination_id=int(destination_id),
                         destination_type=destination_type,
                         formatter_override=formatter_override,
@@ -1151,6 +1326,7 @@ class StreamRunner(BaseRunner):
                     failover_attempted=fo_result.attempted,
                     failover_succeeded=False,
                     failover_secondary_send_attempted=fo_result.secondary_send_attempted,
+                    delivered_event_count=delivered_prefix,
                 )
             if recovered:
                 # RETRY_AND_BACKOFF (or equivalent) recovered via successful resend.
@@ -1172,6 +1348,7 @@ class StreamRunner(BaseRunner):
                 failover_attempted=fo_result.attempted,
                 failover_succeeded=False,
                 failover_secondary_send_attempted=fo_result.secondary_send_attempted,
+                delivered_event_count=delivered_prefix,
             )
 
     def _execute_route_processing_foundation(
@@ -2637,6 +2814,7 @@ class StreamRunner(BaseRunner):
             or self._pending_stream_status
             or self._pending_disabled_routes
             or self._pending_checkpoint is not None
+            or self._pending_route_delivery_state is not None
         ):
             return
 
@@ -2654,6 +2832,10 @@ class StreamRunner(BaseRunner):
                     checkpoint_type=str(pc["checkpoint_type"]),
                     checkpoint_value=pc["checkpoint_value"],
                 )
+            elif self._pending_route_delivery_state is not None and hasattr(db, "query"):
+                save_state = getattr(self.checkpoint_service, "save_route_delivery_state", None)
+                if callable(save_state):
+                    save_state(db=db, **self._pending_route_delivery_state)
             if hasattr(db, "add"):
                 for payload in self._pending_log_payloads:
                     row = self._build_delivery_log_row(payload)
@@ -2678,12 +2860,14 @@ class StreamRunner(BaseRunner):
             or self._pending_stream_status
             or self._pending_disabled_routes
             or self._pending_checkpoint is not None
+            or self._pending_route_delivery_state is not None
         ):
             self._db_write(_write)
         self._pending_log_payloads.clear()
         self._pending_stream_status.clear()
         self._pending_disabled_routes.clear()
         self._pending_checkpoint = None
+        self._pending_route_delivery_state = None
         self._emit_obs({"stage": "transaction_committed", "stream_id": stream_id})
 
     def _commit_if_needed(self, db: Session | None, *, stream_id: int | None = None) -> None:

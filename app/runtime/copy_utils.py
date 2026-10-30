@@ -4,6 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.checkpoints.route_delivery_state import (
+    ROUTE_DELIVERY_STATE_KEY,
+    strip_route_delivery_state,
+    summarize_route_delivery_state,
+)
+
 _CHECKPOINT_LOG_META_KEYS = frozenset(
     {
         "last_processed_key",
@@ -65,7 +71,9 @@ def slim_checkpoint_for_log(checkpoint: dict[str, Any] | None) -> dict[str, Any]
 
     if out:
         return out
-    return copy_json_value(checkpoint)
+    # Per-Route delivery fingerprints are runtime bookkeeping, never log payload.
+    base = strip_route_delivery_state(checkpoint)
+    return copy_json_value(base) if isinstance(base, dict) else None
 
 
 def _event_id_preview(event: Any) -> dict[str, Any] | None:
@@ -84,6 +92,7 @@ def checkpoint_read_view(checkpoint: Any) -> dict[str, Any]:
 
     The stored checkpoint keeps the full ``last_success_event`` for incremental fetch; read
     APIs expose only checkpoint metadata and an event-id/timestamp preview of that event.
+    Per-Route delivery fingerprints are reduced to per-Route delivered-event counts.
     """
 
     if not isinstance(checkpoint, dict):
@@ -97,6 +106,8 @@ def checkpoint_read_view(checkpoint: Any) -> dict[str, Any]:
                 out[key] = preview
         elif key == "delivery_checkpoint" and isinstance(value, dict):
             out[key] = checkpoint_read_view(value)
+        elif key == ROUTE_DELIVERY_STATE_KEY:
+            out[key] = summarize_route_delivery_state(value)
         else:
             out[key] = copy_json_value(value)
     return out

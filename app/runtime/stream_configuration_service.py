@@ -16,6 +16,7 @@ from app.backfill.schemas import BackfillReplayRequest
 from app.backfill import service as backfill_service
 from app.checkpoints.models import Checkpoint
 from app.checkpoints.repository import get_checkpoint_by_stream_id, upsert_checkpoint
+from app.checkpoints.route_delivery_state import reduce_route_delivery_state, strip_route_delivery_state
 from app.connectors.models import Connector
 from app.destinations.repository import get_destination_by_id
 from app.enrichments.models import Enrichment
@@ -382,7 +383,7 @@ def get_stream_configuration(db: Session, stream_id: int) -> StreamConfiguration
     auth_json = mask_secrets(dict(source.auth_json or {})) if source is not None else {}
     rate_limit = dict(stream.rate_limit_json or {})
 
-    checkpoint_value = (
+    checkpoint_value = strip_route_delivery_state(
         dict(checkpoint_row.checkpoint_value_json or {})
         if checkpoint_row is not None and isinstance(checkpoint_row.checkpoint_value_json, dict)
         else None
@@ -879,7 +880,7 @@ def run_stream_incremental_test(
     cfg = dict(stream.config_json or {})
     checkpoint_override = payload.checkpoint_override
     if checkpoint_override is None and checkpoint_row is not None:
-        checkpoint_override = (
+        checkpoint_override = strip_route_delivery_state(
             dict(checkpoint_row.checkpoint_value_json)
             if isinstance(checkpoint_row.checkpoint_value_json, dict)
             else None
@@ -1240,7 +1241,8 @@ def get_stream_checkpoint_manage(db: Session, stream_id: int) -> StreamCheckpoin
     stream_id_out = int(stream.id)
     stream_cfg = dict(stream.config_json or {})
     checkpoint_type = str(checkpoint_row.checkpoint_type) if checkpoint_row is not None else None
-    value = (
+    # Per-Route delivery fingerprints are exposed only as per-Route counts.
+    value = reduce_route_delivery_state(
         copy.deepcopy(checkpoint_row.checkpoint_value_json)
         if checkpoint_row is not None and isinstance(checkpoint_row.checkpoint_value_json, dict)
         else None

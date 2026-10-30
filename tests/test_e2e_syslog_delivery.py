@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.checkpoints.models import Checkpoint
+from app.checkpoints.route_delivery_state import strip_route_delivery_state
 from app.failover_routing.operator_workflow import create_failover_route
 from app.database import get_db
 from app.main import app
@@ -475,7 +476,8 @@ def test_e2e_multi_route_healthy_tcp_and_paused_failure_checkpoint_is_unchanged(
     )
     checkpoint_after = db_session.get(Checkpoint, checkpoint_id)
     assert checkpoint_after is not None
-    assert dict(checkpoint_after.checkpoint_value_json or {}) == checkpoint_before
+    # Cursor is held; per-Route delivery progress for the healthy Route may be recorded.
+    assert strip_route_delivery_state(dict(checkpoint_after.checkpoint_value_json or {})) == checkpoint_before
 
 
 @skip_no_wiremock

@@ -33,11 +33,22 @@ class EnrichmentError(PlatformError):
 
 
 class DestinationSendError(PlatformError):
-    """Syslog or webhook delivery failed."""
+    """Syslog or webhook delivery failed.
 
-    def __init__(self, message: str, *, http_status: int | None = None) -> None:
+    ``delivered_event_count`` is the number of leading events confirmed delivered before
+    the failure (chunked senders); ``None`` means unknown and the whole batch is retried.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        http_status: int | None = None,
+        delivered_event_count: int | None = None,
+    ) -> None:
         super().__init__(message)
         self.http_status = http_status
+        self.delivered_event_count = delivered_event_count
 
 
 class ProtectionApplicationError(PlatformError):
