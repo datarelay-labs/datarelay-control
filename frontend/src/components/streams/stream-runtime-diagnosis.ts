@@ -170,7 +170,12 @@ function buildCheckpointCause(input: BuildStreamDiagnosisInput): DiagnosisCause 
     return cause('checkpoint', 'unknown', 'Checkpoint evidence has not loaded.')
   }
   if (input.checkpointLabel) {
-    return cause('checkpoint', 'clear', `Latest checkpoint is ${input.checkpointLabel}.`)
+    const inline = input.checkpointLabel
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .join(' · ')
+    return cause('checkpoint', 'clear', `Latest checkpoint is ${inline}.`)
   }
   return cause('checkpoint', 'unknown', 'No checkpoint value is reported.')
 }

@@ -128,6 +128,15 @@ describe('buildStreamDiagnosis', () => {
     )
   })
 
+  it('collapses a multi-line checkpoint summary into one sentence', () => {
+    const diagnosis = buildStreamDiagnosis(
+      input({ checkpointLabel: 'last event: evt-00140 @ 2026-10-29T12:02:20Z\ncursor: 2026-10-29T12:02:20Z' }),
+    )
+    expect(diagnosis.causes.find((cause) => cause.key === 'checkpoint')?.detail).toBe(
+      'Latest checkpoint is last event: evt-00140 @ 2026-10-29T12:02:20Z · cursor: 2026-10-29T12:02:20Z.',
+    )
+  })
+
   it('marks checkpoint not applicable for push ingest', () => {
     const diagnosis = buildStreamDiagnosis(
       input({ showCheckpointObservability: false, checkpointLabel: null }),
