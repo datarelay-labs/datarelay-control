@@ -57,6 +57,45 @@ _ROUTE_FAILURE_POLICIES = frozenset(
 )
 
 
+# Optional Route child keys (absent in bundles exported before Route children were included).
+_ROUTE_CHILD_LIST_REQUIRED_KEYS: dict[str, tuple[str, ...]] = {
+    "protection_rules": ("field_path", "sensitivity_class", "protection_mode"),
+    "classification_rules": ("name", "classification_level"),
+    "policy_rules": ("name", "action_type"),
+}
+_ROUTE_CHILD_OBJECT_KEYS = ("route_mapping", "route_enrichment")
+
+
+def _route_children_issues(route: dict[str, Any]) -> list[str]:
+    issues: list[str] = []
+    for key, required in _ROUTE_CHILD_LIST_REQUIRED_KEYS.items():
+        rows = route.get(key)
+        if rows is None:
+            continue
+        if not isinstance(rows, list):
+            issues.append(f"{key} must be an array")
+            continue
+        for idx, row in enumerate(rows):
+            if not isinstance(row, dict):
+                issues.append(f"{key}[{idx}] must be an object")
+                continue
+            missing = [f for f in required if not str(row.get(f) or "").strip()]
+            if missing:
+                issues.append(f"{key}[{idx}] is missing {', '.join(missing)}")
+    protection_paths = [
+        str(p.get("field_path"))
+        for p in (route.get("protection_rules") if isinstance(route.get("protection_rules"), list) else [])
+        if isinstance(p, dict) and p.get("field_path")
+    ]
+    if len(protection_paths) != len(set(protection_paths)):
+        issues.append("protection_rules contains duplicate field_path entries")
+    for key in _ROUTE_CHILD_OBJECT_KEYS:
+        value = route.get(key)
+        if value is not None and not isinstance(value, dict):
+            issues.append(f"{key} must be an object")
+    return issues
+
+
 @dataclass
 class ValidationOutcome:
     ok: bool
@@ -288,6 +327,14 @@ def validate_import_bundle(db: Session, bundle: dict[str, Any], *, mode: str) ->
                     "code": "INVALID_ROUTE_FAILURE_POLICY",
                     "message": f"Route {r.get('id')} has unsupported failure_policy {fp!r}.",
                     "details": {"route_export_id": r.get("id"), "failure_policy": fp},
+                }
+            )
+        for issue in _route_children_issues(r):
+            conflicts.append(
+                {
+                    "code": "INVALID_ROUTE_CHILD_ROW",
+                    "message": f"Route {r.get('id')}: {issue}",
+                    "details": {"route_export_id": r.get("id")},
                 }
             )
         if int(r.get("stream_id", -1)) not in stream_ids_export:

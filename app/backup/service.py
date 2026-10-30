@@ -315,6 +315,7 @@ def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) 
         created_sources.append(int(row.id))
 
     stream_old_to_new: dict[int, int] = {}
+    stream_rows: dict[int, Stream] = {}
     created_streams: list[int] = []
     for st in streams:
         if not isinstance(st, dict):
@@ -341,6 +342,7 @@ def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) 
         db.add(row)
         db.flush()
         stream_old_to_new[old_id] = int(row.id)
+        stream_rows[int(row.id)] = row
         created_streams.append(int(row.id))
 
     for m in mappings:
@@ -388,6 +390,7 @@ def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) 
 
     created_dest_ids = list(dest_old_to_new.values())
     unresolved_route_destinations: list[dict[str, Any]] = []
+    route_id_maps: dict[int, dict[int, int]] = {new_sid: {} for new_sid in stream_rows}
     for r in routes:
         if not isinstance(r, dict):
             continue
@@ -421,6 +424,12 @@ def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) 
             disable_reason=r.get("disable_reason"),
         )
         db.add(row)
+        db.flush()
+        _add_imported_route_children(db, r, int(row.id))
+        try:
+            route_id_maps[new_stream][int(r["id"])] = int(row.id)
+        except (KeyError, TypeError, ValueError):
+            pass
 
     if unresolved_route_destinations:
         raise HTTPException(
@@ -434,6 +443,11 @@ def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) 
                 "unresolved": unresolved_route_destinations[:20],
             },
         )
+
+    # Governance route_overrides carry the exported Route ids; point them at the Routes created above
+    # (overrides for Routes that were not imported with the same Stream are dropped).
+    for new_sid, stream_row in stream_rows.items():
+        _remap_governance_route_ids(stream_row, route_id_maps[new_sid])
 
     audit_details: dict[str, Any] = {
         "mode": mode,
@@ -624,6 +638,71 @@ def _clone_route_children(db: Session, old_route_id: int, new_route_id: int) -> 
                 enrichment_json=deepcopy(re_.enrichment_json or {}),
                 override_policy=re_.override_policy,
                 enabled=re_.enabled,
+            )
+        )
+
+
+def _add_imported_route_children(db: Session, route_row: dict[str, Any], new_route_id: int) -> None:
+    """Create Route-level processing state embedded on an exported Route (see export_builder).
+
+    Bundles exported before Route children were included simply lack these keys and import unchanged.
+    """
+    for p in route_row.get("protection_rules") or []:
+        if not isinstance(p, dict):
+            continue
+        db.add(
+            RouteProtectionRule(
+                route_id=new_route_id,
+                field_path=str(p["field_path"]),
+                sensitivity_class=str(p["sensitivity_class"]),
+                protection_mode=str(p["protection_mode"]),
+                enabled=bool(p.get("enabled", True)),
+                source_finding_id=None,
+                created_by=str(p.get("created_by") or "import"),
+            )
+        )
+    for c in route_row.get("classification_rules") or []:
+        if not isinstance(c, dict):
+            continue
+        db.add(
+            RouteClassificationRule(
+                route_id=new_route_id,
+                name=str(c["name"]),
+                enabled=bool(c.get("enabled", True)),
+                condition_json=dict(c.get("condition_json") or {}),
+                classification_level=str(c["classification_level"]),
+            )
+        )
+    for pr in route_row.get("policy_rules") or []:
+        if not isinstance(pr, dict):
+            continue
+        db.add(
+            RoutePolicyRule(
+                route_id=new_route_id,
+                name=str(pr["name"]),
+                enabled=bool(pr.get("enabled", True)),
+                condition_json=dict(pr.get("condition_json") or {}),
+                action_type=str(pr["action_type"]),
+            )
+        )
+    rm = route_row.get("route_mapping")
+    if isinstance(rm, dict):
+        db.add(
+            RouteMapping(
+                route_id=new_route_id,
+                field_mappings_json=dict(rm.get("field_mappings_json") or {}),
+                raw_payload_mode=rm.get("raw_payload_mode"),
+            )
+        )
+    re_ = route_row.get("route_enrichment")
+    if isinstance(re_, dict):
+        db.add(
+            RouteEnrichment(
+                route_id=new_route_id,
+                # Masked secret placeholders are dropped, never persisted as literal values.
+                enrichment_json=_strip_mask_placeholders(dict(re_.get("enrichment_json") or {})),
+                override_policy=str(re_.get("override_policy") or "KEEP_EXISTING"),
+                enabled=bool(re_.get("enabled", True)),
             )
         )
 

@@ -130,6 +130,16 @@ def verify_export_masking(bundle: dict[str, Any]) -> list[str]:
                 if val not in (None, "", _MASK) and str(val).strip() != _MASK:
                     issues.append(f"destinations[{i}] config_json {path} must be masked or empty")
 
+    for i, r in enumerate(bundle.get("routes") or []):
+        if not isinstance(r, dict):
+            continue
+        enrichment = r.get("route_enrichment")
+        cfg = enrichment.get("enrichment_json") if isinstance(enrichment, dict) else None
+        if isinstance(cfg, dict):
+            for path, val in _sensitive_leaf_values(cfg):
+                if val not in (None, "", _MASK) and str(val).strip() != _MASK:
+                    issues.append(f"routes[{i}] route_enrichment.enrichment_json {path} must be masked or empty")
+
     for i, c in enumerate(bundle.get("checkpoints") or []):
         if not isinstance(c, dict):
             continue
