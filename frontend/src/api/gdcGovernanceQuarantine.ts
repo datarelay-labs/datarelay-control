@@ -94,6 +94,9 @@ export type GovernanceQuarantineDetailResponse = {
   protection_actions: GovernanceQuarantineProtectionAction[]
   policy_decision: GovernanceQuarantinePolicyDecision
   related_replay: GovernanceQuarantineReplayRef[]
+  /** False when the Replay action cannot find a pending replay job (older servers omit it). */
+  replay_available?: boolean
+  replay_unavailable_reason?: string | null
   related_violation: GovernanceQuarantineViolationRef | null
   related_quarantine: GovernanceQuarantineMetadata
   quarantine_metadata: GovernanceQuarantineMetadata

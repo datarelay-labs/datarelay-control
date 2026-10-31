@@ -89,6 +89,7 @@ import { buildFlowTimelineStages, StreamFlowTimeline } from './stream-flow-timel
 import { StreamRecentEventsPanel } from './stream-recent-events-panel'
 import { usePersonaMode } from '../../hooks/use-persona-mode'
 import { StreamGovernanceDrawer } from './stream-governance-drawer'
+import { StreamViolationsDrilldown } from './stream-violations-drilldown'
 import { schemaDriftPolicyLabelsFromStreamConfig } from '../../lib/stream-schema-drift-policy'
 import { StreamMonitoringObservabilitySection } from './stream-monitoring-observability-section'
 import { StreamDetailTabNav, useStreamDetailTab } from './stream-detail-tab-nav'
@@ -1399,14 +1400,23 @@ export function StreamRuntimeDetailPage() {
       <div className="flex flex-col gap-4 md:flex-row md:items-start">
         <div className="min-w-0 flex-1 space-y-4">
       {activeTab === 'violations' ? (
-        <StreamIssueRail
-          ctx={issueCtx}
-          numericId={backendStreamId}
-          controlBusy={controlBusy}
-          runOnceBusy={runOnceBusy}
-          onRunOnce={() => void executeRunOnce()}
-          onStop={() => void runStreamControl('stop')}
-        />
+        <>
+          <StreamIssueRail
+            ctx={issueCtx}
+            numericId={backendStreamId}
+            controlBusy={controlBusy}
+            runOnceBusy={runOnceBusy}
+            onRunOnce={() => void executeRunOnce()}
+            onStop={() => void runStreamControl('stop')}
+          />
+          {backendStreamId != null ? (
+            <StreamViolationsDrilldown
+              streamId={backendStreamId}
+              canOperate={canRuntimeControl}
+              governanceSnapshot={governanceSnapshot}
+            />
+          ) : null}
+        </>
       ) : null}
 
       {activeTab === 'overview' ? (

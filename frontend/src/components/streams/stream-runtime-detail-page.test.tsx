@@ -156,6 +156,7 @@ vi.mock('../../api/gdcRuntime', () => ({
   fetchStreamRuntimeStatsHealth: vi.fn(async () => ({ stats: null, health: null })),
   invalidateStreamRuntimeReadCache: vi.fn(),
   fetchStreamCheckpointHistory: vi.fn(async () => null),
+  searchRuntimeDeliveryLogs: vi.fn(async () => null),
   fetchStreamWebhookIngestObservability: vi.fn(async () => null),
   metricsWindowSeconds: (window: string) => {
     const seconds: Record<string, number> = { '15m': 900, '1h': 3600, '6h': 21600, '24h': 86400 }

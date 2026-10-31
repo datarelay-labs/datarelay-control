@@ -206,6 +206,44 @@ describe('QuarantineCenterPage', () => {
     expect(await screen.findByTestId('quarantine-action-release')).toBeInTheDocument()
   })
 
+  it('disables Replay and states why when no replay job can be associated (F-182)', async () => {
+    vi.spyOn(gdcGovernanceQuarantine, 'fetchGovernanceQuarantineDetail').mockResolvedValue({
+      ...sampleDetail,
+      related_replay: [],
+      replay_available: false,
+      replay_unavailable_reason: 'No pending replay job exists for this stream. Use Release to deliver the held event.',
+    })
+    vi.spyOn(gdcGovernanceQuarantine, 'fetchGovernanceQuarantineEvents').mockResolvedValue({
+      window: '24h',
+      total: 0,
+      quarantine_events: [],
+    })
+
+    renderPage('/governance/quarantine?id=42')
+
+    const replay = await screen.findByTestId('quarantine-action-replay')
+    expect(replay).toBeDisabled()
+    expect(screen.getByTestId('quarantine-replay-unavailable')).toHaveTextContent(/Use Release/)
+  })
+
+  it('keeps Replay enabled when the server reports a replayable job', async () => {
+    vi.spyOn(gdcGovernanceQuarantine, 'fetchGovernanceQuarantineDetail').mockResolvedValue({
+      ...sampleDetail,
+      replay_available: true,
+      replay_unavailable_reason: null,
+    })
+    vi.spyOn(gdcGovernanceQuarantine, 'fetchGovernanceQuarantineEvents').mockResolvedValue({
+      window: '24h',
+      total: 0,
+      quarantine_events: [],
+    })
+
+    renderPage('/governance/quarantine?id=42')
+
+    expect(await screen.findByTestId('quarantine-action-replay')).toBeEnabled()
+    expect(screen.queryByTestId('quarantine-replay-unavailable')).not.toBeInTheDocument()
+  })
+
   it('supports keyboard activation of a quarantine row', async () => {
     vi.spyOn(gdcGovernanceQuarantine, 'fetchGovernanceQuarantineEvents').mockResolvedValue({
       window: '24h',

@@ -5,7 +5,7 @@ import {
   fetchGovernancePolicies,
   type GovernancePolicyEntry,
 } from '../../api/gdcGovernancePolicies'
-import { canEditPolicy } from '../../lib/governance-rbac'
+import { canEditPolicy, governanceAccessDeniedMessage } from '../../lib/governance-rbac'
 import { cn } from '../../lib/utils'
 import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
 import { PolicyEditorDrawer } from './policy-editor-drawer'
@@ -44,7 +44,7 @@ export function PolicyCatalogPage() {
     try {
       const data = await fetchGovernancePolicies()
       setPolicies(data?.policies ?? [])
-      if (data == null) setError('Governance policy APIs unavailable.')
+      if (data == null) setError(governanceAccessDeniedMessage('Governance policies') ?? 'Governance policy APIs unavailable.')
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {

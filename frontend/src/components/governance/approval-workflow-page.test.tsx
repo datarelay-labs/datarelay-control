@@ -147,6 +147,7 @@ describe('ApprovalWorkflowPage', () => {
   })
 
   it('opens detail drawer on row click', async () => {
+    persistTestSession('GOVERNANCE_REVIEWER')
     const user = userEvent.setup()
     vi.spyOn(gdcGovernanceApprovals, 'fetchGovernanceApprovals').mockResolvedValue({
       window: '24h',
@@ -166,6 +167,7 @@ describe('ApprovalWorkflowPage', () => {
   })
 
   it('shows activate button when policy is approved', async () => {
+    persistTestSession('GOVERNANCE_APPROVER')
     const user = userEvent.setup()
     vi.spyOn(gdcGovernanceApprovals, 'fetchGovernanceApprovals').mockResolvedValue({
       window: '24h',
@@ -179,6 +181,51 @@ describe('ApprovalWorkflowPage', () => {
 
     expect(await screen.findByTestId('approval-action-activate')).toBeInTheDocument()
     expect(screen.queryByTestId('approval-action-approve')).not.toBeInTheDocument()
+  })
+
+  it('does not offer Activate to a role that cannot activate and says who can (F-204)', async () => {
+    persistTestSession('GOVERNANCE_REVIEWER')
+    const user = userEvent.setup()
+    vi.spyOn(gdcGovernanceApprovals, 'fetchGovernanceApprovals').mockResolvedValue({
+      window: '24h',
+      total: 1,
+      approvals: [{ ...sampleQueueEntry, approval_status: 'APPROVED' }],
+    })
+    vi.spyOn(gdcGovernanceApprovals, 'fetchGovernanceApprovalDetail').mockResolvedValue(approvedDetail)
+
+    renderPage()
+    await user.click(await screen.findByTestId('approval-row-7'))
+
+    expect(await screen.findByTestId('approval-activate-role-note')).toHaveTextContent(/Governance Approver/)
+    expect(screen.queryByTestId('approval-action-activate')).not.toBeInTheDocument()
+  })
+
+  it('shows a readable error when an approval action is refused (F-204)', async () => {
+    persistTestSession('GOVERNANCE_APPROVER')
+    const user = userEvent.setup()
+    vi.spyOn(gdcGovernanceApprovals, 'fetchGovernanceApprovals').mockResolvedValue({
+      window: '24h',
+      total: 1,
+      approvals: [{ ...sampleQueueEntry, approval_status: 'APPROVED' }],
+    })
+    vi.spyOn(gdcGovernanceApprovals, 'fetchGovernanceApprovalDetail').mockResolvedValue(approvedDetail)
+    vi.spyOn(gdcGovernanceApprovals, 'activateGovernanceApproval').mockRejectedValue(new Error('Policy activation is not permitted for this role'))
+
+    renderPage()
+    await user.click(await screen.findByTestId('approval-row-7'))
+    await user.click(await screen.findByTestId('approval-action-activate'))
+
+    expect(await screen.findByTestId('approval-action-error')).toHaveTextContent(/Action failed: Policy activation is not permitted/)
+  })
+
+  it('says a Viewer lacks access instead of showing an empty approval queue (F-204)', async () => {
+    persistTestSession('VIEWER')
+    vi.spyOn(gdcGovernanceApprovals, 'fetchGovernanceApprovals').mockResolvedValue({ window: '24h', total: 0, approvals: [] })
+
+    renderPage()
+
+    expect(await screen.findByTestId('approval-access-denied')).toHaveTextContent(/Viewer role does not have access/)
+    expect(screen.queryByText(/No policies in the approval queue/i)).not.toBeInTheDocument()
   })
 
   it('shows submit button for draft policy', async () => {

@@ -17,6 +17,7 @@ import {
   canActivatePolicy,
   canApprovePolicy,
   canSubmitApproval,
+  governanceAccessDeniedMessage,
   governanceReadOnlyReason,
 } from '../../lib/governance-rbac'
 import { cn } from '../../lib/utils'
@@ -76,6 +77,10 @@ function ApprovalDetailDrawer({
   loading,
   actionLoading,
   readOnly,
+  canApproveRole,
+  canActivateRole,
+  actionError,
+  actionMessage,
   onClose,
   onSubmit,
   onApprove,
@@ -86,6 +91,10 @@ function ApprovalDetailDrawer({
   loading: boolean
   actionLoading: boolean
   readOnly: boolean
+  canApproveRole: boolean
+  canActivateRole: boolean
+  actionError: string | null
+  actionMessage: string | null
   onClose: () => void
   onSubmit: (comment: string) => void
   onApprove: (comment: string) => void
@@ -102,9 +111,11 @@ function ApprovalDetailDrawer({
 
   const policy = detail?.policy
   const canSubmit = !readOnly && detail?.current_status === 'DRAFT'
-  const canApprove = !readOnly && detail?.current_status === 'REVIEW' && !detail.is_approved
-  const canReject = !readOnly && detail?.current_status === 'REVIEW'
-  const canActivate = !readOnly && detail?.current_status === 'REVIEW' && detail.is_approved
+  const canApprove = !readOnly && canApproveRole && detail?.current_status === 'REVIEW' && !detail.is_approved
+  const canReject = !readOnly && canApproveRole && detail?.current_status === 'REVIEW'
+  const canActivate = !readOnly && canActivateRole && detail?.current_status === 'REVIEW' && detail.is_approved
+  // F-204: an approved policy waiting for activation must not look actionable to a role that cannot activate.
+  const activationBlockedForRole = !readOnly && !canActivateRole && detail?.current_status === 'REVIEW' && detail.is_approved
 
   return (
     <GovernanceInvestigationDrawer
@@ -230,7 +241,7 @@ function ApprovalDetailDrawer({
         ) : null
       }
       whatShouldIDo={
-        detail && !readOnly && (canSubmit || canApprove || canReject || canActivate) ? (
+        detail && !readOnly && (canSubmit || canApprove || canReject || canActivate || activationBlockedForRole || actionError || actionMessage) ? (
           <div className="space-y-2" data-testid="approval-section-actions">
             <textarea
               value={comment}
@@ -240,6 +251,22 @@ function ApprovalDetailDrawer({
               className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-[12px] dark:border-gdc-border dark:bg-gdc-card"
               data-testid="approval-action-comment"
             />
+            {activationBlockedForRole ? (
+              <p data-testid="approval-activate-role-note" className="text-[12px] text-amber-800 dark:text-amber-200">
+                This policy is approved and waiting for activation. Only a Governance Approver or Administrator can
+                activate it.
+              </p>
+            ) : null}
+            {actionError ? (
+              <p role="alert" data-testid="approval-action-error" className="text-[12px] font-medium text-red-700 dark:text-red-300">
+                {actionError}
+              </p>
+            ) : null}
+            {actionMessage ? (
+              <p role="status" data-testid="approval-action-message" className="text-[12px] font-medium text-emerald-700 dark:text-emerald-300">
+                {actionMessage}
+              </p>
+            ) : null}
             <div className="flex flex-wrap gap-2">
               {canSubmit ? (
                 <button
@@ -301,6 +328,7 @@ export function ApprovalWorkflowPage() {
   const canActivate = canActivatePolicy()
   const readOnly = !canSubmit && !canReview && !canActivate
   const readOnlyReason = governanceReadOnlyReason()
+  const accessDenied = governanceAccessDeniedMessage('the policy approval queue')
 
   const [window, setWindow] = useState<ApprovalWindow>('24h')
   const [statusFilter, setStatusFilter] = useState<string>('')
@@ -313,6 +341,8 @@ export function ApprovalWorkflowPage() {
   const [detail, setDetail] = useState<GovernanceApprovalDetailResponse | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [actionMessage, setActionMessage] = useState<string | null>(null)
 
   const loadApprovals = useCallback(async () => {
     setLoading(true)
@@ -360,16 +390,28 @@ export function ApprovalWorkflowPage() {
   const closeDrawer = useCallback(() => {
     setSelectedPolicyId(null)
     setDetail(null)
+    setActionError(null)
+    setActionMessage(null)
   }, [])
 
   const runAction = useCallback(
     async (fn: (id: number, comment: string) => Promise<unknown>) => {
       if (selectedPolicyId == null) return
       setActionLoading(true)
+      setActionError(null)
+      setActionMessage(null)
       try {
-        await fn(selectedPolicyId, '')
+        const out = await fn(selectedPolicyId, '')
+        const done = (out as { message?: string } | null)?.message
+        setActionMessage(done || 'Approval action completed.')
         await loadApprovals()
         await loadDetail(selectedPolicyId)
+      } catch (err) {
+        setActionError(
+          err instanceof Error && err.message
+            ? `Action failed: ${err.message}`
+            : 'Action failed. Your role may not be allowed to perform it.',
+        )
       } finally {
         setActionLoading(false)
       }
@@ -519,10 +561,21 @@ export function ApprovalWorkflowPage() {
           data-testid="approval-empty-state"
         >
           <CheckCircle2 className="mx-auto h-8 w-8 text-slate-400" aria-hidden />
-          <p className="mt-2 text-sm font-medium text-slate-900 dark:text-slate-100">No policies in the approval queue</p>
-          <p className="mt-1 text-[13px] text-slate-600 dark:text-gdc-muted">
-            Submit a draft policy from Data Protection to start the review workflow.
-          </p>
+          {accessDenied ? (
+            <>
+              <p className="mt-2 text-sm font-medium text-slate-900 dark:text-slate-100">Approval queue not available</p>
+              <p className="mt-1 text-[13px] text-slate-600 dark:text-gdc-muted" data-testid="approval-access-denied">
+                {accessDenied}
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="mt-2 text-sm font-medium text-slate-900 dark:text-slate-100">No policies in the approval queue</p>
+              <p className="mt-1 text-[13px] text-slate-600 dark:text-gdc-muted">
+                Submit a draft policy from Data Protection to start the review workflow.
+              </p>
+            </>
+          )}
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-slate-200/80 dark:border-gdc-border" data-testid="approval-table">
@@ -577,6 +630,10 @@ export function ApprovalWorkflowPage() {
           loading={detailLoading}
           actionLoading={actionLoading}
           readOnly={readOnly}
+          canApproveRole={canReview}
+          canActivateRole={canActivate}
+          actionError={actionError}
+          actionMessage={actionMessage}
           onClose={closeDrawer}
           onSubmit={(c) => void runAction((id, _) => submitGovernanceApproval(id, c))}
           onApprove={(c) => void runAction((id, _) => approveGovernancePolicy(id, c))}

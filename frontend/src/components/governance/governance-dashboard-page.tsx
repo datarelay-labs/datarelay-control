@@ -172,7 +172,7 @@ export function GovernanceDashboardPage() {
     setLoading(true)
     setError(null)
     try {
-      const violationsResp = await fetchGovernanceViolations({ window, limit: 5, status: 'OPEN' })
+      const violationsResp = await fetchGovernanceViolations({ window, limit: 5, status: 'QUARANTINED' })
       setViolations(violationsResp?.violations ?? [])
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load governance dashboard')

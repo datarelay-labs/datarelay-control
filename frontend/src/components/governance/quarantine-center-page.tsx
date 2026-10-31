@@ -17,7 +17,13 @@ import { fetchGovernancePolicies, type GovernancePolicyEntry } from '../../api/g
 import { fetchStreamsList } from '../../api/gdcStreams'
 import type { StreamRead } from '../../api/types/gdcApi'
 import { NAV_PATH, logsExplorerPath } from '../../config/nav-paths'
-import { canDiscardQuarantine, canExecuteReplay, canReleaseQuarantine, governanceReadOnlyReason } from '../../lib/governance-rbac'
+import {
+  canDiscardQuarantine,
+  canExecuteReplay,
+  canReleaseQuarantine,
+  governanceAccessDeniedMessage,
+  governanceReadOnlyReason,
+} from '../../lib/governance-rbac'
 import { humanizeQuarantineReason } from '../../lib/humanize-quarantine-reason'
 import { gdcUi } from '../../lib/gdc-ui-tokens'
 import { cn } from '../../lib/utils'
@@ -361,13 +367,22 @@ function InvestigationDrawer({
             </button>
             <button
               type="button"
-              disabled={actionLoading}
+              disabled={actionLoading || detail?.replay_available === false}
+              title={detail?.replay_available === false ? (detail.replay_unavailable_reason ?? undefined) : undefined}
               onClick={onReplay}
               className={actionButtonClass()}
               data-testid="quarantine-action-replay"
             >
               Replay
             </button>
+            {detail?.replay_available === false && detail.replay_unavailable_reason ? (
+              <p
+                className="basis-full text-xs text-slate-600 dark:text-gdc-muted"
+                data-testid="quarantine-replay-unavailable"
+              >
+                {detail.replay_unavailable_reason}
+              </p>
+            ) : null}
           </div>
         ) : null
       }
@@ -421,7 +436,7 @@ export function QuarantineCenterPage() {
       })
       setEvents(data?.quarantine_events ?? [])
       setTotal(data?.total ?? data?.quarantine_events?.length ?? 0)
-      if (data == null) setError('Quarantine APIs unavailable.')
+      if (data == null) setError(governanceAccessDeniedMessage('Governance quarantine') ?? 'Quarantine APIs unavailable.')
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {

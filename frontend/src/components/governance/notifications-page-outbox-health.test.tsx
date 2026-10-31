@@ -223,6 +223,36 @@ describe('Governance notification queue source-driven diagnostics', () => {
   })
 
 
+  it('states that saved channels do not prove delivery and names the server prerequisites (F-183)', async () => {
+    persistTestSession('ADMINISTRATOR')
+    renderPage()
+    const note = await screen.findByTestId('notification-delivery-prerequisites')
+    expect(note).toHaveTextContent(/does not prove delivery/i)
+    expect(note).toHaveTextContent(/SMTP transport is configured on the server/i)
+    expect(note).toHaveTextContent(/HTTPS webhook\s+sender/i)
+  })
+
+  it('refuses to save a malformed email recipient and says which one (F-183)', async () => {
+    persistTestSession('ADMINISTRATOR')
+    const update = vi.spyOn(notificationsApi, 'updateGovernanceNotificationConfig').mockResolvedValue(config)
+    renderPage()
+    const input = await screen.findByTestId('notification-email-recipients')
+    fireEvent.change(input, { target: { value: 'ops@example.com, not-an-email' } })
+    expect(await screen.findByTestId('notification-email-recipients-invalid')).toHaveTextContent('not-an-email')
+    fireEvent.click(screen.getByTestId('notification-save'))
+    expect(update).not.toHaveBeenCalled()
+    expect(await screen.findByText(/Fix the email recipients before saving/i)).toBeInTheDocument()
+  })
+
+  it('explains a refused notification settings load instead of printing a raw script error (F-196)', async () => {
+    persistTestSession('GOVERNANCE_REVIEWER')
+    vi.spyOn(notificationsApi, 'fetchGovernanceNotificationConfig').mockResolvedValue(null as never)
+    renderPage()
+    const alert = await screen.findByText(/notification settings could not be loaded/i)
+    expect(alert).toHaveTextContent(/Governance Reviewer role may not have access/i)
+    expect(screen.queryByText(/Cannot read properties of null/i)).not.toBeInTheDocument()
+  })
+
   it('blocks sidebar navigation with unsaved notification rule changes until explicit discard', async () => {
     persistTestSession('ADMINISTRATOR')
     const router = renderWithDataRouter()

@@ -3489,10 +3489,12 @@ async def discard_stream_quarantine_event(
     request: Request,
     db: Session = Depends(get_db),
 ) -> QuarantineEventActionResponse:
+    from app.audit.service import audit_actor_from_request
     from app.quarantine import service as quarantine_service
 
+    discarded_by = audit_actor_from_request(request).actor_username or "system"
     try:
-        result = quarantine_service.discard_quarantine_event(db, event_id)
+        result = quarantine_service.discard_quarantine_event(db, event_id, discarded_by=discarded_by)
     except quarantine_service.QuarantineEventNotFoundError as exc:
         raise HTTPException(
             status_code=404,

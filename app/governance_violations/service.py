@@ -18,6 +18,7 @@ from app.governance_violations.models import (
     VIOLATION_SEVERITY_HIGH,
     VIOLATION_SEVERITY_LOW,
     VIOLATION_SEVERITY_MEDIUM,
+    VIOLATION_STATUS_DISCARDED,
     VIOLATION_STATUS_OPEN,
     VIOLATION_STATUS_QUARANTINED,
     VIOLATION_STATUS_RELEASED,
@@ -293,6 +294,9 @@ def _derive_violation_status(
 ) -> str:
     if quarantine_status == QUARANTINE_STATUS_QUARANTINED:
         return VIOLATION_STATUS_QUARANTINED
+    if quarantine_status == QUARANTINE_STATUS_DISCARDED:
+        # A discarded event is resolved; it must not keep counting as an open violation (F-181).
+        return VIOLATION_STATUS_DISCARDED
     if int(stream_id) in replayed_streams or _stream_has_replay_after(
         db,
         stream_id=int(stream_id),
@@ -328,11 +332,7 @@ def count_open_violations_by_severity(db: Session) -> dict[str, int]:
     rows = db.execute(
         select(_severity_case_expr(), func.count())
         .select_from(StreamQuarantineEvent)
-        .where(
-            StreamQuarantineEvent.status.in_(
-                (QUARANTINE_STATUS_QUARANTINED, QUARANTINE_STATUS_DISCARDED)
-            )
-        )
+        .where(StreamQuarantineEvent.status == QUARANTINE_STATUS_QUARANTINED)
         .group_by(_severity_case_expr())
     ).all()
     for severity, count in rows:

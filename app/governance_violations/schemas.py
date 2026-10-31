@@ -7,7 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-ViolationStatus = Literal["OPEN", "QUARANTINED", "RELEASED", "REPLAYED"]
+ViolationStatus = Literal["OPEN", "QUARANTINED", "RELEASED", "REPLAYED", "DISCARDED"]
 ViolationSeverity = Literal["HIGH", "MEDIUM", "LOW"]
 ViolationWindow = Literal["24h", "7d", "30d"]
 

@@ -10,7 +10,7 @@ import {
   type GovernanceNotificationEventEntry,
 } from '../../api/gdcGovernanceNotifications'
 import { NAV_PATH } from '../../config/nav-paths'
-import { governanceReadOnlyReason } from '../../lib/governance-rbac'
+import { governanceReadOnlyReason, governanceRoleLabel } from '../../lib/governance-rbac'
 import { cn } from '../../lib/utils'
 import { isSessionExpired, readSession } from '../../auth/session'
 import { getSessionCapabilities } from '../../lib/rbac'
@@ -19,6 +19,9 @@ import { GovernanceInvestigationDrawer } from './governance-investigation-drawer
 import { Link } from 'react-router-dom'
 import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
 import { WizardRouteLeaveGuard, type WizardBlockedNavigation } from '../streams/wizard/wizard-route-leave-guard'
+
+// Shape check only (mirrors the server rule): one "@", a dotted domain, no whitespace or list separators.
+const EMAIL_RECIPIENT_PATTERN = /^[^@\s,;<>]+@[^@\s,;<>]+\.[^@\s,;<>]+$/
 
 function formatTime(iso: string | null | undefined): string {
   if (!iso) return '—'
@@ -230,6 +233,15 @@ export function NotificationsPage() {
         fetchGovernanceNotificationEvents('FAILED', 20),
         fetchGovernanceNotificationEvents('SENT', 20),
       ])
+      // The API client resolves to null when the server refuses or cannot answer (for example a 403).
+      if (cfg == null || pendingResp == null || failedResp == null || sentResp == null) {
+        const role = governanceRoleLabel()
+        setError(
+          `Governance notification settings could not be loaded. ${role ? `The ${role} role may not have access: ` : ''}` +
+            'only Administrators, Governance Operators and Governance Auditors can view them.',
+        )
+        return
+      }
       setConfig(cfg)
       setDraft(cfg)
       setPending(pendingResp.events)
@@ -259,8 +271,15 @@ export function NotificationsPage() {
     void load()
   }
 
+  const invalidRecipients = (draft?.email_recipients ?? []).filter((r) => !EMAIL_RECIPIENT_PATTERN.test(r))
+
   const save = async () => {
     if (!draft || !canEdit) return
+    if (invalidRecipients.length > 0) {
+      setMessage(null)
+      setError(`Fix the email recipients before saving. Not a valid email address: ${invalidRecipients.slice(0, 3).join(', ')}`)
+      return
+    }
     setSaving(true)
     setMessage(null)
     setError(null)
@@ -374,6 +393,15 @@ export function NotificationsPage() {
       <div className="grid gap-6 lg:grid-cols-2">
         <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 dark:border-gdc-border dark:bg-gdc-panel" data-testid="notification-channels">
           <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Notification Channels</h3>
+          <p
+            data-testid="notification-delivery-prerequisites"
+            className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] text-slate-700 dark:border-gdc-border dark:bg-gdc-rowHover/20 dark:text-gdc-mutedStrong"
+          >
+            Saving a channel here records the rule only; it does not prove delivery. Email is sent only when the platform
+            SMTP transport is configured on the server, and webhooks only when the server has an approved HTTPS webhook
+            sender and endpoint allowlist installed. Until then Test Email and Test Webhook report &quot;not accepted&quot;
+            and the Pending, Failed and Sent lists stay empty. Ask the platform administrator to configure delivery.
+          </p>
           {draft ? (
             <div className="space-y-3">
               <ToggleRow
@@ -401,7 +429,13 @@ export function NotificationsPage() {
                   }
                   className="mt-1 w-full rounded-md border border-slate-200 px-2.5 py-1.5 text-[13px] dark:border-gdc-border dark:bg-gdc-bg"
                   data-testid="notification-email-recipients"
+                  aria-invalid={invalidRecipients.length > 0}
                 />
+                {invalidRecipients.length > 0 ? (
+                  <span role="alert" data-testid="notification-email-recipients-invalid" className="mt-1 block text-[12px] text-red-700 dark:text-red-300">
+                    Not a valid email address: {invalidRecipients.slice(0, 3).join(', ')}
+                  </span>
+                ) : null}
               </label>
               <ToggleRow
                 label="Webhook Enabled"

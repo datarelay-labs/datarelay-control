@@ -15,7 +15,7 @@ import { fetchStreamsList } from '../../api/gdcStreams'
 import type { StreamRead } from '../../api/types/gdcApi'
 import { NAV_PATH } from '../../config/nav-paths'
 import { gdcUi } from '../../lib/gdc-ui-tokens'
-import { governanceReadOnlyReason } from '../../lib/governance-rbac'
+import { governanceAccessDeniedMessage, governanceReadOnlyReason } from '../../lib/governance-rbac'
 import { formatTimestampWithResolvedTimezone } from '../../lib/platform-timestamps'
 import { cn } from '../../lib/utils'
 import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
@@ -379,7 +379,7 @@ export function AuditTrailPage() {
         status: status === '' ? undefined : status,
       })
       setEvents(data?.events ?? [])
-      if (data == null) setError('Governance audit APIs unavailable.')
+      if (data == null) setError(governanceAccessDeniedMessage('the Governance audit trail', 'governance_audit_read') ?? 'Governance audit APIs unavailable.')
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
