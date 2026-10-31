@@ -19,6 +19,7 @@ TLS_KEYS = (
     "tls_server_name",
     "connect_timeout",
     "write_timeout",
+    "post_handshake_check_seconds",
 )
 
 WEBHOOK_URL_SCHEMES = ("http", "https")
@@ -84,6 +85,15 @@ def _validate_syslog_tls(cfg: dict[str, Any]) -> None:
             raise ValueError(f"{timeout_key} must be a positive number") from exc
         if value <= 0:
             raise ValueError(f"{timeout_key} must be a positive number")
+
+    check_value = cfg.get("post_handshake_check_seconds")
+    if check_value is not None:
+        try:
+            check_seconds = float(check_value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("post_handshake_check_seconds must be a number between 0 and 10") from exc
+        if check_seconds < 0 or check_seconds > 10:
+            raise ValueError("post_handshake_check_seconds must be a number between 0 and 10")
 
 
 def validate_destination_config(destination_type: str, config_json: dict[str, Any] | None) -> None:

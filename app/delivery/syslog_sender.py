@@ -11,7 +11,13 @@ import threading
 import time
 from typing import Any
 
-from app.delivery.syslog_tls import SyslogTlsConfig, build_syslog_tls_context, normalize_syslog_tls_config
+from app.delivery.syslog_tls import (
+    SyslogTlsConfig,
+    TlsPeerRejectedError,
+    build_syslog_tls_context,
+    check_peer_rejection,
+    normalize_syslog_tls_config,
+)
 from app.formatters.config_resolver import resolve_formatter_config
 from app.formatters.message_prefix import MessagePrefixResolveContext, format_delivery_lines_syslog
 from app.formatters.rfc5425_format import rfc5424_json, rfc5425_frame
@@ -84,6 +90,14 @@ def _borrow_tls_socket(*, pool_key: str, tls_cfg: SyslogTlsConfig, ctx: ssl.SSLC
         except Exception:
             raw_sock.close()
             raise
+        # TLS 1.3: the receiver reports a rejected/missing client certificate only after the
+        # handshake. Never pool (or write to) a connection that was refused.
+        rejection = check_peer_rejection(
+            tls_sock, tls_cfg.post_handshake_check_seconds, eof_is_rejection=True
+        )
+        if rejection is not None:
+            _safe_close_socket(tls_sock)
+            raise rejection
         _tcp_pool[pool_key] = tls_sock
         return tls_sock
 
@@ -369,6 +383,12 @@ class SyslogSender:
                 # MSG-LEN SP SYSLOG-MSG (octets, including UTF-8 BOM).
                 tls_sock.sendall(rfc5425_frame(payload) if octet_counting else payload + b"\n")
                 sent_payload_count += 1
+            # Catch an alert that arrived while writing (checked without waiting).
+            late_rejection = check_peer_rejection(tls_sock, 0.0, eof_is_rejection=False)
+            if isinstance(late_rejection, TlsPeerRejectedError):
+                # The receiver refused the connection: nothing it accepted can be relied on.
+                sent_payload_count = 0
+                raise late_rejection
         except ssl.CertificateError as exc:
             _invalidate_tcp_socket(pool_key)
             raise _tls_send_error(f"Syslog TLS certificate error: {exc}", sent_payload_count) from exc

@@ -13,7 +13,12 @@ import httpx
 from sqlalchemy.orm import Session
 
 from app.http.outbound_httpx_timeout import outbound_httpx_timeout
-from app.delivery.syslog_tls import build_syslog_tls_context, normalize_syslog_tls_config
+from app.delivery.syslog_tls import (
+    TlsPeerRejectedError,
+    build_syslog_tls_context,
+    check_peer_rejection,
+    normalize_syslog_tls_config,
+)
 from app.ai_providers.adapters.registry import get_ai_provider_adapter_registry
 from app.ai_providers.destination_config import resolve_ai_provider_destination_config
 from app.destinations.models import Destination
@@ -244,10 +249,40 @@ def _test_syslog_tls(cfg: dict[str, Any], started: float) -> dict[str, Any]:
                 "tested_at": _iso_now(),
             }
 
-        try:
-            tls_sock.settimeout(tls_cfg.write_timeout)
-            tls_sock.sendall(payload)
-        except OSError as exc:
+        # TLS 1.3 reports a rejected/missing client certificate only after the handshake
+        # (as an alert on the first read/write); wait briefly so the probe does not report
+        # success for a connection the receiver refused (F-135).
+        rejection = check_peer_rejection(
+            tls_sock, tls_cfg.post_handshake_check_seconds, eof_is_rejection=True
+        )
+        if rejection is None:
+            try:
+                tls_sock.settimeout(tls_cfg.write_timeout)
+                tls_sock.sendall(payload)
+            except OSError as exc:
+                rejection = exc
+            else:
+                rejection = check_peer_rejection(
+                    tls_sock, tls_cfg.post_handshake_check_seconds, eof_is_rejection=False
+                )
+        if rejection is not None:
+            exc = rejection
+            if isinstance(exc, TlsPeerRejectedError):
+                return {
+                    "success": False,
+                    "latency_ms": round((time.perf_counter() - started) * 1000.0, 3),
+                    "message": f"TLS connection rejected by the receiver: {exc}",
+                    "detail": {
+                        "protocol": "tls",
+                        "host": tls_cfg.host,
+                        "port": tls_cfg.port,
+                        "verify_mode": tls_cfg.verify_mode,
+                        "server_name": tls_cfg.server_name,
+                        "error_code": "TLS_PEER_REJECTED",
+                        "client_certificate_configured": bool(tls_cfg.client_cert_path),
+                    },
+                    "tested_at": _iso_now(),
+                }
             short, code = _classify_tls_failure(exc)
             return {
                 "success": False,
