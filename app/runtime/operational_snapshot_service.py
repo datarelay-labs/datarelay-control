@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
@@ -25,6 +25,12 @@ from app.runtime.operational_snapshot_schemas import (
 )
 
 _CHECKPOINT_LAG_WARNING_SECONDS = 3600
+# "Observed recently" window. Reuses the existing 3600 s checkpoint-stale value
+# (also the connectors "No Data (1h)" rule); it is not a separate threshold.
+_OBSERVATION_FRESHNESS_SECONDS = _CHECKPOINT_LAG_WARNING_SECONDS
+# Operator-controlled stop states: their own operational state, never a failure.
+_OPERATOR_STOPPED_STATUSES = frozenset({"PAUSED", "STOPPED", "STOPPING"})
+_RATE_WINDOW = timedelta(minutes=5)
 
 
 def _eps(success_count: int, window_seconds: int) -> float:
@@ -32,6 +38,8 @@ def _eps(success_count: int, window_seconds: int) -> float:
 
 
 def _rates(agg: WindowAggregateRow | None) -> tuple[float, float, float]:
+    """Stored (non-null) rates; zero attempts map to 0.0. API reads use ``_api_rates``."""
+
     if agg is None:
         return 0.0, 0.0, 0.0
     total = agg.success_count + agg.failure_count
@@ -41,6 +49,67 @@ def _rates(agg: WindowAggregateRow | None) -> tuple[float, float, float]:
     failure_rate = round(agg.failure_count / total * 100.0, 4)
     retry_rate = round(agg.retry_count / total * 100.0, 4)
     return success_rate, failure_rate, retry_rate
+
+
+def _api_rates(agg: WindowAggregateRow | None) -> tuple[float | None, float | None, float]:
+    """Success/failure rates for the API: None when there were no completed attempts."""
+
+    success_rate, failure_rate, retry_rate = _rates(agg)
+    if agg is None or agg.success_count + agg.failure_count <= 0:
+        return None, None, retry_rate
+    return success_rate, failure_rate, retry_rate
+
+
+def _stored_stream_rates(
+    success_rate_5m: float, failure_rate_5m: float
+) -> tuple[float | None, float | None]:
+    """Stored stream rates are 0/0 only when the 5m window had no attempts."""
+
+    if success_rate_5m <= 0.0 and failure_rate_5m <= 0.0:
+        return None, None
+    return success_rate_5m, failure_rate_5m
+
+
+def _stored_route_success_rate(snap: object) -> float | None:
+    """Map a stored route ``success_rate_5m`` of 0.0 with no attempts to None.
+
+    Stored route rows keep a non-null 0.0 for "no attempts". Any success, retry,
+    1m failure, or a failure inside the row's 5m window means attempts existed.
+    """
+
+    success_rate_5m = float(snap.success_rate_5m)  # type: ignore[attr-defined]
+    if success_rate_5m > 0.0:
+        return success_rate_5m
+    if float(snap.retry_rate_5m or 0.0) > 0.0 or float(snap.failed_eps_1m or 0.0) > 0.0:  # type: ignore[attr-defined]
+        return success_rate_5m
+    last_error_at = getattr(snap, "last_error_at", None)
+    updated_at = getattr(snap, "updated_at", None)
+    if last_error_at is not None and updated_at is not None:
+        if _as_utc(last_error_at) >= _as_utc(updated_at) - _RATE_WINDOW:
+            return success_rate_5m
+    return None
+
+
+def _as_utc(value: datetime) -> datetime:
+    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+
+
+def is_observation_stale(observed_at: datetime | None, now: datetime | None) -> bool:
+    """True when ``observed_at`` is at least the freshness window older than ``now``.
+
+    ``now=None`` disables the freshness check (callers that do not evaluate time).
+    """
+
+    if now is None or observed_at is None:
+        return False
+    age_seconds = (_as_utc(now) - _as_utc(observed_at)).total_seconds()
+    return age_seconds >= _OBSERVATION_FRESHNESS_SECONDS
+
+
+def is_operator_stopped_status(status: str | None) -> bool:
+    """PAUSED / STOPPED / STOPPING: no health verdict, never a failure."""
+
+    return str(status or "").strip().upper() in _OPERATOR_STOPPED_STATUSES
 
 
 def _last_fields(last: LastOutcomeRow | None) -> tuple[datetime | None, datetime | None, str | None]:
@@ -59,6 +128,7 @@ def classify_stream_health(
     failed_route_count: int = 0,
     healthy_route_count: int = 0,
     route_count: int = 0,
+    now: datetime | None = None,
 ) -> OperationalHealthStatus:
     """Classify stream operational health.
 
@@ -69,6 +139,11 @@ def classify_stream_health(
     Source outages persist as ``run_failed`` and raise stream failure_rate; once
     a newer success lands with no failed routes, recovery must not stay stuck on
     the lagging 5m failure window.
+
+    IDLE means "no health verdict": disabled, operator-stopped (PAUSED/STOPPED/
+    STOPPING), or not observed yet. HEALTHY requires a success inside the
+    freshness window when ``now`` is given; an older success with nothing newer
+    is DEGRADED ("no recent ingest/delivery observed").
     """
 
     if not enabled:
@@ -76,15 +151,19 @@ def classify_stream_health(
     status_upper = status.upper()
     if "ERROR" in status_upper:
         return "ERROR"
-    if "PAUSED" in status_upper or "RATE_LIMITED" in status_upper:
+    if is_operator_stopped_status(status_upper):
+        return "IDLE"
+    if "RATE_LIMITED" in status_upper:
         return "DEGRADED"
 
     enabled_routes = max(0, int(route_count or 0))
     failed_routes = max(0, int(failed_route_count or 0))
     healthy_routes = max(0, int(healthy_route_count or 0))
+    success_is_fresh = not is_observation_stale(last_success_at, now)
 
     recovered = (
         last_success_at is not None
+        and success_is_fresh
         and (last_error_at is None or last_success_at >= last_error_at)
         and failed_routes == 0
     )
@@ -111,7 +190,9 @@ def classify_stream_health(
     if failed_routes > 0:
         return "DEGRADED"
     if last_success_at is not None:
-        return "HEALTHY"
+        # A success older than the freshness window with nothing newer is no
+        # longer evidence of health.
+        return "HEALTHY" if success_is_fresh else "DEGRADED"
     return "IDLE"
 
 
@@ -122,6 +203,7 @@ def classify_route_health(
     last_error_at: datetime | None,
     failed_eps_1m: float,
     retry_rate_5m: float,
+    now: datetime | None = None,
 ) -> OperationalHealthStatus:
     if not enabled:
         return "IDLE"
@@ -131,7 +213,8 @@ def classify_route_health(
         return "ERROR"
     if failed_eps_1m > 0.0 or retry_rate_5m > 0.0:
         return "DEGRADED"
-    if last_success_at is not None:
+    # Zero recent traffic is not a failure: an old success is IDLE, not HEALTHY.
+    if last_success_at is not None and not is_observation_stale(last_success_at, now):
         return "HEALTHY"
     return "IDLE"
 
@@ -142,16 +225,36 @@ def classify_destination_health(
     route_healths: list[OperationalHealthStatus],
     last_success_at: datetime | None,
     last_connectivity_test_success: bool | None = None,
+    last_error_at: datetime | None = None,
+    failed_eps_1m: float = 0.0,
+    now: datetime | None = None,
 ) -> OperationalHealthStatus:
+    """Classify destination health from delivery-only evidence.
+
+    ``last_success_at`` / ``last_error_at`` / ``failed_eps_1m`` are the
+    destination's own delivery outcomes (policy dispositions excluded). A route
+    ERROR escalates the destination only when that delivery evidence shows a
+    failure, so policy-only route problems never make a destination unhealthy.
+    Route DEGRADED is derived from delivery failures/retries only and still
+    escalates. A passing connectivity test without deliveries is not a health
+    verdict (IDLE); ``last_connectivity_test_success`` is accepted for callers
+    but no longer yields HEALTHY.
+    """
+
     if not enabled:
         return "IDLE"
+    delivery_failing = failed_eps_1m > 0.0 or (
+        last_error_at is not None and (last_success_at is None or last_error_at >= last_success_at)
+    )
     if any(h == "ERROR" for h in route_healths):
-        return "ERROR"
+        if delivery_failing:
+            return "ERROR"
+        if last_error_at is not None and not is_observation_stale(last_error_at, now):
+            # Recent delivery failure on one route, newer success elsewhere.
+            return "DEGRADED"
     if any(h == "DEGRADED" for h in route_healths):
         return "DEGRADED"
-    if last_success_at is not None:
-        return "HEALTHY"
-    if last_connectivity_test_success is True:
+    if last_success_at is not None and not is_observation_stale(last_success_at, now):
         return "HEALTHY"
     return "IDLE"
 
@@ -160,13 +263,27 @@ def classify_global_health(
     *,
     enabled_streams: int,
     problems: list[OperationalProblem],
+    streams: list[OperationalStreamSnapshot] | None = None,
 ) -> OperationalHealthStatus:
+    """Roll up global health; Unknown/IDLE never hides a confirmed problem.
+
+    With ``streams``, HEALTHY also requires every enabled, not operator-stopped
+    stream to have a verdict: one not-observed (IDLE) stream, or every enabled
+    stream being paused/stopped, yields IDLE.
+    """
+
     if enabled_streams <= 0:
         return "IDLE"
     if any(p.severity == "critical" for p in problems):
         return "ERROR"
     if any(p.severity == "warning" for p in problems):
         return "DEGRADED"
+    if streams is not None:
+        active = [s for s in streams if s.enabled and not is_operator_stopped_status(s.status)]
+        if not active:
+            return "IDLE"
+        if any(s.health_status == "IDLE" for s in active):
+            return "IDLE"
     return "HEALTHY"
 
 
@@ -209,10 +326,11 @@ def _assemble_snapshot_from_physical(rows: PhysicalOperationalRows) -> Operation
 
     for route in rows.routes:
         snap = rows.route_snapshots.get(route.id)
+        success_rate_5m: float | None
         if snap is not None:
             delivered_eps_1m = float(snap.delivered_eps_1m)  # type: ignore[union-attr]
             failed_eps_1m = float(snap.failed_eps_1m)  # type: ignore[union-attr]
-            success_rate_5m = float(snap.success_rate_5m)  # type: ignore[union-attr]
+            success_rate_5m = _stored_route_success_rate(snap)
             retry_rate_5m = float(snap.retry_rate_5m)  # type: ignore[union-attr]
             avg_latency_ms = snap.avg_latency_ms  # type: ignore[union-attr]
             last_success_at = snap.last_success_at  # type: ignore[union-attr]
@@ -224,6 +342,7 @@ def _assemble_snapshot_from_physical(rows: PhysicalOperationalRows) -> Operation
                 last_error_at=last_error_at,
                 failed_eps_1m=failed_eps_1m,
                 retry_rate_5m=retry_rate_5m,
+                now=rows.now,
             )
         else:
             health = classify_route_health(
@@ -232,8 +351,10 @@ def _assemble_snapshot_from_physical(rows: PhysicalOperationalRows) -> Operation
                 last_error_at=None,
                 failed_eps_1m=0.0,
                 retry_rate_5m=0.0,
+                now=rows.now,
             )
-            delivered_eps_1m = failed_eps_1m = success_rate_5m = retry_rate_5m = 0.0
+            delivered_eps_1m = failed_eps_1m = retry_rate_5m = 0.0
+            success_rate_5m = None
             avg_latency_ms = last_success_at = last_error_at = last_error_message = None
 
         route_health_by_id[route.id] = health
@@ -268,11 +389,16 @@ def _assemble_snapshot_from_physical(rows: PhysicalOperationalRows) -> Operation
     stream_snapshots: list[OperationalStreamSnapshot] = []
     for stream in rows.streams:
         snap = rows.stream_snapshots.get(stream.id)
+        stream_success_rate: float | None
+        stream_failure_rate: float | None
         if snap is not None:
             eps_1m = float(snap.eps_1m)  # type: ignore[union-attr]
             eps_5m = float(snap.eps_5m)  # type: ignore[union-attr]
-            success_rate_5m = float(snap.success_rate_5m)  # type: ignore[union-attr]
             failure_rate_5m = float(snap.failure_rate_5m)  # type: ignore[union-attr]
+            stream_success_rate, stream_failure_rate = _stored_stream_rates(
+                float(snap.success_rate_5m),  # type: ignore[union-attr]
+                failure_rate_5m,
+            )
             avg_latency_ms = snap.avg_latency_ms  # type: ignore[union-attr]
             route_count = int(snap.route_count)  # type: ignore[union-attr]
             healthy_route_count = int(snap.healthy_route_count)  # type: ignore[union-attr]
@@ -293,16 +419,20 @@ def _assemble_snapshot_from_physical(rows: PhysicalOperationalRows) -> Operation
                 failed_route_count=failed_route_count,
                 healthy_route_count=healthy_route_count,
                 route_count=route_count,
+                now=rows.now,
             )
         else:
+            # Missing snapshot row: no evidence, never HEALTHY.
             health = classify_stream_health(
                 enabled=stream.enabled,
                 status=stream.status,
                 last_success_at=None,
                 last_error_at=None,
                 failure_rate_5m=0.0,
+                now=rows.now,
             )
-            eps_1m = eps_5m = success_rate_5m = failure_rate_5m = 0.0
+            eps_1m = eps_5m = 0.0
+            stream_success_rate = stream_failure_rate = None
             avg_latency_ms = last_success_at = last_error_at = last_error_message = None
             checkpoint_updated_at = checkpoint_lag_seconds = None
             route_ids = routes_by_stream.get(stream.id, [])
@@ -320,8 +450,8 @@ def _assemble_snapshot_from_physical(rows: PhysicalOperationalRows) -> Operation
                 health_status=health,
                 eps_1m=eps_1m,
                 eps_5m=eps_5m,
-                success_rate_5m=success_rate_5m,
-                failure_rate_5m=failure_rate_5m,
+                success_rate_5m=stream_success_rate,
+                failure_rate_5m=stream_failure_rate,
                 avg_latency_ms=avg_latency_ms,
                 route_count=route_count,
                 healthy_route_count=healthy_route_count,
@@ -352,6 +482,9 @@ def _assemble_snapshot_from_physical(rows: PhysicalOperationalRows) -> Operation
                 route_healths=route_healths,
                 last_success_at=last_success_at,
                 last_connectivity_test_success=dest.last_connectivity_test_success,
+                last_error_at=last_error_at,
+                failed_eps_1m=failed_eps_1m,
+                now=rows.now,
             )
         else:
             health = classify_destination_health(
@@ -359,6 +492,7 @@ def _assemble_snapshot_from_physical(rows: PhysicalOperationalRows) -> Operation
                 route_healths=route_healths,
                 last_success_at=None,
                 last_connectivity_test_success=dest.last_connectivity_test_success,
+                now=rows.now,
             )
             inbound_eps_1m = failed_eps_1m = 0.0
             avg_latency_ms = last_success_at = last_error_at = last_error_message = None
@@ -385,6 +519,7 @@ def _assemble_snapshot_from_physical(rows: PhysicalOperationalRows) -> Operation
         stream_snapshots=stream_snapshots,
         route_snapshots=route_snapshots,
         destination_snapshots=destination_snapshots,
+        now=rows.now,
     )
 
     enabled_streams = sum(1 for s in rows.streams if s.enabled)
@@ -411,6 +546,7 @@ def _assemble_snapshot_from_physical(rows: PhysicalOperationalRows) -> Operation
     global_health = classify_global_health(
         enabled_streams=enabled_streams,
         problems=problems,
+        streams=stream_snapshots,
     )
 
     global_snapshot = OperationalGlobalSnapshot(
@@ -446,7 +582,7 @@ def _assemble_snapshot(bulk: OperationalSnapshotBulkData) -> OperationalSnapshot
     for route in bulk.routes:
         agg_1m = bulk.route_agg_1m.get(route.id)
         agg_5m = bulk.route_agg_5m.get(route.id)
-        success_rate_5m, _, retry_rate_5m = _rates(agg_5m)
+        success_rate_5m, _, retry_rate_5m = _api_rates(agg_5m)
         delivered_eps_1m = _eps(agg_1m.success_count if agg_1m else 0, 60)
         failed_eps_1m = _eps(agg_1m.failure_count if agg_1m else 0, 60)
         last_success_at, last_error_at, last_error_message = _last_fields(bulk.route_last.get(route.id))
@@ -456,6 +592,7 @@ def _assemble_snapshot(bulk: OperationalSnapshotBulkData) -> OperationalSnapshot
             last_error_at=last_error_at,
             failed_eps_1m=failed_eps_1m,
             retry_rate_5m=retry_rate_5m,
+            now=bulk.now,
         )
         route_health_by_id[route.id] = health
         route_snapshots.append(
@@ -490,7 +627,7 @@ def _assemble_snapshot(bulk: OperationalSnapshotBulkData) -> OperationalSnapshot
     for stream in bulk.streams:
         agg_1m = bulk.stream_agg_1m.get(stream.id)
         agg_5m = bulk.stream_agg_5m.get(stream.id)
-        success_rate_5m, failure_rate_5m, _ = _rates(agg_5m)
+        success_rate_5m, failure_rate_5m, _ = _api_rates(agg_5m)
         last_success_at, last_error_at, last_error_message = _last_fields(bulk.stream_last.get(stream.id))
         route_ids = routes_by_stream.get(stream.id, [])
         route_healths = [route_health_by_id[rid] for rid in route_ids]
@@ -502,10 +639,11 @@ def _assemble_snapshot(bulk: OperationalSnapshotBulkData) -> OperationalSnapshot
             status=stream.status,
             last_success_at=last_success_at,
             last_error_at=last_error_at,
-            failure_rate_5m=failure_rate_5m,
+            failure_rate_5m=failure_rate_5m or 0.0,
             failed_route_count=failed_route_count,
             healthy_route_count=healthy_route_count,
             route_count=route_count,
+            now=bulk.now,
         )
         cp = bulk.checkpoints.get(stream.id)
         checkpoint_updated_at = cp.updated_at if cp is not None else None
@@ -542,11 +680,15 @@ def _assemble_snapshot(bulk: OperationalSnapshotBulkData) -> OperationalSnapshot
         last_success_at, last_error_at, last_error_message = _last_fields(bulk.destination_last.get(dest.id))
         route_ids = routes_by_destination.get(dest.id, [])
         route_healths = [route_health_by_id[rid] for rid in route_ids]
+        dest_failed_eps_1m = _eps(agg_1m.failure_count if agg_1m else 0, 60)
         health = classify_destination_health(
             enabled=dest.enabled,
             route_healths=route_healths,
             last_success_at=last_success_at,
             last_connectivity_test_success=dest.last_connectivity_test_success,
+            last_error_at=last_error_at,
+            failed_eps_1m=dest_failed_eps_1m,
+            now=bulk.now,
         )
         destination_snapshots.append(
             OperationalDestinationSnapshot(
@@ -556,7 +698,7 @@ def _assemble_snapshot(bulk: OperationalSnapshotBulkData) -> OperationalSnapshot
                 enabled=dest.enabled,
                 health_status=health,
                 inbound_eps_1m=_eps(agg_1m.success_count if agg_1m else 0, 60),
-                failed_eps_1m=_eps(agg_1m.failure_count if agg_1m else 0, 60),
+                failed_eps_1m=dest_failed_eps_1m,
                 avg_latency_ms=agg_5m.avg_latency_ms if agg_5m else None,
                 route_count=bulk.routes_per_destination.get(dest.id, len(route_ids)),
                 last_success_at=last_success_at,
@@ -569,6 +711,7 @@ def _assemble_snapshot(bulk: OperationalSnapshotBulkData) -> OperationalSnapshot
         stream_snapshots=stream_snapshots,
         route_snapshots=route_snapshots,
         destination_snapshots=destination_snapshots,
+        now=bulk.now,
     )
 
     enabled_streams = sum(1 for s in bulk.streams if s.enabled)
@@ -595,6 +738,7 @@ def _assemble_snapshot(bulk: OperationalSnapshotBulkData) -> OperationalSnapshot
     global_health = classify_global_health(
         enabled_streams=enabled_streams,
         problems=problems,
+        streams=stream_snapshots,
     )
 
     global_snapshot = OperationalGlobalSnapshot(
@@ -623,15 +767,29 @@ def _assemble_snapshot(bulk: OperationalSnapshotBulkData) -> OperationalSnapshot
     )
 
 
+def _stream_success_stale(stream: OperationalStreamSnapshot, now: datetime | None) -> bool:
+    """DEGRADED only because the last success aged out (no newer error, not rate limited)."""
+
+    if stream.last_success_at is None or not is_observation_stale(stream.last_success_at, now):
+        return False
+    if "RATE_LIMITED" in str(stream.status or "").upper():
+        return False
+    return stream.last_error_at is None or stream.last_error_at <= stream.last_success_at
+
+
 def _build_problems(
     *,
     stream_snapshots: list[OperationalStreamSnapshot],
     route_snapshots: list[OperationalRouteSnapshot],
     destination_snapshots: list[OperationalDestinationSnapshot],
+    now: datetime | None = None,
 ) -> list[OperationalProblem]:
     problems: list[OperationalProblem] = []
 
     for stream in stream_snapshots:
+        if not stream.enabled or is_operator_stopped_status(stream.status):
+            # Disabled / paused / stopped is an operational state, not a failure.
+            continue
         if stream.health_status == "ERROR":
             problems.append(
                 OperationalProblem(
@@ -643,7 +801,7 @@ def _build_problems(
                     last_seen_at=stream.last_error_at or stream.last_success_at,
                 )
             )
-        elif stream.failure_rate_5m > 0.0:
+        elif stream.failure_rate_5m is not None and stream.failure_rate_5m > 0.0:
             problems.append(
                 OperationalProblem(
                     severity="warning",
@@ -652,6 +810,20 @@ def _build_problems(
                     title=f"Stream {stream.stream_name} has delivery failures",
                     message=f"Failure rate (5m): {stream.failure_rate_5m:.2f}%",
                     last_seen_at=stream.last_error_at,
+                )
+            )
+        elif stream.health_status == "DEGRADED" and _stream_success_stale(stream, now):
+            problems.append(
+                OperationalProblem(
+                    severity="warning",
+                    scope="stream",
+                    stream_id=stream.stream_id,
+                    title=f"Stream {stream.stream_name}: no recent ingest/delivery observed",
+                    message=(
+                        "No recent ingest/delivery observed: no success within "
+                        f"{_OBSERVATION_FRESHNESS_SECONDS}s"
+                    ),
+                    last_seen_at=stream.last_success_at,
                 )
             )
         elif stream.health_status == "DEGRADED" and (stream.last_error_message or stream.last_error_at):

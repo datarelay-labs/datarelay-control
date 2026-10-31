@@ -479,12 +479,14 @@ def _route_health_from_snapshots(
     routes: list[Route],
     route_snaps: dict[int, object],
     route_counts: dict[int, RouteRuntimeCounts] | None = None,
+    *,
+    now: datetime | None = None,
 ) -> tuple[list[RouteHealthItem], StreamHealthSummary]:
     """Same mapping as the single-stream snapshot read (ERROR -> UNHEALTHY, stats counts)."""
 
     from app.runtime.stream_runtime_snapshot_read import _route_health_from_snapshots as _single
 
-    return _single(routes, route_snaps, route_counts)
+    return _single(routes, route_snaps, route_counts, now=now)
 
 
 def _build_from_runtime_snapshots(
@@ -612,6 +614,7 @@ def _build_from_runtime_snapshots(
             routes,
             route_snaps,
             {item.route_id: item.counts for item in route_stats},
+            now=datetime.now(timezone.utc),
         )
         stream_health = runtime_health_from_operational(snap.health_status if snap is not None else "IDLE")
         health = StreamHealthResponse(
@@ -635,6 +638,9 @@ def _build_from_runtime_snapshots(
         snapshot_id=_dashboard_snapshot_id(until),
         streams=streams_out,
     )
+
+
+_DEGRADED_READ_ISSUE = "Runtime stats unavailable; health not verified"
 
 
 def _build_degraded_bulk_entry(
@@ -687,10 +693,12 @@ def _build_degraded_bulk_entry(
         routes=[],
         recent_logs=[],
     )
+    # A failed read is not evidence about the stream: no health verdict (IDLE).
+    # The non-null ``issue`` below keeps signalling that this entry fell back.
     health = StreamHealthResponse(
         stream_id=sid,
         stream_status=str(stream.status),
-        health="DEGRADED",
+        health="IDLE",
         limit=limit,
         summary=StreamHealthSummary(
             total_routes=len(routes),
@@ -703,12 +711,13 @@ def _build_degraded_bulk_entry(
         routes=route_items,
     )
     bundle = StreamRuntimeStatsHealthBundleResponse(stats=stats, health=health)
-    return _entry_from_bundle(
+    entry = _entry_from_bundle(
         bundle=bundle,
         events_window=0,
         events_24h=0,
         window_seconds=1,
     )
+    return entry.model_copy(update={"issue": _DEGRADED_READ_ISSUE})
 
 
 def _build_degraded_bulk_response(

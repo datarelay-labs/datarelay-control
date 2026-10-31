@@ -421,6 +421,7 @@ def recompute_and_upsert_snapshots(
             last_error_at=last_error_at,
             failed_eps_1m=_eps(agg_1m.failure_count if agg_1m else 0, 60),
             retry_rate_5m=retry_rate_5m,
+            now=now,
         )
         route_health_by_id[route.id] = health
         route_rows.append(
@@ -471,6 +472,7 @@ def recompute_and_upsert_snapshots(
             failed_route_count=failed_route_count,
             healthy_route_count=healthy_route_count,
             route_count=route_count,
+            now=now,
         )
         cp = checkpoints.get(stream.id)
         checkpoint_updated_at = cp.updated_at if cp is not None else None
@@ -507,11 +509,15 @@ def recompute_and_upsert_snapshots(
         last_error_message = last.last_error_message if last else None
         route_ids_for_dest = routes_by_destination.get(dest.id, [])
         route_healths = [route_health_by_id[rid] for rid in route_ids_for_dest]
+        dest_failed_eps_1m = _eps(agg_1m.failure_count if agg_1m else 0, 60)
         health = classify_destination_health(
             enabled=dest.enabled,
             route_healths=route_healths,
             last_success_at=last_success_at,
             last_connectivity_test_success=dest.last_connectivity_test_success,
+            last_error_at=last_error_at,
+            failed_eps_1m=dest_failed_eps_1m,
+            now=now,
         )
         destination_rows.append(
             {
@@ -519,7 +525,7 @@ def recompute_and_upsert_snapshots(
                 "enabled": dest.enabled,
                 "health_status": health,
                 "inbound_eps_1m": _eps(agg_1m.success_count if agg_1m else 0, 60),
-                "failed_eps_1m": _eps(agg_1m.failure_count if agg_1m else 0, 60),
+                "failed_eps_1m": dest_failed_eps_1m,
                 "avg_latency_ms": agg_5m.avg_latency_ms if agg_5m else None,
                 "route_count": routes_per_destination.get(dest.id, len(route_ids_for_dest)),
                 "last_success_at": last_success_at,

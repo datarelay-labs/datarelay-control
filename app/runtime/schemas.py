@@ -315,7 +315,8 @@ class RouteRuntimeLatencyTrendPoint(BaseModel):
 
 class RouteRuntimeSuccessRateTrendPoint(BaseModel):
     timestamp: datetime
-    success_rate: float
+    # None when the bucket had no completed delivery attempts.
+    success_rate: float | None
 
 
 class RouteRuntimeMetricsRow(BaseModel):
@@ -327,7 +328,8 @@ class RouteRuntimeMetricsRow(BaseModel):
     destination_type: str
     enabled: bool
     route_status: str
-    success_rate: float
+    # None when the window had no completed delivery attempts.
+    success_rate: float | None
     events_last_hour: int
     delivered_last_hour: int
     failed_last_hour: int
@@ -341,7 +343,8 @@ class RouteRuntimeMetricsRow(BaseModel):
     last_error_message: str | None = None
     last_error_code: str | None = None
     failure_policy: str
-    connectivity_state: Literal["HEALTHY", "DEGRADED", "ERROR", "DISABLED"]
+    # IDLE: enabled but no deliveries and no failures in the window (no verdict).
+    connectivity_state: Literal["HEALTHY", "DEGRADED", "ERROR", "DISABLED", "IDLE"]
     disable_reason: str | None = None
     latency_trend: list[RouteRuntimeLatencyTrendPoint]
     success_rate_trend: list[RouteRuntimeSuccessRateTrendPoint]

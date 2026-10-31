@@ -192,7 +192,11 @@ def _recent_unhealthy_streams(
     out: list[RecentUnhealthyStreamItem] = []
     for stream in streams:
         snap = stream_snaps.get(stream.id)
-        if snap is None or snap.health_status == "HEALTHY":
+        # Only confirmed problems are "unhealthy": IDLE (no verdict: disabled,
+        # paused/stopped, not observed) and disabled streams never qualify.
+        if snap is None or snap.health_status in ("HEALTHY", "IDLE"):
+            continue
+        if not bool(getattr(stream, "enabled", True)):
             continue
         at = snap.last_error_at or snap.updated_at
         if at < since:

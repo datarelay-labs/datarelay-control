@@ -202,5 +202,10 @@ def test_metrics_empty_stream(metrics_client: TestClient, db_session: Session) -
     assert body["recent_runs"] == []
     assert len(body["route_runtime"]) == 1
     assert body["route_runtime"][0]["events_last_hour"] == 0
-    assert body["route_runtime"][0]["connectivity_state"] == "HEALTHY"
+    # Owner decision (runtime health semantics): zero deliveries and zero failures
+    # is "not observed" (IDLE), not HEALTHY; the old HEALTHY assertion was stale.
+    assert body["route_runtime"][0]["connectivity_state"] == "IDLE"
+    # Zero attempts -> success rate None (never 100.0 or 0.0 without evidence).
+    assert body["route_runtime"][0]["success_rate"] is None
+    assert all(p["success_rate"] is None for p in body["route_runtime"][0]["success_rate_trend"])
     assert body["recent_route_errors"] == []

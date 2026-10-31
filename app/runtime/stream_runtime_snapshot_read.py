@@ -119,12 +119,13 @@ def runtime_health_from_operational(status: str | None) -> str:
     return _OPERATIONAL_TO_RUNTIME_HEALTH.get(str(status or "IDLE").strip().upper(), "IDLE")
 
 
-def snapshot_route_health_key(snap: Any) -> str:
+def snapshot_route_health_key(snap: Any, *, now: datetime | None = None) -> str:
     """Re-classify an enabled Route from snapshot posture fields, like the dashboard.
 
     The operational snapshot read (``_assemble_snapshot_from_physical``) re-runs
-    ``classify_route_health`` on read, so this uses the same inputs and classifier
-    instead of trusting a possibly stale stored ``health_status``.
+    ``classify_route_health`` on read, so this uses the same inputs, classifier
+    and freshness reference (``now``) instead of trusting a possibly stale stored
+    ``health_status``.
     """
 
     from app.runtime.operational_snapshot_service import classify_route_health
@@ -135,6 +136,7 @@ def snapshot_route_health_key(snap: Any) -> str:
         last_error_at=snap.last_error_at,
         failed_eps_1m=float(snap.failed_eps_1m or 0.0),
         retry_rate_5m=float(snap.retry_rate_5m or 0.0),
+        now=now,
     )
     return runtime_health_from_operational(status)
 
@@ -143,6 +145,8 @@ def _route_health_from_snapshots(
     routes: list[Route],
     route_snaps: dict[int, Any],
     route_counts: dict[int, RouteRuntimeCounts] | None = None,
+    *,
+    now: datetime | None = None,
 ) -> tuple[list[RouteHealthItem], StreamHealthSummary]:
     """Route health rows from operational snapshots.
 
@@ -163,7 +167,7 @@ def _route_health_from_snapshots(
         elif snap is None:
             health_key = "IDLE"
         else:
-            health_key = snapshot_route_health_key(snap)
+            health_key = snapshot_route_health_key(snap, now=now)
         bucket[health_key] += 1
         counts = (route_counts or {}).get(int(route.id)) or RouteRuntimeCounts()
         success_c, failure_c, rl_c = route_health_counts_from_stats(counts)
@@ -312,6 +316,7 @@ def build_stream_stats_health_from_snapshot(
         routes,
         route_snaps,
         {item.route_id: item.counts for item in route_stats},
+        now=datetime.now(UTC),
     )
     stream_health = runtime_health_from_operational(
         stream_snap.health_status if stream_snap is not None else "IDLE"
@@ -334,10 +339,13 @@ def _route_connectivity_state(
     route_status: str,
     delivered_ev: int,
     failed_ev: int,
-) -> Literal["HEALTHY", "DEGRADED", "ERROR", "DISABLED"]:
+) -> Literal["HEALTHY", "DEGRADED", "ERROR", "DISABLED", "IDLE"]:
     rs = str(route_status or "").strip().upper()
     if not route_enabled or not destination_enabled or rs != "ENABLED":
         return "DISABLED"
+    if delivered_ev <= 0 and failed_ev <= 0:
+        # No deliveries observed in the window: no verdict, not HEALTHY.
+        return "IDLE"
     if failed_ev <= 0:
         return "HEALTHY"
     if delivered_ev <= 0:
@@ -664,7 +672,7 @@ def _build_metrics_from_buckets(
         delivered_ev = int(rs.success_count) if rs else 0
         failed_ev = int(rs.failure_count) if rs else 0
         events_total = delivered_ev + failed_ev
-        success_rate = 100.0 if events_total <= 0 else round(100.0 * delivered_ev / events_total, 1)
+        success_rate = None if events_total <= 0 else round(100.0 * delivered_ev / events_total, 1)
         lsucc = route_snap.last_success_at if route_snap is not None else None
         lfail = route_snap.last_error_at if route_snap is not None else None
         r_avg_lat = round(float(rs.avg_latency_ms), 1) if rs and rs.avg_latency_ms is not None else 0.0
@@ -686,7 +694,7 @@ def _build_metrics_from_buckets(
         success_rate_trend = []
         for tr in tr_list:
             tot_b = tr.delivered_events + tr.failed_events
-            sr_b = 100.0 if tot_b <= 0 else round(100.0 * tr.delivered_events / tot_b, 1)
+            sr_b = None if tot_b <= 0 else round(100.0 * tr.delivered_events / tot_b, 1)
             success_rate_trend.append(
                 RouteRuntimeSuccessRateTrendPoint(timestamp=tr.bucket_start, success_rate=sr_b)
             )
@@ -706,7 +714,7 @@ def _build_metrics_from_buckets(
                 destination_type=dest_type,
                 enabled=bool(route.enabled),
                 route_status=str(route.status),
-                success_rate=float(success_rate),
+                success_rate=success_rate,
                 events_last_hour=int(events_total),
                 delivered_last_hour=int(delivered_ev),
                 failed_last_hour=int(failed_ev),
@@ -863,7 +871,7 @@ def _build_metrics_from_operational_snapshot(
         delivered_ev = int(round(_int_events(float(rs.delivered_eps_1m), 60) * scale)) if rs else 0
         failed_ev = int(round(_int_events(float(rs.failed_eps_1m), 60) * scale)) if rs else 0
         events_total = delivered_ev + failed_ev
-        success_rate = 100.0 if events_total <= 0 else round(100.0 * delivered_ev / events_total, 1)
+        success_rate = None if events_total <= 0 else round(100.0 * delivered_ev / events_total, 1)
         r_avg_lat = round(float(rs.avg_latency_ms), 1) if rs and rs.avg_latency_ms is not None else 0.0
         route_runtime_rows.append(
             RouteRuntimeMetricsRow(
@@ -873,7 +881,7 @@ def _build_metrics_from_operational_snapshot(
                 destination_type=dest_type,
                 enabled=bool(route.enabled),
                 route_status=str(route.status),
-                success_rate=float(success_rate),
+                success_rate=success_rate,
                 events_last_hour=int(events_total),
                 delivered_last_hour=int(delivered_ev),
                 failed_last_hour=int(failed_ev),

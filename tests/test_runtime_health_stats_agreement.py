@@ -263,6 +263,102 @@ def test_r3_route_without_activity_stays_idle(
     assert idle.failure_count == 0
 
 
+def test_route_with_only_old_success_is_idle_on_snapshot_path(
+    db_session: Session,
+    runtime_snapshot_read_enabled: None,
+) -> None:
+    """Route re-classified on read with ``now``: success older than 3600 s -> IDLE."""
+
+    s = _seed_two_routes(db_session)
+    now = datetime.now(UTC)
+    _seed_receiver_outage_snapshots(db_session, s, now)
+    snap = (
+        db_session.query(RuntimeRouteSnapshot)
+        .filter(RuntimeRouteSnapshot.route_id == s["route_ok_id"])
+        .one()
+    )
+    snap.delivered_eps_1m = 0.0
+    snap.success_rate_5m = 0.0
+    snap.last_success_at = now - timedelta(hours=2)
+    db_session.commit()
+
+    health = read_service.get_stream_runtime_health(db_session, s["stream_id"], 100, window="1h")
+
+    quiet = _route(health, s["route_ok_id"])
+    # Old code: HEALTHY forever after a single historical success.
+    assert quiet.health == "IDLE"
+    assert health.summary.healthy_routes == 0
+    # The failing route keeps its confirmed verdict.
+    assert _route(health, s["route_down_id"]).health == "UNHEALTHY"
+
+
+def test_snapshot_stream_scoring_excludes_disabled_paused_and_unobserved_rows(
+    db_session: Session,
+    runtime_snapshot_read_enabled: None,
+) -> None:
+    """Disabled / paused / no-outcome streams are excluded_no_outcome, not scored."""
+
+    from app.runtime.health_snapshot_read import list_stream_health_from_snapshots
+
+    s = _seed_two_routes(db_session)
+    now = datetime.now(UTC)
+    _seed_receiver_outage_snapshots(db_session, s, now)
+
+    def _rows() -> list[Any]:
+        return list_stream_health_from_snapshots(
+            db_session,
+            window="1h",
+            since=None,
+            stream_id=s["stream_id"],
+            route_id=None,
+            destination_id=None,
+        ).rows
+
+    # Baseline: an enabled, delivering stream is scored.
+    assert len(_rows()) == 1
+
+    stream = db_session.get(Stream, s["stream_id"])
+    snap = db_session.get(RuntimeStreamSnapshot, s["stream_id"])
+    assert stream is not None and snap is not None
+
+    # Disabled with a stale error newer than its last success: old code scored it
+    # UNHEALTHY/CRITICAL (false alarm).
+    stream.enabled = False
+    db_session.commit()
+    assert _rows() == []
+
+    stream.enabled = True
+    stream.status = "PAUSED"
+    db_session.commit()
+    assert _rows() == []
+
+    # Enabled and running but no observed outcome: old code scored 100 / HEALTHY.
+    stream.status = "RUNNING"
+    snap.eps_5m = 0.0
+    snap.failure_rate_5m = 0.0
+    snap.last_error_at = None
+    snap.last_success_at = now - timedelta(hours=6)
+    db_session.commit()
+    assert _rows() == []
+
+
+def test_snapshot_route_health_key_freshness_unit() -> None:
+    from types import SimpleNamespace
+
+    from app.runtime.stream_runtime_snapshot_read import snapshot_route_health_key
+
+    now = datetime(2026, 10, 31, 12, 0, 0, tzinfo=UTC)
+    snap = SimpleNamespace(
+        last_success_at=now - timedelta(hours=2),
+        last_error_at=None,
+        failed_eps_1m=0.0,
+        retry_rate_5m=0.0,
+    )
+    assert snapshot_route_health_key(snap, now=now) == "IDLE"
+    snap.last_success_at = now - timedelta(minutes=5)
+    assert snapshot_route_health_key(snap, now=now) == "HEALTHY"
+
+
 def _assert_health_matches_stats(health: Any, stats: Any) -> None:
     stats_by_route = {r.route_id: r.counts for r in stats.routes}
     assert {r.route_id for r in health.routes} == set(stats_by_route)

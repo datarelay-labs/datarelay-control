@@ -259,6 +259,61 @@ def test_disabled_stream_idle_health(db_session: Session) -> None:
     assert row.health_status == "IDLE"
 
 
+@pytest.mark.parametrize("stream_status", ["PAUSED", "STOPPED"])
+def test_operator_stopped_enabled_stream_is_idle_not_degraded(
+    db_session: Session, stream_status: str
+) -> None:
+    """Scenario 10 (writer): PAUSED/STOPPED is its own state, not a failure verdict."""
+
+    h = _mk_hierarchy(db_session, stream_name=f"op-{stream_status.lower()}", stream_status=stream_status)
+    now = datetime.now(UTC)
+    _log(
+        db_session,
+        connector_id=h["connector_id"],
+        stream_id=h["stream_id"],
+        route_id=h["route_id"],
+        destination_id=h["destination_id"],
+        stage="route_send_success",
+        created_at=now - timedelta(seconds=30),
+    )
+    db_session.commit()
+    recompute_and_upsert_snapshots(db_session, bootstrap_last_outcomes=True)
+    db_session.commit()
+    row = db_session.get(RuntimeStreamSnapshot, h["stream_id"])
+    assert row is not None
+    # Old code: PAUSED -> DEGRADED, STOPPED with a success -> HEALTHY.
+    assert row.health_status == "IDLE"
+
+
+def test_writer_success_older_than_freshness_window_is_not_healthy(db_session: Session) -> None:
+    """Scenario 3 (writer): success 2h ago, nothing newer -> stream DEGRADED, route/destination IDLE."""
+
+    h = _mk_hierarchy(db_session, stream_name="stale-success")
+    _log(
+        db_session,
+        connector_id=h["connector_id"],
+        stream_id=h["stream_id"],
+        route_id=h["route_id"],
+        destination_id=h["destination_id"],
+        stage="route_send_success",
+        created_at=datetime.now(UTC) - timedelta(hours=2),
+    )
+    db_session.commit()
+    recompute_and_upsert_snapshots(db_session, bootstrap_last_outcomes=True)
+    db_session.commit()
+    stream_row = db_session.get(RuntimeStreamSnapshot, h["stream_id"])
+    route_row = db_session.get(RuntimeRouteSnapshot, h["route_id"])
+    dest_row = db_session.get(RuntimeDestinationSnapshot, h["destination_id"])
+    assert stream_row is not None and route_row is not None and dest_row is not None
+    assert stream_row.last_success_at is not None
+    # Old code: HEALTHY for all three from a single historical success.
+    assert stream_row.health_status == "DEGRADED"
+    assert route_row.health_status == "IDLE"
+    assert dest_row.health_status == "IDLE"
+    # Stored columns stay non-null; "no attempts" is mapped to None on read.
+    assert route_row.success_rate_5m == 0.0
+
+
 def test_updater_failure_does_not_raise(db_session: Session) -> None:
     with patch(
         "app.runtime.runtime_snapshot_updater.recompute_and_upsert_snapshots",
