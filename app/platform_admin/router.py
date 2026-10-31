@@ -39,6 +39,7 @@ from app.platform_admin.alert_service import (
     AlertEvent,
     deliver_alert,
     list_alert_history,
+    mask_webhook_url,
 )
 from app.platform_admin.models import PlatformUser, PlatformUserMfa, PlatformMfaChallenge
 from app.database import utcnow
@@ -201,7 +202,47 @@ def _scheduler_delivery_logs_metrics() -> dict[str, Any] | None:
         return None
 
 
-def _alert_read(row: object) -> AlertSettingsRead:
+def _mask_email_for_display(email: str | None) -> str | None:
+    """``alice@example.com`` -> ``a****@example.com`` (domain kept, local part hidden)."""
+
+    value = (email or "").strip()
+    if not value:
+        return None
+    if "@" not in value:
+        return "********"
+    local, _, domain = value.rpartition("@")
+    return f"{local[:1]}****@{domain}" if local else f"****@{domain}"
+
+
+_ALERT_SENSITIVE_FIELDS = frozenset({"webhook_url", "slack_webhook_url", "email_to"})
+
+
+def _alert_update_audit_details(payload: AlertSettingsUpdate) -> dict[str, object]:
+    """Audit details for an alert settings change without the webhook URLs / e-mail address."""
+
+    out: dict[str, object] = {}
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        if key in _ALERT_SENSITIVE_FIELDS:
+            out[key] = "<set>" if value else "<cleared>"
+        else:
+            out[key] = value
+    return out
+
+
+def _alert_reveals_secrets(request: Request) -> bool:
+    """Only an Administrator (who may manage alert settings) sees the webhook URLs and e-mail in clear.
+
+    This reads the already-resolved principal; it does not change who may call the endpoint.
+    Any failure to resolve the principal fails closed (masked).
+    """
+
+    try:
+        return resolve_auth_context(request).role == ROLE_ADMINISTRATOR
+    except Exception:
+        return False
+
+
+def _alert_read(row: object, *, reveal: bool = False) -> AlertSettingsRead:
     raw_rules = list(row.rules_json or [])
     rules: list[AlertRuleState] = []
     for item in raw_rules:
@@ -226,9 +267,9 @@ def _alert_read(row: object) -> AlertSettingsRead:
     }
     return AlertSettingsRead(
         rules=rules,
-        webhook_url=row.webhook_url,
-        slack_webhook_url=row.slack_webhook_url,
-        email_to=row.email_to,
+        webhook_url=row.webhook_url if reveal else mask_webhook_url(wh or None),
+        slack_webhook_url=row.slack_webhook_url if reveal else mask_webhook_url(sl or None),
+        email_to=row.email_to if reveal else _mask_email_for_display(em),
         channel_status=channel_status,
         notification_delivery=notification_delivery,
         cooldown_seconds=int(getattr(row, "cooldown_seconds", 600) or 600),
@@ -1333,13 +1374,15 @@ def read_admin_health_summary(db: Session = Depends(get_db)) -> AdminHealthSumma
 
 
 @router.get("/alert-settings", response_model=AlertSettingsRead)
-def read_alert_settings(db: Session = Depends(get_db)) -> AlertSettingsRead:
+def read_alert_settings(request: Request, db: Session = Depends(get_db)) -> AlertSettingsRead:
     row = get_alert_settings_row(db)
-    return _alert_read(row)
+    return _alert_read(row, reveal=_alert_reveals_secrets(request))
 
 
 @router.put("/alert-settings", response_model=AlertSettingsRead)
-def update_alert_settings(payload: AlertSettingsUpdate, db: Session = Depends(get_db)) -> AlertSettingsRead:
+def update_alert_settings(
+    payload: AlertSettingsUpdate, request: Request, db: Session = Depends(get_db)
+) -> AlertSettingsRead:
     row = get_alert_settings_row(db)
     if payload.rules is not None:
         row.rules_json = [r.model_dump(mode="json") for r in payload.rules]
@@ -1357,11 +1400,11 @@ def update_alert_settings(payload: AlertSettingsUpdate, db: Session = Depends(ge
         db,
         action="ALERT_RULE_UPDATED",
         actor_username="system",
-        details={"channels_updated": payload.model_dump(exclude_unset=True)},
+        details={"channels_updated": _alert_update_audit_details(payload)},
     )
     db.commit()
     db.refresh(row)
-    return _alert_read(row)
+    return _alert_read(row, reveal=_alert_reveals_secrets(request))
 
 
 @router.post("/alert-settings/test", response_model=AlertTestResponse)
