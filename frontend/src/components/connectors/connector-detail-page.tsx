@@ -18,6 +18,8 @@ import { RemoteFileConnectorFields } from './remote-file-connector-fields'
 import { WebhookReceiverFields } from './webhook-receiver-fields'
 import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
 import { getSessionCapabilities, useSessionCapabilities } from '../../lib/rbac'
+import { formatApiErrorMessage } from '../../lib/api-error-message'
+import { FormErrorBanner } from '../ui/form-error-banner'
 
 type ConfiguredSecrets = Partial<
   Record<
@@ -410,9 +412,6 @@ export function ConnectorDetailPage() {
                 ? 'Edit Webhook Receiver Connector'
                 : 'Edit Generic HTTP Connector'}
       </h2>
-      {error ? (
-        <p className="rounded border border-red-200 bg-red-50 p-2 text-[12px] text-red-700 dark:border-red-500/40 dark:bg-red-950/40 dark:text-red-200">{error}</p>
-      ) : null}
       {success ? (
         <p className="rounded border border-emerald-200 bg-emerald-50 p-2 text-[12px] text-emerald-700 dark:border-emerald-500/40 dark:bg-emerald-950/35 dark:text-emerald-200">{success}</p>
       ) : null}
@@ -546,6 +545,8 @@ export function ConnectorDetailPage() {
         </div>
       </div>
 
+      {/* Beside Save, not at the top of the long form, so a failed save is never off-screen. */}
+      {!deleteOpen ? <FormErrorBanner message={error} /> : null}
       {canMutateConnectors ? (
       <div className="flex flex-wrap gap-2">
         <button type="button" disabled={busy} onClick={() => void onSave()} className="h-9 rounded bg-violet-600 px-3 text-sm font-semibold text-white">
@@ -575,7 +576,7 @@ export function ConnectorDetailPage() {
         reversibility="Delete is permanent. Stop or remove dependent streams first if needed."
         primaryLabel="Delete connector"
         busy={deleteBusy}
-        error={error}
+        error={error ? formatApiErrorMessage(error) : error}
         onConfirm={() => void executeDelete()}
         dataTestId="connector-detail-delete-dialog"
       />
