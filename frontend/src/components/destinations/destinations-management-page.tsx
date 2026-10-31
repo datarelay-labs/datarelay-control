@@ -1,6 +1,5 @@
 import {
   AlertCircle,
-  AlertTriangle,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -835,7 +834,6 @@ export function DestinationsManagementPage() {
   const [probeResult, setProbeResult] = useState<FormProbeResult | null>(null)
   const [testBusyId, setTestBusyId] = useState<number | null>(null)
   const [actionBusyId, setActionBusyId] = useState<number | null>(null)
-  const [deleteBlocked, setDeleteBlocked] = useState<{ title: string; message: string; destinationId?: number } | null>(null)
   const [deleteModal, setDeleteModal] = useState<{ row: DestinationListItem; confirm: string } | null>(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [disableDialogRow, setDisableDialogRow] = useState<DestinationListItem | null>(null)
@@ -1108,25 +1106,24 @@ export function DestinationsManagementPage() {
     }
   }
 
+  /** Why this destination cannot be deleted yet, or null when delete may proceed (F-144). */
+  function deleteBlockReason(row: DestinationListItem): string | null {
+    if (row.enabled) {
+      return `'${row.name}' is still enabled. Disable it before deleting.`
+    }
+    const routeCount = row.routes?.length ?? 0
+    if (routeCount > 0) {
+      const streams = row.streams_using_count ?? 0
+      return `'${row.name}' is used by ${routeCount} route${routeCount === 1 ? '' : 's'} on ${streams} stream${streams === 1 ? '' : 's'}. Remove those routes from their streams before deleting.`
+    }
+    return null
+  }
+
+  // Always open the dialog, even when delete is blocked, so the operator sees the impact and the
+  // reason instead of a click that appears to do nothing.
   function openDeleteFlow(row: DestinationListItem) {
     if (!canMutateDestinations) return
-    setDeleteBlocked(null)
-    if (row.enabled) {
-      setDeleteBlocked({
-        title: 'Cannot delete destination',
-        message: `'${row.name}' is still enabled. Disable it before deleting.`,
-        destinationId: row.id,
-      })
-      return
-    }
-    if (row.routes.length > 0) {
-      setDeleteBlocked({
-        title: 'Cannot delete destination',
-        message: `'${row.name}' is used by ${row.streams_using_count} stream(s). Disable or remove all stream routes using this destination before deleting.`,
-        destinationId: row.id,
-      })
-      return
-    }
+    setLocalError(null)
     setDeleteModal({ row, confirm: '' })
   }
 
@@ -2207,25 +2204,6 @@ export function DestinationsManagementPage() {
         </div>
       )}
 
-      {/* ─── Delete Blocked Toast ─────────────────────────────────────────────── */}
-      {deleteBlocked && (
-        <div
-          role="alert"
-          className="fixed bottom-4 left-1/2 z-50 w-[min(100%,520px)] -translate-x-1/2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 shadow-lg dark:border-amber-500/40 dark:bg-amber-950/90"
-        >
-          <div className="flex gap-3">
-            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" aria-hidden />
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-amber-900 dark:text-amber-100">{deleteBlocked.title}</p>
-              <p className="mt-1 text-[12px] text-amber-800 dark:text-amber-200/90">{deleteBlocked.message}</p>
-            </div>
-            <button type="button" onClick={() => setDeleteBlocked(null)} className="shrink-0 text-amber-400" aria-label="Dismiss">
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* ─── Test Result Toast ────────────────────────────────────────────────── */}
       {testBottomToast && (
         <div
@@ -2290,6 +2268,11 @@ export function DestinationsManagementPage() {
             'Removes this destination configuration permanently.',
             'Stream routes must be removed before delete succeeds.',
           ]}
+          dependencies={[
+            { label: 'Connected routes', count: deleteModal.row.routes?.length ?? 0 },
+            { label: 'Streams using destination', count: deleteModal.row.streams_using_count ?? 0 },
+          ]}
+          blockReason={deleteBlockReason(deleteModal.row)}
           reversibility="Delete is permanent. Disable instead to stop delivery while keeping configuration."
           confirmMode="type-name"
           expectedTypeName={deleteModal.row.name}
