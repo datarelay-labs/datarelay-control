@@ -381,6 +381,8 @@ function DeployStatusBanner({ readiness }: { readiness: DeployReadinessSnapshot 
         : 'Complete required wizard steps before creating this stream.'
 
   const Icon = tone === 'ok' ? CheckCircle2 : AlertTriangle
+  // The banner only ever points at rows the checklist below actually renders in red.
+  const blockingRows = readiness.categories.filter((category) => category.tone === 'err')
 
   return (
     <section
@@ -422,9 +424,21 @@ function DeployStatusBanner({ readiness }: { readiness: DeployReadinessSnapshot 
           </div>
         </div>
         {!readiness.canCreate ? (
-          <p className="shrink-0 rounded-lg border border-red-200/70 bg-white/70 px-3 py-2 text-sm font-medium text-red-700 dark:border-red-500/30 dark:bg-red-950/30 dark:text-red-200">
-            Resolve red checklist items before creating.
-          </p>
+          <div
+            className="shrink-0 rounded-lg border border-red-200/70 bg-white/70 px-3 py-2 text-sm font-medium text-red-700 dark:border-red-500/30 dark:bg-red-950/30 dark:text-red-200 sm:max-w-sm"
+            data-testid="deploy-blocking-reasons"
+          >
+            <p>Resolve red checklist items before creating.</p>
+            {blockingRows.length > 0 ? (
+              <ul className="mt-1 list-inside list-disc text-xs font-normal">
+                {blockingRows.map((row) => (
+                  <li key={row.key}>
+                    <span className="font-semibold">{row.label}:</span> {row.summary}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
         ) : null}
       </div>
     </section>

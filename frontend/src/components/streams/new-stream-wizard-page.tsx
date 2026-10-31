@@ -131,6 +131,7 @@ export function NewStreamWizardPage() {
   const [creationError, setCreationError] = useState<string | null>(null)
   const [isStarting, setIsStarting] = useState(false)
   const [draftNotice, setDraftNotice] = useState<string | null>(null)
+  const draftNoticeRef = useRef<HTMLParagraphElement | null>(null)
   const [operationalSampleId, setOperationalSampleId] = useState<OperationalSampleId | null>(null)
   const [dataProtectionDrawerOpen, setDataProtectionDrawerOpen] = useState(false)
   const [connectorCreateOpen, setConnectorCreateOpen] = useState(false)
@@ -936,11 +937,16 @@ export function NewStreamWizardPage() {
   const saveDraft = useCallback(() => {
     try {
       saveWizardDraft(state, currentStepKey)
-      setDraftNotice('Draft saved locally.')
-      window.setTimeout(() => setDraftNotice(null), 4000)
+      // The notice sits at the top of the page while the button is at the bottom: say exactly where the
+      // draft lives, keep it up long enough to read, and bring it into view (F-012).
+      setDraftNotice(
+        'Draft saved in this browser only. Nothing is stored on the server and no Stream exists until you select Create & Start Stream.',
+      )
+      window.setTimeout(() => setDraftNotice(null), 10000)
+      window.requestAnimationFrame(() => draftNoticeRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }))
     } catch {
-      setDraftNotice('Unable to save draft.')
-      window.setTimeout(() => setDraftNotice(null), 4000)
+      setDraftNotice('Unable to save draft in this browser. Check that browser storage is available.')
+      window.setTimeout(() => setDraftNotice(null), 10000)
     }
   }, [currentStepKey, state])
 
@@ -1069,7 +1075,9 @@ export function NewStreamWizardPage() {
     })
   }, [state, wizardSteps])
 
-  const persistenceLabel = state.connector.apiBacked
+  const persistenceLabel = state.outcome?.streamId != null
+    ? 'Stream created. Its configuration is saved in Data Relay Control.'
+    : state.connector.apiBacked
     ? 'Changes will be saved to Data Relay Control when you create the stream.'
     : 'Local draft · Connector and Source availability are not yet verified. No runtime changes have been applied.'
 
@@ -1185,7 +1193,11 @@ export function NewStreamWizardPage() {
       ) : null}
 
       {draftNotice ? (
-        <p className="rounded-md border border-emerald-200/80 bg-emerald-500/[0.06] px-3 py-2 text-[11px] font-medium text-emerald-800 dark:border-emerald-500/35 dark:bg-emerald-500/10 dark:text-emerald-200">
+        <p
+          ref={draftNoticeRef}
+          role="status"
+          data-testid="wizard-draft-notice"
+          className="rounded-md border border-emerald-200/80 bg-emerald-500/[0.06] px-3 py-2 text-[11px] font-medium text-emerald-800 dark:border-emerald-500/35 dark:bg-emerald-500/10 dark:text-emerald-200">
           {draftNotice}
         </p>
       ) : null}

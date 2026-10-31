@@ -349,9 +349,15 @@ export function wizardDataProtectionIntentReady(intent: WizardDataProtectionInte
   return field.length > 0 && field.startsWith('$')
 }
 
+/**
+ * A protection row with no field path yet is an unfinished "Add field" row, not a rule: persistence and
+ * the Deploy checklist already ignore it, so it must not block the wizard either (F-009). A row that has
+ * text but is not a valid `$.` path still blocks and is reported by the checklist.
+ */
 export function wizardDataProtectionStepComplete(state: WizardDataProtectionState): boolean {
-  if (state.intents.length === 0) return true
-  return state.intents.every(wizardDataProtectionIntentReady)
+  return state.intents.every(
+    (intent) => intent.detectedField.trim().length === 0 || wizardDataProtectionIntentReady(intent),
+  )
 }
 
 export type AuthType =
@@ -1498,8 +1504,25 @@ function aggregateCompletion(statuses: StepCompletion[]): StepCompletion {
   return statuses.reduce(worstCompletion, 'complete')
 }
 
-/** Per legacy sub-step completion (internal; review/deploy edit shortcuts). */
-export function computeLegacySubstepCompletion(state: WizardState): WizardLegacySubstepCompletion {
+export type WizardReviewGateTerms = {
+  connectorReady: boolean
+  streamReady: boolean
+  apiTestRan: boolean
+  recordsGateReady: boolean
+  previewReady: boolean
+  mappingReady: boolean
+  destinationsReady: boolean
+  dataProtectionReady: boolean
+  /** All of the above: the wizard may create the stream. */
+  reviewReady: boolean
+}
+
+/**
+ * Every condition the wizard requires before the stream can be created. This is the single source for
+ * both the stepper completion and the Deploy gate, so the Deploy checklist can name exactly which term
+ * is blocking Create & Start Stream (F-009).
+ */
+export function computeReviewGateTerms(state: WizardState): WizardReviewGateTerms {
   const connectorReady =
     Number.isSafeInteger(state.connector.connectorId) && state.connector.connectorId! > 0 &&
     Number.isSafeInteger(state.connector.sourceId) && state.connector.sourceId! > 0
@@ -1539,8 +1562,6 @@ export function computeLegacySubstepCompletion(state: WizardState): WizardLegacy
     wizardMappingContentReady(state) ||
     state.transformRules.some((r) => r.outputField.trim()) ||
     ((isRemote || isWebhook) && state.unmappedFieldsPolicy === 'pass_through')
-  const enrichmentReady = state.enrichment.length === 0 || state.enrichment.every((e) => e.fieldName.trim().length > 0)
-  const enrichmentHasRows = state.enrichment.length > 0
   // Completion reflects the same required delivery-path validity as the Deploy gate.
   const destinationsReady = wizardDestinationGateReady(state)
   const dataProtectionReady = wizardDataProtectionStepComplete(state.dataProtection)
@@ -1553,6 +1574,33 @@ export function computeLegacySubstepCompletion(state: WizardState): WizardLegacy
     mappingReady &&
     destinationsReady &&
     dataProtectionReady
+  return {
+    connectorReady,
+    streamReady,
+    apiTestRan,
+    recordsGateReady,
+    previewReady,
+    mappingReady,
+    destinationsReady,
+    dataProtectionReady,
+    reviewReady,
+  }
+}
+
+/** Per legacy sub-step completion (internal; review/deploy edit shortcuts). */
+export function computeLegacySubstepCompletion(state: WizardState): WizardLegacySubstepCompletion {
+  const {
+    connectorReady,
+    streamReady,
+    apiTestRan,
+    previewReady,
+    mappingReady,
+    destinationsReady,
+    dataProtectionReady,
+    reviewReady,
+  } = computeReviewGateTerms(state)
+  const enrichmentReady = state.enrichment.length === 0 || state.enrichment.every((e) => e.fieldName.trim().length > 0)
+  const enrichmentHasRows = state.enrichment.length > 0
   const created = state.outcome?.streamId != null && reviewReady
 
   return {

@@ -133,6 +133,39 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
     expect(screen.getByTestId('wizard-save-draft')).not.toHaveClass('bg-accent')
   })
 
+  it('says where a Save as Draft draft lives and that no Stream exists yet (F-012)', async () => {
+    localStorage.setItem('gdc-platform-persona', 'connector')
+    const state = buildInitialState()
+    const finishedAt = Date.now()
+    state.connector.connectorId = 1
+    state.connector.sourceId = 1
+    state.stream.name = 'Deploy Test'
+    state.stream.endpoint = '/events'
+    state.stream.eventArrayPath = '$.events'
+    state.stream.checkpointSourcePath = '$.ts'
+    state.stream.checkpointFieldType = 'datetime'
+    state.stream.recordPathConfirmedForApiTestAt = finishedAt
+    state.stream.checkpointConfirmedForApiTestAt = finishedAt
+    state.apiTest.status = 'success'
+    state.apiTest.ok = true
+    state.apiTest.parsedJson = { events: [{ id: '1' }] }
+    state.apiTest.finishedAt = finishedAt
+    state.apiTest.eventCount = 1
+    state.mapping = [{ id: 'm1', outputField: 'id', sourceJsonPath: '$.id' }]
+    state.destinations.routeDrafts = [
+      { key: 'r1', destinationId: 1, enabled: true, failurePolicy: 'RETRY_THEN_DLQ', rateLimitJson: '{}' },
+    ]
+    localStorage.setItem(WIZARD_DRAFT_KEY_V2, JSON.stringify({ version: 2, savedAt: Date.now(), stepKey: 'deploy', state }))
+    const user = userEvent.setup()
+    render(<MemoryRouter initialEntries={['/streams/new']}><NewStreamWizardPage /></MemoryRouter>)
+    await user.click(screen.getByTestId('wizard-draft-resume'))
+    await user.click(screen.getByTestId('wizard-save-draft'))
+    const notice = await screen.findByTestId('wizard-draft-notice')
+    expect(notice).toHaveAttribute('role', 'status')
+    expect(notice).toHaveTextContent('Draft saved in this browser only')
+    expect(notice).toHaveTextContent('no Stream exists until you select Create & Start Stream')
+  })
+
   it('keeps the original Wizard mounted after contextual Connector cancel', async () => {
     vi.mocked(fetchCatalogSnapshot).mockResolvedValue({ connectors: [], sources: [], apiBacked: true })
     localStorage.removeItem(WIZARD_DRAFT_KEY_V2)

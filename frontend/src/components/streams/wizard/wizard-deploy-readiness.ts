@@ -13,6 +13,7 @@ import {
 } from './wizard-step-gates'
 import {
   computeLegacySubstepCompletion,
+  computeReviewGateTerms,
   wizardDataProtectionIntentReady,
   wizardMappingContentReady,
   type RouteProcessingStatus,
@@ -77,6 +78,52 @@ export type DeployReadinessSnapshot = {
   statusLabel: 'READY' | 'READY WITH WARNINGS' | 'NEEDS ATTENTION'
   canCreate: boolean
   categories: DeployChecklistCategory[]
+}
+
+type DeployGateBlocker = {
+  category: DeployChecklistCategoryKey
+  message: string
+}
+
+/**
+ * The wizard gate (`computeReviewGateTerms`) is stricter than any single checklist row. Name each failed
+ * gate term and the checklist row it belongs to, so Create & Start Stream is never disabled without a
+ * red item that says why (F-009).
+ */
+function reviewGateBlockers(state: WizardState): DeployGateBlocker[] {
+  const terms = computeReviewGateTerms(state)
+  const blockers: DeployGateBlocker[] = []
+  if (!terms.connectorReady) {
+    blockers.push({ category: 'connection', message: 'Save the Connector and its Source before creating the stream.' })
+  }
+  if (!terms.streamReady) {
+    blockers.push({ category: 'connection', message: 'Stream name and request settings are incomplete.' })
+  }
+  if (!terms.apiTestRan) {
+    blockers.push({ category: 'data', message: 'Run a successful sample test for the current settings.' })
+  }
+  if (!terms.recordsGateReady || !terms.previewReady) {
+    blockers.push({
+      category: 'records',
+      message: 'Confirm the record path and sync position against the latest sample (re-select them if the sample was refreshed).',
+    })
+  }
+  if (!terms.mappingReady) {
+    blockers.push({ category: 'transform', message: 'Add at least one output field or transform expression.' })
+  }
+  if (!terms.destinationsReady) {
+    blockers.push({
+      category: 'delivery',
+      message: 'Every enabled delivery path needs a valid destination, and at least one must be enabled.',
+    })
+  }
+  if (!terms.dataProtectionReady) {
+    blockers.push({
+      category: 'protection',
+      message: 'A protection row has a field path that does not start with "$.". Fix or remove it.',
+    })
+  }
+  return blockers
 }
 
 export const DEPLOY_STATUS_LABEL: Record<DeployReadinessStatus, DeployReadinessSnapshot['statusLabel']> = {
@@ -431,9 +478,11 @@ export function computeDeployReadiness(
   )
   const protectionPreview = buildDataProtectionPersistPreview(state.dataProtection)
   const routeProtectionRouteCount = countRoutesWithProtectionRules(state)
+  // A half-filled row (text that is not a "$." path) is red even when it is the only row; blank rows
+  // are ignored (see wizardDataProtectionStepComplete).
   const protectionOk =
-    validProtectionIntents.length === 0 ||
-    (!incompleteProtectionRows && !protectionPreview.enforcementIncomplete)
+    !incompleteProtectionRows &&
+    (validProtectionIntents.length === 0 || !protectionPreview.enforcementIncomplete)
   const protectionWarn =
     !protectionOk &&
     !incompleteProtectionRows &&
@@ -584,6 +633,17 @@ export function computeDeployReadiness(
       stepKey: 'destinations',
     },
   ]
+
+  // Turn every failed gate term into a red row. The row that already reports it keeps its own text.
+  const gateBlockers = reviewReady ? [] : reviewGateBlockers(state)
+  for (const blocker of gateBlockers) {
+    const row = categories.find((c) => c.key === blocker.category)
+    if (row && row.tone !== 'err') {
+      row.tone = 'err'
+      row.summary = blocker.message
+      row.detail = undefined
+    }
+  }
 
   const hasError = categories.some((c) => c.tone === 'err')
   const hasWarn = categories.some((c) => c.tone === 'warn')

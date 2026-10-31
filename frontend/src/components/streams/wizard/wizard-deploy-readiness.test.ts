@@ -5,7 +5,7 @@ import {
   computeRouteDeployReadiness,
   routeProcessingStatusToDeployMode,
 } from './wizard-deploy-readiness'
-import { buildInitialState, DEFAULT_ROUTE_PROCESSING_INHERIT } from './wizard-state'
+import { buildInitialState, computeLegacySubstepCompletion, DEFAULT_ROUTE_PROCESSING_INHERIT } from './wizard-state'
 
 function readyState() {
   const state = buildInitialState()
@@ -202,6 +202,71 @@ describe('computeDeployReadiness', () => {
         },
       ]
       expect(protectionSummary(state)).toBe('No data protection intent configured')
+    })
+  })
+
+  // F-009: Create & Start Stream was disabled with a banner asking the operator to resolve red
+  // checklist items while no row was red. The gate and the checklist now share one definition.
+  describe('Create gate and checklist agree (F-009)', () => {
+    const connectivity = { ok: true, failed: false, unknown: false }
+
+    it('does not let an unfinished blank Data Protection row block deployment', () => {
+      const state = readyState()
+      state.dataProtection.intents = [
+        { key: 'dp1', detectedField: '$.card', protectionAction: 'mask_full', deliveryBehavior: 'continue' },
+        { key: 'dp2', detectedField: '', protectionAction: 'mask_partial', deliveryBehavior: 'continue' },
+      ]
+      const snapshot = computeDeployReadiness(state, connectivity)
+      expect(snapshot.canCreate).toBe(true)
+      expect(snapshot.categories.every((c) => c.tone !== 'err')).toBe(true)
+      expect(computeLegacySubstepCompletion(state).data_protection).toBe('complete')
+    })
+
+    it('still blocks, in red, a protection row whose path is not a $ path', () => {
+      const state = readyState()
+      state.dataProtection.intents = [
+        { key: 'dp1', detectedField: 'card', protectionAction: 'mask_full', deliveryBehavior: 'continue' },
+      ]
+      const snapshot = computeDeployReadiness(state, connectivity)
+      expect(snapshot.canCreate).toBe(false)
+      const protection = snapshot.categories.find((c) => c.key === 'protection')
+      expect(protection?.tone).toBe('err')
+      expect(protection?.summary).toMatch(/Complete detected field paths/)
+    })
+
+    it('names the failed gate as a red row when every checklist row would otherwise be green', () => {
+      // A restored draft scrubs the raw sample but keeps its Union Schema: the checklist accepts the sample,
+      // the create gate needs the payload to re-confirm the record path.
+      const state = readyState()
+      state.apiTest.parsedJson = null
+      state.apiTest.rawResponse = null
+      const snapshot = computeDeployReadiness(state, connectivity)
+      expect(snapshot.canCreate).toBe(false)
+      const red = snapshot.categories.filter((c) => c.tone === 'err')
+      expect(red.length).toBeGreaterThan(0)
+      expect(red.some((c) => c.key === 'records' && /re-select|Confirm the record path/i.test(c.summary))).toBe(true)
+    })
+
+    it('never disables Create without at least one red checklist row', () => {
+      const mutations: Array<(s: ReturnType<typeof readyState>) => void> = [
+        (s) => { s.connector.connectorId = null },
+        (s) => { s.stream.name = '' },
+        (s) => { s.apiTest.status = 'idle' },
+        (s) => { s.apiTest.parsedJson = null; s.apiTest.rawResponse = null },
+        (s) => { s.stream.recordPathConfirmedForApiTestAt = null },
+        (s) => { s.stream.checkpointConfirmedForApiTestAt = null },
+        (s) => { s.mapping = [] },
+        (s) => { s.destinations.routeDrafts = [] },
+        (s) => { s.dataProtection.intents = [{ key: 'x', detectedField: 'nope', protectionAction: 'mask_full', deliveryBehavior: 'continue' }] },
+      ]
+      for (const mutate of mutations) {
+        const state = readyState()
+        mutate(state)
+        const snapshot = computeDeployReadiness(state, connectivity)
+        if (!snapshot.canCreate) {
+          expect(snapshot.categories.some((c) => c.tone === 'err')).toBe(true)
+        }
+      }
     })
   })
 
