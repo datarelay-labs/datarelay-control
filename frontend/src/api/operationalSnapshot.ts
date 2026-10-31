@@ -102,6 +102,11 @@ export type OperationalProblem = {
   title: string
   message: string
   last_seen_at: string | null
+  /** Set for Source collection failures (SOURCE_AUTH_FAILED / SOURCE_FETCH_FAILED); additive and optional. */
+  error_code?: string | null
+  http_status?: number | null
+  connector_id?: number | null
+  connector_name?: string | null
 }
 
 export type OperationalSnapshotResponse = {

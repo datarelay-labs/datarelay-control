@@ -390,6 +390,24 @@ export function DashboardOverview() {
                           </span>
                         </div>
                       </Link>
+                      {item.connector ? (
+                        <p
+                          className="mt-1 px-1 text-xs text-slate-600 dark:text-gdc-mutedStrong"
+                          data-testid={`dashboard-investigation-${item.key}-connector`}
+                        >
+                          Connector:{' '}
+                          {item.connector.href ? (
+                            <Link
+                              to={item.connector.href}
+                              className="font-semibold text-violet-700 underline-offset-2 hover:underline dark:text-violet-300"
+                            >
+                              {item.connector.name}
+                            </Link>
+                          ) : (
+                            <span className="font-semibold">{item.connector.name}</span>
+                          )}
+                        </p>
+                      ) : null}
                     </li>
                   ))}
                 </ol>

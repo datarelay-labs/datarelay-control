@@ -716,6 +716,52 @@ describe('DashboardOverview', () => {
     expect(capacity).toHaveTextContent('—')
   })
 
+  it('lists a Source 401 under Action needed, naming the Stream and the Connector with deep links (F-015)', async () => {
+    const snapshotApi = await import('../../api/operationalSnapshot')
+    const baseline = await snapshotApi.getOperationalSnapshot()
+    const healthyStream = baseline?.streams.find((stream) => stream.health_status === 'HEALTHY')
+    if (!baseline || !healthyStream) throw new Error('Missing healthy Stream test fixture')
+
+    vi.mocked(snapshotApi.getOperationalSnapshot).mockResolvedValueOnce({
+      ...baseline,
+      streams: [healthyStream],
+      routes: [],
+      destinations: [],
+      problems: [{
+        severity: 'critical',
+        scope: 'stream',
+        stream_id: healthyStream.stream_id,
+        route_id: null,
+        destination_id: null,
+        title: `Stream ${healthyStream.stream_name}: source authentication failed (HTTP 401)`,
+        message: 'The latest source request through Connector Okta Prod failed with HTTP 401.',
+        last_seen_at: baseline.updated_at,
+        error_code: 'SOURCE_AUTH_FAILED',
+        http_status: 401,
+        connector_id: 42,
+        connector_name: 'Okta Prod',
+      }],
+    })
+
+    render(
+      <MemoryRouter>
+        <main>
+          <DashboardOverview />
+        </main>
+      </MemoryRouter>,
+    )
+
+    const firstLevel = await within(mainRegion()).findByTestId('dashboard-first-level')
+    const attention = within(firstLevel).getByTestId('dashboard-action-needed')
+    const card = await within(attention).findByTestId(`dashboard-investigation-stream-${healthyStream.stream_id}`)
+    expect(card).toHaveTextContent(healthyStream.stream_name)
+    expect(card).toHaveTextContent('Source authentication failed (HTTP 401)')
+    expect(card).toHaveAttribute('href', `/streams/${healthyStream.stream_id}/runtime`)
+    const connector = within(attention).getByTestId(`dashboard-investigation-stream-${healthyStream.stream_id}-connector`)
+    expect(within(connector).getByRole('link', { name: 'Okta Prod' })).toHaveAttribute('href', '/connectors/42')
+    expect(within(attention).getByRole('heading', { name: 'Action needed' })).toBeInTheDocument()
+  })
+
   it('does not claim no action is needed when the only missing evidence is a destination catalog', async () => {
     const snapshotApi = await import('../../api/operationalSnapshot')
     const baseline = await snapshotApi.getOperationalSnapshot()
