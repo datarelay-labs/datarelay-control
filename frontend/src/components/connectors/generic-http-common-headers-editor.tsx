@@ -65,12 +65,12 @@ export function GenericHttpCommonHeadersEditor({ value, onChange }: Props) {
         <ul className="mt-3 space-y-2">
           {rows.map((row, idx) => (
             <li key={row.id} className="grid grid-cols-[1fr_1.4fr_auto] gap-2">
-              <input className={rowCls} value={row.key} placeholder="Header name" onChange={(e) => update(idx, { key: e.target.value })} />
-              <input className={rowCls} value={row.value} placeholder="Value" onChange={(e) => update(idx, { value: e.target.value })} />
+              <input className={rowCls} value={row.key} placeholder="Header name" aria-label={`Header ${idx + 1} name`} onChange={(e) => update(idx, { key: e.target.value })} />
+              <input className={rowCls} value={row.value} placeholder="Value" aria-label={`Header ${idx + 1} value`} onChange={(e) => update(idx, { value: e.target.value })} />
               <button
                 type="button"
                 className="inline-flex h-9 w-9 items-center justify-center rounded border border-slate-200 text-slate-500 hover:bg-red-50 hover:text-red-600 dark:border-gdc-border dark:bg-gdc-section"
-                aria-label="Remove header"
+                aria-label={`Remove header ${idx + 1}`}
                 onClick={() => remove(idx)}
               >
                 <Trash2 className="h-3.5 w-3.5" />

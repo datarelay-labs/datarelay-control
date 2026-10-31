@@ -2106,6 +2106,7 @@ export function LogsExplorerPage() {
                           <button
                             type="button"
                             aria-expanded={expanded}
+                            aria-label={`${expanded ? 'Collapse' : 'Expand'} log row ${row.id}`}
                             className="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-gdc-card dark:hover:text-slate-200"
                             onClick={() =>
                               setExpandedIds((prev) => {

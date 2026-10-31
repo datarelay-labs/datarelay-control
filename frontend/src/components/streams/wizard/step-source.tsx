@@ -194,6 +194,7 @@ export function StepSource({
               }}
               className={inputCls}
               data-testid="wizard-saved-connector-select"
+              aria-label="Saved connector"
             >
               <option value="">Select saved connector</option>
               {selectedIdValid && !snapshot?.connectors.some((conn) => conn.id === c.connectorId) ? (

@@ -505,6 +505,7 @@ function Pagination({
       <div className="flex items-center gap-2">
         <span>Rows per page</span>
         <select
+          aria-label="Rows per page"
           value={pageSize}
           onChange={(e) => { onPageSize(Number(e.target.value) as PageSize); onPage(1) }}
           className="rounded border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section px-1.5 py-0.5 text-[11px] text-slate-700 dark:text-slate-300"
@@ -516,17 +517,17 @@ function Pagination({
       </div>
       <div className="flex items-center gap-1">
         <span className="mr-2">{from}–{to} of {total}</span>
-        <button type="button" disabled={page <= 1} onClick={() => onPage(1)} className="rounded p-1 hover:bg-slate-100 dark:hover:bg-gdc-elevated disabled:opacity-30">
+        <button type="button" aria-label="First page" disabled={page <= 1} onClick={() => onPage(1)} className="rounded p-1 hover:bg-slate-100 dark:hover:bg-gdc-elevated disabled:opacity-30">
           <ChevronsLeft className="h-3.5 w-3.5" />
         </button>
-        <button type="button" disabled={page <= 1} onClick={() => onPage(page - 1)} className="rounded p-1 hover:bg-slate-100 dark:hover:bg-gdc-elevated disabled:opacity-30">
+        <button type="button" aria-label="Previous page" disabled={page <= 1} onClick={() => onPage(page - 1)} className="rounded p-1 hover:bg-slate-100 dark:hover:bg-gdc-elevated disabled:opacity-30">
           <ChevronLeft className="h-3.5 w-3.5" />
         </button>
         <span className="px-1 tabular-nums">{page} / {totalPages}</span>
-        <button type="button" disabled={page >= totalPages} onClick={() => onPage(page + 1)} className="rounded p-1 hover:bg-slate-100 dark:hover:bg-gdc-elevated disabled:opacity-30">
+        <button type="button" aria-label="Next page" disabled={page >= totalPages} onClick={() => onPage(page + 1)} className="rounded p-1 hover:bg-slate-100 dark:hover:bg-gdc-elevated disabled:opacity-30">
           <ChevronRight className="h-3.5 w-3.5" />
         </button>
-        <button type="button" disabled={page >= totalPages} onClick={() => onPage(totalPages)} className="rounded p-1 hover:bg-slate-100 dark:hover:bg-gdc-elevated disabled:opacity-30">
+        <button type="button" aria-label="Last page" disabled={page >= totalPages} onClick={() => onPage(totalPages)} className="rounded p-1 hover:bg-slate-100 dark:hover:bg-gdc-elevated disabled:opacity-30">
           <ChevronsRight className="h-3.5 w-3.5" />
         </button>
       </div>
@@ -1358,7 +1359,8 @@ export function DestinationsManagementPage() {
           <label className="relative flex flex-1 items-center">
             <Search className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-slate-500 dark:text-gdc-muted" aria-hidden />
             <input
-              placeholder="Search destinations…"
+              aria-label="Search destinations"
+          placeholder="Search destinations…"
               value={searchQ}
               onChange={(e) => setSearchQ(e.target.value)}
               data-testid="destinations-search"

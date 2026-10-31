@@ -105,6 +105,7 @@ export function ConnectorRowActions({ row, onAuthCheckStart, onAuthCheckEnd, onA
       {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-500" aria-hidden /> : null}
       <Link
         to={connectorDetailPath(String(row.id))}
+        aria-label={`${canEdit ? 'Edit' : 'View'} connector ${row.name}`}
         className="inline-flex h-7 items-center rounded px-2 text-[11px] font-semibold text-slate-600 hover:bg-slate-100 dark:text-gdc-mutedStrong dark:hover:bg-gdc-rowHover"
       >
         {canEdit ? 'Edit' : 'View connector'}
@@ -113,7 +114,9 @@ export function ConnectorRowActions({ row, onAuthCheckStart, onAuthCheckEnd, onA
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="inline-flex h-7 w-7 items-center justify-center rounded text-slate-600 hover:bg-slate-100 dark:text-gdc-mutedStrong dark:hover:bg-gdc-rowHover"
-        aria-label="Connector actions"
+        aria-label={`Actions for connector ${row.name}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
         data-testid="connector-row-actions-trigger"
       >
         <MoreHorizontal className="h-3.5 w-3.5" />
