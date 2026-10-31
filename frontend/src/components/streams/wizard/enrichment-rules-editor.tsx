@@ -93,6 +93,11 @@ function ruleTypeLabel(type: EnrichmentRuleType): string {
   return ENRICHMENT_RULE_TYPES.find((t) => t.type === type)?.label ?? type
 }
 
+const CALCULATED_SYNTAX_HELP =
+  "Supported: field names, numbers, 'text', + - * / %, == != > >= < <=, && ||, condition ? a : b, field.includes('x'), concat/upper/lower/coalesce/now_utc and {{ field }}. Unsupported expressions are rejected when you save."
+const CONDITIONAL_SYNTAX_HELP =
+  "Examples: severity >= 3, status == 'ok' && code < 500, name.includes('adm'), exists user.id, name contains adm. Unsupported conditions are rejected when you save."
+
 export function EnrichmentRulesEditor({
   rules,
   onChange,
@@ -718,6 +723,9 @@ function renderRuleBody(
               />
             </div>
           </label>
+          <p className="text-[10px] text-slate-500 dark:text-gdc-muted" data-testid="calculated-syntax-help">
+            {CALCULATED_SYNTAX_HELP}
+          </p>
           <TargetFieldPreview rule={rule} output={calcPreview.calcOutput} inputLabel={calcPreview.calcInput} />
         </div>
       )
@@ -752,6 +760,9 @@ function renderRuleBody(
     case 'conditional':
       return (
         <div className="space-y-2">
+          <p className="text-[10px] text-slate-500 dark:text-gdc-muted" data-testid="conditional-syntax-help">
+            {CONDITIONAL_SYNTAX_HELP}
+          </p>
           {rule.conditions.map((cond, idx) => (
             <div key={cond.id} className="grid gap-2 rounded-md border border-slate-100 p-2 dark:border-gdc-border sm:grid-cols-[1fr_1fr_auto]">
               <label className="block space-y-1">
