@@ -17,19 +17,24 @@ import {
 } from '../../utils/templateDraftFromImport'
 
 /**
- * Import failures name the reason and the next action (F-010). A rejected command (HTTP 4xx) points to
- * fixing the pasted text; anything else points to retrying or checking API availability.
+ * Import failures name the reason and the next action (F-010). The "fix the pasted text" advice is only
+ * given when the server actually reported that the text could not be parsed; any other rejection (for
+ * example a malformed request) must not blame a valid command or collection (F-115).
  */
 function importFailureMessage(error: unknown, kind: 'curl command' | 'Postman collection'): string {
   const parsed = parseApiError(error, `Could not parse the ${kind}.`)
-  const rejected = parsed.status != null && parsed.status >= 400 && parsed.status < 500
-  const nextAction = rejected
-    ? kind === 'curl command'
-      ? 'Check that the command starts with "curl" and includes a full http:// or https:// URL, then parse again.'
-      : 'Check that the file is a Postman Collection v2.1 export, then parse again.'
-    : 'Try again. If it keeps failing, check that the API is reachable.'
+  const parseRejected = parsed.code === 'CURL_PARSE_FAILED' || parsed.code === 'POSTMAN_PARSE_FAILED'
+  const clientRejected = parsed.status != null && parsed.status >= 400 && parsed.status < 500
   const reason = /[.!?]$/.test(parsed.message) ? parsed.message : `${parsed.message}.`
-  return `${reason} ${nextAction}`
+  if (parseRejected) {
+    const nextAction =
+      kind === 'curl command'
+        ? 'Check that the command starts with "curl" and includes a full http:// or https:// URL, then parse again.'
+        : 'Check that the file is a Postman Collection v2.1 export, then parse again.'
+    return `${reason} ${nextAction}`
+  }
+  if (clientRejected) return reason
+  return `${reason} Try again. If it keeps failing, check that the API is reachable.`
 }
 
 type ParsedPreview = CurlImportDraft['parsed'] & {

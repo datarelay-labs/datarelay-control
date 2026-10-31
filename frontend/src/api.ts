@@ -294,8 +294,14 @@ function mergeAbortSignals(user: AbortSignal | undefined, deadline: AbortSignal)
 async function doFetch(path: string, init?: GdcJsonFetchInit, withJsonContentType = true): Promise<Response> {
   const raw = init ?? {}
   const { timeoutMs, ...rest } = raw
+  // A string body is always sent as JSON by this client. `safeRequestJsonResult` (withJsonContentType=false)
+  // is shared with GET polling, but a POST/PUT body without `Content-Type: application/json` is rejected by
+  // the API as "Input should be a valid dictionary" (F-115), so the header follows the body, not the helper.
+  const sendsJsonBody = typeof rest.body === 'string'
   const headersBase: Record<string, string> = {
-    ...(withJsonContentType ? { 'Content-Type': 'application/json' } : { Accept: 'application/json' }),
+    ...(withJsonContentType
+      ? { 'Content-Type': 'application/json' }
+      : { Accept: 'application/json', ...(sendsJsonBody ? { 'Content-Type': 'application/json' } : {}) }),
     ...authHeader(),
     ...((rest.headers as Record<string, string>) ?? {}),
   }
