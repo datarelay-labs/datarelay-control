@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { cn } from '../../lib/utils'
+import { StatusChip } from '../ui/status-chip'
 import type { DiagnosisCause, DiagnosisNextStep, DiagnosisTone, StreamDiagnosis } from './stream-runtime-diagnosis'
 
 function toneLabel(tone: DiagnosisTone): string {
@@ -33,7 +34,9 @@ function toneClass(tone: DiagnosisTone): string {
   }
 }
 
-function CauseCard({ cause }: { cause: DiagnosisCause }) {
+function CauseCard({ cause, notObservedRaw }: { cause: DiagnosisCause; notObservedRaw?: string | null }) {
+  // Only an unknown cause can be shown as "not observed"; a measured tone always wins.
+  const notObserved = cause.tone === 'unknown' && notObservedRaw != null
   return (
     <article
       data-testid={`stream-diagnosis-cause-${cause.key}`}
@@ -42,9 +45,19 @@ function CauseCard({ cause }: { cause: DiagnosisCause }) {
     >
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-semibold">{cause.label}</h3>
-        <span className="text-[13px] font-medium">{toneLabel(cause.tone)}</span>
+        {notObserved ? (
+          <StatusChip status="unknown">Not observed yet</StatusChip>
+        ) : (
+          <span className="text-[13px] font-medium">{toneLabel(cause.tone)}</span>
+        )}
       </div>
       <p className="mt-1.5 text-sm leading-relaxed">{cause.detail}</p>
+      {notObserved ? (
+        <details className="mt-2 text-caption text-fg-secondary">
+          <summary className="cursor-pointer font-medium">Raw checkpoint</summary>
+          <pre className="mt-1 whitespace-pre-wrap break-all font-mono">{notObservedRaw}</pre>
+        </details>
+      ) : null}
     </article>
   )
 }
@@ -84,12 +97,15 @@ export function StreamRuntimeDiagnosisOverview({
   onRunOnce,
   onBackfill,
   evidence,
+  checkpointRawNotObserved,
 }: {
   diagnosis: StreamDiagnosis
   onStart?: () => void
   onRunOnce?: () => void
   onBackfill?: () => void
   evidence: ReactNode
+  /** Raw checkpoint row when runtime reported one with only null/empty values. */
+  checkpointRawNotObserved?: string | null
 }) {
   return (
     <div className="space-y-4" data-testid="stream-diagnosis-overview">
@@ -104,7 +120,11 @@ export function StreamRuntimeDiagnosisOverview({
         <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-50">Why?</h3>
         <div className="mt-2 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {diagnosis.causes.map((item) => (
-            <CauseCard key={item.key} cause={item} />
+            <CauseCard
+              key={item.key}
+              cause={item}
+              notObservedRaw={item.key === 'checkpoint' ? checkpointRawNotObserved : null}
+            />
           ))}
         </div>
       </section>

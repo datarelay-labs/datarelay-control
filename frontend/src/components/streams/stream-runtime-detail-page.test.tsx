@@ -1521,6 +1521,44 @@ describe('StreamRuntimeDetailPage diagnosis overview', () => {
     expect(screen.queryByTestId('stream-diagnosis-overview')).not.toBeInTheDocument()
   })
 
+  it('shows an all-null checkpoint as Not observed yet (unknown), never Clear, with the raw row collapsed', async () => {
+    vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mockResolvedValue({
+      ...streamRuntimeMetricsFixture(),
+      stream: {
+        ...streamRuntimeMetricsFixture().stream,
+        last_checkpoint: { type: 'EVENT_ID', value: { event_id: null, timestamp: null } },
+      },
+    } as Awaited<ReturnType<typeof gdcRuntime.fetchStreamRuntimeMetrics>>)
+    renderRuntimePage('42')
+    const checkpoint = await screen.findByTestId('stream-diagnosis-cause-checkpoint')
+    const label = await within(checkpoint).findByText('Not observed yet')
+    expect(checkpoint).toHaveAttribute('data-tone', 'unknown')
+    expect(checkpoint).not.toHaveTextContent('Clear')
+    const chip = label.closest('[data-status]')
+    expect(chip).toHaveAttribute('data-status', 'unknown')
+    const raw = within(checkpoint).getByText('Raw checkpoint').closest('details')
+    expect(raw).not.toBeNull()
+    expect(raw).not.toHaveAttribute('open')
+    expect(raw).toHaveTextContent('"event_id":null')
+    expect(screen.getByTestId('stream-information-panel')).not.toHaveTextContent('"event_id":null')
+  })
+
+  it('keeps rendering an observed checkpoint value as the latest position', async () => {
+    vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mockResolvedValue({
+      ...streamRuntimeMetricsFixture(),
+      stream: {
+        ...streamRuntimeMetricsFixture().stream,
+        last_checkpoint: { type: 'EVENT_ID', value: { event_id: 'evt-00140', timestamp: null } },
+      },
+    } as Awaited<ReturnType<typeof gdcRuntime.fetchStreamRuntimeMetrics>>)
+    renderRuntimePage('42')
+    const checkpoint = await screen.findByTestId('stream-diagnosis-cause-checkpoint')
+    await waitFor(() => expect(checkpoint).toHaveTextContent('evt-00140'))
+    expect(checkpoint).toHaveAttribute('data-tone', 'clear')
+    expect(within(checkpoint).queryByText('Not observed yet')).not.toBeInTheDocument()
+    expect(within(checkpoint).queryByText('Raw checkpoint')).not.toBeInTheDocument()
+  })
+
   it('hides runtime mutation controls for a read-only viewer', async () => {
     const { persistSession } = await import('../../auth/session')
     persistSession({

@@ -141,6 +141,15 @@ function statusTone(s: StreamRuntimeStatus) {
   }
 }
 
+/** True when a checkpoint value carries no observed position: null, empty string, or containers of only those. */
+function isUnobservedCheckpointValue(value: unknown): boolean {
+  if (value == null) return true
+  if (typeof value === 'string') return value.trim() === ''
+  if (Array.isArray(value)) return value.every(isUnobservedCheckpointValue)
+  if (typeof value === 'object') return Object.values(value as Record<string, unknown>).every(isUnobservedCheckpointValue)
+  return false
+}
+
 function currentSourceRunFailureMessage(message: string | null): string | null {
   if (!message) return null
   return /\[(?:SOURCE_[A-Z0-9_]+|RESOURCE_HTTP_ERROR)\]/i.test(message) ? message : null
@@ -1009,12 +1018,20 @@ export function StreamRuntimeDetailPage() {
     return `v${total}`
   }, [governanceSnapshot?.schemaDrift])
 
+  // A reported checkpoint whose values are all null/empty (e.g. {"event_id":null,"timestamp":null})
+  // has observed nothing yet; keep the raw row for inspection instead of presenting it as a position.
+  const checkpointRawNotObserved = useMemo(() => {
+    const cp = runtimeMetrics?.stream.last_checkpoint
+    if (!cp || !isUnobservedCheckpointValue(cp.value)) return null
+    return JSON.stringify(cp)
+  }, [runtimeMetrics?.stream.last_checkpoint])
+
   const checkpointDisplay = useMemo(() => {
     const cp = runtimeMetrics?.stream.last_checkpoint
-    if (!cp) return null
+    if (!cp || checkpointRawNotObserved != null) return null
     const preview = formatCheckpointValueForConsole(cp.value)
     return preview !== '—' ? preview : cp.type || null
-  }, [runtimeMetrics?.stream.last_checkpoint])
+  }, [runtimeMetrics?.stream.last_checkpoint, checkpointRawNotObserved])
 
   const diagnosis = useMemo(
     () =>
@@ -1352,6 +1369,7 @@ export function StreamRuntimeDetailPage() {
         onStart={() => void runStreamControl('start')}
         onRunOnce={() => void executeRunOnce()}
         onBackfill={() => setBackfillOpen(true)}
+        checkpointRawNotObserved={checkpointRawNotObserved}
         evidence={
       <>
       <StreamMonitoringStatusStrip
