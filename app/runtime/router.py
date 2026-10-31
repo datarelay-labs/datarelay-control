@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import os
+import threading
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -3681,8 +3683,21 @@ async def stream_pipeline_debug(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
+def _run_now_max_concurrent() -> int:
+    try:
+        return max(1, int(os.environ.get("GDC_RUN_NOW_MAX_CONCURRENT", "4")))
+    except ValueError:
+        return 4
+
+
+# Manual runs execute blocking source/destination I/O. They run on the worker thread pool (never on
+# the event loop) and are capped so a few slow destinations cannot exhaust the pool that serves every
+# other sync endpoint (F-175).
+_run_now_slots = threading.BoundedSemaphore(_run_now_max_concurrent())
+
+
 @router.post("/streams/{stream_id}/run-once", response_model=RuntimeStreamRunOnceResponse)
-async def run_stream_once(
+def run_stream_once(
     stream_id: int, request: Request, db: Session = Depends(get_db)
 ) -> RuntimeStreamRunOnceResponse:
     """Execute one StreamRunner cycle with DB-backed delivery_logs + checkpoint (manual / verification).
@@ -3690,8 +3705,32 @@ async def run_stream_once(
     HTTP 2xx is returned only when Runtime actually entered and produced a committed
     lifecycle outcome (``completed`` / ``no_events``). Lock contention and dispatch
     failures return explicit non-2xx error codes — never a silent no-op 2xx.
+
+    This is a plain ``def`` endpoint on purpose: the run performs blocking network I/O to the source
+    and every destination. As ``async def`` it ran on the event loop, so one Run Now against a slow
+    destination froze the whole API including ``/health`` (F-175). At most
+    ``GDC_RUN_NOW_MAX_CONCURRENT`` manual runs execute at once; further clicks get a clear 429.
     """
 
+    if not _run_now_slots.acquire(blocking=False):
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error_code": "RUN_NOW_CAPACITY",
+                "message": (
+                    "Too many manual runs are already in progress. Wait for one to finish "
+                    "(a destination may be slow) and try again."
+                ),
+                "stream_id": stream_id,
+            },
+        )
+    try:
+        return _run_stream_once_blocking(stream_id, request, db)
+    finally:
+        _run_now_slots.release()
+
+
+def _run_stream_once_blocking(stream_id: int, request: Request, db: Session) -> RuntimeStreamRunOnceResponse:
     from app.runners.stream_loader import load_stream_context
     from app.runners.stream_runner import StreamRunner
 
