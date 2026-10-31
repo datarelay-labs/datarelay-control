@@ -888,7 +888,7 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
   }, 25000)
 
   it('renders enrichment configuration at /streams/:streamId/enrichment', async () => {
-    renderApp('/streams/malop-api/enrichment')
+    renderApp('/streams/1/enrichment')
     expect(await screen.findByRole('navigation', { name: 'Breadcrumb' }, { timeout: 15000 })).toBeInTheDocument()
     expect(
       await screen.findByText(/Add or calculate fields that should appear in the final event/i, {}, { timeout: 15000 }),
@@ -898,17 +898,12 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     expect(screen.getByText('Existing-field policy')).toBeInTheDocument()
   }, 20000)
 
-  it('renders source test page at /streams/:streamId/api-test with HTTP-aware labels for malop-api', async () => {
-    renderApp('/streams/malop-api/api-test')
-    expect(
-      await screen.findByText(/Runs the saved HTTP request/i, {}, { timeout: 15000 }),
-    ).toBeInTheDocument()
+  it('renders the source test page at /streams/:streamId/api-test for an existing stream', async () => {
+    renderApp('/streams/1/api-test')
     const crumb = await screen.findByRole('navigation', { name: 'Breadcrumb' })
-    expect(within(crumb).getByText('API Test & Preview')).toBeInTheDocument()
-    expect(screen.getAllByRole('heading', { name: 'API Test & Preview' }).length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByRole('heading', { level: 3, name: 'Request Configuration' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 3, name: 'Response Preview' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 3, name: 'JSON Tree' })).toBeInTheDocument()
+    expect(within(crumb).getByText('Source Test & Preview')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Source Test & Preview' })).toBeInTheDocument()
+    expect(screen.queryByTestId('entity-not-found')).not.toBeInTheDocument()
   })
 
   it('uses fixture slug for remote probe breadcrumb on api-test', async () => {
@@ -918,12 +913,12 @@ describe('App shell (phase: sidebar, header, dashboard)', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Remote Probe & Preview' })).toBeInTheDocument()
   })
 
-  it('uses neutral shell title when stream slug has no source hint', async () => {
+  it('shows a not-found state, not an editable workspace, for a malformed stream id (F-019, F-216)', async () => {
     renderApp('/streams/unknown-zzz-stream/api-test')
-    const crumb = await screen.findByRole('navigation', { name: 'Breadcrumb' })
-    expect(within(crumb).getByText('Source Test & Preview')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 1, name: 'Source Test & Preview' })).toBeInTheDocument()
-    expect(await screen.findByRole('heading', { level: 2, name: 'Source Test & Preview' })).toBeInTheDocument()
+    const state = await screen.findByTestId('entity-not-found', {}, { timeout: 15000 })
+    expect(state).toHaveTextContent('Stream not found')
+    expect(state).toHaveTextContent('"unknown-zzz-stream" is not a valid stream id')
+    expect(screen.queryByRole('heading', { level: 3, name: 'Request Configuration' })).not.toBeInTheDocument()
   })
 
   it('renders stream monitoring inspector at /streams/:streamId/runtime', async () => {
