@@ -17,6 +17,7 @@ const ROUTE_DELETE_IMPACT_BULLETS = [
   'Removes this delivery path from the stream. The destination and parent stream are kept.',
   'Permanently removes transform, protection, classification, and policy configuration for this path.',
   'Historical delivery logs are kept, but they are no longer associated with this path.',
+  'Analytics recorded for this path are removed, so it stops appearing in charts and totals.',
 ] as const
 
 export function routeDeleteImpactBullets(hasUnsavedPrefix: boolean): string[] {

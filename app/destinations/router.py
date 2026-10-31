@@ -30,6 +30,7 @@ from app.failover_routing.models import StreamFailoverRoute
 from app.platform_admin import journal
 from app.platform_admin.config_entity_snapshots import serialize_destination_config
 from app.routes.models import Route
+from app.streams.delete_scope import purge_runtime_analytics
 from app.security.secrets import mask_config_payload, preserve_masked_secrets
 
 router = APIRouter()
@@ -431,6 +432,7 @@ async def delete_destination(destination_id: int, request: Request, db: Session 
             },
         )
     dest_name = str(row.name)
+    purge_runtime_analytics(db, destination_id=int(destination_id))
     db.delete(row)
     journal.record_audit_event(
         db,
