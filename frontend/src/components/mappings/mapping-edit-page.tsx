@@ -2,6 +2,7 @@ import { ChevronDown, Loader2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { saveStreamMappingUiConfigStrict } from '../../api/gdcRuntimeUi'
+import { mappingSaveBlockedReason } from '../../utils/mappingSaveGate'
 import {
   buildFieldMappingsWithTransformRules,
   extractPreservedFieldMappingMetadata,
@@ -51,6 +52,7 @@ export function MappingEditPage() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
+  const [runStatus, setRunStatus] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -91,6 +93,7 @@ export function MappingEditPage() {
           status: stream.enabled === false ? 'INACTIVE' : 'ACTIVE',
           updatedAt: stream.updated_at?.slice(0, 19).replace('T', ' ') ?? '—',
         })
+        setRunStatus(String(cfg.stream_status || stream.status || 'RUNNING'))
       })
       .catch((e) => {
         if (!cancelled) setLoadError(e instanceof Error ? e.message : 'Load failed')
@@ -105,8 +108,15 @@ export function MappingEditPage() {
 
   const mappedCount = useMemo(() => rows.filter((r) => r.outputField.trim() && r.sourceJsonPath.trim()).length, [rows])
 
+  // Same rule as Edit Stream: platform saves wait until the stream is stopped (F-173).
+  const platformSaveBlockedReason = runStatus == null ? null : mappingSaveBlockedReason(runStatus)
+
   async function handleSave() {
     if (streamNum == null || isSaving) return
+    if (platformSaveBlockedReason) {
+      setSaveMessage(platformSaveBlockedReason)
+      return
+    }
     const valid = rows.filter((r) => r.outputField.trim() && r.sourceJsonPath.trim())
     const advanced = transformRules.filter((rule) => rule.outputField.trim())
     if (
@@ -156,6 +166,15 @@ export function MappingEditPage() {
             Map source fields to destination schema with live runtime preview and validation.
           </p>
           {loadError ? <p className="text-[12px] font-medium text-amber-800 dark:text-amber-200">{loadError}</p> : null}
+          {platformSaveBlockedReason ? (
+            <p
+              id="mapping-stop-first-note"
+              data-testid="mapping-stop-first-note"
+              className="text-[12px] font-medium text-amber-800 dark:text-amber-200"
+            >
+              {platformSaveBlockedReason}
+            </p>
+          ) : null}
           {saveMessage ? <p className="text-[12px] font-medium text-emerald-700 dark:text-emerald-300">{saveMessage}</p> : null}
         </div>
         <div className="flex items-center gap-2">
@@ -168,7 +187,8 @@ export function MappingEditPage() {
           </button>
           <button
             type="button"
-            disabled={isSaving || streamNum == null}
+            disabled={isSaving || streamNum == null || platformSaveBlockedReason != null}
+            aria-describedby={platformSaveBlockedReason ? 'mapping-stop-first-note' : undefined}
             onClick={() => void handleSave()}
             className="inline-flex h-8 items-center gap-1 rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white hover:bg-violet-700 disabled:opacity-60"
           >
