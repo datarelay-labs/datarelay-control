@@ -10,13 +10,13 @@ export function RemoteFileProbeSummary({ res }: { res: ConnectorAuthTestResponse
           SSH reachable: <span className="font-mono">{String(res.ssh_reachable ?? false)}</span>
         </li>
         <li>
-          Authentication: <span className="font-mono">{String(res.ssh_auth_ok ?? false)}</span>
+          Authentication: <span className="font-mono">{res.ssh_auth_ok == null ? 'not attempted' : String(res.ssh_auth_ok)}</span>
         </li>
         <li>
           Host key policy: <span className="font-mono">{String(res.host_key_status ?? '—')}</span>
         </li>
         <li>
-          SFTP subsystem: <span className="font-mono">{String(res.sftp_available ?? false)}</span>
+          SFTP subsystem: <span className="font-mono">{res.sftp_available == null ? 'not attempted' : String(res.sftp_available)}</span>
         </li>
         <li>
           Remote directory accessible: <span className="font-mono">{String(res.remote_directory_accessible ?? false)}</span>

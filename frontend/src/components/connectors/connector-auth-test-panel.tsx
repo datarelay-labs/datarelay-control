@@ -22,11 +22,19 @@ function S3ProbeSummary({ res }: { res: ConnectorAuthTestResponse }) {
         <li>
           Auth / HeadBucket:{' '}
           <span className="font-mono">
-            {String(res.s3_auth_ok ?? false)} (credentials accepted for bucket access checks)
+            {String(res.s3_auth_ok ?? false)}
+            {res.s3_auth_ok ? ' (credentials accepted for bucket access checks)' : ''}
           </span>
         </li>
         <li>
-          Bucket exists: <span className="font-mono">{String(res.s3_bucket_exists ?? false)}</span>
+          Bucket exists:{' '}
+          <span className="font-mono">
+            {res.s3_bucket_exists
+              ? 'true'
+              : res.error_type === 'no_such_bucket'
+                ? 'false'
+                : 'unknown (not confirmed)'}
+          </span>
         </li>
         <li>
           Object count preview (capped): <span className="font-mono">{String(res.s3_object_count_preview ?? 0)}</span>

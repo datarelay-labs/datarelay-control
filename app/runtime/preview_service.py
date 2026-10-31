@@ -1087,8 +1087,9 @@ def run_connector_auth_test(payload: ConnectorAuthTestRequest, db: Session | Non
             message=str(probe.get("message") or ("ok" if ok else "failed")),
             error_type=et,
             ssh_reachable=bool(probe.get("ssh_reachable")),
-            ssh_auth_ok=bool(probe.get("ssh_auth_ok")),
-            sftp_available=bool(probe.get("sftp_available")),
+            # None means "never attempted" (e.g. host key rejected before login); keep it distinct from False.
+            ssh_auth_ok=None if probe.get("ssh_auth_ok") is None else bool(probe.get("ssh_auth_ok")),
+            sftp_available=None if probe.get("sftp_available") is None else bool(probe.get("sftp_available")),
             remote_directory_accessible=bool(probe.get("remote_directory_accessible")),
             matched_file_count=int(probe.get("matched_file_count") or 0),
             sample_remote_paths=list(probe.get("sample_remote_paths") or []),
