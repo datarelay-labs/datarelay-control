@@ -304,12 +304,14 @@ def test_snapshot_stream_scoring_excludes_disabled_paused_and_unobserved_rows(
     now = datetime.now(UTC)
     _seed_receiver_outage_snapshots(db_session, s, now)
 
-    def _rows() -> list[Any]:
+    def _rows(*, explicit: bool = False) -> list[Any]:
+        # Bulk listing (stream_id=None) applies the exclusion; an explicit
+        # per-stream request keeps returning that stream's row (detail contract).
         return list_stream_health_from_snapshots(
             db_session,
             window="1h",
             since=None,
-            stream_id=s["stream_id"],
+            stream_id=s["stream_id"] if explicit else None,
             route_id=None,
             destination_id=None,
         ).rows
@@ -326,6 +328,7 @@ def test_snapshot_stream_scoring_excludes_disabled_paused_and_unobserved_rows(
     stream.enabled = False
     db_session.commit()
     assert _rows() == []
+    assert len(_rows(explicit=True)) == 1  # per-stream detail still answers
 
     stream.enabled = True
     stream.status = "PAUSED"

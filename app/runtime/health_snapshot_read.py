@@ -141,12 +141,14 @@ def list_stream_health_from_snapshots(
     rows = q.order_by(RuntimeStreamSnapshot.stream_id.asc()).all()
     items: list[StreamHealthRow] = []
     for snap, name, conn_id, stream_enabled, stream_status in rows:
-        if not bool(stream_enabled) or is_operator_stopped_status(stream_status):
+        # Bulk listings only: a request for one explicit stream keeps returning that
+        # stream's row (the per-stream detail contract is pinned by e2e tests).
+        if stream_id is None and (not bool(stream_enabled) or is_operator_stopped_status(stream_status)):
             # Disabled / paused / stopped: excluded_no_outcome, never scored
             # (a stale error must not score a disabled stream CRITICAL).
             continue
         full = _snapshot_outcome(snap)
-        if full.success_count <= 0 and full.failure_count <= 0:
+        if stream_id is None and full.success_count <= 0 and full.failure_count <= 0:
             # No observed outcome: excluded_no_outcome instead of 100/HEALTHY.
             continue
         score = compute_health_score_for_mode(
