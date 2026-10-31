@@ -230,7 +230,7 @@ def test_tokenization_persistence_failure_fails_closed_before_delivery(
     assert "$.message" in str(failed.message or "")
 
 
-def test_scheduled_numeric_tokenization_preserves_full_mask_fallback(
+def test_scheduled_numeric_tokenization_delivers_a_token_not_null(
     db_session: Session,
 ) -> None:
     db = db_session
@@ -258,9 +258,12 @@ def test_scheduled_numeric_tokenization_preserves_full_mask_fallback(
     Scheduler(runner=runner).run_stream(context)
 
     assert len(sender.calls) == 1
-    assert sender.calls[0]["events"][0]["message"] is None
+    # F-157: a numeric value used to be delivered as null; it is tokenized like any other identifier.
+    delivered = sender.calls[0]["events"][0]["message"]
+    assert isinstance(delivered, str) and delivered
+    assert "42" not in delivered
     db.expire_all()
-    assert count_vault_entries_for_stream(db, stream_id) == 0
+    assert count_vault_entries_for_stream(db, stream_id) == 1
 
 
 def test_scheduled_mixed_delivery_and_quarantine_is_partial_success(

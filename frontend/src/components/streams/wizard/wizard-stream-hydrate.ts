@@ -41,6 +41,7 @@ import {
   normalizeUnknownNormalFieldPolicy,
   normalizeUnknownSensitiveFieldPolicy,
   normalizeWizardDestinations,
+  normalizeWizardProtectionAction,
   wizardConnectorPatchFromApi,
   type StreamConfigHeaderRow,
   type WizardMappingRow,
@@ -749,6 +750,36 @@ export function persistedIntentDeliveryBehavior(
   return 'continue'
 }
 
+/**
+ * Stream Governance rules that have no enabled Stream protection rule behind them (for example a
+ * Governance document saved while the protection write failed). They are persisted configuration,
+ * so the Data Protection tab must list them; hiding them leaves rules that cannot be seen or
+ * removed from the browser (F-151).
+ */
+export function governanceOnlyIntents(
+  governance: StreamGovernanceResponse | null,
+  enabledProtectionPaths: ReadonlySet<string>,
+): WizardState['dataProtection']['intents'] {
+  const intents: WizardState['dataProtection']['intents'] = []
+  const seen = new Set<string>()
+  for (const rule of governance?.rules ?? []) {
+    if (rule.enabled === false) continue
+    const path = normalizeWizardDetectedField(rule.field_path) || rule.field_path.trim()
+    if (!path || enabledProtectionPaths.has(path) || seen.has(path)) continue
+    seen.add(path)
+    const behavior = String(rule.default_delivery_behavior ?? '').trim().toLowerCase()
+    intents.push({
+      key: 'persisted-governance-' + (rule.rule_key?.trim() || path),
+      detectedField: path,
+      protectionAction: normalizeWizardProtectionAction(rule.default_protection_action),
+      deliveryBehavior: PERSISTED_DELIVERY_BEHAVIORS.has(behavior as WizardDeliveryBehavior)
+        ? (behavior as WizardDeliveryBehavior)
+        : 'continue',
+    })
+  }
+  return intents
+}
+
 export async function hydrateWizardStateFromStream(streamId: number): Promise<WizardState | null> {
   const [found, mapping, allRoutes, destinations] = await Promise.all([
     fetchStreamById(streamId),
@@ -841,12 +872,22 @@ export async function hydrateWizardStateFromStream(streamId: number): Promise<Wi
       ...base.dataProtection,
       ...(schemaDrift.policy ?? {}),
       routeClassificationOverrides,
-      intents: (protectionRules?.rules ?? []).filter((rule) => rule.enabled).map((rule) => ({
-        key: 'persisted-protection-' + rule.id,
-        detectedField: rule.field_path,
-        protectionAction: protectionModeToWizardAction(rule.protection_mode),
-        deliveryBehavior: persistedIntentDeliveryBehavior(streamGovernance, rule.field_path),
-      })),
+      intents: [
+        ...(protectionRules?.rules ?? []).filter((rule) => rule.enabled).map((rule) => ({
+          key: 'persisted-protection-' + rule.id,
+          detectedField: rule.field_path,
+          protectionAction: protectionModeToWizardAction(rule.protection_mode),
+          deliveryBehavior: persistedIntentDeliveryBehavior(streamGovernance, rule.field_path),
+        })),
+        ...governanceOnlyIntents(
+          streamGovernance,
+          new Set(
+            (protectionRules?.rules ?? [])
+              .filter((rule) => rule.enabled)
+              .map((rule) => normalizeWizardDetectedField(rule.field_path) || rule.field_path.trim()),
+          ),
+        ),
+      ],
     },
     outcome: {
       streamId: found.id,

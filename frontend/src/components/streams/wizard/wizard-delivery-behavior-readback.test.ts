@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { hydrateWizardStateFromStream, persistedIntentDeliveryBehavior } from './wizard-stream-hydrate'
+import { governanceOnlyIntents, hydrateWizardStateFromStream, persistedIntentDeliveryBehavior } from './wizard-stream-hydrate'
 import type { StreamGovernanceResponse } from '../../../api/gdcStreamGovernance'
 
 // F-186: a persisted Block/Quarantine must read back as Block/Quarantine after reload, never as
@@ -94,5 +94,36 @@ describe('persisted delivery behavior read-back (F-186)', () => {
     expect(persistedIntentDeliveryBehavior(
       gov([{ field_path: '$.a', default_protection_action: 'audit', default_delivery_behavior: 'Block', enabled: true }]), '$.a',
     )).toBe('block')
+  })
+})
+
+describe('governance rules without a protection rule are listed (F-151)', () => {
+  it('shows saved-but-inactive Governance rules as intents instead of hiding them', async () => {
+    stubApi(
+      {
+        rules: [
+          { rule_key: 'r1', field_path: '$.card', default_protection_action: 'mask_partial', default_delivery_behavior: 'continue', enabled: true },
+          { rule_key: 'r2', field_path: '$.user.email', default_protection_action: 'hash', default_delivery_behavior: 'quarantine', enabled: true },
+          { rule_key: 'r3', field_path: '$.off', default_protection_action: 'hash', default_delivery_behavior: 'continue', enabled: false },
+        ],
+      },
+      [
+        { id: 7, stream_id: 11, field_path: '$.card', sensitivity_class: 'pii', protection_mode: 'partial_mask', enabled: true, source_finding_id: null, created_by: 'a', created_at: 't', updated_at: 't' },
+      ],
+    )
+    const state = await hydrateWizardStateFromStream(11)
+    const intents = state?.dataProtection.intents ?? []
+    expect(intents.map((i) => i.detectedField)).toEqual(['$.card', '$.user.email'])
+    const email = intents.find((i) => i.detectedField === '$.user.email')
+    expect(email?.protectionAction).toBe('hash')
+    expect(email?.deliveryBehavior).toBe('quarantine')
+  })
+
+  it('does not duplicate a field that already has an active protection rule', () => {
+    const gov = { stream_id: 1, enabled: true, route_overrides: [], rules: [
+      { field_path: '$.a', default_protection_action: 'hash', default_delivery_behavior: 'continue', enabled: true },
+    ] } as StreamGovernanceResponse
+    expect(governanceOnlyIntents(gov, new Set(['$.a']))).toEqual([])
+    expect(governanceOnlyIntents(null, new Set())).toEqual([])
   })
 })

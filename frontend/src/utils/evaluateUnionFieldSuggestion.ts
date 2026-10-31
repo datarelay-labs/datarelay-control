@@ -8,12 +8,24 @@ export type UnionFieldSuggestion = {
 
 const EMAIL_LEAF_NAMES = new Set(['email', 'e_mail'])
 const API_KEY_LEAF_NAMES = new Set(['api_key', 'apikey', 'access_key', 'secret_key'])
-const CREDIT_CARD_LEAF_NAMES = new Set(['credit_card', 'card_number'])
+const CREDIT_CARD_LEAF_NAMES = new Set([
+  'credit_card',
+  'creditcard',
+  'card',
+  'card_number',
+  'card_no',
+  'card_num',
+  'cc_number',
+  'payment_card',
+])
 const PASSWORD_LEAF_NAMES = new Set(['password', 'passwd', 'pwd'])
 const TOKEN_LEAF_NAMES = new Set(['token', 'access_token', 'refresh_token'])
 const PEM_LEAF_NAMES = new Set(['private_key', 'pem'])
 
 const EMAIL_VALUE_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+// 13-19 digit payment card number written in space/hyphen groups, e.g. 4111-1111-1111-1111.
+// The final group may be a placeholder such as NNNN / XXXX / **** in redacted samples.
+const CARD_GROUPED_PATTERN = /^\d{4}([ -])\d{4,6}(?:\1\d{4,6}){0,2}\1(?:\d{3,4}|[NnXx*#]{3,4})$/
 
 function leafSegment(fieldPath: string): string {
   const trimmed = fieldPath.trim()
@@ -31,6 +43,34 @@ function stringSamples(sampleValues: readonly unknown[] | undefined): string[] {
 
 function matchesEmailSample(sampleValues: readonly unknown[] | undefined): boolean {
   return stringSamples(sampleValues).some((value) => EMAIL_VALUE_PATTERN.test(value))
+}
+
+function luhnValid(digits: string): boolean {
+  let total = 0
+  for (let index = 0; index < digits.length; index += 1) {
+    let value = Number(digits[digits.length - 1 - index])
+    if (index % 2 === 1) {
+      value *= 2
+      if (value > 9) value -= 9
+    }
+    total += value
+  }
+  return total % 10 === 0
+}
+
+export function looksLikePaymentCardNumber(value: string): boolean {
+  const text = value.trim()
+  if (text.length > 23 || !CARD_GROUPED_PATTERN.test(text)) return false
+  const digits = text.replace(/[ -]/g, '')
+  if (!/^\d+$/.test(digits)) {
+    // Redacted sample (placeholder in the last group): shape alone is the evidence.
+    return digits.replace(/\D/g, '').length >= 9
+  }
+  return digits.length >= 13 && digits.length <= 19 && luhnValid(digits)
+}
+
+function matchesCardSample(sampleValues: readonly unknown[] | undefined): boolean {
+  return stringSamples(sampleValues).some((value) => looksLikePaymentCardNumber(value))
 }
 
 function matchesPemSample(sampleValues: readonly unknown[] | undefined): boolean {
@@ -72,6 +112,9 @@ function matchBySampleValue(sampleValues: readonly unknown[] | undefined): NameM
   }
   if (matchesPemSample(sampleValues)) {
     return { category: 'secret', suggestedType: 'Likely Private Key' }
+  }
+  if (matchesCardSample(sampleValues)) {
+    return { category: 'pii', suggestedType: 'Likely Credit Card' }
   }
   return null
 }

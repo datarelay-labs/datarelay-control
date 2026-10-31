@@ -1140,6 +1140,10 @@ export function computeWizardRouteProcessingStatuses(
     protection = protectionFieldOverrides ? 'Mixed' : 'Overridden'
   } else if (protectionFieldOverrides) {
     protection = 'Overridden'
+  } else if (draft.governanceLoad?.protection === 'passthrough') {
+    // The Route owns rules the Wizard cannot edit (API-created, disabled, other classes). They are
+    // enforced at runtime, so the card must not read "Shared" (F-158).
+    protection = 'Overridden'
   } else {
     protection = 'Inherited'
   }
@@ -1147,13 +1151,14 @@ export function computeWizardRouteProcessingStatuses(
   let classification: RouteProcessingStatus
   if (!inherit.classification) {
     classification = classificationOverride ? 'Mixed' : 'Overridden'
-  } else if (classificationOverride) {
+  } else if (classificationOverride || draft.governanceLoad?.classification === 'passthrough') {
     classification = 'Overridden'
   } else {
     classification = 'Inherited'
   }
 
-  const policy: RouteProcessingStatus = inherit.policy ? 'Inherited' : 'Overridden'
+  const policy: RouteProcessingStatus =
+    inherit.policy && draft.governanceLoad?.policy !== 'passthrough' ? 'Inherited' : 'Overridden'
 
   return { transform, protection, classification, policy }
 }

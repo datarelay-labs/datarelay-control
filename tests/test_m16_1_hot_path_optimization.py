@@ -202,6 +202,39 @@ def test_tokenization_same_value_stable_token(
     assert next(iter(tokens)).startswith("USER_")
 
 
+def test_tokenization_numeric_id_is_tokenized_not_nulled(
+    db_session: Session,
+    hot_path_settings: None,
+) -> None:
+    """F-157: tokenizing a numeric id used to deliver ``null`` (full-mask semantics for non-strings)."""
+
+    db = db_session
+    fixture = _seed_stream_runtime(db)
+    stream_id = fixture["stream_id"]
+    db.add(
+        StreamProtectionRule(
+            stream_id=stream_id,
+            field_path="$.id",
+            sensitivity_class="pii",
+            protection_mode="tokenization",
+            enabled=True,
+            created_by="test",
+        )
+    )
+    db.commit()
+
+    events = [{"id": 6407}, {"id": 6407}, {"id": 6408}, {"id": True}]
+    rules = db.query(StreamProtectionRule).filter_by(stream_id=stream_id).all()
+    result = protect_batch(events, rules, stream_id=stream_id, db=db)
+    first, second, third, flag = (ev["id"] for ev in result.events)
+    assert isinstance(first, str) and first
+    assert first == second
+    assert third != first
+    assert "6407" not in first
+    # Booleans keep the full-mask semantics; they are not identifiers.
+    assert flag is False
+
+
 def test_get_or_create_tokens_batch_concurrent_race(
     db_session: Session,
     hot_path_settings: None,
