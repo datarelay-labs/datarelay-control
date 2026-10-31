@@ -466,3 +466,32 @@ describe('Sync position must be bound to the request (F-162)', () => {
     expect(snapshot.categories.find((c) => c.key === 'records')?.summary).toContain('{{checkpoint.last_id}}')
   })
 })
+
+describe('Webhook Receiver deploy checklist is honest about what was verified (F-123)', () => {
+  function webhookState(eventCount: number) {
+    const state = readyState()
+    state.connector.sourceType = 'WEBHOOK_RECEIVER'
+    state.apiTest.eventCount = eventCount
+    return state
+  }
+
+  it('does not claim a tested connection or a fetched sample when no payload was supplied', () => {
+    const snapshot = computeDeployReadiness(webhookState(0), { ok: true, failed: false, unknown: false })
+    const connection = snapshot.categories.find((c) => c.key === 'connection')
+    const data = snapshot.categories.find((c) => c.key === 'data')
+    expect(connection?.summary).not.toMatch(/tested/i)
+    expect(connection?.summary).toMatch(/push source/i)
+    expect(data?.tone).toBe('warn')
+    expect(data?.summary).toMatch(/nothing was fetched or tested/i)
+    expect(data?.summary).not.toMatch(/fetched successfully/i)
+    expect(snapshot.statusLabel).toBe('READY WITH WARNINGS')
+  })
+
+  it('says a pasted sample was validated locally rather than received', () => {
+    const snapshot = computeDeployReadiness(webhookState(3), { ok: true, failed: false, unknown: false })
+    const data = snapshot.categories.find((c) => c.key === 'data')
+    expect(data?.tone).toBe('ok')
+    expect(data?.summary).toMatch(/validated locally \(3 records\)/)
+    expect(data?.summary).toMatch(/no live event received/i)
+  })
+})

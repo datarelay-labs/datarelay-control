@@ -176,6 +176,8 @@ const FORM_MANAGED_CONFIG_KEYS = new Set([
 ])
 
 const MASKED_HEADER_PLACEHOLDER = '********'
+/** RFC 9110 token characters allowed in an HTTP header name. */
+const HEADER_NAME_RE = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/
 
 function extractExtraConfig(cfg: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {}
@@ -789,6 +791,39 @@ export function DestinationsManagementPage() {
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editingRow, setEditingRow] = useState<DestinationOverviewRow | null>(null)
   const [form, setForm] = useState<FormState>(INITIAL_FORM)
+  // Webhook request headers: write-only name/value pair being added (F-136).
+  const [newHeaderName, setNewHeaderName] = useState('')
+  const [newHeaderValue, setNewHeaderValue] = useState('')
+  const [headerError, setHeaderError] = useState<string | null>(null)
+  const addWebhookHeader = () => {
+    const name = newHeaderName.trim()
+    if (!HEADER_NAME_RE.test(name)) {
+      setHeaderError('Header name may only contain letters, digits and - _ . ! # $ % & \' * + ^ ` | ~.')
+      return
+    }
+    if (!newHeaderValue.trim()) {
+      setHeaderError('Header value is required. It is hidden after you save.')
+      return
+    }
+    if (newHeaderValue === MASKED_HEADER_PLACEHOLDER) {
+      setHeaderError('Enter the real header value; the masked placeholder keeps the stored one.')
+      return
+    }
+    const sameType = form.extraConfigType === 'WEBHOOK_POST'
+    const existing = sameType ? extraConfigHeaders(form) : {}
+    if (Object.keys(existing).some((k) => k.toLowerCase() === name.toLowerCase())) {
+      setHeaderError(`Header ${name} already exists. Remove it first to replace its value.`)
+      return
+    }
+    setForm((s) => {
+      const base = s.extraConfigType === 'WEBHOOK_POST' ? s.extraConfig : {}
+      const headers = { ...(base.headers as Record<string, unknown> | undefined), [name]: newHeaderValue }
+      return { ...s, extraConfigType: 'WEBHOOK_POST', extraConfig: { ...base, headers } }
+    })
+    setNewHeaderName('')
+    setNewHeaderValue('')
+    setHeaderError(null)
+  }
   const [formBaseline, setFormBaseline] = useState<FormState | null>(
     returnToSavedWizardDraft && canMutateDestinations ? INITIAL_FORM : null,
   )
@@ -1709,6 +1744,43 @@ export function DestinationsManagementPage() {
                             </ul>
                           </div>
                         ) : null}
+                        <div data-testid="webhook-header-editor" className="space-y-2">
+                          <p className="text-[13px] font-medium text-slate-700 dark:text-slate-300">Add request header</p>
+                          <p className="text-[12px] text-slate-500 dark:text-gdc-muted">
+                            Use this for Authorization or an API key. The value is write-only: it is hidden after you save.
+                          </p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <input
+                              aria-label="Header name"
+                              className="h-9 min-w-[10rem] flex-1 rounded-md border border-slate-200/80 bg-white px-3 font-mono text-[13px] dark:border-gdc-border dark:bg-gdc-section dark:text-slate-50"
+                              value={newHeaderName}
+                              onChange={(e) => setNewHeaderName(e.target.value)}
+                              placeholder="Authorization"
+                              autoComplete="off"
+                            />
+                            <input
+                              aria-label="Header value"
+                              type="password"
+                              className="h-9 min-w-[10rem] flex-1 rounded-md border border-slate-200/80 bg-white px-3 font-mono text-[13px] dark:border-gdc-border dark:bg-gdc-section dark:text-slate-50"
+                              value={newHeaderValue}
+                              onChange={(e) => setNewHeaderValue(e.target.value)}
+                              placeholder="Bearer …"
+                              autoComplete="new-password"
+                            />
+                            <button
+                              type="button"
+                              className="h-9 rounded-md border border-slate-300 px-3 text-[13px] font-medium text-slate-800 hover:bg-slate-50 dark:border-gdc-border dark:text-slate-100 dark:hover:bg-gdc-rowHover"
+                              onClick={addWebhookHeader}
+                            >
+                              Add header
+                            </button>
+                          </div>
+                          {headerError ? (
+                            <p role="alert" className="text-[12px] text-red-600 dark:text-red-400">
+                              {headerError}
+                            </p>
+                          ) : null}
+                        </div>
                         <label className="text-[13px] font-medium text-slate-700 dark:text-slate-300">
                           URL *
                           <input

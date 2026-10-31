@@ -31,7 +31,11 @@ function deriveWizardFlowOutline(state: WizardState) {
         ? state.connector.connectorName.trim() || 'Source selected'
         : sourceDraft ? 'Connector module selected' : 'Choose a source',
       detail: sourceSelected
-        ? sampleConfirmed ? 'Sample selection confirmed' : 'Source selected · confirm a sample'
+        ? sampleConfirmed
+          ? state.connector.sourceType === 'WEBHOOK_RECEIVER' && state.apiTest.eventCount === 0
+            ? 'Receiver saved · no sample payload yet'
+            : 'Sample selection confirmed'
+          : 'Source selected · confirm a sample'
         : sourceDraft ? 'Finish source setup and test it' : 'Where the data comes from',
     },
     processing: {

@@ -127,4 +127,59 @@ describe('DestinationsManagementPage - webhook headers survive an edit (F-137)',
     const body = previewTestDestination.mock.calls[0][0] as { config_json: Record<string, unknown> }
     expect(body.config_json.headers).toBeUndefined()
   })
+  it('adds a header with a write-only value next to the masked stored ones (F-136)', async () => {
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <DestinationsManagementPage />
+      </MemoryRouter>,
+    )
+    await openEditSheet(user)
+
+    await user.type(await screen.findByLabelText('Header name'), 'X-Api-Key')
+    const value = screen.getByLabelText('Header value')
+    expect(value).toHaveAttribute('type', 'password')
+    await user.type(value, 'k-12345')
+    await user.click(screen.getByRole('button', { name: 'Add header' }))
+
+    // The list shows the name and a mask, never the value.
+    expect(screen.getByTestId('webhook-stored-headers')).toHaveTextContent('X-Api-Key: ********')
+    expect(screen.getByTestId('webhook-stored-headers')).not.toHaveTextContent('k-12345')
+    fireEvent.click(screen.getByRole('button', { name: /save changes/i }))
+
+    await waitFor(() => expect(updateDestination).toHaveBeenCalledTimes(1))
+    const body = updateDestination.mock.calls[0][1] as { config_json: Record<string, unknown> }
+    expect(body.config_json.headers).toEqual({
+      Authorization: '********',
+      'X-BFS-Dest': '********',
+      'X-Api-Key': 'k-12345',
+    })
+  })
+
+  it('rejects an invalid header name, a duplicate name and the mask as a value', async () => {
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <DestinationsManagementPage />
+      </MemoryRouter>,
+    )
+    await openEditSheet(user)
+
+    await user.type(await screen.findByLabelText('Header name'), 'bad name')
+    await user.type(screen.getByLabelText('Header value'), 'v')
+    await user.click(screen.getByRole('button', { name: 'Add header' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Header name may only contain/)
+
+    await user.clear(screen.getByLabelText('Header name'))
+    await user.type(screen.getByLabelText('Header name'), 'authorization')
+    await user.click(screen.getByRole('button', { name: 'Add header' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/already exists/)
+
+    await user.clear(screen.getByLabelText('Header name'))
+    await user.type(screen.getByLabelText('Header name'), 'X-New')
+    await user.clear(screen.getByLabelText('Header value'))
+    await user.type(screen.getByLabelText('Header value'), '********')
+    await user.click(screen.getByRole('button', { name: 'Add header' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/masked placeholder/)
+  })
 })

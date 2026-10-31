@@ -16,7 +16,7 @@ import {
   type WizardHttpApiAnalysis,
   type WizardState,
 } from './wizard-state'
-import { detectEventRootCandidates, flattenSampleFields } from './wizard-json-extract'
+import { detectEventRootCandidates, flattenSampleFields, wizardExtractEvents } from './wizard-json-extract'
 import { buildApiTestSuccessPatch } from '../../../utils/wizardUnionSchema'
 import { resolveHttpApiTestResult } from './wizard-step-gates'
 import type { OperationalSampleId } from './wizard-operational-samples'
@@ -249,10 +249,13 @@ function resolveHttpFailureStage(
 export function StepApiTest({
   state,
   onChange,
-  onStreamPatch: _onStreamPatch,
+  onStreamPatch,
   onAdvanceToRecordSelection,
 }: StepApiTestProps) {
   const [busy, setBusy] = useState(false)
+  // Webhook Receiver: a representative payload pasted in this wizard session (F-123). It is validated
+  // locally and never sent to the receiver; the saved connector preview is used when this is empty.
+  const [pastedSample, setPastedSample] = useState('')
   const requestGenRef = useRef(0)
 
   const apiTestConfigFingerprint = useMemo(
@@ -794,7 +797,7 @@ export function StepApiTest({
         errorMessage: null,
       })
       try {
-        const sampleText = state.connector.webhookPayloadPreview.trim()
+        const sampleText = pastedSample.trim() || state.connector.webhookPayloadPreview.trim()
         if (!sampleText) {
           commitApiTest(gen, {
             status: 'success',
@@ -830,6 +833,13 @@ export function StepApiTest({
         }
 
         const parsed = parseWebhookPayloadPreview(sampleText)
+        // Honour the Event array / Event root the operator chose so the count and preview match
+        // what the receiver will extract at runtime.
+        const arrayPath = state.stream.useWholeResponseAsEvent ? '' : state.stream.eventArrayPath.trim()
+        const rootPath = state.stream.eventRootPath.trim()
+        if (arrayPath || rootPath) {
+          parsed.events = wizardExtractEvents(parsed.payload, arrayPath, rootPath)
+        }
         commitApiTest(gen, {
           status: 'success',
           ok: true,
@@ -850,7 +860,9 @@ export function StepApiTest({
           errorMessage: null,
           targetStatusCode: null,
           targetResponseBody: null,
-          hint: 'Validated the saved synthetic payload locally. Live producers POST to the saved receiver URL and use the same mapping, Route, and delivery pipeline.',
+          hint: pastedSample.trim()
+            ? 'Validated the pasted sample locally. Nothing was sent to the receiver and no live event has been received; live producers POST to the receiver URL and use the same mapping, Route, and delivery pipeline.'
+            : 'Validated the saved synthetic payload locally. Live producers POST to the saved receiver URL and use the same mapping, Route, and delivery pipeline.',
           apiBacked: false,
           steps: [],
           responseSample: parsed.payload,
@@ -1097,7 +1109,7 @@ export function StepApiTest({
     } finally {
       if (gen === requestGenRef.current) setBusy(false)
     }
-  }, [busy, canRunLiveApiTest, commitApiTest, state])
+  }, [busy, canRunLiveApiTest, commitApiTest, pastedSample, state])
 
   const t = state.apiTest
   const copy = sourcePres.wizardApiTest
@@ -1207,11 +1219,62 @@ export function StepApiTest({
               <div>
                 <dt className="font-semibold text-slate-600 dark:text-gdc-mutedStrong">Preview source</dt>
                 <dd className="mt-0.5 text-slate-800 dark:text-slate-200">
-                  {state.connector.webhookPayloadPreview.trim() ? 'Saved synthetic payload' : 'Waiting for producer / no saved sample'}
+                  {pastedSample.trim()
+                    ? 'Pasted sample (this wizard session)'
+                    : state.connector.webhookPayloadPreview.trim()
+                      ? 'Saved synthetic payload'
+                      : 'Waiting for producer / no saved sample'}
                 </dd>
               </div>
             </dl>
-            {!state.connector.webhookPayloadPreview.trim() ? (
+            <div className="mt-3 space-y-2" data-testid="wizard-webhook-sample-controls">
+              <label className="block">
+                <span className="font-semibold text-slate-700 dark:text-slate-200">Sample payload</span>
+                <span className="ml-1 text-slate-500 dark:text-gdc-mutedStrong">
+                  (paste what your producer will POST: a JSON object, an array, or NDJSON)
+                </span>
+                <textarea
+                  value={pastedSample}
+                  onChange={(e) => setPastedSample(e.target.value)}
+                  rows={5}
+                  spellCheck={false}
+                  placeholder='{"events":[{"id":1,"message":"hello"}]}'
+                  data-testid="wizard-webhook-sample-input"
+                  className="mt-1 w-full rounded border border-slate-300 bg-white p-2 font-mono text-[10px] text-slate-800 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
+                />
+              </label>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <label className="block">
+                  <span className="font-semibold text-slate-700 dark:text-slate-200">Event array path</span>
+                  <input
+                    type="text"
+                    value={state.stream.eventArrayPath}
+                    onChange={(e) =>
+                      onStreamPatch?.({ eventArrayPath: e.target.value, useWholeResponseAsEvent: false })
+                    }
+                    placeholder="$.events (empty: body is one event or a top-level array)"
+                    data-testid="wizard-webhook-event-array-path"
+                    className="mt-1 h-7 w-full rounded border border-slate-300 bg-white px-2 font-mono text-[10px] dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
+                  />
+                </label>
+                <label className="block">
+                  <span className="font-semibold text-slate-700 dark:text-slate-200">Event root</span>
+                  <input
+                    type="text"
+                    value={state.stream.eventRootPath}
+                    onChange={(e) => onStreamPatch?.({ eventRootPath: e.target.value })}
+                    placeholder="$.record (optional: object inside each event)"
+                    data-testid="wizard-webhook-event-root"
+                    className="mt-1 h-7 w-full rounded border border-slate-300 bg-white px-2 font-mono text-[10px] dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100"
+                  />
+                </label>
+              </div>
+              <p className="text-slate-500 dark:text-gdc-mutedStrong">
+                Without an Event array path a {'{"events":[...]}'} body is delivered as ONE event. Click Run Test
+                to validate the sample with these paths; the paths are saved with the stream.
+              </p>
+            </div>
+            {!state.connector.webhookPayloadPreview.trim() && !pastedSample.trim() ? (
               <p
                 className="mt-2 rounded border border-slate-200/80 bg-white/70 p-2 text-slate-600 dark:border-gdc-border dark:bg-gdc-card dark:text-gdc-mutedStrong"
                 data-testid="wizard-webhook-waiting-state"

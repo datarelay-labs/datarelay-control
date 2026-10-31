@@ -33,6 +33,7 @@ import { hydrateWizardStateFromStream, refreshWizardDestinationsFromStream } fro
 import { reconcileWizardAfterPartialPersist } from './wizard/wizard-partial-save-reconcile'
 import { proveStreamRunOnce } from './wizard/prove-stream-run-once'
 import { deliveryProofLines, nextDeliveryProofPrior, type ExactRunDeliveryProof, type PriorDeliveryProof } from './wizard/deploy-delivery-proof'
+import { StreamDeduplicationCard } from './stream-deduplication-card'
 import { confirmDeliveryPanelServerFields, editRuntimeBlockReason, editRuntimeVerificationBlocked, mergeDeliveryPanelRouteDrafts, persistedWizardConfigSnapshot, replacePersistedConcernSnapshot } from './wizard/wizard-edit-runtime-gate'
 import { applyCreatedRouteIdentity, applyPersistedRevisions, persistWizardStreamEdits } from './wizard/wizard-stream-persist'
 import {
@@ -1419,12 +1420,21 @@ export function StreamEditWizardPage({
       <div>
         <ReadonlyInspectionFrame readOnly={!canMutateWorkspace}>
         {currentStepKey === 'connect' ? (
-          <StepConnect
-            state={state}
-            connectorReadonly
-            onConnectorChange={updateConnector}
-            onStreamChange={updateStreamConfig}
-          />
+          <>
+            <StepConnect
+              state={state}
+              connectorReadonly
+              onConnectorChange={updateConnector}
+              onStreamChange={updateStreamConfig}
+            />
+            {Number.isSafeInteger(Number(streamId)) && Number(streamId) > 0 ? (
+              <StreamDeduplicationCard
+                streamId={Number(streamId)}
+                running={runtimeStatus === 'RUNNING'}
+                readOnly={!canMutateWorkspace}
+              />
+            ) : null}
+          </>
         ) : null}
         {currentStepKey === 'sample' ? (
           <StepSample

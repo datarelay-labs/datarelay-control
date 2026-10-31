@@ -506,7 +506,11 @@ export function computeDeployReadiness(
     connectionWarn,
   )
 
-  const dataTone = !dataOk ? categoryTone(dataOk, dataWarn) : samplePolicyWarn ? 'warn' : 'ok'
+  // Webhook Receiver is a push source: nothing is connected or fetched during setup, so the checklist
+  // must not claim a tested connection or a fetched sample (F-123).
+  const isWebhookSource = state.connector.sourceType === 'WEBHOOK_RECEIVER'
+  const webhookNoSample = isWebhookSource && dataOk && state.apiTest.eventCount === 0
+  const dataTone = !dataOk ? categoryTone(dataOk, dataWarn) : samplePolicyWarn || webhookNoSample ? 'warn' : 'ok'
 
   const recordsTone = categoryTone(recordsOk, recordsWarn)
 
@@ -522,7 +526,9 @@ export function computeDeployReadiness(
       label: 'Connection',
       tone: connectionTone,
       summary: connectionOk
-        ? WIZARD_LABEL.connectorConfigured
+        ? isWebhookSource
+          ? 'Receiver saved \u2014 a push source has no connection to test until a producer sends events'
+          : WIZARD_LABEL.connectorConfigured
         : connectionWarn
           ? 'Source connection configured — run Test Connection'
           : 'Complete source connection, request, and connection test',
@@ -533,7 +539,11 @@ export function computeDeployReadiness(
       label: 'Data',
       tone: dataTone,
       summary: dataOk
-        ? samplePolicy.status === 'needs_attention'
+        ? isWebhookSource
+          ? webhookNoSample
+            ? 'No sample payload \u2014 nothing was fetched or tested; the receiver waits for a producer'
+            : `Sample payload validated locally (${state.apiTest.eventCount} record${state.apiTest.eventCount === 1 ? '' : 's'}) \u2014 no live event received yet`
+          : samplePolicy.status === 'needs_attention'
           ? 'Sample fetched — Union Schema needs attention'
           : samplePolicy.status === 'warning'
             ? 'Sample fetched — more events recommended'
@@ -541,7 +551,9 @@ export function computeDeployReadiness(
         : dataWarn
           ? 'Sample returned — review response status'
           : 'Run a successful sample fetch',
-      detail: samplePolicyWarn
+      detail: webhookNoSample
+        ? 'Paste a sample payload on Run Test to check the Event array path, Event root and mapping before live traffic.'
+        : samplePolicyWarn
         ? samplePolicy.message ?? undefined
         : dataWarn && !dataOk
           ? state.apiTest.errorMessage ?? undefined

@@ -467,7 +467,16 @@ export function RecordSelectionWorkspace({
       <section className="rounded-xl border border-dashed border-slate-300/90 bg-slate-50/40 p-6 text-center dark:border-gdc-border dark:bg-gdc-card">
         <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Record Selection</h3>
         <p className="mx-auto mt-2 max-w-md text-[12px] leading-relaxed text-slate-600 dark:text-gdc-muted">
-          Run <span className="font-semibold">Fetch Sample Data</span> or load an operational test dataset on the API Test step.
+          {state.connector.sourceType === 'WEBHOOK_RECEIVER' ? (
+            <>
+              A Webhook Receiver has no source to fetch from. Paste a sample payload on the{' '}
+              <span className="font-semibold">Run Test</span> tab to choose the Event array path and Event root.
+            </>
+          ) : (
+            <>
+              Run <span className="font-semibold">Fetch Sample Data</span> or load an operational test dataset on the API Test step.
+            </>
+          )}
         </p>
       </section>
     )
