@@ -74,6 +74,7 @@ vi.mock('../../../api/gdcRuntimePreview', () => ({
 import { createPolicyRule } from '../../../api/gdcPolicy'
 import { createClassificationRule } from '../../../api/gdcClassification'
 import { createProtectionRulesDirect } from '../../../api/gdcProtection'
+import { runTransformPreview } from '../../../api/gdcRuntimePreview'
 
 describe('wizard-data-protection-persist', () => {
   beforeEach(() => {
@@ -211,6 +212,66 @@ describe('wizard-data-protection-persist', () => {
     expect(result.saved).toBe(false)
     expect(result.errors.some((e) => e.includes('does_not_exist'))).toBe(true)
     expect(createProtectionRulesDirect).not.toHaveBeenCalled()
+  })
+
+  describe('save validation and atomicity (F-149 / F-150)', () => {
+    function stateWithSample() {
+      const state = buildInitialState()
+      state.apiTest.extractedEvents = [{ id: 7, card: '4111111111116407', user: { email: 'a@b.c' }, src_ip: '10.0.0.1' }]
+      state.mapping = [
+        { id: 'm1', outputField: 'id', sourceJsonPath: '$.id' },
+        { id: 'm2', outputField: 'card', sourceJsonPath: '$.card' },
+      ]
+      return state
+    }
+
+    it('accepts a path that is present in the loaded sample even when the mapping preview is unavailable', async () => {
+      vi.mocked(runTransformPreview).mockRejectedValue(new Error('preview unavailable'))
+      const state = stateWithSample()
+      state.dataProtection.intents = [
+        { key: 'a', detectedField: '$.card', protectionAction: 'mask_partial', deliveryBehavior: 'continue' },
+        { key: 'b', detectedField: '$.src_ip', protectionAction: 'mask_full', deliveryBehavior: 'continue' },
+      ]
+      const resolved = await resolveWizardProtectionIntents(state)
+      expect(resolved.errors).toEqual([])
+      expect(resolved.resolved.map((item) => item.resolvedPath).sort()).toEqual(['$.card', '$.src_ip'])
+    })
+
+    it('writes nothing when any protection path cannot be resolved', async () => {
+      const state = stateWithSample()
+      state.dataProtection.intents = [
+        { key: 'a', detectedField: '$.card', protectionAction: 'mask_partial', deliveryBehavior: 'quarantine' },
+        { key: 'b', detectedField: '$.not_in_sample', protectionAction: 'hash', deliveryBehavior: 'quarantine' },
+      ]
+      const result = await persistWizardDataProtectionIntents(9, state)
+      expect(result.saved).toBe(false)
+      expect(result.errors.join(' ')).toContain('$.not_in_sample')
+      expect(createPolicyRule).not.toHaveBeenCalled()
+      expect(createClassificationRule).not.toHaveBeenCalled()
+      expect(createProtectionRulesDirect).not.toHaveBeenCalled()
+    })
+
+    it('creates field protection first so a rejected rule leaves no policy or classification rows behind', async () => {
+      vi.mocked(createProtectionRulesDirect).mockRejectedValueOnce(new Error('422: protection rejected'))
+      const state = stateWithSample()
+      state.dataProtection.intents = [
+        { key: 'a', detectedField: '$.card', protectionAction: 'mask_partial', deliveryBehavior: 'quarantine' },
+      ]
+      const result = await persistWizardDataProtectionIntents(9, state)
+      expect(result.saved).toBe(false)
+      expect(result.errors.join(' ')).toContain('protection rejected')
+      expect(createPolicyRule).not.toHaveBeenCalled()
+      expect(createClassificationRule).not.toHaveBeenCalled()
+    })
+
+    it('explains that no sample is loaded instead of claiming the path does not exist', async () => {
+      const state = buildInitialState()
+      state.dataProtection.intents = [
+        { key: 'a', detectedField: '$.card', protectionAction: 'mask_partial', deliveryBehavior: 'continue' },
+      ]
+      const result = await resolveWizardProtectionIntents(state)
+      expect(result.errors.join(' ')).toMatch(/no sample event is loaded/)
+    })
   })
 
   it('shows protection skip warnings from direct upsert response', async () => {

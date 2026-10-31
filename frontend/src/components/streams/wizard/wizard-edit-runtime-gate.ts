@@ -121,6 +121,33 @@ export function shouldScheduleEditAutosave(
 }
 
 /** Start and Run Now require the visible draft to match the last confirmed save. Stop stays separate. */
+export type EditRuntimeBlockInput = {
+  isSaving: boolean
+  saveFailed: boolean
+  persistErrorCount: number
+  draftSnapshot: string
+  confirmedSavedSnapshot: string
+}
+
+/**
+ * Human-readable reason why Start / Run Now is unavailable in the edit view, or null when it is not
+ * blocked. The switch is disabled whenever the editor cannot prove the draft equals the saved
+ * configuration; the operator must be told which case applies and how to get out of it (F-150).
+ */
+export function editRuntimeBlockReason(input: EditRuntimeBlockInput): string | null {
+  if (input.isSaving) return 'Start is unavailable while the configuration is being saved.'
+  if (input.saveFailed || input.persistErrorCount > 0) {
+    return (
+      'Start is unavailable because the last save failed or was only partly applied. ' +
+      'Fix the error shown below and choose Save now, or discard the failing part of the draft.'
+    )
+  }
+  if (input.draftSnapshot !== input.confirmedSavedSnapshot) {
+    return 'Start is unavailable because this draft has unsaved changes. Choose Save now so the Stream starts with the configuration you see.'
+  }
+  return null
+}
+
 export function editRuntimeVerificationBlocked(input: {
   isSaving: boolean
   saveFailed: boolean

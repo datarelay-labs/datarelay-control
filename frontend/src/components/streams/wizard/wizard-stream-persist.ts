@@ -30,6 +30,7 @@ import {
   type WizardState,
 } from './wizard-state'
 import { persistWizardDataProtectionIntents } from './wizard-data-protection-persist'
+import { precheckWizardProtectionPaths } from './wizard-data-protection-path-resolve'
 import { mergeSchemaDriftPolicyIntoConfigJson } from './wizard-schema-drift-policy-persist'
 import { persistWizardStreamGovernance } from './wizard-governance-persist'
 import {
@@ -464,6 +465,23 @@ export async function persistWizardStreamEdits(
     }
   }
 
+  // Atomic start: a Data Protection path that cannot be resolved must fail the whole save before the
+  // first write, otherwise the stream/mapping/governance are persisted while the banner says the
+  // save failed (F-149).
+  const protectionPrecheck = await precheckEditDataProtectionPaths(state, confirmed)
+  if (protectionPrecheck.length > 0) {
+    return {
+      ok: false,
+      errors: protectionPrecheck,
+      routeIdsByDraftKey: {},
+      routeUpdatedAtByDraftKey: {},
+      streamUpdatedAt: state.streamUpdatedAt ?? null,
+      dataProtectionPersisted: false,
+      persistedObjects: [],
+      notPersistedObjects: ['Data Protection', 'Nothing was written: fix the Data Protection rows and save again'],
+    }
+  }
+
   let streamUpdatedAt: string | null = null
   try {
     const existing = preflight.stream
@@ -662,6 +680,19 @@ function dataProtectionIntentKey(state: WizardState | null): string {
   return JSON.stringify(state?.dataProtection.intents ?? [])
 }
 
+/** Path errors for a Data Protection create that would run in this save (empty when nothing to create). */
+async function precheckEditDataProtectionPaths(state: WizardState, confirmed: WizardState | null): Promise<string[]> {
+  if (state.dataProtection.intents.length === 0) return []
+  if (confirmed != null && dataProtectionIntentKey(state) === dataProtectionIntentKey(confirmed)) return []
+  // Clear / replace are rejected later with their own message; only a first-time create is checked here.
+  if (confirmed != null && confirmed.dataProtection.intents.length > 0) return []
+  try {
+    return await precheckWizardProtectionPaths(state)
+  } catch {
+    return []
+  }
+}
+
 /**
  * Edit-mode Data Protection must not blindly create rules.
  * Unchanged intent is skipped. A real change or clear stays unconfirmed unless there is
@@ -691,7 +722,12 @@ async function existingDataProtectionBlocksCreate(streamId: number): Promise<str
     protection.rules.length > 0 ||
     governance.rules.length > 0
   ) {
-    return 'data-protection: existing rules are already present and cannot be claimed by this draft. No rules were created or deleted.'
+    return (
+      `data-protection: existing rules are already present (policy ${policy.rules.length}, classification ` +
+      `${classification.rules.length}, field protection ${protection.rules.length}, governance ${governance.rules.length}) ` +
+      'and cannot be claimed by this draft. No rules were created or deleted. ' +
+      'Use "Discard Data Protection changes" to keep the saved rules and save the rest of this draft, or review the existing rules under Governance.'
+    )
   }
   return null
 }

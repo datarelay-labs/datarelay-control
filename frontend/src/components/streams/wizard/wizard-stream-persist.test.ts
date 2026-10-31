@@ -1245,6 +1245,28 @@ describe('wizard-stream-persist route sync + transform', () => {
     expect(persistWizardDataProtectionIntents).not.toHaveBeenCalled()
   })
 
+  it('writes nothing when a Data Protection path is absent from the loaded sample (atomic save, F-149)', async () => {
+    const confirmed = editState((s) => {
+      s.dataProtection.intents = []
+    })
+    const added = editState((s) => {
+      s.stream.name = 'Renamed'
+      s.apiTest.extractedEvents = [{ card: '4111111111116407' }]
+      s.dataProtection.intents = [
+        { key: 'intent-1', detectedField: '$.not_in_sample', protectionAction: 'mask_partial', deliveryBehavior: 'continue' },
+      ]
+    })
+    updateStream.mockClear()
+    saveStreamMappingUiConfigStrict.mockClear()
+    vi.mocked(persistWizardDataProtectionIntents).mockClear()
+    const result = await persistWizardStreamEdits(100, added, { confirmedState: confirmed })
+    expect(result.ok).toBe(false)
+    expect(result.errors.join(' ')).toMatch(/\$\.not_in_sample/)
+    expect(updateStream).not.toHaveBeenCalled()
+    expect(saveStreamMappingUiConfigStrict).not.toHaveBeenCalled()
+    expect(persistWizardDataProtectionIntents).not.toHaveBeenCalled()
+  })
+
   it('uses the reviewed Stream token and refuses an externally advanced revision before the first write', async () => {
     fetchStreamByIdFresh.mockResolvedValue({
       id: 100,

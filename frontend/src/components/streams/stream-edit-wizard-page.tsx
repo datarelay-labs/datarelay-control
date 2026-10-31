@@ -33,7 +33,7 @@ import { hydrateWizardStateFromStream, refreshWizardDestinationsFromStream } fro
 import { reconcileWizardAfterPartialPersist } from './wizard/wizard-partial-save-reconcile'
 import { proveStreamRunOnce } from './wizard/prove-stream-run-once'
 import { deliveryProofLines, nextDeliveryProofPrior, type ExactRunDeliveryProof, type PriorDeliveryProof } from './wizard/deploy-delivery-proof'
-import { confirmDeliveryPanelServerFields, editRuntimeVerificationBlocked, mergeDeliveryPanelRouteDrafts, persistedWizardConfigSnapshot, replacePersistedConcernSnapshot } from './wizard/wizard-edit-runtime-gate'
+import { confirmDeliveryPanelServerFields, editRuntimeBlockReason, editRuntimeVerificationBlocked, mergeDeliveryPanelRouteDrafts, persistedWizardConfigSnapshot, replacePersistedConcernSnapshot } from './wizard/wizard-edit-runtime-gate'
 import { applyCreatedRouteIdentity, applyPersistedRevisions, persistWizardStreamEdits } from './wizard/wizard-stream-persist'
 import {
   WIZARD_STEPS,
@@ -1067,6 +1067,41 @@ export function StreamEditWizardPage({
         confirmedSavedSnapshot: confirmedSavedSnapshotRef.current,
       })
 
+  const startBlockedReason = !state
+    ? null
+    : editRuntimeBlockReason({
+        isSaving,
+        saveFailed: saveError != null,
+        persistErrorCount: state.outcome?.errors.length ?? 0,
+        draftSnapshot: persistedWizardConfigSnapshot(state),
+        confirmedSavedSnapshot: confirmedSavedSnapshotRef.current,
+      })
+  const dataProtectionHasDraftChanges =
+    state != null &&
+    confirmedStateRef.current != null &&
+    JSON.stringify(state.dataProtection.intents) !== JSON.stringify(confirmedStateRef.current.dataProtection.intents)
+  const dataProtectionFailureShown =
+    /data-protection|protection-rules|policy-rules|classification-rules/i.test(
+      `${saveError ?? ''} ${(state?.outcome?.errors ?? []).join(' ')}`,
+    )
+
+  /** Escape from a failed Data Protection save: drop only the Data Protection part of the draft. */
+  const discardDataProtectionChanges = useCallback(() => {
+    const confirmed = confirmedStateRef.current
+    if (!confirmed) return
+    setSaveError(null)
+    setState((prev) => {
+      if (!prev) return prev
+      const next: WizardState = {
+        ...prev,
+        dataProtection: confirmed.dataProtection,
+        outcome: prev.outcome ? { ...prev.outcome, errors: [], reconciliationNote: null } : prev.outcome,
+      }
+      latestStateRef.current = next
+      return next
+    })
+  }, [])
+
   const handleBlockedEditNavigation = useCallback((pending: WizardBlockedNavigation) => {
     // An asynchronous unmount flush is not a verified save. Remain in the editor.
     pending.reset()
@@ -1227,6 +1262,7 @@ export function StreamEditWizardPage({
               status={runtimeStatus}
               busy={controlBusy}
               disabled={!isStreamSchedulerActive(runtimeStatus) && (runOnceBusy || runtimeVerificationBlocked)}
+              disabledReason={!isStreamSchedulerActive(runtimeStatus) ? (startBlockedReason ?? undefined) : undefined}
               tooltipExtra={runControlTooltipExtra ?? undefined}
               onToggle={(nextActive) => void runStreamControl(nextActive ? 'start' : 'stop')}
             />
@@ -1270,6 +1306,36 @@ export function StreamEditWizardPage({
           ) : null}
         </div>
       </div>
+
+      {canRuntimeControl && !isStreamSchedulerActive(runtimeStatus) && startBlockedReason ? (
+        <div
+          role="status"
+          data-testid="edit-start-blocked-notice"
+          className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-300/80 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100"
+        >
+          <span className="min-w-0 flex-1">{startBlockedReason}</span>
+          {canMutateWorkspace && !isSaving ? (
+            <button
+              type="button"
+              data-testid="edit-start-blocked-save"
+              onClick={() => void handleSave({ manual: true })}
+              className="inline-flex h-8 items-center rounded-md border border-amber-400/80 bg-white px-3 text-[12px] font-semibold text-amber-900 hover:bg-amber-100 dark:border-amber-500/50 dark:bg-transparent dark:text-amber-100"
+            >
+              Save now
+            </button>
+          ) : null}
+          {canMutateWorkspace && !isSaving && dataProtectionFailureShown && dataProtectionHasDraftChanges ? (
+            <button
+              type="button"
+              data-testid="edit-discard-data-protection"
+              onClick={discardDataProtectionChanges}
+              className="inline-flex h-8 items-center rounded-md border border-amber-400/80 bg-white px-3 text-[12px] font-semibold text-amber-900 hover:bg-amber-100 dark:border-amber-500/50 dark:bg-transparent dark:text-amber-100"
+            >
+              Discard Data Protection changes
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       {backendStreamId != null ? (
         <StreamConfigurationRevisions

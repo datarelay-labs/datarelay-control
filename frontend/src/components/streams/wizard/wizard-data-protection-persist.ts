@@ -9,7 +9,9 @@ import { inferWizardSensitivityClass } from './wizard-data-protection-fields'
 import {
   buildProtectionPathAliasMap,
   buildWizardEnrichedEventForProtection,
-  resolveProtectionFieldPath,
+  collectWizardProtectionFieldCandidatesSync,
+  collectWizardSamplePaths,
+  resolveProtectionFieldPathWithFallbacks,
 } from './wizard-data-protection-path-resolve'
 import {
   wizardDataProtectionIntentReady,
@@ -172,11 +174,17 @@ export async function resolveWizardProtectionIntents(
   const enriched = await buildWizardEnrichedEventForProtection(state)
   const warnings = enriched.error ? [enriched.error] : []
   const aliasMap = buildProtectionPathAliasMap(state)
+  const fallbackPathSets = [collectWizardProtectionFieldCandidatesSync(state), collectWizardSamplePaths(state)]
   const errors: string[] = []
   const resolved: ResolvedProtectionIntent[] = []
 
   for (const intent of fieldIntents) {
-    const result = resolveProtectionFieldPath(intent.detectedField, enriched.paths, aliasMap)
+    const result = resolveProtectionFieldPathWithFallbacks(
+      intent.detectedField,
+      enriched.paths,
+      fallbackPathSets,
+      aliasMap,
+    )
     if (result.ok) {
       resolved.push({
         intent,
@@ -227,6 +235,38 @@ export async function persistWizardDataProtectionIntents(
     warnings: [...preview.warnings, ...pathResolution.warnings],
   }
 
+  // Atomic start: when any rule cannot be resolved, write nothing. Creating the policy and
+  // classification rows first would leave the stream with half a configuration that blocks every
+  // later Apply ("existing rules cannot be claimed by this draft", F-149/F-150).
+  if (pathResolution.errors.length > 0) {
+    return result
+  }
+
+  // Create the field protection rules first: they are validated server-side and the most likely
+  // part to be rejected, so a failure there leaves nothing behind.
+  if (pathResolution.resolved.length > 0) {
+    try {
+      const bulk = await createProtectionRulesDirect(streamId, {
+        origin: 'wizard',
+        rules: pathResolution.resolved.map((item) => ({
+          field_path: item.resolvedPath,
+          sensitivity_class: item.sensitivityClass,
+          protection_mode: item.protectionMode,
+          enabled: true,
+        })),
+      })
+      result.protectionRulesCreated = bulk.created + bulk.updated
+      for (const skip of bulk.skipped ?? []) {
+        result.warnings.push(skip.reason || wizardProtectionSkipWarning(skip.field_path))
+      }
+    } catch (err) {
+      result.errors.push(
+        `protection-rules: ${err instanceof Error ? err.message : String(err)}`,
+      )
+      return result
+    }
+  }
+
   for (const group of preview.aggregated) {
     try {
       await createPolicyRule(streamId, {
@@ -256,28 +296,6 @@ export async function persistWizardDataProtectionIntents(
           `classification-rules (${group.sensitivityClass}): ${err instanceof Error ? err.message : String(err)}`,
         )
       }
-    }
-  }
-
-  if (pathResolution.resolved.length > 0) {
-    try {
-      const bulk = await createProtectionRulesDirect(streamId, {
-        origin: 'wizard',
-        rules: pathResolution.resolved.map((item) => ({
-          field_path: item.resolvedPath,
-          sensitivity_class: item.sensitivityClass,
-          protection_mode: item.protectionMode,
-          enabled: true,
-        })),
-      })
-      result.protectionRulesCreated = bulk.created + bulk.updated
-      for (const skip of bulk.skipped ?? []) {
-        result.warnings.push(skip.reason || wizardProtectionSkipWarning(skip.field_path))
-      }
-    } catch (err) {
-      result.errors.push(
-        `protection-rules: ${err instanceof Error ? err.message : String(err)}`,
-      )
     }
   }
 

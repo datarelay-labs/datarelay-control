@@ -26,6 +26,8 @@ type StreamRunControlSwitchProps = {
   disabled?: boolean
   onToggle: (nextActive: boolean) => void
   tooltipExtra?: string
+  /** Why the switch is disabled; shown as the tooltip so a disabled control is never unexplained. */
+  disabledReason?: string
   size?: 'sm' | 'md'
   label?: string
   'data-testid'?: string
@@ -37,6 +39,7 @@ export function StreamRunControlSwitch({
   disabled = false,
   onToggle,
   tooltipExtra,
+  disabledReason,
   size = 'md',
   label = 'Stream scheduler',
   'data-testid': testId = 'stream-run-control-switch',
@@ -46,7 +49,9 @@ export function StreamRunControlSwitch({
   const actionLabel = streamSchedulerActionLabel(active)
   const height = size === 'sm' ? 'h-8' : 'h-9'
 
-  const title = tooltipExtra
+  const title = disabledReason && (disabled || busy)
+    ? disabledReason
+    : tooltipExtra
     ? `${active ? 'Stop' : 'Start'} stream scheduler — ${tooltipExtra}`
     : active
       ? 'Turn off the scheduled polling worker for this stream.'

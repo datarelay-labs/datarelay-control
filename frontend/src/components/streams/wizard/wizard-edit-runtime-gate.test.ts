@@ -2,11 +2,38 @@ import { describe, expect, it } from 'vitest'
 import { buildInitialState, DEFAULT_ROUTE_PROCESSING_INHERIT, type WizardRouteDraft } from './wizard-state'
 import {
   confirmDeliveryPanelServerFields,
+  editRuntimeBlockReason,
   editRuntimeVerificationBlocked,
   mergeDeliveryPanelRouteDrafts,
   persistedWizardConfigSnapshot,
   shouldScheduleEditAutosave,
 } from './wizard-edit-runtime-gate'
+
+describe('editRuntimeBlockReason (F-150)', () => {
+  const clean = { isSaving: false, saveFailed: false, persistErrorCount: 0, draftSnapshot: 'a', confirmedSavedSnapshot: 'a' }
+
+  it('is null when Start is not blocked', () => {
+    expect(editRuntimeBlockReason(clean)).toBeNull()
+    expect(editRuntimeVerificationBlocked(clean)).toBe(false)
+  })
+
+  it('always explains a block that editRuntimeVerificationBlocked reports', () => {
+    const cases = [
+      { ...clean, isSaving: true },
+      { ...clean, saveFailed: true },
+      { ...clean, persistErrorCount: 2 },
+      { ...clean, draftSnapshot: 'b' },
+    ]
+    for (const input of cases) {
+      expect(editRuntimeVerificationBlocked(input)).toBe(true)
+      expect(editRuntimeBlockReason(input)).toMatch(/^Start is unavailable/)
+    }
+  })
+
+  it('points a failed or partly applied save at the way out', () => {
+    expect(editRuntimeBlockReason({ ...clean, persistErrorCount: 1 })).toMatch(/Save now|discard/i)
+  })
+})
 
 function routeDraft(partial: Partial<WizardRouteDraft> & Pick<WizardRouteDraft, 'key'>): WizardRouteDraft {
   return {
