@@ -12,10 +12,13 @@ from sqlalchemy.orm import Session
 
 from app.backup.export_builder import canonical_bundle_json
 from app.backup.export_validation import assert_bundle_json_roundtrip
+from app.backup.secret_reentry import collect_secret_reentry
 from app.connectors.models import Connector
 from app.destinations.models import Destination
 from app.destinations.adapters.registry import DestinationAdapterRegistry
 from app.sources.adapters.registry import SourceAdapterRegistry
+from app.runtime.state import StreamStatus
+from app.streams.runtime_eligibility import PUSH_ONLY_SCHEDULER_STREAM_TYPES
 
 
 def _bundle_identity_for_token(bundle: dict[str, Any]) -> dict[str, Any]:
@@ -28,6 +31,97 @@ def _bundle_identity_for_token(bundle: dict[str, Any]) -> dict[str, Any]:
 def preview_token_for(bundle: dict[str, Any], mode: str) -> str:
     raw = f"{canonical_bundle_json(_bundle_identity_for_token(bundle))}|{mode}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+# Column limits of the tables the import writes to (String(255) names, String(64) type labels).
+_NAME_MAX_LENGTH = 255
+_TYPE_MAX_LENGTH = 64
+_KNOWN_STREAM_STATUSES = frozenset(str(s.value) for s in StreamStatus)
+
+
+def _content_issues(
+    connectors: list[Any], streams: list[Any], destinations: list[Any], sources: list[Any]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Validate bundle content the normal UI/API forms would reject (lengths, required names, intervals).
+
+    Returns ``(conflicts, warnings)``. Messages name the entity and the limit but never echo long values.
+    """
+
+    conflicts: list[dict[str, Any]] = []
+    warnings: list[dict[str, Any]] = []
+
+    def too_long(entity: str, ident: Any, field: str, value: Any, limit: int) -> None:
+        if isinstance(value, str) and len(value) > limit:
+            conflicts.append(
+                {
+                    "code": "FIELD_TOO_LONG",
+                    "message": (
+                        f"{entity} {ident}: {field} is {len(value)} characters; the maximum is {limit}. "
+                        "Shorten it in the file and preview again."
+                    ),
+                    "details": {"entity": entity.lower(), "id": ident, "field": field, "length": len(value), "max": limit},
+                }
+            )
+
+    for c in connectors:
+        if not isinstance(c, dict):
+            continue
+        ident = c.get("id")
+        if not str(c.get("name") or "").strip():
+            conflicts.append(
+                {
+                    "code": "CONNECTOR_NAME_REQUIRED",
+                    "message": f"Connector {ident}: name is empty. Every connector needs a name.",
+                    "details": {"id": ident},
+                }
+            )
+        too_long("Connector", ident, "name", c.get("name"), _NAME_MAX_LENGTH)
+    for s in sources:
+        if isinstance(s, dict):
+            too_long("Source", s.get("id"), "source_type", s.get("source_type"), _TYPE_MAX_LENGTH)
+    for st in streams:
+        if not isinstance(st, dict):
+            continue
+        ident = st.get("id")
+        label = f"Stream {ident}"
+        if not str(st.get("name") or "").strip():
+            conflicts.append(
+                {
+                    "code": "STREAM_NAME_REQUIRED",
+                    "message": f"{label}: name is empty. Every stream needs a name.",
+                    "details": {"id": ident},
+                }
+            )
+        too_long("Stream", ident, "name", st.get("name"), _NAME_MAX_LENGTH)
+        too_long("Stream", ident, "stream_type", st.get("stream_type"), _TYPE_MAX_LENGTH)
+        interval = st.get("polling_interval")
+        if interval is not None:
+            valid = isinstance(interval, int) and not isinstance(interval, bool) and interval >= 1
+            if not valid:
+                conflicts.append(
+                    {
+                        "code": "INVALID_POLLING_INTERVAL",
+                        "message": f"{label}: polling_interval must be a whole number of seconds, at least 1.",
+                        "details": {"id": ident},
+                    }
+                )
+        status_value = st.get("status")
+        if status_value is not None and str(status_value) not in _KNOWN_STREAM_STATUSES:
+            warnings.append(
+                {
+                    "code": "UNKNOWN_STREAM_STATUS",
+                    "message": (
+                        f"{label}: status is not a known stream status. Imported streams are always created "
+                        "STOPPED and must be started after import."
+                    ),
+                }
+            )
+    for d in destinations:
+        if not isinstance(d, dict):
+            continue
+        too_long("Destination", d.get("id"), "name", d.get("name"), _NAME_MAX_LENGTH)
+        too_long("Destination", d.get("id"), "destination_type", d.get("destination_type"), _TYPE_MAX_LENGTH)
+    return conflicts, warnings
 
 
 def _supported_source_types() -> frozenset[str]:
@@ -287,6 +381,10 @@ def validate_import_bundle(db: Session, bundle: dict[str, Any], *, mode: str) ->
                 }
             )
 
+    content_conflicts, content_warnings = _content_issues(connectors, streams, destinations, sources)
+    conflicts.extend(content_conflicts)
+    warnings.extend(content_warnings)
+
     src_types = _supported_source_types()
     for s in sources:
         if not isinstance(s, dict):
@@ -398,15 +496,41 @@ def validate_import_bundle(db: Session, bundle: dict[str, Any], *, mode: str) ->
     # Route linkage: routes require mapping rows for the same stream when the bundle includes streams.
     streams_with_mapping = {int(m.get("stream_id")) for m in mappings if isinstance(m, dict) and m.get("stream_id") is not None}
     streams_with_routes = {int(r.get("stream_id")) for r in routes if isinstance(r, dict) and r.get("stream_id") is not None}
-    if routes and streams and not mappings:
+    # Push (webhook receiver) streams are created without a stream-level mapping row, and routes that carry
+    # their own route_mapping are processed from it (Route Processing). Neither shape needs a stream mapping.
+    source_type_by_id = {
+        int(x["id"]): str(x.get("source_type") or "").strip().upper()
+        for x in sources
+        if isinstance(x, dict) and x.get("id") is not None
+    }
+    push_stream_ids = {
+        int(st["id"])
+        for st in streams
+        if isinstance(st, dict)
+        and st.get("id") is not None
+        and (
+            str(st.get("stream_type") or "").strip().upper() in PUSH_ONLY_SCHEDULER_STREAM_TYPES
+            or source_type_by_id.get(int(st.get("source_id", -1)), "") in PUSH_ONLY_SCHEDULER_STREAM_TYPES
+        )
+    }
+    routes_by_stream: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    for r in routes:
+        if isinstance(r, dict) and r.get("stream_id") is not None:
+            routes_by_stream[int(r["stream_id"])].append(r)
+    route_mapped_stream_ids = {
+        sid for sid, rs in routes_by_stream.items() if rs and all(isinstance(r.get("route_mapping"), dict) for r in rs)
+    }
+    mapping_exempt = push_stream_ids | route_mapped_stream_ids
+    streams_needing_mapping = {sid for sid in streams_with_routes if sid not in mapping_exempt}
+    if routes and streams and streams_needing_mapping and not mappings:
         conflicts.append(
             {
                 "code": "ROUTES_WITHOUT_MAPPINGS",
                 "message": "Bundle includes routes but no mapping rows; streams with routes require mapping configuration.",
             }
         )
-    elif routes and streams:
-        for sid in streams_with_routes:
+    elif routes and streams and streams_needing_mapping:
+        for sid in sorted(streams_needing_mapping):
             if sid in stream_ids_export and sid not in streams_with_mapping:
                 conflicts.append(
                     {
@@ -454,27 +578,11 @@ def validate_import_bundle(db: Session, bundle: dict[str, Any], *, mode: str) ->
                 }
             )
 
-    auth_masked = any(
-        isinstance(s, dict) and json.dumps(s.get("auth_json") or {}).find("********") >= 0 for s in sources if isinstance(s, dict)
-    )
-    if auth_masked:
-        warnings.append(
-            {
-                "code": "MASKED_AUTH_IN_BUNDLE",
-                "message": "Auth fields appear masked; re-enter credentials on the new connector/source after import.",
-            }
-        )
-
-    dest_masked = any(
-        isinstance(d, dict) and json.dumps(d.get("config_json") or {}).find("********") >= 0 for d in destinations if isinstance(d, dict)
-    )
-    if dest_masked:
-        warnings.append(
-            {
-                "code": "MASKED_DESTINATION_CONFIG",
-                "message": "Destination config may contain masked secrets; verify delivery settings after import.",
-            }
-        )
+    for item in collect_secret_reentry(bundle):
+        if item["entity_type"] == "connector":
+            warnings.append({"code": "MASKED_AUTH_IN_BUNDLE", "message": item["message"]})
+        else:
+            warnings.append({"code": "MASKED_DESTINATION_CONFIG", "message": item["message"]})
 
     tmpl = bundle.get("template_metadata") or {}
     if isinstance(tmpl, dict) and tmpl.get("template_id"):

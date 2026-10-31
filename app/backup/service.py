@@ -14,11 +14,13 @@ from app.backup.export_builder import (
     build_stream_export,
     build_workspace_export,
 )
+from app.backup.secret_reentry import collect_secret_reentry
 from app.backup.import_validator import ValidationOutcome, preview_token_for, validate_import_bundle
 from app.backup.schemas import (
     ImportApplyEntityIds,
     ImportApplyRequest,
     ImportApplyResponse,
+    ImportSecretReentry,
     ImportClassificationSummary,
     ImportPreviewConflict,
     ImportPreviewFinding,
@@ -290,6 +292,7 @@ def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) 
         created_connectors.append(int(row.id))
 
     src_old_to_new: dict[int, int] = {}
+    source_rows: dict[int, Source] = {}
     created_sources: list[int] = []
     for s in sources:
         if not isinstance(s, dict):
@@ -298,22 +301,26 @@ def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) 
         new_cid = conn_old_to_new.get(int(s.get("connector_id", -1)))
         if new_cid is None:
             continue
-        auth_json = _strip_mask_placeholders(dict(s.get("auth_json") or {}))
-        if not auth_json:
+        raw_auth = dict(s.get("auth_json") or {})
+        auth_json = _strip_mask_placeholders(raw_auth)
+        if not raw_auth:
+            # Only a bundle that carried no auth at all gets the explicit default; an existing auth shape
+            # (for example a webhook receiver's auth_mode) is restored as exported, never rewritten.
             auth_json = {"auth_type": "no_auth"}
-        elif not auth_json.get("auth_type"):
-            auth_json = {**auth_json, "auth_type": "no_auth"}
+        # Streams are always imported STOPPED/disabled, which is the safety gate. The Source flag is restored as
+        # exported so push receivers do not answer 409 WEBHOOK_RECEIVER_DISABLED after a restore.
         row = Source(
             connector_id=new_cid,
             source_type=str(s.get("source_type") or "HTTP_API_POLLING"),
             config_json=_strip_mask_placeholders(dict(s.get("config_json") or {})),
             auth_json=auth_json,
-            enabled=False,
+            enabled=bool(s.get("enabled", True)),
         )
         db.add(row)
         db.flush()
         src_old_to_new[old_id] = int(row.id)
         created_sources.append(int(row.id))
+        source_rows[int(row.id)] = row
 
     stream_old_to_new: dict[int, int] = {}
     stream_rows: dict[int, Stream] = {}
@@ -345,6 +352,20 @@ def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) 
         stream_old_to_new[old_id] = int(row.id)
         stream_rows[int(row.id)] = row
         created_streams.append(int(row.id))
+
+    # A receiver source may pin its stream by id; remap it to the stream created above (or drop a dangling pin).
+    for src_row in source_rows.values():
+        cfg = dict(src_row.config_json or {})
+        if cfg.get("stream_id") is not None:
+            try:
+                mapped = stream_old_to_new.get(int(cfg["stream_id"]))
+            except (TypeError, ValueError):
+                mapped = None
+            if mapped is None:
+                cfg.pop("stream_id", None)
+            else:
+                cfg["stream_id"] = mapped
+            src_row.config_json = cfg
 
     for m in mappings:
         if not isinstance(m, dict):
@@ -471,6 +492,30 @@ def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) 
     elif len(created_connectors) == 1:
         redirect_path = f"/connectors/{created_connectors[0]}"
 
+    secrets_to_reenter: list[ImportSecretReentry] = []
+    for item in collect_secret_reentry(bundle):
+        if item["entity_type"] == "connector":
+            new_entity = conn_old_to_new.get(int(item["export_id"])) if item["export_id"] is not None else None
+            edit_path = f"/connectors/{new_entity}" if new_entity is not None else ""
+        else:
+            new_entity = dest_old_to_new.get(int(item["export_id"])) if item["export_id"] is not None else None
+            edit_path = f"/destinations/{new_entity}" if new_entity is not None else ""
+        if new_entity is None:
+            continue
+        display_name = item["name"] + suffix if (suffix and item["entity_type"] == "connector") else item["name"]
+        secrets_to_reenter.append(
+            ImportSecretReentry(
+                entity_type=item["entity_type"],
+                entity_id=int(new_entity),
+                name=display_name,
+                source_type=item["source_type"],
+                fields=list(item["fields"]),
+                blocks_operation=bool(item["blocks_operation"]),
+                message=item["message"],
+                edit_path=edit_path,
+            )
+        )
+
     response = ImportApplyResponse(
         ok=True,
         created=ImportApplyEntityIds(
@@ -479,6 +524,7 @@ def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) 
             stream_ids=created_streams,
             destination_ids=created_dest_ids,
         ),
+        secrets_to_reenter=secrets_to_reenter,
         redirect_path=redirect_path,
         idempotency_key=idempotency_key,
         idempotent_replay=False,

@@ -179,7 +179,9 @@ def test_import_preview_and_additive_apply(client: TestClient, db_session: Sessi
     if new_src_ids:
         src = db_session.get(Source, new_src_ids[0])
         assert src is not None
-        assert src.enabled is False
+        # F-210: the Source flag is restored as exported (no browser control can re-enable it);
+        # the Stream stays disabled/STOPPED and is the safety gate.
+        assert src.enabled is True
 
 
 def test_import_preview_fails_on_missing_destination(client: TestClient, db_session: Session) -> None:

@@ -33,7 +33,7 @@ SourceType = Literal[
 class ConnectorBase(BaseModel):
     """Shared connector/source writable fields."""
 
-    name: str | None = Field(default=None)
+    name: str | None = Field(default=None, max_length=255)
     product_group: str | None = Field(
         default=None,
         max_length=128,
@@ -155,7 +155,7 @@ class ConnectorBase(BaseModel):
 class ConnectorCreate(ConnectorBase):
     """Create Generic HTTP connector."""
 
-    name: str
+    name: str = Field(max_length=255)
     auth_type: AuthType
 
 
