@@ -123,6 +123,11 @@ export default {
         },
         'focus-ring': 'var(--dr-focus-ring)',
       },
+      /** Theme-aware border aliases (`border-default`, `border-strong`); plain var(), no `/<alpha>`. */
+      borderColor: {
+        default: 'var(--dr-border-default)',
+        strong: 'var(--dr-border-strong)',
+      },
       fontSize: {
         /** Exact Kumo base typography scale. */
         xs: ['12px', { lineHeight: 'calc(1 / 0.75)' }],

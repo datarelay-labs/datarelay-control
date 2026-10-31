@@ -153,10 +153,10 @@ describe('Product Foundation semantic-token compatibility slice', () => {
   it('derives subtle status surfaces and borders from the status foreground on the card surface', () => {
     for (const family of STATUS_FAMILIES) {
       const fg = `var(--dr-status-${family})`
-      expect(token(light, `--dr-status-${family}-subtle`)).toBe(`color-mix(in oklch, ${fg} 8%, var(--dr-surface-card))`)
-      expect(token(light, `--dr-status-${family}-border`)).toBe(`color-mix(in oklch, ${fg} 30%, var(--dr-surface-card))`)
-      expect(token(dark, `--dr-status-${family}-subtle`)).toBe(`color-mix(in oklch, ${fg} 14%, var(--dr-surface-card))`)
-      expect(token(dark, `--dr-status-${family}-border`)).toBe(`color-mix(in oklch, ${fg} 35%, var(--dr-surface-card))`)
+      expect(token(light, `--dr-status-${family}-subtle`)).toBe(`color-mix(in oklab, ${fg} 8%, var(--dr-surface-card))`)
+      expect(token(light, `--dr-status-${family}-border`)).toBe(`color-mix(in oklab, ${fg} 30%, var(--dr-surface-card))`)
+      expect(token(dark, `--dr-status-${family}-subtle`)).toBe(`color-mix(in oklab, ${fg} 14%, var(--dr-surface-card))`)
+      expect(token(dark, `--dr-status-${family}-border`)).toBe(`color-mix(in oklab, ${fg} 35%, var(--dr-surface-card))`)
     }
   })
 
@@ -213,6 +213,12 @@ describe('Tailwind semantic aliases', () => {
     for (const snippet of EXPECTED_ALIASES) expect(tailwindConfig, snippet).toContain(snippet)
     expect(tailwindConfig).toMatch(/height:\s*\{\s*'control-sm'/)
     expect(tailwindConfig).toMatch(/minHeight:\s*\{\s*'control-sm'/)
+  })
+
+  it('exposes theme-aware border aliases', () => {
+    expect(tailwindConfig).toMatch(
+      /borderColor:\s*\{\s*default: 'var\(--dr-border-default\)',\s*strong: 'var\(--dr-border-strong\)',\s*\}/,
+    )
   })
 
   it('points every --dr-* reference at a token that exists', () => {

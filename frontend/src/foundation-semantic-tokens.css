@@ -62,17 +62,17 @@
   --dr-status-warning: #92400e;
   --dr-status-critical: #b42318;
   --dr-status-unknown: oklch(45% 0 0);
-  /* Subtle status surfaces/borders are derived from the status foreground on the card surface */
-  --dr-status-info-subtle: color-mix(in oklch, var(--dr-status-info) 8%, var(--dr-surface-card));
-  --dr-status-info-border: color-mix(in oklch, var(--dr-status-info) 30%, var(--dr-surface-card));
-  --dr-status-success-subtle: color-mix(in oklch, var(--dr-status-success) 8%, var(--dr-surface-card));
-  --dr-status-success-border: color-mix(in oklch, var(--dr-status-success) 30%, var(--dr-surface-card));
-  --dr-status-warning-subtle: color-mix(in oklch, var(--dr-status-warning) 8%, var(--dr-surface-card));
-  --dr-status-warning-border: color-mix(in oklch, var(--dr-status-warning) 30%, var(--dr-surface-card));
-  --dr-status-critical-subtle: color-mix(in oklch, var(--dr-status-critical) 8%, var(--dr-surface-card));
-  --dr-status-critical-border: color-mix(in oklch, var(--dr-status-critical) 30%, var(--dr-surface-card));
-  --dr-status-unknown-subtle: color-mix(in oklch, var(--dr-status-unknown) 8%, var(--dr-surface-card));
-  --dr-status-unknown-border: color-mix(in oklch, var(--dr-status-unknown) 30%, var(--dr-surface-card));
+  /* Subtle status surfaces/borders are derived from the status foreground on the card surface. Mix in oklab: oklch interpolation takes the hue of an explicit-hue grey (oklch(17% 0 0) has hue 0) and tints the dark surfaces red. */
+  --dr-status-info-subtle: color-mix(in oklab, var(--dr-status-info) 8%, var(--dr-surface-card));
+  --dr-status-info-border: color-mix(in oklab, var(--dr-status-info) 30%, var(--dr-surface-card));
+  --dr-status-success-subtle: color-mix(in oklab, var(--dr-status-success) 8%, var(--dr-surface-card));
+  --dr-status-success-border: color-mix(in oklab, var(--dr-status-success) 30%, var(--dr-surface-card));
+  --dr-status-warning-subtle: color-mix(in oklab, var(--dr-status-warning) 8%, var(--dr-surface-card));
+  --dr-status-warning-border: color-mix(in oklab, var(--dr-status-warning) 30%, var(--dr-surface-card));
+  --dr-status-critical-subtle: color-mix(in oklab, var(--dr-status-critical) 8%, var(--dr-surface-card));
+  --dr-status-critical-border: color-mix(in oklab, var(--dr-status-critical) 30%, var(--dr-surface-card));
+  --dr-status-unknown-subtle: color-mix(in oklab, var(--dr-status-unknown) 8%, var(--dr-surface-card));
+  --dr-status-unknown-border: color-mix(in oklab, var(--dr-status-unknown) 30%, var(--dr-surface-card));
   --dr-focus-ring: #1473e6;
   /* Control heights: compact, default and touch target */
   --dr-control-sm: 32px;
@@ -136,15 +136,15 @@
   --dr-status-critical: #f87171;
   --dr-status-unknown: oklch(75% 0 0);
   /* Re-declared so a nested dark theme root mixes its own status and card values */
-  --dr-status-info-subtle: color-mix(in oklch, var(--dr-status-info) 14%, var(--dr-surface-card));
-  --dr-status-info-border: color-mix(in oklch, var(--dr-status-info) 35%, var(--dr-surface-card));
-  --dr-status-success-subtle: color-mix(in oklch, var(--dr-status-success) 14%, var(--dr-surface-card));
-  --dr-status-success-border: color-mix(in oklch, var(--dr-status-success) 35%, var(--dr-surface-card));
-  --dr-status-warning-subtle: color-mix(in oklch, var(--dr-status-warning) 14%, var(--dr-surface-card));
-  --dr-status-warning-border: color-mix(in oklch, var(--dr-status-warning) 35%, var(--dr-surface-card));
-  --dr-status-critical-subtle: color-mix(in oklch, var(--dr-status-critical) 14%, var(--dr-surface-card));
-  --dr-status-critical-border: color-mix(in oklch, var(--dr-status-critical) 35%, var(--dr-surface-card));
-  --dr-status-unknown-subtle: color-mix(in oklch, var(--dr-status-unknown) 14%, var(--dr-surface-card));
-  --dr-status-unknown-border: color-mix(in oklch, var(--dr-status-unknown) 35%, var(--dr-surface-card));
+  --dr-status-info-subtle: color-mix(in oklab, var(--dr-status-info) 14%, var(--dr-surface-card));
+  --dr-status-info-border: color-mix(in oklab, var(--dr-status-info) 35%, var(--dr-surface-card));
+  --dr-status-success-subtle: color-mix(in oklab, var(--dr-status-success) 14%, var(--dr-surface-card));
+  --dr-status-success-border: color-mix(in oklab, var(--dr-status-success) 35%, var(--dr-surface-card));
+  --dr-status-warning-subtle: color-mix(in oklab, var(--dr-status-warning) 14%, var(--dr-surface-card));
+  --dr-status-warning-border: color-mix(in oklab, var(--dr-status-warning) 35%, var(--dr-surface-card));
+  --dr-status-critical-subtle: color-mix(in oklab, var(--dr-status-critical) 14%, var(--dr-surface-card));
+  --dr-status-critical-border: color-mix(in oklab, var(--dr-status-critical) 35%, var(--dr-surface-card));
+  --dr-status-unknown-subtle: color-mix(in oklab, var(--dr-status-unknown) 14%, var(--dr-surface-card));
+  --dr-status-unknown-border: color-mix(in oklab, var(--dr-status-unknown) 35%, var(--dr-surface-card));
   --dr-focus-ring: #1473e6;
 }
