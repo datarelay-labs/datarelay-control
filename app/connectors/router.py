@@ -78,6 +78,8 @@ def _apply_operational_from_payload(
     patch: dict[str, Any] = {}
     if "auth_health_check_interval" in incoming:
         patch["auth_health_check_interval"] = incoming.get("auth_health_check_interval")
+    if "auth_test_path" in incoming:
+        patch["auth_test_path"] = incoming.get("auth_test_path")
     if not patch:
         return dict(config or {})
     return merge_operational_config(config if isinstance(config, dict) else {}, patch)
@@ -87,6 +89,7 @@ def _operational_read_fields(config: dict[str, Any] | None) -> dict[str, Any]:
     op = read_operational_config(config)
     return {
         "auth_health_check_interval": op.get("auth_health_check_interval") or "disabled",
+        "auth_test_path": op.get("auth_test_path"),
         "last_auth_check_at": op.get("last_auth_check_at"),
         "last_auth_check_status": op.get("last_auth_check_status"),
         "last_auth_error": op.get("last_auth_error"),

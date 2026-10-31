@@ -161,6 +161,7 @@ export function ConnectorDetailPage() {
         webhook_bearer_token: row.webhook_bearer_token_configured ? '********' : '',
         max_request_bytes: row.max_request_bytes ?? 1048576,
         payload_preview: row.payload_preview ?? '',
+        auth_test_path: row.auth_test_path ?? '',
       })
       setConfiguredSecrets({
         basic_password: Boolean(row.auth.basic_password_configured),
@@ -510,6 +511,8 @@ export function ConnectorDetailPage() {
       <ConnectorAuthTestPanel
         buildAuthTestPayload={buildAuthTestPayload}
         onTestStart={() => setError(null)}
+        defaultTestPath={form.auth_test_path ?? ''}
+        onTestPathChange={(path) => set('auth_test_path', path.trim())}
         mode={isS3 ? 's3' : isDb ? 'database' : isRemote ? 'remote_file' : 'http'}
       />
       ) : null}

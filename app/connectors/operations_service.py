@@ -42,6 +42,7 @@ def read_operational_config(config: dict[str, Any] | None) -> dict[str, Any]:
         status = None
     return {
         "auth_health_check_interval": interval,
+        "auth_test_path": op.get("auth_test_path") or None,
         "last_auth_check_at": op.get("last_auth_check_at"),
         "last_auth_check_status": status,
         "last_auth_error": op.get("last_auth_error"),
@@ -51,7 +52,13 @@ def read_operational_config(config: dict[str, Any] | None) -> dict[str, Any]:
 def merge_operational_config(config: dict[str, Any] | None, patch: dict[str, Any]) -> dict[str, Any]:
     base = dict(config or {})
     op = dict(base.get("operational") or {})
-    for key in ("auth_health_check_interval", "last_auth_check_at", "last_auth_check_status", "last_auth_error"):
+    for key in (
+        "auth_health_check_interval",
+        "auth_test_path",
+        "last_auth_check_at",
+        "last_auth_check_status",
+        "last_auth_error",
+    ):
         if key in patch and patch[key] is not None:
             op[key] = patch[key]
         elif key in patch:
@@ -428,8 +435,15 @@ def _resolve_connector_auth_check_path(
 
     cfg = source_config if isinstance(source_config, dict) else {}
     op = cfg.get("operational") if isinstance(cfg.get("operational"), dict) else {}
+    # The flattened HTTP source config does not carry ``operational`` metadata, so read the stored
+    # Source row too; otherwise a saved auth_test_path is never seen (F-116).
+    stored = (
+        db.query(Source).filter(Source.connector_id == connector_id).order_by(Source.id.asc()).first()
+    )
+    stored_cfg = stored.config_json if stored is not None and isinstance(stored.config_json, dict) else {}
+    stored_op = stored_cfg.get("operational") if isinstance(stored_cfg.get("operational"), dict) else {}
     for key in ("auth_test_path", "auth_check_path", "health_check_path"):
-        for bag in (op, cfg):
+        for bag in (op, cfg, stored_op, stored_cfg):
             candidate = _normalize_auth_probe_path(bag.get(key) if isinstance(bag, dict) else None)
             if candidate and candidate != "/":
                 return candidate

@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 AuthType = Literal[
     "no_auth",
@@ -150,6 +150,26 @@ class ConnectorBase(BaseModel):
         default="disabled",
         description="Scheduled auth health probe interval (stored on Source operational metadata).",
     )
+    auth_test_path: str | None = Field(
+        default=None,
+        max_length=512,
+        description=(
+            "Path the list-level Test Auth probes instead of the base URL root (stored on Source "
+            "operational metadata). Empty clears it."
+        ),
+    )
+
+    @field_validator("auth_test_path", mode="before")
+    @classmethod
+    def _normalize_auth_test_path(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text or text == "/":
+            return None
+        if "://" in text or text.startswith("//") or any(ch.isspace() or ord(ch) < 32 for ch in text):
+            raise ValueError("auth_test_path must be a path such as /health, without a host or spaces")
+        return text if text.startswith("/") else f"/{text}"
 
 
 class ConnectorCreate(ConnectorBase):
@@ -291,6 +311,7 @@ class ConnectorRead(BaseModel):
     max_request_bytes: int | None = None
     payload_preview: str | None = None
     auth_health_check_interval: AuthHealthCheckInterval = "disabled"
+    auth_test_path: str | None = None
     last_auth_check_at: datetime | None = None
     last_auth_check_status: Literal["success", "failed"] | None = None
     last_auth_error: str | None = None

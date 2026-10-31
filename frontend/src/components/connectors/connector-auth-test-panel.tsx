@@ -75,11 +75,24 @@ export type ConnectorAuthTestPanelProps = {
   onTestStart?: () => void
   /** HTTP probe vs S3 vs database vs remote file connectivity. */
   mode?: 'http' | 's3' | 'database' | 'remote_file'
+  /** Initial Test path (the connector's saved auth test path, if any). */
+  defaultTestPath?: string
+  /**
+   * Called whenever the Test path changes, so the parent can store it with the connector. The list-level
+   * Test Auth then probes this path instead of the base URL root, which many APIs answer with 404.
+   */
+  onTestPathChange?: (path: string) => void
 }
 
-export function ConnectorAuthTestPanel({ buildAuthTestPayload, onTestStart, mode = 'http' }: ConnectorAuthTestPanelProps) {
+export function ConnectorAuthTestPanel({
+  buildAuthTestPayload,
+  onTestStart,
+  mode = 'http',
+  defaultTestPath,
+  onTestPathChange,
+}: ConnectorAuthTestPanelProps) {
   const [authTestMethod, setAuthTestMethod] = useState<AuthTestHttpMethod>('GET')
-  const [authTestPath, setAuthTestPath] = useState('/')
+  const [authTestPath, setAuthTestPath] = useState(defaultTestPath?.trim() || '/')
   const [authTestBody, setAuthTestBody] = useState('')
   const [rfDir, setRfDir] = useState('')
   const [rfPattern, setRfPattern] = useState('*')
@@ -197,16 +210,27 @@ export function ConnectorAuthTestPanel({ buildAuthTestPayload, onTestStart, mode
               ))}
             </select>
           </label>
-          <label className="block min-w-0 text-[12px] font-medium text-slate-700 dark:text-slate-200">
-            Test path
-            <input
-              value={authTestPath}
-              disabled={mode === 's3' || mode === 'database' || mode === 'remote_file'}
-              onChange={(e) => setAuthTestPath(e.target.value)}
-              placeholder="/connect/api/v1/alerts"
-              className="mt-1 h-9 w-full rounded border border-slate-200 bg-white px-2 font-mono text-sm dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
-            />
-          </label>
+          <div className="min-w-0">
+            <label className="block min-w-0 text-[12px] font-medium text-slate-700 dark:text-slate-200">
+              Test path
+              <input
+                value={authTestPath}
+                disabled={mode === 's3' || mode === 'database' || mode === 'remote_file'}
+                onChange={(e) => {
+                  setAuthTestPath(e.target.value)
+                  onTestPathChange?.(e.target.value)
+                }}
+                aria-describedby={onTestPathChange && mode === 'http' ? 'auth-test-path-hint' : undefined}
+                placeholder="/connect/api/v1/alerts"
+                className="mt-1 h-9 w-full rounded border border-slate-200 bg-white px-2 font-mono text-sm dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+              />
+            </label>
+            {onTestPathChange && mode === 'http' ? (
+              <p id="auth-test-path-hint" className="mt-1 text-[11px] text-slate-500 dark:text-gdc-muted" data-testid="auth-test-path-hint">
+                Saved with the connector. Test Auth in the Connectors list probes this path instead of the base URL root.
+              </p>
+            ) : null}
+          </div>
         </div>
         {mode === 'remote_file' ? (
           <div className="mt-3 grid w-full min-w-0 gap-3 md:grid-cols-2">

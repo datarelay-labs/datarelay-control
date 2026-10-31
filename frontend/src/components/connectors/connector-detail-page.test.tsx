@@ -123,6 +123,48 @@ describe('ConnectorDetailPage auth test draft truth', () => {
     )
     expect(baseUrl).toHaveValue('https://new.example.invalid/v1')
   })
+
+  it('stores the Test path entered on this page with the connector and restores it (F-116)', async () => {
+    fetchConnectorByIdMock.mockResolvedValue({
+      id: 7,
+      name: 'Test path fixture',
+      description: '',
+      status: 'STOPPED',
+      connector_type: 'generic_http',
+      source_type: 'HTTP_API_POLLING',
+      source_id: 11,
+      stream_count: 0,
+      host: 'https://api.example.invalid',
+      base_url: 'https://api.example.invalid',
+      verify_ssl: true,
+      http_proxy: null,
+      common_headers: {},
+      auth_type: 'no_auth',
+      auth: { auth_type: 'no_auth' },
+      auth_test_path: '/v1/me',
+    })
+    updateConnectorMock.mockResolvedValue({ id: 7 })
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter initialEntries={['/connectors/7']}>
+        <Routes>
+          <Route path="/connectors/:connectorId" element={<ConnectorDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    const testPath = await screen.findByLabelText('Test path')
+    expect(testPath).toHaveValue('/v1/me')
+    expect(screen.getByTestId('auth-test-path-hint')).toHaveTextContent(/Test Auth in the Connectors list/i)
+
+    await user.clear(testPath)
+    await user.type(testPath, '/v2/ping')
+    await user.click(screen.getByRole('button', { name: 'Save', exact: true }))
+
+    await waitFor(() =>
+      expect(updateConnectorMock).toHaveBeenCalledWith(7, expect.objectContaining({ auth_test_path: '/v2/ping' })),
+    )
+  })
 })
 
 
