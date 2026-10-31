@@ -1,8 +1,9 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 import { OperationsBackupPage } from './operations-backup-page'
+import { postImportApply, postImportPreview } from '../../api/gdcBackup'
 
 const emptyCounts = {
   connectors: 0,
@@ -78,5 +79,79 @@ describe('OperationsBackupPage', () => {
     expect(await screen.findByText('Conflicts')).toBeInTheDocument()
     expect(screen.getByText(/MISSING_CONNECTORS/i)).toBeInTheDocument()
     expect(screen.getByTestId('backup-preview-result')).toBeInTheDocument()
+  })
+
+  it('explains an empty import and never prints raw JSON engine messages (F-215)', async () => {
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <OperationsBackupPage />
+      </MemoryRouter>,
+    )
+    expect(screen.getByTestId('backup-import-empty-hint')).toHaveTextContent(/choose a file or paste json/i)
+    const ta = screen.getByRole('textbox', { name: 'Import JSON payload' })
+    fireEvent.change(ta, { target: { value: 'this is not json {' } })
+    expect(screen.queryByTestId('backup-import-empty-hint')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Validate & preview' }))
+    const alert = await screen.findByText(/not valid JSON, or the file is incomplete/i)
+    expect(alert).toBeInTheDocument()
+    expect(screen.queryByText(/Unexpected token/i)).not.toBeInTheDocument()
+
+    fireEvent.change(ta, { target: { value: '[]' } })
+    await user.click(screen.getByRole('button', { name: 'Validate & preview' }))
+    expect(await screen.findByText(/must be a JSON object/i)).toBeInTheDocument()
+  })
+
+  it('lists the secrets to re-enter after apply instead of redirecting past them (F-210)', async () => {
+    const user = userEvent.setup()
+    vi.mocked(postImportPreview).mockResolvedValueOnce({
+      ok: true,
+      export_kind: 'workspace',
+      counts: { ...emptyCounts, connectors: 1 },
+      conflicts: [],
+      warnings: [],
+      unsupported_items: [],
+      preview_token: 'tok-1',
+    })
+    vi.mocked(postImportApply).mockResolvedValueOnce({
+      ok: true,
+      created: { connector_ids: [7], source_ids: [7], stream_ids: [9], destination_ids: [] },
+      redirect_path: '/connectors/7',
+      secrets_to_reenter: [
+        {
+          entity_type: 'connector',
+          entity_id: 7,
+          name: 'Webhook receiver A',
+          source_type: 'WEBHOOK_RECEIVER',
+          fields: ['Shared secret'],
+          blocks_operation: true,
+          message: 'm',
+          edit_path: '/connectors/7',
+        },
+      ],
+    })
+    render(
+      <MemoryRouter>
+        <OperationsBackupPage />
+      </MemoryRouter>,
+    )
+    fireEvent.change(screen.getByRole('textbox', { name: 'Import JSON payload' }), {
+      target: { value: '{"version":2,"connectors":[{"id":1,"name":"x"}]}' },
+    })
+    await user.click(screen.getByRole('button', { name: 'Validate & preview' }))
+    await screen.findByText('Preview OK')
+    await user.click(screen.getByLabelText(/I reviewed the preview/i))
+    await user.click(screen.getByTestId('backup-apply-open'))
+    const dialog = await screen.findByTestId('backup-apply-dialog')
+    expect(dialog).not.toHaveTextContent(/Secrets remain masked/i)
+    expect(dialog).toHaveTextContent(/never contain secrets/i)
+    await user.click(within(dialog).getByRole('button', { name: 'Apply import' }))
+
+    const panel = await screen.findByTestId('backup-secrets-reentry')
+    expect(panel).toHaveTextContent('Webhook receiver A')
+    expect(panel).toHaveTextContent('Shared secret')
+    expect(panel).toHaveTextContent(/cannot work until you do/i)
+    expect(screen.getByRole('link', { name: /Connector: Webhook receiver A/ })).toHaveAttribute('href', '/connectors/7')
+    expect(screen.getByRole('status')).toHaveTextContent(/1 connector, 1 stream, 0 destinations created/)
   })
 })
