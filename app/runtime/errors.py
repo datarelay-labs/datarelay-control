@@ -32,6 +32,21 @@ class EnrichmentError(PlatformError):
     """Static/calculated enrichment failed."""
 
 
+# 4xx responses that can succeed on a later attempt. Every other 4xx is a request or
+# authorization problem that a retry cannot fix (for example 401 or 403).
+RETRYABLE_4XX_STATUSES = frozenset({408, 425, 429})
+
+
+def is_retryable_http_status(status: int | None) -> bool:
+    """False for HTTP client errors a retry cannot fix (4xx except 408/425/429)."""
+
+    if status is None:
+        return True
+    if 400 <= status < 500:
+        return status in RETRYABLE_4XX_STATUSES
+    return True
+
+
 class DestinationSendError(PlatformError):
     """Syslog or webhook delivery failed.
 

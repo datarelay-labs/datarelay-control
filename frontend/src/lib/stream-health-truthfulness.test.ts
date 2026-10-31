@@ -147,3 +147,17 @@ describe('Streams page health uses the same evidence as the Dashboard (F-166, F-
     expect(enriched.operationalProblemSeverity).toBeNull()
   })
 })
+
+describe('STOPPING is not shown as Stopped (F-176)', () => {
+  it('marks a stream whose backend lifecycle is STOPPING and labels it Stopping', () => {
+    const enriched = enrichStreamRowFromOperationalSnapshot(base, snapshot({ status: 'STOPPING', enabled: false }), [])
+    expect(enriched.stopping).toBe(true)
+    expect(streamConsoleLifecycleLabel(enriched)).toBe('Stopping')
+  })
+
+  it('a confirmed stop is labelled Stopped', () => {
+    const enriched = enrichStreamRowFromOperationalSnapshot(base, snapshot({ status: 'STOPPED', enabled: false }), [])
+    expect(enriched.stopping).toBe(false)
+    expect(streamConsoleLifecycleLabel(enriched)).toBe('Stopped')
+  })
+})

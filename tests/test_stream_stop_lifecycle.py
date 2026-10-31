@@ -186,3 +186,41 @@ def test_reconcile_never_clears_owned_lock(db_session: Session) -> None:
         assert db_session.query(Stream).filter(Stream.id == stream_id).one().status == "STOPPING"
     finally:
         lock.release()
+
+
+# F-176: Start was accepted while the previous run was still STOPPING, so two runs overlapped and
+# the old run kept re-sending events.
+def test_start_is_refused_while_stop_is_still_in_flight(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, db_session: Session
+) -> None:
+    stream_id = _running_stream(db_session)
+    lock = StreamRunner._get_lock(stream_id)
+    assert lock.acquire(blocking=False)
+    monkeypatch.setenv("GDC_STREAM_STOP_WAIT_SEC", "0")
+    try:
+        stop = client.post(f"/api/v1/runtime/streams/{stream_id}/stop")
+        assert stop.status_code == 202 and stop.json()["status"] == "STOPPING"
+
+        for path in (
+            f"/api/v1/runtime/streams/{stream_id}/start",
+            f"/api/v1/streams/{stream_id}/start",
+        ):
+            refused = client.post(path)
+            assert refused.status_code == 409, path
+            assert refused.json()["detail"]["error_code"] == "STREAM_STOP_IN_PROGRESS"
+
+        db_session.expire_all()
+        row = db_session.query(Stream).filter(Stream.id == stream_id).one()
+        assert row.status == "STOPPING" and row.enabled is False
+    finally:
+        lock.release()
+
+    started = client.post(f"/api/v1/runtime/streams/{stream_id}/start")
+    assert started.status_code == 200
+    assert started.json()["status"] == "RUNNING"
+
+
+def test_start_after_a_confirmed_stop_is_accepted(client: TestClient, db_session: Session) -> None:
+    stream_id = _running_stream(db_session)
+    assert client.post(f"/api/v1/runtime/streams/{stream_id}/stop").status_code == 200
+    assert client.post(f"/api/v1/runtime/streams/{stream_id}/start").status_code == 200

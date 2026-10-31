@@ -54,6 +54,11 @@ from app.runners.route_context import RoutePipelineResult, RouteRuntimeContext
 from app.runners.route_context_builder import build_route_runtime_contexts, build_shared_batch_context
 from app.runners.route_stage import process_routes
 from app.route_delivery.config import RouteSendOutcome
+from app.runners.route_retry_policy import (
+    http_status_of,
+    is_retryable_delivery_error,
+    resolve_route_retry_policy,
+)
 from app.runners.run_timing import PhaseTimer, RunTimingTrace
 from app.runners.stream_dedup import (
     apply_stream_dedup,
@@ -91,6 +96,24 @@ def _effective_destination_rate_limit_json(route: Any, destination: Any) -> dict
     if isinstance(dest_rl, dict) and dest_rl:
         return dict(dest_rl)
     return {}
+
+
+def _log_http_status(payload: dict[str, Any]) -> int | None:
+    raw = payload.get("http_status")
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        return None
+    return raw if 100 <= raw <= 599 else None
+
+
+def _route_owned_retry_destination_config(route: Any, destination_config: dict[str, Any]) -> dict[str, Any]:
+    """A Route with the Retry policy owns retries; the sender must not multiply them (F-168)."""
+
+    policy = str(_get(route, "failure_policy", "") or "").upper()
+    if policy != "RETRY_AND_BACKOFF":
+        return destination_config
+    owned = dict(destination_config)
+    owned["retry_count"] = 0
+    return owned
 
 
 @dataclass(slots=True)
@@ -1199,7 +1222,10 @@ class StreamRunner(BaseRunner):
             self._send_to_destination(
                 destination_type,
                 route_events,
-                _udp_paced_destination_config(destination_type, destination_config, effective_rl, route_id),
+                _route_owned_retry_destination_config(
+                    route,
+                    _udp_paced_destination_config(destination_type, destination_config, effective_rl, route_id),
+                ),
                 formatter_override=formatter_override,
                 prefix_context=prefix_context,
             )
@@ -1249,20 +1275,28 @@ class StreamRunner(BaseRunner):
             undelivered_events = route_events[delivered_prefix:]
             failure_policy = str(_get(route, "failure_policy", "LOG_AND_CONTINUE")).upper()
             # Always record primary failure before Active/Standby failover.
-            self._log(
-                {
-                    "stage": "route_send_failed",
-                    "stream_id": stream_id,
-                    "route_id": route_id,
-                    "destination_id": destination_id,
-                    "destination_type": destination_type,
-                    "failure_policy": failure_policy,
-                    "error_type": type(exc).__name__,
-                    "message": str(exc),
-                    "latency_ms": latency_ms,
-                    "event_count": len(route_events),
-                }
-            )
+            primary_failure_log: dict[str, Any] = {
+                "stage": "route_send_failed",
+                "stream_id": stream_id,
+                "route_id": route_id,
+                "destination_id": destination_id,
+                "destination_type": destination_type,
+                "failure_policy": failure_policy,
+                "error_type": type(exc).__name__,
+                "message": str(exc),
+                "latency_ms": latency_ms,
+                "event_count": len(route_events),
+            }
+            primary_http_status = http_status_of(exc)
+            if primary_http_status is not None:
+                primary_failure_log["http_status"] = primary_http_status
+            if undelivered_events:
+                # F-169: the log row must carry the undelivered tail, otherwise the Logs-row
+                # "Dry-run replay" / "Replay delivery" actions fail with REPLAY_PAYLOAD_INSUFFICIENT.
+                primary_failure_log["replay_events"] = copy_events(
+                    undelivered_events, limit=_MAX_REPLAY_EVENTS_IN_LOG
+                )
+            self._log(primary_failure_log)
             recovered = False
             fo_result = FailoverAttemptResult()
             bindings = failover_bindings
@@ -1293,6 +1327,16 @@ class StreamRunner(BaseRunner):
                 )
                 if fo_result.attempted and fo_result.succeeded:
                     recovered = True
+            # F-170: when this method records the replay event for a failed Route itself, the
+            # failure policy must not record the same batch a second time.
+            caller_records_base_replay = bool(
+                record_replay_on_failure
+                and bindings is not None
+                and destination_id is not None
+                and not fo_result.succeeded
+                and not fo_result.secondary_send_attempted
+            )
+            retry_delivered = False
             if not recovered:
                 recovered = self._apply_failure_policy(
                     stream,
@@ -1301,7 +1345,10 @@ class StreamRunner(BaseRunner):
                     exc,
                     attempt_latency_ms=latency_ms,
                     emit_failure_log=False,
+                    record_replay=not caller_records_base_replay,
                 )
+                # A successful resend under the Retry policy delivered the batch: nothing to replay.
+                retry_delivered = bool(recovered) and failure_policy == "RETRY_AND_BACKOFF"
             if fo_result.attempted and not fo_result.succeeded:
                 recovered = False
 
@@ -1332,11 +1379,7 @@ class StreamRunner(BaseRunner):
                         error=fo_result.secondary_error,
                         failover_route_id=int(fo_binding.failover_route_id),
                     )
-                elif (
-                    not fo_result.succeeded
-                    and not fo_result.secondary_send_attempted
-                    and destination_id is not None
-                ):
+                elif caller_records_base_replay and not retry_delivered:
                     self._maybe_record_replay_event(
                         stream=stream,
                         route=route,
@@ -1962,6 +2005,184 @@ class StreamRunner(BaseRunner):
             prefix_context=prefix_context,
         )
 
+    def _sleep_unless_stopped(self, stream_id: int, seconds: float) -> bool:
+        """Sleep in short slices; True when a stop request for this worker interrupted the wait (F-176)."""
+
+        from app.scheduler import runtime_state as scheduler_runtime_state
+
+        deadline = time.monotonic() + max(0.0, float(seconds))
+        while True:
+            if scheduler_runtime_state.current_worker_stop_requested(stream_id):
+                return True
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            time.sleep(min(0.25, remaining))
+
+    def _retry_with_backoff(
+        self,
+        stream: Any,
+        route: Any,
+        events: list[dict[str, Any]],
+        error: Exception,
+        *,
+        record_replay: bool,
+    ) -> bool:
+        """Retry a failed Route delivery following the Route's configured policy (F-168).
+
+        Honors max retries, Exponential/Linear backoff, the backoff cap and the maximum
+        delivery time, does not retry client errors a retry cannot fix (HTTP 401/403/...),
+        stops promptly on a stream stop, and persists every attempt on the final log row.
+        """
+
+        stream_id = int(_get(stream, "id"))
+        route_id = int(_get(route, "id", 0))
+        policy = resolve_route_retry_policy(route)
+        destination = _get(route, "destination", {}) or {}
+        destination_type = str(_get(destination, "destination_type", "")).upper()
+        destination_config = _route_owned_retry_destination_config(
+            route,
+            _udp_paced_destination_config(
+                destination_type,
+                _get(destination, "config", {}) or {},
+                _effective_destination_rate_limit_json(route, destination),
+                route_id,
+            ),
+        )
+        route_fc_retry = _get(route, "formatter_config_json")
+        formatter_retry: dict[str, Any] | None = None
+        if isinstance(route_fc_retry, dict) and route_fc_retry:
+            formatter_retry = route_fc_retry
+        if not events:
+            return False
+
+        prefix_context = self._prefix_delivery_context(stream, route)
+        started = time.monotonic()
+        attempts: list[dict[str, Any]] = []
+        last_exc: Exception = error
+        give_up_reason = "retries_exhausted"
+
+        if policy.max_retries <= 0:
+            give_up_reason = "retries_disabled"
+        elif not is_retryable_delivery_error(error):
+            give_up_reason = "non_retryable_error"
+        else:
+            for idx in range(policy.max_retries):
+                delay = policy.delay_before_retry(idx)
+                if (
+                    policy.max_delivery_time_sec > 0
+                    and (time.monotonic() - started) + delay > policy.max_delivery_time_sec
+                ):
+                    give_up_reason = "max_delivery_time_reached"
+                    break
+                if self._sleep_unless_stopped(stream_id, delay):
+                    give_up_reason = "stop_requested"
+                    break
+                attempt_no = idx + 1
+                attempt_row: dict[str, Any] = {
+                    "attempt": attempt_no,
+                    "delay_before_sec": round(delay, 3),
+                    "started_at": _replay_iso_utc(datetime.now(timezone.utc)),
+                }
+                try:
+                    rs = time.monotonic()
+                    self._send_to_destination(
+                        destination_type,
+                        events,
+                        destination_config,
+                        formatter_override=formatter_retry,
+                        prefix_context=prefix_context,
+                    )
+                    rlat = max(0, int((time.monotonic() - rs) * 1000))
+                    attempt_row.update({"outcome": "succeeded", "latency_ms": rlat})
+                    attempts.append(attempt_row)
+                    self._log(
+                        {
+                            "stage": "route_retry_success",
+                            "stream_id": stream_id,
+                            "route_id": route_id,
+                            "attempt": attempt_no,
+                            "retry_count": attempt_no,
+                            "latency_ms": rlat,
+                            "max_retries": policy.max_retries,
+                            "retry_backoff": policy.backoff_mode,
+                            "retry_attempts": attempts,
+                        }
+                    )
+                    if self._dedup_summary is not None:
+                        dest_id = _get(destination, "id")
+                        record_dedup_registry_for_route_success(
+                            stream_id=stream_id,
+                            route_events=events,
+                            summary=self._dedup_summary,
+                            destination=str(destination_type or "") or None,
+                            destination_id=int(dest_id) if dest_id is not None else None,
+                            route_id=route_id,
+                            log_fn=self._log,
+                        )
+                    return True
+                except Exception as exc:  # pragma: no cover - defensive
+                    last_exc = exc
+                    attempt_row.update(
+                        {
+                            "outcome": "failed",
+                            "error_type": type(exc).__name__,
+                            "message": str(exc)[:300],
+                        }
+                    )
+                    status = http_status_of(exc)
+                    if status is not None:
+                        attempt_row["http_status"] = status
+                    attempts.append(attempt_row)
+                    if not is_retryable_delivery_error(exc):
+                        give_up_reason = "non_retryable_error"
+                        break
+
+        n_attempts = len(attempts)
+        last_status = http_status_of(last_exc)
+        if give_up_reason == "non_retryable_error":
+            suffix = f"HTTP {last_status} is not retryable" if last_status is not None else "error is not retryable"
+            summary = f"Not retried further: {suffix}"
+        elif give_up_reason == "retries_disabled":
+            summary = "Retries are disabled for this route (Max Retry 0)"
+        elif give_up_reason == "max_delivery_time_reached":
+            summary = f"Gave up after {n_attempts} of {policy.max_retries} retries: maximum delivery time reached"
+        elif give_up_reason == "stop_requested":
+            summary = f"Gave up after {n_attempts} of {policy.max_retries} retries: stream stop requested"
+        else:
+            summary = f"Gave up after {n_attempts} of {policy.max_retries} retries"
+        retry_fail_payload: dict[str, Any] = {
+            "stage": "route_retry_failed",
+            "stream_id": stream_id,
+            "route_id": route_id,
+            "retry_count": n_attempts,
+            "max_retries": policy.max_retries,
+            "retry_backoff": policy.backoff_mode,
+            "give_up_reason": give_up_reason,
+            "error_type": type(last_exc).__name__,
+            "message": f"{summary}: {last_exc}",
+            "retry_attempts": attempts,
+        }
+        if last_status is not None:
+            retry_fail_payload["http_status"] = last_status
+        retry_fail_payload["replay_events"] = copy_events(events, limit=_MAX_REPLAY_EVENTS_IN_LOG)
+        retry_fail_payload["event_count"] = len(events)
+        self._log(retry_fail_payload)
+        dest_id = _get(destination, "id")
+        if record_replay and dest_id is not None:
+            self._maybe_record_replay_event(
+                stream=stream,
+                route=route,
+                events=events,
+                destination_id=int(dest_id),
+                destination_type=destination_type,
+                formatter_override=formatter_retry,
+                prefix_context=prefix_context,
+                delivery_kind="base_route",
+                error=last_exc,
+            )
+        return False
+
     def _apply_failure_policy(
         self,
         stream: Any,
@@ -1971,6 +2192,7 @@ class StreamRunner(BaseRunner):
         *,
         attempt_latency_ms: int | None = None,
         emit_failure_log: bool = True,
+        record_replay: bool = True,
     ) -> bool:
         """Apply route-level failure policy."""
 
@@ -2005,89 +2227,13 @@ class StreamRunner(BaseRunner):
             return False
 
         if policy == "RETRY_AND_BACKOFF":
-            retry_count = int(_get(route, "retry_count", 2))
-            backoff_seconds = float(_get(route, "backoff_seconds", 1.0))
-            destination = _get(route, "destination", {}) or {}
-            destination_type = str(_get(destination, "destination_type", "")).upper()
-            destination_config = _udp_paced_destination_config(
-                destination_type,
-                _get(destination, "config", {}) or {},
-                _effective_destination_rate_limit_json(route, destination),
-                route_id,
+            return self._retry_with_backoff(
+                stream,
+                route,
+                events,
+                error,
+                record_replay=record_replay,
             )
-            route_fc_retry = _get(route, "formatter_config_json")
-            formatter_retry: dict[str, Any] | None = None
-            if isinstance(route_fc_retry, dict) and route_fc_retry:
-                formatter_retry = route_fc_retry
-            if not events:
-                return False
-
-            prefix_context = self._prefix_delivery_context(stream, route)
-
-            last_exc: Exception | None = None
-            for idx in range(retry_count):
-                try:
-                    rs = time.monotonic()
-                    self._send_to_destination(
-                        destination_type,
-                        events,
-                        destination_config,
-                        formatter_override=formatter_retry,
-                        prefix_context=prefix_context,
-                    )
-                    rlat = max(0, int((time.monotonic() - rs) * 1000))
-                    self._log(
-                        {
-                            "stage": "route_retry_success",
-                            "stream_id": stream_id,
-                            "route_id": route_id,
-                            "attempt": idx + 1,
-                            "retry_count": idx + 1,
-                            "latency_ms": rlat,
-                        }
-                    )
-                    if self._dedup_summary is not None:
-                        dest_id = _get(destination, "id")
-                        record_dedup_registry_for_route_success(
-                            stream_id=stream_id,
-                            route_events=events,
-                            summary=self._dedup_summary,
-                            destination=str(destination_type or "") or None,
-                            destination_id=int(dest_id) if dest_id is not None else None,
-                            route_id=route_id,
-                            log_fn=self._log,
-                        )
-                    return True
-                except Exception as exc:  # pragma: no cover - defensive
-                    last_exc = exc
-                    time.sleep(max(backoff_seconds * (2 ** idx), 0))
-            retry_fail_payload: dict[str, Any] = {
-                "stage": "route_retry_failed",
-                "stream_id": stream_id,
-                "route_id": route_id,
-                "retry_count": retry_count,
-                "error_type": type(last_exc).__name__ if last_exc else None,
-                "message": str(last_exc) if last_exc else "retry failed",
-            }
-            if events:
-                retry_fail_payload["replay_events"] = copy_events(events, limit=_MAX_REPLAY_EVENTS_IN_LOG)
-                retry_fail_payload["event_count"] = len(events)
-            self._log(retry_fail_payload)
-            destination = _get(route, "destination", {}) or {}
-            dest_id = _get(destination, "id")
-            if dest_id is not None:
-                self._maybe_record_replay_event(
-                    stream=stream,
-                    route=route,
-                    events=events,
-                    destination_id=int(dest_id),
-                    destination_type=str(_get(destination, "destination_type", "")).upper(),
-                    formatter_override=formatter_retry,
-                    prefix_context=prefix_context,
-                    delivery_kind="base_route",
-                    error=last_exc,
-                )
-            return False
 
         self._log(
             {
@@ -3228,7 +3374,7 @@ class StreamRunner(BaseRunner):
             message=message,
             payload_sample=payload_sample if isinstance(payload_sample, dict) else {},
             retry_count=retry_count,
-            http_status=None,
+            http_status=_log_http_status(payload),
             latency_ms=latency_ms,
             error_code=error_code,
             run_id=str(run_id_raw) if run_id_raw else None,

@@ -3645,6 +3645,16 @@ async def start_runtime_stream(
             status_code=404,
             detail={"error_code": "STREAM_NOT_FOUND", "message": f"stream not found: {exc.stream_id}"},
         ) from exc
+    except control_service.StreamStopInProgressError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_code": "STREAM_STOP_IN_PROGRESS",
+                "message": (
+                    f"stream {exc.stream_id} is still stopping; wait until it is stopped before starting it again"
+                ),
+            },
+        ) from exc
 
 
 @router.post("/streams/{stream_id}/stop", response_model=RuntimeStreamControlResponse)

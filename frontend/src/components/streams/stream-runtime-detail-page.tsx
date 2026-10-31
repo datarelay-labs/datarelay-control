@@ -66,7 +66,7 @@ import {
   runHistoryFromMetricsRecentRuns,
 } from '../../api/runtimeMetricsAdapter'
 import { timelineItemsToRecentLogLines, timelineItemsToRunHistoryRows } from '../../api/runtimeTimelineAdapter'
-import { formatCheckpointValueForConsole, mapBackendStreamStatus } from '../../api/streamRows'
+import { formatCheckpointValueForConsole, isStreamStoppingStatus, mapBackendStreamStatus } from '../../api/streamRows'
 import { createRefreshCycleSnapshotId, resetRefreshCycleSnapshotId } from '../../api/runtimeSnapshotSync'
 import { visualizationSummary } from '../../api/visualizationMeta'
 import { cn } from '../../lib/utils'
@@ -607,6 +607,14 @@ export function StreamRuntimeDetailPage() {
     return () => window.clearInterval(t)
   }, [showMetricsControls, refreshEvery, backendStreamId, refreshRuntimeData, abortRef])
 
+  const streamStopping = useMemo(
+    () =>
+      isStreamStoppingStatus(runtimeMetrics?.stream?.status) ||
+      (!runtimeMetrics?.stream?.status && isStreamStoppingStatus(runtimeStats?.stream_status)) ||
+      (!runtimeMetrics?.stream?.status && !runtimeStats && isStreamStoppingStatus(runtimeHealth?.stream_status)),
+    [runtimeMetrics, runtimeStats, runtimeHealth],
+  )
+
   const runStreamControl = useCallback(
     async (action: 'start' | 'stop') => {
       if (!canRuntimeControl || backendStreamId == null || controlBusy || runOnceBusy) return
@@ -621,11 +629,15 @@ export function StreamRuntimeDetailPage() {
         window.dispatchEvent(new CustomEvent('gdc-runtime-control-updated', { detail: { streamId: backendStreamId, action } }))
         setControlMessage(res.message)
       } else {
-        setControlMessage('Runtime API unavailable · control action not applied.')
+        setControlMessage(
+          action === 'start' && streamStopping
+            ? 'The stream is still stopping. Wait until the stop is confirmed, then start it again.'
+            : 'Runtime API unavailable · control action not applied.',
+        )
       }
       setControlBusy(false)
     },
-    [backendStreamId, canRuntimeControl, controlBusy, refreshAfterMutation, runOnceBusy, activeTab, loadCheckpointHistory],
+    [backendStreamId, canRuntimeControl, controlBusy, refreshAfterMutation, runOnceBusy, activeTab, loadCheckpointHistory, streamStopping],
   )
 
   const executeRunOnce = useCallback(async () => {
@@ -1211,6 +1223,7 @@ export function StreamRuntimeDetailPage() {
           {backendStreamId != null && canRuntimeControl ? (
             <StreamRunControlSwitch
               status={displayStatus}
+              stopping={streamStopping}
               busy={controlBusy}
               disabled={runOnceBusy}
               size="sm"

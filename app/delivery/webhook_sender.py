@@ -23,7 +23,7 @@ from app.formatters.message_prefix import (
     effective_message_prefix_template,
     resolve_message_prefix_template,
 )
-from app.runtime.errors import DestinationSendError
+from app.runtime.errors import DestinationSendError, is_retryable_http_status
 
 
 class WebhookSender:
@@ -111,6 +111,12 @@ class WebhookSender:
                         break
                     except httpx.HTTPStatusError as exc:
                         status = int(exc.response.status_code) if exc.response is not None else None
+                        if not is_retryable_http_status(status):
+                            # F-168: a 401/403/404/... answer cannot be fixed by sending it again.
+                            raise DestinationSendError(
+                                f"Webhook send failed (HTTP {status}, not retried): {exc}",
+                                http_status=status,
+                            ) from exc
                         if attempt >= attempts:
                             invalidate_httpx_client(pool_key)
                             raise DestinationSendError(

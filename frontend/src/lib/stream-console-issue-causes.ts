@@ -190,7 +190,9 @@ export function streamOperationalHealthLabel(
 /** Streams Console status chip — Stopped vs Disabled vs No Data must not collapse. */
 export function streamConsoleLifecycleLabel(
   row: StreamConsoleRow,
-): 'Healthy' | 'Warning' | 'Critical' | 'Stopped' | 'Disabled' | 'No Data' | 'Not verified' {
+): 'Healthy' | 'Warning' | 'Critical' | 'Stopped' | 'Stopping' | 'Disabled' | 'No Data' | 'Not verified' {
+  // F-176: a stop that is accepted but not confirmed is never presented as Stopped.
+  if (row.stopping === true) return 'Stopping'
   if (row.status === 'ERROR') return 'Critical'
   if (row.status === 'DEGRADED') return 'Warning'
   if (row.status === 'STOPPED') return 'Stopped'

@@ -387,7 +387,9 @@ describe('Logs Explorer time window deep-link persistence', () => {
     )
     await user.selectOptions(screen.getByLabelText('Time range'), 'Last 24 hours')
     expect(screen.getByLabelText('Time range')).toHaveValue('Last 24 hours')
-    expect(await screen.findByTestId('logs-diagnosis-window-hint')).toHaveTextContent('full 24h window')
+    // route_id scopes the view, so platform-wide totals are not applied (F-161).
+    expect(await screen.findByTestId('logs-diagnosis-window-hint')).toHaveTextContent('Scoped to the active filter')
+    expect(screen.getByTestId('logs-diagnosis-window-hint')).toHaveTextContent('24h window')
     expect(screen.getByTestId('logs-histogram-panel')).toHaveAttribute('aria-label', 'Logs over time (24h)')
     await waitFor(() => {
       const query = screen.getByTestId('logs-url-search').textContent ?? ''
@@ -402,12 +404,13 @@ describe('Logs Explorer time window deep-link persistence', () => {
       </MemoryRouter>,
     )
     expect(screen.getByLabelText('Time range')).toHaveValue('Last 24 hours')
-    expect(await screen.findByTestId('logs-diagnosis-window-hint')).toHaveTextContent('full 24h window')
+    expect(await screen.findByTestId('logs-diagnosis-window-hint')).toHaveTextContent('Scoped to the active filter')
+    expect(screen.getByTestId('logs-diagnosis-window-hint')).toHaveTextContent('24h window')
     expect(screen.getByTestId('logs-histogram-panel')).toHaveAttribute('aria-label', 'Logs over time (24h)')
 
     for (const [label, window] of [['Last 15 minutes', '15m'], ['Last 1 hour', '1h']]) {
       await user.selectOptions(screen.getByLabelText('Time range'), label)
-      expect(await screen.findByTestId('logs-diagnosis-window-hint')).toHaveTextContent(`full ${window} window`)
+      expect(await screen.findByTestId('logs-diagnosis-window-hint')).toHaveTextContent(`${window} window`)
       expect(screen.getByTestId('logs-histogram-panel')).toHaveAttribute('aria-label', `Logs over time (${window})`)
     }
   })

@@ -85,6 +85,14 @@ class StreamNotFoundError(Exception):
         self.stream_id = stream_id
 
 
+class StreamStopInProgressError(Exception):
+    """Raised when Start is requested while the previous run is still stopping (F-176)."""
+
+    def __init__(self, stream_id: int) -> None:
+        super().__init__(stream_id)
+        self.stream_id = stream_id
+
+
 class StreamStopFailedError(Exception):
     """Raised when the stop lifecycle cannot be safely advanced."""
 
@@ -135,9 +143,14 @@ class ConnectorNotFoundError(Exception):
 
 
 def start_stream(db: Session, stream_id: int, request: object | None = None) -> RuntimeStreamControlResponse:
-    stream = db.query(Stream).filter(Stream.id == stream_id).first()
+    stream = db.query(Stream).filter(Stream.id == stream_id).with_for_update().first()
     if stream is None:
         raise StreamNotFoundError(stream_id)
+    # F-176: the old run keeps retrying/delivering while STOPPING. Accepting Start now would
+    # overlap two runs and duplicate deliveries, so Start is refused until the stop completes.
+    if str(stream.status) == "STOPPING" and not _stream_runtime_is_terminal(stream_id):
+        db.rollback()
+        raise StreamStopInProgressError(stream_id)
     stream.enabled = True
     stream.status = "RUNNING"
     journal.record_audit_event(

@@ -32,6 +32,8 @@ export type StreamConsoleRow = {
    * Dashboard uses; null/undefined when the snapshot lists no problem for this stream.
    */
   operationalProblemSeverity?: 'critical' | 'warning' | null
+  /** True while the backend lifecycle is STOPPING (stop accepted, worker or run lock still active). */
+  stopping?: boolean
   /** Source/auth collection failure attributed to this stream by the snapshot (F-166). */
   sourceFailure?: { code: string; httpStatus: number | null; connectorName: string | null } | null
   /** Stream enabled flag from config/snapshot; false → Disabled (not Stopped/No Data). */
@@ -99,6 +101,11 @@ function safePercent(numer: unknown, denom: unknown): number {
 }
 
 /** Maps backend stream_status strings to UI row/badge status; unknown → UNKNOWN (neutral elsewhere). */
+/** STOPPING is a distinct backend lifecycle state: the stop is accepted but not yet confirmed (F-176). */
+export function isStreamStoppingStatus(s: string | null | undefined): boolean {
+  return String(s ?? '').trim().toUpperCase() === 'STOPPING'
+}
+
 export function mapBackendStreamStatus(s: string | null | undefined): StreamRuntimeStatus {
   if (s == null || String(s).trim() === '') return 'UNKNOWN'
   const u = String(s).trim().toUpperCase()
@@ -409,6 +416,7 @@ export function enrichStreamRowFromOperationalSnapshot(
     status: kpi.runtimeStatus,
     operationalHealthStatus: snapshot.health_status,
     operationalProblemSeverity,
+    stopping: String(snapshot.status ?? '').trim().toUpperCase() === 'STOPPING',
     sourceFailure: sourceProblem
       ? {
           code: String(sourceProblem.error_code),
