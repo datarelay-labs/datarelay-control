@@ -242,8 +242,8 @@ describe('RoutesOverviewPage snapshot loading', () => {
     await screen.findByTestId('routes-load-error')
     const kpis = screen.getByRole('region', { name: 'Route KPI summary' })
     expect(kpis).toHaveTextContent('Runtime metrics not verified')
-    const streamCard = within(kpis).getByText('Total Streams').parentElement
-    const routeCard = within(kpis).getByText('Total Routes').parentElement
+    const streamCard = within(kpis).getByTestId('routes-kpi-total-streams')
+    const routeCard = within(kpis).getByTestId('routes-kpi-total-routes')
     expect(streamCard).toHaveTextContent('—')
     expect(streamCard).toHaveTextContent('Not verified')
     expect(streamCard).not.toHaveTextContent('0 running')
@@ -270,8 +270,8 @@ describe('RoutesOverviewPage snapshot loading', () => {
 
     await screen.findByTestId('routes-snapshot-evidence')
     const kpis = screen.getByRole('region', { name: 'Route KPI summary' })
-    expect(within(kpis).getByText('Total Streams').parentElement).toHaveTextContent('0 running')
-    expect(within(kpis).getByText('Total Routes').parentElement).toHaveTextContent('0 enabled')
+    expect(within(kpis).getByTestId('routes-kpi-total-streams')).toHaveTextContent('0 running')
+    expect(within(kpis).getByTestId('routes-kpi-total-routes')).toHaveTextContent('0 enabled')
     expect(kpis).not.toHaveTextContent('Runtime metrics not verified')
     expect(screen.getByText('All Routes (0)')).toBeInTheDocument()
     expect(screen.getByTestId('routes-snapshot-evidence')).toHaveTextContent('SNAPSHOT')
@@ -326,6 +326,47 @@ describe('RoutesOverviewPage snapshot loading', () => {
     } finally {
       dateNow.mockRestore()
     }
+  })
+
+  it('keeps one primary action in the Data Flows view', async () => {
+    persistTestSession('ADMINISTRATOR')
+    const { container } = render(<MemoryRouter><RoutesOverviewPage /></MemoryRouter>)
+    expect(await screen.findByTestId('routes-architecture-inspector')).toBeInTheDocument()
+    const primaries = container.querySelectorAll('button.bg-accent, a.bg-accent')
+    expect(primaries).toHaveLength(1)
+    expect(primaries[0]).toBe(screen.getByRole('link', { name: 'Create Route' }))
+    for (const name of ['Configure Route in workspace']) {
+      expect(screen.getByRole('button', { name })).not.toHaveClass('bg-accent')
+    }
+    expect(screen.getByRole('link', { name: 'Open full Route editor' })).toHaveClass('bg-transparent')
+  })
+
+  it('merges the Delivery architecture header into one SectionHeader without a gradient or eyebrow', async () => {
+    render(<MemoryRouter><RoutesOverviewPage /></MemoryRouter>)
+    const workspace = await screen.findByTestId('routes-architecture-workspace')
+    expect(workspace.querySelector('[class*="bg-gradient"]')).toBeNull()
+    expect(workspace).not.toHaveTextContent('Delivery workspace')
+    expect(within(workspace).getByRole('heading', { level: 2, name: 'Delivery architecture' })).toBeInTheDocument()
+    expect(within(workspace).getByTestId('routes-architecture-count-summary')).toBeInTheDocument()
+  })
+
+  it('renders unmeasured KPI values as unknown tiles, never as 0, 0% or 100%', async () => {
+    const snapshots = await import('../../api/operationalSnapshot')
+    vi.mocked(snapshots.getOperationalSnapshot).mockResolvedValueOnce(null)
+
+    render(<MemoryRouter><RoutesOverviewPage /></MemoryRouter>)
+
+    await screen.findByTestId('routes-load-error')
+    const kpis = screen.getByRole('region', { name: 'Route KPI summary' })
+    for (const id of ['total-streams', 'total-routes', 'throughput', 'delivery-success', 'error-rate', 'latency']) {
+      const tile = within(kpis).getByTestId('routes-kpi-' + id)
+      const value = tile.querySelector('[data-metric-value]')
+      expect(value, id).toHaveAttribute('data-unknown', 'true')
+      expect(value, id).toHaveTextContent('—')
+      expect(value, id).toHaveClass('text-status-unknown')
+    }
+    expect(kpis).not.toHaveTextContent('0%')
+    expect(kpis).not.toHaveTextContent('100%')
   })
 
   it('loads operational snapshot on mount and does not fetch per-stream metrics', async () => {

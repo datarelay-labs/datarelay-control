@@ -23,6 +23,7 @@ import {
   streamRuntimePath,
 } from '../../../config/nav-paths'
 import { cn } from '../../../lib/utils'
+import { buttonClassName } from '../../ui/button-classes'
 import { WIZARD_LABEL } from '../../../lib/operator-vocabulary'
 import {
   computeDeployReadiness,
@@ -860,7 +861,7 @@ function DeployCreatedPanel({
                   onStart()
                 }}
                 disabled={!wizardCreateIsStartEligible(outcome) || isStarting || displayedRunBusy || runtimeVerificationBlocked}
-                className="inline-flex h-9 items-center gap-1.5 rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white shadow-sm hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
+                className={buttonClassName({ variant: 'secondary' })}
                 title={
                   wizardCreateIsConfigurationIncomplete(outcome)
                     ? 'Resolve configuration errors before starting'

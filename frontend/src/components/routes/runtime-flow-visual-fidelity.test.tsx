@@ -213,6 +213,22 @@ describe('runtime flow visual fidelity and evidence', () => {
     expect(rateRow?.querySelector('strong')).not.toHaveTextContent('24.4')
   })
 
+  it('labels every measurement window explicitly in the Flow Inspector', () => {
+    const routeNode: Node<FlowNodeData> = {
+      id: 'route:12', type: 'route', position: { x: 0, y: 0 },
+      data: { kind: 'route', label: 'Route #12', detail: 'Healthy', status: 'HEALTHY', href: '/routes/12' },
+    }
+    render(<MemoryRouter>
+      <RuntimeFlowInspector snapshot={snapshot()} selectedStreamId={1}
+        selectedNode={routeNode} shownRoutes={1} totalRoutes={1} stale={false} />
+    </MemoryRouter>)
+    expect(screen.getByTestId('runtime-flow-inspector-window')).toHaveTextContent('last 1 min')
+    expect(screen.getByTestId('runtime-flow-inspector-window')).toHaveTextContent('last 5 min')
+    expect(screen.getByText('Delivery success · last 5 min')).toBeInTheDocument()
+    expect(screen.getByText('Route average latency · last 5 min')).toBeInTheDocument()
+    expect(screen.getByText('Gateway delivery · 1 min')).toBeInTheDocument()
+  })
+
   it('labels stale evidence rather than suggesting current health', () => {
     render(<MemoryRouter>
       <RuntimeFlowInspector snapshot={snapshot()} selectedStreamId={1}

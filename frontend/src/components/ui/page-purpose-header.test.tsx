@@ -89,3 +89,19 @@ describe('PagePurposeHeader', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 })
+
+describe('PagePurposeHeader Help button (B6)', () => {
+  it('keeps the Help button on one line and never shrinks it', () => {
+    render(
+      <PagePurposeHeader
+        title="Streams"
+        purpose="Where data enters."
+        help={{ title: 'Streams', intro: 'Intro', sections: [] }}
+        actions={<button type="button">Action</button>}
+      />,
+    )
+    const help = screen.getByTestId('page-help-open')
+    expect(help).toHaveClass('whitespace-nowrap', 'shrink-0')
+    expect(help.parentElement).toHaveClass('shrink-0')
+  })
+})

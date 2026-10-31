@@ -82,3 +82,16 @@ describe('field-first result inspection', () => {
     expect(screen.getByRole('status')).toHaveTextContent('200')
   })
 })
+
+describe('ProcessingPreviewDock layout (B6)', () => {
+  it('uses a stable shrinkable shell and marks the active stage with the accent alias', () => {
+    render(<ProcessingPreviewDock stages={[
+      { id: 'input', label: 'Input', truth: 'Preview', before: { a: 1 }, after: { a: 1 } },
+      { id: 'mapping', label: 'Mapping', truth: 'Preview' },
+    ]} />)
+    expect(screen.getByTestId('processing-preview-dock')).toHaveClass('w-full', 'min-w-0', 'max-w-full', 'border-default')
+    expect(screen.getByTestId('processing-preview-stage-input')).toHaveClass('border-accent')
+    expect(screen.getByTestId('processing-preview-stage-mapping')).toHaveClass('border-default')
+    expect(screen.getByRole('list', { name: 'Processing stage sequence' })).toHaveClass('grid-cols-1')
+  })
+})

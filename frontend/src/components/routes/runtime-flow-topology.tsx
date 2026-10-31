@@ -171,19 +171,19 @@ export function RuntimeFlowTopology({
       ref={containerRef}
       data-testid="runtime-data-flow-topology"
       aria-label="Runtime data flow topology"
-      className="control-runtime-flow-root border-b border-slate-200/80 bg-slate-50/50 px-4 py-4 dark:border-gdc-border dark:bg-gdc-panel/30 sm:px-6"
+      className="control-runtime-flow-root border-b border-default bg-surface-section px-4 py-4 sm:px-6"
     >
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Live data paths</h3>
-          <p className="mt-1 text-xs leading-5 text-slate-600 dark:text-gdc-mutedStrong">
+          <h3 className="text-title-sm text-fg">Live data paths</h3>
+          <p className="mt-1 text-body-sm text-fg-secondary">
             Source → Stream → Route → Destination · directional motion means gateway-reported 1-minute delivery rate,
             not individual packets or receiver acknowledgement.
           </p>
         </div>
         <span
           data-testid="runtime-data-flow-evidence"
-          className="rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:border-gdc-border dark:text-slate-200"
+          className="rounded-full border border-default px-3 py-1.5 text-body-sm font-semibold text-fg-secondary"
         >
           {topology.stale ? 'Unavailable / stale evidence · no motion' : 'Runtime snapshot · 1m delivery rate'}
         </span>

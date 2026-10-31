@@ -78,6 +78,31 @@ describe('StepRouteProcessing', () => {
     expect(screen.getByTestId('route-processing-list-card-r1')).toHaveTextContent('Shared')
   })
 
+  it('lays the Route detail and output aside out so the detail box is never squeezed or clipped', async () => {
+    render(
+      <MemoryRouter>
+        <StepRouteProcessing
+          state={readyState()}
+          onChangeMapping={() => {}}
+          onChangeMappingMode={() => {}}
+          onChangeFullEventJsonata={() => {}}
+          onChangeFullEventRegexConfigJson={() => {}}
+          onChangeEnrichment={() => {}}
+          onChangeDataProtection={() => {}}
+          onChangeDestinations={() => {}}
+        />
+      </MemoryRouter>,
+    )
+    // Stacked until 2xl (1536px): at 1440px the workspace column is too narrow for two columns.
+    const detailLayout = screen.getByTestId('route-processing-detail-layout')
+    expect(detailLayout).toHaveClass('min-w-0', '2xl:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]')
+    expect(detailLayout.className).not.toMatch(/(^|\s)xl:grid-cols/)
+    expect(screen.getByTestId('route-processing-split-layout')).toHaveClass('min-w-0')
+    const dock = screen.getByTestId('processing-preview-dock')
+    expect(dock).toHaveClass('w-full', 'min-w-0', 'max-w-full', 'bg-surface-card')
+    expect(screen.getByRole('list', { name: 'Processing stage sequence' })).toHaveClass('grid-cols-1', 'xl:grid-cols-5')
+  })
+
   it('shows shared processing concern tabs and switches editors', async () => {
     render(
       <MemoryRouter>

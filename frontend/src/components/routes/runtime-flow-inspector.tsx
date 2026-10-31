@@ -78,6 +78,9 @@ export function RuntimeFlowInspector({
         </p>
       ) : null}
       <h4 className="control-runtime-flow-inspector-title">{selectionLabel}</h4>
+      <p className="control-runtime-flow-inspector-window" data-testid="runtime-flow-inspector-window">
+        Windows: rate · last 1 min; success and latency · last 5 min
+      </p>
       <p className="control-runtime-flow-inspector-description">
         {detail ?? (totalRoutes + ' Route paths · ' + shownRoutes + ' shown. Select a node or path to inspect it.')}
       </p>
@@ -92,14 +95,14 @@ export function RuntimeFlowInspector({
         <div className="control-runtime-flow-inspector-stat">
           <ShieldCheck aria-hidden="true" size={17} />
           <div>
-            <span>Delivery success · 5 min</span>
+            <span>Delivery success · last 5 min</span>
             <strong>{route && !relationOnly ? formatPercent(route.success_rate_5m) : '—'}</strong>
           </div>
         </div>
         <div className="control-runtime-flow-inspector-stat">
           <Gauge aria-hidden="true" size={17} />
           <div>
-            <span>Route average latency</span>
+            <span>Route average latency · last 5 min</span>
             <strong>{route && !relationOnly ? formatLatency(route.avg_latency_ms) : '—'}</strong>
           </div>
         </div>

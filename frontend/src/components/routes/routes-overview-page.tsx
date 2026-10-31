@@ -29,6 +29,9 @@ import {
   selectGlobalKpi,
 } from '../../lib/operational-snapshot-selectors'
 import { cn } from '../../lib/utils'
+import { semanticCn } from '../ui/semantic-cn'
+import { MetricTile } from '../ui/metric-tile'
+import { buttonClassName } from '../ui/button-classes'
 import { useDebouncedValue } from '../../hooks/use-debounced-value'
 import { useDocumentVisible } from '../../hooks/use-document-visible'
 import { useOperationalEvidenceClock } from '../../hooks/use-operational-evidence-clock'
@@ -80,6 +83,11 @@ const ROUTES_HELP: PageHelpContent = {
   ],
 }
 
+/** The operational selectors format an unmeasured value as an em dash; the tile renders that as unknown, never as 0 or 100%. */
+function measuredText(formatted: string): string | null {
+  return formatted === '—' ? null : formatted
+}
+
 function MiniSparkline({ values, className }: { values: readonly number[]; className?: string }) {
   const w = 52
   const h = 18
@@ -106,7 +114,7 @@ function MiniSparkline({ values, className }: { values: readonly number[]; class
 function ThinProgress({ pct, toneClass }: { pct: number; toneClass: string }) {
   const width = `${Math.min(100, Math.max(0, pct))}%`
   return (
-    <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-slate-200/90 dark:bg-gdc-elevated">
+    <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-surface-hover">
       <div className={cn('h-full rounded-full transition-[width]', toneClass)} style={{ width }} />
     </div>
   )
@@ -481,7 +489,7 @@ export function RoutesOverviewPage() {
         actions={canCreateRoute ? (
           <Link
             to={routeEditPath('new')}
-            className="inline-flex h-9 items-center gap-1.5 rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white shadow-sm hover:bg-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500/40"
+            className={buttonClassName({ variant: 'primary', className: 'gap-1.5' })}
           >
             <Plus className="h-3.5 w-3.5" aria-hidden />
             Create Route
@@ -493,14 +501,14 @@ export function RoutesOverviewPage() {
         {operationalSnapshot ? (
           <div
             data-testid="routes-snapshot-evidence"
-            className={cn(
-              'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold',
+            className={semanticCn(
+              'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-caption font-semibold',
               evidenceState === 'current'
-                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-900 dark:text-emerald-100'
-                : 'border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-100',
+                ? 'border-status-success-border bg-status-success-subtle text-status-success'
+                : 'border-status-warning-border bg-status-warning-subtle text-status-warning',
             )}
           >
-            <span className={cn('h-1.5 w-1.5 rounded-full', evidenceState === 'current' ? 'bg-emerald-500' : 'bg-amber-500')} aria-hidden />
+            <span className={semanticCn('h-1.5 w-1.5 rounded-full', evidenceState === 'current' ? 'bg-status-success' : 'bg-status-warning')} aria-hidden />
             {evidenceState === 'current' ? 'SNAPSHOT'
               : loadError ? 'Unverified · last reported' : 'Stale snapshot · last reported'}
             <span className="font-normal opacity-80">
@@ -508,17 +516,17 @@ export function RoutesOverviewPage() {
             </span>
           </div>
         ) : loading ? (
-          <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
+          <span className="inline-flex items-center gap-1 text-caption text-fg-muted">
             <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
             Status…
           </span>
         ) : (
-          <span className="text-[11px] text-slate-500">Runtime status unavailable</span>
+          <span className="text-caption text-fg-muted">Runtime status unavailable</span>
         )}
         <span
           role="note"
           aria-label="Metrics time basis"
-          className="rounded-md border border-slate-200/90 bg-slate-50 px-2.5 py-1.5 text-[11px] font-medium text-slate-600 dark:border-gdc-border dark:bg-gdc-card dark:text-gdc-mutedStrong"
+          className="min-w-0 text-caption text-fg-muted"
         >
           Metrics basis: gateway throughput/errors 1m · delivery success 5m (weighted by 1m ingest) · latency 5m
         </span>
@@ -528,7 +536,7 @@ export function RoutesOverviewPage() {
             clearOperationalSnapshotCache()
             setRefreshTick((x) => x + 1)
           }}
-          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200/90 bg-white text-slate-700 shadow-sm hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200 dark:hover:bg-gdc-rowHover"
+          className={buttonClassName({ variant: 'secondary', className: 'w-9 px-0' })}
           aria-label="Refresh"
         >
           <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} aria-hidden />
@@ -551,61 +559,61 @@ export function RoutesOverviewPage() {
 
       <section aria-label="Route KPI summary" className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6 xl:gap-3">
         {evidenceState !== 'current' ? (
-          <p className="col-span-2 text-xs text-slate-600 dark:text-gdc-mutedStrong sm:col-span-3 xl:col-span-6">
+          <p className="col-span-2 text-body-sm text-fg-secondary sm:col-span-3 xl:col-span-6">
             {evidenceState === 'stale' ? 'Last reported metrics · current values not verified'
               : loading ? 'Loading runtime metrics…' : 'Runtime metrics not verified · snapshot unavailable'}
           </p>
         ) : null}
-        <div className="rounded-lg border border-slate-200/70 bg-white/90 px-3 py-2 dark:border-gdc-border/90 dark:bg-gdc-card">
-          <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500 dark:text-gdc-muted">Total Streams</p>
-          <p className="mt-0.5 text-lg font-semibold tabular-nums leading-none text-slate-900 dark:text-slate-50">
-            {globalKpi?.totalStreams ?? '—'}
-          </p>
-          <p className="mt-1 text-[11px] text-slate-500">{globalKpi ? `${globalKpi.runningStreams} running` : 'Not verified'}</p>
-        </div>
-        <div className="rounded-lg border border-slate-200/70 bg-white/90 px-3 py-2 dark:border-gdc-border/90 dark:bg-gdc-card">
-          <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500 dark:text-gdc-muted">Total Routes</p>
-          <p className="mt-0.5 text-lg font-semibold tabular-nums leading-none text-slate-900 dark:text-slate-50">
-            {globalKpi?.totalRoutes ?? '—'}
-          </p>
-          <p className="mt-1 text-[11px] text-slate-500">{globalKpi ? `${globalKpi.enabledRoutes} enabled` : 'Not verified'}</p>
-        </div>
-        <div className="rounded-lg border border-slate-200/70 bg-white/90 px-3 py-2 dark:border-gdc-border/90 dark:bg-gdc-card">
-          <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500 dark:text-gdc-muted">Total Throughput</p>
-          <p className="mt-0.5 text-lg font-semibold tabular-nums leading-none text-slate-900 dark:text-slate-50">
-            {formatOperationalEps(globalKpi?.eps1m)}
-          </p>
-          {totalEps !== null ? (
-            <div className="mt-1.5 text-violet-600 dark:text-violet-400">
+        <MetricTile
+          data-testid="routes-kpi-total-streams"
+          label="Total Streams"
+          value={globalKpi?.totalStreams ?? null}
+          unknownLabel="—"
+          caption={globalKpi ? `${globalKpi.runningStreams} running` : 'Not verified'}
+        />
+        <MetricTile
+          data-testid="routes-kpi-total-routes"
+          label="Total Routes"
+          value={globalKpi?.totalRoutes ?? null}
+          unknownLabel="—"
+          caption={globalKpi ? `${globalKpi.enabledRoutes} enabled` : 'Not verified'}
+        />
+        <MetricTile
+          data-testid="routes-kpi-throughput"
+          label="Total Throughput"
+          value={measuredText(formatOperationalEps(globalKpi?.eps1m))}
+          unknownLabel="—"
+          caption={totalEps !== null ? (
+            <span className="block text-accent">
               <MiniSparkline values={throughputSpark} />
-            </div>
-          ) : null}
-        </div>
-        <div className="rounded-lg border border-slate-200/70 bg-white/90 px-3 py-2 dark:border-gdc-border/90 dark:bg-gdc-card">
-          <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500 dark:text-gdc-muted">Delivery Success Rate</p>
-          <p className="mt-0.5 text-lg font-semibold tabular-nums leading-none text-slate-900 dark:text-slate-50">
-            {formatOperationalSuccessRate(deliverySuccessRate)}
-          </p>
-          {deliverySuccessRate !== null ? <ThinProgress pct={deliverySuccessRate} toneClass="bg-emerald-500" /> : null}
-        </div>
-        <div className="rounded-lg border border-slate-200/70 bg-white/90 px-3 py-2 dark:border-gdc-border/90 dark:bg-gdc-card">
-          <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500 dark:text-gdc-muted">Error Rate</p>
-          <p className="mt-0.5 text-lg font-semibold tabular-nums leading-none text-slate-900 dark:text-slate-50">
-            {formatOperationalSuccessRate(globalErrorRate)}
-          </p>
-          {deliverySuccessRate !== null ? (
-            <div className="mt-1.5 text-red-500 dark:text-red-400">
+            </span>
+          ) : undefined}
+        />
+        <MetricTile
+          data-testid="routes-kpi-delivery-success"
+          label="Delivery Success Rate"
+          value={measuredText(formatOperationalSuccessRate(deliverySuccessRate))}
+          unknownLabel="—"
+          caption={deliverySuccessRate !== null ? <ThinProgress pct={deliverySuccessRate} toneClass="bg-status-success" /> : undefined}
+        />
+        <MetricTile
+          data-testid="routes-kpi-error-rate"
+          label="Error Rate"
+          value={measuredText(formatOperationalSuccessRate(globalErrorRate))}
+          unknownLabel="—"
+          caption={deliverySuccessRate !== null ? (
+            <span className="block text-status-critical">
               <MiniSparkline values={successSpark.map((v) => 100 - v)} />
-            </div>
-          ) : null}
-        </div>
-        <div className="rounded-lg border border-slate-200/70 bg-white/90 px-3 py-2 dark:border-gdc-border/90 dark:bg-gdc-card">
-          <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500 dark:text-gdc-muted">Avg Latency</p>
-          <p className="mt-0.5 text-lg font-semibold tabular-nums leading-none text-slate-900 dark:text-slate-50">
-            {globalKpi?.avgLatencyMs != null ? `${Math.round(globalKpi.avgLatencyMs)} ms` : '—'}
-          </p>
-          <p className="mt-1 text-[11px] text-slate-500">{evidenceState === 'current' ? 'Operational snapshot · 5m window' : evidenceState === 'stale' ? 'Last reported · latency unverified' : 'Latency not verified'}</p>
-        </div>
+            </span>
+          ) : undefined}
+        />
+        <MetricTile
+          data-testid="routes-kpi-latency"
+          label="Avg Latency"
+          value={globalKpi?.avgLatencyMs != null ? `${Math.round(globalKpi.avgLatencyMs)} ms` : null}
+          unknownLabel="—"
+          caption={evidenceState === 'current' ? 'Operational snapshot · 5m window' : evidenceState === 'stale' ? 'Last reported · latency unverified' : 'Latency not verified'}
+        />
       </section>
 
       <details className="overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-sm dark:border-gdc-border dark:bg-gdc-card">

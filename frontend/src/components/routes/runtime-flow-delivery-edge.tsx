@@ -29,9 +29,9 @@ export function RuntimeFlowDeliveryEdge({
         <defs>
           <linearGradient id={gradientId} gradientUnits="userSpaceOnUse"
             x1={sourceX} y1={sourceY} x2={targetX} y2={targetY}>
-            <stop offset="0%" stopColor="#3b82f6" />
-            <stop offset="48%" stopColor="#22c7f3" />
-            <stop offset="100%" stopColor="#31deb6" />
+            <stop offset="0%" style={{ stopColor: 'var(--dr-status-info)' }} />
+            <stop offset="48%" style={{ stopColor: 'var(--dr-action-primary)' }} />
+            <stop offset="100%" style={{ stopColor: 'var(--dr-status-success)' }} />
           </linearGradient>
         </defs>
       ) : null}

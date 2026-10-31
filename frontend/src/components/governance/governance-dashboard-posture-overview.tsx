@@ -3,11 +3,11 @@
  * Uses backend summary risk/health counts only; does not invent severity semantics.
  */
 
-import { AlertTriangle, CheckCircle2, CircleHelp, XCircle } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import type { GovernanceDashboardSummaryResponse } from '../../api/gdcGovernanceDashboard'
 import { NAV_PATH } from '../../config/nav-paths'
-import { cn } from '../../lib/utils'
+import { MetricTile } from '../ui/metric-tile'
+import { StatusChip, type StatusChipStatus } from '../ui/status-chip'
 
 export type GovernancePosture = 'healthy' | 'warning' | 'critical' | 'unknown'
 
@@ -20,24 +20,18 @@ export function deriveGovernancePosture(summary: GovernanceDashboardSummaryRespo
   return 'healthy'
 }
 
-function postureShellClass(posture: GovernancePosture): string {
-  if (posture === 'critical') {
-    return 'border-red-300/80 bg-red-50 dark:border-red-500/40 dark:bg-red-950/30'
-  }
-  if (posture === 'warning') {
-    return 'border-amber-300/80 bg-amber-50 dark:border-amber-500/35 dark:bg-amber-950/25'
-  }
-  if (posture === 'unknown') {
-    return 'border-slate-300/80 bg-slate-50 dark:border-gdc-border dark:bg-gdc-card'
-  }
-  return 'border-emerald-300/80 bg-emerald-50 dark:border-emerald-500/35 dark:bg-emerald-950/25'
-}
-
 function postureLabel(posture: GovernancePosture): string {
   if (posture === 'critical') return 'Critical'
   if (posture === 'warning') return 'Warning'
   if (posture === 'unknown') return 'Not verified'
   return 'Healthy'
+}
+
+const POSTURE_CHIP_STATUS: Record<GovernancePosture, StatusChipStatus> = {
+  healthy: 'healthy',
+  warning: 'warning',
+  critical: 'critical',
+  unknown: 'unknown',
 }
 
 function postureDescription(summary: GovernanceDashboardSummaryResponse | null, posture: GovernancePosture): string {
@@ -71,39 +65,21 @@ function formatCount(value: number): string {
 
 type CountProps = {
   label: string
-  value: string
+  /** null means the summary is not available: rendered as unknown, never as 0. */
+  value: string | null
   testId: string
-  emphasize?: 'warning' | 'critical' | 'success'
-  to?: string
+  to: string
 }
 
-function CompactCount({ label, value, testId, emphasize, to }: CountProps) {
-  const body = (
-    <div
-      data-testid={testId}
-      className="min-w-[4.5rem] rounded-lg border border-slate-200/70 bg-white/70 px-3 py-2 dark:border-gdc-border dark:bg-gdc-card/70"
+function CompactCount({ label, value, testId, to }: CountProps) {
+  return (
+    <Link
+      to={to}
+      className="block min-w-[5.5rem] rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
     >
-      <p className="text-xs font-medium text-slate-500 dark:text-gdc-muted">{label}</p>
-      <p
-        className={cn(
-          'mt-0.5 text-xl font-semibold tabular-nums text-slate-900 dark:text-slate-50',
-          emphasize === 'critical' && value !== '0' && 'text-red-600 dark:text-red-400',
-          emphasize === 'warning' && value !== '0' && 'text-amber-600 dark:text-amber-400',
-          emphasize === 'success' && value !== '0' && 'text-emerald-600 dark:text-emerald-400',
-        )}
-      >
-        {value}
-      </p>
-    </div>
+      <MetricTile data-testid={testId} label={label} value={value} unknownLabel="—" />
+    </Link>
   )
-  if (to) {
-    return (
-      <Link to={to} className="block transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40">
-        {body}
-      </Link>
-    )
-  }
-  return body
 }
 
 export function GovernanceDashboardPostureOverview({
@@ -116,7 +92,7 @@ export function GovernanceDashboardPostureOverview({
   if (loading && !summary) {
     return (
       <div
-        className="h-28 animate-pulse rounded-xl bg-slate-200/60 dark:bg-gdc-elevated"
+        className="h-28 animate-pulse rounded-lg bg-surface-hover"
         aria-hidden
         data-testid="governance-posture-overview-loading"
       />
@@ -124,83 +100,52 @@ export function GovernanceDashboardPostureOverview({
   }
 
   const posture = deriveGovernancePosture(summary)
-  const Icon =
-    posture === 'healthy'
-      ? CheckCircle2
-      : posture === 'critical'
-        ? XCircle
-        : posture === 'unknown'
-          ? CircleHelp
-          : AlertTriangle
-  const openViolations = summary?.open_violations ?? 0
-  const criticalViolations = summary?.risk.critical ?? 0
-  const quarantined = summary?.quarantined_events ?? 0
-  const pendingApprovals = summary?.pending_approvals ?? 0
+  const countOf = (pick: (s: GovernanceDashboardSummaryResponse) => number): string | null =>
+    summary ? formatCount(pick(summary)) : null
 
   return (
     <section
       aria-label="Governance policy posture"
       data-testid="governance-posture-overview"
-      className={cn('rounded-xl border px-5 py-4 shadow-sm', postureShellClass(posture))}
+      className="rounded-lg border border-default bg-surface-card px-4 py-3"
     >
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex min-w-0 items-start gap-3">
-          <span
-            className={cn(
-              'mt-0.5 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl',
-              posture === 'healthy' && 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
-              posture === 'warning' && 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
-              posture === 'critical' && 'bg-red-500/15 text-red-700 dark:text-red-300',
-              posture === 'unknown' && 'bg-slate-500/15 text-slate-700 dark:text-slate-300',
-            )}
-          >
-            <Icon className="h-5 w-5" aria-hidden />
-          </span>
-          <div className="min-w-0">
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-600 dark:text-slate-300">
-              Policy posture
-            </p>
-            <p
-              className="mt-0.5 text-lg font-semibold text-slate-900 dark:text-slate-50"
-              data-testid="dashboard-kpi-overall-risk"
-            >
-              {postureLabel(posture)}
-            </p>
-            <p className="mt-1 text-sm text-slate-600 dark:text-gdc-muted" data-testid="governance-posture-summary">
-              {postureDescription(summary, posture)}
-            </p>
-            <p className="mt-1 text-xs text-slate-500 dark:text-gdc-muted">
-              Counts come from the governance summary API · open a target below to investigate
-            </p>
-          </div>
+        <div className="min-w-0 space-y-1">
+          <p className="text-label text-fg-muted">Policy posture</p>
+          <StatusChip status={POSTURE_CHIP_STATUS[posture]} size="md" data-testid="dashboard-kpi-overall-risk">
+            {postureLabel(posture)}
+          </StatusChip>
+          <p className="text-body-sm text-fg-secondary" data-testid="governance-posture-summary">
+            {postureDescription(summary, posture)}
+          </p>
+          <p className="text-caption text-fg-muted">
+            Counts come from the governance summary API · open a target below to investigate
+          </p>
         </div>
 
         <div className="flex flex-wrap gap-2" data-testid="dashboard-kpi-strip">
           <CompactCount
             label="Open"
-            value={formatCount(openViolations)}
+            value={countOf((s) => s.open_violations)}
             testId="dashboard-kpi-violations"
-            emphasize="warning"
             to={NAV_PATH.governanceViolations}
           />
           <CompactCount
             label="Critical"
-            value={formatCount(criticalViolations)}
+            value={countOf((s) => s.risk.critical)}
             testId="dashboard-kpi-critical-violations"
-            emphasize="critical"
             to={NAV_PATH.governanceViolations}
           />
           <CompactCount
             label="Quarantine"
-            value={formatCount(quarantined)}
+            value={countOf((s) => s.quarantined_events)}
             testId="dashboard-kpi-quarantine"
             to={NAV_PATH.governanceQuarantine}
           />
           <CompactCount
             label="Approvals"
-            value={formatCount(pendingApprovals)}
+            value={countOf((s) => s.pending_approvals)}
             testId="dashboard-kpi-pending-approvals"
-            emphasize="warning"
             to={NAV_PATH.governanceApprovals}
           />
         </div>
