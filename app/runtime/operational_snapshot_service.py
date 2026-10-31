@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
@@ -10,7 +11,10 @@ from app.runtime.operational_snapshot_repository import (
     LastOutcomeRow,
     OperationalSnapshotBulkData,
     PhysicalOperationalRows,
+    SourceFailureRow,
     WindowAggregateRow,
+    fetch_connector_names,
+    fetch_stream_source_failures,
     load_operational_snapshot_bulk_data,
     load_physical_operational_rows,
 )
@@ -313,9 +317,106 @@ def should_flag_checkpoint_stale(stream: OperationalStreamSnapshot) -> bool:
 def build_operational_snapshot(db: Session) -> OperationalSnapshotResponse:
     physical = load_physical_operational_rows(db)
     if physical is not None:
-        return _assemble_snapshot_from_physical(physical)
-    bulk = load_operational_snapshot_bulk_data(db)
-    return _assemble_snapshot(bulk)
+        snapshot = _assemble_snapshot_from_physical(physical)
+    else:
+        bulk = load_operational_snapshot_bulk_data(db)
+        snapshot = _assemble_snapshot(bulk)
+    return _with_source_failure_problems(db, snapshot)
+
+
+_SOURCE_HTTP_STATUS_RE = re.compile(r"\bHTTP\s+(\d{3})\b")
+
+
+def _source_failure_http_status(row: SourceFailureRow) -> int | None:
+    if row.last_source_failure_http_status is not None:
+        return row.last_source_failure_http_status
+    match = _SOURCE_HTTP_STATUS_RE.search(row.last_source_failure_message or "")
+    return int(match.group(1)) if match else None
+
+
+def build_source_failure_problems(
+    *,
+    stream_snapshots: list[OperationalStreamSnapshot],
+    source_failures: dict[int, SourceFailureRow],
+    connector_names: dict[int, str],
+) -> list[OperationalProblem]:
+    """Attribute Source/auth collection failures to the Stream and its Connector.
+
+    Evidence only: a Stream needs a recorded ``SOURCE_FETCH_FAILED`` run failure that
+    no newer successful fetch has superseded. Disabled and operator-stopped Streams
+    carry no verdict, and a Stream with no observation or zero traffic yields nothing.
+    The raw upstream message (URL, query string) is never copied into the problem.
+    """
+
+    problems: list[OperationalProblem] = []
+    for stream in stream_snapshots:
+        if not stream.enabled or is_operator_stopped_status(stream.status):
+            continue
+        failure = source_failures.get(stream.stream_id)
+        if failure is None:
+            continue
+        http_status = _source_failure_http_status(failure)
+        connector_name = (
+            connector_names.get(stream.connector_id) if stream.connector_id is not None else None
+        )
+        if http_status == 401:
+            title = f"Stream {stream.stream_name}: source authentication failed (HTTP 401)"
+            error_code = "SOURCE_AUTH_FAILED"
+        elif http_status == 403:
+            title = f"Stream {stream.stream_name}: source access denied (HTTP 403)"
+            error_code = "SOURCE_AUTH_FAILED"
+        else:
+            suffix = f" (HTTP {http_status})" if http_status is not None else ""
+            title = f"Stream {stream.stream_name}: source fetch failing{suffix}"
+            error_code = "SOURCE_FETCH_FAILED"
+        where = f"Connector {connector_name}" if connector_name else "its Connector"
+        problems.append(
+            OperationalProblem(
+                severity="critical",
+                scope="stream",
+                stream_id=stream.stream_id,
+                title=title,
+                message=(
+                    f"The latest source request through {where} failed"
+                    f"{f' with HTTP {http_status}' if http_status is not None else ''}. "
+                    "Check the Connector authentication and the source endpoint."
+                ),
+                last_seen_at=failure.last_source_failure_at,
+                error_code=error_code,
+                http_status=http_status,
+                connector_id=stream.connector_id,
+                connector_name=connector_name,
+            )
+        )
+    return problems
+
+
+def _with_source_failure_problems(
+    db: Session, snapshot: OperationalSnapshotResponse
+) -> OperationalSnapshotResponse:
+    """Additive: append Source-failure problems without changing any health verdict."""
+
+    candidates = [s for s in snapshot.streams if s.enabled and not is_operator_stopped_status(s.status)]
+    if not candidates:
+        return snapshot
+    source_failures = fetch_stream_source_failures(db, group_ids=[s.stream_id for s in candidates])
+    if not source_failures:
+        return snapshot
+    connector_names = fetch_connector_names(
+        db,
+        connector_ids=[
+            s.connector_id for s in candidates
+            if s.stream_id in source_failures and s.connector_id is not None
+        ],
+    )
+    extra = build_source_failure_problems(
+        stream_snapshots=candidates,
+        source_failures=source_failures,
+        connector_names=connector_names,
+    )
+    if not extra:
+        return snapshot
+    return snapshot.model_copy(update={"problems": [*extra, *snapshot.problems]})
 
 
 def _assemble_snapshot_from_physical(rows: PhysicalOperationalRows) -> OperationalSnapshotResponse:

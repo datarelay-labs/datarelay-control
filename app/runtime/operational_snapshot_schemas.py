@@ -97,6 +97,12 @@ class OperationalProblem(BaseModel):
     title: str
     message: str
     last_seen_at: datetime | None = None
+    # Optional, additive attribution for Source/Connector problems (API compatible:
+    # absent for Stream/Route/Destination problems that do not carry it).
+    error_code: str | None = None
+    http_status: int | None = None
+    connector_id: int | None = None
+    connector_name: str | None = None
 
 
 class OperationalSnapshotResponse(BaseModel):
