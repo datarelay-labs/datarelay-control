@@ -132,6 +132,22 @@ export function NewStreamWizardPage() {
   const [isStarting, setIsStarting] = useState(false)
   const [draftNotice, setDraftNotice] = useState<string | null>(null)
   const draftNoticeRef = useRef<HTMLParagraphElement | null>(null)
+  const draftNoticeTimerRef = useRef<number | null>(null)
+  // One timer for the transient notice; cleared on unmount so it never updates an unmounted page.
+  const flashDraftNotice = useCallback((message: string, ms: number) => {
+    if (draftNoticeTimerRef.current != null) window.clearTimeout(draftNoticeTimerRef.current)
+    setDraftNotice(message)
+    draftNoticeTimerRef.current = window.setTimeout(() => {
+      draftNoticeTimerRef.current = null
+      setDraftNotice(null)
+    }, ms)
+  }, [])
+  useEffect(
+    () => () => {
+      if (draftNoticeTimerRef.current != null) window.clearTimeout(draftNoticeTimerRef.current)
+    },
+    [],
+  )
   const [operationalSampleId, setOperationalSampleId] = useState<OperationalSampleId | null>(null)
   const [dataProtectionDrawerOpen, setDataProtectionDrawerOpen] = useState(false)
   const [connectorCreateOpen, setConnectorCreateOpen] = useState(false)
@@ -185,9 +201,8 @@ export function NewStreamWizardPage() {
     setPendingDraft(null)
     setDraftBannerVisible(false)
 
-    setDraftNotice('Draft restored from local storage.')
-    window.setTimeout(() => setDraftNotice(null), 4000)
-  }, [pendingDraft, wizardSteps])
+    flashDraftNotice('Draft restored from local storage.', 4000)
+  }, [flashDraftNotice, pendingDraft, wizardSteps])
 
   const handleStartFresh = useCallback(() => {
     setRecentlyCreatedDestinationId(null)
@@ -939,16 +954,15 @@ export function NewStreamWizardPage() {
       saveWizardDraft(state, currentStepKey)
       // The notice sits at the top of the page while the button is at the bottom: say exactly where the
       // draft lives, keep it up long enough to read, and bring it into view (F-012).
-      setDraftNotice(
+      flashDraftNotice(
         'Draft saved in this browser only. Nothing is stored on the server and no Stream exists until you select Create & Start Stream.',
+        10000,
       )
-      window.setTimeout(() => setDraftNotice(null), 10000)
       window.requestAnimationFrame(() => draftNoticeRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }))
     } catch {
-      setDraftNotice('Unable to save draft in this browser. Check that browser storage is available.')
-      window.setTimeout(() => setDraftNotice(null), 10000)
+      flashDraftNotice('Unable to save draft in this browser. Check that browser storage is available.', 10000)
     }
-  }, [currentStepKey, state])
+  }, [currentStepKey, flashDraftNotice, state])
 
   const preserveDraftBeforeDestinationPrerequisite = useCallback(() => {
     try {
@@ -958,11 +972,10 @@ export function NewStreamWizardPage() {
       allowNextNavigation(NAV_PATH.destinations)
       return true
     } catch {
-      setDraftNotice('Unable to save draft. Stay in the wizard and try again.')
-      window.setTimeout(() => setDraftNotice(null), 4000)
+      flashDraftNotice('Unable to save draft. Stay in the wizard and try again.', 4000)
       return false
     }
-  }, [allowNextNavigation, state])
+  }, [allowNextNavigation, flashDraftNotice, state])
 
   const handleCreateAnother = useCallback(() => {
     setRecentlyCreatedDestinationId(null)
