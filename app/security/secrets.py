@@ -310,6 +310,14 @@ def mask_url_query_secrets(url: str) -> str:
     return urlunparse(parsed._replace(query=urlencode(pairs, doseq=True)))
 
 
+# A value that is only a template placeholder ("{{login_password}}", "${TOKEN}") references a secret, it is not one.
+_PLACEHOLDER_RE = re.compile(r"\s*(\{\{[^{}]+\}\}|\$\{[^{}]+\})\s*")
+
+
+def is_template_placeholder(value: Any) -> bool:
+    return isinstance(value, str) and _PLACEHOLDER_RE.fullmatch(value) is not None
+
+
 def _mask_all_leaves(value: Any) -> Any:
     """Mask every non-empty scalar below a secret-named container (keys are kept)."""
 
@@ -317,7 +325,7 @@ def _mask_all_leaves(value: Any) -> Any:
         return {k: _mask_all_leaves(v) for k, v in value.items()}
     if isinstance(value, list):
         return [_mask_all_leaves(v) for v in value]
-    if value is None or value == "" or isinstance(value, bool):
+    if value is None or value == "" or isinstance(value, bool) or is_template_placeholder(value):
         return value
     return _MASK
 
@@ -370,7 +378,7 @@ def collect_secret_literals(value: Any, *, declared: frozenset[str] | None = Non
         elif isinstance(node, list):
             for v in node:
                 _leaves(v)
-        elif isinstance(node, str) and node.strip() and node != _MASK:
+        elif isinstance(node, str) and node.strip() and node != _MASK and not is_template_placeholder(node):
             out.append(node)
 
     def _walk(node: Any) -> None:

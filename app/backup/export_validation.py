@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from app.security.secrets import is_sensitive_field_name
+from app.security.secrets import is_sensitive_field_name, is_template_placeholder
 
 _MASK = "********"
 
@@ -48,7 +48,13 @@ _PRESERVED_AUTH_REFERENCE_KEYS = frozenset(
 def _is_marker(val: Any) -> bool:
     """True for values that carry no secret: empty, boolean flags, or the masked sentinel."""
 
-    return val is None or isinstance(val, bool) or val == "" or str(val).strip() == _MASK
+    return (
+        val is None
+        or isinstance(val, bool)
+        or val == ""
+        or str(val).strip() == _MASK
+        or is_template_placeholder(val)
+    )
 
 
 def _sensitive_leaf_values(obj: Any, path: str = "") -> list[tuple[str, Any]]:

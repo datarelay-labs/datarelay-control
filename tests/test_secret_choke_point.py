@@ -209,6 +209,20 @@ def test_mask_secrets_keeps_empty_and_boolean_markers() -> None:
     assert out["tokens"] == ["********", "********"]
 
 
+def test_template_placeholders_are_references_not_secrets() -> None:
+    template = {"username": "{{login_username}}", "password": "{{login_password}}", "csrf_token": "real-csrf-value-123"}
+    out = mask_secrets({"login_body_template": template})["login_body_template"]
+    assert out["password"] == "{{login_password}}"
+    assert out["csrf_token"] == "********"
+    assert collect_secret_literals({"login_body_template": template}) == ["real-csrf-value-123"]
+
+    from app.backup.export_validation import build_export_integrity_report
+
+    bundle = {"sources": [{"auth_json": {"login_body_template": out}}]}
+    report = build_export_integrity_report(bundle, known_secret_literals=["real-csrf-value-123"])
+    assert report["secrets_masked"] is True
+
+
 def test_source_secret_registry_covers_every_connector_builder_field() -> None:
     cfg = mask_source_config_json(
         "REMOTE_FILE_POLLING",
