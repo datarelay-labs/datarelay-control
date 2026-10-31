@@ -180,26 +180,31 @@ function NotificationCard({ item }: { item: GovernanceOperationsNotificationQueu
   )
 }
 
-function deriveOpsPosture(summary: GovernanceOperationsSummaryResponse | null): 'healthy' | 'warning' | 'critical' {
-  if (!summary) return 'healthy'
+type OpsPosture = 'healthy' | 'warning' | 'critical' | 'unknown'
+
+function deriveOpsPosture(summary: GovernanceOperationsSummaryResponse | null): OpsPosture {
+  // A missing or failed summary is not evidence of a clear queue.
+  if (!summary) return 'unknown'
   if (summary.failed_replays > 0 || summary.failed_notifications > 0) return 'critical'
   if (summary.open_violations > 0 || summary.pending_approvals > 0 || summary.quarantined_events > 0) return 'warning'
   return 'healthy'
 }
 
-function opsPostureShell(posture: 'healthy' | 'warning' | 'critical'): string {
+function opsPostureShell(posture: OpsPosture): string {
   if (posture === 'critical') return 'border-red-300/80 bg-red-50 dark:border-red-500/40 dark:bg-red-950/30'
   if (posture === 'warning') return 'border-amber-300/80 bg-amber-50 dark:border-amber-500/35 dark:bg-amber-950/25'
+  if (posture === 'unknown') return 'border-slate-300/80 bg-slate-50 dark:border-gdc-border dark:bg-gdc-card'
   return 'border-emerald-300/80 bg-emerald-50 dark:border-emerald-500/35 dark:bg-emerald-950/25'
 }
 
-function opsPostureLabel(posture: 'healthy' | 'warning' | 'critical'): string {
+function opsPostureLabel(posture: OpsPosture): string {
   if (posture === 'critical') return 'Needs recovery'
   if (posture === 'warning') return 'Needs action'
+  if (posture === 'unknown') return 'Not verified'
   return 'Clear'
 }
 
-function opsPostureDescription(summary: GovernanceOperationsSummaryResponse | null, posture: 'healthy' | 'warning' | 'critical'): string {
+function opsPostureDescription(summary: GovernanceOperationsSummaryResponse | null, posture: OpsPosture): string {
   if (!summary) return 'Operations summary is still loading or unavailable'
   if (posture === 'critical') {
     if (summary.failed_replays > 0) {

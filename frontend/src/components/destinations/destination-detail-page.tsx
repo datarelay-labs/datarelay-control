@@ -453,10 +453,12 @@ export function RoutesTable({
                   <td className={opTd}>{r.deliveryMode}</td>
                   <td className={opTd}>
                     <StatusBadge
-                      tone={!verified ? 'neutral' : r.status === 'ACTIVE' ? 'success' : r.status === 'ERROR' ? 'error' : 'warning'}
+                      tone={!verified || r.status === 'IDLE' ? 'neutral' : r.status === 'ACTIVE' ? 'success' : r.status === 'ERROR' ? 'error' : 'warning'}
                       className="uppercase"
                     >
-                      {verified ? r.status : lastReported ? `Last reported ${r.status}` : 'Unverified'}
+                      {verified
+                        ? r.status === 'IDLE' ? 'Not observed' : r.status
+                        : lastReported ? `Last reported ${r.status === 'IDLE' ? 'Not observed' : r.status}` : 'Unverified'}
                     </StatusBadge>
                   </td>
                   <td className={cn(opTd, 'tabular-nums')}>{verified ? formatThroughputEps(r.epsAvg) : '—'}</td>

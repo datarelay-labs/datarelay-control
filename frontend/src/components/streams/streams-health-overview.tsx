@@ -1,35 +1,50 @@
-import { AlertTriangle, CheckCircle2, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, CircleHelp, Minus, XCircle } from 'lucide-react'
 import { semanticCn } from '../ui/semantic-cn'
 import type { StreamsPageKpi } from '../../lib/stream-console-metrics'
 import type { StreamOperationsSummary } from '../../lib/streams-console-operations'
 
-type Posture = 'healthy' | 'warning' | 'critical'
+/** `unknown`: active streams without a verdict yet. `inactive`: nothing active to judge (never Healthy). */
+type Posture = 'healthy' | 'warning' | 'critical' | 'unknown' | 'inactive'
 
-function postureFromKpi(kpi: StreamsPageKpi): Posture {
+function postureFromKpi(kpi: StreamsPageKpi, summary: StreamOperationsSummary): Posture {
+  // Critical and warning always win; an unobserved stream never masks them (and never reads Healthy).
   if (kpi.criticalStreams > 0) return 'critical'
   if (kpi.warningStreams > 0 || kpi.totalIssues > 0) return 'warning'
+  if ((summary.unknown ?? 0) > 0) return 'unknown'
+  if (kpi.healthyStreams === 0) return 'inactive'
   return 'healthy'
 }
 
 function postureShellClass(posture: Posture): string {
   if (posture === 'critical') return 'border-status-critical-border bg-status-critical-subtle'
   if (posture === 'warning') return 'border-status-warning-border bg-status-warning-subtle'
+  if (posture === 'unknown' || posture === 'inactive') return 'border-status-unknown-border bg-status-unknown-subtle'
   return 'border-status-success-border bg-status-success-subtle'
 }
 
 function postureTextClass(posture: Posture): string {
   if (posture === 'critical') return 'text-status-critical'
   if (posture === 'warning') return 'text-status-warning'
+  if (posture === 'unknown' || posture === 'inactive') return 'text-status-unknown'
   return 'text-status-success'
 }
 
 function postureLabel(posture: Posture): string {
   if (posture === 'critical') return 'Critical'
   if (posture === 'warning') return 'Warning'
+  if (posture === 'unknown') return 'Not verified'
+  if (posture === 'inactive') return 'No active streams'
   return 'Healthy'
 }
 
-function postureDescription(kpi: StreamsPageKpi, posture: Posture): string {
+function postureDescription(kpi: StreamsPageKpi, summary: StreamOperationsSummary, posture: Posture): string {
+  if (posture === 'unknown') {
+    const n = summary.unknown
+    return `${n} active stream${n === 1 ? '' : 's'} not observed yet`
+  }
+  if (posture === 'inactive') {
+    return kpi.totalStreams === 0 ? 'No streams are configured yet' : 'All streams are stopped or have no data yet'
+  }
   if (posture === 'critical') {
     return `${kpi.criticalStreams} critical stream${kpi.criticalStreams === 1 ? '' : 's'} need attention`
   }
@@ -38,6 +53,9 @@ function postureDescription(kpi: StreamsPageKpi, posture: Posture): string {
       return `${kpi.warningStreams} stream${kpi.warningStreams === 1 ? '' : 's'} require attention`
     }
     return `${kpi.totalIssues} active issue${kpi.totalIssues === 1 ? '' : 's'} detected`
+  }
+  if (kpi.noDataStreams > 0) {
+    return `${kpi.healthyStreams} healthy stream${kpi.healthyStreams === 1 ? '' : 's'} · ${kpi.noDataStreams} stopped or without data`
   }
   return 'All stream groups are operating normally'
 }
@@ -91,8 +109,17 @@ export function StreamsHealthOverview({
     )
   }
 
-  const posture = postureFromKpi(kpi)
-  const Icon = posture === 'healthy' ? CheckCircle2 : posture === 'critical' ? XCircle : AlertTriangle
+  const posture = postureFromKpi(kpi, summary)
+  const Icon =
+    posture === 'healthy'
+      ? CheckCircle2
+      : posture === 'critical'
+        ? XCircle
+        : posture === 'unknown'
+          ? CircleHelp
+          : posture === 'inactive'
+            ? Minus
+            : AlertTriangle
 
   return (
     <section
@@ -111,7 +138,7 @@ export function StreamsHealthOverview({
             >
               {postureLabel(posture)}
             </p>
-            <p className="mt-1 text-body-sm text-fg-secondary">{postureDescription(kpi, posture)}</p>
+            <p className="mt-1 text-body-sm text-fg-secondary">{postureDescription(kpi, summary, posture)}</p>
             <p className="mt-1 text-body-sm text-fg-muted">
               {groupCount} group{groupCount === 1 ? '' : 's'} · {kpi.totalStreams} stream
               {kpi.totalStreams === 1 ? '' : 's'}
@@ -143,6 +170,13 @@ export function StreamsHealthOverview({
             testId="streams-ops-summary-critical"
             emphasize="critical"
           />
+          {summary.unknown > 0 ? (
+            <CompactCount
+              label="Not verified"
+              value={summary.unknown}
+              testId="streams-ops-summary-unknown"
+            />
+          ) : null}
           <CompactCount
             label="Issues"
             value={summary.issues}

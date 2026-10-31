@@ -3,6 +3,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  CircleDashed,
   Loader2,
   MinusCircle,
   MoreHorizontal,
@@ -381,6 +382,7 @@ function StreamSeverityIcon({ row, metricsWindow }: { row: StreamConsoleRow; met
   if (kind === 'critical') return <XCircle className="h-4 w-4 shrink-0 text-red-500" aria-hidden />
   if (kind === 'warn') return <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" aria-hidden />
   if (kind === 'stopped') return <MinusCircle className="h-4 w-4 shrink-0 text-slate-400" aria-hidden />
+  if (kind === 'unknown') return <CircleDashed className="h-4 w-4 shrink-0 text-slate-400" aria-hidden />
   return <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" aria-hidden />
 }
 
@@ -398,7 +400,7 @@ function StreamOperationalStatusBadge({
       ? 'border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-300'
       : severity === 'warning' || label === 'Warning'
         ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300'
-        : label === 'Stopped' || label === 'Disabled' || label === 'No Data'
+        : label === 'Stopped' || label === 'Disabled' || label === 'No Data' || label === 'Not verified'
           ? 'border-slate-400/40 bg-slate-500/10 text-slate-600 dark:text-slate-400'
           : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
   return (

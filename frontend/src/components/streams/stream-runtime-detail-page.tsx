@@ -95,7 +95,7 @@ import { StreamDetailTabNav, useStreamDetailTab } from './stream-detail-tab-nav'
 import { StreamRecentIssuesPanel } from './stream-recent-issues-panel'
 import { StreamWhyPanel } from './stream-why-panel'
 import { StreamInformationPanel } from './stream-information-panel'
-import { buildStreamDiagnosis } from './stream-runtime-diagnosis'
+import { buildStreamDiagnosis, deriveSourceObserved, isCheckpointBehindDelivery } from './stream-runtime-diagnosis'
 import { StreamRuntimeDiagnosisOverview } from './stream-runtime-diagnosis-overview'
 import { formatRelativeShort } from '../../lib/stream-console-metrics'
 import { StreamDetailDeliveryPanel } from './stream-detail-delivery-panel'
@@ -1033,6 +1033,30 @@ export function StreamRuntimeDetailPage() {
     return preview !== '—' ? preview : cp.type || null
   }, [runtimeMetrics?.stream.last_checkpoint, checkpointRawNotObserved])
 
+  // Source is Clear only when a successful run/fetch or events were observed in the metrics window.
+  const sourceObserved = useMemo(
+    () =>
+      deriveSourceObserved({
+        eventsLastHour: runtimeMetrics?.kpis?.events_last_hour ?? events1h,
+        recentRunStatuses: runtimeMetrics?.recent_runs?.map((run) => run.status),
+        runCompleteCount: runtimeStats?.summary?.run_complete,
+        processedEvents: runtimeStats?.summary?.processed_events,
+      }),
+    [runtimeMetrics, runtimeStats, events1h],
+  )
+
+  // Mirrors backend should_flag_checkpoint_stale from the runtime metrics block.
+  const checkpointBehindDelivery = useMemo(
+    () =>
+      isCheckpointBehindDelivery({
+        delivering: (runtimeMetrics?.kpis?.delivered_last_hour ?? 0) > 0,
+        lastSuccessAt: runtimeMetrics?.stream?.last_success_at,
+        checkpointUpdatedAts: (runtimeMetrics?.checkpoint_history ?? []).map((item) => item.updated_at),
+        nowMs: Date.now(),
+      }),
+    [runtimeMetrics],
+  )
+
   const diagnosis = useMemo(
     () =>
       buildStreamDiagnosis({
@@ -1045,6 +1069,9 @@ export function StreamRuntimeDetailPage() {
         checkpointLabel: checkpointDisplay ? String(checkpointDisplay) : null,
         deliveryPctKnown: deliveryPct != null,
         deliveryPct: deliveryPct ?? 0,
+        events1h,
+        sourceObserved,
+        checkpointBehindDelivery,
         recentErrorMessage: issueCtx.recentErrors[0]?.message ?? null,
         currentRunFailureMessage: durableSourceFailure,
         canMutateWorkspace,
@@ -1062,6 +1089,9 @@ export function StreamRuntimeDetailPage() {
       showCheckpointObservability,
       checkpointDisplay,
       deliveryPct,
+      events1h,
+      sourceObserved,
+      checkpointBehindDelivery,
       issueCtx.recentErrors,
       canMutateWorkspace,
       canRuntimeControl,

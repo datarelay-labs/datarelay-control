@@ -2,7 +2,11 @@ import type { StreamRuntimeStatus } from '../../api/streamRows'
 import { logsPath, streamEditPath, streamMappingPath, streamRuntimePath } from '../../config/nav-paths'
 import type { OperationalIssue, StreamGovernanceSnapshot } from '../../lib/stream-governance-snapshot'
 
-export type DiagnosisTone = 'clear' | 'attention' | 'critical' | 'unknown' | 'not_applicable'
+/**
+ * `inactive` is the neutral tone for a stopped or paused stream: nothing is failing, nothing is running.
+ * `unknown` means the area has not been observed or evaluated; it is never presented as Clear.
+ */
+export type DiagnosisTone = 'clear' | 'attention' | 'critical' | 'unknown' | 'not_applicable' | 'inactive'
 
 export type DiagnosisCauseKey =
   | 'source'
@@ -17,6 +21,8 @@ export type DiagnosisCause = {
   label: string
   tone: DiagnosisTone
   detail: string
+  /** Short chip text that replaces the generic tone label (for example "Not observed yet"). */
+  statusLabel?: string
 }
 
 export type DiagnosisNextStep =
@@ -39,6 +45,12 @@ export type BuildStreamDiagnosisInput = {
   checkpointLabel: string | null
   deliveryPctKnown: boolean
   deliveryPct: number
+  /** Events processed in the metrics window; any positive value is mapping evidence. */
+  events1h?: number | null
+  /** True only when a successful run, fetch or events were observed in the metrics window. */
+  sourceObserved?: boolean
+  /** True when the checkpoint is behind successful delivery (mirrors backend should_flag_checkpoint_stale). */
+  checkpointBehindDelivery?: boolean
   recentErrorMessage: string | null
   /** Exact current Run Now source failure. Overrides stale healthy-window projections until a newer run starts. */
   currentRunFailureMessage?: string | null
@@ -57,8 +69,48 @@ const CAUSE_LABEL: Record<DiagnosisCauseKey, string> = {
   checkpoint: 'Checkpoint',
 }
 
-function cause(key: DiagnosisCauseKey, tone: DiagnosisTone, detail: string): DiagnosisCause {
-  return { key, label: CAUSE_LABEL[key], tone, detail }
+function cause(key: DiagnosisCauseKey, tone: DiagnosisTone, detail: string, statusLabel?: string): DiagnosisCause {
+  return statusLabel
+    ? { key, label: CAUSE_LABEL[key], tone, detail, statusLabel }
+    : { key, label: CAUSE_LABEL[key], tone, detail }
+}
+
+/** Same threshold as backend CHECKPOINT_STALE_SECONDS and the streamRows.ts mirror. */
+export const CHECKPOINT_BEHIND_DELIVERY_SECONDS = 3600
+
+/**
+ * Existing backend rule (should_flag_checkpoint_stale), evaluated from runtime metrics:
+ * actively delivering, checkpoint last updated at least an hour ago, and older than the latest successful delivery.
+ * Without any checkpoint timestamp nothing can be judged behind.
+ */
+export function isCheckpointBehindDelivery(input: {
+  delivering: boolean
+  lastSuccessAt: string | null | undefined
+  checkpointUpdatedAts: readonly (string | null | undefined)[]
+  nowMs: number
+}): boolean {
+  if (!input.delivering || !input.lastSuccessAt) return false
+  const lastSuccessMs = Date.parse(input.lastSuccessAt)
+  if (!Number.isFinite(lastSuccessMs)) return false
+  const stamps = input.checkpointUpdatedAts
+    .map((value) => (value ? Date.parse(value) : Number.NaN))
+    .filter((ms) => Number.isFinite(ms))
+  if (stamps.length === 0) return false
+  const newest = Math.max(...stamps)
+  return (input.nowMs - newest) / 1000 >= CHECKPOINT_BEHIND_DELIVERY_SECONDS && newest < lastSuccessMs
+}
+
+/** A successful run or fetch (including an empty one) or any processed events in the metrics window. */
+export function deriveSourceObserved(input: {
+  eventsLastHour?: number | null
+  recentRunStatuses?: readonly string[] | null
+  runCompleteCount?: number | null
+  processedEvents?: number | null
+}): boolean {
+  if ((input.eventsLastHour ?? 0) > 0) return true
+  if ((input.processedEvents ?? 0) > 0) return true
+  if ((input.runCompleteCount ?? 0) > 0) return true
+  return (input.recentRunStatuses ?? []).some((status) => status !== 'FAILED')
 }
 
 function issueByKey(issues: readonly OperationalIssue[], key: string): OperationalIssue | undefined {
@@ -81,7 +133,7 @@ function buildSourceCause(input: BuildStreamDiagnosisInput): DiagnosisCause {
     return cause('source', 'unknown', 'Runtime status has not loaded, so the source cannot be confirmed.')
   }
   if (input.displayStatus === 'STOPPED') {
-    return cause('source', 'attention', 'Stream is stopped. Scheduled collection is not running.')
+    return cause('source', 'inactive', 'Stream is stopped or paused. Scheduled collection is not running.', 'Stopped')
   }
   if (input.displayStatus === 'UNKNOWN') {
     return cause('source', 'unknown', 'Source status is not confirmed by the current runtime snapshot.')
@@ -96,7 +148,16 @@ function buildSourceCause(input: BuildStreamDiagnosisInput): DiagnosisCause {
     return cause('source', 'attention', 'Runtime status is degraded and no destination failure explains it.')
   }
   if (input.displayStatus === 'RUNNING' || input.displayStatus === 'IDLE') {
-    return cause('source', 'clear', 'No source failure is indicated by the current runtime status.')
+    // IDLE is "no health verdict", not evidence. Clear needs an observed run, fetch or events.
+    if (input.sourceObserved) {
+      return cause('source', 'clear', 'No source failure is indicated by the current runtime status.')
+    }
+    return cause(
+      'source',
+      'unknown',
+      'The source has not been observed yet: no successful run, fetch or events in the current window.',
+      'Not observed yet',
+    )
   }
   if (destinationIssue) {
     return cause('source', 'clear', 'Current evidence points to delivery rather than the source.')
@@ -108,7 +169,15 @@ function buildMappingCause(input: BuildStreamDiagnosisInput): DiagnosisCause {
   if (!input.hasRuntimeEvidence) {
     return cause('mapping', 'unknown', 'Mapping evidence has not loaded.')
   }
-  return cause('mapping', 'clear', 'No mapping failure is present in the current runtime evidence.')
+  if (input.deliveryPctKnown || (input.events1h ?? 0) > 0) {
+    return cause('mapping', 'clear', 'No mapping failure is present in the current runtime evidence.')
+  }
+  return cause(
+    'mapping',
+    'unknown',
+    'Mapping has not been evaluated yet: no events or delivery attempts in the current window.',
+    'Not evaluated yet',
+  )
 }
 
 function buildSchemaCause(input: BuildStreamDiagnosisInput): DiagnosisCause {
@@ -159,7 +228,12 @@ function buildDestinationCause(input: BuildStreamDiagnosisInput): DiagnosisCause
   if (input.deliveryPctKnown) {
     return cause('destination', 'clear', `Delivery success is ${input.deliveryPct.toFixed(1)}% with no destination failure.`)
   }
-  return cause('destination', 'unknown', 'Destination success is not available for this window.')
+  return cause(
+    'destination',
+    'unknown',
+    'No deliveries observed in this window, so destination success is not available.',
+    'No deliveries observed',
+  )
 }
 
 function buildCheckpointCause(input: BuildStreamDiagnosisInput): DiagnosisCause {
@@ -175,9 +249,12 @@ function buildCheckpointCause(input: BuildStreamDiagnosisInput): DiagnosisCause 
       .map((line) => line.trim())
       .filter(Boolean)
       .join(' · ')
+    if (input.checkpointBehindDelivery) {
+      return cause('checkpoint', 'attention', `Latest checkpoint is ${inline}, but it is behind successful delivery.`)
+    }
     return cause('checkpoint', 'clear', `Latest checkpoint is ${inline}.`)
   }
-  return cause('checkpoint', 'unknown', 'No checkpoint value is reported.')
+  return cause('checkpoint', 'unknown', 'No checkpoint has been observed yet.', 'Not observed yet')
 }
 
 function buildWhatHappened(causes: readonly DiagnosisCause[]): string {
@@ -190,6 +267,9 @@ function buildWhatHappened(causes: readonly DiagnosisCause[]): string {
       .slice(0, 2)
       .map((item) => item.detail.replace(/\.$/, ''))
       .join('. ') + '.'
+  }
+  if (causes.some((item) => item.key === 'source' && item.tone === 'inactive')) {
+    return 'Stream is stopped or paused. No failure is indicated, and no new data is being collected.'
   }
   const unknown = causes.filter((item) => item.tone === 'unknown')
   if (unknown.length > 0) {
@@ -207,7 +287,7 @@ function buildNextSteps(input: BuildStreamDiagnosisInput, causes: readonly Diagn
   const protection = byKey.get('protection')
   const checkpoint = byKey.get('checkpoint')
 
-  if (source?.tone === 'attention' && input.displayStatus === 'STOPPED' && input.canRuntimeControl) {
+  if (input.displayStatus === 'STOPPED' && input.canRuntimeControl) {
     steps.push({ id: 'start', label: 'Start stream', kind: 'start' })
   }
   if (destination && (destination.tone === 'critical' || destination.tone === 'attention')) {
@@ -231,7 +311,7 @@ function buildNextSteps(input: BuildStreamDiagnosisInput, causes: readonly Diagn
       href: runtimeTab(input.streamId, 'violations'),
     })
   }
-  if (checkpoint?.tone === 'unknown' && input.showCheckpointObservability) {
+  if ((checkpoint?.tone === 'unknown' || checkpoint?.tone === 'attention') && input.showCheckpointObservability) {
     steps.push({ id: 'audit', label: 'Open checkpoint history', kind: 'link', href: runtimeTab(input.streamId, 'audit') })
   }
   if (steps.length > 0 && input.canMutateWorkspace) {

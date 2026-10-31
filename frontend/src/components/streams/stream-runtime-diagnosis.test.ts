@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { OperationalIssue, StreamGovernanceSnapshot } from '../../lib/stream-governance-snapshot'
-import { buildStreamDiagnosis, type BuildStreamDiagnosisInput } from './stream-runtime-diagnosis'
+import {
+  buildStreamDiagnosis,
+  deriveSourceObserved,
+  isCheckpointBehindDelivery,
+  type BuildStreamDiagnosisInput,
+} from './stream-runtime-diagnosis'
 
 function input(overrides: Partial<BuildStreamDiagnosisInput> = {}): BuildStreamDiagnosisInput {
   return {
@@ -22,6 +27,9 @@ function input(overrides: Partial<BuildStreamDiagnosisInput> = {}): BuildStreamD
     checkpointLabel: '2026-01-01T00:00:00Z',
     deliveryPctKnown: true,
     deliveryPct: 99.2,
+    // Source and checkpoint are Clear only with evidence; the calm baseline supplies it explicitly.
+    sourceObserved: true,
+    checkpointBehindDelivery: false,
     recentErrorMessage: null,
     canMutateWorkspace: true,
     canRuntimeControl: true,
@@ -147,10 +155,104 @@ describe('buildStreamDiagnosis', () => {
     })
   })
 
-  it('offers start when the stream is stopped and runtime control is allowed', () => {
+  it('offers start when the stream is stopped and runtime control is allowed (STOPPED is neutral, not attention)', () => {
     const diagnosis = buildStreamDiagnosis(input({ displayStatus: 'STOPPED', checkpointLabel: 'cursor-1' }))
-    expect(diagnosis.causes.find((cause) => cause.key === 'source')?.tone).toBe('attention')
+    expect(diagnosis.causes.find((cause) => cause.key === 'source')?.tone).toBe('inactive')
+    expect(diagnosis.causes.some((cause) => cause.tone === 'attention')).toBe(false)
+    expect(diagnosis.whatHappened).toMatch(/stopped or paused/i)
     expect(diagnosis.nextSteps[0]).toMatchObject({ kind: 'start', label: 'Start stream' })
+  })
+
+  it('keys the Start-stream step on displayStatus STOPPED, not on the source tone', () => {
+    const running = buildStreamDiagnosis(input({ displayStatus: 'RUNNING' }))
+    expect(running.nextSteps.some((step) => step.kind === 'start')).toBe(false)
+    const stopped = buildStreamDiagnosis(input({ displayStatus: 'STOPPED', canRuntimeControl: true }))
+    expect(stopped.nextSteps.filter((step) => step.kind === 'start')).toHaveLength(1)
+  })
+
+  it('does not call an IDLE source Clear without an observed run, fetch or events (Not observed yet)', () => {
+    const diagnosis = buildStreamDiagnosis(input({ displayStatus: 'IDLE', sourceObserved: false }))
+    expect(diagnosis.causes.find((cause) => cause.key === 'source')).toMatchObject({
+      tone: 'unknown',
+      statusLabel: 'Not observed yet',
+    })
+    expect(diagnosis.whatHappened).not.toMatch(/No source, mapping/i)
+  })
+
+  it('treats a RUNNING source without observation as unknown and with observation as clear', () => {
+    expect(
+      buildStreamDiagnosis(input({ displayStatus: 'RUNNING', sourceObserved: undefined })).causes.find(
+        (cause) => cause.key === 'source',
+      )?.tone,
+    ).toBe('unknown')
+    expect(
+      buildStreamDiagnosis(input({ displayStatus: 'IDLE', sourceObserved: true })).causes.find(
+        (cause) => cause.key === 'source',
+      )?.tone,
+    ).toBe('clear')
+  })
+
+  it('keeps a confirmed source ERROR critical even when nothing was observed (Unknown never masks Critical)', () => {
+    const diagnosis = buildStreamDiagnosis(input({ displayStatus: 'ERROR', sourceObserved: false }))
+    expect(diagnosis.causes.find((cause) => cause.key === 'source')?.tone).toBe('critical')
+  })
+
+  it('reports Mapping as Not evaluated yet without delivery attempts or processed events', () => {
+    const diagnosis = buildStreamDiagnosis(input({ deliveryPctKnown: false, events1h: 0 }))
+    expect(diagnosis.causes.find((cause) => cause.key === 'mapping')).toMatchObject({
+      tone: 'unknown',
+      statusLabel: 'Not evaluated yet',
+    })
+  })
+
+  it('reports Mapping as Clear once events were processed or delivery was attempted', () => {
+    expect(
+      buildStreamDiagnosis(input({ deliveryPctKnown: false, events1h: 12 })).causes.find((c) => c.key === 'mapping')?.tone,
+    ).toBe('clear')
+    expect(
+      buildStreamDiagnosis(input({ deliveryPctKnown: true, events1h: 0 })).causes.find((c) => c.key === 'mapping')?.tone,
+    ).toBe('clear')
+  })
+
+  it('words an unmeasured destination as No deliveries observed', () => {
+    const cause = buildStreamDiagnosis(input({ deliveryPctKnown: false })).causes.find((c) => c.key === 'destination')
+    expect(cause).toMatchObject({ tone: 'unknown', statusLabel: 'No deliveries observed' })
+    expect(cause?.detail).toMatch(/No deliveries observed/)
+  })
+
+  it('reports a missing checkpoint as Not observed yet and a lagging one as attention', () => {
+    const none = buildStreamDiagnosis(input({ checkpointLabel: null })).causes.find((c) => c.key === 'checkpoint')
+    expect(none).toMatchObject({ tone: 'unknown', statusLabel: 'Not observed yet' })
+    const behind = buildStreamDiagnosis(input({ checkpointLabel: 'cursor-1', checkpointBehindDelivery: true }))
+    expect(behind.causes.find((c) => c.key === 'checkpoint')?.tone).toBe('attention')
+    expect(behind.whatHappened).toMatch(/behind successful delivery/)
+    const ok = buildStreamDiagnosis(input({ checkpointLabel: 'cursor-1', checkpointBehindDelivery: false }))
+    expect(ok.causes.find((c) => c.key === 'checkpoint')?.tone).toBe('clear')
+  })
+
+  it('derives sourceObserved only from events, processed events, a completed run or a non-failed recent run', () => {
+    expect(deriveSourceObserved({})).toBe(false)
+    expect(deriveSourceObserved({ eventsLastHour: 0, recentRunStatuses: ['FAILED'] })).toBe(false)
+    expect(deriveSourceObserved({ eventsLastHour: 3 })).toBe(true)
+    expect(deriveSourceObserved({ recentRunStatuses: ['FAILED', 'NO_EVENTS'] })).toBe(true)
+    expect(deriveSourceObserved({ runCompleteCount: 1 })).toBe(true)
+    expect(deriveSourceObserved({ processedEvents: 5 })).toBe(true)
+  })
+
+  it('mirrors should_flag_checkpoint_stale: delivering, lag >= 1h, checkpoint older than the last success', () => {
+    const now = Date.parse('2026-10-31T12:00:00Z')
+    const base = {
+      delivering: true,
+      lastSuccessAt: '2026-10-31T11:59:00Z',
+      checkpointUpdatedAts: ['2026-10-31T09:00:00Z'],
+      nowMs: now,
+    }
+    expect(isCheckpointBehindDelivery(base)).toBe(true)
+    expect(isCheckpointBehindDelivery({ ...base, delivering: false })).toBe(false)
+    expect(isCheckpointBehindDelivery({ ...base, checkpointUpdatedAts: ['2026-10-31T11:30:00Z'] })).toBe(false)
+    expect(isCheckpointBehindDelivery({ ...base, checkpointUpdatedAts: [] })).toBe(false)
+    expect(isCheckpointBehindDelivery({ ...base, lastSuccessAt: null })).toBe(false)
+    expect(isCheckpointBehindDelivery({ ...base, checkpointUpdatedAts: ['2026-10-31T11:59:30Z'] })).toBe(false)
   })
 
   it('hides mutation steps when the session cannot change the workspace', () => {

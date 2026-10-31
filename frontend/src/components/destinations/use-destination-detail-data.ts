@@ -47,7 +47,7 @@ export type DestinationDetailRuntimeBundle = {
     streamId: number
     streamName: string
     deliveryMode: string
-    status: 'ACTIVE' | 'PAUSED' | 'ERROR'
+    status: 'ACTIVE' | 'PAUSED' | 'ERROR' | 'IDLE' | 'DEGRADED'
     epsAvg: number
     successRate5m: number | null
   }[]

@@ -36,7 +36,7 @@ export function StreamFlowMap({ streamId, streamName, routes, loading = false, s
               <div key={route.route_id} role="listitem" className={`rounded-lg border p-2.5 ${tone(route.connectivity_state)}`}>
                 <div className="flex items-center gap-1 text-slate-400" aria-hidden><span>↓</span><span className="h-px flex-1 bg-current opacity-40" /></div>
                 <Link to={routeEditPath(String(route.route_id))} className="mt-1 block text-xs font-semibold text-violet-700 hover:underline dark:text-violet-300">Route #{route.route_id}</Link>
-                <p className="mt-1 text-[11px] text-slate-600 dark:text-gdc-muted">{fmtEps(route.eps_current)} · {route.success_rate.toFixed(1)}% success · {route.connectivity_state}</p>
+                <p className="mt-1 text-[11px] text-slate-600 dark:text-gdc-muted">{fmtEps(route.eps_current)} · {route.success_rate != null ? `${route.success_rate.toFixed(1)}%` : '—'} success · {route.connectivity_state}</p>
                 <div className="mt-2 border-t border-current/10 pt-2">
                   {route.destination_id > 0 ? <Link to={destinationDetailPath(String(route.destination_id))} className="text-[11px] font-semibold text-slate-800 hover:underline dark:text-slate-100">{route.destination_name || `Destination #${route.destination_id}`}</Link> : <span className="text-[11px] text-slate-500">Destination metadata unavailable</span>}
                 </div>

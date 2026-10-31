@@ -396,12 +396,12 @@ describe('Data Flows collection status and investigation context', () => {
     expect(screen.getByTestId('routes-architecture-inspector')).toHaveTextContent('Stream #2 · Route R-0091')
   })
 
-  it('respects runtime Stopped and explicit Disabled status instead of inventing Healthy collection', () => {
+  it('shows Paused (distinct from Stopped) for runtime PAUSED and explicit Disabled status instead of inventing Healthy collection', () => {
     const data = snapshotFor([route(100, 1, 200, 'HEALTHY'), route(101, 2, 201, 'HEALTHY')])
     data.streams[0]!.status = 'PAUSED'
     data.streams[1]!.enabled = false
     render(<GraphHarness snapshot={data} />)
-    expect(screen.getByTestId('routes-architecture-collection-1')).toHaveTextContent('Collection: Stopped')
+    expect(screen.getByTestId('routes-architecture-collection-1')).toHaveTextContent('Collection: Paused')
     expect(screen.getByTestId('routes-architecture-collection-2')).toHaveTextContent('Collection: Disabled')
     expect(screen.getByTestId('routes-architecture-selected-collection-health')).not.toHaveTextContent('Healthy')
   })

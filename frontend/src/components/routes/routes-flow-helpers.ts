@@ -227,7 +227,7 @@ function detectRouteIssue(row: RouteConsoleRow, nowMs: number): string | null {
   if (row.uiStatus === 'Warning') return 'Warning'
   const m = row.metrics
   if (!m || !hasRecentMetricActivity(row, nowMs)) return null
-  if (Number.isFinite(m.success_rate) && m.success_rate >= 0 && m.success_rate < LOW_SUCCESS_RATE_PCT) return 'Low Success Rate'
+  if (m.success_rate != null && Number.isFinite(m.success_rate) && m.success_rate >= 0 && m.success_rate < LOW_SUCCESS_RATE_PCT) return 'Low Success Rate'
   if (Number.isFinite(m.avg_latency_ms) && m.avg_latency_ms > HIGH_LATENCY_MS) return 'High Latency'
   return null
 }

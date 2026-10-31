@@ -330,24 +330,28 @@ export function routeMetricsFromSnapshot(
   epsAvg: number
   /** 5-minute operational snapshot, not a 24-hour historical success metric. */
   successRate5m: number | null
-  status: 'ACTIVE' | 'PAUSED' | 'ERROR'
+  /** IDLE = no health verdict (missing snapshot row or not observed); never rendered as ACTIVE. */
+  status: 'ACTIVE' | 'PAUSED' | 'ERROR' | 'IDLE' | 'DEGRADED'
   deliveryMode: string
 } {
   const snap = (snapshotRoutes ?? []).find((r) => r.route_id === routeId)
   if (snap == null) {
-    return { epsAvg: 0, successRate5m: null, status: 'ACTIVE', deliveryMode: '—' }
+    return { epsAvg: 0, successRate5m: null, status: 'IDLE', deliveryMode: '—' }
   }
   const kpi = selectRouteKpi(snap, problems ?? [])
-  // A reported 0% with no recent outcome sample is ambiguous: never render it
-  // as verified failed-only delivery. Keep a genuine 0% where failures exist.
+  // A reported 0% or 100% with no recent outcome sample is ambiguous (no completed attempts):
+  // never render it as verified delivery. Keep a genuine 0% where failures exist.
   const hasRecentSample = (Number.isFinite(snap.delivered_eps_1m) && snap.delivered_eps_1m > 0) ||
     (Number.isFinite(snap.failed_eps_1m) && snap.failed_eps_1m > 0)
-  const successRate5m = kpi.successRatePct == null || (kpi.successRatePct === 0 && !hasRecentSample)
+  const successRate5m = kpi.successRatePct == null ||
+    ((kpi.successRatePct === 0 || kpi.successRatePct === 100) && !hasRecentSample)
     ? null : kpi.successRatePct
 
-  let status: 'ACTIVE' | 'PAUSED' | 'ERROR' = 'ACTIVE'
+  let status: 'ACTIVE' | 'PAUSED' | 'ERROR' | 'IDLE' | 'DEGRADED' = 'ACTIVE'
   if (!snap.enabled) status = 'PAUSED'
   else if (snap.health_status === 'ERROR') status = 'ERROR'
+  else if (snap.health_status === 'DEGRADED') status = 'DEGRADED'
+  else if (snap.health_status !== 'HEALTHY') status = 'IDLE'
 
   return {
     epsAvg: snap.delivered_eps_1m ?? 0,

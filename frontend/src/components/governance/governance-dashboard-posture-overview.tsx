@@ -3,16 +3,17 @@
  * Uses backend summary risk/health counts only; does not invent severity semantics.
  */
 
-import { AlertTriangle, CheckCircle2, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, CircleHelp, XCircle } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import type { GovernanceDashboardSummaryResponse } from '../../api/gdcGovernanceDashboard'
 import { NAV_PATH } from '../../config/nav-paths'
 import { cn } from '../../lib/utils'
 
-export type GovernancePosture = 'healthy' | 'warning' | 'critical'
+export type GovernancePosture = 'healthy' | 'warning' | 'critical' | 'unknown'
 
 export function deriveGovernancePosture(summary: GovernanceDashboardSummaryResponse | null): GovernancePosture {
-  if (!summary) return 'healthy'
+  // A missing or failed summary is not evidence of a healthy posture.
+  if (!summary) return 'unknown'
   const { risk, policy_health: health } = summary
   if (risk.critical > 0 || health.critical > 0) return 'critical'
   if (risk.high > 0 || risk.medium > 0 || health.warning > 0) return 'warning'
@@ -26,12 +27,16 @@ function postureShellClass(posture: GovernancePosture): string {
   if (posture === 'warning') {
     return 'border-amber-300/80 bg-amber-50 dark:border-amber-500/35 dark:bg-amber-950/25'
   }
+  if (posture === 'unknown') {
+    return 'border-slate-300/80 bg-slate-50 dark:border-gdc-border dark:bg-gdc-card'
+  }
   return 'border-emerald-300/80 bg-emerald-50 dark:border-emerald-500/35 dark:bg-emerald-950/25'
 }
 
 function postureLabel(posture: GovernancePosture): string {
   if (posture === 'critical') return 'Critical'
   if (posture === 'warning') return 'Warning'
+  if (posture === 'unknown') return 'Not verified'
   return 'Healthy'
 }
 
@@ -119,7 +124,14 @@ export function GovernanceDashboardPostureOverview({
   }
 
   const posture = deriveGovernancePosture(summary)
-  const Icon = posture === 'healthy' ? CheckCircle2 : posture === 'critical' ? XCircle : AlertTriangle
+  const Icon =
+    posture === 'healthy'
+      ? CheckCircle2
+      : posture === 'critical'
+        ? XCircle
+        : posture === 'unknown'
+          ? CircleHelp
+          : AlertTriangle
   const openViolations = summary?.open_violations ?? 0
   const criticalViolations = summary?.risk.critical ?? 0
   const quarantined = summary?.quarantined_events ?? 0
@@ -139,6 +151,7 @@ export function GovernanceDashboardPostureOverview({
               posture === 'healthy' && 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
               posture === 'warning' && 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
               posture === 'critical' && 'bg-red-500/15 text-red-700 dark:text-red-300',
+              posture === 'unknown' && 'bg-slate-500/15 text-slate-700 dark:text-slate-300',
             )}
           >
             <Icon className="h-5 w-5" aria-hidden />

@@ -119,7 +119,11 @@ function traceOutcomeBadge(level: string, status: string | null | undefined) {
   if (lv === 'WARN' || st.includes('RATE')) return { label: 'Throttled', tone: 'warning' as const }
   if (st === 'SKIPPED') return { label: 'Skipped', tone: 'muted' as const }
   if (st.includes('RETRY')) return { label: 'Retry', tone: 'warning' as const }
-  return { label: 'OK', tone: 'success' as const }
+  // "OK" only for an explicit success outcome; a missing or unrecognised status is merely recorded.
+  if (st === 'OK' || st === 'SUCCESS' || st === 'SUCCEEDED' || st === 'DELIVERED' || st === 'COMPLETE' || st === 'COMPLETED') {
+    return { label: 'OK', tone: 'success' as const }
+  }
+  return { label: 'Recorded', tone: 'muted' as const }
 }
 
 function toneDotClass(tone: 'success' | 'warning' | 'error' | 'neutral'): string {

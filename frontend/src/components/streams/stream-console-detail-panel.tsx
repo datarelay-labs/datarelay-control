@@ -27,6 +27,7 @@ import type { StreamConsoleRow } from '../../api/streamRows'
 import type { OperationalProblem, OperationalRouteSnapshot } from '../../api/operationalSnapshot'
 import { formatOperationalPercent, formatThroughputEps } from '../../lib/observability-format'
 import { formatRelativeShort, streamSuccessRateDisplay } from '../../lib/stream-console-metrics'
+import { effectiveStreamSeverity, normalizeSeverityInput } from '../../lib/stream-operational-status'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -72,9 +73,17 @@ function routeStatusToneClass(route: OperationalRouteSnapshot): string {
   }
 }
 
+/** RUNNING is a lifecycle state, not a health verdict: an IDLE snapshot or missing evidence is "Not verified". */
+function streamRowSeverity(row: StreamConsoleRow) {
+  return effectiveStreamSeverity(normalizeSeverityInput(row))
+}
+
 function streamStatusToneClass(row: StreamConsoleRow): string {
   switch (row.status) {
     case 'RUNNING':
+      if (streamRowSeverity(row) === 'unknown') {
+        return 'border-slate-300 bg-slate-100 text-slate-600 dark:border-slate-600/50 dark:bg-slate-900/80 dark:text-slate-400'
+      }
       return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-600/50 dark:bg-emerald-950/80 dark:text-emerald-400'
     case 'DEGRADED':
       return 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-600/50 dark:bg-amber-950/80 dark:text-amber-400'
@@ -88,7 +97,7 @@ function streamStatusToneClass(row: StreamConsoleRow): string {
 function streamStatusLabel(row: StreamConsoleRow): string {
   switch (row.status) {
     case 'RUNNING':
-      return 'Healthy'
+      return streamRowSeverity(row) === 'unknown' ? 'Not verified' : 'Healthy'
     case 'DEGRADED':
       return 'Warning'
     case 'ERROR':
@@ -205,7 +214,9 @@ function OverviewTab({
                   ) : (
                     <span className="text-[10px] font-semibold text-emerald-500">Healthy</span>
                   )
-                ) : null}
+                ) : (
+                  <span className="text-[10px] font-semibold text-slate-500 dark:text-gdc-muted">Not observed yet</span>
+                )}
               </span>
             }
           />
@@ -566,8 +577,14 @@ function SchemaTab({ stream }: { stream: StreamConsoleRow }) {
 
 function CheckpointTab({ stream }: { stream: StreamConsoleRow }) {
   const hasCheckpoint = stream.checkpointValue && stream.checkpointValue !== '—'
+  const checkpointObserved = Boolean(hasCheckpoint) || (stream.checkpointUpdatedAt != null && stream.checkpointUpdatedAt !== '—')
+  // No checkpoint observation is never Healthy.
   const checkpointStatus =
-    stream.checkpointLagLabel && stream.checkpointLagLabel !== '—' ? 'Warning' : 'Healthy'
+    stream.checkpointLagLabel && stream.checkpointLagLabel !== '—'
+      ? 'Warning'
+      : checkpointObserved
+        ? 'Healthy'
+        : 'Not observed yet'
 
   return (
     <div className="flex flex-col gap-4 p-4">
@@ -587,12 +604,18 @@ function CheckpointTab({ stream }: { stream: StreamConsoleRow }) {
             value={
               <span className={cn(
                 'inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide',
-                checkpointStatus === 'Healthy' ? 'text-emerald-500' : 'text-amber-500',
+                checkpointStatus === 'Healthy'
+                  ? 'text-emerald-500'
+                  : checkpointStatus === 'Warning'
+                    ? 'text-amber-500'
+                    : 'text-slate-500 dark:text-gdc-muted',
               )}>
                 {checkpointStatus === 'Healthy' ? (
                   <CheckCircle2 className="h-3 w-3" aria-hidden />
-                ) : (
+                ) : checkpointStatus === 'Warning' ? (
                   <AlertTriangle className="h-3 w-3" aria-hidden />
+                ) : (
+                  <Info className="h-3 w-3" aria-hidden />
                 )}
                 {checkpointStatus}
               </span>

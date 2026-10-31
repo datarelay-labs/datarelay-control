@@ -7,6 +7,7 @@ import {
   ArrowUpFromLine,
   Bell,
   CheckCircle2,
+  CircleDashed,
   Clock,
   Cloud,
   Database,
@@ -74,12 +75,17 @@ function postureHeroClass(posture: OverallHealthCounts['posture']): string {
   if (posture === 'warning') {
     return 'border-amber-300 border-l-4 border-l-amber-500 bg-white dark:border-amber-500/30 dark:border-l-amber-400 dark:bg-gdc-card'
   }
+  if (posture === 'unknown') {
+    return 'border-slate-200 border-l-4 border-l-slate-400 bg-white dark:border-gdc-border dark:border-l-slate-500 dark:bg-gdc-card'
+  }
   return 'border-slate-200 border-l-4 border-l-emerald-500 bg-white dark:border-gdc-border dark:border-l-emerald-400 dark:bg-gdc-card'
 }
 
 function postureLabel(posture: OverallHealthCounts['posture']): string {
   if (posture === 'critical') return 'Critical'
   if (posture === 'warning') return 'Warning'
+  // No evidence is not Healthy: the snapshot is missing or active streams are not observed yet.
+  if (posture === 'unknown') return 'Not verified'
   return 'Healthy'
 }
 
@@ -120,7 +126,7 @@ export function DashboardRunningBadge({
   engineStatus?: string | null
   /** When true, the dashboard summary API failed so engineStatus is not reliable. */
   dashboardFailed?: boolean
-  posture: 'healthy' | 'warning' | 'critical'
+  posture: OverallHealthCounts['posture']
 }) {
   // engineStatus == null without a failure means the field wasn't returned yet (loading race),
   // treat the same as a failure so we do not show a misleading RUNNING state.
@@ -204,6 +210,8 @@ export function OverallHealthHero({
         <div className="flex min-w-0 items-center gap-3">
           {!stale && health.posture === 'healthy' ? (
             <CheckCircle2 className="h-6 w-6 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
+          ) : !stale && health.posture === 'unknown' ? (
+            <CircleDashed className="h-6 w-6 shrink-0 text-slate-500 dark:text-slate-400" aria-hidden />
           ) : (
             <AlertTriangle
               className={cn(
@@ -226,7 +234,9 @@ export function OverallHealthHero({
                     ? 'text-red-700 dark:text-red-300'
                     : health.posture === 'warning'
                       ? 'text-amber-700 dark:text-amber-300'
-                      : 'text-emerald-700 dark:text-emerald-300',
+                      : health.posture === 'unknown'
+                        ? 'text-slate-600 dark:text-slate-300'
+                        : 'text-emerald-700 dark:text-emerald-300',
               )}
               data-testid="dashboard-overall-posture-label"
             >
@@ -244,6 +254,9 @@ export function OverallHealthHero({
               ['Healthy', health.healthy, 'healthy', 'dashboard-health-healthy'],
               ['Warning', health.warning, 'warning', 'dashboard-health-warning'],
               ['Critical', health.critical, 'critical', 'dashboard-health-critical'],
+              ...(health.unknown > 0
+                ? ([['Not verified', health.unknown, 'unknown', 'dashboard-health-unknown']] as const)
+                : []),
             ] as const
           ).map(([label, count, tone, testId]) => (
             <Link
@@ -691,6 +704,22 @@ export function DashboardGroupSummaryPanel({ groupHealth }: { groupHealth: Strea
   const criticalGroups = groupHealth.groups.filter((g) => g.worstStatus === 'ERROR')
   const warningGroups = groupHealth.groups.filter((g) => g.worstStatus === 'DEGRADED')
   const hasAny = criticalGroups.length > 0 || warningGroups.length > 0
+
+  if (!hasAny && (groupHealth.unknown > 0 || groupHealth.healthy === 0)) {
+    // No problem found, but no group is verified healthy either: never claim "healthy".
+    return (
+      <section
+        aria-label="Stream group summary"
+        data-testid="dashboard-group-summary"
+        className={cn(dashboardCardClass, 'text-[12px] text-slate-500 dark:text-gdc-muted')}
+      >
+        <h2 className="text-[14px] font-semibold text-slate-900 dark:text-slate-100">Group status</h2>
+        <p className="mt-2">
+          {groupHealth.unknown > 0 ? 'Some stream groups are not verified yet.' : 'No stream groups are verified healthy yet.'}
+        </p>
+      </section>
+    )
+  }
 
   if (!hasAny) {
     return (

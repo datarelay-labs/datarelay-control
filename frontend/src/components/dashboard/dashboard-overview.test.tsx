@@ -3,7 +3,12 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 import { DashboardOverview } from './dashboard-overview'
-import { DashboardRunningBadge, OperationalIssuesPanel, TrafficOverviewPanel } from './dashboard-visual-panels'
+import {
+  DashboardRunningBadge,
+  OperationalIssuesPanel,
+  OverallHealthHero,
+  TrafficOverviewPanel,
+} from './dashboard-visual-panels'
 import type {
   DashboardSummaryResponse,
   HealthOverviewResponse,
@@ -493,6 +498,27 @@ describe('Dashboard semantic presentation', () => {
     expect(unknown).not.toHaveTextContent('All Systems Operational')
     expect(unknown).toHaveClass('text-status-unknown')
     expect(unknown).not.toHaveClass('text-status-success')
+  })
+
+  it('scenario 1: an unknown posture (snapshot missing) never shows All Systems Operational, even with a RUNNING engine', () => {
+    render(<DashboardRunningBadge engineStatus="RUNNING" posture="unknown" />)
+    const badge = screen.getByTestId('dashboard-running-badge')
+    expect(badge).not.toHaveTextContent('All Systems Operational')
+  })
+
+  it('scenario 11: the overall health hero labels an unknown posture Not verified, never Healthy', () => {
+    render(
+      <MemoryRouter>
+        <OverallHealthHero
+          health={{ healthy: 1, warning: 0, critical: 0, unknown: 2, posture: 'unknown' }}
+          basisLabel="basis"
+        />
+      </MemoryRouter>,
+    )
+    expect(screen.getByTestId('dashboard-overall-posture-label')).toHaveTextContent('Not verified')
+    expect(screen.getByTestId('dashboard-overall-posture-label')).not.toHaveTextContent('Healthy')
+    expect(screen.getByTestId('dashboard-health-unknown')).toHaveTextContent('2')
+    expect(screen.getByTestId('dashboard-overall-posture-label').className).not.toMatch(/emerald/)
   })
 })
 

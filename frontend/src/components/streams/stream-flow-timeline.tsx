@@ -196,8 +196,10 @@ export function buildFlowTimelineStages(params: {
   const routeStep = workflow.steps.find((s) => s.key === 'route')
   const savedStep = workflow.steps.find((s) => s.key === 'saved')
 
+  // IDLE / UNKNOWN is "no verdict": the Connect stage is not confirmed OK without evidence.
+  const connectNotObserved = displayStatus === 'IDLE' || displayStatus === 'UNKNOWN'
   const connectStatus = aggregateStageStatus([
-    displayStatus === 'ERROR' ? 'error' : displayStatus === 'DEGRADED' ? 'warn' : 'ok',
+    displayStatus === 'ERROR' ? 'error' : displayStatus === 'DEGRADED' ? 'warn' : connectNotObserved ? 'pending' : 'ok',
     workflowStepStatus(connectorStep?.status),
     workflowStepStatus(apiTestStep?.status),
   ])
@@ -219,6 +221,7 @@ export function buildFlowTimelineStages(params: {
     if ((routesErr ?? 0) > 0 || displayStatus === 'ERROR') deployStatus = 'error'
     else if (deliveryPct != null && deliveryPct < 85) deployStatus = 'warn'
     else if (displayStatus === 'DEGRADED') deployStatus = 'warn'
+    else if (connectNotObserved || (deliveryPct == null && !hasDeliveryOutcomes)) deployStatus = 'pending'
     else deployStatus = 'ok'
   } else if (routeStep?.status === 'attention' || savedStep?.status === 'attention') {
     deployStatus = 'warn'

@@ -9,7 +9,7 @@ export type DestinationRouteRow = {
   routeName: string
   streamName: string
   deliveryMode: string
-  status: 'ACTIVE' | 'PAUSED' | 'ERROR'
+  status: 'ACTIVE' | 'PAUSED' | 'ERROR' | 'IDLE' | 'DEGRADED'
   epsAvg: number
   successRate24h: number
 }

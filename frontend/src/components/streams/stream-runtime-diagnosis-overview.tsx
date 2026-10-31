@@ -14,6 +14,8 @@ function toneLabel(tone: DiagnosisTone): string {
       return 'Clear'
     case 'not_applicable':
       return 'Not applicable'
+    case 'inactive':
+      return 'Inactive'
     default:
       return 'Unknown'
   }
@@ -28,6 +30,7 @@ function toneClass(tone: DiagnosisTone): string {
     case 'clear':
       return 'border-emerald-300/70 bg-emerald-500/[0.05] text-emerald-950 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100'
     case 'not_applicable':
+    case 'inactive':
       return 'border-slate-200/80 bg-slate-50 text-slate-700 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-200'
     default:
       return 'border-slate-200/80 bg-white text-slate-800 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100'
@@ -36,7 +39,11 @@ function toneClass(tone: DiagnosisTone): string {
 
 function CauseCard({ cause, notObservedRaw }: { cause: DiagnosisCause; notObservedRaw?: string | null }) {
   // Only an unknown cause can be shown as "not observed"; a measured tone always wins.
-  const notObserved = cause.tone === 'unknown' && notObservedRaw != null
+  const notObservedChip =
+    cause.tone === 'unknown'
+      ? (cause.statusLabel ?? (cause.key === 'checkpoint' || notObservedRaw != null ? 'Not observed yet' : null))
+      : null
+  const notObserved = notObservedRaw != null && cause.tone === 'unknown'
   return (
     <article
       data-testid={`stream-diagnosis-cause-${cause.key}`}
@@ -45,10 +52,12 @@ function CauseCard({ cause, notObservedRaw }: { cause: DiagnosisCause; notObserv
     >
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-semibold">{cause.label}</h3>
-        {notObserved ? (
-          <StatusChip status="unknown">Not observed yet</StatusChip>
+        {notObservedChip ? (
+          <StatusChip status="unknown">{notObservedChip}</StatusChip>
         ) : (
-          <span className="text-[13px] font-medium">{toneLabel(cause.tone)}</span>
+          <span className="text-[13px] font-medium">
+            {cause.tone === 'inactive' ? (cause.statusLabel ?? toneLabel(cause.tone)) : toneLabel(cause.tone)}
+          </span>
         )}
       </div>
       <p className="mt-1.5 text-sm leading-relaxed">{cause.detail}</p>

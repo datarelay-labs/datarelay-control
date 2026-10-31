@@ -78,8 +78,9 @@ export function getRouteProblemSummary(route: OperationalRouteSnapshot): string 
 function connectivityFromOperationalHealth(health: OperationalHealthStatus): RouteRuntimeMetricsRow['connectivity_state'] {
   if (health === 'ERROR') return 'ERROR'
   if (health === 'DEGRADED') return 'DEGRADED'
-  if (health === 'IDLE') return 'IDLE'
-  return 'HEALTHY'
+  // Only an explicit HEALTHY is HEALTHY; IDLE (no verdict) and any unrecognised value must not read healthy.
+  if (health === 'HEALTHY') return 'HEALTHY'
+  return 'IDLE'
 }
 
 /** Map operational snapshot route row to legacy metrics shape for table/detail reuse. */
@@ -329,11 +330,12 @@ export function deriveRouteUiStatus(
   if (m.connectivity_state === 'ERROR') return 'Error'
 
   if (failed > 0 && delivered === 0) return 'Error'
-  if (sr < 90) return 'Error'
+  // A null rate (zero completed attempts) is not a failing rate.
+  if (sr != null && sr < 90) return 'Error'
 
   if (
     m.connectivity_state === 'DEGRADED' ||
-    sr < 98 ||
+    (sr != null && sr < 98) ||
     lat > 250 ||
     (failed > 0 && delivered > 0)
   ) {
@@ -535,7 +537,7 @@ export function filterRouteConsoleRows(rows: readonly RouteConsoleRow[], filters
     if (filters.quickFilter === 'error' && row.uiStatus !== 'Error') return false
     if (filters.quickFilter === 'disabled' && row.uiStatus !== 'Disabled') return false
     if (filters.quickFilter === 'problem' && (row.uiStatus === 'Healthy' || row.uiStatus === 'Idle')) return false
-    if (filters.highErr && (!row.metrics || row.metrics.success_rate >= 95)) return false
+    if (filters.highErr && (!row.metrics || row.metrics.success_rate == null || row.metrics.success_rate >= 95)) return false
     if (filters.highLat && (!row.metrics || row.metrics.avg_latency_ms <= 200)) return false
     return true
   })

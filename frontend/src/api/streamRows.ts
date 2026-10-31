@@ -403,7 +403,7 @@ export function enrichStreamRowFromOperationalSnapshot(
       operationalStreamSuccessRatePct({
         eps_1m: eps1m,
         eps_5m: eps5m,
-        success_rate_5m: successRate5m ?? 0,
+        success_rate_5m: successRate5m,
       }) != null,
     routesTotal: Math.max(base.routesTotal, kpi.routeCount),
     routesOk: kpi.healthyRouteCount,

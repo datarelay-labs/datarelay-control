@@ -143,6 +143,12 @@ function streamRuntimeMetricsFixture(params?: { snapshot_id?: string }) {
   }
 }
 
+/** Same base metrics, but with events and deliveries observed in the window (source/mapping evidence). */
+function observedStreamRuntimeMetricsFixture(params?: { snapshot_id?: string }) {
+  const base = streamRuntimeMetricsFixture(params)
+  return { ...base, kpis: { ...base.kpis, events_last_hour: 12, delivered_last_hour: 12 } }
+}
+
 vi.mock('../../api/gdcRuntime', () => ({
   fetchStreamRuntimeTimeline: vi.fn(async () => null),
   fetchStreamRuntimeStats: vi.fn(async () => null),
@@ -1559,6 +1565,81 @@ describe('StreamRuntimeDetailPage diagnosis overview', () => {
     expect(within(checkpoint).queryByText('Raw checkpoint')).not.toBeInTheDocument()
   })
 
+  it('marks Source, Mapping, Destination and Checkpoint as not observed/evaluated when no evidence exists (never Clear)', async () => {
+    renderRuntimePage('42')
+    const source = await screen.findByTestId('stream-diagnosis-cause-source')
+    await waitFor(() => expect(source).toHaveAttribute('data-tone', 'unknown'))
+    expect(within(source).getByText('Not observed yet')).toBeInTheDocument()
+    expect(source).not.toHaveTextContent('Clear')
+    const mapping = screen.getByTestId('stream-diagnosis-cause-mapping')
+    expect(mapping).toHaveAttribute('data-tone', 'unknown')
+    expect(within(mapping).getByText('Not evaluated yet')).toBeInTheDocument()
+    const destination = screen.getByTestId('stream-diagnosis-cause-destination')
+    expect(destination).toHaveAttribute('data-tone', 'unknown')
+    expect(within(destination).getByText('No deliveries observed')).toBeInTheDocument()
+    const checkpoint = screen.getByTestId('stream-diagnosis-cause-checkpoint')
+    expect(checkpoint).toHaveAttribute('data-tone', 'unknown')
+    expect(within(checkpoint).getByText('Not observed yet')).toBeInTheDocument()
+    expect(screen.getByTestId('stream-diagnosis-summary')).not.toHaveTextContent(/No source, mapping/i)
+  })
+
+  it('marks Source and Mapping Clear once events and deliveries were observed in the window', async () => {
+    vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mockImplementation(
+      async (_id: number, _window: string, params?: { snapshot_id?: string }) =>
+        observedStreamRuntimeMetricsFixture(params) as Awaited<ReturnType<typeof gdcRuntime.fetchStreamRuntimeMetrics>>,
+    )
+    renderRuntimePage('42')
+    const source = await screen.findByTestId('stream-diagnosis-cause-source')
+    await waitFor(() => expect(source).toHaveAttribute('data-tone', 'clear'))
+    expect(screen.getByTestId('stream-diagnosis-cause-mapping')).toHaveAttribute('data-tone', 'clear')
+  })
+
+  it('shows a stopped stream as neutral (inactive), not as an attention cause', async () => {
+    vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mockImplementation(
+      async (_id: number, _window: string, params?: { snapshot_id?: string }) => ({
+        ...streamRuntimeMetricsFixture(params),
+        stream: { ...streamRuntimeMetricsFixture(params).stream, status: 'STOPPED' },
+      }) as Awaited<ReturnType<typeof gdcRuntime.fetchStreamRuntimeMetrics>>,
+    )
+    renderRuntimePage('42')
+    const source = await screen.findByTestId('stream-diagnosis-cause-source')
+    await waitFor(() => expect(source).toHaveAttribute('data-tone', 'inactive'))
+    expect(source).toHaveTextContent('Stopped')
+    expect(screen.getByTestId('stream-diagnosis-summary')).toHaveTextContent(/stopped or paused/i)
+    expect(document.querySelector('[data-testid^="stream-diagnosis-cause-"][data-tone="attention"]')).toBeNull()
+  })
+
+  it('flags an observed checkpoint that is behind successful delivery as attention, and a fresh one as clear', async () => {
+    const now = Date.now()
+    vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mockImplementation(
+      async (_id: number, _window: string, params?: { snapshot_id?: string }) => {
+        const base = observedStreamRuntimeMetricsFixture(params)
+        return {
+          ...base,
+          stream: {
+            ...base.stream,
+            last_success_at: new Date(now - 60_000).toISOString(),
+            last_checkpoint: { type: 'EVENT_ID', value: { event_id: 'evt-00140', timestamp: null } },
+          },
+          checkpoint_history: [
+            { updated_at: new Date(now - 3 * 3600_000).toISOString(), checkpoint_preview: 'evt-00140' },
+          ],
+        } as Awaited<ReturnType<typeof gdcRuntime.fetchStreamRuntimeMetrics>>
+      },
+    )
+    renderRuntimePage('42')
+    const checkpoint = await screen.findByTestId('stream-diagnosis-cause-checkpoint')
+    await waitFor(() => expect(checkpoint).toHaveAttribute('data-tone', 'attention'))
+    expect(checkpoint).toHaveTextContent('behind successful delivery')
+  })
+
+  it('does not show a green Healthy verdict in the why panel without observed delivery', async () => {
+    renderRuntimePage('42')
+    const panel = await screen.findByTestId('stream-why-panel')
+    expect(panel).toHaveTextContent('Not verified')
+    expect(panel).not.toHaveTextContent(/\bHealthy\b/)
+  })
+
   it('hides runtime mutation controls for a read-only viewer', async () => {
     const { persistSession } = await import('../../auth/session')
     persistSession({
@@ -1664,7 +1745,18 @@ const provenCounts = {
 }
 
 describe('StreamRuntimeDetailPage exact-run proof', () => {
+  // Recovery is only Clear when the source was actually observed, so these scenarios supply observed events.
+  afterEach(() => {
+    vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mockImplementation(
+      async (_id: number, _window: string, params?: { snapshot_id?: string }) => streamRuntimeMetricsFixture(params),
+    )
+  })
+
   beforeEach(() => {
+    vi.mocked(gdcRuntime.fetchStreamRuntimeMetrics).mockImplementation(
+      async (_id: number, _window: string, params?: { snapshot_id?: string }) =>
+        observedStreamRuntimeMetricsFixture(params) as Awaited<ReturnType<typeof gdcRuntime.fetchStreamRuntimeMetrics>>,
+    )
     mockFetchStreamById.mockImplementation(async (id: number) => ({
       id,
       name: `Stream ${id}`,
@@ -1715,7 +1807,7 @@ describe('StreamRuntimeDetailPage exact-run proof', () => {
     expect(screen.getByTestId('stream-diagnosis-step-edit-stream')).toHaveTextContent('Edit stream')
     expect(screen.getByTestId('stream-diagnosis-step-run-once')).toHaveTextContent('Run Now')
     expect(screen.getAllByText('ERROR', { exact: true }).length).toBeGreaterThan(0)
-    expect(screen.getByTitle('Deploy: Success')).toBeInTheDocument()
+    expect(screen.getByTitle('Deploy: 100.0% delivered')).toBeInTheDocument()
     expect(screen.queryByTitle('Route Processing: Warning')).not.toBeInTheDocument()
     expect(screen.queryByTitle('Route Processing: Failed')).not.toBeInTheDocument()
     await waitFor(() =>
