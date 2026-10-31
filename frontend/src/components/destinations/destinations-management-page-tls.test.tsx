@@ -115,6 +115,14 @@ describe('DestinationsManagementPage — SYSLOG_TLS', () => {
     expect(screen.getByLabelText(/verification mode/i)).toBeInTheDocument()
   })
 
+  it('exposes the Destination Type select under the exact accessible name "Type" (F-006)', async () => {
+    fetchDestinationsList.mockResolvedValueOnce([])
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: /new destination/i }))
+    expect(screen.getByLabelText('Type', { selector: 'select' })).toBeInstanceOf(HTMLSelectElement)
+  })
+
   it('renders insecure warning when verify mode is insecure_skip_verify', async () => {
     fetchDestinationsList.mockResolvedValueOnce([])
     renderPage()

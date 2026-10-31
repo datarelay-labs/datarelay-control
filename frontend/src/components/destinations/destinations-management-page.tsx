@@ -1584,6 +1584,7 @@ export function DestinationsManagementPage() {
                           <HelpTooltip content={HELP_COPY.destinationVsRoute.content} ariaLabel="Destination type help" />
                         </span>
                         <select
+                          aria-label="Type"
                           className="mt-1.5 h-10 w-full rounded-md border border-slate-200/80 dark:border-gdc-border bg-white dark:bg-gdc-section px-3 text-[13px] text-slate-900 dark:text-slate-50 focus:border-slate-400 dark:focus:border-slate-500 focus:outline-none"
                           value={form.destination_type}
                           onChange={(e) => {

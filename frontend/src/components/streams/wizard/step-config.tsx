@@ -1,5 +1,5 @@
 import { Plus, Trash2 } from 'lucide-react'
-import { useMemo, useState, type ReactNode } from 'react'
+import { Children, cloneElement, isValidElement, useId, useMemo, useState, type ReactElement, type ReactNode } from 'react'
 import { IncrementalFetchCompatibilityHints } from '../incremental-fetch-compatibility-hints'
 import {
   applyIncrementalRequestTemplate,
@@ -543,10 +543,20 @@ function Field({
   children: ReactNode
   className?: string
 }) {
+  const autoId = useId()
+  // Associate the label with a lone form control so it has a programmatic name (F-007).
+  const only = Children.count(children) === 1 ? Children.toArray(children)[0] : null
+  const control =
+    isValidElement(only) && typeof only.type === 'string' && ['input', 'select', 'textarea'].includes(only.type)
+      ? (only as ReactElement<{ id?: string }>)
+      : null
+  const controlId = control ? control.props.id ?? `${autoId}-field` : undefined
   return (
     <div className={cn('space-y-1', className)}>
-      <label className="text-[11px] font-semibold text-slate-600 dark:text-gdc-mutedStrong">{label}</label>
-      {children}
+      <label htmlFor={controlId} className="text-[11px] font-semibold text-slate-600 dark:text-gdc-mutedStrong">
+        {label}
+      </label>
+      {control && controlId && control.props.id == null ? cloneElement(control, { id: controlId }) : children}
     </div>
   )
 }

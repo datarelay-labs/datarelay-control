@@ -27,6 +27,12 @@ function ControlledStepConfig({ onPatch }: { onPatch?: (patch: Partial<WizardCon
 }
 
 describe('StepConfig', () => {
+  it('gives the Stream name and Endpoint path inputs programmatic labels (F-007)', () => {
+    render(<ControlledStepConfig />)
+    expect(screen.getByLabelText('Stream name *')).toBeInstanceOf(HTMLInputElement)
+    expect(screen.getByLabelText('Endpoint path *')).toBeInstanceOf(HTMLInputElement)
+  })
+
   afterEach(() => {
     vi.restoreAllMocks()
   })

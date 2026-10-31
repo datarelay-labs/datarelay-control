@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { sessionRoleLabel } from './role-labels'
+import { USER_ROLE_OPTIONS, sessionRoleLabel } from './role-labels'
 
 describe('canonical platform role labels', () => {
   it.each([
@@ -18,5 +18,13 @@ describe('canonical platform role labels', () => {
   it('never presents missing or unrecognized roles as a Viewer', () => {
     expect(sessionRoleLabel(null)).toBe('Unknown session')
     expect(sessionRoleLabel('UNRECOGNIZED')).toBe('Unknown role')
+  })
+
+  it('offers every role exactly once with a distinguishable user-form label (F-017)', () => {
+    const labels = USER_ROLE_OPTIONS.map((option) => option.label)
+    expect(new Set(labels).size).toBe(labels.length)
+    expect(new Set(USER_ROLE_OPTIONS.map((option) => option.value)).size).toBe(USER_ROLE_OPTIONS.length)
+    expect(USER_ROLE_OPTIONS.find((option) => option.value === 'OPERATOR')?.label).toBe('Operator (legacy)')
+    expect(USER_ROLE_OPTIONS.find((option) => option.value === 'CONNECTOR_OPERATOR')?.label).toBe('Connector Operator')
   })
 })

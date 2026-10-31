@@ -144,7 +144,10 @@ export function AppShellLayout() {
   const routeEditMatch = useMatch({ path: '/routes/:routeId/edit', end: true })
   const mappingEditMatch = useMatch({ path: '/mappings/:mappingId/edit', end: true })
   const logsStreamMatch = useMatch({ path: '/logs/:streamId', end: true })
-  const connectorMatch = useMatch({ path: '/connectors/:connectorId', end: true })
+  const connectorRouteMatch = useMatch({ path: '/connectors/:connectorId', end: true })
+  // `/connectors/new` is the create page, not a Connector whose id is "new" (F-003).
+  const connectorNewMatch = connectorRouteMatch?.params.connectorId === 'new'
+  const connectorMatch = connectorNewMatch ? null : connectorRouteMatch
   const destinationMatch = useMatch({ path: '/destinations/:destinationId', end: true })
   const shellStreamId =
     runtimeMatch?.params.streamId ??
@@ -451,6 +454,23 @@ export function AppShellLayout() {
         </nav>
       )
     }
+    if (connectorNewMatch) {
+      return (
+        <nav className="flex flex-wrap items-center gap-1" aria-label="Breadcrumb">
+          <span className="font-medium text-slate-600 dark:text-gdc-mutedStrong">Data Sources</span>
+          <span className="text-slate-400 dark:text-gdc-muted" aria-hidden>
+            /
+          </span>
+          <Link to={NAV_PATH.connectors} className="font-medium text-violet-700 hover:underline dark:text-violet-300">
+            Connectors
+          </Link>
+          <span className="text-slate-400 dark:text-gdc-muted" aria-hidden>
+            /
+          </span>
+          <span className="font-semibold text-slate-800 dark:text-slate-200">New connector</span>
+        </nav>
+      )
+    }
     if (connectorMatch?.params.connectorId) {
       return (
         <nav className="flex flex-wrap items-center gap-1" aria-label="Breadcrumb">
@@ -548,6 +568,7 @@ export function AppShellLayout() {
     shellLabels.mappingEdit?.name,
     logsStreamMatch,
     connectorMatch,
+    connectorNewMatch,
     shellLabels.connector?.name,
     destinationMatch,
     shellLabels.destination?.name,
@@ -578,6 +599,8 @@ export function AppShellLayout() {
                       ? shellLabels.mappingEdit?.name ?? 'Edit mapping'
                       : destinationMatch?.params.destinationId
                         ? shellLabels.destination?.name ?? PAGE_TITLE.destinations
+                        : connectorNewMatch
+                          ? 'New connector'
                         : connectorMatch?.params.connectorId
                           ? shellLabels.connector?.name ?? PAGE_TITLE.connectors
                           : PAGE_TITLE[activeNav]
@@ -614,6 +637,8 @@ export function AppShellLayout() {
                     ? shellLabels.loading
                       ? 'Loading destination context…'
                       : `Destination · ${shellLabels.destination?.name ?? destinationMatch.params.destinationId}`
+                    : connectorNewMatch
+                      ? 'New connector \u2014 define how Data Relay connects to a source. Nothing is saved until you select Save.'
                     : connectorMatch?.params.connectorId
                       ? shellLabels.loading
                         ? 'Loading connector context…'
