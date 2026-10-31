@@ -5,6 +5,7 @@ import {
   protectionActionNeedsFieldRule,
 } from './wizard-data-protection-persist'
 import {
+  evaluateSyncPositionBinding,
   wizardApiTestReady,
   wizardCheckpointConfirmed,
   wizardDestinationGateReady,
@@ -103,9 +104,13 @@ function reviewGateBlockers(state: WizardState): DeployGateBlocker[] {
     blockers.push({ category: 'data', message: 'Run a successful sample test for the current settings.' })
   }
   if (!terms.recordsGateReady || !terms.previewReady) {
+    const binding = evaluateSyncPositionBinding(state)
     blockers.push({
       category: 'records',
-      message: 'Confirm the record path and sync position against the latest sample (re-select them if the sample was refreshed).',
+      message:
+        binding.status === 'unbound' || binding.status === 'unsupported'
+          ? binding.reason
+          : 'Confirm the record path and sync position against the latest sample (re-select them if the sample was refreshed).',
     })
   }
   if (!terms.mappingReady) {

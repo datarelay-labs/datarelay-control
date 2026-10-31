@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   applySampleConfirmationToWizardState,
+  evaluateSyncPositionBinding,
   canAdvanceFromWizardStep,
   resolveHttpApiTestResult,
   sampleConfirmationPatch,
@@ -340,5 +341,71 @@ describe('Connect prerequisite', () => {
       state.connector.sourceId = invalid
       expect(wizardStepReachable('sample', state)).toBe(false)
     }
+  })
+})
+
+describe('evaluateSyncPositionBinding (F-162 / F-120)', () => {
+  function httpState() {
+    const state = sampleReadyState()
+    state.connector.sourceType = 'HTTP_API_POLLING'
+    state.stream.endpoint = '/bearer/events'
+    state.stream.checkpointSourcePath = '$.id'
+    return state
+  }
+
+  it('reports a Sync position the request never uses', () => {
+    const result = evaluateSyncPositionBinding(httpState())
+    expect(result.status).toBe('unbound')
+    if (result.status === 'unbound') {
+      expect(result.reason).toContain('$.id')
+      expect(result.reason).toContain('{{checkpoint.')
+    }
+  })
+
+  it('accepts a placeholder in a query parameter, the URL, the body or an applied incremental draft', () => {
+    const inParam = httpState()
+    inParam.stream.params = [{ id: 'p1', key: 'after', value: '{{checkpoint.value}}' }]
+    expect(evaluateSyncPositionBinding(inParam).status).toBe('bound')
+
+    const inUrl = httpState()
+    inUrl.stream.endpoint = '/events?after={{checkpoint.last_timestamp}}'
+    expect(evaluateSyncPositionBinding(inUrl).status).toBe('bound')
+
+    const inBody = httpState()
+    inBody.stream.httpMethod = 'POST'
+    inBody.stream.requestBody = '{"since":"{{ checkpoint.cursor }}"}'
+    expect(evaluateSyncPositionBinding(inBody).status).toBe('bound')
+
+    const inDraft = httpState()
+    inDraft.stream.incrementalRequestPattern = 'query_params'
+    inDraft.stream.incrementalRequestDraft = 'after={{checkpoint.value}}'
+    expect(evaluateSyncPositionBinding(inDraft).status).toBe('bound')
+  })
+
+  it('ignores a draft that is not applied (pattern none)', () => {
+    const state = httpState()
+    state.stream.incrementalRequestPattern = 'none'
+    state.stream.incrementalRequestDraft = 'after={{checkpoint.value}}'
+    expect(evaluateSyncPositionBinding(state).status).toBe('unbound')
+  })
+
+  it('names placeholders the runtime and API Test do not substitute', () => {
+    const state = httpState()
+    state.stream.params = [{ id: 'p1', key: 'after', value: '{{checkpoint.last_id}}' }]
+    const result = evaluateSyncPositionBinding(state)
+    expect(result.status).toBe('unsupported')
+    if (result.status === 'unsupported') {
+      expect(result.names).toEqual(['{{checkpoint.last_id}}'])
+      expect(result.reason).toContain('{{checkpoint.value}}')
+    }
+  })
+
+  it('does not apply to sources without an HTTP request or without a Sync position', () => {
+    const noPath = httpState()
+    noPath.stream.checkpointSourcePath = ''
+    expect(evaluateSyncPositionBinding(noPath).status).toBe('not_applicable')
+    const db = httpState()
+    db.connector.sourceType = 'DATABASE_QUERY'
+    expect(evaluateSyncPositionBinding(db).status).toBe('not_applicable')
   })
 })

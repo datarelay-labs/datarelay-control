@@ -11,6 +11,8 @@ import {
   incrementalPreviewKind,
   readCheckpointFromTestRecord,
   resolveCheckpointValuesForTest,
+  SUPPORTED_CHECKPOINT_PLACEHOLDER_NAMES,
+  unsupportedCheckpointPlaceholderNames,
   type IncrementalRequestPattern,
   type IncrementalRequestTestCheckpointResult,
 } from './wizard-incremental-request'
@@ -117,6 +119,13 @@ export function useIncrementalRequestTest(props: IncrementalRequestTestHookProps
   const checkpointCalc = useMemo((): IncrementalRequestTestCheckpointResult => {
     if (pattern === 'none' || !draft.trim()) {
       return { kind: 'disabled', reason: 'Select an incremental request pattern first.' }
+    }
+    const unsupported = unsupportedCheckpointPlaceholderNames(draft)
+    if (unsupported.length > 0) {
+      return {
+        kind: 'disabled',
+        reason: `Unsupported placeholder ${unsupported.join(', ')} would reach the source as literal text. Use ${SUPPORTED_CHECKPOINT_PLACEHOLDER_NAMES.map((n) => `{{checkpoint.${n}}}`).join(', ')}.`,
+      }
     }
     const values = resolveCheckpointValuesForTest({
       records: eventSourceRecords,

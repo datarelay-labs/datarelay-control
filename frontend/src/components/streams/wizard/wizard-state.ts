@@ -31,6 +31,7 @@ import {
 import {
   applyIncrementalRequestTemplate,
   incrementalTemplateDefaults,
+  incrementalCursorKindFromFieldType,
   type IncrementalRequestPattern,
 } from './wizard-incremental-request'
 import {
@@ -38,7 +39,7 @@ import {
   mergeStreamConfigJson,
 } from './wizard-stream-config-sync'
 import { buildPersistParams, normalizePaginationLabel } from '../stream-edit-request-params'
-import { wizardDestinationGateReady } from './wizard-step-gates'
+import { evaluateSyncPositionBinding, wizardDestinationGateReady } from './wizard-step-gates'
 
 /** Top-level wizard steps (Stream Wizard UX Charter v5.2 — P1 structure MVP). */
 export const WIZARD_STEP_KEYS = [
@@ -1545,6 +1546,7 @@ export function computeReviewGateTerms(state: WizardState): WizardReviewGateTerm
     (!isS3 || state.apiTest.s3ConnectivityPassed) &&
     (!isRemote || state.apiTest.remoteProbe?.ok === true)
   const previewErr = state.apiTest.analysis?.previewError
+  const syncPositionBinding = evaluateSyncPositionBinding(state)
   const recordsGateReady =
     isRemote || isWebhook
       ? apiTestRan
@@ -1556,7 +1558,10 @@ export function computeReviewGateTerms(state: WizardState): WizardReviewGateTerm
         state.stream.recordPathConfirmedForApiTestAt === state.apiTest.finishedAt &&
         state.stream.checkpointConfirmedForApiTestAt === state.apiTest.finishedAt &&
         (state.stream.useWholeResponseAsEvent || state.stream.eventArrayPath.trim().length > 0) &&
-        state.stream.checkpointSourcePath.trim().length > 0
+        state.stream.checkpointSourcePath.trim().length > 0 &&
+        // F-162: a Sync position the request never uses silently loses source events.
+        syncPositionBinding.status !== 'unbound' &&
+        syncPositionBinding.status !== 'unsupported'
   const previewReady = isRemote || isWebhook ? apiTestRan : recordsGateReady && !previewErr
   const mappingReady =
     wizardMappingContentReady(state) ||
@@ -1857,7 +1862,11 @@ export function buildPersistedStreamConfigPayload(state: WizardState): Record<st
     },
     state.stream.incrementalRequestPattern,
     state.stream.incrementalRequestDraft,
-    incrementalTemplateDefaults(state.stream.incrementalRequestPattern, state.stream.checkpointSourcePath),
+    incrementalTemplateDefaults(
+      state.stream.incrementalRequestPattern,
+      state.stream.checkpointSourcePath,
+      incrementalCursorKindFromFieldType(state.stream.checkpointFieldType),
+    ),
   )
   const runtimeUi =
     base.runtime_ui && typeof base.runtime_ui === 'object' && !Array.isArray(base.runtime_ui)

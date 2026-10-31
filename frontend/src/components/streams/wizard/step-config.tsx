@@ -5,6 +5,7 @@ import {
   applyIncrementalRequestTemplate,
   incrementalPatternDisplayLabel,
   incrementalTemplateDefaults,
+  incrementalCursorKindFromFieldType,
 } from './wizard-incremental-request'
 import { cn } from '../../../lib/utils'
 import { wizardIncrementalFetchGuidanceComplete } from './wizard-step-gates'
@@ -61,9 +62,13 @@ export function StepConfig({ state, section = 'request', onChange }: StepConfigP
         },
         c.incrementalRequestPattern,
         c.incrementalRequestDraft,
-        incrementalTemplateDefaults(c.incrementalRequestPattern, c.checkpointSourcePath),
+        incrementalTemplateDefaults(
+          c.incrementalRequestPattern,
+          c.checkpointSourcePath,
+          incrementalCursorKindFromFieldType(c.checkpointFieldType),
+        ),
       ),
-    [c.httpMethod, c.params, c.requestBody, c.incrementalRequestPattern, c.incrementalRequestDraft, c.checkpointSourcePath],
+    [c.httpMethod, c.params, c.requestBody, c.checkpointFieldType, c.incrementalRequestPattern, c.incrementalRequestDraft, c.checkpointSourcePath],
   )
 
   const [selectedBodyTemplate, setSelectedBodyTemplate] = useState<BodyTemplateId>(DEFAULT_BODY_TEMPLATE_ID)

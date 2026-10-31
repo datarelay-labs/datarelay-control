@@ -212,9 +212,56 @@ function buildCybereasonVisualSearchIncrementalBody(facetName: string, withCheck
   return JSON.stringify(body, null, 2)
 }
 
+/**
+ * Which runtime placeholder carries the stored sync position into the request.
+ * `timestamp` cursors use `{{checkpoint.last_timestamp}}`; id / cursor / offset cursors use
+ * `{{checkpoint.value}}` so an integer id is never presented as a timestamp (F-120).
+ */
+export type IncrementalCursorKind = 'timestamp' | 'value'
+
+export function incrementalCursorKindFromFieldType(fieldType: string | null | undefined): IncrementalCursorKind {
+  const t = String(fieldType ?? '').trim().toUpperCase()
+  return t === 'EVENT_ID' || t === 'CURSOR' || t === 'OFFSET' ? 'value' : 'timestamp'
+}
+
+export function checkpointPlaceholderForKind(kind: IncrementalCursorKind): string {
+  return kind === 'value' ? '{{checkpoint.value}}' : '{{checkpoint.last_timestamp}}'
+}
+
+/**
+ * `{{checkpoint.NAME}}` names the runtime and API Test both substitute. Any other name is sent
+ * to the source literally, so it is reported before the request is run or saved (F-120).
+ */
+export const SUPPORTED_CHECKPOINT_PLACEHOLDER_NAMES: readonly string[] = [
+  'last_timestamp',
+  'last_timestamp_ms',
+  'last_event_id',
+  'cursor',
+  'value',
+  'last_seen',
+  'next_cursor',
+]
+
+const CHECKPOINT_PLACEHOLDER_RE = /\{\{\s*checkpoint(?:\.([A-Za-z0-9_]*))?\s*\}\}/g
+
+/** Names used by `{{checkpoint.NAME}}` placeholders in `text` ('' for the bare `{{checkpoint}}`). */
+export function findCheckpointPlaceholderNames(text: string): string[] {
+  const names: string[] = []
+  for (const match of text.matchAll(CHECKPOINT_PLACEHOLDER_RE)) names.push(match[1] ?? '')
+  return names
+}
+
+export function unsupportedCheckpointPlaceholderNames(text: string): string[] {
+  const bad = findCheckpointPlaceholderNames(text).filter(
+    (name) => !SUPPORTED_CHECKPOINT_PLACEHOLDER_NAMES.includes(name),
+  )
+  return [...new Set(bad)].map((name) => (name ? `{{checkpoint.${name}}}` : '{{checkpoint}}'))
+}
+
 export function buildIncrementalRequestPlan(
   pattern: IncrementalRequestPattern,
   checkpointSourcePath: string,
+  cursorKind: IncrementalCursorKind = 'timestamp',
 ): IncrementalRequestPlan | null {
   if (pattern === 'none' || pattern === 'custom') return null
 
@@ -229,11 +276,14 @@ export function buildIncrementalRequestPlan(
   const fullField = fieldNameFromCheckpointPath(checkpointSourcePath)
   if (!fullField) return null
   const prefix = leafFieldName(checkpointSourcePath) || fullField
+  const checkpointToken = checkpointPlaceholderForKind(cursorKind)
+  // `{{now}}` is a time upper bound; it is meaningless for an id / cursor / offset position.
+  const timeUpperBound = cursorKind === 'timestamp'
 
   if (pattern === 'query_params') {
     const params = [
-      { key: `${prefix}_gt`, value: '{{checkpoint.last_timestamp}}' },
-      { key: `${prefix}_lte`, value: '{{now}}' },
+      { key: `${prefix}_gt`, value: checkpointToken },
+      ...(timeUpperBound ? [{ key: `${prefix}_lte`, value: '{{now}}' }] : []),
       { key: 'limit', value: '100' },
       { key: 'sort', value: `${prefix}:asc` },
     ]
@@ -243,8 +293,8 @@ export function buildIncrementalRequestPlan(
 
   if (pattern === 'json_body') {
     const body = {
-      from: '{{checkpoint.last_timestamp}}',
-      to: '{{now}}',
+      from: checkpointToken,
+      ...(timeUpperBound ? { to: '{{now}}' } : {}),
       limit: 100,
       sort: [{ [fullField]: 'asc' }],
     }
@@ -259,8 +309,8 @@ export function buildIncrementalRequestPlan(
     query: {
       range: {
         [fullField]: {
-          gt: '{{checkpoint.last_timestamp}}',
-          lte: '{{now}}',
+          gt: checkpointToken,
+          ...(timeUpperBound ? { lte: '{{now}}' } : {}),
         },
       },
     },
@@ -446,8 +496,9 @@ export function applyIncrementalRequestTemplate(
 export function incrementalTemplateDefaults(
   pattern: IncrementalRequestPattern,
   checkpointSourcePath: string,
+  cursorKind: IncrementalCursorKind = 'timestamp',
 ): { params?: Record<string, string>; body?: string } | undefined {
-  const plan = buildIncrementalRequestPlan(pattern, checkpointSourcePath)
+  const plan = buildIncrementalRequestPlan(pattern, checkpointSourcePath, cursorKind)
   if (!plan) return undefined
   if (plan.pattern === 'query_params') {
     return { params: Object.fromEntries(plan.params.map((p) => [p.key, p.value])) }
@@ -976,6 +1027,10 @@ export function buildApiTestCheckpointPayload(
     last_event_id: String(test.value),
     last_timestamp: String(test.value),
     last_timestamp_ms: String(test.value),
+    // Same aliases the runtime exposes, so `{{checkpoint.value}}` / `{{checkpoint.cursor}}` are
+    // substituted by Run Test instead of being sent to the source literally.
+    value: String(test.value),
+    cursor: String(test.value),
   }
 }
 

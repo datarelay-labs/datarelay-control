@@ -358,6 +358,11 @@ def api_test_checkpoint_replacements(checkpoint: dict[str, Any] | None) -> dict[
         replacements.update(
             {
                 "{{checkpoint}}": str(ck_val),
+                # Runtime aliases (build_runtime_checkpoint_template_context): API Test must substitute the
+                # same names the poller does, otherwise they reach the source as literal "{{...}}" text.
+                "{{checkpoint.cursor}}": str(ck_val),
+                "{{checkpoint.value}}": str(ck_val),
+                "{{checkpoint.last_seen}}": str(ck_val),
                 "{{checkpoint.last_timestamp}}": str(last_timestamp),
                 "{{checkpoint.last_timestamp_ms}}": str(last_timestamp_ms),
                 "{{checkpoint.last_event_id}}": str(last_event_id),

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   applyIncrementalRequestTemplate,
+  incrementalCursorKindFromFieldType,
+  unsupportedCheckpointPlaceholderNames,
   availableIncrementalPatterns,
   buildApiTestCheckpointPayload,
   buildIncrementalRequestPlan,
@@ -723,5 +725,42 @@ describe('applyIncrementalRequestTemplate', () => {
     expect(merged.body).toContain('{{checkpoint.last_timestamp}}')
     expect(merged.body).toContain('{{now}}')
     expect(merged.body).not.toContain('1700000000000')
+  })
+})
+
+describe('cursor-type aware incremental templates (F-120)', () => {
+  it('uses {{checkpoint.value}} and no time upper bound for id / cursor / offset positions', () => {
+    expect(incrementalCursorKindFromFieldType('EVENT_ID')).toBe('value')
+    expect(incrementalCursorKindFromFieldType('TIMESTAMP')).toBe('timestamp')
+    expect(incrementalCursorKindFromFieldType('')).toBe('timestamp')
+
+    const query = buildIncrementalRequestPlan('query_params', '$.data.items[*].id', 'value')
+    expect(query?.preview).toContain('{{checkpoint.value}}')
+    expect(query?.preview).not.toContain('last_timestamp')
+    expect(query?.preview).not.toContain('{{now}}')
+
+    const body = buildIncrementalRequestPlan('json_body', '$.id', 'value')
+    expect(body?.preview).toContain('{{checkpoint.value}}')
+    expect(body?.preview).not.toContain('{{now}}')
+
+    const es = buildIncrementalRequestPlan('elasticsearch', '$.id', 'value')
+    expect(es?.preview).toContain('{{checkpoint.value}}')
+    expect(es?.preview).not.toContain('lte')
+  })
+
+  it('keeps the timestamp placeholders for timestamp positions', () => {
+    const query = buildIncrementalRequestPlan('query_params', '$.ts')
+    expect(query?.preview).toContain('{{checkpoint.last_timestamp}}')
+    expect(query?.preview).toContain('{{now}}')
+  })
+
+  it('flags placeholder names that would be sent to the source literally', () => {
+    expect(unsupportedCheckpointPlaceholderNames('a={{checkpoint.last_id}}&b={{checkpoint.value}}')).toEqual([
+      '{{checkpoint.last_id}}',
+    ])
+    expect(unsupportedCheckpointPlaceholderNames('{{checkpoint}} {{checkpoint.last_timestamp}}')).toEqual([
+      '{{checkpoint}}',
+    ])
+    expect(unsupportedCheckpointPlaceholderNames('{{checkpoint.cursor}} {{now}}')).toEqual([])
   })
 })

@@ -17,6 +17,7 @@ function readyState() {
   state.stream.endpoint = '/events'
   state.stream.eventArrayPath = '$.events'
   state.stream.checkpointSourcePath = '$.timestamp'
+  state.stream.params = [{ id: 'p-sync', key: 'after', value: '{{checkpoint.last_timestamp}}' }]
   state.stream.checkpointFieldType = 'datetime'
   state.stream.recordPathConfirmedForApiTestAt = finishedAt
   state.stream.checkpointConfirmedForApiTestAt = finishedAt
@@ -441,5 +442,27 @@ describe('computeRouteDeployReadiness', () => {
     expect(routeProcessingStatusToDeployMode('Inherited')).toBe('shared')
     expect(routeProcessingStatusToDeployMode('Overridden')).toBe('override')
     expect(routeProcessingStatusToDeployMode('Mixed')).toBe('override')
+  })
+})
+
+describe('Sync position must be bound to the request (F-162)', () => {
+  it('refuses READY with a specific reason when no placeholder uses the Sync position', () => {
+    const state = readyState()
+    state.stream.params = []
+    const snapshot = computeDeployReadiness(state, { ok: true, failed: false, unknown: false })
+    expect(snapshot.canCreate).toBe(false)
+    expect(snapshot.statusLabel).toBe('NEEDS ATTENTION')
+    const records = snapshot.categories.find((c) => c.key === 'records')
+    expect(records?.tone).toBe('err')
+    expect(records?.summary).toContain('is not used by the request')
+    expect(records?.summary).toContain('{{checkpoint.')
+  })
+
+  it('names an unsupported placeholder instead of the generic confirm message', () => {
+    const state = readyState()
+    state.stream.params = [{ id: 'p', key: 'after', value: '{{checkpoint.last_id}}' }]
+    const snapshot = computeDeployReadiness(state, { ok: true, failed: false, unknown: false })
+    expect(snapshot.canCreate).toBe(false)
+    expect(snapshot.categories.find((c) => c.key === 'records')?.summary).toContain('{{checkpoint.last_id}}')
   })
 })

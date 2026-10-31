@@ -71,6 +71,7 @@ describe('computeStepCompletion v3 aggregation', () => {
     state.apiTest.eventCount = 1
     state.stream.useWholeResponseAsEvent = true
     state.stream.checkpointSourcePath = '$.ts'
+    state.stream.params = [{ id: 'p-sync', key: 'after', value: '{{checkpoint.last_timestamp}}' }]
     state.stream.recordPathConfirmedForApiTestAt = finishedAt
     state.stream.checkpointConfirmedForApiTestAt = finishedAt
     state.mapping = [{ id: 'm1', outputField: 'id', sourceJsonPath: '$.id' }]
