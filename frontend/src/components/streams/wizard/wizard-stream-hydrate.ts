@@ -29,6 +29,7 @@ import { fullEventRegexConfigJsonFromFieldMappings } from './wizard-full-event-r
 import {
   readAdvancedStreamConfigFromPersisted,
 } from './wizard-stream-config-sync'
+import { normalizeWizardDetectedField } from './wizard-data-protection-fields'
 import { hydrateRouteGovernanceDrafts } from './wizard-route-governance-bundle'
 import {
   inferIncrementalRequestPattern,
@@ -46,6 +47,7 @@ import {
   type WizardRouteDraft,
   type WizardRouteClassificationOverride,
   type WizardClassificationLevel,
+  type WizardDeliveryBehavior,
   type WizardRouteTransformOverride,
   type WizardState,
 } from './wizard-state'
@@ -723,6 +725,30 @@ export function hydrateStreamClassificationFloors(
   return restored
 }
 
+const PERSISTED_DELIVERY_BEHAVIORS = new Set<WizardDeliveryBehavior>(['continue', 'quarantine', 'block'])
+
+/**
+ * Stream protection rules carry no delivery behavior; it lives on the Governance rule for the same
+ * field. Showing Continue for a persisted Quarantine/Block would make the next Save silently widen
+ * delivery, so read the persisted value back (unknown or missing falls back to Continue).
+ */
+export function persistedIntentDeliveryBehavior(
+  governance: StreamGovernanceResponse | null,
+  fieldPath: string,
+): WizardDeliveryBehavior {
+  const wanted = normalizeWizardDetectedField(fieldPath) || fieldPath.trim()
+  for (const rule of governance?.rules ?? []) {
+    if (rule.enabled === false) continue
+    const candidate = normalizeWizardDetectedField(rule.field_path) || rule.field_path.trim()
+    if (candidate !== wanted) continue
+    const behavior = String(rule.default_delivery_behavior ?? '').trim().toLowerCase()
+    if (PERSISTED_DELIVERY_BEHAVIORS.has(behavior as WizardDeliveryBehavior)) {
+      return behavior as WizardDeliveryBehavior
+    }
+  }
+  return 'continue'
+}
+
 export async function hydrateWizardStateFromStream(streamId: number): Promise<WizardState | null> {
   const [found, mapping, allRoutes, destinations] = await Promise.all([
     fetchStreamById(streamId),
@@ -819,7 +845,7 @@ export async function hydrateWizardStateFromStream(streamId: number): Promise<Wi
         key: 'persisted-protection-' + rule.id,
         detectedField: rule.field_path,
         protectionAction: protectionModeToWizardAction(rule.protection_mode),
-        deliveryBehavior: 'continue' as const,
+        deliveryBehavior: persistedIntentDeliveryBehavior(streamGovernance, rule.field_path),
       })),
     },
     outcome: {
