@@ -71,6 +71,7 @@ import {
   saveStreamEditDraft,
 } from './wizard/wizard-edit-draft'
 import { useSessionCapabilities } from '../../lib/rbac'
+import { formatApiErrorMessage } from '../../lib/api-error-message'
 
 const EDIT_NEXT_STEP_LABEL: Partial<Record<WizardStepKey, string>> = {
   connect: 'Sample & Record Selection',
@@ -1034,7 +1035,7 @@ export function StreamEditWizardPage({
       allowedNextPathRef.current = NAV_PATH.streams
       navigate(NAV_PATH.streams)
     } catch (e) {
-      setStreamDeleteError(e instanceof Error ? e.message : 'Delete failed.')
+      setStreamDeleteError(formatApiErrorMessage(e, 'Delete failed.'))
     } finally {
       setStreamDeleteBusy(false)
     }
