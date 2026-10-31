@@ -903,6 +903,36 @@ export function StreamEditWizardPage({
     })
   }, [])
 
+  /**
+   * Start and Stop bump the stream row's `updated_at`, which is also the revision token a save is
+   * checked against. Without this the documented flow "Stop the Stream, then Save now" always failed
+   * with STREAM_STALE_WRITE and the reload advice dropped the local draft (F-148). After this page's
+   * own control action, adopt the server's current token in the draft, the confirmed baseline and
+   * the stored local draft; no draft content changes.
+   */
+  const adoptServerStreamRevision = useCallback(
+    (serverUpdatedAt: unknown) => {
+      const token = typeof serverUpdatedAt === 'string' ? serverUpdatedAt.trim() : ''
+      if (!token || backendStreamId == null) return
+      const adopt = (current: WizardState): WizardState =>
+        (typeof current.streamUpdatedAt === 'string' ? current.streamUpdatedAt.trim() : '') === token
+          ? current
+          : applyPersistedRevisions(current, { streamUpdatedAt: token })
+      if (latestStateRef.current) latestStateRef.current = adopt(latestStateRef.current)
+      if (confirmedStateRef.current) confirmedStateRef.current = adopt(confirmedStateRef.current)
+      setState((prev) => (prev ? adopt(prev) : prev))
+      try {
+        const stored = loadStreamEditDraft(backendStreamId)
+        if (stored && latestStateRef.current) {
+          saveStreamEditDraft(backendStreamId, latestStateRef.current, stored.stepKey)
+        }
+      } catch {
+        // Browser storage is best effort; the in-memory draft already carries the new token.
+      }
+    },
+    [backendStreamId],
+  )
+
   const runStreamControl = useCallback(
     async (action: 'start' | 'stop') => {
       if (!canRuntimeControl || backendStreamId == null || controlBusy) return
@@ -917,6 +947,7 @@ export function StreamEditWizardPage({
           await refreshRuntimeSnapshot()
           const found = await fetchStreamById(backendStreamId)
           if (found?.status) setRuntimeStatus(mapBackendStreamStatus(found.status))
+          adoptServerStreamRevision(found?.updated_at)
         } else {
           setControlMessage('Runtime API unavailable · control action not applied.')
         }
@@ -928,7 +959,15 @@ export function StreamEditWizardPage({
         setControlBusy(false)
       }
     },
-    [backendStreamId, canRuntimeControl, controlBusy, refreshRuntimeSnapshot, runOnceBusy, runtimeVerificationBlockedNow],
+    [
+      adoptServerStreamRevision,
+      backendStreamId,
+      canRuntimeControl,
+      controlBusy,
+      refreshRuntimeSnapshot,
+      runOnceBusy,
+      runtimeVerificationBlockedNow,
+    ],
   )
 
   const executeRunOnce = useCallback(async () => {
