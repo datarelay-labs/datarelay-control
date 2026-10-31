@@ -209,9 +209,12 @@ export function GovernanceDashboardPage() {
     const pending = summary?.pending_approvals ?? 0
     const quarantined = summary?.quarantined_events ?? 0
     const schemaChanges = operationalIssues.schemaDriftCount
+    const summaryUnverified = summary == null
     const actions = [
       {
-        label: `Review ${formatCount(critical)} critical violation${critical === 1 ? '' : 's'}`,
+        label: summaryUnverified
+          ? 'Critical violations: governance summary unavailable - counts not verified'
+          : `Review ${formatCount(critical)} critical violation${critical === 1 ? '' : 's'}`,
         to: NAV_PATH.governanceViolations,
         tone: 'red' as const,
         testId: 'gov-action-critical-violations',
@@ -219,7 +222,9 @@ export function GovernanceDashboardPage() {
         count: critical,
       },
       {
-        label: `Process ${formatCount(pending)} pending approval${pending === 1 ? '' : 's'}`,
+        label: summaryUnverified
+          ? 'Pending approvals: governance summary unavailable - counts not verified'
+          : `Process ${formatCount(pending)} pending approval${pending === 1 ? '' : 's'}`,
         to: NAV_PATH.governanceApprovals,
         tone: 'orange' as const,
         testId: 'gov-action-pending-approvals',
@@ -227,7 +232,9 @@ export function GovernanceDashboardPage() {
         count: pending,
       },
       {
-        label: `Review ${formatCount(quarantined)} quarantined event${quarantined === 1 ? '' : 's'}`,
+        label: summaryUnverified
+          ? 'Quarantined events: governance summary unavailable - counts not verified'
+          : `Review ${formatCount(quarantined)} quarantined event${quarantined === 1 ? '' : 's'}`,
         to: NAV_PATH.governanceQuarantine,
         tone: 'blue' as const,
         testId: 'gov-action-quarantine',

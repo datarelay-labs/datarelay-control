@@ -19,7 +19,7 @@ function whyVerdict(ctx: StreamIssueContext, issues: readonly OperationalIssue[]
 
 function severityBadgeClass(verdict: WhyVerdict): string {
   if (verdict === 'critical') return 'border-red-400/50 bg-red-500/10 text-red-300'
-  if (verdict === 'warning') return 'border-amber-400/50 bg-amber-500/10 text-amber-200'
+  if (verdict === 'warning') return 'border-status-warning-border bg-status-warning-subtle text-status-warning'
   if (verdict === 'healthy') return 'border-emerald-400/50 bg-emerald-500/10 text-emerald-300'
   return 'border-slate-300/70 bg-slate-500/10 text-slate-600 dark:border-slate-500/50 dark:text-slate-300'
 }
@@ -116,7 +116,7 @@ export function StreamWhyPanel({
             <ul className="mt-1.5 space-y-1.5">
               {actions.map((action) => (
                 <li key={action} className="flex items-start gap-1.5 text-[11px] text-slate-700 dark:text-gdc-mutedStrong">
-                  <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-500" aria-hidden />
+                  <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-status-warning" aria-hidden />
                   <span>{action}</span>
                 </li>
               ))}

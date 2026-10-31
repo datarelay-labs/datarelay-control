@@ -26,7 +26,7 @@ function toneClass(tone: DiagnosisTone): string {
     case 'critical':
       return 'border-red-300/80 bg-red-500/[0.06] text-red-950 dark:border-red-500/35 dark:bg-red-500/10 dark:text-red-100'
     case 'attention':
-      return 'border-amber-300/80 bg-amber-500/[0.07] text-amber-950 dark:border-amber-500/35 dark:bg-amber-500/10 dark:text-amber-100'
+      return 'border-status-warning-border bg-status-warning-subtle text-status-warning'
     case 'clear':
       return 'border-emerald-300/70 bg-emerald-500/[0.05] text-emerald-950 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100'
     case 'not_applicable':

@@ -1629,7 +1629,7 @@ export function StreamRuntimeDetailPage() {
           <p>
             <span className="font-semibold">Delivery retries (sum, last hour):</span>{' '}
             <span className="tabular-nums font-medium">{routeRetryTotalLastHour}</span>
-            <span className="text-amber-800/90 dark:text-amber-200/85"> · from route_runtime aggregates</span>
+            <span className="text-status-warning"> · from route_runtime aggregates</span>
           </p>
           {backendStreamId != null ? (
             <Link
@@ -1666,7 +1666,7 @@ export function StreamRuntimeDetailPage() {
                         {it.update_reason ?? '—'}
                       </span>
                       {it.partial_success ? (
-                        <span className="rounded bg-amber-500/15 px-1.5 py-px text-[10px] font-semibold text-amber-900 dark:text-amber-200">
+                        <span className="rounded bg-status-warning-subtle px-1.5 py-px text-[10px] font-semibold text-status-warning">
                           Partial success
                         </span>
                       ) : null}
@@ -1846,7 +1846,7 @@ export function StreamRuntimeDetailPage() {
                           ) : row.status === 'Failed' ? (
                             <XCircle className="h-3.5 w-3.5 text-red-600 dark:text-red-400" aria-hidden />
                           ) : row.status === 'Partial' ? (
-                            <AlertTriangle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" aria-hidden />
+                            <AlertTriangle className="h-3.5 w-3.5 text-status-warning" aria-hidden />
                           ) : (
                             <History className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" aria-hidden />
                           )}

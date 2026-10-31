@@ -77,7 +77,7 @@ function stageBubbleClass(status: FlowTimelineStageStatus) {
     case 'ok':
       return 'border-emerald-500/50 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
     case 'warn':
-      return 'border-amber-500/50 bg-amber-500/15 text-amber-700 dark:text-amber-300'
+      return 'border-status-warning-border bg-status-warning-subtle text-status-warning'
     case 'error':
       return 'border-red-500/50 bg-red-500/15 text-red-700 dark:text-red-300'
     case 'skipped':
@@ -301,7 +301,7 @@ function stageStatusClass(status: FlowTimelineStageStatus, detail?: string): str
     case 'ok':
       return 'text-emerald-600 dark:text-emerald-400'
     case 'warn':
-      return 'text-amber-600 dark:text-amber-400'
+      return 'text-status-warning'
     case 'error':
       return 'text-red-600 dark:text-red-400'
     default:
@@ -398,7 +398,7 @@ export function StreamFlowTimeline({ stages, lastRunLabel, className }: StreamFl
       </div>
 
       {warnStage ? (
-        <p className="mt-3 text-[11px] text-amber-800 dark:text-amber-200">
+        <p className="mt-3 text-[11px] text-status-warning">
           <AlertTriangle className="mr-1 inline h-3.5 w-3.5 align-text-bottom" aria-hidden />
           {warnStage.label}: {warnStage.status === 'error' ? 'error' : 'needs attention'}
           {warnStage.detail ? ` — ${warnStage.detail}` : ''}
