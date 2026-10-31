@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
 from starlette.status import HTTP_422_UNPROCESSABLE_CONTENT
-from sqlalchemy import text
+from sqlalchemy import func, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -452,6 +452,7 @@ def read_network_settings(
 @router.put("/network-settings", response_model=NetworkSettingsSaveResponse)
 def update_network_settings(
     payload: NetworkSettingsUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     _admin: str = Depends(require_roles(ROLE_ADMINISTRATOR)),
 ) -> NetworkSettingsSaveResponse:
@@ -468,6 +469,7 @@ def update_network_settings(
         db,
         action="NETWORK_SETTINGS_UPDATED",
         actor_username="system",
+        request=request,
         details={
             "http_port": cfg.http_port,
             "https_port": cfg.https_port,
@@ -489,6 +491,7 @@ def update_network_settings(
 
 @router.post("/network-settings/apply", response_model=NetworkSettingsApplyResponse)
 def apply_network_settings(
+    request: Request,
     db: Session = Depends(get_db),
     _admin: str = Depends(require_roles(ROLE_ADMINISTRATOR)),
 ) -> NetworkSettingsApplyResponse:
@@ -506,6 +509,7 @@ def apply_network_settings(
         db,
         action="NETWORK_SETTINGS_APPLY_REVERSE_PROXY_RECREATE",
         actor_username="system",
+        request=request,
         details={
             "command": result.command,
             "success": result.success,
@@ -637,6 +641,7 @@ def update_https_settings(payload: HttpsSettingsUpdate, request: Request, db: Se
         db,
         action="HTTPS_SETTINGS_UPDATED",
         actor_username="system",
+        request=request,
         details={
             "enabled": payload.enabled,
             "redirect_http_to_https": payload.redirect_http_to_https,
@@ -710,6 +715,7 @@ def read_users(db: Session = Depends(get_db)) -> list[PlatformUserRead]:
 @router.post("/users", response_model=PlatformUserRead, status_code=status.HTTP_201_CREATED)
 def create_user(
     payload: PlatformUserCreate,
+    request: Request,
     db: Session = Depends(get_db),
     _admin: str = Depends(require_roles(ROLE_ADMINISTRATOR)),
 ) -> PlatformUserRead:
@@ -717,6 +723,22 @@ def create_user(
         username = normalize_username(payload.username)
     except ValueError as exc:
         raise _http_error("USER_USERNAME_INVALID", str(exc)) from exc
+
+    # Usernames that differ only by letter case are the same person to an operator (F-201). Login
+    # matching is unchanged; this only stops creating look-alike accounts.
+    existing = (
+        db.query(PlatformUser.username)
+        .filter(func.lower(PlatformUser.username) == username.lower())
+        .first()
+    )
+    if existing is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error_code": "USER_USERNAME_TAKEN",
+                "message": f"username already exists: {existing[0]} (usernames are compared without regard to letter case)",
+            },
+        )
 
     user = PlatformUser(
         username=username,
@@ -730,7 +752,8 @@ def create_user(
         journal.record_audit_event(
             db,
             action="USER_CREATED",
-            actor_username=username,
+            actor_username="system",
+            request=request,
             entity_type="PLATFORM_USER",
             entity_id=int(user.id),
             entity_name=username,
@@ -751,6 +774,7 @@ def create_user(
 def update_user(
     user_id: int,
     payload: PlatformUserUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     _admin: str = Depends(require_roles(ROLE_ADMINISTRATOR)),
 ) -> PlatformUserRead:
@@ -795,6 +819,7 @@ def update_user(
         db,
         action="USER_UPDATED",
         actor_username="system",
+        request=request,
         entity_type="PLATFORM_USER",
         entity_id=int(user.id),
         entity_name=user.username,
@@ -919,6 +944,7 @@ def reset_user_mfa(
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_user(
     user_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     _admin: str = Depends(require_roles(ROLE_ADMINISTRATOR)),
 ) -> None:
@@ -935,6 +961,7 @@ def delete_user(
         db,
         action="USER_DELETED",
         actor_username="system",
+        request=request,
         entity_type="PLATFORM_USER",
         entity_id=uid,
         entity_name=uname,
@@ -945,7 +972,7 @@ def delete_user(
 
 
 @router.post("/password", status_code=status.HTTP_204_NO_CONTENT)
-def change_password(payload: AdminPasswordChange, db: Session = Depends(get_db)) -> None:
+def change_password(payload: AdminPasswordChange, request: Request, db: Session = Depends(get_db)) -> None:
     try:
         username = normalize_username(payload.username)
     except ValueError as exc:
@@ -965,6 +992,7 @@ def change_password(payload: AdminPasswordChange, db: Session = Depends(get_db))
         db,
         action="PASSWORD_CHANGED",
         actor_username=username,
+        request=request,
         entity_type="PLATFORM_USER",
         entity_id=int(user.id),
         entity_name=username,
@@ -1010,7 +1038,9 @@ def read_retention_policy(db: Session = Depends(get_db)) -> RetentionPolicyRead:
 
 
 @router.put("/retention-policy", response_model=RetentionPolicyRead)
-def update_retention_policy(payload: RetentionPolicyUpdate, db: Session = Depends(get_db)) -> RetentionPolicyRead:
+def update_retention_policy(
+    payload: RetentionPolicyUpdate, request: Request, db: Session = Depends(get_db)
+) -> RetentionPolicyRead:
     row = get_retention_policy_row(db)
     data = payload.model_dump(exclude_unset=True)
     allowed = {
@@ -1033,6 +1063,7 @@ def update_retention_policy(payload: RetentionPolicyUpdate, db: Session = Depend
         db,
         action="RETENTION_POLICY_UPDATED",
         actor_username="system",
+        request=request,
         details=data,
     )
     db.commit()
@@ -1054,7 +1085,9 @@ def read_display_settings(db: Session = Depends(get_db)) -> DisplaySettingsRead:
 
 
 @router.put("/display-settings", response_model=DisplaySettingsRead)
-def update_display_settings(payload: DisplaySettingsUpdate, db: Session = Depends(get_db)) -> DisplaySettingsRead:
+def update_display_settings(
+    payload: DisplaySettingsUpdate, request: Request, db: Session = Depends(get_db)
+) -> DisplaySettingsRead:
     tz = validate_iana_timezone(payload.default_timezone)
     row = get_display_settings_row(db)
     row.default_timezone = tz
@@ -1062,6 +1095,7 @@ def update_display_settings(payload: DisplaySettingsUpdate, db: Session = Depend
         db,
         action="DISPLAY_SETTINGS_UPDATED",
         actor_username="system",
+        request=request,
         details={"default_timezone": tz},
     )
     db.commit()
@@ -1400,6 +1434,7 @@ def update_alert_settings(
         db,
         action="ALERT_RULE_UPDATED",
         actor_username="system",
+        request=request,
         details={"channels_updated": _alert_update_audit_details(payload)},
     )
     db.commit()
@@ -1409,6 +1444,7 @@ def update_alert_settings(
 
 @router.post("/alert-settings/test", response_model=AlertTestResponse)
 def post_alert_settings_test(
+    request: Request,
     payload: AlertTestRequest | None = None,
     db: Session = Depends(get_db),
 ) -> AlertTestResponse:
@@ -1428,6 +1464,7 @@ def post_alert_settings_test(
         db,
         action="ALERT_TEST_DISPATCHED",
         actor_username="system",
+        request=request,
         details={
             "alert_type": body.alert_type,
             "delivery_status": result.delivery_status,
