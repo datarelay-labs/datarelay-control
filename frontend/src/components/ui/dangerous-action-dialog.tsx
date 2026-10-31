@@ -1,5 +1,6 @@
-import { useEffect, useId, useRef } from 'react'
+import { useId, useRef } from 'react'
 import { cn } from '../../lib/utils'
+import { useModalA11y } from './use-modal-a11y'
 
 export type DangerousActionRisk = 'medium' | 'high' | 'critical'
 
@@ -73,27 +74,31 @@ export function DangerousActionDialog({
 }: DangerousActionDialogProps) {
   const titleId = useId()
   const cancelRef = useRef<HTMLButtonElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
   const typedMatch =
     confirmMode !== 'type-name' || typeNameValue.trim() === expectedTypeName.trim()
   const confirmDisabled = busy || Boolean(blockReason) || !typedMatch
 
-  useEffect(() => {
-    if (!open) return
-    cancelRef.current?.focus()
-  }, [open])
+  // F-228: initial focus on the safe Cancel action, focus trap, Escape from anywhere, focus returned to the opener.
+  useModalA11y({
+    open,
+    containerRef: dialogRef,
+    initialFocusRef: cancelRef,
+    onEscape: () => onOpenChange(false),
+    escapeDisabled: busy,
+  })
 
   if (!open) return null
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4"
+      ref={dialogRef}
+      tabIndex={-1}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 focus:outline-none"
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
       data-testid={dataTestId}
-      onKeyDown={(event) => {
-        if (event.key === 'Escape' && !busy) onOpenChange(false)
-      }}
     >
       <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-xl dark:border-gdc-border dark:bg-gdc-card">
         <h3 id={titleId} className="text-sm font-semibold text-slate-900 dark:text-slate-50">
