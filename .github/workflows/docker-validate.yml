@@ -34,6 +34,8 @@ jobs:
           SECRET_KEY: ci-only-not-for-deploy-secret-key-32bytes
           ENCRYPTION_KEY: ci-only-not-for-deploy-encryption-key32
           GDC_PROXY_RELOAD_TOKEN: ci-only-not-for-deploy-token
+          # RFC 5737 documentation address: CI-only placeholder, never use in a real deployment.
+          GDC_PROXY_FORWARD_TRUSTED_HOSTS: 192.0.2.200/32
         run: docker compose -f deploy/docker-compose.https.yml config -q
 
   shellcheck-release:

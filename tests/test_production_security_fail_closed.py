@@ -247,6 +247,8 @@ def test_production_compose_config_fails_without_jwt_secret() -> None:
             "SECRET_KEY": strong,
             "ENCRYPTION_KEY": secrets.token_urlsafe(32),
             "GDC_PROXY_RELOAD_TOKEN": secrets.token_urlsafe(32),
+            # Supply the required proxy peer so JWT_SECRET_KEY is the only missing value.
+            "GDC_PROXY_FORWARD_TRUSTED_HOSTS": "192.0.2.200/32",
         }
     )
     completed = subprocess.run(
@@ -272,6 +274,8 @@ def test_production_compose_config_passes_with_required_secrets() -> None:
             "SECRET_KEY": secrets.token_urlsafe(48),
             "ENCRYPTION_KEY": secrets.token_urlsafe(32),
             "GDC_PROXY_RELOAD_TOKEN": secrets.token_urlsafe(32),
+            # RFC 5737 documentation address; Compose now requires an explicit proxy peer.
+            "GDC_PROXY_FORWARD_TRUSTED_HOSTS": "192.0.2.200/32",
             "GDC_ENTRY_HTTP_PORT": "18080",
             "GDC_ENTRY_HTTPS_PORT": "18443",
         }
