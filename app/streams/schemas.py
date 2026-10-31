@@ -84,3 +84,11 @@ class StreamRead(StreamBase):
     status: str | None = Field(default=None, description="StreamStatus value when populated")
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+
+class StreamDeleteImpact(BaseModel):
+    """Operator-held data that deleting the stream permanently destroys."""
+
+    stream_id: int
+    quarantined_events: int
+    pending_replay_jobs: int

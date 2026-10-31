@@ -10,7 +10,7 @@ from app.connectors.models import Connector
 from app.database import get_db, get_db_read_bounded, utcnow
 from app.sources.models import Source
 from app.streams import repository as streams_repository
-from app.streams.delete_scope import delete_stream_and_dependencies
+from app.streams.delete_scope import delete_stream_and_dependencies, stream_delete_impact
 from app.streams.models import Stream
 from app.platform_admin import journal
 from app.platform_admin.config_entity_snapshots import serialize_stream_config
@@ -18,7 +18,7 @@ from app.runners.stream_runner import StreamRunner
 from app.runtime import control_service
 from app.runtime.schemas import RuntimeStreamControlResponse
 from app.scheduler import runtime_state as scheduler_runtime_state
-from app.streams.schemas import StreamCreate, StreamRead, StreamUpdate
+from app.streams.schemas import StreamCreate, StreamDeleteImpact, StreamRead, StreamUpdate
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -201,6 +201,20 @@ async def update_stream(stream_id: int, payload: StreamUpdate, request: Request,
     return StreamRead.model_validate(row)
 
 
+@router.get("/{stream_id}/delete-impact", response_model=StreamDeleteImpact)
+async def get_stream_delete_impact(
+    stream_id: int, db: Session = Depends(get_db_read_bounded)
+) -> StreamDeleteImpact:
+    """Counts of quarantined events and pending replay jobs a delete would destroy."""
+
+    if streams_repository.get_stream_by_id(db, stream_id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error_code": "STREAM_NOT_FOUND", "message": f"stream not found: {stream_id}"},
+        )
+    return StreamDeleteImpact(stream_id=stream_id, **stream_delete_impact(db, stream_id))
+
+
 @router.delete("/{stream_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_stream(stream_id: int, request: Request, db: Session = Depends(get_db)) -> None:
     row = streams_repository.get_stream_by_id(db, stream_id)
@@ -227,6 +241,9 @@ async def delete_stream(stream_id: int, request: Request, db: Session = Depends(
             },
         )
     stream_name = str(row.name)
+    # Counted server-side at delete time (not trusted from the client) so the audit trail records
+    # exactly what this delete destroyed.
+    impact = stream_delete_impact(db, stream_id)
     try:
         journal.record_audit_event(
             db,
@@ -234,6 +251,10 @@ async def delete_stream(stream_id: int, request: Request, db: Session = Depends(
             entity_type="STREAM",
             entity_id=stream_id,
             entity_name=stream_name,
+            details={
+                "quarantined_events_deleted": impact["quarantined_events"],
+                "pending_replay_jobs_deleted": impact["pending_replay_jobs"],
+            },
             request=request,
         )
         delete_stream_and_dependencies(db, stream_id)

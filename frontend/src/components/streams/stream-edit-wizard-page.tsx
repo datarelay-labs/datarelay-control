@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { cn } from '../../lib/utils'
 import { NAV_PATH, streamRuntimePath, type StreamWizardStepKey } from '../../config/nav-paths'
-import { deleteStream, fetchStreamById } from '../../api/gdcStreams'
+import { deleteStream, fetchStreamById, fetchStreamDeleteImpact } from '../../api/gdcStreams'
 import {
   fetchStreamRuntimeStatsHealth,
   startRuntimeStream,
@@ -62,7 +62,7 @@ import {
   normalizeEventRootPath,
 } from '../../utils/eventExtractionPaths'
 import { normalizeCheckpointRelativePath } from '../../utils/recordSelectionPaths'
-import { StreamDeleteConfirmDialog } from './stream-delete-confirm-dialog'
+import { StreamDeleteConfirmDialog, type StreamDeleteImpactState } from './stream-delete-confirm-dialog'
 import { WizardRouteLeaveGuard, type WizardBlockedNavigation } from './wizard/wizard-route-leave-guard'
 import {
   clearStreamEditDraft,
@@ -186,6 +186,7 @@ export function StreamEditWizardPage({
   const [operationalSampleId, setOperationalSampleId] = useState<OperationalSampleId | null>(null)
   const [dataProtectionDrawerOpen, setDataProtectionDrawerOpen] = useState(false)
   const [streamDeleteOpen, setStreamDeleteOpen] = useState(false)
+  const [streamDeleteImpact, setStreamDeleteImpact] = useState<StreamDeleteImpactState>({ status: 'loading' })
   const [streamDeleteConfirm, setStreamDeleteConfirm] = useState('')
   const [streamDeleteBusy, setStreamDeleteBusy] = useState(false)
   const [streamDeleteError, setStreamDeleteError] = useState<string | null>(null)
@@ -1023,10 +1024,35 @@ export function StreamEditWizardPage({
     runtimeVerificationBlockedNow,
   ])
 
+  // Count quarantined events and pending replay jobs every time the dialog opens; the delete is
+  // blocked until the count is known so held data is never destroyed unseen.
+  useEffect(() => {
+    if (!streamDeleteOpen || backendStreamId == null) return
+    let cancelled = false
+    setStreamDeleteImpact({ status: 'loading' })
+    void fetchStreamDeleteImpact(backendStreamId)
+      .then((impact) => {
+        if (cancelled) return
+        setStreamDeleteImpact({
+          status: 'ready',
+          quarantinedEvents: impact.quarantined_events,
+          pendingReplayJobs: impact.pending_replay_jobs,
+        })
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return
+        setStreamDeleteImpact({ status: 'error', message: formatApiErrorMessage(e, 'request failed') })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [backendStreamId, streamDeleteOpen])
+
   const executeStreamDelete = useCallback(async () => {
     if (!canMutateWorkspace || backendStreamId == null) return
     const streamName = state?.stream.name ?? ''
     if (streamDeleteConfirm.trim() !== streamName.trim()) return
+    if (streamDeleteImpact.status !== 'ready') return
     setStreamDeleteBusy(true)
     setStreamDeleteError(null)
     try {
@@ -1039,7 +1065,7 @@ export function StreamEditWizardPage({
     } finally {
       setStreamDeleteBusy(false)
     }
-  }, [backendStreamId, canMutateWorkspace, navigate, state?.stream.name, streamDeleteConfirm])
+  }, [backendStreamId, canMutateWorkspace, navigate, state?.stream.name, streamDeleteConfirm, streamDeleteImpact.status])
 
   const headerStatus = runtimeStatus
   const headerStatusTone =
@@ -1559,6 +1585,7 @@ export function StreamEditWizardPage({
           busy={streamDeleteBusy}
           error={streamDeleteError}
           running={runtimeStatus === 'RUNNING'}
+          impact={streamDeleteImpact}
           onOpenChange={(open) => {
             if (!open && !streamDeleteBusy) {
               setStreamDeleteOpen(false)

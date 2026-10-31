@@ -160,6 +160,17 @@ export async function updateStream(
   return updated
 }
 
+export type StreamDeleteImpact = {
+  stream_id: number
+  quarantined_events: number
+  pending_replay_jobs: number
+}
+
+/** Held data a stream delete would destroy. Throws on failure so the caller can fail closed. */
+export async function fetchStreamDeleteImpact(streamId: number): Promise<StreamDeleteImpact> {
+  return requestJson<StreamDeleteImpact>(`${GDC_API_PREFIX}/streams/${streamId}/delete-impact`)
+}
+
 export async function deleteStream(streamId: number): Promise<void> {
   await requestJson<unknown>(`${GDC_API_PREFIX}/streams/${streamId}`, {
     method: 'DELETE',
