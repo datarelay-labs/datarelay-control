@@ -134,6 +134,11 @@ export function collectWizardSamplePaths(state: WizardState): string[] {
   return collectRuntimeEventFieldPaths(firstWizardSampleEvent(state))
 }
 
+// Without strictNullChecks a truthiness check does not narrow this union; compare to false.
+function isAmbiguousPathResult(result: ProtectionPathResolveResult): boolean {
+  return result.ok === false && result.error.startsWith('Ambiguous')
+}
+
 /**
  * Resolve a protection field against the preview-derived runtime paths first, then fall back to the
  * paths the Data Protection step itself offered (mapping applied synchronously) and finally to the raw
@@ -147,11 +152,11 @@ export function resolveProtectionFieldPathWithFallbacks(
   aliasMap: ReadonlyMap<string, string>,
 ): ProtectionPathResolveResult {
   let result = resolveProtectionFieldPath(selectedPath, runtimePaths, aliasMap)
-  if (result.ok || result.error.startsWith('Ambiguous')) return result
+  if (result.ok || isAmbiguousPathResult(result)) return result
   for (const paths of fallbackPathSets) {
     if (paths.length === 0) continue
     const attempt = resolveProtectionFieldPath(selectedPath, paths, aliasMap)
-    if (attempt.ok || attempt.error.startsWith('Ambiguous')) return attempt
+    if (attempt.ok || isAmbiguousPathResult(attempt)) return attempt
     result = attempt
   }
   const known = runtimePaths.length > 0 || fallbackPathSets.some((paths) => paths.length > 0)
@@ -186,7 +191,7 @@ export async function precheckWizardProtectionPaths(state: WizardState): Promise
       [mappedPaths, samplePaths],
       aliasMap,
     )
-    if (!result.ok) errors.push(`data-protection: ${intent.detectedField}: ${result.error}`)
+    if (result.ok === false) errors.push(`data-protection: ${intent.detectedField}: ${result.error}`)
   }
   return errors
 }

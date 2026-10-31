@@ -24,7 +24,7 @@ function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? '' : 's'}`
 }
 
-export function streamDeleteHeldDataBullets(impact: StreamDeleteImpactState | undefined): string[] {
+function streamDeleteHeldDataBullets(impact: StreamDeleteImpactState | undefined): string[] {
   if (impact?.status !== 'ready') return []
   const bullets: string[] = []
   if (impact.quarantinedEvents > 0) {
