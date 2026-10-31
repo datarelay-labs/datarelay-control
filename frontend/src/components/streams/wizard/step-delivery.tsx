@@ -28,6 +28,8 @@ import { DELIVERY_PREVIEW_SAMPLE_EVENT } from '../../../utils/deliveryPreviewSam
 import { DEFAULT_MESSAGE_PREFIX_TEMPLATE, defaultMessagePrefixEnabled } from '../../../utils/messagePrefixDefaults'
 import { MessagePrefixDeliveryPreview } from '../message-prefix-delivery-preview'
 import { buttonClassName } from '../../ui/button-classes'
+import { DangerousActionDialog } from '../../ui/dangerous-action-dialog'
+import { ROUTE_DELETE_REVERSIBILITY, routeDeleteImpactBullets } from '../destructive-lifecycle-copy'
 import {
   deliveryModeFromFailurePolicy,
   destinationLibraryTab,
@@ -409,6 +411,10 @@ type StepDeliveryProps = {
   canValidate?: boolean
 }
 
+function isSavedRouteDraftKey(key: string): boolean {
+  return /^route-\d+$/.test(key)
+}
+
 export function StepDelivery({
   state,
   onChange,
@@ -426,6 +432,7 @@ export function StepDelivery({
   const [search, setSearch] = useState('')
   const [tab, setTab] = useState<DestinationLibraryTab>('all')
   const [menuKey, setMenuKey] = useState<string | null>(null)
+  const [pendingRemoveKey, setPendingRemoveKey] = useState<string | null>(null)
   const [testBusyId, setTestBusyId] = useState<number | null>(null)
   const [testFeedbackByDestinationId, setTestFeedbackByDestinationId] = useState<Record<number, DestinationProbeFeedback>>({})
   const [inlineCreateOpen, setInlineCreateOpen] = useState(false)
@@ -684,6 +691,7 @@ export function StepDelivery({
   }, [destinations])
 
   const drafts = state.destinations.routeDrafts
+  const pendingRemoveDraft = pendingRemoveKey != null ? drafts.find((d) => d.key === pendingRemoveKey) : undefined
   const returnedDestination =
     recentlyCreatedDestinationId != null ? destById.get(recentlyCreatedDestinationId) : undefined
   const returnedDestinationHasPath =
@@ -1240,6 +1248,13 @@ export function StepDelivery({
                     draft={draft}
                     destination={destById.get(draft.destinationId)}
                     onRemove={() => {
+                      // A saved route carries transform/protection/policy configuration that is
+                      // permanently deleted on Save, so removal needs an explicit confirmation.
+                      // A route that was only added in this session has nothing to lose.
+                      if (isSavedRouteDraftKey(draft.key)) {
+                        setPendingRemoveKey(draft.key)
+                        return
+                      }
                       onChange({ routeDrafts: drafts.filter((d) => d.key !== draft.key) })
                     }}
                     onDuplicate={() => onChange({ routeDrafts: duplicateRouteDraft(drafts, draft.key) })}
@@ -1483,7 +1498,29 @@ export function StepDelivery({
           </aside>
         </div>
       )}
-
+      {pendingRemoveDraft ? (
+        <DangerousActionDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setPendingRemoveKey(null)
+          }}
+          title="Remove route from stream?"
+          targetName={destById.get(pendingRemoveDraft.destinationId)?.name ?? 'destination'}
+          impactBullets={[
+            ...routeDeleteImpactBullets(false),
+            pendingRemoveDraft.enabled
+              ? 'The route is currently enabled: it is disabled and then deleted when you save the stream.'
+              : 'The route is deleted when you save the stream. Leaving without saving keeps it.',
+          ]}
+          reversibility={ROUTE_DELETE_REVERSIBILITY}
+          primaryLabel="Remove route"
+          onConfirm={() => {
+            onChange({ routeDrafts: drafts.filter((d) => d.key !== pendingRemoveDraft.key) })
+            setPendingRemoveKey(null)
+          }}
+          dataTestId="wizard-route-remove-dialog"
+        />
+      ) : null}
     </section>
   )
 }
