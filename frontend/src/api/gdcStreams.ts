@@ -150,7 +150,12 @@ export async function updateStream(
     token = current?.updated_at ?? undefined
   }
   if (!token) {
-    throw new Error('expected_updated_at is required for stream updates')
+    // Same as connectors (F-231): a missing revision after the fallback read means the stream
+    // is gone, not that the caller forgot an internal field.
+    throw new Error(
+      `Stream #${streamId} could not be found, so your changes were not saved. ` +
+        'It may have been deleted from another session. Reload the stream list to check.',
+    )
   }
   const updated = await requestJson<StreamRead>(`${GDC_API_PREFIX}/streams/${streamId}`, {
     method: 'PUT',

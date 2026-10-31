@@ -297,7 +297,12 @@ export async function updateConnector(connectorId: number, payload: ConnectorWri
     }
   }
   if (!expectedUpdatedAt) {
-    throw new Error('expected_updated_at is required for connector updates')
+    // The fallback read found nothing: the connector was most likely deleted from another
+    // session. Say that instead of leaking the internal concurrency field name (F-231).
+    throw new Error(
+      `Connector #${connectorId} could not be found, so your changes were not saved. ` +
+        'It may have been deleted from another session. Reload the connector list to check.',
+    )
   }
   const body: ConnectorWritePayload = {
     ...payload,
