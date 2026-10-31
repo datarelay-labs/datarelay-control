@@ -283,6 +283,20 @@ describe('TopHeader SaaS shell', () => {
     expect(header).toHaveClass('min-h-[58px]', 'sm:min-h-[69px]')
   })
 
+  it('renders the runtime chip as a StatusChip and never styles unverified state as healthy', () => {
+    renderHeader({ runtimeHealthy: null })
+    const unverified = screen.getByLabelText('Runtime status')
+    expect(unverified).toHaveAttribute('data-status', 'unknown')
+    expect(unverified).toHaveTextContent('Not verified')
+    expect(unverified).not.toHaveClass('bg-status-success-subtle')
+    cleanup()
+    renderHeader({ runtimeHealthy: true })
+    expect(screen.getByLabelText('Runtime status')).toHaveAttribute('data-status', 'healthy')
+    cleanup()
+    renderHeader({ runtimeHealthy: false })
+    expect(screen.getByLabelText('Runtime status')).toHaveAttribute('data-status', 'warning')
+  })
+
   it('uses green health only for explicitly supplied measurements', () => {
     renderHeader({ runtimeHealthy: true })
     expect(screen.getByLabelText('Runtime status')).toHaveTextContent('Healthy')

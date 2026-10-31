@@ -2,9 +2,9 @@ import { useSyncExternalStore, type ReactNode, type Ref } from 'react'
 import { Bell, CircleHelp, Menu, Moon, Plus, RefreshCw, Settings, Sun, X } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { NAV_PATH, newStreamPath } from '../../config/nav-paths'
-import { cn } from '../../lib/utils'
 import { isSessionExpired, onSessionChange, readSession } from '../../auth/session'
 import { getSessionCapabilities } from '../../lib/rbac'
+import { StatusChip } from '../ui/status-chip'
 import { GDC_HEADER_REFRESH_EVENT } from './header-refresh-event'
 
 /** Global operational-alert surface. Kept out of primary sidebar by UX charter. */
@@ -109,23 +109,15 @@ export function TopHeader({
             {/* Wraps on phones; from sm up stays one row so the chip remains inline. Runtime text states
                 runtime truth (including "not verified" qualifiers), so it wraps and is never truncated. */}
             <div className="flex min-w-0 flex-wrap items-center gap-2 sm:flex-1 sm:flex-nowrap">
-              {showRuntimeStatus ? <span
-                className={cn(
-                  'inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium',
-                  runtimeHealthy === true
-                    ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-100/90'
-                    : runtimeHealthy === false
-                      ? 'bg-amber-50 text-amber-900 dark:bg-amber-500/15 dark:text-amber-100/90'
-                      : 'bg-slate-100 text-slate-600 dark:bg-gdc-elevated dark:text-gdc-mutedStrong',
-                )}
-                aria-label="Runtime status"
-              >
-                <span
-                  className={cn('h-1.5 w-1.5 rounded-full', runtimeHealthy === true ? 'bg-emerald-500' : runtimeHealthy === false ? 'bg-amber-500' : 'bg-slate-400')}
-                  aria-hidden
-                />
-                {runtimeStatusLabel ?? (runtimeHealthy === true ? 'Healthy' : runtimeHealthy === false ? 'Attention' : 'Not verified')}
-              </span> : null}
+              {showRuntimeStatus ? (
+                <StatusChip
+                  status={runtimeHealthy === true ? 'healthy' : runtimeHealthy === false ? 'warning' : 'unknown'}
+                  className="shrink-0"
+                  aria-label="Runtime status"
+                >
+                  {runtimeStatusLabel ?? (runtimeHealthy === true ? 'Healthy' : runtimeHealthy === false ? 'Attention' : 'Not verified')}
+                </StatusChip>
+              ) : null}
               <div className="min-w-0 space-y-0.5">
                 <p className="text-xs leading-snug text-slate-600 dark:text-gdc-muted">{runtimeSummary}</p>
                 {showRuntimeStatus && runtimeStatusEvidence ? (

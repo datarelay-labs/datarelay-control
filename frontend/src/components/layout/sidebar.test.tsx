@@ -96,6 +96,45 @@ describe('Sidebar SaaS shell', () => {
     expect(onMobileClose).toHaveBeenCalled()
   })
 
+  it('keeps the sidebar create action at secondary emphasis so the header CTA is the only primary', () => {
+    persistTestSession('ADMINISTRATOR')
+    renderSidebar()
+    const create = screen.getByTestId('sidebar-create-stream')
+    expect(create).toHaveAccessibleName('New data flow')
+    expect(create).not.toHaveClass('bg-gdc-primary')
+    expect(create).not.toHaveClass('bg-accent')
+    expect(create).not.toHaveClass('text-white')
+    expect(create).toHaveClass('border-default', 'bg-surface-card', 'text-fg-secondary')
+  })
+
+  it('keeps the top-level navigation order unchanged', () => {
+    persistTestSession('ADMINISTRATOR')
+    renderSidebar({ pathname: '/monitoring' })
+    const nav = screen.getByRole('navigation')
+    expect(within(nav).getAllByRole('button').map((button) => button.getAttribute('aria-label') ?? button.textContent)).toEqual([
+      'Dashboard',
+      'Connections',
+      'Streams',
+      'Data Flows',
+      'Governance',
+      'Administration',
+    ])
+  })
+
+  it('renders group labels in sentence case and nav icons at full contrast', () => {
+    renderSidebar({ pathname: '/monitoring' })
+    const nav = screen.getByRole('navigation')
+    const groupLabel = within(within(nav).getByRole('button', { name: 'Connections' })).getByText('Connections')
+    expect(groupLabel).not.toHaveClass('uppercase')
+    expect(groupLabel).toHaveClass('text-label')
+    for (const button of within(nav).getAllByRole('button')) {
+      const icon = button.querySelector('svg')
+      expect(icon).not.toBeNull()
+      expect(icon).not.toHaveClass('opacity-50')
+      expect(icon).not.toHaveClass('opacity-80')
+    }
+  })
+
   it('does not advertise a create action to read-only and governance-only roles', () => {
     persistTestSession('VIEWER')
     renderSidebar()
