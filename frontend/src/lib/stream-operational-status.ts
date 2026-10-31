@@ -17,6 +17,8 @@ export type StreamSeverityInput = {
   operationalHealthStatus?: OperationalHealthStatus | null
   /** True when a runtime API body (snapshot/stats/health) exists for this stream. */
   hasRuntimeApiSnapshot?: boolean
+  /** Worst severity of stream-scoped snapshot problems (same evidence as the Dashboard). */
+  operationalProblemSeverity?: 'critical' | 'warning' | null
 }
 
 export type PartialStreamSeverityInput = {
@@ -27,6 +29,7 @@ export type PartialStreamSeverityInput = {
   deliveryPct?: number
   operationalHealthStatus?: OperationalHealthStatus | null
   hasRuntimeApiSnapshot?: boolean
+  operationalProblemSeverity?: 'critical' | 'warning' | null
 }
 
 export function normalizeSeverityInput(row: PartialStreamSeverityInput): StreamSeverityInput {
@@ -40,6 +43,7 @@ export function normalizeSeverityInput(row: PartialStreamSeverityInput): StreamS
     deliveryPct: row.deliveryPct ?? 0,
     operationalHealthStatus: row.operationalHealthStatus ?? null,
     hasRuntimeApiSnapshot: row.hasRuntimeApiSnapshot,
+    operationalProblemSeverity: row.operationalProblemSeverity ?? null,
   }
 }
 
@@ -48,6 +52,10 @@ export function effectiveStreamSeverity(row: StreamSeverityInput): StreamOperati
   if (row.status === 'ERROR') return 'critical'
   if (row.status === 'STOPPED') return 'stopped'
   if (row.status === 'IDLE') return 'stopped'
+  // Same evidence as the Dashboard (F-166/F-163): a snapshot health verdict of ERROR/DEGRADED or a
+  // stream-scoped problem (Source 401/429/500, ...) is never shown as Healthy on the Streams page.
+  if (row.operationalHealthStatus === 'ERROR' || row.operationalProblemSeverity === 'critical') return 'critical'
+  if (row.operationalHealthStatus === 'DEGRADED' || row.operationalProblemSeverity === 'warning') return 'warning'
   if ((row.routesError ?? 0) > 0) return 'warning'
   if (row.status === 'DEGRADED' && row.deliveryPctKnown && row.deliveryPct < 95) return 'warning'
   if (row.status === 'DEGRADED' && !row.deliveryPctKnown) return 'warning'

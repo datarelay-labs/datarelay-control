@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { OperationalIssue, StreamGovernanceSnapshot } from '../../lib/stream-governance-snapshot'
 import {
   buildStreamDiagnosis,
+  deriveFailingRoutes,
   deriveSourceObserved,
   isCheckpointBehindDelivery,
   type BuildStreamDiagnosisInput,
@@ -265,5 +266,43 @@ describe('buildStreamDiagnosis', () => {
       }),
     )
     expect(diagnosis.nextSteps).toEqual([])
+  })
+})
+
+describe('failing route identification (F-146)', () => {
+  const rows = [
+    { route_id: 11, destination_name: 'webhook-ok', enabled: true, failed_last_hour: 0, last_success_at: '2026-10-31T17:20:00Z', last_failure_at: null, last_error_message: null },
+    { route_id: 12, destination_name: 'webhook-a', enabled: true, failed_last_hour: 4, last_success_at: '2026-10-31T17:00:00Z', last_failure_at: '2026-10-31T17:20:00Z', last_error_message: 'Cannot send a request, as the client has been closed.' },
+    { route_id: 13, destination_name: 'webhook-recovered', enabled: true, failed_last_hour: 2, last_success_at: '2026-10-31T17:25:00Z', last_failure_at: '2026-10-31T17:10:00Z', last_error_message: 'HTTP 500' },
+    { route_id: 14, destination_name: 'webhook-off', enabled: false, failed_last_hour: 9, last_success_at: null, last_failure_at: '2026-10-31T17:10:00Z', last_error_message: 'HTTP 500' },
+  ]
+
+  it('derives only the routes whose newest evidence is a failure and never leaks raw library text', () => {
+    const failing = deriveFailingRoutes(rows)
+    expect(failing).toHaveLength(1)
+    expect(failing[0]).toMatchObject({ routeId: 12, destinationName: 'webhook-a', allFailing: false })
+    expect(failing[0].message).toBe('the destination connection was closed before the request could be sent')
+  })
+
+  it('names the failing Route and Destination instead of reporting Destination Clear', () => {
+    const diagnosis = buildStreamDiagnosis(input({ deliveryPct: 95.9, failingRoutes: deriveFailingRoutes(rows) }))
+    const destination = diagnosis.causes.find((cause) => cause.key === 'destination')
+    expect(destination?.tone).toBe('attention')
+    expect(destination?.detail).toContain('Route #12')
+    expect(destination?.detail).toContain('webhook-a')
+    expect(destination?.detail).not.toMatch(/no destination failure/i)
+    expect(diagnosis.whatHappened).toContain('Route #12')
+  })
+
+  it('is critical when the failing Route never succeeded', () => {
+    const diagnosis = buildStreamDiagnosis(
+      input({ failingRoutes: [{ routeId: 7, destinationName: 'syslog-x', message: 'HTTP 500', allFailing: true }] }),
+    )
+    expect(diagnosis.causes.find((cause) => cause.key === 'destination')?.tone).toBe('critical')
+  })
+
+  it('stays Clear when no Route fails', () => {
+    const diagnosis = buildStreamDiagnosis(input({ failingRoutes: [] }))
+    expect(diagnosis.causes.find((cause) => cause.key === 'destination')?.tone).toBe('clear')
   })
 })

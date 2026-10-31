@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { runHistoryRowKeys } from './stream-runtime-detail-model'
+import { latestEventTimestamp, runHistoryRowKeys } from './stream-runtime-detail-model'
 
 // C9: /streams/:id/runtime keyed run rows by `runId`, which repeats when metrics completion
 // records share a run id, so React warned "two children with the same key". On the old code
@@ -26,5 +26,16 @@ describe('runHistoryRowKeys (C9)', () => {
     const rows = [{ runId: 'a' }, { runId: 'b' }, { runId: 'a' }]
     expect(runHistoryRowKeys(rows)).toEqual(runHistoryRowKeys(rows))
     expect(runHistoryRowKeys(rows)).toEqual(['run:a', 'run:b', 'run:a#2'])
+  })
+})
+
+describe('latestEventTimestamp (F-163)', () => {
+  it('returns null when there is no delivery evidence', () => {
+    expect(latestEventTimestamp(null, undefined)).toBeNull()
+  })
+  it('returns the newer of success and failure evidence', () => {
+    expect(latestEventTimestamp('2026-10-31T16:00:00Z', '2026-10-31T16:05:00Z')).toBe('2026-10-31T16:05:00Z')
+    expect(latestEventTimestamp('2026-10-31T16:10:00Z', '2026-10-31T16:05:00Z')).toBe('2026-10-31T16:10:00Z')
+    expect(latestEventTimestamp('2026-10-31T16:10:00Z', null)).toBe('2026-10-31T16:10:00Z')
   })
 })

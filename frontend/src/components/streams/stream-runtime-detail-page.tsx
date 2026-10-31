@@ -95,7 +95,7 @@ import { StreamDetailTabNav, useStreamDetailTab } from './stream-detail-tab-nav'
 import { StreamRecentIssuesPanel } from './stream-recent-issues-panel'
 import { StreamWhyPanel } from './stream-why-panel'
 import { StreamInformationPanel } from './stream-information-panel'
-import { buildStreamDiagnosis, deriveSourceObserved, isCheckpointBehindDelivery } from './stream-runtime-diagnosis'
+import { buildStreamDiagnosis, deriveFailingRoutes, deriveSourceObserved, isCheckpointBehindDelivery } from './stream-runtime-diagnosis'
 import { StreamRuntimeDiagnosisOverview } from './stream-runtime-diagnosis-overview'
 import { formatRelativeShort } from '../../lib/stream-console-metrics'
 import { StreamDetailDeliveryPanel } from './stream-detail-delivery-panel'
@@ -106,7 +106,7 @@ import { StatusBadge } from '../shell/status-badge'
 import { RuntimeChartCard } from '../shell/runtime-chart-card'
 import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
 import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
-import type { RecentLogLine, RunHistoryRow } from './stream-runtime-detail-model'
+import { latestEventTimestamp, type RecentLogLine, type RunHistoryRow } from './stream-runtime-detail-model'
 import { emptyStreamRuntimeDetail, runHistoryRowKeys } from './stream-runtime-detail-model'
 import { useMountAbortController } from '../../hooks/use-mount-abort-signal'
 import { isRequestAborted } from '../../lib/request-abort'
@@ -928,13 +928,12 @@ export function StreamRuntimeDetailPage() {
         .slice(0, 3)
         .map((e) => ({ message: e.message ?? 'Delivery path error' })),
     ].slice(0, 3)
-    const lastAt =
-      runtimeMetrics?.stream.last_run_at ??
-      runtimeMetrics?.stream.last_success_at ??
-      runtimeMetrics?.stream.last_error_at ??
-      runtimeStats?.last_seen?.success_at ??
-      runtimeStats?.last_seen?.failure_at ??
-      null
+    // F-163: "Last event" is delivery evidence (latest success/failure), never the scheduler tick
+    // (`last_run_at`), which moves even when the source returned nothing.
+    const lastAt = latestEventTimestamp(
+      runtimeMetrics?.stream.last_success_at ?? runtimeStats?.last_seen?.success_at,
+      runtimeMetrics?.stream.last_error_at ?? runtimeStats?.last_seen?.failure_at,
+    )
     let lastActivityRelative = data.lastUpdatedRelative
     if (lastAt) {
       const diff = Date.now() - new Date(lastAt).getTime()
@@ -1057,6 +1056,8 @@ export function StreamRuntimeDetailPage() {
     [runtimeMetrics],
   )
 
+  const failingRoutes = useMemo(() => deriveFailingRoutes(observedRuntimeRoutes), [observedRuntimeRoutes])
+
   const diagnosis = useMemo(
     () =>
       buildStreamDiagnosis({
@@ -1078,6 +1079,7 @@ export function StreamRuntimeDetailPage() {
         canRuntimeControl,
         canBackfill,
         logsHref: logsExplorerDrilldown,
+        failingRoutes,
       }),
     [
       streamId,
@@ -1097,6 +1099,7 @@ export function StreamRuntimeDetailPage() {
       canRuntimeControl,
       canBackfill,
       logsExplorerDrilldown,
+      failingRoutes,
     ],
   )
 
@@ -1420,6 +1423,10 @@ export function StreamRuntimeDetailPage() {
         errorRate={errorRate}
         lastErrorAt={lastErrorAt}
         lastEventRelative={issueCtx.lastActivityRelative}
+        lastEventAt={latestEventTimestamp(
+          runtimeMetrics?.stream.last_success_at ?? runtimeStats?.last_seen?.success_at,
+          runtimeMetrics?.stream.last_error_at ?? runtimeStats?.last_seen?.failure_at,
+        )}
         windowSeconds={monitoringWindowSeconds}
         onExpandObservability={() => setObservabilityOpen(true)}
       />

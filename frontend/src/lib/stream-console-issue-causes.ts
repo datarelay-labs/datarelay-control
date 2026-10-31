@@ -118,6 +118,8 @@ export function deriveStreamIssueCauses(
     }
   }
 
+  if (row.sourceFailure) causes.push('Source Error')
+
   if (row.hasRuntimeApiSnapshot) {
     if (row.status === 'ERROR' || row.routesError > 0) {
       causes.push('Destination Error')
@@ -196,7 +198,10 @@ export function streamConsoleLifecycleLabel(
   if (row.status === 'IDLE' || !row.hasRuntimeApiSnapshot) return 'No Data'
   // UNKNOWN runtime status is never Healthy; RUNNING is Healthy only with evidence.
   if (row.status === 'UNKNOWN') return 'Not verified'
-  return effectiveStreamSeverity(normalizeSeverityInput(row)) === 'unknown' ? 'Not verified' : 'Healthy'
+  const severity = effectiveStreamSeverity(normalizeSeverityInput(row))
+  if (severity === 'critical') return 'Critical'
+  if (severity === 'warning') return 'Warning'
+  return severity === 'unknown' ? 'Not verified' : 'Healthy'
 }
 
 export function aggregateGroupIssueCauses(

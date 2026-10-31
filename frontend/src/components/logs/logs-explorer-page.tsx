@@ -51,7 +51,8 @@ import { LogDetailDrawer } from './log-detail-drawer'
 import { LogsRouteReturnActions } from './logs-route-return-actions'
 import { LogsCompactCards } from './logs-compact-cards'
 import { serializeLoadedLogsCsv } from './logs-export-csv'
-import { LogsDiagnosisOverview, type LogsDiagnosisSnapshot } from './logs-diagnosis-overview'
+import { LogsDiagnosisOverview } from './logs-diagnosis-overview'
+import { buildLogsDiagnosisSnapshot, type LogsDiagnosisSnapshot } from './logs-diagnosis-snapshot'
 import { LevelBadge } from './logs-level-badge'
 import { HelpTooltip } from '../ui/help-tooltip'
 import { HELP_COPY } from '../ui/help-tooltip-copy'
@@ -1032,8 +1033,13 @@ export function LogsExplorerPage() {
   const warnCount = logsKpiFromApi?.warnings ?? 0
   const infoCount = logsKpiFromApi?.info ?? 0
 
+  const diagnosisScoped =
+    effectiveStreamIdForApi != null ||
+    routeIdFromQuery != null ||
+    destinationIdFromQuery != null ||
+    runIdFromQuery != null
   const diagnosisSnapshot = useMemo((): LogsDiagnosisSnapshot => {
-    return {
+    return buildLogsDiagnosisSnapshot({
       loadedFailedDeliveries: deliveryOutcomes.deliveryFailed,
       loadedSuccessfulDeliveries: deliveryOutcomes.deliverySuccess,
       errorRows: errorCount,
@@ -1043,8 +1049,9 @@ export function LogsExplorerPage() {
       globalSuccess: observabilitySummary?.totals.delivery_success_events ?? null,
       lifecycleRows: observabilitySummary?.totals.lifecycle_rows ?? deliveryOutcomes.lifecycleInfo,
       windowLabel: metricsWindow,
-    }
-  }, [deliveryOutcomes, errorCount, warnCount, kpi.total, observabilitySummary, metricsWindow])
+      scoped: diagnosisScoped,
+    })
+  }, [deliveryOutcomes, errorCount, warnCount, kpi.total, observabilitySummary, metricsWindow, diagnosisScoped])
 
   function exportJson() {
     const blob = new Blob([JSON.stringify(filteredRowsBase, null, 2)], { type: 'application/json' })

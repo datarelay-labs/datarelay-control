@@ -58,6 +58,67 @@ export type BuildStreamDiagnosisInput = {
   canRuntimeControl: boolean
   canBackfill: boolean
   logsHref?: string | null
+  /** Routes of this stream whose latest delivery evidence is a failure (F-146). */
+  failingRoutes?: readonly FailingRoute[]
+}
+
+export type FailingRoute = {
+  routeId: number
+  destinationName: string
+  message: string | null
+  /** True when no delivery of this Route succeeded after its latest failure. */
+  allFailing: boolean
+}
+
+/** Raw client-library text is never an operator-facing reason. */
+export function humanizeRouteFailureMessage(message: string | null | undefined): string | null {
+  const text = (message ?? '').trim()
+  if (!text) return null
+  if (/client has been closed/i.test(text)) {
+    return 'the destination connection was closed before the request could be sent'
+  }
+  return text.replace(/\.$/, '')
+}
+
+/**
+ * Routes whose newest delivery evidence is a failure. Derived from the same Route Metrics rows the
+ * Routes panel uses, so the diagnosis names the Route and Destination at fault.
+ */
+export function deriveFailingRoutes(
+  rows: ReadonlyArray<{
+    route_id: number
+    destination_name: string
+    enabled: boolean
+    failed_last_hour: number
+    last_success_at: string | null
+    last_failure_at: string | null
+    last_error_message: string | null
+  }>,
+): FailingRoute[] {
+  const out: FailingRoute[] = []
+  for (const row of rows) {
+    if (!row.enabled || !(row.failed_last_hour > 0) || !row.last_failure_at) continue
+    const failMs = Date.parse(row.last_failure_at)
+    const okMs = row.last_success_at ? Date.parse(row.last_success_at) : Number.NaN
+    // A success after the newest failure means the Route recovered.
+    if (Number.isFinite(okMs) && Number.isFinite(failMs) && okMs > failMs) continue
+    out.push({
+      routeId: row.route_id,
+      destinationName: row.destination_name,
+      message: humanizeRouteFailureMessage(row.last_error_message),
+      allFailing: !Number.isFinite(okMs),
+    })
+  }
+  return out
+}
+
+function describeFailingRoutes(routes: readonly FailingRoute[]): string {
+  const named = routes.slice(0, 2).map((route) => {
+    const reason = route.message ? `: ${route.message}` : ''
+    return `Route #${route.routeId} \u2192 ${route.destinationName || 'unknown destination'}${reason}`
+  })
+  const more = routes.length > 2 ? ` and ${routes.length - 2} more` : ''
+  return `${routes.length === 1 ? '1 route is' : `${routes.length} routes are`} failing (${named.join('; ')}${more}).`
 }
 
 const CAUSE_LABEL: Record<DiagnosisCauseKey, string> = {
@@ -220,6 +281,10 @@ function buildDestinationCause(input: BuildStreamDiagnosisInput): DiagnosisCause
   const lowSuccess = issueByKey(input.issues, 'low-success')
   if (destination) {
     return cause('destination', 'critical', destination.detail ?? input.recentErrorMessage ?? 'A delivery path reported a failure.')
+  }
+  const failing = input.failingRoutes ?? []
+  if (failing.length > 0) {
+    return cause('destination', failing.some((route) => route.allFailing) ? 'critical' : 'attention', describeFailingRoutes(failing))
   }
   if (degraded || lowSuccess) {
     const issue = degraded ?? lowSuccess

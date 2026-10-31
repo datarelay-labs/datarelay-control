@@ -79,3 +79,44 @@ describe('StreamMonitoringStatusStrip', () => {
     expect(screen.getByText('Success Rate').closest('div')?.parentElement).not.toHaveTextContent('100.00%')
   })
 })
+
+describe('StreamMonitoringStatusStrip last event (F-163)', () => {
+  it('does not present the scheduler tick as the last event when there is no delivery evidence', () => {
+    render(
+      <StreamMonitoringStatusStrip
+        {...baseProps}
+        events1h={0}
+        lastEventRelative="19s ago"
+        lastEventAt={null}
+        runtimeMetrics={{
+          stream: { id: 2, name: 'push', status: 'RUNNING', last_run_at: '2026-10-31T17:19:00Z', last_success_at: null, last_error_at: null, last_checkpoint: null },
+          kpis: { events_last_hour: 0, delivered_last_hour: 0, failed_last_hour: 0, delivery_success_rate: 100, avg_latency_ms: 0, max_latency_ms: 0, error_rate: 0 },
+          events_over_time: [],
+          route_health: [],
+          checkpoint_history: [],
+          recent_runs: [],
+          route_runtime: [],
+          recent_route_errors: [],
+        }}
+      />,
+    )
+    const card = metricValue('Last Event')
+    expect(card).toContain('Not observed yet')
+    expect(card).not.toContain('19s ago')
+    expect(card).not.toMatch(/\d{2}:19/)
+  })
+
+  it('shows the relative and absolute time of real delivery evidence', () => {
+    render(
+      <StreamMonitoringStatusStrip
+        {...baseProps}
+        events1h={5}
+        lastEventRelative="3m ago"
+        lastEventAt="2026-10-31T16:18:32Z"
+        runtimeMetrics={null}
+      />,
+    )
+    expect(metricValue('Last Event')).toContain('3m ago')
+    expect(metricValue('Last Event')).toMatch(/\d{4}-\d{2}-\d{2} \d{2}:18/)
+  })
+})

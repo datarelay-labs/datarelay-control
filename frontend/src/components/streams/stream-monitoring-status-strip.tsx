@@ -86,6 +86,8 @@ export type StreamMonitoringStatusStripProps = {
   errorRate: number | null
   lastErrorAt: string | null
   lastEventRelative?: string | null
+  /** Timestamp of the latest delivery evidence (success/failure). Never the scheduler tick. */
+  lastEventAt?: string | null
   windowSeconds?: number | null
   onExpandObservability?: () => void
 }
@@ -96,7 +98,7 @@ export function StreamMonitoringStatusStrip({
   deliveryPct,
   runtimeMetrics,
   lastEventRelative,
-  lastErrorAt,
+  lastEventAt: lastEventAtProp,
   windowSeconds,
 }: StreamMonitoringStatusStripProps) {
   const winSec = Math.max(
@@ -124,8 +126,9 @@ export function StreamMonitoringStatusStrip({
       ? `${formatEventsPerSecRate(deliveredHour, winSec).replace(' /s', '')} events/sec`
       : '0 events/sec'
   const successLabel = successRate != null ? formatOperationalPercent(successRate) : '—'
-  const lastEvent = lastEventRelative ?? '—'
-  const lastEventAt = runtimeMetrics?.stream.last_run_at ?? lastErrorAt ?? null
+  const lastEventAt = lastEventAtProp ?? null
+  // No delivery evidence means no event time: do not present a scheduler tick as the last event.
+  const lastEvent = lastEventAt ? (lastEventRelative ?? '—') : 'Not observed yet'
   const lastEventSub = lastEventAt ? formatTimestampWithResolvedTimezone(lastEventAt) : null
 
   const ingestSpark = eventsSparkline.length ? eventsSparkline : [eventsPerSecFromWindow(eventsHour, winSec)]
