@@ -9,6 +9,11 @@ from pydantic import BaseModel, Field
 
 AuditEventType = Literal[
     "POLICY_ACTIVATED",
+    "SUBMITTED_FOR_REVIEW",
+    "APPROVED",
+    "REJECTED",
+    "REQUEST_CHANGES",
+    "APPROVAL_ACTIVATED",
     "VIOLATION_CREATED",
     "QUARANTINE_CREATED",
     "QUARANTINE_RELEASED",
