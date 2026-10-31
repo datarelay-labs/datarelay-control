@@ -48,9 +48,11 @@
   --dr-border-input: oklch(87% 0 0);
   --dr-text-primary: oklch(21% 0.006 285.885);
   --dr-text-secondary: oklch(37.1% 0 0);
-  --dr-text-muted: oklch(55.6% 0 0);
+  --dr-text-muted: oklch(50% 0 0);
   --dr-text-placeholder: oklch(55.6% 0 0);
   --dr-text-inverse: #ffffff;
+  /* Text on --dr-action-primary; never use --dr-text-inverse on the accent */
+  --dr-text-on-accent: #ffffff;
   --dr-action-primary: oklch(54.6% 0.245 262.881);
   --dr-action-primary-hover: oklch(48.8% 0.243 264.376);
   --dr-action-secondary: #ffffff;
@@ -59,7 +61,48 @@
   --dr-status-success: #047857;
   --dr-status-warning: #92400e;
   --dr-status-critical: #b42318;
+  --dr-status-unknown: oklch(45% 0 0);
+  /* Subtle status surfaces/borders are derived from the status foreground on the card surface */
+  --dr-status-info-subtle: color-mix(in oklch, var(--dr-status-info) 8%, var(--dr-surface-card));
+  --dr-status-info-border: color-mix(in oklch, var(--dr-status-info) 30%, var(--dr-surface-card));
+  --dr-status-success-subtle: color-mix(in oklch, var(--dr-status-success) 8%, var(--dr-surface-card));
+  --dr-status-success-border: color-mix(in oklch, var(--dr-status-success) 30%, var(--dr-surface-card));
+  --dr-status-warning-subtle: color-mix(in oklch, var(--dr-status-warning) 8%, var(--dr-surface-card));
+  --dr-status-warning-border: color-mix(in oklch, var(--dr-status-warning) 30%, var(--dr-surface-card));
+  --dr-status-critical-subtle: color-mix(in oklch, var(--dr-status-critical) 8%, var(--dr-surface-card));
+  --dr-status-critical-border: color-mix(in oklch, var(--dr-status-critical) 30%, var(--dr-surface-card));
+  --dr-status-unknown-subtle: color-mix(in oklch, var(--dr-status-unknown) 8%, var(--dr-surface-card));
+  --dr-status-unknown-border: color-mix(in oklch, var(--dr-status-unknown) 30%, var(--dr-surface-card));
   --dr-focus-ring: #1473e6;
+  /* Control heights: compact, default and touch target */
+  --dr-control-sm: 32px;
+  --dr-control-md: 36px;
+  --dr-control-touch: 44px;
+  /* Type scale: size / line height / weight per role */
+  --dr-type-caption-size: 12px;
+  --dr-type-caption-line-height: 16px;
+  --dr-type-caption-weight: 400;
+  --dr-type-body-sm-size: 13px;
+  --dr-type-body-sm-line-height: 18px;
+  --dr-type-body-sm-weight: 400;
+  --dr-type-body-size: 14px;
+  --dr-type-body-line-height: 20px;
+  --dr-type-body-weight: 400;
+  --dr-type-label-size: 13px;
+  --dr-type-label-line-height: 16px;
+  --dr-type-label-weight: 600;
+  --dr-type-title-sm-size: 14px;
+  --dr-type-title-sm-line-height: 20px;
+  --dr-type-title-sm-weight: 600;
+  --dr-type-title-size: 16px;
+  --dr-type-title-line-height: 24px;
+  --dr-type-title-weight: 600;
+  --dr-type-page-title-size: 20px;
+  --dr-type-page-title-line-height: 28px;
+  --dr-type-page-title-weight: 600;
+  --dr-type-metric-size: 24px;
+  --dr-type-metric-line-height: 32px;
+  --dr-type-metric-weight: 600;
 }
 
 [data-dr-theme="dark"] {
@@ -80,8 +123,9 @@
   --dr-text-primary: oklch(97% 0 0);
   --dr-text-secondary: oklch(92.2% 0 0);
   --dr-text-muted: oklch(70.8% 0 0);
-  --dr-text-placeholder: oklch(55.6% 0 0);
+  --dr-text-placeholder: oklch(65% 0 0);
   --dr-text-inverse: #111827;
+  --dr-text-on-accent: #ffffff;
   --dr-action-primary: oklch(52% 0.209 260);
   --dr-action-primary-hover: oklch(62.3% 0.214 259.815);
   --dr-action-secondary: oklch(17% 0 0);
@@ -90,5 +134,17 @@
   --dr-status-success: #34d399;
   --dr-status-warning: #f59e0b;
   --dr-status-critical: #f87171;
+  --dr-status-unknown: oklch(75% 0 0);
+  /* Re-declared so a nested dark theme root mixes its own status and card values */
+  --dr-status-info-subtle: color-mix(in oklch, var(--dr-status-info) 14%, var(--dr-surface-card));
+  --dr-status-info-border: color-mix(in oklch, var(--dr-status-info) 35%, var(--dr-surface-card));
+  --dr-status-success-subtle: color-mix(in oklch, var(--dr-status-success) 14%, var(--dr-surface-card));
+  --dr-status-success-border: color-mix(in oklch, var(--dr-status-success) 35%, var(--dr-surface-card));
+  --dr-status-warning-subtle: color-mix(in oklch, var(--dr-status-warning) 14%, var(--dr-surface-card));
+  --dr-status-warning-border: color-mix(in oklch, var(--dr-status-warning) 35%, var(--dr-surface-card));
+  --dr-status-critical-subtle: color-mix(in oklch, var(--dr-status-critical) 14%, var(--dr-surface-card));
+  --dr-status-critical-border: color-mix(in oklch, var(--dr-status-critical) 35%, var(--dr-surface-card));
+  --dr-status-unknown-subtle: color-mix(in oklch, var(--dr-status-unknown) 14%, var(--dr-surface-card));
+  --dr-status-unknown-border: color-mix(in oklch, var(--dr-status-unknown) 35%, var(--dr-surface-card));
   --dr-focus-ring: #1473e6;
 }

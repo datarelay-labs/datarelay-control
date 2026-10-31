@@ -277,6 +277,12 @@ describe('TopHeader SaaS shell', () => {
     expect(evidence).not.toHaveAttribute('title')
   })
 
+  it('keeps one header height from sm up whether or not the runtime summary wraps, without changing the phone floor', () => {
+    renderHeader()
+    const header = screen.getByRole('banner')
+    expect(header).toHaveClass('min-h-[58px]', 'sm:min-h-[69px]')
+  })
+
   it('uses green health only for explicitly supplied measurements', () => {
     renderHeader({ runtimeHealthy: true })
     expect(screen.getByLabelText('Runtime status')).toHaveTextContent('Healthy')

@@ -81,6 +81,47 @@ export default {
           critical: 'oklch(57.7% 0.245 27.325 / <alpha-value>)',
           criticalFg: 'oklch(97.1% 0.013 17.38 / <alpha-value>)',
         },
+        /**
+         * Theme-aware semantic aliases backed by --dr-* tokens
+         * (src/foundation-semantic-tokens.css). One class covers light and dark.
+         * Plain var() values: the `/<alpha>` opacity modifier is not supported on these.
+         */
+        'surface-page': 'var(--dr-surface-page)',
+        'surface-card': 'var(--dr-surface-card)',
+        'surface-section': 'var(--dr-surface-section)',
+        'surface-hover': 'var(--dr-surface-hover)',
+        fg: 'var(--dr-text-primary)',
+        'fg-secondary': 'var(--dr-text-secondary)',
+        'fg-muted': 'var(--dr-text-muted)',
+        'on-accent': 'var(--dr-text-on-accent)',
+        accent: 'var(--dr-action-primary)',
+        'accent-hover': 'var(--dr-action-primary-hover)',
+        'status-success': {
+          DEFAULT: 'var(--dr-status-success)',
+          subtle: 'var(--dr-status-success-subtle)',
+          border: 'var(--dr-status-success-border)',
+        },
+        'status-warning': {
+          DEFAULT: 'var(--dr-status-warning)',
+          subtle: 'var(--dr-status-warning-subtle)',
+          border: 'var(--dr-status-warning-border)',
+        },
+        'status-critical': {
+          DEFAULT: 'var(--dr-status-critical)',
+          subtle: 'var(--dr-status-critical-subtle)',
+          border: 'var(--dr-status-critical-border)',
+        },
+        'status-info': {
+          DEFAULT: 'var(--dr-status-info)',
+          subtle: 'var(--dr-status-info-subtle)',
+          border: 'var(--dr-status-info-border)',
+        },
+        'status-unknown': {
+          DEFAULT: 'var(--dr-status-unknown)',
+          subtle: 'var(--dr-status-unknown-subtle)',
+          border: 'var(--dr-status-unknown-border)',
+        },
+        'focus-ring': 'var(--dr-focus-ring)',
       },
       fontSize: {
         /** Exact Kumo base typography scale. */
@@ -88,6 +129,25 @@ export default {
         sm: ['13px', { lineHeight: 'calc(1 / 0.85)' }],
         base: ['14px', { lineHeight: '1.5' }],
         lg: ['16px', { lineHeight: '1.5' }],
+        /** Semantic type scale backed by --dr-type-* tokens. */
+        caption: ['var(--dr-type-caption-size)', { lineHeight: 'var(--dr-type-caption-line-height)', fontWeight: 'var(--dr-type-caption-weight)' }],
+        'body-sm': ['var(--dr-type-body-sm-size)', { lineHeight: 'var(--dr-type-body-sm-line-height)', fontWeight: 'var(--dr-type-body-sm-weight)' }],
+        body: ['var(--dr-type-body-size)', { lineHeight: 'var(--dr-type-body-line-height)', fontWeight: 'var(--dr-type-body-weight)' }],
+        label: ['var(--dr-type-label-size)', { lineHeight: 'var(--dr-type-label-line-height)', fontWeight: 'var(--dr-type-label-weight)' }],
+        'title-sm': ['var(--dr-type-title-sm-size)', { lineHeight: 'var(--dr-type-title-sm-line-height)', fontWeight: 'var(--dr-type-title-sm-weight)' }],
+        title: ['var(--dr-type-title-size)', { lineHeight: 'var(--dr-type-title-line-height)', fontWeight: 'var(--dr-type-title-weight)' }],
+        'page-title': ['var(--dr-type-page-title-size)', { lineHeight: 'var(--dr-type-page-title-line-height)', fontWeight: 'var(--dr-type-page-title-weight)' }],
+        metric: ['var(--dr-type-metric-size)', { lineHeight: 'var(--dr-type-metric-line-height)', fontWeight: 'var(--dr-type-metric-weight)' }],
+      },
+      height: {
+        'control-sm': 'var(--dr-control-sm)',
+        'control-md': 'var(--dr-control-md)',
+        'control-touch': 'var(--dr-control-touch)',
+      },
+      minHeight: {
+        'control-sm': 'var(--dr-control-sm)',
+        'control-md': 'var(--dr-control-md)',
+        'control-touch': 'var(--dr-control-touch)',
       },
       letterSpacing: {
         tighter: '0em',
