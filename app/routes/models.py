@@ -14,6 +14,9 @@ class Route(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     stream_id: Mapped[int] = mapped_column(ForeignKey("streams.id"), nullable=False)
     destination_id: Mapped[int] = mapped_column(ForeignKey("destinations.id"), nullable=False)
+    # Optional operator label. NULL keeps the "Route #<id>" identity used everywhere else.
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    description: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     failure_policy: Mapped[str] = mapped_column(String(64), nullable=False, default="LOG_AND_CONTINUE")
     formatter_config_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
