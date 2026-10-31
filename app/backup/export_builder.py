@@ -20,7 +20,15 @@ from app.route_policy.models import RoutePolicyRule
 from app.route_protection.models import RouteProtectionRule
 from app.route_transform.models import RouteEnrichment, RouteMapping
 from app.routes.models import Route
-from app.security.secrets import mask_config_payload, mask_http_headers, mask_secrets, mask_secrets_and_pem
+from app.security.secrets import (
+    collect_secret_literals,
+    mask_config_payload,
+    mask_http_headers,
+    mask_secrets_and_pem,
+    mask_source_auth_json,
+    mask_source_config_json,
+    SOURCE_SECRET_FIELDS,
+)
 from app.sources.models import Source
 from app.streams.models import Stream
 
@@ -43,24 +51,24 @@ def _connector_dict(c: Connector) -> dict[str, Any]:
     }
 
 
-def _mask_source_auth_json(auth: dict[str, Any]) -> dict[str, Any]:
-    base = mask_secrets(dict(auth or {}))
+def _mask_source_auth_json(auth: dict[str, Any], source_type: str | None = None) -> dict[str, Any]:
+    base = mask_source_auth_json(source_type, dict(auth or {}))
     ph = base.get("preflight_headers")
     if isinstance(ph, dict):
         try:
             base["preflight_headers"] = mask_http_headers({str(k): str(v) for k, v in ph.items()})
         except Exception:
-            base["preflight_headers"] = mask_secrets(ph)
+            base["preflight_headers"] = mask_source_auth_json(source_type, ph)
     return base
 
 
 def _source_dict(s: Source) -> dict[str, Any]:
-    auth = _mask_source_auth_json(dict(s.auth_json or {}))
+    auth = _mask_source_auth_json(dict(s.auth_json or {}), s.source_type)
     return {
         "id": s.id,
         "connector_id": s.connector_id,
         "source_type": s.source_type,
-        "config_json": mask_secrets(dict(s.config_json or {})),
+        "config_json": mask_source_config_json(s.source_type, dict(s.config_json or {})),
         "auth_json": auth,
         "enabled": s.enabled,
         "created_at": _iso(s.created_at),
@@ -249,6 +257,39 @@ def _checkpoint_dict(c: Checkpoint) -> dict[str, Any]:
     }
 
 
+def _stored_secret_literals(db: Session, payload: dict[str, Any]) -> list[str]:
+    """Secret values the exporter read from storage for the entities in ``payload``.
+
+    The integrity report scans the finished bundle for these values, so ``secrets_masked`` can only
+    be claimed when no stored secret survived serialization (whatever key it was stored under).
+    """
+
+    literals: list[str] = []
+    source_ids = [int(s["id"]) for s in payload.get("sources") or [] if isinstance(s, dict) and s.get("id") is not None]
+    if source_ids:
+        for src in db.query(Source).filter(Source.id.in_(source_ids)).all():
+            scope = SOURCE_SECRET_FIELDS.get(str(src.source_type or "").strip().upper(), {})
+            literals.extend(collect_secret_literals(dict(src.config_json or {}), declared=scope.get("config_json")))
+            literals.extend(collect_secret_literals(dict(src.auth_json or {}), declared=scope.get("auth_json")))
+    stream_ids = [int(s["id"]) for s in payload.get("streams") or [] if isinstance(s, dict) and s.get("id") is not None]
+    if stream_ids:
+        for st in db.query(Stream).filter(Stream.id.in_(stream_ids)).all():
+            literals.extend(collect_secret_literals(dict(st.config_json or {})))
+    dest_ids = [int(d["id"]) for d in payload.get("destinations") or [] if isinstance(d, dict) and d.get("id") is not None]
+    if dest_ids:
+        for d in db.query(Destination).filter(Destination.id.in_(dest_ids)).all():
+            cfg = dict(d.config_json or {})
+            literals.extend(collect_secret_literals(cfg))
+            headers = cfg.get("headers")
+            if isinstance(headers, dict):
+                literals.extend(str(v) for v in headers.values() if isinstance(v, str) and v.strip())
+    return literals
+
+
+def _integrity(db: Session, payload: dict[str, Any]) -> dict[str, Any]:
+    return build_export_integrity_report(payload, known_secret_literals=_stored_secret_literals(db, payload))
+
+
 def _base_bundle(*, export_kind: ExportKind, options: dict[str, Any]) -> dict[str, Any]:
     return {
         "version": 2,
@@ -288,7 +329,7 @@ def build_workspace_export(
     payload["routes"] = _route_rows(db, routes)
     if include_checkpoints:
         payload["checkpoints"] = [_checkpoint_dict(r) for r in db.query(Checkpoint).order_by(Checkpoint.id.asc()).all()]
-    payload["export_integrity"] = build_export_integrity_report(payload)
+    payload["export_integrity"] = _integrity(db, payload)
     return payload
 
 
@@ -318,7 +359,7 @@ def build_connector_export(
     sources = db.query(Source).filter(Source.connector_id == connector_id).order_by(Source.id.asc()).all()
     payload["sources"] = [_source_dict(s) for s in sources]
     if not include_streams:
-        payload["export_integrity"] = build_export_integrity_report(payload)
+        payload["export_integrity"] = _integrity(db, payload)
         return payload
     streams = db.query(Stream).filter(Stream.connector_id == connector_id).order_by(Stream.id.asc()).all()
     stream_ids = [int(s.id) for s in streams]
@@ -347,7 +388,7 @@ def build_connector_export(
                         db.query(Destination).filter(Destination.id.in_(dest_ids)).order_by(Destination.id.asc()).all()
                     )
                     payload["destinations"] = [_destination_dict(d) for d in dest_rows]
-    payload["export_integrity"] = build_export_integrity_report(payload)
+    payload["export_integrity"] = _integrity(db, payload)
     return payload
 
 
@@ -395,7 +436,7 @@ def build_stream_export(
             dest_ids = {int(r.destination_id) for r in routes}
             dest_rows = db.query(Destination).filter(Destination.id.in_(dest_ids)).order_by(Destination.id.asc()).all()
             payload["destinations"] = [_destination_dict(d) for d in dest_rows]
-    payload["export_integrity"] = build_export_integrity_report(payload)
+    payload["export_integrity"] = _integrity(db, payload)
     return payload
 
 

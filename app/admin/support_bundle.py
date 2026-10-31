@@ -29,7 +29,12 @@ from app.platform_admin.repository import (
     list_config_versions,
 )
 from app.routes.models import Route
-from app.security.secrets import mask_secrets_and_pem, redact_pem_literals
+from app.security.secrets import (
+    mask_secrets_and_pem,
+    mask_source_auth_json,
+    mask_source_config_json,
+    redact_pem_literals,
+)
 from app.sources.models import Source
 from app.streams.models import Stream
 
@@ -230,8 +235,8 @@ def build_support_bundle_zip_bytes(db: Session) -> tuple[bytes, str]:
                 "enabled": s.enabled,
                 "created_at": s.created_at,
                 "updated_at": s.updated_at,
-                "config_json": mask_secrets_and_pem(dict(s.config_json or {})),
-                "auth_json": mask_secrets_and_pem(dict(s.auth_json or {})),
+                "config_json": redact_pem_literals(mask_source_config_json(s.source_type, dict(s.config_json or {}))),
+                "auth_json": redact_pem_literals(mask_source_auth_json(s.source_type, dict(s.auth_json or {}))),
             }
             for s in sources
         ]

@@ -23,7 +23,7 @@ from app.platform_admin.config_entity_snapshots import (
 from app.routes.models import Route
 from app.runners.stream_runner import StreamRunner
 from app.scheduler import runtime_state as scheduler_runtime_state
-from app.security.secrets import mask_secrets
+from app.security.secrets import mask_source_auth_json, mask_source_config_json
 from app.sources.models import Source
 from app.runtime.schemas import (
     ConnectorUISaveRequest,
@@ -800,8 +800,8 @@ def save_runtime_source_ui_config(
     return SourceUISaveResponse(
         source_id=int(source.id),
         enabled=bool(source.enabled),
-        config_json=mask_secrets(dict(source.config_json or {})),
-        auth_json=mask_secrets(dict(source.auth_json or {})),
+        config_json=mask_source_config_json(source.source_type, dict(source.config_json or {})),
+        auth_json=mask_source_auth_json(source.source_type, dict(source.auth_json or {})),
         message="Source UI configuration saved successfully",
     )
 

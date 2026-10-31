@@ -39,6 +39,7 @@ from app.route_transform.models import RouteEnrichment, RouteMapping
 from app.routes.models import Route
 from app.sources.models import Source
 from app.platform_admin import journal
+from app.security.secrets import restore_stripped_secrets
 from app.streams.models import Stream
 
 _IMPORT_APPLY_OPERATION_ACTION = "IMPORT_APPLY_OPERATION"
@@ -513,6 +514,19 @@ def clone_connector(db: Session, connector_id: int, name_suffix: str) -> tuple[i
         clone_name_suffix=name_suffix,
     )
     res = apply_import(db, body)
+    # Same-environment clone: the original rows still hold the real secrets that the (masked) bundle could not
+    # carry. Copy them server-side into the clone so it stays a faithful copy; nothing is returned to the client.
+    originals = db.query(Source).filter(Source.connector_id == connector_id).order_by(Source.id.asc()).all()
+    clones = (
+        db.query(Source).filter(Source.id.in_(list(res.created.source_ids))).order_by(Source.id.asc()).all()
+        if res.created.source_ids
+        else []
+    )
+    for original, clone in zip(originals, clones):
+        clone.config_json = restore_stripped_secrets(dict(clone.config_json or {}), dict(original.config_json or {}))
+        clone.auth_json = restore_stripped_secrets(dict(clone.auth_json or {}), dict(original.auth_json or {}))
+    if clones:
+        db.commit()
     cid = res.created.connector_ids[0]
     sids = list(res.created.stream_ids)
     path = res.redirect_path or f"/connectors/{cid}"

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from app.security.secrets import SENSITIVE_FIELD_NAMES
+from app.security.secrets import is_sensitive_field_name
 
 _MASK = "********"
 
@@ -45,6 +45,12 @@ _PRESERVED_AUTH_REFERENCE_KEYS = frozenset(
 )
 
 
+def _is_marker(val: Any) -> bool:
+    """True for values that carry no secret: empty, boolean flags, or the masked sentinel."""
+
+    return val is None or isinstance(val, bool) or val == "" or str(val).strip() == _MASK
+
+
 def _sensitive_leaf_values(obj: Any, path: str = "") -> list[tuple[str, Any]]:
     """Collect values for dict keys that match sensitive token names (case-insensitive)."""
 
@@ -52,8 +58,7 @@ def _sensitive_leaf_values(obj: Any, path: str = "") -> list[tuple[str, Any]]:
     if isinstance(obj, dict):
         for k, v in obj.items():
             p = f"{path}.{k}" if path else str(k)
-            lk = str(k).lower()
-            if lk in SENSITIVE_FIELD_NAMES:
+            if is_sensitive_field_name(str(k)):
                 out.append((p, v))
             else:
                 out.extend(_sensitive_leaf_values(v, p))
@@ -102,13 +107,13 @@ def verify_export_masking(bundle: dict[str, Any]) -> list[str]:
         auth = s.get("auth_json") or {}
         if isinstance(auth, dict):
             for path, val in _sensitive_leaf_values(auth):
-                if val not in (None, "", _MASK) and str(val).strip() != _MASK:
+                if not _is_marker(val):
                     issues.append(f"sources[{i}] {path} must be masked or empty, got non-mask value")
             issues.extend(f"sources[{i}] {m}" for m in _preflight_headers_leak(auth))
         cfg = s.get("config_json") or {}
         if isinstance(cfg, dict):
             for path, val in _sensitive_leaf_values(cfg):
-                if val not in (None, "", _MASK) and str(val).strip() != _MASK:
+                if not _is_marker(val):
                     issues.append(f"sources[{i}] config_json {path} must be masked or empty")
 
     for i, st in enumerate(bundle.get("streams") or []):
@@ -117,7 +122,7 @@ def verify_export_masking(bundle: dict[str, Any]) -> list[str]:
         cfg = st.get("config_json") or {}
         if isinstance(cfg, dict):
             for path, val in _sensitive_leaf_values(cfg):
-                if val not in (None, "", _MASK) and str(val).strip() != _MASK:
+                if not _is_marker(val):
                     issues.append(f"streams[{i}] config_json {path} must be masked or empty")
 
     for i, d in enumerate(bundle.get("destinations") or []):
@@ -127,7 +132,7 @@ def verify_export_masking(bundle: dict[str, Any]) -> list[str]:
         if isinstance(cfg, dict):
             issues.extend(f"destinations[{i}] {m}" for m in _webhook_headers_leak(cfg))
             for path, val in _sensitive_leaf_values(cfg):
-                if val not in (None, "", _MASK) and str(val).strip() != _MASK:
+                if not _is_marker(val):
                     issues.append(f"destinations[{i}] config_json {path} must be masked or empty")
 
     for i, r in enumerate(bundle.get("routes") or []):
@@ -137,7 +142,7 @@ def verify_export_masking(bundle: dict[str, Any]) -> list[str]:
         cfg = enrichment.get("enrichment_json") if isinstance(enrichment, dict) else None
         if isinstance(cfg, dict):
             for path, val in _sensitive_leaf_values(cfg):
-                if val not in (None, "", _MASK) and str(val).strip() != _MASK:
+                if not _is_marker(val):
                     issues.append(f"routes[{i}] route_enrichment.enrichment_json {path} must be masked or empty")
 
     for i, c in enumerate(bundle.get("checkpoints") or []):
@@ -146,9 +151,45 @@ def verify_export_masking(bundle: dict[str, Any]) -> list[str]:
         cp = c.get("checkpoint_value_json") or {}
         if isinstance(cp, dict):
             for path, val in _sensitive_leaf_values(cp):
-                if val not in (None, "", _MASK) and str(val).strip() != _MASK:
+                if not _is_marker(val):
                     issues.append(f"checkpoints[{i}] checkpoint_value_json {path} must be masked or empty")
 
+    return issues
+
+
+def _walk_leaf_strings(obj: Any, path: str = ""):
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            yield from _walk_leaf_strings(v, f"{path}.{k}" if path else str(k))
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            yield from _walk_leaf_strings(v, f"{path}[{i}]")
+    elif isinstance(obj, str):
+        yield path, obj
+
+
+_MIN_SUBSTRING_SECRET_LEN = 8
+
+
+def verify_no_secret_literals(bundle: dict[str, Any], known_secret_literals: list[str] | None) -> list[str]:
+    """Value-based check: no stored secret value may appear anywhere in the exported bundle.
+
+    Key-name checks cannot see a secret stored under an unexpected key; this scan compares every
+    string leaf with the secret values the exporter itself read from the database. Values are never
+    echoed in the returned messages.
+    """
+
+    literals = [lit for lit in dict.fromkeys(known_secret_literals or []) if lit and lit != _MASK]
+    if not literals:
+        return []
+    issues: list[str] = []
+    for path, leaf in _walk_leaf_strings(bundle):
+        if path.startswith("export_integrity"):
+            continue
+        for lit in literals:
+            if leaf == lit or (len(lit) >= _MIN_SUBSTRING_SECRET_LEN and lit in leaf):
+                issues.append(f"{path} contains a stored secret value that must be masked")
+                break
     return issues
 
 
@@ -195,10 +236,16 @@ def verify_deterministic_export_ordering(bundle: dict[str, Any]) -> list[str]:
     return issues
 
 
-def build_export_integrity_report(bundle: dict[str, Any]) -> dict[str, Any]:
-    """Structured integrity block embedded in export JSON."""
+def build_export_integrity_report(
+    bundle: dict[str, Any], *, known_secret_literals: list[str] | None = None
+) -> dict[str, Any]:
+    """Structured integrity block embedded in export JSON.
 
-    masking = verify_export_masking(bundle)
+    ``secrets_masked`` is only True when both the key-name scan and the value scan (against the
+    secret values the exporter read from storage) find nothing.
+    """
+
+    masking = [*verify_export_masking(bundle), *verify_no_secret_literals(bundle, known_secret_literals)]
     refs = verify_credential_reference_preservation(bundle)
     ordering = verify_deterministic_export_ordering(bundle)
     all_issues = [*masking, *refs, *ordering]

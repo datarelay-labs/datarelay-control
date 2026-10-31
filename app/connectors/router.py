@@ -38,6 +38,13 @@ from app.connectors.read_cache import (
 from app.database import SessionLocal, get_db, get_db_read_bounded, utcnow
 from app.sources.models import Source
 from app.platform_admin import journal
+from app.security.secrets import (
+    SOURCE_SECRET_FIELDS,
+    is_sensitive_field_name,
+    mask_http_headers,
+    mask_source_auth_json,
+    preserve_masked_secrets,
+)
 from app.streams.models import Stream
 
 router = APIRouter()
@@ -183,16 +190,27 @@ def _merge_secret(
     return None
 
 
-def _mask_auth_for_response(auth: dict[str, Any] | None) -> dict[str, Any]:
+def _mask_auth_for_response(auth: dict[str, Any] | None, source_type: str | None = None) -> dict[str, Any]:
+    """Mask ``Source.auth_json`` for API responses via the shared secret policy.
+
+    Secret fields keep a ``<key>_configured`` flag and the masked sentinel so the UI can show
+    "secret is set" without receiving the value.
+    """
+
     if not isinstance(auth, dict):
         return {"auth_type": "no_auth"}
+    declared = SOURCE_SECRET_FIELDS.get(str(source_type or "HTTP_API_POLLING").strip().upper(), {}).get(
+        "auth_json", frozenset()
+    )
+    masked = mask_source_auth_json(source_type, auth)
     out: dict[str, Any] = {}
     for key, value in auth.items():
-        if key in _SECRET_KEYS:
-            out[f"{key}_configured"] = value not in (None, "")
-            out[key] = _MASK if value not in (None, "") else ""
+        if is_sensitive_field_name(str(key), declared=declared):
+            is_set = value not in (None, "")
+            out[f"{key}_configured"] = is_set
+            out[key] = _MASK if is_set else ""
             continue
-        out[key] = value
+        out[key] = masked.get(key)
     return out
 
 
@@ -221,6 +239,9 @@ def _build_auth_json(
         raise _bad_request(f"unsupported auth_type: {effective_auth_type}")
 
     incoming = payload.model_dump(exclude_unset=True)
+    if existing_auth:
+        # Masked sentinels round-tripped from a GET (header maps, nested templates) keep stored values.
+        incoming = preserve_masked_secrets(incoming, dict(existing_auth))
     auth: dict[str, Any] = {"auth_type": effective_auth_type}
 
     if effective_auth_type == "basic":
@@ -552,6 +573,8 @@ def _build_config_json(payload: ConnectorCreate | ConnectorUpdate, existing: dic
         common_headers = existing.get("common_headers")
 
     raw_ch = common_headers if isinstance(common_headers, dict) else {}
+    if existing is not None and isinstance(existing.get("common_headers"), dict):
+        raw_ch = preserve_masked_secrets(dict(raw_ch), dict(existing["common_headers"]))
     apply_defaults = (not partial) and len(raw_ch) == 0
     ch_final = _effective_common_headers(raw_ch, on_create_empty_defaults=apply_defaults)
 
@@ -711,9 +734,16 @@ def _build_remote_file_config_json(
     if not username:
         raise _bad_request("remote_username is required for REMOTE_FILE_POLLING")
 
-    password = _merge_secret("remote_password", incoming, prev if partial else None)
-    private_key = _merge_secret("remote_private_key", incoming, prev if partial else None)
-    private_key_passphrase = _merge_secret("remote_private_key_passphrase", incoming, prev if partial else None)
+    # Stored keys are password/private_key/private_key_passphrase; the API names are remote_*.
+    prev_api = {
+        **prev,
+        "remote_password": prev.get("password"),
+        "remote_private_key": prev.get("private_key"),
+        "remote_private_key_passphrase": prev.get("private_key_passphrase"),
+    }
+    password = _merge_secret("remote_password", incoming, prev_api if partial else None)
+    private_key = _merge_secret("remote_private_key", incoming, prev_api if partial else None)
+    private_key_passphrase = _merge_secret("remote_private_key_passphrase", incoming, prev_api if partial else None)
 
     if not password and not (private_key or "").strip():
         raise _bad_request("remote_password or remote_private_key is required for REMOTE_FILE_POLLING")
@@ -813,6 +843,12 @@ def _build_webhook_receiver_auth_json(
     partial: bool,
 ) -> dict[str, Any]:
     prev = dict(existing or {})
+    # Stored keys are shared_secret/bearer_token; the API names are webhook_*.
+    prev_api = {
+        **prev,
+        "webhook_shared_secret": prev.get("shared_secret"),
+        "webhook_bearer_token": prev.get("bearer_token"),
+    }
     incoming = payload.model_dump(exclude_unset=partial)
     raw_mode = incoming.get("webhook_auth_mode")
     if raw_mode is None and partial:
@@ -822,14 +858,14 @@ def _build_webhook_receiver_auth_json(
         raise _bad_request("webhook_auth_mode must be one of: no_auth, shared_secret_header, bearer_token")
     auth: dict[str, Any] = {"auth_mode": mode}
     if mode == "shared_secret_header":
-        secret_value = _merge_secret("webhook_shared_secret", incoming, prev if partial else None)
+        secret_value = _merge_secret("webhook_shared_secret", incoming, prev_api if partial else None)
         if not secret_value:
             raise _bad_request("webhook_shared_secret is required when webhook_auth_mode=shared_secret_header")
         auth["shared_secret"] = secret_value
         header_name = incoming.get("webhook_auth_header_name") or prev.get("header_name") or "X-GDC-Webhook-Secret"
         auth["header_name"] = str(header_name).strip() or "X-GDC-Webhook-Secret"
     elif mode == "bearer_token":
-        token_value = _merge_secret("webhook_bearer_token", incoming, prev if partial else None)
+        token_value = _merge_secret("webhook_bearer_token", incoming, prev_api if partial else None)
         if not token_value:
             raise _bad_request("webhook_bearer_token is required when webhook_auth_mode=bearer_token")
         auth["bearer_token"] = token_value
@@ -839,8 +875,8 @@ def _build_webhook_receiver_auth_json(
 def _serialize(connector: Connector, source: Source | None, stream_count: int) -> ConnectorRead:
     config = source.config_json if source else {}
     auth = source.auth_json if source else {"auth_type": "no_auth"}
-    masked_auth = _mask_auth_for_response(auth if isinstance(auth, dict) else {"auth_type": "no_auth"})
     st = str(source.source_type if source else "HTTP_API_POLLING").strip().upper()
+    masked_auth = _mask_auth_for_response(auth if isinstance(auth, dict) else {"auth_type": "no_auth"}, st)
     ctype = str(
         (config or {}).get("connector_type")
         or (
@@ -890,7 +926,7 @@ def _serialize(connector: Connector, source: Source | None, stream_count: int) -
         if st not in {"S3_OBJECT_POLLING", "DATABASE_QUERY", "REMOTE_FILE_POLLING", "WEBHOOK_RECEIVER"}
         else True,
         http_proxy=(config or {}).get("http_proxy"),
-        common_headers=dict((config or {}).get("common_headers") or {}),
+        common_headers=mask_http_headers(dict((config or {}).get("common_headers") or {})),
         auth_type=_normalize_auth_type(str((auth or {}).get("auth_type") or "no_auth")),
         auth=masked_auth if isinstance(masked_auth, dict) else {"auth_type": "no_auth"},
         created_at=connector.created_at,

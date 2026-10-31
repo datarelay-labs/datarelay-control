@@ -7,7 +7,7 @@ from app.config_concurrency import pop_expected_updated_at, require_fresh_update
 from app.connectors.models import Connector
 from app.database import get_db, utcnow
 from app.platform_admin import journal
-from app.security.secrets import mask_secrets, preserve_masked_secrets
+from app.security.secrets import mask_source_auth_json, mask_source_config_json, preserve_masked_secrets
 from app.sources.models import Source
 from app.sources.schemas import SourceCreate, SourceRead, SourceUpdate
 from app.streams.models import Stream
@@ -17,8 +17,9 @@ router = APIRouter()
 
 def _masked_read(row: Source) -> SourceRead:
     item = SourceRead.model_validate(row).model_dump()
-    item["config_json"] = mask_secrets(item.get("config_json"))
-    item["auth_json"] = mask_secrets(item.get("auth_json"))
+    source_type = item.get("source_type")
+    item["config_json"] = mask_source_config_json(source_type, item.get("config_json"))
+    item["auth_json"] = mask_source_auth_json(source_type, item.get("auth_json"))
     return SourceRead.model_validate(item)
 
 

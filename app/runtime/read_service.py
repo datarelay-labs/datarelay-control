@@ -35,7 +35,7 @@ from app.logs.repository import (
 from app.mappings.models import Mapping
 from app.enrichments.models import Enrichment
 from app.routes.models import Route
-from app.security.secrets import mask_secrets
+from app.security.secrets import mask_secrets, mask_source_auth_json, mask_source_config_json
 from app.sources.models import Source
 from app.formatters.config_resolver import resolve_formatter_config
 from app.formatters.message_prefix import effective_message_prefix_enabled, effective_message_prefix_template
@@ -2801,7 +2801,9 @@ def get_stream_ui_config(db: Session, stream_id: int) -> StreamUIConfigResponse:
             id=int(source.id) if source is not None else None,
             source_type=str(source.source_type) if source is not None else None,
             enabled=bool(source.enabled) if source is not None else False,
-            config_json=dict(source.config_json or {}) if source is not None else {},
+            config_json=(
+                mask_source_config_json(source.source_type, dict(source.config_json or {})) if source is not None else {}
+            ),
         ),
         mapping=StreamUIConfigMappingSummary(
             exists=mapping is not None,
@@ -2867,8 +2869,8 @@ def get_source_ui_config(db: Session, source_id: int) -> SourceUIConfigResponse:
             connector_id=int(source.connector_id),
             source_type=str(source.source_type),
             enabled=bool(source.enabled),
-            config_json=mask_secrets(dict(source.config_json or {})),
-            auth_json=mask_secrets(dict(source.auth_json or {})),
+            config_json=mask_source_config_json(source.source_type, dict(source.config_json or {})),
+            auth_json=mask_source_auth_json(source.source_type, dict(source.auth_json or {})),
         ),
         streams=streams,
         message="Source UI config loaded successfully",
