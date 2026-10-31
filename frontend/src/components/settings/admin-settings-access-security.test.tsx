@@ -380,4 +380,25 @@ describe('AdminSettingsPage Access & security modernization', () => {
     expect(screen.getByTestId('admin-users-create')).toBeDisabled()
     expect(await screen.findByLabelText('Enable HTTPS')).toBeDisabled()
   })
+
+  it('shows Governance-only roles why the Administration surface is disabled instead of a raw 403 (F-195)', async () => {
+    persistSession({
+      access_token: 'test-token',
+      refresh_token: 'test-refresh',
+      expires_at: new Date(Date.now() + 60_000).toISOString(),
+      user: { username: 'gov-user', role: 'GOVERNANCE_OPERATOR', status: 'ACTIVE' },
+    })
+    vi.mocked(getAuthWhoAmI).mockResolvedValue({ role: 'GOVERNANCE_OPERATOR', username: 'gov-user' } as never)
+    vi.mocked(getAdminHttpsSettings).mockRejectedValue(new Error('403: [ROLE_FORBIDDEN] This endpoint requires the Administrator role.'))
+    vi.mocked(listAdminUsers).mockRejectedValue(new Error('403: [ROLE_FORBIDDEN] This endpoint requires the Administrator role.'))
+
+    renderPage()
+
+    expect(await screen.findByTestId('admin-settings-governance-role-banner')).toHaveTextContent(/only use Governance pages/i)
+    expect(await screen.findByText(/visible to Administrators only, so your role cannot view them/i)).toBeInTheDocument()
+    expect(screen.queryByText(/Could not load admin settings: 403/i)).not.toBeInTheDocument()
+    expect(await screen.findByTestId('admin-https-unavailable')).toHaveTextContent(/Administrators only/i)
+    expect(screen.getByTestId('admin-users-empty')).toHaveTextContent(/visible to Administrators only/i)
+    expect(screen.queryByText(/Create a local account/i)).not.toBeInTheDocument()
+  })
 })

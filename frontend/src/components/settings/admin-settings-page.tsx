@@ -39,6 +39,7 @@ import { clearSession, getSessionUsername } from '../../auth/session'
 import { formatTimestampWithResolvedTimezone } from '../../lib/platform-timestamps'
 import { isDevValidationLabUiEnabled } from '../../lib/feature-flags'
 import { gdcUi, isAdminUiReadOnly, readAdminUiRole } from '../../lib/gdc-ui-tokens'
+import { isGovernanceOnlyRole } from '../../lib/governance-rbac'
 import { cn } from '../../lib/utils'
 import { AdminDevValidationPanel } from './admin-dev-validation-panel'
 import { AdminDisplayTimezoneSettings } from './admin-display-timezone-settings'
@@ -145,7 +146,10 @@ export function AdminSettingsPage() {
   const [backendRole, setBackendRole] = useState<import('../../auth/session').SessionRole | null>(readAdminUiRole())
 
   const effectiveRole = backendRole ?? readAdminUiRole()
-  const readOnly = isAdminUiReadOnly() || backendRole === 'VIEWER'
+  // F-195: Governance-only roles are refused every non-Governance mutation by the backend, so the whole
+  // Administration surface is read-only (and says why) instead of offering controls that always fail.
+  const governanceOnly = isGovernanceOnlyRole()
+  const readOnly = isAdminUiReadOnly() || backendRole === 'VIEWER' || governanceOnly
   const isOperator = effectiveRole === 'OPERATOR'
   const accountMutationReadOnly = effectiveRole !== 'ADMINISTRATOR'
 
@@ -495,7 +499,16 @@ export function AdminSettingsPage() {
         </nav>
       </header>
 
-      {readOnly ? (
+      {governanceOnly ? (
+        <div
+          role="status"
+          data-testid="admin-settings-governance-role-banner"
+          className="rounded-lg border border-sky-500/25 bg-sky-500/[0.07] px-3 py-2 text-sm text-sky-950 dark:border-sky-500/35 dark:bg-sky-500/10 dark:text-sky-100"
+        >
+          <strong>Governance role.</strong> Your role may only use Governance pages. Platform settings, retention,
+          backup and account controls are shown for reference and are disabled because the backend would refuse them.
+        </div>
+      ) : readOnly ? (
         <div
           role="status"
           data-testid="admin-settings-readonly-banner"
@@ -522,7 +535,9 @@ export function AdminSettingsPage() {
           role="alert"
           className="rounded-lg border border-amber-500/30 bg-amber-500/[0.07] px-3 py-2 text-sm text-amber-950 dark:border-amber-500/35 dark:bg-amber-500/10 dark:text-amber-100"
         >
-          Could not load admin settings: {loadError}
+          {effectiveRole !== 'ADMINISTRATOR' && /403|ROLE_FORBIDDEN|may only access/i.test(loadError)
+            ? 'Some admin settings (HTTPS, platform users, system information) are visible to Administrators only, so your role cannot view them.'
+            : `Could not load admin settings: ${loadError}`}
         </div>
       ) : null}
       {pageErr ? (
@@ -744,8 +759,10 @@ export function AdminSettingsPage() {
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-slate-500" role="status">
-                Loading HTTPS settings…
+              <p className="text-sm text-slate-500" role="status" data-testid="admin-https-unavailable">
+                {loadError && effectiveRole !== 'ADMINISTRATOR'
+                  ? 'HTTPS settings are available to Administrators only.'
+                  : 'Loading HTTPS settings…'}
               </p>
             )}
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -977,7 +994,9 @@ export function AdminSettingsPage() {
             <div className={gdcUi.emptyPanel} data-testid="admin-users-empty" role="status">
               <p className="text-sm font-medium text-slate-800 dark:text-slate-100">No platform users loaded</p>
               <p className="mt-1 text-sm text-slate-600 dark:text-gdc-muted">
-                Create a local account or refresh admin settings after the API is available.
+                {effectiveRole === 'ADMINISTRATOR'
+                  ? 'Create a local account or refresh admin settings after the API is available.'
+                  : 'The platform user list is visible to Administrators only.'}
               </p>
             </div>
           ) : (

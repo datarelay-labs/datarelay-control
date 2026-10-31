@@ -6,6 +6,7 @@ import {
   postAdminRetentionCleanupRun,
   putAdminRetentionPolicy,
 } from '../../api/gdcAdmin'
+import { clearSession, persistSession } from '../../auth/session'
 import { AdminRetentionSettings } from './admin-retention-settings'
 
 vi.mock('../../api/gdcAdmin', () => ({
@@ -76,6 +77,7 @@ describe('AdminRetentionSettings lifecycle workspace', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    clearSession()
     vi.mocked(getAdminRetentionPolicy).mockResolvedValue(retentionFixture)
   })
 
@@ -158,5 +160,54 @@ describe('AdminRetentionSettings lifecycle workspace', () => {
     vi.mocked(getAdminRetentionPolicy).mockRejectedValue(new Error('retention down'))
     renderPanel()
     expect(await screen.findByRole('alert')).toHaveTextContent(/retention down/i)
+  })
+
+  it('asks for confirmation with the impact before a live cleanup runs (F-203)', async () => {
+    const user = userEvent.setup()
+    vi.mocked(postAdminRetentionCleanupRun).mockResolvedValue({
+      dry_run: false,
+      triggered_at: '2026-09-23T13:00:00Z',
+      outcomes: [{ category: 'backup_temp', status: 'ok', deleted_count: 2 } as never],
+      policy: retentionFixture,
+    })
+    renderPanel()
+    await screen.findByTestId('admin-retention-panel')
+
+    await user.click(screen.getByRole('button', { name: /Run cleanup now for Backup temp/i }))
+    expect(postAdminRetentionCleanupRun).not.toHaveBeenCalled()
+    const dialog = await screen.findByTestId('admin-retention-run-confirm')
+    expect(dialog).toHaveTextContent(/Backup temp: rows older than 3 days are deleted/i)
+    expect(dialog).toHaveTextContent(/cannot be restored/i)
+
+    await user.click(screen.getByTestId('admin-retention-run-confirm-cancel'))
+    expect(postAdminRetentionCleanupRun).not.toHaveBeenCalled()
+
+    await user.click(screen.getByTestId('admin-retention-run-cleanup'))
+    await user.click(await screen.findByTestId('admin-retention-run-confirm-confirm'))
+    await waitFor(() => expect(postAdminRetentionCleanupRun).toHaveBeenCalledWith({ categories: undefined, dry_run: false }))
+  })
+
+  it('shows a cleanup failure next to the actions, not only in the page banner stack (F-194)', async () => {
+    const user = userEvent.setup()
+    vi.mocked(postAdminRetentionCleanupRun).mockRejectedValue(new Error('cleanup exploded'))
+    renderPanel()
+    await screen.findByTestId('admin-retention-panel')
+    await user.click(screen.getByTestId('admin-retention-dry-run'))
+    expect(await screen.findByTestId('admin-retention-action-error')).toHaveTextContent(/cleanup exploded/)
+  })
+
+  it('disables Administrator-only cleanup and policy actions for an Operator and explains why (F-194)', async () => {
+    persistSession({
+      access_token: 't',
+      refresh_token: 'r',
+      expires_at: new Date(Date.now() + 60_000).toISOString(),
+      user: { username: 'ops', role: 'CONNECTOR_OPERATOR', status: 'ACTIVE' },
+    })
+    renderPanel(false)
+    await screen.findByTestId('admin-retention-panel')
+    expect(screen.getByTestId('admin-retention-role-note')).toHaveTextContent(/Administrator-only/i)
+    expect(screen.getByTestId('admin-retention-dry-run')).toBeDisabled()
+    expect(screen.getByTestId('admin-retention-run-cleanup')).toBeDisabled()
+    expect(screen.getByTestId('admin-retention-edit-policy')).toBeDisabled()
   })
 })

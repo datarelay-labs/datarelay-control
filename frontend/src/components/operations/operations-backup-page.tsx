@@ -13,6 +13,7 @@ import {
 } from '../../api/gdcBackup'
 import { NAV_PATH, SETTINGS_SECTION_PATH } from '../../config/nav-paths'
 import { cn } from '../../lib/utils'
+import { isGovernanceOnlyRole } from '../../lib/governance-rbac'
 import { useSessionCapabilities } from '../../lib/rbac'
 import { gdcUi } from '../../lib/gdc-ui-tokens'
 import { navigateToConnectorWizardWithDraft } from '../../utils/httpImportDraft'
@@ -48,6 +49,8 @@ export function OperationsBackupPage() {
   const caps = useSessionCapabilities()
   const canPreviewImport = caps.backup_import_preview === true
   const canApplyImport = caps.backup_import_apply === true
+  // F-195: Governance-only roles are refused backup/export by the backend; show that instead of a failing control.
+  const governanceOnly = isGovernanceOnlyRole()
   const [wsCkpt, setWsCkpt] = useState(true)
   const [wsDest, setWsDest] = useState(true)
   const [wsBusy, setWsBusy] = useState(false)
@@ -284,7 +287,8 @@ export function OperationsBackupPage() {
           </div>
           <button
             type="button"
-            disabled={wsBusy}
+            disabled={wsBusy || governanceOnly}
+            title={governanceOnly ? 'Governance roles cannot download platform backups.' : undefined}
             onClick={() => void onWorkspaceDownload()}
             className={cn(gdcUi.primaryBtn, 'inline-flex h-9 items-center gap-2 px-3')}
           >
@@ -382,7 +386,9 @@ export function OperationsBackupPage() {
             ) : null}
             {!canPreviewImport || !canApplyImport ? (
               <p className="text-sm text-slate-600 dark:text-gdc-muted" role="status">
-                {!canPreviewImport
+                {governanceOnly
+                  ? 'Governance roles cannot download, preview or apply platform backups. Sign in as Operator or Administrator.'
+                  : !canPreviewImport
                   ? 'Viewer role cannot run import preview or apply. Sign in as Operator or Administrator.'
                   : 'Operators may preview imports; applying import requires the Administrator role.'}
               </p>

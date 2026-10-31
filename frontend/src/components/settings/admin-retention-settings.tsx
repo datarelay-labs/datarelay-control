@@ -9,6 +9,9 @@ import {
   type RetentionPolicyDto,
 } from '../../api/gdcAdmin'
 import { formatTimestampWithResolvedTimezone } from '../../lib/platform-timestamps'
+import { readAdminUiRole } from '../../lib/gdc-ui-tokens'
+import { useSessionCapabilities } from '../../lib/rbac'
+import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
 import { gdcUi } from '../../lib/gdc-ui-tokens'
 import { cn } from '../../lib/utils'
 
@@ -56,12 +59,20 @@ const SECTION_STEP = 'text-xs font-semibold uppercase tracking-wide text-slate-5
 
 export function AdminRetentionSettings({
   reloadToken,
-  readOnly,
+  readOnly: readOnlyProp,
   busy,
   setBusy,
   setPageMsg,
   setPageErr,
 }: Props) {
+  // F-194 / F-195: cleanup runs and policy edits call Administrator-only endpoints, so a session whose
+  // capability map lacks admin_retention_policy_write must see them disabled with the reason, not a late 403.
+  const capabilities = useSessionCapabilities()
+  const adminOnlyLocked = capabilities.admin_retention_policy_write !== true
+  const readOnly = readOnlyProp || adminOnlyLocked
+  const roleName = readAdminUiRole()
+  const [actionErr, setActionErr] = useState<string | null>(null)
+  const [confirmRun, setConfirmRun] = useState<{ categories?: RetentionCleanupCategory[] } | null>(null)
   const [retention, setRetention] = useState<RetentionPolicyDto | null>(null)
   const [retentionErr, setRetentionErr] = useState<string | null>(null)
   const [retentionOpen, setRetentionOpen] = useState(false)
@@ -89,6 +100,7 @@ export function AdminRetentionSettings({
       setBusy(true)
       setPageErr(null)
       setPageMsg(null)
+      setActionErr(null)
       try {
         const out = await postAdminRetentionCleanupRun({ categories, dry_run: dryRun })
         setLastCleanupRun(out)
@@ -97,7 +109,9 @@ export function AdminRetentionSettings({
         setPageMsg(`Cleanup ${dryRun ? '(dry-run) ' : ''}completed: ${summary || 'no work'}.`)
         void load()
       } catch (e) {
-        setPageErr(e instanceof Error ? e.message : String(e))
+        const message = e instanceof Error ? e.message : String(e)
+        setPageErr(message)
+        setActionErr(`Cleanup ${dryRun ? '(dry-run) ' : ''}failed: ${message}`)
       } finally {
         setBusy(false)
       }
@@ -289,7 +303,7 @@ export function AdminRetentionSettings({
                     type="button"
                     disabled={readOnly || busy}
                     aria-label={`Run cleanup now for ${row.label}`}
-                    onClick={() => void runCleanupNow([row.cat], false)}
+                    onClick={() => setConfirmRun({ categories: [row.cat] })}
                     className={cn(
                       'inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-semibold',
                       readOnly || busy
@@ -355,6 +369,26 @@ export function AdminRetentionSettings({
           className="space-y-3 border-t border-slate-100 pt-6 dark:border-gdc-border"
         >
           <p className={SECTION_STEP}>Operator actions</p>
+          {adminOnlyLocked && !readOnlyProp ? (
+            <p
+              role="status"
+              data-testid="admin-retention-role-note"
+              className="rounded-lg border border-sky-500/25 bg-sky-500/[0.07] px-3 py-2 text-sm text-sky-950 dark:border-sky-500/35 dark:bg-sky-500/10 dark:text-sky-100"
+            >
+              Cleanup runs and retention policy edits are Administrator-only
+              {roleName ? ` (your role: ${roleName.replace(/_/g, ' ').toLowerCase()})` : ''}. You can review the
+              retention posture and last-run evidence here.
+            </p>
+          ) : null}
+          {actionErr ? (
+            <p
+              role="alert"
+              data-testid="admin-retention-action-error"
+              className="rounded-lg border border-red-500/30 bg-red-500/[0.07] px-3 py-2 text-sm text-red-900 dark:border-red-500/35 dark:bg-red-500/10 dark:text-red-100"
+            >
+              {actionErr}
+            </p>
+          ) : null}
           <p className="text-sm text-slate-600 dark:text-gdc-muted">
             Dry-run estimates deletes without removing rows. Run cleanup performs live deletes. Edit policy changes
             retention days and scheduler settings.
@@ -372,7 +406,7 @@ export function AdminRetentionSettings({
             <button
               type="button"
               disabled={readOnly || busy}
-              onClick={() => void runCleanupNow(undefined, false)}
+              onClick={() => setConfirmRun({})}
               data-testid="admin-retention-run-cleanup"
               className={cn(
                 'rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-[13px] font-semibold text-amber-950 shadow-sm hover:bg-amber-500/15 disabled:opacity-50 dark:border-amber-500/35 dark:bg-amber-500/15 dark:text-amber-100',
@@ -579,6 +613,33 @@ export function AdminRetentionSettings({
           </div>
         </div>
       ) : null}
+      <DangerousActionDialog
+        open={confirmRun != null}
+        onOpenChange={(open) => {
+          if (!open) setConfirmRun(null)
+        }}
+        title="Run live retention cleanup?"
+        targetName={
+          confirmRun?.categories
+            ? confirmRun.categories.map((cat) => retentionRows.find((r) => r.cat === cat)?.label ?? cat).join(', ')
+            : 'All categories'
+        }
+        impactBullets={retentionRows
+          .filter((row) => !confirmRun?.categories || confirmRun.categories.includes(row.cat))
+          .map(
+            (row) =>
+              `${row.label}: rows older than ${row.b.retention_days} days are deleted${row.b.enabled ? '' : ' (cleanup is switched off for this category in the policy, so it may be skipped)'}.`,
+          )}
+        reversibility="Deleted rows cannot be restored. Use Dry-run all first to estimate what would be removed."
+        risk="high"
+        primaryLabel="Run cleanup now"
+        onConfirm={() => {
+          const categories = confirmRun?.categories
+          setConfirmRun(null)
+          void runCleanupNow(categories, false)
+        }}
+        dataTestId="admin-retention-run-confirm"
+      />
     </section>
   )
 }
