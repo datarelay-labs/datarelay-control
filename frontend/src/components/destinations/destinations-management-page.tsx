@@ -118,6 +118,14 @@ type FormState = {
   tlsServerName: string
   tlsConnectTimeout: string
   tlsWriteTimeout: string
+  /**
+   * Stored config keys this form has no control for (webhook `headers`, `formatter_config`, ...).
+   * They are sent back unchanged on save so editing an unrelated field never deletes them
+   * (F-137). Secret values arrive masked and the API restores the stored value for the mask.
+   */
+  extraConfig: Record<string, unknown>
+  /** Destination type `extraConfig` belongs to; it is dropped when the type is changed. */
+  extraConfigType: DestinationListItem['destination_type'] | null
   // Capacity & Monitoring
   capacityLimitEps: string    // '' = no value set; ignored when capacityUnlimited
   capacityUnlimited: boolean  // true → no capacity limit (capacity_limit_eps = null)
@@ -142,10 +150,60 @@ const INITIAL_FORM: FormState = {
   tlsServerName: '',
   tlsConnectTimeout: '5',
   tlsWriteTimeout: '5',
+  extraConfig: {},
+  extraConfigType: null,
   capacityLimitEps: '',
   capacityUnlimited: false,
   capacityWarningPct: '70',
   capacityCriticalPct: '85',
+}
+
+/** Config keys owned by the destination form; every other stored key is preserved on save. */
+const FORM_MANAGED_CONFIG_KEYS = new Set([
+  'url',
+  'payload_mode',
+  'host',
+  'port',
+  'protocol',
+  'tls_enabled',
+  'tls_verify_mode',
+  'tls_ca_cert_path',
+  'tls_client_cert_path',
+  'tls_client_key_path',
+  'tls_server_name',
+  'connect_timeout',
+  'write_timeout',
+])
+
+const MASKED_HEADER_PLACEHOLDER = '********'
+
+function extractExtraConfig(cfg: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(cfg)) {
+    if (!FORM_MANAGED_CONFIG_KEYS.has(key)) out[key] = value
+  }
+  return out
+}
+
+function extraConfigHeaders(form: FormState): Record<string, unknown> {
+  const raw = form.extraConfig.headers
+  return raw != null && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
+}
+
+/** Unmanaged keys to send, or none when the destination type was changed in the form. */
+function preservedExtraConfig(form: FormState, forProbe: boolean): Record<string, unknown> {
+  if (form.extraConfigType !== form.destination_type) return {}
+  const out: Record<string, unknown> = { ...form.extraConfig }
+  if (forProbe && 'headers' in out) {
+    // The unsaved-form probe has no stored row to restore masked values from; never send the
+    // placeholder as if it were the real header value.
+    const kept = Object.fromEntries(
+      Object.entries(extraConfigHeaders(form)).filter(([, v]) => v !== MASKED_HEADER_PLACEHOLDER),
+    )
+    if (Object.keys(kept).length > 0) out.headers = kept
+    else delete out.headers
+  }
+  return out
 }
 
 function defaultPortFor(type: DestinationListItem['destination_type']): string {
@@ -179,20 +237,22 @@ function buildCapacityRateLimitJson(form: FormState): Record<string, unknown> {
   return rl
 }
 
-function payloadFromForm(form: FormState): DestinationWritePayload {
+function payloadFromForm(form: FormState, options: { forProbe?: boolean } = {}): DestinationWritePayload {
   const rate_limit_json = buildCapacityRateLimitJson(form)
+  const extra = preservedExtraConfig(form, options.forProbe === true)
 
   if (form.destination_type === 'WEBHOOK_POST') {
     return {
       name: form.name.trim(),
       destination_type: 'WEBHOOK_POST',
       enabled: form.enabled,
-      config_json: { url: form.url.trim(), payload_mode: form.webhookPayloadMode },
+      config_json: { ...extra, url: form.url.trim(), payload_mode: form.webhookPayloadMode },
       rate_limit_json,
     }
   }
   if (form.destination_type === 'SYSLOG_TLS') {
     const cfg: Record<string, unknown> = {
+      ...extra,
       host: form.host.trim(),
       port: Number(form.port),
       tls_enabled: true,
@@ -217,6 +277,7 @@ function payloadFromForm(form: FormState): DestinationWritePayload {
     destination_type: form.destination_type,
     enabled: form.enabled,
     config_json: {
+      ...extra,
       host: form.host.trim(),
       port: Number(form.port),
       protocol: form.destination_type === 'SYSLOG_TCP' ? 'tcp' : 'udp',
@@ -243,6 +304,8 @@ function formFromRow(row: DestinationListItem): FormState {
     tlsServerName: String(cfg.tls_server_name ?? ''),
     tlsConnectTimeout: cfg.connect_timeout != null ? String(cfg.connect_timeout) : '5',
     tlsWriteTimeout: cfg.write_timeout != null ? String(cfg.write_timeout) : '5',
+    extraConfig: extractExtraConfig(cfg),
+    extraConfigType: row.destination_type,
     capacityLimitEps: limitEps != null ? String(limitEps) : '',
     capacityUnlimited: limitEps == null,
     capacityWarningPct: String(thresholds.warningPct),
@@ -912,7 +975,7 @@ export function DestinationsManagementPage() {
     setProbeBanner(null)
     setLocalError(null)
     try {
-      const payload = payloadFromForm(form)
+      const payload = payloadFromForm(form, { forProbe: true })
       const result = await previewTestDestination(payload)
       const testedAt = new Date().toLocaleTimeString()
       setProbeOk(result.success)
@@ -1609,6 +1672,43 @@ export function DestinationsManagementPage() {
 
                     {form.destination_type === 'WEBHOOK_POST' ? (
                       <div className="space-y-4">
+                        {form.extraConfigType === 'WEBHOOK_POST' && Object.keys(extraConfigHeaders(form)).length > 0 ? (
+                          <div data-testid="webhook-stored-headers" className="space-y-2">
+                            <p className="text-[13px] font-medium text-slate-700 dark:text-slate-300">
+                              Configured request headers
+                            </p>
+                            <p className="text-[12px] text-slate-500 dark:text-gdc-muted">
+                              Header values are hidden and kept unchanged when you save. Remove a header explicitly to delete it.
+                            </p>
+                            <ul className="space-y-1">
+                              {Object.keys(extraConfigHeaders(form)).map((headerName) => (
+                                <li
+                                  key={headerName}
+                                  className="flex items-center justify-between gap-3 rounded-md border border-slate-200/80 px-3 py-1.5 text-[13px] dark:border-gdc-border"
+                                >
+                                  <span className="font-mono">{headerName}: ********</span>
+                                  <button
+                                    type="button"
+                                    className="text-[12px] font-medium text-red-600 hover:underline dark:text-red-400"
+                                    aria-label={`Remove header ${headerName}`}
+                                    onClick={() =>
+                                      setForm((s) => {
+                                        const remaining = { ...(s.extraConfig.headers as Record<string, unknown>) }
+                                        delete remaining[headerName]
+                                        const nextExtra = { ...s.extraConfig }
+                                        if (Object.keys(remaining).length > 0) nextExtra.headers = remaining
+                                        else delete nextExtra.headers
+                                        return { ...s, extraConfig: nextExtra }
+                                      })
+                                    }
+                                  >
+                                    Remove
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null}
                         <label className="text-[13px] font-medium text-slate-700 dark:text-slate-300">
                           URL *
                           <input
