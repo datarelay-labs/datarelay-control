@@ -95,7 +95,7 @@ import { StreamDetailTabNav, useStreamDetailTab } from './stream-detail-tab-nav'
 import { StreamRecentIssuesPanel } from './stream-recent-issues-panel'
 import { StreamWhyPanel } from './stream-why-panel'
 import { StreamInformationPanel } from './stream-information-panel'
-import { buildStreamDiagnosis } from './stream-runtime-diagnosis'
+import { buildStreamDiagnosis, deriveSourceObserved, isCheckpointBehindDelivery } from './stream-runtime-diagnosis'
 import { StreamRuntimeDiagnosisOverview } from './stream-runtime-diagnosis-overview'
 import { formatRelativeShort } from '../../lib/stream-console-metrics'
 import { StreamDetailDeliveryPanel } from './stream-detail-delivery-panel'
@@ -107,7 +107,7 @@ import { RuntimeChartCard } from '../shell/runtime-chart-card'
 import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
 import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
 import type { RecentLogLine, RunHistoryRow } from './stream-runtime-detail-model'
-import { emptyStreamRuntimeDetail } from './stream-runtime-detail-model'
+import { emptyStreamRuntimeDetail, runHistoryRowKeys } from './stream-runtime-detail-model'
 import { useMountAbortController } from '../../hooks/use-mount-abort-signal'
 import { isRequestAborted } from '../../lib/request-abort'
 import type {
@@ -139,6 +139,15 @@ function statusTone(s: StreamRuntimeStatus) {
       return _e
     }
   }
+}
+
+/** True when a checkpoint value carries no observed position: null, empty string, or containers of only those. */
+function isUnobservedCheckpointValue(value: unknown): boolean {
+  if (value == null) return true
+  if (typeof value === 'string') return value.trim() === ''
+  if (Array.isArray(value)) return value.every(isUnobservedCheckpointValue)
+  if (typeof value === 'object') return Object.values(value as Record<string, unknown>).every(isUnobservedCheckpointValue)
+  return false
 }
 
 function currentSourceRunFailureMessage(message: string | null): string | null {
@@ -825,6 +834,7 @@ export function StreamRuntimeDetailPage() {
     if (fromMetrics.length > 0) return fromMetrics
     return timelineRunHistory ?? []
   }, [runtimeMetrics, timelineRunHistory])
+  const runHistoryKeys = useMemo(() => runHistoryRowKeys(runHistoryRows), [runHistoryRows])
 
   const hasRuntimeObsApi = runtimeStats != null || runtimeHealth != null || runtimeMetrics != null
 
@@ -1008,12 +1018,44 @@ export function StreamRuntimeDetailPage() {
     return `v${total}`
   }, [governanceSnapshot?.schemaDrift])
 
+  // A reported checkpoint whose values are all null/empty (e.g. {"event_id":null,"timestamp":null})
+  // has observed nothing yet; keep the raw row for inspection instead of presenting it as a position.
+  const checkpointRawNotObserved = useMemo(() => {
+    const cp = runtimeMetrics?.stream.last_checkpoint
+    if (!cp || !isUnobservedCheckpointValue(cp.value)) return null
+    return JSON.stringify(cp)
+  }, [runtimeMetrics?.stream.last_checkpoint])
+
   const checkpointDisplay = useMemo(() => {
     const cp = runtimeMetrics?.stream.last_checkpoint
-    if (!cp) return null
+    if (!cp || checkpointRawNotObserved != null) return null
     const preview = formatCheckpointValueForConsole(cp.value)
     return preview !== '—' ? preview : cp.type || null
-  }, [runtimeMetrics?.stream.last_checkpoint])
+  }, [runtimeMetrics?.stream.last_checkpoint, checkpointRawNotObserved])
+
+  // Source is Clear only when a successful run/fetch or events were observed in the metrics window.
+  const sourceObserved = useMemo(
+    () =>
+      deriveSourceObserved({
+        eventsLastHour: runtimeMetrics?.kpis?.events_last_hour ?? events1h,
+        recentRunStatuses: runtimeMetrics?.recent_runs?.map((run) => run.status),
+        runCompleteCount: runtimeStats?.summary?.run_complete,
+        processedEvents: runtimeStats?.summary?.processed_events,
+      }),
+    [runtimeMetrics, runtimeStats, events1h],
+  )
+
+  // Mirrors backend should_flag_checkpoint_stale from the runtime metrics block.
+  const checkpointBehindDelivery = useMemo(
+    () =>
+      isCheckpointBehindDelivery({
+        delivering: (runtimeMetrics?.kpis?.delivered_last_hour ?? 0) > 0,
+        lastSuccessAt: runtimeMetrics?.stream?.last_success_at,
+        checkpointUpdatedAts: (runtimeMetrics?.checkpoint_history ?? []).map((item) => item.updated_at),
+        nowMs: Date.now(),
+      }),
+    [runtimeMetrics],
+  )
 
   const diagnosis = useMemo(
     () =>
@@ -1027,6 +1069,9 @@ export function StreamRuntimeDetailPage() {
         checkpointLabel: checkpointDisplay ? String(checkpointDisplay) : null,
         deliveryPctKnown: deliveryPct != null,
         deliveryPct: deliveryPct ?? 0,
+        events1h,
+        sourceObserved,
+        checkpointBehindDelivery,
         recentErrorMessage: issueCtx.recentErrors[0]?.message ?? null,
         currentRunFailureMessage: durableSourceFailure,
         canMutateWorkspace,
@@ -1044,6 +1089,9 @@ export function StreamRuntimeDetailPage() {
       showCheckpointObservability,
       checkpointDisplay,
       deliveryPct,
+      events1h,
+      sourceObserved,
+      checkpointBehindDelivery,
       issueCtx.recentErrors,
       canMutateWorkspace,
       canRuntimeControl,
@@ -1351,6 +1399,7 @@ export function StreamRuntimeDetailPage() {
         onStart={() => void runStreamControl('start')}
         onRunOnce={() => void executeRunOnce()}
         onBackfill={() => setBackfillOpen(true)}
+        checkpointRawNotObserved={checkpointRawNotObserved}
         evidence={
       <>
       <StreamMonitoringStatusStrip
@@ -1580,7 +1629,7 @@ export function StreamRuntimeDetailPage() {
           <p>
             <span className="font-semibold">Delivery retries (sum, last hour):</span>{' '}
             <span className="tabular-nums font-medium">{routeRetryTotalLastHour}</span>
-            <span className="text-amber-800/90 dark:text-amber-200/85"> · from route_runtime aggregates</span>
+            <span className="text-status-warning"> · from route_runtime aggregates</span>
           </p>
           {backendStreamId != null ? (
             <Link
@@ -1617,7 +1666,7 @@ export function StreamRuntimeDetailPage() {
                         {it.update_reason ?? '—'}
                       </span>
                       {it.partial_success ? (
-                        <span className="rounded bg-amber-500/15 px-1.5 py-px text-[10px] font-semibold text-amber-900 dark:text-amber-200">
+                        <span className="rounded bg-status-warning-subtle px-1.5 py-px text-[10px] font-semibold text-status-warning">
                           Partial success
                         </span>
                       ) : null}
@@ -1756,7 +1805,7 @@ export function StreamRuntimeDetailPage() {
                     </td>
                   </tr>
                 ) : null}
-                {runHistoryRows.map((row) => {
+                {runHistoryRows.map((row, index) => {
                   const countsVerified = row.countsVerified !== false
                   const failed = countsVerified && row.failed > 0
                   const partial = row.status === 'Partial'
@@ -1770,7 +1819,7 @@ export function StreamRuntimeDetailPage() {
                     : null
                   return (
                     <tr
-                      key={row.runId}
+                      key={runHistoryKeys[index]}
                       className={cn(
                         opTr,
                         row.status === 'Failed' && 'bg-red-500/[0.04] dark:bg-red-500/[0.06]',
@@ -1797,7 +1846,7 @@ export function StreamRuntimeDetailPage() {
                           ) : row.status === 'Failed' ? (
                             <XCircle className="h-3.5 w-3.5 text-red-600 dark:text-red-400" aria-hidden />
                           ) : row.status === 'Partial' ? (
-                            <AlertTriangle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" aria-hidden />
+                            <AlertTriangle className="h-3.5 w-3.5 text-status-warning" aria-hidden />
                           ) : (
                             <History className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" aria-hidden />
                           )}

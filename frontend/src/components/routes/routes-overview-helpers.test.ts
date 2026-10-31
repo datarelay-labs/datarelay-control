@@ -167,6 +167,27 @@ describe('buildRouteRowsFromOperationalSnapshot', () => {
     expect(metricsFromOperationalRoute(route).failed_last_hour).toBe(Math.round(0.2 * 60))
   })
 
+  it('maps an IDLE route (null success rate, zero attempts) to IDLE connectivity and a null rate, never HEALTHY', () => {
+    const idle = {
+      ...snapshot.routes[0]!,
+      health_status: 'IDLE' as const,
+      success_rate_5m: null,
+      delivered_eps_1m: 0,
+      failed_eps_1m: 0,
+    }
+    const metrics = metricsFromOperationalRoute(idle)
+    expect(metrics.connectivity_state).toBe('IDLE')
+    expect(metrics.success_rate).toBeNull()
+    expect(formatSuccessRate(idle.success_rate_5m)).not.toMatch(/^(0|100)(\.0+)?%$/)
+  })
+
+  it('does not default an unrecognised health value to HEALTHY connectivity', () => {
+    const odd = { ...snapshot.routes[0]!, health_status: 'UNKNOWN' as never }
+    expect(metricsFromOperationalRoute(odd).connectivity_state).not.toBe('HEALTHY')
+    const healthy = { ...snapshot.routes[0]!, health_status: 'HEALTHY' as const }
+    expect(metricsFromOperationalRoute(healthy).connectivity_state).toBe('HEALTHY')
+  })
+
   it('applies debounced-style search and quick filters', () => {
     const rows = buildRouteRowsFromOperationalSnapshot(snapshot, [])
     const all = filterRouteConsoleRows(rows, {

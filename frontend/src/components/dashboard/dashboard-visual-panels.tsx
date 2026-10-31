@@ -7,6 +7,7 @@ import {
   ArrowUpFromLine,
   Bell,
   CheckCircle2,
+  CircleDashed,
   Clock,
   Cloud,
   Database,
@@ -41,6 +42,9 @@ import {
 import { destinationDetailPath, NAV_PATH, streamRuntimePath, streamsExpandedGroupPath } from '../../config/nav-paths'
 import { cn } from '../../lib/utils'
 import { formatThroughputEps } from '../../lib/observability-format'
+import { MetricTile } from '../ui/metric-tile'
+import { SectionHeader } from '../ui/section-header'
+import { semanticCn } from '../ui/semantic-cn'
 import type { RuntimeAlertSummaryItem } from '../../api/types/gdcApi'
 import {
   dashboardCardClass,
@@ -71,12 +75,17 @@ function postureHeroClass(posture: OverallHealthCounts['posture']): string {
   if (posture === 'warning') {
     return 'border-amber-300 border-l-4 border-l-amber-500 bg-white dark:border-amber-500/30 dark:border-l-amber-400 dark:bg-gdc-card'
   }
+  if (posture === 'unknown') {
+    return 'border-slate-200 border-l-4 border-l-slate-400 bg-white dark:border-gdc-border dark:border-l-slate-500 dark:bg-gdc-card'
+  }
   return 'border-slate-200 border-l-4 border-l-emerald-500 bg-white dark:border-gdc-border dark:border-l-emerald-400 dark:bg-gdc-card'
 }
 
 function postureLabel(posture: OverallHealthCounts['posture']): string {
   if (posture === 'critical') return 'Critical'
   if (posture === 'warning') return 'Warning'
+  // No evidence is not Healthy: the snapshot is missing or active streams are not observed yet.
+  if (posture === 'unknown') return 'Not verified'
   return 'Healthy'
 }
 
@@ -117,7 +126,7 @@ export function DashboardRunningBadge({
   engineStatus?: string | null
   /** When true, the dashboard summary API failed so engineStatus is not reliable. */
   dashboardFailed?: boolean
-  posture: 'healthy' | 'warning' | 'critical'
+  posture: OverallHealthCounts['posture']
 }) {
   // engineStatus == null without a failure means the field wasn't returned yet (loading race),
   // treat the same as a failure so we do not show a misleading RUNNING state.
@@ -127,24 +136,22 @@ export function DashboardRunningBadge({
   return (
     <div
       data-testid="dashboard-running-badge"
-      className={cn(
-        'inline-flex items-center gap-2 rounded-md border px-2.5 py-1 text-[11px] font-semibold',
+      className={semanticCn(
+        'inline-flex items-center gap-2 rounded-md border px-2.5 py-1 text-caption font-semibold',
         isUnknown
-          ? 'border-slate-600/40 bg-slate-700/20 text-slate-400'
-          : running && posture === 'healthy'
-            ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200'
-            : running
-              ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-200'
-              : posture === 'critical'
-                ? 'border-red-500/40 bg-red-500/10 text-red-300'
-                : 'border-amber-500/40 bg-amber-500/10 text-amber-300',
+          ? 'border-dashed border-status-unknown-border bg-status-unknown-subtle text-status-unknown'
+          : running
+            ? 'border-status-success-border bg-status-success-subtle text-status-success'
+            : posture === 'critical'
+              ? 'border-status-critical-border bg-status-critical-subtle text-status-critical'
+              : 'border-status-warning-border bg-status-warning-subtle text-status-warning',
       )}
     >
       <span className="inline-flex items-center gap-1.5">
         <span
           className={cn(
             'h-2 w-2 rounded-full',
-            isUnknown ? 'bg-slate-500' : running ? 'bg-emerald-400' : 'bg-amber-400',
+            isUnknown ? 'bg-status-unknown' : running ? 'bg-status-success' : 'bg-status-warning',
           )}
           aria-hidden
         />
@@ -152,10 +159,10 @@ export function DashboardRunningBadge({
       </span>
       {running && posture === 'healthy' ? (
         <>
-          <span className="text-slate-600 dark:text-slate-500" aria-hidden>
+          <span className="text-fg-muted" aria-hidden>
             |
           </span>
-          <span className="inline-flex items-center gap-1 text-emerald-300">
+          <span className="inline-flex items-center gap-1">
             <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
             All Systems Operational
           </span>
@@ -171,10 +178,10 @@ export function DataModeBadge({ isFixtureMode }: { isFixtureMode: boolean }) {
   return (
     <div
       data-testid="dashboard-fixture-mode-badge"
-      className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-300"
+      className="inline-flex items-center gap-1.5 rounded-md border border-status-warning-border bg-status-warning-subtle px-2.5 py-1 text-caption font-semibold text-status-warning"
       title="Dashboard is showing fixture / test data, not live backend data"
     >
-      <span className="h-2 w-2 rounded-full bg-amber-400" aria-hidden />
+      <span className="h-2 w-2 rounded-full bg-status-warning" aria-hidden />
       Fixture Mode
     </div>
   )
@@ -203,6 +210,8 @@ export function OverallHealthHero({
         <div className="flex min-w-0 items-center gap-3">
           {!stale && health.posture === 'healthy' ? (
             <CheckCircle2 className="h-6 w-6 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
+          ) : !stale && health.posture === 'unknown' ? (
+            <CircleDashed className="h-6 w-6 shrink-0 text-slate-500 dark:text-slate-400" aria-hidden />
           ) : (
             <AlertTriangle
               className={cn(
@@ -225,7 +234,9 @@ export function OverallHealthHero({
                     ? 'text-red-700 dark:text-red-300'
                     : health.posture === 'warning'
                       ? 'text-amber-700 dark:text-amber-300'
-                      : 'text-emerald-700 dark:text-emerald-300',
+                      : health.posture === 'unknown'
+                        ? 'text-slate-600 dark:text-slate-300'
+                        : 'text-emerald-700 dark:text-emerald-300',
               )}
               data-testid="dashboard-overall-posture-label"
             >
@@ -243,6 +254,9 @@ export function OverallHealthHero({
               ['Healthy', health.healthy, 'healthy', 'dashboard-health-healthy'],
               ['Warning', health.warning, 'warning', 'dashboard-health-warning'],
               ['Critical', health.critical, 'critical', 'dashboard-health-critical'],
+              ...(health.unknown > 0
+                ? ([['Not verified', health.unknown, 'unknown', 'dashboard-health-unknown']] as const)
+                : []),
             ] as const
           ).map(([label, count, tone, testId]) => (
             <Link
@@ -690,6 +704,22 @@ export function DashboardGroupSummaryPanel({ groupHealth }: { groupHealth: Strea
   const criticalGroups = groupHealth.groups.filter((g) => g.worstStatus === 'ERROR')
   const warningGroups = groupHealth.groups.filter((g) => g.worstStatus === 'DEGRADED')
   const hasAny = criticalGroups.length > 0 || warningGroups.length > 0
+
+  if (!hasAny && (groupHealth.unknown > 0 || groupHealth.healthy === 0)) {
+    // No problem found, but no group is verified healthy either: never claim "healthy".
+    return (
+      <section
+        aria-label="Stream group summary"
+        data-testid="dashboard-group-summary"
+        className={cn(dashboardCardClass, 'text-[12px] text-slate-500 dark:text-gdc-muted')}
+      >
+        <h2 className="text-[14px] font-semibold text-slate-900 dark:text-slate-100">Group status</h2>
+        <p className="mt-2">
+          {groupHealth.unknown > 0 ? 'Some stream groups are not verified yet.' : 'No stream groups are verified healthy yet.'}
+        </p>
+      </section>
+    )
+  }
 
   if (!hasAny) {
     return (
@@ -1676,6 +1706,17 @@ export function StreamGroupHealthPanel({
 }
 
 /** Charter Traffic Overview — Incoming / Outgoing / Delivery Gap / Delivery Success Rate. */
+/** Flat semantic surface for the live first-level Dashboard panels. */
+const liveDashboardCardClass = 'rounded-lg border border-default bg-surface-card px-4 py-3'
+
+const trafficTileLinkClass =
+  'group block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring'
+
+/** Unmeasured counts stay null for MetricTile ("Unknown"); formatMetricCount would turn NaN into "0". */
+function measuredCount(value: number | null): string | null {
+  return value == null || !Number.isFinite(value) ? null : formatMetricCount(value)
+}
+
 export function TrafficOverviewPanel({
   traffic,
   stale = false,
@@ -1684,9 +1725,9 @@ export function TrafficOverviewPanel({
   stale?: boolean
 }) {
   const rate = traffic.deliverySuccessRatePct
-  const rateTone = stale
-    ? 'text-slate-600 dark:text-gdc-mutedStrong'
-    : rate == null ? 'text-slate-700 dark:text-slate-200' : rate >= 99 ? 'text-emerald-700 dark:text-emerald-300' : 'text-amber-700 dark:text-amber-300'
+  const rateKnown = rate != null && Number.isFinite(rate)
+  // A last-reported rate is not current evidence, so it never carries a status emphasis.
+  const rateBelowTarget = !stale && rate != null && Number.isFinite(rate) && rate < 99
   const deliveryGap =
     traffic.incomingEvents != null && traffic.outgoingEvents != null
       ? Math.max(0, traffic.incomingEvents - traffic.outgoingEvents)
@@ -1698,69 +1739,54 @@ export function TrafficOverviewPanel({
   const gapIsMaterial = deliveryGapPct != null && deliveryGapPct >= 1
 
   return (
-    <section aria-label="Traffic overview" data-testid="dashboard-traffic-overview" className={dashboardCardClass}>
-      <div className="flex items-baseline justify-between gap-2">
-        <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">Traffic Overview</h2>
-        <Link
-          to={NAV_PATH.streams}
-          className="text-sm font-medium text-slate-600 underline-offset-2 hover:underline dark:text-slate-300"
-          data-testid="dashboard-traffic-drilldown"
-        >
-          View streams
-        </Link>
-      </div>
-      <p data-testid="dashboard-traffic-evidence-caption" className="mt-1 text-sm text-slate-500 dark:text-gdc-muted">
+    <section aria-label="Traffic overview" data-testid="dashboard-traffic-overview" className={liveDashboardCardClass}>
+      <SectionHeader
+        title="Traffic Overview"
+        actions={
+          <Link
+            to={NAV_PATH.streams}
+            className="text-body-sm font-medium text-fg-secondary underline-offset-2 hover:underline"
+            data-testid="dashboard-traffic-drilldown"
+          >
+            View streams
+          </Link>
+        }
+      />
+      <p data-testid="dashboard-traffic-evidence-caption" className="mt-1 text-body-sm text-fg-muted">
         {stale
           ? `Last reported ${traffic.windowLabel} snapshot — current traffic and Route delivery are not verified.`
           : `Snapshot window ${traffic.windowLabel}`}
       </p>
-      <div className="mt-3 divide-y divide-slate-200 rounded-lg border border-slate-200 dark:divide-gdc-divider dark:border-gdc-border">
-        <Link
-          to={NAV_PATH.streams}
-          data-testid="dashboard-traffic-incoming"
-          className="flex items-center justify-between gap-4 px-3 py-2.5 hover:bg-slate-50 dark:hover:bg-gdc-rowHover"
-        >
-          <span className="text-sm font-medium text-slate-600 dark:text-gdc-muted">Incoming Events</span>
-          <span className="text-base font-semibold tabular-nums text-slate-900 dark:text-gdc-foreground">
-            {formatMetricCount(traffic.incomingEvents)}
-          </span>
+      {/* Null (unmeasured) values go to MetricTile as null so they render "Unknown", never 0 or a dash. */}
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <Link to={NAV_PATH.streams} data-testid="dashboard-traffic-incoming" className={trafficTileLinkClass}>
+          <MetricTile
+            label="Incoming Events"
+            value={measuredCount(traffic.incomingEvents)}
+            className="h-full group-hover:bg-surface-hover"
+          />
         </Link>
-        <Link
-          to={NAV_PATH.destinations}
-          data-testid="dashboard-traffic-outgoing"
-          className="flex items-center justify-between gap-4 px-3 py-2.5 hover:bg-slate-50 dark:hover:bg-gdc-rowHover"
-        >
-          <span className="text-sm font-medium text-slate-600 dark:text-gdc-muted">Outgoing Events</span>
-          <span className="text-base font-semibold tabular-nums text-slate-900 dark:text-gdc-foreground">
-            {formatMetricCount(traffic.outgoingEvents)}
-          </span>
+        <Link to={NAV_PATH.destinations} data-testid="dashboard-traffic-outgoing" className={trafficTileLinkClass}>
+          <MetricTile
+            label="Outgoing Events"
+            value={measuredCount(traffic.outgoingEvents)}
+            className="h-full group-hover:bg-surface-hover"
+          />
         </Link>
-        <div className="flex items-center justify-between gap-4 px-3 py-2.5" data-testid="dashboard-traffic-gap">
-          <span>
-            <span className="block text-sm font-medium text-slate-600 dark:text-gdc-muted">Delivery Gap</span>
-            <span className="block text-[11px] text-slate-500 dark:text-gdc-muted">
-              Incoming events not yet reflected as successful delivery
-            </span>
-          </span>
-          <span
-            className={cn(
-              'text-right text-sm font-semibold tabular-nums',
-              gapIsMaterial ? 'text-amber-700 dark:text-amber-300' : 'text-slate-700 dark:text-gdc-mutedStrong',
-            )}
-          >
-            {deliveryGap == null ? '—' : formatMetricCount(deliveryGap)}
-            {deliveryGapPct != null ? <span className="ml-1 text-[11px] font-medium">({deliveryGapPct.toFixed(1)}%)</span> : null}
-          </span>
-        </div>
-        <Link
-          to={NAV_PATH.destinations}
-          data-testid="dashboard-traffic-success"
-          className="flex items-center justify-between gap-4 px-3 py-2.5 hover:bg-slate-50 dark:hover:bg-gdc-rowHover"
-        >
-          <span className="text-sm font-medium text-slate-600 dark:text-gdc-muted">Delivery Success Rate</span>
-          <span className={cn('text-base font-semibold tabular-nums', rateTone)}>
-            {formatSuccessRate(traffic.deliverySuccessRatePct)}
-          </span>
+        <MetricTile
+          data-testid="dashboard-traffic-gap"
+          label="Delivery Gap"
+          value={measuredCount(deliveryGap)}
+          unit={deliveryGapPct != null ? `(${deliveryGapPct.toFixed(1)}%)` : undefined}
+          caption="Incoming events not yet reflected as successful delivery"
+          className={gapIsMaterial ? 'border-status-warning-border' : undefined}
+        />
+        <Link to={NAV_PATH.destinations} data-testid="dashboard-traffic-success" className={trafficTileLinkClass}>
+          <MetricTile
+            label="Delivery Success Rate"
+            value={rateKnown ? formatSuccessRate(rate) : null}
+            className={semanticCn('h-full group-hover:bg-surface-hover', rateBelowTarget && 'border-status-warning-border')}
+          />
         </Link>
       </div>
     </section>
@@ -1892,21 +1918,21 @@ export function OperationalIssuesPanel({
     <section
       aria-label="Operational issues"
       data-testid="dashboard-operational-issues"
-      className={cn(dashboardCardClass, className)}
+      className={semanticCn(liveDashboardCardClass, className)}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">Operational Issues</h2>
-          <p data-testid="dashboard-issues-evidence-caption" className="mt-1 text-sm text-slate-500 dark:text-gdc-muted">{evidenceSummary}</p>
-        </div>
-        <Link
-          to={NAV_PATH.streams}
-          className="shrink-0 text-sm font-medium text-violet-700 underline-offset-2 hover:underline dark:text-violet-300"
-        >
-          Review all
-        </Link>
-      </div>
-      <ul className="mt-3 divide-y divide-slate-200 overflow-hidden rounded-lg border border-slate-200 dark:divide-gdc-divider dark:border-gdc-border">
+      <SectionHeader
+        title="Operational Issues"
+        actions={
+          <Link
+            to={NAV_PATH.streams}
+            className="shrink-0 text-body-sm font-medium text-fg-secondary underline-offset-2 hover:underline"
+          >
+            Review all
+          </Link>
+        }
+      />
+      <p data-testid="dashboard-issues-evidence-caption" className="mt-1 text-body-sm text-fg-muted">{evidenceSummary}</p>
+      <ul className="mt-3 divide-y divide-default overflow-hidden rounded-lg border border-default">
         {rows.map((row) => {
           const known = row.count != null
           const n = row.count ?? 0

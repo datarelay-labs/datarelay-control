@@ -309,6 +309,169 @@ describe('routes-flow-helpers', () => {
     expect(isRouteSnapshotStale('2026-10-09T12:05:00Z', now)).toBe(true)
   })
 
+  it('does not turn a healthy zero-volume route into a low-success problem', () => {
+    const noActivity: OperationalSnapshotResponse = {
+      ...snapshot,
+      routes: [{
+        ...snapshot.routes[0]!,
+        health_status: 'HEALTHY',
+        delivered_eps_1m: 0,
+        failed_eps_1m: 0,
+        success_rate_5m: 0,
+        avg_latency_ms: 0,
+        last_success_at: null,
+        last_error_at: null,
+      }],
+    }
+    expect(buildProblemRoutes(buildRouteRowsFromOperationalSnapshot(noActivity))).toEqual([])
+  })
+
+  it('does not promote retained metrics for a disabled Route to an active problem', () => {
+    const disabled: OperationalSnapshotResponse = {
+      ...snapshot,
+      routes: [{
+        ...snapshot.routes[0]!,
+        enabled: false,
+        success_rate_5m: 20,
+        avg_latency_ms: 800,
+      }],
+    }
+    const rows = buildRouteRowsFromOperationalSnapshot(disabled)
+    expect(rows[0]?.uiStatus).toBe('Disabled')
+    expect(buildProblemRoutes(rows)).toEqual([])
+  })
+
+  it('does not promote retained metrics when the receiving Destination is disabled', () => {
+    const disabled: OperationalSnapshotResponse = {
+      ...snapshot,
+      routes: [{ ...snapshot.routes[0]!, success_rate_5m: 20, avg_latency_ms: 800 }],
+      destinations: snapshot.destinations.map((destination) => (
+        destination.destination_id === 10 ? { ...destination, enabled: false } : destination
+      )),
+    }
+    const rows = buildRouteRowsFromOperationalSnapshot(disabled)
+    expect(rows[0]?.uiStatus).toBe('Disabled')
+    expect(buildProblemRoutes(rows)).toEqual([])
+  })
+
+  it('keeps explicit current health errors and warnings even with no recent throughput', () => {
+    const observedHealth: OperationalSnapshotResponse = {
+      ...snapshot,
+      routes: snapshot.routes.slice(0, 2).map((route, index) => ({
+        ...route,
+        enabled: true,
+        health_status: index === 0 ? 'ERROR' : 'DEGRADED',
+        delivered_eps_1m: 0,
+        failed_eps_1m: 0,
+        success_rate_5m: 0,
+        last_success_at: null,
+        last_error_at: null,
+      })),
+    }
+    expect(buildProblemRoutes(buildRouteRowsFromOperationalSnapshot(observedHealth)).map((problem) => (
+      { routeId: problem.routeId, issue: problem.issue }
+    ))).toEqual([{ routeId: 1, issue: 'Error' }, { routeId: 2, issue: 'Warning' }])
+  })
+
+  it('does not revive old metric warnings from retained delivery timestamps', () => {
+    const now = Date.parse('2026-10-20T04:00:00Z')
+    const stale: OperationalSnapshotResponse = {
+      ...snapshot,
+      routes: [{
+        ...snapshot.routes[0]!,
+        health_status: 'HEALTHY',
+        delivered_eps_1m: 0,
+        failed_eps_1m: 0,
+        success_rate_5m: 0,
+        avg_latency_ms: 800,
+        last_success_at: '2026-10-19T04:00:00Z',
+        last_error_at: '2026-10-18T04:00:00Z',
+      }],
+    }
+    expect(buildProblemRoutes(buildRouteRowsFromOperationalSnapshot(stale), undefined, now)).toEqual([])
+  })
+
+  it('preserves a genuine five-minute low-success window after one-minute EPS becomes zero', () => {
+    const now = Date.parse('2026-10-20T04:00:00Z')
+    const recent: OperationalSnapshotResponse = {
+      ...snapshot,
+      routes: [{
+        ...snapshot.routes[0]!,
+        health_status: 'HEALTHY',
+        delivered_eps_1m: 0,
+        failed_eps_1m: 0,
+        success_rate_5m: 40,
+        last_success_at: '2026-10-20T03:56:00Z',
+        last_error_at: '2026-10-20T03:57:00Z',
+      }],
+    }
+    const problems = buildProblemRoutes(buildRouteRowsFromOperationalSnapshot(recent), undefined, now)
+    expect(problems).toHaveLength(1)
+    expect(problems[0]).toMatchObject({ routeId: 1, issue: 'Low Success Rate' })
+  })
+
+  it('keeps current failed deliveries visible when success EPS and timestamps are absent', () => {
+    const observed: OperationalSnapshotResponse = {
+      ...snapshot,
+      routes: [{
+        ...snapshot.routes[0]!,
+        health_status: 'HEALTHY',
+        delivered_eps_1m: 0,
+        failed_eps_1m: 0.001,
+        success_rate_5m: 0,
+        last_success_at: null,
+        last_error_at: null,
+      }],
+    }
+    expect(buildProblemRoutes(buildRouteRowsFromOperationalSnapshot(observed)))
+      .toEqual([expect.objectContaining({ routeId: 1, issue: 'Low Success Rate' })])
+  })
+
+  it('keeps current low-success and latency evidence visible', () => {
+    const observed: OperationalSnapshotResponse = {
+      ...snapshot,
+      routes: [
+        { ...snapshot.routes[0]!, success_rate_5m: 50, delivered_eps_1m: 1 },
+        { ...snapshot.routes[0]!, route_id: 2, success_rate_5m: 100, avg_latency_ms: 800, delivered_eps_1m: 1 },
+      ],
+    }
+    expect(buildProblemRoutes(buildRouteRowsFromOperationalSnapshot(observed)).map((problem) => (
+      { routeId: problem.routeId, issue: problem.issue }
+    ))).toEqual([{ routeId: 2, issue: 'High Latency' }, { routeId: 1, issue: 'Low Success Rate' }])
+  })
+
+  it('does not use malformed or far-future timestamps as current activity evidence', () => {
+    const now = Date.parse('2026-10-20T04:00:00Z')
+    for (const stamp of ['invalid', '2026-10-20T05:00:00Z']) {
+      const unknown: OperationalSnapshotResponse = {
+        ...snapshot,
+        routes: [{
+          ...snapshot.routes[0]!,
+          delivered_eps_1m: 0,
+          failed_eps_1m: 0,
+          success_rate_5m: 0,
+          last_success_at: stamp,
+          last_error_at: null,
+        }],
+      }
+      expect(buildProblemRoutes(buildRouteRowsFromOperationalSnapshot(unknown), undefined, now)).toEqual([])
+    }
+  })
+
+  it('shows the latest observed delivery activity instead of inventing issue onset from an old failure', () => {
+    const observed: OperationalSnapshotResponse = {
+      ...snapshot,
+      routes: [{
+        ...snapshot.routes[0]!,
+        health_status: 'DEGRADED',
+        last_success_at: '2026-10-20T03:59:00Z',
+        last_error_at: '2026-10-19T03:00:00Z',
+      }],
+    }
+    expect(buildProblemRoutes(buildRouteRowsFromOperationalSnapshot(observed))[0]?.since)
+      .toBe('2026-10-20T03:59:00Z')
+  })
+
   it('flags warning routes in problem panel', () => {
     const problems = buildProblemRoutes(consoleRows)
     expect(problems.some((p) => p.routeId === 2 && p.issue === 'Warning')).toBe(true)

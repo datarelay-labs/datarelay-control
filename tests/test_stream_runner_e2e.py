@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.checkpoints.models import Checkpoint
+from app.checkpoints.route_delivery_state import ROUTE_DELIVERY_STATE_KEY, strip_route_delivery_state
 from app.connectors.models import Connector
 from app.destinations.models import Destination
 from app.enrichments.models import Enrichment
@@ -353,7 +354,9 @@ def test_runtime_emitted_logs_partial_destination_failure_no_checkpoint_advance_
     after_checkpoint = _checkpoint_value(db, seeded["stream_id"])
 
     assert len(sender.calls) == 2
-    assert before_checkpoint == after_checkpoint
+    # Cursor is held; only per-Route delivery progress for the healthy Route is recorded.
+    assert strip_route_delivery_state(after_checkpoint) == before_checkpoint
+    assert ROUTE_DELIVERY_STATE_KEY in after_checkpoint
 
     rows = _delivery_logs(db, seeded["stream_id"])
     failure_logs = [row for row in rows if row.stage == "route_send_failed"]
@@ -529,7 +532,9 @@ def test_runner_owns_single_commit_on_partial_failure_logs_without_checkpoint_up
     after_checkpoint = _checkpoint_value(db, seeded["stream_id"])
 
     assert len(commit_calls) == 1
-    assert before_checkpoint == after_checkpoint
+    # Cursor is held; per-Route progress is written in the same single commit.
+    assert strip_route_delivery_state(after_checkpoint) == before_checkpoint
+    assert ROUTE_DELIVERY_STATE_KEY in after_checkpoint
 
     rows = (
         db.query(DeliveryLog)

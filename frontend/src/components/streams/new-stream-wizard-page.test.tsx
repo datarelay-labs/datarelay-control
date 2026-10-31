@@ -74,6 +74,98 @@ describe('NewStreamWizardPage v5.2 5-step', () => {
     expect(screen.queryByText(/Offline mode/i)).not.toBeInTheDocument()
   })
 
+  it('keeps exactly one primary action on the Connect step, even while a saved draft banner is shown', () => {
+    localStorage.setItem('gdc-platform-persona', 'connector')
+    localStorage.setItem(
+      WIZARD_DRAFT_KEY_V2,
+      JSON.stringify({ version: 2, savedAt: Date.now(), stepKey: 'connect', state: buildInitialState() }),
+    )
+    const { container } = render(<MemoryRouter initialEntries={['/streams/new']}><NewStreamWizardPage /></MemoryRouter>)
+    expect(screen.getByTestId('wizard-draft-banner')).toBeInTheDocument()
+    const primaries = container.querySelectorAll('button.bg-accent, a.bg-accent')
+    expect(primaries).toHaveLength(1)
+    expect(primaries[0]).toBe(screen.getByTestId('wizard-next'))
+    expect(screen.getByTestId('wizard-draft-resume')).not.toHaveClass('bg-accent')
+    expect(screen.getByTestId('wizard-action-bar')).toHaveClass('bg-surface-card')
+  })
+
+  it('keeps the Next label, testid and disabled gate while using the shared Button styling', () => {
+    localStorage.setItem('gdc-platform-persona', 'connector')
+    localStorage.removeItem(WIZARD_DRAFT_KEY_V2)
+    render(<MemoryRouter initialEntries={['/streams/new']}><NewStreamWizardPage /></MemoryRouter>)
+    const next = screen.getByTestId('wizard-next')
+    expect(next).toBeDisabled()
+    expect(next).toHaveClass('bg-accent', 'text-on-accent', 'h-control-md', 'whitespace-nowrap')
+    expect(next).toHaveTextContent(/^Next/)
+    expect(screen.getByRole('button', { name: 'Back' })).toHaveClass('border-default', 'bg-surface-card')
+  })
+
+  it('keeps one primary (Create & Start) on the Deploy step', async () => {
+    localStorage.setItem('gdc-platform-persona', 'connector')
+    const state = buildInitialState()
+    const finishedAt = Date.now()
+    state.connector.connectorId = 1
+    state.connector.sourceId = 1
+    state.stream.name = 'Deploy Test'
+    state.stream.endpoint = '/events'
+    state.stream.eventArrayPath = '$.events'
+    state.stream.checkpointSourcePath = '$.ts'
+    state.stream.checkpointFieldType = 'datetime'
+    state.stream.recordPathConfirmedForApiTestAt = finishedAt
+    state.stream.checkpointConfirmedForApiTestAt = finishedAt
+    state.apiTest.status = 'success'
+    state.apiTest.ok = true
+    state.apiTest.parsedJson = { events: [{ id: '1' }] }
+    state.apiTest.finishedAt = finishedAt
+    state.apiTest.eventCount = 1
+    state.mapping = [{ id: 'm1', outputField: 'id', sourceJsonPath: '$.id' }]
+    state.destinations.routeDrafts = [
+      { key: 'r1', destinationId: 1, enabled: true, failurePolicy: 'RETRY_THEN_DLQ', rateLimitJson: '{}' },
+    ]
+    localStorage.setItem(WIZARD_DRAFT_KEY_V2, JSON.stringify({ version: 2, savedAt: Date.now(), stepKey: 'deploy', state }))
+    const user = userEvent.setup()
+    const { container } = render(<MemoryRouter initialEntries={['/streams/new']}><NewStreamWizardPage /></MemoryRouter>)
+    await user.click(screen.getByTestId('wizard-draft-resume'))
+    expect(screen.getByTestId('wizard-step-deploy')).toBeInTheDocument()
+    const primaries = container.querySelectorAll('button.bg-accent, a.bg-accent')
+    expect(primaries).toHaveLength(1)
+    expect(primaries[0]).toBe(screen.getByTestId('deploy-create-and-start'))
+    expect(screen.getByTestId('wizard-save-draft')).not.toHaveClass('bg-accent')
+  })
+
+  it('says where a Save as Draft draft lives and that no Stream exists yet (F-012)', async () => {
+    localStorage.setItem('gdc-platform-persona', 'connector')
+    const state = buildInitialState()
+    const finishedAt = Date.now()
+    state.connector.connectorId = 1
+    state.connector.sourceId = 1
+    state.stream.name = 'Deploy Test'
+    state.stream.endpoint = '/events'
+    state.stream.eventArrayPath = '$.events'
+    state.stream.checkpointSourcePath = '$.ts'
+    state.stream.checkpointFieldType = 'datetime'
+    state.stream.recordPathConfirmedForApiTestAt = finishedAt
+    state.stream.checkpointConfirmedForApiTestAt = finishedAt
+    state.apiTest.status = 'success'
+    state.apiTest.ok = true
+    state.apiTest.parsedJson = { events: [{ id: '1' }] }
+    state.apiTest.finishedAt = finishedAt
+    state.apiTest.eventCount = 1
+    state.mapping = [{ id: 'm1', outputField: 'id', sourceJsonPath: '$.id' }]
+    state.destinations.routeDrafts = [
+      { key: 'r1', destinationId: 1, enabled: true, failurePolicy: 'RETRY_THEN_DLQ', rateLimitJson: '{}' },
+    ]
+    localStorage.setItem(WIZARD_DRAFT_KEY_V2, JSON.stringify({ version: 2, savedAt: Date.now(), stepKey: 'deploy', state }))
+    const user = userEvent.setup()
+    render(<MemoryRouter initialEntries={['/streams/new']}><NewStreamWizardPage /></MemoryRouter>)
+    await user.click(screen.getByTestId('wizard-draft-resume'))
+    await user.click(screen.getByTestId('wizard-save-draft'))
+    const notice = await screen.findByTestId('wizard-draft-notice')
+    expect(notice).toHaveAttribute('role', 'status')
+    expect(notice).toHaveTextContent('Draft saved in this browser only')
+    expect(notice).toHaveTextContent('no Stream exists until you select Create & Start Stream')
+  })
+
   it('keeps the original Wizard mounted after contextual Connector cancel', async () => {
     vi.mocked(fetchCatalogSnapshot).mockResolvedValue({ connectors: [], sources: [], apiBacked: true })
     localStorage.removeItem(WIZARD_DRAFT_KEY_V2)

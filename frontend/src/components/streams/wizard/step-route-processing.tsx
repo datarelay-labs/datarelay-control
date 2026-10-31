@@ -229,7 +229,7 @@ export function StepRouteProcessing({
         ) : null}
       </WizardSharedProcessingSection>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(220px,0.85fr)_minmax(0,1.55fr)]" data-testid="route-processing-split-layout">
+      <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(220px,0.85fr)_minmax(0,1.55fr)]" data-testid="route-processing-split-layout">
         <WizardRouteProcessingList
           routeDrafts={routeDrafts}
           destinations={destinations}
@@ -240,7 +240,7 @@ export function StepRouteProcessing({
 
         <div className="min-w-0 space-y-0" data-testid="route-processing-workspace">
           {selectedDraft ? (
-            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.85fr)]">
+            <div className="grid min-w-0 gap-4 2xl:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]" data-testid="route-processing-detail-layout">
               <WizardRouteProcessingDetailPanel
                 state={state}
                 draft={selectedDraft}
@@ -269,10 +269,10 @@ export function StepRouteProcessing({
                 />
               ) : (
                 <aside
-                  className="flex min-h-[12rem] items-center justify-center rounded-lg border border-dashed border-slate-200/90 p-4 text-center dark:border-gdc-border"
+                  className="flex min-h-[12rem] items-center justify-center rounded-lg border border-dashed border-default p-4 text-center"
                   data-testid="route-processing-output-workspace"
                 >
-                  <p className="text-[11px] text-slate-500 dark:text-gdc-muted">
+                  <p className="text-caption text-fg-muted">
                     Complete Sample &amp; Record Selection to preview mapped output.
                   </p>
                 </aside>

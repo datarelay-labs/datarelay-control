@@ -96,6 +96,17 @@ describe('GovernanceDashboardPostureOverview', () => {
     expect(screen.getByLabelText('Governance policy posture')).toBeInTheDocument()
   })
 
+  it('derives Not verified (unknown), never healthy, from a missing or failed summary', () => {
+    expect(deriveGovernancePosture(null)).toBe('unknown')
+    render(
+      <MemoryRouter>
+        <GovernanceDashboardPostureOverview summary={null} />
+      </MemoryRouter>,
+    )
+    expect(screen.getByTestId('dashboard-kpi-overall-risk')).toHaveTextContent('Not verified')
+    expect(screen.getByTestId('dashboard-kpi-overall-risk')).not.toHaveTextContent('Healthy')
+  })
+
   it('shows loading shell when summary is not ready', () => {
     render(
       <MemoryRouter>
@@ -256,6 +267,21 @@ describe('Operations Center modernization', () => {
     })
     expect(screen.getByTestId('ops-action-required-empty')).toBeInTheDocument()
     expect(screen.getByLabelText('Action Queue')).toBeInTheDocument()
+  })
+
+  it('reads Not verified (never Clear) in the queue posture when the summary failed to load', async () => {
+    vi.spyOn(gdcGovernanceOperations, 'fetchGovernanceOperationsSummary').mockRejectedValue(new Error('ops down'))
+    vi.spyOn(gdcGovernanceOperations, 'fetchGovernanceOperationsQueue').mockRejectedValue(new Error('ops down'))
+
+    render(
+      <MemoryRouter initialEntries={[NAV_PATH.governanceOperations]}>
+        <OperationsCenterPage />
+      </MemoryRouter>,
+    )
+
+    await screen.findByTestId('ops-error')
+    expect(screen.getByTestId('ops-posture-label')).toHaveTextContent('Not verified')
+    expect(screen.getByTestId('ops-posture-label')).not.toHaveTextContent('Clear')
   })
 
   it('renders load failure with alert semantics', async () => {

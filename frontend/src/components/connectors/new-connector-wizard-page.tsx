@@ -21,6 +21,7 @@ import { DatabaseConnectorFields } from './database-connector-fields'
 import { RemoteFileConnectorFields } from './remote-file-connector-fields'
 import { WebhookReceiverFields } from './webhook-receiver-fields'
 import { getSessionCapabilities, useSessionCapabilities } from '../../lib/rbac'
+import { FormErrorBanner } from '../ui/form-error-banner'
 
 export function NewConnectorWizardPage({
   onCreated,
@@ -42,6 +43,8 @@ export function NewConnectorWizardPage({
     onBusyChange?.(busy)
   }, [busy, onBusyChange])
   const [error, setError] = useState<string | null>(null)
+  // Bumped per failed submit so the banner re-takes focus even when the text repeats.
+  const [errorSeq, setErrorSeq] = useState(0)
   const [success, setSuccess] = useState<string | null>(null)
   const [form, setForm] = useState<ConnectorWritePayload>({
     name: '',
@@ -123,6 +126,13 @@ export function NewConnectorWizardPage({
     },
     [navigate],
   )
+
+  // The "API Key Location" select shows `headers` when unset. Commit that default to the form state as
+  // soon as API key auth is chosen, so what the operator sees is what is validated and saved (F-002).
+  useEffect(() => {
+    if (authType !== 'api_key') return
+    setForm((f) => (f.api_key_location ? f : { ...f, api_key_location: 'headers' }))
+  }, [authType])
 
   useEffect(() => {
     const prev = prevAuthRef.current
@@ -310,6 +320,7 @@ export function NewConnectorWizardPage({
     const msg = validate()
     if (msg) {
       setError(msg)
+      setErrorSeq((n) => n + 1)
       return
     }
     setBusy(true)
@@ -347,6 +358,7 @@ export function NewConnectorWizardPage({
       navigate(`/connectors/${created.id}`)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
+      setErrorSeq((n) => n + 1)
     } finally {
       setBusy(false)
     }
@@ -374,9 +386,6 @@ export function NewConnectorWizardPage({
         <CurlImportPanel onApprove={onApproveImport} />
         <PostmanImportPanel onApprove={onApproveImport} />
       </div>
-      {error ? (
-        <p className="rounded border border-red-200 bg-red-50 p-2 text-[12px] text-red-700 dark:border-red-500/40 dark:bg-red-950/40 dark:text-red-200">{error}</p>
-      ) : null}
       {success ? (
         <p className="rounded border border-emerald-200 bg-emerald-50 p-2 text-[12px] text-emerald-700 dark:border-emerald-500/40 dark:bg-emerald-950/35 dark:text-emerald-200">{success}</p>
       ) : null}
@@ -540,6 +549,8 @@ export function NewConnectorWizardPage({
       />
       ) : null}
 
+      {/* Form-level errors render beside Save so a failure on this long form is never off-screen. */}
+      <FormErrorBanner key={errorSeq} message={error} />
       <div className="flex gap-2">
         <button type="button" disabled={busy} onClick={() => onCancel ? onCancel() : navigate('/connectors')} className={cn('h-9 px-3', gdcUi.secondaryBtn)}>
           Cancel

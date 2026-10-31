@@ -9,11 +9,28 @@ import {
 } from '../../api/gdcBackup'
 import { TemplateDraftPreviewModal } from '../templates/template-draft-preview-modal'
 import { cn } from '../../lib/utils'
+import { parseApiError } from '../../lib/api-error-message'
 import {
   defaultDraftDisplayName,
   importSourceFromDraftKind,
   requestStructureFromImportDraft,
 } from '../../utils/templateDraftFromImport'
+
+/**
+ * Import failures name the reason and the next action (F-010). A rejected command (HTTP 4xx) points to
+ * fixing the pasted text; anything else points to retrying or checking API availability.
+ */
+function importFailureMessage(error: unknown, kind: 'curl command' | 'Postman collection'): string {
+  const parsed = parseApiError(error, `Could not parse the ${kind}.`)
+  const rejected = parsed.status != null && parsed.status >= 400 && parsed.status < 500
+  const nextAction = rejected
+    ? kind === 'curl command'
+      ? 'Check that the command starts with "curl" and includes a full http:// or https:// URL, then parse again.'
+      : 'Check that the file is a Postman Collection v2.1 export, then parse again.'
+    : 'Try again. If it keeps failing, check that the API is reachable.'
+  const reason = /[.!?]$/.test(parsed.message) ? parsed.message : `${parsed.message}.`
+  return `${reason} ${nextAction}`
+}
 
 type ParsedPreview = CurlImportDraft['parsed'] & {
   body_mode?: string | null
@@ -128,7 +145,7 @@ export function CurlImportPanel({ onApprove, className }: CurlImportPanelProps) 
       setDraft(res.draft)
       setWarnings([...res.warnings, ...(res.draft.warnings ?? [])])
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(importFailureMessage(e, 'curl command'))
     } finally {
       setBusy(false)
     }
@@ -268,7 +285,7 @@ export function PostmanImportPanel({ onApprove, className }: PostmanImportPanelP
       setWarnings(res.warnings)
       if (res.items.length === 1) setSelectedId(res.items[0].item_id)
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(importFailureMessage(e, 'Postman collection'))
     } finally {
       setBusy(false)
     }
@@ -290,7 +307,7 @@ export function PostmanImportPanel({ onApprove, className }: PostmanImportPanelP
       setDraft(res.draft)
       setWarnings([...res.warnings, ...(res.draft.warnings ?? [])])
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(importFailureMessage(e, 'Postman collection'))
     } finally {
       setBusy(false)
     }

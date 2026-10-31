@@ -547,6 +547,17 @@ export function RecordSelectionWorkspace({
                 Advanced (Custom)
               </button>
             </div>
+            {paths.eventRootPath || eventRootInteracted ? (
+              <button
+                type="button"
+                onClick={() => handleSelectEventRoot('')}
+                data-testid="record-selection-reset-event-root"
+                title="Clear the Event root and use the entire record"
+                className="ml-2 mt-2 inline-flex rounded-md border border-slate-200/80 bg-white px-2 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-100 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200 dark:hover:bg-gdc-rowHover"
+              >
+                Reset Event root
+              </button>
+            ) : null}
           </div>
           <SelectionStatusChips
             eventArrayPath={paths.eventArrayPath}
@@ -1157,6 +1168,9 @@ function lastTestStatusLabel(
   }
   if (result.status === 'success') {
     return result.httpStatus != null ? `Success · ${result.httpStatus}` : 'Success'
+  }
+  if (result.status === 'warning') {
+    return result.httpStatus != null ? `Warning · ${result.httpStatus}` : 'Warning'
   }
   return result.httpStatus != null ? `Failed · ${result.httpStatus}` : 'Failed'
 }

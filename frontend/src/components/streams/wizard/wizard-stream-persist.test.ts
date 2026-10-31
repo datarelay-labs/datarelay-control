@@ -66,7 +66,8 @@ vi.mock('./wizard-data-protection-persist', () => ({
   persistWizardDataProtectionIntents: vi.fn(async () => ({ saved: true, errors: [] })),
 }))
 
-vi.mock('./wizard-schema-drift-policy-persist', () => ({
+vi.mock('./wizard-schema-drift-policy-persist', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./wizard-schema-drift-policy-persist')>()),
   persistWizardSchemaDriftPolicy: vi.fn(async (_streamId: number, _policy: unknown, options?: { expectedUpdatedAt?: string | null }) => ({
     saved: true,
     errors: [],
@@ -155,10 +156,11 @@ vi.mock('../../../api/gdcRoutePolicy', () => ({
 }))
 
 import { persistWizardDataProtectionIntents } from './wizard-data-protection-persist'
-import { persistWizardSchemaDriftPolicy } from './wizard-schema-drift-policy-persist'
+import { buildSchemaDriftPolicyPersistPayload, persistWizardSchemaDriftPolicy } from './wizard-schema-drift-policy-persist'
 import { saveStreamMappingUiConfigStrict } from '../../../api/gdcRuntimeUi'
 import {
   applyCreatedRouteIdentity,
+  applyPersistedRevisions,
   persistWizardRouteTransformOverrides,
   persistWizardStreamEdits,
   syncRoutes,
@@ -262,6 +264,31 @@ describe('wizard-stream-persist route sync + transform', () => {
         message: 'ok',
       }
     })
+  })
+
+  it('retains the server revision when a new Route receives its persisted ID', async () => {
+    createRoute.mockResolvedValue({ id: 22, stream_id: 100, destination_id: 20, updated_at: 'created-token' })
+    const state = editState((s) => {
+      s.outcome = { ...s.outcome!, routeId: null, routeIds: [] }
+      s.destinations.routeDrafts = [{
+        key: 'wr-new-dest-b',
+        destinationId: 20,
+        enabled: true,
+        failurePolicy: 'LOG_AND_CONTINUE',
+        rateLimitJson: {},
+        inherit: { ...DEFAULT_ROUTE_PROCESSING_INHERIT },
+      }]
+    })
+    const result = await syncRoutes(100, state, { confirmedState: state })
+    expect(result.errors).toEqual([])
+    const withIdentity = applyCreatedRouteIdentity(state, result.routeIdsByDraftKey)
+    const updated = applyPersistedRevisions(withIdentity, {
+      streamUpdatedAt: 'stream-b',
+      routeUpdatedAtByDraftKey: result.routeUpdatedAtByDraftKey,
+    })
+    expect(updated.destinations.routeDrafts).toHaveLength(1)
+    expect(updated.destinations.routeDrafts[0].key).toBe('route-22')
+    expect(updated.destinations.routeDrafts[0].updatedAt).toBe('created-token')
   })
 
   it('captures newly created route ids and applies transform to the new route only', async () => {
@@ -1253,6 +1280,71 @@ describe('wizard-stream-persist route sync + transform', () => {
     expect(saveStreamMappingUiConfigStrict).not.toHaveBeenCalled()
   })
 
+  it('stops downstream writes if the Stream CAS fails after a valid preflight', async () => {
+    const state = editState((s) => {
+      s.stream.name = 'Edited during another write'
+      s.destinations.routeDrafts = [{
+        key: 'route-5',
+        destinationId: 7,
+        enabled: true,
+        failurePolicy: 'LOG_AND_CONTINUE',
+        rateLimitJson: {},
+        inherit: { ...DEFAULT_ROUTE_PROCESSING_INHERIT },
+        updatedAt: 'route-a',
+      }]
+      s.outcome = { ...s.outcome!, routeId: 5, routeIds: [5] }
+    })
+    // The server changes between preflight GET and the first CAS update.
+    fetchRouteByIdFresh.mockResolvedValue({
+      id: 5, stream_id: 100, destination_id: 7, updated_at: 'route-a',
+    })
+    updateStream.mockRejectedValueOnce(new Error('409 STREAM_STALE_WRITE'))
+
+    const result = await persistWizardStreamEdits(100, state, { confirmedState: state })
+
+    expect(result.ok).toBe(false)
+    expect(result.errors.join(' ')).toMatch(/STREAM_STALE_WRITE/)
+    expect(result.notPersistedObjects).toContain('Stream #100')
+    expect(result.persistedObjects).toEqual([])
+    expect(saveStreamMappingUiConfigStrict).not.toHaveBeenCalled()
+    expect(updateRoute).not.toHaveBeenCalled()
+    expect(createRoute).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when the fresh Stream revision read rejects before any write', async () => {
+    fetchStreamByIdFresh.mockRejectedValueOnce(new Error('network unavailable'))
+    const state = editState((s) => { s.stream.name = 'Pending name' })
+
+    const result = await persistWizardStreamEdits(100, state, { confirmedState: state })
+
+    expect(result.ok).toBe(false)
+    expect(result.errors.join(' ')).toMatch(/stream 100: current server revision could not be read/i)
+    expect(result.notPersistedObjects).toContain('Reviewed Stream/Route configuration')
+    expect(updateStream).not.toHaveBeenCalled()
+    expect(saveStreamMappingUiConfigStrict).not.toHaveBeenCalled()
+    expect(createRoute).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when a fresh Route revision read rejects before any write', async () => {
+    const state = editState((s) => {
+      s.destinations.routeDrafts = [{
+        key: 'route-5', destinationId: 7, enabled: true,
+        failurePolicy: 'LOG_AND_CONTINUE', rateLimitJson: {},
+        inherit: { ...DEFAULT_ROUTE_PROCESSING_INHERIT }, updatedAt: 'route-a',
+      }]
+      s.outcome = { ...s.outcome!, routeId: 5, routeIds: [5] }
+    })
+    fetchRouteByIdFresh.mockRejectedValueOnce(new Error('network unavailable'))
+
+    const result = await persistWizardStreamEdits(100, state, { confirmedState: state })
+
+    expect(result.ok).toBe(false)
+    expect(result.errors.join(' ')).toMatch(/route 5: current server revision could not be read/i)
+    expect(updateStream).not.toHaveBeenCalled()
+    expect(updateRoute).not.toHaveBeenCalled()
+    expect(saveStreamMappingUiConfigStrict).not.toHaveBeenCalled()
+  })
+
   it('preflights every reviewed Route token before writing the Stream', async () => {
     const state = editState((s) => {
       s.destinations.routeDrafts = [{
@@ -1336,15 +1428,25 @@ describe('wizard-stream-persist route sync + transform', () => {
     expect(result.notPersistedObjects).toContain('Route #5')
   })
 
-  it('chains the Stream revision returned by schema-drift into the final confirmed revision', async () => {
+  it('writes Schema Drift in the first guarded Stream CAS before Governance changes its revision', async () => {
+    const { persistWizardStreamGovernance } = await import('./wizard-governance-persist')
+    vi.mocked(persistWizardStreamGovernance).mockResolvedValueOnce({
+      saved: true, errors: [], warnings: [], streamUpdatedAt: 'stream-c',
+    })
     const state = editState((s) => { s.stream.name = 'Revision chain' })
     const result = await persistWizardStreamEdits(100, state, { confirmedState: editState(() => undefined) })
-    expect(persistWizardSchemaDriftPolicy).toHaveBeenCalledWith(
-      100,
-      state.dataProtection,
-      expect.objectContaining({ expectedUpdatedAt: 'stream-b' }),
-    )
-    expect(result.streamUpdatedAt).toBe('stream-b-drift')
+    expect(result.ok).toBe(true)
+    expect(updateStream).toHaveBeenCalledTimes(1)
+    expect(updateStream).toHaveBeenCalledWith(100, expect.objectContaining({
+      expected_updated_at: 'stream-a',
+      config_json: expect.objectContaining({
+        governance: expect.objectContaining({
+          schema_drift_policy: buildSchemaDriftPolicyPersistPayload(state.dataProtection),
+        }),
+      }),
+    }))
+    expect(persistWizardSchemaDriftPolicy).not.toHaveBeenCalled()
+    expect(result.streamUpdatedAt).toBe('stream-c')
   })
 
   it('refuses a broad route update that has no hydrated concurrency token', async () => {

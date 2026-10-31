@@ -78,6 +78,31 @@ describe('DestinationsHealthOverview', () => {
     expect(screen.getByTestId('destinations-capacity-summary')).toHaveTextContent(/No capacity limits/i)
   })
 
+  it('reads Not verified (not Healthy) when an active destination has no delivery verdict', () => {
+    const kpi = computeDestinationsKpi([
+      healthyRow(),
+      healthyRow({ id: 10, runtime: { ...healthyRow().runtime, health: 'Idle', hasDeliveryActivity: false } }),
+    ])
+    render(<DestinationsHealthOverview kpi={kpi} />)
+    expect(screen.getByTestId('destinations-health-posture')).toHaveTextContent('Not verified')
+    expect(screen.getByTestId('destinations-health-posture')).not.toHaveTextContent('Healthy')
+  })
+
+  it('reads Not verified when no destination is active', () => {
+    render(<DestinationsHealthOverview kpi={computeDestinationsKpi([])} />)
+    expect(screen.getByTestId('destinations-health-posture')).toHaveTextContent('Not verified')
+    expect(screen.getByText(/No active destinations yet/i)).toBeInTheDocument()
+  })
+
+  it('keeps Critical ahead of Not verified', () => {
+    const kpi = computeDestinationsKpi([
+      healthyRow({ runtime: { ...healthyRow().runtime, health: 'Critical' } }),
+      healthyRow({ id: 10, runtime: { ...healthyRow().runtime, health: 'Idle' } }),
+    ])
+    render(<DestinationsHealthOverview kpi={kpi} />)
+    expect(screen.getByTestId('destinations-health-posture')).toHaveTextContent('Critical')
+  })
+
   it('reports capacity posture only from configured capacity evidence', () => {
     const row = healthyRow({
       rate_limit_json: {

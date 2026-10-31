@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -187,6 +187,188 @@ describe('RoutesOverviewPage snapshot loading', () => {
     expect(screen.queryByText('No routes configured yet.')).not.toBeInTheDocument()
   })
 
+  it('labels retained Route metrics as last reported when the snapshot is stale', async () => {
+    const snapshots = await import('../../api/operationalSnapshot')
+    vi.mocked(snapshots.getOperationalSnapshot).mockResolvedValue({
+      ...operationalSnapshot,
+      routes: [{ ...operationalSnapshot.routes[0]!, success_rate_5m: 40 }],
+    })
+
+    render(<MemoryRouter><RoutesOverviewPage /></MemoryRouter>)
+
+    const evidence = await screen.findByTestId('routes-snapshot-evidence')
+    expect(evidence).toHaveTextContent('Stale snapshot · last reported')
+    expect(screen.getByRole('region', { name: 'Route KPI summary' }))
+      .toHaveTextContent('Last reported metrics · current values not verified')
+    const problemRoutes = screen.getByRole('region', { name: 'Problem routes' })
+    expect(problemRoutes).toHaveTextContent('Last reported Route conditions')
+    expect(problemRoutes).toHaveTextContent('Last reported Low Success Rate')
+    expect(screen.getByRole('region', { name: 'Route metrics by destination' }))
+      .toHaveTextContent('Last reported destination metrics')
+    expect(screen.getByTestId('routes-architecture-selected-collection-health'))
+      .toHaveTextContent('Stale')
+  })
+
+  it('does not present a fresh-looking snapshot when Route catalog refresh failed', async () => {
+    const snapshots = await import('../../api/operationalSnapshot')
+    const routes = await import('../../api/gdcRoutes')
+    vi.mocked(snapshots.getOperationalSnapshot).mockResolvedValue({
+      ...operationalSnapshot,
+      updated_at: new Date().toISOString(),
+      routes: [{
+        ...operationalSnapshot.routes[0]!,
+        health_status: 'DEGRADED',
+      }],
+    })
+    vi.mocked(routes.fetchRoutesList).mockResolvedValueOnce(null)
+
+    render(<MemoryRouter><RoutesOverviewPage /></MemoryRouter>)
+
+    await screen.findByTestId('routes-load-error')
+    const evidence = await screen.findByTestId('routes-snapshot-evidence')
+    expect(evidence).toHaveTextContent('Unverified · last reported')
+    expect(screen.getByTestId('routes-architecture-selected-collection-health'))
+      .toHaveTextContent('Stale')
+    expect(screen.getByRole('region', { name: 'Problem routes' }))
+      .toHaveTextContent('Last reported Route conditions')
+  })
+
+  it('does not report zero Streams or Routes when the runtime snapshot cannot be read', async () => {
+    const snapshots = await import('../../api/operationalSnapshot')
+    vi.mocked(snapshots.getOperationalSnapshot).mockResolvedValueOnce(null)
+
+    render(<MemoryRouter><RoutesOverviewPage /></MemoryRouter>)
+
+    await screen.findByTestId('routes-load-error')
+    const kpis = screen.getByRole('region', { name: 'Route KPI summary' })
+    expect(kpis).toHaveTextContent('Runtime metrics not verified')
+    const streamCard = within(kpis).getByTestId('routes-kpi-total-streams')
+    const routeCard = within(kpis).getByTestId('routes-kpi-total-routes')
+    expect(streamCard).toHaveTextContent('—')
+    expect(streamCard).toHaveTextContent('Not verified')
+    expect(streamCard).not.toHaveTextContent('0 running')
+    expect(routeCard).toHaveTextContent('—')
+    expect(routeCard).not.toHaveTextContent('0 enabled')
+    expect(kpis).not.toHaveTextContent('0 /s')
+    expect(kpis.querySelector('svg')).toBeNull()
+    expect(screen.getByText('All Routes (—)')).toBeInTheDocument()
+  })
+
+  it('retains measured zero counts when an empty runtime snapshot is fresh', async () => {
+    const snapshots = await import('../../api/operationalSnapshot')
+    vi.mocked(snapshots.getOperationalSnapshot).mockResolvedValueOnce({
+      ...operationalSnapshot,
+      updated_at: new Date().toISOString(),
+      global: { ...operationalSnapshot.global, total_streams: 0,
+        enabled_streams: 0, running_streams: 0, total_routes: 0, enabled_routes: 0,
+        total_destinations: 0, enabled_destinations: 0, total_eps_1m: 0, total_eps_5m: 0 },
+      streams: [], routes: [], destinations: [], problems: [],
+    })
+    vi.mocked((await import('../../api/gdcRoutes')).fetchRoutesList).mockResolvedValueOnce([])
+
+    render(<MemoryRouter><RoutesOverviewPage /></MemoryRouter>)
+
+    await screen.findByTestId('routes-snapshot-evidence')
+    const kpis = screen.getByRole('region', { name: 'Route KPI summary' })
+    expect(within(kpis).getByTestId('routes-kpi-total-streams')).toHaveTextContent('0 running')
+    expect(within(kpis).getByTestId('routes-kpi-total-routes')).toHaveTextContent('0 enabled')
+    expect(kpis).not.toHaveTextContent('Runtime metrics not verified')
+    expect(screen.getByText('All Routes (0)')).toBeInTheDocument()
+    expect(screen.getByTestId('routes-snapshot-evidence')).toHaveTextContent('SNAPSHOT')
+  })
+
+  it('uses an unverified empty state without a snapshot, then restores current evidence on refresh', async () => {
+    const snapshots = await import('../../api/operationalSnapshot')
+    vi.mocked(snapshots.getOperationalSnapshot)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ ...operationalSnapshot, updated_at: new Date().toISOString() })
+
+    render(<MemoryRouter><RoutesOverviewPage /></MemoryRouter>)
+
+    await screen.findByTestId('routes-load-error')
+    expect(screen.getByRole('region', { name: 'Problem routes' }))
+      .toHaveTextContent('Route issues not verified · runtime snapshot unavailable.')
+    expect(screen.getByRole('region', { name: 'Route metrics by destination' }))
+      .toHaveTextContent('Destination delivery not verified · runtime snapshot unavailable.')
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Refresh' }))
+    const evidence = await screen.findByTestId('routes-snapshot-evidence')
+    expect(evidence).toHaveTextContent('SNAPSHOT')
+    expect(screen.queryByTestId('routes-load-error')).not.toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Problem routes' }))
+      .toHaveTextContent('Current health warnings and errors')
+  })
+
+  it('expires the current snapshot evidence at 90 seconds without a network refresh', async () => {
+    const snapshots = await import('../../api/operationalSnapshot')
+    const observedAt = Date.now()
+    const dateNow = vi.spyOn(Date, 'now').mockReturnValue(observedAt)
+    try {
+      vi.mocked(snapshots.getOperationalSnapshot).mockResolvedValue({
+        ...operationalSnapshot,
+        updated_at: new Date(observedAt).toISOString(),
+      })
+      render(<MemoryRouter><RoutesOverviewPage /></MemoryRouter>)
+      const evidence = await screen.findByTestId('routes-snapshot-evidence')
+      expect(evidence).toHaveTextContent('SNAPSHOT')
+      expect(screen.getByRole('region', { name: 'Problem routes' }))
+        .toHaveTextContent('Current health warnings and errors')
+
+      act(() => {
+        dateNow.mockReturnValue(observedAt + 90_001)
+        window.dispatchEvent(new Event('focus'))
+      })
+
+      expect(evidence).toHaveTextContent('Stale snapshot · last reported')
+      expect(screen.getByRole('region', { name: 'Problem routes' }))
+        .toHaveTextContent('Last reported Route conditions')
+      expect(snapshots.getOperationalSnapshot).toHaveBeenCalledTimes(1)
+    } finally {
+      dateNow.mockRestore()
+    }
+  })
+
+  it('keeps one primary action in the Data Flows view', async () => {
+    persistTestSession('ADMINISTRATOR')
+    const { container } = render(<MemoryRouter><RoutesOverviewPage /></MemoryRouter>)
+    expect(await screen.findByTestId('routes-architecture-inspector')).toBeInTheDocument()
+    const primaries = container.querySelectorAll('button.bg-accent, a.bg-accent')
+    expect(primaries).toHaveLength(1)
+    expect(primaries[0]).toBe(screen.getByRole('link', { name: 'Create Route' }))
+    for (const name of ['Configure Route in workspace']) {
+      expect(screen.getByRole('button', { name })).not.toHaveClass('bg-accent')
+    }
+    expect(screen.getByRole('link', { name: 'Open full Route editor' })).toHaveClass('bg-transparent')
+  })
+
+  it('merges the Delivery architecture header into one SectionHeader without a gradient or eyebrow', async () => {
+    render(<MemoryRouter><RoutesOverviewPage /></MemoryRouter>)
+    const workspace = await screen.findByTestId('routes-architecture-workspace')
+    expect(workspace.querySelector('[class*="bg-gradient"]')).toBeNull()
+    expect(workspace).not.toHaveTextContent('Delivery workspace')
+    expect(within(workspace).getByRole('heading', { level: 2, name: 'Delivery architecture' })).toBeInTheDocument()
+    expect(within(workspace).getByTestId('routes-architecture-count-summary')).toBeInTheDocument()
+  })
+
+  it('renders unmeasured KPI values as unknown tiles, never as 0, 0% or 100%', async () => {
+    const snapshots = await import('../../api/operationalSnapshot')
+    vi.mocked(snapshots.getOperationalSnapshot).mockResolvedValueOnce(null)
+
+    render(<MemoryRouter><RoutesOverviewPage /></MemoryRouter>)
+
+    await screen.findByTestId('routes-load-error')
+    const kpis = screen.getByRole('region', { name: 'Route KPI summary' })
+    for (const id of ['total-streams', 'total-routes', 'throughput', 'delivery-success', 'error-rate', 'latency']) {
+      const tile = within(kpis).getByTestId('routes-kpi-' + id)
+      const value = tile.querySelector('[data-metric-value]')
+      expect(value, id).toHaveAttribute('data-unknown', 'true')
+      expect(value, id).toHaveTextContent('—')
+      expect(value, id).toHaveClass('text-status-unknown')
+    }
+    expect(kpis).not.toHaveTextContent('0%')
+    expect(kpis).not.toHaveTextContent('100%')
+  })
+
   it('loads operational snapshot on mount and does not fetch per-stream metrics', async () => {
     const snap = await import('../../api/operationalSnapshot')
     const runtime = await import('../../api/gdcRuntime')
@@ -204,7 +386,7 @@ describe('RoutesOverviewPage snapshot loading', () => {
     // for a user-selected 15m/1h/6h/24h window.
     expect(screen.queryByRole('combobox', { name: 'Metrics window' })).not.toBeInTheDocument()
     expect(screen.getByRole('note', { name: 'Metrics time basis' })).toHaveTextContent(
-      'Metrics basis: 5m gateway snapshot',
+      'Metrics basis: gateway throughput/errors 1m · delivery success 5m (weighted by 1m ingest) · latency 5m',
     )
     expect(screen.getByTestId('routes-purpose-header')).toHaveTextContent(/destination-specific path/i)
     expect(screen.getByTestId('routes-mental-model')).toHaveTextContent('Stream')
@@ -300,6 +482,35 @@ describe('RoutesOverviewPage snapshot loading', () => {
     expect(screen.queryByTestId('routes-architecture-route-5')).not.toBeInTheDocument()
     expect(screen.getByTestId('routes-architecture-inspector')).toHaveTextContent('R-0006')
     expect(screen.getByTestId('routes-architecture-stream-1')).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it.each([
+    { latency: null, expected: '—' },
+    { latency: 0, expected: '0 ms' },
+    { latency: 180.4, expected: '180 ms' },
+  ])('preserves unavailable and measured catalog latency ($latency)', async ({ latency, expected }) => {
+    const user = userEvent.setup()
+    const snap = await import('../../api/operationalSnapshot')
+    const lastSuccessAt = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString()
+    vi.mocked(snap.getOperationalSnapshot).mockResolvedValue({
+      ...operationalSnapshot,
+      routes: [{
+        ...operationalSnapshot.routes[0]!,
+        avg_latency_ms: latency,
+        last_success_at: lastSuccessAt,
+      }],
+    })
+
+    render(<MemoryRouter><RoutesOverviewPage /></MemoryRouter>)
+    await screen.findByText('All Routes (1)')
+    await user.click(screen.getByRole('button', { name: /All Routes \(1\)/i }))
+
+    const row = await screen.findByTestId('routes-table-row-5')
+    const table = row.closest('table')!
+    const headers = within(table).getAllByRole('columnheader').map((cell) => cell.textContent?.trim())
+    const cells = within(row).getAllByRole('cell')
+    expect(cells[headers.indexOf('Avg Latency')]?.textContent?.trim()).toBe(expected)
+    expect(cells[headers.indexOf('Last Activity')]).toHaveTextContent(/^4h ago$/)
   })
 
   it('restores the exact Stream and Route selection from a Data Flows investigation deep link', async () => {

@@ -3,6 +3,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  CircleDashed,
   Loader2,
   MinusCircle,
   MoreHorizontal,
@@ -99,6 +100,7 @@ import type { StreamRead } from '../../api/types/gdcApi'
 import { readStreamsConsoleSnapshot, writeStreamsConsoleSnapshot, clearStreamsConsoleSnapshot } from './streams-console-cache'
 import { RuntimeFixtureModeBanner } from '../runtime/runtime-fixture-mode-banner'
 import { PagePurposeHeader, type PageHelpContent } from '../ui/page-purpose-header'
+import { buttonClassName } from '../ui/button-classes'
 import { useMountAbortController } from '../../hooks/use-mount-abort-signal'
 import { isRequestAborted } from '../../lib/request-abort'
 import { deriveStreamHealthMatrix } from '../dashboard/dashboard-charter-metrics'
@@ -380,6 +382,7 @@ function StreamSeverityIcon({ row, metricsWindow }: { row: StreamConsoleRow; met
   if (kind === 'critical') return <XCircle className="h-4 w-4 shrink-0 text-red-500" aria-hidden />
   if (kind === 'warn') return <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" aria-hidden />
   if (kind === 'stopped') return <MinusCircle className="h-4 w-4 shrink-0 text-slate-400" aria-hidden />
+  if (kind === 'unknown') return <CircleDashed className="h-4 w-4 shrink-0 text-slate-400" aria-hidden />
   return <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" aria-hidden />
 }
 
@@ -397,7 +400,7 @@ function StreamOperationalStatusBadge({
       ? 'border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-300'
       : severity === 'warning' || label === 'Warning'
         ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300'
-        : label === 'Stopped' || label === 'Disabled' || label === 'No Data'
+        : label === 'Stopped' || label === 'Disabled' || label === 'No Data' || label === 'Not verified'
           ? 'border-slate-400/40 bg-slate-500/10 text-slate-600 dark:text-slate-400'
           : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
   return (
@@ -797,11 +800,14 @@ export function StreamsConsole() {
         help={STREAMS_HELP}
         testId="streams-purpose-header"
         actions={
-          <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
+          /* min-w-0 instead of shrink-0: a non-shrinking column forced the controls row to its
+             single-line width and overflowed the page at 390px. */
+          <div className="flex min-w-0 max-w-full flex-col items-stretch gap-2 sm:items-end">
             {canCreateStream ? (
+              /* Secondary emphasis: the header "New data flow" link is the single primary CTA per screen. */
               <Link
                 to={newStreamPath()}
-                className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-gdc-primary px-4 text-sm font-semibold text-white hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/60"
+                className={buttonClassName({ variant: 'secondary' })}
               >
                 <Plus className="h-4 w-4" aria-hidden />
                 New Stream
@@ -909,7 +915,7 @@ export function StreamsConsole() {
           </div>
         ) : (
           <>
-            <div className="overflow-x-auto">
+            <div className="relative overflow-x-auto">
               <table className="w-full min-w-[40rem] border-collapse text-left">
                 <thead>
                   <tr className="border-b border-slate-200/80 dark:border-gdc-border">

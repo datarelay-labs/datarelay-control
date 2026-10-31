@@ -2,6 +2,7 @@ import { type ReactNode, useEffect, useState } from 'react'
 import { ArrowRight, Loader2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { cn } from '../../../lib/utils'
+import { buttonClassName } from '../../ui/button-classes'
 import { fetchCatalogSnapshot, type CatalogSnapshot } from '../../../api/gdcCatalog'
 import { fetchConnectorById } from '../../../api/gdcConnectors'
 import { wizardConnectorPatchFromApi, wizardHasLinkedSource, type WizardState } from './wizard-state'
@@ -130,15 +131,15 @@ export function StepSource({
             : 'Create a connector first, then return here to bind it to a new stream.'}
         </p>
         {catalogUnavailable ? (
-          <button type="button" onClick={() => void retryCatalog()} disabled={loading} className="mt-3 inline-flex min-h-9 items-center rounded-md bg-violet-600 px-3 text-xs font-semibold text-white disabled:opacity-60" data-testid="wizard-retry-connector-catalog">
+          <button type="button" onClick={() => void retryCatalog()} disabled={loading} className={buttonClassName({ variant: 'secondary', className: 'mt-3' })} data-testid="wizard-retry-connector-catalog">
             {loading ? 'Checking catalog…' : 'Retry Connector catalog'}
           </button>
         ) : onCreateConnector && !connectorReadonly ? (
-          <button type="button" onClick={onCreateConnector} className="mt-3 inline-flex min-h-9 items-center rounded-md bg-violet-600 px-3 text-xs font-semibold text-white" data-testid="wizard-add-connector">
+          <button type="button" onClick={onCreateConnector} className={buttonClassName({ variant: 'secondary', className: 'mt-3' })} data-testid="wizard-add-connector">
             Add Connector without leaving this Data Flow
           </button>
         ) : (
-          <Link to="/connectors/new" className="mt-3 inline-flex min-h-9 items-center rounded-md bg-violet-600 px-3 text-xs font-semibold text-white">
+          <Link to="/connectors/new" className={buttonClassName({ variant: 'secondary', className: 'mt-3' })}>
             Go to Connector Create Page
           </Link>
         )}

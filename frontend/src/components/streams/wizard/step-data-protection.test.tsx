@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { StepDataProtection } from './step-data-protection'
 import { buildInitialState } from './wizard-state'
@@ -163,5 +163,52 @@ describe('StepDataProtection', () => {
     render(<StepDataProtection state={state} onChange={vi.fn()} />)
     expect(screen.getByTestId('route-override-effective-preview-row-1')).toBeInTheDocument()
     expect(screen.getByText(/tokenize \(override\)/i)).toBeInTheDocument()
+  })
+
+  // C4: on the old code every Route row showed the panel's own intent action ("Mask (full)
+  // (default)") for both Routes; Route 1 inherits the shared mask_partial rule.
+  it('shows each Route its own effective protection in a Route-scoped panel', () => {
+    const shared = buildInitialState()
+    shared.dataProtection.intents = [
+      { key: 'shared-1', detectedField: '$.email', protectionAction: 'mask_partial', deliveryBehavior: 'continue' },
+    ]
+    const routeIntents = [
+      { key: 'row-1', detectedField: '$.email', protectionAction: 'mask_full' as const, deliveryBehavior: 'continue' as const },
+    ]
+    shared.destinations.routeDrafts = [
+      {
+        key: 'r1',
+        destinationId: 10,
+        enabled: true,
+        failurePolicy: 'LOG_AND_CONTINUE',
+        rateLimitJson: {},
+        inherit: { transform: true, protection: true, classification: true, policy: true },
+      },
+      {
+        key: 'r2',
+        destinationId: 20,
+        enabled: true,
+        failurePolicy: 'LOG_AND_CONTINUE',
+        rateLimitJson: {},
+        inherit: { transform: true, protection: false, classification: true, policy: true },
+        overrides: {
+          protection: {
+            intents: routeIntents,
+            unknownNormalFieldPolicy: 'pass_through',
+            unknownSensitiveFieldPolicy: 'auto_protect',
+          },
+        },
+      },
+    ]
+    // Route 2's panel: state scoped to Route 2's intents, as WizardRouteProcessingDetailPanel does.
+    const routeScoped = { ...shared, dataProtection: { ...shared.dataProtection, intents: routeIntents } }
+
+    render(<StepDataProtection state={routeScoped} onChange={vi.fn()} sharedIntents={shared.dataProtection.intents} />)
+    const preview = screen.getByTestId('route-override-effective-preview-row-1')
+    const items = within(preview).getAllByRole('listitem').map((li) => li.textContent)
+    expect(items).toEqual([
+      'Route 1 (dest #10): Mask (partial) (default)',
+      'Route 2 (dest #20): Mask (full) (route)',
+    ])
   })
 })

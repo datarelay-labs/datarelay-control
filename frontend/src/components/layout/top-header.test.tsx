@@ -233,6 +233,70 @@ describe('TopHeader SaaS shell', () => {
     expect(screen.queryByText('24 streams active · delivery path nominal')).not.toBeInTheDocument()
   })
 
+  it('keeps the page title on one line (truncated only as a last resort) and never truncates the runtime summary or evidence', () => {
+    render(
+      <MemoryRouter initialEntries={['/streams/new']}>
+        <TopHeader
+          title="New data flow"
+          isDark={false}
+          onToggleTheme={() => undefined}
+          runtimeSummary="Operational overview — streams, routes, and delivery health from live APIs."
+          runtimeStatusEvidence="2 running / 2 enabled Streams · 3 Routes"
+        />
+      </MemoryRouter>,
+    )
+    const heading = screen.getByRole('heading', { level: 1, name: 'New data flow' })
+    expect(heading).not.toHaveClass('shrink-0')
+    expect(heading).toHaveClass('sm:truncate')
+    expect(heading).toHaveAttribute('title', 'New data flow')
+    // The title column is content-sized instead of competing for space with the summary.
+    expect(heading.parentElement).toHaveClass('flex-none', 'max-w-full', 'min-w-0')
+    expect(heading.parentElement).not.toHaveClass('flex-1')
+
+    const summary = screen.getByText('Operational overview — streams, routes, and delivery health from live APIs.')
+    // Runtime text states runtime truth (e.g. "is not verified"); an ellipsis could make an unmeasured
+    // state read as healthy, so the paragraphs wrap instead of truncating.
+    expect(summary).not.toHaveClass('truncate')
+    expect(summary).not.toHaveClass('sm:truncate')
+    expect(summary).not.toHaveAttribute('title')
+    // The text wrapper stays a shrinkable flex item so long text wraps instead of overflowing.
+    expect(summary.parentElement).toHaveClass('min-w-0')
+    // The summary block wraps on phones but stays one shrinkable row from sm up, so the status chip
+    // remains inline beside the title.
+    const summaryBlock = summary.parentElement?.parentElement
+    expect(summaryBlock).toContainElement(screen.getByLabelText('Runtime status'))
+    expect(summaryBlock).toHaveClass('flex', 'min-w-0', 'flex-wrap', 'sm:flex-1', 'sm:flex-nowrap')
+
+    const evidence = screen.getByTestId('shell-runtime-evidence')
+    expect(evidence).toHaveTextContent('2 running / 2 enabled Streams · 3 Routes')
+    expect(evidence).toHaveAttribute('role', 'status')
+    expect(evidence).toHaveAttribute('aria-live', 'polite')
+    expect(evidence).toHaveAttribute('aria-atomic', 'true')
+    expect(evidence).not.toHaveClass('truncate')
+    expect(evidence).not.toHaveClass('sm:truncate')
+    expect(evidence).not.toHaveAttribute('title')
+  })
+
+  it('keeps one header height from sm up whether or not the runtime summary wraps, without changing the phone floor', () => {
+    renderHeader()
+    const header = screen.getByRole('banner')
+    expect(header).toHaveClass('min-h-[58px]', 'sm:min-h-[69px]')
+  })
+
+  it('renders the runtime chip as a StatusChip and never styles unverified state as healthy', () => {
+    renderHeader({ runtimeHealthy: null })
+    const unverified = screen.getByLabelText('Runtime status')
+    expect(unverified).toHaveAttribute('data-status', 'unknown')
+    expect(unverified).toHaveTextContent('Not verified')
+    expect(unverified).not.toHaveClass('bg-status-success-subtle')
+    cleanup()
+    renderHeader({ runtimeHealthy: true })
+    expect(screen.getByLabelText('Runtime status')).toHaveAttribute('data-status', 'healthy')
+    cleanup()
+    renderHeader({ runtimeHealthy: false })
+    expect(screen.getByLabelText('Runtime status')).toHaveAttribute('data-status', 'warning')
+  })
+
   it('uses green health only for explicitly supplied measurements', () => {
     renderHeader({ runtimeHealthy: true })
     expect(screen.getByLabelText('Runtime status')).toHaveTextContent('Healthy')

@@ -396,12 +396,12 @@ describe('Data Flows collection status and investigation context', () => {
     expect(screen.getByTestId('routes-architecture-inspector')).toHaveTextContent('Stream #2 · Route R-0091')
   })
 
-  it('respects runtime Stopped and explicit Disabled status instead of inventing Healthy collection', () => {
+  it('shows Paused (distinct from Stopped) for runtime PAUSED and explicit Disabled status instead of inventing Healthy collection', () => {
     const data = snapshotFor([route(100, 1, 200, 'HEALTHY'), route(101, 2, 201, 'HEALTHY')])
     data.streams[0]!.status = 'PAUSED'
     data.streams[1]!.enabled = false
     render(<GraphHarness snapshot={data} />)
-    expect(screen.getByTestId('routes-architecture-collection-1')).toHaveTextContent('Collection: Stopped')
+    expect(screen.getByTestId('routes-architecture-collection-1')).toHaveTextContent('Collection: Paused')
     expect(screen.getByTestId('routes-architecture-collection-2')).toHaveTextContent('Collection: Disabled')
     expect(screen.getByTestId('routes-architecture-selected-collection-health')).not.toHaveTextContent('Healthy')
   })
@@ -931,5 +931,40 @@ describe('Route Inspector session capability changes', () => {
     expect(within(inspector).getByRole('link', { name: 'View Route settings' })).toBeInTheDocument()
     expect(inspector).toHaveTextContent('Route R-0001')
     expect(within(inspector).getByRole('link', { name: /Delivery logs/ })).toBeInTheDocument()
+  })
+})
+
+
+describe('Runtime graph contextual Route inspection', () => {
+  afterEach(() => clearTestSession())
+
+  it('selects a different Route through the keyboard-accessible graph list without leaving Data Flows', async () => {
+    const user = userEvent.setup()
+    render(<GraphHarness snapshot={snapshotFor()} />)
+    expect(screen.getByTestId('routes-architecture-route-1')).toHaveAttribute('aria-pressed', 'true')
+    await user.click(screen.getByRole('button', { name: 'Show accessible path list' }))
+    const paths = screen.getByRole('list', { name: 'Data paths with runtime evidence' })
+    await user.click(within(paths).getByRole('button', { name: 'Inspect Route #2 in workspace' }))
+    expect(screen.getByTestId('routes-architecture-route-2')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('routes-architecture-route-1')).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByTestId('routes-architecture-inspector')).toHaveTextContent('Route')
+    expect(screen.getByTestId('routes-architecture-workspace')).toBeInTheDocument()
+  })
+
+  it('refuses graph-driven Route selection while an embedded editor may have an unsaved draft', async () => {
+    persistTestSession('ADMINISTRATOR')
+    const user = userEvent.setup()
+    render(<GraphHarness snapshot={snapshotFor()} />)
+    const inspector = screen.getByTestId('routes-architecture-inspector')
+    await user.click(within(inspector).getByRole('button', { name: 'Configure Route in workspace' }))
+    expect(screen.getByTestId('routes-architecture-configuration')).toHaveTextContent('Route editor #1')
+    await user.click(screen.getByRole('button', { name: 'Show accessible path list' }))
+    const paths = screen.getByRole('list', { name: 'Data paths with runtime evidence' })
+    await user.click(within(paths).getByRole('button', { name: 'Inspect Route #2 in workspace' }))
+    expect(screen.getByTestId('routes-architecture-route-1')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('routes-architecture-configuration')).toHaveTextContent('Route editor #1')
+    expect(screen.getByTestId('routes-architecture-configuration-selection-notice')).toHaveTextContent(
+      'Close the current Route configuration before selecting another delivery path',
+    )
   })
 })

@@ -1,6 +1,6 @@
 import type { ConnectorRead } from '../../api/gdcConnectors'
 import type { DestinationListItem } from '../../api/gdcDestinations'
-import type { OperationalSnapshotResponse } from '../../api/operationalSnapshot'
+import type { OperationalHealthStatus, OperationalSnapshotResponse } from '../../api/operationalSnapshot'
 import { mapBackendStreamStatus } from '../../api/streamRows'
 import type {
   DashboardOutcomeTimeseriesResponse,
@@ -17,6 +17,7 @@ import {
   countHealthFromRows,
   deriveOverallHealthPostureFromSnapshot,
   formatOperationalEps,
+  isActiveOperationalStream,
   formatOperationalSuccessRate,
   selectGlobalKpi,
 } from '../../lib/operational-snapshot-selectors'
@@ -32,13 +33,17 @@ export type OverallHealthCounts = {
   healthy: number
   warning: number
   critical: number
-  posture: 'healthy' | 'warning' | 'critical'
+  /** Active streams without a health verdict (not observed yet / snapshot unavailable). */
+  unknown: number
+  posture: 'healthy' | 'warning' | 'critical' | 'unknown'
 }
 
 export type StreamGroupHealthCounts = {
   healthy: number
   warning: number
   critical: number
+  /** Groups with an active member lacking a verdict and no warning/critical member. */
+  unknown: number
   groups: ProductStreamGroup<StreamGroupRow>[]
 }
 
@@ -46,6 +51,9 @@ export type StreamGroupRow = {
   connectorName: string
   connectorProductGroup?: string | null
   status: StreamRuntimeStatus
+  /** Snapshot health of the stream; lets the group roll-up see "no verdict" (IDLE). */
+  operationalHealthStatus?: OperationalHealthStatus | null
+  hasRuntimeApiSnapshot?: boolean
 }
 
 export type TrafficOverviewMetrics = {
@@ -88,12 +96,13 @@ export function deriveOverallHealth(health: HealthOverviewResponse | null): Over
   let posture: OverallHealthCounts['posture'] = 'healthy'
   if (critical > 0) posture = 'critical'
   else if (warning > 0) posture = 'warning'
-  return { healthy, warning, critical, posture }
+  return { healthy, warning, critical, unknown: 0, posture }
 }
 
 export function deriveOverallHealthFromSnapshot(snapshot: OperationalSnapshotResponse | null): OverallHealthCounts {
   if (snapshot == null) {
-    return { healthy: 0, warning: 0, critical: 0, posture: 'healthy' }
+    // Missing snapshot is "no evidence", never Healthy.
+    return { healthy: 0, warning: 0, critical: 0, unknown: 0, posture: 'unknown' }
   }
   return deriveOverallHealthPostureFromSnapshot(snapshot)
 }
@@ -123,49 +132,58 @@ export function deriveStreamGroupHealth(
   let healthy = 0
   let warning = 0
   let critical = 0
+  let unknown = 0
   for (const g of groups) {
     if (g.worstStatus === 'ERROR') critical += 1
     else if (g.worstStatus === 'DEGRADED') warning += 1
+    else if (g.worstStatus === 'UNKNOWN') unknown += 1
     else healthy += 1
   }
-  return { healthy, warning, critical, groups }
+  return { healthy, warning, critical, unknown, groups }
 }
 
 export function deriveStreamGroupHealthFromSnapshot(
   snapshot: OperationalSnapshotResponse | null,
   connectors: readonly ConnectorRead[],
 ): StreamGroupHealthCounts {
-  if (snapshot == null) return { healthy: 0, warning: 0, critical: 0, groups: [] }
+  if (snapshot == null) return { healthy: 0, warning: 0, critical: 0, unknown: 0, groups: [] }
   const connectorById = new Map<number, ConnectorRead>()
   for (const c of connectors) connectorById.set(c.id, c)
   const rows: StreamGroupRow[] = (snapshot.streams ?? []).map((s) => {
     const connector = s.connector_id != null ? connectorById.get(s.connector_id) : undefined
-    const status =
-      !s.enabled
-        ? 'STOPPED'
-        : s.health_status === 'HEALTHY'
-          ? 'RUNNING'
-          : s.health_status === 'DEGRADED'
-            ? 'DEGRADED'
-            : s.health_status === 'ERROR'
-              ? 'ERROR'
-              : 'STOPPED'
+    // Disabled/paused/stopped members are neutral; an active member with no verdict (IDLE or an
+    // unrecognised value) is UNKNOWN, never healthy.
+    const status: StreamRuntimeStatus = !isActiveOperationalStream(s)
+      ? 'STOPPED'
+      : s.health_status === 'HEALTHY'
+        ? 'RUNNING'
+        : s.health_status === 'DEGRADED'
+          ? 'DEGRADED'
+          : s.health_status === 'ERROR'
+            ? 'ERROR'
+            : 'UNKNOWN'
     return {
       connectorName: connector?.name?.trim() || (s.connector_id != null ? `Connector #${s.connector_id}` : s.stream_name),
       connectorProductGroup: connector?.product_group ?? null,
       status,
+      operationalHealthStatus: status === 'UNKNOWN' ? 'IDLE' : s.health_status,
+      hasRuntimeApiSnapshot: true,
     }
   })
   const groups = groupRowsBySourceProduct(rows)
   let healthy = 0
   let warning = 0
   let critical = 0
+  let unknown = 0
+  // Critical > warning > unknown > healthy. Groups with only disabled/paused members are neutral
+  // (not counted as healthy).
   for (const g of groups) {
     if (g.worstStatus === 'ERROR') critical += 1
     else if (g.worstStatus === 'DEGRADED') warning += 1
-    else healthy += 1
+    else if (g.worstStatus === 'UNKNOWN') unknown += 1
+    else if (g.worstStatus === 'RUNNING') healthy += 1
   }
-  return { healthy, warning, critical, groups }
+  return { healthy, warning, critical, unknown, groups }
 }
 
 export function deriveTrafficOverview(
@@ -1215,15 +1233,16 @@ const STATUS_PRIORITY: Record<string, number> = { HEALTHY: 0, IDLE: 1, DEGRADED:
 
 function worstStatus(a: string | null, b: string): string {
   if (a == null) return b
-  return (STATUS_PRIORITY[b] ?? 0) > (STATUS_PRIORITY[a] ?? 0) ? b : a
+  return (STATUS_PRIORITY[b] ?? 1) > (STATUS_PRIORITY[a] ?? 1) ? b : a
 }
 
 function cellStatusFromHealthStatus(s: string | null, routeCount: number): StreamHealthMatrixCellStatus {
   if (routeCount === 0) return 'not-connected'
   if (s === 'ERROR') return 'failed'
   if (s === 'DEGRADED') return 'warning'
-  if (s === 'IDLE') return 'no-data'
-  return 'healthy'
+  if (s === 'HEALTHY') return 'healthy'
+  // IDLE, null or any unrecognised value: no verdict, never a green cell.
+  return 'no-data'
 }
 
 export function deriveStreamHealthMatrix(

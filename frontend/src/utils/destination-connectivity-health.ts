@@ -22,9 +22,18 @@ function snapshotHasDeliveryTraffic(snapshot: OperationalDestinationSnapshot | n
   return inbound + failed > 0 || snapshot.last_success_at != null || snapshot.last_error_at != null
 }
 
+const PROBE_ONLY_LABEL: OperationalUiHealthLabel = 'Connectivity verified · No deliveries observed'
+
+/** A runtime verdict that must never be masked by a passing connectivity probe. */
+function isProblemLabel(label: OperationalUiHealthLabel | undefined): boolean {
+  return label === 'Critical' || label === 'Error' || label === 'Warning'
+}
+
 /**
- * List/overview health: prefer verified connectivity when runtime delivery metrics
- * are not yet available, so a passing probe is not shown as Critical/Error.
+ * List/overview health. A passing probe proves reachability only, never delivery health:
+ * - a snapshot Error/Critical/Warning always wins (Unknown never masks a confirmed problem);
+ * - a probe with zero observed deliveries reads "Connectivity verified - No deliveries observed", not Healthy;
+ * - Healthy requires an actual delivery observation reported by the snapshot.
  */
 export function resolveDestinationListUiHealth(
   row: DestinationConnectivityFields & { enabled: boolean },
@@ -35,11 +44,13 @@ export function resolveDestinationListUiHealth(
   const connectivityOk = isDestinationConnectivityVerified(row)
   const hasTraffic = snapshotHasDeliveryTraffic(snapshot)
 
-  if (connectivityOk && !hasTraffic) {
-    return 'Healthy'
-  }
+  if (isProblemLabel(snapshotLabel)) return snapshotLabel as OperationalUiHealthLabel
+  if (snapshot?.health_status === 'ERROR') return 'Critical'
+  if (snapshot?.health_status === 'DEGRADED') return 'Warning'
+
+  if (connectivityOk && !hasTraffic) return PROBE_ONLY_LABEL
 
   if (snapshotLabel) return snapshotLabel
-  if (connectivityOk) return 'Healthy'
+  if (connectivityOk) return PROBE_ONLY_LABEL
   return 'Idle'
 }

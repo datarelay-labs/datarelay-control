@@ -289,6 +289,21 @@ def test_connectivity_error_all_failed() -> None:
     )
 
 
+def test_connectivity_idle_when_no_deliveries_and_no_failures() -> None:
+    """Zero traffic is not a failure and not a HEALTHY verdict."""
+
+    assert (
+        _route_connectivity_state(
+            route_enabled=True,
+            destination_enabled=True,
+            route_status="ENABLED",
+            delivered_ev=0,
+            failed_ev=0,
+        )
+        == "IDLE"
+    )
+
+
 def test_connectivity_degraded() -> None:
     assert (
         _route_connectivity_state(

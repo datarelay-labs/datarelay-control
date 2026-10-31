@@ -223,6 +223,52 @@ def read_model_is_populated(db: Session) -> bool:
     return db.query(func.count(RuntimeStreamSnapshot.stream_id)).scalar() > 0
 
 
+def read_model_is_current(db: Session, *, now: datetime | None = None) -> bool:
+    """Require a fresh snapshot for every current entity in one bounded query.
+
+    Allow two updater ticks, capped at the one-minute rate window. A fresh row
+    elsewhere or the updater cursor cannot make a stale/missing entity current.
+    """
+
+    from app.config import settings
+
+    current_time = now or snapshot_now()
+    tick_seconds = max(
+        5.0,
+        float(getattr(settings, "GDC_RUNTIME_OPERATIONAL_SNAPSHOT_UPDATER_INTERVAL_SECONDS", 30.0)),
+    )
+    since = current_time - timedelta(seconds=min(60.0, 2 * tick_seconds))
+    return bool(
+        db.execute(
+            text(
+                """
+                SELECT
+                    EXISTS (
+                        SELECT 1 FROM streams e
+                        JOIN runtime_stream_snapshot s ON s.stream_id = e.id
+                    )
+                    AND NOT EXISTS (
+                        SELECT 1 FROM streams e
+                        LEFT JOIN runtime_stream_snapshot s ON s.stream_id = e.id
+                        WHERE s.updated_at IS NULL OR s.updated_at < :since OR s.updated_at > :now
+                    )
+                    AND NOT EXISTS (
+                        SELECT 1 FROM routes e
+                        LEFT JOIN runtime_route_snapshot s ON s.route_id = e.id
+                        WHERE s.updated_at IS NULL OR s.updated_at < :since OR s.updated_at > :now
+                    )
+                    AND NOT EXISTS (
+                        SELECT 1 FROM destinations e
+                        LEFT JOIN runtime_destination_snapshot s ON s.destination_id = e.id
+                        WHERE s.updated_at IS NULL OR s.updated_at < :since OR s.updated_at > :now
+                    )
+                """
+            ),
+            {"since": since, "now": current_time},
+        ).scalar()
+    )
+
+
 def load_updater_state(db: Session) -> RuntimeSnapshotUpdaterState:
     state = db.get(RuntimeSnapshotUpdaterState, 1)
     if state is None:
@@ -375,6 +421,7 @@ def recompute_and_upsert_snapshots(
             last_error_at=last_error_at,
             failed_eps_1m=_eps(agg_1m.failure_count if agg_1m else 0, 60),
             retry_rate_5m=retry_rate_5m,
+            now=now,
         )
         route_health_by_id[route.id] = health
         route_rows.append(
@@ -425,6 +472,7 @@ def recompute_and_upsert_snapshots(
             failed_route_count=failed_route_count,
             healthy_route_count=healthy_route_count,
             route_count=route_count,
+            now=now,
         )
         cp = checkpoints.get(stream.id)
         checkpoint_updated_at = cp.updated_at if cp is not None else None
@@ -461,11 +509,15 @@ def recompute_and_upsert_snapshots(
         last_error_message = last.last_error_message if last else None
         route_ids_for_dest = routes_by_destination.get(dest.id, [])
         route_healths = [route_health_by_id[rid] for rid in route_ids_for_dest]
+        dest_failed_eps_1m = _eps(agg_1m.failure_count if agg_1m else 0, 60)
         health = classify_destination_health(
             enabled=dest.enabled,
             route_healths=route_healths,
             last_success_at=last_success_at,
             last_connectivity_test_success=dest.last_connectivity_test_success,
+            last_error_at=last_error_at,
+            failed_eps_1m=dest_failed_eps_1m,
+            now=now,
         )
         destination_rows.append(
             {
@@ -473,7 +525,7 @@ def recompute_and_upsert_snapshots(
                 "enabled": dest.enabled,
                 "health_status": health,
                 "inbound_eps_1m": _eps(agg_1m.success_count if agg_1m else 0, 60),
-                "failed_eps_1m": _eps(agg_1m.failure_count if agg_1m else 0, 60),
+                "failed_eps_1m": dest_failed_eps_1m,
                 "avg_latency_ms": agg_5m.avg_latency_ms if agg_5m else None,
                 "route_count": routes_per_destination.get(dest.id, len(route_ids_for_dest)),
                 "last_success_at": last_success_at,

@@ -24,7 +24,8 @@ from app.runtime.health_service import (
 )
 from app.runtime.metric_contract import metric_meta_map
 from app.runtime.models import RuntimeDestinationSnapshot, RuntimeRouteSnapshot, RuntimeStreamSnapshot
-from app.runtime.runtime_snapshot_repository import read_model_is_populated
+from app.runtime.operational_snapshot_service import is_operator_stopped_status
+from app.runtime.runtime_snapshot_repository import read_model_is_current
 from app.runtime.aggregate_summaries import summarize_route_posture_config
 from app.runtime import health_repository as repo
 from app.runtime.analytics_service import resolve_analytics_window
@@ -38,7 +39,7 @@ _WINDOW_SECONDS = 300
 def snapshot_health_available(db: Session) -> bool:
     if not bool(getattr(settings, "GDC_RUNTIME_OPERATIONAL_SNAPSHOT_READ_MODEL_ENABLED", True)):
         return False
-    return read_model_is_populated(db)
+    return read_model_is_current(db)
 
 
 def _events_from_eps(eps: float | None, window_seconds: int) -> int:
@@ -132,15 +133,24 @@ def list_stream_health_from_snapshots(
         window=window, since=since, snapshot_id=snapshot_id
     )
     recent_since, recent_until = resolve_recent_posture_window(start, until)
-    q = db.query(RuntimeStreamSnapshot, Stream.name, Stream.connector_id).join(
-        Stream, Stream.id == RuntimeStreamSnapshot.stream_id
-    )
+    q = db.query(
+        RuntimeStreamSnapshot, Stream.name, Stream.connector_id, Stream.enabled, Stream.status
+    ).join(Stream, Stream.id == RuntimeStreamSnapshot.stream_id)
     if stream_id is not None:
         q = q.filter(RuntimeStreamSnapshot.stream_id == int(stream_id))
     rows = q.order_by(RuntimeStreamSnapshot.stream_id.asc()).all()
     items: list[StreamHealthRow] = []
-    for snap, name, conn_id in rows:
+    for snap, name, conn_id, stream_enabled, stream_status in rows:
+        # Bulk listings only: a request for one explicit stream keeps returning that
+        # stream's row (the per-stream detail contract is pinned by e2e tests).
+        if stream_id is None and (not bool(stream_enabled) or is_operator_stopped_status(stream_status)):
+            # Disabled / paused / stopped: excluded_no_outcome, never scored
+            # (a stale error must not score a disabled stream CRITICAL).
+            continue
         full = _snapshot_outcome(snap)
+        if stream_id is None and full.success_count <= 0 and full.failure_count <= 0:
+            # No observed outcome: excluded_no_outcome instead of 100/HEALTHY.
+            continue
         score = compute_health_score_for_mode(
             full,
             full,

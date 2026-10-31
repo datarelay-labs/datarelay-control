@@ -54,6 +54,7 @@ function renderShell(initialPath = '/streams') {
           <Route path="/monitoring" element={<p>Dashboard workspace</p>} />
           <Route path="/admin" element={<p>Administration workspace</p>} />
           <Route path="/routes" element={<p>Routes workspace</p>} />
+          <Route path="/connectors/new" element={<p>New connector workspace</p>} />
           <Route path="/help/:topic" element={<p>In-product help guide</p>} />
         </Route>
       </Routes>
@@ -286,6 +287,17 @@ describe('AppShellLayout responsive accessibility', () => {
     expect(screen.getAllByRole('heading', { name: 'Data Flows' })).toHaveLength(1)
     expect(screen.queryByRole('heading', { name: 'Routes' })).not.toBeInTheDocument()
     expect(screen.queryByRole('navigation', { name: 'Breadcrumb' })).not.toBeInTheDocument()
+  })
+
+  it('names the Connector create page instead of echoing the raw "new" route token (F-003)', () => {
+    renderShell('/connectors/new')
+    expect(screen.getByRole('heading', { level: 1, name: 'New connector' })).toBeInTheDocument()
+    const crumbs = screen.getByRole('navigation', { name: 'Breadcrumb' })
+    expect(crumbs).toHaveTextContent('Connectors')
+    expect(crumbs).toHaveTextContent('New connector')
+    expect(within(crumbs).queryByText(/^new$/)).not.toBeInTheDocument()
+    expect(document.title).toBe('New connector \u00b7 DataRelay')
+    expect(screen.queryByText(/Connector \u00b7 new/)).not.toBeInTheDocument()
   })
 
   it('preserves primary navigation role and persona-facing nav labels', () => {

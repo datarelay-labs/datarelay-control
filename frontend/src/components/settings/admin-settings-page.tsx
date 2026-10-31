@@ -1,3 +1,4 @@
+import { sessionRoleLabel } from '../../auth/role-labels'
 import {
   ChevronRight,
   Download,
@@ -45,6 +46,7 @@ import { AdminMaintenanceCenter } from './admin-maintenance-center'
 import { AdminMfaEnrollment } from './admin-mfa-enrollment'
 import { AdminManagementAclPreview } from './admin-management-acl-preview'
 import { AdminNetworkSettingsPage } from './admin-network-settings-page'
+import { USER_ROLE_OPTIONS } from '../../auth/role-labels'
 import { AdminRetentionSettings } from './admin-retention-settings'
 import { AdminOperationalDashboard } from './admin-settings-operational'
 import { passwordsMatch, validateNewPassword } from './admin-settings-validation'
@@ -84,11 +86,6 @@ function roleBadgeClass(role: string) {
   return 'border-slate-300/80 bg-slate-100 text-slate-700 dark:border-gdc-borderStrong dark:bg-gdc-elevated dark:text-slate-200'
 }
 
-function roleLabel(role: string) {
-  if (role === 'ADMINISTRATOR') return 'Administrator'
-  if (role === 'OPERATOR') return 'Operator'
-  return 'Viewer'
-}
 
 function formatTs(iso: string | null) {
   if (!iso) return '—'
@@ -1031,7 +1028,7 @@ export function AdminSettingsPage() {
                                 roleBadgeClass(u.role),
                               )}
                             >
-                              {roleLabel(u.role)}
+                              {sessionRoleLabel(u.role)}
                             </span>
                           </td>
                           <td className="px-3 py-3">
@@ -1422,14 +1419,11 @@ export function AdminSettingsPage() {
                   value={userForm.role}
                   onChange={(e) => setUserForm((f) => ({ ...f, role: e.target.value }))}
                 >
-                  <option value="VIEWER">Viewer</option>
-                  <option value="OPERATOR">Connector Operator (legacy Operator)</option>
-                  <option value="CONNECTOR_OPERATOR">Connector Operator</option>
-                  <option value="GOVERNANCE_OPERATOR">Governance Operator</option>
-                  <option value="GOVERNANCE_REVIEWER">Governance Reviewer</option>
-                  <option value="GOVERNANCE_APPROVER">Governance Approver</option>
-                  <option value="GOVERNANCE_AUDITOR">Governance Auditor</option>
-                  <option value="ADMINISTRATOR">Administrator</option>
+                  {USER_ROLE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
               </div>
               {userModal === 'edit' ? (

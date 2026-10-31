@@ -2,9 +2,9 @@ import { useSyncExternalStore, type ReactNode, type Ref } from 'react'
 import { Bell, CircleHelp, Menu, Moon, Plus, RefreshCw, Settings, Sun, X } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { NAV_PATH, newStreamPath } from '../../config/nav-paths'
-import { cn } from '../../lib/utils'
 import { isSessionExpired, onSessionChange, readSession } from '../../auth/session'
 import { getSessionCapabilities } from '../../lib/rbac'
+import { StatusChip } from '../ui/status-chip'
 import { GDC_HEADER_REFRESH_EVENT } from './header-refresh-event'
 
 /** Global operational-alert surface. Kept out of primary sidebar by UX charter. */
@@ -72,8 +72,9 @@ export function TopHeader({
     }
   }
 
+  // From sm up the minimum height matches the two-line runtime summary so the header does not jump between pages.
   return (
-    <header className="sticky top-0 z-10 min-h-[58px] border-b border-slate-200 bg-white px-3 py-2 dark:border-gdc-border dark:bg-gdc-panel md:px-6">
+    <header className="sticky top-0 z-10 min-h-[58px] sm:min-h-[69px] border-b border-slate-200 bg-white px-3 py-2 dark:border-gdc-border dark:bg-gdc-panel md:px-6">
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
         <div className="flex min-w-0 flex-1 items-start gap-2">
           {onMobileNavToggle ? (
@@ -95,33 +96,28 @@ export function TopHeader({
             className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-center sm:gap-x-4"
             {...(mobileNavOpen ? { inert: true } : {})}
           >
-            <div className="flex min-w-0 flex-1 flex-col gap-1">
+            {/* Content-sized title column: the heading keeps one line and truncates only as a last resort. */}
+            <div className="flex min-w-0 max-w-full flex-none flex-col gap-1">
               {breadcrumb ? (
                 <div className="min-w-0 text-xs leading-snug text-slate-500 dark:text-gdc-muted">{breadcrumb}</div>
               ) : null}
-              <h1 className="shrink-0 text-lg font-semibold text-slate-900 dark:text-gdc-foreground">
+              <h1 className="text-lg font-semibold text-slate-900 dark:text-gdc-foreground sm:truncate" title={title}>
                 {title}
               </h1>
             </div>
             <div className="hidden h-4 w-px shrink-0 bg-slate-200 dark:bg-gdc-border sm:block" aria-hidden />
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              {showRuntimeStatus ? <span
-                className={cn(
-                  'inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium',
-                  runtimeHealthy === true
-                    ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-100/90'
-                    : runtimeHealthy === false
-                      ? 'bg-amber-50 text-amber-900 dark:bg-amber-500/15 dark:text-amber-100/90'
-                      : 'bg-slate-100 text-slate-600 dark:bg-gdc-elevated dark:text-gdc-mutedStrong',
-                )}
-                aria-label="Runtime status"
-              >
-                <span
-                  className={cn('h-1.5 w-1.5 rounded-full', runtimeHealthy === true ? 'bg-emerald-500' : runtimeHealthy === false ? 'bg-amber-500' : 'bg-slate-400')}
-                  aria-hidden
-                />
-                {runtimeStatusLabel ?? (runtimeHealthy === true ? 'Healthy' : runtimeHealthy === false ? 'Attention' : 'Not verified')}
-              </span> : null}
+            {/* Wraps on phones; from sm up stays one row so the chip remains inline. Runtime text states
+                runtime truth (including "not verified" qualifiers), so it wraps and is never truncated. */}
+            <div className="flex min-w-0 flex-wrap items-center gap-2 sm:flex-1 sm:flex-nowrap">
+              {showRuntimeStatus ? (
+                <StatusChip
+                  status={runtimeHealthy === true ? 'healthy' : runtimeHealthy === false ? 'warning' : 'unknown'}
+                  className="shrink-0"
+                  aria-label="Runtime status"
+                >
+                  {runtimeStatusLabel ?? (runtimeHealthy === true ? 'Healthy' : runtimeHealthy === false ? 'Attention' : 'Not verified')}
+                </StatusChip>
+              ) : null}
               <div className="min-w-0 space-y-0.5">
                 <p className="text-xs leading-snug text-slate-600 dark:text-gdc-muted">{runtimeSummary}</p>
                 {showRuntimeStatus && runtimeStatusEvidence ? (

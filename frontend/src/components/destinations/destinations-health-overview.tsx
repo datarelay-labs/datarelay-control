@@ -3,15 +3,18 @@
  * Uses existing KPI math only; does not invent capacity/health semantics.
  */
 
-import { AlertTriangle, CheckCircle2, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, CircleHelp, XCircle } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import type { DestinationsKpi } from './destination-kpi-strip'
 
-type Posture = 'healthy' | 'warning' | 'critical'
+/** `unknown`: no active destination, or some active destination without a delivery verdict (never Healthy). */
+type Posture = 'healthy' | 'warning' | 'critical' | 'unknown'
 
 function postureFromKpi(kpi: DestinationsKpi): Posture {
+  // Critical and warning always win over unknown.
   if (kpi.criticalCount > 0 || kpi.deliveryFailures > 0) return 'critical'
   if (kpi.warningCount > 0 || kpi.capacityWarnings > 0 || kpi.totalAlerts > 0) return 'warning'
+  if (kpi.activeCount === 0 || kpi.healthyCount < kpi.activeCount) return 'unknown'
   return 'healthy'
 }
 
@@ -22,12 +25,16 @@ function postureShellClass(posture: Posture): string {
   if (posture === 'warning') {
     return 'border-amber-300/80 bg-amber-50 dark:border-amber-500/35 dark:bg-amber-950/25'
   }
+  if (posture === 'unknown') {
+    return 'border-slate-300/80 bg-slate-50 dark:border-gdc-border dark:bg-gdc-card'
+  }
   return 'border-emerald-300/80 bg-emerald-50 dark:border-emerald-500/35 dark:bg-emerald-950/25'
 }
 
 function postureLabel(posture: Posture): string {
   if (posture === 'critical') return 'Critical'
   if (posture === 'warning') return 'Warning'
+  if (posture === 'unknown') return 'Not verified'
   return 'Healthy'
 }
 
@@ -45,6 +52,10 @@ function postureDescription(kpi: DestinationsKpi, posture: Posture): string {
     return `${kpi.totalAlerts} active alert${kpi.totalAlerts === 1 ? '' : 's'} detected`
   }
   if (kpi.activeCount === 0) return 'No active destinations yet'
+  if (posture === 'unknown') {
+    const n = kpi.activeCount - kpi.healthyCount
+    return `${n} active destination${n === 1 ? '' : 's'} with no delivery verdict yet`
+  }
   return 'Destinations are operating within expected delivery posture'
 }
 
@@ -94,7 +105,14 @@ export function DestinationsHealthOverview({
   }
 
   const posture = postureFromKpi(kpi)
-  const Icon = posture === 'healthy' ? CheckCircle2 : posture === 'critical' ? XCircle : AlertTriangle
+  const Icon =
+    posture === 'healthy'
+      ? CheckCircle2
+      : posture === 'critical'
+        ? XCircle
+        : posture === 'unknown'
+          ? CircleHelp
+          : AlertTriangle
 
   return (
     <section
@@ -110,6 +128,7 @@ export function DestinationsHealthOverview({
               posture === 'healthy' && 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
               posture === 'warning' && 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
               posture === 'critical' && 'bg-red-500/15 text-red-700 dark:text-red-300',
+              posture === 'unknown' && 'bg-slate-500/15 text-slate-700 dark:text-slate-300',
             )}
           >
             <Icon className="h-5 w-5" aria-hidden />

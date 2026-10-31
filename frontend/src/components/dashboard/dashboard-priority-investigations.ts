@@ -1,5 +1,14 @@
-import type { OperationalHealthStatus, OperationalSnapshotResponse } from '../../api/operationalSnapshot'
-import { destinationDetailPath, logsExplorerPath, streamRuntimePath } from '../../config/nav-paths'
+import type {
+  OperationalHealthStatus,
+  OperationalProblem,
+  OperationalSnapshotResponse,
+} from '../../api/operationalSnapshot'
+import {
+  connectorDetailPath,
+  destinationDetailPath,
+  logsExplorerPath,
+  streamRuntimePath,
+} from '../../config/nav-paths'
 
 export type DashboardInvestigation = {
   key: string
@@ -8,6 +17,8 @@ export type DashboardInvestigation = {
   reason: string
   severity: 'critical' | 'warning'
   href: string
+  /** Present for Source/auth failures: the Connector the failing Stream reads through. */
+  connector?: { name: string; href: string | null }
 }
 
 const isValidId = (id: number | null | undefined): id is number =>
@@ -17,6 +28,31 @@ function issueReason(health: OperationalHealthStatus, problemTitle?: string): st
   const reason = problemTitle?.trim()
   if (reason) return reason
   return health === 'ERROR' ? 'Health error reported' : 'Health degraded'
+}
+
+function isSourceProblem(problem: OperationalProblem | undefined): problem is OperationalProblem {
+  const code = problem?.error_code
+  return code === 'SOURCE_AUTH_FAILED' || code === 'SOURCE_FETCH_FAILED'
+}
+
+function sourceReason(problem: OperationalProblem): string {
+  const status = typeof problem.http_status === 'number' ? ` (HTTP ${problem.http_status})` : ''
+  if (problem.error_code === 'SOURCE_AUTH_FAILED') {
+    return problem.http_status === 403
+      ? `Source access denied${status}`
+      : `Source authentication failed${status}`
+  }
+  return `Source fetch failing${status}`
+}
+
+function sourceConnector(problem: OperationalProblem): DashboardInvestigation['connector'] {
+  const name = problem.connector_name?.trim()
+  const id = problem.connector_id
+  if (!name && !isValidId(id)) return undefined
+  return {
+    name: name || `Connector #${id}`,
+    href: isValidId(id) ? connectorDetailPath(String(id)) : null,
+  }
 }
 
 function needsAttention(health: OperationalHealthStatus, hasProblem: boolean): boolean {
@@ -37,13 +73,17 @@ export function dashboardPriorityInvestigations(
 
   for (const stream of snapshot.streams ?? []) {
     if (!isValidId(stream.stream_id) || !stream.enabled) continue
-    const problem = problems.find((p) => p.scope === 'stream' && p.stream_id === stream.stream_id)
+    const streamProblems = problems.filter((p) => p.scope === 'stream' && p.stream_id === stream.stream_id)
+    // A Source/auth failure names the cause and the Connector, so it leads over generic problems.
+    const sourceProblem = streamProblems.find(isSourceProblem)
+    const problem = sourceProblem ?? streamProblems[0]
     if (!needsAttention(stream.health_status, problem != null)) continue
     result.push({
       key: `stream-${stream.stream_id}`,
       kind: 'Stream',
       resource: stream.stream_name?.trim() || `Stream #${stream.stream_id}`,
-      reason: issueReason(stream.health_status, problem?.title),
+      reason: sourceProblem ? sourceReason(sourceProblem) : issueReason(stream.health_status, problem?.title),
+      ...(sourceProblem ? { connector: sourceConnector(sourceProblem) } : {}),
       severity: stream.health_status === 'ERROR' || problem?.severity === 'critical' ? 'critical' : 'warning',
       href: streamRuntimePath(String(stream.stream_id)),
     })

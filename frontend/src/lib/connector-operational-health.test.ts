@@ -3,6 +3,9 @@ import type { ConnectorRead } from '../api/gdcConnectors'
 import type { ConnectorOperationsRow } from '../api/gdcConnectorsOperations'
 import {
   computeConnectorHealth,
+  connectorHealthBadgeClass,
+  connectorHealthSortRank,
+  connectorHealthTone,
   connectorTierFromCriticalStreams,
   dataFreshnessReason,
   formatAuthHealthCheckStatus,
@@ -137,6 +140,22 @@ describe('computeConnectorHealth', () => {
       health: 'Critical',
       reason: 'Authentication Failed',
     })
+  })
+
+  it('reads Not verified (neutral), never Healthy/Auth OK, when no operations summary was loaded', () => {
+    const connector = baseConnector({ last_auth_check_status: 'success' })
+    expect(computeConnectorHealth(connector, undefined)).toEqual({
+      health: 'Not verified',
+      reason: 'Operations summary not available',
+    })
+    expect(connectorHealthTone('Not verified')).toBe('neutral')
+    expect(connectorHealthBadgeClass('Not verified')).toContain('slate')
+    expect(connectorHealthSortRank('Not verified')).toBeGreaterThan(connectorHealthSortRank('Healthy'))
+  })
+
+  it('keeps an auth failure Critical even without an operations summary', () => {
+    const connector = baseConnector({ last_auth_check_status: 'failed', last_auth_error: '401' })
+    expect(computeConnectorHealth(connector, undefined).health).toBe('Critical')
   })
 
   it('marks stopped connectors as Stopped', () => {

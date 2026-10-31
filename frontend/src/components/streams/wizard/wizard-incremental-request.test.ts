@@ -2,15 +2,18 @@ import { describe, expect, it } from 'vitest'
 import {
   applyIncrementalRequestTemplate,
   availableIncrementalPatterns,
+  buildApiTestCheckpointPayload,
   buildIncrementalRequestPlan,
   buildIncrementalRequestTestSignature,
   calculateIncrementalRequestTestCheckpoint,
   collectCheckpointValuesForIncrementalTest,
   collectCheckpointValuesFromEventSource,
   coerceCheckpointScalarValue,
+  countRecordsNewerThanTestCheckpoint,
   facetNameFromCheckpointPath,
   incrementalPatternDisplayLabel,
   incrementalPreviewKind,
+  incrementalTemplateDefaults,
   incrementalPreviewKindLabel,
   inferIncrementalRequestPattern,
   incrementalRequestTestWarning,
@@ -154,6 +157,41 @@ describe('calculateIncrementalRequestTestCheckpoint', () => {
     expect(calculateIncrementalRequestTestCheckpoint(values, 'TIMESTAMP')).toMatchObject({
       kind: 'ok',
       usedFallback: true,
+    })
+  })
+
+  it('keeps the raw ISO checkpoint for the API test request (runtime parity)', () => {
+    const values = ['2026-10-29T12:00:00Z', '2026-10-29T12:01:00Z', '2026-10-29T12:02:00Z']
+    const result = calculateIncrementalRequestTestCheckpoint(values, 'TIMESTAMP')
+    expect(result).toMatchObject({
+      kind: 'ok',
+      value: Date.parse('2026-10-29T12:01:00Z'),
+      requestValue: '2026-10-29T12:01:00Z',
+      displayValue: '2026-10-29T12:01:00Z',
+      usedFallback: false,
+      valueKind: 'timestamp',
+    })
+    if (result.kind !== 'ok') throw new Error('expected ok')
+    expect(buildApiTestCheckpointPayload(result)).toEqual({
+      last_timestamp: '2026-10-29T12:01:00Z',
+      last_timestamp_ms: String(Date.parse('2026-10-29T12:01:00Z')),
+    })
+  })
+
+  it('formats the one-hour fallback in the sample checkpoint representation', () => {
+    expect(calculateIncrementalRequestTestCheckpoint(['2026-10-29T12:01:00Z'], 'TIMESTAMP')).toMatchObject({
+      kind: 'ok',
+      usedFallback: true,
+      requestValue: '2026-10-29T11:01:00Z',
+    })
+    expect(calculateIncrementalRequestTestCheckpoint(['2026-10-29T12:01:00.250Z'], 'TIMESTAMP')).toMatchObject({
+      requestValue: '2026-10-29T11:01:00.250Z',
+    })
+    expect(calculateIncrementalRequestTestCheckpoint([1_700_000_000], 'TIMESTAMP')).toMatchObject({
+      requestValue: String(1_700_000_000 - 3600),
+    })
+    expect(calculateIncrementalRequestTestCheckpoint([1_700_000_000_000], 'TIMESTAMP')).toMatchObject({
+      requestValue: String(1_700_000_000_000 - 3_600_000),
     })
   })
 
@@ -588,7 +626,89 @@ describe('incrementalRequestTestWarning', () => {
   })
 })
 
+// New helper (did not exist on old code): the incremental Test verdict depends on it.
+describe('countRecordsNewerThanTestCheckpoint', () => {
+  const tsTest = calculateIncrementalRequestTestCheckpoint(
+    ['2026-10-29T11:00:00Z', '2026-10-29T12:00:00Z'],
+    'TIMESTAMP',
+  )
+
+  it('counts only values strictly newer than the tested timestamp', () => {
+    if (tsTest.kind !== 'ok') throw new Error('expected ok checkpoint')
+    expect(
+      countRecordsNewerThanTestCheckpoint(
+        ['2026-10-29T10:00:00Z', '2026-10-29T11:00:00Z', '2026-10-29T11:30:00Z', 1793275201000],
+        tsTest,
+      ),
+    ).toBe(2)
+  })
+
+  it('returns 0 when every returned value is at or before the checkpoint', () => {
+    if (tsTest.kind !== 'ok') throw new Error('expected ok checkpoint')
+    expect(countRecordsNewerThanTestCheckpoint(['2026-10-29T10:00:00Z', '2026-10-29T11:00:00Z'], tsTest)).toBe(0)
+  })
+
+  it('returns null when nothing is comparable', () => {
+    if (tsTest.kind !== 'ok') throw new Error('expected ok checkpoint')
+    expect(countRecordsNewerThanTestCheckpoint([undefined, null, '', { nested: true }], tsTest)).toBeNull()
+  })
+
+  it('compares numeric checkpoints numerically', () => {
+    const numTest = calculateIncrementalRequestTestCheckpoint([10, 20], 'OFFSET')
+    if (numTest.kind !== 'ok') throw new Error('expected ok checkpoint')
+    expect(countRecordsNewerThanTestCheckpoint([5, 10, 15], numTest)).toBe(1)
+  })
+})
+
 describe('applyIncrementalRequestTemplate', () => {
+  // C5: the old merge let the generated template limit=100 overwrite the user's limit=20.
+  it('keeps a user-entered query param over the untouched template default', () => {
+    const defaults = incrementalTemplateDefaults('query_params', '$.creationTime')
+    expect(defaults?.params?.limit).toBe('100')
+    const draft = buildIncrementalRequestPlan('query_params', '$.creationTime')?.preview ?? ''
+    const merged = applyIncrementalRequestTemplate(
+      { method: 'GET', params: { limit: '20' } },
+      'query_params',
+      draft,
+      defaults,
+    )
+    expect(merged.params.limit).toBe('20')
+    expect(merged.params.creationTime_gt).toBe('{{checkpoint.last_timestamp}}')
+  })
+
+  it('applies the template default when the user has not set the param', () => {
+    const merged = applyIncrementalRequestTemplate(
+      { method: 'GET', params: {} },
+      'query_params',
+      buildIncrementalRequestPlan('query_params', '$.creationTime')?.preview ?? '',
+      incrementalTemplateDefaults('query_params', '$.creationTime'),
+    )
+    expect(merged.params.limit).toBe('100')
+  })
+
+  it('lets a value the user edited in the draft win over the request', () => {
+    const merged = applyIncrementalRequestTemplate(
+      { method: 'GET', params: { limit: '20' } },
+      'query_params',
+      'creationTime_gt={{checkpoint.last_timestamp}}\nlimit=50',
+      incrementalTemplateDefaults('query_params', '$.creationTime'),
+    )
+    expect(merged.params.limit).toBe('50')
+  })
+
+  it('keeps a user-entered JSON body limit over the untouched template default', () => {
+    const defaults = incrementalTemplateDefaults('json_body', '$.creationTime')
+    const merged = applyIncrementalRequestTemplate(
+      { method: 'POST', params: {}, body: '{"limit":20}' },
+      'json_body',
+      defaults?.body ?? '',
+      defaults,
+    )
+    const body = JSON.parse(merged.body ?? '{}')
+    expect(body.limit).toBe(20)
+    expect(body.from).toBe('{{checkpoint.last_timestamp}}')
+  })
+
   it('keeps template placeholders in saved stream body', () => {
     const draft = JSON.stringify({
       from: '{{checkpoint.last_timestamp}}',

@@ -6,6 +6,7 @@ import {
   buildDestinationRouteMetrics,
   formatFlowEps,
   formatFlowSuccessRate,
+  type RouteEvidenceState,
 } from './routes-flow-helpers'
 import type { OperationalSnapshotResponse } from '../../api/operationalSnapshot'
 import type { RouteConsoleRow } from './routes-overview-helpers'
@@ -13,9 +14,10 @@ import type { RouteConsoleRow } from './routes-overview-helpers'
 export type RoutesDestinationMetricsPanelProps = {
   snapshot: OperationalSnapshotResponse | null
   consoleRows: readonly RouteConsoleRow[]
+  evidenceState?: RouteEvidenceState
 }
 
-export function RoutesDestinationMetricsPanel({ snapshot, consoleRows }: RoutesDestinationMetricsPanelProps) {
+export function RoutesDestinationMetricsPanel({ snapshot, consoleRows, evidenceState = 'current' }: RoutesDestinationMetricsPanelProps) {
   const rows = buildDestinationRouteMetrics(snapshot, consoleRows)
 
   return (
@@ -25,7 +27,11 @@ export function RoutesDestinationMetricsPanel({ snapshot, consoleRows }: RoutesD
     >
       <div className="border-b border-slate-200/80 px-3 py-2 dark:border-gdc-border">
         <h3 className="text-[13px] font-semibold text-slate-900 dark:text-slate-100">Route Metrics by Destination</h3>
-        <p className="text-[11px] text-slate-500 dark:text-gdc-muted">Aggregated delivery across connected routes</p>
+        <p className="text-[11px] text-slate-500 dark:text-gdc-muted">
+          {evidenceState === 'current' ? 'Aggregated delivery across connected routes'
+            : evidenceState === 'stale' ? 'Last reported destination metrics · current delivery unverified'
+              : 'Destination metrics unavailable · no verified runtime snapshot'}
+        </p>
       </div>
       <div className="overflow-x-auto">
         <table className={opTable}>
@@ -41,7 +47,9 @@ export function RoutesDestinationMetricsPanel({ snapshot, consoleRows }: RoutesD
             {rows.length === 0 ? (
               <tr className={opTr}>
                 <td className={cn(opTd, 'py-6 text-center text-[12px] text-slate-500')} colSpan={4}>
-                  No destination delivery activity yet.
+                  {evidenceState === 'unavailable' ? 'Destination delivery not verified · runtime snapshot unavailable.'
+                    : evidenceState === 'stale' ? 'No activity in last reported snapshot · current delivery unverified.'
+                      : 'No destination delivery activity yet.'}
                 </td>
               </tr>
             ) : (

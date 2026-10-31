@@ -64,7 +64,7 @@ export function StreamIssueRail({
             className={cn(
               'rounded-full border px-2 py-0.5 text-[10px] font-semibold',
               hasIssue
-                ? 'border-amber-300/80 bg-amber-50 text-amber-900 dark:border-amber-500/35 dark:bg-amber-500/10 dark:text-amber-100'
+                ? 'border-status-warning-border bg-status-warning-subtle text-status-warning'
                 : verifiedHealthy
                   ? 'border-emerald-300/80 bg-emerald-50 text-emerald-900 dark:border-emerald-500/35 dark:bg-emerald-500/10 dark:text-emerald-100'
                   : 'border-slate-300/80 bg-slate-50 text-slate-700 dark:border-slate-500/35 dark:bg-slate-500/10 dark:text-slate-200',
@@ -98,7 +98,7 @@ export function StreamIssueRail({
           <ul className="mt-2 space-y-1">
             {ctx.recentErrors.slice(0, 2).map((err, i) => (
               <li key={`${err.message}-${i}`} className="flex items-start gap-1.5 text-[11px] text-slate-600 dark:text-gdc-muted">
-                <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-600" aria-hidden />
+                <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-status-warning" aria-hidden />
                 <span>{err.message}</span>
               </li>
             ))}

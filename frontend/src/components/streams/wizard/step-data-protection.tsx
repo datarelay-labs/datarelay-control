@@ -29,6 +29,11 @@ export type StepDataProtectionProps = {
   state: WizardState
   onChange: (patch: Partial<WizardDataProtectionState>) => void
   section?: 'full' | 'schema-drift'
+  /**
+   * Shared (stream-level) intents used for Routes that inherit protection. Defaults to
+   * state.dataProtection.intents; set it when `state` is scoped to one Route's override.
+   */
+  sharedIntents?: readonly WizardDataProtectionIntent[]
 }
 
 const PROTECTION_ACTIONS: ReadonlyArray<{ value: WizardProtectionAction; label: string }> = [
@@ -75,10 +80,12 @@ function RouteOverridesSection({
   intent,
   state,
   onChange,
+  sharedIntents,
 }: {
   intent: WizardDataProtectionIntent
   state: WizardState
   onChange: (patch: Partial<WizardDataProtectionState>) => void
+  sharedIntents?: readonly WizardDataProtectionIntent[]
 }) {
   const fieldPath = normalizeWizardDetectedField(intent.detectedField)
   const routeDrafts = state.destinations.routeDrafts
@@ -94,24 +101,41 @@ function RouteOverridesSection({
     return labels
   }, [routeDrafts])
 
+  // Each Route resolves the field from its own configuration: its Route Protection override when
+  // it has one, otherwise the shared intents (not the intent of the panel being edited).
+  const sharedAction = (sharedIntents ?? state.dataProtection.intents).find(
+    (candidate) => normalizeWizardDetectedField(candidate.detectedField) === fieldPath,
+  )?.protectionAction
+
   const previewRoutes = useMemo(
     () =>
-      routeDrafts.map((draft, index) => ({
-        routeDraftKey: draft.key,
-        label: routeLabels.get(draft.key) ?? `Route ${index + 1}`,
-      })),
-    [routeDrafts, routeLabels],
+      routeDrafts.map((draft, index) => {
+        const ownIntents =
+          draft.inherit?.protection === false ? draft.overrides?.protection?.intents : undefined
+        const effectiveAction = ownIntents
+          ? ownIntents.find((candidate) => normalizeWizardDetectedField(candidate.detectedField) === fieldPath)
+              ?.protectionAction ?? null
+          : sharedAction === undefined
+            ? null
+            : undefined
+        return {
+          routeDraftKey: draft.key,
+          label: routeLabels.get(draft.key) ?? `Route ${index + 1}`,
+          effectiveAction,
+        }
+      }),
+    [routeDrafts, routeLabels, fieldPath, sharedAction],
   )
 
   const effectivePreview = useMemo(() => {
     if (!fieldPath || previewRoutes.length === 0) return null
     return computeRouteProtectionEffectivePreview({
       fieldPath,
-      defaultAction: intent.protectionAction,
+      defaultAction: sharedAction ?? intent.protectionAction,
       routeOverrides: state.dataProtection.routeOverrides,
       routes: previewRoutes,
     })
-  }, [fieldPath, previewRoutes, intent.protectionAction, state.dataProtection.routeOverrides])
+  }, [fieldPath, previewRoutes, sharedAction, intent.protectionAction, state.dataProtection.routeOverrides])
 
   const updateOverrides = (next: WizardRouteProtectionOverride[]) => {
     const other = state.dataProtection.routeOverrides.filter(
@@ -275,8 +299,9 @@ function RouteOverridesSection({
           <ul className="mt-1 space-y-0.5 text-[10px] text-slate-600 dark:text-gdc-muted">
             {effectivePreview.perRoute.map((entry) => (
               <li key={entry.routeDraftKey}>
-                {entry.routeLabel}: {protectionActionLabel(entry.protectionAction)}
-                {entry.source === 'override' ? ' (override)' : ' (default)'}
+                {entry.routeLabel}:{' '}
+                {entry.protectionAction ? protectionActionLabel(entry.protectionAction) : 'Not protected'}
+                {entry.source === 'override' ? ' (override)' : entry.source === 'route' ? ' (route)' : ' (default)'}
               </li>
             ))}
           </ul>
@@ -344,7 +369,7 @@ function SchemaDriftPolicyOptionGroup<T extends string>({
   )
 }
 
-export function StepDataProtection({ state, onChange, section = 'full' }: StepDataProtectionProps) {
+export function StepDataProtection({ state, onChange, section = 'full', sharedIntents }: StepDataProtectionProps) {
   const candidates = useMemo(() => collectWizardDetectedFieldCandidates(state), [state])
   const likelySensitive = useMemo(() => suggestLikelySensitiveFieldsFromState(state), [state])
   const preview = useMemo(() => buildDataProtectionPersistPreview(state.dataProtection), [state.dataProtection])
@@ -575,7 +600,12 @@ export function StepDataProtection({ state, onChange, section = 'full' }: StepDa
                       Category: {sensitivityClassLabel(sensitivityClass)}
                     </p>
                   ) : null}
-                  <RouteOverridesSection intent={intent} state={state} onChange={onChange} />
+                  <RouteOverridesSection
+                    intent={intent}
+                    state={state}
+                    onChange={onChange}
+                    sharedIntents={sharedIntents}
+                  />
                 </div>
               )
             })}

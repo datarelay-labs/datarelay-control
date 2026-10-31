@@ -94,6 +94,77 @@ describe('NewConnectorWizardPage', () => {
     expect(screen.getByRole('button', { name: 'Save Connector' })).toBeEnabled()
   })
 
+  describe('API key connector save (F-002)', () => {
+    async function fillBasics(user: ReturnType<typeof userEvent.setup>) {
+      await user.type(screen.getByLabelText('Connector Name *'), 'Keyed source')
+      await user.type(screen.getByLabelText('Host / Base URL *'), 'https://example.net')
+      await user.selectOptions(screen.getByLabelText('Authentication Type'), 'api_key')
+    }
+
+    it('commits the displayed default API Key Location so Save is accepted without touching the select', async () => {
+      vi.mocked(createConnector).mockClear()
+      const user = userEvent.setup()
+      const onCreated = vi.fn()
+      render(<MemoryRouter><NewConnectorWizardPage onCreated={onCreated} /></MemoryRouter>)
+      await fillBasics(user)
+      expect(screen.getByLabelText('API Key Location')).toHaveValue('headers')
+      await user.type(screen.getByLabelText('API Key Name'), 'X-Api-Key')
+      await user.type(screen.getByLabelText('API Key Value'), 'abc123')
+      await user.click(screen.getByRole('button', { name: 'Save Connector' }))
+
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(createConnector).toHaveBeenCalledWith(
+        expect.objectContaining({ auth_type: 'api_key', api_key_location: 'headers', api_key_name: 'X-Api-Key' }),
+      )
+      expect(onCreated).toHaveBeenCalledWith(1)
+    })
+
+    it('keeps the operator-chosen query_params location', async () => {
+      vi.mocked(createConnector).mockClear()
+      const user = userEvent.setup()
+      render(<MemoryRouter><NewConnectorWizardPage onCreated={vi.fn()} /></MemoryRouter>)
+      await fillBasics(user)
+      await user.selectOptions(screen.getByLabelText('API Key Location'), 'query_params')
+      await user.type(screen.getByLabelText('API Key Name'), 'api_key')
+      await user.type(screen.getByLabelText('API Key Value'), 'abc123')
+      await user.click(screen.getByRole('button', { name: 'Save Connector' }))
+      expect(createConnector).toHaveBeenCalledWith(expect.objectContaining({ api_key_location: 'query_params' }))
+    })
+
+    it('shows a validation error beside Save, focused, instead of at the top of the form', async () => {
+      Element.prototype.scrollIntoView = vi.fn()
+      const user = userEvent.setup()
+      render(<MemoryRouter><NewConnectorWizardPage onCreated={vi.fn()} /></MemoryRouter>)
+      await fillBasics(user)
+      await user.click(screen.getByRole('button', { name: 'Save Connector' }))
+
+      const alert = await screen.findByRole('alert')
+      expect(alert).toHaveTextContent('API key name and value are required.')
+      expect(alert).toHaveFocus()
+      const save = screen.getByRole('button', { name: 'Save Connector' })
+      const authFields = screen.getByLabelText('API Key Name')
+      // Document order: auth fields, then the error, then the Save action.
+      expect(authFields.compareDocumentPosition(alert) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(alert.compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(Element.prototype.scrollIntoView).toHaveBeenCalled()
+    })
+  })
+
+  it('shows a rejected save without the HTTP status or internal error code (F-004)', async () => {
+    Element.prototype.scrollIntoView = vi.fn()
+    vi.mocked(createConnector).mockRejectedValueOnce(
+      new Error('422: [CONNECTOR_VALIDATION_FAILED] Login base URL must not include a path.'),
+    )
+    const user = userEvent.setup()
+    render(<MemoryRouter><NewConnectorWizardPage onCreated={vi.fn()} /></MemoryRouter>)
+    await user.type(screen.getByLabelText('Connector Name *'), 'Session source')
+    await user.type(screen.getByLabelText('Host / Base URL *'), 'https://example.net')
+    await user.click(screen.getByRole('button', { name: 'Save Connector' }))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Login base URL must not include a path.')
+    expect(alert.textContent).not.toMatch(/422|CONNECTOR_VALIDATION_FAILED/)
+  })
+
   it('shows required validation before save', async () => {
     const user = userEvent.setup()
     render(

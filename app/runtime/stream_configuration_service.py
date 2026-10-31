@@ -16,6 +16,7 @@ from app.backfill.schemas import BackfillReplayRequest
 from app.backfill import service as backfill_service
 from app.checkpoints.models import Checkpoint
 from app.checkpoints.repository import get_checkpoint_by_stream_id, upsert_checkpoint
+from app.checkpoints.route_delivery_state import strip_route_delivery_state
 from app.connectors.models import Connector
 from app.destinations.repository import get_destination_by_id
 from app.enrichments.models import Enrichment
@@ -23,11 +24,12 @@ from app.logs.models import DeliveryLog
 from app.mappings.models import Mapping
 from app.protection.operator_workflow import list_protection_rules
 from app.routes.models import Route
-from app.runtime.copy_utils import slim_checkpoint_for_log
+from app.runtime.copy_utils import checkpoint_read_view, slim_checkpoint_for_log
 from app.runtime.preview_service import run_http_api_test
 from app.http.shared_request_builder import build_shared_http_request
 from app.runtime.incremental_fetch import (
     build_fetch_window,
+    count_records_newer_than_checkpoint,
     get_incremental_display_state,
     normalize_incremental_fetch_config,
     parse_incremental_fetch_config,
@@ -134,7 +136,8 @@ def _auth_type_label(auth_json: dict[str, Any]) -> str:
 def _checkpoint_display(checkpoint: dict[str, Any] | None) -> str:
     if not checkpoint:
         return NOT_CONFIGURED
-    preview = slim_checkpoint_for_log(checkpoint) or checkpoint
+    # Never fall back to the raw checkpoint: it may hold a full delivered event.
+    preview = slim_checkpoint_for_log(checkpoint) or {}
     return _display_json(preview)
 
 
@@ -382,7 +385,7 @@ def get_stream_configuration(db: Session, stream_id: int) -> StreamConfiguration
     auth_json = mask_secrets(dict(source.auth_json or {})) if source is not None else {}
     rate_limit = dict(stream.rate_limit_json or {})
 
-    checkpoint_value = (
+    checkpoint_value = strip_route_delivery_state(
         dict(checkpoint_row.checkpoint_value_json or {})
         if checkpoint_row is not None and isinstance(checkpoint_row.checkpoint_value_json, dict)
         else None
@@ -647,11 +650,29 @@ def _sample_data_from_config(cfg: dict[str, Any], mapping: Mapping | None) -> St
             sample_blob.get("record_path")
             or (mapping.event_array_path if mapping is not None else None)
         ),
-        checkpoint_test_result=incremental.get("checkpoint_test_result") if incremental else None,
+        # Rows stored before the reduction may still hold raw events: reduce on read too.
+        checkpoint_test_result=(
+            _reduced_checkpoint_test_result(incremental.get("checkpoint_test_result")) if incremental else None
+        ),
         incremental_test_result=incremental.get("result") if incremental else None,
         saved_at=sample_blob.get("saved_at"),
         message="Sample data loaded successfully" if (events or union_schema or last_test) else "No sample data saved yet",
     )
+
+
+def _reduced_checkpoint_test_result(value: Any) -> Any:
+    """Incremental test copy kept in stream config: checkpoints as read views (no raw events).
+
+    The real stream checkpoint is never read from or written through this copy.
+    """
+
+    if not isinstance(value, dict):
+        return value
+    out = copy.deepcopy(value)
+    for key in ("input_checkpoint", "next_checkpoint_preview"):
+        if isinstance(out.get(key), dict):
+            out[key] = checkpoint_read_view(out[key])
+    return out
 
 
 def get_stream_sample_data(db: Session, stream_id: int) -> StreamSampleDataResponse:
@@ -688,7 +709,7 @@ def save_stream_sample_data(db: Session, stream_id: int, payload: StreamSampleDa
         if payload.incremental_test_result is not None:
             inc_blob["result"] = copy.deepcopy(payload.incremental_test_result)
         if payload.checkpoint_test_result is not None:
-            inc_blob["checkpoint_test_result"] = copy.deepcopy(payload.checkpoint_test_result)
+            inc_blob["checkpoint_test_result"] = _reduced_checkpoint_test_result(payload.checkpoint_test_result)
         inc_blob["tested_at"] = _utcnow().isoformat()
         cfg[_INCREMENTAL_TEST_KEY] = inc_blob
 
@@ -821,7 +842,7 @@ def get_stream_incremental_fetch(db: Session, stream_id: int) -> StreamIncrement
         framework_enabled=parsed.framework_enabled,
         fetch_watermark=display.fetch_watermark,
         connector_cursor=display.connector_cursor,
-        delivery_checkpoint=display.delivery_checkpoint,
+        delivery_checkpoint=checkpoint_read_view(display.delivery_checkpoint) or None,
         last_fetch_at=display.last_fetch_at,
         last_delivery_at=display.last_delivery_at,
         fetch_window=(
@@ -879,7 +900,7 @@ def run_stream_incremental_test(
     cfg = dict(stream.config_json or {})
     checkpoint_override = payload.checkpoint_override
     if checkpoint_override is None and checkpoint_row is not None:
-        checkpoint_override = (
+        checkpoint_override = strip_route_delivery_state(
             dict(checkpoint_row.checkpoint_value_json)
             if isinstance(checkpoint_row.checkpoint_value_json, dict)
             else None
@@ -899,10 +920,11 @@ def run_stream_incremental_test(
     if payload.request_body is not None:
         stream_config["body"] = payload.request_body
 
+    request_checkpoint = fetch_ctx if inc_config.framework_enabled else checkpoint_override
     test_req = HttpApiTestRequest(
         source_config=dict(source.config_json or {}),
         stream_config=stream_config,
-        checkpoint=fetch_ctx if inc_config.framework_enabled else checkpoint_override,
+        checkpoint=request_checkpoint,
         connector_id=int(stream.connector_id),
         fetch_sample=True,
     )
@@ -941,6 +963,14 @@ def run_stream_incremental_test(
         events.append(result.analysis.sample_event)
 
     fetched_count = len(events)
+    # A successful request that only returns records at or before the checkpoint does not prove the incremental
+    # filter works (the runtime would not advance), so report it as a warning instead of plain success.
+    newer_record_count = count_records_newer_than_checkpoint(
+        events, checkpoint=request_checkpoint, stream_config=stream_config
+    )
+    no_newer_records = bool(result.ok) and fetched_count > 0 and newer_record_count == 0
+    test_status = "error" if not result.ok else ("warning" if no_newer_records else "success")
+    warning_code = "NO_NEWER_RECORDS" if no_newer_records else None
     dedup_events, dedup_summary = apply_stream_dedup(
         events,
         stream_config=cfg,
@@ -961,12 +991,23 @@ def run_stream_incremental_test(
 
     unchanged = checkpoint_unchanged(db, stream_id, before_checkpoint)
 
+    if no_newer_records:
+        message = (
+            f"Incremental test returned {fetched_count} record(s), but none is newer than the checkpoint. "
+            "Verify the request applies the checkpoint filter before relying on it."
+        )
+    else:
+        message = str(result.message or ("Incremental test completed" if result.ok else "Incremental test failed"))
+
     inc_blob = cfg.get(_INCREMENTAL_TEST_KEY)
     inc_store: dict[str, Any] = copy.deepcopy(inc_blob) if isinstance(inc_blob, dict) else {}
     inc_store["result"] = {
         "ok": bool(result.ok),
+        "status": test_status,
+        "warning_code": warning_code,
+        "newer_record_count": newer_record_count,
         "http_status": result.response.status_code if result.response is not None else None,
-        "message": result.message,
+        "message": message if no_newer_records else result.message,
         "returned_record_count": len(events),
         "substituted_request_body": (
             result.actual_request_sent.json_body_masked
@@ -974,11 +1015,13 @@ def run_stream_incremental_test(
             else None
         ),
     }
-    inc_store["checkpoint_test_result"] = {
-        "input_checkpoint": checkpoint_override,
-        "next_checkpoint_preview": next_checkpoint_preview,
-        "checkpoint_unchanged": unchanged,
-    }
+    inc_store["checkpoint_test_result"] = _reduced_checkpoint_test_result(
+        {
+            "input_checkpoint": checkpoint_override,
+            "next_checkpoint_preview": next_checkpoint_preview,
+            "checkpoint_unchanged": unchanged,
+        }
+    )
     inc_store["tested_at"] = _utcnow().isoformat()
     cfg[_INCREMENTAL_TEST_KEY] = inc_store
     stream.config_json = cfg
@@ -989,9 +1032,17 @@ def run_stream_incremental_test(
         stream_id=int(stream.id),
         ok=bool(result.ok),
         http_status=result.response.status_code if result.response is not None else None,
-        message=str(result.message or ("Incremental test completed" if result.ok else "Incremental test failed")),
+        message=message,
+        status=test_status,
+        warning_code=warning_code,
+        newer_record_count=newer_record_count,
         preview_events=events[:10],
-        next_checkpoint_preview=next_checkpoint_preview,
+        # Without fetched events this is the stored checkpoint; expose only its read view.
+        next_checkpoint_preview=(
+            checkpoint_read_view(next_checkpoint_preview)
+            if isinstance(next_checkpoint_preview, dict)
+            else next_checkpoint_preview
+        ),
         checkpoint_unchanged=unchanged,
         substituted_request_body=(
             json.dumps(result.actual_request_sent.json_body_masked, default=str)
@@ -1009,7 +1060,7 @@ def run_stream_incremental_test(
         watermark_field=inc_display.watermark_field,
         cursor_field=inc_display.cursor_field,
         fetch_watermark=inc_display.fetch_watermark,
-        delivery_checkpoint=inc_display.delivery_checkpoint,
+        delivery_checkpoint=checkpoint_read_view(inc_display.delivery_checkpoint) or None,
         stability_lag_seconds=inc_display.stability_lag_seconds,
         fetch_window=fetch_window_dict,
         query_preview=query_preview,
@@ -1240,8 +1291,10 @@ def get_stream_checkpoint_manage(db: Session, stream_id: int) -> StreamCheckpoin
     stream_id_out = int(stream.id)
     stream_cfg = dict(stream.config_json or {})
     checkpoint_type = str(checkpoint_row.checkpoint_type) if checkpoint_row is not None else None
+    # Read view: per-Route delivery fingerprints become per-Route counts and raw delivered
+    # events become an id/timestamp preview (the stored checkpoint is unchanged).
     value = (
-        copy.deepcopy(checkpoint_row.checkpoint_value_json)
+        checkpoint_read_view(checkpoint_row.checkpoint_value_json)
         if checkpoint_row is not None and isinstance(checkpoint_row.checkpoint_value_json, dict)
         else None
     )

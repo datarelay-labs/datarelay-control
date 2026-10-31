@@ -64,7 +64,7 @@ export function StreamInformationPanel({
   if (currentCheckpoint) {
     rows.push({
       label: 'Current Checkpoint',
-      value: <span className="font-mono text-[11px]">{currentCheckpoint}</span>,
+      value: <span className="whitespace-pre-line font-mono text-[11px]">{currentCheckpoint}</span>,
     })
   }
   if (checkpointUpdated) rows.push({ label: 'Checkpoint Updated', value: checkpointUpdated })

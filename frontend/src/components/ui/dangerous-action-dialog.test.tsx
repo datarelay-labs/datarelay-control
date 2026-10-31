@@ -110,4 +110,23 @@ describe('DangerousActionDialog', () => {
     await user.keyboard('{Escape}')
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
+
+  it('renders the error with a readable light/dark text pair on the white panel', () => {
+    render(
+      <DangerousActionDialog
+        open
+        onOpenChange={() => {}}
+        title="Delete route?"
+        primaryLabel="Delete route"
+        error="Delete failed"
+        onConfirm={() => {}}
+      />,
+    )
+
+    const error = screen.getByTestId('dangerous-action-dialog-error')
+    expect(error).toHaveTextContent('Delete failed')
+    // The near-white criticalFg token is unreadable on the light (bg-white) panel.
+    expect(error).not.toHaveClass('text-gdc-criticalFg')
+    expect(error).toHaveClass('text-red-700', 'dark:text-red-300')
+  })
 })

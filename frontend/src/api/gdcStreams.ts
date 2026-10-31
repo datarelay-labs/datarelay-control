@@ -6,22 +6,19 @@ import {
   safeRequestJsonResult,
   type GdcJsonResult,
 } from '../api'
-import { CATALOG_LIST_CACHE_TTL_MS, CATALOG_STREAMS_LIST_KEY } from './catalogListCache'
+import {
+  CATALOG_LIST_CACHE_TTL_MS,
+  CATALOG_STREAMS_LIST_KEY,
+  invalidateStreamCatalogCache,
+  STREAM_BY_ID_CACHE_NS,
+  STREAMS_LIST_CACHE_NS,
+} from './catalogListCache'
 import { GDC_API_PREFIX } from './gdcApiPrefix'
 import { readJsonWithSignal, type GdcSignalOptions } from './gdcSignalOptions'
 import { cachedRequest, clearSharedRequestCache } from './requestCache'
 import type { StreamRead } from './types/gdcApi'
 
 const readJsonOpts = { timeoutMs: GDC_DEFAULT_READ_JSON_TIMEOUT_MS }
-const STREAMS_LIST_CACHE_NS = 'catalog-streams'
-const STREAM_BY_ID_CACHE_NS = 'catalog-stream-by-id'
-
-function invalidateStreamCatalogCache(streamId?: number): void {
-  clearSharedRequestCache(STREAMS_LIST_CACHE_NS, CATALOG_STREAMS_LIST_KEY)
-  if (streamId != null) {
-    clearSharedRequestCache(STREAM_BY_ID_CACHE_NS, String(streamId))
-  }
-}
 
 /** Legacy placeholder shape from `app/streams/router` before DB-backed list. */
 export function isStreamsPlaceholderResponse(body: unknown): boolean {

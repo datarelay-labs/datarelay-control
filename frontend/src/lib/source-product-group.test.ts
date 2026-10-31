@@ -22,4 +22,11 @@ describe('source-product-group', () => {
     expect(groups[0].issueCount).toBe(1)
     expect(worstStreamStatus(['RUNNING', 'ERROR'])).toBe('ERROR')
   })
+
+  it('never lets a RUNNING member hide an UNKNOWN one, and UNKNOWN never masks DEGRADED/ERROR (scenario 12)', () => {
+    expect(worstStreamStatus(['RUNNING', 'UNKNOWN'])).toBe('UNKNOWN')
+    expect(worstStreamStatus(['UNKNOWN', 'RUNNING'])).toBe('UNKNOWN')
+    expect(worstStreamStatus(['UNKNOWN', 'DEGRADED'])).toBe('DEGRADED')
+    expect(worstStreamStatus(['UNKNOWN', 'ERROR'])).toBe('ERROR')
+  })
 })

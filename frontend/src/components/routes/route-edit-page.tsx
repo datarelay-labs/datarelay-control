@@ -208,7 +208,7 @@ export function RouteEditPage({ routeIdOverride = null, embedded = false, onClos
     label: string
     destinationType: string
   }>>([])
-  const [destinationSource, setDestinationSource] = useState<'api' | 'empty'>('empty')
+  const [destinationSource, setDestinationSource] = useState<'api' | 'empty' | 'unavailable'>('empty')
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null)
@@ -571,9 +571,14 @@ export function RouteEditPage({ routeIdOverride = null, embedded = false, onClos
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      const rows = await fetchDestinationsList()
+      const rows = await fetchDestinationsList().catch(() => null)
       if (cancelled) return
-      if (rows?.length) {
+      if (rows === null) {
+        // An unavailable catalog is not evidence that no Destinations exist.
+        setDestinationSource('unavailable')
+        return
+      }
+      if (rows.length) {
         const next = rows.map((row) => ({ id: row.id, label: (row.name ?? '').trim() || `Destination #${row.id}` , destinationType: row.destination_type }))
         setDestinationOptions(next)
         setDestinationSource('api')
@@ -1194,6 +1199,11 @@ export function RouteEditPage({ routeIdOverride = null, embedded = false, onClos
                     </option>
                   ))}
                 </select>
+                {destinationSource === 'unavailable' ? (
+                  <p role="alert" className="text-[11px] text-amber-700 dark:text-amber-300">
+                    Destination catalog unavailable. Check API connectivity and reload before selecting a Destination.
+                  </p>
+                ) : null}
               </Field>
             </div>
           </PanelChrome>
@@ -1349,7 +1359,7 @@ export function RouteEditPage({ routeIdOverride = null, embedded = false, onClos
               <li>4. Monitor route failure/retry signals</li>
             </ol>
             <p className="px-2.5 pb-2 text-[10px] text-slate-500 dark:text-gdc-muted">
-              Destination source: {destinationSource === 'api' ? 'API-backed list' : 'No destinations loaded'}
+              Destination source: {destinationSource === 'api' ? 'API-backed list' : destinationSource === 'unavailable' ? 'Unavailable · retry' : 'No destinations loaded'}
             </p>
           </PanelChrome>
 

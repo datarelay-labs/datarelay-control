@@ -71,6 +71,7 @@ import {
   saveStreamEditDraft,
 } from './wizard/wizard-edit-draft'
 import { useSessionCapabilities } from '../../lib/rbac'
+import { formatApiErrorMessage } from '../../lib/api-error-message'
 
 const EDIT_NEXT_STEP_LABEL: Partial<Record<WizardStepKey, string>> = {
   connect: 'Sample & Record Selection',
@@ -218,7 +219,7 @@ export function StreamEditWizardPage({
     setLoading(true)
     setLoadError(null)
     void (async () => {
-      const hydrated = await hydrateWizardStateFromStream(backendStreamId)
+      const hydrated = await hydrateWizardStateFromStream(backendStreamId).catch(() => null)
       if (cancelled) return
       if (!hydrated) {
         setLoadError('Could not load stream configuration.')
@@ -1034,7 +1035,7 @@ export function StreamEditWizardPage({
       allowedNextPathRef.current = NAV_PATH.streams
       navigate(NAV_PATH.streams)
     } catch (e) {
-      setStreamDeleteError(e instanceof Error ? e.message : 'Delete failed.')
+      setStreamDeleteError(formatApiErrorMessage(e, 'Delete failed.'))
     } finally {
       setStreamDeleteBusy(false)
     }
@@ -1211,15 +1212,6 @@ export function StreamEditWizardPage({
               <span className="mt-0.5 block">{runtimeLifecycleLabel}</span>
             </p>
           </div>
-          {backendStreamId != null ? (
-            <StreamConfigurationRevisions
-              streamId={backendStreamId}
-              runtimeStatus={runtimeStatus}
-              canRestore={caps.admin_config_snapshot_apply === true}
-              restoreBlocked={runtimeVerificationBlocked}
-              onRestored={reloadAfterRevisionRestore}
-            />
-          ) : null}
           <p className="max-w-2xl text-sm text-slate-600 dark:text-gdc-muted" data-testid="wizard-stage-purpose">
             {stagePurpose}
           </p>
@@ -1278,6 +1270,16 @@ export function StreamEditWizardPage({
           ) : null}
         </div>
       </div>
+
+      {backendStreamId != null ? (
+        <StreamConfigurationRevisions
+          streamId={backendStreamId}
+          runtimeStatus={runtimeStatus}
+          canRestore={caps.admin_config_snapshot_apply === true}
+          restoreBlocked={runtimeVerificationBlocked}
+          onRestored={reloadAfterRevisionRestore}
+        />
+      ) : null}
 
       {saveError ? (
         <p className="rounded-md border border-red-200/80 bg-red-500/[0.06] p-3 text-[12px] font-medium text-red-700 dark:border-red-500/40 dark:text-red-300">

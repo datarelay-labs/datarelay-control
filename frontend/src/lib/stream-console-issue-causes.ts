@@ -168,7 +168,9 @@ export function deriveStreamIssueCauses(
   return sortIssueCausesByPriority([...new Set(causes)]) as StreamIssueCauseLabel[]
 }
 
-export function streamOperationalHealthLabel(severity: StreamOperationalSeverity): 'Healthy' | 'Warning' | 'Critical' | 'Stopped' {
+export function streamOperationalHealthLabel(
+  severity: StreamOperationalSeverity,
+): 'Healthy' | 'Warning' | 'Critical' | 'Stopped' | 'Not verified' {
   switch (severity) {
     case 'critical':
       return 'Critical'
@@ -176,20 +178,25 @@ export function streamOperationalHealthLabel(severity: StreamOperationalSeverity
       return 'Warning'
     case 'stopped':
       return 'Stopped'
+    case 'unknown':
+      return 'Not verified'
     default:
       return 'Healthy'
   }
 }
 
 /** Streams Console status chip — Stopped vs Disabled vs No Data must not collapse. */
-export function streamConsoleLifecycleLabel(row: StreamConsoleRow): 'Healthy' | 'Warning' | 'Critical' | 'Stopped' | 'Disabled' | 'No Data' {
+export function streamConsoleLifecycleLabel(
+  row: StreamConsoleRow,
+): 'Healthy' | 'Warning' | 'Critical' | 'Stopped' | 'Disabled' | 'No Data' | 'Not verified' {
   if (row.status === 'ERROR') return 'Critical'
   if (row.status === 'DEGRADED') return 'Warning'
   if (row.status === 'STOPPED') return 'Stopped'
   if (row.enabled === false) return 'Disabled'
   if (row.status === 'IDLE' || !row.hasRuntimeApiSnapshot) return 'No Data'
-  if (row.status === 'RUNNING' || row.status === 'UNKNOWN') return 'Healthy'
-  return 'Healthy'
+  // UNKNOWN runtime status is never Healthy; RUNNING is Healthy only with evidence.
+  if (row.status === 'UNKNOWN') return 'Not verified'
+  return effectiveStreamSeverity(normalizeSeverityInput(row)) === 'unknown' ? 'Not verified' : 'Healthy'
 }
 
 export function aggregateGroupIssueCauses(

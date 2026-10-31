@@ -28,7 +28,7 @@ def _iso_now() -> str:
 def _test_payload() -> dict[str, Any]:
     return {
         "datarelay": True,
-        "message": "Generic Data Connector Platform destination test",
+        "message": "DataRelay Control destination test",
         "timestamp": _iso_now(),
     }
 

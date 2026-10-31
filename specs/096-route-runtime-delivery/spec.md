@@ -528,7 +528,10 @@ M13.6 adopts **operator-facing** three-level route health for Runtime UI badges 
 |-------|---------|
 | **Healthy** | Recent delivery success; low failure rate; no sustained policy quarantine |
 | **Warning** | Elevated send failures OR elevated policy review/block rate OR retry-heavy |
-| **Failed** | Route disabled; sustained send failures; destination unreachable; or policy quarantine streak |
+| **Failed** | Sustained send failures; destination unreachable; or policy quarantine streak |
+| **Idle** | Route disabled, or no delivery outcome observed yet (no health verdict) |
+
+A disabled route is **Idle**, never **Failed**: a disabled route is an operator state, and zero traffic or no observation is not evidence of failure. Healthy requires an actual observed delivery success and no problem found (runtime health semantics: no evidence is not Healthy, zero traffic is not failure).
 
 ### 9.2 Health inputs (additive)
 

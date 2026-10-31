@@ -3,14 +3,13 @@ import { cn } from '../../lib/utils'
 
 export type StatusTone = 'success' | 'warning' | 'error' | 'neutral' | 'info'
 
+/** Theme-aware status aliases (foundation-semantic-tokens.css); one class covers light and dark. */
 const toneClass: Record<StatusTone, string> = {
-  success:
-    'border-emerald-500/15 bg-emerald-500/[0.08] text-emerald-900 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-100/90',
-  warning:
-    'border-amber-500/20 bg-amber-500/[0.08] text-amber-950 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-100/85',
-  error: 'border-red-500/15 bg-red-500/[0.07] text-red-900 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-100/90',
-  neutral: 'border-slate-300/40 bg-slate-500/[0.06] text-slate-800 dark:border-gdc-borderStrong/40 dark:bg-slate-400/10 dark:text-slate-200',
-  info: 'border-sky-500/15 bg-sky-500/[0.07] text-sky-950 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-100/90',
+  success: 'border-status-success-border bg-status-success-subtle text-status-success',
+  warning: 'border-status-warning-border bg-status-warning-subtle text-status-warning',
+  error: 'border-status-critical-border bg-status-critical-subtle text-status-critical',
+  neutral: 'border-status-unknown-border bg-status-unknown-subtle text-status-unknown',
+  info: 'border-status-info-border bg-status-info-subtle text-status-info',
 }
 
 type StatusBadgeProps = HTMLAttributes<HTMLSpanElement> & {

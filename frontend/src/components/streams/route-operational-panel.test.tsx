@@ -102,6 +102,19 @@ describe('Stream Route operator investigation UI', () => {
     expect(screen.getByText(/no observed route delivery outcomes/i)).toBeInTheDocument()
   })
 
+  it('renders a null Route success rate (zero completed attempts) as an em dash, never 0% or 100%', () => {
+    mount(route({ success_rate: null, connectivity_state: 'IDLE' }), true)
+    const cell = screen.getByTestId('route-delivery-success-7')
+    expect(cell).toHaveTextContent('—')
+    expect(cell).not.toHaveTextContent('0.0%')
+    expect(cell).not.toHaveTextContent('100.0%')
+  })
+
+  it('renders a null Route success rate as an em dash even when counters exist', () => {
+    mount(route({ success_rate: null, delivered_last_hour: 4, failed_last_hour: 1 }), true)
+    expect(screen.getByTestId('route-delivery-success-7')).toHaveTextContent('—')
+  })
+
   it('refuses fabricated per-Route links for invalid IDs, while preserving the Stream identity', () => {
     mount(route({ route_id: -8, destination_id: -3 }), true)
     expect(screen.queryByRole('link', { name: /Investigate Route .* delivery logs/ })).not.toBeInTheDocument()
@@ -122,6 +135,7 @@ describe('Stream Route operator investigation UI', () => {
     expect(fallback).toHaveLength(1)
     expect(fallback[0]?.connectivity_state).toBe('IDLE')
     expect(fallback[0]?.success_rate).not.toBe(100)
+    expect(fallback[0]?.success_rate).toBeNull()
     expect(fallback[0]?.success_rate_trend).toEqual([])
     expect(fallback[0]?.latency_trend).toEqual([])
   })

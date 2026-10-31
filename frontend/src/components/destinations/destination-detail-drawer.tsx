@@ -119,14 +119,16 @@ const TD = 'px-2.5 py-2 align-top'
 
 // ─── Route health derivation ──────────────────────────────────────────────────
 
-type RouteHealth = 'Healthy' | 'Warning' | 'Critical' | 'Disabled'
+type RouteHealth = 'Healthy' | 'Warning' | 'Critical' | 'Disabled' | 'Not observed'
 
 function deriveRouteHealth(enabled: boolean | undefined, status: string | undefined): RouteHealth {
   if (enabled === false) return 'Disabled'
   const s = (status ?? '').toUpperCase()
   if (s.includes('ERROR') || s.includes('FAIL') || s.includes('CRITICAL')) return 'Critical'
   if (s.includes('WARN') || s.includes('DEGRADED') || s.includes('RETRY')) return 'Warning'
-  return 'Healthy'
+  // Only an explicit healthy status is Healthy; IDLE / empty / unrecognised is "no verdict".
+  if (s === 'HEALTHY' || s === 'ACTIVE' || s === 'OK' || s === 'RUNNING') return 'Healthy'
+  return 'Not observed'
 }
 
 const ROUTE_HEALTH_BADGE: Record<RouteHealth, string> = {
@@ -134,11 +136,12 @@ const ROUTE_HEALTH_BADGE: Record<RouteHealth, string> = {
   Warning: 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300',
   Critical: 'border-red-300 bg-red-50 text-red-700 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-300',
   Disabled: 'border-slate-300 bg-slate-100 text-slate-600 dark:border-gdc-border dark:bg-gdc-elevated dark:text-gdc-muted',
+  'Not observed': 'border-slate-300 bg-slate-100 text-slate-600 dark:border-gdc-border dark:bg-gdc-elevated dark:text-gdc-muted',
 }
 
 function RouteHealthBadge({ health }: { health: RouteHealth }) {
   const dot: Record<RouteHealth, string> = {
-    Healthy: 'bg-emerald-400', Warning: 'bg-amber-400', Critical: 'bg-red-400', Disabled: 'bg-slate-500',
+    Healthy: 'bg-emerald-400', Warning: 'bg-amber-400', Critical: 'bg-red-400', Disabled: 'bg-slate-500', 'Not observed': 'bg-slate-500',
   }
   return (
     <span className={cn('inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase', ROUTE_HEALTH_BADGE[health])}>

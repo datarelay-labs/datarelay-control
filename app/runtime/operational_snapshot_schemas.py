@@ -38,8 +38,9 @@ class OperationalStreamSnapshot(BaseModel):
     health_status: OperationalHealthStatus
     eps_1m: float
     eps_5m: float
-    success_rate_5m: float
-    failure_rate_5m: float
+    # None when the 5m window had no completed attempts (never 0 or 100 without evidence).
+    success_rate_5m: float | None
+    failure_rate_5m: float | None
     avg_latency_ms: float | None = None
     route_count: int
     healthy_route_count: int
@@ -63,7 +64,8 @@ class OperationalRouteSnapshot(BaseModel):
     health_status: OperationalHealthStatus
     delivered_eps_1m: float
     failed_eps_1m: float
-    success_rate_5m: float
+    # None when the 5m window had no completed delivery attempts.
+    success_rate_5m: float | None
     retry_rate_5m: float
     avg_latency_ms: float | None = None
     last_success_at: datetime | None = None
@@ -95,6 +97,12 @@ class OperationalProblem(BaseModel):
     title: str
     message: str
     last_seen_at: datetime | None = None
+    # Optional, additive attribution for Source/Connector problems (API compatible:
+    # absent for Stream/Route/Destination problems that do not carry it).
+    error_code: str | None = None
+    http_status: int | None = None
+    connector_id: int | None = None
+    connector_name: str | None = None
 
 
 class OperationalSnapshotResponse(BaseModel):

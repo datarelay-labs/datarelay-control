@@ -22,10 +22,14 @@ from app.runtime.read_service import (
     _compute_stream_health,
     _dashboard_snapshot_id,
     _dashboard_snapshot_time,
+    _load_snapshot_outcome_metadata,
+    _merge_health_outcome_metadata,
+    _merge_stats_outcome_metadata,
     _recent_log_items,
     _route_last_failure,
     _route_last_success,
 )
+from app.runtime.copy_utils import checkpoint_read_view
 from app.runtime.schemas import (
     BulkStreamStatsHealthResponse,
     CheckpointStatsPayload,
@@ -106,15 +110,13 @@ def _last_event_at(last_seen: StreamRuntimeLastSeen | None) -> datetime | None:
     return max(present) if present else None
 
 
-def _derive_issue(*, health: StreamHealthResponse | None, last_error_message: str | None) -> str | None:
+def _derive_issue(*, health: StreamHealthResponse | None) -> str | None:
     if health is None:
-        return last_error_message
+        return None
     if health.health in ("UNHEALTHY", "DEGRADED"):
         for route in health.routes:
-            if route.last_error_message:
+            if route.health in ("UNHEALTHY", "DEGRADED") and route.last_error_message:
                 return route.last_error_message
-        if last_error_message:
-            return last_error_message
         return f"stream health {health.health.lower()}"
     return None
 
@@ -345,7 +347,7 @@ def _checkpoint_payload(checkpoint: Checkpoint | None) -> CheckpointStatsPayload
         return None
     return CheckpointStatsPayload(
         type=checkpoint.checkpoint_type,
-        value=checkpoint.checkpoint_value_json or {},
+        value=checkpoint_read_view(checkpoint.checkpoint_value_json),
     )
 
 
@@ -360,19 +362,13 @@ def _entry_from_bundle(
     health = bundle.health
     last_seen = stats.last_seen
     eps = round(float(events_window) / max(1, window_seconds), 6) if events_window > 0 else 0.0
-    last_error_message = None
-    if health.routes:
-        for route in health.routes:
-            if route.last_error_message:
-                last_error_message = route.last_error_message
-                break
     return StreamStatsHealthBulkEntry(
         events_per_second=eps,
         events_1h=events_window,
         events_24h=events_24h,
         health=_health_label(health.health),
         last_event_at=_last_event_at(last_seen),
-        issue=_derive_issue(health=health, last_error_message=last_error_message),
+        issue=_derive_issue(health=health),
         stats=stats,
         health_detail=health,
     )
@@ -413,6 +409,7 @@ def _build_from_delivery_logs_bulk(
         per_stream_limit=recent_log_cap,
     )
 
+    stream_last, route_last = _load_snapshot_outcome_metadata(db, stream_ids)
     streams_out: dict[str, StreamStatsHealthBulkEntry] = {}
     for sid in stream_ids:
         stream = stream_by_id.get(sid)
@@ -461,6 +458,8 @@ def _build_from_delivery_logs_bulk(
             summary=health_summary,
             routes=route_items,
         )
+        stats = _merge_stats_outcome_metadata(stats, stream_last.get(sid), route_last)
+        health = _merge_health_outcome_metadata(health, route_last)
         bundle = StreamRuntimeStatsHealthBundleResponse(stats=stats, health=health)
         streams_out[str(sid)] = _entry_from_bundle(
             bundle=bundle,
@@ -479,53 +478,15 @@ def _build_from_delivery_logs_bulk(
 def _route_health_from_snapshots(
     routes: list[Route],
     route_snaps: dict[int, object],
+    route_counts: dict[int, RouteRuntimeCounts] | None = None,
+    *,
+    now: datetime | None = None,
 ) -> tuple[list[RouteHealthItem], StreamHealthSummary]:
-    bucket = {"HEALTHY": 0, "DEGRADED": 0, "UNHEALTHY": 0, "DISABLED": 0, "IDLE": 0}
-    items: list[RouteHealthItem] = []
-    for route in routes:
-        snap = route_snaps.get(int(route.id))
-        dest = route.destination
-        dest_type = str(dest.destination_type or "").strip().upper() if dest is not None else ""
-        dest_enabled = bool(dest.enabled) if dest is not None else False
-        if not bool(route.enabled):
-            health_key = "DISABLED"
-        elif snap is None:
-            health_key = "IDLE"
-        else:
-            health_key = str(snap.health_status or "IDLE").upper()
-            if health_key not in bucket:
-                health_key = "IDLE"
-        bucket[health_key] += 1
-        items.append(
-            RouteHealthItem(
-                route_id=int(route.id),
-                destination_id=int(route.destination_id),
-                destination_type=dest_type,
-                route_enabled=bool(route.enabled),
-                destination_enabled=dest_enabled,
-                failure_policy=str(route.failure_policy),
-                route_status=str(route.status),
-                health=cast(RouteHealthState, health_key),
-                success_count=0,
-                failure_count=0,
-                rate_limited_count=0,
-                consecutive_failure_count=0,
-                last_success_at=snap.last_success_at if snap is not None else None,
-                last_failure_at=snap.last_error_at if snap is not None else None,
-                last_rate_limited_at=None,
-                last_error_code=None,
-                last_error_message=snap.last_error_message if snap is not None else None,
-            )
-        )
-    summary = StreamHealthSummary(
-        total_routes=len(routes),
-        healthy_routes=bucket["HEALTHY"],
-        degraded_routes=bucket["DEGRADED"],
-        unhealthy_routes=bucket["UNHEALTHY"],
-        disabled_routes=bucket["DISABLED"],
-        idle_routes=bucket["IDLE"],
-    )
-    return items, summary
+    """Same mapping as the single-stream snapshot read (ERROR -> UNHEALTHY, stats counts)."""
+
+    from app.runtime.stream_runtime_snapshot_read import _route_health_from_snapshots as _single
+
+    return _single(routes, route_snaps, route_counts, now=now)
 
 
 def _build_from_runtime_snapshots(
@@ -536,15 +497,14 @@ def _build_from_runtime_snapshots(
     window: str,
     snapshot_id: str | None,
 ) -> BulkStreamStatsHealthResponse:
+    """Use the physical model selected once by the request entry point."""
+
     from app.runtime.models import RuntimeRouteSnapshot, RuntimeStreamSnapshot
     from app.runtime.runtime_analytics_bucket_read_repository import (
         fetch_stream_processed_events_from_buckets,
         historical_analytics_available,
     )
-    from app.runtime.runtime_snapshot_analytics_repository import _int_events, _operational_scale, snapshot_analytics_available
-
-    if not snapshot_analytics_available(db):
-        raise RuntimeError("runtime snapshot read model unavailable")
+    from app.runtime.runtime_snapshot_analytics_repository import _int_events, _operational_scale
 
     until = _safe_bulk_until(snapshot_id)
     token_td = parse_metrics_window(window)
@@ -600,12 +560,12 @@ def _build_from_runtime_snapshots(
         send_success = int(round(send_success * scale))
         send_failed = int(round(send_failed * scale))
 
-        processed_window = window_processed.get(sid, 0)
-        if processed_window <= 0 and snap is not None:
-            processed_window = int(round(_int_events(float(snap.eps_5m), 300) * scale))
-        processed_24h = day_processed.get(sid, 0)
-        if processed_24h <= 0 and snap is not None:
-            processed_24h = int(round(_int_events(float(snap.eps_5m), 300) * day_scale))
+        processed_window = window_processed.get(sid)
+        if processed_window is None:
+            processed_window = int(round(_int_events(float(snap.eps_5m), 300) * scale)) if snap is not None else 0
+        processed_24h = day_processed.get(sid)
+        if processed_24h is None:
+            processed_24h = int(round(_int_events(float(snap.eps_5m), 300) * day_scale)) if snap is not None else 0
 
         summary = StreamRuntimeSummary(
             processed_events=processed_window,
@@ -648,10 +608,15 @@ def _build_from_runtime_snapshots(
             routes=route_stats,
             recent_logs=[],
         )
-        route_items, health_summary = _route_health_from_snapshots(routes, route_snaps)
-        stream_health = snap.health_status if snap is not None else "IDLE"
-        if stream_health not in ("HEALTHY", "DEGRADED", "UNHEALTHY", "IDLE"):
-            stream_health = "IDLE"
+        from app.runtime.stream_runtime_snapshot_read import runtime_health_from_operational
+
+        route_items, health_summary = _route_health_from_snapshots(
+            routes,
+            route_snaps,
+            {item.route_id: item.counts for item in route_stats},
+            now=datetime.now(timezone.utc),
+        )
+        stream_health = runtime_health_from_operational(snap.health_status if snap is not None else "IDLE")
         health = StreamHealthResponse(
             stream_id=sid,
             stream_status=str(stream.status),
@@ -673,6 +638,9 @@ def _build_from_runtime_snapshots(
         snapshot_id=_dashboard_snapshot_id(until),
         streams=streams_out,
     )
+
+
+_DEGRADED_READ_ISSUE = "Runtime stats unavailable; health not verified"
 
 
 def _build_degraded_bulk_entry(
@@ -725,10 +693,12 @@ def _build_degraded_bulk_entry(
         routes=[],
         recent_logs=[],
     )
+    # A failed read is not evidence about the stream: no health verdict (IDLE).
+    # The non-null ``issue`` below keeps signalling that this entry fell back.
     health = StreamHealthResponse(
         stream_id=sid,
         stream_status=str(stream.status),
-        health="DEGRADED",
+        health="IDLE",
         limit=limit,
         summary=StreamHealthSummary(
             total_routes=len(routes),
@@ -741,12 +711,13 @@ def _build_degraded_bulk_entry(
         routes=route_items,
     )
     bundle = StreamRuntimeStatsHealthBundleResponse(stats=stats, health=health)
-    return _entry_from_bundle(
+    entry = _entry_from_bundle(
         bundle=bundle,
         events_window=0,
         events_24h=0,
         window_seconds=1,
     )
+    return entry.model_copy(update={"issue": _DEGRADED_READ_ISSUE})
 
 
 def _build_degraded_bulk_response(

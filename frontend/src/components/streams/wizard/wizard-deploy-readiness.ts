@@ -13,6 +13,7 @@ import {
 } from './wizard-step-gates'
 import {
   computeLegacySubstepCompletion,
+  computeReviewGateTerms,
   wizardDataProtectionIntentReady,
   wizardMappingContentReady,
   type RouteProcessingStatus,
@@ -77,6 +78,52 @@ export type DeployReadinessSnapshot = {
   statusLabel: 'READY' | 'READY WITH WARNINGS' | 'NEEDS ATTENTION'
   canCreate: boolean
   categories: DeployChecklistCategory[]
+}
+
+type DeployGateBlocker = {
+  category: DeployChecklistCategoryKey
+  message: string
+}
+
+/**
+ * The wizard gate (`computeReviewGateTerms`) is stricter than any single checklist row. Name each failed
+ * gate term and the checklist row it belongs to, so Create & Start Stream is never disabled without a
+ * red item that says why (F-009).
+ */
+function reviewGateBlockers(state: WizardState): DeployGateBlocker[] {
+  const terms = computeReviewGateTerms(state)
+  const blockers: DeployGateBlocker[] = []
+  if (!terms.connectorReady) {
+    blockers.push({ category: 'connection', message: 'Save the Connector and its Source before creating the stream.' })
+  }
+  if (!terms.streamReady) {
+    blockers.push({ category: 'connection', message: 'Stream name and request settings are incomplete.' })
+  }
+  if (!terms.apiTestRan) {
+    blockers.push({ category: 'data', message: 'Run a successful sample test for the current settings.' })
+  }
+  if (!terms.recordsGateReady || !terms.previewReady) {
+    blockers.push({
+      category: 'records',
+      message: 'Confirm the record path and sync position against the latest sample (re-select them if the sample was refreshed).',
+    })
+  }
+  if (!terms.mappingReady) {
+    blockers.push({ category: 'transform', message: 'Add at least one output field or transform expression.' })
+  }
+  if (!terms.destinationsReady) {
+    blockers.push({
+      category: 'delivery',
+      message: 'Every enabled delivery path needs a valid destination, and at least one must be enabled.',
+    })
+  }
+  if (!terms.dataProtectionReady) {
+    blockers.push({
+      category: 'protection',
+      message: 'A protection row has a field path that does not start with "$.". Fix or remove it.',
+    })
+  }
+  return blockers
 }
 
 export const DEPLOY_STATUS_LABEL: Record<DeployReadinessStatus, DeployReadinessSnapshot['statusLabel']> = {
@@ -334,6 +381,27 @@ export function computeRouteDeployReadiness(
   }
 }
 
+/**
+ * Routes that carry their own protection rules: a Route Protection override with at least one
+ * ready intent, saved Route rules kept as passthrough on edit, or an enabled per-Route
+ * governance protection override.
+ */
+export function countRoutesWithProtectionRules(state: Pick<WizardState, 'destinations' | 'dataProtection'>): number {
+  return state.destinations.routeDrafts.filter((route) => {
+    if (route.governanceLoad?.protection === 'passthrough') return true
+    const routeIntents =
+      route.inherit?.protection === false ? route.overrides?.protection?.intents ?? [] : []
+    if (routeIntents.some(wizardDataProtectionIntentReady)) return true
+    return state.dataProtection.routeOverrides.some(
+      (override) => override.enabled && override.routeDraftKey === route.key,
+    )
+  }).length
+}
+
+function formatRouteProtectionCount(count: number): string {
+  return `Route protection rules on ${count} route${count === 1 ? '' : 's'}`
+}
+
 function categoryTone(ok: boolean, warn: boolean): DeployChecklistTone {
   if (ok) return 'ok'
   if (warn) return 'warn'
@@ -409,9 +477,12 @@ export function computeDeployReadiness(
     (intent) => intent.detectedField.trim().length > 0 && !wizardDataProtectionIntentReady(intent),
   )
   const protectionPreview = buildDataProtectionPersistPreview(state.dataProtection)
+  const routeProtectionRouteCount = countRoutesWithProtectionRules(state)
+  // A half-filled row (text that is not a "$." path) is red even when it is the only row; blank rows
+  // are ignored (see wizardDataProtectionStepComplete).
   const protectionOk =
-    validProtectionIntents.length === 0 ||
-    (!incompleteProtectionRows && !protectionPreview.enforcementIncomplete)
+    !incompleteProtectionRows &&
+    (validProtectionIntents.length === 0 || !protectionPreview.enforcementIncomplete)
   const protectionWarn =
     !protectionOk &&
     !incompleteProtectionRows &&
@@ -512,9 +583,13 @@ export function computeDeployReadiness(
       tone: protectionTone,
       summary: incompleteProtectionRows
         ? 'Complete detected field paths for all protection rows'
-          : validProtectionIntents.length === 0
-          ? 'No data protection intent configured'
-          : `${validProtectionIntents.length} field intent${validProtectionIntents.length === 1 ? '' : 's'} — policy, classification, and protection rules deploy together`,
+        : validProtectionIntents.length === 0
+          ? routeProtectionRouteCount > 0
+            ? `No shared intent · ${formatRouteProtectionCount(routeProtectionRouteCount)}`
+            : 'No data protection intent configured'
+          : `${validProtectionIntents.length} field intent${validProtectionIntents.length === 1 ? '' : 's'} — policy, classification, and protection rules deploy together${
+              routeProtectionRouteCount > 0 ? ` · ${formatRouteProtectionCount(routeProtectionRouteCount)}` : ''
+            }`,
       detail:
         incompleteProtectionRows
           ? 'Each protection row needs a JSONPath starting with $.'
@@ -558,6 +633,17 @@ export function computeDeployReadiness(
       stepKey: 'destinations',
     },
   ]
+
+  // Turn every failed gate term into a red row. The row that already reports it keeps its own text.
+  const gateBlockers = reviewReady ? [] : reviewGateBlockers(state)
+  for (const blocker of gateBlockers) {
+    const row = categories.find((c) => c.key === blocker.category)
+    if (row && row.tone !== 'err') {
+      row.tone = 'err'
+      row.summary = blocker.message
+      row.detail = undefined
+    }
+  }
 
   const hasError = categories.some((c) => c.tone === 'err')
   const hasWarn = categories.some((c) => c.tone === 'warn')

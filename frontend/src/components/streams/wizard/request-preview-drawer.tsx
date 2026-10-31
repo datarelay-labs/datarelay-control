@@ -1,5 +1,6 @@
 import { Copy, X } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { useEffect, useId, useRef } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react'
 import { cn } from '../../../lib/utils'
 import { ResizableSplit } from '../../ui/resizable-split'
 
@@ -17,6 +18,13 @@ export type RequestPreviewDrawerProps = {
   children?: ReactNode
   /** When true, template and test result share the body with a draggable divider. */
   splitResults?: boolean
+}
+
+const FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+function focusableWithin(root: HTMLElement): HTMLElement[] {
+  return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
 }
 
 function RequestTemplatePane({
@@ -84,7 +92,56 @@ export function RequestPreviewDrawer({
   children,
   splitResults = false,
 }: RequestPreviewDrawerProps) {
+  const titleId = useId()
+  const dialogRef = useRef<HTMLElement>(null)
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+
+  // Move focus into the dialog on open and restore it to the opener on close.
+  useEffect(() => {
+    if (!open) return
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const first = dialogRef.current ? focusableWithin(dialogRef.current)[0] : undefined
+    ;(first ?? dialogRef.current)?.focus()
+    return () => {
+      if (previouslyFocused && previouslyFocused.isConnected) previouslyFocused.focus()
+    }
+  }, [open])
+
+  // Escape closes the dialog even when focus is not inside it.
+  useEffect(() => {
+    if (!open) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation()
+        onCloseRef.current()
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [open])
+
   if (!open) return null
+
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.key !== 'Tab' || !dialogRef.current) return
+    const focusable = focusableWithin(dialogRef.current)
+    if (focusable.length === 0) {
+      event.preventDefault()
+      dialogRef.current.focus()
+      return
+    }
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+    const active = document.activeElement
+    if (event.shiftKey && (active === first || active === dialogRef.current)) {
+      event.preventDefault()
+      last.focus()
+    } else if (!event.shiftKey && active === last) {
+      event.preventDefault()
+      first.focus()
+    }
+  }
 
   const templatePane = (
     <RequestTemplatePane
@@ -108,13 +165,19 @@ export function RequestPreviewDrawer({
         className="flex h-full w-full max-w-xl flex-col border-l border-slate-200 bg-white shadow-xl dark:border-gdc-border dark:bg-gdc-card"
         data-testid="request-preview-drawer"
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={handleKeyDown}
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
-        aria-label={title}
+        aria-modal="true"
+        aria-labelledby={titleId}
       >
         <div className="shrink-0 border-b border-slate-200 px-4 py-3 dark:border-gdc-border">
           <div className="flex items-center justify-between gap-2">
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{title}</p>
+              <p id={titleId} className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                {title}
+              </p>
               <p className="mt-0.5 text-[11px] text-slate-500 dark:text-gdc-mutedStrong">{previewKindLabel}</p>
             </div>
             <button

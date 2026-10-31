@@ -29,6 +29,20 @@ export type RunHistoryRow = {
   idBasis?: 'run' | 'completion-record'
 }
 
+/**
+ * Stable unique React keys for run rows. `runId` is not unique (metrics completion records can
+ * repeat a run id), so a repeated id gets an occurrence suffix in list order.
+ */
+export function runHistoryRowKeys(rows: readonly Pick<RunHistoryRow, 'runId' | 'idBasis'>[]): string[] {
+  const seen = new Map<string, number>()
+  return rows.map((row) => {
+    const base = `${row.idBasis ?? 'run'}:${row.runId}`
+    const occurrence = (seen.get(base) ?? 0) + 1
+    seen.set(base, occurrence)
+    return occurrence === 1 ? base : `${base}#${occurrence}`
+  })
+}
+
 export type RecentLogLine = {
   at: string
   level: 'INFO' | 'DEBUG' | 'WARN' | 'ERROR'

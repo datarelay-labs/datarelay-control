@@ -230,6 +230,16 @@ describe('StreamEditWizardPage workspace capability visibility', () => {
     clearSession()
   })
 
+  it('shows a load error instead of an endless spinner when Stream hydration rejects', async () => {
+    signIn('OPERATOR')
+    hydrateHolder.factory = () => {
+      throw new Error('Route catalog request failed')
+    }
+    renderStreamEdit()
+    expect(await screen.findByText('Could not load stream configuration.')).toBeInTheDocument()
+    expect(screen.queryByTestId('edit-stream-wizard')).not.toBeInTheDocument()
+  })
+
   it('uses the provided Stream identity in embedded mode and closes without a cross-page navigation', async () => {
     signIn('OPERATOR')
     const { onClose } = renderEmbeddedStreamEdit()

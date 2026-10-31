@@ -30,7 +30,7 @@ import {
   type WizardState,
 } from './wizard-state'
 import { persistWizardDataProtectionIntents } from './wizard-data-protection-persist'
-import { persistWizardSchemaDriftPolicy } from './wizard-schema-drift-policy-persist'
+import { mergeSchemaDriftPolicyIntoConfigJson } from './wizard-schema-drift-policy-persist'
 import { persistWizardStreamGovernance } from './wizard-governance-persist'
 import {
   persistWizardRouteGovernanceBundles,
@@ -94,7 +94,12 @@ export async function preflightWizardReviewedRevision(
 ): Promise<ReviewedRevisionPreflightResult> {
   const errors: string[] = []
   const reviewedStreamToken = normalizedRevision(state.streamUpdatedAt)
-  const stream = await fetchStreamByIdFresh(streamId)
+  let stream: Awaited<ReturnType<typeof fetchStreamByIdFresh>> = null
+  try {
+    stream = await fetchStreamByIdFresh(streamId)
+  } catch {
+    // An unavailable revision read is not authorization to write against stale state.
+  }
   if (stream == null) {
     errors.push(`stream ${streamId}: current server revision could not be read; reviewed configuration was not applied.`)
   } else if (!reviewedStreamToken) {
@@ -116,7 +121,12 @@ export async function preflightWizardReviewedRevision(
       errors.push(`route ${routeId}: reviewed concurrency token is missing; no configuration was written.`)
       continue
     }
-    const current = await fetchRouteByIdFresh(routeId)
+    let current: Awaited<ReturnType<typeof fetchRouteByIdFresh>> = null
+    try {
+      current = await fetchRouteByIdFresh(routeId)
+    } catch {
+      // A failed Route preflight must preserve all reviewed configuration without writes.
+    }
     if (current == null) {
       errors.push(`route ${routeId}: current server revision could not be read; no configuration was written.`)
       continue
@@ -180,6 +190,9 @@ export async function syncRoutes(
       } else {
         const created = await createRoute(payload)
         routeIdsByDraftKey[draft.key] = created.id
+        // Callers remap the local draft key to route-{id} before applying
+        // server revisions, so the new Route token must use that final key.
+        if (created.updated_at) routeUpdatedAtByDraftKey[`route-${created.id}`] = created.updated_at
         persistedObjects.push(`Route #${created.id}`)
       }
     } catch (err) {
@@ -451,7 +464,6 @@ export async function persistWizardStreamEdits(
     }
   }
 
-  let persistedConfigJson: Record<string, unknown> | null = null
   let streamUpdatedAt: string | null = null
   try {
     const existing = preflight.stream
@@ -476,7 +488,7 @@ export async function persistWizardStreamEdits(
         ),
       )
       const eventPaths = applyExplicitEventPathClear(mergedConfig, confirmed?.stream, state.stream)
-      const config_json = eventPaths.config
+      const config_json = mergeSchemaDriftPolicyIntoConfigJson(eventPaths.config, state.dataProtection)
       if (
         (eventPaths.clearArray || eventPaths.clearRoot) &&
         !wizardFieldMappingsReady(state) &&
@@ -495,13 +507,28 @@ export async function persistWizardStreamEdits(
         rate_limit_json: payload.rate_limit_json,
         expected_updated_at: token,
       })
-      persistedConfigJson = config_json
       streamUpdatedAt = updated.updated_at ?? token
       persistedObjects.push(`Stream #${streamId}`)
     }
   } catch (err) {
     errors.push(`stream: ${err instanceof Error ? err.message : String(err)}`)
     notPersistedObjects.push(`Stream #${streamId}`)
+  }
+
+  // A Stream CAS can fail after the preflight GET if another writer advances
+  // its revision. Without a confirmed Stream save, do not persist Mapping,
+  // Route or Governance fragments of this now-stale draft.
+  if (streamUpdatedAt == null) {
+    return {
+      ok: false,
+      errors,
+      routeIdsByDraftKey: {},
+      routeUpdatedAtByDraftKey: {},
+      streamUpdatedAt: state.streamUpdatedAt ?? null,
+      dataProtectionPersisted: false,
+      persistedObjects,
+      notPersistedObjects,
+    }
   }
 
   const fieldMappings = buildWizardFieldMappingsPayload(state)
@@ -601,6 +628,7 @@ export async function persistWizardStreamEdits(
   try {
     const governanceResult = await persistWizardStreamGovernance(streamId, routeSafeState, routeIdsByDraftKey)
     if (!governanceResult.saved) errors.push(...governanceResult.errors)
+    else if (governanceResult.streamUpdatedAt) streamUpdatedAt = governanceResult.streamUpdatedAt
   } catch (err) {
     errors.push(`governance: ${err instanceof Error ? err.message : String(err)}`)
   }
@@ -611,19 +639,6 @@ export async function persistWizardStreamEdits(
       state.dataProtection,
     )),
   )
-
-  if (persistedConfigJson) {
-    try {
-      const driftResult = await persistWizardSchemaDriftPolicy(streamId, state.dataProtection, {
-        existingConfigJson: persistedConfigJson,
-        expectedUpdatedAt: streamUpdatedAt,
-      })
-      if (!driftResult.saved) errors.push(...driftResult.errors)
-      else if (driftResult.streamUpdatedAt) streamUpdatedAt = driftResult.streamUpdatedAt
-    } catch (err) {
-      errors.push(`schema-drift-policy: ${err instanceof Error ? err.message : String(err)}`)
-    }
-  }
 
   if (errors.length > 0) {
     for (const error of errors) {

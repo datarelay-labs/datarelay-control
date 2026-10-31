@@ -27,6 +27,7 @@ import { WIZARD_LABEL } from '../../../lib/operator-vocabulary'
 import { DELIVERY_PREVIEW_SAMPLE_EVENT } from '../../../utils/deliveryPreviewSample'
 import { DEFAULT_MESSAGE_PREFIX_TEMPLATE, defaultMessagePrefixEnabled } from '../../../utils/messagePrefixDefaults'
 import { MessagePrefixDeliveryPreview } from '../message-prefix-delivery-preview'
+import { buttonClassName } from '../../ui/button-classes'
 import {
   deliveryModeFromFailurePolicy,
   destinationLibraryTab,
@@ -59,8 +60,8 @@ const textareaCls =
 const btnGhost =
   'inline-flex h-8 items-center gap-1 rounded-md border border-slate-200/90 bg-white px-2.5 text-[11px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200 dark:hover:bg-gdc-rowHover'
 
-const btnPrimarySm =
-  'inline-flex h-8 shrink-0 items-center rounded-md bg-violet-600 px-2.5 text-[11px] font-semibold text-white shadow-sm hover:bg-violet-700'
+// In-step actions stay secondary: the wizard action bar owns the single primary action per step.
+const btnPrimarySm = buttonClassName({ variant: 'secondary', size: 'sm' })
 
 function buildWizardFinalDraftRequest(state: WizardState) {
   const payload = state.apiTest.parsedJson ?? state.apiTest.rawResponse

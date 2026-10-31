@@ -209,7 +209,10 @@ export function mergeConnectorLabelIntoRow(row: StreamConsoleRow, connectorName:
   return mergeConnectorIntoRow(row, connectorName)
 }
 
-/** Prefer readable remote-file and S3 checkpoint lines; other checkpoints use compact JSON (legacy truncation). */
+/**
+ * Prefer readable remote-file and S3 checkpoint lines; other checkpoints summarize well-known keys
+ * (last event, cursor, last timestamp, value) one per line, falling back to compact JSON (legacy truncation).
+ */
 export function formatCheckpointValueForConsole(value: Record<string, unknown> | null | undefined): string {
   if (!value || typeof value !== 'object') return '—'
   const lse = value.last_success_event
@@ -249,8 +252,39 @@ export function formatCheckpointValueForConsole(value: Record<string, unknown> |
     }
   }
 
+  const summary = genericCheckpointSummaryLines(value, lseObj)
+  if (summary.length) return summary.join('\n')
+
   const json = JSON.stringify(value)
   return json.length > 160 ? `${json.slice(0, 160)}…` : json
+}
+
+function checkpointScalarText(v: unknown): string | null {
+  if (typeof v === 'string') return v.trim() ? v : null
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v)
+  return null
+}
+
+/** Readable one-item-per-line summary of well-known generic checkpoint keys; nested objects are never printed as JSON. */
+function genericCheckpointSummaryLines(
+  value: Record<string, unknown>,
+  lseObj: Record<string, unknown> | null,
+): string[] {
+  const lines: string[] = []
+  if (lseObj) {
+    const eventId = checkpointScalarText(lseObj.event_id)
+    const ts = checkpointScalarText(lseObj.timestamp)
+    if (eventId && ts) lines.push(`last event: ${eventId} @ ${ts}`)
+    else if (eventId) lines.push(`last event: ${eventId}`)
+    else if (ts) lines.push(`last event time: ${ts}`)
+  }
+  const cursor = checkpointScalarText(value.cursor)
+  if (cursor) lines.push(`cursor: ${cursor}`)
+  const lastTimestamp = checkpointScalarText(value.last_timestamp)
+  if (lastTimestamp) lines.push(`last timestamp: ${lastTimestamp}`)
+  const plainValue = checkpointScalarText(value.value)
+  if (plainValue && plainValue !== cursor) lines.push(`value: ${plainValue}`)
+  return lines
 }
 
 function baseRowFromStreamRead(s: StreamRead): StreamConsoleRow {
@@ -369,7 +403,7 @@ export function enrichStreamRowFromOperationalSnapshot(
       operationalStreamSuccessRatePct({
         eps_1m: eps1m,
         eps_5m: eps5m,
-        success_rate_5m: successRate5m ?? 0,
+        success_rate_5m: successRate5m,
       }) != null,
     routesTotal: Math.max(base.routesTotal, kpi.routeCount),
     routesOk: kpi.healthyRouteCount,

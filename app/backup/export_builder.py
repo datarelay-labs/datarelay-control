@@ -15,6 +15,10 @@ from app.connectors.models import Connector
 from app.destinations.models import Destination
 from app.enrichments.models import Enrichment
 from app.mappings.models import Mapping
+from app.route_classification.models import RouteClassificationRule
+from app.route_policy.models import RoutePolicyRule
+from app.route_protection.models import RouteProtectionRule
+from app.route_transform.models import RouteEnrichment, RouteMapping
 from app.routes.models import Route
 from app.security.secrets import mask_config_payload, mask_http_headers, mask_secrets, mask_secrets_and_pem
 from app.sources.models import Source
@@ -119,6 +123,91 @@ def _destination_dict(d: Destination) -> dict[str, Any]:
     }
 
 
+def _route_children_by_route(db: Session, route_ids: list[int]) -> dict[int, dict[str, Any]]:
+    """Route-level processing state keyed by Route id (protection, classification, policy, transform).
+
+    Children are embedded on each exported Route under optional keys that are only present when the Route
+    has such rows, so bundles for Routes without children are unchanged and older bundles still import.
+    Protection findings belong to the source Stream and are never exported. Route enrichment values are
+    masked like other exported config because they are operator-entered static values.
+    """
+    out: dict[int, dict[str, Any]] = {}
+    if not route_ids:
+        return out
+
+    def _slot(route_id: int) -> dict[str, Any]:
+        return out.setdefault(int(route_id), {})
+
+    for p in (
+        db.query(RouteProtectionRule)
+        .filter(RouteProtectionRule.route_id.in_(route_ids))
+        .order_by(RouteProtectionRule.id.asc())
+        .all()
+    ):
+        _slot(p.route_id).setdefault("protection_rules", []).append(
+            {
+                "field_path": p.field_path,
+                "sensitivity_class": p.sensitivity_class,
+                "protection_mode": p.protection_mode,
+                "enabled": p.enabled,
+                "created_by": p.created_by,
+            }
+        )
+    for c in (
+        db.query(RouteClassificationRule)
+        .filter(RouteClassificationRule.route_id.in_(route_ids))
+        .order_by(RouteClassificationRule.id.asc())
+        .all()
+    ):
+        _slot(c.route_id).setdefault("classification_rules", []).append(
+            {
+                "name": c.name,
+                "enabled": c.enabled,
+                "condition_json": dict(c.condition_json or {}),
+                "classification_level": c.classification_level,
+            }
+        )
+    for pr in (
+        db.query(RoutePolicyRule)
+        .filter(RoutePolicyRule.route_id.in_(route_ids))
+        .order_by(RoutePolicyRule.id.asc())
+        .all()
+    ):
+        _slot(pr.route_id).setdefault("policy_rules", []).append(
+            {
+                "name": pr.name,
+                "enabled": pr.enabled,
+                "condition_json": dict(pr.condition_json or {}),
+                "action_type": pr.action_type,
+            }
+        )
+    for rm in db.query(RouteMapping).filter(RouteMapping.route_id.in_(route_ids)).order_by(RouteMapping.id.asc()).all():
+        _slot(rm.route_id)["route_mapping"] = {
+            "field_mappings_json": dict(rm.field_mappings_json or {}),
+            "raw_payload_mode": rm.raw_payload_mode,
+        }
+    for re_ in (
+        db.query(RouteEnrichment).filter(RouteEnrichment.route_id.in_(route_ids)).order_by(RouteEnrichment.id.asc()).all()
+    ):
+        _slot(re_.route_id)["route_enrichment"] = {
+            "enrichment_json": mask_secrets_and_pem(dict(re_.enrichment_json or {})),
+            "override_policy": re_.override_policy,
+            "enabled": re_.enabled,
+        }
+    return out
+
+
+def _route_rows(db: Session, routes: list[Route]) -> list[dict[str, Any]]:
+    dest_names = _destination_name_map(db, {int(r.destination_id) for r in routes})
+    children = _route_children_by_route(db, [int(r.id) for r in routes])
+    rows: list[dict[str, Any]] = []
+    for r in routes:
+        row = _route_dict(r, destination_name=dest_names.get(int(r.destination_id)))
+        row.update(children.get(int(r.id), {}))
+        rows.append(row)
+    return rows
+
+
 def _route_dict(r: Route, *, destination_name: str | None = None) -> dict[str, Any]:
     dest_id = int(r.destination_id)
     ref: dict[str, Any] = {"id": dest_id}
@@ -196,9 +285,7 @@ def build_workspace_export(
     if include_destinations:
         payload["destinations"] = [_destination_dict(r) for r in db.query(Destination).order_by(Destination.id.asc()).all()]
     routes = db.query(Route).order_by(Route.id.asc()).all()
-    dest_ids = {int(r.destination_id) for r in routes}
-    dest_names = _destination_name_map(db, dest_ids)
-    payload["routes"] = [_route_dict(r, destination_name=dest_names.get(int(r.destination_id))) for r in routes]
+    payload["routes"] = _route_rows(db, routes)
     if include_checkpoints:
         payload["checkpoints"] = [_checkpoint_dict(r) for r in db.query(Checkpoint).order_by(Checkpoint.id.asc()).all()]
     payload["export_integrity"] = build_export_integrity_report(payload)
@@ -252,9 +339,7 @@ def build_connector_export(
             ]
         if include_routes:
             routes = db.query(Route).filter(Route.stream_id.in_(stream_ids)).order_by(Route.id.asc()).all()
-            dest_ids = {int(r.destination_id) for r in routes}
-            dest_names = _destination_name_map(db, dest_ids)
-            payload["routes"] = [_route_dict(r, destination_name=dest_names.get(int(r.destination_id))) for r in routes]
+            payload["routes"] = _route_rows(db, routes)
             if include_destinations:
                 dest_ids = {int(r.destination_id) for r in routes}
                 if dest_ids:
@@ -305,9 +390,7 @@ def build_stream_export(
             payload["checkpoints"] = [_checkpoint_dict(cp)]
     if include_routes:
         routes = db.query(Route).filter(Route.stream_id == stream_id).order_by(Route.id.asc()).all()
-        dest_ids = {int(r.destination_id) for r in routes}
-        dest_names = _destination_name_map(db, dest_ids)
-        payload["routes"] = [_route_dict(r, destination_name=dest_names.get(int(r.destination_id))) for r in routes]
+        payload["routes"] = _route_rows(db, routes)
         if include_destinations and routes:
             dest_ids = {int(r.destination_id) for r in routes}
             dest_rows = db.query(Destination).filter(Destination.id.in_(dest_ids)).order_by(Destination.id.asc()).all()

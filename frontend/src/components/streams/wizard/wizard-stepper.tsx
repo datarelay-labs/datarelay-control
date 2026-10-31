@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { cn } from '../../../lib/utils'
+import { semanticCn } from '../../ui/semantic-cn'
 import { WizardFlowOverview } from './wizard-flow-overview'
 import {
   wizardDestinationGateReady,
@@ -56,22 +56,22 @@ export function WizardStepper({
   }, [stepIndex])
 
   return (
-    <div className={cn('space-y-3', className)} data-testid="wizard-progress">
+    <div className={semanticCn('min-w-0 space-y-3', className)} data-testid="wizard-progress">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm font-semibold text-slate-800 dark:text-slate-100" data-testid="wizard-progress-label">
+        <p className="min-w-0 text-body font-semibold text-fg" data-testid="wizard-progress-label">
           Step {stepIndex + 1} of {wizardSteps.length}
-          <span className="ml-2 font-normal text-slate-500 dark:text-gdc-muted">
+          <span className="ml-2 font-normal text-fg-muted">
             {activeStep?.title ?? 'Stream setup'}
           </span>
         </p>
         <div className="flex flex-col items-start gap-0.5 sm:items-end">
           <span
-            className="text-xs font-medium text-slate-700 dark:text-gdc-mutedStrong"
+            className="text-body-sm font-medium text-fg-secondary"
             data-testid="wizard-completed-stage-count"
           >
             {completedStages} of {wizardSteps.length} setup stages marked complete
           </span>
-          <span className="text-[11px] text-slate-500 dark:text-gdc-muted">
+          <span className="text-caption text-fg-muted">
             Choose an available step to review its settings
           </span>
         </div>
@@ -83,19 +83,21 @@ export function WizardStepper({
         aria-valuemax={wizardSteps.length}
         aria-valuenow={completedStages}
         aria-valuetext={`${completedStages} of ${wizardSteps.length} setup stages marked complete`}
-        className="h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-gdc-border"
+        className="h-1.5 overflow-hidden rounded-full bg-surface-hover"
       >
         <div
-          className="h-full rounded-full bg-violet-600 transition-[width] duration-200 dark:bg-violet-400"
+          className="h-full rounded-full bg-accent transition-[width] duration-200"
           style={{ width: `${(completedStages / Math.max(1, wizardSteps.length)) * 100}%` }}
         />
       </div>
+      {/* Five equal columns at every width: nothing scrolls sideways. Inactive titles stay in the
+          accessibility tree but collapse visually below sm so the rail fits a 390px viewport. */}
       <ol
         id="wizard-stepper"
         ref={railRef}
         data-testid="wizard-stepper"
         aria-label="Stream setup steps"
-        className="flex snap-x gap-2 overflow-x-auto rounded-xl border border-slate-200 bg-slate-50 p-2 dark:border-gdc-border dark:bg-gdc-panel lg:grid lg:grid-cols-5"
+        className="grid grid-cols-5 gap-1 rounded-lg border border-default bg-surface-section p-1"
       >
         {wizardSteps.map((step, index) => {
           const active = index === stepIndex
@@ -107,14 +109,14 @@ export function WizardStepper({
           )
           const tone =
             status === 'complete'
-              ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+              ? 'border-status-success-border bg-status-success-subtle text-status-success'
               : active
-                ? 'border-violet-500/40 bg-violet-500/10 text-violet-700 dark:border-violet-400/40 dark:text-violet-300'
+                ? 'border-accent bg-accent text-on-accent'
                 : status === 'in_progress'
-                  ? 'border-amber-300/60 bg-amber-500/10 text-amber-800 dark:text-amber-200'
-                  : 'border-slate-300 bg-white text-slate-500 dark:border-gdc-border dark:bg-gdc-card dark:text-gdc-muted'
+                  ? 'border-status-warning-border bg-status-warning-subtle text-status-warning'
+                  : 'border-default bg-surface-card text-fg-muted'
           return (
-            <li key={step.key} className="min-w-[170px] flex-[0_0_74%] snap-start sm:flex-[0_0_210px] lg:min-w-0 lg:flex-auto">
+            <li key={step.key} className="min-w-0">
               <button
                 type="button"
                 onClick={() => {
@@ -123,11 +125,11 @@ export function WizardStepper({
                 }}
                 disabled={!reachable}
                 title={!reachable ? unlockGuidance?.reason ?? 'Complete required steps before opening this section.' : undefined}
-                className={cn(
-                  'h-full w-full rounded-lg border px-3 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400',
+                className={semanticCn(
+                  'flex h-full w-full min-w-0 flex-col items-center gap-1 rounded-md border px-1 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring sm:items-start sm:px-3',
                   active
-                    ? 'border-violet-400 bg-white shadow-sm dark:border-violet-400/60 dark:bg-violet-500/10'
-                    : 'border-transparent bg-transparent hover:bg-white dark:hover:bg-gdc-rowHover',
+                    ? 'border-accent bg-surface-card'
+                    : 'border-transparent bg-transparent hover:bg-surface-hover',
                   !reachable && 'cursor-not-allowed opacity-60',
                 )}
                 aria-current={active ? 'step' : undefined}
@@ -136,22 +138,23 @@ export function WizardStepper({
                 data-active={active ? 'true' : 'false'}
                 data-status={status}
               >
-                <p className="flex items-center gap-2">
-                  <span className={cn('inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border text-xs font-semibold', tone)}>
+                <span className="flex min-w-0 max-w-full items-center gap-2">
+                  <span className={semanticCn('inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border text-label', tone)}>
                     {status === 'complete' ? '✓' : index + 1}
                   </span>
                   <span
-                    className={cn(
-                      'min-w-0 text-sm font-semibold leading-tight',
-                      active ? 'text-violet-800 dark:text-violet-200' : 'text-slate-700 dark:text-gdc-mutedStrong',
+                    data-testid={`wizard-stepper-${step.key}-title`}
+                    className={semanticCn(
+                      'min-w-0 truncate text-label',
+                      active ? 'text-fg' : 'sr-only text-fg-secondary sm:not-sr-only',
                     )}
                   >
                     {step.title}
                   </span>
-                </p>
-                <p className="ml-9 mt-1 text-xs leading-snug text-slate-500 dark:text-gdc-muted">
+                </span>
+                <span className="hidden w-full min-w-0 truncate pl-9 text-caption text-fg-muted lg:block">
                   {step.subtitle}
-                </p>
+                </span>
               </button>
             </li>
           )
@@ -159,7 +162,7 @@ export function WizardStepper({
       </ol>
       {unlockGuidance ? (
         <p
-          className="text-xs leading-5 text-slate-600 dark:text-gdc-mutedStrong"
+          className="text-caption text-fg-secondary"
           id="wizard-unlock-guidance"
           data-testid="wizard-unlock-guidance"
           role="status"

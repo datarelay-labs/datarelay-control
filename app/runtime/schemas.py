@@ -315,7 +315,8 @@ class RouteRuntimeLatencyTrendPoint(BaseModel):
 
 class RouteRuntimeSuccessRateTrendPoint(BaseModel):
     timestamp: datetime
-    success_rate: float
+    # None when the bucket had no completed delivery attempts.
+    success_rate: float | None
 
 
 class RouteRuntimeMetricsRow(BaseModel):
@@ -327,7 +328,8 @@ class RouteRuntimeMetricsRow(BaseModel):
     destination_type: str
     enabled: bool
     route_status: str
-    success_rate: float
+    # None when the window had no completed delivery attempts.
+    success_rate: float | None
     events_last_hour: int
     delivered_last_hour: int
     failed_last_hour: int
@@ -341,7 +343,8 @@ class RouteRuntimeMetricsRow(BaseModel):
     last_error_message: str | None = None
     last_error_code: str | None = None
     failure_policy: str
-    connectivity_state: Literal["HEALTHY", "DEGRADED", "ERROR", "DISABLED"]
+    # IDLE: enabled but no deliveries and no failures in the window (no verdict).
+    connectivity_state: Literal["HEALTHY", "DEGRADED", "ERROR", "DISABLED", "IDLE"]
     disable_reason: str | None = None
     latency_trend: list[RouteRuntimeLatencyTrendPoint]
     success_rate_trend: list[RouteRuntimeSuccessRateTrendPoint]
@@ -2593,9 +2596,16 @@ class StreamIncrementalTestRequest(BaseModel):
 
 class StreamIncrementalTestResponse(BaseModel):
     stream_id: int
+    # ``ok`` keeps its original meaning (the HTTP request succeeded); ``status`` adds the incremental verdict.
     ok: bool
     http_status: int | None = None
     message: str
+    status: Literal["success", "warning", "error"] = "success"
+    # NO_NEWER_RECORDS: records were returned but none is newer than the checkpoint used for the request.
+    warning_code: Literal["NO_NEWER_RECORDS"] | None = None
+    # Returned records strictly newer than the checkpoint; None when it cannot be compared (no checkpoint value,
+    # opaque cursor, or no record exposes the checkpoint field).
+    newer_record_count: int | None = None
     preview_events: list[dict[str, Any]] = Field(default_factory=list)
     next_checkpoint_preview: dict[str, Any] | None = None
     checkpoint_unchanged: bool = True

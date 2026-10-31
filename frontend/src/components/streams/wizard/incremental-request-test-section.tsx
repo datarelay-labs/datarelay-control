@@ -7,7 +7,9 @@ import {
   buildApiTestCheckpointPayload,
   buildIncrementalRequestTestSignature,
   calculateIncrementalRequestTestCheckpoint,
+  countRecordsNewerThanTestCheckpoint,
   incrementalPreviewKind,
+  readCheckpointFromTestRecord,
   resolveCheckpointValuesForTest,
   type IncrementalRequestPattern,
   type IncrementalRequestTestCheckpointResult,
@@ -205,16 +207,30 @@ export function useIncrementalRequestTest(props: IncrementalRequestTestHookProps
       const sampleRecords = returned.slice(0, 2)
       const testedAt = Date.now()
       if (res.ok && res.response) {
+        const newerRecordCount = returned.length
+          ? countRecordsNewerThanTestCheckpoint(
+              returned.map((record) =>
+                readCheckpointFromTestRecord(record, checkpointSourcePath, eventArrayPath, eventRootPath),
+              ),
+              checkpointCalc,
+            )
+          : null
+        // Records at or before the checkpoint do not prove the incremental filter works.
+        const noNewerRecords = returned.length > 0 && newerRecordCount === 0
         const result: WizardIncrementalRequestTestResult = {
-          status: 'success',
+          status: noNewerRecords ? 'warning' : 'success',
           httpStatus: res.response.status_code,
           durationMs,
           returnedRecordCount: returned.length,
+          newerRecordCount,
+          warningCode: noNewerRecords ? 'NO_NEWER_RECORDS' : null,
           testedCheckpointDisplay: checkpointCalc.displayValue,
           substitutedRequestBody,
           sampleRecords,
           rawResponseBody: res.response.raw_body ?? null,
-          message: 'Incremental request looks good.',
+          message: noNewerRecords
+            ? `Request succeeded and returned ${returned.length} record(s), but none is newer than the tested checkpoint. Verify the request applies the checkpoint filter.`
+            : 'Incremental request looks good.',
           testedAt,
           signature,
         }
@@ -266,7 +282,18 @@ export function useIncrementalRequestTest(props: IncrementalRequestTestHookProps
     } finally {
       setTesting(false)
     }
-  }, [checkpointCalc, draft, eventArrayPath, onStreamPatch, pattern, signature, state, testDisabled])
+  }, [
+    checkpointCalc,
+    checkpointSourcePath,
+    draft,
+    eventArrayPath,
+    eventRootPath,
+    onStreamPatch,
+    pattern,
+    signature,
+    state,
+    testDisabled,
+  ])
 
   return { testing, testDisabled, testDisabledReason, checkpointCalc, runTest, signature }
 }
@@ -282,9 +309,11 @@ export function IncrementalRequestTestSection({
   const [showRaw, setShowRaw] = useState(false)
 
   const result = state.stream.incrementalRequestTestResult
+  const requestSucceeded = result != null && result.status !== 'error'
   const stale =
-    result?.status === 'success' &&
+    requestSucceeded &&
     (result.signature !== signature || state.stream.incrementalRequestTestSignature !== signature)
+  const tone = result?.status ?? 'error'
 
   const codePreClass = drawerLayout
     ? 'gdc-thin-scroll mt-0.5 min-h-[7rem] max-h-[min(22vh,200px)] overflow-auto rounded border border-slate-200/70 bg-slate-950 p-2 font-mono text-[9px] text-emerald-200 dark:border-gdc-border'
@@ -319,27 +348,41 @@ export function IncrementalRequestTestSection({
             <p className="text-[11px] font-semibold text-slate-800 dark:text-slate-100">Test result</p>
           </div>
           <div
+            data-testid="incremental-request-test-result-status"
+            data-status={tone}
             className={cn(
               'rounded-md border px-2.5 py-2',
               drawerLayout && 'flex min-h-0 flex-1 flex-col',
-              result.status === 'success'
+              tone === 'success'
                 ? 'border-emerald-300/70 bg-emerald-500/[0.08] dark:border-emerald-500/35 dark:bg-emerald-500/10'
-                : 'border-red-300/70 bg-red-500/[0.06] dark:border-red-500/35 dark:bg-red-500/10',
+                : tone === 'warning'
+                  ? 'border-amber-300/70 bg-amber-500/[0.08] dark:border-amber-500/35 dark:bg-amber-500/10'
+                  : 'border-red-300/70 bg-red-500/[0.06] dark:border-red-500/35 dark:bg-red-500/10',
             )}
           >
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px]">
               <span
                 className={cn(
-                  'font-semibold',
-                  result.status === 'success' ? 'text-emerald-800 dark:text-emerald-200' : 'text-red-800 dark:text-red-200',
+                  'inline-flex items-center gap-1 font-semibold',
+                  tone === 'success'
+                    ? 'text-emerald-800 dark:text-emerald-200'
+                    : tone === 'warning'
+                      ? 'text-amber-800 dark:text-amber-200'
+                      : 'text-red-800 dark:text-red-200',
                 )}
               >
-                {result.status === 'success' ? 'Success' : 'Failed'}
+                {tone === 'warning' ? <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden /> : null}
+                {tone === 'success' ? 'Success' : tone === 'warning' ? 'Warning' : 'Failed'}
                 {result.httpStatus != null ? ` · ${result.httpStatus}` : ''}
               </span>
               {result.durationMs != null ? <span className="text-slate-600 dark:text-gdc-mutedStrong">Duration: {result.durationMs}ms</span> : null}
-              {result.status === 'success' ? (
+              {requestSucceeded ? (
                 <span className="text-slate-600 dark:text-gdc-mutedStrong">Returned records: {result.returnedRecordCount}</span>
+              ) : null}
+              {requestSucceeded && result.newerRecordCount != null ? (
+                <span className="text-slate-600 dark:text-gdc-mutedStrong">
+                  Newer than checkpoint: {result.newerRecordCount}
+                </span>
               ) : null}
               <span className="text-slate-500 dark:text-gdc-mutedStrong">
                 Tested at: {new Date(result.testedAt).toLocaleString()}
@@ -358,7 +401,11 @@ export function IncrementalRequestTestSection({
             <p
               className={cn(
                 'mt-1.5 text-[11px] font-medium',
-                result.status === 'success' ? 'text-emerald-900 dark:text-emerald-100' : 'text-red-900 dark:text-red-100',
+                tone === 'success'
+                  ? 'text-emerald-900 dark:text-emerald-100'
+                  : tone === 'warning'
+                    ? 'text-amber-900 dark:text-amber-100'
+                    : 'text-red-900 dark:text-red-100',
               )}
             >
               {result.message}
@@ -382,7 +429,7 @@ export function IncrementalRequestTestSection({
                   </pre>
                 </dd>
               </div>
-              {result.status === 'success' && result.sampleRecords.length > 0 ? (
+              {requestSucceeded && result.sampleRecords.length > 0 ? (
                 <div className={cn(drawerLayout && 'min-h-0 flex-1')}>
                   <dt className="font-semibold text-slate-500 dark:text-gdc-mutedStrong">Sample records (first 2)</dt>
                   <dd>
@@ -392,7 +439,7 @@ export function IncrementalRequestTestSection({
                   </dd>
                 </div>
               ) : null}
-              {result.status === 'success' && result.rawResponseBody && showRaw ? (
+              {requestSucceeded && result.rawResponseBody && showRaw ? (
                 <div className={cn(drawerLayout && 'min-h-0')}>
                   <dt className="font-semibold text-slate-500 dark:text-gdc-mutedStrong">Raw response body</dt>
                   <dd>

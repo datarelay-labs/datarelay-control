@@ -43,8 +43,9 @@ export type OperationalStreamSnapshot = {
   health_status: OperationalHealthStatus
   eps_1m: number
   eps_5m: number
-  success_rate_5m: number
-  failure_rate_5m: number
+  /** null when the 5m window had no completed attempts (never 0 or 100 without evidence). */
+  success_rate_5m: number | null
+  failure_rate_5m: number | null
   avg_latency_ms: number | null
   route_count: number
   healthy_route_count: number
@@ -68,7 +69,8 @@ export type OperationalRouteSnapshot = {
   health_status: OperationalHealthStatus
   delivered_eps_1m: number
   failed_eps_1m: number
-  success_rate_5m: number
+  /** null when the 5m window had no completed delivery attempts. */
+  success_rate_5m: number | null
   retry_rate_5m: number
   avg_latency_ms: number | null
   last_success_at: string | null
@@ -100,6 +102,11 @@ export type OperationalProblem = {
   title: string
   message: string
   last_seen_at: string | null
+  /** Set for Source collection failures (SOURCE_AUTH_FAILED / SOURCE_FETCH_FAILED); additive and optional. */
+  error_code?: string | null
+  http_status?: number | null
+  connector_id?: number | null
+  connector_name?: string | null
 }
 
 export type OperationalSnapshotResponse = {

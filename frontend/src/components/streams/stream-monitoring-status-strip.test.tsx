@@ -2,6 +2,41 @@ import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { StreamMonitoringStatusStrip } from './stream-monitoring-status-strip'
 
+const baseProps = {
+  displayStatus: 'RUNNING' as const,
+  backendStreamId: 1,
+  hasRuntimeObsApi: true,
+  eventsSparkline: [] as number[],
+  deliveryPct: null,
+  deliveryLabel: null,
+  routesTotal: 0,
+  routesOk: 0,
+  routesErr: 0,
+  showCheckpointObservability: false,
+  failedLastHour: null,
+  errorRate: null,
+  lastErrorAt: null,
+}
+
+function metricValue(label: string): string {
+  return screen.getByText(label).closest('div')?.parentElement?.textContent ?? ''
+}
+
+describe('StreamMonitoringStatusStrip measurement', () => {
+  it('shows an em dash (not 0 events/sec) for ingest and delivery when nothing was measured', () => {
+    render(<StreamMonitoringStatusStrip {...baseProps} events1h={null} runtimeMetrics={null} />)
+    expect(metricValue('Ingest Rate')).toContain('—')
+    expect(metricValue('Ingest Rate')).not.toContain('0 events/sec')
+    expect(metricValue('Delivery Rate')).toContain('—')
+    expect(metricValue('Delivery Rate')).not.toContain('0 events/sec')
+  })
+
+  it('keeps a measured zero as 0 events/sec', () => {
+    render(<StreamMonitoringStatusStrip {...baseProps} events1h={0} runtimeMetrics={null} />)
+    expect(metricValue('Ingest Rate')).toContain('0 events/sec')
+  })
+})
+
 describe('StreamMonitoringStatusStrip', () => {
   it('shows em dash for success rate when no delivery outcomes exist', () => {
     render(

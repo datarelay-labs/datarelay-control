@@ -3,13 +3,19 @@ import type { WizardProtectionAction, WizardRouteProtectionOverride } from '../c
 export type RouteProtectionPreviewRoute = {
   routeDraftKey: string
   label: string
+  /**
+   * This Route's own action for the field before field overrides apply. Omit to use the
+   * preview default; null means this Route's configuration does not protect the field.
+   */
+  effectiveAction?: WizardProtectionAction | null
 }
 
 export type EffectiveProtectionPreviewEntry = {
   routeDraftKey: string
   routeLabel: string
-  protectionAction: WizardProtectionAction
-  source: 'default' | 'override'
+  /** Null when the Route's own configuration does not protect the field. */
+  protectionAction: WizardProtectionAction | null
+  source: 'default' | 'override' | 'route'
 }
 
 export type EffectiveProtectionPreviewField = {
@@ -55,6 +61,14 @@ export function computeRouteProtectionEffectivePreview(input: {
         routeLabel: route.label,
         protectionAction: override.protectionAction,
         source: 'override' as const,
+      }
+    }
+    if (route.effectiveAction !== undefined) {
+      return {
+        routeDraftKey: route.routeDraftKey,
+        routeLabel: route.label,
+        protectionAction: route.effectiveAction,
+        source: 'route' as const,
       }
     }
     return {
