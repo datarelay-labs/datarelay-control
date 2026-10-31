@@ -190,6 +190,22 @@ describe('useDestinationDetailData ownership + stale protection', () => {
     expect(fetchDestinationById).toHaveBeenCalledTimes(3)
   })
 
+  it('reports a 403 from the connection test as readable text without status or code prefixes (F-018)', async () => {
+    fetchDestinationById.mockResolvedValue(detail(3, 'Dest'))
+    testDestination.mockRejectedValue(new Error('403: [ROLE_FORBIDDEN] Role VIEWER may not do this'))
+
+    const { result } = renderHook(() => useDestinationDetailData(3))
+    await waitFor(() => expect(result.current.destination?.name).toBe('Dest'))
+
+    let out: { success: boolean; message: string } | undefined
+    await act(async () => {
+      out = await result.current.runConnectivityTest()
+    })
+    expect(out?.success).toBe(false)
+    expect(out?.message).toMatch(/do not have permission/i)
+    expect(out?.message).not.toMatch(/403|ROLE_FORBIDDEN/)
+  })
+
   it('ignores stale destination A response after switching to B', async () => {
     let resolveA: (value: ReturnType<typeof detail>) => void = () => undefined
     const slowA = new Promise<ReturnType<typeof detail>>((resolve) => {

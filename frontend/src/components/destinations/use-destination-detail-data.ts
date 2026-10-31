@@ -15,6 +15,7 @@ import type {
   RouteFailuresAnalyticsResponse,
   RuntimeLogSearchItem,
 } from '../../api/types/gdcApi'
+import { formatApiErrorMessage } from '../../lib/api-error-message'
 import { isRequestAborted } from '../../lib/request-abort'
 import {
   computeDestinationCurrentEps,
@@ -27,7 +28,7 @@ import {
   routeMetricsFromSnapshot,
   type DestinationUiHealth,
 } from './destination-runtime-metrics'
-import type { DestinationHealthState } from './destination-detail-model'
+import { DESTINATION_NOT_FOUND_MESSAGE, type DestinationHealthState } from './destination-detail-model'
 
 const RUNTIME_WINDOW = '24h' as const
 
@@ -145,7 +146,7 @@ export function useDestinationDetailData(destinationId: number | null): Destinat
       const detail = await fetchDestinationById(destinationId)
       if (gen !== loadGenRef.current || abort.signal.aborted) return
       if (detail == null) {
-        setError('Destination not found.')
+        setError(DESTINATION_NOT_FOUND_MESSAGE)
         setDestination(null)
         setListRow(null)
         return
@@ -243,7 +244,8 @@ export function useDestinationDetailData(destinationId: number | null): Destinat
     } catch (err) {
       return {
         success: false,
-        message: err instanceof Error ? err.message : 'Connection test failed.',
+        // Includes the 403 case (a role that may not run tests): readable text, no status/code prefix.
+        message: formatApiErrorMessage(err, 'Connection test failed.'),
       }
     } finally {
       setTestBusy(false)

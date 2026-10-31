@@ -130,3 +130,6 @@ export function emptyDestinationDetail(destinationId: string): DestinationDetail
     recentFailures: [],
   }
 }
+
+/** Shown when the API confirms the Destination id does not exist (a Retry cannot help). */
+export const DESTINATION_NOT_FOUND_MESSAGE = 'Destination not found.'
