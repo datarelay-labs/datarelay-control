@@ -95,16 +95,19 @@ export function TopHeader({
             className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-center sm:gap-x-4"
             {...(mobileNavOpen ? { inert: true } : {})}
           >
-            <div className="flex min-w-0 flex-1 flex-col gap-1">
+            {/* Content-sized title column: the heading keeps one line and truncates only as a last resort. */}
+            <div className="flex min-w-0 max-w-full flex-none flex-col gap-1">
               {breadcrumb ? (
                 <div className="min-w-0 text-xs leading-snug text-slate-500 dark:text-gdc-muted">{breadcrumb}</div>
               ) : null}
-              <h1 className="shrink-0 text-lg font-semibold text-slate-900 dark:text-gdc-foreground">
+              <h1 className="text-lg font-semibold text-slate-900 dark:text-gdc-foreground sm:truncate" title={title}>
                 {title}
               </h1>
             </div>
             <div className="hidden h-4 w-px shrink-0 bg-slate-200 dark:bg-gdc-border sm:block" aria-hidden />
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
+            {/* Wraps on phones; from sm up stays one row so the chip remains inline. Runtime text states
+                runtime truth (including "not verified" qualifiers), so it wraps and is never truncated. */}
+            <div className="flex min-w-0 flex-wrap items-center gap-2 sm:flex-1 sm:flex-nowrap">
               {showRuntimeStatus ? <span
                 className={cn(
                   'inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium',

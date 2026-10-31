@@ -59,29 +59,29 @@ function routeStatusLabel(route: OperationalRouteSnapshot): string {
 }
 
 function routeStatusToneClass(route: OperationalRouteSnapshot): string {
-  if (!route.enabled) return 'border-slate-600/40 bg-slate-500/10 text-slate-400'
+  if (!route.enabled) return 'border-slate-300 bg-slate-100 text-slate-600 dark:border-slate-600/40 dark:bg-slate-500/10 dark:text-slate-400'
   switch (route.health_status) {
     case 'HEALTHY':
-      return 'border-emerald-600/40 bg-emerald-500/10 text-emerald-400'
+      return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-600/40 dark:bg-emerald-500/10 dark:text-emerald-400'
     case 'DEGRADED':
-      return 'border-amber-600/40 bg-amber-500/10 text-amber-400'
+      return 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-600/40 dark:bg-amber-500/10 dark:text-amber-400'
     case 'ERROR':
-      return 'border-red-600/40 bg-red-500/10 text-red-400'
+      return 'border-red-200 bg-red-50 text-red-700 dark:border-red-600/40 dark:bg-red-500/10 dark:text-red-400'
     default:
-      return 'border-slate-600/40 bg-slate-500/10 text-slate-400'
+      return 'border-slate-300 bg-slate-100 text-slate-600 dark:border-slate-600/40 dark:bg-slate-500/10 dark:text-slate-400'
   }
 }
 
 function streamStatusToneClass(row: StreamConsoleRow): string {
   switch (row.status) {
     case 'RUNNING':
-      return 'border-emerald-600/50 bg-emerald-950/80 text-emerald-400'
+      return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-600/50 dark:bg-emerald-950/80 dark:text-emerald-400'
     case 'DEGRADED':
-      return 'border-amber-600/50 bg-amber-950/80 text-amber-400'
+      return 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-600/50 dark:bg-amber-950/80 dark:text-amber-400'
     case 'ERROR':
-      return 'border-red-600/50 bg-red-950/80 text-red-400'
+      return 'border-red-200 bg-red-50 text-red-700 dark:border-red-600/50 dark:bg-red-950/80 dark:text-red-400'
     default:
-      return 'border-slate-600/50 bg-slate-900/80 text-slate-400'
+      return 'border-slate-300 bg-slate-100 text-slate-600 dark:border-slate-600/50 dark:bg-slate-900/80 dark:text-slate-400'
   }
 }
 

@@ -177,7 +177,7 @@ export function DangerousActionDialog({
         ) : null}
 
         {error ? (
-          <p className="mt-2 text-[11px] font-medium text-gdc-criticalFg" data-testid={`${dataTestId}-error`}>
+          <p className="mt-2 text-[11px] font-medium text-red-700 dark:text-red-300" data-testid={`${dataTestId}-error`}>
             {error}
           </p>
         ) : null}

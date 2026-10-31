@@ -9,7 +9,9 @@
   color-scheme: light;
 }
 
-html.dark {
+/* The shell marks the theme on <html> with data-dr-theme; html.dark is kept for compatibility. */
+html.dark,
+html[data-dr-theme="dark"] {
   color-scheme: dark;
 }
 
@@ -21,7 +23,8 @@ html.dark {
   --gdc-chart-primary: oklch(57.72% 0.2324 260);
 }
 
-html.dark {
+html.dark,
+html[data-dr-theme="dark"] {
   --gdc-chart-muted: oklch(70.8% 0 0);
   --gdc-chart-line: oklch(26.9% 0 0);
   --gdc-chart-tooltip-bg: oklch(12% 0 0);
@@ -37,7 +40,8 @@ html {
   background: oklch(98.75% 0 0);
 }
 
-html.dark {
+html.dark,
+html[data-dr-theme="dark"] {
   background: oklch(10% 0 0);
 }
 
@@ -207,6 +211,13 @@ html[data-dr-theme] :where(code, pre) {
    additional product-name line, but hide Foundation's duplicate wordmark. */
 .gdc-login-centered .dr-auth-layout__wordmark {
   display: none;
+}
+
+/* Foundation colours only the "Relay" half of the shell wordmark; "Data" inherits.
+   The ThemeRoot's own `dark:` text utility cannot match itself, so the inherited
+   colour stays near-black in dark theme. Pin "Data" to the brand token instead. */
+.dr-shell__wordmark > span:not(.dr-shell__wordmark-relay) {
+  color: var(--dr-brand-data);
 }
 
 .gdc-login-centered .dr-auth-card {
