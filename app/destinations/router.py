@@ -3,7 +3,7 @@
 from collections import defaultdict
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 from starlette.status import HTTP_422_UNPROCESSABLE_CONTENT
 
@@ -85,8 +85,29 @@ async def list_destinations(db: Session = Depends(get_db_read_bounded)) -> list[
     return items
 
 
+def _ensure_destination_name_free(db: Session, name: str, *, exclude_id: int | None = None) -> None:
+    """Reject a second destination with the same (case-insensitive, trimmed) name (F-139)."""
+
+    wanted = str(name or "").strip().lower()
+    if not wanted:
+        return
+    query = db.query(Destination.id).filter(func.lower(func.trim(Destination.name)) == wanted)
+    if exclude_id is not None:
+        query = query.filter(Destination.id != exclude_id)
+    if query.first() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error_code": "DESTINATION_NAME_EXISTS",
+                "field": "name",
+                "message": f"A destination named {str(name).strip()!r} already exists. Choose a different name.",
+            },
+        )
+
+
 @router.post("/", response_model=DestinationRead, status_code=status.HTTP_201_CREATED)
 async def create_destination(payload: DestinationCreate, request: Request, db: Session = Depends(get_db)) -> DestinationRead:
+    _ensure_destination_name_free(db, payload.name)
     try:
         validate_destination_config(payload.destination_type, dict(payload.config_json or {}))
     except ValueError as exc:
@@ -291,6 +312,8 @@ async def update_destination(
         current_updated_at=getattr(row, "updated_at", None),
         expected_updated_at=expected_updated_at,
     )
+    if "name" in update and str(update["name"] or "").strip().lower() != str(row.name or "").strip().lower():
+        _ensure_destination_name_free(db, str(update["name"]), exclude_id=destination_id)
     merged_type = str(update.get("destination_type", row.destination_type))
     merged_cfg = dict(row.config_json or {})
     if "config_json" in update and update["config_json"] is not None:

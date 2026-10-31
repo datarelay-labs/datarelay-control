@@ -9,11 +9,16 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 DestinationTypeLiteral = Literal["SYSLOG_UDP", "SYSLOG_TCP", "SYSLOG_TLS", "WEBHOOK_POST", "AI_PROVIDER_POST"]
 
 
+DESTINATION_NAME_MAX_LENGTH = 255  # destinations.name is VARCHAR(255)
+
+
 def _require_non_blank_name(value: str | None) -> str | None:
     if value is None:
         return value
     if not isinstance(value, str) or not value.strip():
         raise ValueError("Destination name must be a non-empty string")
+    if len(value.strip()) > DESTINATION_NAME_MAX_LENGTH:
+        raise ValueError(f"Destination name must be {DESTINATION_NAME_MAX_LENGTH} characters or fewer")
     return value
 
 

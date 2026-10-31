@@ -101,7 +101,10 @@ def _not_found(connector_id: int) -> HTTPException:
 
 
 def _bad_request(message: str, error_code: str = "CONNECTOR_VALIDATION_FAILED") -> HTTPException:
-    return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail={"error_code": error_code, "message": message})
+    detail: dict[str, Any] = {"error_code": error_code, "message": message}
+    if error_code == "CONNECTOR_HOST_INVALID":
+        detail["field"] = "host"
+    return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=detail)
 
 
 def _normalize_source_type(source_type: str | None) -> str:
@@ -133,11 +136,38 @@ def _normalize_auth_type(auth_type: str | None) -> str:
     return alias.get(value, value)
 
 
+def _validate_http_base_url(value: str) -> str:
+    """Require an http(s) URL or a bare host[:port][/path]; reject free text such as "not a url" (F-118)."""
+
+    from urllib.parse import urlparse
+
+    text = value.strip()
+    problem = (
+        "host/base_url must be a URL such as https://api.example.com or a host name such as api.example.com"
+    )
+    if any(ch.isspace() for ch in text) or any(ord(ch) < 32 for ch in text):
+        raise _bad_request(problem + " (no spaces).", "CONNECTOR_HOST_INVALID")
+    candidate = text if "://" in text else f"//{text}"
+    try:
+        parsed = urlparse(candidate)
+        host = parsed.hostname
+        parsed.port  # noqa: B018 - raises ValueError for a non-numeric / out-of-range port
+    except ValueError as exc:
+        raise _bad_request(problem + ".", "CONNECTOR_HOST_INVALID") from exc
+    if "://" in text and (parsed.scheme or "").lower() not in {"http", "https"}:
+        raise _bad_request("host/base_url must use http:// or https://.", "CONNECTOR_HOST_INVALID")
+    from app.destinations.config_validation import is_valid_network_host
+
+    if not host or not is_valid_network_host(host):
+        raise _bad_request(problem + ".", "CONNECTOR_HOST_INVALID")
+    return text
+
+
 def _effective_host(payload: ConnectorCreate | ConnectorUpdate) -> str:
     host = (payload.host or payload.base_url or "").strip()
     if not host:
         raise _bad_request("host/base_url is required")
-    return host
+    return _validate_http_base_url(host)
 
 
 def _extract_common_headers(value: dict[str, Any] | None) -> dict[str, str]:

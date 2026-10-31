@@ -8,7 +8,7 @@ from app.schema_drift_policy.schemas import validate_schema_drift_policy_payload
 
 
 class StreamBase(BaseModel):
-    name: str | None = None
+    name: str | None = Field(default=None, max_length=255)  # streams.name is VARCHAR(255)
     connector_id: int | None = None
     source_id: int | None = None
     stream_type: str | None = None
@@ -36,7 +36,7 @@ class StreamBase(BaseModel):
 
 
 class StreamCreate(StreamBase):
-    name: str
+    name: str = Field(max_length=255)
     connector_id: int
     source_id: int
 
@@ -51,7 +51,7 @@ class StreamUpdate(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    name: str | None = None
+    name: str | None = Field(default=None, max_length=255)
     connector_id: int | None = None
     source_id: int | None = None
     stream_type: str | None = None
