@@ -171,10 +171,14 @@ def evaluate_http_access(*, role: str, method: str, path: str) -> AccessDenied |
         )
 
     # --- Platform policy writes: Administrator only (GET remains for operators/viewers) ---
+    # F-192: display-settings holds the platform-wide default timezone, so its
+    # writes are Administrator-only like the other platform configuration. A
+    # user's own timezone preference is separate (PATCH /auth/profile).
     policy_prefixes = (
         f"{base}/admin/https-settings",
         f"{base}/admin/retention-policy",
         f"{base}/admin/alert-settings",
+        f"{base}/admin/display-settings",
     )
     for prefix in policy_prefixes:
         if _under(prefix, path) and m not in SAFE_METHODS and role != ROLE_ADMINISTRATOR:
@@ -358,6 +362,7 @@ def evaluate_http_access(*, role: str, method: str, path: str) -> AccessDenied |
             f"{base}/admin/https-settings",
             f"{base}/admin/retention-policy",
             f"{base}/admin/alert-settings",
+            f"{base}/admin/display-settings",
         )
         for prefix in operator_mutation_deny:
             if _under(prefix, path):

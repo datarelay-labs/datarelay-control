@@ -1086,8 +1086,13 @@ def read_display_settings(db: Session = Depends(get_db)) -> DisplaySettingsRead:
 
 @router.put("/display-settings", response_model=DisplaySettingsRead)
 def update_display_settings(
-    payload: DisplaySettingsUpdate, request: Request, db: Session = Depends(get_db)
+    payload: DisplaySettingsUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(require_roles(ROLE_ADMINISTRATOR)),
 ) -> DisplaySettingsRead:
+    # F-192: the platform-wide default timezone is Administrator-only. The coarse rule lives in
+    # ``route_access``; this dependency keeps the handler safe if it is mounted without that guard.
     tz = validate_iana_timezone(payload.default_timezone)
     row = get_display_settings_row(db)
     row.default_timezone = tz
