@@ -27,6 +27,14 @@ The platform already ships an nginx sidecar, Admin HTTPS settings that render ng
 
 Forwarded headers: `X-Forwarded-For`, `X-Forwarded-Proto`, `X-Real-IP`. The API enables `ProxyHeadersMiddleware` when `GDC_TRUST_PROXY_HEADERS=true` (set in compose).
 
+Production HTTPS and offline installs require an explicit `GDC_PROXY_FORWARD_TRUSTED_HOSTS` value before starting API.
+Supply only the reverse proxy's actual socket-source IP or an operator-approved restricted CIDR.
+Do not use `*` or `0.0.0.0/0`. The API validates and rejects unsafe peers at startup.
+Recheck the value after Docker network/reverse-proxy address changes.
+The bundled Compose keeps `GDC_TRUST_PROXY_HEADERS=true` to preserve forwarded HTTPS/client origin,
+but now fails the installation preflight rather than silently trusting arbitrary headers
+or starting with an invalid wildcard.
+
 WebSocket-ready headers: `Upgrade` and `Connection` are passed using the standard nginx `map` pattern (`docker/reverse-proxy/nginx.conf`).
 
 ## Stacks

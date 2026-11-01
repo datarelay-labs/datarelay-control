@@ -146,7 +146,7 @@ describe('useDestinationsOverviewData', () => {
     expect(result.current.runtimeError).toBeNull()
   })
 
-  it('surfaces runtime error when operational snapshot is unavailable', async () => {
+  it('surfaces runtime error when operational snapshot is unavailable and reads Connectivity verified, not Healthy, without delivery evidence', async () => {
     const operationalSnapshot = await import('../../api/operationalSnapshot')
     vi.mocked(operationalSnapshot.getOperationalSnapshot).mockResolvedValueOnce(null)
     const health = await import('../../api/gdcRuntimeHealth')
@@ -156,7 +156,7 @@ describe('useDestinationsOverviewData', () => {
     )
     await waitFor(() => expect(result.current.runtimeLoading).toBe(false))
     expect(result.current.runtimeError).toMatch(/runtime data/i)
-    expect(result.current.rows[0]?.runtime.health).toBe('Healthy')
+    expect(result.current.rows[0]?.runtime.health).toBe('Connectivity verified \u00b7 No deliveries observed')
   })
 
   it('keeps newest refresh generation when an older runtime response arrives late', async () => {

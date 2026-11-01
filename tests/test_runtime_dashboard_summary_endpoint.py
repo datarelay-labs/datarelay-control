@@ -500,6 +500,43 @@ def test_recent_unhealthy_streams_dedupe_by_stream_id(dashboard_client: TestClie
     assert matching[0]["last_error_message"] == "second"
 
 
+def test_recent_unhealthy_streams_excludes_idle_and_disabled_streams() -> None:
+    """Scenario 10 (snapshot path): IDLE / disabled streams are not "recent unhealthy"."""
+
+    from types import SimpleNamespace
+
+    from app.runtime.runtime_snapshot_analytics_repository import _recent_unhealthy_streams
+
+    now = datetime.now(UTC)
+    since = now - timedelta(hours=1)
+    streams = [
+        SimpleNamespace(id=1, enabled=True),  # not observed / paused -> IDLE
+        SimpleNamespace(id=2, enabled=False),  # disabled with a stale ERROR row
+        SimpleNamespace(id=3, enabled=True),  # confirmed DEGRADED
+    ]
+    snaps = {
+        1: SimpleNamespace(health_status="IDLE", last_error_at=None, last_error_message=None, updated_at=now),
+        2: SimpleNamespace(
+            health_status="ERROR",
+            last_error_at=now - timedelta(minutes=5),
+            last_error_message="old failure",
+            updated_at=now,
+        ),
+        3: SimpleNamespace(
+            health_status="DEGRADED",
+            last_error_at=now - timedelta(minutes=2),
+            last_error_message="send failed",
+            updated_at=now,
+        ),
+    }
+    statuses = {1: "PAUSED", 2: "STOPPED", 3: "RUNNING"}
+
+    out = _recent_unhealthy_streams(streams, snaps, statuses, since=since, limit=10)  # type: ignore[arg-type]
+
+    # Old code listed stream 1 (IDLE fell back to updated_at) and stream 2 (disabled).
+    assert [item.stream_id for item in out] == [3]
+
+
 def test_limit_validation_422(dashboard_client: TestClient, db_session: Session) -> None:
     _mk_stream_hierarchy(db_session, stream_status="RUNNING")
     db_session.commit()

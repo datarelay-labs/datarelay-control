@@ -1,6 +1,7 @@
 import { Activity, Clock, Send, TrendingUp } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { formatOperationalPercent } from '../../lib/observability-format'
+import { formatTimestampWithResolvedTimezone } from '../../lib/platform-timestamps'
 import { eventsPerSecFromWindow, formatEventsPerSecRate } from '../../lib/stream-console-metrics'
 import type { StreamRuntimeStatus } from '../../api/streamRows'
 import type { StreamRuntimeMetricsResponse } from '../../api/types/gdcApi'
@@ -85,6 +86,8 @@ export type StreamMonitoringStatusStripProps = {
   errorRate: number | null
   lastErrorAt: string | null
   lastEventRelative?: string | null
+  /** Timestamp of the latest delivery evidence (success/failure). Never the scheduler tick. */
+  lastEventAt?: string | null
   windowSeconds?: number | null
   onExpandObservability?: () => void
 }
@@ -95,13 +98,16 @@ export function StreamMonitoringStatusStrip({
   deliveryPct,
   runtimeMetrics,
   lastEventRelative,
-  lastErrorAt,
+  lastEventAt: lastEventAtProp,
   windowSeconds,
 }: StreamMonitoringStatusStripProps) {
   const winSec = Math.max(
     1,
     windowSeconds ?? runtimeMetrics?.metrics_window_seconds ?? 3600,
   )
+  // An unmeasured window (no event count and no metrics block) is not "0 events/sec".
+  const ingestMeasured = events1h != null || runtimeMetrics?.kpis != null
+  const deliveryMeasured = runtimeMetrics?.kpis != null
   const eventsHour = events1h ?? runtimeMetrics?.kpis.events_last_hour ?? 0
   const deliveredHour = runtimeMetrics?.kpis.delivered_last_hour ?? 0
   const failedHour = runtimeMetrics?.kpis.failed_last_hour ?? 0
@@ -109,18 +115,21 @@ export function StreamMonitoringStatusStrip({
   const rawSuccessRate = deliveryPct ?? runtimeMetrics?.kpis.delivery_success_rate ?? null
   const successRate = hasDeliveryOutcomes && rawSuccessRate != null ? rawSuccessRate : null
 
-  const ingestLabel =
-    eventsHour > 0
+  const ingestLabel = !ingestMeasured
+    ? '—'
+    : eventsHour > 0
       ? `${formatEventsPerSecRate(eventsHour, winSec).replace(' /s', '')} events/sec`
       : '0 events/sec'
-  const deliveryLabel =
-    hasDeliveryOutcomes || deliveredHour > 0
+  const deliveryLabel = !deliveryMeasured
+    ? '—'
+    : hasDeliveryOutcomes || deliveredHour > 0
       ? `${formatEventsPerSecRate(deliveredHour, winSec).replace(' /s', '')} events/sec`
       : '0 events/sec'
   const successLabel = successRate != null ? formatOperationalPercent(successRate) : '—'
-  const lastEvent = lastEventRelative ?? '—'
-  const lastEventAt = runtimeMetrics?.stream.last_run_at ?? lastErrorAt ?? null
-  const lastEventSub = lastEventAt ? lastEventAt.slice(0, 19).replace('T', ' ') : null
+  const lastEventAt = lastEventAtProp ?? null
+  // No delivery evidence means no event time: do not present a scheduler tick as the last event.
+  const lastEvent = lastEventAt ? (lastEventRelative ?? '—') : 'Not observed yet'
+  const lastEventSub = lastEventAt ? formatTimestampWithResolvedTimezone(lastEventAt) : null
 
   const ingestSpark = eventsSparkline.length ? eventsSparkline : [eventsPerSecFromWindow(eventsHour, winSec)]
   const deliverySpark = ingestSpark.map((v) => (successRate != null ? (v * successRate) / 100 : 0))
@@ -140,7 +149,7 @@ export function StreamMonitoringStatusStrip({
         value={ingestLabel}
         icon={Activity}
         iconClassName="bg-sky-500/15 text-sky-600 dark:bg-sky-500/20 dark:text-sky-400"
-        sparkline={ingestSpark}
+        sparkline={ingestMeasured ? ingestSpark : undefined}
         sparklineClassName="text-sky-500 dark:text-sky-400"
       />
       <MetricCard
@@ -148,7 +157,7 @@ export function StreamMonitoringStatusStrip({
         value={deliveryLabel}
         icon={Send}
         iconClassName="bg-violet-500/15 text-violet-600 dark:bg-violet-500/20 dark:text-violet-400"
-        sparkline={deliverySpark}
+        sparkline={deliveryMeasured ? deliverySpark : undefined}
         sparklineClassName="text-violet-500 dark:text-violet-400"
       />
       <MetricCard

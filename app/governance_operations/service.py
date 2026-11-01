@@ -36,7 +36,6 @@ from app.governance_policies.models import (
 from app.governance_violations.models import VIOLATION_SEVERITY_HIGH
 from app.governance_violations.service import list_governance_violations
 from app.quarantine.models import (
-    QUARANTINE_STATUS_DISCARDED,
     QUARANTINE_STATUS_QUARANTINED,
     StreamQuarantineEvent,
 )
@@ -111,11 +110,7 @@ def _count_open_violations(db: Session) -> int:
         db.scalar(
             select(func.count())
             .select_from(StreamQuarantineEvent)
-            .where(
-                StreamQuarantineEvent.status.in_(
-                    (QUARANTINE_STATUS_QUARANTINED, QUARANTINE_STATUS_DISCARDED)
-                )
-            )
+            .where(StreamQuarantineEvent.status == QUARANTINE_STATUS_QUARANTINED)
         )
         or 0
     )

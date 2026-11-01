@@ -1,3 +1,8 @@
+import {
+  SUPPORTED_CHECKPOINT_PLACEHOLDER_NAMES,
+  findCheckpointPlaceholderNames,
+  unsupportedCheckpointPlaceholderNames,
+} from './wizard-incremental-request'
 import { wizardHasLinkedSource, type WizardConfigState, type WizardState, type WizardStepKey } from './wizard-state'
 
 type SampleConfirmationStream = Pick<
@@ -139,6 +144,46 @@ export function wizardRecordPathReady(state: Pick<WizardState, 'stream'>): boole
 /** Sync position field selected on the sample record. */
 export function wizardSyncPositionReady(state: Pick<WizardState, 'stream'>): boolean {
   return state.stream.checkpointSourcePath.trim().length > 0
+}
+
+export type SyncPositionBinding =
+  | { status: 'not_applicable' }
+  | { status: 'bound' }
+  | { status: 'unbound'; reason: string }
+  | { status: 'unsupported'; names: string[]; reason: string }
+
+/**
+ * An HTTP stream's Sync position only works when the request actually uses it. Without a
+ * `{{checkpoint.*}}` placeholder in the URL, query parameters, headers or body, every poll
+ * re-fetches the same latest records and older source events are silently lost (F-162).
+ */
+export function evaluateSyncPositionBinding(
+  state: Pick<WizardState, 'stream' | 'connector'>,
+): SyncPositionBinding {
+  if (state.connector?.sourceType !== 'HTTP_API_POLLING') return { status: 'not_applicable' }
+  const path = state.stream.checkpointSourcePath.trim()
+  if (!path) return { status: 'not_applicable' }
+  const s = state.stream
+  const parts: string[] = [s.endpoint ?? '', s.requestBody ?? '']
+  for (const row of s.params ?? []) parts.push(row.key ?? '', row.value ?? '')
+  for (const row of s.headers ?? []) parts.push(row.key ?? '', row.value ?? '')
+  if (s.incrementalRequestPattern !== 'none') parts.push(s.incrementalRequestDraft ?? '')
+  const haystack = parts.join('\n')
+  const unsupported = unsupportedCheckpointPlaceholderNames(haystack)
+  if (unsupported.length > 0) {
+    return {
+      status: 'unsupported',
+      names: unsupported,
+      reason: `Unsupported placeholder ${unsupported.join(', ')} would be sent to the source as literal text. Use one of ${SUPPORTED_CHECKPOINT_PLACEHOLDER_NAMES.map((n) => `{{checkpoint.${n}}}`).join(', ')}.`,
+    }
+  }
+  if (findCheckpointPlaceholderNames(haystack).length === 0) {
+    return {
+      status: 'unbound',
+      reason: `Sync position ${path} is not used by the request: no {{checkpoint.*}} placeholder appears in the URL, query parameters, headers or body, so every poll re-fetches the same latest records and older source events are lost. Add a placeholder such as {{checkpoint.value}} (or use Generate incremental request), or clear the sync position.`,
+    }
+  }
+  return { status: 'bound' }
 }
 
 /** Record path confirmed against the latest successful API test run. */

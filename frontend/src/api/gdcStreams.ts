@@ -6,22 +6,19 @@ import {
   safeRequestJsonResult,
   type GdcJsonResult,
 } from '../api'
-import { CATALOG_LIST_CACHE_TTL_MS, CATALOG_STREAMS_LIST_KEY } from './catalogListCache'
+import {
+  CATALOG_LIST_CACHE_TTL_MS,
+  CATALOG_STREAMS_LIST_KEY,
+  invalidateStreamCatalogCache,
+  STREAM_BY_ID_CACHE_NS,
+  STREAMS_LIST_CACHE_NS,
+} from './catalogListCache'
 import { GDC_API_PREFIX } from './gdcApiPrefix'
 import { readJsonWithSignal, type GdcSignalOptions } from './gdcSignalOptions'
 import { cachedRequest, clearSharedRequestCache } from './requestCache'
 import type { StreamRead } from './types/gdcApi'
 
 const readJsonOpts = { timeoutMs: GDC_DEFAULT_READ_JSON_TIMEOUT_MS }
-const STREAMS_LIST_CACHE_NS = 'catalog-streams'
-const STREAM_BY_ID_CACHE_NS = 'catalog-stream-by-id'
-
-function invalidateStreamCatalogCache(streamId?: number): void {
-  clearSharedRequestCache(STREAMS_LIST_CACHE_NS, CATALOG_STREAMS_LIST_KEY)
-  if (streamId != null) {
-    clearSharedRequestCache(STREAM_BY_ID_CACHE_NS, String(streamId))
-  }
-}
 
 /** Legacy placeholder shape from `app/streams/router` before DB-backed list. */
 export function isStreamsPlaceholderResponse(body: unknown): boolean {
@@ -153,7 +150,12 @@ export async function updateStream(
     token = current?.updated_at ?? undefined
   }
   if (!token) {
-    throw new Error('expected_updated_at is required for stream updates')
+    // Same as connectors (F-231): a missing revision after the fallback read means the stream
+    // is gone, not that the caller forgot an internal field.
+    throw new Error(
+      `Stream #${streamId} could not be found, so your changes were not saved. ` +
+        'It may have been deleted from another session. Reload the stream list to check.',
+    )
   }
   const updated = await requestJson<StreamRead>(`${GDC_API_PREFIX}/streams/${streamId}`, {
     method: 'PUT',
@@ -161,6 +163,17 @@ export async function updateStream(
   })
   invalidateStreamCatalogCache(streamId)
   return updated
+}
+
+export type StreamDeleteImpact = {
+  stream_id: number
+  quarantined_events: number
+  pending_replay_jobs: number
+}
+
+/** Held data a stream delete would destroy. Throws on failure so the caller can fail closed. */
+export async function fetchStreamDeleteImpact(streamId: number): Promise<StreamDeleteImpact> {
+  return requestJson<StreamDeleteImpact>(`${GDC_API_PREFIX}/streams/${streamId}/delete-impact`)
 }
 
 export async function deleteStream(streamId: number): Promise<void> {

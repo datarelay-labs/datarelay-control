@@ -12,6 +12,11 @@ import {
   type WizardUnmappedFieldsPolicy,
 } from './wizard-state'
 import { buildWizardTransformSample } from './wizard-transform-sample'
+import {
+  runtimePreviewBadgeLabel,
+  summarizeTransformFailures,
+  TRANSFORM_ENGINE_UNAVAILABLE_HINT,
+} from './route-processing-transform-failures'
 
 export type WizardMappingOutputAsideProps = {
   state: WizardState
@@ -134,6 +139,7 @@ export function WizardMappingOutputAside({
   const runtimeDefaultCount = runtimeTransformEvidence.filter((item) => item.recovered_via_default).length
   const runtimeBlockedCount = runtimeTransformEvidence.filter((item) => item.blocked === true).length
   const runtimeFailureCount = runtimeTransformEvidence.filter((item) => !item.success).length
+  const transformFailures = useMemo(() => summarizeTransformFailures(runtimeTransformEvidence), [runtimeTransformEvidence])
 
   const duplicateOutputKeys = useMemo(() => {
     const counts = new Map<string, number>()
@@ -245,13 +251,20 @@ export function WizardMappingOutputAside({
                   ? 'border-violet-500/25 bg-violet-500/10 text-violet-700 dark:text-violet-300'
                   : runtimeError
                     ? 'border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300'
-                    : runtimePreview
+                    : runtimePreview && runtimeFailureCount > 0
+                      ? 'border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300'
+                      : runtimePreview
                       ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
                       : 'border-slate-300 bg-slate-100 text-slate-600 dark:border-gdc-border dark:bg-gdc-section dark:text-gdc-muted',
               )}
             >
               {runtimeLoading ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : null}
-              {runtimeLoading ? 'Runtime preview' : runtimeError ? 'Preview failed' : runtimePreview ? 'Runtime verified' : 'Preview pending'}
+              {runtimePreviewBadgeLabel({
+                loading: runtimeLoading,
+                error: runtimeError,
+                hasPreview: runtimePreview != null,
+                failureCount: runtimeFailureCount,
+              })}
             </span>
             <div className="inline-flex rounded-md border border-slate-200/90 p-0.5 dark:border-gdc-border">
               <button
@@ -306,6 +319,31 @@ export function WizardMappingOutputAside({
             <p className="mb-2 rounded-md border border-red-200/80 bg-red-500/[0.06] px-2.5 py-2 text-[10px] text-red-800 dark:border-red-500/30 dark:text-red-200">
               Runtime preview failed: {runtimeError}
             </p>
+          ) : null}
+          {transformFailures.count > 0 ? (
+            <div
+              role="alert"
+              data-testid="route-processing-transform-errors"
+              className="mb-2 rounded-md border border-red-200/80 bg-red-500/[0.06] px-2.5 py-2 text-[10px] text-red-800 dark:border-red-500/30 dark:text-red-200"
+            >
+              <p className="font-semibold">
+                {transformFailures.count} transform rule{transformFailures.count === 1 ? '' : 's'} did not produce output
+              </p>
+              {transformFailures.engineUnavailable ? (
+                <p className="mt-0.5" data-testid="route-processing-engine-unavailable">
+                  TRANSFORM_ENGINE_UNAVAILABLE: {TRANSFORM_ENGINE_UNAVAILABLE_HINT}
+                </p>
+              ) : null}
+              <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                {transformFailures.lines.slice(0, 5).map((line) => (
+                  <li key={line.key}>
+                    {line.field ? <span className="font-mono">{line.field}</span> : null}
+                    {line.field ? ': ' : ''}
+                    {line.message}
+                  </li>
+                ))}
+              </ul>
+            </div>
           ) : null}
           {previewTab === 'preview' ? (
             <pre className="overflow-x-auto rounded-lg border border-slate-200 bg-slate-950 p-2.5 text-[10px] leading-snug text-slate-100 dark:border-gdc-border dark:bg-gdc-section dark:text-gdc-foreground">

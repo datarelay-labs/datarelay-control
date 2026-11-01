@@ -9,7 +9,12 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from app.enrichers.expression_evaluator import ExpressionEvaluationError, evaluate_calculated_expression
+from app.enrichers.expression_evaluator import (
+    ExpressionEvaluationError,
+    condition_syntax_error,
+    evaluate_calculated_expression,
+    evaluate_condition_expression,
+)
 from app.mappers.full_event_mapping import FieldTransformRuleResult, evaluate_field_transform_rule
 from app.runtime.copy_utils import copy_event_dict, copy_json_value
 from app.enrichers.field_paths import get_field_value, has_field_value, is_valid_field_path, set_field_value
@@ -292,7 +297,11 @@ def _apply_static_fields(
 
 
 def _parse_condition(when: str) -> tuple[str, str, str] | None:
-    """Return ``(operator, field, operand)``."""
+    """Parse the keyword conditions (``exists X`` / ``X contains Y``).
+
+    Everything else (comparisons, ``&&``/``||``, ``.includes(...)``) goes through the shared
+    expression parser, see ``evaluate_condition_expression``.
+    """
 
     text = when.strip()
     if not text:
@@ -303,41 +312,30 @@ def _parse_condition(when: str) -> tuple[str, str, str] | None:
     if " contains " in lower:
         field, _, operand = text.partition(" contains ")
         return ("contains", field.strip(), operand.strip().strip("'\""))
-    m = re.match(r"^(.+?)\s*===\s*['\"]([^'\"]*)['\"]\s*$", text)
-    if m:
-        return ("equals", m.group(1).strip(), m.group(2))
-    m = re.match(r"^(.+?)\s*!==\s*['\"]([^'\"]*)['\"]\s*$", text)
-    if m:
-        return ("not_equals", m.group(1).strip(), m.group(2))
-    m = re.match(r"^(.+?)\s*==\s*['\"]?([^'\"]+)['\"]?\s*$", text)
-    if m:
-        return ("equals", m.group(1).strip(), m.group(2))
-    m = re.match(r"^(.+?)\s*!=\s*['\"]?([^'\"]+)['\"]?\s*$", text)
-    if m:
-        return ("not_equals", m.group(1).strip(), m.group(2))
-    m = re.match(
-        r"^([A-Za-z_][A-Za-z0-9_.]*)\s*\.includes\s*\(\s*['\"]([^'\"]*)['\"]\s*\)\s*$",
-        text,
-    )
-    if m:
-        return ("contains", m.group(1), m.group(2))
     return None
+
+
+def _condition_error(when: str) -> str | None:
+    """Return why a ``when`` clause cannot be evaluated, or ``None`` when it is supported."""
+
+    if _parse_condition(when) is not None:
+        return None
+    return condition_syntax_error(when)
 
 
 def _evaluate_condition(when: str, event: dict[str, Any]) -> bool:
     parsed = _parse_condition(when)
     if parsed is None:
-        return False
+        try:
+            return evaluate_condition_expression(when, event)
+        except ExpressionEvaluationError:
+            return False
     op, field, operand = parsed
     val = get_field_value(event, field)
     if val is None:
         val = event.get(field)
     if op == "exists":
         return val is not None and str(val) != ""
-    if op == "equals":
-        return str(val) == operand
-    if op == "not_equals":
-        return str(val) != operand
     if op == "contains":
         return operand in str(val or "")
     return False
@@ -455,11 +453,12 @@ def _apply_conditional(
             value = item.get("then", "")
             matched = True
             break
-        if when.strip() and not _parse_condition(when):
+        condition_error = _condition_error(when) if when.strip() else None
+        if condition_error:
             warnings.append(
                 EnrichmentWarning(
                     code="conditional_invalid",
-                    message=f"Unrecognized condition syntax: {when!r}",
+                    message=f"Unrecognized condition syntax: {when!r} ({condition_error})",
                     rule_type="conditional",
                     target_field=target,
                 )

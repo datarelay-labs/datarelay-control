@@ -8,13 +8,20 @@ and probe both rely on this helper so verification semantics stay identical.
 
 from __future__ import annotations
 
+import select
 import ssl
+import time
 from dataclasses import dataclass
 from typing import Any
 
 DEFAULT_VERIFY_MODE = "strict"
 DEFAULT_CONNECT_TIMEOUT = 5.0
 DEFAULT_WRITE_TIMEOUT = 5.0
+# TLS 1.3 completes the client-side handshake before the server has validated the client
+# certificate; a rejection only arrives as an alert on the first read/write. After a fresh
+# handshake we therefore listen for this long before trusting the connection.
+DEFAULT_POST_HANDSHAKE_CHECK_SECONDS = 0.3
+MAX_POST_HANDSHAKE_CHECK_SECONDS = 10.0
 
 
 @dataclass(frozen=True)
@@ -28,6 +35,15 @@ class SyslogTlsConfig:
     ca_cert_path: str | None
     client_cert_path: str | None
     client_key_path: str | None
+    post_handshake_check_seconds: float = DEFAULT_POST_HANDSHAKE_CHECK_SECONDS
+
+
+class TlsPeerRejectedError(ssl.SSLError):
+    """The receiver completed the TLS handshake but then rejected the connection.
+
+    Typical cause: TLS 1.3 receiver requires a client certificate that was missing or
+    untrusted. The alert is only visible on the first read after the handshake.
+    """
 
 
 def normalize_syslog_tls_config(config: dict[str, Any]) -> SyslogTlsConfig:
@@ -64,6 +80,19 @@ def normalize_syslog_tls_config(config: dict[str, Any]) -> SyslogTlsConfig:
     connect_timeout = _coerce_timeout(config.get("connect_timeout"), DEFAULT_CONNECT_TIMEOUT)
     write_timeout = _coerce_timeout(config.get("write_timeout"), DEFAULT_WRITE_TIMEOUT)
 
+    check_raw = config.get("post_handshake_check_seconds")
+    if check_raw is None:
+        post_handshake_check = DEFAULT_POST_HANDSHAKE_CHECK_SECONDS
+    else:
+        try:
+            post_handshake_check = float(check_raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("post_handshake_check_seconds must be numeric") from exc
+        if post_handshake_check < 0 or post_handshake_check > MAX_POST_HANDSHAKE_CHECK_SECONDS:
+            raise ValueError(
+                f"post_handshake_check_seconds must be between 0 and {MAX_POST_HANDSHAKE_CHECK_SECONDS:g}"
+            )
+
     ca_cert_path = config.get("tls_ca_cert_path") or None
     client_cert_path = config.get("tls_client_cert_path") or None
     client_key_path = config.get("tls_client_key_path") or None
@@ -78,6 +107,7 @@ def normalize_syslog_tls_config(config: dict[str, Any]) -> SyslogTlsConfig:
         ca_cert_path=str(ca_cert_path) if ca_cert_path else None,
         client_cert_path=str(client_cert_path) if client_cert_path else None,
         client_key_path=str(client_key_path) if client_key_path else None,
+        post_handshake_check_seconds=post_handshake_check,
     )
 
 
@@ -97,3 +127,64 @@ def build_syslog_tls_context(cfg: SyslogTlsConfig) -> ssl.SSLContext:
         ctx.load_cert_chain(certfile=cfg.client_cert_path, keyfile=cfg.client_key_path)
 
     return ctx
+
+
+def check_peer_rejection(
+    tls_sock: Any,
+    window_seconds: float,
+    *,
+    eof_is_rejection: bool,
+) -> BaseException | None:
+    """Detect a post-handshake rejection by the receiver.
+
+    A syslog receiver never sends application data, so any fatal alert, reset or (when
+    ``eof_is_rejection``) orderly close seen within ``window_seconds`` means the receiver
+    refused this connection even though ``wrap_socket`` succeeded. TLS 1.3 session tickets
+    are consumed internally by ``recv`` (``SSLWantReadError``) and are not a rejection.
+
+    Returns the exception describing the rejection, or ``None`` for a healthy connection.
+    Only real :class:`ssl.SSLSocket` objects are inspected (fakes are always healthy).
+    """
+
+    if not isinstance(tls_sock, ssl.SSLSocket):
+        return None
+    previous_timeout = tls_sock.gettimeout()
+    deadline = time.monotonic() + max(0.0, window_seconds)
+    try:
+        tls_sock.settimeout(0.0)
+        while True:
+            remaining = max(0.0, deadline - time.monotonic())
+            try:
+                readable, _, _ = select.select([tls_sock], [], [], remaining)
+            except (OSError, ValueError) as exc:
+                return exc
+            if not readable and not tls_sock.pending():
+                return None
+            try:
+                data = tls_sock.recv(4096)
+            except (ssl.SSLWantReadError, ssl.SSLWantWriteError, BlockingIOError):
+                if remaining <= 0.0:
+                    return None
+                continue
+            except ssl.SSLError as exc:
+                return TlsPeerRejectedError(
+                    f"receiver rejected the connection after the TLS handshake "
+                    f"(a client certificate may be required or untrusted): {exc}"
+                )
+            except OSError as exc:
+                return exc
+            if data == b"":
+                if eof_is_rejection:
+                    return TlsPeerRejectedError(
+                        "receiver closed the connection right after the TLS handshake "
+                        "(a client certificate may be required or untrusted)"
+                    )
+                return None
+            # Unsolicited application data from a syslog receiver is ignored.
+            if remaining <= 0.0:
+                return None
+    finally:
+        try:
+            tls_sock.settimeout(previous_timeout)
+        except OSError:
+            pass

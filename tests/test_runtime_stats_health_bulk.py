@@ -177,6 +177,26 @@ def test_bulk_stats_health_returns_all_requested_streams(bulk_stats_client: Test
         assert entry["health_detail"]["stream_id"] == sid
 
 
+def test_degraded_read_fallback_entry_has_no_health_verdict() -> None:
+    """A failed bulk read is not evidence: health IDLE (not DEGRADED), issue still set."""
+
+    from types import SimpleNamespace
+
+    from app.runtime.stats_health_bulk_service import _build_degraded_bulk_entry
+
+    entry = _build_degraded_bulk_entry(
+        sid=7,
+        stream=SimpleNamespace(status="RUNNING"),  # type: ignore[arg-type]
+        routes=[],
+        checkpoints={},
+        limit=10,
+    )
+    # Old code: "degraded" / DEGRADED invented for every stream.
+    assert entry.health == "idle"
+    assert entry.health_detail.health == "IDLE"
+    assert entry.issue  # fallback remains visible to callers
+
+
 def test_bulk_stats_health_uses_few_queries_not_n_plus_one(bulk_stats_client: TestClient, db_session: Session) -> None:
     stream_ids = _seed_streams(db_session, 25)
     ids_param = ",".join(str(sid) for sid in stream_ids)

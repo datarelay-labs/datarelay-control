@@ -9,7 +9,13 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.checkpoints.models import Checkpoint
 from app.checkpoints.repository import get_checkpoint_by_stream_id, upsert_checkpoint
+from app.checkpoints.route_delivery_state import (
+    ROUTE_DELIVERY_STATE_KEY,
+    checkpoint_anchor,
+    split_route_delivery_state,
+)
 
 
 class CheckpointService:
@@ -78,3 +84,56 @@ class CheckpointService:
         )
         value = getattr(row, "checkpoint_value_json", None)
         return copy_json_value(value) if isinstance(value, dict) else {}
+
+    def save_route_delivery_state(
+        self,
+        db: Session,
+        stream_id: int,
+        checkpoint_type: str,
+        anchor: str,
+        route_delivery_state: dict[str, Any] | None,
+    ) -> bool:
+        """Persist per-Route delivery fingerprints without advancing the checkpoint.
+
+        Only the route delivery key changes; the cursor fields and ``updated_at`` (used by
+        checkpoint-window dedup scope) stay untouched. Skips the write when the checkpoint
+        window moved since the run loaded it (``anchor`` mismatch). Returns True on write.
+        """
+
+        row = get_checkpoint_by_stream_id(db, stream_id)
+        current = getattr(row, "checkpoint_value_json", None) if row is not None else None
+        current = current if isinstance(current, dict) else None
+        base, _ = split_route_delivery_state(current)
+        if checkpoint_anchor(base) != anchor:
+            return False
+
+        if row is None:
+            if not route_delivery_state:
+                return False
+            upsert_checkpoint(
+                db=db,
+                stream_id=stream_id,
+                checkpoint_type=checkpoint_type,
+                checkpoint_value_json={ROUTE_DELIVERY_STATE_KEY: copy_json_value(route_delivery_state)},
+            )
+            return True
+
+        new_value = {
+            key: copy_json_value(value)
+            for key, value in (current or {}).items()
+            if key != ROUTE_DELIVERY_STATE_KEY
+        }
+        if route_delivery_state:
+            new_value[ROUTE_DELIVERY_STATE_KEY] = copy_json_value(route_delivery_state)
+        if new_value == (current or {}):
+            return False
+        # Explicit updated_at = updated_at suppresses the model onupdate timestamp.
+        db.query(Checkpoint).filter(Checkpoint.id == row.id).update(
+            {
+                Checkpoint.checkpoint_value_json: new_value,
+                Checkpoint.updated_at: Checkpoint.updated_at,
+            },
+            synchronize_session=False,
+        )
+        db.expire(row, ["checkpoint_value_json"])
+        return True

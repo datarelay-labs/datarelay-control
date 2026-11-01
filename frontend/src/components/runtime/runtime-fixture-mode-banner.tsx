@@ -101,37 +101,43 @@ export function RuntimeFixtureModeBanner({ surface }: { surface: 'runtime' | 'ro
   }
 
   if (!hasRuntimeFixtureUserOptIn()) {
+    // Inactive developer tooling stays collapsed so it does not compete with page content.
     return (
-      <div
+      <details
         data-testid="runtime-fixture-mode-admin-panel"
-        className="rounded-lg border border-dashed border-amber-400/50 bg-amber-50/50 px-3 py-2 text-[12px] text-amber-950 dark:border-amber-600/30 dark:bg-amber-950/20 dark:text-amber-100"
+        className="rounded-md text-[12px] text-slate-500 dark:text-gdc-muted"
       >
-        <p className="font-semibold">Runtime fixture mode (admin / dev-validation)</p>
-        <p className="mt-1 text-[11px] opacity-90">
-          Load scale fixtures from <code className="font-mono">/dev-fixtures/</code> for virtualization validation.
-          Use <code className="font-mono">?runtime_fixture=1</code> or enable below.
-        </p>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <label className="sr-only" htmlFor={`fixture-file-${surface}`}>
-            Fixture file
-          </label>
-          <input
-            id={`fixture-file-${surface}`}
-            value={fileInput}
-            onChange={(e) => setFileInput(e.target.value)}
-            className="h-8 min-w-[220px] rounded border border-amber-300/80 bg-white px-2 font-mono text-[11px] dark:border-amber-700 dark:bg-gdc-card"
-            placeholder={DEFAULT_RUNTIME_FIXTURE_FILE}
-          />
-          <button
-            type="button"
-            data-testid="runtime-fixture-mode-enable"
-            className="h-8 rounded-md border border-amber-600/50 bg-amber-700 px-2.5 text-[11px] font-semibold text-white hover:bg-amber-800"
-            onClick={() => void applyFixtureMode(true)}
-          >
-            Enable fixture mode
-          </button>
+        <summary className="w-fit cursor-pointer select-none rounded px-1 py-0.5 text-[11px] hover:text-slate-700 dark:hover:text-slate-200">
+          Developer tools: runtime fixture mode
+        </summary>
+        <div className="mt-1 rounded-lg border border-dashed border-amber-400/50 bg-amber-50/50 px-3 py-2 text-amber-950 dark:border-amber-600/30 dark:bg-amber-950/20 dark:text-amber-100">
+          <p className="font-semibold">Runtime fixture mode (admin / dev-validation)</p>
+          <p className="mt-1 text-[11px] opacity-90">
+            Load scale fixtures from <code className="font-mono">/dev-fixtures/</code> for virtualization validation.
+            Use <code className="font-mono">?runtime_fixture=1</code> or enable below.
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <label className="sr-only" htmlFor={`fixture-file-${surface}`}>
+              Fixture file
+            </label>
+            <input
+              id={`fixture-file-${surface}`}
+              value={fileInput}
+              onChange={(e) => setFileInput(e.target.value)}
+              className="h-8 min-w-[220px] rounded border border-amber-300/80 bg-white px-2 font-mono text-[11px] dark:border-amber-700 dark:bg-gdc-card"
+              placeholder={DEFAULT_RUNTIME_FIXTURE_FILE}
+            />
+            <button
+              type="button"
+              data-testid="runtime-fixture-mode-enable"
+              className="h-8 rounded-md border border-amber-600/50 bg-amber-700 px-2.5 text-[11px] font-semibold text-white hover:bg-amber-800"
+              onClick={() => void applyFixtureMode(true)}
+            >
+              Enable fixture mode
+            </button>
+          </div>
         </div>
-      </div>
+      </details>
     )
   }
 

@@ -52,6 +52,14 @@ def _create_policy(client: TestClient) -> int:
     return response.json()["policy"]["id"]
 
 
+def _activate(client: TestClient, policy_id: int):
+    """These tests drive the lifecycle as a single principal, so activation passes the explicit F-187 override."""
+
+    return client.post(
+        f"/api/v1/governance/policies/{policy_id}/activate", json={"allow_self_approval": True}
+    )
+
+
 def test_lifecycle_draft_to_review(governance_lifecycle_client: TestClient) -> None:
     policy_id = _create_policy(governance_lifecycle_client)
     response = governance_lifecycle_client.post(f"/api/v1/governance/policies/{policy_id}/submit-review")
@@ -65,7 +73,7 @@ def test_lifecycle_draft_to_review(governance_lifecycle_client: TestClient) -> N
 def test_lifecycle_review_to_active(governance_lifecycle_client: TestClient) -> None:
     policy_id = _create_policy(governance_lifecycle_client)
     governance_lifecycle_client.post(f"/api/v1/governance/policies/{policy_id}/submit-review")
-    response = governance_lifecycle_client.post(f"/api/v1/governance/policies/{policy_id}/activate")
+    response = _activate(governance_lifecycle_client, policy_id)
     assert response.status_code == 200
     policy = response.json()["policy"]
     assert policy["status"] == "ACTIVE"
@@ -76,7 +84,7 @@ def test_lifecycle_review_to_active(governance_lifecycle_client: TestClient) -> 
 def test_lifecycle_active_to_retired(governance_lifecycle_client: TestClient) -> None:
     policy_id = _create_policy(governance_lifecycle_client)
     governance_lifecycle_client.post(f"/api/v1/governance/policies/{policy_id}/submit-review")
-    governance_lifecycle_client.post(f"/api/v1/governance/policies/{policy_id}/activate")
+    _activate(governance_lifecycle_client, policy_id)
     response = governance_lifecycle_client.post(f"/api/v1/governance/policies/{policy_id}/retire")
     assert response.status_code == 200
     policy = response.json()["policy"]
@@ -88,7 +96,7 @@ def test_lifecycle_active_to_retired(governance_lifecycle_client: TestClient) ->
 def test_lifecycle_invalid_transition(governance_lifecycle_client: TestClient) -> None:
     policy_id = _create_policy(governance_lifecycle_client)
     governance_lifecycle_client.post(f"/api/v1/governance/policies/{policy_id}/submit-review")
-    governance_lifecycle_client.post(f"/api/v1/governance/policies/{policy_id}/activate")
+    _activate(governance_lifecycle_client, policy_id)
     governance_lifecycle_client.post(f"/api/v1/governance/policies/{policy_id}/retire")
 
     reactivate = governance_lifecycle_client.post(f"/api/v1/governance/policies/{policy_id}/activate")
@@ -109,7 +117,7 @@ def test_lifecycle_invalid_transition(governance_lifecycle_client: TestClient) -
 def test_delete_retired_policy(governance_lifecycle_client: TestClient, db_session: Session) -> None:
     policy_id = _create_policy(governance_lifecycle_client)
     governance_lifecycle_client.post(f"/api/v1/governance/policies/{policy_id}/submit-review")
-    governance_lifecycle_client.post(f"/api/v1/governance/policies/{policy_id}/activate")
+    _activate(governance_lifecycle_client, policy_id)
     governance_lifecycle_client.post(f"/api/v1/governance/policies/{policy_id}/retire")
 
     deleted = governance_lifecycle_client.delete(f"/api/v1/governance/policies/{policy_id}")
@@ -121,7 +129,7 @@ def test_delete_retired_policy(governance_lifecycle_client: TestClient, db_sessi
 def test_delete_active_policy_fails(governance_lifecycle_client: TestClient) -> None:
     policy_id = _create_policy(governance_lifecycle_client)
     governance_lifecycle_client.post(f"/api/v1/governance/policies/{policy_id}/submit-review")
-    governance_lifecycle_client.post(f"/api/v1/governance/policies/{policy_id}/activate")
+    _activate(governance_lifecycle_client, policy_id)
 
     deleted = governance_lifecycle_client.delete(f"/api/v1/governance/policies/{policy_id}")
     assert deleted.status_code == 409

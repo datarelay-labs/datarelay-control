@@ -97,6 +97,30 @@ describe('StreamsConsole loading states', () => {
     expect(screen.queryByTestId('streams-create-first')).not.toBeInTheDocument()
   })
 
+  it('keeps the in-page New Stream link secondary so the header New data flow stays the single primary CTA', async () => {
+    persistTestSession('OPERATOR')
+    vi.mocked(fetchStreamsListResult).mockResolvedValue({ ok: true, status: 200, data: [] })
+    render(<MemoryRouter><StreamsConsole /></MemoryRouter>)
+    await screen.findByTestId('streams-empty-state')
+    const link = screen.getByRole('link', { name: 'New Stream' })
+    expect(link).toHaveAttribute('href', '/streams/new')
+    expect(link).toHaveClass('border-default', 'bg-surface-card', 'text-fg')
+    expect(link).not.toHaveClass('bg-gdc-primary')
+    expect(link).not.toHaveClass('bg-accent')
+    expect(link).not.toHaveClass('text-white')
+  })
+
+  it('lets the header action column shrink so the controls row cannot overflow a 390px viewport', async () => {
+    persistTestSession('OPERATOR')
+    vi.mocked(fetchStreamsListResult).mockResolvedValue({ ok: true, status: 200, data: [] })
+    render(<MemoryRouter><StreamsConsole /></MemoryRouter>)
+    await screen.findByTestId('streams-empty-state')
+    const actionColumn = screen.getByTestId('streams-console-controls').parentElement!
+    expect(actionColumn).toContainElement(screen.getByRole('link', { name: 'New Stream' }))
+    expect(actionColumn).toHaveClass('min-w-0', 'max-w-full')
+    expect(actionColumn).not.toHaveClass('shrink-0')
+  })
+
   it('stops loading and shows auth message on 401', async () => {
     vi.mocked(fetchStreamsListResult).mockResolvedValue({
       ok: false,
@@ -134,6 +158,37 @@ describe('StreamsConsole loading states', () => {
       expect(screen.queryByText(/Loading streams/i)).not.toBeInTheDocument()
     })
     expect(screen.getByTestId('streams-empty-state')).toBeInTheDocument()
+  })
+
+  it('contains the streams table sr-only helpers inside its horizontal scroll wrapper so the page cannot scroll sideways at 390px', async () => {
+    vi.mocked(fetchStreamsListResult).mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: [
+        {
+          id: 101,
+          name: 'Overflow guard stream',
+          connector_id: 1,
+          source_id: 11,
+          enabled: true,
+          stream_type: 'DATABASE_QUERY',
+          source_type: 'DATABASE_QUERY',
+          status: 'RUNNING',
+        },
+      ],
+    })
+    render(
+      <MemoryRouter>
+        <StreamsConsole />
+      </MemoryRouter>,
+    )
+    await screen.findByTestId('stream-group-row-Database Query')
+    const table = document.querySelector('table.min-w-\\[40rem\\]')!
+    expect(table).not.toBeNull()
+    // Absolutely positioned sr-only labels inside the table escape overflow clipping unless the
+    // scroll wrapper is their containing block; without `relative` they extended the page to 621px.
+    const wrapper = table.parentElement!
+    expect(wrapper).toHaveClass('overflow-x-auto', 'relative')
   })
 
   it('renders dev-validation non-HTTP source types from Streams API rows', async () => {

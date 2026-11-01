@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 RouteFailurePolicy = Literal[
     "LOG_AND_CONTINUE",
@@ -25,12 +25,22 @@ _ROUTE_FAILURE_POLICIES = frozenset(
 class RouteBase(BaseModel):
     stream_id: int | None = None
     destination_id: int | None = None
+    name: str | None = Field(default=None, max_length=255)
+    description: str | None = Field(default=None, max_length=1024)
     enabled: bool | None = None
     disable_reason: str | None = None
     failure_policy: RouteFailurePolicy | None = None
     formatter_config_json: dict | None = None
     rate_limit_json: dict | None = None
     status: str | None = None
+
+    @field_validator("name", "description", mode="before")
+    @classmethod
+    def _trim_label(cls, value: object) -> object:
+        if isinstance(value, str):
+            trimmed = value.strip()
+            return trimmed or None
+        return value
 
     @field_validator("failure_policy", mode="before")
     @classmethod

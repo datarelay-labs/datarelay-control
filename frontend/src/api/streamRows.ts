@@ -8,7 +8,7 @@ import type {
   StreamStatsHealthBulkEntry,
 } from './types/gdcApi'
 import { normalizeGdcStreamSourceType } from '../utils/sourceTypePresentation'
-import { deriveStreamIssuesFromSnapshot, operationalStreamSuccessRatePct, selectStreamKpi } from '../lib/operational-snapshot-selectors'
+import { deriveStreamIssuesFromSnapshot, operationalStreamSuccessRatePct, problemsForEntity, selectStreamKpi } from '../lib/operational-snapshot-selectors'
 import { estimatedHourlyEventsFromEps } from '../lib/low-volume-signal'
 
 /** Maps to Stream.status / runtime-derived operational badge. */
@@ -26,6 +26,16 @@ export type StreamConsoleRow = {
   status: StreamRuntimeStatus
   /** Snapshot-derived operational health; distinct from runtime lifecycle status. */
   operationalHealthStatus?: OperationalStreamSnapshot['health_status'] | null
+  /**
+   * Worst severity of the stream-scoped operational problems (e.g. a Source 401/429/500 that the
+   * snapshot reports as a problem without changing the stream health verdict). Same evidence the
+   * Dashboard uses; null/undefined when the snapshot lists no problem for this stream.
+   */
+  operationalProblemSeverity?: 'critical' | 'warning' | null
+  /** True while the backend lifecycle is STOPPING (stop accepted, worker or run lock still active). */
+  stopping?: boolean
+  /** Source/auth collection failure attributed to this stream by the snapshot (F-166). */
+  sourceFailure?: { code: string; httpStatus: number | null; connectorName: string | null } | null
   /** Stream enabled flag from config/snapshot; false → Disabled (not Stopped/No Data). */
   enabled?: boolean
   /** False until runtime stats/health fetch completed for this row. */
@@ -91,6 +101,11 @@ function safePercent(numer: unknown, denom: unknown): number {
 }
 
 /** Maps backend stream_status strings to UI row/badge status; unknown → UNKNOWN (neutral elsewhere). */
+/** STOPPING is a distinct backend lifecycle state: the stop is accepted but not yet confirmed (F-176). */
+export function isStreamStoppingStatus(s: string | null | undefined): boolean {
+  return String(s ?? '').trim().toUpperCase() === 'STOPPING'
+}
+
 export function mapBackendStreamStatus(s: string | null | undefined): StreamRuntimeStatus {
   if (s == null || String(s).trim() === '') return 'UNKNOWN'
   const u = String(s).trim().toUpperCase()
@@ -209,7 +224,10 @@ export function mergeConnectorLabelIntoRow(row: StreamConsoleRow, connectorName:
   return mergeConnectorIntoRow(row, connectorName)
 }
 
-/** Prefer readable remote-file and S3 checkpoint lines; other checkpoints use compact JSON (legacy truncation). */
+/**
+ * Prefer readable remote-file and S3 checkpoint lines; other checkpoints summarize well-known keys
+ * (last event, cursor, last timestamp, value) one per line, falling back to compact JSON (legacy truncation).
+ */
 export function formatCheckpointValueForConsole(value: Record<string, unknown> | null | undefined): string {
   if (!value || typeof value !== 'object') return '—'
   const lse = value.last_success_event
@@ -249,8 +267,39 @@ export function formatCheckpointValueForConsole(value: Record<string, unknown> |
     }
   }
 
+  const summary = genericCheckpointSummaryLines(value, lseObj)
+  if (summary.length) return summary.join('\n')
+
   const json = JSON.stringify(value)
   return json.length > 160 ? `${json.slice(0, 160)}…` : json
+}
+
+function checkpointScalarText(v: unknown): string | null {
+  if (typeof v === 'string') return v.trim() ? v : null
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v)
+  return null
+}
+
+/** Readable one-item-per-line summary of well-known generic checkpoint keys; nested objects are never printed as JSON. */
+function genericCheckpointSummaryLines(
+  value: Record<string, unknown>,
+  lseObj: Record<string, unknown> | null,
+): string[] {
+  const lines: string[] = []
+  if (lseObj) {
+    const eventId = checkpointScalarText(lseObj.event_id)
+    const ts = checkpointScalarText(lseObj.timestamp)
+    if (eventId && ts) lines.push(`last event: ${eventId} @ ${ts}`)
+    else if (eventId) lines.push(`last event: ${eventId}`)
+    else if (ts) lines.push(`last event time: ${ts}`)
+  }
+  const cursor = checkpointScalarText(value.cursor)
+  if (cursor) lines.push(`cursor: ${cursor}`)
+  const lastTimestamp = checkpointScalarText(value.last_timestamp)
+  if (lastTimestamp) lines.push(`last timestamp: ${lastTimestamp}`)
+  const plainValue = checkpointScalarText(value.value)
+  if (plainValue && plainValue !== cursor) lines.push(`value: ${plainValue}`)
+  return lines
 }
 
 function baseRowFromStreamRead(s: StreamRead): StreamConsoleRow {
@@ -265,6 +314,8 @@ function baseRowFromStreamRead(s: StreamRead): StreamConsoleRow {
     sourceTypeLabel: s.source_id != null ? `Source #${s.source_id}` : '—',
     status: mapBackendStreamStatus(s.status),
     operationalHealthStatus: null,
+    operationalProblemSeverity: null,
+    sourceFailure: null,
     enabled: s.enabled == null ? undefined : Boolean(s.enabled),
     runtimeStatsAttempted: false,
     hasRuntimeApiSnapshot: false,
@@ -336,6 +387,15 @@ export function enrichStreamRowFromOperationalSnapshot(
   const ingestEps = eps1m > 0 ? eps1m : eps5m > 0 ? eps5m : base.ingestEps
   const successRate5m = kpi.successRatePct
   const issues = deriveStreamIssuesFromSnapshot(snapshot, problems)
+  const streamProblems = problemsForEntity(problems, 'stream', snapshot.stream_id)
+  const operationalProblemSeverity: 'critical' | 'warning' | null = streamProblems.some((p) => p.severity === 'critical')
+    ? 'critical'
+    : streamProblems.length > 0
+      ? 'warning'
+      : null
+  const sourceProblem = streamProblems.find(
+    (p) => p.error_code === 'SOURCE_AUTH_FAILED' || p.error_code === 'SOURCE_FETCH_FAILED',
+  )
   const checkpointLagSeconds = snapshot.checkpoint_lag_seconds
   // Mirror backend should_flag_checkpoint_stale exactly: an enabled stream is stale when
   // it is actively delivering, lag is at least one hour, a successful delivery exists, and
@@ -355,6 +415,15 @@ export function enrichStreamRowFromOperationalSnapshot(
     name: (snapshot.stream_name ?? '').trim() || base.name,
     status: kpi.runtimeStatus,
     operationalHealthStatus: snapshot.health_status,
+    operationalProblemSeverity,
+    stopping: String(snapshot.status ?? '').trim().toUpperCase() === 'STOPPING',
+    sourceFailure: sourceProblem
+      ? {
+          code: String(sourceProblem.error_code),
+          httpStatus: typeof sourceProblem.http_status === 'number' ? sourceProblem.http_status : null,
+          connectorName: sourceProblem.connector_name?.trim() || null,
+        }
+      : null,
     enabled: kpi.enabled,
     runtimeStatsAttempted: true,
     hasRuntimeApiSnapshot: true,
@@ -369,7 +438,7 @@ export function enrichStreamRowFromOperationalSnapshot(
       operationalStreamSuccessRatePct({
         eps_1m: eps1m,
         eps_5m: eps5m,
-        success_rate_5m: successRate5m ?? 0,
+        success_rate_5m: successRate5m,
       }) != null,
     routesTotal: Math.max(base.routesTotal, kpi.routeCount),
     routesOk: kpi.healthyRouteCount,

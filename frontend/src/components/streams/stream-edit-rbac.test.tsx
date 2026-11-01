@@ -125,6 +125,16 @@ vi.mock('../../api/gdcRuntimePreview', async () => {
   }
 })
 
+// The Edit page now hosts the Deduplication card (F-132); keep its read off the network like every other API here.
+vi.mock('../../api/gdcRuntimeUi', async () => {
+  const actual = await vi.importActual<typeof import('../../api/gdcRuntimeUi')>('../../api/gdcRuntimeUi')
+  return {
+    ...actual,
+    fetchStreamDeduplication: vi.fn(async () => actual.DEFAULT_STREAM_DEDUPLICATION_CONFIG),
+    saveStreamDeduplication: vi.fn(),
+  }
+})
+
 vi.mock('../../api/gdcCatalog', () => ({
   fetchCatalogSnapshot: vi.fn(async () => ({ connectors: [], sources: [], apiBacked: false })),
 }))
@@ -228,6 +238,16 @@ describe('StreamEditWizardPage workspace capability visibility', () => {
   afterEach(() => {
     localStorage.removeItem(streamEditDraftStorageKey(10))
     clearSession()
+  })
+
+  it('shows a load error instead of an endless spinner when Stream hydration rejects', async () => {
+    signIn('OPERATOR')
+    hydrateHolder.factory = () => {
+      throw new Error('Route catalog request failed')
+    }
+    renderStreamEdit()
+    expect(await screen.findByText('Could not load stream configuration.')).toBeInTheDocument()
+    expect(screen.queryByTestId('edit-stream-wizard')).not.toBeInTheDocument()
   })
 
   it('uses the provided Stream identity in embedded mode and closes without a cross-page navigation', async () => {
@@ -359,6 +379,37 @@ describe('StreamEditWizardPage workspace capability visibility', () => {
     await user.click(page.getByTestId('wizard-stepper-deploy'))
     expect(await page.findByRole('button', { name: 'Start Stream' })).toBeInTheDocument()
     expect(page.getByRole('button', { name: 'Run Once' })).toBeInTheDocument()
+  })
+
+  it('saves with the post-Stop revision instead of failing with a stale write (F-148)', async () => {
+    const user = userEvent.setup()
+    signIn('OPERATOR')
+    const before = '2026-01-01T00:00:00Z'
+    const afterStop = '2026-01-01T00:05:00Z'
+    let server: { status: string; updated_at: string } = { status: 'RUNNING', updated_at: before }
+    hydrateHolder.factory = () => {
+      const hydrated = hydratedStream()
+      hydrated.streamUpdatedAt = before
+      return hydrated
+    }
+    vi.mocked(fetchStreamById).mockImplementation(
+      async () => ({ id: 10, name: 'Viewer Stream', ...server }) as never,
+    )
+    stopRuntimeStream.mockImplementation(async () => {
+      // Stopping rewrites the stream row, which moves the revision token.
+      server = { status: 'STOPPED', updated_at: afterStop }
+      return { message: 'stream stopped', status: 'STOPPED', terminal: true }
+    })
+    renderStreamEdit()
+
+    const page = await screen.findByTestId('edit-stream-wizard')
+    await user.click(await within(page).findByRole('switch', { name: /Stream scheduler: Running/i }))
+    await within(page).findByRole('switch', { name: /Stream scheduler: Stopped/i })
+
+    await user.click(within(page).getByTestId('wizard-save-now'))
+    await waitFor(() => expect(persistWizardStreamEdits).toHaveBeenCalled())
+    const savedState = persistWizardStreamEdits.mock.calls[0][1] as { streamUpdatedAt?: string | null }
+    expect(savedState.streamUpdatedAt).toBe(afterStop)
   })
 
   it('releases the Deploy start action after a failed runtime start so the operator can retry', async () => {

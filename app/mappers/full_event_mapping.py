@@ -11,6 +11,17 @@ from app.parsers.jsonpath_parser import extract_one
 from app.runtime.copy_utils import copy_json_value
 from app.runtime.errors import MappingError
 
+
+def jsonata_engine_available() -> bool:
+    """True when the JSONata engine can be imported in this runtime environment."""
+
+    try:
+        import jsonata  # type: ignore[import-untyped]  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
 FIELD_MAPPINGS_META_KEYS = frozenset(
     {
         "transform_rules",

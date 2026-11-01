@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+PRODUCT_GROUP_MAX_LENGTH = 128  # connectors.product_group is VARCHAR(128)
+
 PRODUCT_ALIASES: list[tuple[str, str]] = [
     ("crowdstrike", "CrowdStrike"),
     ("falcon", "CrowdStrike"),
@@ -34,4 +36,4 @@ def infer_product_group_from_connector_name(name: str | None) -> str | None:
     for needle, label in PRODUCT_ALIASES:
         if needle in lower:
             return label
-    return raw
+    return raw[:PRODUCT_GROUP_MAX_LENGTH]

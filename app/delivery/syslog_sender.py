@@ -11,7 +11,13 @@ import threading
 import time
 from typing import Any
 
-from app.delivery.syslog_tls import SyslogTlsConfig, build_syslog_tls_context, normalize_syslog_tls_config
+from app.delivery.syslog_tls import (
+    SyslogTlsConfig,
+    TlsPeerRejectedError,
+    build_syslog_tls_context,
+    check_peer_rejection,
+    normalize_syslog_tls_config,
+)
 from app.formatters.config_resolver import resolve_formatter_config
 from app.formatters.message_prefix import MessagePrefixResolveContext, format_delivery_lines_syslog
 from app.formatters.rfc5425_format import rfc5424_json, rfc5425_frame
@@ -84,6 +90,14 @@ def _borrow_tls_socket(*, pool_key: str, tls_cfg: SyslogTlsConfig, ctx: ssl.SSLC
         except Exception:
             raw_sock.close()
             raise
+        # TLS 1.3: the receiver reports a rejected/missing client certificate only after the
+        # handshake. Never pool (or write to) a connection that was refused.
+        rejection = check_peer_rejection(
+            tls_sock, tls_cfg.post_handshake_check_seconds, eof_is_rejection=True
+        )
+        if rejection is not None:
+            _safe_close_socket(tls_sock)
+            raise rejection
         _tcp_pool[pool_key] = tls_sock
         return tls_sock
 
@@ -125,6 +139,26 @@ def resolve_syslog_protocol(config: dict[str, Any], destination_type: str | None
         if p in {"udp", "tcp", "tls"}:
             return p
     return "udp"
+
+
+def _delivered_event_prefix(
+    payload_event_index: list[int] | None,
+    event_count: int,
+    sent_payload_count: int | None,
+) -> int | None:
+    """Leading events whose payloads were all written before a mid-batch failure.
+
+    ``payload_event_index[i]`` is the index of the event that produced payload ``i`` (each
+    event yields at most one payload). ``None`` means the mapping or progress is unknown.
+    """
+
+    if payload_event_index is None or sent_payload_count is None:
+        return None
+    if sent_payload_count <= 0:
+        return 0
+    if sent_payload_count >= len(payload_event_index):
+        return event_count
+    return payload_event_index[sent_payload_count]
 
 
 class SyslogSender:
@@ -179,7 +213,14 @@ class SyslogSender:
                     rfc5424_json(event, formatter_cfg, timestamp_iso=stamp)
                     for event in events
                 ]
-                self._send_tls(payloads, config, octet_counting=True)
+                # One RFC 5424 message per event.
+                self._send_tls_with_progress(
+                    payloads,
+                    config,
+                    payload_event_index=list(range(len(events))),
+                    event_count=len(events),
+                    octet_counting=True,
+                )
                 return
             # Callers may omit ``destination_type`` (legacy); prefix defaults treat SYSLOG kinds alike.
             dt_for_prefix = str(destination_type or "").strip() or "SYSLOG_UDP"
@@ -192,12 +233,25 @@ class SyslogSender:
         except ValueError as exc:
             raise DestinationSendError(str(exc)) from exc
 
-        payloads = [line.encode("utf-8") for line in lines if str(line).strip()]
+        indexed_payloads = [
+            (event_idx, line.encode("utf-8")) for event_idx, line in enumerate(lines) if str(line).strip()
+        ]
+        payloads = [payload for _, payload in indexed_payloads]
         if not payloads:
             raise DestinationSendError("Syslog send produced no non-empty payloads")
+        # One line per event (blank lines are dropped); without that 1:1 shape the
+        # delivered prefix cannot be derived, so it stays unknown (whole batch retried).
+        payload_event_index: list[int] | None = (
+            [event_idx for event_idx, _ in indexed_payloads] if len(lines) == len(events) else None
+        )
 
         if protocol == "tls":
-            self._send_tls(payloads, config)
+            self._send_tls_with_progress(
+                payloads,
+                config,
+                payload_event_index=payload_event_index,
+                event_count=len(events),
+            )
             return
 
         host = str(config.get("host", "")).strip()
@@ -225,8 +279,12 @@ class SyslogSender:
             udp_limiter = get_process_destination_rate_limiter()
 
         pool_key = f"syslog-tcp:{host}:{port}"
+        sent_payload_count = 0
         try:
             if protocol == "udp":
+                # UDP never reports a delivered prefix: there is no receiver acknowledgment and
+                # ICMP errors surface asynchronously on a later send()/SO_ERROR, so a datagram
+                # written before the failure may be the one that was refused.
                 # Connected UDP + SO_ERROR: ICMP port-unreachable is asynchronous, so a single
                 # send() often returns success even when nothing listens. Unconnected sendto()
                 # never surfaces that failure. Without this check, syslog_destination_down
@@ -254,10 +312,42 @@ class SyslogSender:
             sock = _borrow_tcp_socket(pool_key=pool_key, host=host, port=port, timeout=timeout)
             for payload in payloads:
                 sock.sendall(payload + b"\n")
+                sent_payload_count += 1
         except OSError as exc:
             if protocol != "udp":
                 _invalidate_tcp_socket(pool_key)
-            raise DestinationSendError(f"Syslog send failed: {exc}") from exc
+            raise DestinationSendError(
+                f"Syslog send failed: {exc}",
+                delivered_event_count=(
+                    None
+                    if protocol == "udp"
+                    else _delivered_event_prefix(payload_event_index, len(events), sent_payload_count)
+                ),
+            ) from exc
+
+    def _send_tls_with_progress(
+        self,
+        payloads: list[bytes],
+        config: dict[str, Any],
+        *,
+        payload_event_index: list[int] | None,
+        event_count: int,
+        octet_counting: bool = False,
+    ) -> None:
+        """Run ``_send_tls`` and translate written payloads into a delivered event prefix."""
+
+        try:
+            if octet_counting:
+                self._send_tls(payloads, config, octet_counting=True)
+            else:
+                self._send_tls(payloads, config)
+        except DestinationSendError as exc:
+            exc.delivered_event_count = _delivered_event_prefix(
+                payload_event_index,
+                event_count,
+                getattr(exc, "delivered_payload_count", None),
+            )
+            raise
 
     def _send_tls(
         self,
@@ -284,6 +374,7 @@ class SyslogSender:
             raise DestinationSendError(f"Syslog TLS context error: {exc}") from exc
 
         pool_key = _build_syslog_tls_pool_key(tls_cfg)
+        sent_payload_count = 0
         try:
             tls_sock = _borrow_tls_socket(pool_key=pool_key, tls_cfg=tls_cfg, ctx=ctx)
             tls_sock.settimeout(tls_cfg.write_timeout)
@@ -291,12 +382,26 @@ class SyslogSender:
                 # Legacy stays newline-framed. RFC 5425 explicitly opts into
                 # MSG-LEN SP SYSLOG-MSG (octets, including UTF-8 BOM).
                 tls_sock.sendall(rfc5425_frame(payload) if octet_counting else payload + b"\n")
+                sent_payload_count += 1
+            # Catch an alert that arrived while writing (checked without waiting).
+            late_rejection = check_peer_rejection(tls_sock, 0.0, eof_is_rejection=False)
+            if isinstance(late_rejection, TlsPeerRejectedError):
+                # The receiver refused the connection: nothing it accepted can be relied on.
+                sent_payload_count = 0
+                raise late_rejection
         except ssl.CertificateError as exc:
             _invalidate_tcp_socket(pool_key)
-            raise DestinationSendError(f"Syslog TLS certificate error: {exc}") from exc
+            raise _tls_send_error(f"Syslog TLS certificate error: {exc}", sent_payload_count) from exc
         except ssl.SSLError as exc:
             _invalidate_tcp_socket(pool_key)
-            raise DestinationSendError(f"Syslog TLS handshake failed: {exc}") from exc
+            raise _tls_send_error(f"Syslog TLS handshake failed: {exc}", sent_payload_count) from exc
         except OSError as exc:
             _invalidate_tcp_socket(pool_key)
-            raise DestinationSendError(f"Syslog TLS send failed: {exc}") from exc
+            raise _tls_send_error(f"Syslog TLS send failed: {exc}", sent_payload_count) from exc
+
+
+def _tls_send_error(message: str, sent_payload_count: int) -> DestinationSendError:
+    # Payload progress only; ``send`` maps it to ``delivered_event_count``.
+    err = DestinationSendError(message)
+    err.delivered_payload_count = sent_payload_count  # type: ignore[attr-defined]
+    return err

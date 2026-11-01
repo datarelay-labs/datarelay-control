@@ -261,7 +261,7 @@ describe('destination-runtime-metrics', () => {
     expect(metrics.health).toBe('Idle')
   })
 
-  it('shows healthy when connectivity test passed but runtime snapshot is absent', () => {
+  it('shows Connectivity verified - No deliveries observed (not Healthy) when the probe passed but the runtime snapshot is absent', () => {
     const lookup = buildDestinationRuntimeLookup(null)
     const row = {
       ...catalogRow(99),
@@ -269,6 +269,30 @@ describe('destination-runtime-metrics', () => {
       last_connectivity_test_at: '2026-06-23T10:00:00Z',
     }
     const metrics = listRuntimeMetricsForDestination(row, lookup, null, null, '1h')
-    expect(metrics.health).toBe('Healthy')
+    expect(metrics.health).toBe('Connectivity verified · No deliveries observed')
+    expect(metrics.health).not.toBe('Healthy')
+  })
+
+  it('does not render a missing or IDLE Route snapshot as ACTIVE', () => {
+    expect(routeMetricsFromSnapshot(41, [], []).status).toBe('IDLE')
+    const idle = {
+      route_id: 41, success_rate_5m: null, delivered_eps_1m: 0, failed_eps_1m: 0,
+      enabled: true, health_status: 'IDLE', failure_policy: 'LOG_AND_CONTINUE',
+    } as OperationalSnapshotResponse['routes'][number]
+    expect(routeMetricsFromSnapshot(41, [idle], []).status).toBe('IDLE')
+    const degraded = { ...idle, health_status: 'DEGRADED' } as OperationalSnapshotResponse['routes'][number]
+    expect(routeMetricsFromSnapshot(41, [degraded], []).status).toBe('DEGRADED')
+    const healthy = { ...idle, health_status: 'HEALTHY', delivered_eps_1m: 2, success_rate_5m: 99 } as OperationalSnapshotResponse['routes'][number]
+    expect(routeMetricsFromSnapshot(41, [healthy], []).status).toBe('ACTIVE')
+  })
+
+  it('treats a 100% rate with no recent outcome sample as unknown (null), keeping a measured 100%', () => {
+    const base = {
+      route_id: 41, success_rate_5m: 100, delivered_eps_1m: 0, failed_eps_1m: 0,
+      enabled: true, health_status: 'HEALTHY', failure_policy: 'LOG_AND_CONTINUE',
+    } as OperationalSnapshotResponse['routes'][number]
+    expect(routeMetricsFromSnapshot(41, [base], []).successRate5m).toBeNull()
+    const measured = { ...base, delivered_eps_1m: 3 } as OperationalSnapshotResponse['routes'][number]
+    expect(routeMetricsFromSnapshot(41, [measured], []).successRate5m).toBe(100)
   })
 })

@@ -110,4 +110,86 @@ describe('DangerousActionDialog', () => {
     await user.keyboard('{Escape}')
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
+
+  function Harness({ busy = false }: { busy?: boolean }) {
+    const [open, setOpen] = useState(false)
+    return (
+      <>
+        <button type="button" onClick={() => setOpen(true)}>
+          Open dialog
+        </button>
+        <button type="button">Behind the dialog</button>
+        <DangerousActionDialog
+          open={open}
+          onOpenChange={setOpen}
+          title="Delete connector?"
+          primaryLabel="Delete connector"
+          busy={busy}
+          onConfirm={() => {}}
+        />
+      </>
+    )
+  }
+
+  it('moves focus into the dialog, traps Tab, closes on Escape and returns focus to the opener (F-228)', async () => {
+    const user = userEvent.setup()
+    render(<Harness />)
+    const opener = screen.getByRole('button', { name: 'Open dialog' })
+    opener.focus()
+    await user.click(opener)
+
+    const cancel = await screen.findByTestId('dangerous-action-dialog-cancel')
+    const confirm = screen.getByTestId('dangerous-action-dialog-confirm')
+    expect(cancel).toHaveFocus()
+
+    await user.tab()
+    expect(confirm).toHaveFocus()
+    await user.tab()
+    expect(cancel).toHaveFocus()
+    await user.tab({ shift: true })
+    expect(confirm).toHaveFocus()
+    expect(screen.getByRole('button', { name: 'Behind the dialog' })).not.toHaveFocus()
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(opener).toHaveFocus()
+  })
+
+  it('closes on Escape even when focus has left the dialog (F-228)', async () => {
+    const user = userEvent.setup()
+    render(<Harness />)
+    await user.click(screen.getByRole('button', { name: 'Open dialog' }))
+    await screen.findByRole('dialog')
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('keeps the dialog open on Escape while busy (F-228)', async () => {
+    const user = userEvent.setup()
+    render(<Harness busy />)
+    await user.click(screen.getByRole('button', { name: 'Open dialog' }))
+    await screen.findByRole('dialog')
+    await user.keyboard('{Escape}')
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('renders the error with a readable light/dark text pair on the white panel', () => {
+    render(
+      <DangerousActionDialog
+        open
+        onOpenChange={() => {}}
+        title="Delete route?"
+        primaryLabel="Delete route"
+        error="Delete failed"
+        onConfirm={() => {}}
+      />,
+    )
+
+    const error = screen.getByTestId('dangerous-action-dialog-error')
+    expect(error).toHaveTextContent('Delete failed')
+    // The near-white criticalFg token is unreadable on the light (bg-white) panel.
+    expect(error).not.toHaveClass('text-gdc-criticalFg')
+    expect(error).toHaveClass('text-red-700', 'dark:text-red-300')
+  })
 })

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   applyAdminConfigSnapshot,
   getAdminConfigVersions,
@@ -23,6 +23,8 @@ export function StreamConfigurationRevisions({
   restoreBlocked,
   onRestored,
 }: Props) {
+  const historyRequestRef = useRef(0)
+  const previewRequestRef = useRef(0)
   const [versions, setVersions] = useState<ConfigVersionDto[]>([])
   const [historyError, setHistoryError] = useState<string | null>(null)
   const [preview, setPreview] = useState<ConfigSafeRollbackPreviewDto | null>(null)
@@ -31,22 +33,29 @@ export function StreamConfigurationRevisions({
   const [error, setError] = useState<string | null>(null)
 
   const loadVersions = useCallback(async () => {
+    const request = ++historyRequestRef.current
     try {
       const result = await getAdminConfigVersions({
         limit: 8,
         entity_type: 'STREAM_CONFIG',
         entity_id: streamId,
       })
+      if (request !== historyRequestRef.current) return
       setVersions([...result.items].sort((a, b) => b.version - a.version))
       setHistoryError(null)
     } catch (cause) {
+      if (request !== historyRequestRef.current) return
       setVersions([])
       setHistoryError(cause instanceof Error ? cause.message : String(cause))
     }
   }, [streamId])
 
   useEffect(() => {
+    ++previewRequestRef.current
+    setBusy(false)
     setPreview(null)
+    setVersions([])
+    setHistoryError(null)
     setMessage(null)
     setError(null)
     void loadVersions()
@@ -68,21 +77,26 @@ export function StreamConfigurationRevisions({
 
   const review = async (version: ConfigVersionDto) => {
     if (busy || currentVersion <= 0) return
+    const request = ++previewRequestRef.current
     setBusy(true)
     setError(null)
     setMessage(null)
     try {
-      setPreview(await getAdminSafeRollbackPreview(version.id, currentVersion, 'after'))
+      const result = await getAdminSafeRollbackPreview(version.id, currentVersion, 'after')
+      if (request !== previewRequestRef.current) return
+      setPreview(result)
     } catch (cause) {
+      if (request !== previewRequestRef.current) return
       setPreview(null)
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
-      setBusy(false)
+      if (request === previewRequestRef.current) setBusy(false)
     }
   }
 
   const restore = async () => {
     if (!preview || !restoreAllowed || busy) return
+    const request = ++previewRequestRef.current
     setBusy(true)
     setError(null)
     setMessage(null)
@@ -91,21 +105,24 @@ export function StreamConfigurationRevisions({
         target: 'after',
         expected_version: preview.current_version,
       })
+      if (request !== previewRequestRef.current) return
       setMessage(`Restored as saved revision v${result.new_monotonic_version}. Runtime was not started.`)
       setPreview(null)
       await loadVersions()
+      if (request !== previewRequestRef.current) return
       await onRestored()
     } catch (cause) {
+      if (request !== previewRequestRef.current) return
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
-      setBusy(false)
+      if (request === previewRequestRef.current) setBusy(false)
     }
   }
 
   return (
     <section
       data-testid="stream-configuration-revisions"
-      className="rounded-lg border border-slate-200/80 bg-white p-3 text-xs dark:border-gdc-border dark:bg-gdc-section"
+      className="rounded-lg border border-slate-200/80 bg-white p-3 text-xs text-slate-700 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-200"
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
@@ -170,11 +187,21 @@ export function StreamConfigurationRevisions({
           <p className="text-slate-600 dark:text-gdc-muted">
             Preview or restore never starts the Stream or delivers data.
           </p>
-          {preview.changed_fields.map((change) => (
-            <p key={change.path} className="font-mono text-[11px]">
-              {change.path}: {change.before ?? '—'} → {change.after ?? '—'}
-            </p>
-          ))}
+          <p className="text-slate-600 dark:text-gdc-muted">
+            This review compares only Enabled and Polling interval. Names and other Stream settings are not compared.
+          </p>
+          {preview.changed_fields.length === 0 ? (
+            <p>No differences in the compared settings. Other settings may still differ.</p>
+          ) : (
+            <div className="space-y-1">
+              <p className="font-semibold">Reviewed revision → Current configuration</p>
+              {preview.changed_fields.map((change) => (
+                <p key={change.path} className="font-mono text-[11px]">
+                  {change.path}: {change.before ?? '—'} → {change.after ?? '—'}
+                </p>
+              ))}
+            </div>
+          )}
           {preview.blockers.length > 0 ? (
             <p role="status" className="text-amber-700 dark:text-amber-200">
               Restore blocked: {preview.blockers.join(', ').replaceAll('_', ' ')}

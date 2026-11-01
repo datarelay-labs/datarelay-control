@@ -44,6 +44,7 @@ function withConfirmedSample(state: ReturnType<typeof buildInitialState>) {
   state.apiTest.finishedAt = finishedAt
   if (!state.stream.checkpointSourcePath.trim()) {
     state.stream.checkpointSourcePath = '$.timestamp'
+    state.stream.params = [{ id: 'p-sync', key: 'after', value: '{{checkpoint.last_timestamp}}' }]
   }
   state.stream.recordPathConfirmedForApiTestAt = finishedAt
   state.stream.checkpointConfirmedForApiTestAt = finishedAt
@@ -64,6 +65,7 @@ describe('applyWizardConnectorPatch', () => {
     state.stream.eventArrayPath = '$.items'
     state.stream.eventRootPath = '$'
     state.stream.checkpointSourcePath = '$.id'
+    state.stream.params = [{ id: 'p-sync', key: 'after', value: '{{checkpoint.last_timestamp}}' }]
     state.stream.recordPathConfirmedForApiTestAt = 1234
     state.stream.eventRootConfirmedForApiTestAt = 1234
     state.stream.checkpointConfirmedForApiTestAt = 1234
@@ -530,6 +532,7 @@ describe('wizard-state buildStreamCreatePayload', () => {
     state.stream.httpMethod = 'GET'
     state.stream.endpoint = '/events'
     state.stream.checkpointSourcePath = '$.id'
+    state.stream.params = [{ id: 'p-sync', key: 'after', value: '{{checkpoint.last_timestamp}}' }]
 
     expect(state.stream.incrementalRequestPattern).toBe('none')
     expect(state.stream.incrementalRequestDraft).toBe('')
@@ -558,6 +561,7 @@ describe('wizard-state buildStreamCreatePayload', () => {
     state.stream.httpMethod = 'GET'
     state.stream.endpoint = '/events'
     state.stream.checkpointSourcePath = '$.id'
+    state.stream.params = [{ id: 'p-sync', key: 'after', value: '{{checkpoint.last_timestamp}}' }]
     state.stream.incrementalRequestPattern = 'query_params'
     state.stream.incrementalRequestDraft = [
       'id_gt={{checkpoint.last_timestamp}}',

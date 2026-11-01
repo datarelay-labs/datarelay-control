@@ -29,6 +29,40 @@ export type RunHistoryRow = {
   idBasis?: 'run' | 'completion-record'
 }
 
+/**
+ * Stable unique React keys for run rows. `runId` is not unique (metrics completion records can
+ * repeat a run id), so a repeated id gets an occurrence suffix in list order.
+ */
+/**
+ * Latest delivery evidence timestamp (success or failure). The scheduler tick (`last_run_at`)
+ * is deliberately not an input: a poll or idle tick is not an event (F-163).
+ */
+export function latestEventTimestamp(
+  successAt: string | null | undefined,
+  errorAt: string | null | undefined,
+): string | null {
+  const a = successAt ?? null
+  const b = errorAt ?? null
+  if (!a && !b) return null
+  if (!a) return b
+  if (!b) return a
+  const ta = Date.parse(a)
+  const tb = Date.parse(b)
+  if (!Number.isFinite(ta)) return b
+  if (!Number.isFinite(tb)) return a
+  return ta >= tb ? a : b
+}
+
+export function runHistoryRowKeys(rows: readonly Pick<RunHistoryRow, 'runId' | 'idBasis'>[]): string[] {
+  const seen = new Map<string, number>()
+  return rows.map((row) => {
+    const base = `${row.idBasis ?? 'run'}:${row.runId}`
+    const occurrence = (seen.get(base) ?? 0) + 1
+    seen.set(base, occurrence)
+    return occurrence === 1 ? base : `${base}#${occurrence}`
+  })
+}
+
 export type RecentLogLine = {
   at: string
   level: 'INFO' | 'DEBUG' | 'WARN' | 'ERROR'

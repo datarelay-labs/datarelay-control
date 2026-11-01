@@ -11,6 +11,7 @@ import {
 import { StreamWorkflowSummaryStrip } from './stream-workflow-checklist'
 import { computeStreamWorkflow } from '../../utils/streamWorkflow'
 import { saveStreamMappingUiConfigStrict } from '../../api/gdcRuntimeUi'
+import { mappingSaveBlockedReason } from '../../utils/mappingSaveGate'
 import type { AdvancedTransformRuleDraft } from '../../types/advancedTransform'
 import {
   buildFieldMappingsWithTransformRules,
@@ -229,8 +230,16 @@ export function StreamMappingPage() {
     ],
   )
 
+  // Same rule as Edit Stream: platform saves wait until the stream is stopped (F-173).
+  const platformSaveBlockedReason = backendStreamId != null ? mappingSaveBlockedReason(streamStatusUi) : null
+
   async function handleSaveMapping() {
     if (isSaving) return
+    if (platformSaveBlockedReason) {
+      setSaveSuccess(null)
+      setSaveError(platformSaveBlockedReason)
+      return
+    }
     setIsSaving(true)
     setSaveError(null)
     setSaveSuccess(null)
@@ -324,13 +333,24 @@ export function StreamMappingPage() {
           <button
             type="button"
             onClick={() => void handleSaveMapping()}
-            className="inline-flex h-8 items-center gap-1.5 rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white shadow-sm hover:bg-violet-700"
+            disabled={platformSaveBlockedReason != null}
+            aria-describedby={platformSaveBlockedReason ? 'mapping-stop-first-note' : undefined}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white shadow-sm hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isSaving ? 'Saving…' : 'Save Mapping'}
           </button>
         </div>
       </div>
-      {saveError ? <p className="text-[12px] font-medium text-red-700 dark:text-red-300">{saveError}</p> : null}
+      {platformSaveBlockedReason ? (
+        <p
+          id="mapping-stop-first-note"
+          data-testid="mapping-stop-first-note"
+          className="text-[12px] font-medium text-amber-800 dark:text-amber-200"
+        >
+          {platformSaveBlockedReason}
+        </p>
+      ) : null}
+      {saveError && saveError !== platformSaveBlockedReason ? <p className="text-[12px] font-medium text-red-700 dark:text-red-300">{saveError}</p> : null}
       {saveSuccess ? <p className="text-[12px] font-medium text-emerald-700 dark:text-emerald-300">{saveSuccess}</p> : null}
 
       <StreamWorkflowSummaryStrip snapshot={workflowSnapshot} activeStep="mapping" highlightCompleted={['connector', 'apiTest']} />

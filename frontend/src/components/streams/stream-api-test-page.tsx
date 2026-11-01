@@ -353,7 +353,11 @@ export function StreamApiTestPage() {
   const [rootIsArray, setRootIsArray] = useState(false)
   const [maxPreview, setMaxPreview] = useState('500')
   const [dedupeKey, setDedupeKey] = useState('')
+  /** Dedup key that is currently persisted on the stream ('' = deduplication off). */
+  const [savedDedupeKey, setSavedDedupeKey] = useState('')
   const [dedupPolicy, setDedupPolicy] = useState<StreamDeduplicationConfig>(DEFAULT_STREAM_DEDUPLICATION_CONFIG)
+  const [dedupDroppedLastRun, setDedupDroppedLastRun] = useState<number | null>(null)
+  const [continueBusy, setContinueBusy] = useState(false)
 
   useEffect(() => {
     if (numericId == null) {
@@ -427,6 +431,10 @@ export function StreamApiTestPage() {
         const dedupConfig = streamDeduplicationConfigWithKey(dedup, loadedDedupKey)
         setDedupPolicy(dedupConfig)
         setDedupeKey(loadedDedupKey)
+        setSavedDedupeKey(loadedDedupKey)
+        setDedupDroppedLastRun(
+          dedup && !dedup.last_runtime_stats_degraded ? Number(dedup.last_runtime_duplicate_count ?? 0) : null,
+        )
 
         const cid = typeof stream.connector_id === 'number' ? stream.connector_id : null
         setConnectorId(cid)
@@ -560,6 +568,44 @@ export function StreamApiTestPage() {
       .finally(() => setValidatingExtraction(false))
   }, [checkpointPathInput, eventPath, eventRootPathInput, extractionMode, httpResult?.response?.parsed_json, previewRoot])
 
+  /**
+   * Persist the dedup key and read it back: the saved state must be what the runtime will use
+   * (F-131). Throws when the API did not apply the requested enabled/disabled state.
+   */
+  const persistDedup = useCallback(async (): Promise<StreamDeduplicationConfig> => {
+    if (numericId == null) throw new Error('Invalid stream id.')
+    const wanted = streamDeduplicationConfigWithKey(dedupPolicy, dedupeKey)
+    const saved = await saveStreamDeduplication(numericId, wanted)
+    const readBack = await fetchStreamDeduplication(numericId)
+    if (readBack && readBack.enabled !== wanted.enabled) {
+      throw new Error(
+        `Deduplication was not ${wanted.enabled ? 'enabled' : 'disabled'}: the stream still has it ${
+          readBack.enabled ? 'on' : 'off'
+        }. Reload the page and try again.`,
+      )
+    }
+    setDedupPolicy(saved)
+    setSavedDedupeKey(dedupeKey.trim())
+    return saved
+  }, [dedupPolicy, dedupeKey, numericId])
+
+  const handleSaveAndContinue = useCallback(async () => {
+    if (numericId == null) return
+    if (dedupeKey.trim() !== savedDedupeKey.trim()) {
+      setContinueBusy(true)
+      setSendError(null)
+      try {
+        await persistDedup()
+      } catch (e) {
+        setSendError(e instanceof Error ? e.message : 'Could not save the deduplication setting.')
+        return
+      } finally {
+        setContinueBusy(false)
+      }
+    }
+    navigate(streamMappingPath(streamId))
+  }, [dedupeKey, navigate, numericId, persistDedup, savedDedupeKey, streamId])
+
   const sendRequest = useCallback(async () => {
     if (numericId == null || requestBusy) return
     if (!endpointPath.trim()) {
@@ -591,8 +637,7 @@ export function StreamApiTestPage() {
         if (k) headersObj[k] = h.v
       }
       const dedupConfig = streamDeduplicationConfigWithKey(dedupPolicy, dedupeKey)
-      const savedDedupConfig = await saveStreamDeduplication(numericId, dedupConfig)
-      setDedupPolicy(savedDedupConfig)
+      await persistDedup()
       const streamCfg: Record<string, unknown> = {
         method,
         endpoint: endpointPath.trim(),
@@ -632,6 +677,7 @@ export function StreamApiTestPage() {
     timeoutSec,
     dedupeKey,
     dedupPolicy,
+    persistDedup,
   ])
 
   const addQueryRow = useCallback(() => {
@@ -698,8 +744,9 @@ export function StreamApiTestPage() {
         </div>
         <button
           type="button"
-          onClick={() => navigate(streamMappingPath(streamId))}
-          className="inline-flex h-9 shrink-0 items-center gap-1 rounded-md bg-violet-600 px-4 text-[12px] font-semibold text-white shadow-sm hover:bg-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500/40"
+          disabled={continueBusy}
+          onClick={() => void handleSaveAndContinue()}
+          className="inline-flex h-9 shrink-0 items-center gap-1 rounded-md bg-violet-600 px-4 text-[12px] font-semibold text-white shadow-sm hover:bg-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500/40 disabled:cursor-not-allowed disabled:opacity-60"
         >
           Save & Continue
           <ArrowRight className="h-3.5 w-3.5" aria-hidden />
@@ -1147,6 +1194,19 @@ export function StreamApiTestPage() {
                   placeholder="e.g. id"
                   className="mt-1 h-8 w-full rounded-md border border-slate-200/90 px-2 text-[12px] disabled:cursor-not-allowed disabled:opacity-60 dark:border-gdc-border dark:bg-gdc-card"
                 />
+                <p data-testid="dedup-status" className="mt-1 text-[11px] text-slate-500 dark:text-gdc-muted">
+                  {savedDedupeKey.trim()
+                    ? `Deduplication is ON (key ${savedDedupeKey.trim()}): events that repeat this value are dropped from delivery.`
+                    : 'Deduplication is OFF. Leave this field empty to deliver every event.'}
+                  {dedupeKey.trim() !== savedDedupeKey.trim() ? ' Unsaved change: Save & Continue to apply it.' : ''}
+                </p>
+                {savedDedupeKey.trim() && dedupDroppedLastRun != null ? (
+                  <p data-testid="dedup-dropped" className="mt-0.5 text-[11px] text-slate-500 dark:text-gdc-muted">
+                    {dedupDroppedLastRun > 0
+                      ? `Last poll dropped ${dedupDroppedLastRun} event(s) as duplicates.`
+                      : 'Last poll dropped no events as duplicates.'}
+                  </p>
+                ) : null}
               </div>
               <button
                 type="button"

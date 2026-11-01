@@ -392,6 +392,119 @@ def _fetch_last_outcomes(
     return out
 
 
+@dataclass(frozen=True)
+class SourceFailureRow:
+    """Latest Source collection failure for a Stream, plus the latest successful fetch."""
+
+    stream_id: int
+    last_source_failure_at: datetime
+    last_source_failure_message: str | None
+    last_source_failure_http_status: int | None
+    last_source_success_at: datetime | None
+
+
+SOURCE_FETCH_FAILED_CODE = "SOURCE_FETCH_FAILED"
+
+
+def fetch_stream_source_failures(
+    db: Session,
+    *,
+    group_ids: list[int],
+    since: datetime | None = None,
+) -> dict[int, SourceFailureRow]:
+    """Streams whose newest Source outcome is a ``SOURCE_FETCH_FAILED`` run failure.
+
+    A Stream appears only when it has recorded Source failure evidence that is not
+    superseded by a newer successful ``source_fetch``. No evidence (never polled)
+    and zero traffic produce no row, so absence of data is never reported as a
+    failure. Bounded to the same 24h log window as the other last-outcome reads.
+    """
+
+    ids = sorted({int(g) for g in group_ids})
+    if not ids:
+        return {}
+    params = {
+        "group_ids": ids,
+        "since": since if since is not None else _last_outcome_since(),
+        "code": SOURCE_FETCH_FAILED_CODE,
+    }
+    failure_sql = text(
+        """
+        SELECT DISTINCT ON (delivery_logs.stream_id)
+            delivery_logs.stream_id AS stream_id,
+            delivery_logs.created_at AS failed_at,
+            delivery_logs.message AS message,
+            delivery_logs.http_status AS http_status
+        FROM delivery_logs
+        WHERE delivery_logs.stream_id = ANY(:group_ids)
+          AND delivery_logs.created_at >= :since
+          AND delivery_logs.stage = 'run_failed'
+          AND delivery_logs.error_code = :code
+        ORDER BY delivery_logs.stream_id ASC, delivery_logs.created_at DESC
+        """
+    )
+    success_sql = text(
+        """
+        SELECT delivery_logs.stream_id AS stream_id,
+               MAX(delivery_logs.created_at) AS success_at
+        FROM delivery_logs
+        WHERE delivery_logs.stream_id = ANY(:group_ids)
+          AND delivery_logs.created_at >= :since
+          AND delivery_logs.stage = 'source_fetch'
+          AND UPPER(COALESCE(delivery_logs.level, '')) <> 'DEBUG'
+        GROUP BY delivery_logs.stream_id
+        """
+    )
+    try:
+        db.execute(text(f"SET LOCAL statement_timeout = '{int(_LAST_OUTCOME_STATEMENT_TIMEOUT_MS)}ms'"))
+        failure_rows = db.execute(failure_sql, params).fetchall()
+        success_rows = db.execute(success_sql, params).fetchall()
+    except OperationalError:
+        db.rollback()
+        logger.warning(
+            "source_failures_degraded",
+            extra={"stage": "source_failures_degraded"},
+        )
+        return {}
+    finally:
+        try:
+            db.execute(text("SET LOCAL statement_timeout = '0'"))
+        except OperationalError:
+            db.rollback()
+
+    success_by_stream = {int(r[0]): r[1] for r in success_rows if r[0] is not None}
+    out: dict[int, SourceFailureRow] = {}
+    for r in failure_rows:
+        if r[0] is None or r[1] is None:
+            continue
+        sid = int(r[0])
+        success_at = success_by_stream.get(sid)
+        if success_at is not None and success_at >= r[1]:
+            continue  # Recovered: a newer successful fetch supersedes the failure.
+        out[sid] = SourceFailureRow(
+            stream_id=sid,
+            last_source_failure_at=r[1],
+            last_source_failure_message=str(r[2]) if r[2] else None,
+            last_source_failure_http_status=int(r[3]) if r[3] is not None else None,
+            last_source_success_at=success_at,
+        )
+    return out
+
+
+def fetch_connector_names(db: Session, *, connector_ids: list[int]) -> dict[int, str]:
+    """Connector display names for attribution (bulk, one query)."""
+
+    from app.connectors.models import Connector
+
+    ids = sorted({int(c) for c in connector_ids if c is not None})
+    if not ids:
+        return {}
+    return {
+        int(row[0]): str(row[1])
+        for row in db.query(Connector.id, Connector.name).filter(Connector.id.in_(ids)).all()
+    }
+
+
 def fetch_stream_last_outcomes(
     db: Session, *, group_ids: list[int] | None = None
 ) -> dict[int, LastOutcomeRow]:
@@ -551,7 +664,7 @@ class PhysicalOperationalRows:
 
 
 def load_physical_operational_rows(db: Session) -> PhysicalOperationalRows | None:
-    """Load physical read model when populated; None triggers virtual aggregate fallback."""
+    """Load a fresh, complete physical model; otherwise use bounded aggregates."""
 
     from app.config import settings
     from app.runtime.models import (
@@ -559,14 +672,14 @@ def load_physical_operational_rows(db: Session) -> PhysicalOperationalRows | Non
         RuntimeRouteSnapshot,
         RuntimeStreamSnapshot,
     )
-    from app.runtime.runtime_snapshot_repository import read_model_is_populated
+    from app.runtime.runtime_snapshot_repository import read_model_is_current
 
     if not bool(getattr(settings, "GDC_RUNTIME_OPERATIONAL_SNAPSHOT_READ_MODEL_ENABLED", True)):
         return None
-    if not read_model_is_populated(db):
+    now = snapshot_now()
+    if not read_model_is_current(db, now=now):
         return None
 
-    now = snapshot_now()
     streams = load_all_streams(db)
     routes = load_all_routes(db)
     destinations = load_all_destinations(db)
@@ -622,7 +735,7 @@ def load_operational_snapshot_bulk_data(db: Session) -> OperationalSnapshotBulkD
     stream_ids = [s.id for s in streams]
     route_ids = [r.id for r in routes]
     destination_ids = [d.id for d in destinations]
-    return OperationalSnapshotBulkData(
+    bulk = OperationalSnapshotBulkData(
         now=now,
         since_1m=since_1m,
         since_5m=since_5m,
@@ -644,3 +757,27 @@ def load_operational_snapshot_bulk_data(db: Session) -> OperationalSnapshotBulkD
         route_last=fetch_route_last_outcomes(db, group_ids=route_ids),
         destination_last=fetch_destination_last_outcomes(db, group_ids=destination_ids),
     )
+
+    # Window metrics expire; last outcomes are historical metadata. Retain older
+    # outcomes beyond the bounded log scan, but always prefer newer log evidence.
+    from app.config import settings
+    from app.runtime.runtime_snapshot_repository import (
+        _load_existing_destination_last_outcomes,
+        _load_existing_route_last_outcomes,
+        _load_existing_stream_last_outcomes,
+        _merge_last_outcome,
+        read_model_is_populated,
+    )
+
+    if bool(getattr(settings, "GDC_RUNTIME_OPERATIONAL_SNAPSHOT_READ_MODEL_ENABLED", True)) and read_model_is_populated(db):
+        histories = (
+            (streams, bulk.stream_last, _load_existing_stream_last_outcomes(db)),
+            (routes, bulk.route_last, _load_existing_route_last_outcomes(db)),
+            (destinations, bulk.destination_last, _load_existing_destination_last_outcomes(db)),
+        )
+        for entities, current, retained in histories:
+            for entity in entities:
+                merged = _merge_last_outcome(retained.get(entity.id), current.get(entity.id))
+                if merged is not None:
+                    current[entity.id] = merged
+    return bulk

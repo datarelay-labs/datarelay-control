@@ -1087,8 +1087,9 @@ def run_connector_auth_test(payload: ConnectorAuthTestRequest, db: Session | Non
             message=str(probe.get("message") or ("ok" if ok else "failed")),
             error_type=et,
             ssh_reachable=bool(probe.get("ssh_reachable")),
-            ssh_auth_ok=bool(probe.get("ssh_auth_ok")),
-            sftp_available=bool(probe.get("sftp_available")),
+            # None means "never attempted" (e.g. host key rejected before login); keep it distinct from False.
+            ssh_auth_ok=None if probe.get("ssh_auth_ok") is None else bool(probe.get("ssh_auth_ok")),
+            sftp_available=None if probe.get("sftp_available") is None else bool(probe.get("sftp_available")),
             remote_directory_accessible=bool(probe.get("remote_directory_accessible")),
             matched_file_count=int(probe.get("matched_file_count") or 0),
             sample_remote_paths=list(probe.get("sample_remote_paths") or []),
@@ -2797,6 +2798,19 @@ def run_transform_preview(payload: TransformPreviewRequest) -> TransformPreviewR
     )
 
 
+# Enrichment warnings that mean a rule did not produce its output (F-152/F-153/F-235). Data-dependent
+# outcomes such as a lookup miss stay plain warnings.
+_PREVIEW_FAILURE_WARNING_CODES = frozenset(
+    {
+        "calculated_expression_failed",
+        "conditional_invalid",
+        "invalid_rule_definition",
+        "normalize_failed",
+        "invalid_field_path",
+    }
+)
+
+
 def run_final_event_draft_preview(
     payload: FinalEventDraftPreviewRequest,
     db: Any | None = None,
@@ -2833,6 +2847,24 @@ def run_final_event_draft_preview(
                         recovered_via_default=result.recovered_via_default,
                         executed=result.executed,
                         blocked=result.blocked,
+                    )
+                )
+            for warning in enrichment_result.warnings:
+                if warning.code not in _PREVIEW_FAILURE_WARNING_CODES:
+                    continue
+                enrichment_transform_results.append(
+                    MappingDraftPreviewTransformResultItem(
+                        event_index=event_index,
+                        success=False,
+                        value=None,
+                        error_code=warning.code.upper(),
+                        error_message=warning.message,
+                        rule_id=None,
+                        output_field=warning.target_field or "",
+                        mode=warning.rule_type or "enrichment",
+                        recovered_via_default=False,
+                        executed=True,
+                        blocked=False,
                     )
                 )
             failed_keys = {

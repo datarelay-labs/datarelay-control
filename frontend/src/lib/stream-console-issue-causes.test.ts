@@ -315,4 +315,31 @@ describe('streamConsoleLifecycleLabel', () => {
     expect(streamConsoleLifecycleLabel({ ...base, status: 'RUNNING', enabled: false })).toBe('Disabled')
     expect(streamConsoleLifecycleLabel({ ...base, status: 'ERROR', enabled: true })).toBe('Critical')
   })
+
+  it('never labels a RUNNING stream without a snapshot verdict, or an UNKNOWN stream, as Healthy', async () => {
+    const { streamConsoleLifecycleLabel } = await import('./stream-console-issue-causes')
+    expect(
+      streamConsoleLifecycleLabel({ ...base, status: 'RUNNING', enabled: true, operationalHealthStatus: 'IDLE' }),
+    ).toBe('Not verified')
+    expect(streamConsoleLifecycleLabel({ ...base, status: 'UNKNOWN', enabled: true })).toBe('Not verified')
+    expect(
+      streamConsoleLifecycleLabel({
+        ...base,
+        status: 'RUNNING',
+        enabled: true,
+        operationalHealthStatus: 'HEALTHY',
+        deliveryPct: 100,
+        deliveryPctKnown: true,
+      }),
+    ).toBe('Healthy')
+  })
+
+  it('maps the unknown severity to "Not verified", not "Healthy"', () => {
+    expect(streamOperationalHealthLabel('unknown')).toBe('Not verified')
+    expect(
+      streamOperationalHealthLabel(
+        effectiveStreamSeverity({ ...base, status: 'RUNNING', operationalHealthStatus: 'IDLE' }),
+      ),
+    ).toBe('Not verified')
+  })
 })

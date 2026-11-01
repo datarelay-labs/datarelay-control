@@ -35,6 +35,17 @@ export type ImportPreviewResult = {
   preview_token: string
 }
 
+export type ImportSecretReentry = {
+  entity_type: 'connector' | 'destination'
+  entity_id: number
+  name: string
+  source_type: string | null
+  fields: string[]
+  blocks_operation: boolean
+  message: string
+  edit_path: string
+}
+
 export type ImportApplyResult = {
   ok: boolean
   created: {
@@ -43,6 +54,8 @@ export type ImportApplyResult = {
     stream_ids: number[]
     destination_ids: number[]
   }
+  /** Created connectors/destinations whose secrets were masked in the bundle and must be re-entered. */
+  secrets_to_reenter?: ImportSecretReentry[]
   redirect_path: string | null
   idempotency_key?: string | null
   idempotent_replay?: boolean

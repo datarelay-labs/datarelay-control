@@ -115,6 +115,8 @@ def collect_tokenization_targets(
 ) -> list[dict[str, str]]:
     """Gather distinct tokenization values across a batch before vault lookup."""
 
+    from app.protection.identity_vault import tokenizable_text
+
     enabled = [
         r
         for r in rules
@@ -138,9 +140,7 @@ def collect_tokenization_targets(
             if _legacy_path_has_literal_dotted_member(raw, str(rule.field_path), segments):
                 continue
             for value in _collect_leaf_values_at_segments(raw, segments, 0):
-                if not isinstance(value, str):
-                    continue
-                canonical = value.strip()
+                canonical = tokenizable_text(value)
                 if not canonical:
                     continue
                 key = (str(rule.field_path), canonical)

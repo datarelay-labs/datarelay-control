@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { cn } from '../../lib/utils'
 import { NAV_PATH, streamRuntimePath, type StreamWizardStepKey } from '../../config/nav-paths'
-import { deleteStream, fetchStreamById } from '../../api/gdcStreams'
+import { deleteStream, fetchStreamById, fetchStreamDeleteImpact } from '../../api/gdcStreams'
 import {
   fetchStreamRuntimeStatsHealth,
   startRuntimeStream,
@@ -33,7 +33,8 @@ import { hydrateWizardStateFromStream, refreshWizardDestinationsFromStream } fro
 import { reconcileWizardAfterPartialPersist } from './wizard/wizard-partial-save-reconcile'
 import { proveStreamRunOnce } from './wizard/prove-stream-run-once'
 import { deliveryProofLines, nextDeliveryProofPrior, type ExactRunDeliveryProof, type PriorDeliveryProof } from './wizard/deploy-delivery-proof'
-import { confirmDeliveryPanelServerFields, editRuntimeVerificationBlocked, mergeDeliveryPanelRouteDrafts, persistedWizardConfigSnapshot, replacePersistedConcernSnapshot } from './wizard/wizard-edit-runtime-gate'
+import { StreamDeduplicationCard } from './stream-deduplication-card'
+import { confirmDeliveryPanelServerFields, editRuntimeBlockReason, editRuntimeVerificationBlocked, mergeDeliveryPanelRouteDrafts, persistedWizardConfigSnapshot, replacePersistedConcernSnapshot } from './wizard/wizard-edit-runtime-gate'
 import { applyCreatedRouteIdentity, applyPersistedRevisions, persistWizardStreamEdits } from './wizard/wizard-stream-persist'
 import {
   WIZARD_STEPS,
@@ -62,7 +63,7 @@ import {
   normalizeEventRootPath,
 } from '../../utils/eventExtractionPaths'
 import { normalizeCheckpointRelativePath } from '../../utils/recordSelectionPaths'
-import { StreamDeleteConfirmDialog } from './stream-delete-confirm-dialog'
+import { StreamDeleteConfirmDialog, type StreamDeleteImpactState } from './stream-delete-confirm-dialog'
 import { WizardRouteLeaveGuard, type WizardBlockedNavigation } from './wizard/wizard-route-leave-guard'
 import {
   clearStreamEditDraft,
@@ -71,6 +72,7 @@ import {
   saveStreamEditDraft,
 } from './wizard/wizard-edit-draft'
 import { useSessionCapabilities } from '../../lib/rbac'
+import { formatApiErrorMessage } from '../../lib/api-error-message'
 
 const EDIT_NEXT_STEP_LABEL: Partial<Record<WizardStepKey, string>> = {
   connect: 'Sample & Record Selection',
@@ -185,6 +187,7 @@ export function StreamEditWizardPage({
   const [operationalSampleId, setOperationalSampleId] = useState<OperationalSampleId | null>(null)
   const [dataProtectionDrawerOpen, setDataProtectionDrawerOpen] = useState(false)
   const [streamDeleteOpen, setStreamDeleteOpen] = useState(false)
+  const [streamDeleteImpact, setStreamDeleteImpact] = useState<StreamDeleteImpactState>({ status: 'loading' })
   const [streamDeleteConfirm, setStreamDeleteConfirm] = useState('')
   const [streamDeleteBusy, setStreamDeleteBusy] = useState(false)
   const [streamDeleteError, setStreamDeleteError] = useState<string | null>(null)
@@ -218,7 +221,7 @@ export function StreamEditWizardPage({
     setLoading(true)
     setLoadError(null)
     void (async () => {
-      const hydrated = await hydrateWizardStateFromStream(backendStreamId)
+      const hydrated = await hydrateWizardStateFromStream(backendStreamId).catch(() => null)
       if (cancelled) return
       if (!hydrated) {
         setLoadError('Could not load stream configuration.')
@@ -900,6 +903,36 @@ export function StreamEditWizardPage({
     })
   }, [])
 
+  /**
+   * Start and Stop bump the stream row's `updated_at`, which is also the revision token a save is
+   * checked against. Without this the documented flow "Stop the Stream, then Save now" always failed
+   * with STREAM_STALE_WRITE and the reload advice dropped the local draft (F-148). After this page's
+   * own control action, adopt the server's current token in the draft, the confirmed baseline and
+   * the stored local draft; no draft content changes.
+   */
+  const adoptServerStreamRevision = useCallback(
+    (serverUpdatedAt: unknown) => {
+      const token = typeof serverUpdatedAt === 'string' ? serverUpdatedAt.trim() : ''
+      if (!token || backendStreamId == null) return
+      const adopt = (current: WizardState): WizardState =>
+        (typeof current.streamUpdatedAt === 'string' ? current.streamUpdatedAt.trim() : '') === token
+          ? current
+          : applyPersistedRevisions(current, { streamUpdatedAt: token })
+      if (latestStateRef.current) latestStateRef.current = adopt(latestStateRef.current)
+      if (confirmedStateRef.current) confirmedStateRef.current = adopt(confirmedStateRef.current)
+      setState((prev) => (prev ? adopt(prev) : prev))
+      try {
+        const stored = loadStreamEditDraft(backendStreamId)
+        if (stored && latestStateRef.current) {
+          saveStreamEditDraft(backendStreamId, latestStateRef.current, stored.stepKey)
+        }
+      } catch {
+        // Browser storage is best effort; the in-memory draft already carries the new token.
+      }
+    },
+    [backendStreamId],
+  )
+
   const runStreamControl = useCallback(
     async (action: 'start' | 'stop') => {
       if (!canRuntimeControl || backendStreamId == null || controlBusy) return
@@ -914,6 +947,7 @@ export function StreamEditWizardPage({
           await refreshRuntimeSnapshot()
           const found = await fetchStreamById(backendStreamId)
           if (found?.status) setRuntimeStatus(mapBackendStreamStatus(found.status))
+          adoptServerStreamRevision(found?.updated_at)
         } else {
           setControlMessage('Runtime API unavailable · control action not applied.')
         }
@@ -925,7 +959,15 @@ export function StreamEditWizardPage({
         setControlBusy(false)
       }
     },
-    [backendStreamId, canRuntimeControl, controlBusy, refreshRuntimeSnapshot, runOnceBusy, runtimeVerificationBlockedNow],
+    [
+      adoptServerStreamRevision,
+      backendStreamId,
+      canRuntimeControl,
+      controlBusy,
+      refreshRuntimeSnapshot,
+      runOnceBusy,
+      runtimeVerificationBlockedNow,
+    ],
   )
 
   const executeRunOnce = useCallback(async () => {
@@ -1022,10 +1064,35 @@ export function StreamEditWizardPage({
     runtimeVerificationBlockedNow,
   ])
 
+  // Count quarantined events and pending replay jobs every time the dialog opens; the delete is
+  // blocked until the count is known so held data is never destroyed unseen.
+  useEffect(() => {
+    if (!streamDeleteOpen || backendStreamId == null) return
+    let cancelled = false
+    setStreamDeleteImpact({ status: 'loading' })
+    void fetchStreamDeleteImpact(backendStreamId)
+      .then((impact) => {
+        if (cancelled) return
+        setStreamDeleteImpact({
+          status: 'ready',
+          quarantinedEvents: impact.quarantined_events,
+          pendingReplayJobs: impact.pending_replay_jobs,
+        })
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return
+        setStreamDeleteImpact({ status: 'error', message: formatApiErrorMessage(e, 'request failed') })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [backendStreamId, streamDeleteOpen])
+
   const executeStreamDelete = useCallback(async () => {
     if (!canMutateWorkspace || backendStreamId == null) return
     const streamName = state?.stream.name ?? ''
     if (streamDeleteConfirm.trim() !== streamName.trim()) return
+    if (streamDeleteImpact.status !== 'ready') return
     setStreamDeleteBusy(true)
     setStreamDeleteError(null)
     try {
@@ -1034,11 +1101,11 @@ export function StreamEditWizardPage({
       allowedNextPathRef.current = NAV_PATH.streams
       navigate(NAV_PATH.streams)
     } catch (e) {
-      setStreamDeleteError(e instanceof Error ? e.message : 'Delete failed.')
+      setStreamDeleteError(formatApiErrorMessage(e, 'Delete failed.'))
     } finally {
       setStreamDeleteBusy(false)
     }
-  }, [backendStreamId, canMutateWorkspace, navigate, state?.stream.name, streamDeleteConfirm])
+  }, [backendStreamId, canMutateWorkspace, navigate, state?.stream.name, streamDeleteConfirm, streamDeleteImpact.status])
 
   const headerStatus = runtimeStatus
   const headerStatusTone =
@@ -1065,6 +1132,41 @@ export function StreamEditWizardPage({
         draftSnapshot: persistedWizardConfigSnapshot(state),
         confirmedSavedSnapshot: confirmedSavedSnapshotRef.current,
       })
+
+  const startBlockedReason = !state
+    ? null
+    : editRuntimeBlockReason({
+        isSaving,
+        saveFailed: saveError != null,
+        persistErrorCount: state.outcome?.errors.length ?? 0,
+        draftSnapshot: persistedWizardConfigSnapshot(state),
+        confirmedSavedSnapshot: confirmedSavedSnapshotRef.current,
+      })
+  const dataProtectionHasDraftChanges =
+    state != null &&
+    confirmedStateRef.current != null &&
+    JSON.stringify(state.dataProtection.intents) !== JSON.stringify(confirmedStateRef.current.dataProtection.intents)
+  const dataProtectionFailureShown =
+    /data-protection|protection-rules|policy-rules|classification-rules/i.test(
+      `${saveError ?? ''} ${(state?.outcome?.errors ?? []).join(' ')}`,
+    )
+
+  /** Escape from a failed Data Protection save: drop only the Data Protection part of the draft. */
+  const discardDataProtectionChanges = useCallback(() => {
+    const confirmed = confirmedStateRef.current
+    if (!confirmed) return
+    setSaveError(null)
+    setState((prev) => {
+      if (!prev) return prev
+      const next: WizardState = {
+        ...prev,
+        dataProtection: confirmed.dataProtection,
+        outcome: prev.outcome ? { ...prev.outcome, errors: [], reconciliationNote: null } : prev.outcome,
+      }
+      latestStateRef.current = next
+      return next
+    })
+  }, [])
 
   const handleBlockedEditNavigation = useCallback((pending: WizardBlockedNavigation) => {
     // An asynchronous unmount flush is not a verified save. Remain in the editor.
@@ -1211,15 +1313,6 @@ export function StreamEditWizardPage({
               <span className="mt-0.5 block">{runtimeLifecycleLabel}</span>
             </p>
           </div>
-          {backendStreamId != null ? (
-            <StreamConfigurationRevisions
-              streamId={backendStreamId}
-              runtimeStatus={runtimeStatus}
-              canRestore={caps.admin_config_snapshot_apply === true}
-              restoreBlocked={runtimeVerificationBlocked}
-              onRestored={reloadAfterRevisionRestore}
-            />
-          ) : null}
           <p className="max-w-2xl text-sm text-slate-600 dark:text-gdc-muted" data-testid="wizard-stage-purpose">
             {stagePurpose}
           </p>
@@ -1235,6 +1328,7 @@ export function StreamEditWizardPage({
               status={runtimeStatus}
               busy={controlBusy}
               disabled={!isStreamSchedulerActive(runtimeStatus) && (runOnceBusy || runtimeVerificationBlocked)}
+              disabledReason={!isStreamSchedulerActive(runtimeStatus) ? (startBlockedReason ?? undefined) : undefined}
               tooltipExtra={runControlTooltipExtra ?? undefined}
               onToggle={(nextActive) => void runStreamControl(nextActive ? 'start' : 'stop')}
             />
@@ -1278,6 +1372,46 @@ export function StreamEditWizardPage({
           ) : null}
         </div>
       </div>
+
+      {canRuntimeControl && !isStreamSchedulerActive(runtimeStatus) && startBlockedReason ? (
+        <div
+          role="status"
+          data-testid="edit-start-blocked-notice"
+          className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-300/80 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100"
+        >
+          <span className="min-w-0 flex-1">{startBlockedReason}</span>
+          {canMutateWorkspace && !isSaving ? (
+            <button
+              type="button"
+              data-testid="edit-start-blocked-save"
+              onClick={() => void handleSave({ manual: true })}
+              className="inline-flex h-8 items-center rounded-md border border-amber-400/80 bg-white px-3 text-[12px] font-semibold text-amber-900 hover:bg-amber-100 dark:border-amber-500/50 dark:bg-transparent dark:text-amber-100"
+            >
+              Save now
+            </button>
+          ) : null}
+          {canMutateWorkspace && !isSaving && dataProtectionFailureShown && dataProtectionHasDraftChanges ? (
+            <button
+              type="button"
+              data-testid="edit-discard-data-protection"
+              onClick={discardDataProtectionChanges}
+              className="inline-flex h-8 items-center rounded-md border border-amber-400/80 bg-white px-3 text-[12px] font-semibold text-amber-900 hover:bg-amber-100 dark:border-amber-500/50 dark:bg-transparent dark:text-amber-100"
+            >
+              Discard Data Protection changes
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {backendStreamId != null ? (
+        <StreamConfigurationRevisions
+          streamId={backendStreamId}
+          runtimeStatus={runtimeStatus}
+          canRestore={caps.admin_config_snapshot_apply === true}
+          restoreBlocked={runtimeVerificationBlocked}
+          onRestored={reloadAfterRevisionRestore}
+        />
+      ) : null}
 
       {saveError ? (
         <p className="rounded-md border border-red-200/80 bg-red-500/[0.06] p-3 text-[12px] font-medium text-red-700 dark:border-red-500/40 dark:text-red-300">
@@ -1325,12 +1459,21 @@ export function StreamEditWizardPage({
       <div>
         <ReadonlyInspectionFrame readOnly={!canMutateWorkspace}>
         {currentStepKey === 'connect' ? (
-          <StepConnect
-            state={state}
-            connectorReadonly
-            onConnectorChange={updateConnector}
-            onStreamChange={updateStreamConfig}
-          />
+          <>
+            <StepConnect
+              state={state}
+              connectorReadonly
+              onConnectorChange={updateConnector}
+              onStreamChange={updateStreamConfig}
+            />
+            {Number.isSafeInteger(Number(streamId)) && Number(streamId) > 0 ? (
+              <StreamDeduplicationCard
+                streamId={Number(streamId)}
+                running={runtimeStatus === 'RUNNING'}
+                readOnly={!canMutateWorkspace}
+              />
+            ) : null}
+          </>
         ) : null}
         {currentStepKey === 'sample' ? (
           <StepSample
@@ -1491,6 +1634,7 @@ export function StreamEditWizardPage({
           busy={streamDeleteBusy}
           error={streamDeleteError}
           running={runtimeStatus === 'RUNNING'}
+          impact={streamDeleteImpact}
           onOpenChange={(open) => {
             if (!open && !streamDeleteBusy) {
               setStreamDeleteOpen(false)

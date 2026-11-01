@@ -1,33 +1,50 @@
-import { AlertTriangle, CheckCircle2, XCircle } from 'lucide-react'
-import { cn } from '../../lib/utils'
+import { AlertTriangle, CheckCircle2, CircleHelp, Minus, XCircle } from 'lucide-react'
+import { semanticCn } from '../ui/semantic-cn'
 import type { StreamsPageKpi } from '../../lib/stream-console-metrics'
 import type { StreamOperationsSummary } from '../../lib/streams-console-operations'
 
-type Posture = 'healthy' | 'warning' | 'critical'
+/** `unknown`: active streams without a verdict yet. `inactive`: nothing active to judge (never Healthy). */
+type Posture = 'healthy' | 'warning' | 'critical' | 'unknown' | 'inactive'
 
-function postureFromKpi(kpi: StreamsPageKpi): Posture {
+function postureFromKpi(kpi: StreamsPageKpi, summary: StreamOperationsSummary): Posture {
+  // Critical and warning always win; an unobserved stream never masks them (and never reads Healthy).
   if (kpi.criticalStreams > 0) return 'critical'
   if (kpi.warningStreams > 0 || kpi.totalIssues > 0) return 'warning'
+  if ((summary.unknown ?? 0) > 0) return 'unknown'
+  if (kpi.healthyStreams === 0) return 'inactive'
   return 'healthy'
 }
 
 function postureShellClass(posture: Posture): string {
-  if (posture === 'critical') {
-    return 'border-red-300/80 bg-red-50 dark:border-red-500/40 dark:bg-red-950/30'
-  }
-  if (posture === 'warning') {
-    return 'border-amber-300/80 bg-amber-50 dark:border-amber-500/35 dark:bg-amber-950/25'
-  }
-  return 'border-emerald-300/80 bg-emerald-50 dark:border-emerald-500/35 dark:bg-emerald-950/25'
+  if (posture === 'critical') return 'border-status-critical-border bg-status-critical-subtle'
+  if (posture === 'warning') return 'border-status-warning-border bg-status-warning-subtle'
+  if (posture === 'unknown' || posture === 'inactive') return 'border-status-unknown-border bg-status-unknown-subtle'
+  return 'border-status-success-border bg-status-success-subtle'
+}
+
+function postureTextClass(posture: Posture): string {
+  if (posture === 'critical') return 'text-status-critical'
+  if (posture === 'warning') return 'text-status-warning'
+  if (posture === 'unknown' || posture === 'inactive') return 'text-status-unknown'
+  return 'text-status-success'
 }
 
 function postureLabel(posture: Posture): string {
   if (posture === 'critical') return 'Critical'
   if (posture === 'warning') return 'Warning'
+  if (posture === 'unknown') return 'Not verified'
+  if (posture === 'inactive') return 'No active streams'
   return 'Healthy'
 }
 
-function postureDescription(kpi: StreamsPageKpi, posture: Posture): string {
+function postureDescription(kpi: StreamsPageKpi, summary: StreamOperationsSummary, posture: Posture): string {
+  if (posture === 'unknown') {
+    const n = summary.unknown
+    return `${n} active stream${n === 1 ? '' : 's'} not observed yet`
+  }
+  if (posture === 'inactive') {
+    return kpi.totalStreams === 0 ? 'No streams are configured yet' : 'All streams are stopped or have no data yet'
+  }
   if (posture === 'critical') {
     return `${kpi.criticalStreams} critical stream${kpi.criticalStreams === 1 ? '' : 's'} need attention`
   }
@@ -36,6 +53,9 @@ function postureDescription(kpi: StreamsPageKpi, posture: Posture): string {
       return `${kpi.warningStreams} stream${kpi.warningStreams === 1 ? '' : 's'} require attention`
     }
     return `${kpi.totalIssues} active issue${kpi.totalIssues === 1 ? '' : 's'} detected`
+  }
+  if (kpi.noDataStreams > 0) {
+    return `${kpi.healthyStreams} healthy stream${kpi.healthyStreams === 1 ? '' : 's'} · ${kpi.noDataStreams} stopped or without data`
   }
   return 'All stream groups are operating normally'
 }
@@ -51,15 +71,15 @@ function CompactCount({ label, value, testId, emphasize }: CountProps) {
   return (
     <div
       data-testid={testId}
-      className="min-w-[4.5rem] rounded-lg border border-slate-200/70 bg-white/70 px-3 py-2 dark:border-gdc-border dark:bg-gdc-card/70"
+      className="min-w-[4.5rem] rounded-lg border border-default bg-surface-card px-3 py-2"
     >
-      <p className="text-xs font-medium text-slate-500 dark:text-gdc-muted">{label}</p>
+      <p className="text-caption font-medium text-fg-muted">{label}</p>
       <p
-        className={cn(
-          'mt-0.5 text-xl font-semibold tabular-nums text-slate-900 dark:text-slate-50',
-          emphasize === 'critical' && value > 0 && 'text-red-600 dark:text-red-400',
-          emphasize === 'warning' && value > 0 && 'text-amber-600 dark:text-amber-400',
-          emphasize === 'success' && value > 0 && 'text-emerald-600 dark:text-emerald-400',
+        className={semanticCn(
+          'mt-0.5 text-title font-semibold tabular-nums text-fg',
+          emphasize === 'critical' && value > 0 && 'text-status-critical',
+          emphasize === 'warning' && value > 0 && 'text-status-warning',
+          emphasize === 'success' && value > 0 && 'text-status-success',
         )}
       >
         {value}
@@ -82,48 +102,44 @@ export function StreamsHealthOverview({
   if (loading) {
     return (
       <div
-        className="h-28 animate-pulse rounded-xl bg-slate-200/60 dark:bg-gdc-elevated"
+        className="h-28 animate-pulse rounded-xl bg-surface-section"
         aria-hidden
         data-testid="streams-health-overview-loading"
       />
     )
   }
 
-  const posture = postureFromKpi(kpi)
-  const Icon = posture === 'healthy' ? CheckCircle2 : posture === 'critical' ? XCircle : AlertTriangle
+  const posture = postureFromKpi(kpi, summary)
+  const Icon =
+    posture === 'healthy'
+      ? CheckCircle2
+      : posture === 'critical'
+        ? XCircle
+        : posture === 'unknown'
+          ? CircleHelp
+          : posture === 'inactive'
+            ? Minus
+            : AlertTriangle
 
   return (
     <section
       aria-label="Streams health overview"
       data-testid="streams-health-overview"
-      className={cn('rounded-xl border px-5 py-4 shadow-sm', postureShellClass(posture))}
+      className={semanticCn('rounded-xl border px-5 py-4 shadow-sm', postureShellClass(posture))}
     >
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 items-start gap-3">
-          <Icon
-            className={cn(
-              'mt-0.5 h-6 w-6 shrink-0',
-              posture === 'critical' && 'text-red-600 dark:text-red-400',
-              posture === 'warning' && 'text-amber-600 dark:text-amber-400',
-              posture === 'healthy' && 'text-emerald-600 dark:text-emerald-400',
-            )}
-            aria-hidden
-          />
+          <Icon className={semanticCn('mt-0.5 h-6 w-6 shrink-0', postureTextClass(posture))} aria-hidden />
           <div className="min-w-0">
-            <p className="text-sm font-medium text-slate-600 dark:text-slate-400">Stream groups</p>
+            <p className="text-body-sm font-medium text-fg-secondary">Stream groups</p>
             <p
-              className={cn(
-                'text-2xl font-semibold tracking-tight',
-                posture === 'critical' && 'text-red-700 dark:text-red-300',
-                posture === 'warning' && 'text-amber-700 dark:text-amber-300',
-                posture === 'healthy' && 'text-emerald-700 dark:text-emerald-300',
-              )}
+              className={semanticCn('text-page-title font-semibold tracking-tight', postureTextClass(posture))}
               data-testid="streams-health-posture"
             >
               {postureLabel(posture)}
             </p>
-            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{postureDescription(kpi, posture)}</p>
-            <p className="mt-1 text-sm text-slate-500 dark:text-gdc-muted">
+            <p className="mt-1 text-body-sm text-fg-secondary">{postureDescription(kpi, summary, posture)}</p>
+            <p className="mt-1 text-body-sm text-fg-muted">
               {groupCount} group{groupCount === 1 ? '' : 's'} · {kpi.totalStreams} stream
               {kpi.totalStreams === 1 ? '' : 's'}
               {kpi.totalEpsLabel !== '—' ? ` · ${kpi.totalEpsLabel} EPS` : ''}
@@ -154,6 +170,13 @@ export function StreamsHealthOverview({
             testId="streams-ops-summary-critical"
             emphasize="critical"
           />
+          {summary.unknown > 0 ? (
+            <CompactCount
+              label="Not verified"
+              value={summary.unknown}
+              testId="streams-ops-summary-unknown"
+            />
+          ) : null}
           <CompactCount
             label="Issues"
             value={summary.issues}

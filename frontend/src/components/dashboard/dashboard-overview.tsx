@@ -1,5 +1,5 @@
 import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react'
-import { useLayoutEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useLayoutEffect, useMemo, useState } from 'react'
 import { loadDashboardRefreshMs, persistDashboardRefreshMs } from '../../localPreferences'
 import { Link } from 'react-router-dom'
 import { NAV_PATH, newStreamPath } from '../../config/nav-paths'
@@ -25,6 +25,10 @@ import {
 import { useDashboardOverviewData } from './use-dashboard-overview-data'
 import { RuntimeFixtureModeBanner } from '../runtime/runtime-fixture-mode-banner'
 import { PagePurposeHeader, type PageHelpContent } from '../ui/page-purpose-header'
+import { buttonClassName } from '../ui/button-classes'
+
+const DashboardLiveFlowsPanel = lazy(() => import('./dashboard-live-flows-panel')
+  .then((module) => ({ default: module.DashboardLiveFlowsPanel })))
 
 const REFRESH_OPTIONS: { label: string; ms: number | null }[] = [
   { label: 'Off', ms: null },
@@ -306,7 +310,7 @@ export function DashboardOverview() {
       ) : (
         <div className={cn('space-y-5', initialLoading && 'opacity-80')} data-testid="dashboard-first-level">
           <section
-            className="overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br from-white via-white to-violet-50/60 p-5 shadow-sm dark:border-gdc-border dark:from-gdc-card dark:via-gdc-card dark:to-gdc-panel sm:p-6"
+            className="overflow-hidden rounded-2xl border border-default bg-surface-card p-5 sm:p-6"
             data-testid="dashboard-action-needed"
             aria-label="Action needed"
           >
@@ -386,6 +390,24 @@ export function DashboardOverview() {
                           </span>
                         </div>
                       </Link>
+                      {item.connector ? (
+                        <p
+                          className="mt-1 px-1 text-xs text-slate-600 dark:text-gdc-mutedStrong"
+                          data-testid={`dashboard-investigation-${item.key}-connector`}
+                        >
+                          Connector:{' '}
+                          {item.connector.href ? (
+                            <Link
+                              to={item.connector.href}
+                              className="font-semibold text-violet-700 underline-offset-2 hover:underline dark:text-violet-300"
+                            >
+                              {item.connector.name}
+                            </Link>
+                          ) : (
+                            <span className="font-semibold">{item.connector.name}</span>
+                          )}
+                        </p>
+                      ) : null}
                     </li>
                   ))}
                 </ol>
@@ -406,10 +428,10 @@ export function DashboardOverview() {
                 ))}
               </div>
             ) : null}
-            <div className="mt-5 flex flex-col gap-4 rounded-xl bg-slate-900 px-4 py-4 text-white shadow-sm sm:flex-row sm:items-center sm:justify-between sm:px-5 dark:bg-slate-950">
+            <div className="mt-5 flex flex-col gap-4 rounded-xl border border-status-info-border bg-status-info-subtle px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
               <div className="min-w-0">
-                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-violet-300">Recommended next step</p>
-                <p className="mt-1 text-sm font-medium leading-relaxed text-slate-100" data-testid="dashboard-next-step-description">
+                <p className="text-label text-status-info">Recommended next step</p>
+                <p className="mt-1 text-body-sm font-medium text-fg" data-testid="dashboard-next-step-description">
                   {priorityInvestigations.length > 0
                     ? `Investigate ${priorityInvestigations[0].resource} — ${priorityInvestigations[0].reason.toLowerCase()}.`
                     : attentionItems.length > 0
@@ -422,7 +444,7 @@ export function DashboardOverview() {
               <div className="flex shrink-0 flex-wrap gap-2">
                 <Link
                   to={priorityInvestigations[0]?.href ?? attentionItems[0]?.to ?? (attentionDataPartial ? NAV_PATH.streams : NAV_PATH.routes)}
-                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-violet-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-300"
+                  className={buttonClassName({ variant: 'secondary' })}
                   data-testid="dashboard-next-action"
                 >
                   {hasAnyAttention ? 'Review issue' : attentionDataPartial ? 'Open Streams' : 'Open Data Flows'}
@@ -431,7 +453,7 @@ export function DashboardOverview() {
                 {canConfigure ? (
                   <Link
                     to={newStreamPath()}
-                    className="inline-flex min-h-10 items-center justify-center rounded-lg border border-white/30 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-300"
+                    className={buttonClassName({ variant: 'secondary' })}
                     data-testid="dashboard-create-stream"
                   >
                     New Stream
@@ -440,6 +462,17 @@ export function DashboardOverview() {
               </div>
             </div>
           </section>
+
+          {bundle?.operationalSnapshot?.routes.length ? (
+            <Suspense fallback={
+              <p className="text-xs text-slate-500 dark:text-gdc-muted" role="status">Loading observed data paths…</p>
+            }>
+              <DashboardLiveFlowsPanel
+                snapshot={bundle.operationalSnapshot}
+                requestFailed={Boolean(loadError)}
+              />
+            </Suspense>
+          ) : null}
 
           <OverallHealthHero health={overallHealth} basisLabel={SNAPSHOT_KPI_BASIS_LABEL} stale={snapshotStale} />
 

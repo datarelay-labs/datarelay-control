@@ -5,6 +5,7 @@ import { postAuthLogin, postAuthMfaVerify, type TokenBundleDto, type MfaChalleng
 import { accessTokenRequiresPasswordChange } from '../../auth/jwt-session-hints'
 import { markSessionRequiresPasswordChange } from '../../auth/password-change-gate'
 import { persistSession } from '../../auth/session'
+import { formatApiErrorMessage } from '../../lib/api-error-message'
 import { DataRelayLogoMark } from './datarelay-logo'
 
 const RESOURCES: readonly {
@@ -114,7 +115,7 @@ export function PlatformLoginPage({ onAuthenticated }: PlatformLoginPageProps) {
       }
       finishAuthenticated(res)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Sign-in failed.')
+      setError(formatApiErrorMessage(err, 'Sign-in failed.'))
     } finally {
       setBusy(false)
     }

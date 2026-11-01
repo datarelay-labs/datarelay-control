@@ -83,7 +83,7 @@ describe('HealthBadge', () => {
 })
 
 describe('RuntimeHealthSection', () => {
-  it('renders empty banner copy when nothing has been scored', async () => {
+  it('renders Not verified banner copy (never "All scored entities are HEALTHY") when nothing has been scored', async () => {
     render(
       <MemoryRouter>
         <RuntimeHealthSection query={{ window: '24h' }} />
@@ -91,7 +91,8 @@ describe('RuntimeHealthSection', () => {
     )
     expect(await screen.findByTestId('runtime-health-section')).toBeInTheDocument()
     const banner = screen.getByTestId('runtime-health-banner')
-    expect(banner.textContent).toMatch(/All scored entities are HEALTHY/i)
+    expect(banner.textContent).toMatch(/Not verified: no entities were scored/i)
+    expect(banner.textContent).not.toMatch(/All scored entities are HEALTHY/i)
     expect(screen.getByTestId('runtime-health-routes-table').textContent).toMatch(/No unhealthy routes/i)
     expect(screen.getByTestId('runtime-health-streams-table').textContent).toMatch(/No degraded streams/i)
     expect(screen.getByTestId('runtime-health-destinations-table').textContent).toMatch(

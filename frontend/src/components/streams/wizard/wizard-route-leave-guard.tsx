@@ -1,4 +1,4 @@
-import { useContext, useEffect, type MutableRefObject } from 'react'
+import { useContext, useEffect, useLayoutEffect, useRef, type MutableRefObject } from 'react'
 import { useBlocker } from 'react-router-dom'
 import { NAV_PATH } from '../../../config/nav-paths'
 import { DataRouterEnabledContext } from '../../../router/data-router-enabled'
@@ -25,11 +25,22 @@ export function WizardRouteLeaveGuard(props: GuardProps) {
 }
 
 function DataRouterWizardLeaveGuard({ active, allowedNextPathRef, onBlocked, allowSamePathname = false }: GuardProps) {
+  // react-router registers a changed blocker predicate in a passive effect, so a
+  // predicate that closes over `active` stays stale for a tick after the commit
+  // that releases the guard (e.g. right after Save succeeds). Read the live value
+  // from a ref that is synced in the commit phase instead, so a click in that
+  // window is not blocked by a guard the user can no longer see.
+  const activeRef = useRef(active)
+  const allowSamePathnameRef = useRef(allowSamePathname)
+  useLayoutEffect(() => {
+    activeRef.current = active
+    allowSamePathnameRef.current = allowSamePathname
+  })
   const blocker = useBlocker(({ currentLocation, nextLocation }) => {
-    if (!active) return false
+    if (!activeRef.current) return false
     if (
       currentLocation.pathname === nextLocation.pathname &&
-      (allowSamePathname || currentLocation.search === nextLocation.search)
+      (allowSamePathnameRef.current || currentLocation.search === nextLocation.search)
     ) return false
 
     const allowed = allowedNextPathRef.current

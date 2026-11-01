@@ -200,6 +200,13 @@ class Scheduler:
             event = self._stream_stop_events.setdefault(int(stream_id), threading.Event())
             event.set()
 
+    def is_stream_stop_requested(self, stream_id: int) -> bool:
+        """True while a stop signal is pending for this process-local stream worker."""
+
+        with self._workers_lock:
+            event = self._stream_stop_events.get(int(stream_id))
+            return bool(event is not None and event.is_set())
+
     def is_stream_worker_alive(self, stream_id: int) -> bool:
         """Return whether this scheduler owns a live worker for stream_id."""
 
@@ -546,7 +553,7 @@ class Scheduler:
             return False
 
         try:
-            confirmed = bool(run_with_db(_confirm))
+            confirmed = bool(run_with_db(_confirm, commit=True))
             if confirmed:
                 logger.info(
                     "%s",

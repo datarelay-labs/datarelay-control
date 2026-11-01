@@ -21,6 +21,33 @@ describe('RemoteFileProbeSummary', () => {
     expect(screen.getByText(/Authentication/i)).toBeInTheDocument()
     expect(screen.getByText(/upload\/a\.ndjson/)).toBeInTheDocument()
   })
+
+  it('says "not attempted" instead of false when authentication or SFTP never ran (F-112)', () => {
+    const res: ConnectorAuthTestResponse = {
+      ok: false,
+      auth_type: 'REMOTE_FILE_POLLING',
+      ssh_reachable: true,
+      ssh_auth_ok: null,
+      sftp_available: null,
+      remote_directory_accessible: false,
+      host_key_status: 'strict',
+    }
+    render(<RemoteFileProbeSummary res={res} />)
+    expect(screen.getByText(/Authentication:/i).parentElement).toHaveTextContent('Authentication: not attempted')
+    expect(screen.getByText(/SFTP subsystem:/i).parentElement).toHaveTextContent('SFTP subsystem: not attempted')
+  })
+
+  it('still reports a real authentication failure as false', () => {
+    const res: ConnectorAuthTestResponse = {
+      ok: false,
+      auth_type: 'REMOTE_FILE_POLLING',
+      ssh_reachable: true,
+      ssh_auth_ok: false,
+      sftp_available: null,
+    }
+    render(<RemoteFileProbeSummary res={res} />)
+    expect(screen.getByText(/Authentication:/i).parentElement).toHaveTextContent('Authentication: false')
+  })
 })
 
 describe('redactConnectorAuthTestResponseForDisplay', () => {

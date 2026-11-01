@@ -36,6 +36,7 @@ from app.runtime.query_boundary import materialize_live_aggregate_snapshot
 from app.runtime.visualization_contract import bucket_meta, visualization_meta_map
 from app.runtime.models import RuntimeStreamSnapshot
 from app.runtime.read_service import StreamNotFoundError
+from app.runtime.copy_utils import checkpoint_read_view
 from app.runtime.schemas import (
     RecentRouteErrorItem,
     RouteRuntimeLatencyTrendPoint,
@@ -132,10 +133,13 @@ def _route_connectivity_state(
     route_status: str,
     delivered_ev: int,
     failed_ev: int,
-) -> Literal["HEALTHY", "DEGRADED", "ERROR", "DISABLED"]:
+) -> Literal["HEALTHY", "DEGRADED", "ERROR", "DISABLED", "IDLE"]:
     rs = str(route_status or "").strip().upper()
     if not route_enabled or not destination_enabled or rs != "ENABLED":
         return "DISABLED"
+    if delivered_ev <= 0 and failed_ev <= 0:
+        # No deliveries observed in the window: no verdict, not HEALTHY.
+        return "IDLE"
     if failed_ev <= 0:
         return "HEALTHY"
     if delivered_ev <= 0:
@@ -265,7 +269,7 @@ def _build_stream_runtime_metrics(
     last_cp: StreamMetricsCheckpoint | None = None
     checkpoint_history: list[StreamMetricsCheckpointHistoryItem] = []
     if checkpoint_row is not None:
-        val = dict(checkpoint_row.checkpoint_value_json or {})
+        val = checkpoint_read_view(checkpoint_row.checkpoint_value_json)
         last_cp = StreamMetricsCheckpoint(type=str(checkpoint_row.checkpoint_type), value=val)
         checkpoint_history.append(
             StreamMetricsCheckpointHistoryItem(
@@ -443,10 +447,9 @@ def _build_stream_runtime_metrics(
         delivered_ev = int(rw.delivered_events) if rw else 0
         failed_ev = int(rw.failed_events) if rw else 0
         events_total = delivered_ev + failed_ev
-        if events_total > 0:
-            success_rate = round(100.0 * delivered_ev / events_total, 1)
-        else:
-            success_rate = 100.0
+        success_rate: float | None = (
+            round(100.0 * delivered_ev / events_total, 1) if events_total > 0 else None
+        )
 
         lsucc = rw.last_success_at if rw else None
         lfail = rw.last_failure_at if rw else None
@@ -472,7 +475,7 @@ def _build_stream_runtime_metrics(
                 RouteRuntimeLatencyTrendPoint(timestamp=tr.bucket_start, avg_latency_ms=round(tr.avg_latency_ms, 1))
             )
             tot_b = tr.delivered_events + tr.failed_events
-            sr_b = 100.0 if tot_b <= 0 else round(100.0 * tr.delivered_events / tot_b, 1)
+            sr_b = None if tot_b <= 0 else round(100.0 * tr.delivered_events / tot_b, 1)
             success_rate_trend.append(RouteRuntimeSuccessRateTrendPoint(timestamp=tr.bucket_start, success_rate=sr_b))
 
         connectivity = _route_connectivity_state(
@@ -498,7 +501,7 @@ def _build_stream_runtime_metrics(
                 destination_type=dest_type,
                 enabled=bool(route.enabled),
                 route_status=str(route.status),
-                success_rate=float(success_rate),
+                success_rate=success_rate,
                 events_last_hour=int(events_total),
                 delivered_last_hour=int(delivered_ev),
                 failed_last_hour=int(failed_ev),

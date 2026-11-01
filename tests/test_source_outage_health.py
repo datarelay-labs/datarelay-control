@@ -284,11 +284,15 @@ def test_destination_total_and_partial_regression() -> None:
         )
         == "ERROR"
     )
+    # Owner decision D3: route ERROR escalates the destination only with the
+    # destination's own delivery-failure evidence, now passed explicitly.
     assert (
         classify_destination_health(
             enabled=True,
             route_healths=["ERROR"],
             last_success_at=NOW - timedelta(minutes=2),
+            last_error_at=NOW,
+            failed_eps_1m=0.05,
         )
         == "ERROR"
     )
@@ -325,6 +329,120 @@ def test_idle_s3_canonical_no_data_not_error() -> None:
         route_count=1,
     )
     assert health == "HEALTHY"
+
+
+def test_success_older_than_freshness_window_is_not_healthy() -> None:
+    """Scenario 3: last success older than the existing 3600 s window, nothing newer.
+
+    Without ``now`` (legacy callers above) no freshness check runs; production
+    call sites always pass ``now``.
+    """
+
+    stale = classify_stream_health(
+        enabled=True,
+        status="RUNNING",
+        last_success_at=NOW - timedelta(days=1),
+        last_error_at=None,
+        failure_rate_5m=0.0,
+        failed_route_count=0,
+        healthy_route_count=1,
+        route_count=1,
+        now=NOW,
+    )
+    # Warning-level, never ERROR: zero traffic is not a failure.
+    assert stale == "DEGRADED"
+    within_window = classify_stream_health(
+        enabled=True,
+        status="RUNNING",
+        last_success_at=NOW - timedelta(minutes=59),
+        last_error_at=None,
+        failure_rate_5m=0.0,
+        failed_route_count=0,
+        healthy_route_count=1,
+        route_count=1,
+        now=NOW,
+    )
+    assert within_window == "HEALTHY"
+    # A stale success after an older error is still not HEALTHY (no recovery shortcut).
+    assert (
+        classify_stream_health(
+            enabled=True,
+            status="RUNNING",
+            last_success_at=NOW - timedelta(hours=2),
+            last_error_at=NOW - timedelta(hours=3),
+            failure_rate_5m=0.0,
+            now=NOW,
+        )
+        == "DEGRADED"
+    )
+    # Recent failures keep their existing ERROR handling.
+    assert (
+        classify_stream_health(
+            enabled=True,
+            status="RUNNING",
+            last_success_at=NOW - timedelta(hours=2),
+            last_error_at=NOW,
+            failure_rate_5m=100.0,
+            now=NOW,
+        )
+        == "ERROR"
+    )
+
+
+def test_stale_success_raises_no_recent_observation_warning() -> None:
+    from app.runtime.operational_snapshot_schemas import OperationalStreamSnapshot
+    from app.runtime.operational_snapshot_service import _build_problems
+
+    stream = OperationalStreamSnapshot(
+        stream_id=8,
+        stream_name="quiet-source",
+        enabled=True,
+        status="RUNNING",
+        health_status="DEGRADED",
+        eps_1m=0.0,
+        eps_5m=0.0,
+        success_rate_5m=None,
+        failure_rate_5m=None,
+        route_count=1,
+        healthy_route_count=0,
+        failed_route_count=0,
+        last_success_at=NOW - timedelta(hours=2),
+        last_error_at=None,
+    )
+    problems = _build_problems(stream_snapshots=[stream], route_snapshots=[], destination_snapshots=[], now=NOW)
+    assert len(problems) == 1
+    assert problems[0].severity == "warning"
+    assert "no recent ingest/delivery observed" in problems[0].title.lower()
+
+
+def test_enabled_idle_source_without_observation_is_never_healthy() -> None:
+    """Scenario 8: enabled source that was never observed stays IDLE (no verdict)."""
+
+    assert (
+        classify_stream_health(
+            enabled=True,
+            status="RUNNING",
+            last_success_at=None,
+            last_error_at=None,
+            failure_rate_5m=0.0,
+            failed_route_count=0,
+            healthy_route_count=0,
+            route_count=1,
+            now=NOW,
+        )
+        == "IDLE"
+    )
+    assert (
+        classify_route_health(
+            enabled=True,
+            last_success_at=None,
+            last_error_at=None,
+            failed_eps_1m=0.0,
+            retry_rate_5m=0.0,
+            now=NOW,
+        )
+        == "IDLE"
+    )
 
 
 def test_degraded_source_outage_surfaces_dashboard_operational_problem() -> None:

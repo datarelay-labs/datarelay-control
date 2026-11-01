@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { OperationalIssue, StreamGovernanceSnapshot } from '../../lib/stream-governance-snapshot'
-import { buildStreamDiagnosis, type BuildStreamDiagnosisInput } from './stream-runtime-diagnosis'
+import {
+  buildStreamDiagnosis,
+  deriveFailingRoutes,
+  deriveSourceObserved,
+  isCheckpointBehindDelivery,
+  type BuildStreamDiagnosisInput,
+} from './stream-runtime-diagnosis'
 
 function input(overrides: Partial<BuildStreamDiagnosisInput> = {}): BuildStreamDiagnosisInput {
   return {
@@ -22,6 +28,9 @@ function input(overrides: Partial<BuildStreamDiagnosisInput> = {}): BuildStreamD
     checkpointLabel: '2026-01-01T00:00:00Z',
     deliveryPctKnown: true,
     deliveryPct: 99.2,
+    // Source and checkpoint are Clear only with evidence; the calm baseline supplies it explicitly.
+    sourceObserved: true,
+    checkpointBehindDelivery: false,
     recentErrorMessage: null,
     canMutateWorkspace: true,
     canRuntimeControl: true,
@@ -128,6 +137,15 @@ describe('buildStreamDiagnosis', () => {
     )
   })
 
+  it('collapses a multi-line checkpoint summary into one sentence', () => {
+    const diagnosis = buildStreamDiagnosis(
+      input({ checkpointLabel: 'last event: evt-00140 @ 2026-10-29T12:02:20Z\ncursor: 2026-10-29T12:02:20Z' }),
+    )
+    expect(diagnosis.causes.find((cause) => cause.key === 'checkpoint')?.detail).toBe(
+      'Latest checkpoint is last event: evt-00140 @ 2026-10-29T12:02:20Z · cursor: 2026-10-29T12:02:20Z.',
+    )
+  })
+
   it('marks checkpoint not applicable for push ingest', () => {
     const diagnosis = buildStreamDiagnosis(
       input({ showCheckpointObservability: false, checkpointLabel: null }),
@@ -138,10 +156,104 @@ describe('buildStreamDiagnosis', () => {
     })
   })
 
-  it('offers start when the stream is stopped and runtime control is allowed', () => {
+  it('offers start when the stream is stopped and runtime control is allowed (STOPPED is neutral, not attention)', () => {
     const diagnosis = buildStreamDiagnosis(input({ displayStatus: 'STOPPED', checkpointLabel: 'cursor-1' }))
-    expect(diagnosis.causes.find((cause) => cause.key === 'source')?.tone).toBe('attention')
+    expect(diagnosis.causes.find((cause) => cause.key === 'source')?.tone).toBe('inactive')
+    expect(diagnosis.causes.some((cause) => cause.tone === 'attention')).toBe(false)
+    expect(diagnosis.whatHappened).toMatch(/stopped or paused/i)
     expect(diagnosis.nextSteps[0]).toMatchObject({ kind: 'start', label: 'Start stream' })
+  })
+
+  it('keys the Start-stream step on displayStatus STOPPED, not on the source tone', () => {
+    const running = buildStreamDiagnosis(input({ displayStatus: 'RUNNING' }))
+    expect(running.nextSteps.some((step) => step.kind === 'start')).toBe(false)
+    const stopped = buildStreamDiagnosis(input({ displayStatus: 'STOPPED', canRuntimeControl: true }))
+    expect(stopped.nextSteps.filter((step) => step.kind === 'start')).toHaveLength(1)
+  })
+
+  it('does not call an IDLE source Clear without an observed run, fetch or events (Not observed yet)', () => {
+    const diagnosis = buildStreamDiagnosis(input({ displayStatus: 'IDLE', sourceObserved: false }))
+    expect(diagnosis.causes.find((cause) => cause.key === 'source')).toMatchObject({
+      tone: 'unknown',
+      statusLabel: 'Not observed yet',
+    })
+    expect(diagnosis.whatHappened).not.toMatch(/No source, mapping/i)
+  })
+
+  it('treats a RUNNING source without observation as unknown and with observation as clear', () => {
+    expect(
+      buildStreamDiagnosis(input({ displayStatus: 'RUNNING', sourceObserved: undefined })).causes.find(
+        (cause) => cause.key === 'source',
+      )?.tone,
+    ).toBe('unknown')
+    expect(
+      buildStreamDiagnosis(input({ displayStatus: 'IDLE', sourceObserved: true })).causes.find(
+        (cause) => cause.key === 'source',
+      )?.tone,
+    ).toBe('clear')
+  })
+
+  it('keeps a confirmed source ERROR critical even when nothing was observed (Unknown never masks Critical)', () => {
+    const diagnosis = buildStreamDiagnosis(input({ displayStatus: 'ERROR', sourceObserved: false }))
+    expect(diagnosis.causes.find((cause) => cause.key === 'source')?.tone).toBe('critical')
+  })
+
+  it('reports Mapping as Not evaluated yet without delivery attempts or processed events', () => {
+    const diagnosis = buildStreamDiagnosis(input({ deliveryPctKnown: false, events1h: 0 }))
+    expect(diagnosis.causes.find((cause) => cause.key === 'mapping')).toMatchObject({
+      tone: 'unknown',
+      statusLabel: 'Not evaluated yet',
+    })
+  })
+
+  it('reports Mapping as Clear once events were processed or delivery was attempted', () => {
+    expect(
+      buildStreamDiagnosis(input({ deliveryPctKnown: false, events1h: 12 })).causes.find((c) => c.key === 'mapping')?.tone,
+    ).toBe('clear')
+    expect(
+      buildStreamDiagnosis(input({ deliveryPctKnown: true, events1h: 0 })).causes.find((c) => c.key === 'mapping')?.tone,
+    ).toBe('clear')
+  })
+
+  it('words an unmeasured destination as No deliveries observed', () => {
+    const cause = buildStreamDiagnosis(input({ deliveryPctKnown: false })).causes.find((c) => c.key === 'destination')
+    expect(cause).toMatchObject({ tone: 'unknown', statusLabel: 'No deliveries observed' })
+    expect(cause?.detail).toMatch(/No deliveries observed/)
+  })
+
+  it('reports a missing checkpoint as Not observed yet and a lagging one as attention', () => {
+    const none = buildStreamDiagnosis(input({ checkpointLabel: null })).causes.find((c) => c.key === 'checkpoint')
+    expect(none).toMatchObject({ tone: 'unknown', statusLabel: 'Not observed yet' })
+    const behind = buildStreamDiagnosis(input({ checkpointLabel: 'cursor-1', checkpointBehindDelivery: true }))
+    expect(behind.causes.find((c) => c.key === 'checkpoint')?.tone).toBe('attention')
+    expect(behind.whatHappened).toMatch(/behind successful delivery/)
+    const ok = buildStreamDiagnosis(input({ checkpointLabel: 'cursor-1', checkpointBehindDelivery: false }))
+    expect(ok.causes.find((c) => c.key === 'checkpoint')?.tone).toBe('clear')
+  })
+
+  it('derives sourceObserved only from events, processed events, a completed run or a non-failed recent run', () => {
+    expect(deriveSourceObserved({})).toBe(false)
+    expect(deriveSourceObserved({ eventsLastHour: 0, recentRunStatuses: ['FAILED'] })).toBe(false)
+    expect(deriveSourceObserved({ eventsLastHour: 3 })).toBe(true)
+    expect(deriveSourceObserved({ recentRunStatuses: ['FAILED', 'NO_EVENTS'] })).toBe(true)
+    expect(deriveSourceObserved({ runCompleteCount: 1 })).toBe(true)
+    expect(deriveSourceObserved({ processedEvents: 5 })).toBe(true)
+  })
+
+  it('mirrors should_flag_checkpoint_stale: delivering, lag >= 1h, checkpoint older than the last success', () => {
+    const now = Date.parse('2026-10-31T12:00:00Z')
+    const base = {
+      delivering: true,
+      lastSuccessAt: '2026-10-31T11:59:00Z',
+      checkpointUpdatedAts: ['2026-10-31T09:00:00Z'],
+      nowMs: now,
+    }
+    expect(isCheckpointBehindDelivery(base)).toBe(true)
+    expect(isCheckpointBehindDelivery({ ...base, delivering: false })).toBe(false)
+    expect(isCheckpointBehindDelivery({ ...base, checkpointUpdatedAts: ['2026-10-31T11:30:00Z'] })).toBe(false)
+    expect(isCheckpointBehindDelivery({ ...base, checkpointUpdatedAts: [] })).toBe(false)
+    expect(isCheckpointBehindDelivery({ ...base, lastSuccessAt: null })).toBe(false)
+    expect(isCheckpointBehindDelivery({ ...base, checkpointUpdatedAts: ['2026-10-31T11:59:30Z'] })).toBe(false)
   })
 
   it('hides mutation steps when the session cannot change the workspace', () => {
@@ -154,5 +266,43 @@ describe('buildStreamDiagnosis', () => {
       }),
     )
     expect(diagnosis.nextSteps).toEqual([])
+  })
+})
+
+describe('failing route identification (F-146)', () => {
+  const rows = [
+    { route_id: 11, destination_name: 'webhook-ok', enabled: true, failed_last_hour: 0, last_success_at: '2026-10-31T17:20:00Z', last_failure_at: null, last_error_message: null },
+    { route_id: 12, destination_name: 'webhook-a', enabled: true, failed_last_hour: 4, last_success_at: '2026-10-31T17:00:00Z', last_failure_at: '2026-10-31T17:20:00Z', last_error_message: 'Cannot send a request, as the client has been closed.' },
+    { route_id: 13, destination_name: 'webhook-recovered', enabled: true, failed_last_hour: 2, last_success_at: '2026-10-31T17:25:00Z', last_failure_at: '2026-10-31T17:10:00Z', last_error_message: 'HTTP 500' },
+    { route_id: 14, destination_name: 'webhook-off', enabled: false, failed_last_hour: 9, last_success_at: null, last_failure_at: '2026-10-31T17:10:00Z', last_error_message: 'HTTP 500' },
+  ]
+
+  it('derives only the routes whose newest evidence is a failure and never leaks raw library text', () => {
+    const failing = deriveFailingRoutes(rows)
+    expect(failing).toHaveLength(1)
+    expect(failing[0]).toMatchObject({ routeId: 12, destinationName: 'webhook-a', allFailing: false })
+    expect(failing[0].message).toBe('the destination connection was closed before the request could be sent')
+  })
+
+  it('names the failing Route and Destination instead of reporting Destination Clear', () => {
+    const diagnosis = buildStreamDiagnosis(input({ deliveryPct: 95.9, failingRoutes: deriveFailingRoutes(rows) }))
+    const destination = diagnosis.causes.find((cause) => cause.key === 'destination')
+    expect(destination?.tone).toBe('attention')
+    expect(destination?.detail).toContain('Route #12')
+    expect(destination?.detail).toContain('webhook-a')
+    expect(destination?.detail).not.toMatch(/no destination failure/i)
+    expect(diagnosis.whatHappened).toContain('Route #12')
+  })
+
+  it('is critical when the failing Route never succeeded', () => {
+    const diagnosis = buildStreamDiagnosis(
+      input({ failingRoutes: [{ routeId: 7, destinationName: 'syslog-x', message: 'HTTP 500', allFailing: true }] }),
+    )
+    expect(diagnosis.causes.find((cause) => cause.key === 'destination')?.tone).toBe('critical')
+  })
+
+  it('stays Clear when no Route fails', () => {
+    const diagnosis = buildStreamDiagnosis(input({ failingRoutes: [] }))
+    expect(diagnosis.causes.find((cause) => cause.key === 'destination')?.tone).toBe('clear')
   })
 })

@@ -97,6 +97,9 @@ class GovernanceQuarantineDetailResponse(BaseModel):
     protection_actions: list[GovernanceQuarantineProtectionAction] = Field(default_factory=list)
     policy_decision: GovernanceQuarantinePolicyDecision
     related_replay: list[GovernanceQuarantineReplayRef] = Field(default_factory=list)
+    # The Replay action only succeeds when a pending replay job can be associated (F-182).
+    replay_available: bool = False
+    replay_unavailable_reason: str | None = None
     related_violation: GovernanceQuarantineViolationRef | None = None
     related_quarantine: GovernanceQuarantineMetadata
     quarantine_metadata: GovernanceQuarantineMetadata

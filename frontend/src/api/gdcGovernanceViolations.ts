@@ -5,7 +5,7 @@ const GOV = `${GDC_API_PREFIX}/governance`
 
 const readJsonOpts = { timeoutMs: GDC_DEFAULT_READ_JSON_TIMEOUT_MS }
 
-export type ViolationStatus = 'OPEN' | 'QUARANTINED' | 'RELEASED' | 'REPLAYED'
+export type ViolationStatus = 'OPEN' | 'QUARANTINED' | 'RELEASED' | 'REPLAYED' | 'DISCARDED'
 export type ViolationSeverity = 'HIGH' | 'MEDIUM' | 'LOW'
 export type ViolationWindow = '24h' | '7d' | '30d'
 

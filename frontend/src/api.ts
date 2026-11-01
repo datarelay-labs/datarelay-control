@@ -29,6 +29,21 @@ function formatHttpErrorBody(status: number, body: unknown): string {
     const o = body as Record<string, unknown>
     const detail = o.detail
     if (typeof detail === 'string') return `${status}: ${detail}`
+    if (Array.isArray(detail) && detail.length > 0) {
+      // FastAPI request-validation failures: [{ loc: ['body', 'field'], msg: '...' }].
+      const parts = detail
+        .map((item) => {
+          if (item === null || typeof item !== 'object') return String(item)
+          const entry = item as Record<string, unknown>
+          const msg = typeof entry.msg === 'string' ? entry.msg : ''
+          const where = Array.isArray(entry.loc)
+            ? entry.loc.filter((part) => part !== 'body' && part !== 'query').map(String).join('.')
+            : ''
+          return where && msg ? `${where}: ${msg}` : msg || where
+        })
+        .filter((part) => part.length > 0)
+      if (parts.length > 0) return `${status}: ${parts.join('; ')}`
+    }
     if (detail !== null && typeof detail === 'object' && !Array.isArray(detail)) {
       const d = detail as Record<string, unknown>
       const parseErrors = d.parse_errors
@@ -41,6 +56,11 @@ function formatHttpErrorBody(status: number, body: unknown): string {
         if (typeof d.error_code === 'string') return `${status}: [${d.error_code}] ${d.message}`
         return `${status}: ${d.message}`
       }
+      const reason = [d.reason, d.error, d.detail].find((value) => typeof value === 'string' && value.trim())
+      if (typeof reason === 'string') {
+        return typeof d.error_code === 'string' ? `${status}: [${d.error_code}] ${reason}` : `${status}: ${reason}`
+      }
+      if (typeof d.error_code === 'string') return `${status}: [${d.error_code}]`
     }
     if (typeof o.message === 'string') return `${status}: ${o.message}`
   }
@@ -274,8 +294,14 @@ function mergeAbortSignals(user: AbortSignal | undefined, deadline: AbortSignal)
 async function doFetch(path: string, init?: GdcJsonFetchInit, withJsonContentType = true): Promise<Response> {
   const raw = init ?? {}
   const { timeoutMs, ...rest } = raw
+  // A string body is always sent as JSON by this client. `safeRequestJsonResult` (withJsonContentType=false)
+  // is shared with GET polling, but a POST/PUT body without `Content-Type: application/json` is rejected by
+  // the API as "Input should be a valid dictionary" (F-115), so the header follows the body, not the helper.
+  const sendsJsonBody = typeof rest.body === 'string'
   const headersBase: Record<string, string> = {
-    ...(withJsonContentType ? { 'Content-Type': 'application/json' } : { Accept: 'application/json' }),
+    ...(withJsonContentType
+      ? { 'Content-Type': 'application/json' }
+      : { Accept: 'application/json', ...(sendsJsonBody ? { 'Content-Type': 'application/json' } : {}) }),
     ...authHeader(),
     ...((rest.headers as Record<string, string>) ?? {}),
   }

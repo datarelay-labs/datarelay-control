@@ -27,6 +27,7 @@ export type GovernancePersistResult = {
   saved: boolean
   errors: string[]
   warnings: string[]
+  streamUpdatedAt?: string | null
 }
 
 /**
@@ -203,7 +204,9 @@ function mergeByStableKey<T>(
     seen.add(key)
     const replacement = incomingByKey.get(key)
     if (replacement) {
-      merged.push(replacement)
+      // Preserve persisted override identity and non-Wizard facets (e.g.
+      // classification on a field protection row, delivery on a Route floor).
+      merged.push({ ...item, ...replacement })
       incomingByKey.delete(key)
     } else {
       merged.push(item)
@@ -361,8 +364,10 @@ export async function persistWizardStreamGovernance(
     return { saved: true, errors: [], warnings }
   }
 
+  let governanceWrittenAt: string | null = null
   try {
-    await putStreamGovernance(streamId, { ...payload, expected_updated_at: current.updated_at })
+    const written = await putStreamGovernance(streamId, { ...payload, expected_updated_at: current.updated_at })
+    governanceWrittenAt = written.updated_at ?? null
   } catch (err) {
     return {
       saved: false,
@@ -392,5 +397,5 @@ export async function persistWizardStreamGovernance(
   if (readBackErrors.length > 0) {
     return { saved: false, errors: readBackErrors, warnings }
   }
-  return { saved: true, errors: [], warnings }
+  return { saved: true, errors: [], warnings, streamUpdatedAt: governanceWrittenAt }
 }

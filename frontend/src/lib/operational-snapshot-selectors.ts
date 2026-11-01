@@ -21,6 +21,9 @@ export type OperationalUiHealthLabel =
   | 'No Data'
   | 'Disabled'
   | 'Stopped'
+  | 'Paused'
+  | 'Not observed yet'
+  | 'Connectivity verified · No deliveries observed'
   | 'Critical'
 
 export type OperationalHealthPresentation = {
@@ -108,6 +111,11 @@ function safeFinite(n: unknown): number | null {
   return x
 }
 
+/** Nullable rate: null/undefined (no attempts) stays null instead of coercing to 0. */
+function finiteRateOrNull(n: number | null | undefined): number | null {
+  return typeof n === 'number' && Number.isFinite(n) ? n : null
+}
+
 function safeNonNeg(n: unknown): number {
   const x = safeFinite(n)
   if (x == null || x < 0) return 0
@@ -130,12 +138,12 @@ export function formatOperationalFailureRate(pct: number | null | undefined): st
 export function operationalStreamSuccessRatePct(stream: {
   eps_1m: number
   eps_5m: number
-  success_rate_5m: number
+  success_rate_5m: number | null
 }): number | null {
   const eps1 = safeNonNeg(stream.eps_1m)
   const eps5 = safeNonNeg(stream.eps_5m)
   if (eps1 <= 0 && eps5 <= 0) return null
-  return Number.isFinite(stream.success_rate_5m) ? stream.success_rate_5m : null
+  return finiteRateOrNull(stream.success_rate_5m)
 }
 
 export function computeSuccessRateFromEps(delivered: number, failed: number): number | null {
@@ -146,16 +154,24 @@ export function computeSuccessRateFromEps(delivered: number, failed: number): nu
   return Math.round((100 * d) / total * 100) / 100
 }
 
+/**
+ * Snapshot IDLE means "no health verdict". When the caller passes the entity's
+ * observation timestamps and both are empty, IDLE is shown as "Not observed yet".
+ */
 export function formatOperationalHealth(
   status: OperationalHealthStatus | null | undefined,
   enabled = true,
   runtimeStatus?: string | null,
+  observation?: { lastSuccessAt?: string | null; lastErrorAt?: string | null },
 ): OperationalHealthPresentation {
   const rt = String(runtimeStatus ?? '')
     .trim()
     .toUpperCase()
   // Explicit scheduler/runtime stop takes precedence over enabled=false (Stop vs Disabled).
-  if (rt === 'STOPPED' || rt === 'PAUSED' || rt === 'STOPPING' || rt === 'STOP_FAILED') {
+  if (rt === 'PAUSED') {
+    return { raw: status ?? null, label: 'Paused', tone: 'neutral' }
+  }
+  if (rt === 'STOPPED' || rt === 'STOPPING' || rt === 'STOP_FAILED') {
     return { raw: status ?? null, label: 'Stopped', tone: 'neutral' }
   }
   if (!enabled) {
@@ -169,6 +185,9 @@ export function formatOperationalHealth(
     case 'ERROR':
       return { raw: 'ERROR', label: 'Error', tone: 'error' }
     case 'IDLE':
+      if (observation != null && !observation.lastSuccessAt && !observation.lastErrorAt) {
+        return { raw: 'IDLE', label: 'Not observed yet', tone: 'neutral' }
+      }
       return { raw: 'IDLE', label: 'No Data', tone: 'neutral' }
     default:
       return { raw: status ?? 'IDLE', label: 'No Data', tone: 'neutral' }
@@ -343,7 +362,8 @@ export function selectStreamKpi(
     : formatProblemSummary(stream.last_error_message, stream.health_status, 'Stream delivery degraded', 'Stream delivery error')
   if (summary && !issues.includes(summary)) issues.unshift(summary)
 
-  const failureRatePct = Number.isFinite(stream.failure_rate_5m) ? stream.failure_rate_5m : null
+  // null (zero completed attempts) stays null and renders as "—".
+  const failureRatePct = finiteRateOrNull(stream.failure_rate_5m)
 
   const runtimeStatusFromSnapshot = mapOperationalRuntimeStatus(stream.status)
   const runtimeStatus =
@@ -352,7 +372,10 @@ export function selectStreamKpi(
       : operationalHealthToStreamStatus(stream.health_status, stream.enabled)
 
   return {
-    health: formatOperationalHealth(stream.health_status, stream.enabled, stream.status),
+    health: formatOperationalHealth(stream.health_status, stream.enabled, stream.status, {
+      lastSuccessAt: stream.last_success_at,
+      lastErrorAt: stream.last_error_at,
+    }),
     enabled: stream.enabled,
     eps1m: safeFinite(stream.eps_1m),
     eps5m: safeFinite(stream.eps_5m),
@@ -381,7 +404,8 @@ export function selectRouteKpi(
   const summary = formatProblemSummary(route.last_error_message, route.health_status, 'Route delivery degraded', 'Route delivery error')
   if (summary && !issues.includes(summary)) issues.unshift(summary)
 
-  const successRatePct = Number.isFinite(route.success_rate_5m) ? route.success_rate_5m : null
+  // null means zero completed attempts in the window: shown as "—", never 0% or 100%.
+  const successRatePct = finiteRateOrNull(route.success_rate_5m)
   const delivered = safeNonNeg(route.delivered_eps_1m)
   const failed = safeNonNeg(route.failed_eps_1m)
   const failureRatePct = computeSuccessRateFromEps(failed, delivered) != null && delivered + failed > 0
@@ -389,7 +413,10 @@ export function selectRouteKpi(
     : null
 
   return {
-    health: formatOperationalHealth(route.health_status, route.enabled),
+    health: formatOperationalHealth(route.health_status, route.enabled, null, {
+      lastSuccessAt: route.last_success_at,
+      lastErrorAt: route.last_error_at,
+    }),
     enabled: route.enabled,
     deliveredEps1m: safeFinite(route.delivered_eps_1m),
     failedEps1m: safeFinite(route.failed_eps_1m),
@@ -455,14 +482,34 @@ export function deriveStreamIssuesFromSnapshot(
   return selectStreamKpi(stream, problems).issues
 }
 
+export type OverallHealthPosture = 'healthy' | 'warning' | 'critical' | 'unknown'
+
+const INACTIVE_STREAM_RUNTIME_STATUSES = new Set(['PAUSED', 'STOPPED', 'STOPPING', 'STOP_FAILED'])
+
+/** Enabled and not paused/stopped by the operator or scheduler. */
+export function isActiveOperationalStream(stream: Pick<OperationalStreamSnapshot, 'enabled' | 'status'>): boolean {
+  if (!stream.enabled) return false
+  return !INACTIVE_STREAM_RUNTIME_STATUSES.has(String(stream.status ?? '').trim().toUpperCase())
+}
+
+/**
+ * Critical > warning > unknown > healthy. Healthy requires at least one observed healthy
+ * stream and no active stream without a verdict (IDLE). Unknown never masks critical/warning.
+ */
 export function deriveOverallHealthPostureFromSnapshot(
   snapshot: OperationalSnapshotResponse,
-): { healthy: number; warning: number; critical: number; posture: 'healthy' | 'warning' | 'critical' } {
-  const counts = countHealthFromRows(snapshot.streams ?? [])
-  let posture: 'healthy' | 'warning' | 'critical' = 'healthy'
-  if (counts.critical > 0) posture = 'critical'
-  else if (counts.warning > 0) posture = 'warning'
-  return { healthy: counts.healthy, warning: counts.warning, critical: counts.critical, posture }
+): { healthy: number; warning: number; critical: number; unknown: number; posture: OverallHealthPosture } {
+  const streams = snapshot.streams ?? []
+  const counts = countHealthFromRows(streams)
+  const unknown = streams.filter((s) => isActiveOperationalStream(s) && s.health_status === 'IDLE').length
+  const globalUnverified =
+    snapshot.global?.health_status === 'IDLE' && safeNonNeg(snapshot.global?.enabled_streams) > 0
+  const globalHealth = snapshot.global?.health_status
+  let posture: OverallHealthPosture = 'healthy'
+  if (counts.critical > 0 || globalHealth === 'ERROR') posture = 'critical'
+  else if (counts.warning > 0 || globalHealth === 'DEGRADED') posture = 'warning'
+  else if (unknown > 0 || globalUnverified || counts.healthy === 0) posture = 'unknown'
+  return { healthy: counts.healthy, warning: counts.warning, critical: counts.critical, unknown, posture }
 }
 
 export function aggregateDeliverySuccessRateFromSnapshot(
@@ -473,8 +520,9 @@ export function aggregateDeliverySuccessRateFromSnapshot(
   for (const s of snapshot.streams ?? []) {
     const eps = safeNonNeg(s.eps_1m)
     if (eps <= 0) continue
-    const sr = Number.isFinite(s.success_rate_5m) ? s.success_rate_5m / 100 : null
-    if (sr == null) continue
+    const rate = finiteRateOrNull(s.success_rate_5m)
+    if (rate == null) continue
+    const sr = rate / 100
     delivered += eps * sr
     failed += eps * (1 - sr)
   }

@@ -1077,4 +1077,67 @@ describe('StepDelivery', () => {
     expect(onChange).not.toHaveBeenCalledWith(expect.objectContaining({ routeDrafts: expect.any(Array) }))
   })
 
+  it('asks for confirmation before removing a saved route and removes it only after confirming (F-230)', async () => {
+    const user = userEvent.setup()
+    const state = buildInitialState()
+    state.destinations.routeDrafts = [{
+      key: 'route-41',
+      destinationId: 1,
+      enabled: true,
+      failurePolicy: 'RETRY_AND_BACKOFF',
+      rateLimitJson: {},
+    }]
+    const onChange = vi.fn()
+    render(
+      <MemoryRouter>
+        <StepDelivery state={state} onChange={onChange} />
+      </MemoryRouter>,
+    )
+    await screen.findAllByText('Stellar Syslog')
+    onChange.mockClear()
+
+    const card = screen.getByTestId('destination-route-card-route-41')
+    await user.click(within(card).getByRole('button', { name: 'Actions for Stellar Syslog' }))
+    await user.click(within(card).getByRole('menuitem', { name: 'Remove route' }))
+
+    const impact = await screen.findByTestId('wizard-route-remove-dialog-impact')
+    expect(impact).toHaveTextContent(/permanently removes transform, protection, classification, and policy/i)
+    expect(impact).toHaveTextContent(/disabled and then deleted when you save/i)
+    expect(onChange).not.toHaveBeenCalled()
+
+    await user.click(screen.getByTestId('wizard-route-remove-dialog-cancel'))
+    expect(onChange).not.toHaveBeenCalled()
+
+    await user.click(within(card).getByRole('button', { name: 'Actions for Stellar Syslog' }))
+    await user.click(within(card).getByRole('menuitem', { name: 'Remove route' }))
+    await user.click(await screen.findByTestId('wizard-route-remove-dialog-confirm'))
+    expect(onChange).toHaveBeenCalledWith({ routeDrafts: [] })
+  })
+
+  it('removes a route that was only added in this session without a dialog (F-230)', async () => {
+    const user = userEvent.setup()
+    const state = buildInitialState()
+    state.destinations.routeDrafts = [{
+      key: 'draft-new-1',
+      destinationId: 1,
+      enabled: true,
+      failurePolicy: 'RETRY_AND_BACKOFF',
+      rateLimitJson: {},
+    }]
+    const onChange = vi.fn()
+    render(
+      <MemoryRouter>
+        <StepDelivery state={state} onChange={onChange} />
+      </MemoryRouter>,
+    )
+    await screen.findAllByText('Stellar Syslog')
+    onChange.mockClear()
+
+    const card = screen.getByTestId('destination-route-card-draft-new-1')
+    await user.click(within(card).getByRole('button', { name: 'Actions for Stellar Syslog' }))
+    await user.click(within(card).getByRole('menuitem', { name: 'Remove route' }))
+    expect(screen.queryByTestId('wizard-route-remove-dialog')).not.toBeInTheDocument()
+    expect(onChange).toHaveBeenCalledWith({ routeDrafts: [] })
+  })
+
 })

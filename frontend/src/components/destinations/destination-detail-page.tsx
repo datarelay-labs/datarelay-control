@@ -10,6 +10,7 @@ import {
 import { useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { cn } from '../../lib/utils'
+import { useSessionCapabilities } from '../../lib/rbac'
 import { formatThroughputEps } from '../../lib/observability-format'
 import { NAV_PATH, logsExplorerPath, routeEditPath, streamRuntimePath } from '../../config/nav-paths'
 import { StatusBadge } from '../shell/status-badge'
@@ -21,6 +22,7 @@ import { isRouteSnapshotStale } from '../routes/routes-flow-helpers'
 import { useOperationalEvidenceClock } from '../../hooks/use-operational-evidence-clock'
 import type { DestinationUiHealth } from './destination-runtime-metrics'
 import { extractCapacityConfig } from './destination-mini-charts'
+import { DESTINATION_NOT_FOUND_MESSAGE } from './destination-detail-model'
 
 type MainTab = 'overview' | 'routes' | 'delivery' | 'health' | 'failures'
 
@@ -86,6 +88,8 @@ export function DestinationDetailPage() {
   const [mainTab, setMainTab] = useState<MainTab>('overview')
   const [moreOpen, setMoreOpen] = useState(false)
   const [testMessage, setTestMessage] = useState<string | null>(null)
+  // Mirrors the backend rule (validation_mutations); the API stays the authority and still answers 403.
+  const canTestConnection = useSessionCapabilities().validation_mutations === true
   const moreRef = useRef<HTMLDivElement>(null)
 
   const displayName = runtime.destination?.name ?? `Destination #${destinationId}`
@@ -138,6 +142,28 @@ export function DestinationDetailPage() {
     )
   }
 
+  if (runtime.error === DESTINATION_NOT_FOUND_MESSAGE && runtime.destination == null) {
+    // The id is valid but no such Destination exists; retrying cannot change that (F-019).
+    return (
+      <div
+        role="alert"
+        data-testid="destination-not-found"
+        className="space-y-3 rounded-xl border border-slate-200 bg-white px-4 py-6 dark:border-gdc-border dark:bg-gdc-card"
+      >
+        <p className="text-[13px] font-semibold text-slate-900 dark:text-slate-100">Destination not found</p>
+        <p className="text-[12px] text-slate-600 dark:text-gdc-muted">
+          No Destination with id {backendDestinationNumericId} exists. It may have been deleted, or the link may be wrong.
+        </p>
+        <Link
+          to={NAV_PATH.destinations}
+          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-[12px] font-semibold text-slate-800 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-100"
+        >
+          Back to Destinations
+        </Link>
+      </div>
+    )
+  }
+
   if (runtime.error && runtime.destination == null) {
     return (
       <div className="space-y-3 rounded-xl border border-red-200 bg-red-50 px-4 py-6 dark:border-red-900/40 dark:bg-red-950/30">
@@ -171,18 +197,38 @@ export function DestinationDetailPage() {
               Partial runtime data: {runtime.error}
             </p>
           ) : null}
-          {testMessage ? <p className="text-[12px] text-slate-600 dark:text-gdc-muted">{testMessage}</p> : null}
+          {testMessage ? (
+            <p
+              role={testMessage.startsWith('Failed:') ? 'alert' : 'status'}
+              data-testid="destination-test-message"
+              className={cn(
+                'text-[12px]',
+                testMessage.startsWith('Failed:')
+                  ? 'font-medium text-red-700 dark:text-red-300'
+                  : 'text-slate-600 dark:text-gdc-muted',
+              )}
+            >
+              {testMessage}
+            </p>
+          ) : null}
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => void onTestConnection()}
-            disabled={runtime.testBusy}
+            disabled={runtime.testBusy || !canTestConnection}
+            title={canTestConnection ? undefined : 'Testing a connection requires the Operator or Administrator role.'}
+            aria-describedby={canTestConnection ? undefined : 'destination-test-role-hint'}
             className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-200/90 bg-white px-3 text-[12px] font-semibold text-slate-800 shadow-sm hover:bg-slate-50 disabled:opacity-70 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-100"
           >
             {runtime.testBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" aria-hidden />}
             Test Connection
           </button>
+          {canTestConnection ? null : (
+            <span id="destination-test-role-hint" className="text-[11px] text-slate-500 dark:text-gdc-muted">
+              Requires Operator or Administrator
+            </span>
+          )}
           <Link
             to={NAV_PATH.destinations}
             className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-200/90 bg-white px-3 text-[12px] font-semibold text-slate-800 shadow-sm dark:border-gdc-border dark:bg-gdc-section dark:text-slate-100"
@@ -453,10 +499,12 @@ export function RoutesTable({
                   <td className={opTd}>{r.deliveryMode}</td>
                   <td className={opTd}>
                     <StatusBadge
-                      tone={!verified ? 'neutral' : r.status === 'ACTIVE' ? 'success' : r.status === 'ERROR' ? 'error' : 'warning'}
+                      tone={!verified || r.status === 'IDLE' ? 'neutral' : r.status === 'ACTIVE' ? 'success' : r.status === 'ERROR' ? 'error' : 'warning'}
                       className="uppercase"
                     >
-                      {verified ? r.status : lastReported ? `Last reported ${r.status}` : 'Unverified'}
+                      {verified
+                        ? r.status === 'IDLE' ? 'Not observed' : r.status
+                        : lastReported ? `Last reported ${r.status === 'IDLE' ? 'Not observed' : r.status}` : 'Unverified'}
                     </StatusBadge>
                   </td>
                   <td className={cn(opTd, 'tabular-nums')}>{verified ? formatThroughputEps(r.epsAvg) : '—'}</td>

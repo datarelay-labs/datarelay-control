@@ -537,6 +537,7 @@ def _events_from_delivery_logs(
     stream_names: dict[int, str],
     stream_policies: dict[int, list[GovernancePolicy]],
     known_keys: set[tuple[str, datetime]],
+    known_quarantine_events: set[tuple[str, int]] | None = None,
     replay_event_id: int | None = None,
 ) -> list[_InternalAuditEvent]:
     stage_map = {
@@ -605,6 +606,15 @@ def _events_from_delivery_logs(
 
         dedupe_key = (event_type, log_row.created_at)
         if dedupe_key in known_keys:
+            continue
+        # The quarantine row already yields one release/discard entry; the matching
+        # observability log is stamped by the database clock, so a timestamp-only key
+        # would list the same action twice (F-174).
+        if (
+            quarantine_id is not None
+            and known_quarantine_events is not None
+            and (event_type, int(quarantine_id)) in known_quarantine_events
+        ):
             continue
 
         stream_name = stream_names.get(int(stream_id), f"Stream {stream_id}") if stream_id is not None else None
@@ -732,6 +742,7 @@ def _collect_audit_events(
 
     events: list[_InternalAuditEvent] = []
     known_keys: set[tuple[str, datetime]] = set()
+    known_quarantine_events: set[tuple[str, int]] = set()
 
     for row in quarantine_rows:
         q_events = _events_from_quarantine_row(
@@ -742,6 +753,8 @@ def _collect_audit_events(
         )
         for ev in q_events:
             known_keys.add((ev.event_type, ev.event_time))
+            if ev.quarantine_event_id is not None:
+                known_quarantine_events.add((ev.event_type, int(ev.quarantine_event_id)))
         events.extend(q_events)
 
     for row in replay_rows:
@@ -782,6 +795,7 @@ def _collect_audit_events(
             stream_names=stream_names,
             stream_policies=stream_policies,
             known_keys=known_keys,
+            known_quarantine_events=known_quarantine_events,
         )
     )
 

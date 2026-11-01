@@ -263,7 +263,8 @@ describe('operational-snapshot-selectors', () => {
 
   it('derives dashboard and streams section KPI from snapshot', () => {
     const posture = deriveOverallHealthPostureFromSnapshot(snapshot)
-    expect(posture).toEqual({ healthy: 1, warning: 1, critical: 0, posture: 'warning' })
+    // Shape extended with the unknown (active, not observed) count; posture unchanged.
+    expect(posture).toEqual({ healthy: 1, warning: 1, critical: 0, unknown: 0, posture: 'warning' })
     const success = aggregateDeliverySuccessRateFromSnapshot(snapshot)
     expect(success).not.toBeNull()
     const section = streamsSectionKpiFromOperationalSnapshot(snapshot)
@@ -288,5 +289,125 @@ describe('operational-snapshot-selectors', () => {
       idle: 0,
       disabled: 1,
     })
+  })
+})
+
+describe('runtime health semantics (no evidence is not Healthy)', () => {
+  const base = snapshotFixture()
+  const healthyStream = base.streams[0]!
+  const notObservedStream = {
+    ...healthyStream,
+    stream_id: 9,
+    stream_name: 'New stream',
+    health_status: 'IDLE' as const,
+    eps_1m: 0,
+    eps_5m: 0,
+    success_rate_5m: null,
+    failure_rate_5m: null,
+    last_success_at: null,
+    last_error_at: null,
+  }
+
+  it('labels an IDLE stream without any observation as "Not observed yet" (scenario 2)', () => {
+    const kpi = selectStreamKpi(notObservedStream, [])
+    expect(kpi.health.label).toBe('Not observed yet')
+    expect(kpi.health.tone).toBe('neutral')
+    expect(kpi.successLabel).toBe('—')
+    expect(kpi.failureLabel).toBe('—')
+    expect(formatOperationalHealth('IDLE', true, 'RUNNING', { lastSuccessAt: null, lastErrorAt: null }).label).toBe(
+      'Not observed yet',
+    )
+    expect(formatOperationalHealth('IDLE', true, 'RUNNING', { lastSuccessAt: '2026-06-22T11:00:00Z' }).label).toBe(
+      'No Data',
+    )
+  })
+
+  it('labels a paused stream "Paused" and keeps STOPPED as "Stopped" (scenario 10)', () => {
+    expect(formatOperationalHealth('IDLE', true, 'PAUSED').label).toBe('Paused')
+    expect(formatOperationalHealth('IDLE', true, 'PAUSED').tone).toBe('neutral')
+    expect(formatOperationalHealth('IDLE', true, 'STOPPED').label).toBe('Stopped')
+  })
+
+  it('shows a route with zero completed attempts as "—", never 0% (scenario 5)', () => {
+    const idleRoute = {
+      ...base.routes[0]!,
+      health_status: 'IDLE' as const,
+      delivered_eps_1m: 0,
+      failed_eps_1m: 0,
+      success_rate_5m: null,
+      last_success_at: null,
+      last_error_at: null,
+    }
+    const kpi = selectRouteKpi(idleRoute, [])
+    expect(kpi.successRatePct).toBeNull()
+    expect(kpi.successLabel).toBe('—')
+    expect(kpi.health.label).toBe('Not observed yet')
+  })
+
+  it('posture is unknown when an enabled active stream is IDLE beside a healthy one (scenario 11)', () => {
+    const snapshot: OperationalSnapshotResponse = {
+      ...base,
+      global: { ...base.global, health_status: 'IDLE', enabled_streams: 2 },
+      streams: [healthyStream, notObservedStream],
+      problems: [],
+    }
+    const posture = deriveOverallHealthPostureFromSnapshot(snapshot)
+    expect(posture.posture).toBe('unknown')
+    expect(posture.unknown).toBe(1)
+  })
+
+  it('posture never lets Unknown mask a confirmed Critical or Warning', () => {
+    const critical = { ...healthyStream, stream_id: 5, health_status: 'ERROR' as const }
+    const warning = { ...healthyStream, stream_id: 6, health_status: 'DEGRADED' as const }
+    const mk = (streams: OperationalSnapshotResponse['streams']): OperationalSnapshotResponse => ({
+      ...base,
+      global: { ...base.global, health_status: 'IDLE', enabled_streams: streams.length },
+      streams,
+      problems: [],
+    })
+    expect(deriveOverallHealthPostureFromSnapshot(mk([notObservedStream, critical])).posture).toBe('critical')
+    expect(deriveOverallHealthPostureFromSnapshot(mk([notObservedStream, warning])).posture).toBe('warning')
+  })
+
+  it('posture is unknown when global is IDLE with enabled streams, and healthy only with observed healthy streams', () => {
+    const allHealthy: OperationalSnapshotResponse = {
+      ...base,
+      global: { ...base.global, health_status: 'HEALTHY', enabled_streams: 1 },
+      streams: [healthyStream],
+      problems: [],
+    }
+    expect(deriveOverallHealthPostureFromSnapshot(allHealthy).posture).toBe('healthy')
+    const globalIdle: OperationalSnapshotResponse = {
+      ...allHealthy,
+      global: { ...allHealthy.global, health_status: 'IDLE', enabled_streams: 1 },
+    }
+    expect(deriveOverallHealthPostureFromSnapshot(globalIdle).posture).toBe('unknown')
+    const empty: OperationalSnapshotResponse = {
+      ...allHealthy,
+      global: { ...allHealthy.global, health_status: 'IDLE', enabled_streams: 0 },
+      streams: [],
+    }
+    expect(deriveOverallHealthPostureFromSnapshot(empty).posture).toBe('unknown')
+  })
+
+  it('a paused stream does not raise the posture to warning', () => {
+    const paused = { ...notObservedStream, stream_id: 10, status: 'PAUSED' }
+    const snapshot: OperationalSnapshotResponse = {
+      ...base,
+      global: { ...base.global, health_status: 'HEALTHY', enabled_streams: 2 },
+      streams: [healthyStream, paused],
+      problems: [],
+    }
+    const posture = deriveOverallHealthPostureFromSnapshot(snapshot)
+    expect(posture.posture).toBe('healthy')
+    expect(posture.unknown).toBe(0)
+  })
+
+  it('aggregate delivery success ignores streams whose rate is null', () => {
+    const snapshot: OperationalSnapshotResponse = {
+      ...base,
+      streams: [{ ...healthyStream, eps_1m: 3, success_rate_5m: null, failure_rate_5m: null }],
+    }
+    expect(aggregateDeliverySuccessRateFromSnapshot(snapshot)).toBeNull()
   })
 })

@@ -35,7 +35,8 @@
     "@datarelay-labs/system-contracts": "file:../.foundation/packs/datarelay-labs-system-contracts-0.1.0-rc.50.tgz",
     "@datarelay-labs/testkit": "file:../.foundation/packs/datarelay-labs-testkit-0.1.0-rc.50.tgz",
     "@datarelay-labs/tokens": "file:../.foundation/packs/datarelay-labs-tokens-0.1.0-rc.50.tgz",
-    "@datarelay-labs/ui": "file:../.foundation/packs/datarelay-labs-ui-0.1.0-rc.50.tgz"
+    "@datarelay-labs/ui": "file:../.foundation/packs/datarelay-labs-ui-0.1.0-rc.50.tgz",
+    "@xyflow/react": "12.12.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.15.0",

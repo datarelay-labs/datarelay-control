@@ -11,7 +11,7 @@ from app.checkpoints.models import Checkpoint
 from app.connectors.models import Connector
 from app.destinations.models import Destination
 from app.routes.models import Route
-from app.runtime.models import RuntimeRouteSnapshot, RuntimeStreamSnapshot
+from app.runtime.models import RuntimeDestinationSnapshot, RuntimeRouteSnapshot, RuntimeStreamSnapshot
 from app.runtime.stream_runtime_snapshot_read import (
     build_stream_stats_health_from_snapshot,
     try_build_stream_runtime_metrics,
@@ -108,6 +108,19 @@ def _seed_stream_with_snapshot(db: Session) -> int:
             success_rate_5m=100.0,
             retry_rate_5m=0.0,
             avg_latency_ms=42.0,
+            last_success_at=now,
+            updated_at=now,
+        )
+    )
+    db.add(
+        RuntimeDestinationSnapshot(
+            destination_id=int(dest.id),
+            enabled=True,
+            health_status="HEALTHY",
+            inbound_eps_1m=1.0,
+            failed_eps_1m=0.0,
+            avg_latency_ms=42.0,
+            route_count=1,
             last_success_at=now,
             updated_at=now,
         )

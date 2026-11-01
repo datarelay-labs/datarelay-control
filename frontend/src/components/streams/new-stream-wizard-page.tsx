@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent a
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { NAV_PATH, runtimeOverviewPath } from '../../config/nav-paths'
 import { WIZARD_LABEL } from '../../lib/operator-vocabulary'
+import { Button } from '../ui/button'
+import { buttonClassName } from '../ui/button-classes'
 import { useSessionCapabilities } from '../../lib/rbac'
 import { createStream } from '../../api/gdcStreams'
 import { materializeConnectorTemplates } from '../../api/gdcConnectorTemplates'
@@ -129,6 +131,23 @@ export function NewStreamWizardPage() {
   const [creationError, setCreationError] = useState<string | null>(null)
   const [isStarting, setIsStarting] = useState(false)
   const [draftNotice, setDraftNotice] = useState<string | null>(null)
+  const draftNoticeRef = useRef<HTMLParagraphElement | null>(null)
+  const draftNoticeTimerRef = useRef<number | null>(null)
+  // One timer for the transient notice; cleared on unmount so it never updates an unmounted page.
+  const flashDraftNotice = useCallback((message: string, ms: number) => {
+    if (draftNoticeTimerRef.current != null) window.clearTimeout(draftNoticeTimerRef.current)
+    setDraftNotice(message)
+    draftNoticeTimerRef.current = window.setTimeout(() => {
+      draftNoticeTimerRef.current = null
+      setDraftNotice(null)
+    }, ms)
+  }, [])
+  useEffect(
+    () => () => {
+      if (draftNoticeTimerRef.current != null) window.clearTimeout(draftNoticeTimerRef.current)
+    },
+    [],
+  )
   const [operationalSampleId, setOperationalSampleId] = useState<OperationalSampleId | null>(null)
   const [dataProtectionDrawerOpen, setDataProtectionDrawerOpen] = useState(false)
   const [connectorCreateOpen, setConnectorCreateOpen] = useState(false)
@@ -182,9 +201,8 @@ export function NewStreamWizardPage() {
     setPendingDraft(null)
     setDraftBannerVisible(false)
 
-    setDraftNotice('Draft restored from local storage.')
-    window.setTimeout(() => setDraftNotice(null), 4000)
-  }, [pendingDraft, wizardSteps])
+    flashDraftNotice('Draft restored from local storage.', 4000)
+  }, [flashDraftNotice, pendingDraft, wizardSteps])
 
   const handleStartFresh = useCallback(() => {
     setRecentlyCreatedDestinationId(null)
@@ -934,13 +952,17 @@ export function NewStreamWizardPage() {
   const saveDraft = useCallback(() => {
     try {
       saveWizardDraft(state, currentStepKey)
-      setDraftNotice('Draft saved locally.')
-      window.setTimeout(() => setDraftNotice(null), 4000)
+      // The notice sits at the top of the page while the button is at the bottom: say exactly where the
+      // draft lives, keep it up long enough to read, and bring it into view (F-012).
+      flashDraftNotice(
+        'Draft saved in this browser only. Nothing is stored on the server and no Stream exists until you select Create & Start Stream.',
+        10000,
+      )
+      window.requestAnimationFrame(() => draftNoticeRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }))
     } catch {
-      setDraftNotice('Unable to save draft.')
-      window.setTimeout(() => setDraftNotice(null), 4000)
+      flashDraftNotice('Unable to save draft in this browser. Check that browser storage is available.', 10000)
     }
-  }, [currentStepKey, state])
+  }, [currentStepKey, flashDraftNotice, state])
 
   const preserveDraftBeforeDestinationPrerequisite = useCallback(() => {
     try {
@@ -950,11 +972,10 @@ export function NewStreamWizardPage() {
       allowNextNavigation(NAV_PATH.destinations)
       return true
     } catch {
-      setDraftNotice('Unable to save draft. Stay in the wizard and try again.')
-      window.setTimeout(() => setDraftNotice(null), 4000)
+      flashDraftNotice('Unable to save draft. Stay in the wizard and try again.', 4000)
       return false
     }
-  }, [allowNextNavigation, state])
+  }, [allowNextNavigation, flashDraftNotice, state])
 
   const handleCreateAnother = useCallback(() => {
     setRecentlyCreatedDestinationId(null)
@@ -1067,7 +1088,9 @@ export function NewStreamWizardPage() {
     })
   }, [state, wizardSteps])
 
-  const persistenceLabel = state.connector.apiBacked
+  const persistenceLabel = state.outcome?.streamId != null
+    ? 'Stream created. Its configuration is saved in Data Relay Control.'
+    : state.connector.apiBacked
     ? 'Changes will be saved to Data Relay Control when you create the stream.'
     : 'Local draft · Connector and Source availability are not yet verified. No runtime changes have been applied.'
 
@@ -1091,7 +1114,7 @@ export function NewStreamWizardPage() {
         </p>
         <Link
           to={NAV_PATH.streams}
-          className="mt-4 inline-flex min-h-10 items-center rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700"
+          className={buttonClassName({ variant: 'primary', className: 'mt-4' })}
         >
           View existing Streams
         </Link>
@@ -1107,23 +1130,22 @@ export function NewStreamWizardPage() {
         onBlocked={handleBlockedNavigation}
       />
       {/* Toolbar only — App Shell owns the page title */}
-      <div className="flex flex-col gap-3 border-b border-slate-200/80 pb-4 dark:border-gdc-divider sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex flex-col gap-3 border-b border-default pb-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 space-y-1">
-          <p className="max-w-2xl text-sm text-slate-600 dark:text-gdc-muted" data-testid="wizard-stage-purpose">
+          <p className="max-w-2xl text-body text-fg-secondary" data-testid="wizard-stage-purpose">
             {stagePurpose}
           </p>
-          <p className="text-xs text-slate-500 dark:text-gdc-muted">{persistenceLabel}</p>
+          <p className="text-body-sm text-fg-muted">{persistenceLabel}</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <button
+          <Button
             ref={cancelButtonRef}
-            type="button"
+            variant="secondary"
             onClick={requestCancel}
             disabled={busy || isStarting}
-            className="inline-flex h-9 items-center rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-200 dark:hover:bg-gdc-rowHover"
           >
             Cancel
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -1168,33 +1190,27 @@ export function NewStreamWizardPage() {
 
       {draftBannerVisible && pendingDraft ? (
         <div
-          className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200/80 bg-amber-500/[0.06] px-3 py-2.5 dark:border-amber-500/35 dark:bg-amber-500/10"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-status-warning-border bg-status-warning-subtle px-3 py-2.5"
           data-testid="wizard-draft-banner"
         >
-          <p className="text-[12px] font-medium text-amber-900 dark:text-amber-100">Saved draft found.</p>
+          <p className="text-body-sm font-medium text-status-warning">Saved draft found.</p>
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={handleResumeDraft}
-              className="inline-flex h-8 items-center rounded-md bg-gdc-primary px-3 text-[12px] font-semibold text-white hover:bg-violet-700"
-              data-testid="wizard-draft-resume"
-            >
+            <Button variant="secondary" size="sm" onClick={handleResumeDraft} data-testid="wizard-draft-resume">
               Resume draft
-            </button>
-            <button
-              type="button"
-              onClick={handleStartFresh}
-              className="inline-flex h-8 items-center rounded-md border border-slate-200 bg-white px-3 text-[12px] font-semibold text-slate-700 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200"
-              data-testid="wizard-draft-start-fresh"
-            >
+            </Button>
+            <Button variant="ghost" size="sm" onClick={handleStartFresh} data-testid="wizard-draft-start-fresh">
               Start fresh
-            </button>
+            </Button>
           </div>
         </div>
       ) : null}
 
       {draftNotice ? (
-        <p className="rounded-md border border-emerald-200/80 bg-emerald-500/[0.06] px-3 py-2 text-[11px] font-medium text-emerald-800 dark:border-emerald-500/35 dark:bg-emerald-500/10 dark:text-emerald-200">
+        <p
+          ref={draftNoticeRef}
+          role="status"
+          data-testid="wizard-draft-notice"
+          className="rounded-md border border-emerald-200/80 bg-emerald-500/[0.06] px-3 py-2 text-[11px] font-medium text-emerald-800 dark:border-emerald-500/35 dark:bg-emerald-500/10 dark:text-emerald-200">
           {draftNotice}
         </p>
       ) : null}
@@ -1258,47 +1274,39 @@ export function NewStreamWizardPage() {
         ) : null}
       </div>
 
+      {/* One primary action per step lives here; every in-step control is secondary or ghost. */}
       <nav
-        className="sticky bottom-0 z-20 mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 dark:border-gdc-border dark:bg-gdc-panel"
+        className="sticky bottom-0 z-20 mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-default bg-surface-card px-3 py-2.5"
         aria-label="Wizard navigation"
         data-testid="wizard-action-bar"
       >
         {isDeployStep && streamCreated ? (
-          <button
-            type="button"
-            onClick={() => navigate(NAV_PATH.streams)}
-            className="inline-flex h-9 items-center rounded-lg border border-transparent px-1 text-sm font-semibold text-slate-600 hover:text-slate-900 dark:text-gdc-muted dark:hover:text-slate-100"
-          >
+          <Button variant="ghost" onClick={() => navigate(NAV_PATH.streams)}>
             Exit Wizard
-          </button>
+          </Button>
         ) : (
-          <button
-            type="button"
+          <Button
+            variant="secondary"
             onClick={() => setStepIndex((idx) => Math.max(0, idx - 1))}
             disabled={stepIndex === 0}
-            className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-200/90 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200 dark:hover:bg-gdc-rowHover"
+            leadingIcon={<ChevronLeft className="h-3.5 w-3.5" />}
           >
-            <ChevronLeft className="h-3.5 w-3.5" aria-hidden />
             Back
-          </button>
+          </Button>
         )}
         <div className="flex flex-wrap items-center justify-end gap-2">
           {isDeployStep && streamCreated ? (
             <>
-              <button
-                type="button"
-                onClick={() => handleCreateAnother()}
-                className="inline-flex h-9 items-center rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100 dark:hover:bg-gdc-rowHover"
-              >
+              <Button variant="secondary" onClick={() => handleCreateAnother()}>
                 Create Another Stream
-              </button>
+              </Button>
               <Link
                 to={
                   state.outcome?.streamId != null
                     ? runtimeOverviewPath({ stream_id: state.outcome.streamId })
                     : NAV_PATH.runtime
                 }
-                className="inline-flex h-9 items-center gap-1 rounded-lg bg-gdc-primary px-4 text-sm font-semibold text-white hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/60"
+                className={buttonClassName({ variant: 'primary', className: 'gap-1' })}
               >
                 {WIZARD_LABEL.goToOperations}
                 <ChevronRight className="h-3.5 w-3.5" aria-hidden />
@@ -1307,52 +1315,38 @@ export function NewStreamWizardPage() {
           ) : (
             <>
               {currentStepKey === 'route_processing' || currentStepKey === 'deploy' ? (
-                <button
-                  type="button"
-                  onClick={() => saveDraft()}
-                  className="inline-flex h-9 items-center rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200 dark:hover:bg-gdc-rowHover"
-                  data-testid="wizard-save-draft"
-                >
+                <Button variant="secondary" onClick={() => saveDraft()} data-testid="wizard-save-draft">
                   Save as Draft
-                </button>
+                </Button>
               ) : null}
               {isDeployStep && !streamCreated ? (
-                <button
-                  type="button"
+                <Button
+                  variant="primary"
                   onClick={() => void handleCreate({ startAfter: true })}
                   disabled={busy || isStarting || !deployReadiness.canCreate}
-                  className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-gdc-primary px-4 text-sm font-semibold text-white hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/60 disabled:cursor-not-allowed disabled:opacity-60"
+                  leadingIcon={
+                    busy || isStarting ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                    )
+                  }
                   data-testid="deploy-create-and-start"
                 >
-                  {busy || isStarting ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                  ) : (
-                    <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
-                  )}
                   {busy || isStarting ? 'Creating & Starting…' : 'Create & Start Stream'}
-                </button>
+                </Button>
               ) : null}
               {!isDeployStep ? (
-                <button
-                  type="button"
+                <Button
+                  variant="primary"
                   onClick={goToNextStep}
                   disabled={!canAdvance}
                   title={nextStepBlockReason}
-                  className="inline-flex h-9 items-center gap-1 rounded-lg bg-gdc-primary px-4 text-sm font-semibold text-white hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/60 disabled:cursor-not-allowed disabled:opacity-60"
+                  trailingIcon={<ChevronRight className="h-3.5 w-3.5" />}
                   data-testid="wizard-next"
                 >
-                  {nextLabel ? (
-                    <>
-                      Next: {nextLabel}
-                      <ChevronRight className="h-3.5 w-3.5" aria-hidden />
-                    </>
-                  ) : (
-                    <>
-                      Next
-                      <ChevronRight className="h-3.5 w-3.5" aria-hidden />
-                    </>
-                  )}
-                </button>
+                  {nextLabel ? `Next: ${nextLabel}` : 'Next'}
+                </Button>
               ) : null}
             </>
           )}

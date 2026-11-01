@@ -5,9 +5,18 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+import re
+
+from pydantic import BaseModel, Field, field_validator
 
 NotificationChannel = Literal["email", "webhook"]
+
+# Deliberately small shape check (one "@", a dotted domain, no whitespace or list separators).
+_EMAIL_RECIPIENT_RE = re.compile(r"^[^@\s,;<>]+@[^@\s,;<>]+\.[^@\s,;<>]+$")
+
+
+def invalid_email_recipients(values: list[str] | None) -> list[str]:
+    return [v for v in (values or []) if v.strip() and not _EMAIL_RECIPIENT_RE.match(v.strip())]
 NotificationEventStatus = Literal["PENDING", "SENT", "FAILED"]
 
 
@@ -32,6 +41,14 @@ class GovernanceNotificationConfigUpdateRequest(BaseModel):
     email_recipients: list[str] | None = None
     webhook_enabled: bool | None = None
     webhook_url: str | None = None
+
+    @field_validator("email_recipients")
+    @classmethod
+    def _recipients_look_like_email_addresses(cls, value: list[str] | None) -> list[str] | None:
+        bad = invalid_email_recipients(value)
+        if bad:
+            raise ValueError(f"not a valid email address: {', '.join(bad[:3])}")
+        return value
 
 
 class GovernanceNotificationTestRequest(BaseModel):

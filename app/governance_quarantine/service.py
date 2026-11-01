@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from fastapi import Request
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -458,6 +460,8 @@ def get_governance_quarantine_detail(
         )
     ]
 
+    replay_available, replay_unavailable_reason = _replay_availability(db, row)
+
     metadata = _metadata_from_row(row)
     violation_id = _violation_id_for_quarantine(int(row.id))
     related_violation = GovernanceQuarantineViolationRef(
@@ -494,6 +498,8 @@ def get_governance_quarantine_detail(
         protection_actions=protection_actions,
         policy_decision=policy_decision,
         related_replay=related_replays,
+        replay_available=replay_available,
+        replay_unavailable_reason=replay_unavailable_reason,
         related_violation=related_violation,
         related_quarantine=metadata,
         quarantine_metadata=metadata,
@@ -521,17 +527,77 @@ def _find_pending_replay_for_quarantine(db: Session, row: StreamQuarantineEvent)
     ).scalar_one_or_none()
 
 
-def bulk_release_quarantine_events(db: Session, ids: list[int]) -> GovernanceQuarantineBulkResponse:
+def _replay_availability(db: Session, row: StreamQuarantineEvent) -> tuple[bool, str | None]:
+    """Whether the Quarantine Replay action can find a replay job to execute (F-182)."""
+
+    if str(row.status) == QUARANTINE_STATUS_DISCARDED:
+        return False, "Discarded events cannot be replayed."
+    if _find_pending_replay_for_quarantine(db, row) is None:
+        return False, (
+            "No pending replay job exists for this stream since the event was quarantined. "
+            "Quarantined events are held, not queued for replay: use Release to deliver the held event."
+        )
+    return True, None
+
+
+def _record_quarantine_audit(
+    db: Session,
+    *,
+    request: Request | None,
+    action: str,
+    quarantine_event_id: int,
+    details: dict[str, Any],
+) -> None:
+    """Write an operator-attributed row to /api/v1/audit-logs (F-174)."""
+
+    from app.audit.service import record_audit_log
+
+    record_audit_log(
+        db,
+        action=action,
+        entity_type="STREAM_QUARANTINE_EVENT",
+        entity_id=int(quarantine_event_id),
+        metadata=details,
+        request=request,
+    )
+
+
+def _actor_name(request: Request | None) -> str:
+    from app.audit.service import audit_actor_from_request
+
+    return audit_actor_from_request(request).actor_username or "system"
+
+
+def bulk_release_quarantine_events(
+    db: Session,
+    ids: list[int],
+    *,
+    request: Request | None = None,
+) -> GovernanceQuarantineBulkResponse:
     from app.quarantine import service as quarantine_service
 
     results: list[GovernanceQuarantineBulkItemResult] = []
     succeeded = 0
     for event_id in ids:
         try:
-            result = quarantine_service.execute_quarantine_release(db, int(event_id))
+            result = quarantine_service.execute_quarantine_release(
+                db, int(event_id), released_by=_actor_name(request)
+            )
             outcome = str(result.get("outcome") or "unknown")
             if outcome == "released":
                 succeeded += 1
+                _record_quarantine_audit(
+                    db,
+                    request=request,
+                    action="QUARANTINE_EVENT_RELEASE",
+                    quarantine_event_id=int(event_id),
+                    details={
+                        "outcome": outcome,
+                        "stream_id": result.get("stream_id"),
+                        "status": result.get("status"),
+                        "source": "governance_quarantine_bulk",
+                    },
+                )
                 _notify_quarantine_governance_event(
                     db,
                     event_type="QUARANTINE_RELEASED",
@@ -581,15 +647,34 @@ def bulk_release_quarantine_events(db: Session, ids: list[int]) -> GovernanceQua
     )
 
 
-def bulk_discard_quarantine_events(db: Session, ids: list[int]) -> GovernanceQuarantineBulkResponse:
+def bulk_discard_quarantine_events(
+    db: Session,
+    ids: list[int],
+    *,
+    request: Request | None = None,
+) -> GovernanceQuarantineBulkResponse:
     from app.quarantine import service as quarantine_service
 
     results: list[GovernanceQuarantineBulkItemResult] = []
     succeeded = 0
     for event_id in ids:
         try:
-            result = quarantine_service.discard_quarantine_event(db, int(event_id))
+            result = quarantine_service.discard_quarantine_event(
+                db, int(event_id), discarded_by=_actor_name(request)
+            )
             succeeded += 1
+            _record_quarantine_audit(
+                db,
+                request=request,
+                action="QUARANTINE_EVENT_DISCARD",
+                quarantine_event_id=int(event_id),
+                details={
+                    "outcome": "discarded",
+                    "stream_id": result.get("stream_id"),
+                    "status": result.get("status"),
+                    "source": "governance_quarantine_bulk",
+                },
+            )
             _notify_quarantine_governance_event(
                 db,
                 event_type="QUARANTINE_DISCARDED",
@@ -638,7 +723,12 @@ def bulk_discard_quarantine_events(db: Session, ids: list[int]) -> GovernanceQua
     )
 
 
-def bulk_replay_quarantine_events(db: Session, ids: list[int]) -> GovernanceQuarantineBulkResponse:
+def bulk_replay_quarantine_events(
+    db: Session,
+    ids: list[int],
+    *,
+    request: Request | None = None,
+) -> GovernanceQuarantineBulkResponse:
     from app.replay import service as replay_service
 
     results: list[GovernanceQuarantineBulkItemResult] = []
@@ -683,6 +773,18 @@ def bulk_replay_quarantine_events(db: Session, ids: list[int]) -> GovernanceQuar
             outcome = str(result.get("outcome") or "unknown")
             if outcome == "replayed":
                 succeeded += 1
+                _record_quarantine_audit(
+                    db,
+                    request=request,
+                    action="QUARANTINE_EVENT_REPLAY",
+                    quarantine_event_id=int(quarantine_id),
+                    details={
+                        "outcome": outcome,
+                        "replay_event_id": int(replay_row.id),
+                        "stream_id": int(row.stream_id),
+                        "source": "governance_quarantine_bulk",
+                    },
+                )
             results.append(
                 GovernanceQuarantineBulkItemResult(
                     id=int(quarantine_id),

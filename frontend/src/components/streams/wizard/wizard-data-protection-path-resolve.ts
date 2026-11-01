@@ -123,6 +123,79 @@ export function resolveProtectionFieldPath(
   }
 }
 
+function firstWizardSampleEvent(state: WizardState): Record<string, unknown> | null {
+  const sample = state.apiTest.extractedEvents[0] ?? state.apiTest.analysis?.sampleEvent ?? null
+  if (!sample || typeof sample !== 'object' || Array.isArray(sample)) return null
+  return sample as Record<string, unknown>
+}
+
+/** Field paths of the raw loaded sample event (before mapping/enrichment). */
+export function collectWizardSamplePaths(state: WizardState): string[] {
+  return collectRuntimeEventFieldPaths(firstWizardSampleEvent(state))
+}
+
+// Without strictNullChecks a truthiness check does not narrow this union; compare to false.
+function isAmbiguousPathResult(result: ProtectionPathResolveResult): boolean {
+  return result.ok === false && result.error.startsWith('Ambiguous')
+}
+
+/**
+ * Resolve a protection field against the preview-derived runtime paths first, then fall back to the
+ * paths the Data Protection step itself offered (mapping applied synchronously) and finally to the raw
+ * loaded sample. The preview call can fail or return nothing while the sample and mapping clearly
+ * contain the field; that must not reject a path the user picked from the loaded sample (F-149).
+ */
+export function resolveProtectionFieldPathWithFallbacks(
+  selectedPath: string,
+  runtimePaths: readonly string[],
+  fallbackPathSets: ReadonlyArray<readonly string[]>,
+  aliasMap: ReadonlyMap<string, string>,
+): ProtectionPathResolveResult {
+  let result = resolveProtectionFieldPath(selectedPath, runtimePaths, aliasMap)
+  if (result.ok || isAmbiguousPathResult(result)) return result
+  for (const paths of fallbackPathSets) {
+    if (paths.length === 0) continue
+    const attempt = resolveProtectionFieldPath(selectedPath, paths, aliasMap)
+    if (attempt.ok || isAmbiguousPathResult(attempt)) return attempt
+    result = attempt
+  }
+  const known = runtimePaths.length > 0 || fallbackPathSets.some((paths) => paths.length > 0)
+  if (!known) {
+    return {
+      ok: false,
+      error: `Protection path ${normalizeProtectionJsonPath(selectedPath)} cannot be checked because no sample event is loaded. Load a sample (API test / Data Sample step) so the path can be verified.`,
+    }
+  }
+  return result
+}
+
+/**
+ * Cheap pre-write check: protection paths that are definitively absent from every known sample/mapping
+ * path set. Returns no errors when no sample is available (the persist step reports that case itself).
+ */
+export async function precheckWizardProtectionPaths(state: WizardState): Promise<string[]> {
+  const fieldIntents = state.dataProtection.intents.filter(
+    (intent) => intent.detectedField.trim() && intent.protectionAction !== 'audit',
+  )
+  if (fieldIntents.length === 0) return []
+  const mappedPaths = collectWizardProtectionFieldCandidatesSync(state)
+  const samplePaths = collectWizardSamplePaths(state)
+  if (mappedPaths.length === 0 && samplePaths.length === 0) return []
+  const enriched = await buildWizardEnrichedEventForProtection(state)
+  const aliasMap = buildProtectionPathAliasMap(state)
+  const errors: string[] = []
+  for (const intent of fieldIntents) {
+    const result = resolveProtectionFieldPathWithFallbacks(
+      intent.detectedField,
+      enriched.paths,
+      [mappedPaths, samplePaths],
+      aliasMap,
+    )
+    if (result.ok === false) errors.push(`data-protection: ${intent.detectedField}: ${result.error}`)
+  }
+  return errors
+}
+
 async function buildMappedEventForProtection(state: WizardState): Promise<Record<string, unknown>> {
   const sample = state.apiTest.extractedEvents[0] ?? state.apiTest.analysis?.sampleEvent ?? null
   if (!sample || typeof sample !== 'object' || Array.isArray(sample)) {

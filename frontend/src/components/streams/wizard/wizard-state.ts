@@ -30,6 +30,8 @@ import {
 } from '../../../utils/messagePrefixDefaults'
 import {
   applyIncrementalRequestTemplate,
+  incrementalTemplateDefaults,
+  incrementalCursorKindFromFieldType,
   type IncrementalRequestPattern,
 } from './wizard-incremental-request'
 import {
@@ -37,7 +39,7 @@ import {
   mergeStreamConfigJson,
 } from './wizard-stream-config-sync'
 import { buildPersistParams, normalizePaginationLabel } from '../stream-edit-request-params'
-import { wizardDestinationGateReady } from './wizard-step-gates'
+import { evaluateSyncPositionBinding, wizardDestinationGateReady } from './wizard-step-gates'
 
 /** Top-level wizard steps (Stream Wizard UX Charter v5.2 — P1 structure MVP). */
 export const WIZARD_STEP_KEYS = [
@@ -348,9 +350,15 @@ export function wizardDataProtectionIntentReady(intent: WizardDataProtectionInte
   return field.length > 0 && field.startsWith('$')
 }
 
+/**
+ * A protection row with no field path yet is an unfinished "Add field" row, not a rule: persistence and
+ * the Deploy checklist already ignore it, so it must not block the wizard either (F-009). A row that has
+ * text but is not a valid `$.` path still blocks and is reported by the checklist.
+ */
 export function wizardDataProtectionStepComplete(state: WizardDataProtectionState): boolean {
-  if (state.intents.length === 0) return true
-  return state.intents.every(wizardDataProtectionIntentReady)
+  return state.intents.every(
+    (intent) => intent.detectedField.trim().length === 0 || wizardDataProtectionIntentReady(intent),
+  )
 }
 
 export type AuthType =
@@ -543,10 +551,14 @@ export type WizardConfigState = {
 }
 
 export type WizardIncrementalRequestTestResult = {
-  status: 'success' | 'error'
+  /** `warning`: the request succeeded and returned records, but none is newer than the tested checkpoint. */
+  status: 'success' | 'warning' | 'error'
   httpStatus: number | null
   durationMs: number | null
   returnedRecordCount: number
+  /** Returned records newer than the tested checkpoint; null/undefined when it could not be compared. */
+  newerRecordCount?: number | null
+  warningCode?: 'NO_NEWER_RECORDS' | null
   testedCheckpointDisplay: string
   substitutedRequestBody: string
   sampleRecords: Array<Record<string, unknown>>
@@ -1128,6 +1140,10 @@ export function computeWizardRouteProcessingStatuses(
     protection = protectionFieldOverrides ? 'Mixed' : 'Overridden'
   } else if (protectionFieldOverrides) {
     protection = 'Overridden'
+  } else if (draft.governanceLoad?.protection === 'passthrough') {
+    // The Route owns rules the Wizard cannot edit (API-created, disabled, other classes). They are
+    // enforced at runtime, so the card must not read "Shared" (F-158).
+    protection = 'Overridden'
   } else {
     protection = 'Inherited'
   }
@@ -1135,13 +1151,14 @@ export function computeWizardRouteProcessingStatuses(
   let classification: RouteProcessingStatus
   if (!inherit.classification) {
     classification = classificationOverride ? 'Mixed' : 'Overridden'
-  } else if (classificationOverride) {
+  } else if (classificationOverride || draft.governanceLoad?.classification === 'passthrough') {
     classification = 'Overridden'
   } else {
     classification = 'Inherited'
   }
 
-  const policy: RouteProcessingStatus = inherit.policy ? 'Inherited' : 'Overridden'
+  const policy: RouteProcessingStatus =
+    inherit.policy && draft.governanceLoad?.policy !== 'passthrough' ? 'Inherited' : 'Overridden'
 
   return { transform, protection, classification, policy }
 }
@@ -1493,8 +1510,25 @@ function aggregateCompletion(statuses: StepCompletion[]): StepCompletion {
   return statuses.reduce(worstCompletion, 'complete')
 }
 
-/** Per legacy sub-step completion (internal; review/deploy edit shortcuts). */
-export function computeLegacySubstepCompletion(state: WizardState): WizardLegacySubstepCompletion {
+export type WizardReviewGateTerms = {
+  connectorReady: boolean
+  streamReady: boolean
+  apiTestRan: boolean
+  recordsGateReady: boolean
+  previewReady: boolean
+  mappingReady: boolean
+  destinationsReady: boolean
+  dataProtectionReady: boolean
+  /** All of the above: the wizard may create the stream. */
+  reviewReady: boolean
+}
+
+/**
+ * Every condition the wizard requires before the stream can be created. This is the single source for
+ * both the stepper completion and the Deploy gate, so the Deploy checklist can name exactly which term
+ * is blocking Create & Start Stream (F-009).
+ */
+export function computeReviewGateTerms(state: WizardState): WizardReviewGateTerms {
   const connectorReady =
     Number.isSafeInteger(state.connector.connectorId) && state.connector.connectorId! > 0 &&
     Number.isSafeInteger(state.connector.sourceId) && state.connector.sourceId! > 0
@@ -1517,6 +1551,7 @@ export function computeLegacySubstepCompletion(state: WizardState): WizardLegacy
     (!isS3 || state.apiTest.s3ConnectivityPassed) &&
     (!isRemote || state.apiTest.remoteProbe?.ok === true)
   const previewErr = state.apiTest.analysis?.previewError
+  const syncPositionBinding = evaluateSyncPositionBinding(state)
   const recordsGateReady =
     isRemote || isWebhook
       ? apiTestRan
@@ -1528,14 +1563,15 @@ export function computeLegacySubstepCompletion(state: WizardState): WizardLegacy
         state.stream.recordPathConfirmedForApiTestAt === state.apiTest.finishedAt &&
         state.stream.checkpointConfirmedForApiTestAt === state.apiTest.finishedAt &&
         (state.stream.useWholeResponseAsEvent || state.stream.eventArrayPath.trim().length > 0) &&
-        state.stream.checkpointSourcePath.trim().length > 0
+        state.stream.checkpointSourcePath.trim().length > 0 &&
+        // F-162: a Sync position the request never uses silently loses source events.
+        syncPositionBinding.status !== 'unbound' &&
+        syncPositionBinding.status !== 'unsupported'
   const previewReady = isRemote || isWebhook ? apiTestRan : recordsGateReady && !previewErr
   const mappingReady =
     wizardMappingContentReady(state) ||
     state.transformRules.some((r) => r.outputField.trim()) ||
     ((isRemote || isWebhook) && state.unmappedFieldsPolicy === 'pass_through')
-  const enrichmentReady = state.enrichment.length === 0 || state.enrichment.every((e) => e.fieldName.trim().length > 0)
-  const enrichmentHasRows = state.enrichment.length > 0
   // Completion reflects the same required delivery-path validity as the Deploy gate.
   const destinationsReady = wizardDestinationGateReady(state)
   const dataProtectionReady = wizardDataProtectionStepComplete(state.dataProtection)
@@ -1548,6 +1584,33 @@ export function computeLegacySubstepCompletion(state: WizardState): WizardLegacy
     mappingReady &&
     destinationsReady &&
     dataProtectionReady
+  return {
+    connectorReady,
+    streamReady,
+    apiTestRan,
+    recordsGateReady,
+    previewReady,
+    mappingReady,
+    destinationsReady,
+    dataProtectionReady,
+    reviewReady,
+  }
+}
+
+/** Per legacy sub-step completion (internal; review/deploy edit shortcuts). */
+export function computeLegacySubstepCompletion(state: WizardState): WizardLegacySubstepCompletion {
+  const {
+    connectorReady,
+    streamReady,
+    apiTestRan,
+    previewReady,
+    mappingReady,
+    destinationsReady,
+    dataProtectionReady,
+    reviewReady,
+  } = computeReviewGateTerms(state)
+  const enrichmentReady = state.enrichment.length === 0 || state.enrichment.every((e) => e.fieldName.trim().length > 0)
+  const enrichmentHasRows = state.enrichment.length > 0
   const created = state.outcome?.streamId != null && reviewReady
 
   return {
@@ -1804,6 +1867,11 @@ export function buildPersistedStreamConfigPayload(state: WizardState): Record<st
     },
     state.stream.incrementalRequestPattern,
     state.stream.incrementalRequestDraft,
+    incrementalTemplateDefaults(
+      state.stream.incrementalRequestPattern,
+      state.stream.checkpointSourcePath,
+      incrementalCursorKindFromFieldType(state.stream.checkpointFieldType),
+    ),
   )
   const runtimeUi =
     base.runtime_ui && typeof base.runtime_ui === 'object' && !Array.isArray(base.runtime_ui)

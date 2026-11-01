@@ -1,3 +1,4 @@
+import { sessionRoleLabel } from '../../auth/role-labels'
 import {
   ChevronRight,
   Download,
@@ -27,6 +28,7 @@ import {
   listAdminUsers,
   postAdminUserMfaReset,
   postAdminPasswordChange,
+  postAuthChangePassword,
   putAdminHttpsSettings,
   updateAdminUser,
   type HttpsSettingsDto,
@@ -38,6 +40,7 @@ import { clearSession, getSessionUsername } from '../../auth/session'
 import { formatTimestampWithResolvedTimezone } from '../../lib/platform-timestamps'
 import { isDevValidationLabUiEnabled } from '../../lib/feature-flags'
 import { gdcUi, isAdminUiReadOnly, readAdminUiRole } from '../../lib/gdc-ui-tokens'
+import { isGovernanceOnlyRole } from '../../lib/governance-rbac'
 import { cn } from '../../lib/utils'
 import { AdminDevValidationPanel } from './admin-dev-validation-panel'
 import { AdminDisplayTimezoneSettings } from './admin-display-timezone-settings'
@@ -45,6 +48,7 @@ import { AdminMaintenanceCenter } from './admin-maintenance-center'
 import { AdminMfaEnrollment } from './admin-mfa-enrollment'
 import { AdminManagementAclPreview } from './admin-management-acl-preview'
 import { AdminNetworkSettingsPage } from './admin-network-settings-page'
+import { USER_ROLE_OPTIONS } from '../../auth/role-labels'
 import { AdminRetentionSettings } from './admin-retention-settings'
 import { AdminOperationalDashboard } from './admin-settings-operational'
 import { passwordsMatch, validateNewPassword } from './admin-settings-validation'
@@ -84,11 +88,6 @@ function roleBadgeClass(role: string) {
   return 'border-slate-300/80 bg-slate-100 text-slate-700 dark:border-gdc-borderStrong dark:bg-gdc-elevated dark:text-slate-200'
 }
 
-function roleLabel(role: string) {
-  if (role === 'ADMINISTRATOR') return 'Administrator'
-  if (role === 'OPERATOR') return 'Operator'
-  return 'Viewer'
-}
 
 function formatTs(iso: string | null) {
   if (!iso) return '—'
@@ -130,7 +129,8 @@ export function AdminSettingsPage() {
   const [pwCurrent, setPwCurrent] = useState('')
   const [pwNew, setPwNew] = useState('')
   const [pwConfirm, setPwConfirm] = useState('')
-  const [pwUser, setPwUser] = useState('admin')
+  // F-202: default to the signed-in account (not a hard-coded "admin") so the card never targets the wrong user.
+  const [pwUser, setPwUser] = useState(() => getSessionUsername() || 'admin')
   const [showPw, setShowPw] = useState(false)
 
   const [userModal, setUserModal] = useState<'create' | 'edit' | null>(null)
@@ -148,9 +148,15 @@ export function AdminSettingsPage() {
   const [backendRole, setBackendRole] = useState<import('../../auth/session').SessionRole | null>(readAdminUiRole())
 
   const effectiveRole = backendRole ?? readAdminUiRole()
-  const readOnly = isAdminUiReadOnly() || backendRole === 'VIEWER'
+  // F-195: Governance-only roles are refused every non-Governance mutation by the backend, so the whole
+  // Administration surface is read-only (and says why) instead of offering controls that always fail.
+  const governanceOnly = isGovernanceOnlyRole()
+  const readOnly = isAdminUiReadOnly() || backendRole === 'VIEWER' || governanceOnly
   const isOperator = effectiveRole === 'OPERATOR'
   const accountMutationReadOnly = effectiveRole !== 'ADMINISTRATOR'
+  // F-202: changing your own password is self-service for every role. Only administrators may name
+  // another account in the Password Management card (that path needs the target's current password).
+  const canTargetOtherAccounts = effectiveRole === 'ADMINISTRATOR'
 
   useEffect(() => {
     const hash = location.hash.replace(/^#/, '').trim()
@@ -264,7 +270,6 @@ export function AdminSettingsPage() {
   }
 
   const onChangePassword = async () => {
-    if (accountMutationReadOnly) return
     setPageErr(null)
     setPageMsg(null)
     const v = validateNewPassword(pwNew)
@@ -278,13 +283,29 @@ export function AdminSettingsPage() {
     }
     setBusy(true)
     try {
-      await postAdminPasswordChange({
-        username: pwUser.trim(),
-        current_password: pwCurrent,
-        new_password: pwNew,
-        confirm_password: pwConfirm,
-      })
-      setPageMsg('Password updated.')
+      if (canTargetOtherAccounts) {
+        await postAdminPasswordChange({
+          username: pwUser.trim(),
+          current_password: pwCurrent,
+          new_password: pwNew,
+          confirm_password: pwConfirm,
+        })
+        setPageMsg('Password updated.')
+      } else {
+        await postAuthChangePassword({
+          current_password: pwCurrent,
+          new_password: pwNew,
+          confirm_new_password: pwConfirm,
+        })
+        // The API revokes every session of this account: end it here and say why on the sign-in page.
+        try {
+          sessionStorage.setItem('gdc_post_password_change', '1')
+        } catch {
+          /* ignore */
+        }
+        setPageMsg('Password updated. Sign in again with your new password.')
+        clearSession()
+      }
       setPwCurrent('')
       setPwNew('')
       setPwConfirm('')
@@ -498,14 +519,24 @@ export function AdminSettingsPage() {
         </nav>
       </header>
 
-      {readOnly ? (
+      {governanceOnly ? (
+        <div
+          role="status"
+          data-testid="admin-settings-governance-role-banner"
+          className="rounded-lg border border-sky-500/25 bg-sky-500/[0.07] px-3 py-2 text-sm text-sky-950 dark:border-sky-500/35 dark:bg-sky-500/10 dark:text-sky-100"
+        >
+          <strong>Governance role.</strong> Your role may only use Governance pages. Platform settings, retention,
+          backup and account administration are shown for reference and are disabled because the backend would
+          refuse them. Changing your own password and setting up your own authenticator stay available.
+        </div>
+      ) : readOnly ? (
         <div
           role="status"
           data-testid="admin-settings-readonly-banner"
           className="rounded-lg border border-sky-500/25 bg-sky-500/[0.07] px-3 py-2 text-sm text-sky-950 dark:border-sky-500/35 dark:bg-sky-500/10 dark:text-sky-100"
         >
           <strong>Read-only Viewer session.</strong> Mutating actions are disabled in the UI <em>and</em> rejected by the backend
-          role guard (HTTP 403). Sign in as <code className="rounded bg-black/5 px-1 dark:bg-white/10">OPERATOR</code> or{' '}
+          role guard (HTTP 403), except changing your own password and authenticator. Sign in as <code className="rounded bg-black/5 px-1 dark:bg-white/10">OPERATOR</code> or{' '}
           <code className="rounded bg-black/5 px-1 dark:bg-white/10">ADMINISTRATOR</code> to make changes.
         </div>
       ) : null}
@@ -525,7 +556,9 @@ export function AdminSettingsPage() {
           role="alert"
           className="rounded-lg border border-amber-500/30 bg-amber-500/[0.07] px-3 py-2 text-sm text-amber-950 dark:border-amber-500/35 dark:bg-amber-500/10 dark:text-amber-100"
         >
-          Could not load admin settings: {loadError}
+          {effectiveRole !== 'ADMINISTRATOR' && /403|ROLE_FORBIDDEN|may only access/i.test(loadError)
+            ? 'Some admin settings (HTTPS, platform users, system information) are visible to Administrators only, so your role cannot view them.'
+            : `Could not load admin settings: ${loadError}`}
         </div>
       ) : null}
       {pageErr ? (
@@ -747,8 +780,10 @@ export function AdminSettingsPage() {
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-slate-500" role="status">
-                Loading HTTPS settings…
+              <p className="text-sm text-slate-500" role="status" data-testid="admin-https-unavailable">
+                {loadError && effectiveRole !== 'ADMINISTRATOR'
+                  ? 'HTTPS settings are available to Administrators only.'
+                  : 'Loading HTTPS settings…'}
               </p>
             )}
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -807,7 +842,9 @@ export function AdminSettingsPage() {
                 Password Management
               </h3>
               <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-gdc-muted">
-                Choose the target local account, confirm the current credential, then set and confirm the new password.
+                {canTargetOtherAccounts
+                  ? 'Choose the target local account, confirm the current credential, then set and confirm the new password.'
+                  : 'Change the password of your own account: confirm the current password, then set and confirm the new one. You will be signed out afterwards.'}
               </p>
             </div>
           </div>
@@ -828,7 +865,7 @@ export function AdminSettingsPage() {
                 id="pw-user"
                 className={cn('mt-1.5 w-full', gdcUi.input)}
                 value={pwUser}
-                disabled={accountMutationReadOnly}
+                disabled={!canTargetOtherAccounts}
                 onChange={(e) => setPwUser(e.target.value)}
                 autoComplete="username"
               />
@@ -843,7 +880,7 @@ export function AdminSettingsPage() {
                   type={showPw ? 'text' : 'password'}
                   className={cn('w-full py-2 pl-3 pr-10', gdcUi.input)}
                   value={pwCurrent}
-                  disabled={accountMutationReadOnly}
+                  disabled={busy}
                   onChange={(e) => setPwCurrent(e.target.value)}
                   autoComplete="current-password"
                 />
@@ -870,7 +907,7 @@ export function AdminSettingsPage() {
                 type={showPw ? 'text' : 'password'}
                 className={cn('mt-1.5 w-full', gdcUi.input)}
                 value={pwNew}
-                disabled={accountMutationReadOnly}
+                disabled={busy}
                 onChange={(e) => setPwNew(e.target.value)}
                 autoComplete="new-password"
                 aria-describedby="pw-new-hint"
@@ -888,7 +925,7 @@ export function AdminSettingsPage() {
                 type={showPw ? 'text' : 'password'}
                 className={cn('mt-1.5 w-full', gdcUi.input)}
                 value={pwConfirm}
-                disabled={accountMutationReadOnly}
+                disabled={busy}
                 onChange={(e) => setPwConfirm(e.target.value)}
                 autoComplete="new-password"
               />
@@ -898,7 +935,7 @@ export function AdminSettingsPage() {
             <button
               type="submit"
               data-testid="admin-password-submit"
-              disabled={accountMutationReadOnly || busy}
+              disabled={busy}
               className={cn(
                 'rounded-lg border border-gdc-primary/40 bg-gdc-primary px-4 py-2 text-sm font-semibold text-white hover:opacity-95 disabled:opacity-50',
                 focusRing,
@@ -980,7 +1017,9 @@ export function AdminSettingsPage() {
             <div className={gdcUi.emptyPanel} data-testid="admin-users-empty" role="status">
               <p className="text-sm font-medium text-slate-800 dark:text-slate-100">No platform users loaded</p>
               <p className="mt-1 text-sm text-slate-600 dark:text-gdc-muted">
-                Create a local account or refresh admin settings after the API is available.
+                {effectiveRole === 'ADMINISTRATOR'
+                  ? 'Create a local account or refresh admin settings after the API is available.'
+                  : 'The platform user list is visible to Administrators only.'}
               </p>
             </div>
           ) : (
@@ -1031,7 +1070,7 @@ export function AdminSettingsPage() {
                                 roleBadgeClass(u.role),
                               )}
                             >
-                              {roleLabel(u.role)}
+                              {sessionRoleLabel(u.role)}
                             </span>
                           </td>
                           <td className="px-3 py-3">
@@ -1422,14 +1461,11 @@ export function AdminSettingsPage() {
                   value={userForm.role}
                   onChange={(e) => setUserForm((f) => ({ ...f, role: e.target.value }))}
                 >
-                  <option value="VIEWER">Viewer</option>
-                  <option value="OPERATOR">Connector Operator (legacy Operator)</option>
-                  <option value="CONNECTOR_OPERATOR">Connector Operator</option>
-                  <option value="GOVERNANCE_OPERATOR">Governance Operator</option>
-                  <option value="GOVERNANCE_REVIEWER">Governance Reviewer</option>
-                  <option value="GOVERNANCE_APPROVER">Governance Approver</option>
-                  <option value="GOVERNANCE_AUDITOR">Governance Auditor</option>
-                  <option value="ADMINISTRATOR">Administrator</option>
+                  {USER_ROLE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
               </div>
               {userModal === 'edit' ? (

@@ -119,6 +119,19 @@ def test_notification_config_crud(db_session: Session, governance_client: TestCl
     assert updated["replay_events"] is False
 
 
+def test_notification_config_rejects_malformed_email_recipients(governance_client: TestClient) -> None:
+    """F-183: a recipient that is not an email address is refused instead of silently saved."""
+
+    resp = governance_client.put(
+        "/api/v1/governance/notifications/config",
+        json={"email_enabled": True, "email_recipients": ["not-an-email"]},
+    )
+    assert resp.status_code == 422
+    assert "not-an-email" in resp.text
+    persisted = governance_client.get("/api/v1/governance/notifications/config").json()
+    assert persisted["email_recipients"] == []
+
+
 def test_notification_config_get_is_read_only_on_empty_database(db_session: Session) -> None:
     app = _governance_app()
     bind = db_session.get_bind()

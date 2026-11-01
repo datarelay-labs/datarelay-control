@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from app.auth.governance_rbac import require_governance_read, require_quarantine_action, require_replay_action
@@ -88,31 +88,34 @@ async def get_governance_quarantine_by_id(
 @router.post("/quarantine/release", response_model=GovernanceQuarantineBulkResponse)
 async def release_governance_quarantine_events(
     payload: GovernanceQuarantineBulkRequest,
+    request: Request,
     db: Session = Depends(get_db),
     _auth=Depends(require_quarantine_action()),
 ) -> GovernanceQuarantineBulkResponse:
     if not payload.ids:
         raise HTTPException(status_code=400, detail="ids must not be empty")
-    return bulk_release_quarantine_events(db, payload.ids)
+    return bulk_release_quarantine_events(db, payload.ids, request=request)
 
 
 @router.post("/quarantine/discard", response_model=GovernanceQuarantineBulkResponse)
 async def discard_governance_quarantine_events(
     payload: GovernanceQuarantineBulkRequest,
+    request: Request,
     db: Session = Depends(get_db),
     _auth=Depends(require_quarantine_action()),
 ) -> GovernanceQuarantineBulkResponse:
     if not payload.ids:
         raise HTTPException(status_code=400, detail="ids must not be empty")
-    return bulk_discard_quarantine_events(db, payload.ids)
+    return bulk_discard_quarantine_events(db, payload.ids, request=request)
 
 
 @router.post("/quarantine/replay", response_model=GovernanceQuarantineBulkResponse)
 async def replay_governance_quarantine_events(
     payload: GovernanceQuarantineBulkRequest,
+    request: Request,
     db: Session = Depends(get_db),
     _auth=Depends(require_replay_action()),
 ) -> GovernanceQuarantineBulkResponse:
     if not payload.ids:
         raise HTTPException(status_code=400, detail="ids must not be empty")
-    return bulk_replay_quarantine_events(db, payload.ids)
+    return bulk_replay_quarantine_events(db, payload.ids, request=request)

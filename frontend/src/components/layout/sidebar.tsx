@@ -1,8 +1,10 @@
+import { sessionRoleLabel } from '../../auth/role-labels'
 import { ChevronDown, LogOut, PanelLeftClose, PanelLeftOpen, Plus } from 'lucide-react'
 import { useEffect, useState, useSyncExternalStore, type ComponentType } from 'react'
 import { Link } from 'react-router-dom'
 import { DataRelayWordmark } from '@datarelay-labs/product-shell'
 import { cn } from '../../lib/utils'
+import { semanticCn } from '../ui/semantic-cn'
 import { newStreamPath } from '../../config/nav-paths'
 import { getAdminSystemInfo, postAuthLogout } from '../../api/gdcAdmin'
 import { clearSession, isSessionExpired, onSessionChange, readSession } from '../../auth/session'
@@ -54,13 +56,6 @@ function userInitials(name: string): string {
   return (parts[0][0] + parts[1][0]).toUpperCase()
 }
 
-function roleLabel(role: string): string {
-  if (role === 'ADMINISTRATOR') return 'Administrator'
-  if (role === 'OPERATOR') return 'Operator'
-  if (role === 'VIEWER') return 'Viewer'
-  return role
-}
-
 function isGroupActive(pathname: string, items: readonly SidebarTopItem[]): boolean {
   return items.some((item) => isNavKeyActive(pathname, item.key))
 }
@@ -106,7 +101,7 @@ function NavButton({
       {!nested || collapsed ? (
         <ItemIcon
           className={cn(
-            'h-4 w-4 shrink-0 opacity-50',
+            'h-4 w-4 shrink-0',
             active ? 'text-violet-700 dark:text-violet-300' : 'text-slate-600 dark:text-gdc-muted',
           )}
           aria-hidden
@@ -157,10 +152,10 @@ function NavGroup({
             : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-gdc-muted dark:hover:bg-gdc-rowHover',
         )}
       >
-        <GroupIcon className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
+        <GroupIcon className="h-4 w-4 shrink-0" aria-hidden />
         {!collapsed ? (
           <>
-            <span className="flex-1 truncate text-[11px] font-bold uppercase tracking-[0.10em]">{group.label}</span>
+            <span className="flex-1 truncate text-label">{group.label}</span>
             <ChevronDown
               className={cn('h-4 w-4 shrink-0 transition-transform', expanded && 'rotate-180')}
               aria-hidden
@@ -294,8 +289,9 @@ export function Sidebar({
             onClick={() => { if (canCreateStreamForCurrentSession()) handleNavigate(newStreamPath()) }}
             title="New data flow"
             aria-label="New data flow"
-            className={cn(
-              'flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-gdc-primary text-sm font-semibold text-white shadow-sm transition hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2',
+            /* Secondary emphasis: the header "New data flow" link is the single primary CTA per screen. */
+            className={semanticCn(
+              'flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-default bg-surface-card text-body-sm font-medium text-fg-secondary transition hover:bg-surface-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring',
               collapsed ? 'px-0' : 'px-3',
             )}
             data-testid="sidebar-create-stream"
@@ -391,7 +387,7 @@ function SidebarUserPanel() {
         </div>
         <div className="min-w-0 flex-1 leading-tight">
           <p className="truncate text-sm font-medium text-slate-900 dark:text-gdc-foreground">{username}</p>
-          <p className="truncate text-xs text-slate-500 dark:text-gdc-muted">{roleLabel(role)}</p>
+          <p className="truncate text-xs text-slate-500 dark:text-gdc-muted">{sessionRoleLabel(role)}</p>
         </div>
       </div>
       <button
@@ -413,7 +409,7 @@ function SidebarUserPanelCollapsed() {
   const role = session?.user.role ?? 'VIEWER'
   return (
     <div className="space-y-1">
-      <div className="flex justify-center py-0.5" title={`${username} (${roleLabel(role)})`}>
+      <div className="flex justify-center py-0.5" title={`${username} (${sessionRoleLabel(role)})`}>
         <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200/90 text-[10px] font-semibold text-slate-700 dark:bg-gdc-rowHover dark:text-gdc-foreground">
           {userInitials(username)}
         </div>

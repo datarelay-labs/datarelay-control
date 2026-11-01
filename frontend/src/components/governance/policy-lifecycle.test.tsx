@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -180,5 +180,86 @@ describe('Policy lifecycle UI', () => {
     await user.click(await screen.findByTestId('policy-lifecycle-submit-review'))
     expect(submitPolicyForReview).toHaveBeenCalledWith(1)
     expect(onSaved).toHaveBeenCalled()
+  })
+
+  describe('activate separation of duties (F-187)', () => {
+    const reviewPolicy = { ...basePolicy, status: 'REVIEW' as const }
+
+    async function activateMock() {
+      const { activateGovernancePolicy } = await import('../../api/gdcGovernancePolicies')
+      return vi.mocked(activateGovernancePolicy)
+    }
+
+    it('confirms before activating a policy the user submitted, then retries with the explicit override', async () => {
+      const activate = await activateMock()
+      activate
+        .mockRejectedValueOnce(new Error('403: [GOVERNANCE_SELF_APPROVAL_FORBIDDEN] you submitted this policy'))
+        .mockResolvedValue({ policy: { ...basePolicy, status: 'ACTIVE' } })
+      const onSaved = vi.fn()
+      const user = userEvent.setup()
+      render(<PolicyEditorDrawer open policy={reviewPolicy} onClose={() => {}} onSaved={onSaved} />)
+
+      await user.click(await screen.findByTestId('policy-lifecycle-activate'))
+
+      const dialog = await screen.findByTestId('policy-activate-override-dialog')
+      expect(dialog).toHaveTextContent('Activate your own policy?')
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(activate).toHaveBeenCalledTimes(1)
+      expect(activate).toHaveBeenLastCalledWith(1)
+      expect(onSaved).not.toHaveBeenCalled()
+
+      await user.click(screen.getByTestId('policy-activate-override-dialog-confirm'))
+
+      await waitFor(() => expect(activate).toHaveBeenCalledTimes(2))
+      expect(activate).toHaveBeenLastCalledWith(1, { allowSelfApproval: true })
+      await waitFor(() => expect(onSaved).toHaveBeenCalled())
+      expect(screen.queryByTestId('policy-activate-override-dialog')).not.toBeInTheDocument()
+    })
+
+    it('shows the unknown-submitter wording and sends the override only after confirmation', async () => {
+      const activate = await activateMock()
+      activate
+        .mockRejectedValueOnce(new Error('403: [GOVERNANCE_SUBMITTER_UNKNOWN] the submitter is not recorded'))
+        .mockResolvedValue({ policy: { ...basePolicy, status: 'ACTIVE' } })
+      const user = userEvent.setup()
+      render(<PolicyEditorDrawer open policy={reviewPolicy} onClose={() => {}} onSaved={() => {}} />)
+
+      await user.click(await screen.findByTestId('policy-lifecycle-activate'))
+
+      const dialog = await screen.findByTestId('policy-activate-override-dialog')
+      expect(dialog).toHaveTextContent('Activate without a recorded submitter?')
+      expect(dialog).toHaveTextContent('Nobody is recorded as the submitter')
+      expect(activate).toHaveBeenCalledTimes(1)
+      await user.click(screen.getByTestId('policy-activate-override-dialog-confirm'))
+      await waitFor(() => expect(activate).toHaveBeenLastCalledWith(1, { allowSelfApproval: true }))
+    })
+
+    it('sends nothing more when the override dialog is cancelled', async () => {
+      const activate = await activateMock()
+      activate.mockRejectedValueOnce(new Error('403: [GOVERNANCE_SUBMITTER_UNKNOWN] not recorded'))
+      const onSaved = vi.fn()
+      const user = userEvent.setup()
+      render(<PolicyEditorDrawer open policy={reviewPolicy} onClose={() => {}} onSaved={onSaved} />)
+
+      await user.click(await screen.findByTestId('policy-lifecycle-activate'))
+      await screen.findByTestId('policy-activate-override-dialog')
+      await user.click(screen.getByTestId('policy-activate-override-dialog-cancel'))
+
+      expect(screen.queryByTestId('policy-activate-override-dialog')).not.toBeInTheDocument()
+      expect(activate).toHaveBeenCalledTimes(1)
+      expect(onSaved).not.toHaveBeenCalled()
+    })
+
+    it('shows other activate errors as before, without an override dialog', async () => {
+      const activate = await activateMock()
+      activate.mockRejectedValueOnce(new Error('409: [GOVERNANCE_POLICY_LIFECYCLE] invalid status transition'))
+      const user = userEvent.setup()
+      render(<PolicyEditorDrawer open policy={reviewPolicy} onClose={() => {}} onSaved={() => {}} />)
+
+      await user.click(await screen.findByTestId('policy-lifecycle-activate'))
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('GOVERNANCE_POLICY_LIFECYCLE')
+      expect(screen.queryByTestId('policy-activate-override-dialog')).not.toBeInTheDocument()
+    })
   })
 })

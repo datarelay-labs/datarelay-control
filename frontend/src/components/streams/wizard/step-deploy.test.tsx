@@ -49,6 +49,7 @@ function readyState() {
   state.stream.endpoint = '/events'
   state.stream.eventArrayPath = '$.events'
   state.stream.checkpointSourcePath = '$.timestamp'
+  state.stream.params = [{ id: 'p-sync', key: 'after', value: '{{checkpoint.last_timestamp}}' }]
   state.stream.checkpointFieldType = 'datetime'
   state.stream.recordPathConfirmedForApiTestAt = finishedAt
   state.stream.checkpointConfirmedForApiTestAt = finishedAt

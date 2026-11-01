@@ -1,6 +1,11 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { AppShellLayout, NotFoundPage, PlaceholderPage } from './components/layout/app-shell-layout'
 import { PreserveSearchRedirect } from './components/layout/preserve-search-redirect'
+import {
+  RequireConnectorParam,
+  RequireRouteParam,
+  RequireStreamParam,
+} from './components/layout/require-entity-route'
 import { OssRouteGuard } from './components/oss/oss-route-guard'
 import { NAV_PATH } from './config/nav-paths'
 import { PAGE_TITLE, type AppNavKey } from './config/app-navigation'
@@ -34,6 +39,7 @@ import {
   LazyReplayCenterPage,
   LazyRouteEditPage,
   LazyRoutesOverviewPage,
+  LazyRuntimeAnalyticsPage,
   LazyStreamApiTestPage,
   LazyStreamEnrichmentPage,
   LazyStreamEditPage,
@@ -64,21 +70,21 @@ export default function App() {
         <Route index element={<Navigate to={NAV_PATH.dashboard} replace />} />
         <Route path="streams" element={<LazyStreamsConsole />} />
         <Route path="streams/new" element={<LazyNewStreamWizardPage />} />
-        <Route path="streams/:streamId/api-test" element={<LazyStreamApiTestPage />} />
-        <Route path="streams/:streamId/enrichment" element={<LazyStreamEnrichmentPage />} />
+        <Route path="streams/:streamId/api-test" element={<RequireStreamParam><LazyStreamApiTestPage /></RequireStreamParam>} />
+        <Route path="streams/:streamId/enrichment" element={<RequireStreamParam><LazyStreamEnrichmentPage /></RequireStreamParam>} />
         <Route path="streams/:streamId/runtime" element={<LazyStreamRuntimeDetailPage />} />
-        <Route path="streams/:streamId/mapping" element={<LazyStreamMappingPage />} />
-        <Route path="streams/:streamId/edit" element={<LazyStreamEditPage />} />
+        <Route path="streams/:streamId/mapping" element={<RequireStreamParam><LazyStreamMappingPage /></RequireStreamParam>} />
+        <Route path="streams/:streamId/edit" element={<RequireStreamParam><LazyStreamEditPage /></RequireStreamParam>} />
         <Route path="monitoring" element={<LazyDashboardOverview />} />
         <Route path="help" element={<LazyHelpCenterPage />} />
         <Route path="help/:topic" element={<LazyHelpCenterPage />} />
         <Route path="alerts" element={<LazyOperationalAlertsPage />} />
         <Route path="monitoring/streams" element={<PreserveSearchRedirect to={NAV_PATH.streams} />} />
         <Route path="monitoring/topology" element={<PreserveSearchRedirect to={NAV_PATH.dashboard} />} />
-        <Route path="monitoring/analytics" element={<PreserveSearchRedirect to={NAV_PATH.dashboard} />} />
+        <Route path="monitoring/analytics" element={<LazyRuntimeAnalyticsPage />} />
         <Route path="runtime" element={<PreserveSearchRedirect to={NAV_PATH.dashboard} />} />
         <Route path="runtime/topology" element={<PreserveSearchRedirect to={NAV_PATH.dashboard} />} />
-        <Route path="runtime/analytics" element={<PreserveSearchRedirect to={NAV_PATH.dashboard} />} />
+        <Route path="runtime/analytics" element={<PreserveSearchRedirect to={NAV_PATH.analytics} />} />
         <Route path="runtime/ai-gateway" element={<PreserveSearchRedirect to={NAV_PATH.streams} />} />
         <Route path="admin" element={<LazyAdministrationHubPage />} />
         <Route
@@ -91,13 +97,13 @@ export default function App() {
         />
         <Route path="connectors" element={<LazyConnectorsOverviewPage />} />
         <Route path="connectors/new" element={<LazyNewConnectorWizardPage />} />
-        <Route path="connectors/:connectorId" element={<LazyConnectorDetailPage />} />
+        <Route path="connectors/:connectorId" element={<RequireConnectorParam><LazyConnectorDetailPage /></RequireConnectorParam>} />
         <Route path="mappings" element={<LazyMappingsOverviewPage />} />
-        <Route path="mappings/:mappingId/edit" element={<LazyMappingEditPage />} />
+        <Route path="mappings/:mappingId/edit" element={<RequireStreamParam param="mappingId"><LazyMappingEditPage /></RequireStreamParam>} />
         <Route path="destinations" element={<LazyDestinationsManagementPage />} />
         <Route path="destinations/:destinationId" element={<LazyDestinationDetailPage />} />
         <Route path="routes" element={<LazyRoutesOverviewPage />} />
-        <Route path="routes/:routeId/edit" element={<LazyRouteEditPage />} />
+        <Route path="routes/:routeId/edit" element={<RequireRouteParam><LazyRouteEditPage /></RequireRouteParam>} />
         <Route path="governance" element={<LazyGovernanceShell />}>
           <Route index element={<LazyGovernanceDashboardPage />} />
           <Route path="operations" element={<LazyOperationsCenterPage />} />

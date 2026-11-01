@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -47,8 +48,61 @@ from app.governance_policies.service import (
 )
 
 
+logger = logging.getLogger(__name__)
+
+
 class GovernanceApprovalError(Exception):
     pass
+
+
+# Error codes returned (HTTP 403) by approve/activate when separation of duties blocks the action.
+SELF_APPROVAL_FORBIDDEN_CODE = "GOVERNANCE_SELF_APPROVAL_FORBIDDEN"
+SUBMITTER_UNKNOWN_CODE = "GOVERNANCE_SUBMITTER_UNKNOWN"
+
+
+class GovernanceSeparationOfDutiesError(GovernanceApprovalError):
+    """Approve/activate refused by the separation-of-duties rule (F-187); carries the API error code."""
+
+    error_code: str = SELF_APPROVAL_FORBIDDEN_CODE
+
+    def __init__(self, action: str, message: str) -> None:
+        self.action = action
+        super().__init__(message)
+
+
+class GovernanceSelfApprovalError(GovernanceSeparationOfDutiesError):
+    """The acting user submitted this policy and did not explicitly allow self-approval (F-187)."""
+
+    error_code = SELF_APPROVAL_FORBIDDEN_CODE
+
+    def __init__(self, action: str) -> None:
+        super().__init__(
+            action,
+            f"you submitted this policy for review, so you cannot {action} it yourself; "
+            "ask another reviewer, or confirm an explicit self-approval override",
+        )
+
+
+class GovernanceSubmitterUnknownError(GovernanceSeparationOfDutiesError):
+    """Nobody is recorded as the submitter of the policy's current review (F-187 follow-up).
+
+    Fail closed: when the rule cannot be evaluated, approve/activate are refused for everyone unless
+    the caller sends the same explicit ``allow_self_approval: true`` override.
+    """
+
+    error_code = SUBMITTER_UNKNOWN_CODE
+
+    def __init__(self, action: str) -> None:
+        super().__init__(
+            action,
+            f"the submitter of this policy's current review is not recorded, so separation of duties "
+            f"cannot be checked and you cannot {action} it without an explicit override; "
+            "ask an administrator to confirm the override, or reject it and resubmit it for review",
+        )
+
+
+SELF_APPROVAL_OVERRIDE_MARKER = "[self-approval override]"
+SUBMITTER_UNKNOWN_OVERRIDE_MARKER = "[override: submitter unknown]"
 
 
 class GovernanceApprovalNotFoundError(Exception):
@@ -128,6 +182,117 @@ def _derive_approval_status(policy_status: str, events: list[GovernancePolicyApp
     if policy_status == POLICY_STATUS_REVIEW:
         return "PENDING_REVIEW"
     return policy_status
+
+
+def _same_actor(a: str | None, b: str | None) -> bool:
+    left = (a or "").strip().casefold()
+    right = (b or "").strip().casefold()
+    return bool(left) and left == right
+
+
+# A review cycle that one of these events follows is over (the policy went back to DRAFT).
+_CYCLE_ENDING_EVENTS = frozenset(
+    {APPROVAL_EVENT_REJECTED, APPROVAL_EVENT_REQUEST_CHANGES, APPROVAL_EVENT_CANCELLED}
+)
+
+
+def open_cycle_requester(events: list[GovernancePolicyApprovalEvent]) -> str | None:
+    """Who submitted the review the policy is in now, or ``None`` when that is not recorded (UNKNOWN).
+
+    Evidence, best first:
+
+    1. The latest SUBMITTED_FOR_REVIEW event, if that cycle is still open. Every transition into
+       REVIEW records one (``submit_policy_for_review``), and the recorded actor is what counts.
+    2. Nothing else exists to consult: policy status changes are not written to ``audit_logs`` and
+       ``governance_policies`` has no creator / last-modifier column. The governance audit view is
+       built from these same events.
+
+    A submission event followed by a REJECTED / REQUEST_CHANGES / CANCELLED event belongs to a
+    cycle that already ended. A policy that is in REVIEW again after that was moved there without
+    recording a submitter (the pre-fix ``POST /policies/{id}/submit-review``), so the old
+    submitter must not be reused: the result is UNKNOWN. A blank actor is UNKNOWN as well.
+    """
+
+    submit_idx = _latest_submit_index(events)
+    if submit_idx is None:
+        return None
+    if any(ev.event_type in _CYCLE_ENDING_EVENTS for ev in events[submit_idx + 1 :]):
+        return None
+    actor = (events[submit_idx].actor or "").strip()
+    return actor or None
+
+
+def current_cycle_requester(db: Session, policy_id: int) -> str | None:
+    """Submitter of the policy's open review, or ``None`` when unknown (see ``open_cycle_requester``)."""
+
+    return open_cycle_requester(_load_events_for_policy(db, policy_id))
+
+
+def enforce_separation_of_duties(
+    db: Session,
+    row: GovernancePolicy,
+    *,
+    action: str,
+    actor: str,
+    allow_self_approval: bool,
+    comment: str | None = None,
+) -> str | None:
+    """Refuse approve/activate by the user who submitted the policy (F-187).
+
+    Only a REVIEW policy has an open submission to protect. Rejecting your own submission is not
+    restricted and never calls this.
+
+    * Submitter is the acting user -> 403 ``GOVERNANCE_SELF_APPROVAL_FORBIDDEN``.
+    * Submitter not recorded (UNKNOWN, e.g. a policy moved to REVIEW before submitters were
+      recorded for every path) -> 403 ``GOVERNANCE_SUBMITTER_UNKNOWN`` for every user. The rule
+      fails closed rather than assuming the actor is someone else.
+    * Both are lifted only by ``allow_self_approval`` (an explicit JSON ``true`` from the caller).
+      The override is logged and marked in the recorded comment so other reviewers can see it in
+      the approval history.
+
+    Returns the comment that should be recorded.
+    """
+
+    if row.status != POLICY_STATUS_REVIEW:
+        return comment
+    requester = current_cycle_requester(db, int(row.id))
+    if requester is None:
+        if not allow_self_approval:
+            raise GovernanceSubmitterUnknownError(action)
+        marker = SUBMITTER_UNKNOWN_OVERRIDE_MARKER
+    elif _same_actor(requester, actor):
+        if not allow_self_approval:
+            raise GovernanceSelfApprovalError(action)
+        marker = SELF_APPROVAL_OVERRIDE_MARKER
+    else:
+        return comment
+    logger.warning(
+        "governance separation-of-duties override: actor=%s action=%s policy_id=%s submitter_known=%s",
+        actor,
+        action,
+        row.id,
+        requester is not None,
+    )
+    text = (comment or "").strip()
+    return f"{marker} {text}".strip()
+
+
+def record_submission_event(
+    db: Session,
+    policy_id: int,
+    *,
+    actor: str,
+    comment: str | None = None,
+) -> GovernancePolicyApprovalEvent:
+    """Record who moved the policy into REVIEW. Called by ``submit_policy_for_review`` only."""
+
+    return _record_event(
+        db,
+        policy_id=policy_id,
+        event_type=APPROVAL_EVENT_SUBMITTED,
+        actor=actor,
+        comment=comment,
+    )
 
 
 def _record_event(
@@ -423,6 +588,12 @@ def get_governance_approval_detail(db: Session, policy_id: int) -> GovernanceApp
 
     policy_status = str(entry["status"])
     approved = _is_approved_cycle(events)
+    submitter_unknown = False
+    if policy_status == POLICY_STATUS_REVIEW and open_cycle_requester(events) is None:
+        # F-187: no (valid) submission is recorded for the open review; do not present the
+        # submitter of an earlier, finished cycle as its requester.
+        submitter_unknown = True
+        requester = None
     return GovernanceApprovalDetailResponse(
         policy=_policy_summary_from_entry(entry),
         current_status=policy_status,  # type: ignore[arg-type]
@@ -432,6 +603,7 @@ def get_governance_approval_detail(db: Session, policy_id: int) -> GovernanceApp
         submitted_at=submitted_at,
         review_comment=review_comment,
         is_approved=approved,
+        submitter_unknown=submitter_unknown,
         history=_history_entries(events),
         impact=_build_impact_summary(entry),
         simulation=_build_simulation_summary(entry),
@@ -455,15 +627,9 @@ def submit_policy_approval(
     if row.status != POLICY_STATUS_DRAFT:
         raise GovernanceApprovalError(f"only DRAFT policies can be submitted (current: {row.status})")
 
-    updated = submit_policy_for_review(db, policy_id)
-    _record_event(
-        db,
-        policy_id=policy_id,
-        event_type=APPROVAL_EVENT_SUBMITTED,
-        actor=actor,
-        comment=comment,
-    )
-    return updated
+    # submit_policy_for_review records the SUBMITTED_FOR_REVIEW event with ``actor`` itself, so the
+    # approval workflow and POST /policies/{id}/submit-review share one code path (F-187).
+    return submit_policy_for_review(db, policy_id, actor=actor, comment=comment)
 
 
 def approve_policy(
@@ -472,6 +638,7 @@ def approve_policy(
     *,
     comment: str | None = None,
     actor: str = DEFAULT_ACTOR,
+    allow_self_approval: bool = False,
 ) -> GovernancePolicy:
     row = get_governance_policy(db, policy_id)
     if row is None:
@@ -485,6 +652,14 @@ def approve_policy(
     if row.status != POLICY_STATUS_REVIEW:
         raise GovernanceApprovalError(f"only REVIEW policies can be approved (current: {row.status})")
 
+    comment = enforce_separation_of_duties(
+        db,
+        row,
+        action="approve",
+        actor=actor,
+        allow_self_approval=allow_self_approval,
+        comment=comment,
+    )
     _record_event(
         db,
         policy_id=policy_id,
@@ -532,6 +707,7 @@ def activate_approved_policy(
     *,
     comment: str | None = None,
     actor: str = DEFAULT_ACTOR,
+    allow_self_approval: bool = False,
 ) -> GovernancePolicy:
     row = get_governance_policy(db, policy_id)
     if row is None:
@@ -547,6 +723,14 @@ def activate_approved_policy(
     if not _is_approved_cycle(events):
         raise GovernanceApprovalError("policy must be approved before activation")
 
+    comment = enforce_separation_of_duties(
+        db,
+        row,
+        action="activate",
+        actor=actor,
+        allow_self_approval=allow_self_approval,
+        comment=comment,
+    )
     try:
         updated = activate_policy(db, policy_id)
     except GovernancePolicyLifecycleError as exc:

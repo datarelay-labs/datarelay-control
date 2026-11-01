@@ -21,6 +21,7 @@ import { cn } from '../../lib/utils'
 import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
 import {
   buildRetryTimelineEntries,
+  retryTimelineSummary,
   deliveryStatusPresentation,
   formatLatencyMs,
   safeCtxInt,
@@ -119,7 +120,11 @@ function traceOutcomeBadge(level: string, status: string | null | undefined) {
   if (lv === 'WARN' || st.includes('RATE')) return { label: 'Throttled', tone: 'warning' as const }
   if (st === 'SKIPPED') return { label: 'Skipped', tone: 'muted' as const }
   if (st.includes('RETRY')) return { label: 'Retry', tone: 'warning' as const }
-  return { label: 'OK', tone: 'success' as const }
+  // "OK" only for an explicit success outcome; a missing or unrecognised status is merely recorded.
+  if (st === 'OK' || st === 'SUCCESS' || st === 'SUCCEEDED' || st === 'DELIVERED' || st === 'COMPLETE' || st === 'COMPLETED') {
+    return { label: 'OK', tone: 'success' as const }
+  }
+  return { label: 'Recorded', tone: 'muted' as const }
 }
 
 function toneDotClass(tone: 'success' | 'warning' | 'error' | 'neutral'): string {
@@ -474,6 +479,7 @@ export function LogDetailDrawer({
   }
 
   const retryEntries = useMemo(() => buildRetryTimelineEntries(row), [row])
+  const retrySummary = useMemo(() => retryTimelineSummary(row), [row])
 
   const runIdStr = typeof row.contextJson.run_id === 'string' && row.contextJson.run_id.trim() !== '' ? row.contextJson.run_id : null
 
@@ -510,7 +516,12 @@ export function LogDetailDrawer({
           : typeof err === 'object' && err !== null && 'message' in err
             ? String((err as { message: unknown }).message)
             : 'Replay request failed'
-      setReplayError(msg)
+      // F-169: older failed rows carry no events; say so and point to the working path.
+      setReplayError(
+        /REPLAY_PAYLOAD_INSUFFICIENT/.test(msg)
+          ? 'This log row did not store the failed events, so it cannot be replayed from here. Use Governance > Replay to re-send the recorded events.'
+          : msg,
+      )
     } finally {
       setReplayBusy(false)
     }
@@ -744,8 +755,20 @@ export function LogDetailDrawer({
 
         {tab === 'retry' ? (
           <div className="space-y-3">
+            {retrySummary ? (
+              <p className="text-[12px] text-slate-700 dark:text-slate-200" data-testid="log-retry-summary">
+                {retrySummary.attempts} {retrySummary.attempts === 1 ? 'retry' : 'retries'} recorded
+                {retrySummary.maxRetries != null ? ` of ${retrySummary.maxRetries} configured` : ''}
+                {retrySummary.backoff ? ` · ${retrySummary.backoff} backoff` : ''}
+                {retrySummary.giveUpReason ? ` · ${retrySummary.giveUpReason}` : ''}
+              </p>
+            ) : null}
             {retryEntries.length === 0 ? (
-              <p className="text-[12px] text-slate-600 dark:text-gdc-muted">No retries recorded for this log row.</p>
+              <p className="text-[12px] text-slate-600 dark:text-gdc-muted">
+                {retrySummary
+                  ? 'Per-attempt timing was not stored for this log row.'
+                  : 'No retries recorded for this log row.'}
+              </p>
             ) : (
               <ul className="space-y-2">
                 {retryEntries.map((e) => (
@@ -758,8 +781,9 @@ export function LogDetailDrawer({
                       <span className="font-mono text-[10px] text-slate-600 dark:text-gdc-muted">{e.atLabel}</span>
                     </div>
                     <div className="mt-1 flex flex-wrap gap-x-3 text-[11px] text-slate-600 dark:text-gdc-muted">
-                      <span>Backoff: {e.backoffLabel}</span>
+                      <span>{e.backoffLabel}</span>
                       <span className="capitalize">Outcome: {e.outcome}</span>
+                      {e.detail ? <span>{e.detail}</span> : null}
                     </div>
                   </li>
                 ))}
@@ -810,6 +834,13 @@ export function LogDetailDrawer({
             {replayError ? (
               <p className="text-sm font-medium text-red-800 dark:text-red-300">{replayError}</p>
             ) : null}
+            <Link
+              to={NAV_PATH.governanceReplay}
+              data-testid="delivery-log-open-governance-replay"
+              className="inline-block text-xs font-semibold text-violet-700 hover:underline dark:text-violet-300"
+            >
+              Open replay jobs in Governance
+            </Link>
             {replayResult ? (
               <div className="rounded-md border border-slate-200 bg-slate-50/90 p-2 text-sm dark:border-gdc-border dark:bg-gdc-panel">
                 <p className="font-semibold text-slate-900 dark:text-slate-100">

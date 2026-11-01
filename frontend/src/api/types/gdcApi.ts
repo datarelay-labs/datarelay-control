@@ -610,7 +610,8 @@ export type RouteRuntimeLatencyTrendPoint = {
 
 export type RouteRuntimeSuccessRateTrendPoint = {
   timestamp: string
-  success_rate: number
+  /** null when the bucket had no completed delivery attempts. */
+  success_rate: number | null
 }
 
 export type RouteRuntimeMetricsRow = {
@@ -620,7 +621,8 @@ export type RouteRuntimeMetricsRow = {
   destination_type: string
   enabled: boolean
   route_status: string
-  success_rate: number
+  /** null when the window had no completed delivery attempts. */
+  success_rate: number | null
   events_last_hour: number
   delivered_last_hour: number
   failed_last_hour: number

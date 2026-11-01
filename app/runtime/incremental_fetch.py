@@ -477,6 +477,13 @@ def build_fetch_window(
         if lower_raw is None:
             lower_raw = checkpoint.get("last_timestamp") or checkpoint.get("last_timestamp_ms")
     lower_dt = _parse_iso(lower_raw)
+    if lower_dt is None and lower_raw is not None:
+        # last_timestamp_ms is numeric epoch ms; never drop the stored window by treating it as unparseable.
+        from app.http.shared_request_builder import checkpoint_timestamp_ms
+
+        lower_ms_raw = checkpoint_timestamp_ms(lower_raw)
+        if lower_ms_raw is not None:
+            lower_dt = datetime.fromtimestamp(lower_ms_raw / 1000, timezone.utc)
     if lower_dt is None:
         lower_dt = current - timedelta(seconds=config.initial_lookback_seconds)
     if lower_dt > upper:
@@ -547,6 +554,11 @@ def prepare_fetch_checkpoint_context(
         fetch_ctx[_FETCH_WATERMARK_KEY] = fetch_watermark
         fetch_ctx.setdefault("last_timestamp", fetch_watermark)
         fetch_ctx.setdefault("last_timestamp_ms", fetch_watermark)
+    if "last_timestamp_ms" in fetch_ctx:
+        # Numeric epoch ms like the API Test; also converts ISO values stored before that rule (read-time only).
+        from app.http.shared_request_builder import normalize_checkpoint_timestamp_ms
+
+        fetch_ctx["last_timestamp_ms"] = normalize_checkpoint_timestamp_ms(fetch_ctx["last_timestamp_ms"])
     if connector_cursor is not None:
         fetch_ctx[_CONNECTOR_CURSOR_KEY] = connector_cursor
         fetch_ctx.setdefault("cursor", connector_cursor)
@@ -633,6 +645,84 @@ def _select_latest_event(events: list[dict[str, Any]], config: IncrementalFetchC
             if key[1] is not None and (best_key[1] is None or key[1] > best_key[1]):
                 best, best_key = event, key
     return best if isinstance(best, dict) else None
+
+
+def _comparable_checkpoint_value(value: Any) -> tuple[str, float] | None:
+    """Normalize a checkpoint/event value for ordering: ("time", epoch seconds) or ("number", value)."""
+
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        number = float(value)
+    else:
+        text = str(value).strip()
+        if not text:
+            return None
+        try:
+            number = float(text)
+        except ValueError:
+            dt = _parse_iso(text)
+            return ("time", dt.timestamp()) if dt is not None else None
+    if number != number:  # NaN
+        return None
+    if number >= 100_000_000_000:  # epoch milliseconds
+        return ("time", number / 1000)
+    if number >= 1_000_000_000:  # epoch seconds
+        return ("time", number)
+    return ("number", number)
+
+
+def count_records_newer_than_checkpoint(
+    events: list[dict[str, Any]],
+    *,
+    checkpoint: dict[str, Any] | None,
+    stream_config: dict[str, Any] | None,
+) -> int | None:
+    """Count returned records whose checkpoint field is strictly newer than ``checkpoint``.
+
+    ``checkpoint`` is the context the request was built from (``prepare_fetch_checkpoint_context`` for the
+    incremental framework, the raw checkpoint otherwise). Returns ``None`` when the comparison is unknown: no
+    checkpoint value, no record exposes a comparable value, or the values are opaque cursors.
+    """
+
+    from app.http.shared_request_builder import build_runtime_checkpoint_template_context
+
+    cfg = stream_config if isinstance(stream_config, dict) else {}
+    config = parse_incremental_fetch_config(cfg)
+    if config.framework_enabled:
+        ctx = checkpoint if isinstance(checkpoint, dict) else {}
+        if config.strategy == "cursor":
+            field_path = config.cursor_field
+            ck_raw = ctx.get(_CONNECTOR_CURSOR_KEY) or ctx.get("cursor")
+        else:
+            field_path = config.watermark_field
+            ck_raw = ctx.get(_FETCH_WATERMARK_KEY) or ctx.get("last_timestamp") or ctx.get("last_timestamp_ms")
+
+        def _event_value(event: dict[str, Any]) -> Any:
+            return _resolve_field(event, field_path) if field_path else None
+
+    else:
+        ctx = build_runtime_checkpoint_template_context(checkpoint, cfg)
+        ck_raw = ctx.get("last_timestamp") or ctx.get("last_timestamp_ms")
+
+        def _event_value(event: dict[str, Any]) -> Any:
+            return build_runtime_checkpoint_template_context({"last_success_event": event}, cfg).get("last_timestamp")
+
+    ck = _comparable_checkpoint_value(ck_raw)
+    if ck is None:
+        return None
+    compared = 0
+    newer = 0
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        value = _comparable_checkpoint_value(_event_value(event))
+        if value is None or value[0] != ck[0]:
+            continue
+        compared += 1
+        if value[1] > ck[1]:
+            newer += 1
+    return newer if compared else None
 
 
 def build_fetch_checkpoint_update(
@@ -742,6 +832,11 @@ def build_delivery_checkpoint_update(
         for key, val in delivery_blob.items():
             if key != "last_success_event":
                 merged.setdefault(key, val)
+        if "last_timestamp_ms" in merged:
+            # A preserved pre-fix ISO value must not be re-written as ISO.
+            from app.http.shared_request_builder import normalize_checkpoint_timestamp_ms
+
+            merged["last_timestamp_ms"] = normalize_checkpoint_timestamp_ms(merged["last_timestamp_ms"])
 
     return merged
 

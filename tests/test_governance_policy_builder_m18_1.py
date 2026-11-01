@@ -84,7 +84,10 @@ def test_policy_crud_api(governance_policies_client: TestClient, db_session: Ses
     assert updated_policy["version"] == 2
 
     for endpoint in ("submit-review", "activate", "retire"):
-        step = governance_policies_client.post(f"/api/v1/governance/policies/{policy_id}/{endpoint}")
+        # One principal drives the whole lifecycle; activating what you submitted needs the explicit
+        # F-187 override.
+        body = {"allow_self_approval": True} if endpoint == "activate" else None
+        step = governance_policies_client.post(f"/api/v1/governance/policies/{policy_id}/{endpoint}", json=body)
         assert step.status_code == 200
 
     deleted = governance_policies_client.delete(f"/api/v1/governance/policies/{policy_id}")
@@ -196,7 +199,10 @@ def test_delete_policy_cascades_assignments(
     assert assignment_count == 1
 
     for endpoint in ("submit-review", "activate", "retire"):
-        step = governance_policies_client.post(f"/api/v1/governance/policies/{policy_id}/{endpoint}")
+        # One principal drives the whole lifecycle; activating what you submitted needs the explicit
+        # F-187 override.
+        body = {"allow_self_approval": True} if endpoint == "activate" else None
+        step = governance_policies_client.post(f"/api/v1/governance/policies/{policy_id}/{endpoint}", json=body)
         assert step.status_code == 200
 
     assert governance_policies_client.delete(f"/api/v1/governance/policies/{policy_id}").status_code == 204

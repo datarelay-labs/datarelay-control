@@ -76,6 +76,8 @@ export type GovernanceApprovalDetailResponse = {
   submitted_at: string | null
   review_comment: string | null
   is_approved: boolean
+  /** True when the policy is in REVIEW and nobody is recorded as its submitter (F-187 fail-closed). */
+  submitter_unknown?: boolean
   history: GovernanceApprovalHistoryEntry[]
   impact: GovernanceApprovalImpactSummary | null
   simulation: GovernanceApprovalSimulationSummary | null
@@ -115,14 +117,49 @@ export async function fetchGovernanceApprovalDetail(
   return safeRequestJson<GovernanceApprovalDetailResponse>(`${GOV}/approvals/${policyId}`, readJsonOpts)
 }
 
+/** Error code the API returns (HTTP 403) when the submitter approves or activates their own policy (F-187). */
+export const SELF_APPROVAL_FORBIDDEN_CODE = 'GOVERNANCE_SELF_APPROVAL_FORBIDDEN'
+
+export type SelfApprovalOptions = {
+  /** Explicit override of the separation-of-duties rule; only sent as `true` after the user confirmed. */
+  allowSelfApproval?: boolean
+}
+
+/**
+ * Error code the API returns (HTTP 403) when approve/activate is attempted on a policy in REVIEW whose
+ * submitter is not recorded. Same explicit `allow_self_approval` override as the self-approval case.
+ */
+export const SUBMITTER_UNKNOWN_CODE = 'GOVERNANCE_SUBMITTER_UNKNOWN'
+
+export type SeparationOfDutiesKind = 'self' | 'unknown'
+
+export function errorIndicatesSelfApprovalForbidden(err: unknown): boolean {
+  return err instanceof Error && err.message.includes(SELF_APPROVAL_FORBIDDEN_CODE)
+}
+
+export function errorIndicatesSubmitterUnknown(err: unknown): boolean {
+  return err instanceof Error && err.message.includes(SUBMITTER_UNKNOWN_CODE)
+}
+
+/** Which separation-of-duties refusal (if any) the server reported; both are lifted by the same override. */
+export function separationOfDutiesKind(err: unknown): SeparationOfDutiesKind | null {
+  if (errorIndicatesSelfApprovalForbidden(err)) return 'self'
+  if (errorIndicatesSubmitterUnknown(err)) return 'unknown'
+  return null
+}
+
 async function postApprovalAction(
   policyId: number,
   action: 'submit' | 'approve' | 'reject' | 'activate',
   comment?: string | null,
+  options?: SelfApprovalOptions,
 ): Promise<GovernanceApprovalActionResponse> {
   return requestJson<GovernanceApprovalActionResponse>(`${GOV}/approvals/${policyId}/${action}`, {
     method: 'POST',
-    body: JSON.stringify({ comment: comment ?? null }),
+    body: JSON.stringify({
+      comment: comment ?? null,
+      ...(options?.allowSelfApproval === true ? { allow_self_approval: true } : {}),
+    }),
   })
 }
 
@@ -130,14 +167,14 @@ export function submitGovernanceApproval(policyId: number, comment?: string | nu
   return postApprovalAction(policyId, 'submit', comment)
 }
 
-export function approveGovernancePolicy(policyId: number, comment?: string | null) {
-  return postApprovalAction(policyId, 'approve', comment)
+export function approveGovernancePolicy(policyId: number, comment?: string | null, options?: SelfApprovalOptions) {
+  return postApprovalAction(policyId, 'approve', comment, options)
 }
 
 export function rejectGovernancePolicy(policyId: number, comment?: string | null) {
   return postApprovalAction(policyId, 'reject', comment)
 }
 
-export function activateGovernanceApproval(policyId: number, comment?: string | null) {
-  return postApprovalAction(policyId, 'activate', comment)
+export function activateGovernanceApproval(policyId: number, comment?: string | null, options?: SelfApprovalOptions) {
+  return postApprovalAction(policyId, 'activate', comment, options)
 }

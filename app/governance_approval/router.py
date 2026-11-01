@@ -23,6 +23,7 @@ from app.governance_approval.schemas import (
 from app.governance_approval.service import (
     GovernanceApprovalError,
     GovernanceApprovalNotFoundError,
+    GovernanceSeparationOfDutiesError,
     activate_approved_policy,
     approve_policy,
     get_governance_approval_detail,
@@ -84,6 +85,15 @@ async def get_governance_approval_by_policy_id(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+def _self_approval_forbidden(exc: GovernanceSeparationOfDutiesError) -> HTTPException:
+    # GOVERNANCE_SELF_APPROVAL_FORBIDDEN (the actor submitted it) or GOVERNANCE_SUBMITTER_UNKNOWN
+    # (no submitter recorded; fail closed).
+    return HTTPException(
+        status_code=403,
+        detail={"error_code": exc.error_code, "message": str(exc)},
+    )
+
+
 def _action_response(
     *,
     policy_id: int,
@@ -141,11 +151,20 @@ async def post_governance_approval_approve(
 ) -> GovernanceApprovalActionResponse:
     actor = resolve_governance_actor(request)
     try:
-        row = approve_policy(db, policy_id, comment=body.comment, actor=actor)
+        row = approve_policy(
+            db,
+            policy_id,
+            comment=body.comment,
+            actor=actor,
+            allow_self_approval=body.allow_self_approval,
+        )
         db.commit()
     except GovernancePolicyNotFoundError as exc:
         db.rollback()
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except GovernanceSeparationOfDutiesError as exc:
+        db.rollback()
+        raise _self_approval_forbidden(exc) from exc
     except GovernanceApprovalError as exc:
         db.rollback()
         raise HTTPException(
@@ -201,11 +220,20 @@ async def post_governance_approval_activate(
 ) -> GovernanceApprovalActionResponse:
     actor = resolve_governance_actor(request)
     try:
-        row = activate_approved_policy(db, policy_id, comment=body.comment, actor=actor)
+        row = activate_approved_policy(
+            db,
+            policy_id,
+            comment=body.comment,
+            actor=actor,
+            allow_self_approval=body.allow_self_approval,
+        )
         db.commit()
     except GovernancePolicyNotFoundError as exc:
         db.rollback()
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except GovernanceSeparationOfDutiesError as exc:
+        db.rollback()
+        raise _self_approval_forbidden(exc) from exc
     except GovernanceApprovalError as exc:
         db.rollback()
         raise HTTPException(

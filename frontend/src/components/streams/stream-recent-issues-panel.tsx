@@ -53,7 +53,10 @@ function buildStatusRows(
         },
   )
 
-  const errorRateIssue = issues.find((i) => i.key === 'low-success' || i.label.toLowerCase().includes('error'))
+  // Never reuse the issue already shown in the destination row (e.g. a lone low-success issue).
+  const errorRateIssue = issues.find(
+    (i) => i !== destIssue && (i.key === 'low-success' || i.label.toLowerCase().includes('error')),
+  )
   rows.push(
     errorRateIssue
       ? issueToStatusRow(errorRateIssue)
@@ -114,7 +117,7 @@ function buildStatusRows(
 
 function StatusIcon({ tone }: { tone: StatusRow['tone'] }) {
   if (tone === 'critical') return <XCircle className="h-4 w-4 shrink-0 text-red-500" aria-hidden />
-  if (tone === 'warn') return <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" aria-hidden />
+  if (tone === 'warn') return <AlertTriangle className="h-4 w-4 shrink-0 text-status-warning" aria-hidden />
   if (tone === 'unknown') return <CircleHelp className="h-4 w-4 shrink-0 text-slate-400" aria-hidden />
   if (tone === 'info') return <Info className="h-4 w-4 shrink-0 text-sky-500" aria-hidden />
   return <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" aria-hidden />
@@ -166,7 +169,7 @@ export function StreamRecentIssuesPanel({
                 className={cn(
                   'text-[12px] font-semibold',
                   row.tone === 'critical' && 'text-red-700 dark:text-red-300',
-                  row.tone === 'warn' && 'text-amber-800 dark:text-amber-200',
+                  row.tone === 'warn' && 'text-status-warning',
                   row.tone === 'ok' && 'text-slate-800 dark:text-slate-100',
                   row.tone === 'unknown' && 'text-slate-600 dark:text-slate-300',
                   row.tone === 'info' && 'text-slate-700 dark:text-slate-200',

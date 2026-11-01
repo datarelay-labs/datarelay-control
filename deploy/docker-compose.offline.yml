@@ -54,7 +54,7 @@ services:
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
       GDC_TRUST_PROXY_HEADERS: "true"
-      GDC_PROXY_FORWARD_TRUSTED_HOSTS: "*"
+      GDC_PROXY_FORWARD_TRUSTED_HOSTS: "${GDC_PROXY_FORWARD_TRUSTED_HOSTS:?Set explicit reverse-proxy IP/CIDR; wildcard forbidden}"
       GDC_TLS_CERT_PATH: /var/gdc/tls/server.crt
       GDC_TLS_KEY_PATH: /var/gdc/tls/server.key
       GDC_NGINX_TLS_CERT_CONTAINER_PATH: /var/gdc/tls/server.crt

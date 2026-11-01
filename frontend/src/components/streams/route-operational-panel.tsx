@@ -89,9 +89,9 @@ function fallbackRowFromHealth(h: StreamMetricsRouteHealthRow, windowSeconds: nu
   const ok = h.success_count
   const bad = h.failed_count
   const tot = ok + bad
-  // A zero-outcome legacy row has no observed delivery success rate.
-  // Keep the required numeric DTO stable but treat the state as IDLE, not HEALTHY.
-  const sr = tot > 0 ? Math.round((100 * ok) / tot * 10) / 10 : 0
+  // A zero-outcome legacy row has no observed delivery success rate: null (rendered as an em dash),
+  // never 0% or 100%, and the state is IDLE, not HEALTHY.
+  const sr = tot > 0 ? Math.round((100 * ok) / tot * 10) / 10 : null
   const conn: RouteRuntimeConnectivityState =
     !h.enabled ? 'DISABLED' : tot === 0 ? 'IDLE' : bad > 0 && ok === 0 ? 'ERROR' : bad > 0 ? 'DEGRADED' : 'HEALTHY'
   return {
@@ -259,7 +259,7 @@ export function RouteOperationalPanel({
                 Number.isSafeInteger(backendStreamId) && backendStreamId > 0
               const deliveryOutcomesObserved = Number.isFinite(r.delivered_last_hour) &&
                 Number.isFinite(r.failed_last_hour) &&
-                r.delivered_last_hour + r.failed_last_hour > 0 && Number.isFinite(r.success_rate)
+                r.delivered_last_hour + r.failed_last_hour > 0 && r.success_rate != null && Number.isFinite(r.success_rate)
               const latSpark = r.latency_trend?.length
                 ? r.latency_trend.map((p) => p.avg_latency_ms)
                 : [r.avg_latency_ms]
@@ -317,7 +317,11 @@ export function RouteOperationalPanel({
                       </span>
                       {deliveryOutcomesObserved && r.success_rate_trend.length > 1 ? (
                         <MiniSparkline
-                          values={r.success_rate_trend?.length ? r.success_rate_trend.map((p) => p.success_rate) : [r.success_rate]}
+                          values={
+                            r.success_rate_trend?.length
+                              ? r.success_rate_trend.map((p) => p.success_rate).filter((v): v is number => v != null)
+                              : [r.success_rate as number]
+                          }
                           className="text-emerald-600 dark:text-emerald-400"
                         />
                       ) : !deliveryOutcomesObserved ? (

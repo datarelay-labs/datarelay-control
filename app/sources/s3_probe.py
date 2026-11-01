@@ -7,7 +7,15 @@ from typing import Any
 
 import boto3
 from botocore.client import Config as BotoConfig
-from botocore.exceptions import BotoCoreError, ClientError
+from botocore.exceptions import (
+    BotoCoreError,
+    ClientError,
+    ConnectionClosedError,
+    ConnectTimeoutError,
+    EndpointConnectionError,
+    ReadTimeoutError,
+    SSLError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +24,82 @@ def _get(data: Any, key: str, default: Any = None) -> Any:
     if isinstance(data, dict):
         return data.get(key, default)
     return getattr(data, key, default)
+
+
+# Error codes that say the credentials themselves are wrong, with the field the operator should fix.
+_CREDENTIAL_CODES: dict[str, tuple[str, str]] = {
+    "InvalidAccessKeyId": (
+        "invalid_access_key",
+        "The Access key is not recognised by this endpoint (InvalidAccessKeyId). Check the Access key and the endpoint URL.",
+    ),
+    "SignatureDoesNotMatch": (
+        "signature_mismatch",
+        "The Secret key does not match the Access key (SignatureDoesNotMatch). Re-enter the Secret key; "
+        "also confirm the Region matches the endpoint.",
+    ),
+    "AuthorizationHeaderMalformed": (
+        "region_mismatch",
+        "The Region does not match the endpoint or bucket (AuthorizationHeaderMalformed). Set the Region the bucket lives in.",
+    ),
+    "InvalidToken": (
+        "invalid_token",
+        "The credentials include an invalid or expired session token (InvalidToken).",
+    ),
+    "ExpiredToken": (
+        "invalid_token",
+        "The credentials include an invalid or expired session token (ExpiredToken).",
+    ),
+}
+
+
+def _error_code(exc: ClientError) -> str:
+    return str(exc.response.get("Error", {}).get("Code") or "")
+
+
+def _classify_client_error(code: str, bucket: str) -> tuple[str, str]:
+    """Map an S3 error code to (error_type, operator-facing message) naming the input to correct."""
+
+    if code in _CREDENTIAL_CODES:
+        return _CREDENTIAL_CODES[code]
+    if code in {"404", "NoSuchBucket", "NotFound"}:
+        return "no_such_bucket", f"Bucket not found: {bucket!r}. Check the bucket name and that it exists on this endpoint."
+    if code in {"403", "AccessDenied", "AllAccessDisabled"}:
+        return (
+            "access_denied",
+            "The credentials were accepted but are not allowed to access this bucket "
+            "(AccessDenied). Grant s3:ListBucket on the bucket, or use credentials that have it.",
+        )
+    if code == "400":
+        return (
+            "bad_request",
+            "The endpoint rejected the request (HTTP 400). This usually means the Region does not match "
+            "the endpoint or bucket; check the Region and the endpoint URL.",
+        )
+    return "head_bucket_failed", f"The bucket check failed with {code or 'an unknown error'}."
+
+
+def _classify_network_error(exc: BotoCoreError, use_ssl: bool, endpoint_url: str) -> tuple[str, str, bool]:
+    """Return (error_type, message, endpoint_reachable) for a transport-level failure."""
+
+    if isinstance(exc, SSLError):
+        return (
+            "tls_error",
+            "TLS verification failed: the endpoint certificate is not trusted or does not match the "
+            "endpoint host name. Use a trusted certificate or the correct host name.",
+            True,
+        )
+    if isinstance(exc, ConnectionClosedError):
+        hint = (
+            " The endpoint is https but Use SSL is off; enable Use SSL."
+            if endpoint_url.lower().startswith("https://") and not use_ssl
+            else " Check the endpoint URL and the Use SSL setting."
+        )
+        return "connection_closed", "The server closed the connection before answering." + hint, True
+    if isinstance(exc, (ConnectTimeoutError, ReadTimeoutError)):
+        return "timeout", "The endpoint did not answer in time. Check the endpoint URL, port and firewall.", False
+    if isinstance(exc, EndpointConnectionError):
+        return "network_error", "Could not connect to the endpoint. Check the endpoint URL, port and firewall.", False
+    return "network_error", f"Connection error: {type(exc).__name__}", False
 
 
 def probe_s3_source(source_config: dict[str, Any], *, preview_key_limit: int = 8) -> dict[str, Any]:
@@ -82,23 +166,29 @@ def probe_s3_source(source_config: dict[str, Any], *, preview_key_limit: int = 8
         client.head_bucket(Bucket=bucket)
         out["s3_bucket_exists"] = True
     except ClientError as exc:
-        code = str(exc.response.get("Error", {}).get("Code") or "")
-        if code in {"404", "NoSuchBucket", "NotFound"}:
-            out["s3_bucket_exists"] = False
-            out["s3_error_type"] = "no_such_bucket"
-            out["s3_message"] = f"Bucket not found or no access: {bucket!r}"
-        elif code in {"403", "AccessDenied"}:
-            out["s3_error_type"] = "access_denied"
-            out["s3_message"] = "Access denied listing bucket (check IAM: s3:ListBucket)"
-        else:
-            out["s3_error_type"] = "head_bucket_failed"
-            out["s3_message"] = f"HeadBucket failed: {code or type(exc).__name__}"
+        code = _error_code(exc)
+        if code in {"403", "400", ""}:
+            # HEAD responses have no body, so the real cause (bad key, bad secret, wrong region,
+            # policy deny) is invisible. A one-key listing returns the S3 error code.
+            try:
+                client.list_objects_v2(Bucket=bucket, MaxKeys=1)
+            except ClientError as detail_exc:
+                detail_code = _error_code(detail_exc)
+                if detail_code:
+                    code = detail_code
+            except BotoCoreError:
+                pass
+        error_type, message = _classify_client_error(code, bucket)
+        out["s3_bucket_exists"] = False if error_type == "no_such_bucket" else out["s3_bucket_exists"]
+        out["s3_error_type"] = error_type
+        out["s3_message"] = message
         logger.info("%s", {"stage": "s3_probe_head_bucket", "bucket": bucket, "error_code": code})
         return out
     except BotoCoreError as exc:
-        out["s3_endpoint_reachable"] = False
-        out["s3_error_type"] = "network_error"
-        out["s3_message"] = f"Connection error: {type(exc).__name__}"
+        error_type, message, reachable = _classify_network_error(exc, use_ssl, endpoint_url)
+        out["s3_endpoint_reachable"] = reachable
+        out["s3_error_type"] = error_type
+        out["s3_message"] = message
         logger.info("%s", {"stage": "s3_probe_head_bucket_network", "error_type": type(exc).__name__})
         return out
 

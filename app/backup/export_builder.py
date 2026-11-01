@@ -15,8 +15,20 @@ from app.connectors.models import Connector
 from app.destinations.models import Destination
 from app.enrichments.models import Enrichment
 from app.mappings.models import Mapping
+from app.route_classification.models import RouteClassificationRule
+from app.route_policy.models import RoutePolicyRule
+from app.route_protection.models import RouteProtectionRule
+from app.route_transform.models import RouteEnrichment, RouteMapping
 from app.routes.models import Route
-from app.security.secrets import mask_config_payload, mask_http_headers, mask_secrets, mask_secrets_and_pem
+from app.security.secrets import (
+    collect_secret_literals,
+    mask_config_payload,
+    mask_http_headers,
+    mask_secrets_and_pem,
+    mask_source_auth_json,
+    mask_source_config_json,
+    SOURCE_SECRET_FIELDS,
+)
 from app.sources.models import Source
 from app.streams.models import Stream
 
@@ -39,24 +51,24 @@ def _connector_dict(c: Connector) -> dict[str, Any]:
     }
 
 
-def _mask_source_auth_json(auth: dict[str, Any]) -> dict[str, Any]:
-    base = mask_secrets(dict(auth or {}))
+def _mask_source_auth_json(auth: dict[str, Any], source_type: str | None = None) -> dict[str, Any]:
+    base = mask_source_auth_json(source_type, dict(auth or {}))
     ph = base.get("preflight_headers")
     if isinstance(ph, dict):
         try:
             base["preflight_headers"] = mask_http_headers({str(k): str(v) for k, v in ph.items()})
         except Exception:
-            base["preflight_headers"] = mask_secrets(ph)
+            base["preflight_headers"] = mask_source_auth_json(source_type, ph)
     return base
 
 
 def _source_dict(s: Source) -> dict[str, Any]:
-    auth = _mask_source_auth_json(dict(s.auth_json or {}))
+    auth = _mask_source_auth_json(dict(s.auth_json or {}), s.source_type)
     return {
         "id": s.id,
         "connector_id": s.connector_id,
         "source_type": s.source_type,
-        "config_json": mask_secrets(dict(s.config_json or {})),
+        "config_json": mask_source_config_json(s.source_type, dict(s.config_json or {})),
         "auth_json": auth,
         "enabled": s.enabled,
         "created_at": _iso(s.created_at),
@@ -119,6 +131,91 @@ def _destination_dict(d: Destination) -> dict[str, Any]:
     }
 
 
+def _route_children_by_route(db: Session, route_ids: list[int]) -> dict[int, dict[str, Any]]:
+    """Route-level processing state keyed by Route id (protection, classification, policy, transform).
+
+    Children are embedded on each exported Route under optional keys that are only present when the Route
+    has such rows, so bundles for Routes without children are unchanged and older bundles still import.
+    Protection findings belong to the source Stream and are never exported. Route enrichment values are
+    masked like other exported config because they are operator-entered static values.
+    """
+    out: dict[int, dict[str, Any]] = {}
+    if not route_ids:
+        return out
+
+    def _slot(route_id: int) -> dict[str, Any]:
+        return out.setdefault(int(route_id), {})
+
+    for p in (
+        db.query(RouteProtectionRule)
+        .filter(RouteProtectionRule.route_id.in_(route_ids))
+        .order_by(RouteProtectionRule.id.asc())
+        .all()
+    ):
+        _slot(p.route_id).setdefault("protection_rules", []).append(
+            {
+                "field_path": p.field_path,
+                "sensitivity_class": p.sensitivity_class,
+                "protection_mode": p.protection_mode,
+                "enabled": p.enabled,
+                "created_by": p.created_by,
+            }
+        )
+    for c in (
+        db.query(RouteClassificationRule)
+        .filter(RouteClassificationRule.route_id.in_(route_ids))
+        .order_by(RouteClassificationRule.id.asc())
+        .all()
+    ):
+        _slot(c.route_id).setdefault("classification_rules", []).append(
+            {
+                "name": c.name,
+                "enabled": c.enabled,
+                "condition_json": dict(c.condition_json or {}),
+                "classification_level": c.classification_level,
+            }
+        )
+    for pr in (
+        db.query(RoutePolicyRule)
+        .filter(RoutePolicyRule.route_id.in_(route_ids))
+        .order_by(RoutePolicyRule.id.asc())
+        .all()
+    ):
+        _slot(pr.route_id).setdefault("policy_rules", []).append(
+            {
+                "name": pr.name,
+                "enabled": pr.enabled,
+                "condition_json": dict(pr.condition_json or {}),
+                "action_type": pr.action_type,
+            }
+        )
+    for rm in db.query(RouteMapping).filter(RouteMapping.route_id.in_(route_ids)).order_by(RouteMapping.id.asc()).all():
+        _slot(rm.route_id)["route_mapping"] = {
+            "field_mappings_json": dict(rm.field_mappings_json or {}),
+            "raw_payload_mode": rm.raw_payload_mode,
+        }
+    for re_ in (
+        db.query(RouteEnrichment).filter(RouteEnrichment.route_id.in_(route_ids)).order_by(RouteEnrichment.id.asc()).all()
+    ):
+        _slot(re_.route_id)["route_enrichment"] = {
+            "enrichment_json": mask_secrets_and_pem(dict(re_.enrichment_json or {})),
+            "override_policy": re_.override_policy,
+            "enabled": re_.enabled,
+        }
+    return out
+
+
+def _route_rows(db: Session, routes: list[Route]) -> list[dict[str, Any]]:
+    dest_names = _destination_name_map(db, {int(r.destination_id) for r in routes})
+    children = _route_children_by_route(db, [int(r.id) for r in routes])
+    rows: list[dict[str, Any]] = []
+    for r in routes:
+        row = _route_dict(r, destination_name=dest_names.get(int(r.destination_id)))
+        row.update(children.get(int(r.id), {}))
+        rows.append(row)
+    return rows
+
+
 def _route_dict(r: Route, *, destination_name: str | None = None) -> dict[str, Any]:
     dest_id = int(r.destination_id)
     ref: dict[str, Any] = {"id": dest_id}
@@ -160,6 +257,39 @@ def _checkpoint_dict(c: Checkpoint) -> dict[str, Any]:
     }
 
 
+def _stored_secret_literals(db: Session, payload: dict[str, Any]) -> list[str]:
+    """Secret values the exporter read from storage for the entities in ``payload``.
+
+    The integrity report scans the finished bundle for these values, so ``secrets_masked`` can only
+    be claimed when no stored secret survived serialization (whatever key it was stored under).
+    """
+
+    literals: list[str] = []
+    source_ids = [int(s["id"]) for s in payload.get("sources") or [] if isinstance(s, dict) and s.get("id") is not None]
+    if source_ids:
+        for src in db.query(Source).filter(Source.id.in_(source_ids)).all():
+            scope = SOURCE_SECRET_FIELDS.get(str(src.source_type or "").strip().upper(), {})
+            literals.extend(collect_secret_literals(dict(src.config_json or {}), declared=scope.get("config_json")))
+            literals.extend(collect_secret_literals(dict(src.auth_json or {}), declared=scope.get("auth_json")))
+    stream_ids = [int(s["id"]) for s in payload.get("streams") or [] if isinstance(s, dict) and s.get("id") is not None]
+    if stream_ids:
+        for st in db.query(Stream).filter(Stream.id.in_(stream_ids)).all():
+            literals.extend(collect_secret_literals(dict(st.config_json or {})))
+    dest_ids = [int(d["id"]) for d in payload.get("destinations") or [] if isinstance(d, dict) and d.get("id") is not None]
+    if dest_ids:
+        for d in db.query(Destination).filter(Destination.id.in_(dest_ids)).all():
+            cfg = dict(d.config_json or {})
+            literals.extend(collect_secret_literals(cfg))
+            headers = cfg.get("headers")
+            if isinstance(headers, dict):
+                literals.extend(str(v) for v in headers.values() if isinstance(v, str) and v.strip())
+    return literals
+
+
+def _integrity(db: Session, payload: dict[str, Any]) -> dict[str, Any]:
+    return build_export_integrity_report(payload, known_secret_literals=_stored_secret_literals(db, payload))
+
+
 def _base_bundle(*, export_kind: ExportKind, options: dict[str, Any]) -> dict[str, Any]:
     return {
         "version": 2,
@@ -196,12 +326,10 @@ def build_workspace_export(
     if include_destinations:
         payload["destinations"] = [_destination_dict(r) for r in db.query(Destination).order_by(Destination.id.asc()).all()]
     routes = db.query(Route).order_by(Route.id.asc()).all()
-    dest_ids = {int(r.destination_id) for r in routes}
-    dest_names = _destination_name_map(db, dest_ids)
-    payload["routes"] = [_route_dict(r, destination_name=dest_names.get(int(r.destination_id))) for r in routes]
+    payload["routes"] = _route_rows(db, routes)
     if include_checkpoints:
         payload["checkpoints"] = [_checkpoint_dict(r) for r in db.query(Checkpoint).order_by(Checkpoint.id.asc()).all()]
-    payload["export_integrity"] = build_export_integrity_report(payload)
+    payload["export_integrity"] = _integrity(db, payload)
     return payload
 
 
@@ -231,7 +359,7 @@ def build_connector_export(
     sources = db.query(Source).filter(Source.connector_id == connector_id).order_by(Source.id.asc()).all()
     payload["sources"] = [_source_dict(s) for s in sources]
     if not include_streams:
-        payload["export_integrity"] = build_export_integrity_report(payload)
+        payload["export_integrity"] = _integrity(db, payload)
         return payload
     streams = db.query(Stream).filter(Stream.connector_id == connector_id).order_by(Stream.id.asc()).all()
     stream_ids = [int(s.id) for s in streams]
@@ -252,9 +380,7 @@ def build_connector_export(
             ]
         if include_routes:
             routes = db.query(Route).filter(Route.stream_id.in_(stream_ids)).order_by(Route.id.asc()).all()
-            dest_ids = {int(r.destination_id) for r in routes}
-            dest_names = _destination_name_map(db, dest_ids)
-            payload["routes"] = [_route_dict(r, destination_name=dest_names.get(int(r.destination_id))) for r in routes]
+            payload["routes"] = _route_rows(db, routes)
             if include_destinations:
                 dest_ids = {int(r.destination_id) for r in routes}
                 if dest_ids:
@@ -262,7 +388,7 @@ def build_connector_export(
                         db.query(Destination).filter(Destination.id.in_(dest_ids)).order_by(Destination.id.asc()).all()
                     )
                     payload["destinations"] = [_destination_dict(d) for d in dest_rows]
-    payload["export_integrity"] = build_export_integrity_report(payload)
+    payload["export_integrity"] = _integrity(db, payload)
     return payload
 
 
@@ -305,14 +431,12 @@ def build_stream_export(
             payload["checkpoints"] = [_checkpoint_dict(cp)]
     if include_routes:
         routes = db.query(Route).filter(Route.stream_id == stream_id).order_by(Route.id.asc()).all()
-        dest_ids = {int(r.destination_id) for r in routes}
-        dest_names = _destination_name_map(db, dest_ids)
-        payload["routes"] = [_route_dict(r, destination_name=dest_names.get(int(r.destination_id))) for r in routes]
+        payload["routes"] = _route_rows(db, routes)
         if include_destinations and routes:
             dest_ids = {int(r.destination_id) for r in routes}
             dest_rows = db.query(Destination).filter(Destination.id.in_(dest_ids)).order_by(Destination.id.asc()).all()
             payload["destinations"] = [_destination_dict(d) for d in dest_rows]
-    payload["export_integrity"] = build_export_integrity_report(payload)
+    payload["export_integrity"] = _integrity(db, payload)
     return payload
 
 

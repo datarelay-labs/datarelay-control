@@ -1,9 +1,14 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 import { DashboardOverview } from './dashboard-overview'
-import { OperationalIssuesPanel } from './dashboard-visual-panels'
+import {
+  DashboardRunningBadge,
+  OperationalIssuesPanel,
+  OverallHealthHero,
+  TrafficOverviewPanel,
+} from './dashboard-visual-panels'
 import type {
   DashboardSummaryResponse,
   HealthOverviewResponse,
@@ -425,6 +430,98 @@ describe('OperationalIssuesPanel summary truth', () => {
   })
 })
 
+describe('Dashboard semantic presentation', () => {
+  it('renders unmeasured traffic metrics as Unknown, never 0 or a dash', () => {
+    render(
+      <MemoryRouter>
+        <TrafficOverviewPanel
+          traffic={{ incomingEvents: null, outgoingEvents: null, deliverySuccessRatePct: null, windowLabel: '5m' }}
+        />
+      </MemoryRouter>,
+    )
+    const panel = screen.getByTestId('dashboard-traffic-overview')
+    for (const testId of ['dashboard-traffic-incoming', 'dashboard-traffic-outgoing', 'dashboard-traffic-gap', 'dashboard-traffic-success']) {
+      const tile = within(panel).getByTestId(testId)
+      const value = tile.querySelector('[data-metric-value]')
+      expect(value).not.toBeNull()
+      expect(value).toHaveAttribute('data-unknown', 'true')
+      expect(value).toHaveTextContent(/^Unknown$/)
+      expect(tile).not.toHaveTextContent('—')
+    }
+    expect(within(panel).getByTestId('dashboard-traffic-incoming')).toHaveAttribute('href', '/streams')
+    expect(within(panel).getByTestId('dashboard-traffic-success')).toHaveAttribute('href', '/destinations')
+  })
+
+  it('keeps measured traffic values as MetricTile numbers', () => {
+    render(
+      <MemoryRouter>
+        <TrafficOverviewPanel
+          traffic={{ incomingEvents: 0, outgoingEvents: 0, deliverySuccessRatePct: 100, windowLabel: '5m' }}
+        />
+      </MemoryRouter>,
+    )
+    const incoming = screen.getByTestId('dashboard-traffic-incoming').querySelector('[data-metric-value]')
+    expect(incoming).not.toHaveAttribute('data-unknown')
+    expect(incoming).toHaveTextContent(/^0$/)
+    expect(screen.getByTestId('dashboard-traffic-success').querySelector('[data-metric-value]')).toHaveTextContent('100.00%')
+  })
+
+  it('renders the Recommended next step card on theme-aware surfaces, without dark-only or gradient classes', async () => {
+    render(
+      <MemoryRouter>
+        <main><DashboardOverview /></main>
+      </MemoryRouter>,
+    )
+    const firstLevel = await within(mainRegion()).findByTestId('dashboard-first-level')
+    const actionNeeded = within(firstLevel).getByTestId('dashboard-action-needed')
+    const description = within(actionNeeded).getByTestId('dashboard-next-step-description')
+    const card = description.parentElement?.parentElement
+    expect(card).toBeTruthy()
+    for (const element of [actionNeeded, card!, description, within(actionNeeded).getByTestId('dashboard-next-action')]) {
+      expect(element.className).not.toMatch(/bg-slate-9|bg-black|\bfrom-|bg-gradient/)
+    }
+    expect(card).toHaveClass('bg-status-info-subtle', 'border-status-info-border')
+    expect(description).toHaveClass('text-fg')
+    expect(actionNeeded).toHaveClass('bg-surface-card', 'border-default')
+  })
+
+  it('styles the RUNNING / All Systems Operational pill with status-success aliases and Unknown as unmeasured', () => {
+    render(<DashboardRunningBadge engineStatus="RUNNING" posture="healthy" />)
+    const running = screen.getByTestId('dashboard-running-badge')
+    expect(running).toHaveTextContent('All Systems Operational')
+    expect(running).toHaveClass('border-status-success-border', 'bg-status-success-subtle', 'text-status-success')
+    expect(running.className).not.toMatch(/emerald/)
+    cleanup()
+    render(<DashboardRunningBadge engineStatus={null} posture="healthy" />)
+    const unknown = screen.getByTestId('dashboard-running-badge')
+    expect(unknown).toHaveTextContent('Unknown')
+    expect(unknown).not.toHaveTextContent('All Systems Operational')
+    expect(unknown).toHaveClass('text-status-unknown')
+    expect(unknown).not.toHaveClass('text-status-success')
+  })
+
+  it('scenario 1: an unknown posture (snapshot missing) never shows All Systems Operational, even with a RUNNING engine', () => {
+    render(<DashboardRunningBadge engineStatus="RUNNING" posture="unknown" />)
+    const badge = screen.getByTestId('dashboard-running-badge')
+    expect(badge).not.toHaveTextContent('All Systems Operational')
+  })
+
+  it('scenario 11: the overall health hero labels an unknown posture Not verified, never Healthy', () => {
+    render(
+      <MemoryRouter>
+        <OverallHealthHero
+          health={{ healthy: 1, warning: 0, critical: 0, unknown: 2, posture: 'unknown' }}
+          basisLabel="basis"
+        />
+      </MemoryRouter>,
+    )
+    expect(screen.getByTestId('dashboard-overall-posture-label')).toHaveTextContent('Not verified')
+    expect(screen.getByTestId('dashboard-overall-posture-label')).not.toHaveTextContent('Healthy')
+    expect(screen.getByTestId('dashboard-health-unknown')).toHaveTextContent('2')
+    expect(screen.getByTestId('dashboard-overall-posture-label').className).not.toMatch(/emerald/)
+  })
+})
+
 describe('DashboardOverview', () => {
   it('shows loading state before data resolves', async () => {
     const rt = await import('../../api/gdcRuntime')
@@ -617,6 +714,52 @@ describe('DashboardOverview', () => {
     const capacity = within(issues).getByTestId('dashboard-issue-destination-capacity')
     await waitFor(() => expect(capacity).toHaveTextContent('Data unavailable'))
     expect(capacity).toHaveTextContent('—')
+  })
+
+  it('lists a Source 401 under Action needed, naming the Stream and the Connector with deep links (F-015)', async () => {
+    const snapshotApi = await import('../../api/operationalSnapshot')
+    const baseline = await snapshotApi.getOperationalSnapshot()
+    const healthyStream = baseline?.streams.find((stream) => stream.health_status === 'HEALTHY')
+    if (!baseline || !healthyStream) throw new Error('Missing healthy Stream test fixture')
+
+    vi.mocked(snapshotApi.getOperationalSnapshot).mockResolvedValueOnce({
+      ...baseline,
+      streams: [healthyStream],
+      routes: [],
+      destinations: [],
+      problems: [{
+        severity: 'critical',
+        scope: 'stream',
+        stream_id: healthyStream.stream_id,
+        route_id: null,
+        destination_id: null,
+        title: `Stream ${healthyStream.stream_name}: source authentication failed (HTTP 401)`,
+        message: 'The latest source request through Connector Okta Prod failed with HTTP 401.',
+        last_seen_at: baseline.updated_at,
+        error_code: 'SOURCE_AUTH_FAILED',
+        http_status: 401,
+        connector_id: 42,
+        connector_name: 'Okta Prod',
+      }],
+    })
+
+    render(
+      <MemoryRouter>
+        <main>
+          <DashboardOverview />
+        </main>
+      </MemoryRouter>,
+    )
+
+    const firstLevel = await within(mainRegion()).findByTestId('dashboard-first-level')
+    const attention = within(firstLevel).getByTestId('dashboard-action-needed')
+    const card = await within(attention).findByTestId(`dashboard-investigation-stream-${healthyStream.stream_id}`)
+    expect(card).toHaveTextContent(healthyStream.stream_name)
+    expect(card).toHaveTextContent('Source authentication failed (HTTP 401)')
+    expect(card).toHaveAttribute('href', `/streams/${healthyStream.stream_id}/runtime`)
+    const connector = within(attention).getByTestId(`dashboard-investigation-stream-${healthyStream.stream_id}-connector`)
+    expect(within(connector).getByRole('link', { name: 'Okta Prod' })).toHaveAttribute('href', '/connectors/42')
+    expect(within(attention).getByRole('heading', { name: 'Action needed' })).toBeInTheDocument()
   })
 
   it('does not claim no action is needed when the only missing evidence is a destination catalog', async () => {

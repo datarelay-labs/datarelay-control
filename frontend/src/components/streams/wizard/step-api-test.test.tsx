@@ -195,6 +195,46 @@ describe('StepApiTest copy', () => {
     expect(success?.rawBody).not.toContain('webhook-receiver-ready')
   })
 
+  it('lets the operator paste a webhook sample and choose the Event array path / Event root (F-123)', async () => {
+    const state = buildInitialState()
+    state.connector.sourceType = 'WEBHOOK_RECEIVER'
+    state.connector.connectorId = 31
+    state.connector.sourceId = 41
+    state.connector.webhookReceiverPath = '/api/v1/ingest/webhook/rx-safe'
+    state.stream.useWholeResponseAsEvent = false
+    state.stream.eventArrayPath = '$.events'
+    state.stream.eventRootPath = '$.record'
+    const onChange = vi.fn()
+    const onStreamPatch = vi.fn()
+
+    render(
+      <MemoryRouter>
+        <StepApiTest state={state} onChange={onChange} onStreamPatch={onStreamPatch} />
+      </MemoryRouter>,
+    )
+    fireEvent.change(screen.getByTestId('wizard-webhook-sample-input'), {
+      target: {
+        value: JSON.stringify({
+          events: [{ record: { id: 1 } }, { record: { id: 2 } }, { record: { id: 3 } }],
+        }),
+      },
+    })
+    fireEvent.change(screen.getByTestId('wizard-webhook-event-array-path'), { target: { value: '$.events[*]' } })
+    expect(onStreamPatch).toHaveBeenCalledWith({ eventArrayPath: '$.events[*]', useWholeResponseAsEvent: false })
+    fireEvent.change(screen.getByTestId('wizard-webhook-event-root'), { target: { value: '$.rec' } })
+    expect(onStreamPatch).toHaveBeenCalledWith({ eventRootPath: '$.rec' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Run Test' }))
+    await waitFor(() => {
+      expect(onChange.mock.calls.some(([next]) => next.status === 'success')).toBe(true)
+    })
+    const success = onChange.mock.calls.map(([next]) => next).find((next) => next.status === 'success')
+    // Three events extracted from the wrapper instead of ONE event containing the wrapper.
+    expect(success?.eventCount).toBe(3)
+    expect(success?.extractedEvents).toEqual([{ id: 1 }, { id: 2 }, { id: 3 }])
+    expect(success?.hint).toMatch(/Nothing was sent to the receiver/)
+  })
+
   it('keeps a saved webhook receiver in a non-error waiting state when no preview payload exists', async () => {
     const state = buildInitialState()
     state.connector.sourceType = 'WEBHOOK_RECEIVER'

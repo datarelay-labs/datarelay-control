@@ -241,7 +241,12 @@ def _update_checkpoint_after_release(db: Session, stream_id: int, events: list[d
     )
 
 
-def discard_quarantine_event(db: Session, event_id: int) -> dict[str, Any]:
+def discard_quarantine_event(
+    db: Session,
+    event_id: int,
+    *,
+    discarded_by: str | None = None,
+) -> dict[str, Any]:
     row = _lock_quarantine_row(db, event_id)
     if row is None:
         raise QuarantineEventNotFoundError(event_id)
@@ -253,6 +258,9 @@ def discard_quarantine_event(db: Session, event_id: int) -> dict[str, Any]:
     now = datetime.now(timezone.utc)
     row.status = QUARANTINE_STATUS_DISCARDED
     row.updated_at = now
+    # ``released_by`` is the single resolution-attribution column; for a discarded
+    # event it records the operator who resolved (discarded) it (F-174).
+    row.released_by = (discarded_by or "system")[:128]
     persist_quarantine_observability_log(
         db,
         stage=QUARANTINE_EVENT_DISCARDED_STAGE,
@@ -261,6 +269,7 @@ def discard_quarantine_event(db: Session, event_id: int) -> dict[str, Any]:
         status=row.status,
         quarantine_reason=str(row.quarantine_reason),
         message="quarantine event discarded",
+        extra={"discarded_by": row.released_by},
     )
     db.flush()
     return quarantine_event_to_dict(row)

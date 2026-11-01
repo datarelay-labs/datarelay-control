@@ -6,7 +6,7 @@ import { formatTimestampWithResolvedTimezone, parseApiTimestampMs } from '../../
 import { logsExplorerPath, runtimeAnalyticsPath } from '../../config/nav-paths'
 import { toOperatorEventLabel } from '../../lib/stream-governance-snapshot'
 import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
-import type { RecentLogLine, RunHistoryRow } from './stream-runtime-detail-model'
+import { runHistoryRowKeys, type RecentLogLine, type RunHistoryRow } from './stream-runtime-detail-model'
 
 export type RecentEventsTab = 'events' | 'errors' | 'delivery'
 
@@ -225,7 +225,7 @@ function compactEventIcon(log: RecentLogLine) {
   // A free-text message is not evidence of successful delivery. Runtime stage wins.
   const stage = log.stage?.trim().toLowerCase()
   if (log.level === 'ERROR' || log.level === 'WARN' || (stage != null && RECORDED_GATEWAY_FAILURES.has(stage))) {
-    return <AlertTriangle className="h-4 w-4 text-amber-500" aria-hidden />
+    return <AlertTriangle className="h-4 w-4 text-status-warning" aria-hidden />
   }
   if (stage != null && RECORDED_GATEWAY_SUCCESSES.has(stage)) {
     return <CheckCircle2 className="h-4 w-4 text-emerald-500" aria-hidden />
@@ -302,6 +302,7 @@ export function StreamRecentEventsPanel({
   const deliveryRuns = useMemo(() =>
     activeRouteId == null ? runHistory.filter((r) => r.delivered > 0 || r.failed > 0) : [],
   [runHistory, activeRouteId])
+  const deliveryRunKeys = useMemo(() => runHistoryRowKeys(deliveryRuns), [deliveryRuns])
   const validStreamScope = typeof backendStreamId === 'number' &&
     Number.isSafeInteger(backendStreamId) && backendStreamId > 0
   const scopedLogsHref = !validStreamScope
@@ -509,8 +510,8 @@ export function StreamRecentEventsPanel({
                       </tr>
                     </thead>
                     <tbody>
-                      {deliveryRuns.slice(0, 5).map((row) => (
-                        <tr key={row.runId} className={opTr}>
+                      {deliveryRuns.slice(0, 5).map((row, index) => (
+                        <tr key={deliveryRunKeys[index]} className={opTr}>
                           <td className={cn(opTd, 'font-mono text-[11px]')}>
                             {row.idBasis === 'completion-record' ? `Completion record ${row.runId}` : row.runId}
                           </td>
@@ -520,7 +521,7 @@ export function StreamRecentEventsPanel({
                               {row.status === 'Success' ? (
                                 <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" aria-hidden />
                               ) : (
-                                <AlertTriangle className="h-3.5 w-3.5 text-amber-600" aria-hidden />
+                                <AlertTriangle className="h-3.5 w-3.5 text-status-warning" aria-hidden />
                               )}
                               {row.status}
                             </span>
@@ -609,7 +610,7 @@ function RecentLogsTable({
                       className={cn(
                         'rounded px-1 py-px text-[9px] font-bold uppercase',
                         log.level === 'ERROR' && 'bg-red-500/10 text-red-800 dark:text-red-200',
-                        log.level === 'WARN' && 'bg-amber-500/15 text-amber-900 dark:text-amber-200',
+                        log.level === 'WARN' && 'bg-status-warning-subtle text-status-warning',
                         log.level === 'INFO' && 'bg-slate-100 text-slate-700 dark:bg-gdc-elevated dark:text-slate-200',
                       )}
                     >

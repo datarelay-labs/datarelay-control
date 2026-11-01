@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 from sqlalchemy.orm import Session
 
+from app.checkpoints.route_delivery_state import ROUTE_DELIVERY_STATE_KEY, strip_route_delivery_state
 from app.config import settings
 from app.logs.models import DeliveryLog
 from app.mappings.models import Mapping
@@ -235,7 +236,9 @@ def test_multi_route_partial_pause_records_only_successful_destination(
     summary = _build_runner(poller=poller, webhook_sender=sender).run(context, db=db_session)
 
     after = _checkpoint_value(db_session, stream_id)
-    assert before == after
+    # Cursor is held; only per-Route delivery progress for route A is recorded.
+    assert strip_route_delivery_state(after) == before
+    assert ROUTE_DELIVERY_STATE_KEY in after
     dedup = summary.get("dedup_summary") or {}
     assert dedup.get("registry_recorded") == 1
     assert _registry_logs_for_route(db_session, stream_id, route_a)

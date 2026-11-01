@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import os
+import threading
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -1378,23 +1380,30 @@ async def get_stream_runtime_health(
     stream_id: int,
     db: Session = Depends(get_db_read_bounded),
     limit: int = Query(100, ge=1, le=1000),
-    window: str = Query(
-        "1h",
-        description="Rolling window for snapshot-backed health (15m, 1h, 6h, 24h).",
+    window: str | None = Query(
+        None,
+        description=(
+            "Optional rolling window (15m, 1h, 6h, 24h); snapshot-backed when the read model is populated. "
+            "Without a window, counts come from the last `limit` delivery logs, same as /streams/{id}/stats-health."
+        ),
     ),
     snapshot_id: str | None = Query(
         None,
         description="Optional ISO-8601 aggregate snapshot timestamp shared across runtime widgets.",
     ),
 ) -> StreamHealthResponse:
-    """Per-route and stream health (snapshot-backed when read model is populated)."""
+    """Per-route and stream health; identical to ``health`` of /streams/{id}/stats-health for the same query."""
 
+    try:
+        w = normalize_metrics_window_token(window) if window is not None else None
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     try:
         return read_service.get_stream_runtime_health(
             db,
             stream_id,
             limit,
-            window=window,
+            window=w,
             snapshot_id=snapshot_id,
         )
     except read_service.StreamNotFoundError as exc:
@@ -3480,10 +3489,12 @@ async def discard_stream_quarantine_event(
     request: Request,
     db: Session = Depends(get_db),
 ) -> QuarantineEventActionResponse:
+    from app.audit.service import audit_actor_from_request
     from app.quarantine import service as quarantine_service
 
+    discarded_by = audit_actor_from_request(request).actor_username or "system"
     try:
-        result = quarantine_service.discard_quarantine_event(db, event_id)
+        result = quarantine_service.discard_quarantine_event(db, event_id, discarded_by=discarded_by)
     except quarantine_service.QuarantineEventNotFoundError as exc:
         raise HTTPException(
             status_code=404,
@@ -3636,6 +3647,16 @@ async def start_runtime_stream(
             status_code=404,
             detail={"error_code": "STREAM_NOT_FOUND", "message": f"stream not found: {exc.stream_id}"},
         ) from exc
+    except control_service.StreamStopInProgressError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_code": "STREAM_STOP_IN_PROGRESS",
+                "message": (
+                    f"stream {exc.stream_id} is still stopping; wait until it is stopped before starting it again"
+                ),
+            },
+        ) from exc
 
 
 @router.post("/streams/{stream_id}/stop", response_model=RuntimeStreamControlResponse)
@@ -3674,8 +3695,21 @@ async def stream_pipeline_debug(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
+def _run_now_max_concurrent() -> int:
+    try:
+        return max(1, int(os.environ.get("GDC_RUN_NOW_MAX_CONCURRENT", "4")))
+    except ValueError:
+        return 4
+
+
+# Manual runs execute blocking source/destination I/O. They run on the worker thread pool (never on
+# the event loop) and are capped so a few slow destinations cannot exhaust the pool that serves every
+# other sync endpoint (F-175).
+_run_now_slots = threading.BoundedSemaphore(_run_now_max_concurrent())
+
+
 @router.post("/streams/{stream_id}/run-once", response_model=RuntimeStreamRunOnceResponse)
-async def run_stream_once(
+def run_stream_once(
     stream_id: int, request: Request, db: Session = Depends(get_db)
 ) -> RuntimeStreamRunOnceResponse:
     """Execute one StreamRunner cycle with DB-backed delivery_logs + checkpoint (manual / verification).
@@ -3683,8 +3717,32 @@ async def run_stream_once(
     HTTP 2xx is returned only when Runtime actually entered and produced a committed
     lifecycle outcome (``completed`` / ``no_events``). Lock contention and dispatch
     failures return explicit non-2xx error codes — never a silent no-op 2xx.
+
+    This is a plain ``def`` endpoint on purpose: the run performs blocking network I/O to the source
+    and every destination. As ``async def`` it ran on the event loop, so one Run Now against a slow
+    destination froze the whole API including ``/health`` (F-175). At most
+    ``GDC_RUN_NOW_MAX_CONCURRENT`` manual runs execute at once; further clicks get a clear 429.
     """
 
+    if not _run_now_slots.acquire(blocking=False):
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error_code": "RUN_NOW_CAPACITY",
+                "message": (
+                    "Too many manual runs are already in progress. Wait for one to finish "
+                    "(a destination may be slow) and try again."
+                ),
+                "stream_id": stream_id,
+            },
+        )
+    try:
+        return _run_stream_once_blocking(stream_id, request, db)
+    finally:
+        _run_now_slots.release()
+
+
+def _run_stream_once_blocking(stream_id: int, request: Request, db: Session) -> RuntimeStreamRunOnceResponse:
     from app.runners.stream_loader import load_stream_context
     from app.runners.stream_runner import StreamRunner
 

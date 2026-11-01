@@ -40,6 +40,35 @@ export function UnionSchemaStatusCard({ state, extractedEventCount, className }:
   )
 
   if (summary.state !== 'ready') {
+    // Terminal state: the sample is loaded, both selections are confirmed, and they extract nothing.
+    // Without this the card claimed "Generating Union Schema…" forever (F-008).
+    const samplePayload = state.apiTest.parsedJson ?? state.apiTest.rawResponse
+    if (
+      samplePayload != null &&
+      state.apiTest.status === 'success' &&
+      wizardRecordPathConfirmed(state) &&
+      wizardEventRootConfirmed(state) &&
+      extractedEventCount === 0
+    ) {
+      return (
+        <div
+          role="status"
+          data-testid="union-schema-status-empty"
+          className={cn(
+            'rounded-md border border-amber-300/70 bg-amber-50 px-2.5 py-2 text-[11px] text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100',
+            className,
+          )}
+        >
+          <p className="font-semibold">No records extracted — Union Schema cannot be generated.</p>
+          <p className="mt-0.5 leading-snug">
+            The current Record Path{state.stream.eventRootPath ? ` and Event Root (${state.stream.eventRootPath})` : ''} select
+            no records from this sample. Use Reset Event root to return to the entire record, or choose a different Event
+            Root or Record Path.
+          </p>
+        </div>
+      )
+    }
+
     const generating =
       wizardRecordPathConfirmed(state) &&
       wizardEventRootConfirmed(state) &&

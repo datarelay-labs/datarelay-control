@@ -10,10 +10,12 @@ import hmac
 import json
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Mapping
 
 from sqlalchemy.orm import Session
 
+from app.replay.models import REPLAY_STATUS_PENDING, StreamReplayEvent
 from app.runners.stream_loader import load_stream_context
 from app.runners.stream_runner import StreamRunner
 from app.sources.adapters.webhook_receiver import WEBHOOK_PAYLOAD_CONFIG_KEY
@@ -182,10 +184,84 @@ class WebhookReceiver:
         context.stream["source_config"] = source_config
         context.stream["source_type"] = "WEBHOOK_RECEIVER"
 
+        run_started_at = datetime.now(timezone.utc)
         summary = self.runner.run(context, db=db)
         summary["receiver_key"] = _norm_receiver_key(receiver_key)
         summary["checkpoint_updated"] = False
+        summary["delivery"] = self._delivery_report(
+            db,
+            stream_id=int(resolved.stream.id),
+            summary=summary,
+            run_started_at=run_started_at,
+        )
         return summary
+
+    @staticmethod
+    def _delivery_report(
+        db: Session,
+        *,
+        stream_id: int,
+        summary: Mapping[str, Any],
+        run_started_at: datetime,
+    ) -> dict[str, Any]:
+        """Describe per-route delivery for the producer (push has no source to re-poll).
+
+        A polled stream holds its checkpoint and re-fetches the same window, so a failed
+        Route is retried on the next poll. A webhook push cannot be re-fetched: the events
+        that a Route failed to deliver are held as replay events instead, and the producer
+        must not resend (the Routes that delivered would receive duplicates).
+        """
+
+        failures = int(summary.get("route_delivery_failure_count") or 0)
+        successes = int(summary.get("route_delivery_success_count") or 0)
+        if str(summary.get("outcome") or "") != "completed" or failures <= 0:
+            status = "complete"
+        elif successes > 0:
+            status = "partial"
+        else:
+            status = "failed"
+        report: dict[str, Any] = {
+            "status": status,
+            "delivered_route_count": successes,
+            "failed_route_count": failures,
+            "failed_route_ids": [],
+            "replay_pending_event_count": 0,
+            "replay_event_ids": [],
+            "resend_not_needed": status != "complete",
+            "message": None,
+        }
+        if status == "complete":
+            return report
+        try:
+            rows = (
+                db.query(StreamReplayEvent)
+                .filter(StreamReplayEvent.stream_id == stream_id)
+                .filter(StreamReplayEvent.status == REPLAY_STATUS_PENDING)
+                .filter(StreamReplayEvent.created_at >= run_started_at)
+                .order_by(StreamReplayEvent.id.asc())
+                .all()
+            )
+        except Exception:
+            logger.exception("webhook_delivery_report_replay_lookup_failed stream_id=%s", stream_id)
+            rows = []
+        report["replay_event_ids"] = [int(row.id) for row in rows]
+        report["replay_pending_event_count"] = sum(int(row.event_count or 0) for row in rows)
+        report["failed_route_ids"] = sorted({int(row.route_id) for row in rows if row.route_id is not None})
+        held = (
+            f"{report['replay_pending_event_count']} event(s) are held for replay on the failed route(s)"
+            if rows
+            else "the failed route(s) recorded no replay event (see Logs)"
+        )
+        lead = (
+            f"Partial delivery: {successes} route(s) delivered, {failures} failed"
+            if status == "partial"
+            else f"Delivery failed on all {failures} route(s)"
+        )
+        report["message"] = (
+            f"{lead}; {held}. Do not resend this payload (routes that delivered would receive duplicates); "
+            "replay the held events from the Replay page after the destination recovers."
+        )
+        return report
 
     def _resolve(self, db: Session, receiver_key: str) -> ResolvedWebhookReceiver:
         key = _norm_receiver_key(receiver_key)

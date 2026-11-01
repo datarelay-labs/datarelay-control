@@ -1,0 +1,183 @@
+/* Read-only runtime topology. All glow and motion require fresh gateway evidence.
+ * The graph scrolls internally at narrow desktop/high zoom instead of
+ * compressing text or expanding the document viewport.
+ */
+.control-runtime-flow-scroll {
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+.control-runtime-flow-scroll:focus-visible {
+  outline: 2px solid var(--dr-focus-ring);
+  outline-offset: -2px;
+}
+.control-runtime-flow-root {
+  --flow-ink: var(--dr-text-primary);
+  --flow-muted: var(--dr-text-secondary);
+  --flow-border: var(--dr-border-default);
+  --flow-surface: var(--dr-surface-card);
+  --flow-canvas: var(--dr-surface-section);
+  --flow-highlight: var(--dr-status-info);
+  --flow-cyan: var(--dr-status-info);
+  --flow-green: var(--dr-status-success);
+  --flow-muted-chip: var(--dr-status-unknown);
+}
+.control-runtime-flow-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+}
+@media (min-width: 1400px) {
+  .control-runtime-flow-workspace {
+    grid-template-columns: minmax(0, 1fr) 282px;
+    align-items: stretch;
+  }
+  .control-runtime-flow-canvas {
+    min-width: 720px;
+  }
+}
+.control-runtime-flow-canvas {
+  width: 100%;
+  height: clamp(560px, 43vw, 690px);
+  min-width: 1020px;
+  border-radius: 15px;
+  border: 1px solid var(--flow-border);
+  background: var(--flow-canvas);
+  overflow: hidden;
+  position: relative;
+  isolation: isolate;
+}
+.control-runtime-flow-canvas .react-flow__pane { cursor: grab; }
+.control-runtime-flow-canvas .react-flow__pane:active { cursor: grabbing; }
+.control-runtime-flow-canvas .react-flow__background { opacity: .42; }
+.control-runtime-flow-canvas .react-flow__node.control-runtime-flow-node {
+  width: 216px;
+  min-width: 216px;
+  border: 0;
+  border-radius: 13px;
+  padding: 0;
+  color: var(--flow-ink);
+  background: transparent;
+  text-align: left;
+  box-shadow: none;
+}
+.control-runtime-flow-card {
+  position: relative;
+  overflow: visible;
+  width: 216px;
+  min-height: 96px;
+  border: 1px solid var(--flow-border);
+  border-radius: 13px;
+  background: var(--flow-surface);
+  box-shadow: 0 1px 2px color-mix(in oklab, var(--dr-text-primary) 12%, transparent);
+  transition: border-color .16s ease, box-shadow .16s ease;
+}
+.control-runtime-flow-node--healthy .control-runtime-flow-card { border-left: 3px solid var(--dr-status-success); }
+.control-runtime-flow-node--warning .control-runtime-flow-card { border-left: 3px solid var(--dr-status-warning); }
+.control-runtime-flow-node--error .control-runtime-flow-card { border-left: 3px solid var(--dr-status-critical); }
+.control-runtime-flow-node--disabled .control-runtime-flow-card { border-left: 3px solid var(--dr-status-unknown); opacity: .73; }
+.control-runtime-flow-node.selected .control-runtime-flow-card,
+.control-runtime-flow-card--selected {
+  border-color: var(--flow-highlight);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--flow-highlight) 28%, transparent);
+}
+.control-runtime-flow-card-main {
+  padding: 12px 13px 11px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.control-runtime-flow-icon {
+  width: 35px;
+  height: 35px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  color: var(--dr-text-secondary);
+  background: var(--dr-surface-section);
+  border: 1px solid var(--dr-border-default);
+}
+.control-runtime-flow-icon--route { color: var(--dr-action-primary); }
+.control-runtime-flow-card-copy { min-width: 0; display: flex; flex-direction: column; gap: 3px; flex: 1; }
+.control-runtime-flow-kind { color: var(--flow-muted); text-transform: uppercase; font-size: 10px; letter-spacing: .09em; font-weight: 600; }
+.control-runtime-flow-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 680; color: var(--flow-ink); }
+.control-runtime-flow-indicator { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--flow-muted-chip); }
+.control-runtime-flow-node--healthy .control-runtime-flow-indicator { background: var(--dr-status-success); }
+.control-runtime-flow-node--warning .control-runtime-flow-indicator { background: var(--dr-status-warning); }
+.control-runtime-flow-node--error .control-runtime-flow-indicator { background: var(--dr-status-critical); }
+.control-runtime-flow-card-footer { border-top: 1px solid var(--flow-border); display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 31px; padding: 6px 12px; }
+.control-runtime-flow-status { min-width: 0; font-size: 10px; color: var(--flow-muted); font-weight: 630; }
+.control-runtime-flow-rate { font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 700; color: var(--flow-cyan); }
+.control-runtime-flow-handle.react-flow__handle {
+  width: 7px; height: 7px; background: var(--flow-highlight); border: 1px solid var(--flow-surface);
+}
+.control-runtime-flow-canvas .react-flow__edge-path { stroke: var(--dr-text-muted); stroke-width: 1.75; }
+.control-runtime-flow-canvas .react-flow__edge.control-runtime-flow-edge--active .react-flow__edge-path {
+  stroke-width: 2.7; stroke-dasharray: 7 11;
+  filter: drop-shadow(0 0 4px color-mix(in oklab, var(--dr-status-info) 55%, transparent));
+}
+.control-runtime-flow-canvas .control-runtime-flow-glow {
+  stroke-width: 11; stroke-linecap: round; opacity: .32;
+  filter: blur(5px);
+}
+.control-runtime-flow-canvas .control-runtime-flow-trail {
+  fill: var(--dr-status-info); opacity: .36; filter: drop-shadow(0 0 7px color-mix(in oklab, var(--dr-status-info) 85%, transparent));
+}
+.control-runtime-flow-canvas .control-runtime-flow-particle {
+  fill: var(--dr-surface-card); stroke: var(--dr-status-info); stroke-width: 1;
+  filter: drop-shadow(0 0 7px color-mix(in oklab, var(--dr-status-info) 90%, transparent));
+}
+.control-runtime-flow-canvas .control-runtime-flow-spark { fill: var(--dr-status-success); }
+.control-runtime-flow-canvas .react-flow__edge.selected .react-flow__edge-path { stroke-width: 4; }
+.control-runtime-flow-canvas .react-flow__controls {
+  overflow: hidden; border-radius: 9px; border: 1px solid var(--flow-border);
+}
+.control-runtime-flow-inspector {
+  min-width: 0;
+  border-radius: 14px;
+  padding: 17px;
+  border: 1px solid var(--flow-border);
+  color: var(--flow-ink);
+  background: var(--flow-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.control-runtime-flow-inspector-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.control-runtime-flow-inspector-eyebrow { font-size: 10px; letter-spacing: .1em; font-weight: 750; color: var(--flow-muted); }
+.control-runtime-flow-inspector-status { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; color: var(--flow-muted); }
+.control-runtime-flow-inspector-status-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--flow-highlight); }
+.control-runtime-flow-inspector-title { font-size: 17px; font-weight: 690; color: var(--flow-ink); overflow-wrap: anywhere; }
+.control-runtime-flow-inspector-description { font-size: 11px; color: var(--flow-muted); line-height: 1.55; overflow-wrap: anywhere; }
+.control-runtime-flow-inspector-stats { display: grid; gap: 9px; }
+.control-runtime-flow-inspector-stat {
+  border: 1px solid var(--flow-border); border-radius: 10px;
+  padding: 10px; display: flex; align-items: flex-start; gap: 10px;
+}
+.control-runtime-flow-inspector-stat svg { color: var(--flow-cyan); flex: none; }
+.control-runtime-flow-inspector-stat div { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.control-runtime-flow-inspector-stat span { font-size: 10px; color: var(--flow-muted); }
+.control-runtime-flow-inspector-stat strong { font-size: 17px; font-variant-numeric: tabular-nums; color: var(--flow-ink); }
+.control-runtime-flow-inspector-stat small { font-size: 10px; font-weight: 550; }
+.control-runtime-flow-inspector-route { border-top: 1px solid var(--flow-border); padding-top: 13px; display: flex; flex-direction: column; gap: 8px; }
+.control-runtime-flow-inspector-route strong { font-size: 12px; color: var(--flow-ink); }
+.control-runtime-flow-inspector-route > span:not(.control-runtime-flow-inspector-eyebrow) { font-size: 10px; line-height: 1.5; color: var(--flow-muted); }
+.control-runtime-flow-inspector-error { color: var(--dr-status-critical); font-size: 11px; line-height: 1.5; display: flex; gap: 5px; align-items: flex-start; }
+.control-runtime-flow-inspector-link { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 36px; border-radius: 8px; padding: 8px 12px; border: 1px solid var(--dr-border-default); background: var(--dr-surface-card); color: var(--dr-text-primary); font-size: 12px; font-weight: 690; margin-top: 4px; }
+.control-runtime-flow-inspector-link:hover { background: var(--dr-surface-hover); }
+.control-runtime-flow-inspector-link:focus-visible { outline: 2px solid var(--dr-focus-ring); outline-offset: 2px; }
+.control-runtime-flow-inspector-window { font-size: 10px; line-height: 1.5; color: var(--flow-muted); }
+.control-runtime-flow-inspector-hint { font-size: 11px; color: var(--flow-muted); line-height: 1.5; }
+.control-runtime-flow-inspector-footnote { border-top: 1px solid var(--flow-border); padding-top: 12px; margin-top: auto; font-size: 10px; color: var(--flow-muted); line-height: 1.6; }
+@media (prefers-reduced-motion: reduce) {
+  .control-runtime-flow-canvas .control-runtime-flow-particles,
+  .control-runtime-flow-canvas .control-runtime-flow-glow { display: none !important; }
+  .control-runtime-flow-canvas .react-flow__edge.animated .react-flow__edge-path,
+  .control-runtime-flow-canvas .react-flow__edge.control-runtime-flow-edge--active .react-flow__edge-path { animation: none !important; stroke-dasharray: none; }
+  .control-runtime-flow-card { transition: none !important; }
+}

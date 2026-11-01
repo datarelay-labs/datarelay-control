@@ -109,7 +109,11 @@ function HealthSummaryBanner({ overview }: { overview: HealthOverviewResponse })
     overview.routes.critical +
     overview.destinations.unhealthy +
     overview.destinations.critical
-  const isHealthy = bad === 0
+  const degraded = overview.streams.degraded + overview.routes.degraded + overview.destinations.degraded
+  // Nothing scored is "Not verified", never "All scored entities are HEALTHY".
+  const nothingScored =
+    scoredCount(overview.streams) + scoredCount(overview.routes) + scoredCount(overview.destinations) === 0
+  const isHealthy = bad === 0 && degraded === 0 && !nothingScored
   return (
     <div
       data-testid="runtime-health-banner"
@@ -117,7 +121,9 @@ function HealthSummaryBanner({ overview }: { overview: HealthOverviewResponse })
         'flex items-start gap-2 rounded-xl border px-3 py-2 shadow-sm',
         isHealthy
           ? 'border-emerald-300/60 bg-emerald-50/60 text-emerald-900 dark:border-emerald-800/60 dark:bg-emerald-900/30 dark:text-emerald-100'
-          : 'border-amber-300/60 bg-amber-50/70 text-amber-900 dark:border-amber-800/60 dark:bg-amber-900/30 dark:text-amber-100',
+          : bad === 0 && nothingScored
+            ? 'border-slate-300/70 bg-slate-50 text-slate-800 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100'
+            : 'border-amber-300/60 bg-amber-50/70 text-amber-900 dark:border-amber-800/60 dark:bg-amber-900/30 dark:text-amber-100',
       )}
     >
       <HeartPulse className="mt-0.5 h-4 w-4" aria-hidden />
@@ -125,6 +131,16 @@ function HealthSummaryBanner({ overview }: { overview: HealthOverviewResponse })
         {isHealthy ? (
           <span>
             All scored entities are HEALTHY ({scoringModeLabel(overview.scoring_mode)}, {overview.time.window}).
+          </span>
+        ) : bad === 0 && nothingScored ? (
+          <span>
+            Not verified: no entities were scored in this window ({scoringModeLabel(overview.scoring_mode)},{' '}
+            {overview.time.window}).
+          </span>
+        ) : bad === 0 ? (
+          <span>
+            {degraded} entit{degraded === 1 ? 'y is' : 'ies are'} DEGRADED — {scoringModeLabel(overview.scoring_mode)},{' '}
+            {overview.time.window}.
           </span>
         ) : (
           <span>

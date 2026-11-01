@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -16,12 +17,24 @@ from app.destinations.models import Destination
 from app.logs.models import DeliveryLog
 from app.main import app
 from app.routes.models import Route
+from app.runtime.operational_snapshot_repository import (
+    DestinationEntityRow,
+    LastOutcomeRow,
+    OperationalSnapshotBulkData,
+    PhysicalOperationalRows,
+    RouteEntityRow,
+    StreamEntityRow,
+    WindowAggregateRow,
+)
 from app.runtime.operational_snapshot_service import (
+    _assemble_snapshot,
+    _assemble_snapshot_from_physical,
+    classify_global_health,
     classify_route_health,
     classify_stream_health,
     should_flag_checkpoint_stale,
 )
-from app.runtime.operational_snapshot_schemas import OperationalStreamSnapshot
+from app.runtime.operational_snapshot_schemas import OperationalProblem, OperationalStreamSnapshot
 from app.sources.models import Source
 from app.streams.models import Stream
 
@@ -283,6 +296,323 @@ def test_operational_snapshot_health_rules(
     assert streams[disabled["stream_id"]]["health_status"] == "IDLE"
     assert streams[err_h["stream_id"]]["health_status"] in ("DEGRADED", "ERROR")
     assert routes[err_h["route_id"]]["health_status"] == "ERROR"
+
+
+def test_operational_snapshot_new_stream_without_observations_is_idle_with_null_rates(
+    snapshot_client: TestClient, db_session: Session
+) -> None:
+    """Scenario 2 (endpoint): enabled RUNNING stream, zero logs -> IDLE, rates None."""
+
+    h = _mk_hierarchy(db_session, stream_name="never-observed")
+    resp = snapshot_client.get(ENDPOINT)
+    assert resp.status_code == 200
+    body = resp.json()
+    stream = next(s for s in body["streams"] if s["stream_id"] == h["stream_id"])
+    route = next(r for r in body["routes"] if r["route_id"] == h["route_id"])
+    assert stream["health_status"] == "IDLE"
+    assert stream["success_rate_5m"] is None
+    assert stream["failure_rate_5m"] is None
+    assert route["success_rate_5m"] is None
+    assert not any(p.get("stream_id") == h["stream_id"] for p in body["problems"])
+
+
+# --- Pure-unit assembly tests (runtime health semantics: no evidence != Healthy) ---
+
+UNIT_NOW = datetime(2026, 10, 31, 12, 0, 0, tzinfo=UTC)
+
+
+def _stream_row(sid: int, *, enabled: bool = True, status: str = "RUNNING") -> StreamEntityRow:
+    return StreamEntityRow(id=sid, name=f"s{sid}", connector_id=1, source_id=1, enabled=enabled, status=status)
+
+
+def _route_row(rid: int, *, stream_id: int, destination_id: int) -> RouteEntityRow:
+    return RouteEntityRow(
+        id=rid,
+        stream_id=stream_id,
+        stream_name=f"s{stream_id}",
+        destination_id=destination_id,
+        destination_name=f"d{destination_id}",
+        destination_type="WEBHOOK_POST",
+        enabled=True,
+        failure_policy="LOG_AND_CONTINUE",
+    )
+
+
+def _last(gid: int, *, success: datetime | None = None, failure: datetime | None = None) -> LastOutcomeRow:
+    return LastOutcomeRow(group_id=gid, last_success_at=success, last_failure_at=failure, last_error_message=None)
+
+
+def _bulk(
+    *,
+    streams: list[StreamEntityRow],
+    routes: list[RouteEntityRow] | None = None,
+    destinations: list[DestinationEntityRow] | None = None,
+    stream_last: dict[int, LastOutcomeRow] | None = None,
+    route_last: dict[int, LastOutcomeRow] | None = None,
+    destination_last: dict[int, LastOutcomeRow] | None = None,
+    stream_agg_5m: dict[int, WindowAggregateRow] | None = None,
+    route_agg_5m: dict[int, WindowAggregateRow] | None = None,
+) -> OperationalSnapshotBulkData:
+    return OperationalSnapshotBulkData(
+        now=UNIT_NOW,
+        since_1m=UNIT_NOW - timedelta(minutes=1),
+        since_5m=UNIT_NOW - timedelta(minutes=5),
+        streams=streams,
+        routes=routes or [],
+        destinations=destinations or [],
+        checkpoints={},
+        routes_per_stream={},
+        routes_per_destination={},
+        stream_agg_1m={},
+        stream_agg_5m=stream_agg_5m or {},
+        stream_input_1m={},
+        stream_input_5m={},
+        route_agg_1m={},
+        route_agg_5m=route_agg_5m or {},
+        destination_agg_1m={},
+        destination_agg_5m={},
+        stream_last=stream_last or {},
+        route_last=route_last or {},
+        destination_last=destination_last or {},
+    )
+
+
+def test_unit_missing_stored_snapshot_row_is_idle_never_healthy() -> None:
+    """Scenario 1: stored snapshot row missing -> IDLE (no verdict), global IDLE, rates None."""
+
+    rows = PhysicalOperationalRows(
+        now=UNIT_NOW,
+        streams=[_stream_row(1)],
+        routes=[_route_row(10, stream_id=1, destination_id=100)],
+        destinations=[DestinationEntityRow(id=100, name="d100", destination_type="WEBHOOK_POST", enabled=True)],
+        stream_snapshots={},
+        route_snapshots={},
+        destination_snapshots={},
+        checkpoints={},
+        routes_per_stream={1: 1},
+        routes_per_destination={100: 1},
+    )
+    snap = _assemble_snapshot_from_physical(rows)
+    assert snap.streams[0].health_status == "IDLE"
+    assert snap.streams[0].success_rate_5m is None
+    assert snap.streams[0].failure_rate_5m is None
+    assert snap.routes[0].success_rate_5m is None
+    assert snap.destinations[0].health_status == "IDLE"
+    assert snap.problems == []
+    # Old code: no problems -> global HEALTHY without any observation.
+    assert snap.global_.health_status == "IDLE"
+
+
+def test_unit_stored_route_zero_rate_without_attempts_maps_to_none() -> None:
+    """Scenario 5 (stored read model): non-null 0.0 column + no attempts -> None."""
+
+    route_snap = SimpleNamespace(
+        delivered_eps_1m=0.0,
+        failed_eps_1m=0.0,
+        success_rate_5m=0.0,
+        retry_rate_5m=0.0,
+        avg_latency_ms=None,
+        last_success_at=UNIT_NOW - timedelta(minutes=10),
+        last_error_at=None,
+        last_error_message=None,
+        updated_at=UNIT_NOW,
+    )
+    failing_snap = SimpleNamespace(
+        **{**vars(route_snap), "failed_eps_1m": 0.05, "last_error_at": UNIT_NOW - timedelta(seconds=20)}
+    )
+    rows = PhysicalOperationalRows(
+        now=UNIT_NOW,
+        streams=[_stream_row(1)],
+        routes=[_route_row(10, stream_id=1, destination_id=100), _route_row(11, stream_id=1, destination_id=100)],
+        destinations=[],
+        stream_snapshots={},
+        route_snapshots={10: route_snap, 11: failing_snap},
+        destination_snapshots={},
+        checkpoints={},
+        routes_per_stream={},
+        routes_per_destination={},
+    )
+    snap = _assemble_snapshot_from_physical(rows)
+    by_id = {r.route_id: r for r in snap.routes}
+    assert by_id[10].success_rate_5m is None
+    # Real failures in the window keep the measured 0.0.
+    assert by_id[11].success_rate_5m == 0.0
+
+
+def test_unit_new_enabled_stream_without_observations_global_idle() -> None:
+    """Scenario 2: new enabled stream, zero observations -> stream IDLE and global IDLE."""
+
+    snap = _assemble_snapshot(_bulk(streams=[_stream_row(1)]))
+    assert snap.streams[0].health_status == "IDLE"
+    assert snap.streams[0].success_rate_5m is None
+    assert snap.problems == []
+    assert snap.global_.health_status == "IDLE"
+
+
+def test_unit_fresh_success_healthy_and_stale_success_degraded_with_warning() -> None:
+    """Scenarios 3 and 4: freshness window reuses the existing 3600 s value."""
+
+    fresh = _assemble_snapshot(
+        _bulk(
+            streams=[_stream_row(1)],
+            routes=[_route_row(10, stream_id=1, destination_id=100)],
+            destinations=[DestinationEntityRow(id=100, name="d100", destination_type="WEBHOOK_POST", enabled=True)],
+            stream_last={1: _last(1, success=UNIT_NOW - timedelta(minutes=59))},
+            route_last={10: _last(10, success=UNIT_NOW - timedelta(minutes=59))},
+            destination_last={100: _last(100, success=UNIT_NOW - timedelta(minutes=59))},
+            route_agg_5m={10: WindowAggregateRow(10, 4, 0, 0, None)},
+        )
+    )
+    assert fresh.streams[0].health_status == "HEALTHY"
+    assert fresh.routes[0].health_status == "HEALTHY"
+    assert fresh.destinations[0].health_status == "HEALTHY"
+    assert fresh.global_.health_status == "HEALTHY"
+    assert fresh.problems == []
+
+    stale = _assemble_snapshot(
+        _bulk(
+            streams=[_stream_row(1)],
+            routes=[_route_row(10, stream_id=1, destination_id=100)],
+            destinations=[DestinationEntityRow(id=100, name="d100", destination_type="WEBHOOK_POST", enabled=True)],
+            stream_last={1: _last(1, success=UNIT_NOW - timedelta(hours=2))},
+            route_last={10: _last(10, success=UNIT_NOW - timedelta(hours=2))},
+            destination_last={100: _last(100, success=UNIT_NOW - timedelta(hours=2))},
+        )
+    )
+    # Old code: a single past success kept everything HEALTHY forever.
+    assert stale.streams[0].health_status == "DEGRADED"
+    assert stale.routes[0].health_status == "IDLE"
+    assert stale.destinations[0].health_status == "IDLE"
+    warnings = [p for p in stale.problems if p.stream_id == 1]
+    assert len(warnings) == 1
+    assert warnings[0].severity == "warning"
+    assert "no recent ingest/delivery observed" in warnings[0].title.lower()
+    assert stale.global_.health_status == "DEGRADED"
+
+
+def test_unit_paused_stopped_disabled_are_idle_without_problems() -> None:
+    """Scenario 10: operator-stopped / disabled streams are never a failure alert."""
+
+    recent_error = {
+        "success": UNIT_NOW - timedelta(minutes=10),
+        "failure": UNIT_NOW - timedelta(minutes=1),
+    }
+    snap = _assemble_snapshot(
+        _bulk(
+            streams=[
+                _stream_row(1, status="PAUSED"),
+                _stream_row(2, status="STOPPED"),
+                _stream_row(3, status="STOPPING"),
+                _stream_row(4, enabled=False, status="STOPPED"),
+            ],
+            stream_last={
+                1: _last(1, **recent_error),
+                2: _last(2, success=UNIT_NOW - timedelta(minutes=1)),
+                3: _last(3, success=UNIT_NOW - timedelta(minutes=1)),
+                4: _last(4, **recent_error),
+            },
+        )
+    )
+    # Old code: PAUSED -> DEGRADED (+ "is degraded" warning); STOPPED/STOPPING -> HEALTHY.
+    assert {s.stream_id: s.health_status for s in snap.streams} == {1: "IDLE", 2: "IDLE", 3: "IDLE", 4: "IDLE"}
+    assert snap.problems == []
+    # Every enabled stream is operator-stopped: no verdict.
+    assert snap.global_.health_status == "IDLE"
+
+
+def test_unit_stop_failed_and_rate_limited_keep_existing_classification() -> None:
+    assert (
+        classify_stream_health(
+            enabled=True,
+            status="RATE_LIMITED_SOURCE",
+            last_success_at=UNIT_NOW,
+            last_error_at=None,
+            failure_rate_5m=0.0,
+            now=UNIT_NOW,
+        )
+        == "DEGRADED"
+    )
+    assert (
+        classify_stream_health(
+            enabled=True,
+            status="STOP_FAILED",
+            last_success_at=None,
+            last_error_at=UNIT_NOW,
+            failure_rate_5m=0.0,
+            now=UNIT_NOW,
+        )
+        == "ERROR"
+    )
+
+
+def test_unit_global_partial_observation_never_healthy_and_never_masks_error() -> None:
+    """Scenario 11: one HEALTHY + one IDLE -> IDLE; one ERROR + one IDLE -> ERROR."""
+
+    healthy_plus_unobserved = _assemble_snapshot(
+        _bulk(
+            streams=[_stream_row(1), _stream_row(2)],
+            stream_last={1: _last(1, success=UNIT_NOW - timedelta(seconds=30))},
+        )
+    )
+    statuses = {s.stream_id: s.health_status for s in healthy_plus_unobserved.streams}
+    assert statuses == {1: "HEALTHY", 2: "IDLE"}
+    # Old code: HEALTHY (only problems were consulted).
+    assert healthy_plus_unobserved.global_.health_status == "IDLE"
+
+    error_plus_unobserved = _assemble_snapshot(
+        _bulk(
+            streams=[_stream_row(1), _stream_row(2)],
+            stream_last={1: _last(1, failure=UNIT_NOW - timedelta(seconds=30))},
+        )
+    )
+    assert {s.stream_id: s.health_status for s in error_plus_unobserved.streams} == {1: "ERROR", 2: "IDLE"}
+    assert error_plus_unobserved.global_.health_status == "ERROR"
+
+
+def test_unit_classify_global_health_streams_argument() -> None:
+    def _s(sid: int, health: str, *, enabled: bool = True, status: str = "RUNNING") -> OperationalStreamSnapshot:
+        return OperationalStreamSnapshot(
+            stream_id=sid,
+            stream_name=f"s{sid}",
+            enabled=enabled,
+            status=status,
+            health_status=health,  # type: ignore[arg-type]
+            eps_1m=0.0,
+            eps_5m=0.0,
+            success_rate_5m=None,
+            failure_rate_5m=None,
+            route_count=0,
+            healthy_route_count=0,
+            failed_route_count=0,
+        )
+
+    warning = OperationalProblem(severity="warning", scope="stream", stream_id=9, title="t", message="m")
+    critical = OperationalProblem(severity="critical", scope="stream", stream_id=9, title="t", message="m")
+
+    assert classify_global_health(enabled_streams=0, problems=[], streams=[]) == "IDLE"
+    assert classify_global_health(enabled_streams=2, problems=[], streams=[_s(1, "HEALTHY"), _s(2, "IDLE")]) == "IDLE"
+    assert (
+        classify_global_health(enabled_streams=2, problems=[critical], streams=[_s(1, "IDLE"), _s(2, "IDLE")])
+        == "ERROR"
+    )
+    assert (
+        classify_global_health(enabled_streams=2, problems=[warning], streams=[_s(1, "IDLE"), _s(2, "IDLE")])
+        == "DEGRADED"
+    )
+    # A paused stream is its own state; it does not block a HEALTHY roll-up of active streams.
+    assert (
+        classify_global_health(
+            enabled_streams=2, problems=[], streams=[_s(1, "HEALTHY"), _s(2, "IDLE", status="PAUSED")]
+        )
+        == "HEALTHY"
+    )
+    # Disabled streams are ignored for the roll-up.
+    assert (
+        classify_global_health(
+            enabled_streams=1, problems=[], streams=[_s(1, "HEALTHY"), _s(2, "IDLE", enabled=False)]
+        )
+        == "HEALTHY"
+    )
 
 
 def test_stream_health_unit_rules() -> None:

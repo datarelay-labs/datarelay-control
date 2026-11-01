@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
 from starlette.status import HTTP_422_UNPROCESSABLE_CONTENT
-from sqlalchemy import text
+from sqlalchemy import func, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -39,6 +39,7 @@ from app.platform_admin.alert_service import (
     AlertEvent,
     deliver_alert,
     list_alert_history,
+    mask_webhook_url,
 )
 from app.platform_admin.models import PlatformUser, PlatformUserMfa, PlatformMfaChallenge
 from app.database import utcnow
@@ -201,7 +202,47 @@ def _scheduler_delivery_logs_metrics() -> dict[str, Any] | None:
         return None
 
 
-def _alert_read(row: object) -> AlertSettingsRead:
+def _mask_email_for_display(email: str | None) -> str | None:
+    """``alice@example.com`` -> ``a****@example.com`` (domain kept, local part hidden)."""
+
+    value = (email or "").strip()
+    if not value:
+        return None
+    if "@" not in value:
+        return "********"
+    local, _, domain = value.rpartition("@")
+    return f"{local[:1]}****@{domain}" if local else f"****@{domain}"
+
+
+_ALERT_SENSITIVE_FIELDS = frozenset({"webhook_url", "slack_webhook_url", "email_to"})
+
+
+def _alert_update_audit_details(payload: AlertSettingsUpdate) -> dict[str, object]:
+    """Audit details for an alert settings change without the webhook URLs / e-mail address."""
+
+    out: dict[str, object] = {}
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        if key in _ALERT_SENSITIVE_FIELDS:
+            out[key] = "<set>" if value else "<cleared>"
+        else:
+            out[key] = value
+    return out
+
+
+def _alert_reveals_secrets(request: Request) -> bool:
+    """Only an Administrator (who may manage alert settings) sees the webhook URLs and e-mail in clear.
+
+    This reads the already-resolved principal; it does not change who may call the endpoint.
+    Any failure to resolve the principal fails closed (masked).
+    """
+
+    try:
+        return resolve_auth_context(request).role == ROLE_ADMINISTRATOR
+    except Exception:
+        return False
+
+
+def _alert_read(row: object, *, reveal: bool = False) -> AlertSettingsRead:
     raw_rules = list(row.rules_json or [])
     rules: list[AlertRuleState] = []
     for item in raw_rules:
@@ -226,9 +267,9 @@ def _alert_read(row: object) -> AlertSettingsRead:
     }
     return AlertSettingsRead(
         rules=rules,
-        webhook_url=row.webhook_url,
-        slack_webhook_url=row.slack_webhook_url,
-        email_to=row.email_to,
+        webhook_url=row.webhook_url if reveal else mask_webhook_url(wh or None),
+        slack_webhook_url=row.slack_webhook_url if reveal else mask_webhook_url(sl or None),
+        email_to=row.email_to if reveal else _mask_email_for_display(em),
         channel_status=channel_status,
         notification_delivery=notification_delivery,
         cooldown_seconds=int(getattr(row, "cooldown_seconds", 600) or 600),
@@ -411,6 +452,7 @@ def read_network_settings(
 @router.put("/network-settings", response_model=NetworkSettingsSaveResponse)
 def update_network_settings(
     payload: NetworkSettingsUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     _admin: str = Depends(require_roles(ROLE_ADMINISTRATOR)),
 ) -> NetworkSettingsSaveResponse:
@@ -427,6 +469,7 @@ def update_network_settings(
         db,
         action="NETWORK_SETTINGS_UPDATED",
         actor_username="system",
+        request=request,
         details={
             "http_port": cfg.http_port,
             "https_port": cfg.https_port,
@@ -448,6 +491,7 @@ def update_network_settings(
 
 @router.post("/network-settings/apply", response_model=NetworkSettingsApplyResponse)
 def apply_network_settings(
+    request: Request,
     db: Session = Depends(get_db),
     _admin: str = Depends(require_roles(ROLE_ADMINISTRATOR)),
 ) -> NetworkSettingsApplyResponse:
@@ -465,6 +509,7 @@ def apply_network_settings(
         db,
         action="NETWORK_SETTINGS_APPLY_REVERSE_PROXY_RECREATE",
         actor_username="system",
+        request=request,
         details={
             "command": result.command,
             "success": result.success,
@@ -596,6 +641,7 @@ def update_https_settings(payload: HttpsSettingsUpdate, request: Request, db: Se
         db,
         action="HTTPS_SETTINGS_UPDATED",
         actor_username="system",
+        request=request,
         details={
             "enabled": payload.enabled,
             "redirect_http_to_https": payload.redirect_http_to_https,
@@ -669,6 +715,7 @@ def read_users(db: Session = Depends(get_db)) -> list[PlatformUserRead]:
 @router.post("/users", response_model=PlatformUserRead, status_code=status.HTTP_201_CREATED)
 def create_user(
     payload: PlatformUserCreate,
+    request: Request,
     db: Session = Depends(get_db),
     _admin: str = Depends(require_roles(ROLE_ADMINISTRATOR)),
 ) -> PlatformUserRead:
@@ -677,11 +724,30 @@ def create_user(
     except ValueError as exc:
         raise _http_error("USER_USERNAME_INVALID", str(exc)) from exc
 
+    # Usernames that differ only by letter case are the same person to an operator (F-201). Login
+    # matching is unchanged; this only stops creating look-alike accounts.
+    existing = (
+        db.query(PlatformUser.username)
+        .filter(func.lower(PlatformUser.username) == username.lower())
+        .first()
+    )
+    if existing is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error_code": "USER_USERNAME_TAKEN",
+                "message": f"username already exists: {existing[0]} (usernames are compared without regard to letter case)",
+            },
+        )
+
     user = PlatformUser(
         username=username,
         password_hash=get_password_hash(payload.password),
         role=payload.role,
         status="ACTIVE",
+        # F-202: the administrator who typed the initial password must not keep knowing it; the
+        # account owner has to choose their own password at first sign-in.
+        must_change_password=True,
     )
     db.add(user)
     try:
@@ -689,11 +755,12 @@ def create_user(
         journal.record_audit_event(
             db,
             action="USER_CREATED",
-            actor_username=username,
+            actor_username="system",
+            request=request,
             entity_type="PLATFORM_USER",
             entity_id=int(user.id),
             entity_name=username,
-            details={"role": payload.role},
+            details={"role": payload.role, "must_change_password": True},
         )
         db.commit()
     except IntegrityError as exc:
@@ -710,6 +777,7 @@ def create_user(
 def update_user(
     user_id: int,
     payload: PlatformUserUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     _admin: str = Depends(require_roles(ROLE_ADMINISTRATOR)),
 ) -> PlatformUserRead:
@@ -728,7 +796,8 @@ def update_user(
     bump_token_version = False
     if payload.password is not None:
         user.password_hash = get_password_hash(payload.password)
-        user.must_change_password = False
+        # F-202: an administrator-set password is temporary; force the owner to replace it.
+        user.must_change_password = True
         bump_token_version = True
     if payload.role is not None and payload.role != user.role:
         user.role = payload.role
@@ -748,12 +817,14 @@ def update_user(
     details = payload.model_dump(exclude_unset=True, exclude={"password": True})
     if payload.password is not None:
         details["password_rotated"] = True
+        details["must_change_password"] = True
     if bump_token_version:
         details["token_version_bumped"] = True
     journal.record_audit_event(
         db,
         action="USER_UPDATED",
         actor_username="system",
+        request=request,
         entity_type="PLATFORM_USER",
         entity_id=int(user.id),
         entity_name=user.username,
@@ -878,6 +949,7 @@ def reset_user_mfa(
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_user(
     user_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     _admin: str = Depends(require_roles(ROLE_ADMINISTRATOR)),
 ) -> None:
@@ -894,6 +966,7 @@ def delete_user(
         db,
         action="USER_DELETED",
         actor_username="system",
+        request=request,
         entity_type="PLATFORM_USER",
         entity_id=uid,
         entity_name=uname,
@@ -904,7 +977,7 @@ def delete_user(
 
 
 @router.post("/password", status_code=status.HTTP_204_NO_CONTENT)
-def change_password(payload: AdminPasswordChange, db: Session = Depends(get_db)) -> None:
+def change_password(payload: AdminPasswordChange, request: Request, db: Session = Depends(get_db)) -> None:
     try:
         username = normalize_username(payload.username)
     except ValueError as exc:
@@ -924,6 +997,7 @@ def change_password(payload: AdminPasswordChange, db: Session = Depends(get_db))
         db,
         action="PASSWORD_CHANGED",
         actor_username=username,
+        request=request,
         entity_type="PLATFORM_USER",
         entity_id=int(user.id),
         entity_name=username,
@@ -969,7 +1043,9 @@ def read_retention_policy(db: Session = Depends(get_db)) -> RetentionPolicyRead:
 
 
 @router.put("/retention-policy", response_model=RetentionPolicyRead)
-def update_retention_policy(payload: RetentionPolicyUpdate, db: Session = Depends(get_db)) -> RetentionPolicyRead:
+def update_retention_policy(
+    payload: RetentionPolicyUpdate, request: Request, db: Session = Depends(get_db)
+) -> RetentionPolicyRead:
     row = get_retention_policy_row(db)
     data = payload.model_dump(exclude_unset=True)
     allowed = {
@@ -992,6 +1068,7 @@ def update_retention_policy(payload: RetentionPolicyUpdate, db: Session = Depend
         db,
         action="RETENTION_POLICY_UPDATED",
         actor_username="system",
+        request=request,
         details=data,
     )
     db.commit()
@@ -1013,7 +1090,14 @@ def read_display_settings(db: Session = Depends(get_db)) -> DisplaySettingsRead:
 
 
 @router.put("/display-settings", response_model=DisplaySettingsRead)
-def update_display_settings(payload: DisplaySettingsUpdate, db: Session = Depends(get_db)) -> DisplaySettingsRead:
+def update_display_settings(
+    payload: DisplaySettingsUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(require_roles(ROLE_ADMINISTRATOR)),
+) -> DisplaySettingsRead:
+    # F-192: the platform-wide default timezone is Administrator-only. The coarse rule lives in
+    # ``route_access``; this dependency keeps the handler safe if it is mounted without that guard.
     tz = validate_iana_timezone(payload.default_timezone)
     row = get_display_settings_row(db)
     row.default_timezone = tz
@@ -1021,6 +1105,7 @@ def update_display_settings(payload: DisplaySettingsUpdate, db: Session = Depend
         db,
         action="DISPLAY_SETTINGS_UPDATED",
         actor_username="system",
+        request=request,
         details={"default_timezone": tz},
     )
     db.commit()
@@ -1333,13 +1418,15 @@ def read_admin_health_summary(db: Session = Depends(get_db)) -> AdminHealthSumma
 
 
 @router.get("/alert-settings", response_model=AlertSettingsRead)
-def read_alert_settings(db: Session = Depends(get_db)) -> AlertSettingsRead:
+def read_alert_settings(request: Request, db: Session = Depends(get_db)) -> AlertSettingsRead:
     row = get_alert_settings_row(db)
-    return _alert_read(row)
+    return _alert_read(row, reveal=_alert_reveals_secrets(request))
 
 
 @router.put("/alert-settings", response_model=AlertSettingsRead)
-def update_alert_settings(payload: AlertSettingsUpdate, db: Session = Depends(get_db)) -> AlertSettingsRead:
+def update_alert_settings(
+    payload: AlertSettingsUpdate, request: Request, db: Session = Depends(get_db)
+) -> AlertSettingsRead:
     row = get_alert_settings_row(db)
     if payload.rules is not None:
         row.rules_json = [r.model_dump(mode="json") for r in payload.rules]
@@ -1357,15 +1444,17 @@ def update_alert_settings(payload: AlertSettingsUpdate, db: Session = Depends(ge
         db,
         action="ALERT_RULE_UPDATED",
         actor_username="system",
-        details={"channels_updated": payload.model_dump(exclude_unset=True)},
+        request=request,
+        details={"channels_updated": _alert_update_audit_details(payload)},
     )
     db.commit()
     db.refresh(row)
-    return _alert_read(row)
+    return _alert_read(row, reveal=_alert_reveals_secrets(request))
 
 
 @router.post("/alert-settings/test", response_model=AlertTestResponse)
 def post_alert_settings_test(
+    request: Request,
     payload: AlertTestRequest | None = None,
     db: Session = Depends(get_db),
 ) -> AlertTestResponse:
@@ -1385,6 +1474,7 @@ def post_alert_settings_test(
         db,
         action="ALERT_TEST_DISPATCHED",
         actor_username="system",
+        request=request,
         details={
             "alert_type": body.alert_type,
             "delivery_status": result.delivery_status,

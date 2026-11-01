@@ -61,13 +61,14 @@ export function resolveSourceProductLabel(
 
 export type StreamRuntimeStatus = 'RUNNING' | 'DEGRADED' | 'ERROR' | 'STOPPED' | 'IDLE' | 'UNKNOWN'
 
+// UNKNOWN (no verdict) outranks RUNNING so an unverified member is never hidden by a running one.
 const STATUS_RANK: Record<StreamRuntimeStatus, number> = {
-  ERROR: 4,
-  DEGRADED: 3,
+  ERROR: 5,
+  DEGRADED: 4,
+  UNKNOWN: 3,
   RUNNING: 2,
   STOPPED: 1,
   IDLE: 1,
-  UNKNOWN: 0,
 }
 
 export function worstStreamStatus(statuses: readonly StreamRuntimeStatus[]): StreamRuntimeStatus {

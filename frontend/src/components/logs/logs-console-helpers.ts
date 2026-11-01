@@ -171,28 +171,79 @@ export function buildOperationalTrace(row: LogExplorerRow): { key: TraceStepKey;
   })
 }
 
-export type RetryTimelineEntry = { attempt: number; atLabel: string; backoffLabel: string; outcome: string }
+export type RetryTimelineEntry = {
+  attempt: number
+  atLabel: string
+  backoffLabel: string
+  outcome: string
+  /** Short error text of a failed attempt (HTTP status and message), when recorded. */
+  detail: string | null
+}
 
-/** Synthetic retry timeline when structured retry steps are not persisted (Phase 1 UX). */
+export type RetryTimelineSummary = {
+  attempts: number
+  maxRetries: number | null
+  backoff: string | null
+  /** Operator-readable reason the runtime stopped retrying; null when it did not give up. */
+  giveUpReason: string | null
+}
+
+const GIVE_UP_REASON_LABEL: Record<string, string> = {
+  retries_exhausted: 'All configured retries were used',
+  non_retryable_error: 'The error cannot be fixed by retrying (for example HTTP 401/403)',
+  retries_disabled: 'Retries are disabled for this route (Max Retry 0)',
+  max_delivery_time_reached: 'The maximum delivery time was reached',
+  stop_requested: 'The stream was stopped while retrying',
+}
+
+function retryPayload(row: LogExplorerRow): Record<string, unknown> {
+  const sample = row.contextJson.payload_sample
+  return sample && typeof sample === 'object' && !Array.isArray(sample) ? (sample as Record<string, unknown>) : {}
+}
+
+/**
+ * Retry attempts exactly as the runtime recorded them (F-168). Nothing is synthesized: a row
+ * without persisted attempts has no timeline, and the drawer says so instead of inventing
+ * attempt times and backoff values.
+ */
 export function buildRetryTimelineEntries(row: LogExplorerRow): RetryTimelineEntry[] {
-  const n = safeCtxInt(row.contextJson, 'retry_count') ?? 0
-  if (n <= 0) return []
-  const base = new Date(row.timeIso).getTime()
+  const raw = retryPayload(row).retry_attempts
+  if (!Array.isArray(raw)) return []
   const out: RetryTimelineEntry[] = []
-  for (let a = 1; a <= n; a += 1) {
-    const backoffMs = Math.min(1500 * 2 ** (a - 1), 120_000)
-    const t = base - (n - a) * backoffMs
-    const d = new Date(t)
-    const atLabel = Number.isFinite(d.getTime()) ? d.toISOString().slice(0, 23).replace('T', ' ') : '—'
-    const outcome = a === n ? (row.level === 'ERROR' ? 'failed' : 'last attempt') : 'retry scheduled'
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const a = item as Record<string, unknown>
+    const attempt = typeof a.attempt === 'number' ? a.attempt : out.length + 1
+    const startedAt = typeof a.started_at === 'string' ? a.started_at : ''
+    const atLabel = startedAt ? formatLogTimeUtc(startedAt) : '—'
+    const delay = typeof a.delay_before_sec === 'number' ? a.delay_before_sec : null
+    const outcome = a.outcome === 'succeeded' ? 'succeeded' : 'failed'
+    const status = typeof a.http_status === 'number' ? `HTTP ${a.http_status}` : null
+    const message = typeof a.message === 'string' && a.message.trim() ? a.message.trim() : null
     out.push({
-      attempt: a,
+      attempt,
       atLabel,
-      backoffLabel: `${backoffMs} ms`,
+      backoffLabel: delay == null ? '—' : `${delay} s wait before this attempt`,
       outcome,
+      detail: [status, message].filter(Boolean).join(' · ') || null,
     })
   }
   return out
+}
+
+export function retryTimelineSummary(row: LogExplorerRow): RetryTimelineSummary | null {
+  const payload = retryPayload(row)
+  const attemptsRaw = payload.retry_attempts
+  const recordedCount = safeCtxInt(row.contextJson, 'retry_count') ?? 0
+  const maxRetries = typeof payload.max_retries === 'number' ? payload.max_retries : null
+  if (!Array.isArray(attemptsRaw) && maxRetries == null && recordedCount <= 0) return null
+  const reason = typeof payload.give_up_reason === 'string' ? payload.give_up_reason : null
+  return {
+    attempts: Array.isArray(attemptsRaw) ? attemptsRaw.length : recordedCount,
+    maxRetries,
+    backoff: typeof payload.retry_backoff === 'string' ? payload.retry_backoff : null,
+    giveUpReason: reason ? (GIVE_UP_REASON_LABEL[reason] ?? reason) : null,
+  }
 }
 
 /** Show operational log time in one explicit basis; never imply a zone for an unzoned string. */

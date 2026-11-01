@@ -157,6 +157,38 @@ describe('Route catalog creation requires an explicit Stream', () => {
     expect(createRoute).not.toHaveBeenCalled()
   })
 
+  it('distinguishes an unavailable Destination catalog from a genuinely empty one', async () => {
+    const user = userEvent.setup()
+    fetchDestinationsList.mockResolvedValue(null)
+    mount()
+    await waitFor(() => {
+      expect(screen.getByText(/Destination catalog unavailable/i)).toBeInTheDocument()
+    })
+    expect(screen.queryByText('Destination source: No destinations loaded')).not.toBeInTheDocument()
+    const select = await screen.findByTestId('route-edit-stream-select')
+    await user.selectOptions(select, '10')
+    await user.click(screen.getByRole('button', { name: 'Create Route' }))
+    expect(createRoute).not.toHaveBeenCalled()
+  })
+
+  it('reports an actual empty Destination catalog without claiming an API failure', async () => {
+    fetchDestinationsList.mockResolvedValue([])
+    mount()
+    await waitFor(() => {
+      expect(screen.getByText('Destination source: No destinations loaded')).toBeInTheDocument()
+    })
+    expect(screen.queryByText(/Destination catalog unavailable/i)).not.toBeInTheDocument()
+    expect(createRoute).not.toHaveBeenCalled()
+  })
+
+  it('also reports rejected Destination catalog requests instead of an unhandled exception', async () => {
+    fetchDestinationsList.mockRejectedValue(new Error('Destination service unavailable'))
+    mount()
+    expect(await screen.findByText(/Destination catalog unavailable/i)).toBeInTheDocument()
+    expect(screen.queryByText('Destination source: No destinations loaded')).not.toBeInTheDocument()
+    expect(createRoute).not.toHaveBeenCalled()
+  })
+
   it('exposes Stream catalog failures distinctly from an empty catalog', async () => {
     const user = userEvent.setup()
     fetchStreamsListResult.mockResolvedValue({ ok: false, status: 503, message: 'Stream service unavailable', authRequired: false })

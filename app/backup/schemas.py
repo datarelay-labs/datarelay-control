@@ -140,9 +140,26 @@ class ImportApplyEntityIds(BaseModel):
     destination_ids: list[int] = Field(default_factory=list)
 
 
+class ImportSecretReentry(BaseModel):
+    """A created connector/destination whose secrets were masked in the bundle and must be re-entered."""
+
+    entity_type: Literal["connector", "destination"]
+    entity_id: int
+    name: str
+    source_type: str | None = None
+    fields: list[str] = Field(default_factory=list)
+    blocks_operation: bool = Field(
+        default=False,
+        description="True when the created entity cannot work until the listed secrets are re-entered.",
+    )
+    message: str = ""
+    edit_path: str = ""
+
+
 class ImportApplyResponse(BaseModel):
     ok: bool
     created: ImportApplyEntityIds
+    secrets_to_reenter: list[ImportSecretReentry] = Field(default_factory=list)
     redirect_path: str | None = None
     idempotency_key: str | None = Field(
         default=None,

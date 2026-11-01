@@ -12,7 +12,7 @@ import {
 } from '../../api/gdcGovernanceViolations'
 import { fetchGovernancePolicies, type GovernancePolicyEntry } from '../../api/gdcGovernancePolicies'
 import { NAV_PATH, logsExplorerPath } from '../../config/nav-paths'
-import { governanceReadOnlyReason } from '../../lib/governance-rbac'
+import { governanceAccessDeniedMessage, governanceReadOnlyReason } from '../../lib/governance-rbac'
 import { humanizeQuarantineReason } from '../../lib/humanize-quarantine-reason'
 import { isOssReleaseMode } from '../../lib/feature-flags'
 import { gdcUi } from '../../lib/gdc-ui-tokens'
@@ -21,7 +21,7 @@ import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operati
 import { GovernanceInvestigationDrawer } from './governance-investigation-drawer'
 
 const WINDOWS: readonly ViolationWindow[] = ['24h', '7d', '30d'] as const
-const STATUSES: readonly ViolationStatus[] = ['OPEN', 'QUARANTINED', 'RELEASED', 'REPLAYED'] as const
+const STATUSES: readonly ViolationStatus[] = ['OPEN', 'QUARANTINED', 'RELEASED', 'REPLAYED', 'DISCARDED'] as const
 const SEVERITIES: readonly ViolationSeverity[] = ['HIGH', 'MEDIUM', 'LOW'] as const
 
 function formatTime(iso: string) {
@@ -77,6 +77,8 @@ function statusLabel(status: ViolationStatus): string {
       return 'Released'
     case 'REPLAYED':
       return 'Replayed'
+    case 'DISCARDED':
+      return 'Discarded'
     default:
       return status
   }
@@ -256,10 +258,12 @@ function ViolationDetailDrawer({
             {detail.related_quarantine ? (
               <Link
                 to={`${NAV_PATH.governanceQuarantine}?id=${encodeURIComponent(String(detail.related_quarantine.quarantine_event_id))}`}
-                className={actionLinkClass(true)}
+                className={actionLinkClass(String(detail.related_quarantine.status).toUpperCase() === 'QUARANTINED')}
                 data-testid="violation-open-quarantine"
               >
-                Release
+                {String(detail.related_quarantine.status).toUpperCase() === 'QUARANTINED'
+                  ? 'Release'
+                  : 'View quarantine item'}
               </Link>
             ) : null}
             {detail.related_replays.length > 0 ? (
@@ -323,7 +327,7 @@ export function ViolationCenterPage() {
       })
       setViolations(data?.violations ?? [])
       setTotal(data?.total ?? data?.violations?.length ?? 0)
-      if (data == null) setError('Violation APIs unavailable.')
+      if (data == null) setError(governanceAccessDeniedMessage('Governance violations') ?? 'Violation APIs unavailable.')
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {

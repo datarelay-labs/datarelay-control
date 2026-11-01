@@ -39,11 +39,13 @@ import {
   wizardRecordPathConfirmed,
   wizardRecordPathStale,
   wizardSourceRequiresHttpRecordSelection,
+  evaluateSyncPositionBinding,
 } from './wizard-step-gates'
 import { flattenSampleFields, wizardExtractEvents } from './wizard-json-extract'
 import type { OperationalSampleId } from './wizard-operational-samples'
 import {
   buildIncrementalRequestPlan,
+  incrementalCursorKindFromFieldType,
   fieldNameFromCheckpointPath,
   inferIncrementalRequestPattern,
   incrementalPatternDisplayLabel,
@@ -465,7 +467,16 @@ export function RecordSelectionWorkspace({
       <section className="rounded-xl border border-dashed border-slate-300/90 bg-slate-50/40 p-6 text-center dark:border-gdc-border dark:bg-gdc-card">
         <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Record Selection</h3>
         <p className="mx-auto mt-2 max-w-md text-[12px] leading-relaxed text-slate-600 dark:text-gdc-muted">
-          Run <span className="font-semibold">Fetch Sample Data</span> or load an operational test dataset on the API Test step.
+          {state.connector.sourceType === 'WEBHOOK_RECEIVER' ? (
+            <>
+              A Webhook Receiver has no source to fetch from. Paste a sample payload on the{' '}
+              <span className="font-semibold">Run Test</span> tab to choose the Event array path and Event root.
+            </>
+          ) : (
+            <>
+              Run <span className="font-semibold">Fetch Sample Data</span> or load an operational test dataset on the API Test step.
+            </>
+          )}
         </p>
       </section>
     )
@@ -547,6 +558,17 @@ export function RecordSelectionWorkspace({
                 Advanced (Custom)
               </button>
             </div>
+            {paths.eventRootPath || eventRootInteracted ? (
+              <button
+                type="button"
+                onClick={() => handleSelectEventRoot('')}
+                data-testid="record-selection-reset-event-root"
+                title="Clear the Event root and use the entire record"
+                className="ml-2 mt-2 inline-flex rounded-md border border-slate-200/80 bg-white px-2 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-100 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-200 dark:hover:bg-gdc-rowHover"
+              >
+                Reset Event root
+              </button>
+            ) : null}
           </div>
           <SelectionStatusChips
             eventArrayPath={paths.eventArrayPath}
@@ -1158,6 +1180,9 @@ function lastTestStatusLabel(
   if (result.status === 'success') {
     return result.httpStatus != null ? `Success · ${result.httpStatus}` : 'Success'
   }
+  if (result.status === 'warning') {
+    return result.httpStatus != null ? `Warning · ${result.httpStatus}` : 'Warning'
+  }
   return result.httpStatus != null ? `Failed · ${result.httpStatus}` : 'Failed'
 }
 
@@ -1190,6 +1215,7 @@ function IncrementalRequestPanel({
 }) {
   const fieldFull = fieldNameFromCheckpointPath(checkpointSourcePath)
   const hasCheckpoint = Boolean(fieldFull)
+  const syncBinding = evaluateSyncPositionBinding(state)
   const checkpointPathOnRecord = useMemo(
     () => resolveCheckpointPathForRecord(checkpointSourcePath, eventArrayPath),
     [checkpointSourcePath, eventArrayPath],
@@ -1237,7 +1263,11 @@ function IncrementalRequestPanel({
     // Only auto-apply visualsearch_query from endpoint/body hints when no
     // operator pattern has been chosen yet. Preserve explicit user selection.
     if (pattern !== 'none') return
-    const generated = buildIncrementalRequestPlan(inferred, checkpointSourcePath)
+    const generated = buildIncrementalRequestPlan(
+      inferred,
+      checkpointSourcePath,
+      incrementalCursorKindFromFieldType(state.stream.checkpointFieldType),
+    )
     onChange({
       incrementalRequestPattern: inferred,
       ...(generated?.preview ? { incrementalRequestDraft: generated.preview } : {}),
@@ -1252,8 +1282,13 @@ function IncrementalRequestPanel({
   ])
 
   const generated = useMemo(
-    () => buildIncrementalRequestPlan(pattern, checkpointSourcePath),
-    [pattern, checkpointSourcePath],
+    () =>
+      buildIncrementalRequestPlan(
+        pattern,
+        checkpointSourcePath,
+        incrementalCursorKindFromFieldType(state.stream.checkpointFieldType),
+      ),
+    [pattern, checkpointSourcePath, state.stream.checkpointFieldType],
   )
 
   const httpMethod = state.stream.httpMethod
@@ -1289,7 +1324,11 @@ function IncrementalRequestPanel({
   const setPattern = useCallback(
     (nextSelect: IncrementalPatternSelectValue) => {
       const next = incrementalPatternFromSelect(nextSelect, pattern)
-      const generatedNext = buildIncrementalRequestPlan(next, checkpointSourcePath)
+      const generatedNext = buildIncrementalRequestPlan(
+        next,
+        checkpointSourcePath,
+        incrementalCursorKindFromFieldType(state.stream.checkpointFieldType),
+      )
       const patch: Partial<WizardConfigState> = { incrementalRequestPattern: next }
       if (next === 'none') {
         patch.incrementalRequestDraft = ''
@@ -1302,7 +1341,7 @@ function IncrementalRequestPanel({
       }
       onChange(patch)
     },
-    [checkpointSourcePath, draft, onChange, pattern],
+    [checkpointSourcePath, draft, onChange, pattern, state.stream.checkpointFieldType],
   )
 
   const setDraft = useCallback(
@@ -1318,8 +1357,8 @@ function IncrementalRequestPanel({
       ? '// Select a pattern above to get started.'
       : pattern === 'custom' || pattern === 'visualsearch_query'
         ? isBodyHttpMethodForPlaceholder(httpMethod)
-          ? '// Custom JSON body — use {{checkpoint.last_timestamp}}, {{now}}, {{checkpoint.last_id}}.'
-          : '// Custom template — JSON body or `key=value` lines for query params.\n// You can use {{checkpoint.last_timestamp}}, {{now}}, {{checkpoint.last_id}}.'
+          ? '// Custom JSON body — use {{checkpoint.last_timestamp}}, {{now}}, {{checkpoint.value}}.'
+          : '// Custom template — JSON body or `key=value` lines for query params.\n// You can use {{checkpoint.last_timestamp}}, {{now}}, {{checkpoint.value}}.'
         : '// Pick a checkpoint field to populate this template.'
 
   return (
@@ -1364,6 +1403,16 @@ function IncrementalRequestPanel({
           </p>
         )}
       </div>
+
+      {syncBinding.status === 'unbound' || syncBinding.status === 'unsupported' ? (
+        <p
+          role="alert"
+          data-testid="sync-position-unbound-alert"
+          className="mt-2 rounded-md border border-amber-300/70 bg-amber-50 p-2 text-[11px] text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200"
+        >
+          {syncBinding.reason}
+        </p>
+      ) : null}
 
       <div className="mt-2 rounded-md border border-slate-200/70 p-2 dark:border-gdc-border">
         <div className="flex flex-wrap items-center gap-2">

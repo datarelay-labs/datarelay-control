@@ -17,7 +17,12 @@ import {
   type WizardRouteDraft,
   type WizardState,
 } from '../wizard/wizard-state'
-import { ROUTE_PROCESSING_COPY, routeDraftUsesSharedProcessing } from './route-processing-labels'
+import {
+  ROUTE_PROCESSING_CONCERN_LABEL,
+  ROUTE_PROCESSING_COPY,
+  routeDraftUsesSharedProcessing,
+  type RouteProcessingConcernKey,
+} from './route-processing-labels'
 import { RouteProcessingModeSelector, type RouteProcessingMode } from './route-processing-mode-selector'
 import { RouteProcessingDetailHeader } from './route-processing-detail-header'
 
@@ -113,24 +118,39 @@ export function WizardRouteProcessingDetailPanel({
     })
   }
 
-  const usesShared = routeDraftUsesSharedProcessing(draft)
+  // "Override for this Route" only reveals the per-section override toggles; each concern is
+  // overridden independently. Keyed by route so the choice does not leak to another Route.
+  const [overrideRequestedKey, setOverrideRequestedKey] = useState<string | null>(null)
+  const usesShared = routeDraftUsesSharedProcessing(draft) && overrideRequestedKey !== draft.key
   const routeMode: RouteProcessingMode = usesShared ? 'shared' : 'override'
 
   const patchRouteMode = (mode: RouteProcessingMode) => {
     if (mode === 'shared') {
+      setOverrideRequestedKey(null)
       patchRoute({
         inherit: { transform: true, protection: true, classification: true, policy: true },
       })
       return
     }
+    setOverrideRequestedKey(draft.key)
+  }
+
+  const setConcernOverride = (concern: RouteProcessingConcernKey, override: boolean) => {
+    const inherit = { ...draft.inherit, [concern]: !override }
+    if (!override) {
+      patchRoute({ inherit })
+      return
+    }
     const nextOverrides = { ...draft.overrides }
-    if (!nextOverrides.transform) nextOverrides.transform = buildRouteTransformOverrideFromGlobal(state)
-    if (!nextOverrides.protection) nextOverrides.protection = buildRouteProtectionOverrideFromGlobal(state.dataProtection)
-    if (!nextOverrides.policy) nextOverrides.policy = { deliveryBehavior: 'continue' }
-    patchRoute({
-      inherit: { transform: false, protection: false, classification: false, policy: false },
-      overrides: nextOverrides,
-    })
+    if (concern === 'transform' && !nextOverrides.transform) {
+      nextOverrides.transform = buildRouteTransformOverrideFromGlobal(state)
+    }
+    // Route Classification rules are derived from the Route protection intents.
+    if ((concern === 'protection' || concern === 'classification') && !nextOverrides.protection) {
+      nextOverrides.protection = buildRouteProtectionOverrideFromGlobal(state.dataProtection)
+    }
+    if (concern === 'policy' && !nextOverrides.policy) nextOverrides.policy = { deliveryBehavior: 'continue' }
+    patchRoute({ inherit, overrides: nextOverrides })
   }
 
   useEffect(() => {
@@ -139,6 +159,28 @@ export function WizardRouteProcessingDetailPanel({
   }, [usesShared]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const visibleTabs = usesShared ? TABS.filter((item) => item.key === 'delivery') : TABS
+
+  const overrideToggle = (concern: RouteProcessingConcernKey) => (
+    <label
+      className="flex items-center gap-2 text-[12px] font-medium text-slate-700 dark:text-slate-200"
+      data-testid={`route-override-${concern}`}
+    >
+      <input
+        type="checkbox"
+        checked={draft.inherit[concern] === false}
+        onChange={(e) => setConcernOverride(concern, e.target.checked)}
+        className="accent-violet-600"
+        data-testid={`route-override-toggle-${concern}`}
+      />
+      Override {ROUTE_PROCESSING_CONCERN_LABEL[concern]} for this Route
+    </label>
+  )
+
+  const inheritedNote = (concern: RouteProcessingConcernKey) => (
+    <p className="text-[11px] text-slate-600 dark:text-gdc-muted" data-testid={`route-inherits-${concern}`}>
+      Uses the shared {ROUTE_PROCESSING_CONCERN_LABEL[concern]}.
+    </p>
+  )
 
   const patchRouteTransform = (patch: Partial<WizardState>) => {
     const current = draft.overrides?.transform ?? buildRouteTransformOverrideFromGlobal(state)
@@ -227,6 +269,8 @@ export function WizardRouteProcessingDetailPanel({
       <div className="space-y-3 p-3">
         {!usesShared && tab === 'transform' ? (
           <div className="space-y-3" data-testid="route-detail-transform">
+            {overrideToggle('transform')}
+            {draft.inherit.transform !== false ? inheritedNote('transform') : (
             <StepMappingCombined
               state={routeTransformState}
               onChangeMapping={(rows) => patchRouteTransform({ mapping: rows })}
@@ -240,17 +284,34 @@ export function WizardRouteProcessingDetailPanel({
               onChangeDataProtection={() => {}}
               showOutputAside={showOutputAside}
             />
+            )}
           </div>
         ) : null}
 
         {!usesShared && tab === 'data_protection' ? (
           <div className="space-y-4" data-testid="route-detail-data-protection">
-            <StepDataProtection state={routeProtectionState} onChange={(patch) => patchRouteProtection(patch)} />
-            <RouteClassificationOverridesSection
-              state={state.dataProtection}
-              routeDrafts={[draft]}
-              onChange={onChangeDataProtection}
-            />
+            {overrideToggle('protection')}
+            {draft.inherit.protection !== false ? (
+              inheritedNote('protection')
+            ) : (
+              <StepDataProtection
+                state={routeProtectionState}
+                onChange={(patch) => patchRouteProtection(patch)}
+                sharedIntents={state.dataProtection.intents}
+              />
+            )}
+            {overrideToggle('classification')}
+            {draft.inherit.classification !== false ? (
+              inheritedNote('classification')
+            ) : (
+              <RouteClassificationOverridesSection
+                state={state.dataProtection}
+                routeDrafts={[draft]}
+                onChange={onChangeDataProtection}
+              />
+            )}
+            {overrideToggle('policy')}
+            {draft.inherit.policy !== false ? inheritedNote('policy') : (
             <section
               className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm dark:border-gdc-border dark:bg-gdc-card"
               data-testid="route-default-delivery-behavior-section"
@@ -288,6 +349,7 @@ export function WizardRouteProcessingDetailPanel({
                 </span>
               </label>
             </section>
+            )}
           </div>
         ) : null}
 

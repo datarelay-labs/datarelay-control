@@ -7,14 +7,17 @@ import {
   postImportApply,
   postImportPreview,
   type CurlImportDraft,
+  type ImportApplyResult,
   type ImportMode,
   type ImportPreviewResult,
 } from '../../api/gdcBackup'
 import { NAV_PATH, SETTINGS_SECTION_PATH } from '../../config/nav-paths'
 import { cn } from '../../lib/utils'
+import { isGovernanceOnlyRole } from '../../lib/governance-rbac'
 import { useSessionCapabilities } from '../../lib/rbac'
 import { gdcUi } from '../../lib/gdc-ui-tokens'
 import { navigateToConnectorWizardWithDraft } from '../../utils/httpImportDraft'
+import { parseImportBundleText } from '../../utils/importBundleText'
 import { CurlImportPanel, PostmanImportPanel } from '../connectors/http-import-panel'
 import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
 
@@ -29,6 +32,16 @@ const MODE_HELP: Record<ImportMode, { title: string; body: string }> = {
   },
 }
 
+function describeImportCounts(res: ImportApplyResult): string {
+  const c = res.created
+  const parts = [
+    `${c.connector_ids.length} connector${c.connector_ids.length === 1 ? '' : 's'}`,
+    `${c.stream_ids.length} stream${c.stream_ids.length === 1 ? '' : 's'}`,
+    `${c.destination_ids.length} destination${c.destination_ids.length === 1 ? '' : 's'}`,
+  ]
+  return `${parts.join(', ')} created`
+}
+
 const SECTION_STEP = 'text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-gdc-muted'
 
 export function OperationsBackupPage() {
@@ -36,6 +49,8 @@ export function OperationsBackupPage() {
   const caps = useSessionCapabilities()
   const canPreviewImport = caps.backup_import_preview === true
   const canApplyImport = caps.backup_import_apply === true
+  // F-195: Governance-only roles are refused backup/export by the backend; show that instead of a failing control.
+  const governanceOnly = isGovernanceOnlyRole()
   const [wsCkpt, setWsCkpt] = useState(true)
   const [wsDest, setWsDest] = useState(true)
   const [wsBusy, setWsBusy] = useState(false)
@@ -49,6 +64,7 @@ export function OperationsBackupPage() {
   const [helpersOpen, setHelpersOpen] = useState(false)
   const [pageError, setPageError] = useState<string | null>(null)
   const [pageInfo, setPageInfo] = useState<string | null>(null)
+  const [applyResult, setApplyResult] = useState<ImportApplyResult | null>(null)
   const applyIdempotencyKeyRef = useRef<string | null>(null)
   const modeHelp = MODE_HELP[importMode]
 
@@ -72,7 +88,8 @@ export function OperationsBackupPage() {
       setJsonText(t)
       setPreview(null)
       setConfirmApply(false)
-      setPageError(null)
+      setApplyResult(null)
+      setPageError(t.trim() ? null : `The file "${file.name}" is empty. Choose a file produced by Download JSON.`)
     })
   }, [])
 
@@ -81,10 +98,15 @@ export function OperationsBackupPage() {
     setPageError(null)
     setPageInfo(null)
     setPreview(null)
+    setApplyResult(null)
+    const parsedBundle = parseImportBundleText(jsonText)
+    if (parsedBundle.ok === false) {
+      setPageError(parsedBundle.message)
+      return
+    }
     setPreviewBusy(true)
     try {
-      const bundle = JSON.parse(jsonText || '{}') as unknown
-      const res = await postImportPreview(bundle, importMode)
+      const res = await postImportPreview(parsedBundle.bundle, importMode)
       setPreview(res)
     } catch (e) {
       setPageError(e instanceof Error ? e.message : String(e))
@@ -117,17 +139,35 @@ export function OperationsBackupPage() {
           : `import-apply-${Date.now()}-${Math.random().toString(36).slice(2)}`
     }
     try {
-      const bundle = JSON.parse(jsonText || '{}') as unknown
-      const res = await postImportApply(bundle, importMode, preview.preview_token, {
+      const parsedBundle = parseImportBundleText(jsonText)
+      if (parsedBundle.ok === false) {
+        setPageError(parsedBundle.message)
+        return
+      }
+      const res = await postImportApply(parsedBundle.bundle, importMode, preview.preview_token, {
         confirm: true,
         idempotency_key: applyIdempotencyKeyRef.current,
       })
       applyIdempotencyKeyRef.current = null
       setApplyDialogOpen(false)
-      if (res.redirect_path) {
+      const pendingSecrets = res.secrets_to_reenter ?? []
+      const counts = describeImportCounts(res)
+      if (pendingSecrets.length > 0) {
+        // Stay on this page: the user has to see which secrets to re-enter (the redirect would hide it).
+        setApplyResult(res)
+        setPageInfo(
+          `${res.idempotent_replay ? 'Import already applied (idempotent replay)' : 'Import completed'}: ${counts}. ` +
+            'Some secrets must be re-entered before the imported connectors work — see the list below.',
+        )
+      } else if (res.redirect_path) {
         navigate(res.redirect_path)
       } else {
-        setPageInfo(res.idempotent_replay ? 'Import already applied (idempotent replay).' : 'Import completed.')
+        setApplyResult(res)
+        setPageInfo(
+          res.idempotent_replay
+            ? `Import already applied (idempotent replay): ${counts}.`
+            : `Import completed: ${counts}.`,
+        )
       }
     } catch (e) {
       setPageError(e instanceof Error ? e.message : String(e))
@@ -195,6 +235,34 @@ export function OperationsBackupPage() {
           {pageInfo}
         </p>
       ) : null}
+      {applyResult?.secrets_to_reenter?.length ? (
+        <section
+          className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100"
+          aria-labelledby="backup-secrets-reentry-heading"
+          data-testid="backup-secrets-reentry"
+        >
+          <h3 id="backup-secrets-reentry-heading" className="font-semibold">
+            Re-enter secrets before using the imported configuration
+          </h3>
+          <p className="mt-1 text-xs opacity-90">
+            Exports never contain secrets, so these were created without them. Open each item and enter the listed
+            values.
+          </p>
+          <ul className="mt-2 space-y-2">
+            {applyResult.secrets_to_reenter.map((item) => (
+              <li key={`${item.entity_type}-${item.entity_id}`} data-testid="backup-secrets-reentry-item">
+                <Link to={item.edit_path} className="font-semibold text-gdc-primary hover:underline">
+                  {item.entity_type === 'connector' ? 'Connector' : 'Destination'}: {item.name}
+                </Link>
+                <span className="ml-1">— re-enter {item.fields.join(', ')}.</span>
+                {item.blocks_operation ? (
+                  <span className="ml-1 font-semibold">It cannot work until you do.</span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <section
         className={cn(gdcUi.cardShell, 'overflow-hidden')}
@@ -219,7 +287,8 @@ export function OperationsBackupPage() {
           </div>
           <button
             type="button"
-            disabled={wsBusy}
+            disabled={wsBusy || governanceOnly}
+            title={governanceOnly ? 'Governance roles cannot download platform backups.' : undefined}
             onClick={() => void onWorkspaceDownload()}
             className={cn(gdcUi.primaryBtn, 'inline-flex h-9 items-center gap-2 px-3')}
           >
@@ -310,9 +379,16 @@ export function OperationsBackupPage() {
 
           <div data-testid="backup-import-preview" className="space-y-3 border-t border-slate-100 pt-6 dark:border-gdc-border">
             <p className={SECTION_STEP}>Validate & preview</p>
+            {!jsonText.trim() ? (
+              <p className="text-sm text-slate-600 dark:text-gdc-muted" data-testid="backup-import-empty-hint">
+                Choose a file or paste JSON above to enable Validate & preview.
+              </p>
+            ) : null}
             {!canPreviewImport || !canApplyImport ? (
               <p className="text-sm text-slate-600 dark:text-gdc-muted" role="status">
-                {!canPreviewImport
+                {governanceOnly
+                  ? 'Governance roles cannot download, preview or apply platform backups. Sign in as Operator or Administrator.'
+                  : !canPreviewImport
                   ? 'Viewer role cannot run import preview or apply. Sign in as Operator or Administrator.'
                   : 'Operators may preview imports; applying import requires the Administrator role.'}
               </p>
@@ -468,7 +544,7 @@ export function OperationsBackupPage() {
             'Applies the selected import mode to the current workspace without deleting existing configuration.',
             'Matching display names may create additional entities depending on mode.',
             'Preview token must match the latest preview; stale previews are rejected.',
-            'Secrets remain masked — re-enter credentials after import when required.',
+            'Exports never contain secrets. Connectors and destinations that used secrets are created without them; after the import you are shown which ones to re-enter.',
           ]}
           dependencies={[{ label: 'Mode', detail: importMode }]}
           reversibility="Import effects depend on mode; keep a fresh export before applying. Database disaster recovery uses PostgreSQL backup/restore, not JSON import."
