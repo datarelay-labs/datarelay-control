@@ -76,6 +76,8 @@ export type GovernanceApprovalDetailResponse = {
   submitted_at: string | null
   review_comment: string | null
   is_approved: boolean
+  /** True when the policy is in REVIEW and nobody is recorded as its submitter (F-187 fail-closed). */
+  submitter_unknown?: boolean
   history: GovernanceApprovalHistoryEntry[]
   impact: GovernanceApprovalImpactSummary | null
   simulation: GovernanceApprovalSimulationSummary | null
@@ -123,8 +125,27 @@ export type SelfApprovalOptions = {
   allowSelfApproval?: boolean
 }
 
+/**
+ * Error code the API returns (HTTP 403) when approve/activate is attempted on a policy in REVIEW whose
+ * submitter is not recorded. Same explicit `allow_self_approval` override as the self-approval case.
+ */
+export const SUBMITTER_UNKNOWN_CODE = 'GOVERNANCE_SUBMITTER_UNKNOWN'
+
+export type SeparationOfDutiesKind = 'self' | 'unknown'
+
 export function errorIndicatesSelfApprovalForbidden(err: unknown): boolean {
   return err instanceof Error && err.message.includes(SELF_APPROVAL_FORBIDDEN_CODE)
+}
+
+export function errorIndicatesSubmitterUnknown(err: unknown): boolean {
+  return err instanceof Error && err.message.includes(SUBMITTER_UNKNOWN_CODE)
+}
+
+/** Which separation-of-duties refusal (if any) the server reported; both are lifted by the same override. */
+export function separationOfDutiesKind(err: unknown): SeparationOfDutiesKind | null {
+  if (errorIndicatesSelfApprovalForbidden(err)) return 'self'
+  if (errorIndicatesSubmitterUnknown(err)) return 'unknown'
+  return null
 }
 
 async function postApprovalAction(

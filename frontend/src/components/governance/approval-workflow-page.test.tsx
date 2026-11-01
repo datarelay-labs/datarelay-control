@@ -435,4 +435,121 @@ describe('ApprovalWorkflowPage separation of duties (F-187)', () => {
     await waitFor(() => expect(approve).toHaveBeenCalledTimes(2))
     expect(approve).toHaveBeenLastCalledWith(7, '', { allowSelfApproval: true })
   })
+
+  describe('submitter not recorded (fail-closed)', () => {
+    const unknownDetail: gdcGovernanceApprovals.GovernanceApprovalDetailResponse = {
+      ...sampleDetail,
+      requester: null,
+      submitted_at: null,
+      submitter_unknown: true,
+      history: [],
+    }
+    const approved = {
+      policy_id: 7,
+      policy_status: 'REVIEW' as const,
+      approval_status: 'APPROVED',
+      event_type: 'APPROVED' as const,
+      message: 'Policy approved',
+    }
+
+    it('explains the situation and asks for confirmation before approving; Cancel sends nothing', async () => {
+      persistTestSession('GOVERNANCE_REVIEWER', 'someone-else')
+      vi.spyOn(gdcGovernanceApprovals, 'fetchGovernanceApprovals').mockResolvedValue(queue('PENDING_REVIEW'))
+      vi.spyOn(gdcGovernanceApprovals, 'fetchGovernanceApprovalDetail').mockResolvedValue(unknownDetail)
+      const approve = vi.spyOn(gdcGovernanceApprovals, 'approveGovernancePolicy').mockResolvedValue(approved)
+
+      const user = await openRow()
+      expect(await screen.findByTestId('approval-submitter-unknown-note')).toHaveTextContent('Nobody is recorded')
+      expect(screen.queryByTestId('approval-self-approval-note')).not.toBeInTheDocument()
+      await user.click(await screen.findByTestId('approval-action-approve'))
+
+      const dialog = await screen.findByTestId('approval-submitter-unknown-dialog')
+      expect(dialog).toHaveTextContent('Approve without a recorded submitter?')
+      expect(dialog).toHaveTextContent('Employee PII Protection')
+      expect(approve).not.toHaveBeenCalled()
+
+      await user.click(screen.getByTestId('approval-submitter-unknown-dialog-cancel'))
+      expect(screen.queryByTestId('approval-submitter-unknown-dialog')).not.toBeInTheDocument()
+      expect(approve).not.toHaveBeenCalled()
+    })
+
+    it('sends the explicit override only after the user confirms approving', async () => {
+      persistTestSession('GOVERNANCE_REVIEWER', 'someone-else')
+      vi.spyOn(gdcGovernanceApprovals, 'fetchGovernanceApprovals').mockResolvedValue(queue('PENDING_REVIEW'))
+      vi.spyOn(gdcGovernanceApprovals, 'fetchGovernanceApprovalDetail').mockResolvedValue(unknownDetail)
+      const approve = vi.spyOn(gdcGovernanceApprovals, 'approveGovernancePolicy').mockResolvedValue(approved)
+
+      const user = await openRow()
+      await user.click(await screen.findByTestId('approval-action-approve'))
+      await user.click(await screen.findByTestId('approval-submitter-unknown-dialog-confirm'))
+
+      await waitFor(() => expect(approve).toHaveBeenCalledTimes(1))
+      expect(approve).toHaveBeenCalledWith(7, '', { allowSelfApproval: true })
+    })
+
+    it('asks for confirmation before activating an approved policy with no recorded submitter', async () => {
+      persistTestSession('GOVERNANCE_APPROVER', 'someone-else')
+      vi.spyOn(gdcGovernanceApprovals, 'fetchGovernanceApprovals').mockResolvedValue(queue('APPROVED'))
+      vi.spyOn(gdcGovernanceApprovals, 'fetchGovernanceApprovalDetail').mockResolvedValue({
+        ...unknownDetail,
+        approval_status: 'APPROVED',
+        is_approved: true,
+      })
+      const activate = vi.spyOn(gdcGovernanceApprovals, 'activateGovernanceApproval').mockResolvedValue({
+        policy_id: 7,
+        policy_status: 'ACTIVE',
+        approval_status: 'ACTIVATED',
+        event_type: 'ACTIVATED',
+        message: 'Policy activated',
+      })
+
+      const user = await openRow()
+      await user.click(await screen.findByTestId('approval-action-activate'))
+
+      expect(await screen.findByTestId('approval-submitter-unknown-dialog')).toHaveTextContent(
+        'Activate without a recorded submitter?',
+      )
+      expect(activate).not.toHaveBeenCalled()
+      await user.click(screen.getByTestId('approval-submitter-unknown-dialog-confirm'))
+      await waitFor(() => expect(activate).toHaveBeenCalledWith(7, '', { allowSelfApproval: true }))
+    })
+
+    it('lets the reviewer reject without any confirmation', async () => {
+      persistTestSession('GOVERNANCE_REVIEWER', 'someone-else')
+      vi.spyOn(gdcGovernanceApprovals, 'fetchGovernanceApprovals').mockResolvedValue(queue('PENDING_REVIEW'))
+      vi.spyOn(gdcGovernanceApprovals, 'fetchGovernanceApprovalDetail').mockResolvedValue(unknownDetail)
+      const reject = vi.spyOn(gdcGovernanceApprovals, 'rejectGovernancePolicy').mockResolvedValue({
+        policy_id: 7,
+        policy_status: 'DRAFT',
+        approval_status: 'REJECTED',
+        event_type: 'REJECTED',
+        message: 'Policy returned to draft',
+      })
+
+      const user = await openRow()
+      await user.click(await screen.findByTestId('approval-action-reject'))
+
+      await waitFor(() => expect(reject).toHaveBeenCalledWith(7, ''))
+      expect(screen.queryByTestId('approval-submitter-unknown-dialog')).not.toBeInTheDocument()
+    })
+
+    it('falls back to the dialog when only the server reports the unknown submitter', async () => {
+      persistTestSession('GOVERNANCE_REVIEWER', 'someone-else')
+      vi.spyOn(gdcGovernanceApprovals, 'fetchGovernanceApprovals').mockResolvedValue(queue('PENDING_REVIEW'))
+      vi.spyOn(gdcGovernanceApprovals, 'fetchGovernanceApprovalDetail').mockResolvedValue(sampleDetail)
+      const approve = vi
+        .spyOn(gdcGovernanceApprovals, 'approveGovernancePolicy')
+        .mockRejectedValueOnce(new Error('403: [GOVERNANCE_SUBMITTER_UNKNOWN] the submitter is not recorded'))
+        .mockResolvedValue(approved)
+
+      const user = await openRow()
+      await user.click(await screen.findByTestId('approval-action-approve'))
+
+      expect(await screen.findByTestId('approval-submitter-unknown-dialog')).toBeInTheDocument()
+      expect(screen.queryByTestId('approval-action-error')).not.toBeInTheDocument()
+      await user.click(screen.getByTestId('approval-submitter-unknown-dialog-confirm'))
+      await waitFor(() => expect(approve).toHaveBeenCalledTimes(2))
+      expect(approve).toHaveBeenLastCalledWith(7, '', { allowSelfApproval: true })
+    })
+  })
 })

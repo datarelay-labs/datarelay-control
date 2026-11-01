@@ -3,7 +3,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   activateGovernanceApproval,
   approveGovernancePolicy,
-  errorIndicatesSelfApprovalForbidden,
+  separationOfDutiesKind,
+  type SeparationOfDutiesKind,
   fetchGovernanceApprovalDetail,
   fetchGovernanceApprovals,
   rejectGovernancePolicy,
@@ -76,6 +77,12 @@ const SELF_APPROVAL_COPY: Record<SelfApprovalAction, { title: string; primaryLab
   activate: { title: 'Activate your own policy?', primaryLabel: 'Activate anyway', verb: 'activating' },
 }
 
+// F-187 fail-closed: the policy is in REVIEW but nobody is recorded as its submitter.
+const SUBMITTER_UNKNOWN_COPY: Record<SelfApprovalAction, { title: string; primaryLabel: string; verb: string }> = {
+  approve: { title: 'Approve without a recorded submitter?', primaryLabel: 'Approve anyway', verb: 'approving' },
+  activate: { title: 'Activate without a recorded submitter?', primaryLabel: 'Activate anyway', verb: 'activating' },
+}
+
 function ApprovalReadOnlyBanner({ message }: { message: string }) {
   return (
     <div
@@ -135,6 +142,7 @@ function ApprovalDetailDrawer({
   const activationBlockedForRole = !readOnly && !canActivateRole && detail?.current_status === 'REVIEW' && detail.is_approved
   // F-187: the submitter may reject, but approving or activating needs an explicit confirmation.
   const selfSubmitted = submittedByCurrentUser(detail?.requester) && (canApprove || canActivate)
+  const submitterUnknown = detail?.submitter_unknown === true && (canApprove || canActivate)
 
   return (
     <GovernanceInvestigationDrawer
@@ -276,6 +284,13 @@ function ApprovalDetailDrawer({
                 confirmation and is recorded in the approval history; you can reject it without one.
               </p>
             ) : null}
+            {submitterUnknown ? (
+              <p data-testid="approval-submitter-unknown-note" className="text-[12px] text-amber-800 dark:text-amber-200">
+                Nobody is recorded as the submitter of this review, so separation of duties cannot be checked.
+                Approving or activating it needs an explicit confirmation that is recorded in the approval history;
+                you can reject it without one.
+              </p>
+            ) : null}
             {activationBlockedForRole ? (
               <p data-testid="approval-activate-role-note" className="text-[12px] text-amber-800 dark:text-amber-200">
                 This policy is approved and waiting for activation. Only a Governance Approver or Administrator can
@@ -368,7 +383,7 @@ export function ApprovalWorkflowPage() {
   const [actionLoading, setActionLoading] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
-  const [selfConfirm, setSelfConfirm] = useState<{ action: SelfApprovalAction; comment: string } | null>(null)
+  const [selfConfirm, setSelfConfirm] = useState<{ action: SelfApprovalAction; comment: string; kind: SeparationOfDutiesKind } | null>(null)
 
   const loadApprovals = useCallback(async () => {
     setLoading(true)
@@ -422,7 +437,10 @@ export function ApprovalWorkflowPage() {
   }, [])
 
   const runAction = useCallback(
-    async (fn: (id: number, comment: string) => Promise<unknown>, onSelfApprovalForbidden?: () => void) => {
+    async (
+      fn: (id: number, comment: string) => Promise<unknown>,
+      onSeparationOfDuties?: (kind: SeparationOfDutiesKind) => void,
+    ) => {
       if (selectedPolicyId == null) return
       setActionLoading(true)
       setActionError(null)
@@ -434,9 +452,11 @@ export function ApprovalWorkflowPage() {
         await loadApprovals()
         await loadDetail(selectedPolicyId)
       } catch (err) {
-        if (onSelfApprovalForbidden && errorIndicatesSelfApprovalForbidden(err)) {
-          // The server is authoritative about who submitted the policy: offer the explicit override.
-          onSelfApprovalForbidden()
+        const kind = onSeparationOfDuties ? separationOfDutiesKind(err) : null
+        if (onSeparationOfDuties && kind) {
+          // The server is authoritative about who submitted the policy (or that nobody is recorded):
+          // offer the explicit override.
+          onSeparationOfDuties(kind)
           return
         }
         setActionError(
@@ -451,20 +471,25 @@ export function ApprovalWorkflowPage() {
     [selectedPolicyId, loadApprovals, loadDetail],
   )
 
-  // F-187: Approve and Activate are refused for the user who submitted the policy unless they
-  // explicitly confirm the override. The dialog is shown up front when the session user is the
-  // requester, and also if the server reports the self-approval refusal.
+  // F-187: Approve and Activate are refused for the user who submitted the policy, and for a policy
+  // whose submitter is not recorded, unless they explicitly confirm the override. The dialog is shown
+  // up front when the session user is the requester or the detail reports an unknown submitter, and
+  // also if the server reports either refusal.
   const requestGatedAction = useCallback(
     (action: SelfApprovalAction, comment: string) => {
       if (submittedByCurrentUser(detail?.requester)) {
-        setSelfConfirm({ action, comment })
+        setSelfConfirm({ action, comment, kind: 'self' })
+        return
+      }
+      if (detail?.submitter_unknown === true) {
+        setSelfConfirm({ action, comment, kind: 'unknown' })
         return
       }
       const call = (id: number) =>
         action === 'approve' ? approveGovernancePolicy(id, comment) : activateGovernanceApproval(id, comment)
-      void runAction(call, () => setSelfConfirm({ action, comment }))
+      void runAction(call, (kind) => setSelfConfirm({ action, comment, kind }))
     },
-    [detail?.requester, runAction],
+    [detail?.requester, detail?.submitter_unknown, runAction],
   )
 
   const confirmSelfApproval = useCallback(async () => {
@@ -707,17 +732,19 @@ export function ApprovalWorkflowPage() {
           onOpenChange={(open) => {
             if (!open) setSelfConfirm(null)
           }}
-          title={SELF_APPROVAL_COPY[selfConfirm.action].title}
+          title={(selfConfirm.kind === 'unknown' ? SUBMITTER_UNKNOWN_COPY : SELF_APPROVAL_COPY)[selfConfirm.action].title}
           targetName={detail?.policy.name}
           impactBullets={[
-            `You submitted this policy for review, so ${SELF_APPROVAL_COPY[selfConfirm.action].verb} it yourself skips an independent second review.`,
+            selfConfirm.kind === 'unknown'
+              ? `Nobody is recorded as the submitter of this review, so separation of duties cannot be checked and ${SUBMITTER_UNKNOWN_COPY[selfConfirm.action].verb} it may skip an independent second review.`
+              : `You submitted this policy for review, so ${SELF_APPROVAL_COPY[selfConfirm.action].verb} it yourself skips an independent second review.`,
             'The override is recorded in the approval history under your name.',
           ]}
           risk="high"
-          primaryLabel={SELF_APPROVAL_COPY[selfConfirm.action].primaryLabel}
+          primaryLabel={(selfConfirm.kind === 'unknown' ? SUBMITTER_UNKNOWN_COPY : SELF_APPROVAL_COPY)[selfConfirm.action].primaryLabel}
           onConfirm={confirmSelfApproval}
           busy={actionLoading}
-          dataTestId="approval-self-approval-dialog"
+          dataTestId={selfConfirm.kind === 'unknown' ? 'approval-submitter-unknown-dialog' : 'approval-self-approval-dialog'}
         />
       ) : null}
     </div>
