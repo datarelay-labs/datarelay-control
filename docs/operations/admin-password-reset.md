@@ -55,6 +55,19 @@ Setting only `GDC_SEED_ADMIN_PASSWORD` on bootstrap/seed **without** `GDC_RECONC
 - `token_version` is bumped; outstanding JWTs for `admin` are invalidated.
 - Validate login: `GDC_VALIDATE_ADMIN_PASSWORD='…' ./scripts/dev/validate-platform-ready.sh`
 
+## Accounts created or reset by an administrator
+
+The same first-login gate applies to every other local account (F-202):
+
+- An account created with `POST /api/v1/admin/users` starts with `must_change_password=true`.
+- Setting a password for an existing account with `PATCH /api/v1/admin/users/{id}` sets `must_change_password=true`
+  again and bumps `token_version`. A PATCH without a `password` (role, status, timezone) does not.
+- While the flag is set, every API except `GET /auth/whoami`, `POST /auth/refresh`, `POST /auth/logout` and
+  `POST /auth/change-password` answers `403` with `error_code: PASSWORD_CHANGE_REQUIRED`. Scripts and API clients that
+  use such an account must call `POST /api/v1/auth/change-password` first, then log in again.
+- Every role, including `VIEWER` and the Governance-only roles, may change its own password with
+  `POST /api/v1/auth/change-password`; the Settings page offers the same self-service change.
+
 ## Related
 
 - `docs/deployment-readiness.md` — development bootstrap contract  

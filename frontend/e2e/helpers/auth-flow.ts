@@ -214,6 +214,16 @@ export async function clearClientSession(page: Page): Promise<void> {
   })
 }
 
+/**
+ * Open an in-app path right after a UI sign-in.  The SPA drops its stored
+ * session when its boot-time whoami request is aborted, and a hard navigation
+ * while the first page is still loading aborts it, so let the page settle first.
+ */
+export async function gotoAfterLogin(page: Page, path: string): Promise<void> {
+  await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => undefined)
+  await page.goto(path)
+}
+
 export async function expectLoginScreen(page: Page): Promise<void> {
   await page.getByRole('heading', { name: 'Welcome to DataRelay' }).waitFor({ state: 'visible' })
 }
@@ -230,7 +240,7 @@ export async function uiChangeDefaultPassword(
   currentPassword: string,
   newPassword: string,
 ): Promise<void> {
-  await page.getByRole('heading', { name: 'Change default password' }).waitFor({ state: 'visible' })
+  await page.getByRole('heading', { name: /Change (your|default) password/i }).waitFor({ state: 'visible' })
   await page.locator('#force-pw-current').fill(currentPassword)
   await page.locator('#force-pw-new').fill(newPassword)
   await page.locator('#force-pw-confirm').fill(newPassword)
