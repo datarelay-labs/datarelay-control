@@ -22,9 +22,10 @@ PolicyStatus = Literal["DRAFT", "REVIEW", "ACTIVE", "RETIRED"]
 
 class GovernanceApprovalActionRequest(BaseModel):
     comment: str | None = Field(default=None, max_length=2000)
-    # F-187: approve/activate is refused (403) for the user who submitted the policy unless the
-    # caller explicitly sends JSON ``true`` (strict: strings such as "true" or 1 are rejected with
-    # 422). It has no effect on any other action.
+    # F-187: approve/activate is refused (403) for the user who submitted the policy, and for a
+    # policy whose submitter is not recorded, unless the caller explicitly sends JSON ``true``
+    # (strict: strings such as "true" or 1 are rejected with 422). It has no effect on any other
+    # action.
     allow_self_approval: StrictBool = False
 
 
@@ -88,6 +89,9 @@ class GovernanceApprovalDetailResponse(BaseModel):
     submitted_at: datetime | None = None
     review_comment: str | None = None
     is_approved: bool = False
+    # True for a policy in REVIEW whose submitter is not recorded: approve/activate then need the
+    # explicit allow_self_approval override (error code GOVERNANCE_SUBMITTER_UNKNOWN).
+    submitter_unknown: bool = False
     history: list[GovernanceApprovalHistoryEntry]
     impact: GovernanceApprovalImpactSummary | None = None
     simulation: GovernanceApprovalSimulationSummary | None = None

@@ -4,9 +4,17 @@
 * rejecting your own submission in REVIEW stays allowed
 * only an explicit JSON ``allow_self_approval: true`` permits it, and the override is visible in the
   approval history
+
+Follow-up: every way into REVIEW records the submitter (including ``POST /policies/{id}/submit-review``),
+and a policy in REVIEW whose submitter is not recorded fails closed with
+``GOVERNANCE_SUBMITTER_UNKNOWN`` unless the same explicit override is sent.
 """
 
 from __future__ import annotations
+
+import re
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
@@ -18,10 +26,18 @@ from app.auth.role_guard import role_guard_middleware
 from app.database import get_db, get_db_read_bounded
 from app.governance_approval.models import (
     APPROVAL_EVENT_APPROVED,
+    APPROVAL_EVENT_CANCELLED,
     APPROVAL_EVENT_REJECTED,
+    APPROVAL_EVENT_REQUEST_CHANGES,
+    APPROVAL_EVENT_SUBMITTED,
     GovernancePolicyApprovalEvent,
 )
-from app.governance_approval.service import SELF_APPROVAL_OVERRIDE_MARKER
+from app.governance_approval.service import (
+    SELF_APPROVAL_OVERRIDE_MARKER,
+    SUBMITTER_UNKNOWN_OVERRIDE_MARKER,
+    open_cycle_requester,
+)
+from app.governance_policies.service import create_governance_policy, submit_policy_for_review
 from app.governance_policies.models import (
     POLICY_STATUS_ACTIVE,
     POLICY_STATUS_DRAFT,
@@ -31,6 +47,7 @@ from app.governance_policies.models import (
 
 GOV = "/api/v1/governance"
 FORBIDDEN = "GOVERNANCE_SELF_APPROVAL_FORBIDDEN"
+UNKNOWN = "GOVERNANCE_SUBMITTER_UNKNOWN"
 
 AUTHOR = ("alice-author", "GOVERNANCE_OPERATOR")
 REVIEWER = ("bob-reviewer", "GOVERNANCE_REVIEWER")
@@ -412,16 +429,489 @@ def test_direct_policy_activate_by_another_user_is_allowed(client: TestClient, d
     assert _status(db_session, policy_id) == POLICY_STATUS_ACTIVE
 
 
-def test_direct_policy_activate_without_approval_history_is_unchanged(
+# --- every way into REVIEW records the submitter ------------------------------------------------
+
+
+def _direct_submit(client: TestClient, who, name: str = "Direct SoD policy") -> int:
+    """Create a policy and move it to REVIEW through POST /policies/{id}/submit-review."""
+
+    policy_id = _create_policy(client, name)
+    resp = client.post(f"{GOV}/policies/{policy_id}/submit-review", headers=_as(who))
+    assert resp.status_code == 200, resp.text
+    return policy_id
+
+
+def _submit_via(client: TestClient, path: str, who) -> int:
+    return _submitted_by(client, who) if path == "approvals" else _direct_submit(client, who)
+
+
+SUBMIT_PATHS = ["approvals", "policies"]
+
+
+@pytest.mark.parametrize("path", SUBMIT_PATHS)
+def test_each_submit_path_records_the_submitter(client: TestClient, db_session: Session, path: str) -> None:
+    policy_id = _submit_via(client, path, AUTHOR)
+
+    submitted = _events(db_session, policy_id, APPROVAL_EVENT_SUBMITTED)
+    assert [e.actor for e in submitted] == [AUTHOR[0]]
+    detail = client.get(f"{GOV}/approvals/{policy_id}", headers=_as(ADMIN)).json()
+    assert detail["requester"] == AUTHOR[0]
+    assert detail["submitter_unknown"] is False
+    assert detail["history"][0]["event_type"] == "SUBMITTED_FOR_REVIEW"
+
+
+@pytest.mark.parametrize("path", SUBMIT_PATHS)
+def test_submitter_cannot_approve_or_activate_after_either_submit_path(
+    client: TestClient, db_session: Session, path: str
+) -> None:
+    policy_id = _submit_via(client, path, ADMIN)
+
+    approve = _act(client, policy_id, "approve", ADMIN)
+    assert approve.status_code == 403, approve.text
+    assert approve.json()["detail"]["error_code"] == FORBIDDEN
+
+    direct_activate = client.post(f"{GOV}/policies/{policy_id}/activate", headers=_as(ADMIN))
+    assert direct_activate.status_code == 403, direct_activate.text
+    assert direct_activate.json()["detail"]["error_code"] == FORBIDDEN
+    assert _status(db_session, policy_id) == POLICY_STATUS_REVIEW
+    assert _events(db_session, policy_id, APPROVAL_EVENT_APPROVED) == []
+
+    # A second administrator approves; the submitter still cannot activate through either endpoint.
+    assert _act(client, policy_id, "approve", ADMIN_2).status_code == 200
+    assert _act(client, policy_id, "activate", ADMIN).status_code == 403
+    assert client.post(f"{GOV}/policies/{policy_id}/activate", headers=_as(ADMIN)).status_code == 403
+    assert _status(db_session, policy_id) == POLICY_STATUS_REVIEW
+
+
+@pytest.mark.parametrize("path", SUBMIT_PATHS)
+def test_another_user_can_approve_and_activate_after_either_submit_path(
+    client: TestClient, db_session: Session, path: str
+) -> None:
+    policy_id = _submit_via(client, path, AUTHOR)
+
+    assert _act(client, policy_id, "approve", REVIEWER).status_code == 200
+    assert _act(client, policy_id, "activate", APPROVER).status_code == 200
+    assert _status(db_session, policy_id) == POLICY_STATUS_ACTIVE
+
+
+def test_direct_submit_review_then_direct_activate_by_another_user_is_allowed(
     client: TestClient, db_session: Session
 ) -> None:
-    """submit-review records no approval event, so there is no requester to compare against."""
+    policy_id = _direct_submit(client, AUTHOR)
 
-    policy_id = _create_policy(client, "Direct lifecycle")
-    submit = client.post(f"{GOV}/policies/{policy_id}/submit-review", headers=_as(ADMIN))
-    assert submit.status_code == 200, submit.text
-
-    resp = client.post(f"{GOV}/policies/{policy_id}/activate", headers=_as(ADMIN))
+    resp = client.post(f"{GOV}/policies/{policy_id}/activate", headers=_as(APPROVER))
 
     assert resp.status_code == 200, resp.text
     assert _status(db_session, policy_id) == POLICY_STATUS_ACTIVE
+
+
+def test_explicit_override_still_works_after_direct_submit_review(client: TestClient, db_session: Session) -> None:
+    policy_id = _direct_submit(client, ADMIN)
+
+    approve = _act(client, policy_id, "approve", ADMIN, comment="urgent", allow_self_approval=True)
+    activate = client.post(
+        f"{GOV}/policies/{policy_id}/activate", json={"allow_self_approval": True}, headers=_as(ADMIN)
+    )
+
+    assert approve.status_code == 200, approve.text
+    assert _events(db_session, policy_id, APPROVAL_EVENT_APPROVED)[0].comment == (
+        f"{SELF_APPROVAL_OVERRIDE_MARKER} urgent"
+    )
+    assert activate.status_code == 200, activate.text
+    assert _status(db_session, policy_id) == POLICY_STATUS_ACTIVE
+
+
+def test_author_can_reject_after_direct_submit_review(client: TestClient, db_session: Session) -> None:
+    policy_id = _direct_submit(client, ADMIN)
+
+    resp = _act(client, policy_id, "reject", ADMIN, comment="withdrawing")
+
+    assert resp.status_code == 200, resp.text
+    assert _status(db_session, policy_id) == POLICY_STATUS_DRAFT
+
+
+def test_resubmitting_directly_after_a_rejection_records_the_new_submitter(
+    client: TestClient, db_session: Session
+) -> None:
+    policy_id = _submitted_by(client, ADMIN)
+    assert _act(client, policy_id, "reject", ADMIN_2).status_code == 200
+
+    assert client.post(f"{GOV}/policies/{policy_id}/submit-review", headers=_as(ADMIN_2)).status_code == 200
+
+    own = _act(client, policy_id, "approve", ADMIN_2)
+    assert own.status_code == 403
+    assert own.json()["detail"]["error_code"] == FORBIDDEN
+    assert _act(client, policy_id, "approve", ADMIN).status_code == 200
+
+
+def test_direct_submit_review_errors_still_win_and_record_nothing(
+    client: TestClient, db_session: Session
+) -> None:
+    assert client.post(f"{GOV}/policies/999999/submit-review", headers=_as(ADMIN)).status_code == 404
+
+    policy_id = _direct_submit(client, ADMIN)
+    again = client.post(f"{GOV}/policies/{policy_id}/submit-review", headers=_as(ADMIN_2))
+    assert again.status_code == 409
+    assert again.json()["detail"]["error_code"] == "GOVERNANCE_POLICY_LIFECYCLE"
+    assert [e.actor for e in _events(db_session, policy_id, APPROVAL_EVENT_SUBMITTED)] == [ADMIN[0]]
+
+
+def test_anonymous_principal_direct_submit_review_is_subject_to_the_rule(anonymous_client: TestClient) -> None:
+    created = anonymous_client.post(
+        f"{GOV}/policies",
+        json={
+            "name": "Anonymous direct SoD",
+            "category": "DATA_PROTECTION",
+            "status": "DRAFT",
+            "policy_json": {
+                "conditions": [{"field": "classification", "operator": "equals", "value": "RESTRICTED"}],
+                "actions": [{"type": "quarantine"}],
+            },
+        },
+    )
+    policy_id = created.json()["policy"]["id"]
+    assert anonymous_client.post(f"{GOV}/policies/{policy_id}/submit-review").status_code == 200
+
+    denied = anonymous_client.post(f"{GOV}/policies/{policy_id}/activate")
+    allowed = anonymous_client.post(f"{GOV}/policies/{policy_id}/activate", json={"allow_self_approval": True})
+
+    assert denied.status_code == 403
+    assert denied.json()["detail"]["error_code"] == FORBIDDEN
+    assert allowed.status_code == 200
+
+
+def test_service_level_submit_requires_an_actor_and_records_it(db_session: Session) -> None:
+    """The shared transition function is the only way into REVIEW; it cannot be called anonymously."""
+
+    row = create_governance_policy(
+        db_session,
+        name="Service level",
+        description=None,
+        category="DATA_PROTECTION",
+        status=POLICY_STATUS_DRAFT,
+        policy_json={
+            "conditions": [{"field": "classification", "operator": "equals", "value": "RESTRICTED"}],
+            "actions": [{"type": "quarantine"}],
+        },
+    )
+
+    with pytest.raises(TypeError):
+        submit_policy_for_review(db_session, int(row.id))  # type: ignore[call-arg]
+
+    submit_policy_for_review(db_session, int(row.id), actor="svc-user")
+    assert [e.actor for e in _events(db_session, int(row.id), APPROVAL_EVENT_SUBMITTED)] == ["svc-user"]
+
+
+_APP_DIR = Path(__file__).resolve().parents[1] / "app"
+
+
+def test_no_code_path_moves_a_policy_into_review_without_the_recording_function() -> None:
+    """Static inventory of the paths into REVIEW (F-187 follow-up).
+
+    Today there are exactly two entry points, both ending in ``submit_policy_for_review``:
+    ``POST /governance/approvals/{id}/submit`` and ``POST /governance/policies/{id}/submit-review``.
+    Any new writer of ``status = REVIEW`` (import, seed, helper) must record a submitter too, so this
+    fails until it is routed through that function or consciously added here.
+    """
+
+    status_assignment = re.compile(r"""\.status\s*=\s*(POLICY_STATUS_REVIEW|["']REVIEW["'])""")
+    status_kwarg = re.compile(r"""\bstatus\s*=\s*(POLICY_STATUS_REVIEW|["']REVIEW["'])""")
+    transition_call = re.compile(r"target_status\s*=\s*POLICY_STATUS_REVIEW")
+    raw_sql = re.compile(r"""(?is)update\s+governance_policies\b[^;]*['"]REVIEW['"]""")
+
+    assignments: list[str] = []
+    transitions: list[str] = []
+    for path in sorted(_APP_DIR.rglob("*.py")):
+        text = path.read_text(encoding="utf-8")
+        rel = str(path.relative_to(_APP_DIR.parent))
+        if status_assignment.search(text) or raw_sql.search(text):
+            assignments.append(rel)
+        if rel.startswith("app/governance_policies/") or rel.startswith("app/governance_approval/"):
+            # ``status=POLICY_STATUS_REVIEW`` as a filter/compare is fine; constructing a row is not.
+            if re.search(r"GovernancePolicy\([^)]*" + status_kwarg.pattern, text, re.S):
+                assignments.append(rel)
+        if transition_call.search(text):
+            transitions.append(rel)
+
+    assert assignments == []
+    assert transitions == ["app/governance_policies/service.py"]
+    source = (_APP_DIR / "governance_policies" / "service.py").read_text(encoding="utf-8")
+    assert len(transition_call.findall(source)) == 1
+    body = source[source.index("def submit_policy_for_review(") :]
+    body = body[: body.index("\ndef ", 10)]
+    assert "record_submission_event(" in body
+
+
+# --- legacy policies with no recorded submitter -> UNKNOWN, fail closed ------------------------
+
+
+def _legacy_review(
+    client: TestClient,
+    db: Session,
+    events: list[tuple[str, str]] | None = None,
+    *,
+    name: str = "Legacy policy",
+) -> int:
+    """A policy in REVIEW the way POST /policies/{id}/submit-review left it before the fix.
+
+    ``events`` are ``(event_type, actor)`` rows inserted in order, oldest first.
+    """
+
+    policy_id = _create_policy(client, name)
+    row = db.get(GovernancePolicy, policy_id)
+    assert row is not None
+    row.status = POLICY_STATUS_REVIEW
+    base = datetime.now(timezone.utc) - timedelta(hours=1)
+    for offset, (event_type, actor) in enumerate(events or []):
+        db.add(
+            GovernancePolicyApprovalEvent(
+                policy_id=policy_id,
+                event_type=event_type,
+                actor=actor,
+                comment=None,
+                created_at=base + timedelta(minutes=offset),
+            )
+        )
+    db.commit()
+    return policy_id
+
+
+@pytest.mark.parametrize("who", [ADMIN, APPROVER])
+def test_review_policy_without_any_submitter_evidence_is_denied_by_default(
+    client: TestClient, db_session: Session, who
+) -> None:
+    """Denied for everybody, not just for some assumed author: the submitter cannot be identified."""
+
+    policy_id = _legacy_review(client, db_session)
+
+    approve = _act(client, policy_id, "approve", who)
+    assert approve.status_code == 403, approve.text
+    assert approve.json()["detail"]["error_code"] == UNKNOWN
+    assert "not recorded" in approve.json()["detail"]["message"]
+
+    direct = client.post(f"{GOV}/policies/{policy_id}/activate", headers=_as(who))
+    assert direct.status_code == 403, direct.text
+    assert direct.json()["detail"]["error_code"] == UNKNOWN
+    assert _status(db_session, policy_id) == POLICY_STATUS_REVIEW
+    assert _events(db_session, policy_id, APPROVAL_EVENT_APPROVED) == []
+
+
+@pytest.mark.parametrize("flag", [False, None])
+def test_missing_or_false_flag_does_not_lift_the_unknown_submitter_block(
+    client: TestClient, db_session: Session, flag: bool | None
+) -> None:
+    policy_id = _legacy_review(client, db_session)
+    body = {} if flag is None else {"allow_self_approval": flag}
+
+    resp = _act(client, policy_id, "approve", ADMIN, **body)
+
+    assert resp.status_code == 403
+    assert resp.json()["detail"]["error_code"] == UNKNOWN
+
+
+@pytest.mark.parametrize("value", ["true", 1, "yes"])
+def test_only_json_true_lifts_the_unknown_submitter_block(
+    client: TestClient, db_session: Session, value: object
+) -> None:
+    policy_id = _legacy_review(client, db_session)
+
+    resp = _act(client, policy_id, "approve", ADMIN, allow_self_approval=value)
+
+    assert resp.status_code == 422
+    assert _events(db_session, policy_id, APPROVAL_EVENT_APPROVED) == []
+
+
+def test_explicit_override_permits_approve_of_an_unknown_submitter_and_marks_the_history(
+    client: TestClient, db_session: Session
+) -> None:
+    policy_id = _legacy_review(client, db_session)
+
+    resp = _act(client, policy_id, "approve", ADMIN, comment="checked offline", allow_self_approval=True)
+
+    assert resp.status_code == 200, resp.text
+    approved = _events(db_session, policy_id, APPROVAL_EVENT_APPROVED)
+    assert [e.actor for e in approved] == [ADMIN[0]]
+    assert approved[0].comment == f"{SUBMITTER_UNKNOWN_OVERRIDE_MARKER} checked offline"
+    # Activation is gated on its own, again with the same explicit override. (The approval workflow's
+    # activate needs a recorded submission to call the cycle approved, so a legacy policy is activated
+    # through the policy endpoint, or rejected and resubmitted.)
+    denied = client.post(f"{GOV}/policies/{policy_id}/activate", headers=_as(ADMIN_2))
+    assert denied.status_code == 403
+    assert denied.json()["detail"]["error_code"] == UNKNOWN
+    allowed = client.post(
+        f"{GOV}/policies/{policy_id}/activate", json={"allow_self_approval": True}, headers=_as(ADMIN_2)
+    )
+    assert allowed.status_code == 200, allowed.text
+    assert _status(db_session, policy_id) == POLICY_STATUS_ACTIVE
+
+
+def test_explicit_override_permits_direct_activate_of_an_unknown_submitter(
+    client: TestClient, db_session: Session
+) -> None:
+    policy_id = _legacy_review(client, db_session)
+
+    resp = client.post(
+        f"{GOV}/policies/{policy_id}/activate", json={"allow_self_approval": True}, headers=_as(ADMIN)
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert _status(db_session, policy_id) == POLICY_STATUS_ACTIVE
+
+
+def test_unknown_submitter_policy_with_an_approved_event_cannot_be_activated_directly_by_default(
+    client: TestClient, db_session: Session
+) -> None:
+    """Legacy "approved" state: REVIEW + an APPROVED event but no submission event at all."""
+
+    policy_id = _legacy_review(client, db_session, [(APPROVAL_EVENT_APPROVED, "bob-reviewer")])
+
+    direct = client.post(f"{GOV}/policies/{policy_id}/activate", headers=_as(ADMIN))
+    workflow = _act(client, policy_id, "activate", ADMIN)
+
+    assert direct.status_code == 403
+    assert direct.json()["detail"]["error_code"] == UNKNOWN
+    # No approved cycle exists for the workflow endpoint: its 409 comes first.
+    assert workflow.status_code == 409
+    assert _status(db_session, policy_id) == POLICY_STATUS_REVIEW
+
+
+def test_reject_stays_allowed_for_an_unknown_submitter(client: TestClient, db_session: Session) -> None:
+    policy_id = _legacy_review(client, db_session)
+
+    resp = _act(client, policy_id, "reject", ADMIN, comment="resubmit please")
+
+    assert resp.status_code == 200, resp.text
+    assert _status(db_session, policy_id) == POLICY_STATUS_DRAFT
+    # Resubmitting through the direct endpoint now records a submitter, so the rule is back to normal.
+    assert client.post(f"{GOV}/policies/{policy_id}/submit-review", headers=_as(AUTHOR)).status_code == 200
+    assert _act(client, policy_id, "approve", REVIEWER).status_code == 200
+
+
+def test_detail_reports_an_unknown_submitter(client: TestClient, db_session: Session) -> None:
+    policy_id = _legacy_review(client, db_session)
+
+    detail = client.get(f"{GOV}/approvals/{policy_id}", headers=_as(ADMIN)).json()
+
+    assert detail["current_status"] == "REVIEW"
+    assert detail["submitter_unknown"] is True
+    assert detail["requester"] is None
+
+
+def test_unknown_submitter_does_not_mask_404_or_409(client: TestClient, db_session: Session) -> None:
+    assert _act(client, 999999, "approve", ADMIN).status_code == 404
+    assert client.post(f"{GOV}/policies/999999/activate", headers=_as(ADMIN)).status_code == 404
+
+    draft_id = _create_policy(client, "Plain draft")
+    approve_draft = _act(client, draft_id, "approve", ADMIN)
+    assert approve_draft.status_code == 409
+    assert approve_draft.json()["detail"]["error_code"] == "GOVERNANCE_APPROVAL"
+    activate_draft = client.post(f"{GOV}/policies/{draft_id}/activate", headers=_as(ADMIN))
+    assert activate_draft.status_code == 409
+    assert activate_draft.json()["detail"]["error_code"] == "GOVERNANCE_POLICY_LIFECYCLE"
+
+    # A review that was never approved: the workflow's own 409 still precedes the separation check.
+    legacy_id = _legacy_review(client, db_session)
+    not_approved = _act(client, legacy_id, "activate", ADMIN)
+    assert not_approved.status_code == 409
+
+
+def test_single_administrator_environment_is_blocked_by_default(client: TestClient, db_session: Session) -> None:
+    """No flag relaxes the rule: a sole administrator needs the explicit per-request override."""
+
+    policy_id = _direct_submit(client, ADMIN)
+    legacy_id = _legacy_review(client, db_session, name="Legacy for the sole admin")
+
+    for target, expected in ((policy_id, FORBIDDEN), (legacy_id, UNKNOWN)):
+        resp = _act(client, target, "approve", ADMIN)
+        assert resp.status_code == 403
+        assert resp.json()["detail"]["error_code"] == expected
+
+
+# --- fallback evidence rules (pure unit tests of the requester resolution) ----------------------
+
+
+def _ev(event_type: str, actor: str, minute: int) -> GovernancePolicyApprovalEvent:
+    return GovernancePolicyApprovalEvent(
+        policy_id=1,
+        event_type=event_type,
+        actor=actor,
+        created_at=datetime(2026, 1, 1, 12, minute, tzinfo=timezone.utc),
+    )
+
+
+def test_open_cycle_requester_uses_the_latest_submission_event() -> None:
+    events = [_ev(APPROVAL_EVENT_SUBMITTED, "alice", 0), _ev(APPROVAL_EVENT_APPROVED, "bob", 1)]
+
+    assert open_cycle_requester(events) == "alice"
+
+
+def test_open_cycle_requester_follows_a_resubmission_after_a_rejection() -> None:
+    events = [
+        _ev(APPROVAL_EVENT_SUBMITTED, "alice", 0),
+        _ev(APPROVAL_EVENT_REJECTED, "bob", 1),
+        _ev(APPROVAL_EVENT_SUBMITTED, "carol", 2),
+    ]
+
+    assert open_cycle_requester(events) == "carol"
+
+
+@pytest.mark.parametrize(
+    "ending", [APPROVAL_EVENT_REJECTED, APPROVAL_EVENT_REQUEST_CHANGES, APPROVAL_EVENT_CANCELLED]
+)
+def test_open_cycle_requester_is_unknown_when_the_submitted_cycle_already_ended(ending: str) -> None:
+    """The policy is in REVIEW again, so it was resubmitted without a recorded submitter."""
+
+    events = [_ev(APPROVAL_EVENT_SUBMITTED, "alice", 0), _ev(ending, "bob", 1)]
+
+    assert open_cycle_requester(events) is None
+
+
+@pytest.mark.parametrize("actor", ["", "   "])
+def test_open_cycle_requester_is_unknown_for_a_blank_actor(actor: str) -> None:
+    assert open_cycle_requester([_ev(APPROVAL_EVENT_SUBMITTED, actor, 0)]) is None
+
+
+def test_open_cycle_requester_is_unknown_without_any_submission_event() -> None:
+    assert open_cycle_requester([]) is None
+    assert open_cycle_requester([_ev(APPROVAL_EVENT_APPROVED, "bob", 0)]) is None
+
+
+# --- fallback evidence through the API ---------------------------------------------------------
+
+
+def test_legacy_review_with_a_submission_event_uses_it(client: TestClient, db_session: Session) -> None:
+    policy_id = _legacy_review(client, db_session, [(APPROVAL_EVENT_SUBMITTED, ADMIN[0])])
+
+    own = _act(client, policy_id, "approve", ADMIN)
+    other = _act(client, policy_id, "approve", ADMIN_2)
+
+    assert own.status_code == 403
+    assert own.json()["detail"]["error_code"] == FORBIDDEN
+    assert other.status_code == 200, other.text
+
+
+def test_stale_submitter_of_a_finished_cycle_is_not_reused(client: TestClient, db_session: Session) -> None:
+    """alice submitted, bob rejected, then the policy went back to REVIEW without a recorded submitter."""
+
+    policy_id = _legacy_review(
+        client,
+        db_session,
+        [(APPROVAL_EVENT_SUBMITTED, AUTHOR[0]), (APPROVAL_EVENT_REJECTED, REVIEWER[0])],
+    )
+
+    for who in (ADMIN, ADMIN_2):
+        resp = _act(client, policy_id, "approve", who)
+        assert resp.status_code == 403
+        assert resp.json()["detail"]["error_code"] == UNKNOWN
+    detail = client.get(f"{GOV}/approvals/{policy_id}", headers=_as(ADMIN)).json()
+    assert detail["submitter_unknown"] is True
+    assert detail["requester"] is None
+
+
+def test_blank_actor_on_the_submission_event_fails_closed(client: TestClient, db_session: Session) -> None:
+    policy_id = _legacy_review(client, db_session, [(APPROVAL_EVENT_SUBMITTED, "  ")])
+
+    resp = _act(client, policy_id, "approve", ADMIN)
+
+    assert resp.status_code == 403
+    assert resp.json()["detail"]["error_code"] == UNKNOWN

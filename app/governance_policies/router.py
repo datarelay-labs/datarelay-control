@@ -12,7 +12,7 @@ from app.auth.governance_rbac import (
     resolve_governance_actor,
 )
 from app.governance_approval.schemas import GovernanceApprovalActionRequest
-from app.governance_approval.service import GovernanceSelfApprovalError, enforce_separation_of_duties
+from app.governance_approval.service import GovernanceSeparationOfDutiesError, enforce_separation_of_duties
 
 from app.database import get_db, get_db_read_bounded
 from app.governance_policies.impact_service import analyze_policy_impact_preview, analyze_saved_policy_impact
@@ -172,11 +172,13 @@ def _lifecycle_response(db: Session, policy_id: int) -> GovernancePolicyResponse
 @router.post("/policies/{policy_id}/submit-review", response_model=GovernancePolicyResponse)
 async def post_governance_policy_submit_review(
     policy_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     _auth=Depends(require_governance_write()),
 ) -> GovernancePolicyResponse:
     try:
-        submit_policy_for_review(db, policy_id)
+        # F-187: record the submitter exactly like POST /governance/approvals/{id}/submit does.
+        submit_policy_for_review(db, policy_id, actor=resolve_governance_actor(request))
         db.commit()
     except GovernancePolicyNotFoundError as exc:
         db.rollback()
@@ -221,11 +223,11 @@ async def post_governance_policy_activate(
             status_code=404,
             detail={"error_code": "GOVERNANCE_POLICY_NOT_FOUND", "message": str(exc)},
         ) from exc
-    except GovernanceSelfApprovalError as exc:
+    except GovernanceSeparationOfDutiesError as exc:
         db.rollback()
         raise HTTPException(
             status_code=403,
-            detail={"error_code": "GOVERNANCE_SELF_APPROVAL_FORBIDDEN", "message": str(exc)},
+            detail={"error_code": exc.error_code, "message": str(exc)},
         ) from exc
     except GovernancePolicyLifecycleError as exc:
         db.rollback()
