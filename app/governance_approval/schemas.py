@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool
 
 ApprovalEventType = Literal[
     "SUBMITTED_FOR_REVIEW",
@@ -22,6 +22,10 @@ PolicyStatus = Literal["DRAFT", "REVIEW", "ACTIVE", "RETIRED"]
 
 class GovernanceApprovalActionRequest(BaseModel):
     comment: str | None = Field(default=None, max_length=2000)
+    # F-187: approve/activate is refused (403) for the user who submitted the policy unless the
+    # caller explicitly sends JSON ``true`` (strict: strings such as "true" or 1 are rejected with
+    # 422). It has no effect on any other action.
+    allow_self_approval: StrictBool = False
 
 
 class GovernanceApprovalHistoryEntry(BaseModel):

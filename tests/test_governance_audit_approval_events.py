@@ -63,8 +63,9 @@ def test_audit_lists_events_after_submit_reject_approve_activate(governance_clie
 
     activated = _create_policy(governance_client, "F188 activated")
     _post(governance_client, activated, "submit")
-    _post(governance_client, activated, "approve")
-    _post(governance_client, activated, "activate")
+    # One anonymous principal runs every step here, so approve/activate need the F-187 override.
+    _post(governance_client, activated, "approve", allow_self_approval=True)
+    _post(governance_client, activated, "activate", allow_self_approval=True)
 
     listed = governance_client.get("/api/v1/governance/audit?window=24h")
     assert listed.status_code == 200, listed.text

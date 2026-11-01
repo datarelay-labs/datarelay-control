@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -47,8 +48,25 @@ from app.governance_policies.service import (
 )
 
 
+logger = logging.getLogger(__name__)
+
+
 class GovernanceApprovalError(Exception):
     pass
+
+
+class GovernanceSelfApprovalError(GovernanceApprovalError):
+    """The acting user submitted this policy and did not explicitly allow self-approval (F-187)."""
+
+    def __init__(self, action: str) -> None:
+        self.action = action
+        super().__init__(
+            f"you submitted this policy for review, so you cannot {action} it yourself; "
+            "ask another reviewer, or confirm an explicit self-approval override"
+        )
+
+
+SELF_APPROVAL_OVERRIDE_MARKER = "[self-approval override]"
 
 
 class GovernanceApprovalNotFoundError(Exception):
@@ -128,6 +146,54 @@ def _derive_approval_status(policy_status: str, events: list[GovernancePolicyApp
     if policy_status == POLICY_STATUS_REVIEW:
         return "PENDING_REVIEW"
     return policy_status
+
+
+def _same_actor(a: str | None, b: str | None) -> bool:
+    left = (a or "").strip().casefold()
+    right = (b or "").strip().casefold()
+    return bool(left) and left == right
+
+
+def current_cycle_requester(db: Session, policy_id: int) -> str | None:
+    """Actor of the latest SUBMITTED_FOR_REVIEW event for the policy, if any."""
+
+    events = _load_events_for_policy(db, policy_id)
+    submit_idx = _latest_submit_index(events)
+    return events[submit_idx].actor if submit_idx is not None else None
+
+
+def enforce_separation_of_duties(
+    db: Session,
+    row: GovernancePolicy,
+    *,
+    action: str,
+    actor: str,
+    allow_self_approval: bool,
+    comment: str | None = None,
+) -> str | None:
+    """Refuse approve/activate by the user who submitted the policy (F-187).
+
+    Only a REVIEW policy has an open submission to protect. Rejecting your own submission is not
+    restricted and never calls this. ``allow_self_approval`` must be an explicit opt-in from the
+    caller; when it is used, the override is logged and marked in the recorded comment so other
+    reviewers can see it in the approval history. Returns the comment that should be recorded.
+    """
+
+    if row.status != POLICY_STATUS_REVIEW:
+        return comment
+    requester = current_cycle_requester(db, int(row.id))
+    if requester is None or not _same_actor(requester, actor):
+        return comment
+    if not allow_self_approval:
+        raise GovernanceSelfApprovalError(action)
+    logger.warning(
+        "governance self-approval override: actor=%s action=%s policy_id=%s",
+        actor,
+        action,
+        row.id,
+    )
+    text = (comment or "").strip()
+    return f"{SELF_APPROVAL_OVERRIDE_MARKER} {text}".strip()
 
 
 def _record_event(
@@ -472,6 +538,7 @@ def approve_policy(
     *,
     comment: str | None = None,
     actor: str = DEFAULT_ACTOR,
+    allow_self_approval: bool = False,
 ) -> GovernancePolicy:
     row = get_governance_policy(db, policy_id)
     if row is None:
@@ -485,6 +552,14 @@ def approve_policy(
     if row.status != POLICY_STATUS_REVIEW:
         raise GovernanceApprovalError(f"only REVIEW policies can be approved (current: {row.status})")
 
+    comment = enforce_separation_of_duties(
+        db,
+        row,
+        action="approve",
+        actor=actor,
+        allow_self_approval=allow_self_approval,
+        comment=comment,
+    )
     _record_event(
         db,
         policy_id=policy_id,
@@ -532,6 +607,7 @@ def activate_approved_policy(
     *,
     comment: str | None = None,
     actor: str = DEFAULT_ACTOR,
+    allow_self_approval: bool = False,
 ) -> GovernancePolicy:
     row = get_governance_policy(db, policy_id)
     if row is None:
@@ -547,6 +623,14 @@ def activate_approved_policy(
     if not _is_approved_cycle(events):
         raise GovernanceApprovalError("policy must be approved before activation")
 
+    comment = enforce_separation_of_duties(
+        db,
+        row,
+        action="activate",
+        actor=actor,
+        allow_self_approval=allow_self_approval,
+        comment=comment,
+    )
     try:
         updated = activate_policy(db, policy_id)
     except GovernancePolicyLifecycleError as exc:

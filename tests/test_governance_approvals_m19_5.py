@@ -72,16 +72,19 @@ def _full_approval_flow(client: TestClient, policy_id: int) -> None:
     assert submit.status_code == 200
     assert submit.json()["policy_status"] == "REVIEW"
 
+    # These tests use one anonymous principal for every step, so each approve/activate is a
+    # self-approval (F-187) and needs the explicit override. Separation of duties itself is covered
+    # in tests/test_governance_separation_of_duties.py.
     approve = client.post(
         f"/api/v1/governance/approvals/{policy_id}/approve",
-        json={"comment": "Looks good"},
+        json={"comment": "Looks good", "allow_self_approval": True},
     )
     assert approve.status_code == 200
     assert approve.json()["approval_status"] == "APPROVED"
 
     activate = client.post(
         f"/api/v1/governance/approvals/{policy_id}/activate",
-        json={"comment": "Go live"},
+        json={"comment": "Go live", "allow_self_approval": True},
     )
     assert activate.status_code == 200
     assert activate.json()["policy_status"] == "ACTIVE"
@@ -104,7 +107,7 @@ def test_approve_success(governance_write_client: TestClient) -> None:
     governance_write_client.post(f"/api/v1/governance/approvals/{policy_id}/submit", json={})
     response = governance_write_client.post(
         f"/api/v1/governance/approvals/{policy_id}/approve",
-        json={"comment": "Approved"},
+        json={"comment": "Approved", "allow_self_approval": True},
     )
     assert response.status_code == 200
     assert response.json()["approval_status"] == "APPROVED"
@@ -138,7 +141,9 @@ def test_activate_success(governance_write_client: TestClient, db_session: Sessi
 def test_activate_without_approval_blocked(governance_write_client: TestClient) -> None:
     policy_id = _create_policy(governance_write_client)
     governance_write_client.post(f"/api/v1/governance/approvals/{policy_id}/submit", json={})
-    response = governance_write_client.post(f"/api/v1/governance/approvals/{policy_id}/activate", json={})
+    response = governance_write_client.post(
+        f"/api/v1/governance/approvals/{policy_id}/activate", json={"allow_self_approval": True}
+    )
     assert response.status_code == 409
     assert response.json()["detail"]["error_code"] == "GOVERNANCE_APPROVAL"
 
@@ -146,7 +151,9 @@ def test_activate_without_approval_blocked(governance_write_client: TestClient) 
 def test_invalid_transitions_blocked(governance_write_client: TestClient) -> None:
     policy_id = _create_policy(governance_write_client)
 
-    approve_draft = governance_write_client.post(f"/api/v1/governance/approvals/{policy_id}/approve", json={})
+    approve_draft = governance_write_client.post(
+        f"/api/v1/governance/approvals/{policy_id}/approve", json={"allow_self_approval": True}
+    )
     assert approve_draft.status_code == 409
 
     _full_approval_flow(governance_write_client, policy_id)
@@ -164,7 +171,9 @@ def test_retired_policy_actions_blocked(governance_write_client: TestClient) -> 
     governance_write_client.post(f"/api/v1/governance/policies/{policy_id}/retire")
 
     for path in ("submit", "approve", "activate"):
-        resp = governance_write_client.post(f"/api/v1/governance/approvals/{policy_id}/{path}", json={})
+        resp = governance_write_client.post(
+            f"/api/v1/governance/approvals/{policy_id}/{path}", json={"allow_self_approval": True}
+        )
         assert resp.status_code == 409
 
 
@@ -191,7 +200,10 @@ def test_approval_list_filter(governance_write_client: TestClient) -> None:
 def test_approval_detail_history(governance_write_client: TestClient, db_session: Session) -> None:
     policy_id = _create_policy(governance_write_client)
     governance_write_client.post(f"/api/v1/governance/approvals/{policy_id}/submit", json={"comment": "v1"})
-    governance_write_client.post(f"/api/v1/governance/approvals/{policy_id}/approve", json={"comment": "ok"})
+    governance_write_client.post(
+        f"/api/v1/governance/approvals/{policy_id}/approve",
+        json={"comment": "ok", "allow_self_approval": True},
+    )
 
     response = governance_write_client.get(f"/api/v1/governance/approvals/{policy_id}")
     assert response.status_code == 200

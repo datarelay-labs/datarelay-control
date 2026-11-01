@@ -21,8 +21,12 @@ def _governance_app() -> FastAPI:
     return app
 
 
-def _bearer(role: str, *, username: str = "rbac-test") -> dict[str, str]:
-    token, _ = issue_access_token(username=username, user_id=99, role=role, token_version=1)
+def _bearer(role: str, *, username: str | None = None) -> dict[str, str]:
+    # One distinct principal per role: since F-187 a user cannot approve or activate the policy they
+    # submitted, so roles in these workflows must not share a username.
+    token, _ = issue_access_token(
+        username=username or f"rbac-{role.lower()}", user_id=99, role=role, token_version=1
+    )
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -74,16 +78,17 @@ def test_administrator_full_governance_access(governance_rbac_client: TestClient
     )
     assert submit.status_code == 200
 
+    # The same administrator runs every step, so approve/activate need the explicit F-187 override.
     approve = client.post(
         f"/api/v1/governance/approvals/{policy_id}/approve",
-        json={"comment": "ok"},
+        json={"comment": "ok", "allow_self_approval": True},
         headers=_bearer("ADMINISTRATOR"),
     )
     assert approve.status_code == 200
 
     activate = client.post(
         f"/api/v1/governance/approvals/{policy_id}/activate",
-        json={},
+        json={"allow_self_approval": True},
         headers=_bearer("ADMINISTRATOR"),
     )
     assert activate.status_code == 200

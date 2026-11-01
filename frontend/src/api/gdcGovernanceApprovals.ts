@@ -115,14 +115,30 @@ export async function fetchGovernanceApprovalDetail(
   return safeRequestJson<GovernanceApprovalDetailResponse>(`${GOV}/approvals/${policyId}`, readJsonOpts)
 }
 
+/** Error code the API returns (HTTP 403) when the submitter approves or activates their own policy (F-187). */
+export const SELF_APPROVAL_FORBIDDEN_CODE = 'GOVERNANCE_SELF_APPROVAL_FORBIDDEN'
+
+export type SelfApprovalOptions = {
+  /** Explicit override of the separation-of-duties rule; only sent as `true` after the user confirmed. */
+  allowSelfApproval?: boolean
+}
+
+export function errorIndicatesSelfApprovalForbidden(err: unknown): boolean {
+  return err instanceof Error && err.message.includes(SELF_APPROVAL_FORBIDDEN_CODE)
+}
+
 async function postApprovalAction(
   policyId: number,
   action: 'submit' | 'approve' | 'reject' | 'activate',
   comment?: string | null,
+  options?: SelfApprovalOptions,
 ): Promise<GovernanceApprovalActionResponse> {
   return requestJson<GovernanceApprovalActionResponse>(`${GOV}/approvals/${policyId}/${action}`, {
     method: 'POST',
-    body: JSON.stringify({ comment: comment ?? null }),
+    body: JSON.stringify({
+      comment: comment ?? null,
+      ...(options?.allowSelfApproval === true ? { allow_self_approval: true } : {}),
+    }),
   })
 }
 
@@ -130,14 +146,14 @@ export function submitGovernanceApproval(policyId: number, comment?: string | nu
   return postApprovalAction(policyId, 'submit', comment)
 }
 
-export function approveGovernancePolicy(policyId: number, comment?: string | null) {
-  return postApprovalAction(policyId, 'approve', comment)
+export function approveGovernancePolicy(policyId: number, comment?: string | null, options?: SelfApprovalOptions) {
+  return postApprovalAction(policyId, 'approve', comment, options)
 }
 
 export function rejectGovernancePolicy(policyId: number, comment?: string | null) {
   return postApprovalAction(policyId, 'reject', comment)
 }
 
-export function activateGovernanceApproval(policyId: number, comment?: string | null) {
-  return postApprovalAction(policyId, 'activate', comment)
+export function activateGovernanceApproval(policyId: number, comment?: string | null, options?: SelfApprovalOptions) {
+  return postApprovalAction(policyId, 'activate', comment, options)
 }

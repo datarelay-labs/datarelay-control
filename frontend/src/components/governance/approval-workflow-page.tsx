@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   activateGovernanceApproval,
   approveGovernancePolicy,
+  errorIndicatesSelfApprovalForbidden,
   fetchGovernanceApprovalDetail,
   fetchGovernanceApprovals,
   rejectGovernancePolicy,
@@ -20,7 +21,9 @@ import {
   governanceAccessDeniedMessage,
   governanceReadOnlyReason,
 } from '../../lib/governance-rbac'
+import { getSessionUsername } from '../../auth/session'
 import { cn } from '../../lib/utils'
+import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
 import { GovernanceInvestigationDrawer } from './governance-investigation-drawer'
 import { policyStatusBadgeClass, policyStatusLabel } from './policy-lifecycle'
 import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
@@ -57,6 +60,20 @@ function approvalStatusBadgeClass(status: string) {
 
 function eventTypeLabel(eventType: ApprovalEventType) {
   return eventType.replace(/_/g, ' ')
+}
+
+type SelfApprovalAction = 'approve' | 'activate'
+
+/** F-187: true when the signed-in user is the one who submitted this policy for review. */
+function submittedByCurrentUser(requester: string | null | undefined): boolean {
+  const me = (getSessionUsername() ?? '').trim().toLowerCase()
+  const who = (requester ?? '').trim().toLowerCase()
+  return me !== '' && me === who
+}
+
+const SELF_APPROVAL_COPY: Record<SelfApprovalAction, { title: string; primaryLabel: string; verb: string }> = {
+  approve: { title: 'Approve your own submission?', primaryLabel: 'Approve anyway', verb: 'approving' },
+  activate: { title: 'Activate your own policy?', primaryLabel: 'Activate anyway', verb: 'activating' },
 }
 
 function ApprovalReadOnlyBanner({ message }: { message: string }) {
@@ -116,6 +133,8 @@ function ApprovalDetailDrawer({
   const canActivate = !readOnly && canActivateRole && detail?.current_status === 'REVIEW' && detail.is_approved
   // F-204: an approved policy waiting for activation must not look actionable to a role that cannot activate.
   const activationBlockedForRole = !readOnly && !canActivateRole && detail?.current_status === 'REVIEW' && detail.is_approved
+  // F-187: the submitter may reject, but approving or activating needs an explicit confirmation.
+  const selfSubmitted = submittedByCurrentUser(detail?.requester) && (canApprove || canActivate)
 
   return (
     <GovernanceInvestigationDrawer
@@ -251,6 +270,12 @@ function ApprovalDetailDrawer({
               className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-[12px] dark:border-gdc-border dark:bg-gdc-card"
               data-testid="approval-action-comment"
             />
+            {selfSubmitted ? (
+              <p data-testid="approval-self-approval-note" className="text-[12px] text-amber-800 dark:text-amber-200">
+                You submitted this policy for review. Approving or activating it yourself needs an explicit
+                confirmation and is recorded in the approval history; you can reject it without one.
+              </p>
+            ) : null}
             {activationBlockedForRole ? (
               <p data-testid="approval-activate-role-note" className="text-[12px] text-amber-800 dark:text-amber-200">
                 This policy is approved and waiting for activation. Only a Governance Approver or Administrator can
@@ -343,6 +368,7 @@ export function ApprovalWorkflowPage() {
   const [actionLoading, setActionLoading] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
+  const [selfConfirm, setSelfConfirm] = useState<{ action: SelfApprovalAction; comment: string } | null>(null)
 
   const loadApprovals = useCallback(async () => {
     setLoading(true)
@@ -392,10 +418,11 @@ export function ApprovalWorkflowPage() {
     setDetail(null)
     setActionError(null)
     setActionMessage(null)
+    setSelfConfirm(null)
   }, [])
 
   const runAction = useCallback(
-    async (fn: (id: number, comment: string) => Promise<unknown>) => {
+    async (fn: (id: number, comment: string) => Promise<unknown>, onSelfApprovalForbidden?: () => void) => {
       if (selectedPolicyId == null) return
       setActionLoading(true)
       setActionError(null)
@@ -407,6 +434,11 @@ export function ApprovalWorkflowPage() {
         await loadApprovals()
         await loadDetail(selectedPolicyId)
       } catch (err) {
+        if (onSelfApprovalForbidden && errorIndicatesSelfApprovalForbidden(err)) {
+          // The server is authoritative about who submitted the policy: offer the explicit override.
+          onSelfApprovalForbidden()
+          return
+        }
         setActionError(
           err instanceof Error && err.message
             ? `Action failed: ${err.message}`
@@ -418,6 +450,33 @@ export function ApprovalWorkflowPage() {
     },
     [selectedPolicyId, loadApprovals, loadDetail],
   )
+
+  // F-187: Approve and Activate are refused for the user who submitted the policy unless they
+  // explicitly confirm the override. The dialog is shown up front when the session user is the
+  // requester, and also if the server reports the self-approval refusal.
+  const requestGatedAction = useCallback(
+    (action: SelfApprovalAction, comment: string) => {
+      if (submittedByCurrentUser(detail?.requester)) {
+        setSelfConfirm({ action, comment })
+        return
+      }
+      const call = (id: number) =>
+        action === 'approve' ? approveGovernancePolicy(id, comment) : activateGovernanceApproval(id, comment)
+      void runAction(call, () => setSelfConfirm({ action, comment }))
+    },
+    [detail?.requester, runAction],
+  )
+
+  const confirmSelfApproval = useCallback(async () => {
+    if (!selfConfirm) return
+    const { action, comment } = selfConfirm
+    setSelfConfirm(null)
+    await runAction((id) =>
+      action === 'approve'
+        ? approveGovernancePolicy(id, comment, { allowSelfApproval: true })
+        : activateGovernanceApproval(id, comment, { allowSelfApproval: true }),
+    )
+  }, [selfConfirm, runAction])
 
   const requesters = useMemo(() => {
     const set = new Set<string>()
@@ -636,9 +695,29 @@ export function ApprovalWorkflowPage() {
           actionMessage={actionMessage}
           onClose={closeDrawer}
           onSubmit={(c) => void runAction((id, _) => submitGovernanceApproval(id, c))}
-          onApprove={(c) => void runAction((id, _) => approveGovernancePolicy(id, c))}
+          onApprove={(c) => requestGatedAction('approve', c)}
           onReject={(c) => void runAction((id, _) => rejectGovernancePolicy(id, c))}
-          onActivate={(c) => void runAction((id, _) => activateGovernanceApproval(id, c))}
+          onActivate={(c) => requestGatedAction('activate', c)}
+        />
+      ) : null}
+
+      {selfConfirm ? (
+        <DangerousActionDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setSelfConfirm(null)
+          }}
+          title={SELF_APPROVAL_COPY[selfConfirm.action].title}
+          targetName={detail?.policy.name}
+          impactBullets={[
+            `You submitted this policy for review, so ${SELF_APPROVAL_COPY[selfConfirm.action].verb} it yourself skips an independent second review.`,
+            'The override is recorded in the approval history under your name.',
+          ]}
+          risk="high"
+          primaryLabel={SELF_APPROVAL_COPY[selfConfirm.action].primaryLabel}
+          onConfirm={confirmSelfApproval}
+          busy={actionLoading}
+          dataTestId="approval-self-approval-dialog"
         />
       ) : null}
     </div>

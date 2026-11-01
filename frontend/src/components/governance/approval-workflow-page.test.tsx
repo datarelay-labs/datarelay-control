@@ -280,3 +280,159 @@ describe('ApprovalWorkflowPage', () => {
     expect(screen.queryByTestId('approval-action-reject')).not.toBeInTheDocument()
   })
 })
+
+describe('ApprovalWorkflowPage separation of duties (F-187)', () => {
+  const queue = (approval_status: string) => ({
+    window: '24h' as const,
+    total: 1,
+    approvals: [{ ...sampleQueueEntry, approval_status }],
+  })
+
+  beforeEach(() => {
+    clearTestSession()
+    vi.restoreAllMocks()
+  })
+
+  async function openRow() {
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(await screen.findByTestId('approval-row-7'))
+    return user
+  }
+
+  it('asks for confirmation before the submitter approves their own policy, and Cancel sends nothing', async () => {
+    persistTestSession('GOVERNANCE_REVIEWER', 'Governance Operator')
+    vi.spyOn(gdcGovernanceApprovals, 'fetchGovernanceApprovals').mockResolvedValue(queue('PENDING_REVIEW'))
+    vi.spyOn(gdcGovernanceApprovals, 'fetchGovernanceApprovalDetail').mockResolvedValue(sampleDetail)
+    const approve = vi.spyOn(gdcGovernanceApprovals, 'approveGovernancePolicy').mockResolvedValue({
+      policy_id: 7,
+      policy_status: 'REVIEW',
+      approval_status: 'APPROVED',
+      event_type: 'APPROVED',
+      message: 'Policy approved',
+    })
+
+    const user = await openRow()
+    expect(await screen.findByTestId('approval-self-approval-note')).toBeInTheDocument()
+    await user.click(await screen.findByTestId('approval-action-approve'))
+
+    const dialog = await screen.findByTestId('approval-self-approval-dialog')
+    expect(dialog).toHaveTextContent('Approve your own submission?')
+    expect(dialog).toHaveTextContent('Employee PII Protection')
+    expect(approve).not.toHaveBeenCalled()
+
+    await user.click(screen.getByTestId('approval-self-approval-dialog-cancel'))
+    expect(screen.queryByTestId('approval-self-approval-dialog')).not.toBeInTheDocument()
+    expect(approve).not.toHaveBeenCalled()
+  })
+
+  it('sends the explicit override only after the submitter confirms', async () => {
+    persistTestSession('GOVERNANCE_REVIEWER', 'governance operator')
+    vi.spyOn(gdcGovernanceApprovals, 'fetchGovernanceApprovals').mockResolvedValue(queue('PENDING_REVIEW'))
+    vi.spyOn(gdcGovernanceApprovals, 'fetchGovernanceApprovalDetail').mockResolvedValue(sampleDetail)
+    const approve = vi.spyOn(gdcGovernanceApprovals, 'approveGovernancePolicy').mockResolvedValue({
+      policy_id: 7,
+      policy_status: 'REVIEW',
+      approval_status: 'APPROVED',
+      event_type: 'APPROVED',
+      message: 'Policy approved',
+    })
+
+    const user = await openRow()
+    await user.click(await screen.findByTestId('approval-action-approve'))
+    await user.click(await screen.findByTestId('approval-self-approval-dialog-confirm'))
+
+    await waitFor(() => expect(approve).toHaveBeenCalledTimes(1))
+    expect(approve).toHaveBeenCalledWith(7, '', { allowSelfApproval: true })
+    expect(screen.queryByTestId('approval-self-approval-dialog')).not.toBeInTheDocument()
+  })
+
+  it('asks for confirmation before the submitter activates their own approved policy', async () => {
+    persistTestSession('GOVERNANCE_APPROVER', 'Governance Operator')
+    vi.spyOn(gdcGovernanceApprovals, 'fetchGovernanceApprovals').mockResolvedValue(queue('APPROVED'))
+    vi.spyOn(gdcGovernanceApprovals, 'fetchGovernanceApprovalDetail').mockResolvedValue(approvedDetail)
+    const activate = vi.spyOn(gdcGovernanceApprovals, 'activateGovernanceApproval').mockResolvedValue({
+      policy_id: 7,
+      policy_status: 'ACTIVE',
+      approval_status: 'ACTIVATED',
+      event_type: 'ACTIVATED',
+      message: 'Policy activated',
+    })
+
+    const user = await openRow()
+    await user.click(await screen.findByTestId('approval-action-activate'))
+
+    expect(await screen.findByTestId('approval-self-approval-dialog')).toHaveTextContent('Activate your own policy?')
+    expect(activate).not.toHaveBeenCalled()
+    await user.click(screen.getByTestId('approval-self-approval-dialog-confirm'))
+    await waitFor(() => expect(activate).toHaveBeenCalledWith(7, '', { allowSelfApproval: true }))
+  })
+
+  it('does not interrupt a different user: approve and activate go straight through without an override', async () => {
+    persistTestSession('GOVERNANCE_APPROVER', 'someone-else')
+    vi.spyOn(gdcGovernanceApprovals, 'fetchGovernanceApprovals').mockResolvedValue(queue('PENDING_REVIEW'))
+    vi.spyOn(gdcGovernanceApprovals, 'fetchGovernanceApprovalDetail').mockResolvedValue(sampleDetail)
+    const approve = vi.spyOn(gdcGovernanceApprovals, 'approveGovernancePolicy').mockResolvedValue({
+      policy_id: 7,
+      policy_status: 'REVIEW',
+      approval_status: 'APPROVED',
+      event_type: 'APPROVED',
+      message: 'Policy approved',
+    })
+
+    const user = await openRow()
+    expect(screen.queryByTestId('approval-self-approval-note')).not.toBeInTheDocument()
+    await user.click(await screen.findByTestId('approval-action-approve'))
+
+    await waitFor(() => expect(approve).toHaveBeenCalledTimes(1))
+    expect(approve).toHaveBeenCalledWith(7, '')
+    expect(screen.queryByTestId('approval-self-approval-dialog')).not.toBeInTheDocument()
+  })
+
+  it('lets the submitter reject their own submission without a dialog', async () => {
+    persistTestSession('GOVERNANCE_REVIEWER', 'Governance Operator')
+    vi.spyOn(gdcGovernanceApprovals, 'fetchGovernanceApprovals').mockResolvedValue(queue('PENDING_REVIEW'))
+    vi.spyOn(gdcGovernanceApprovals, 'fetchGovernanceApprovalDetail').mockResolvedValue(sampleDetail)
+    const reject = vi.spyOn(gdcGovernanceApprovals, 'rejectGovernancePolicy').mockResolvedValue({
+      policy_id: 7,
+      policy_status: 'DRAFT',
+      approval_status: 'REJECTED',
+      event_type: 'REJECTED',
+      message: 'Policy returned to draft',
+    })
+
+    const user = await openRow()
+    await user.click(await screen.findByTestId('approval-action-reject'))
+
+    await waitFor(() => expect(reject).toHaveBeenCalledWith(7, ''))
+    expect(screen.queryByTestId('approval-self-approval-dialog')).not.toBeInTheDocument()
+  })
+
+  it('falls back to the dialog when the server reports a self-approval the UI did not predict', async () => {
+    persistTestSession('GOVERNANCE_REVIEWER', 'alias-of-the-requester')
+    vi.spyOn(gdcGovernanceApprovals, 'fetchGovernanceApprovals').mockResolvedValue(queue('PENDING_REVIEW'))
+    vi.spyOn(gdcGovernanceApprovals, 'fetchGovernanceApprovalDetail').mockResolvedValue(sampleDetail)
+    const approve = vi
+      .spyOn(gdcGovernanceApprovals, 'approveGovernancePolicy')
+      .mockRejectedValueOnce(
+        new Error('403: [GOVERNANCE_SELF_APPROVAL_FORBIDDEN] you submitted this policy for review'),
+      )
+      .mockResolvedValue({
+        policy_id: 7,
+        policy_status: 'REVIEW',
+        approval_status: 'APPROVED',
+        event_type: 'APPROVED',
+        message: 'Policy approved',
+      })
+
+    const user = await openRow()
+    await user.click(await screen.findByTestId('approval-action-approve'))
+
+    expect(await screen.findByTestId('approval-self-approval-dialog')).toBeInTheDocument()
+    expect(screen.queryByTestId('approval-action-error')).not.toBeInTheDocument()
+    await user.click(screen.getByTestId('approval-self-approval-dialog-confirm'))
+
+    await waitFor(() => expect(approve).toHaveBeenCalledTimes(2))
+    expect(approve).toHaveBeenLastCalledWith(7, '', { allowSelfApproval: true })
+  })
+})
