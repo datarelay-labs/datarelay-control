@@ -10,6 +10,7 @@ import {
   listAdminUsers,
   postAdminUserMfaReset,
   postAdminPasswordChange,
+  postAuthChangePassword,
   putAdminHttpsSettings,
   updateAdminUser,
 } from '../../api/gdcAdmin'
@@ -40,6 +41,7 @@ vi.mock('../../api/gdcAdmin', () => ({
   updateAdminUser: vi.fn(),
   postAdminUserMfaReset: vi.fn(),
   postAdminPasswordChange: vi.fn(),
+  postAuthChangePassword: vi.fn(),
   putAdminHttpsSettings: vi.fn(),
   downloadAdminSupportBundle: vi.fn(),
 }))
@@ -155,6 +157,9 @@ describe('AdminSettingsPage Access & security modernization', () => {
       proxy_fallback_to_http: false,
     })
     vi.mocked(postAdminPasswordChange).mockResolvedValue(undefined)
+    vi.mocked(postAuthChangePassword).mockReset()
+    vi.mocked(postAuthChangePassword).mockResolvedValue({ ok: true, message: 'Password updated.' })
+    vi.mocked(postAdminPasswordChange).mockClear()
     vi.mocked(postAdminUserMfaReset).mockReset()
     vi.mocked(postAdminUserMfaReset).mockResolvedValue(undefined)
     vi.mocked(createAdminUser).mockResolvedValue({
@@ -336,7 +341,8 @@ describe('AdminSettingsPage Access & security modernization', () => {
     await screen.findByTestId('admin-users-table')
 
     expect(screen.getByTestId('admin-users-create')).toBeDisabled()
-    expect(screen.getByTestId('admin-password-submit')).toBeDisabled()
+    // F-202: changing your own password stays available to every role.
+    expect(screen.getByTestId('admin-password-submit')).toBeEnabled()
     const opsRow = screen.getByTestId('admin-user-row-ops')
     expect(within(opsRow).queryByRole('button', { name: /Edit user ops/i })).not.toBeInTheDocument()
     expect(within(opsRow).queryByRole('button', { name: /Delete user ops/i })).not.toBeInTheDocument()
@@ -362,7 +368,7 @@ describe('AdminSettingsPage Access & security modernization', () => {
     await screen.findByTestId('admin-users-table')
 
     expect(screen.getByTestId('admin-users-create')).toBeDisabled()
-    expect(screen.getByTestId('admin-password-submit')).toBeDisabled()
+    expect(screen.getByTestId('admin-password-submit')).toBeEnabled()
     const opsRow = screen.getByTestId('admin-user-row-ops')
     expect(within(opsRow).queryByRole('button', { name: /Edit user ops/i })).not.toBeInTheDocument()
     expect(within(opsRow).queryByRole('button', { name: /Delete user ops/i })).not.toBeInTheDocument()
@@ -376,7 +382,7 @@ describe('AdminSettingsPage Access & security modernization', () => {
     await screen.findByTestId('admin-settings-readonly-banner')
 
     expect(screen.getByTestId('admin-https-save')).toBeDisabled()
-    expect(screen.getByTestId('admin-password-submit')).toBeDisabled()
+    expect(screen.getByTestId('admin-password-submit')).toBeEnabled()
     expect(screen.getByTestId('admin-users-create')).toBeDisabled()
     expect(await screen.findByLabelText('Enable HTTPS')).toBeDisabled()
   })
@@ -400,5 +406,123 @@ describe('AdminSettingsPage Access & security modernization', () => {
     expect(await screen.findByTestId('admin-https-unavailable')).toHaveTextContent(/Administrators only/i)
     expect(screen.getByTestId('admin-users-empty')).toHaveTextContent(/visible to Administrators only/i)
     expect(screen.queryByText(/Create a local account/i)).not.toBeInTheDocument()
+  })
+
+  describe('self-service password change for every role (F-202)', () => {
+    const NON_ADMIN_ROLES = [
+      'OPERATOR',
+      'CONNECTOR_OPERATOR',
+      'VIEWER',
+      'GOVERNANCE_OPERATOR',
+      'GOVERNANCE_REVIEWER',
+      'GOVERNANCE_APPROVER',
+      'GOVERNANCE_AUDITOR',
+    ] as SessionRole[]
+
+    function signInAs(role: SessionRole, username: string) {
+      persistSession({
+        access_token: 'test-token',
+        refresh_token: 'test-refresh',
+        expires_at: new Date(Date.now() + 60_000).toISOString(),
+        user: { username, role, status: 'ACTIVE' },
+      })
+      vi.mocked(getAuthWhoAmI).mockResolvedValue({ role, username } as never)
+    }
+
+    async function fillPasswordForm(user: ReturnType<typeof userEvent.setup>, current: string, next: string, confirm: string) {
+      const panel = within(await screen.findByTestId('admin-password-panel'))
+      await user.type(panel.getByLabelText('Current password'), current)
+      await user.type(panel.getByLabelText('New password'), next)
+      await user.type(panel.getByLabelText('Confirm new password'), confirm)
+    }
+
+    it.each(NON_ADMIN_ROLES)('lets %s change its own password through the self-service endpoint', async (role) => {
+      const user = userEvent.setup()
+      signInAs(role, 'self-user')
+      renderPage()
+
+      const panel = within(await screen.findByTestId('admin-password-panel'))
+      const target = panel.getByLabelText('Target account username')
+      expect(target).toHaveValue('self-user')
+      expect(target).toBeDisabled()
+      expect(panel.getByLabelText('Current password')).toBeEnabled()
+      expect(panel.getByLabelText('New password')).toBeEnabled()
+
+      await fillPasswordForm(user, 'old-secret', 'long-enough', 'long-enough')
+      await user.click(screen.getByTestId('admin-password-submit'))
+
+      await waitFor(() => {
+        expect(postAuthChangePassword).toHaveBeenCalledWith({
+          current_password: 'old-secret',
+          new_password: 'long-enough',
+          confirm_new_password: 'long-enough',
+        })
+      })
+      expect(postAdminPasswordChange).not.toHaveBeenCalled()
+      expect(await screen.findByText(/Sign in again with your new password/i)).toBeInTheDocument()
+      // The API revoked every session of this account, so the browser session ends with a hint for sign-in.
+      expect(localStorage.getItem('gdc_platform_session_v1')).toBeNull()
+      expect(sessionStorage.getItem('gdc_post_password_change')).toBe('1')
+    })
+
+    it('keeps client-side validation for the self-service path and sends nothing', async () => {
+      const user = userEvent.setup()
+      signInAs('VIEWER', 'viewer-user')
+      renderPage()
+
+      await fillPasswordForm(user, 'old-secret', 'short', 'short')
+      await user.click(screen.getByTestId('admin-password-submit'))
+      expect(await screen.findByRole('alert')).toHaveTextContent(/at least 8 characters/i)
+
+      await user.clear(screen.getByLabelText('New password'))
+      await user.type(screen.getByLabelText('New password'), 'long-enough')
+      await user.clear(screen.getByLabelText('Confirm new password'))
+      await user.type(screen.getByLabelText('Confirm new password'), 'mismatch!!')
+      await user.click(screen.getByTestId('admin-password-submit'))
+      expect(await screen.findByRole('alert')).toHaveTextContent(/do not match/i)
+
+      expect(postAuthChangePassword).not.toHaveBeenCalled()
+      expect(postAdminPasswordChange).not.toHaveBeenCalled()
+    })
+
+    it('shows the server error and keeps the session when the current password is wrong', async () => {
+      const user = userEvent.setup()
+      signInAs('OPERATOR', 'ops-user')
+      vi.mocked(postAuthChangePassword).mockRejectedValue(
+        new Error('400: [USER_AUTH_FAILED] Current password is incorrect.'),
+      )
+      renderPage()
+
+      await fillPasswordForm(user, 'wrong-secret', 'long-enough', 'long-enough')
+      await user.click(screen.getByTestId('admin-password-submit'))
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(/Current password is incorrect/i)
+      expect(localStorage.getItem('gdc_platform_session_v1')).not.toBeNull()
+    })
+
+    it('defaults an administrator\'s target to the signed-in account and keeps the admin endpoint', async () => {
+      const user = userEvent.setup()
+      signInAs('ADMINISTRATOR', 'second-admin')
+      renderPage()
+
+      const target = within(await screen.findByTestId('admin-password-panel')).getByLabelText(
+        'Target account username',
+      )
+      expect(target).toHaveValue('second-admin')
+      expect(target).toBeEnabled()
+
+      await fillPasswordForm(user, 'old-secret', 'long-enough', 'long-enough')
+      await user.click(screen.getByTestId('admin-password-submit'))
+
+      await waitFor(() => {
+        expect(postAdminPasswordChange).toHaveBeenCalledWith({
+          username: 'second-admin',
+          current_password: 'old-secret',
+          new_password: 'long-enough',
+          confirm_password: 'long-enough',
+        })
+      })
+      expect(postAuthChangePassword).not.toHaveBeenCalled()
+    })
   })
 })

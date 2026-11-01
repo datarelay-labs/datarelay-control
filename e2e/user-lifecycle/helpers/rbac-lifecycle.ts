@@ -106,6 +106,19 @@ export async function runFirstLoginAndRbacLifecycle(opts: {
       ids.push(await seedUser(api, user))
     }
 
+    // F-202: admin-created accounts start with must_change_password. The operator and viewer fixtures
+    // exercise RBAC, not the first-login gate (the `forced` user covers that), so clear their flag.
+    for (const user of [users.operator, users.viewer]) {
+      const clear = spawnSync('python3', [fixtureScript, 'clear-password-change', '--username', user.username], {
+        env: process.env,
+        encoding: 'utf8',
+      })
+      if (clear.status !== 0) {
+        const detail = String(clear.stderr || clear.stdout || '').trim().replace(/\s+/g, ' ').slice(0, 280)
+        throw new Error(`failed to clear first-login gate for ${user.role} fixture${detail ? `: ${detail}` : ''}`)
+      }
+    }
+
     const mark = spawnSync('python3', [fixtureScript, 'mark-password-change', '--username', users.forced.username], {
       env: process.env,
       encoding: 'utf8',

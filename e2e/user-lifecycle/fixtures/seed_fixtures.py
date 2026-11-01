@@ -381,6 +381,29 @@ def cmd_mark_password_change(args: argparse.Namespace) -> int:
 
 
 
+def cmd_clear_password_change(args: argparse.Namespace) -> int:
+    """Clear the first-login gate on a disposable fixture user.
+
+    Since F-202 every account created through the admin API starts with ``must_change_password``.
+    Fixture users that exist to exercise RBAC (not the first-login gate) use this to skip the gate.
+    """
+    from app.database import SessionLocal
+    from app.platform_admin.models import PlatformUser
+
+    db = SessionLocal()
+    try:
+        row = db.query(PlatformUser).filter(PlatformUser.username == args.username).one_or_none()
+        if row is None:
+            raise RuntimeError("fixture user not found")
+        row.must_change_password = False
+        row.token_version = int(row.token_version or 1) + 1
+        db.commit()
+        print(json.dumps({"ok": True, "username": row.username, "must_change_password": False}))
+        return 0
+    finally:
+        db.close()
+
+
 def cmd_seed_governance_ops(args: argparse.Namespace) -> int:
     """Seed deterministic Governance operation rows in the disposable platform DB."""
     from datetime import datetime, timedelta, timezone
@@ -619,6 +642,9 @@ def main() -> int:
     s = sub.add_parser("mark-password-change")
     s.add_argument("--username", required=True)
     s.set_defaults(func=cmd_mark_password_change)
+    s = sub.add_parser("clear-password-change")
+    s.add_argument("--username", required=True)
+    s.set_defaults(func=cmd_clear_password_change)
     s = sub.add_parser("seed-governance-ops")
     s.add_argument("--run-id", required=True)
     s.add_argument("--stream-id", required=True, type=int)

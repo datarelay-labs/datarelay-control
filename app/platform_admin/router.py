@@ -745,6 +745,9 @@ def create_user(
         password_hash=get_password_hash(payload.password),
         role=payload.role,
         status="ACTIVE",
+        # F-202: the administrator who typed the initial password must not keep knowing it; the
+        # account owner has to choose their own password at first sign-in.
+        must_change_password=True,
     )
     db.add(user)
     try:
@@ -757,7 +760,7 @@ def create_user(
             entity_type="PLATFORM_USER",
             entity_id=int(user.id),
             entity_name=username,
-            details={"role": payload.role},
+            details={"role": payload.role, "must_change_password": True},
         )
         db.commit()
     except IntegrityError as exc:
@@ -793,7 +796,8 @@ def update_user(
     bump_token_version = False
     if payload.password is not None:
         user.password_hash = get_password_hash(payload.password)
-        user.must_change_password = False
+        # F-202: an administrator-set password is temporary; force the owner to replace it.
+        user.must_change_password = True
         bump_token_version = True
     if payload.role is not None and payload.role != user.role:
         user.role = payload.role
@@ -813,6 +817,7 @@ def update_user(
     details = payload.model_dump(exclude_unset=True, exclude={"password": True})
     if payload.password is not None:
         details["password_rotated"] = True
+        details["must_change_password"] = True
     if bump_token_version:
         details["token_version_bumped"] = True
     journal.record_audit_event(
