@@ -80,6 +80,31 @@ async function safeSessionDiagnostic(page: Page): Promise<Record<string, unknown
   })
 }
 
+/**
+ * Open an in-app path as an already signed-in user and wait for the page to be usable.
+ *
+ * Two races made BFS016 flaky under a cold Vite dev server (reproduced on the pre-F-192/F-187/F-202
+ * baseline as well, so they are not caused by those changes):
+ *  1. A hard navigation right after login aborts the SPA's boot-time whoami request, and the SPA drops
+ *     its stored session on that abort (see frontend/src/main.tsx), so the next page shows the login screen.
+ *     Letting the post-login page settle first avoids aborting it.
+ *  2. The Administration hub is a lazily loaded route; a fixed 500 ms sleep read the page before the hub
+ *     (and its access-context banner) had rendered. Wait for the banner instead of sleeping.
+ */
+async function settleAfterLogin(page: Page): Promise<void> {
+  await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => undefined)
+}
+
+async function openAdministrationHub(page: Page, uiBase: string): Promise<string> {
+  await settleAfterLogin(page)
+  await page.goto(`${uiBase}/admin`, { waitUntil: 'domcontentloaded', timeout: 15_000 })
+  await page
+    .getByTestId('admin-hub-access-context')
+    .waitFor({ state: 'visible', timeout: 15_000 })
+    .catch(() => undefined)
+  return page.locator('body').innerText()
+}
+
 function captureBrowserErrors(page: Page): string[] {
   const errors: string[] = []
   page.on('pageerror', (err) => errors.push(`pageerror: ${String(err).slice(0, 500)}`))
@@ -172,10 +197,8 @@ export async function runFirstLoginAndRbacLifecycle(opts: {
     const viewerErrors = captureBrowserErrors(viewerPage)
     await login(viewerPage, uiBase, users.viewer)
     const viewerAfterLogin = await safeSessionDiagnostic(viewerPage)
-    await viewerPage.goto(`${uiBase}/admin`, { waitUntil: 'domcontentloaded', timeout: 15_000 })
-    await viewerPage.waitForTimeout(500)
+    const viewerAdminText = await openAdministrationHub(viewerPage, uiBase)
     const viewerAfterAdmin = await safeSessionDiagnostic(viewerPage)
-    const viewerAdminText = await viewerPage.locator('body').innerText()
     await viewerPage.goto(`${uiBase}/settings`, { waitUntil: 'domcontentloaded', timeout: 15_000 })
     await viewerPage.waitForTimeout(500)
     const viewerAfterSettings = await safeSessionDiagnostic(viewerPage)
@@ -217,10 +240,8 @@ export async function runFirstLoginAndRbacLifecycle(opts: {
     const operatorErrors = captureBrowserErrors(operatorPage)
     await login(operatorPage, uiBase, users.operator)
     const operatorAfterLogin = await safeSessionDiagnostic(operatorPage)
-    await operatorPage.goto(`${uiBase}/admin`, { waitUntil: 'domcontentloaded', timeout: 15_000 })
-    await operatorPage.waitForTimeout(500)
+    const operatorAdminText = await openAdministrationHub(operatorPage, uiBase)
     const operatorAfterAdmin = await safeSessionDiagnostic(operatorPage)
-    const operatorAdminText = await operatorPage.locator('body').innerText()
     await operatorPage.goto(`${uiBase}/settings`, { waitUntil: 'domcontentloaded', timeout: 15_000 })
     await operatorPage.waitForTimeout(500)
     const operatorAfterSettings = await safeSessionDiagnostic(operatorPage)
