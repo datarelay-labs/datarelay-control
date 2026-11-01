@@ -88,6 +88,7 @@ async function safeSessionDiagnostic(page: Page): Promise<Record<string, unknown
  *  1. A hard navigation right after login aborts the SPA's boot-time whoami request, and the SPA drops
  *     its stored session on that abort (see frontend/src/main.tsx), so the next page shows the login screen.
  *     Letting the post-login page settle first avoids aborting it.
+ *     The same applies to every later hard navigation while the previous page still has requests in flight.
  *  2. The Administration hub is a lazily loaded route; a fixed 500 ms sleep read the page before the hub
  *     (and its access-context banner) had rendered. Wait for the banner instead of sleeping.
  */
@@ -199,6 +200,7 @@ export async function runFirstLoginAndRbacLifecycle(opts: {
     const viewerAfterLogin = await safeSessionDiagnostic(viewerPage)
     const viewerAdminText = await openAdministrationHub(viewerPage, uiBase)
     const viewerAfterAdmin = await safeSessionDiagnostic(viewerPage)
+    await settleAfterLogin(viewerPage)
     await viewerPage.goto(`${uiBase}/settings`, { waitUntil: 'domcontentloaded', timeout: 15_000 })
     await viewerPage.waitForTimeout(500)
     const viewerAfterSettings = await safeSessionDiagnostic(viewerPage)
@@ -242,6 +244,7 @@ export async function runFirstLoginAndRbacLifecycle(opts: {
     const operatorAfterLogin = await safeSessionDiagnostic(operatorPage)
     const operatorAdminText = await openAdministrationHub(operatorPage, uiBase)
     const operatorAfterAdmin = await safeSessionDiagnostic(operatorPage)
+    await settleAfterLogin(operatorPage)
     await operatorPage.goto(`${uiBase}/settings`, { waitUntil: 'domcontentloaded', timeout: 15_000 })
     await operatorPage.waitForTimeout(500)
     const operatorAfterSettings = await safeSessionDiagnostic(operatorPage)
