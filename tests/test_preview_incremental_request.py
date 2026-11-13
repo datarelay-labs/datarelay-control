@@ -144,3 +144,15 @@ def test_fetch_sample_without_checkpoint_uses_neutral_checkpoint_replacements(
     assert isinstance(sent, dict)
     assert sent["from"] == "0"
     assert "{{checkpoint.last_timestamp}}" not in json.dumps(sent)
+
+
+def test_api_test_checkpoint_replacements_match_runtime_aliases() -> None:
+    """F-120: {{checkpoint.value}} / cursor / last_seen are runtime aliases; Run Test must substitute them."""
+
+    repl = api_test_checkpoint_replacements({"value": "6899", "last_timestamp": "6899", "last_event_id": "6899"})
+
+    assert repl["{{checkpoint.value}}"] == "6899"
+    assert repl["{{checkpoint.cursor}}"] == "6899"
+    assert repl["{{checkpoint.last_seen}}"] == "6899"
+    # Names the runtime does not know stay unsubstituted so the wizard can flag them.
+    assert "{{checkpoint.last_id}}" not in repl

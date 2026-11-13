@@ -23,7 +23,7 @@ from app.formatters.message_prefix import (
     effective_message_prefix_template,
     resolve_message_prefix_template,
 )
-from app.runtime.errors import DestinationSendError
+from app.runtime.errors import DestinationSendError, is_retryable_http_status
 
 
 class WebhookSender:
@@ -85,6 +85,8 @@ class WebhookSender:
         httpx_timeout = outbound_httpx_timeout(timeout_seconds)
         pool_key = f"webhook:{url}"
         client = get_httpx_client(pool_key=pool_key, timeout=httpx_timeout)
+        # Leading events confirmed by the receiver; lets the runner resume a Route mid-batch.
+        delivered_event_count = 0
         try:
             for batch in batches:
                 if prefix_on:
@@ -109,6 +111,12 @@ class WebhookSender:
                         break
                     except httpx.HTTPStatusError as exc:
                         status = int(exc.response.status_code) if exc.response is not None else None
+                        if not is_retryable_http_status(status):
+                            # F-168: a 401/403/404/... answer cannot be fixed by sending it again.
+                            raise DestinationSendError(
+                                f"Webhook send failed (HTTP {status}, not retried): {exc}",
+                                http_status=status,
+                            ) from exc
                         if attempt >= attempts:
                             invalidate_httpx_client(pool_key)
                             raise DestinationSendError(
@@ -123,8 +131,13 @@ class WebhookSender:
                                 f"Webhook send failed after retries: {exc}"
                             ) from exc
                         time.sleep(max(backoff * (2 ** (attempt - 1)), 0))
-        except DestinationSendError:
+                delivered_event_count += len(batch)
+        except DestinationSendError as exc:
+            exc.delivered_event_count = delivered_event_count
             raise
         except httpx.HTTPError as exc:
             invalidate_httpx_client(pool_key)
-            raise DestinationSendError(f"Webhook send failed: {exc}") from exc
+            raise DestinationSendError(
+                f"Webhook send failed: {exc}",
+                delivered_event_count=delivered_event_count,
+            ) from exc

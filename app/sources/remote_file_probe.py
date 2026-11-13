@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import socket
 import time
 from typing import Any
 
@@ -16,6 +17,79 @@ def _get(data: Any, key: str, default: Any = None) -> Any:
     if isinstance(data, dict):
         return data.get(key, default)
     return getattr(data, key, default)
+
+
+_PRIVATE_KEY_UNREADABLE = (
+    "The Private key could not be read. Paste the whole key including the BEGIN/END lines and, "
+    "if the key is encrypted, enter its passphrase."
+)
+
+
+def describe_ssh_connect_failure(exc: BaseException, *, host: str, port: int) -> dict[str, Any]:
+    """Turn a paramiko/socket failure into an operator-facing message that names the input to fix.
+
+    Returns ``error_type``, ``message``, ``ssh_reachable`` and ``ssh_auth_ok`` (``None`` when
+    authentication was never attempted). Only the exception class and fixed text are used, never
+    raw exception strings, so no credential or key material can leak.
+    """
+
+    if isinstance(exc, paramiko.BadHostKeyException):
+        return {
+            "error_type": "host_key_mismatch",
+            "message": (
+                "The server's host key does not match the Known hosts entry. Replace the entry with the "
+                "server's current key if the change is expected; otherwise do not connect."
+            ),
+            "ssh_reachable": True,
+            "ssh_auth_ok": None,
+        }
+    if isinstance(exc, paramiko.AuthenticationException):
+        return {
+            "error_type": "authentication_failed",
+            "message": "The server rejected the credentials. Check the Username and the Password or Private key.",
+            "ssh_reachable": True,
+            "ssh_auth_ok": False,
+        }
+    if isinstance(exc, paramiko.SSHException) and "known_hosts" in str(exc).lower():
+        return {
+            "error_type": "host_key_unknown",
+            "message": (
+                "The server's host key is not in Known hosts and the policy is strict. Paste the server's "
+                "host key into Known hosts, or choose a less strict policy for a trusted network."
+            ),
+            "ssh_reachable": True,
+            "ssh_auth_ok": None,
+        }
+    if isinstance(exc, socket.gaierror):
+        return {
+            "error_type": "host_unresolved",
+            "message": f"The host name {host!r} could not be resolved. Check the Host.",
+            "ssh_reachable": False,
+            "ssh_auth_ok": None,
+        }
+    if isinstance(exc, (socket.timeout, TimeoutError)):
+        return {
+            "error_type": "connect_timeout",
+            "message": f"Timed out connecting to {host}:{port}. Check the Host, Port and firewall.",
+            "ssh_reachable": False,
+            "ssh_auth_ok": None,
+        }
+    if isinstance(exc, OSError):
+        return {
+            "error_type": "connect_failed",
+            "message": f"Could not connect to {host}:{port}. Check the Host and Port, and that the SSH service is running.",
+            "ssh_reachable": False,
+            "ssh_auth_ok": None,
+        }
+    return {
+        "error_type": "ssh_protocol_error",
+        "message": (
+            f"SSH negotiation with {host}:{port} failed ({type(exc).__name__}). "
+            "The server may not offer a compatible key exchange, cipher or key type."
+        ),
+        "ssh_reachable": True,
+        "ssh_auth_ok": None,
+    }
 
 
 def probe_remote_file_source(
@@ -56,14 +130,25 @@ def probe_remote_file_source(
     try:
         client = open_ssh_client(source_config)
     except ValueError as exc:
-        out["message"] = str(exc)
+        text = str(exc)
+        out["message"] = _PRIVATE_KEY_UNREADABLE if text == "private_key could not be parsed" else text
         out["error_type"] = "remote_file_probe_invalid_config"
+        out["ssh_auth_ok"] = None
+        out["sftp_available"] = None
         out["latency_ms"] = int((time.perf_counter() - started) * 1000)
         return out
     except Exception as exc:
-        out["message"] = f"SSH connect failed: {type(exc).__name__}"
-        out["error_type"] = "ssh_connect_failed"
-        out["ssh_reachable"] = True
+        host = str(_get(source_config, "host") or "").strip()
+        try:
+            port = int(_get(source_config, "port", 22) or 22)
+        except (TypeError, ValueError):
+            port = 22
+        info = describe_ssh_connect_failure(exc, host=host, port=port)
+        out["message"] = info["message"]
+        out["error_type"] = info["error_type"]
+        out["ssh_reachable"] = info["ssh_reachable"]
+        out["ssh_auth_ok"] = info["ssh_auth_ok"]
+        out["sftp_available"] = None
         out["latency_ms"] = int((time.perf_counter() - started) * 1000)
         logger.info("%s", {"stage": "remote_file_probe_connect_failed", "error_type": type(exc).__name__})
         return out

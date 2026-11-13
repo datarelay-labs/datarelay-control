@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { ArrowRight } from 'lucide-react'
-import { cn } from '../../lib/utils'
+import { semanticCn as cn } from '../ui/semantic-cn'
 import { comparePreviewFields, formatPreviewValue, type FieldChange } from './processing-preview-diff'
 
 export type ProcessingPreviewTruth = 'Preview' | 'Saved configuration' | 'Runtime'
@@ -16,27 +16,27 @@ export type ProcessingPreviewStage = {
 }
 
 const CHANGE_STYLES: Record<FieldChange, string> = {
-  Added: 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200',
-  Changed: 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200',
-  Removed: 'border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200',
-  Unchanged: 'border-slate-200 bg-slate-50 text-slate-700 dark:border-gdc-border dark:bg-gdc-section dark:text-gdc-mutedStrong',
+  Added: 'border-status-success-border bg-status-success-subtle text-status-success',
+  Changed: 'border-status-warning-border bg-status-warning-subtle text-status-warning',
+  Removed: 'border-status-critical-border bg-status-critical-subtle text-status-critical',
+  Unchanged: 'border-default bg-surface-section text-fg-secondary',
 }
 
 function PreviewValue({ value, present }: { value: unknown; present: boolean }) {
-  if (!present) return <span className="text-slate-500 dark:text-gdc-muted">Not present</span>
+  if (!present) return <span className="text-fg-muted">Not present</span>
   const display = formatPreviewValue(value)
-  return <><code className="whitespace-pre-wrap break-all text-sm">{display.text}</code>{display.truncated ? <span className="block text-xs text-slate-500 dark:text-gdc-muted">Value truncated</span> : null}</>
+  return <><code className="whitespace-pre-wrap break-all text-sm">{display.text}</code>{display.truncated ? <span className="block text-caption text-fg-muted">Value truncated</span> : null}</>
 }
 
 function JsonEvidence({ label, value, present }: { label: 'Before' | 'After'; value: unknown; present: boolean }) {
   const display = present ? formatPreviewValue(value, 16000) : null
   return (
     <div className="min-w-0">
-      <p className="mb-1 text-sm font-semibold text-slate-700 dark:text-gdc-mutedStrong">{label}</p>
+      <p className="mb-1 text-body-sm font-semibold text-fg-secondary">{label}</p>
       {display ? <>
         <pre className="max-h-80 overflow-auto rounded-lg bg-slate-950 p-3 text-sm leading-6 text-slate-100">{display.text}</pre>
-        {display.truncated ? <p className="mt-1 text-xs text-slate-500 dark:text-gdc-muted">JSON display truncated; the original sample is unchanged.</p> : null}
-      </> : <p className="text-sm text-slate-500 dark:text-gdc-muted">{label === 'Before' ? 'No input preview for this stage' : 'No after-preview for this stage'}</p>}
+        {display.truncated ? <p className="mt-1 text-caption text-fg-muted">JSON display truncated; the original sample is unchanged.</p> : null}
+      </> : <p className="text-body-sm text-fg-muted">{label === 'Before' ? 'No input preview for this stage' : 'No after-preview for this stage'}</p>}
     </div>
   )
 }
@@ -59,37 +59,37 @@ export function ProcessingPreviewDock({ stages, title = 'Processing Preview' }: 
   const rows = comparison?.rows.filter((row) => !changesOnly || row.change !== 'Unchanged') ?? []
 
   return (
-    <section className="min-w-0 rounded-xl border border-slate-200/80 bg-white p-3.5 shadow-sm dark:border-gdc-border dark:bg-gdc-card"
+    <section className="w-full min-w-0 max-w-full rounded-lg border border-default bg-surface-card p-3.5"
       data-testid="processing-preview-dock" aria-label={title}>
       <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">{title}</h3>
-          <p className="mt-1 text-xs text-slate-500 dark:text-gdc-muted">Select a stage to compare its actual input and output. Preview evidence never claims persistence or delivery success.</p>
+        <div className="min-w-0 flex-1 basis-64">
+          <h3 className="text-title text-fg">{title}</h3>
+          <p className="mt-1 text-body-sm text-fg-muted">Select a stage to compare its actual input and output. Preview evidence never claims persistence or delivery success.</p>
         </div>
-        <span className="rounded-md bg-violet-500/10 px-2.5 py-1 text-xs font-semibold text-violet-700 dark:text-violet-300">{stages.length} processing stages</span>
+        <span className="shrink-0 whitespace-nowrap rounded-md border border-default bg-surface-section px-2.5 py-1 text-body-sm font-semibold text-fg-secondary">{stages.length} processing stages</span>
       </div>
-      <ol className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5" aria-label="Processing stage sequence">
+      <ol className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-5" aria-label="Processing stage sequence">
         {stages.map((stage, index) => {
           const active = selected?.id === stage.id
           return <li key={stage.id} className="min-w-0">
             <button type="button" onClick={() => setSelectedId(stage.id)} aria-pressed={active}
               data-testid={`processing-preview-stage-${stage.id}`}
-              className={cn('flex h-full min-h-20 w-full min-w-0 flex-col gap-2 rounded-lg border p-3 text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500',
-                active ? 'border-violet-400 bg-violet-50/80 shadow-sm dark:border-violet-500/60 dark:bg-violet-500/10' : 'border-slate-200 bg-slate-50/70 hover:border-violet-300 hover:bg-violet-50/40 dark:border-gdc-border dark:bg-gdc-section dark:hover:border-violet-500/40')}>
+              className={cn('flex h-full min-h-20 w-full min-w-0 flex-col gap-2 rounded-lg border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring',
+                active ? 'border-accent bg-surface-card' : 'border-default bg-surface-section hover:bg-surface-hover')}>
               <span className="flex w-full items-start justify-between gap-2">
-                <span className="text-xs font-bold tabular-nums text-violet-700 dark:text-violet-300">{String(index + 1).padStart(2, '0')}</span>
-                <ArrowRight className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
+                <span className="text-label tabular-nums text-fg">{String(index + 1).padStart(2, '0')}</span>
+                <ArrowRight className="h-3.5 w-3.5 shrink-0 text-fg-muted" aria-hidden />
               </span>
-              <span className="break-words text-sm font-semibold leading-snug text-slate-900 dark:text-slate-100">{stage.label}</span>
-              <span className="text-xs text-slate-500 dark:text-gdc-muted">{stage.truth}{stage.status ? ` · ${stage.status}` : ''}</span>
+              <span className="break-words text-label text-fg">{stage.label}</span>
+              <span className="break-words text-caption text-fg-muted">{stage.truth}{stage.status ? ` · ${stage.status}` : ''}</span>
             </button>
           </li>
         })}
       </ol>
-      {selected ? <div className="mt-3 min-w-0 rounded-lg border border-slate-200/80 bg-slate-50/50 p-3 dark:border-gdc-border dark:bg-gdc-section/50" data-testid="processing-preview-stage-comparison" aria-live="polite">
+      {selected ? <div className="mt-3 min-w-0 rounded-lg border border-default bg-surface-section p-3" data-testid="processing-preview-stage-comparison" aria-live="polite">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{selected.label} · inspection</h4>
-          <span className="rounded-md border border-violet-300 px-2 py-0.5 text-xs font-semibold text-violet-700 dark:border-violet-500/40 dark:text-violet-300">{selected.truth}</span>
+          <h4 className="text-label text-fg">{selected.label} · inspection</h4>
+          <span className="rounded-md border border-default px-2 py-0.5 text-caption font-semibold text-fg-secondary">{selected.truth}</span>
         </div>
         {!hasBefore && !hasAfter ? <p className="mt-2 text-sm text-slate-600 dark:text-gdc-muted">No before/after evidence for this stage yet. Use the detailed preview workspace for a verified sample.</p> : <>
           {comparison ? <>

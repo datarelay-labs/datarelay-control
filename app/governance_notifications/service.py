@@ -211,7 +211,8 @@ class NotificationService:
                 success=ok,
                 message=(
                     "SMTP relay accepted the test message; inbox delivery is not verified."
-                    if ok else "SMTP test not accepted; check configured transport and relay."
+                    if ok else "SMTP test not accepted. Email delivery needs the platform SMTP transport "
+                    "(GDC_NOTIFICATION_SMTP_* server settings); check that it is configured and the relay is reachable."
                 ),
             )
 
@@ -236,7 +237,8 @@ class NotificationService:
                 success=ok,
                 message=(
                     "Webhook endpoint returned success; downstream processing is not verified."
-                    if ok else "Webhook test not accepted; check configured transport and endpoint."
+                    if ok else "Webhook test not accepted. Webhook delivery needs a server-installed HTTPS webhook sender "
+                    "and endpoint allowlist; check that they are configured and the endpoint is reachable."
                 ),
             )
 

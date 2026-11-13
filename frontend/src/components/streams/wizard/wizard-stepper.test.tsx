@@ -1,5 +1,6 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
+import { expectOnlySemanticClasses } from '../../../test/semantic-class-contract'
 import { WizardStepper } from './wizard-stepper'
 import { buildInitialState, WIZARD_STEPS, type WizardStepCompletion } from './wizard-state'
 
@@ -112,5 +113,49 @@ describe('WizardStepper honest setup progress', () => {
     expect(screen.getByTestId('wizard-stepper-deploy')).toBeDisabled()
     expect(screen.getByTestId('wizard-unlock-guidance')).toHaveTextContent('To open Deploy')
     expect(screen.getByTestId('wizard-unlock-guidance')).toHaveTextContent('Enable at least one delivery path')
+  })
+})
+
+describe('WizardStepper compact rail (B6)', () => {
+  function renderRail(stepIndex: number) {
+    render(
+      <WizardStepper
+        wizardSteps={WIZARD_STEPS}
+        stepIndex={stepIndex}
+        setStepIndex={vi.fn()}
+        completion={completion({ connect: 'complete' })}
+        state={buildInitialState()}
+        reachability={{ editMode: true }}
+      />,
+    )
+    return screen.getByTestId('wizard-stepper')
+  }
+
+  it('keeps all five steps in one equal-width grid that never scrolls sideways', () => {
+    const rail = renderRail(1)
+    expect(rail).toHaveClass('grid', 'grid-cols-5')
+    expect(rail).not.toHaveClass('overflow-x-auto')
+    expect(within(rail).getAllByRole('listitem')).toHaveLength(5)
+  })
+
+  it('marks the current step with the accent alias and collapses inactive titles visually below sm', () => {
+    const rail = renderRail(1)
+    const current = within(rail).getByTestId('wizard-stepper-sample')
+    expect(current).toHaveAttribute('aria-current', 'step')
+    expect(current).toHaveClass('border-accent')
+    expect(within(rail).getByTestId('wizard-stepper-connect')).not.toHaveClass('border-accent')
+
+    const currentTitle = within(rail).getByTestId('wizard-stepper-sample-title')
+    expect(currentTitle).not.toHaveClass('sr-only')
+    expect(currentTitle).toHaveClass('truncate')
+    const inactiveTitle = within(rail).getByTestId('wizard-stepper-connect-title')
+    // Still in the accessibility tree: sr-only below sm, restored from sm up.
+    expect(inactiveTitle).toHaveClass('sr-only', 'sm:not-sr-only', 'truncate')
+    expect(inactiveTitle).toHaveTextContent('Connect')
+  })
+
+  it('styles the stepper and the flow overview with semantic aliases only', () => {
+    renderRail(2)
+    expectOnlySemanticClasses(screen.getByTestId('wizard-progress'))
   })
 })

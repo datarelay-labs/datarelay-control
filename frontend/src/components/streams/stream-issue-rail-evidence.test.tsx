@@ -51,7 +51,7 @@ describe('Stream Issue Rail evidence and lifecycle', () => {
   it('uses a warning tone for a verified low delivery rate even if the lifecycle is running', () => {
     const root = panel({ ...baseline, deliveryPctKnown: true, deliveryPct: 80 })
     expect(root).toHaveTextContent('Low success rate')
-    expect(screen.getByText('Low success rate').className).toMatch(/amber/)
+    expect(screen.getByText('Low success rate').className).toMatch(/text-status-warning/)
     expect(root).not.toHaveTextContent('No active issues')
   })
 })

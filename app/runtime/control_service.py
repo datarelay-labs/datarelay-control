@@ -23,7 +23,7 @@ from app.platform_admin.config_entity_snapshots import (
 from app.routes.models import Route
 from app.runners.stream_runner import StreamRunner
 from app.scheduler import runtime_state as scheduler_runtime_state
-from app.security.secrets import mask_secrets
+from app.security.secrets import mask_source_auth_json, mask_source_config_json
 from app.sources.models import Source
 from app.runtime.schemas import (
     ConnectorUISaveRequest,
@@ -85,6 +85,14 @@ class StreamNotFoundError(Exception):
         self.stream_id = stream_id
 
 
+class StreamStopInProgressError(Exception):
+    """Raised when Start is requested while the previous run is still stopping (F-176)."""
+
+    def __init__(self, stream_id: int) -> None:
+        super().__init__(stream_id)
+        self.stream_id = stream_id
+
+
 class StreamStopFailedError(Exception):
     """Raised when the stop lifecycle cannot be safely advanced."""
 
@@ -135,9 +143,14 @@ class ConnectorNotFoundError(Exception):
 
 
 def start_stream(db: Session, stream_id: int, request: object | None = None) -> RuntimeStreamControlResponse:
-    stream = db.query(Stream).filter(Stream.id == stream_id).first()
+    stream = db.query(Stream).filter(Stream.id == stream_id).with_for_update().first()
     if stream is None:
         raise StreamNotFoundError(stream_id)
+    # F-176: the old run keeps retrying/delivering while STOPPING. Accepting Start now would
+    # overlap two runs and duplicate deliveries, so Start is refused until the stop completes.
+    if str(stream.status) == "STOPPING" and not _stream_runtime_is_terminal(stream_id):
+        db.rollback()
+        raise StreamStopInProgressError(stream_id)
     stream.enabled = True
     stream.status = "RUNNING"
     journal.record_audit_event(
@@ -800,8 +813,8 @@ def save_runtime_source_ui_config(
     return SourceUISaveResponse(
         source_id=int(source.id),
         enabled=bool(source.enabled),
-        config_json=mask_secrets(dict(source.config_json or {})),
-        auth_json=mask_secrets(dict(source.auth_json or {})),
+        config_json=mask_source_config_json(source.source_type, dict(source.config_json or {})),
+        auth_json=mask_source_auth_json(source.source_type, dict(source.auth_json or {})),
         message="Source UI configuration saved successfully",
     )
 

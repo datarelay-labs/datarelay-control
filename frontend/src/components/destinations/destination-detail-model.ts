@@ -9,7 +9,7 @@ export type DestinationRouteRow = {
   routeName: string
   streamName: string
   deliveryMode: string
-  status: 'ACTIVE' | 'PAUSED' | 'ERROR'
+  status: 'ACTIVE' | 'PAUSED' | 'ERROR' | 'IDLE' | 'DEGRADED'
   epsAvg: number
   successRate24h: number
 }
@@ -130,3 +130,6 @@ export function emptyDestinationDetail(destinationId: string): DestinationDetail
     recentFailures: [],
   }
 }
+
+/** Shown when the API confirms the Destination id does not exist (a Retry cannot help). */
+export const DESTINATION_NOT_FOUND_MESSAGE = 'Destination not found.'

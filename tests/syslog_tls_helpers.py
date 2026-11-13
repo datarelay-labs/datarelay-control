@@ -115,9 +115,14 @@ class SyslogTlsTestReceiver:
         keyfile: str | Path,
         host: str = "127.0.0.1",
         port: int = 0,
+        client_ca: str | Path | None = None,
     ) -> None:
         self._host = host
         self._requested_port = int(port)
+        # When set, the receiver requires a client certificate signed by/pinned to this CA
+        # (mutual TLS). With TLS 1.3 the client only learns about a rejection from an alert
+        # that arrives after its own handshake call has already returned.
+        self._client_ca = str(client_ca) if client_ca else None
         self._certfile = str(certfile)
         self._keyfile = str(keyfile)
         self._server_sock: socket.socket | None = None
@@ -144,6 +149,9 @@ class SyslogTlsTestReceiver:
 
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ctx.load_cert_chain(certfile=self._certfile, keyfile=self._keyfile)
+        if self._client_ca:
+            ctx.verify_mode = ssl.CERT_REQUIRED
+            ctx.load_verify_locations(cafile=self._client_ca)
 
         srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

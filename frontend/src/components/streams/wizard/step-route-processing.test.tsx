@@ -78,6 +78,31 @@ describe('StepRouteProcessing', () => {
     expect(screen.getByTestId('route-processing-list-card-r1')).toHaveTextContent('Shared')
   })
 
+  it('lays the Route detail and output aside out so the detail box is never squeezed or clipped', async () => {
+    render(
+      <MemoryRouter>
+        <StepRouteProcessing
+          state={readyState()}
+          onChangeMapping={() => {}}
+          onChangeMappingMode={() => {}}
+          onChangeFullEventJsonata={() => {}}
+          onChangeFullEventRegexConfigJson={() => {}}
+          onChangeEnrichment={() => {}}
+          onChangeDataProtection={() => {}}
+          onChangeDestinations={() => {}}
+        />
+      </MemoryRouter>,
+    )
+    // Stacked until 2xl (1536px): at 1440px the workspace column is too narrow for two columns.
+    const detailLayout = screen.getByTestId('route-processing-detail-layout')
+    expect(detailLayout).toHaveClass('min-w-0', '2xl:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]')
+    expect(detailLayout.className).not.toMatch(/(^|\s)xl:grid-cols/)
+    expect(screen.getByTestId('route-processing-split-layout')).toHaveClass('min-w-0')
+    const dock = screen.getByTestId('processing-preview-dock')
+    expect(dock).toHaveClass('w-full', 'min-w-0', 'max-w-full', 'bg-surface-card')
+    expect(screen.getByRole('list', { name: 'Processing stage sequence' })).toHaveClass('grid-cols-1', 'xl:grid-cols-5')
+  })
+
   it('shows shared processing concern tabs and switches editors', async () => {
     render(
       <MemoryRouter>
@@ -239,34 +264,52 @@ describe('StepRouteProcessing', () => {
     expect(screen.queryByTestId('route-detail-transform')).not.toBeInTheDocument()
   })
 
-  it('shows override editors when override mode is selected', async () => {
-    const onChangeDestinations = vi.fn()
-    render(
-      <MemoryRouter>
-        <StepRouteProcessing
-          state={readyState()}
-          onChangeMapping={() => {}}
-          onChangeMappingMode={() => {}}
-          onChangeFullEventJsonata={() => {}}
-          onChangeFullEventRegexConfigJson={() => {}}
-          onChangeEnrichment={() => {}}
-          onChangeDataProtection={() => {}}
-          onChangeDestinations={onChangeDestinations}
-        />
-      </MemoryRouter>,
-    )
+  // C3: the old "Override for this Route" flipped Transform, Protection, Classification and Policy
+  // together (inherit all false). It must now only reveal per-section toggles, and each toggle
+  // must flip exactly one concern.
+  it('overrides each processing section independently (C3)', async () => {
+    function Fixture() {
+      const [value, setValue] = useState(readyState())
+      return (
+        <MemoryRouter>
+          <StepRouteProcessing
+            state={value}
+            onChangeMapping={() => {}}
+            onChangeMappingMode={() => {}}
+            onChangeFullEventJsonata={() => {}}
+            onChangeFullEventRegexConfigJson={() => {}}
+            onChangeEnrichment={() => {}}
+            onChangeDataProtection={() => {}}
+            onChangeDestinations={(patch) =>
+              setValue((prior) => ({ ...prior, destinations: { ...prior.destinations, ...patch } }))
+            }
+          />
+          <output data-testid="route-draft">{JSON.stringify(value.destinations.routeDrafts[0])}</output>
+        </MemoryRouter>
+      )
+    }
+    const inheritOf = () => JSON.parse(screen.getByTestId('route-draft').textContent ?? '{}').inherit
 
+    render(<Fixture />)
     fireEvent.click(screen.getByTestId('route-processing-mode-override'))
-    expect(onChangeDestinations).toHaveBeenCalledWith(
-      expect.objectContaining({
-        routeDrafts: [
-          expect.objectContaining({
-            key: 'r1',
-            inherit: { transform: false, protection: false, classification: false, policy: false },
-          }),
-        ],
-      }),
-    )
+    expect(screen.getByTestId('route-processing-mode-override')).toHaveAttribute('aria-checked', 'true')
+    // Choosing override mode alone does not override any concern.
+    expect(inheritOf()).toEqual({ transform: true, protection: true, classification: true, policy: true })
+
+    fireEvent.click(screen.getByTestId('route-override-toggle-transform'))
+    expect(inheritOf()).toEqual({ transform: false, protection: true, classification: true, policy: true })
+    expect(screen.getByTestId('route-detail-transform')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId('route-detail-tab-data_protection'))
+    expect(screen.getByTestId('route-inherits-protection')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('route-override-toggle-policy'))
+    expect(inheritOf()).toEqual({ transform: false, protection: true, classification: true, policy: false })
+    expect(screen.getByTestId('route-policy-delivery-behavior')).toBeInTheDocument()
+    expect(screen.queryByTestId('protection-rules-section')).not.toBeInTheDocument()
+
+    // Turning one section back to shared leaves the others untouched.
+    fireEvent.click(screen.getByTestId('route-override-toggle-policy'))
+    expect(inheritOf()).toEqual({ transform: false, protection: true, classification: true, policy: true })
   })
 
   it('patches route draft when enabled is toggled in delivery tab', async () => {
@@ -456,6 +499,7 @@ describe('StepRouteProcessing guided Transform runtime enablement', () => {
     fireEvent.click(await screen.findByTestId('route-processing-list-card-route-2'))
     fireEvent.click(screen.getByTestId('route-processing-mode-override'))
     fireEvent.click(await screen.findByTestId('route-detail-tab-data_protection'))
+    fireEvent.click(screen.getByTestId('route-override-toggle-protection'))
     const protection = screen.getByTestId('route-detail-data-protection')
     fireEvent.click(within(protection).getByTestId('data-protection-add-row'))
     fireEvent.change(within(protection).getByPlaceholderText('$.email'), { target: { value: '$.email' } })

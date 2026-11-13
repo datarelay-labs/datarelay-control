@@ -38,6 +38,20 @@ def request_stream_stop(stream_id: int) -> None:
         scheduler.request_stream_stop(stream_id)
 
 
+def current_worker_stop_requested(stream_id: int) -> bool:
+    """True when the calling thread is this stream's scheduler worker and a stop was requested.
+
+    Manual runs (Run Now) execute on other threads and are never interrupted by a stale stop signal.
+    """
+
+    import threading
+
+    if threading.current_thread().name != f"stream-scheduler-{int(stream_id)}":
+        return False
+    scheduler = get_scheduler()
+    return bool(scheduler is not None and scheduler.is_stream_stop_requested(stream_id))
+
+
 def is_stream_worker_alive(stream_id: int) -> bool:
     scheduler = get_scheduler()
     return bool(scheduler is not None and scheduler.is_stream_worker_alive(stream_id))

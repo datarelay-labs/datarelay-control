@@ -84,6 +84,17 @@ export function DatabaseConnectorFields({ form, set }: { form: ConnectorWritePay
               </option>
             ))}
           </select>
+          {String(form.ssl_mode ?? '').startsWith('VERIFY_') ? (
+            <span
+              className={cn('mt-1 block text-[11px] font-normal', gdcUi.textMuted)}
+              data-testid="db-ssl-verify-note"
+            >
+              {form.ssl_mode} checks the server certificate against the root certificate installed on the
+              DataRelay server (<code>~/.postgresql/root.crt</code> of the API service account). This form cannot
+              upload a CA. If that file is missing, Test Authentication fails with a root certificate error; ask
+              your administrator to install it, or use REQUIRE for encryption without certificate verification.
+            </span>
+          ) : null}
         </label>
         <label className="text-[12px] font-medium text-slate-700 dark:text-slate-200">
           Connect timeout (seconds)

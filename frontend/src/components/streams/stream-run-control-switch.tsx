@@ -26,6 +26,13 @@ type StreamRunControlSwitchProps = {
   disabled?: boolean
   onToggle: (nextActive: boolean) => void
   tooltipExtra?: string
+  /**
+   * Backend lifecycle is STOPPING: the stop was accepted but the worker or run lock is still
+   * active. The switch reads "Stopping" and cannot be toggled until the stop is confirmed (F-176).
+   */
+  stopping?: boolean
+  /** Why the switch is disabled; shown as the tooltip so a disabled control is never unexplained. */
+  disabledReason?: string
   size?: 'sm' | 'md'
   label?: string
   'data-testid'?: string
@@ -34,19 +41,26 @@ type StreamRunControlSwitchProps = {
 export function StreamRunControlSwitch({
   status,
   busy = false,
-  disabled = false,
+  disabled: disabledProp = false,
+  stopping = false,
   onToggle,
   tooltipExtra,
+  disabledReason,
   size = 'md',
   label = 'Stream scheduler',
   'data-testid': testId = 'stream-run-control-switch',
 }: StreamRunControlSwitchProps) {
-  const active = isStreamSchedulerActive(status)
-  const statusLabel = streamSchedulerStatusLabel(status, active)
+  const disabled = disabledProp || stopping
+  const active = !stopping && isStreamSchedulerActive(status)
+  const statusLabel = stopping ? 'Stopping' : streamSchedulerStatusLabel(status, active)
   const actionLabel = streamSchedulerActionLabel(active)
   const height = size === 'sm' ? 'h-8' : 'h-9'
 
-  const title = tooltipExtra
+  const title = stopping
+    ? 'The stream is still stopping. Start is available once the stop is confirmed.'
+    : disabledReason && (disabled || busy)
+    ? disabledReason
+    : tooltipExtra
     ? `${active ? 'Stop' : 'Start'} stream scheduler — ${tooltipExtra}`
     : active
       ? 'Turn off the scheduled polling worker for this stream.'
@@ -93,7 +107,7 @@ export function StreamRunControlSwitch({
           active ? 'text-emerald-800 dark:text-emerald-200' : 'text-slate-600 dark:text-gdc-muted',
         )}
       >
-        {busy ? 'Updating…' : actionLabel}
+        {busy ? 'Updating…' : stopping ? 'Stopping…' : actionLabel}
       </span>
       <span className="sr-only">Current status: {statusLabel}</span>
     </button>

@@ -83,16 +83,36 @@ async function openApproval(page: Page, uiBase: string, policyId: number): Promi
   await page.getByTestId('approval-detail-drawer').waitFor({ timeout: 15_000 })
 }
 
+// F-187: this lifecycle submits, approves and activates the fixture policy as the same signed-in user. The UI no
+// longer lets a submitter approve or activate their own policy silently: it opens a confirmation dialog and the
+// confirmed override is recorded in the approval history. Drive that explicit path (and assert it was shown).
+async function confirmSelfApprovalDialog(page: Page): Promise<boolean> {
+  const dialog = page.getByTestId('approval-self-approval-dialog')
+  const shown = await dialog.waitFor({ state: 'visible', timeout: 15_000 }).then(() => true).catch(() => false)
+  if (!shown) return false
+  await page.getByTestId('approval-self-approval-dialog-confirm').click()
+  await dialog.waitFor({ state: 'hidden', timeout: 15_000 })
+  return true
+}
+
 async function runApprovalActivate(page: Page, api: ApiClient, uiBase: string, policyId: number): Promise<boolean> {
   await openApproval(page, uiBase, policyId)
   await clickAction(page, 'approval-action-submit')
   await page.getByTestId('approval-action-approve').waitFor({ timeout: 15_000 })
   await clickAction(page, 'approval-action-approve')
+  const approveConfirmed = await confirmSelfApprovalDialog(page)
+  if (!approveConfirmed) return false
   await page.getByTestId('approval-action-activate').waitFor({ timeout: 15_000 })
   await clickAction(page, 'approval-action-activate')
+  const activateConfirmed = await confirmSelfApprovalDialog(page)
+  if (!activateConfirmed) return false
   await page.waitForTimeout(300)
   const detail = await approvalDetail(api, policyId)
-  return detail.status < 300 && detail.body.current_status === 'ACTIVE'
+  const history = Array.isArray(detail.body.history) ? detail.body.history : []
+  const overridesRecorded = history.filter((row) =>
+    String((row as Record<string, unknown>).comment ?? '').includes('[self-approval override]'),
+  ).length
+  return detail.status < 300 && detail.body.current_status === 'ACTIVE' && overridesRecorded >= 2
 }
 
 async function runApprovalReject(page: Page, api: ApiClient, uiBase: string, policyId: number): Promise<boolean> {

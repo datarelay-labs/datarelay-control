@@ -517,13 +517,13 @@ describe('ConnectorsOverviewPage — Test Auth visibility', () => {
       </MemoryRouter>,
     )
     expect(await screen.findByText('Production Okta')).toBeInTheDocument()
-    await user.click(screen.getByLabelText('Connector actions'))
+    await user.click(screen.getByLabelText(/^Actions for connector /))
     await user.click(screen.getByRole('menuitem', { name: 'Test Auth' }))
     const success = await screen.findByTestId('connector-row-auth-result')
     expect(success).toHaveTextContent('Auth test succeeded')
     expect(success.className).not.toMatch(/\bsr-only\b/)
 
-    await user.click(screen.getByLabelText('Connector actions'))
+    await user.click(screen.getByLabelText(/^Actions for connector /))
     await user.click(screen.getByRole('menuitem', { name: 'Test Auth' }))
     const failure = await screen.findByText('Invalid bearer token')
     expect(failure).toHaveAttribute('data-testid', 'connector-row-auth-result')
@@ -550,8 +550,8 @@ describe('ConnectorsOverviewPage — server-effective action capabilities', () =
       expect(screen.queryByRole('link', { name: 'Create Connector' })).not.toBeInTheDocument()
       await user.click(screen.getByText('Advanced setup & validation'))
       expect(screen.queryByRole('button', { name: 'Import from cURL / Postman' })).not.toBeInTheDocument()
-      expect(screen.getByRole('link', { name: 'View connector' })).toBeInTheDocument()
-      await user.click(screen.getByLabelText('Connector actions'))
+      expect(screen.getByRole('link', { name: /^View connector / })).toBeInTheDocument()
+      await user.click(screen.getByLabelText(/^Actions for connector /))
       expect(screen.getByRole('menuitem', { name: 'View Streams' })).toBeInTheDocument()
       for (const name of ['Test Auth', 'Test Query', 'Delete']) {
         expect(screen.queryByRole('menuitem', { name })).not.toBeInTheDocument()
@@ -580,8 +580,8 @@ describe('ConnectorsOverviewPage — server-effective action capabilities', () =
     render(<MemoryRouter><ConnectorsOverviewPage /></MemoryRouter>)
     expect(await screen.findByText('Production Okta')).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Create Connector' })).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'View connector' })).toBeInTheDocument()
-    await user.click(screen.getByLabelText('Connector actions'))
+    expect(screen.getByRole('link', { name: /^View connector / })).toBeInTheDocument()
+    await user.click(screen.getByLabelText(/^Actions for connector /))
     expect(screen.getByRole('menuitem', { name: 'Test Auth' })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: 'Test Query' })).toBeInTheDocument()
     expect(screen.queryByRole('menuitem', { name: 'Delete' })).not.toBeInTheDocument()
@@ -593,7 +593,7 @@ describe('ConnectorsOverviewPage — server-effective action capabilities', () =
     render(<MemoryRouter><ConnectorsOverviewPage /></MemoryRouter>)
     expect(await screen.findByText('Production Okta')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Create Connector' })).toBeInTheDocument()
-    await user.click(screen.getByLabelText('Connector actions'))
+    await user.click(screen.getByLabelText(/^Actions for connector /))
     expect(screen.getByRole('menuitem', { name: 'Delete' })).toBeInTheDocument()
     const session = readSession()!
     act(() => persistSession({
@@ -603,9 +603,9 @@ describe('ConnectorsOverviewPage — server-effective action capabilities', () =
       } },
     }))
     expect(screen.queryByRole('link', { name: 'Create Connector' })).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'View connector' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /^View connector / })).toBeInTheDocument()
     expect(screen.getByText('Production Okta')).toBeInTheDocument()
-    await user.click(screen.getByLabelText('Connector actions'))
+    await user.click(screen.getByLabelText(/^Actions for connector /))
     expect(screen.queryByRole('menuitem', { name: 'Delete' })).not.toBeInTheDocument()
     expect(screen.queryByRole('menuitem', { name: 'Test Auth' })).not.toBeInTheDocument()
     expect(deleteConnectorMock).not.toHaveBeenCalled()

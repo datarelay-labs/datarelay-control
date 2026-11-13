@@ -187,6 +187,22 @@ def get_or_create_token(
     raise RuntimeError("failed to allocate identity vault token")
 
 
+def tokenizable_text(value: Any) -> str | None:
+    """Canonical text that identifies ``value`` in the identity vault.
+
+    Strings and plain numbers (numeric ids) are tokenizable; booleans, objects and arrays are not.
+    Numbers used to fall through to full-mask semantics, which delivered ``null`` (F-157).
+    """
+
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, (int, float)):
+        return str(value)
+    return None
+
+
 def tokenize_value(
     db: Session | None,
     *,
@@ -201,10 +217,8 @@ def tokenize_value(
 
     if value is None:
         return None
-    if not isinstance(value, str):
-        return full_mask_value(value)
-    text_value = value.strip()
-    if not text_value:
+    text_value = tokenizable_text(value)
+    if text_value is None or not text_value:
         return full_mask_value(value)
     if token_map is not None:
         cached = token_map.get(_canonical_token_key(field_path, text_value))

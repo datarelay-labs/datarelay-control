@@ -63,7 +63,7 @@ export function StreamsOperationsSummaryStrip({
         label="Warning Streams"
         value={summary.warning}
         icon={AlertTriangle}
-        iconClassName="bg-amber-500/15 text-amber-600 dark:text-amber-400"
+        iconClassName="bg-status-warning-subtle text-status-warning"
         testId="streams-ops-summary-warning"
       />
       <SummaryCard

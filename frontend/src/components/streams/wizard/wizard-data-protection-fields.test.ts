@@ -59,4 +59,26 @@ describe('wizard-data-protection-fields', () => {
     expect(likely).not.toContain('$.id')
     expect(likely).not.toContain('$.status')
   })
+
+  it('suggests a card number by field name and by grouped sample value (F-156)', () => {
+    const likely = suggestLikelySensitiveFields(['$.card', '$.card_number', '$.ref', '$.note', '$.serial'], new Map<string, readonly unknown[]>([
+      ['$.ref', ['4111-1111-1111-1111']],
+      ['$.note', ['4111-1111-1111-NNNN']],
+      ['$.serial', ['1234-5678-9012-3456']],
+    ]))
+    expect(likely).toContain('$.card')
+    expect(likely).toContain('$.card_number')
+    expect(likely).toContain('$.ref')
+    expect(likely).toContain('$.note')
+    // Luhn-invalid digits grouped like a card are not suggested.
+    expect(likely).not.toContain('$.serial')
+  })
+
+  it('suggests the card field from wizard state with the audit sample shape', () => {
+    const state = buildInitialState()
+    state.apiTest.extractedEvents = [{ user: { email: 'a@b.c' }, card: '4111-1111-1111-6407', id: 7 }]
+    const likely = suggestLikelySensitiveFieldsFromState(state)
+    expect(likely).toContain('$.card')
+    expect(likely).toContain('$.user.email')
+  })
 })

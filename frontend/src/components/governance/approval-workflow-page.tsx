@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   activateGovernanceApproval,
   approveGovernancePolicy,
+  separationOfDutiesKind,
+  type SeparationOfDutiesKind,
   fetchGovernanceApprovalDetail,
   fetchGovernanceApprovals,
   rejectGovernancePolicy,
@@ -17,9 +19,12 @@ import {
   canActivatePolicy,
   canApprovePolicy,
   canSubmitApproval,
+  governanceAccessDeniedMessage,
   governanceReadOnlyReason,
 } from '../../lib/governance-rbac'
+import { getSessionUsername } from '../../auth/session'
 import { cn } from '../../lib/utils'
+import { DangerousActionDialog } from '../ui/dangerous-action-dialog'
 import { GovernanceInvestigationDrawer } from './governance-investigation-drawer'
 import { policyStatusBadgeClass, policyStatusLabel } from './policy-lifecycle'
 import { opTable, opTd, opTh, opThRow, opTr } from '../dashboard/widgets/operational-table-styles'
@@ -58,6 +63,26 @@ function eventTypeLabel(eventType: ApprovalEventType) {
   return eventType.replace(/_/g, ' ')
 }
 
+type SelfApprovalAction = 'approve' | 'activate'
+
+/** F-187: true when the signed-in user is the one who submitted this policy for review. */
+function submittedByCurrentUser(requester: string | null | undefined): boolean {
+  const me = (getSessionUsername() ?? '').trim().toLowerCase()
+  const who = (requester ?? '').trim().toLowerCase()
+  return me !== '' && me === who
+}
+
+const SELF_APPROVAL_COPY: Record<SelfApprovalAction, { title: string; primaryLabel: string; verb: string }> = {
+  approve: { title: 'Approve your own submission?', primaryLabel: 'Approve anyway', verb: 'approving' },
+  activate: { title: 'Activate your own policy?', primaryLabel: 'Activate anyway', verb: 'activating' },
+}
+
+// F-187 fail-closed: the policy is in REVIEW but nobody is recorded as its submitter.
+const SUBMITTER_UNKNOWN_COPY: Record<SelfApprovalAction, { title: string; primaryLabel: string; verb: string }> = {
+  approve: { title: 'Approve without a recorded submitter?', primaryLabel: 'Approve anyway', verb: 'approving' },
+  activate: { title: 'Activate without a recorded submitter?', primaryLabel: 'Activate anyway', verb: 'activating' },
+}
+
 function ApprovalReadOnlyBanner({ message }: { message: string }) {
   return (
     <div
@@ -76,6 +101,10 @@ function ApprovalDetailDrawer({
   loading,
   actionLoading,
   readOnly,
+  canApproveRole,
+  canActivateRole,
+  actionError,
+  actionMessage,
   onClose,
   onSubmit,
   onApprove,
@@ -86,6 +115,10 @@ function ApprovalDetailDrawer({
   loading: boolean
   actionLoading: boolean
   readOnly: boolean
+  canApproveRole: boolean
+  canActivateRole: boolean
+  actionError: string | null
+  actionMessage: string | null
   onClose: () => void
   onSubmit: (comment: string) => void
   onApprove: (comment: string) => void
@@ -102,9 +135,14 @@ function ApprovalDetailDrawer({
 
   const policy = detail?.policy
   const canSubmit = !readOnly && detail?.current_status === 'DRAFT'
-  const canApprove = !readOnly && detail?.current_status === 'REVIEW' && !detail.is_approved
-  const canReject = !readOnly && detail?.current_status === 'REVIEW'
-  const canActivate = !readOnly && detail?.current_status === 'REVIEW' && detail.is_approved
+  const canApprove = !readOnly && canApproveRole && detail?.current_status === 'REVIEW' && !detail.is_approved
+  const canReject = !readOnly && canApproveRole && detail?.current_status === 'REVIEW'
+  const canActivate = !readOnly && canActivateRole && detail?.current_status === 'REVIEW' && detail.is_approved
+  // F-204: an approved policy waiting for activation must not look actionable to a role that cannot activate.
+  const activationBlockedForRole = !readOnly && !canActivateRole && detail?.current_status === 'REVIEW' && detail.is_approved
+  // F-187: the submitter may reject, but approving or activating needs an explicit confirmation.
+  const selfSubmitted = submittedByCurrentUser(detail?.requester) && (canApprove || canActivate)
+  const submitterUnknown = detail?.submitter_unknown === true && (canApprove || canActivate)
 
   return (
     <GovernanceInvestigationDrawer
@@ -230,7 +268,7 @@ function ApprovalDetailDrawer({
         ) : null
       }
       whatShouldIDo={
-        detail && !readOnly && (canSubmit || canApprove || canReject || canActivate) ? (
+        detail && !readOnly && (canSubmit || canApprove || canReject || canActivate || activationBlockedForRole || actionError || actionMessage) ? (
           <div className="space-y-2" data-testid="approval-section-actions">
             <textarea
               value={comment}
@@ -240,6 +278,35 @@ function ApprovalDetailDrawer({
               className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-[12px] dark:border-gdc-border dark:bg-gdc-card"
               data-testid="approval-action-comment"
             />
+            {selfSubmitted ? (
+              <p data-testid="approval-self-approval-note" className="text-[12px] text-amber-800 dark:text-amber-200">
+                You submitted this policy for review. Approving or activating it yourself needs an explicit
+                confirmation and is recorded in the approval history; you can reject it without one.
+              </p>
+            ) : null}
+            {submitterUnknown ? (
+              <p data-testid="approval-submitter-unknown-note" className="text-[12px] text-amber-800 dark:text-amber-200">
+                Nobody is recorded as the submitter of this review, so separation of duties cannot be checked.
+                Approving or activating it needs an explicit confirmation that is recorded in the approval history;
+                you can reject it without one.
+              </p>
+            ) : null}
+            {activationBlockedForRole ? (
+              <p data-testid="approval-activate-role-note" className="text-[12px] text-amber-800 dark:text-amber-200">
+                This policy is approved and waiting for activation. Only a Governance Approver or Administrator can
+                activate it.
+              </p>
+            ) : null}
+            {actionError ? (
+              <p role="alert" data-testid="approval-action-error" className="text-[12px] font-medium text-red-700 dark:text-red-300">
+                {actionError}
+              </p>
+            ) : null}
+            {actionMessage ? (
+              <p role="status" data-testid="approval-action-message" className="text-[12px] font-medium text-emerald-700 dark:text-emerald-300">
+                {actionMessage}
+              </p>
+            ) : null}
             <div className="flex flex-wrap gap-2">
               {canSubmit ? (
                 <button
@@ -301,6 +368,7 @@ export function ApprovalWorkflowPage() {
   const canActivate = canActivatePolicy()
   const readOnly = !canSubmit && !canReview && !canActivate
   const readOnlyReason = governanceReadOnlyReason()
+  const accessDenied = governanceAccessDeniedMessage('the policy approval queue')
 
   const [window, setWindow] = useState<ApprovalWindow>('24h')
   const [statusFilter, setStatusFilter] = useState<string>('')
@@ -313,6 +381,9 @@ export function ApprovalWorkflowPage() {
   const [detail, setDetail] = useState<GovernanceApprovalDetailResponse | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [actionMessage, setActionMessage] = useState<string | null>(null)
+  const [selfConfirm, setSelfConfirm] = useState<{ action: SelfApprovalAction; comment: string; kind: SeparationOfDutiesKind } | null>(null)
 
   const loadApprovals = useCallback(async () => {
     setLoading(true)
@@ -360,22 +431,77 @@ export function ApprovalWorkflowPage() {
   const closeDrawer = useCallback(() => {
     setSelectedPolicyId(null)
     setDetail(null)
+    setActionError(null)
+    setActionMessage(null)
+    setSelfConfirm(null)
   }, [])
 
   const runAction = useCallback(
-    async (fn: (id: number, comment: string) => Promise<unknown>) => {
+    async (
+      fn: (id: number, comment: string) => Promise<unknown>,
+      onSeparationOfDuties?: (kind: SeparationOfDutiesKind) => void,
+    ) => {
       if (selectedPolicyId == null) return
       setActionLoading(true)
+      setActionError(null)
+      setActionMessage(null)
       try {
-        await fn(selectedPolicyId, '')
+        const out = await fn(selectedPolicyId, '')
+        const done = (out as { message?: string } | null)?.message
+        setActionMessage(done || 'Approval action completed.')
         await loadApprovals()
         await loadDetail(selectedPolicyId)
+      } catch (err) {
+        const kind = onSeparationOfDuties ? separationOfDutiesKind(err) : null
+        if (onSeparationOfDuties && kind) {
+          // The server is authoritative about who submitted the policy (or that nobody is recorded):
+          // offer the explicit override.
+          onSeparationOfDuties(kind)
+          return
+        }
+        setActionError(
+          err instanceof Error && err.message
+            ? `Action failed: ${err.message}`
+            : 'Action failed. Your role may not be allowed to perform it.',
+        )
       } finally {
         setActionLoading(false)
       }
     },
     [selectedPolicyId, loadApprovals, loadDetail],
   )
+
+  // F-187: Approve and Activate are refused for the user who submitted the policy, and for a policy
+  // whose submitter is not recorded, unless they explicitly confirm the override. The dialog is shown
+  // up front when the session user is the requester or the detail reports an unknown submitter, and
+  // also if the server reports either refusal.
+  const requestGatedAction = useCallback(
+    (action: SelfApprovalAction, comment: string) => {
+      if (submittedByCurrentUser(detail?.requester)) {
+        setSelfConfirm({ action, comment, kind: 'self' })
+        return
+      }
+      if (detail?.submitter_unknown === true) {
+        setSelfConfirm({ action, comment, kind: 'unknown' })
+        return
+      }
+      const call = (id: number) =>
+        action === 'approve' ? approveGovernancePolicy(id, comment) : activateGovernanceApproval(id, comment)
+      void runAction(call, (kind) => setSelfConfirm({ action, comment, kind }))
+    },
+    [detail?.requester, detail?.submitter_unknown, runAction],
+  )
+
+  const confirmSelfApproval = useCallback(async () => {
+    if (!selfConfirm) return
+    const { action, comment } = selfConfirm
+    setSelfConfirm(null)
+    await runAction((id) =>
+      action === 'approve'
+        ? approveGovernancePolicy(id, comment, { allowSelfApproval: true })
+        : activateGovernanceApproval(id, comment, { allowSelfApproval: true }),
+    )
+  }, [selfConfirm, runAction])
 
   const requesters = useMemo(() => {
     const set = new Set<string>()
@@ -519,10 +645,21 @@ export function ApprovalWorkflowPage() {
           data-testid="approval-empty-state"
         >
           <CheckCircle2 className="mx-auto h-8 w-8 text-slate-400" aria-hidden />
-          <p className="mt-2 text-sm font-medium text-slate-900 dark:text-slate-100">No policies in the approval queue</p>
-          <p className="mt-1 text-[13px] text-slate-600 dark:text-gdc-muted">
-            Submit a draft policy from Data Protection to start the review workflow.
-          </p>
+          {accessDenied ? (
+            <>
+              <p className="mt-2 text-sm font-medium text-slate-900 dark:text-slate-100">Approval queue not available</p>
+              <p className="mt-1 text-[13px] text-slate-600 dark:text-gdc-muted" data-testid="approval-access-denied">
+                {accessDenied}
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="mt-2 text-sm font-medium text-slate-900 dark:text-slate-100">No policies in the approval queue</p>
+              <p className="mt-1 text-[13px] text-slate-600 dark:text-gdc-muted">
+                Submit a draft policy from Data Protection to start the review workflow.
+              </p>
+            </>
+          )}
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-slate-200/80 dark:border-gdc-border" data-testid="approval-table">
@@ -577,11 +714,37 @@ export function ApprovalWorkflowPage() {
           loading={detailLoading}
           actionLoading={actionLoading}
           readOnly={readOnly}
+          canApproveRole={canReview}
+          canActivateRole={canActivate}
+          actionError={actionError}
+          actionMessage={actionMessage}
           onClose={closeDrawer}
           onSubmit={(c) => void runAction((id, _) => submitGovernanceApproval(id, c))}
-          onApprove={(c) => void runAction((id, _) => approveGovernancePolicy(id, c))}
+          onApprove={(c) => requestGatedAction('approve', c)}
           onReject={(c) => void runAction((id, _) => rejectGovernancePolicy(id, c))}
-          onActivate={(c) => void runAction((id, _) => activateGovernanceApproval(id, c))}
+          onActivate={(c) => requestGatedAction('activate', c)}
+        />
+      ) : null}
+
+      {selfConfirm ? (
+        <DangerousActionDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setSelfConfirm(null)
+          }}
+          title={(selfConfirm.kind === 'unknown' ? SUBMITTER_UNKNOWN_COPY : SELF_APPROVAL_COPY)[selfConfirm.action].title}
+          targetName={detail?.policy.name}
+          impactBullets={[
+            selfConfirm.kind === 'unknown'
+              ? `Nobody is recorded as the submitter of this review, so separation of duties cannot be checked and ${SUBMITTER_UNKNOWN_COPY[selfConfirm.action].verb} it may skip an independent second review.`
+              : `You submitted this policy for review, so ${SELF_APPROVAL_COPY[selfConfirm.action].verb} it yourself skips an independent second review.`,
+            'The override is recorded in the approval history under your name.',
+          ]}
+          risk="high"
+          primaryLabel={(selfConfirm.kind === 'unknown' ? SUBMITTER_UNKNOWN_COPY : SELF_APPROVAL_COPY)[selfConfirm.action].primaryLabel}
+          onConfirm={confirmSelfApproval}
+          busy={actionLoading}
+          dataTestId={selfConfirm.kind === 'unknown' ? 'approval-submitter-unknown-dialog' : 'approval-self-approval-dialog'}
         />
       ) : null}
     </div>

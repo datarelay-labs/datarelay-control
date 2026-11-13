@@ -137,7 +137,16 @@ export async function submitPolicyForReview(
 
 export async function activateGovernancePolicy(
   policyId: number,
+  options?: { allowSelfApproval?: boolean },
 ): Promise<{ policy: GovernancePolicyEntry } | null> {
+  // F-187: `allow_self_approval: true` is only sent after the user confirmed the override dialog.
+  if (options?.allowSelfApproval === true) {
+    return requestJson(`${GOV}/policies/${policyId}/activate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ allow_self_approval: true }),
+    })
+  }
   return requestJson(`${GOV}/policies/${policyId}/activate`, { method: 'POST' })
 }
 

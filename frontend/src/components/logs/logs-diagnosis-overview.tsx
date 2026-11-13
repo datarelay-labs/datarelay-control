@@ -6,17 +6,9 @@
 import { AlertTriangle, CheckCircle2, HelpCircle, XCircle } from 'lucide-react'
 import { cn } from '../../lib/utils'
 
-export type LogsDiagnosisSnapshot = {
-  loadedFailedDeliveries: number
-  loadedSuccessfulDeliveries: number
-  errorRows: number
-  warningRows: number
-  loadedRows: number
-  globalFailed: number | null
-  globalSuccess: number | null
-  lifecycleRows: number | null
-  windowLabel: string
-}
+import type { LogsDiagnosisSnapshot } from './logs-diagnosis-snapshot'
+
+export type { LogsDiagnosisSnapshot }
 
 type Posture = 'healthy' | 'warning' | 'critical' | 'unknown'
 
@@ -160,7 +152,9 @@ export function LogsDiagnosisOverview({
               {postureDescription(snapshot, posture)}
             </p>
             <p className="mt-1 text-xs text-slate-500 dark:text-gdc-muted" data-testid="logs-diagnosis-window-hint">
-              Loaded sample vs full {snapshot.windowLabel} window · sample counts are not full-window totals
+              {snapshot.scoped
+                ? `Scoped to the active filter · loaded sample only (${snapshot.windowLabel} window) · platform-wide totals are not applied`
+                : `Loaded sample vs full ${snapshot.windowLabel} window · sample counts are not full-window totals`}
             </p>
           </div>
         </div>

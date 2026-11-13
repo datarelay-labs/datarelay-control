@@ -1,6 +1,6 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { StreamRecentIssuesPanel } from './stream-recent-issues-panel'
 import type { StreamIssueContext } from '../../lib/stream-issue-context'
 import type { OperationalIssue, StreamGovernanceSnapshot } from '../../lib/stream-governance-snapshot'
@@ -83,5 +83,22 @@ describe('Stream Recent Issues: evidence-aware status', () => {
     )
     expect(panel).toHaveTextContent('Route timed out')
     expect(panel.querySelectorAll('[data-evidence-status="critical"]')).toHaveLength(1)
+  })
+
+  it('does not render a lone low-success issue twice for destination and error rate rows', () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const panel = display(
+        { ...baseline, deliveryPctKnown: true, deliveryPct: 79.4, routesError: 0 },
+        undefined,
+        [{ key: 'low-success', label: 'Low delivery success', tone: 'warning', detail: 'Success rate 79.4%' }],
+      )
+      expect(within(panel).getAllByText('Low delivery success')).toHaveLength(1)
+      expect(panel).toHaveTextContent('High error rate')
+      const duplicateKeyErrors = errorSpy.mock.calls.filter((call) => String(call[0]).includes('same key'))
+      expect(duplicateKeyErrors).toHaveLength(0)
+    } finally {
+      errorSpy.mockRestore()
+    }
   })
 })

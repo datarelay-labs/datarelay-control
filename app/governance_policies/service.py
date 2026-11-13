@@ -282,10 +282,25 @@ def _transition_policy_status(db: Session, *, policy_id: int, target_status: str
     return row
 
 
-def submit_policy_for_review(db: Session, policy_id: int) -> GovernancePolicy:
+def submit_policy_for_review(
+    db: Session,
+    policy_id: int,
+    *,
+    actor: str,
+    comment: str | None = None,
+) -> GovernancePolicy:
+    """The only way a policy enters REVIEW. Records who submitted it (F-187).
+
+    ``actor`` is required: the separation-of-duties check on approve/activate compares against the
+    recorded submitter, so no caller may move a policy into REVIEW anonymously.
+    """
+
+    from app.governance_approval.service import record_submission_event
     from app.governance_policies.models import POLICY_STATUS_REVIEW
 
-    return _transition_policy_status(db, policy_id=policy_id, target_status=POLICY_STATUS_REVIEW)
+    updated = _transition_policy_status(db, policy_id=policy_id, target_status=POLICY_STATUS_REVIEW)
+    record_submission_event(db, policy_id, actor=actor, comment=comment)
+    return updated
 
 
 def activate_policy(db: Session, policy_id: int) -> GovernancePolicy:

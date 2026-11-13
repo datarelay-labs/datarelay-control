@@ -144,12 +144,48 @@ export function canViewAudit(): boolean {
   return getGovernanceCapabilities().governance_audit_read === true
 }
 
+const ROLE_LABELS: Record<GovernanceRole, string> = {
+  ADMINISTRATOR: 'Administrator',
+  OPERATOR: 'Connector Operator',
+  CONNECTOR_OPERATOR: 'Connector Operator',
+  GOVERNANCE_OPERATOR: 'Governance Operator',
+  GOVERNANCE_REVIEWER: 'Governance Reviewer',
+  GOVERNANCE_APPROVER: 'Governance Approver',
+  GOVERNANCE_AUDITOR: 'Governance Auditor',
+  VIEWER: 'Viewer',
+}
+
+/** True for the four Governance-only roles; the backend refuses every non-Governance mutation for them. */
+export function isGovernanceOnlyRole(): boolean {
+  const role = getSessionRole()
+  return role != null && role.startsWith('GOVERNANCE_')
+}
+
+export function governanceRoleLabel(): string | null {
+  const role = getSessionRole() as GovernanceRole | null
+  return role == null ? null : (ROLE_LABELS[role] ?? role)
+}
+
+/**
+ * F-196: a 403 must read as "your role lacks access", not as an outage. Returns the access message when the
+ * session capability map says the role cannot read this Governance area, otherwise null (caller keeps its
+ * generic unavailable message).
+ */
+export function governanceAccessDeniedMessage(
+  subject: string,
+  capability: 'governance_read' | 'governance_audit_read' | 'governance_operations_access' = 'governance_read',
+): string | null {
+  if (getGovernanceCapabilities()[capability] !== false) return null
+  const role = governanceRoleLabel()
+  return `${role ? `The ${role} role` : 'Your role'} does not have access to ${subject}. Ask an Administrator if you need it.`
+}
+
 export function governanceReadOnlyReason(): string | null {
   const role = normalizeRole(getSessionRole())
   if (role == null) return null
   if (canEditPolicy()) return null
   if (role === 'CONNECTOR_OPERATOR') {
-    return 'Governance write actions require Governance Operator role. You have Connector Operator (read-only) access.'
+    return 'Governance write actions require Governance Operator role. Connector Operators can view Governance but cannot change it.'
   }
   if (role === 'GOVERNANCE_AUDITOR') {
     return 'Governance Auditor role is read-only for all write actions.'

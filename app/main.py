@@ -316,6 +316,18 @@ def _build_readiness_payload() -> tuple[dict[str, Any], int]:
         "build_identity": load_build_identity(),
         "route_processing_enabled": bool(_settings.GDC_ROUTE_PROCESSING_ENABLED),
     }
+    # A missing transform engine means JSONata rules silently produce nothing: never report ok (F-172).
+    from app.mappers.full_event_mapping import jsonata_engine_available
+
+    jsonata_ok = jsonata_engine_available()
+    body["transform_engines"] = {
+        "jsonata": {
+            "available": jsonata_ok,
+            "error": None if jsonata_ok else "TRANSFORM_ENGINE_UNAVAILABLE",
+        }
+    }
+    if not jsonata_ok:
+        body["status"] = "degraded"
     try:
         with engine.connect() as conn:
             probe = probe_delivery_logs_indexes(conn)

@@ -61,8 +61,32 @@ def test_health_ready_ok_when_db_reachable(client: TestClient, monkeypatch: pyte
             "reindex_suggested": False,
         },
     )
+    monkeypatch.setattr("app.mappers.full_event_mapping.jsonata_engine_available", lambda: True)
     res = client.get("/health")
     assert res.status_code == 200
     assert res.json()["status"] == "ok"
     assert res.json()["delivery_logs_indexes"]["ok"] is True
     assert res.json()["delivery_logs_indexes"]["error"] is None
+    assert res.json()["transform_engines"]["jsonata"] == {"available": True, "error": None}
+
+
+def test_health_ready_degraded_when_jsonata_engine_missing(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """F-172: a missing transform engine must not be reported as ok."""
+
+    conn = MagicMock()
+    ctx = MagicMock()
+    ctx.__enter__.return_value = conn
+    ctx.__exit__.return_value = False
+    monkeypatch.setattr("app.main.engine.connect", lambda: ctx)
+    monkeypatch.setattr(
+        "app.main.probe_delivery_logs_indexes",
+        lambda _conn: {"error": None, "checked": True, "invalid_indexes": [], "reindex_suggested": False},
+    )
+    monkeypatch.setattr("app.mappers.full_event_mapping.jsonata_engine_available", lambda: False)
+    res = client.get("/health")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["status"] == "degraded"
+    assert body["transform_engines"]["jsonata"] == {"available": False, "error": "TRANSFORM_ENGINE_UNAVAILABLE"}

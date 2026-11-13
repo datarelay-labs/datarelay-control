@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { cn } from '../../lib/utils'
+import { StatusChip } from '../ui/status-chip'
 import type { DiagnosisCause, DiagnosisNextStep, DiagnosisTone, StreamDiagnosis } from './stream-runtime-diagnosis'
 
 function toneLabel(tone: DiagnosisTone): string {
@@ -13,6 +14,8 @@ function toneLabel(tone: DiagnosisTone): string {
       return 'Clear'
     case 'not_applicable':
       return 'Not applicable'
+    case 'inactive':
+      return 'Inactive'
     default:
       return 'Unknown'
   }
@@ -23,17 +26,24 @@ function toneClass(tone: DiagnosisTone): string {
     case 'critical':
       return 'border-red-300/80 bg-red-500/[0.06] text-red-950 dark:border-red-500/35 dark:bg-red-500/10 dark:text-red-100'
     case 'attention':
-      return 'border-amber-300/80 bg-amber-500/[0.07] text-amber-950 dark:border-amber-500/35 dark:bg-amber-500/10 dark:text-amber-100'
+      return 'border-status-warning-border bg-status-warning-subtle text-status-warning'
     case 'clear':
       return 'border-emerald-300/70 bg-emerald-500/[0.05] text-emerald-950 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100'
     case 'not_applicable':
+    case 'inactive':
       return 'border-slate-200/80 bg-slate-50 text-slate-700 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-200'
     default:
       return 'border-slate-200/80 bg-white text-slate-800 dark:border-gdc-border dark:bg-gdc-card dark:text-slate-100'
   }
 }
 
-function CauseCard({ cause }: { cause: DiagnosisCause }) {
+function CauseCard({ cause, notObservedRaw }: { cause: DiagnosisCause; notObservedRaw?: string | null }) {
+  // Only an unknown cause can be shown as "not observed"; a measured tone always wins.
+  const notObservedChip =
+    cause.tone === 'unknown'
+      ? (cause.statusLabel ?? (cause.key === 'checkpoint' || notObservedRaw != null ? 'Not observed yet' : null))
+      : null
+  const notObserved = notObservedRaw != null && cause.tone === 'unknown'
   return (
     <article
       data-testid={`stream-diagnosis-cause-${cause.key}`}
@@ -42,9 +52,21 @@ function CauseCard({ cause }: { cause: DiagnosisCause }) {
     >
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-semibold">{cause.label}</h3>
-        <span className="text-[13px] font-medium">{toneLabel(cause.tone)}</span>
+        {notObservedChip ? (
+          <StatusChip status="unknown">{notObservedChip}</StatusChip>
+        ) : (
+          <span className="text-[13px] font-medium">
+            {cause.tone === 'inactive' ? (cause.statusLabel ?? toneLabel(cause.tone)) : toneLabel(cause.tone)}
+          </span>
+        )}
       </div>
       <p className="mt-1.5 text-sm leading-relaxed">{cause.detail}</p>
+      {notObserved ? (
+        <details className="mt-2 text-caption text-fg-secondary">
+          <summary className="cursor-pointer font-medium">Raw checkpoint</summary>
+          <pre className="mt-1 whitespace-pre-wrap break-all font-mono">{notObservedRaw}</pre>
+        </details>
+      ) : null}
     </article>
   )
 }
@@ -84,12 +106,15 @@ export function StreamRuntimeDiagnosisOverview({
   onRunOnce,
   onBackfill,
   evidence,
+  checkpointRawNotObserved,
 }: {
   diagnosis: StreamDiagnosis
   onStart?: () => void
   onRunOnce?: () => void
   onBackfill?: () => void
   evidence: ReactNode
+  /** Raw checkpoint row when runtime reported one with only null/empty values. */
+  checkpointRawNotObserved?: string | null
 }) {
   return (
     <div className="space-y-4" data-testid="stream-diagnosis-overview">
@@ -104,7 +129,11 @@ export function StreamRuntimeDiagnosisOverview({
         <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-50">Why?</h3>
         <div className="mt-2 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {diagnosis.causes.map((item) => (
-            <CauseCard key={item.key} cause={item} />
+            <CauseCard
+              key={item.key}
+              cause={item}
+              notObservedRaw={item.key === 'checkpoint' ? checkpointRawNotObserved : null}
+            />
           ))}
         </div>
       </section>

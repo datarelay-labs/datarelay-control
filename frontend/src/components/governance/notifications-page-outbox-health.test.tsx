@@ -223,6 +223,36 @@ describe('Governance notification queue source-driven diagnostics', () => {
   })
 
 
+  it('states that saved channels do not prove delivery and names the server prerequisites (F-183)', async () => {
+    persistTestSession('ADMINISTRATOR')
+    renderPage()
+    const note = await screen.findByTestId('notification-delivery-prerequisites')
+    expect(note).toHaveTextContent(/does not prove delivery/i)
+    expect(note).toHaveTextContent(/SMTP transport is configured on the server/i)
+    expect(note).toHaveTextContent(/HTTPS webhook\s+sender/i)
+  })
+
+  it('refuses to save a malformed email recipient and says which one (F-183)', async () => {
+    persistTestSession('ADMINISTRATOR')
+    const update = vi.spyOn(notificationsApi, 'updateGovernanceNotificationConfig').mockResolvedValue(config)
+    renderPage()
+    const input = await screen.findByTestId('notification-email-recipients')
+    fireEvent.change(input, { target: { value: 'ops@example.com, not-an-email' } })
+    expect(await screen.findByTestId('notification-email-recipients-invalid')).toHaveTextContent('not-an-email')
+    fireEvent.click(screen.getByTestId('notification-save'))
+    expect(update).not.toHaveBeenCalled()
+    expect(await screen.findByText(/Fix the email recipients before saving/i)).toBeInTheDocument()
+  })
+
+  it('explains a refused notification settings load instead of printing a raw script error (F-196)', async () => {
+    persistTestSession('GOVERNANCE_REVIEWER')
+    vi.spyOn(notificationsApi, 'fetchGovernanceNotificationConfig').mockResolvedValue(null as never)
+    renderPage()
+    const alert = await screen.findByText(/notification settings could not be loaded/i)
+    expect(alert).toHaveTextContent(/Governance Reviewer role may not have access/i)
+    expect(screen.queryByText(/Cannot read properties of null/i)).not.toBeInTheDocument()
+  })
+
   it('blocks sidebar navigation with unsaved notification rule changes until explicit discard', async () => {
     persistTestSession('ADMINISTRATOR')
     const router = renderWithDataRouter()
@@ -291,9 +321,39 @@ describe('Governance notification queue source-driven diagnostics', () => {
     fireEvent.click(within(box).getByRole('checkbox'))
     expect(await screen.findByTestId('notification-unsaved-warning')).toBeInTheDocument()
     fireEvent.click(screen.getByTestId('notification-save'))
+    // Prove the save settled (not just that the warning text is gone) before leaving.
+    expect(await screen.findByTestId('notification-success-message')).toHaveTextContent('Notification rules saved.')
     await waitFor(() => expect(screen.queryByTestId('notification-unsaved-warning')).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.getByTestId('notification-save')).toBeEnabled())
     fireEvent.click(screen.getByTestId('notification-external-nav'))
     await waitFor(() => expect(router.state.location.pathname).toBe('/monitoring'))
+    expect(screen.queryByTestId('notification-discard-dialog')).not.toBeInTheDocument()
+  })
+
+  it('does not block leaving in the same task as the commit that completes a successful Save', async () => {
+    persistTestSession('ADMINISTRATOR')
+    vi.spyOn(notificationsApi, 'updateGovernanceNotificationConfig').mockImplementation(async payload => ({
+      ...config, ...payload, updated_at: '2026-10-13T02:00:00Z',
+    }))
+    const router = renderWithDataRouter()
+    const box = await screen.findByTestId('notification-email-enabled')
+    fireEvent.click(within(box).getByRole('checkbox'))
+    expect(await screen.findByTestId('notification-unsaved-warning')).toBeInTheDocument()
+    // react-router re-registers a changed blocker predicate in a passive effect. Click from a
+    // MutationObserver callback, i.e. before that effect can run, to cover the window in which a
+    // user (or a fast test) leaves right after Save completes.
+    const observer = new MutationObserver(() => {
+      if (screen.queryByTestId('notification-unsaved-warning')) return
+      observer.disconnect()
+      fireEvent.click(screen.getByTestId('notification-external-nav'))
+    })
+    observer.observe(document.body, { childList: true, subtree: true })
+    try {
+      fireEvent.click(screen.getByTestId('notification-save'))
+      await waitFor(() => expect(router.state.location.pathname).toBe('/monitoring'))
+    } finally {
+      observer.disconnect()
+    }
     expect(screen.queryByTestId('notification-discard-dialog')).not.toBeInTheDocument()
   })
 
@@ -338,9 +398,12 @@ describe('Governance notification queue source-driven diagnostics', () => {
     if (resolveSave == null) throw new Error('Notification save was not started')
     resolveSave({ ...config, email_enabled: true, updated_at: '2026-10-13T02:00:00Z' })
     await waitFor(() => expect(within(box).getByRole('checkbox')).toBeEnabled())
+    expect(await screen.findByTestId('notification-success-message')).toHaveTextContent('Notification rules saved.')
     await waitFor(() => expect(screen.queryByTestId('notification-unsaved-warning')).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.getByTestId('notification-save')).toBeEnabled())
     fireEvent.click(screen.getByTestId('notification-external-nav'))
     await waitFor(() => expect(router.state.location.pathname).toBe('/monitoring'))
+    expect(screen.queryByTestId('notification-discard-dialog')).not.toBeInTheDocument()
   })
 
   it('preserves unsaved notification rules if Save fails', async () => {

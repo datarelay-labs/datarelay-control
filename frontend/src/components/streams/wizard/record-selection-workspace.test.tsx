@@ -67,6 +67,22 @@ describe('RecordSelectionWorkspace', () => {
     expect(screen.getByTestId('summary-records')).toHaveTextContent('2')
   })
 
+  it('offers a Basic-mode Reset Event root control that clears a chosen Event root (F-008)', async () => {
+    const user = userEvent.setup()
+    const { onSetEventRootPath } = renderWorkspace({
+      payload: { items: [{ id: 'a' }] },
+      eventArrayPath: '$.items',
+      eventRootPath: '$.id',
+    })
+    await user.click(screen.getByTestId('record-selection-reset-event-root'))
+    expect(onSetEventRootPath).toHaveBeenCalledWith('')
+  })
+
+  it('does not show Reset Event root while no Event root is chosen (F-008)', () => {
+    renderWorkspace()
+    expect(screen.queryByTestId('record-selection-reset-event-root')).toBeNull()
+  })
+
   it('shows truthful bounded sample provenance without inventing a live sample id', () => {
     renderWorkspace({ finishedAt: Date.UTC(2026, 9, 14, 6, 0, 0) })
     const evidence = screen.getByTestId('record-selection-sample-provenance')

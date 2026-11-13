@@ -32,12 +32,38 @@ class EnrichmentError(PlatformError):
     """Static/calculated enrichment failed."""
 
 
-class DestinationSendError(PlatformError):
-    """Syslog or webhook delivery failed."""
+# 4xx responses that can succeed on a later attempt. Every other 4xx is a request or
+# authorization problem that a retry cannot fix (for example 401 or 403).
+RETRYABLE_4XX_STATUSES = frozenset({408, 425, 429})
 
-    def __init__(self, message: str, *, http_status: int | None = None) -> None:
+
+def is_retryable_http_status(status: int | None) -> bool:
+    """False for HTTP client errors a retry cannot fix (4xx except 408/425/429)."""
+
+    if status is None:
+        return True
+    if 400 <= status < 500:
+        return status in RETRYABLE_4XX_STATUSES
+    return True
+
+
+class DestinationSendError(PlatformError):
+    """Syslog or webhook delivery failed.
+
+    ``delivered_event_count`` is the number of leading events confirmed delivered before
+    the failure (chunked senders); ``None`` means unknown and the whole batch is retried.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        http_status: int | None = None,
+        delivered_event_count: int | None = None,
+    ) -> None:
         super().__init__(message)
         self.http_status = http_status
+        self.delivered_event_count = delivered_event_count
 
 
 class ProtectionApplicationError(PlatformError):

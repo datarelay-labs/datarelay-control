@@ -128,6 +128,35 @@ describe('buildFlowTimelineStages', () => {
     }
   })
 
+  it('does not mark Connect or Deploy OK for an IDLE/UNKNOWN stream without delivery evidence', () => {
+    const stages = buildFlowTimelineStages({
+      streamId: '42',
+      displayStatus: 'IDLE',
+      workflow: baseWorkflow(),
+      deliveryPct: null,
+      routesErr: 0,
+      usesPushIngest: false,
+      governance: defaultGovernance(),
+    })
+    expect(stages.find((s) => s.key === 'connect')?.status).toBe('pending')
+    expect(stages.find((s) => s.key === 'deploy')?.status).toBe('pending')
+  })
+
+  it('keeps Deploy OK once delivery was observed on a RUNNING stream', () => {
+    const stages = buildFlowTimelineStages({
+      streamId: '42',
+      displayStatus: 'RUNNING',
+      workflow: baseWorkflow(),
+      deliveryPct: 100,
+      deliveredLastHour: 5,
+      routesErr: 0,
+      usesPushIngest: false,
+      governance: defaultGovernance(),
+    })
+    expect(stages.find((s) => s.key === 'connect')?.status).toBe('ok')
+    expect(stages.find((s) => s.key === 'deploy')?.status).toBe('ok')
+  })
+
   it('shows activity-specific governance labels when engaged', () => {
     const governance = defaultGovernance()
     governance.protection!.enabled_rule_count = 2

@@ -2,7 +2,8 @@ import type { ConnectorRead } from '../api/gdcConnectors'
 import type { AuthHealthCheckInterval, ConnectorOperationsRow, ConnectorStreamOpsSummary } from '../api/gdcConnectorsOperations'
 import { formatThroughputEps } from './observability-format'
 
-export type ConnectorHealthLabel = 'Healthy' | 'Warning' | 'Critical' | 'Stopped'
+/** `Not verified`: no operations summary was loaded for the connector (never read as Healthy). */
+export type ConnectorHealthLabel = 'Healthy' | 'Warning' | 'Critical' | 'Stopped' | 'Not verified'
 
 export type ConnectorHealthResult = {
   health: ConnectorHealthLabel
@@ -34,6 +35,7 @@ const REASON_PRIORITY = {
 const HEALTH_SORT_RANK: Record<ConnectorHealthLabel, number> = {
   Critical: 4,
   Warning: 3,
+  'Not verified': 2.5,
   Healthy: 2,
   Stopped: 1,
 }
@@ -271,6 +273,11 @@ export function computeConnectorHealth(
     return { health: 'Critical', reason: 'Authentication Failed' }
   }
 
+  // Without an operations summary there is no stream evidence; an auth check alone is not "Healthy".
+  if (ops == null) {
+    return { health: 'Not verified', reason: 'Operations summary not available' }
+  }
+
   const streams = ops?.streams ?? []
   const counts = countStreamsByHealth(streams, nowMs)
   const issues = countIssueTypes(streams)
@@ -361,6 +368,7 @@ export function connectorHealthTone(health: ConnectorHealthLabel): 'success' | '
     case 'Warning':
       return 'warning'
     case 'Stopped':
+    case 'Not verified':
       return 'neutral'
     default:
       return 'success'
@@ -374,6 +382,7 @@ export function connectorHealthBadgeClass(health: ConnectorHealthLabel): string 
     case 'Warning':
       return 'bg-amber-100 text-amber-900 dark:bg-amber-500/15 dark:text-amber-100'
     case 'Stopped':
+    case 'Not verified':
       return 'bg-slate-100 text-slate-700 dark:bg-slate-500/15 dark:text-slate-200'
     default:
       return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-100'

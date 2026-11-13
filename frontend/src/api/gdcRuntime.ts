@@ -28,8 +28,9 @@ import type {
   RuntimeStatusResponse,
 } from './types/gdcApi'
 import { GDC_API_PREFIX } from './gdcApiPrefix'
+import { invalidateStreamCatalogCache } from './catalogListCache'
 
-const RT = `${GDC_API_PREFIX}/runtime`
+const RT =`${GDC_API_PREFIX}/runtime`
 
 const readJsonOpts = { timeoutMs: GDC_DEFAULT_READ_JSON_TIMEOUT_MS }
 const RUNTIME_READ_CACHE_TTL_MS = 15_000
@@ -453,12 +454,30 @@ export async function fetchRuntimeRunTrace(runId: string): Promise<RuntimeTraceR
   return safeRequestJson<RuntimeTraceResponse>(`${RT}/runs/${encodeURIComponent(rid)}/trace`, readJsonOpts)
 }
 
+/**
+ * Start/Stop change the stream status, so cached status reads (stats-health, metrics,
+ * stream-by-id and the stream list) must not be served from their TTL cache afterwards.
+ */
+async function controlRuntimeStream(
+  streamId: number,
+  action: 'start' | 'stop',
+): Promise<RuntimeStreamControlResponse | null> {
+  const res = await safeRequestJson<RuntimeStreamControlResponse>(`${RT}/streams/${streamId}/${action}`, {
+    method: 'POST',
+  })
+  if (res) {
+    invalidateStreamRuntimeReadCache(streamId)
+    invalidateStreamCatalogCache(streamId)
+  }
+  return res
+}
+
 export async function startRuntimeStream(streamId: number): Promise<RuntimeStreamControlResponse | null> {
-  return safeRequestJson<RuntimeStreamControlResponse>(`${RT}/streams/${streamId}/start`, { method: 'POST' })
+  return controlRuntimeStream(streamId, 'start')
 }
 
 export async function stopRuntimeStream(streamId: number): Promise<RuntimeStreamControlResponse | null> {
-  return safeRequestJson<RuntimeStreamControlResponse>(`${RT}/streams/${streamId}/stop`, { method: 'POST' })
+  return controlRuntimeStream(streamId, 'stop')
 }
 
 /** Single StreamRunner cycle; throws on HTTP/network error with backend detail when available. */

@@ -92,6 +92,24 @@ describe('ViolationCenterPage', () => {
     )
   })
 
+  it('tells a Viewer the role lacks access instead of reporting an outage (F-196)', async () => {
+    persistTestSession('VIEWER', 'viewer')
+    vi.spyOn(gdcGovernanceViolations, 'fetchGovernanceViolations').mockResolvedValue(null)
+
+    renderPage()
+
+    expect(await screen.findByText(/Viewer role does not have access to Governance violations/i)).toBeInTheDocument()
+    expect(screen.queryByText(/Violation APIs unavailable/i)).not.toBeInTheDocument()
+  })
+
+  it('keeps the unavailable message when the role can read Governance but the API failed (F-196)', async () => {
+    vi.spyOn(gdcGovernanceViolations, 'fetchGovernanceViolations').mockResolvedValue(null)
+
+    renderPage()
+
+    expect(await screen.findByText(/Violation APIs unavailable/i)).toBeInTheDocument()
+  })
+
   it('shows empty state when no violations', async () => {
     vi.spyOn(gdcGovernanceViolations, 'fetchGovernanceViolations').mockResolvedValue({
       window: '24h',
@@ -246,5 +264,25 @@ describe('ViolationCenterPage', () => {
 
     expect(await screen.findByTestId('violation-read-only-banner')).toBeInTheDocument()
     expect(within(screen.getByTestId('violation-read-only-banner')).getByText(/Read-only view/i)).toBeInTheDocument()
+  })
+
+  it('does not offer Release for a discarded quarantine item and labels it Discarded (F-181)', async () => {
+    const discardedViolation = { ...sampleViolation, status: 'DISCARDED' as const }
+    vi.spyOn(gdcGovernanceViolations, 'fetchGovernanceViolations').mockResolvedValue({
+      window: '24h',
+      total: 1,
+      violations: [discardedViolation],
+    })
+    vi.spyOn(gdcGovernanceViolations, 'fetchGovernanceViolationDetail').mockResolvedValue({
+      ...sampleDetail,
+      violation: discardedViolation,
+      related_quarantine: { ...sampleDetail.related_quarantine!, status: 'discarded' },
+    })
+
+    renderPage('/governance/violations?id=q-42')
+
+    const cta = await screen.findByTestId('violation-open-quarantine')
+    expect(cta).toHaveTextContent('View quarantine item')
+    expect(cta).not.toHaveTextContent(/^Release$/)
   })
 })

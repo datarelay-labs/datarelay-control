@@ -1,5 +1,5 @@
 import { useSearchParams } from 'react-router-dom'
-import { cn } from '../../lib/utils'
+import { semanticCn } from '../ui/semantic-cn'
 import { STREAM_DETAIL_TAB_DEFS, parseStreamDetailTab, type StreamDetailTab } from './stream-detail-tab-model'
 
 export function StreamDetailTabNav({ active }: { streamId: string; active: StreamDetailTab }) {
@@ -25,11 +25,12 @@ export function StreamDetailTabNav({ active }: { streamId: string; active: Strea
                     return next
                   })
                 }}
-                className={cn(
+                /* Theme-aware aliases: the old light-violet active text failed 4.5:1 on the light card. */
+                className={semanticCn(
                   'border-b-2 px-4 py-2.5 text-[13px] font-semibold transition-colors',
                   isActive
-                    ? 'border-violet-500 text-violet-300 dark:border-violet-400 dark:text-violet-200'
-                    : 'border-transparent text-slate-500 hover:text-slate-300 dark:text-gdc-muted dark:hover:text-slate-200',
+                    ? 'border-accent text-fg'
+                    : 'border-transparent text-fg-secondary hover:text-fg',
                 )}
               >
                 {tab.label}

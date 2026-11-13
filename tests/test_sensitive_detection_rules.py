@@ -100,3 +100,18 @@ def test_pattern_email_on_email_leaf() -> None:
 def test_field_name_classes(path: str, expected_class: str) -> None:
     hits = evaluate_field_name_rules(path)
     assert any(h["sensitivity_class"] == expected_class for h in hits)
+
+
+def test_card_field_name_is_pii_f156() -> None:
+    for path in ("$.card", "$.card_number", "$.payment.credit_card"):
+        hits = evaluate_field_name_rules(path)
+        assert hits and hits[0]["sensitivity_class"] == "pii", path
+
+
+def test_card_number_pattern_requires_luhn_and_grouping_f156() -> None:
+    hit = evaluate_pattern_rules("$.payment_info", inferred_type="string", sample_value="4111-1111-1111-1111")
+    assert hit is not None
+    assert hit["pattern"] == "payment_card"
+    assert hit["sensitivity_class"] == "pii"
+    assert evaluate_pattern_rules("$.serial", inferred_type="string", sample_value="1234-5678-9012-3456") is None
+    assert evaluate_pattern_rules("$.order", inferred_type="string", sample_value="4111111111111111") is None

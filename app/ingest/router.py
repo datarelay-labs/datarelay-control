@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from functools import partial
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -20,9 +20,16 @@ router = APIRouter()
 async def ingest_webhook(
     receiver_key: str,
     request: Request,
+    response: Response,
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
-    """Receive an authenticated webhook event batch and run the stream pipeline."""
+    """Receive an authenticated webhook event batch and run the stream pipeline.
+
+    HTTP 200 / ``accepted: true`` keeps meaning "the payload was received and processed";
+    ``delivery_status`` (``complete`` | ``partial`` | ``failed``) and the
+    ``X-GDC-Delivery-Status`` header say whether every Route delivered. Undelivered events
+    are held for replay, so producers must not resend on ``partial`` / ``failed``.
+    """
 
     receiver = WebhookReceiver()
     max_bytes = receiver.max_request_bytes_for_key(db, receiver_key)
@@ -56,7 +63,10 @@ async def ingest_webhook(
                 "runtime_run_id": (summary or {}).get("run_id"),
             },
         )
-    return {"accepted": True, "summary": summary}
+    delivery = (summary or {}).get("delivery") if isinstance(summary, dict) else None
+    delivery_status = str((delivery or {}).get("status") or "complete")
+    response.headers["X-GDC-Delivery-Status"] = delivery_status
+    return {"accepted": True, "delivery_status": delivery_status, "delivery": delivery, "summary": summary}
 
 
 @router.post("/ai/{stream_slug}/v1/chat/completions")

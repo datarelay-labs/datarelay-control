@@ -5,7 +5,7 @@ import {
   computeRouteDeployReadiness,
   routeProcessingStatusToDeployMode,
 } from './wizard-deploy-readiness'
-import { buildInitialState } from './wizard-state'
+import { buildInitialState, computeLegacySubstepCompletion, DEFAULT_ROUTE_PROCESSING_INHERIT } from './wizard-state'
 
 function readyState() {
   const state = buildInitialState()
@@ -17,6 +17,7 @@ function readyState() {
   state.stream.endpoint = '/events'
   state.stream.eventArrayPath = '$.events'
   state.stream.checkpointSourcePath = '$.timestamp'
+  state.stream.params = [{ id: 'p-sync', key: 'after', value: '{{checkpoint.last_timestamp}}' }]
   state.stream.checkpointFieldType = 'datetime'
   state.stream.recordPathConfirmedForApiTestAt = finishedAt
   state.stream.checkpointConfirmedForApiTestAt = finishedAt
@@ -39,6 +40,7 @@ function readyState() {
       enabled: true,
       failurePolicy: 'RETRY_THEN_DLQ',
       rateLimitJson: '{}',
+      inherit: { ...DEFAULT_ROUTE_PROCESSING_INHERIT },
     },
   ]
   return state
@@ -128,6 +130,145 @@ describe('computeDeployReadiness', () => {
     const snapshot = computeDeployReadiness(state, { ok: true, failed: false, unknown: false })
     expect(snapshot.categories.find((c) => c.key === 'protection')?.tone).toBe('ok')
     expect(snapshot.canCreate).toBe(true)
+  })
+
+  // C2: the old checklist only read shared dataProtection.intents, so a stream whose Routes carry
+  // their own protection rules was reported as "No data protection intent configured".
+  describe('protection checklist reads Route protection rules (C2)', () => {
+    function protectionSummary(state: ReturnType<typeof readyState>) {
+      return computeDeployReadiness(state, { ok: true, failed: false, unknown: false }).categories.find(
+        (c) => c.key === 'protection',
+      )?.summary
+    }
+
+    it('reports Route override protection rules instead of "no intent"', () => {
+      const state = readyState()
+      state.destinations.routeDrafts[0] = {
+        ...state.destinations.routeDrafts[0]!,
+        inherit: { transform: true, protection: false, classification: true, policy: true },
+        overrides: {
+          protection: {
+            intents: [
+              { key: 'rp1', detectedField: '$.email', protectionAction: 'mask_partial', deliveryBehavior: 'continue' },
+            ],
+            unknownNormalFieldPolicy: 'pass_through',
+            unknownSensitiveFieldPolicy: 'auto_protect',
+          },
+        },
+      }
+      const summary = protectionSummary(state)
+      expect(summary).not.toBe('No data protection intent configured')
+      expect(summary).toContain('Route protection rules on 1 route')
+    })
+
+    it('reports enabled governance route overrides', () => {
+      const state = readyState()
+      state.dataProtection.routeOverrides = [
+        {
+          key: 'o1',
+          routeDraftKey: 'r1',
+          fieldPath: '$.email',
+          protectionAction: 'mask_partial',
+          deliveryBehavior: 'continue',
+          enabled: true,
+        },
+      ]
+      expect(protectionSummary(state)).toContain('Route protection rules on 1 route')
+    })
+
+    it('still says no intent when Routes have no usable protection rules', () => {
+      const state = readyState()
+      // Inheriting Route with stale override intents, plus a disabled governance override.
+      state.destinations.routeDrafts[0] = {
+        ...state.destinations.routeDrafts[0]!,
+        inherit: { transform: true, protection: true, classification: true, policy: true },
+        overrides: {
+          protection: {
+            intents: [
+              { key: 'rp1', detectedField: '$.email', protectionAction: 'mask_partial', deliveryBehavior: 'continue' },
+            ],
+            unknownNormalFieldPolicy: 'pass_through',
+            unknownSensitiveFieldPolicy: 'auto_protect',
+          },
+        },
+      }
+      state.dataProtection.routeOverrides = [
+        {
+          key: 'o1',
+          routeDraftKey: 'r1',
+          fieldPath: '$.email',
+          protectionAction: 'mask_partial',
+          deliveryBehavior: 'continue',
+          enabled: false,
+        },
+      ]
+      expect(protectionSummary(state)).toBe('No data protection intent configured')
+    })
+  })
+
+  // F-009: Create & Start Stream was disabled with a banner asking the operator to resolve red
+  // checklist items while no row was red. The gate and the checklist now share one definition.
+  describe('Create gate and checklist agree (F-009)', () => {
+    const connectivity = { ok: true, failed: false, unknown: false }
+
+    it('does not let an unfinished blank Data Protection row block deployment', () => {
+      const state = readyState()
+      state.dataProtection.intents = [
+        { key: 'dp1', detectedField: '$.card', protectionAction: 'mask_full', deliveryBehavior: 'continue' },
+        { key: 'dp2', detectedField: '', protectionAction: 'mask_partial', deliveryBehavior: 'continue' },
+      ]
+      const snapshot = computeDeployReadiness(state, connectivity)
+      expect(snapshot.canCreate).toBe(true)
+      expect(snapshot.categories.every((c) => c.tone !== 'err')).toBe(true)
+      expect(computeLegacySubstepCompletion(state).data_protection).toBe('complete')
+    })
+
+    it('still blocks, in red, a protection row whose path is not a $ path', () => {
+      const state = readyState()
+      state.dataProtection.intents = [
+        { key: 'dp1', detectedField: 'card', protectionAction: 'mask_full', deliveryBehavior: 'continue' },
+      ]
+      const snapshot = computeDeployReadiness(state, connectivity)
+      expect(snapshot.canCreate).toBe(false)
+      const protection = snapshot.categories.find((c) => c.key === 'protection')
+      expect(protection?.tone).toBe('err')
+      expect(protection?.summary).toMatch(/Complete detected field paths/)
+    })
+
+    it('names the failed gate as a red row when every checklist row would otherwise be green', () => {
+      // A restored draft scrubs the raw sample but keeps its Union Schema: the checklist accepts the sample,
+      // the create gate needs the payload to re-confirm the record path.
+      const state = readyState()
+      state.apiTest.parsedJson = null
+      state.apiTest.rawResponse = null
+      const snapshot = computeDeployReadiness(state, connectivity)
+      expect(snapshot.canCreate).toBe(false)
+      const red = snapshot.categories.filter((c) => c.tone === 'err')
+      expect(red.length).toBeGreaterThan(0)
+      expect(red.some((c) => c.key === 'records' && /re-select|Confirm the record path/i.test(c.summary))).toBe(true)
+    })
+
+    it('never disables Create without at least one red checklist row', () => {
+      const mutations: Array<(s: ReturnType<typeof readyState>) => void> = [
+        (s) => { s.connector.connectorId = null },
+        (s) => { s.stream.name = '' },
+        (s) => { s.apiTest.status = 'idle' },
+        (s) => { s.apiTest.parsedJson = null; s.apiTest.rawResponse = null },
+        (s) => { s.stream.recordPathConfirmedForApiTestAt = null },
+        (s) => { s.stream.checkpointConfirmedForApiTestAt = null },
+        (s) => { s.mapping = [] },
+        (s) => { s.destinations.routeDrafts = [] },
+        (s) => { s.dataProtection.intents = [{ key: 'x', detectedField: 'nope', protectionAction: 'mask_full', deliveryBehavior: 'continue' }] },
+      ]
+      for (const mutate of mutations) {
+        const state = readyState()
+        mutate(state)
+        const snapshot = computeDeployReadiness(state, connectivity)
+        if (!snapshot.canCreate) {
+          expect(snapshot.categories.some((c) => c.tone === 'err')).toBe(true)
+        }
+      }
+    })
   })
 
   it('returns NEEDS ATTENTION when delivery paths are disabled', () => {
@@ -301,5 +442,56 @@ describe('computeRouteDeployReadiness', () => {
     expect(routeProcessingStatusToDeployMode('Inherited')).toBe('shared')
     expect(routeProcessingStatusToDeployMode('Overridden')).toBe('override')
     expect(routeProcessingStatusToDeployMode('Mixed')).toBe('override')
+  })
+})
+
+describe('Sync position must be bound to the request (F-162)', () => {
+  it('refuses READY with a specific reason when no placeholder uses the Sync position', () => {
+    const state = readyState()
+    state.stream.params = []
+    const snapshot = computeDeployReadiness(state, { ok: true, failed: false, unknown: false })
+    expect(snapshot.canCreate).toBe(false)
+    expect(snapshot.statusLabel).toBe('NEEDS ATTENTION')
+    const records = snapshot.categories.find((c) => c.key === 'records')
+    expect(records?.tone).toBe('err')
+    expect(records?.summary).toContain('is not used by the request')
+    expect(records?.summary).toContain('{{checkpoint.')
+  })
+
+  it('names an unsupported placeholder instead of the generic confirm message', () => {
+    const state = readyState()
+    state.stream.params = [{ id: 'p', key: 'after', value: '{{checkpoint.last_id}}' }]
+    const snapshot = computeDeployReadiness(state, { ok: true, failed: false, unknown: false })
+    expect(snapshot.canCreate).toBe(false)
+    expect(snapshot.categories.find((c) => c.key === 'records')?.summary).toContain('{{checkpoint.last_id}}')
+  })
+})
+
+describe('Webhook Receiver deploy checklist is honest about what was verified (F-123)', () => {
+  function webhookState(eventCount: number) {
+    const state = readyState()
+    state.connector.sourceType = 'WEBHOOK_RECEIVER'
+    state.apiTest.eventCount = eventCount
+    return state
+  }
+
+  it('does not claim a tested connection or a fetched sample when no payload was supplied', () => {
+    const snapshot = computeDeployReadiness(webhookState(0), { ok: true, failed: false, unknown: false })
+    const connection = snapshot.categories.find((c) => c.key === 'connection')
+    const data = snapshot.categories.find((c) => c.key === 'data')
+    expect(connection?.summary).not.toMatch(/tested/i)
+    expect(connection?.summary).toMatch(/push source/i)
+    expect(data?.tone).toBe('warn')
+    expect(data?.summary).toMatch(/nothing was fetched or tested/i)
+    expect(data?.summary).not.toMatch(/fetched successfully/i)
+    expect(snapshot.statusLabel).toBe('READY WITH WARNINGS')
+  })
+
+  it('says a pasted sample was validated locally rather than received', () => {
+    const snapshot = computeDeployReadiness(webhookState(3), { ok: true, failed: false, unknown: false })
+    const data = snapshot.categories.find((c) => c.key === 'data')
+    expect(data?.tone).toBe('ok')
+    expect(data?.summary).toMatch(/validated locally \(3 records\)/)
+    expect(data?.summary).toMatch(/no live event received/i)
   })
 })

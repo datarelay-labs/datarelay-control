@@ -8,7 +8,7 @@ import {
   canViewGovernanceWorkspace,
   governanceReadOnlyReason,
 } from '../../lib/governance-rbac'
-import { cn } from '../../lib/utils'
+import { semanticCn } from '../ui/semantic-cn'
 import { PersonaReadOnlyBanner } from './persona-read-only-banner'
 
 const TABS: readonly { to: string; end?: boolean; label: string; testId: string; visible?: () => boolean }[] = [
@@ -28,11 +28,11 @@ export function GovernanceShell() {
     const reason = governanceReadOnlyReason() ?? 'Governance access requires an authorized role.'
     return (
       <section
-        className="rounded-xl border border-amber-300/70 bg-amber-500/[0.06] p-6 text-sm text-amber-950 dark:border-amber-500/35 dark:bg-amber-500/10 dark:text-amber-100"
+        className="rounded-lg border border-status-warning-border bg-status-warning-subtle p-6 text-body text-status-warning"
         data-testid="governance-unauthorized"
         role="alert"
       >
-        <h2 className="text-base font-semibold">Governance access unavailable</h2>
+        <h2 className="text-title">Governance access unavailable</h2>
         <p className="mt-2">{reason}</p>
       </section>
     )
@@ -49,7 +49,7 @@ export function GovernanceShell() {
     <div className="w-full min-w-0 space-y-4" data-testid="governance-shell">
       <PersonaReadOnlyBanner />
       <nav
-        className="flex flex-wrap gap-1.5 border-b border-slate-200 pb-2 dark:border-gdc-border"
+        className="flex flex-wrap gap-x-1 border-b border-default"
         aria-label="Governance sections"
       >
         {visibleTabs.map((t) => (
@@ -59,11 +59,11 @@ export function GovernanceShell() {
             end={t.end}
             data-testid={t.testId}
             className={({ isActive }) =>
-              cn(
-                'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+              semanticCn(
+                '-mb-px inline-flex h-control-md items-center whitespace-nowrap border-b-2 px-3 text-label transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring',
                 isActive
-                  ? 'bg-violet-600 text-white shadow-sm dark:bg-violet-500'
-                  : 'text-slate-600 hover:bg-slate-100 dark:text-gdc-mutedStrong dark:hover:bg-gdc-rowHover',
+                  ? 'border-accent text-fg'
+                  : 'border-transparent text-fg-secondary hover:bg-surface-hover hover:text-fg',
               )
             }
           >

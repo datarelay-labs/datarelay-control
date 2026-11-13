@@ -180,6 +180,9 @@ Missing today:
 | Spec | Coverage |
 | ---- | -------- |
 | `operator-auth-runtime-smoke.spec.ts` | Login / AppShell / Runtime / bearer API |
+| `forced-password-change.spec.ts` | Admin-created account forced password change; VIEWER / OPERATOR / GOVERNANCE_AUDITOR change own password (F-202) |
+| `policy-separation-of-duties.spec.ts` | Policy approve/activate self-approval confirmation, other-approver path, unknown-submitter dialog (F-187) |
+| `display-settings-rbac.spec.ts` | Operator denied platform display-settings writes in UI and API (F-192) |
 | `record-selection-smoke.spec.ts` | Wizard Record Selection + mapping + run control |
 | `record-selection-workspace-validation.spec.ts` | CloudTrail sample, checkpoint, mapping tree |
 | `wizard-full-event-mapping.spec.ts` | Full-event mapping preview/save |
@@ -190,6 +193,8 @@ Missing today:
 | screenshot specs | UX capture only |
 
 Configs: `frontend/playwright.config*.ts` (9 configs). **Not run in GitHub Actions.**
+
+The three account/governance specs above run with `frontend/playwright.config.auth-governance.ts` against a disposable stack (`PLAYWRIGHT_API_BASE_URL`, `PLAYWRIGHT_BASE_URL`, `PLAYWRIGHT_E2E_USERNAME`, `PLAYWRIGHT_E2E_PASSWORD`; the unknown-submitter case also needs `PLAYWRIGHT_E2E_DISPOSABLE_DB=1` with `DATABASE_URL` set to that stack's database).
 
 ### Backend / CI E2E
 

@@ -92,7 +92,7 @@ function RoutesTableRowInner({
   const m = row.metrics
   const sr = m ? m.success_rate : null
   const eps = m ? m.eps_current : 0
-  const lat = m ? m.avg_latency_ms : null
+  const lat = row.avgLatencyMs === undefined ? m?.avg_latency_ms : row.avgLatencyMs
   const errCount = m ? m.failed_last_hour : null
   const lastAct = relativeShort(lastActivityIso(m))
   const logsHref = logsExplorerPath({

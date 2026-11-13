@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import ipaddress
+import re
 from typing import Any
 from urllib.parse import urlparse
 
@@ -19,9 +21,52 @@ TLS_KEYS = (
     "tls_server_name",
     "connect_timeout",
     "write_timeout",
+    "post_handshake_check_seconds",
 )
 
 WEBHOOK_URL_SCHEMES = ("http", "https")
+
+SYSLOG_DESTINATION_TYPES = ("SYSLOG_UDP", "SYSLOG_TCP", "SYSLOG_TLS")
+
+# RFC 1123 host name labels (underscore tolerated for internal DNS names).
+_HOSTNAME_RE = re.compile(r"^(?=.{1,253}$)[A-Za-z0-9_]([A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?(\.[A-Za-z0-9_]([A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?)*\.?$")
+
+
+def is_valid_network_host(value: str) -> bool:
+    """True for an IPv4/IPv6 literal or an RFC 1123 host name (no spaces or punctuation)."""
+
+    host = value.strip()
+    if not host:
+        return False
+    if host.startswith("[") and host.endswith("]"):
+        host = host[1:-1]
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        pass
+    return bool(_HOSTNAME_RE.match(host))
+
+
+def _validate_syslog_host_and_port(destination_type: str, cfg: dict[str, Any]) -> None:
+    """Host must be a real host name / IP and port (when given) a valid TCP/UDP port (F-139)."""
+
+    host = cfg.get("host")
+    if host is None or not str(host).strip():
+        raise ValueError(f"{destination_type} destination requires host")
+    if not is_valid_network_host(str(host)):
+        raise ValueError(
+            f"{destination_type} host {str(host).strip()!r} is not a valid host name or IP address "
+            "(no spaces or special characters)"
+        )
+    port = cfg.get("port")
+    if port is not None and str(port).strip() != "":
+        try:
+            port_int = int(port)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{destination_type} port must be a number between 1 and 65535") from exc
+        if not (1 <= port_int <= 65535):
+            raise ValueError(f"{destination_type} port must be between 1 and 65535")
 
 
 def _validate_webhook_post(cfg: dict[str, Any]) -> None:
@@ -85,6 +130,15 @@ def _validate_syslog_tls(cfg: dict[str, Any]) -> None:
         if value <= 0:
             raise ValueError(f"{timeout_key} must be a positive number")
 
+    check_value = cfg.get("post_handshake_check_seconds")
+    if check_value is not None:
+        try:
+            check_seconds = float(check_value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("post_handshake_check_seconds must be a number between 0 and 10") from exc
+        if check_seconds < 0 or check_seconds > 10:
+            raise ValueError("post_handshake_check_seconds must be a number between 0 and 10")
+
 
 def validate_destination_config(destination_type: str, config_json: dict[str, Any] | None) -> None:
     """Raise ``ValueError`` with a human-readable message when config is invalid."""
@@ -99,6 +153,9 @@ def validate_destination_config(destination_type: str, config_json: dict[str, An
         _validate_webhook_post(cfg)
         if "payload_mode" in cfg:
             normalize_webhook_payload_mode(cfg.get("payload_mode"))
+
+    if dtype in SYSLOG_DESTINATION_TYPES:
+        _validate_syslog_host_and_port(dtype, cfg)
 
     tls_keys_present = [k for k in TLS_KEYS if k in cfg]
     if dtype != "SYSLOG_TLS" and tls_keys_present:

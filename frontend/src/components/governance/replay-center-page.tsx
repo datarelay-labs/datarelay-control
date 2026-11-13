@@ -15,7 +15,7 @@ import {
 import { fetchStreamsList } from '../../api/gdcStreams'
 import type { StreamRead } from '../../api/types/gdcApi'
 import { NAV_PATH, logsExplorerPath } from '../../config/nav-paths'
-import { canExecuteReplay, governanceReadOnlyReason } from '../../lib/governance-rbac'
+import { canExecuteReplay, governanceAccessDeniedMessage, governanceReadOnlyReason } from '../../lib/governance-rbac'
 import { gdcUi } from '../../lib/gdc-ui-tokens'
 import { humanizeQuarantineReason } from '../../lib/humanize-quarantine-reason'
 import { cn } from '../../lib/utils'
@@ -347,7 +347,7 @@ export function ReplayCenterPage() {
       setQueueCount(resp?.queue_count ?? 0)
       setFailedCount(resp?.failed_count ?? 0)
       setRecentCount(resp?.recent_count ?? 0)
-      if (resp == null) setError('Replay APIs unavailable.')
+      if (resp == null) setError(governanceAccessDeniedMessage('Governance replay') ?? 'Replay APIs unavailable.')
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {

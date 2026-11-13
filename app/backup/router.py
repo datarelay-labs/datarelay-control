@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
@@ -39,6 +40,8 @@ from app.backup.service import (
 from app.database import get_db
 from app.platform_admin import journal
 from app.streams.models import Stream
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -264,9 +267,18 @@ def import_apply(
     except HTTPException:
         raise
     except Exception as exc:
+        # The driver message contains the SQL statement and bound values; keep it in the log, not in the response.
+        logger.exception("Import apply failed")
+        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"error_code": "IMPORT_APPLY_FAILED", "message": str(exc)},
+            detail={
+                "error_code": "IMPORT_APPLY_FAILED",
+                "message": (
+                    "The import could not be applied and nothing was saved. "
+                    "Check the bundle for values that are too long or malformed, or see the API log for details."
+                ),
+            },
         ) from exc
 
 

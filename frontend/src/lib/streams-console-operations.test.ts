@@ -205,7 +205,59 @@ describe('streams-console-operations', () => {
       warning: 1,
       critical: 1,
       issues: 2,
+      // Shape extended with the separately counted unknown (not observed) streams.
+      unknown: 0,
     })
+  })
+
+  it('counts not-observed streams as unknown, never healthy, and agrees with the no-data filter', () => {
+    const notObserved = row({
+      id: '4',
+      name: 'Not observed',
+      status: 'RUNNING',
+      enabled: true,
+      operationalHealthStatus: 'IDLE',
+      deliveryPctKnown: false,
+      deliveryPct: 0,
+    })
+    const rows = [...allRows, notObserved]
+    const summary = computeStreamOperationsSummary(rows)
+    expect(summary.healthy).toBe(1)
+    expect(summary.unknown).toBe(1)
+    const noData = filterStreamRows({
+      rows,
+      searchQuery: '',
+      quickFilter: 'all',
+      groupFilter: 'all',
+      connectorFilter: null,
+      operationalFilter: 'no-data',
+      destinationLabelsByStreamId: new Map(),
+    })
+    expect(noData.map((r) => r.id)).toEqual(['4'])
+    expect(noData.length).toBe(summary.unknown)
+  })
+
+  it('excludes paused streams from the no-data filter (scenario 10)', () => {
+    // A PAUSED snapshot stream maps to runtime STOPPED with health IDLE.
+    const paused = row({
+      id: '6',
+      name: 'Paused',
+      status: 'STOPPED',
+      enabled: true,
+      operationalHealthStatus: 'IDLE',
+      deliveryPctKnown: false,
+    })
+    const out = filterStreamRows({
+      rows: [...allRows, paused],
+      searchQuery: '',
+      quickFilter: 'all',
+      groupFilter: 'all',
+      connectorFilter: null,
+      operationalFilter: 'no-data',
+      destinationLabelsByStreamId: new Map(),
+    })
+    expect(out).toEqual([])
+    expect(computeStreamOperationsSummary([paused]).unknown).toBe(0)
   })
 
   it('builds problem stream items for warning and critical only', () => {

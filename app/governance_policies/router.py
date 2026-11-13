@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from app.auth.governance_rbac import require_governance_read, require_governance_write, require_policy_activate
+from app.auth.governance_rbac import (
+    require_governance_read,
+    require_governance_write,
+    require_policy_activate,
+    resolve_governance_actor,
+)
+from app.governance_approval.schemas import GovernanceApprovalActionRequest
+from app.governance_approval.service import GovernanceSeparationOfDutiesError, enforce_separation_of_duties
 
 from app.database import get_db, get_db_read_bounded
 from app.governance_policies.impact_service import analyze_policy_impact_preview, analyze_saved_policy_impact
@@ -38,6 +45,7 @@ from app.governance_policies.service import (
     activate_policy,
     create_governance_policy,
     delete_governance_policy,
+    get_governance_policy,
     get_governance_policy_entry,
     list_governance_policies,
     list_policy_assignments,
@@ -164,11 +172,13 @@ def _lifecycle_response(db: Session, policy_id: int) -> GovernancePolicyResponse
 @router.post("/policies/{policy_id}/submit-review", response_model=GovernancePolicyResponse)
 async def post_governance_policy_submit_review(
     policy_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     _auth=Depends(require_governance_write()),
 ) -> GovernancePolicyResponse:
     try:
-        submit_policy_for_review(db, policy_id)
+        # F-187: record the submitter exactly like POST /governance/approvals/{id}/submit does.
+        submit_policy_for_review(db, policy_id, actor=resolve_governance_actor(request))
         db.commit()
     except GovernancePolicyNotFoundError as exc:
         db.rollback()
@@ -188,10 +198,23 @@ async def post_governance_policy_submit_review(
 @router.post("/policies/{policy_id}/activate", response_model=GovernancePolicyResponse)
 async def post_governance_policy_activate(
     policy_id: int,
+    request: Request,
+    body: GovernanceApprovalActionRequest | None = None,
     db: Session = Depends(get_db),
     _auth=Depends(require_policy_activate()),
 ) -> GovernancePolicyResponse:
     try:
+        # F-187: the same separation of duties as the approval workflow's activate, so the policy
+        # author cannot sidestep it through this endpoint.
+        row = get_governance_policy(db, policy_id)
+        if row is not None:
+            enforce_separation_of_duties(
+                db,
+                row,
+                action="activate",
+                actor=resolve_governance_actor(request),
+                allow_self_approval=bool(body and body.allow_self_approval),
+            )
         activate_policy(db, policy_id)
         db.commit()
     except GovernancePolicyNotFoundError as exc:
@@ -199,6 +222,12 @@ async def post_governance_policy_activate(
         raise HTTPException(
             status_code=404,
             detail={"error_code": "GOVERNANCE_POLICY_NOT_FOUND", "message": str(exc)},
+        ) from exc
+    except GovernanceSeparationOfDutiesError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=403,
+            detail={"error_code": exc.error_code, "message": str(exc)},
         ) from exc
     except GovernancePolicyLifecycleError as exc:
         db.rollback()

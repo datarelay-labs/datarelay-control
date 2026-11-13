@@ -17,6 +17,8 @@ export type StreamOperationsSummary = {
   warning: number
   critical: number
   issues: number
+  /** Active streams with no health verdict yet (not observed); never counted as healthy. */
+  unknown: number
 }
 
 export type ProblemStreamItem = {
@@ -27,8 +29,9 @@ export type ProblemStreamItem = {
 }
 
 const SEVERITY_SORT_RANK: Record<StreamOperationalSeverity, number> = {
-  critical: 3,
-  warning: 2,
+  critical: 4,
+  warning: 3,
+  unknown: 2,
   stopped: 1,
   healthy: 0,
 }
@@ -37,6 +40,7 @@ const GROUP_OPS_SORT_RANK: Record<StreamOperationalSeverity, number> = {
   critical: 4,
   stopped: 3,
   warning: 2,
+  unknown: 1,
   healthy: 0,
 }
 
@@ -50,6 +54,17 @@ export function streamIssueCount(row: StreamConsoleRow, metricsWindow: StreamsMe
 
 export function streamOperationalSeverity(row: StreamConsoleRow): StreamOperationalSeverity {
   return effectiveStreamSeverity(normalizeSeverityInput(row))
+}
+
+/**
+ * Enabled, not paused/stopped, and without a health verdict (snapshot IDLE or no evidence).
+ * Shared by the no-data filter and the summary `unknown` count so both always agree.
+ */
+export function isNoDataStream(row: StreamConsoleRow): boolean {
+  if (row.enabled === false || row.status === 'STOPPED') return false
+  const severity = streamOperationalSeverity(row)
+  if (severity === 'unknown') return true
+  return severity === 'stopped' && row.status === 'IDLE' && row.operationalHealthStatus === 'IDLE'
 }
 
 export function matchesQuickFilter(row: StreamConsoleRow, filter: StreamsQuickFilter): boolean {
@@ -72,7 +87,7 @@ export function matchesOperationalFilter(
   filter: StreamsOperationalFilter | null | undefined,
 ): boolean {
   if (filter == null) return true
-  if (filter === 'no-data') return row.enabled === true && row.operationalHealthStatus === 'IDLE'
+  if (filter === 'no-data') return isNoDataStream(row)
   if (filter === 'low-volume') return row.enabled === true && isLowVolumeEps(row.eps1m, row.eps5m)
   if (filter === 'checkpoint-lag') return row.enabled === true && row.checkpointBehindDelivery === true
   return true
@@ -158,13 +173,15 @@ export function computeStreamOperationsSummary(rows: readonly StreamConsoleRow[]
   let healthy = 0
   let warning = 0
   let critical = 0
+  let unknown = 0
   for (const row of rows) {
     const severity = streamOperationalSeverity(row)
     if (severity === 'critical') critical += 1
     else if (severity === 'warning') warning += 1
+    else if (isNoDataStream(row)) unknown += 1
     else if (severity === 'healthy') healthy += 1
   }
-  return { healthy, warning, critical, issues: warning + critical }
+  return { healthy, warning, critical, issues: warning + critical, unknown }
 }
 
 export function buildProblemStreamItems(rows: readonly StreamConsoleRow[]): ProblemStreamItem[] {

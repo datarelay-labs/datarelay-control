@@ -3,6 +3,8 @@ import {
   deriveDashboardKpisFromSnapshot,
   deriveFlowBreakdownFromSnapshot,
   deriveOverallHealthFromSnapshot,
+  deriveStreamGroupHealthFromSnapshot,
+  deriveStreamHealthMatrix,
   deriveTrafficOverviewFromSnapshot,
   deriveOperationalIssuesFromSnapshot,
   deriveRecentAlertsSummary,
@@ -131,7 +133,126 @@ describe('dashboard-charter-metrics', () => {
       healthy: 1,
       warning: 1,
       critical: 1,
+      // Updated: the shape now also counts the enabled IDLE stream C as unknown (not observed).
+      unknown: 1,
       posture: 'critical',
+    })
+  })
+
+  describe('runtime health semantics (no evidence is not Healthy)', () => {
+    const stream = (
+      id: number,
+      health_status: 'HEALTHY' | 'DEGRADED' | 'ERROR' | 'IDLE',
+      extra: Record<string, unknown> = {},
+    ) => ({
+      ...snapshot().streams[0],
+      stream_id: id,
+      stream_name: `S${id}`,
+      connector_id: 1,
+      status: 'RUNNING',
+      health_status,
+      ...extra,
+    })
+    const withStreams = (
+      streams: ReturnType<typeof stream>[],
+      globalHealth: 'HEALTHY' | 'DEGRADED' | 'ERROR' | 'IDLE' = 'HEALTHY',
+    ): OperationalSnapshotResponse => ({
+      ...snapshot(),
+      global: { ...snapshot().global, health_status: globalHealth, enabled_streams: streams.length },
+      streams: streams as unknown as OperationalSnapshotResponse['streams'],
+    })
+    const connectors = [{ id: 1, name: 'Acme', product_group: 'Acme' }] as unknown as ConnectorRead[]
+
+    it('scenario 1: a missing snapshot is unknown, never healthy', () => {
+      expect(deriveOverallHealthFromSnapshot(null)).toEqual({
+        healthy: 0,
+        warning: 0,
+        critical: 0,
+        unknown: 0,
+        posture: 'unknown',
+      })
+    })
+
+    it('scenario 4: all observed healthy streams give a healthy posture', () => {
+      const out = deriveOverallHealthFromSnapshot(withStreams([stream(1, 'HEALTHY'), stream(2, 'HEALTHY')]))
+      expect(out.posture).toBe('healthy')
+      expect(out.unknown).toBe(0)
+    })
+
+    it('scenario 11: healthy plus a not-observed (IDLE) stream is unknown, not healthy', () => {
+      const out = deriveOverallHealthFromSnapshot(withStreams([stream(1, 'HEALTHY'), stream(2, 'IDLE')], 'IDLE'))
+      expect(out.posture).toBe('unknown')
+      expect(out.unknown).toBe(1)
+      expect(out.healthy).toBe(1)
+    })
+
+    it('scenario 11: unknown never masks warning or critical', () => {
+      expect(deriveOverallHealthFromSnapshot(withStreams([stream(1, 'IDLE'), stream(2, 'ERROR')], 'ERROR')).posture).toBe('critical')
+      expect(deriveOverallHealthFromSnapshot(withStreams([stream(1, 'IDLE'), stream(2, 'DEGRADED')], 'DEGRADED')).posture).toBe('warning')
+    })
+
+    it('an enabled global IDLE snapshot with no stream rows is unknown, not healthy', () => {
+      expect(deriveOverallHealthFromSnapshot(withStreams([], 'IDLE')).posture).toBe('unknown')
+    })
+
+    it('scenario 10: a paused IDLE stream is neutral and does not make the posture unknown', () => {
+      const out = deriveOverallHealthFromSnapshot(
+        withStreams([stream(1, 'HEALTHY'), stream(2, 'IDLE', { status: 'PAUSED' })], 'HEALTHY'),
+      )
+      expect(out.posture).toBe('healthy')
+      expect(out.unknown).toBe(0)
+    })
+
+    it('scenario 12: group roll-up is critical > warning > unknown > healthy', () => {
+      const group = (streams: ReturnType<typeof stream>[]) => deriveStreamGroupHealthFromSnapshot(withStreams(streams), connectors)
+      expect(group([stream(1, 'HEALTHY'), stream(2, 'HEALTHY')])).toMatchObject({ healthy: 1, unknown: 0, warning: 0, critical: 0 })
+      expect(group([stream(1, 'HEALTHY'), stream(2, 'IDLE')])).toMatchObject({ healthy: 0, unknown: 1, warning: 0, critical: 0 })
+      expect(group([stream(1, 'IDLE'), stream(2, 'ERROR')])).toMatchObject({ healthy: 0, unknown: 0, critical: 1 })
+      expect(group([stream(1, 'IDLE'), stream(2, 'DEGRADED')])).toMatchObject({ unknown: 0, warning: 1 })
+    })
+
+    it('a group whose only members are paused is neither healthy nor unknown', () => {
+      const out = deriveStreamGroupHealthFromSnapshot(
+        withStreams([stream(1, 'IDLE', { status: 'PAUSED' })]),
+        connectors,
+      )
+      expect(out).toMatchObject({ healthy: 0, unknown: 0, warning: 0, critical: 0 })
+    })
+
+    it('matrix cells: IDLE and unrecognised health are no-data, never a healthy cell', () => {
+      const route = (id: number, health: string) => ({
+        ...snapshot().routes[0],
+        route_id: id,
+        stream_id: 1,
+        destination_id: 10,
+        health_status: health,
+      })
+      const dest = {
+        destination_id: 10,
+        destination_name: 'D',
+        destination_type: null,
+        enabled: true,
+        health_status: 'HEALTHY',
+        inbound_eps_1m: 1,
+        failed_eps_1m: 0,
+        avg_latency_ms: null,
+        route_count: 1,
+        last_success_at: null,
+        last_error_at: null,
+        last_error_message: null,
+      }
+      const cellFor = (health: string) =>
+        deriveStreamHealthMatrix(
+          {
+            ...withStreams([stream(1, 'HEALTHY')]),
+            routes: [route(1, health)] as unknown as OperationalSnapshotResponse['routes'],
+            destinations: [dest] as unknown as OperationalSnapshotResponse['destinations'],
+          },
+          connectors,
+        ).rows[0].cells[0].status
+      expect(cellFor('HEALTHY')).toBe('healthy')
+      expect(cellFor('IDLE')).toBe('no-data')
+      expect(cellFor('SOMETHING_NEW')).toBe('no-data')
     })
   })
 

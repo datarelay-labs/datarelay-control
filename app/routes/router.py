@@ -14,6 +14,7 @@ from app.logs.models import DeliveryLog
 from app.route_transform.models import RouteEnrichment, RouteMapping
 from app.routes.models import Route
 from app.routes.schemas import RouteCreate, RouteRead, RouteUpdate
+from app.streams.delete_scope import purge_runtime_analytics
 from app.streams.models import Stream
 
 router = APIRouter()
@@ -96,6 +97,8 @@ async def create_route(payload: RouteCreate, request: Request, db: Session = Dep
     row = Route(
         stream_id=payload.stream_id,
         destination_id=payload.destination_id,
+        name=payload.name,
+        description=payload.description,
         enabled=enabled,
         failure_policy=payload.failure_policy or "LOG_AND_CONTINUE",
         formatter_config_json=dict(payload.formatter_config_json or {}),
@@ -298,6 +301,9 @@ async def delete_route(route_id: int, request: Request, db: Session = Depends(ge
     stream_id = int(row.stream_id)
     destination_id = int(row.destination_id)
     try:
+        # Analytics buckets are keyed by plain route_id (no FK): drop them so the deleted route
+        # stops reporting metrics. Alert history belongs to the surviving stream and is kept.
+        purge_runtime_analytics(db, route_id=int(route_id))
         db.delete(row)
         journal.record_audit_event(
             db,

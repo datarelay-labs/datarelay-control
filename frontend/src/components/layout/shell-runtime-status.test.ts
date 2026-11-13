@@ -58,9 +58,30 @@ describe('presentShellRuntimeStatus — Runtime Is Truth', () => {
 
   it('handles idle or no running streams without fabricated active delivery', () => {
     for (const global of [
-      { ...sample.global, health_status: 'IDLE' as const },
+      // Updated: global IDLE with running enabled Streams is now Not verified (see test below).
+      { ...sample.global, health_status: 'IDLE' as const, running_streams: 0 },
       { ...sample.global, enabled_streams: 0, running_streams: 0 },
       { ...sample.global, enabled_streams: 2, running_streams: 0 },
+    ]) {
+      expect(presentShellRuntimeStatus({ ...sample, global }, { nowMs: NOW })).toMatchObject({
+        label: 'Idle', healthy: null,
+      })
+    }
+  })
+
+  it('scenario 11: global IDLE with running enabled Streams is Not verified (some not observed yet), never Idle or Healthy', () => {
+    const presentation = presentShellRuntimeStatus({
+      ...sample,
+      global: { ...sample.global, health_status: 'IDLE' as const },
+    }, { nowMs: NOW })
+    expect(presentation).toMatchObject({ label: 'Not verified', healthy: null })
+    expect(presentation.evidence).toContain('Some streams not observed yet')
+  })
+
+  it('keeps Idle when nothing is enabled or nothing is running, even if global is IDLE', () => {
+    for (const global of [
+      { ...sample.global, health_status: 'IDLE' as const, enabled_streams: 0, running_streams: 0 },
+      { ...sample.global, health_status: 'IDLE' as const, enabled_streams: 2, running_streams: 0 },
     ]) {
       expect(presentShellRuntimeStatus({ ...sample, global }, { nowMs: NOW })).toMatchObject({
         label: 'Idle', healthy: null,

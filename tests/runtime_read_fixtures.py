@@ -151,7 +151,7 @@ def seed_minimal_operational_snapshot(
 
     from datetime import datetime, timezone
 
-    from app.runtime.models import RuntimeRouteSnapshot, RuntimeStreamSnapshot
+    from app.runtime.models import RuntimeDestinationSnapshot, RuntimeRouteSnapshot, RuntimeStreamSnapshot
 
     now = datetime.now(timezone.utc)
     db.merge(
@@ -184,6 +184,19 @@ def seed_minimal_operational_snapshot(
             success_rate_5m=100.0,
             retry_rate_5m=0.0,
             avg_latency_ms=10.0,
+            last_success_at=now,
+            updated_at=now,
+        )
+    )
+    db.merge(
+        RuntimeDestinationSnapshot(
+            destination_id=int(destination_id),
+            enabled=True,
+            health_status=health_status,
+            inbound_eps_1m=1.0,
+            failed_eps_1m=0.0,
+            avg_latency_ms=10.0,
+            route_count=1,
             last_success_at=now,
             updated_at=now,
         )

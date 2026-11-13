@@ -212,9 +212,56 @@ function buildCybereasonVisualSearchIncrementalBody(facetName: string, withCheck
   return JSON.stringify(body, null, 2)
 }
 
+/**
+ * Which runtime placeholder carries the stored sync position into the request.
+ * `timestamp` cursors use `{{checkpoint.last_timestamp}}`; id / cursor / offset cursors use
+ * `{{checkpoint.value}}` so an integer id is never presented as a timestamp (F-120).
+ */
+export type IncrementalCursorKind = 'timestamp' | 'value'
+
+export function incrementalCursorKindFromFieldType(fieldType: string | null | undefined): IncrementalCursorKind {
+  const t = String(fieldType ?? '').trim().toUpperCase()
+  return t === 'EVENT_ID' || t === 'CURSOR' || t === 'OFFSET' ? 'value' : 'timestamp'
+}
+
+export function checkpointPlaceholderForKind(kind: IncrementalCursorKind): string {
+  return kind === 'value' ? '{{checkpoint.value}}' : '{{checkpoint.last_timestamp}}'
+}
+
+/**
+ * `{{checkpoint.NAME}}` names the runtime and API Test both substitute. Any other name is sent
+ * to the source literally, so it is reported before the request is run or saved (F-120).
+ */
+export const SUPPORTED_CHECKPOINT_PLACEHOLDER_NAMES: readonly string[] = [
+  'last_timestamp',
+  'last_timestamp_ms',
+  'last_event_id',
+  'cursor',
+  'value',
+  'last_seen',
+  'next_cursor',
+]
+
+const CHECKPOINT_PLACEHOLDER_RE = /\{\{\s*checkpoint(?:\.([A-Za-z0-9_]*))?\s*\}\}/g
+
+/** Names used by `{{checkpoint.NAME}}` placeholders in `text` ('' for the bare `{{checkpoint}}`). */
+export function findCheckpointPlaceholderNames(text: string): string[] {
+  const names: string[] = []
+  for (const match of text.matchAll(CHECKPOINT_PLACEHOLDER_RE)) names.push(match[1] ?? '')
+  return names
+}
+
+export function unsupportedCheckpointPlaceholderNames(text: string): string[] {
+  const bad = findCheckpointPlaceholderNames(text).filter(
+    (name) => !SUPPORTED_CHECKPOINT_PLACEHOLDER_NAMES.includes(name),
+  )
+  return [...new Set(bad)].map((name) => (name ? `{{checkpoint.${name}}}` : '{{checkpoint}}'))
+}
+
 export function buildIncrementalRequestPlan(
   pattern: IncrementalRequestPattern,
   checkpointSourcePath: string,
+  cursorKind: IncrementalCursorKind = 'timestamp',
 ): IncrementalRequestPlan | null {
   if (pattern === 'none' || pattern === 'custom') return null
 
@@ -229,11 +276,14 @@ export function buildIncrementalRequestPlan(
   const fullField = fieldNameFromCheckpointPath(checkpointSourcePath)
   if (!fullField) return null
   const prefix = leafFieldName(checkpointSourcePath) || fullField
+  const checkpointToken = checkpointPlaceholderForKind(cursorKind)
+  // `{{now}}` is a time upper bound; it is meaningless for an id / cursor / offset position.
+  const timeUpperBound = cursorKind === 'timestamp'
 
   if (pattern === 'query_params') {
     const params = [
-      { key: `${prefix}_gt`, value: '{{checkpoint.last_timestamp}}' },
-      { key: `${prefix}_lte`, value: '{{now}}' },
+      { key: `${prefix}_gt`, value: checkpointToken },
+      ...(timeUpperBound ? [{ key: `${prefix}_lte`, value: '{{now}}' }] : []),
       { key: 'limit', value: '100' },
       { key: 'sort', value: `${prefix}:asc` },
     ]
@@ -243,8 +293,8 @@ export function buildIncrementalRequestPlan(
 
   if (pattern === 'json_body') {
     const body = {
-      from: '{{checkpoint.last_timestamp}}',
-      to: '{{now}}',
+      from: checkpointToken,
+      ...(timeUpperBound ? { to: '{{now}}' } : {}),
       limit: 100,
       sort: [{ [fullField]: 'asc' }],
     }
@@ -259,8 +309,8 @@ export function buildIncrementalRequestPlan(
     query: {
       range: {
         [fullField]: {
-          gt: '{{checkpoint.last_timestamp}}',
-          lte: '{{now}}',
+          gt: checkpointToken,
+          ...(timeUpperBound ? { lte: '{{now}}' } : {}),
         },
       },
     },
@@ -375,15 +425,51 @@ export function looksLikeQueryParams(draft: string): boolean {
   return true
 }
 
+function parseJsonObject(text: string | undefined): Record<string, unknown> | null {
+  if (!text?.trim()) return null
+  try {
+    const parsed: unknown = JSON.parse(text)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Keep top-level body values the user already set when the draft still carries the
+ * untouched generated default for that key (e.g. `limit`). Returns the draft unchanged otherwise.
+ */
+function preferUserBodyValues(draft: string, baseBody: string | undefined, defaultBody: string | undefined): string {
+  const draftObj = parseJsonObject(draft)
+  const baseObj = parseJsonObject(baseBody)
+  const defaultObj = parseJsonObject(defaultBody)
+  if (!draftObj || !baseObj || !defaultObj) return draft
+  let changed = false
+  const next = { ...draftObj }
+  for (const [key, value] of Object.entries(draftObj)) {
+    if (!(key in baseObj) || !(key in defaultObj)) continue
+    if (JSON.stringify(value) !== JSON.stringify(defaultObj[key])) continue
+    if (JSON.stringify(baseObj[key]) === JSON.stringify(value)) continue
+    next[key] = baseObj[key]
+    changed = true
+  }
+  return changed ? JSON.stringify(next, null, 2) : draft
+}
+
 /**
  * Apply an incremental-request template to an in-progress HTTP request payload.
  * Pure helper used at create-stream payload time so the user does not have to bounce
  * back to the HTTP Request step. `none`/empty drafts are no-ops.
+ *
+ * `templateDefaults` is the generated template for the pattern. A draft value that still equals
+ * the generated default does not override a value the user already set in the request (for
+ * example `limit=20`); values the user edited in the draft always win.
  */
 export function applyIncrementalRequestTemplate(
   base: { method: string; params: Record<string, string>; body?: string },
   pattern: IncrementalRequestPattern,
   draft: string,
+  templateDefaults?: { params?: Readonly<Record<string, string>>; body?: string },
 ): { method: string; params: Record<string, string>; body?: string } {
   const trimmed = (draft ?? '').trim()
   if (pattern === 'none' || !trimmed) return base
@@ -391,15 +477,33 @@ export function applyIncrementalRequestTemplate(
   if (treatAsQuery) {
     const merged: Record<string, string> = { ...base.params }
     for (const p of parseQueryParamsDraft(trimmed)) {
-      if (p.key) merged[p.key] = p.value
+      if (!p.key) continue
+      const userValue = base.params[p.key]
+      const isUntouchedDefault = templateDefaults?.params?.[p.key] === p.value
+      if (isUntouchedDefault && userValue != null && String(userValue).trim() !== '') continue
+      merged[p.key] = p.value
     }
     return { method: 'GET', params: merged, body: base.body }
   }
   return {
     method: base.method === 'GET' ? 'POST' : base.method,
     params: { ...base.params },
-    body: trimmed,
+    body: preferUserBodyValues(trimmed, base.body, templateDefaults?.body),
   }
+}
+
+/** Generated template defaults for `applyIncrementalRequestTemplate`. */
+export function incrementalTemplateDefaults(
+  pattern: IncrementalRequestPattern,
+  checkpointSourcePath: string,
+  cursorKind: IncrementalCursorKind = 'timestamp',
+): { params?: Record<string, string>; body?: string } | undefined {
+  const plan = buildIncrementalRequestPlan(pattern, checkpointSourcePath, cursorKind)
+  if (!plan) return undefined
+  if (plan.pattern === 'query_params') {
+    return { params: Object.fromEntries(plan.params.map((p) => [p.key, p.value])) }
+  }
+  return { body: plan.body }
 }
 
 export type IncrementalRequestTestCheckpointResult =
@@ -407,6 +511,8 @@ export type IncrementalRequestTestCheckpointResult =
       kind: 'ok'
       value: string | number
       displayValue: string
+      /** Value substituted for `{{checkpoint.last_timestamp}}` — same representation the runtime stores. */
+      requestValue?: string
       usedFallback: boolean
       latestExcluded?: string
       valueKind: 'timestamp' | 'numeric' | 'string'
@@ -512,6 +618,14 @@ function parseTimestampMs(value: unknown): number | null {
     if (!Number.isNaN(parsed)) return parsed
   }
   return null
+}
+
+/** Format epoch ms in the same representation as a sample checkpoint value (epoch s/ms or ISO-8601). */
+function formatTimestampLikeSample(ms: number, sample: unknown): string {
+  const numeric = parseNumericValue(sample)
+  if (numeric != null) return numeric >= 1e12 ? String(ms) : String(Math.floor(ms / 1000))
+  const iso = new Date(ms).toISOString()
+  return /\.\d+/.test(String(sample)) ? iso : iso.replace(/\.\d{3}Z$/, 'Z')
 }
 
 function parseNumericValue(value: unknown): number | null {
@@ -691,6 +805,55 @@ export function readCheckpointFromExtractedEvent(
   )
 }
 
+/** Read the checkpoint value from an extracted record the same way incremental Test collects it. */
+export function readCheckpointFromTestRecord(
+  record: Record<string, unknown>,
+  checkpointSourcePath: string,
+  eventArrayPath: string,
+  eventRootPath = '',
+): unknown {
+  return eventRootPath.trim()
+    ? readCheckpointFromExtractedEvent(record, checkpointSourcePath, eventArrayPath, eventRootPath)
+    : readCheckpointFromEventSourceRecord(
+        record,
+        resolveCheckpointPathForRecord(checkpointSourcePath, eventArrayPath) || checkpointSourcePath,
+        eventRootPath,
+      )
+}
+
+/**
+ * Count returned record checkpoint values strictly newer than the tested checkpoint.
+ * Returns null when no value can be compared (blank / non-scalar / different kind), so callers do not warn
+ * on an unknown result.
+ */
+export function countRecordsNewerThanTestCheckpoint(
+  recordValues: unknown[],
+  test: Extract<IncrementalRequestTestCheckpointResult, { kind: 'ok' }>,
+): number | null {
+  let compared = 0
+  let newer = 0
+  for (const raw of recordValues) {
+    const value = coerceCheckpointScalarValue(raw)
+    if (isBlankValue(value) || typeof value === 'object') continue
+    let diff: number | null = null
+    if (test.valueKind === 'timestamp') {
+      const ms = parseTimestampMs(value)
+      const base = typeof test.value === 'number' ? test.value : parseTimestampMs(test.value)
+      if (ms != null && base != null) diff = ms - base
+    } else if (test.valueKind === 'numeric') {
+      const n = parseNumericValue(value)
+      const base = parseNumericValue(test.value)
+      if (n != null && base != null) diff = n - base
+    } else if (typeof value === 'string') {
+      diff = value.localeCompare(String(test.value))
+    }
+    if (diff == null) continue
+    compared += 1
+    if (diff > 0) newer += 1
+  }
+  return compared > 0 ? newer : null
+}
+
 /** Collect checkpoint values for incremental Test — uses extracted records + preview/fallback. */
 export function collectCheckpointValuesForIncrementalTest(input: {
   records: Array<Record<string, unknown>>
@@ -706,13 +869,7 @@ export function collectCheckpointValuesForIncrementalTest(input: {
   if (!checkpointSourcePath.trim()) return []
 
   const readOn = (record: Record<string, unknown>) =>
-    eventRootPath.trim()
-      ? readCheckpointFromExtractedEvent(record, checkpointSourcePath, eventArrayPath, eventRootPath)
-      : readCheckpointFromEventSourceRecord(
-          record,
-          resolveCheckpointPathForRecord(checkpointSourcePath, eventArrayPath) || checkpointSourcePath,
-          eventRootPath,
-        )
+    readCheckpointFromTestRecord(record, checkpointSourcePath, eventArrayPath, eventRootPath)
 
   const fromRecords = records
     .map(readOn)
@@ -763,18 +920,23 @@ export function calculateIncrementalRequestTestCheckpoint(
 
   const classified = coerced.map((value) => ({ value, kind: classifyCheckpointValue(value) }))
 
-  const timestampMs = classified
-    .map((row) => parseTimestampMs(row.value))
-    .filter((ms): ms is number => ms != null)
-  if (timestampMs.length) {
-    const sorted = uniqueSortedNumbers(timestampMs)
+  // Order by parsed time, but keep the raw sample so the request uses the runtime checkpoint representation.
+  const rawByMs = new Map<number, unknown>()
+  for (const row of classified) {
+    const ms = parseTimestampMs(row.value)
+    if (ms != null && !rawByMs.has(ms)) rawByMs.set(ms, row.value)
+  }
+  if (rawByMs.size) {
+    const sorted = uniqueSortedNumbers([...rawByMs.keys()])
     if (sorted.length >= 2) {
       const testMs = sorted[sorted.length - 2]
       const latestMs = sorted[sorted.length - 1]
+      const requestValue = String(rawByMs.get(testMs))
       return {
         kind: 'ok',
         value: testMs,
-        displayValue: String(testMs),
+        displayValue: requestValue,
+        requestValue,
         usedFallback: false,
         latestExcluded: String(latestMs),
         valueKind: 'timestamp',
@@ -782,10 +944,12 @@ export function calculateIncrementalRequestTestCheckpoint(
     }
     const only = sorted[0]
     const fallbackMs = only - HOUR_MS
+    const requestValue = formatTimestampLikeSample(fallbackMs, rawByMs.get(only))
     return {
       kind: 'ok',
       value: fallbackMs,
-      displayValue: String(fallbackMs),
+      displayValue: requestValue,
+      requestValue,
       usedFallback: true,
       valueKind: 'timestamp',
     }
@@ -855,7 +1019,7 @@ export function buildApiTestCheckpointPayload(
   if (test.valueKind === 'timestamp') {
     const ms = typeof test.value === 'number' ? test.value : Number(test.value)
     return {
-      last_timestamp: String(test.value),
+      last_timestamp: test.requestValue ?? String(test.value),
       last_timestamp_ms: String(ms),
     }
   }
@@ -863,6 +1027,10 @@ export function buildApiTestCheckpointPayload(
     last_event_id: String(test.value),
     last_timestamp: String(test.value),
     last_timestamp_ms: String(test.value),
+    // Same aliases the runtime exposes, so `{{checkpoint.value}}` / `{{checkpoint.cursor}}` are
+    // substituted by Run Test instead of being sent to the source literally.
+    value: String(test.value),
+    cursor: String(test.value),
   }
 }
 

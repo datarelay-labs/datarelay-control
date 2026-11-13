@@ -94,6 +94,23 @@ describe('Http import panels', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/No URL found/i)
   })
 
+  it('only advises fixing the command when the server reported a parse failure (F-115)', async () => {
+    const user = userEvent.setup()
+    postCurlParseMock.mockRejectedValueOnce(new Error('422: [CURL_PARSE_FAILED] No URL found in curl command.'))
+    renderWithRouter(<CurlImportPanel onApprove={vi.fn()} />)
+    fireEvent.change(screen.getByRole('textbox', { name: 'Curl command' }), { target: { value: 'curl' } })
+    await user.click(screen.getByRole('button', { name: 'Parse cURL' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Check that the command starts with "curl"/)
+
+    postCurlParseMock.mockRejectedValueOnce(new Error('422: Input should be a valid dictionary or object to extract fields from'))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Curl command' }), {
+      target: { value: 'curl https://api.example.com/v1/events' },
+    })
+    await user.click(screen.getByRole('button', { name: 'Parse cURL' }))
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/valid dictionary/))
+    expect(screen.getByRole('alert')).not.toHaveTextContent(/Check that the command starts with/)
+  })
+
   it('renders Postman import button', () => {
     renderWithRouter(<PostmanImportPanel onApprove={vi.fn()} />)
     expect(screen.getByRole('button', { name: 'Parse collection' })).toBeInTheDocument()

@@ -1,8 +1,9 @@
 import { useSyncExternalStore } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { AdminTaskCatalog, type AdminTask } from '@datarelay-labs/system-admin-ui'
+import { AdministrationHub, type AdministrationCoreTask, type AdministrationCoreGroupId } from '@datarelay-labs/system-admin-ui'
 import { NAV_PATH, SETTINGS_SECTION_PATH } from '../../config/nav-paths'
 import { isSessionExpired, onSessionChange, readSession, type SessionRole } from '../../auth/session'
+import { sessionRoleLabel } from '../../auth/role-labels'
 import { PagePurposeHeader, type PageHelpContent } from '../ui/page-purpose-header'
 
 type HubDestination = {
@@ -13,7 +14,7 @@ type HubDestination = {
 }
 
 type HubTaskGroup = {
-  id: string
+  id: AdministrationCoreGroupId
   title: string
   description: string
   testId: string
@@ -159,7 +160,7 @@ function mayOpenAdministrationTask(role: SessionRole | null, taskId: string): bo
   return role === 'ADMINISTRATOR' || (canViewAdministration(role) && READ_ONLY_TASKS.has(taskId))
 }
 
-function foundationTasksForGroup(group: HubTaskGroup, role: SessionRole | null): readonly AdminTask[] {
+function foundationTasksForGroup(group: HubTaskGroup, role: SessionRole | null): readonly AdministrationCoreTask[] {
   const administrator = role === 'ADMINISTRATOR'
   return group.destinations
     .filter((destination) => mayOpenAdministrationTask(role, destination.testId))
@@ -167,23 +168,33 @@ function foundationTasksForGroup(group: HubTaskGroup, role: SessionRole | null):
       id: destination.testId,
       label: destination.title,
       description: destination.description,
-      group: group.title,
+      groupId: group.id,
+      target: { kind: 'path' as const, path: destination.path },
+      access: administrator && !ADMIN_VIEW_TASKS.has(destination.testId)
+        ? 'manage' as const
+        : 'view' as const,
       availability: administrator && !ADMIN_VIEW_TASKS.has(destination.testId)
         ? 'supported' as const
         : 'read_only' as const,
     }))
 }
 
-function roleLabel(role: string | null): string {
-  if (role === 'ADMINISTRATOR') return 'Administrator'
-  if (role === 'OPERATOR') return 'Operator'
-  if (role === 'VIEWER') return 'Viewer'
-  return 'Unknown session'
-}
-
 function AccessContextBanner({ role }: { role: SessionRole | null }) {
   const readOnly = role === 'VIEWER'
   const operator = role === 'OPERATOR' || role === 'CONNECTOR_OPERATOR'
+
+  if (role === null) {
+    return (
+      <div
+        role="status"
+        data-testid="admin-hub-access-context"
+        className="rounded-xl border border-slate-200/90 bg-slate-50/70 px-4 py-3 text-sm text-slate-700 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-200"
+      >
+        <p className="font-semibold">Administration requires a current, active session.</p>
+        <p className="mt-1 text-sm leading-relaxed">Sign in or complete required account actions to continue.</p>
+      </div>
+    )
+  }
 
   if (readOnly) {
     return (
@@ -208,11 +219,24 @@ function AccessContextBanner({ role }: { role: SessionRole | null }) {
         data-testid="admin-hub-access-context"
         className="rounded-xl border border-amber-500/25 bg-amber-500/[0.07] px-4 py-3 text-sm text-amber-950 dark:border-amber-500/35 dark:bg-amber-500/10 dark:text-amber-100"
       >
-        <p className="font-semibold">Operator session.</p>
+        <p className="font-semibold">{sessionRoleLabel(role)} session.</p>
         <p className="mt-1 text-sm leading-relaxed opacity-90">
           Admin and security settings (HTTPS, accounts, retention policy, alert settings) remain restricted to
           Administrators. Operational destinations stay available according to current product rules.
         </p>
+      </div>
+    )
+  }
+
+  if (role !== 'ADMINISTRATOR') {
+    return (
+      <div
+        role="status"
+        data-testid="admin-hub-access-context"
+        className="rounded-xl border border-slate-200/90 bg-slate-50/70 px-4 py-3 text-sm text-slate-700 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-200"
+      >
+        <p className="font-semibold">Signed in as {sessionRoleLabel(role)}.</p>
+        <p className="mt-1 text-sm leading-relaxed">No Administration tasks are available for this role. Continue with your permitted operational or Governance workspace.</p>
       </div>
     )
   }
@@ -223,7 +247,7 @@ function AccessContextBanner({ role }: { role: SessionRole | null }) {
       data-testid="admin-hub-access-context"
       className="rounded-xl border border-slate-200/90 bg-slate-50/70 px-4 py-3 text-sm text-slate-700 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-200"
     >
-      <p className="font-semibold">Signed in as {roleLabel(role)}.</p>
+      <p className="font-semibold">Signed in as {sessionRoleLabel(role)}.</p>
       <p className="mt-1 text-sm leading-relaxed text-slate-600 dark:text-gdc-muted">
         Choose a task group below. High-risk changes still use the existing confirmation and apply workflows inside
         Settings.
@@ -259,37 +283,16 @@ export function AdministrationHubPage() {
       <AccessContextBanner role={role} />
 
       <div className="flex flex-col gap-8" data-testid="admin-hub-task-groups">
-        {TASK_GROUPS.map((group) => ({
-          group,
-          tasks: foundationTasksForGroup(group, role),
-        })).filter(({ tasks }) => tasks.length > 0).map(({ group, tasks }) => (
-          <section
-            key={group.id}
-            aria-labelledby={`${group.id}-heading`}
-            data-testid={group.testId}
-            className="space-y-3"
-          >
-            <div className="space-y-1">
-              <h2
-                id={`${group.id}-heading`}
-                className="text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50"
-              >
-                {group.title}
-              </h2>
-              <p className="max-w-2xl text-sm text-slate-600 dark:text-gdc-muted">{group.description}</p>
-            </div>
-            <div data-testid={`${group.testId}-catalog`}>
-              <AdminTaskCatalog
-                tasks={tasks}
-                onOpen={(task) => {
-                  if (!mayOpenAdministrationTask(activeSessionRole(), task.id)) return
-                  const path = FOUNDATION_ADMIN_PATH.get(task.id)
-                  if (path) navigate(path)
-                }}
-              />
-            </div>
-          </section>
-        ))}
+        <AdministrationHub
+          productId="datarelay-control"
+          tasks={TASK_GROUPS.flatMap((group) => foundationTasksForGroup(group, role))}
+          showHeader={false}
+          onOpen={(task) => {
+            if (!mayOpenAdministrationTask(activeSessionRole(), task.id)) return
+            const path = FOUNDATION_ADMIN_PATH.get(task.id)
+            if (task.target?.kind === 'path' && path === task.target.path) navigate(path)
+          }}
+        />
       </div>
     </div>
   )

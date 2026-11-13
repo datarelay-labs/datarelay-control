@@ -14,11 +14,13 @@ from app.backup.export_builder import (
     build_stream_export,
     build_workspace_export,
 )
+from app.backup.secret_reentry import collect_secret_reentry
 from app.backup.import_validator import ValidationOutcome, preview_token_for, validate_import_bundle
 from app.backup.schemas import (
     ImportApplyEntityIds,
     ImportApplyRequest,
     ImportApplyResponse,
+    ImportSecretReentry,
     ImportClassificationSummary,
     ImportPreviewConflict,
     ImportPreviewFinding,
@@ -32,9 +34,14 @@ from app.destinations.models import Destination
 from app.enrichments.models import Enrichment
 from app.mappings.models import Mapping
 from app.platform_admin.models import PlatformAuditEvent
+from app.route_classification.models import RouteClassificationRule
+from app.route_policy.models import RoutePolicyRule
+from app.route_protection.models import RouteProtectionRule
+from app.route_transform.models import RouteEnrichment, RouteMapping
 from app.routes.models import Route
 from app.sources.models import Source
 from app.platform_admin import journal
+from app.security.secrets import restore_stripped_secrets
 from app.streams.models import Stream
 
 _IMPORT_APPLY_OPERATION_ACTION = "IMPORT_APPLY_OPERATION"
@@ -285,6 +292,7 @@ def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) 
         created_connectors.append(int(row.id))
 
     src_old_to_new: dict[int, int] = {}
+    source_rows: dict[int, Source] = {}
     created_sources: list[int] = []
     for s in sources:
         if not isinstance(s, dict):
@@ -293,24 +301,29 @@ def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) 
         new_cid = conn_old_to_new.get(int(s.get("connector_id", -1)))
         if new_cid is None:
             continue
-        auth_json = _strip_mask_placeholders(dict(s.get("auth_json") or {}))
-        if not auth_json:
+        raw_auth = dict(s.get("auth_json") or {})
+        auth_json = _strip_mask_placeholders(raw_auth)
+        if not raw_auth:
+            # Only a bundle that carried no auth at all gets the explicit default; an existing auth shape
+            # (for example a webhook receiver's auth_mode) is restored as exported, never rewritten.
             auth_json = {"auth_type": "no_auth"}
-        elif not auth_json.get("auth_type"):
-            auth_json = {**auth_json, "auth_type": "no_auth"}
+        # Streams are always imported STOPPED/disabled, which is the safety gate. The Source flag is restored as
+        # exported so push receivers do not answer 409 WEBHOOK_RECEIVER_DISABLED after a restore.
         row = Source(
             connector_id=new_cid,
             source_type=str(s.get("source_type") or "HTTP_API_POLLING"),
             config_json=_strip_mask_placeholders(dict(s.get("config_json") or {})),
             auth_json=auth_json,
-            enabled=False,
+            enabled=bool(s.get("enabled", True)),
         )
         db.add(row)
         db.flush()
         src_old_to_new[old_id] = int(row.id)
         created_sources.append(int(row.id))
+        source_rows[int(row.id)] = row
 
     stream_old_to_new: dict[int, int] = {}
+    stream_rows: dict[int, Stream] = {}
     created_streams: list[int] = []
     for st in streams:
         if not isinstance(st, dict):
@@ -337,7 +350,22 @@ def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) 
         db.add(row)
         db.flush()
         stream_old_to_new[old_id] = int(row.id)
+        stream_rows[int(row.id)] = row
         created_streams.append(int(row.id))
+
+    # A receiver source may pin its stream by id; remap it to the stream created above (or drop a dangling pin).
+    for src_row in source_rows.values():
+        cfg = dict(src_row.config_json or {})
+        if cfg.get("stream_id") is not None:
+            try:
+                mapped = stream_old_to_new.get(int(cfg["stream_id"]))
+            except (TypeError, ValueError):
+                mapped = None
+            if mapped is None:
+                cfg.pop("stream_id", None)
+            else:
+                cfg["stream_id"] = mapped
+            src_row.config_json = cfg
 
     for m in mappings:
         if not isinstance(m, dict):
@@ -384,6 +412,7 @@ def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) 
 
     created_dest_ids = list(dest_old_to_new.values())
     unresolved_route_destinations: list[dict[str, Any]] = []
+    route_id_maps: dict[int, dict[int, int]] = {new_sid: {} for new_sid in stream_rows}
     for r in routes:
         if not isinstance(r, dict):
             continue
@@ -417,6 +446,12 @@ def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) 
             disable_reason=r.get("disable_reason"),
         )
         db.add(row)
+        db.flush()
+        _add_imported_route_children(db, r, int(row.id))
+        try:
+            route_id_maps[new_stream][int(r["id"])] = int(row.id)
+        except (KeyError, TypeError, ValueError):
+            pass
 
     if unresolved_route_destinations:
         raise HTTPException(
@@ -430,6 +465,11 @@ def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) 
                 "unresolved": unresolved_route_destinations[:20],
             },
         )
+
+    # Governance route_overrides carry the exported Route ids; point them at the Routes created above
+    # (overrides for Routes that were not imported with the same Stream are dropped).
+    for new_sid, stream_row in stream_rows.items():
+        _remap_governance_route_ids(stream_row, route_id_maps[new_sid])
 
     audit_details: dict[str, Any] = {
         "mode": mode,
@@ -452,6 +492,30 @@ def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) 
     elif len(created_connectors) == 1:
         redirect_path = f"/connectors/{created_connectors[0]}"
 
+    secrets_to_reenter: list[ImportSecretReentry] = []
+    for item in collect_secret_reentry(bundle):
+        if item["entity_type"] == "connector":
+            new_entity = conn_old_to_new.get(int(item["export_id"])) if item["export_id"] is not None else None
+            edit_path = f"/connectors/{new_entity}" if new_entity is not None else ""
+        else:
+            new_entity = dest_old_to_new.get(int(item["export_id"])) if item["export_id"] is not None else None
+            edit_path = f"/destinations/{new_entity}" if new_entity is not None else ""
+        if new_entity is None:
+            continue
+        display_name = item["name"] + suffix if (suffix and item["entity_type"] == "connector") else item["name"]
+        secrets_to_reenter.append(
+            ImportSecretReentry(
+                entity_type=item["entity_type"],
+                entity_id=int(new_entity),
+                name=display_name,
+                source_type=item["source_type"],
+                fields=list(item["fields"]),
+                blocks_operation=bool(item["blocks_operation"]),
+                message=item["message"],
+                edit_path=edit_path,
+            )
+        )
+
     response = ImportApplyResponse(
         ok=True,
         created=ImportApplyEntityIds(
@@ -460,6 +524,7 @@ def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) 
             stream_ids=created_streams,
             destination_ids=created_dest_ids,
         ),
+        secrets_to_reenter=secrets_to_reenter,
         redirect_path=redirect_path,
         idempotency_key=idempotency_key,
         idempotent_replay=False,
@@ -495,6 +560,19 @@ def clone_connector(db: Session, connector_id: int, name_suffix: str) -> tuple[i
         clone_name_suffix=name_suffix,
     )
     res = apply_import(db, body)
+    # Same-environment clone: the original rows still hold the real secrets that the (masked) bundle could not
+    # carry. Copy them server-side into the clone so it stays a faithful copy; nothing is returned to the client.
+    originals = db.query(Source).filter(Source.connector_id == connector_id).order_by(Source.id.asc()).all()
+    clones = (
+        db.query(Source).filter(Source.id.in_(list(res.created.source_ids))).order_by(Source.id.asc()).all()
+        if res.created.source_ids
+        else []
+    )
+    for original, clone in zip(originals, clones):
+        clone.config_json = restore_stripped_secrets(dict(clone.config_json or {}), dict(original.config_json or {}))
+        clone.auth_json = restore_stripped_secrets(dict(clone.auth_json or {}), dict(original.auth_json or {}))
+    if clones:
+        db.commit()
     cid = res.created.connector_ids[0]
     sids = list(res.created.stream_ids)
     path = res.redirect_path or f"/connectors/{cid}"
@@ -543,21 +621,175 @@ def clone_stream(db: Session, stream_id: int, name_suffix: str) -> int:
                 enabled=e.enabled,
             )
         )
-    for r in db.query(Route).filter(Route.stream_id == stream_id).all():
-        db.add(
-            Route(
-                stream_id=new_id,
-                destination_id=int(r.destination_id),
-                enabled=r.enabled,
-                failure_policy=r.failure_policy,
-                formatter_config_json=deepcopy(r.formatter_config_json or {}),
-                rate_limit_json=deepcopy(r.rate_limit_json or {}),
-                status=r.status,
-                disable_reason=r.disable_reason,
-            )
+    route_id_map: dict[int, int] = {}
+    for r in db.query(Route).filter(Route.stream_id == stream_id).order_by(Route.id).all():
+        new_route = Route(
+            stream_id=new_id,
+            destination_id=int(r.destination_id),
+            enabled=r.enabled,
+            failure_policy=r.failure_policy,
+            formatter_config_json=deepcopy(r.formatter_config_json or {}),
+            rate_limit_json=deepcopy(r.rate_limit_json or {}),
+            status=r.status,
+            disable_reason=r.disable_reason,
         )
+        db.add(new_route)
+        db.flush()
+        route_id_map[int(r.id)] = int(new_route.id)
+        _clone_route_children(db, int(r.id), int(new_route.id))
+    _remap_governance_route_ids(new_stream, route_id_map)
     db.commit()
     return new_id
+
+
+def _clone_route_children(db: Session, old_route_id: int, new_route_id: int) -> None:
+    """Copy Route-level processing state (protection, classification, policy, transform) to a cloned Route.
+
+    A cloned Stream keeps the same Destinations, so it must also keep the same per-Route data protection;
+    otherwise starting the clone would deliver unprotected data to Destinations that the source Stream protects.
+    """
+    for rule in db.query(RouteProtectionRule).filter(RouteProtectionRule.route_id == old_route_id).order_by(RouteProtectionRule.id).all():
+        db.add(
+            RouteProtectionRule(
+                route_id=new_route_id,
+                field_path=rule.field_path,
+                sensitivity_class=rule.sensitivity_class,
+                protection_mode=rule.protection_mode,
+                enabled=rule.enabled,
+                # Findings belong to the source Stream; the clone must not reference them.
+                source_finding_id=None,
+                created_by=rule.created_by,
+            )
+        )
+    for crule in db.query(RouteClassificationRule).filter(RouteClassificationRule.route_id == old_route_id).order_by(RouteClassificationRule.id).all():
+        db.add(
+            RouteClassificationRule(
+                route_id=new_route_id,
+                name=crule.name,
+                enabled=crule.enabled,
+                condition_json=deepcopy(crule.condition_json or {}),
+                classification_level=crule.classification_level,
+            )
+        )
+    for prule in db.query(RoutePolicyRule).filter(RoutePolicyRule.route_id == old_route_id).order_by(RoutePolicyRule.id).all():
+        db.add(
+            RoutePolicyRule(
+                route_id=new_route_id,
+                name=prule.name,
+                enabled=prule.enabled,
+                condition_json=deepcopy(prule.condition_json or {}),
+                action_type=prule.action_type,
+            )
+        )
+    rm = db.query(RouteMapping).filter(RouteMapping.route_id == old_route_id).first()
+    if rm is not None:
+        db.add(
+            RouteMapping(
+                route_id=new_route_id,
+                field_mappings_json=deepcopy(rm.field_mappings_json or {}),
+                raw_payload_mode=rm.raw_payload_mode,
+            )
+        )
+    re_ = db.query(RouteEnrichment).filter(RouteEnrichment.route_id == old_route_id).first()
+    if re_ is not None:
+        db.add(
+            RouteEnrichment(
+                route_id=new_route_id,
+                enrichment_json=deepcopy(re_.enrichment_json or {}),
+                override_policy=re_.override_policy,
+                enabled=re_.enabled,
+            )
+        )
+
+
+def _add_imported_route_children(db: Session, route_row: dict[str, Any], new_route_id: int) -> None:
+    """Create Route-level processing state embedded on an exported Route (see export_builder).
+
+    Bundles exported before Route children were included simply lack these keys and import unchanged.
+    """
+    for p in route_row.get("protection_rules") or []:
+        if not isinstance(p, dict):
+            continue
+        db.add(
+            RouteProtectionRule(
+                route_id=new_route_id,
+                field_path=str(p["field_path"]),
+                sensitivity_class=str(p["sensitivity_class"]),
+                protection_mode=str(p["protection_mode"]),
+                enabled=bool(p.get("enabled", True)),
+                source_finding_id=None,
+                created_by=str(p.get("created_by") or "import"),
+            )
+        )
+    for c in route_row.get("classification_rules") or []:
+        if not isinstance(c, dict):
+            continue
+        db.add(
+            RouteClassificationRule(
+                route_id=new_route_id,
+                name=str(c["name"]),
+                enabled=bool(c.get("enabled", True)),
+                condition_json=dict(c.get("condition_json") or {}),
+                classification_level=str(c["classification_level"]),
+            )
+        )
+    for pr in route_row.get("policy_rules") or []:
+        if not isinstance(pr, dict):
+            continue
+        db.add(
+            RoutePolicyRule(
+                route_id=new_route_id,
+                name=str(pr["name"]),
+                enabled=bool(pr.get("enabled", True)),
+                condition_json=dict(pr.get("condition_json") or {}),
+                action_type=str(pr["action_type"]),
+            )
+        )
+    rm = route_row.get("route_mapping")
+    if isinstance(rm, dict):
+        db.add(
+            RouteMapping(
+                route_id=new_route_id,
+                field_mappings_json=dict(rm.get("field_mappings_json") or {}),
+                raw_payload_mode=rm.get("raw_payload_mode"),
+            )
+        )
+    re_ = route_row.get("route_enrichment")
+    if isinstance(re_, dict):
+        db.add(
+            RouteEnrichment(
+                route_id=new_route_id,
+                # Masked secret placeholders are dropped, never persisted as literal values.
+                enrichment_json=_strip_mask_placeholders(dict(re_.get("enrichment_json") or {})),
+                override_policy=str(re_.get("override_policy") or "KEEP_EXISTING"),
+                enabled=bool(re_.get("enabled", True)),
+            )
+        )
+
+
+def _remap_governance_route_ids(stream: Stream, route_id_map: dict[int, int]) -> None:
+    """Point cloned governance ``route_overrides`` at the clone's own Routes instead of the source Stream's."""
+    config = stream.config_json if isinstance(stream.config_json, dict) else None
+    governance = config.get("governance") if config else None
+    overrides = governance.get("route_overrides") if isinstance(governance, dict) else None
+    if not isinstance(overrides, list) or not overrides:
+        return
+    remapped: list[Any] = []
+    for item in overrides:
+        if isinstance(item, dict) and item.get("route_id") is not None:
+            try:
+                old = int(item["route_id"])
+            except (TypeError, ValueError):
+                remapped.append(item)
+                continue
+            if old not in route_id_map:
+                # Override for a Route that does not belong to the cloned Stream: drop it instead of
+                # leaving a reference to another Stream's Route.
+                continue
+            item = {**item, "route_id": route_id_map[old]}
+        remapped.append(item)
+    new_governance = {**governance, "route_overrides": remapped}
+    stream.config_json = {**config, "governance": new_governance}
 
 
 def export_workspace_bundle(

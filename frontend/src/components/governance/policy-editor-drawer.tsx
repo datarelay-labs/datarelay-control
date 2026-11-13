@@ -21,6 +21,7 @@ import {
   type PolicyStatus,
   type StreamAssignmentEntry,
 } from '../../api/gdcGovernancePolicies'
+import { separationOfDutiesKind, type SeparationOfDutiesKind } from '../../api/gdcGovernanceApprovals'
 import { fetchStreamsList } from '../../api/gdcStreams'
 import type { StreamRead } from '../../api/types/gdcApi'
 import { cn } from '../../lib/utils'
@@ -89,6 +90,8 @@ export function PolicyEditorDrawer({ open, policy, readOnly = false, onClose, on
   const [saving, setSaving] = useState(false)
   const [lifecycleLoading, setLifecycleLoading] = useState(false)
   const [retireDialogOpen, setRetireDialogOpen] = useState(false)
+  // F-187: set when the server refuses Activate because the user submitted the policy (or nobody is recorded).
+  const [activateOverrideKind, setActivateOverrideKind] = useState<SeparationOfDutiesKind | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
@@ -255,6 +258,29 @@ export function PolicyEditorDrawer({ open, policy, readOnly = false, onClose, on
       } else if (lifecycleAction === 'activate') {
         result = await activateGovernancePolicy(policy.id)
       }
+      if (!result?.policy) throw new Error('Lifecycle action failed.')
+      setStatus(result.policy.status)
+      onSaved()
+    } catch (e) {
+      const kind = lifecycleAction === 'activate' ? separationOfDutiesKind(e) : null
+      if (kind) {
+        // The server is authoritative: offer the explicit override instead of a bare error.
+        setActivateOverrideKind(kind)
+      } else {
+        setError(e instanceof Error ? e.message : String(e))
+      }
+    } finally {
+      setLifecycleLoading(false)
+    }
+  }
+
+  const executeActivateOverride = async () => {
+    if (!policy) return
+    setActivateOverrideKind(null)
+    setLifecycleLoading(true)
+    setError(null)
+    try {
+      const result = await activateGovernancePolicy(policy.id, { allowSelfApproval: true })
       if (!result?.policy) throw new Error('Lifecycle action failed.')
       setStatus(result.policy.status)
       onSaved()
@@ -720,6 +746,29 @@ export function PolicyEditorDrawer({ open, policy, readOnly = false, onClose, on
         error={error}
         onConfirm={() => void executeRetire()}
         dataTestId="policy-retire-dialog"
+      />
+      <DangerousActionDialog
+        open={activateOverrideKind !== null}
+        onOpenChange={(open) => {
+          if (!open && !lifecycleLoading) setActivateOverrideKind(null)
+        }}
+        title={
+          activateOverrideKind === 'unknown'
+            ? 'Activate without a recorded submitter?'
+            : 'Activate your own policy?'
+        }
+        targetName={policy?.name}
+        impactBullets={[
+          activateOverrideKind === 'unknown'
+            ? 'Nobody is recorded as the submitter of this review, so separation of duties cannot be checked and activating it may skip an independent second review.'
+            : 'You submitted this policy for review, so activating it yourself skips an independent second review.',
+          'The override is logged by the server under your name.',
+        ]}
+        risk="high"
+        primaryLabel="Activate anyway"
+        busy={lifecycleLoading}
+        onConfirm={() => void executeActivateOverride()}
+        dataTestId="policy-activate-override-dialog"
       />
     </div>
   )

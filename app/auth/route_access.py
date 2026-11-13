@@ -148,6 +148,15 @@ def evaluate_http_access(*, role: str, method: str, path: str) -> AccessDenied |
     }:
         return None
 
+    # F-202: every role - including Viewer and the Governance-only roles - may
+    # rotate its own password. The route handler authenticates the JWT identity
+    # and verifies the current password. This must stay reachable before the
+    # Governance-only and Viewer restrictions below, otherwise an account that an
+    # administrator created or reset with ``must_change_password=true`` could
+    # never complete the forced change.
+    if m == "POST" and path == f"{base}/auth/change-password":
+        return None
+
     # --- Sensitive administrator surfaces (not even read for non-admins) ---
     admin_exclusive = (
         f"{base}/admin/maintenance/health",
@@ -171,10 +180,14 @@ def evaluate_http_access(*, role: str, method: str, path: str) -> AccessDenied |
         )
 
     # --- Platform policy writes: Administrator only (GET remains for operators/viewers) ---
+    # F-192: display-settings holds the platform-wide default timezone, so its
+    # writes are Administrator-only like the other platform configuration. A
+    # user's own timezone preference is separate (PATCH /auth/profile).
     policy_prefixes = (
         f"{base}/admin/https-settings",
         f"{base}/admin/retention-policy",
         f"{base}/admin/alert-settings",
+        f"{base}/admin/display-settings",
     )
     for prefix in policy_prefixes:
         if _under(prefix, path) and m not in SAFE_METHODS and role != ROLE_ADMINISTRATOR:
@@ -336,11 +349,6 @@ def evaluate_http_access(*, role: str, method: str, path: str) -> AccessDenied |
                 "AI governance mutations require Connector Operator or Administrator role.",
             )
 
-    # Self-service password rotation is authenticated in the route handler and
-    # must remain reachable even when the principal is otherwise read-only.
-    if m == "POST" and path == f"{base}/auth/change-password":
-        return None
-
     # --- VIEWER: read-only monitoring; no mutating verbs except preview POSTs ---
     if role == ROLE_VIEWER and m not in SAFE_METHODS:
         if is_viewer_allowed_post(path):
@@ -358,6 +366,7 @@ def evaluate_http_access(*, role: str, method: str, path: str) -> AccessDenied |
             f"{base}/admin/https-settings",
             f"{base}/admin/retention-policy",
             f"{base}/admin/alert-settings",
+            f"{base}/admin/display-settings",
         )
         for prefix in operator_mutation_deny:
             if _under(prefix, path):

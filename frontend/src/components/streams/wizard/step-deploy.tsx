@@ -23,6 +23,7 @@ import {
   streamRuntimePath,
 } from '../../../config/nav-paths'
 import { cn } from '../../../lib/utils'
+import { buttonClassName } from '../../ui/button-classes'
 import { WIZARD_LABEL } from '../../../lib/operator-vocabulary'
 import {
   computeDeployReadiness,
@@ -380,6 +381,8 @@ function DeployStatusBanner({ readiness }: { readiness: DeployReadinessSnapshot 
         : 'Complete required wizard steps before creating this stream.'
 
   const Icon = tone === 'ok' ? CheckCircle2 : AlertTriangle
+  // The banner only ever points at rows the checklist below actually renders in red.
+  const blockingRows = readiness.categories.filter((category) => category.tone === 'err')
 
   return (
     <section
@@ -421,9 +424,21 @@ function DeployStatusBanner({ readiness }: { readiness: DeployReadinessSnapshot 
           </div>
         </div>
         {!readiness.canCreate ? (
-          <p className="shrink-0 rounded-lg border border-red-200/70 bg-white/70 px-3 py-2 text-sm font-medium text-red-700 dark:border-red-500/30 dark:bg-red-950/30 dark:text-red-200">
-            Resolve red checklist items before creating.
-          </p>
+          <div
+            className="shrink-0 rounded-lg border border-red-200/70 bg-white/70 px-3 py-2 text-sm font-medium text-red-700 dark:border-red-500/30 dark:bg-red-950/30 dark:text-red-200 sm:max-w-sm"
+            data-testid="deploy-blocking-reasons"
+          >
+            <p>Resolve red checklist items before creating.</p>
+            {blockingRows.length > 0 ? (
+              <ul className="mt-1 list-inside list-disc text-xs font-normal">
+                {blockingRows.map((row) => (
+                  <li key={row.key}>
+                    <span className="font-semibold">{row.label}:</span> {row.summary}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
         ) : null}
       </div>
     </section>
@@ -860,7 +875,7 @@ function DeployCreatedPanel({
                   onStart()
                 }}
                 disabled={!wizardCreateIsStartEligible(outcome) || isStarting || displayedRunBusy || runtimeVerificationBlocked}
-                className="inline-flex h-9 items-center gap-1.5 rounded-md bg-violet-600 px-3 text-[12px] font-semibold text-white shadow-sm hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
+                className={buttonClassName({ variant: 'secondary' })}
                 title={
                   wizardCreateIsConfigurationIncomplete(outcome)
                     ? 'Resolve configuration errors before starting'

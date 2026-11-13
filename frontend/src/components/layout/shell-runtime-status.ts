@@ -45,6 +45,11 @@ export function presentShellRuntimeStatus(
   if (global.health_status === 'DEGRADED' || global.health_status === 'ERROR') {
     return { label: 'Attention', healthy: false, evidence: `Runtime snapshot (${global.health_status.toLowerCase()}): ${counts}. Investigate affected flows.` }
   }
+  // IDLE = "no health verdict". With enabled and running Streams that means some are not observed yet,
+  // which must not read as a calm "Idle" (and never as Healthy).
+  if (global.health_status === 'IDLE' && global.enabled_streams > 0 && global.running_streams > 0) {
+    return { label: 'Not verified', healthy: null, evidence: `Some streams not observed yet. Snapshot: ${counts}.` }
+  }
   if (global.enabled_streams === 0 || global.running_streams === 0 || global.health_status === 'IDLE') {
     return { label: 'Idle', healthy: null, evidence: `Snapshot: ${counts}. No active delivery is asserted.` }
   }

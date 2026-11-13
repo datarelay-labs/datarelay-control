@@ -31,6 +31,7 @@ from app.runtime.read_service import (
     StreamNotFoundError,
     _dashboard_snapshot_id,
     _dashboard_snapshot_time,
+    route_health_counts_from_stats,
 )
 from app.runtime.runtime_analytics_bucket_read_repository import (
     RouteTrendBucketStatsRow,
@@ -46,6 +47,7 @@ from app.runtime.runtime_snapshot_analytics_repository import (
     _int_events,
     _operational_scale,
 )
+from app.runtime.copy_utils import checkpoint_read_view
 from app.runtime.schemas import (
     CheckpointStatsPayload,
     RecentRouteErrorItem,
@@ -95,14 +97,64 @@ def _checkpoint_payload(row: Checkpoint | None) -> CheckpointStatsPayload | None
         return None
     return CheckpointStatsPayload(
         type=row.checkpoint_type,
-        value=dict(row.checkpoint_value_json or {}),
+        value=checkpoint_read_view(row.checkpoint_value_json),
     )
+
+
+# Operational snapshot vocabulary (ERROR/DEGRADED/HEALTHY/IDLE) -> runtime health API
+# vocabulary. ERROR is what the dashboard reports as "Route N delivery failing"; it
+# must surface as UNHEALTHY here and never fall through to IDLE.
+_OPERATIONAL_TO_RUNTIME_HEALTH = {
+    "ERROR": "UNHEALTHY",
+    "UNHEALTHY": "UNHEALTHY",
+    "DEGRADED": "DEGRADED",
+    "HEALTHY": "HEALTHY",
+    "IDLE": "IDLE",
+}
+
+
+def runtime_health_from_operational(status: str | None) -> str:
+    """Map an operational snapshot health status onto StreamHealthState/RouteHealthState."""
+
+    return _OPERATIONAL_TO_RUNTIME_HEALTH.get(str(status or "IDLE").strip().upper(), "IDLE")
+
+
+def snapshot_route_health_key(snap: Any, *, now: datetime | None = None) -> str:
+    """Re-classify an enabled Route from snapshot posture fields, like the dashboard.
+
+    The operational snapshot read (``_assemble_snapshot_from_physical``) re-runs
+    ``classify_route_health`` on read, so this uses the same inputs, classifier
+    and freshness reference (``now``) instead of trusting a possibly stale stored
+    ``health_status``.
+    """
+
+    from app.runtime.operational_snapshot_service import classify_route_health
+
+    status = classify_route_health(
+        enabled=True,
+        last_success_at=snap.last_success_at,
+        last_error_at=snap.last_error_at,
+        failed_eps_1m=float(snap.failed_eps_1m or 0.0),
+        retry_rate_5m=float(snap.retry_rate_5m or 0.0),
+        now=now,
+    )
+    return runtime_health_from_operational(status)
 
 
 def _route_health_from_snapshots(
     routes: list[Route],
-    route_snaps: dict[int, RuntimeRouteSnapshot],
+    route_snaps: dict[int, Any],
+    route_counts: dict[int, RouteRuntimeCounts] | None = None,
+    *,
+    now: datetime | None = None,
 ) -> tuple[list[RouteHealthItem], StreamHealthSummary]:
+    """Route health rows from operational snapshots.
+
+    ``route_counts`` are the stats ``routes[].counts`` for the same window; health
+    counts are derived from them (see read_service.route_health_counts_from_stats)
+    so GET /runtime/health and GET /runtime/stats agree.
+    """
+
     bucket = {"HEALTHY": 0, "DEGRADED": 0, "UNHEALTHY": 0, "DISABLED": 0, "IDLE": 0}
     items: list[RouteHealthItem] = []
     for route in routes:
@@ -115,10 +167,10 @@ def _route_health_from_snapshots(
         elif snap is None:
             health_key = "IDLE"
         else:
-            health_key = str(snap.health_status or "IDLE").upper()
-            if health_key not in bucket:
-                health_key = "IDLE"
+            health_key = snapshot_route_health_key(snap, now=now)
         bucket[health_key] += 1
+        counts = (route_counts or {}).get(int(route.id)) or RouteRuntimeCounts()
+        success_c, failure_c, rl_c = route_health_counts_from_stats(counts)
         items.append(
             RouteHealthItem(
                 route_id=int(route.id),
@@ -129,9 +181,9 @@ def _route_health_from_snapshots(
                 failure_policy=str(route.failure_policy),
                 route_status=str(route.status),
                 health=cast(RouteHealthState, health_key),
-                success_count=0,
-                failure_count=0,
-                rate_limited_count=0,
+                success_count=success_c,
+                failure_count=failure_c,
+                rate_limited_count=rl_c,
                 consecutive_failure_count=0,
                 last_success_at=snap.last_success_at if snap is not None else None,
                 last_failure_at=snap.last_error_at if snap is not None else None,
@@ -220,7 +272,7 @@ def build_stream_stats_health_from_snapshot(
             stream_id=stream_id,
             window_seconds=window_seconds,
         )
-    if processed_window <= 0 and stream_snap is not None:
+    elif stream_snap is not None:
         processed_window = int(round(_int_events(float(stream_snap.eps_5m), 300) * scale))
 
     summary = StreamRuntimeSummary(
@@ -260,10 +312,15 @@ def build_stream_stats_health_from_snapshot(
         routes=route_stats,
         recent_logs=[],
     )
-    route_items, health_summary = _route_health_from_snapshots(routes, route_snaps)
-    stream_health = stream_snap.health_status if stream_snap is not None else "IDLE"
-    if stream_health not in ("HEALTHY", "DEGRADED", "UNHEALTHY", "IDLE"):
-        stream_health = "IDLE"
+    route_items, health_summary = _route_health_from_snapshots(
+        routes,
+        route_snaps,
+        {item.route_id: item.counts for item in route_stats},
+        now=datetime.now(UTC),
+    )
+    stream_health = runtime_health_from_operational(
+        stream_snap.health_status if stream_snap is not None else "IDLE"
+    )
     health = StreamHealthResponse(
         stream_id=int(stream.id),
         stream_status=str(stream.status),
@@ -282,10 +339,13 @@ def _route_connectivity_state(
     route_status: str,
     delivered_ev: int,
     failed_ev: int,
-) -> Literal["HEALTHY", "DEGRADED", "ERROR", "DISABLED"]:
+) -> Literal["HEALTHY", "DEGRADED", "ERROR", "DISABLED", "IDLE"]:
     rs = str(route_status or "").strip().upper()
     if not route_enabled or not destination_enabled or rs != "ENABLED":
         return "DISABLED"
+    if delivered_ev <= 0 and failed_ev <= 0:
+        # No deliveries observed in the window: no verdict, not HEALTHY.
+        return "IDLE"
     if failed_ev <= 0:
         return "HEALTHY"
     if delivered_ev <= 0:
@@ -526,9 +586,6 @@ def _build_metrics_from_buckets(
         stream_id=int(stream.id),
         window_seconds=window_seconds,
     )
-    if processed_events <= 0 and stream_snap is not None:
-        scale = _operational_scale(window_seconds)
-        processed_events = int(round(_int_events(float(stream_snap.eps_5m), 300) * scale))
 
     route_bucket_stats = {
         row.route_id: row
@@ -555,8 +612,6 @@ def _build_metrics_from_buckets(
         destination_id=None,
         window_seconds=window_seconds,
     )
-    if stream_snap is not None and stream_snap.avg_latency_ms is not None and avg_latency_ms is None:
-        avg_latency_ms = float(stream_snap.avg_latency_ms)
 
     kpis = StreamRuntimeKpis(
         events_last_hour=int(processed_events),
@@ -580,7 +635,7 @@ def _build_metrics_from_buckets(
     last_cp: StreamMetricsCheckpoint | None = None
     checkpoint_history: list[StreamMetricsCheckpointHistoryItem] = []
     if checkpoint_row is not None:
-        val = dict(checkpoint_row.checkpoint_value_json or {})
+        val = checkpoint_read_view(checkpoint_row.checkpoint_value_json)
         last_cp = StreamMetricsCheckpoint(type=str(checkpoint_row.checkpoint_type), value=val)
         checkpoint_history.append(
             StreamMetricsCheckpointHistoryItem(
@@ -617,7 +672,7 @@ def _build_metrics_from_buckets(
         delivered_ev = int(rs.success_count) if rs else 0
         failed_ev = int(rs.failure_count) if rs else 0
         events_total = delivered_ev + failed_ev
-        success_rate = 100.0 if events_total <= 0 else round(100.0 * delivered_ev / events_total, 1)
+        success_rate = None if events_total <= 0 else round(100.0 * delivered_ev / events_total, 1)
         lsucc = route_snap.last_success_at if route_snap is not None else None
         lfail = route_snap.last_error_at if route_snap is not None else None
         r_avg_lat = round(float(rs.avg_latency_ms), 1) if rs and rs.avg_latency_ms is not None else 0.0
@@ -639,7 +694,7 @@ def _build_metrics_from_buckets(
         success_rate_trend = []
         for tr in tr_list:
             tot_b = tr.delivered_events + tr.failed_events
-            sr_b = 100.0 if tot_b <= 0 else round(100.0 * tr.delivered_events / tot_b, 1)
+            sr_b = None if tot_b <= 0 else round(100.0 * tr.delivered_events / tot_b, 1)
             success_rate_trend.append(
                 RouteRuntimeSuccessRateTrendPoint(timestamp=tr.bucket_start, success_rate=sr_b)
             )
@@ -659,7 +714,7 @@ def _build_metrics_from_buckets(
                 destination_type=dest_type,
                 enabled=bool(route.enabled),
                 route_status=str(route.status),
-                success_rate=float(success_rate),
+                success_rate=success_rate,
                 events_last_hour=int(events_total),
                 delivered_last_hour=int(delivered_ev),
                 failed_last_hour=int(failed_ev),
@@ -795,7 +850,7 @@ def _build_metrics_from_operational_snapshot(
     last_cp: StreamMetricsCheckpoint | None = None
     checkpoint_history: list[StreamMetricsCheckpointHistoryItem] = []
     if checkpoint_row is not None:
-        val = dict(checkpoint_row.checkpoint_value_json or {})
+        val = checkpoint_read_view(checkpoint_row.checkpoint_value_json)
         last_cp = StreamMetricsCheckpoint(type=str(checkpoint_row.checkpoint_type), value=val)
         checkpoint_history.append(
             StreamMetricsCheckpointHistoryItem(
@@ -816,7 +871,7 @@ def _build_metrics_from_operational_snapshot(
         delivered_ev = int(round(_int_events(float(rs.delivered_eps_1m), 60) * scale)) if rs else 0
         failed_ev = int(round(_int_events(float(rs.failed_eps_1m), 60) * scale)) if rs else 0
         events_total = delivered_ev + failed_ev
-        success_rate = 100.0 if events_total <= 0 else round(100.0 * delivered_ev / events_total, 1)
+        success_rate = None if events_total <= 0 else round(100.0 * delivered_ev / events_total, 1)
         r_avg_lat = round(float(rs.avg_latency_ms), 1) if rs and rs.avg_latency_ms is not None else 0.0
         route_runtime_rows.append(
             RouteRuntimeMetricsRow(
@@ -826,7 +881,7 @@ def _build_metrics_from_operational_snapshot(
                 destination_type=dest_type,
                 enabled=bool(route.enabled),
                 route_status=str(route.status),
-                success_rate=float(success_rate),
+                success_rate=success_rate,
                 events_last_hour=int(events_total),
                 delivered_last_hour=int(delivered_ev),
                 failed_last_hour=int(failed_ev),

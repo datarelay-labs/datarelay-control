@@ -103,4 +103,70 @@ describe('Dashboard priority investigations', () => {
     expect(result).toHaveLength(3)
     expect(result[0]).toMatchObject({ key: 'destination-4', severity: 'critical' })
   })
+  describe('Source/auth failure (F-015)', () => {
+    const sourceSnapshot = (patch: Partial<OperationalSnapshotResponse['problems'][number]> = {}) =>
+      snapshot({
+        streams: [{
+          stream_id: 7, stream_name: 'Okta Events', enabled: true, health_status: 'HEALTHY', connector_id: 12,
+        } as OperationalSnapshotResponse['streams'][number]],
+        problems: [{
+          scope: 'stream', stream_id: 7, severity: 'critical',
+          title: 'Stream Okta Events: source authentication failed (HTTP 401)',
+          message: 'The latest source request through Connector Okta Prod failed with HTTP 401.',
+          error_code: 'SOURCE_AUTH_FAILED', http_status: 401, connector_id: 12, connector_name: 'Okta Prod',
+          ...patch,
+        } as OperationalSnapshotResponse['problems'][number]],
+      })
+
+    it('surfaces a 401 on an otherwise HEALTHY Stream, naming Stream and Connector with deep links', () => {
+      const [item] = dashboardPriorityInvestigations(sourceSnapshot())
+      expect(item).toMatchObject({
+        key: 'stream-7',
+        resource: 'Okta Events',
+        severity: 'critical',
+        reason: 'Source authentication failed (HTTP 401)',
+        href: '/streams/7/runtime',
+        connector: { name: 'Okta Prod', href: '/connectors/12' },
+      })
+    })
+
+    it('words a 403 as access denied and a non-auth failure as a fetch failure', () => {
+      expect(dashboardPriorityInvestigations(sourceSnapshot({ http_status: 403 }))[0].reason)
+        .toBe('Source access denied (HTTP 403)')
+      expect(
+        dashboardPriorityInvestigations(
+          sourceSnapshot({ error_code: 'SOURCE_FETCH_FAILED', http_status: 502 }),
+        )[0].reason,
+      ).toBe('Source fetch failing (HTTP 502)')
+    })
+
+    it('falls back to the connector id when the name is unavailable and never invents a link', () => {
+      const [withId] = dashboardPriorityInvestigations(sourceSnapshot({ connector_name: null }))
+      expect(withId.connector).toEqual({ name: 'Connector #12', href: '/connectors/12' })
+      const [none] = dashboardPriorityInvestigations(
+        sourceSnapshot({ connector_name: null, connector_id: null }),
+      )
+      expect(none.connector).toBeUndefined()
+    })
+
+    it('leads with the source problem over a generic one and does not leak the message text', () => {
+      const input = sourceSnapshot()
+      input.problems.unshift({
+        scope: 'stream', stream_id: 7, severity: 'warning', title: 'Generic slowdown', message: 'm',
+        last_seen_at: null, route_id: null, destination_id: null,
+      })
+      const [item] = dashboardPriorityInvestigations(input)
+      expect(item.reason).toBe('Source authentication failed (HTTP 401)')
+      expect(item.severity).toBe('critical')
+    })
+
+    it('adds no Connector context for non-source problems', () => {
+      const [item] = dashboardPriorityInvestigations(snapshot({
+        streams: [{
+          stream_id: 3, stream_name: 'S', enabled: true, health_status: 'ERROR',
+        } as OperationalSnapshotResponse['streams'][number]],
+      }))
+      expect(item.connector).toBeUndefined()
+    })
+  })
 })

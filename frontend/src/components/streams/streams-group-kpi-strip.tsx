@@ -16,7 +16,7 @@ function KpiCard({ label, value, sub, icon: Icon, iconClassName, tone = 'default
     tone === 'error'
       ? 'text-red-600 dark:text-red-400'
       : tone === 'warning'
-        ? 'text-amber-600 dark:text-amber-400'
+        ? 'text-status-warning'
         : tone === 'success'
           ? 'text-emerald-600 dark:text-emerald-400'
           : 'text-slate-900 dark:text-slate-50'
@@ -77,7 +77,7 @@ export function StreamsGroupKpiStrip({ kpi, loading }: { kpi: StreamsPageKpi; lo
         sub={kpi.warningStreamsPct}
         icon={AlertTriangle}
         tone={kpi.warningStreams > 0 ? 'warning' : 'default'}
-        iconClassName="bg-amber-500/15 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400"
+        iconClassName="bg-status-warning-subtle text-status-warning"
       />
       <KpiCard
         label="Critical"

@@ -59,7 +59,7 @@ export function DashboardFirstFlowSetup({
 
   return (
     <section
-      className="overflow-hidden rounded-2xl border border-violet-200/80 bg-gradient-to-br from-violet-50 via-white to-white shadow-sm dark:border-gdc-border dark:from-gdc-section dark:via-gdc-card dark:to-gdc-card"
+      className="overflow-hidden rounded-2xl border border-default bg-surface-card"
       data-testid="dashboard-empty-state"
       aria-labelledby="dashboard-first-flow-title"
     >

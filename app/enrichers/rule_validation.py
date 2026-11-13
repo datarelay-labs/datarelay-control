@@ -6,13 +6,17 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from app.enrichers.expression_evaluator import (
+    SUPPORTED_EXPRESSION_SYNTAX,
+    condition_syntax_error,
+    expression_syntax_error,
+)
 from app.enrichers.lookup_tables import TABLES, normalize_table_name
 
 _RULE_TYPES = frozenset({"static", "calculated", "lookup", "conditional", "normalize", "jsonata", "regex_extract"})
 _RESERVED_TOP_LEVEL = frozenset({"__rules", "__computed", "__preview", "__enrichment_meta", "advanced_fields"})
 _FIELD_PATH_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")
 _NORMALIZE_FORMATS = frozenset({"iso8601", "iso_8601", "lowercase", "uppercase", "trim"})
-_ALLOWED_FUNCTIONS = ("concat", "upper", "lower", "coalesce", "now_utc")
 _FIELD_REF_RE = re.compile(r"\{\{\s*([^}]+?)\s*\}\}")
 
 
@@ -57,6 +61,11 @@ def is_valid_field_path(path: str) -> bool:
     return bool(_FIELD_PATH_RE.match(key))
 
 
+def _is_keyword_condition(when: str) -> bool:
+    lower = when.strip().lower()
+    return lower.startswith("exists ") or " contains " in lower
+
+
 def validate_calculated_expression(expression: str) -> list[EnrichmentValidationIssue]:
     issues: list[EnrichmentValidationIssue] = []
     expr = expression.strip()
@@ -92,20 +101,17 @@ def validate_calculated_expression(expression: str) -> list[EnrichmentValidation
                     field="expression",
                 )
             )
-    lower = expr.lower()
-    if "{{" not in expr and not any(fn in lower for fn in _ALLOWED_FUNCTIONS):
-        if "?" in expr and (".includes" in expr or "===" in expr or "==" in expr):
-            return issues
-        if not re.match(r"^[A-Za-z_][A-Za-z0-9_.]*$", expr):
-            issues.append(
-                EnrichmentValidationIssue(
-                    code="calculated_expression_unsupported",
-                    severity="warning",
-                    message="Expression uses legacy syntax; verify with preview before save",
-                    rule_type="calculated",
-                    field="expression",
-                )
+    syntax_error = expression_syntax_error(expr)
+    if syntax_error is not None and not any(i.code == "calculated_expression_malformed" for i in issues):
+        issues.append(
+            EnrichmentValidationIssue(
+                code="calculated_expression_unsupported",
+                severity="error",
+                message=f"Unsupported expression: {syntax_error}. Supported: {SUPPORTED_EXPRESSION_SYNTAX}.",
+                rule_type="calculated",
+                field="expression",
             )
+        )
     return issues
 
 
@@ -238,6 +244,21 @@ def _validate_rule_dict(rule: dict[str, Any], *, default_target: str | None = No
                 when = str(item.get("when") or "").strip()
                 if when:
                     has_valid_when = True
+                    when_error = condition_syntax_error(when) if not _is_keyword_condition(when) else None
+                    if when_error is not None:
+                        issues.append(
+                            EnrichmentValidationIssue(
+                                code="conditional_invalid",
+                                severity="error",
+                                message=(
+                                    f"Condition {idx + 1} is not supported: {when_error}. "
+                                    f"Supported: exists FIELD, FIELD contains TEXT, {SUPPORTED_EXPRESSION_SYNTAX}."
+                                ),
+                                rule_type="conditional",
+                                target_field=target or None,
+                                field="conditions",
+                            )
+                        )
                 elif str(item.get("then") or "").strip():
                     issues.append(
                         EnrichmentValidationIssue(
