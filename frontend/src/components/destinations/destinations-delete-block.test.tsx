@@ -8,6 +8,16 @@ import { clearDestinationsListSnapshot } from './destinations-list-cache'
 
 const fetchDestinationsList = vi.fn()
 const deleteDestination = vi.fn()
+const fetchDestinationDeleteImpact = vi.fn()
+
+const NO_HISTORY = {
+  destination_id: 0,
+  routes: 0,
+  streams: 0,
+  delivery_logs_retained: 0,
+  pending_replay_jobs: 0,
+  completed_replay_jobs: 0,
+}
 
 vi.mock('../../api/gdcDestinations', () => ({
   fetchDestinationsList: (...args: unknown[]) => fetchDestinationsList(...args),
@@ -16,6 +26,7 @@ vi.mock('../../api/gdcDestinations', () => ({
   previewTestDestination: vi.fn(),
   testDestination: vi.fn(),
   deleteDestination: (...args: unknown[]) => deleteDestination(...args),
+  fetchDestinationDeleteImpact: (...args: unknown[]) => fetchDestinationDeleteImpact(...args),
   isDestinationStaleWriteError: () => false,
   DESTINATION_STALE_WRITE_CODE: 'DESTINATION_STALE_WRITE',
 }))
@@ -64,6 +75,8 @@ beforeEach(() => {
   clearDestinationsListSnapshot()
   fetchDestinationsList.mockReset()
   deleteDestination.mockReset()
+  fetchDestinationDeleteImpact.mockReset()
+  fetchDestinationDeleteImpact.mockResolvedValue(NO_HISTORY)
 })
 
 afterEach(() => {
@@ -121,5 +134,64 @@ describe('DestinationsManagementPage - delete is never a silent no-op (F-144)', 
     await user.type(screen.getByTestId('destination-delete-dialog-type-name'), 'Free Hook')
     await user.click(screen.getByTestId('destination-delete-dialog-confirm'))
     await waitFor(() => expect(deleteDestination).toHaveBeenCalledTimes(1))
+  })
+})
+
+describe('DestinationsManagementPage - delete impact is truthful (E-129 / E-130 / E-131)', () => {
+  it('does not append a stray plural suffix to zero or singular counts', async () => {
+    fetchDestinationsList.mockResolvedValue([row({ id: 14, name: 'Idle Hook', routes: [], streams_using_count: 0 })])
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <DestinationsManagementPage />
+      </MemoryRouter>,
+    )
+    await openDelete(user, 'Idle Hook')
+    const deps = await screen.findByTestId('destination-delete-dialog-dependencies')
+    expect(deps).toHaveTextContent('Connected routes: 0')
+    expect(deps).toHaveTextContent('Streams using destination: 0')
+    expect(deps.textContent).not.toMatch(/\d+s\b/)
+  })
+
+  it('discloses that delivery logs are kept and replay jobs are removed', async () => {
+    fetchDestinationsList.mockResolvedValue([row({ id: 15, name: 'Used Hook', routes: [], streams_using_count: 0 })])
+    fetchDestinationDeleteImpact.mockResolvedValue({
+      destination_id: 15,
+      routes: 0,
+      streams: 0,
+      delivery_logs_retained: 1379,
+      pending_replay_jobs: 2,
+      completed_replay_jobs: 5,
+    })
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <DestinationsManagementPage />
+      </MemoryRouter>,
+    )
+    await openDelete(user, 'Used Hook')
+
+    await waitFor(() => expect(fetchDestinationDeleteImpact).toHaveBeenCalledWith(15))
+    const impact = await screen.findByText(/Keeps 1379 delivery logs/)
+    expect(impact).toHaveTextContent('no longer show this destination')
+    const removed = screen.getByText(/Permanently deletes 7 replay jobs/)
+    expect(removed).toHaveTextContent('2 not yet delivered')
+    expect(removed).toHaveTextContent('5 already replayed or discarded')
+    expect(screen.queryByText(/Stream routes must be removed before delete succeeds/)).not.toBeInTheDocument()
+  })
+
+  it('keeps delete disabled while the impact is loading and when it cannot be read', async () => {
+    fetchDestinationsList.mockResolvedValue([row({ id: 16, name: 'Slow Hook', routes: [], streams_using_count: 0 })])
+    fetchDestinationDeleteImpact.mockRejectedValue(new Error('HTTP 500'))
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <DestinationsManagementPage />
+      </MemoryRouter>,
+    )
+    await openDelete(user, 'Slow Hook')
+    expect(await screen.findByTestId('destination-delete-dialog-block')).toHaveTextContent(/could not check/i)
+    await user.type(screen.getByTestId('destination-delete-dialog-type-name'), 'Slow Hook')
+    expect(screen.getByTestId('destination-delete-dialog-confirm')).toBeDisabled()
   })
 })

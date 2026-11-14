@@ -1,6 +1,18 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { StreamDeleteConfirmDialog } from './stream-delete-confirm-dialog'
+import { StreamDeleteConfirmDialog, type StreamDeleteImpactState } from './stream-delete-confirm-dialog'
+
+const ZERO_HISTORY = {
+  status: 'ready',
+  quarantinedEvents: 0,
+  pendingReplayJobs: 0,
+  resolvedQuarantineEvents: 0,
+  completedReplayJobs: 0,
+  backfillJobs: 0,
+  protectionRules: 0,
+  routes: 0,
+  deliveryLogs: 0,
+} as const satisfies StreamDeleteImpactState
 
 describe('StreamDeleteConfirmDialog', () => {
   it('states the permanent blast radius and keeps type-name confirmation', () => {
@@ -68,7 +80,7 @@ describe('StreamDeleteConfirmDialog', () => {
       render(
         <StreamDeleteConfirmDialog
           {...base}
-          impact={{ status: 'ready', quarantinedEvents: 3, pendingReplayJobs: 1 }}
+          impact={{ ...ZERO_HISTORY, quarantinedEvents: 3, pendingReplayJobs: 1 }}
           onConfirm={() => undefined}
         />,
       )
@@ -82,12 +94,48 @@ describe('StreamDeleteConfirmDialog', () => {
       expect(screen.getByTestId('stream-delete-dialog-confirm')).toBeEnabled()
     })
 
+    it('discloses released/discarded quarantine history, replayed jobs, backfill jobs and protection rules (E-130)', () => {
+      render(
+        <StreamDeleteConfirmDialog
+          {...base}
+          impact={{
+            ...ZERO_HISTORY,
+            resolvedQuarantineEvents: 3,
+            completedReplayJobs: 2,
+            backfillJobs: 1,
+            protectionRules: 1,
+            routes: 2,
+            deliveryLogs: 4000,
+          }}
+          onConfirm={() => undefined}
+        />,
+      )
+      const impact = screen.getByTestId('stream-delete-dialog-impact')
+      expect(impact).toHaveTextContent('3 released or discarded quarantine events')
+      expect(impact).toHaveTextContent('Settings > Audit Logs')
+      expect(impact).toHaveTextContent('2 replayed or discarded replay jobs')
+      expect(impact).toHaveTextContent('1 backfill job')
+      expect(impact).toHaveTextContent('1 field protection rule')
+      const deps = screen.getByTestId('stream-delete-dialog-dependencies')
+      expect(deps).toHaveTextContent('2 routes')
+      expect(deps).toHaveTextContent('4000 delivery logs')
+      expect(deps.textContent).not.toMatch(/\b0 (released|replayed|backfill|field)/)
+    })
+
+    it('does not mention history that does not exist', () => {
+      render(<StreamDeleteConfirmDialog {...base} impact={{ ...ZERO_HISTORY }} onConfirm={() => undefined} />)
+      const impact = screen.getByTestId('stream-delete-dialog-impact')
+      expect(impact).not.toHaveTextContent('backfill job')
+      expect(impact).not.toHaveTextContent('protection rule')
+      expect(impact).not.toHaveTextContent('replayed or discarded')
+    })
+
     it('still requires the stream name to be typed when held data exists', () => {
       render(
         <StreamDeleteConfirmDialog
           {...base}
           confirmValue=""
-          impact={{ status: 'ready', quarantinedEvents: 2, pendingReplayJobs: 0 }}
+          impact={{ ...ZERO_HISTORY, quarantinedEvents: 2, pendingReplayJobs: 0 }}
           onConfirm={() => undefined}
         />,
       )
@@ -98,7 +146,7 @@ describe('StreamDeleteConfirmDialog', () => {
       render(
         <StreamDeleteConfirmDialog
           {...base}
-          impact={{ status: 'ready', quarantinedEvents: 0, pendingReplayJobs: 0 }}
+          impact={{ ...ZERO_HISTORY }}
           onConfirm={() => undefined}
         />,
       )

@@ -190,6 +190,21 @@ export async function updateDestinationWithFreshToken(
   return updateDestination(destinationId, { ...payload, expected_updated_at: token })
 }
 
+/** What deleting a destination retains (delivery logs) and removes (replay jobs). */
+export type DestinationDeleteImpact = {
+  destination_id: number
+  routes: number
+  streams: number
+  delivery_logs_retained: number
+  pending_replay_jobs: number
+  completed_replay_jobs: number
+}
+
+/** Throws on failure so the delete dialog can fail closed. */
+export async function fetchDestinationDeleteImpact(destinationId: number): Promise<DestinationDeleteImpact> {
+  return requestJson<DestinationDeleteImpact>(`${GDC_API_PREFIX}/destinations/${destinationId}/delete-impact`)
+}
+
 export async function deleteDestination(destinationId: number): Promise<void> {
   await requestJson<unknown>(`${GDC_API_PREFIX}/destinations/${destinationId}`, {
     method: 'DELETE',

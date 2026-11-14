@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from app.backfill.models import BackfillJob
 from app.checkpoints.models import Checkpoint
 from app.enrichments.models import Enrichment
 from app.logs.models import DeliveryLog
 from app.mappings.models import Mapping
 from app.platform_admin.models import PlatformAlertHistory
+from app.protection.models import StreamProtectionRule
 from app.quarantine.models import QUARANTINE_STATUS_QUARANTINED, StreamQuarantineEvent
 from app.replay.models import REPLAY_TERMINAL_STATUSES, StreamReplayEvent
 from app.route_transform.models import RouteEnrichment, RouteMapping
@@ -19,14 +22,28 @@ from app.streams.repository import get_stream_by_id
 
 
 def stream_delete_impact(db: Session, stream_id: int) -> dict[str, int]:
-    """Counts of data a stream delete destroys that an operator may still need.
+    """Counts of everything a stream delete destroys that an operator may still need (E-130).
 
-    ``quarantined_events``: events still held in quarantine (status ``quarantined``). They are
-    removed by the stream row's ON DELETE CASCADE and can no longer be released or replayed.
-    ``pending_replay_jobs``: replay jobs that have not reached a terminal status
-    (pending, replaying or failed), so they will never be delivered.
+    Held / undelivered data (the operator may still want to act on it first):
+
+    ``quarantined_events``: events still held in quarantine (status ``quarantined``).
+    ``pending_replay_jobs``: replay jobs that have not reached a terminal status (pending,
+    replaying or failed), so they will never be delivered.
+
+    History that is destroyed as well (governance evidence, kept nowhere else):
+
+    ``resolved_quarantine_events``: quarantine events already released or discarded.
+    ``completed_replay_jobs``: replay jobs already replayed or discarded.
+    ``backfill_jobs``: backfill jobs (with their progress events).
+    ``protection_rules``: field protection rules configured on the stream.
+    ``routes``: delivery routes of the stream.
+    ``delivery_logs``: delivery log rows of the stream and its routes.
+
+    Quarantine, replay, backfill and protection rows are removed by the stream row's ON DELETE
+    CASCADE; routes and delivery logs are deleted explicitly by ``delete_stream_and_dependencies``.
     """
 
+    quarantine_total = db.query(StreamQuarantineEvent).filter(StreamQuarantineEvent.stream_id == stream_id).count()
     quarantined = (
         db.query(StreamQuarantineEvent)
         .filter(
@@ -35,6 +52,7 @@ def stream_delete_impact(db: Session, stream_id: int) -> dict[str, int]:
         )
         .count()
     )
+    replay_total = db.query(StreamReplayEvent).filter(StreamReplayEvent.stream_id == stream_id).count()
     pending = (
         db.query(StreamReplayEvent)
         .filter(
@@ -43,7 +61,22 @@ def stream_delete_impact(db: Session, stream_id: int) -> dict[str, int]:
         )
         .count()
     )
-    return {"quarantined_events": int(quarantined), "pending_replay_jobs": int(pending)}
+    route_ids = [int(r[0]) for r in db.query(Route.id).filter(Route.stream_id == stream_id).all()]
+    log_filter = DeliveryLog.stream_id == stream_id
+    if route_ids:
+        log_filter = or_(log_filter, DeliveryLog.route_id.in_(route_ids))
+    return {
+        "quarantined_events": int(quarantined),
+        "pending_replay_jobs": int(pending),
+        "resolved_quarantine_events": int(quarantine_total - quarantined),
+        "completed_replay_jobs": int(replay_total - pending),
+        "backfill_jobs": int(db.query(BackfillJob).filter(BackfillJob.stream_id == stream_id).count()),
+        "protection_rules": int(
+            db.query(StreamProtectionRule).filter(StreamProtectionRule.stream_id == stream_id).count()
+        ),
+        "routes": len(route_ids),
+        "delivery_logs": int(db.query(DeliveryLog).filter(log_filter).count()),
+    }
 
 
 def purge_runtime_analytics(

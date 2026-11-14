@@ -20,17 +20,20 @@ import { newStreamPath } from '../../config/nav-paths'
 import {
   createDestination,
   deleteDestination,
+  fetchDestinationDeleteImpact,
   isDestinationStaleWriteError,
   previewTestDestination,
   testDestination,
   updateDestination,
   updateDestinationWithFreshToken,
+  type DestinationDeleteImpact,
   type DestinationListItem,
   type DestinationWritePayload,
   type DestinationTestResult,
 } from '../../api/gdcDestinations'
 import { isDestinationFormDirty } from './destination-form-dirty'
 import { useDestinationsOverviewData, type DestinationOverviewRow } from './use-destinations-overview-data'
+import { formatApiErrorMessage } from '../../lib/api-error-message'
 import { formatOperationalRate } from '../../lib/observability-format'
 import type { DestinationUiHealth } from './destination-runtime-metrics'
 import type { StreamsMetricsWindow } from '../../constants/streamConsoleFilters'
@@ -837,6 +840,26 @@ export function DestinationsManagementPage() {
   const [actionBusyId, setActionBusyId] = useState<number | null>(null)
   const [deleteModal, setDeleteModal] = useState<{ row: DestinationListItem; confirm: string } | null>(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
+  // Retained/removed history for the open delete dialog; delete stays blocked until it is known.
+  const [deleteImpact, setDeleteImpact] = useState<
+    { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; impact: DestinationDeleteImpact }
+  >({ status: 'loading' })
+  const deleteModalId = deleteModal?.row.id ?? null
+  useEffect(() => {
+    if (deleteModalId == null) return
+    let cancelled = false
+    setDeleteImpact({ status: 'loading' })
+    void fetchDestinationDeleteImpact(deleteModalId)
+      .then((impact) => {
+        if (!cancelled) setDeleteImpact({ status: 'ready', impact })
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setDeleteImpact({ status: 'error', message: formatApiErrorMessage(e, 'request failed') })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [deleteModalId])
   const [disableDialogRow, setDisableDialogRow] = useState<DestinationListItem | null>(null)
   // A session capability downgrade immediately closes any pending write-only UI.
   // The backend remains the authorization authority for all API calls.
@@ -1117,7 +1140,30 @@ export function DestinationsManagementPage() {
       const streams = row.streams_using_count ?? 0
       return `'${row.name}' is used by ${routeCount} route${routeCount === 1 ? '' : 's'} on ${streams} stream${streams === 1 ? '' : 's'}. Remove those routes from their streams before deleting.`
     }
+    if (deleteImpact.status === 'loading') return 'Checking delivery history and replay jobs before delete\u2026'
+    if (deleteImpact.status === 'error') {
+      return `Could not check delivery history and replay jobs (${deleteImpact.message}). Close this dialog and try again.`
+    }
     return null
+  }
+
+  /** Retention lines for the delete dialog: what is kept and what is removed (E-129 / E-130). */
+  function deleteHistoryBullets(): string[] {
+    if (deleteImpact.status !== 'ready') return []
+    const { delivery_logs_retained: logs, pending_replay_jobs: pending, completed_replay_jobs: completed } = deleteImpact.impact
+    const bullets: string[] = []
+    if (logs > 0) {
+      bullets.push(
+        `Keeps ${logs} delivery log${logs === 1 ? '' : 's'}. They stay searchable by stream but no longer show this destination.`,
+      )
+    }
+    const replayTotal = pending + completed
+    if (replayTotal > 0) {
+      bullets.push(
+        `Permanently deletes ${replayTotal} replay job${replayTotal === 1 ? '' : 's'} for this destination (${pending} not yet delivered, ${completed} already replayed or discarded). Undelivered events will never be sent.`,
+      )
+    }
+    return bullets
   }
 
   // Always open the dialog, even when delete is blocked, so the operator sees the impact and the
@@ -1138,7 +1184,7 @@ export function DestinationsManagementPage() {
       setDeleteModal(null)
       await refresh()
     } catch (err) {
-      setLocalError(err instanceof Error ? err.message : 'Delete failed.')
+      setLocalError(formatApiErrorMessage(err, 'Delete failed.'))
     } finally {
       setDeleteBusy(false)
     }
@@ -2268,7 +2314,8 @@ export function DestinationsManagementPage() {
           targetName={deleteModal.row.name}
           impactBullets={[
             'Removes this destination configuration permanently.',
-            'Stream routes must be removed before delete succeeds.',
+            'Every route that uses this destination must be removed from its stream first.',
+            ...deleteHistoryBullets(),
           ]}
           dependencies={[
             { label: 'Connected routes', count: deleteModal.row.routes?.length ?? 0 },
