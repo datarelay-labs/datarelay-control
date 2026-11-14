@@ -45,6 +45,13 @@ from app.governance_violations.service import (
     _violation_id_for_quarantine,
 )
 from app.quarantine.models import StreamQuarantineEvent
+from app.replay.reconciliation import (
+    REPLAY_ALREADY_DELIVERED,
+    REPLAY_SUPERSEDED,
+    failure_occurrences,
+    is_superseded,
+    reconciliation_info,
+)
 from app.replay.models import (
     REPLAY_STATUS_DISCARDED,
     REPLAY_STATUS_FAILED,
@@ -151,6 +158,13 @@ def _outcome_for_row(row: StreamReplayEvent) -> str | None:
         return REPLAY_OUTCOME_FAILURE
     if raw == REPLAY_STATUS_DISCARDED:
         return REPLAY_OUTCOME_DISCARDED
+    return None
+
+
+def _status_note(row: StreamReplayEvent) -> str | None:
+    if str(row.status or "") == REPLAY_STATUS_DISCARDED and is_superseded(row):
+        info = reconciliation_info(row) or {}
+        return str(info.get("message") or "Superseded: these events were already delivered.")
     return None
 
 
@@ -278,6 +292,10 @@ def _row_to_entry(
         outcome=_outcome_for_row(row),
         event_count=int(row.event_count or 0),
         correlation_id=_correlation_id_for_replay(db, row, quarantine=quarantine),
+        route_id=int(row.route_id) if row.route_id is not None else None,
+        destination_id=int(row.destination_id),
+        occurrence_count=failure_occurrences(row),
+        status_note=_status_note(row),
     )
 
 
@@ -469,6 +487,8 @@ def get_governance_replay_detail(
         )
 
     can_execute = str(row.status) in {REPLAY_STATUS_PENDING, REPLAY_STATUS_FAILED}
+    # Same state machine as execute: only open jobs; replaying/replayed/discarded are final or owned.
+    can_discard = can_execute
 
     return GovernanceReplayDetailResponse(
         entry=entry,
@@ -480,33 +500,50 @@ def get_governance_replay_detail(
         error_type=row.error_type,
         error_message=row.error_message,
         can_execute=can_execute,
+        can_discard=can_discard,
     )
 
 
-def execute_governance_replay(db: Session, replay_id: int) -> GovernanceReplayExecuteResponse:
+# State errors that mean "nothing was attempted because the events are already delivered":
+# informational for the operator, not a replay failure worth a HIGH notification.
+_RECONCILED_ERROR_CODES = frozenset({REPLAY_ALREADY_DELIVERED, REPLAY_SUPERSEDED})
+
+
+def execute_governance_replay(
+    db: Session,
+    replay_id: int,
+    *,
+    allow_redelivery: bool = False,
+) -> GovernanceReplayExecuteResponse:
     from app.replay import service as replay_service
 
     row = db.get(StreamReplayEvent, int(replay_id))
     retry_before = int(row.retry_count or 0) if row is not None else 0
 
     try:
-        result = replay_service.execute_replay_event(db, int(replay_id))
+        result = replay_service.execute_replay_event(
+            db,
+            int(replay_id),
+            allow_redelivery=allow_redelivery,
+        )
     except replay_service.ReplayEventNotFoundError as exc:
         raise GovernanceReplayNotFoundError(replay_id) from exc
     except replay_service.ReplayEventStateError as exc:
-        _notify_replay_governance_events(
-            db,
-            replay_id=int(replay_id),
-            outcome="failed",
-            retry_count_before=retry_before,
-            message=str(exc.message),
-        )
+        if exc.error_code not in _RECONCILED_ERROR_CODES:
+            _notify_replay_governance_events(
+                db,
+                replay_id=int(replay_id),
+                outcome="failed",
+                retry_count_before=retry_before,
+                message=str(exc.message),
+            )
         db.commit()
         return GovernanceReplayExecuteResponse(
             id=int(replay_id),
             outcome="failed",
             message=str(exc.message),
             status=None,
+            error_code=str(exc.error_code),
         )
     except replay_service.ReplayInProgressError:
         return GovernanceReplayExecuteResponse(
@@ -514,6 +551,7 @@ def execute_governance_replay(db: Session, replay_id: int) -> GovernanceReplayEx
             outcome="failed",
             message=f"replay already in progress for event {replay_id}",
             status=None,
+            error_code="REPLAY_IN_PROGRESS",
         )
 
     outcome = str(result.get("outcome") or "unknown")
@@ -533,7 +571,12 @@ def execute_governance_replay(db: Session, replay_id: int) -> GovernanceReplayEx
     )
 
 
-def bulk_execute_governance_replay(db: Session, ids: list[int]) -> GovernanceReplayBulkResponse:
+def bulk_execute_governance_replay(
+    db: Session,
+    ids: list[int],
+    *,
+    allow_redelivery: bool = False,
+) -> GovernanceReplayBulkResponse:
     from app.replay import service as replay_service
 
     results: list[GovernanceReplayBulkItemResult] = []
@@ -541,7 +584,11 @@ def bulk_execute_governance_replay(db: Session, ids: list[int]) -> GovernanceRep
 
     for replay_id in ids:
         try:
-            result = replay_service.execute_replay_event(db, int(replay_id))
+            result = replay_service.execute_replay_event(
+                db,
+                int(replay_id),
+                allow_redelivery=allow_redelivery,
+            )
             outcome = str(result.get("outcome") or "unknown")
             if outcome == "replayed":
                 succeeded += 1
@@ -561,6 +608,7 @@ def bulk_execute_governance_replay(db: Session, ids: list[int]) -> GovernanceRep
                     id=int(replay_id),
                     outcome="failed",
                     message=f"replay event not found: {replay_id}",
+                    error_code="REPLAY_EVENT_NOT_FOUND",
                 )
             )
         except replay_service.ReplayEventStateError as exc:
@@ -570,6 +618,7 @@ def bulk_execute_governance_replay(db: Session, ids: list[int]) -> GovernanceRep
                     id=int(replay_id),
                     outcome="failed",
                     message=str(exc.message),
+                    error_code=str(exc.error_code),
                 )
             )
         except replay_service.ReplayInProgressError:
@@ -579,6 +628,7 @@ def bulk_execute_governance_replay(db: Session, ids: list[int]) -> GovernanceRep
                     id=int(replay_id),
                     outcome="failed",
                     message=f"replay already in progress for event {replay_id}",
+                    error_code="REPLAY_IN_PROGRESS",
                 )
             )
     failed = len(results) - succeeded
@@ -586,5 +636,81 @@ def bulk_execute_governance_replay(db: Session, ids: list[int]) -> GovernanceRep
         total=len(results),
         succeeded=succeeded,
         failed=failed,
+        results=results,
+    )
+
+
+def discard_governance_replay(db: Session, replay_id: int) -> GovernanceReplayExecuteResponse:
+    """Discard (cancel) an open replay job without delivering anything (E-116).
+
+    Reuses the replay engine's discard transition (pending|failed -> discarded, terminal);
+    jobs that are replaying, replayed or already discarded are refused, never altered.
+    """
+
+    from app.replay import service as replay_service
+
+    try:
+        result = replay_service.discard_replay_event(db, int(replay_id))
+    except replay_service.ReplayEventNotFoundError as exc:
+        db.rollback()
+        raise GovernanceReplayNotFoundError(replay_id) from exc
+    except replay_service.ReplayEventStateError as exc:
+        db.rollback()
+        return GovernanceReplayExecuteResponse(
+            id=int(replay_id),
+            outcome="failed",
+            message=str(exc.message),
+            status=None,
+            error_code=str(exc.error_code),
+        )
+    except replay_service.ReplayInProgressError:
+        db.rollback()
+        return GovernanceReplayExecuteResponse(
+            id=int(replay_id),
+            outcome="failed",
+            message=f"replay already in progress for event {replay_id}",
+            status=None,
+            error_code="REPLAY_IN_PROGRESS",
+        )
+    db.commit()
+    return GovernanceReplayExecuteResponse(
+        id=int(replay_id),
+        outcome="discarded",
+        message="Replay job discarded; no events were delivered.",
+        status=str(result.get("status") or ""),
+    )
+
+
+def bulk_discard_governance_replay(db: Session, ids: list[int]) -> GovernanceReplayBulkResponse:
+    results: list[GovernanceReplayBulkItemResult] = []
+    succeeded = 0
+    for replay_id in ids:
+        try:
+            single = discard_governance_replay(db, int(replay_id))
+        except GovernanceReplayNotFoundError:
+            results.append(
+                GovernanceReplayBulkItemResult(
+                    id=int(replay_id),
+                    outcome="failed",
+                    message=f"replay event not found: {replay_id}",
+                    error_code="REPLAY_EVENT_NOT_FOUND",
+                )
+            )
+            continue
+        if single.outcome == "discarded":
+            succeeded += 1
+        results.append(
+            GovernanceReplayBulkItemResult(
+                id=single.id,
+                outcome=single.outcome,
+                message=single.message,
+                status=single.status,
+                error_code=single.error_code,
+            )
+        )
+    return GovernanceReplayBulkResponse(
+        total=len(results),
+        succeeded=succeeded,
+        failed=len(results) - succeeded,
         results=results,
     )

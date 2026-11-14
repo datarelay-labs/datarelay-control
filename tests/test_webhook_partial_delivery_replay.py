@@ -118,3 +118,23 @@ def test_retry_and_backoff_that_recovers_records_no_replay_event(
     assert len(calls) == 2
     # The retry delivered the events; replaying them would deliver a duplicate.
     assert _replay_rows(db_session, seeded["stream_id"]) == []
+
+
+def test_identical_failed_pushes_stay_separate_replay_jobs(
+    client: TestClient,
+    db_session: Session,
+    sent_webhook_batches: list[dict[str, Any]],
+) -> None:
+    """E-114 dedup must not fold distinct pushes: a webhook push has no checkpoint window identity."""
+
+    seeded = _seed_webhook_stream(db_session, route_urls=[_FAIL])
+    payload = {"id": "same-1", "message": "identical"}
+    first = client.post("/api/v1/ingest/webhook/rx-test", json=payload, headers=_HEADERS)
+    second = client.post("/api/v1/ingest/webhook/rx-test", json=payload, headers=_HEADERS)
+
+    assert first.status_code == 200 and second.status_code == 200
+    rows = _replay_rows(db_session, seeded["stream_id"])
+    assert len(rows) == 2
+    assert {row.status for row in rows} == {"pending"}
+    assert len({row.id for row in rows}) == 2
+    assert first.json()["delivery"]["replay_event_ids"] != second.json()["delivery"]["replay_event_ids"]

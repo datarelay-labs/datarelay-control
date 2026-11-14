@@ -50,6 +50,20 @@ from app.replay.models import (
     REPLAY_TERMINAL_STATUSES,
     StreamReplayEvent,
 )
+from app.replay.reconciliation import (
+    REPLAY_ALREADY_DELIVERED,
+    REPLAY_SUPERSEDED,
+    SUPERSEDE_SOURCE_REPLAY_JOB,
+    describe_prior_delivery,
+    find_prior_delivery,
+    is_delivery_failure_origin,
+    is_superseded,
+    reconciliation_info,
+    row_identities,
+    run_ids,
+    source_window,
+    supersede_delivered_jobs,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -301,6 +315,9 @@ def discard_replay_event(db: Session, event_id: int) -> dict[str, Any]:
             f"cannot discard replay event in status {row.status!r}",
         )
     now = datetime.now(timezone.utc)
+    if row.status == REPLAY_STATUS_REPLAYING and _claim_is_fresh(_delivery_attempt_from_row(row), now=now):
+        # An executor owns the in-flight delivery; discarding now cannot stop the send.
+        raise ReplayInProgressError(event_id)
     row.status = REPLAY_STATUS_DISCARDED
     row.updated_at = now
     persist_replay_observability_log(
@@ -384,8 +401,13 @@ def execute_replay_event(
     *,
     destination_registry: DestinationAdapterRegistry | None = None,
     destination_limiter: DestinationRateLimiter | None = None,
+    allow_redelivery: bool = False,
 ) -> dict[str, Any]:
     """Resend stored protected payload; never updates checkpoints.
+
+    ``allow_redelivery`` is the explicit operator override for events that another path
+    (a replay job or a Logs delivery replay) already delivered to the same destination;
+    without it such a job is refused with ``REPLAY_ALREADY_DELIVERED`` (E-051 / E-113).
 
     Commits a durable ``replaying`` claim (with attempt_id) before destination.send
     so a crash after the external side effect cannot silently revert to pending and
@@ -396,6 +418,12 @@ def execute_replay_event(
     if row is None:
         raise ReplayEventNotFoundError(event_id)
     if row.status == REPLAY_STATUS_DISCARDED:
+        if is_superseded(row):
+            info = reconciliation_info(row) or {}
+            raise ReplayEventStateError(
+                REPLAY_SUPERSEDED,
+                str(info.get("message") or "these events were already delivered; the replay job was superseded"),
+            )
         raise ReplayEventStateError(
             "REPLAY_DISCARDED",
             "discarded replay events cannot be replayed",
@@ -434,6 +462,28 @@ def execute_replay_event(
         raise ReplayEventStateError("REPLAY_DESTINATION_NOT_FOUND", "destination not found")
     if not bool(destination.enabled):
         raise ReplayEventStateError("REPLAY_DESTINATION_DISABLED", "destination is disabled")
+
+    if not allow_redelivery and is_delivery_failure_origin(row):
+        prior = find_prior_delivery(
+            db,
+            stream_id=int(row.stream_id),
+            destination_id=int(row.destination_id),
+            route_id=row.route_id,
+            dynamic_route_id=row.dynamic_route_id,
+            failover_route_id=row.failover_route_id,
+            identities=row_identities(row),
+            since=row.created_at,
+            exclude_id=int(row.id),
+            window=source_window(row),
+            known_run_ids=run_ids(row),
+        )
+        if prior is not None:
+            raise ReplayEventStateError(
+                REPLAY_ALREADY_DELIVERED,
+                f"These events were already delivered to this destination: {describe_prior_delivery(prior)} "
+                "Replaying again would duplicate them. Discard this job, or confirm the explicit "
+                "duplicate-delivery override to replay anyway.",
+            )
 
     ctx = row.delivery_context_json if isinstance(row.delivery_context_json, dict) else {}
     destination_type = str(ctx.get("destination_type") or destination.destination_type or "").strip().upper()
@@ -607,6 +657,23 @@ def execute_replay_event(
         },
     )
     db.flush()
+    if is_delivery_failure_origin(row):
+        # Other open jobs for the very same events (legacy duplicates, repeated recordings)
+        # would re-send them: close them now that this job delivered them.
+        supersede_delivered_jobs(
+            db,
+            stream_id=int(row.stream_id),
+            destination_id=int(row.destination_id),
+            route_id=row.route_id,
+            dynamic_route_id=row.dynamic_route_id,
+            failover_route_id=row.failover_route_id,
+            delivered_identities=row_identities(row),
+            source=SUPERSEDE_SOURCE_REPLAY_JOB,
+            detail=f"replay job #{int(row.id)}",
+            exclude_ids=(int(row.id),),
+            window=source_window(row),
+            known_run_ids=run_ids(row),
+        )
     return {
         **replay_event_to_dict(row),
         "outcome": "replayed",

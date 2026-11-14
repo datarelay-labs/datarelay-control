@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
+from app.platform_admin import journal
 from app.auth.governance_rbac import require_governance_read, require_replay_action
 from app.database import get_db, get_db_read_bounded
 from app.governance_replay.models import REPLAY_DISPLAY_STATUSES, REPLAY_WINDOWS
@@ -12,12 +13,15 @@ from app.governance_replay.schemas import (
     GovernanceReplayBulkRequest,
     GovernanceReplayBulkResponse,
     GovernanceReplayDetailResponse,
+    GovernanceReplayExecuteRequest,
     GovernanceReplayExecuteResponse,
     GovernanceReplayListResponse,
 )
 from app.governance_replay.service import (
     GovernanceReplayNotFoundError,
+    bulk_discard_governance_replay,
     bulk_execute_governance_replay,
+    discard_governance_replay,
     execute_governance_replay,
     get_governance_replay_detail,
     list_governance_replay_events,
@@ -70,7 +74,31 @@ async def bulk_execute_governance_replay_events(
 ) -> GovernanceReplayBulkResponse:
     if not payload.ids:
         raise HTTPException(status_code=400, detail="ids must not be empty")
-    return bulk_execute_governance_replay(db, payload.ids)
+    return bulk_execute_governance_replay(db, payload.ids, allow_redelivery=payload.allow_redelivery)
+
+
+@router.post("/replay/bulk-discard", response_model=GovernanceReplayBulkResponse)
+async def bulk_discard_governance_replay_events(
+    payload: GovernanceReplayBulkRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    _auth=Depends(require_replay_action()),
+) -> GovernanceReplayBulkResponse:
+    if not payload.ids:
+        raise HTTPException(status_code=400, detail="ids must not be empty")
+    response = bulk_discard_governance_replay(db, payload.ids)
+    for item in response.results:
+        if item.outcome == "discarded":
+            journal.record_audit_event(
+                db,
+                action="REPLAY_EVENT_DISCARD",
+                entity_type="STREAM_REPLAY_EVENT",
+                entity_id=int(item.id),
+                details={"status": item.status, "via": "governance_bulk_discard"},
+                request=request,
+            )
+    db.commit()
+    return response
 
 
 @router.get("/replay/{replay_id}", response_model=GovernanceReplayDetailResponse)
@@ -92,10 +120,39 @@ async def get_governance_replay_by_id(
 @router.post("/replay/{replay_id}/execute", response_model=GovernanceReplayExecuteResponse)
 async def execute_governance_replay_event(
     replay_id: int,
+    payload: GovernanceReplayExecuteRequest | None = None,
     db: Session = Depends(get_db),
     _auth=Depends(require_replay_action()),
 ) -> GovernanceReplayExecuteResponse:
     try:
-        return execute_governance_replay(db, replay_id)
+        return execute_governance_replay(
+            db,
+            replay_id,
+            allow_redelivery=bool(payload.allow_redelivery) if payload is not None else False,
+        )
     except GovernanceReplayNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/replay/{replay_id}/discard", response_model=GovernanceReplayExecuteResponse)
+async def discard_governance_replay_event(
+    replay_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    _auth=Depends(require_replay_action()),
+) -> GovernanceReplayExecuteResponse:
+    try:
+        result = discard_governance_replay(db, replay_id)
+    except GovernanceReplayNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if result.outcome == "discarded":
+        journal.record_audit_event(
+            db,
+            action="REPLAY_EVENT_DISCARD",
+            entity_type="STREAM_REPLAY_EVENT",
+            entity_id=int(replay_id),
+            details={"status": result.status, "via": "governance_replay_center"},
+            request=request,
+        )
+        db.commit()
+    return result

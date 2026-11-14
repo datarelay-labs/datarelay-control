@@ -3,7 +3,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { fetchGovernancePolicies, type GovernancePolicyEntry } from '../../api/gdcGovernancePolicies'
 import {
+  REPLAY_ALREADY_DELIVERED_CODE,
+  bulkDiscardGovernanceReplay,
   bulkExecuteGovernanceReplay,
+  discardGovernanceReplay,
   executeGovernanceReplay,
   fetchGovernanceReplayDetail,
   fetchGovernanceReplayEvents,
@@ -94,6 +97,7 @@ function ReplayDetailDrawer({
   readOnly,
   onClose,
   onExecute,
+  onDiscard,
 }: {
   detail: GovernanceReplayDetailResponse | null
   loading: boolean
@@ -101,17 +105,25 @@ function ReplayDetailDrawer({
   readOnly: boolean
   onClose: () => void
   onExecute: () => void
+  onDiscard: () => void
 }) {
   const entry = detail?.entry
-  const strip = detail?.error_message ?? detail?.outcome ?? entry?.status ?? null
+  const strip = entry?.status_note ?? detail?.error_message ?? detail?.outcome ?? entry?.status ?? null
   const violationHref = detail?.source.violation
     ? `${NAV_PATH.governanceViolations}?id=${encodeURIComponent(detail.source.violation.violation_id)}`
     : null
   const quarantineHref = detail?.source.quarantine
     ? `${NAV_PATH.governanceQuarantine}?id=${encodeURIComponent(String(detail.source.quarantine.quarantine_event_id))}`
     : null
+  // Delivery-failure jobs belong to the failing Route/Destination rows; only quarantine
+  // recoveries start at the quarantine-stage records.
   const logsHref = entry
-    ? logsExplorerPath({ stream_id: entry.stream_id, stage: 'quarantine_event_created' })
+    ? detail?.source.quarantine
+      ? logsExplorerPath({ stream_id: entry.stream_id, stage: 'quarantine_event_created' })
+      : logsExplorerPath({
+          stream_id: entry.stream_id,
+          ...(entry.route_id ? { route_id: entry.route_id } : { destination_id: entry.destination_id ?? undefined }),
+        })
     : null
 
   return (
@@ -166,6 +178,19 @@ function ReplayDetailDrawer({
                 Replay #{entry.id} · {formatTime(entry.created_at)}
               </span>
             </div>
+            {entry.status_note ? (
+              <p
+                className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 dark:border-gdc-border dark:bg-gdc-section dark:text-slate-200"
+                data-testid="replay-status-note"
+              >
+                {entry.status_note}
+              </p>
+            ) : null}
+            {(entry.occurrence_count ?? 1) > 1 ? (
+              <p className="text-xs text-slate-500 dark:text-gdc-muted" data-testid="replay-occurrence-note">
+                The same failure was recorded {entry.occurrence_count} times and is consolidated into this job.
+              </p>
+            ) : null}
           </div>
         ) : null
       }
@@ -271,6 +296,17 @@ function ReplayDetailDrawer({
                 Replay
               </button>
             ) : null}
+            {!readOnly && detail.can_discard ? (
+              <button
+                type="button"
+                disabled={actionLoading}
+                onClick={onDiscard}
+                className={actionButtonClass()}
+                data-testid="replay-action-discard"
+              >
+                Discard
+              </button>
+            ) : null}
             {violationHref ? (
               <Link to={violationHref} className={actionButtonClass()} data-testid="replay-open-violation">
                 Open Violation
@@ -325,6 +361,9 @@ export function ReplayCenterPage() {
   const [detail, setDetail] = useState<GovernanceReplayDetailResponse | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [pendingIds, setPendingIds] = useState<number[] | null>(null)
+  // Jobs whose events were already delivered: replaying needs this explicit override.
+  const [redeliveryOverride, setRedeliveryOverride] = useState(false)
+  const [discardIds, setDiscardIds] = useState<number[] | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [confirmTypeValue, setConfirmTypeValue] = useState('')
   const openedFromUrlRef = useRef<number | null>(null)
@@ -440,7 +479,47 @@ export function ReplayCenterPage() {
     setActionError(null)
     setError(null)
     setConfirmTypeValue('')
+    setRedeliveryOverride(false)
     setPendingIds(ids)
+  }
+
+  const requestDiscard = (ids: number[]) => {
+    if (readOnly || ids.length === 0) return
+    setActionError(null)
+    setError(null)
+    setConfirmTypeValue('')
+    setDiscardIds(ids)
+  }
+
+  const discardPending = async () => {
+    if (readOnly || !discardIds || discardIds.length === 0) return
+    const ids = discardIds
+    setActionLoading(true)
+    setActionError(null)
+    setError(null)
+    try {
+      if (ids.length === 1) {
+        const result = await discardGovernanceReplay(ids[0])
+        if (result.outcome !== 'discarded') {
+          setActionError(result.message || 'Discard failed.')
+          return
+        }
+      } else {
+        const result = await bulkDiscardGovernanceReplay(ids)
+        if (result.failed > 0) {
+          setActionError(result.results.find((r) => r.outcome !== 'discarded')?.message ?? 'Some discards failed.')
+          return
+        }
+      }
+      setDiscardIds(null)
+      setSelectedIds(new Set())
+      closeDetail()
+      await load()
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setActionLoading(false)
+    }
   }
 
   const runExecute = async (ids: number[]) => {
@@ -450,21 +529,44 @@ export function ReplayCenterPage() {
   const executePending = async () => {
     if (readOnly || !pendingIds || pendingIds.length === 0) return
     const ids = pendingIds
+    const override = redeliveryOverride
     setActionLoading(true)
     setActionError(null)
     setError(null)
     try {
       if (ids.length === 1) {
-        const result = await executeGovernanceReplay(ids[0])
+        const result = override
+          ? await executeGovernanceReplay(ids[0], { allowRedelivery: true })
+          : await executeGovernanceReplay(ids[0])
         if (result.outcome !== 'replayed') {
           const msg = result.message || 'Replay failed.'
+          if (result.error_code === REPLAY_ALREADY_DELIVERED_CODE) {
+            // Nothing was sent. Keep the dialog open: confirming again is the explicit override.
+            setRedeliveryOverride(true)
+            setActionError(msg)
+            return
+          }
           setActionError(msg)
           setError(msg)
           return
         }
       } else {
-        const result = await bulkExecuteGovernanceReplay(ids)
+        const result = override
+          ? await bulkExecuteGovernanceReplay(ids, { allowRedelivery: true })
+          : await bulkExecuteGovernanceReplay(ids)
         if (result.failed > 0) {
+          const blocked = result.results.filter((r) => r.error_code === REPLAY_ALREADY_DELIVERED_CODE)
+          if (blocked.length > 0) {
+            // Only the blocked jobs remain; everything else already ran or was refused.
+            setPendingIds(blocked.map((r) => r.id))
+            setConfirmTypeValue('')
+            setRedeliveryOverride(true)
+            setActionError(
+              `${blocked.length} job${blocked.length === 1 ? ' was' : 's were'} not replayed because their events were already delivered. ${blocked[0].message}`,
+            )
+            await load()
+            return
+          }
           const msg = result.results.find((r) => r.outcome !== 'replayed')?.message ?? 'Some replays failed.'
           setActionError(msg)
           setError(msg)
@@ -472,6 +574,7 @@ export function ReplayCenterPage() {
         }
       }
       setPendingIds(null)
+      setRedeliveryOverride(false)
       setSelectedIds(new Set())
       closeDetail()
       await load()
@@ -713,6 +816,15 @@ export function ReplayCenterPage() {
             >
               Execute Selected ({retryableSelected.length})
             </button>
+            <button
+              type="button"
+              disabled={actionLoading}
+              onClick={() => requestDiscard(retryableSelected)}
+              className={actionButtonClass()}
+              data-testid="replay-bulk-discard"
+            >
+              Discard Selected ({retryableSelected.length})
+            </button>
           </div>
         ) : null}
       </section>
@@ -850,6 +962,15 @@ export function ReplayCenterPage() {
                           <span className="font-medium text-slate-900 dark:text-slate-100">
                             #{entry.id}
                           </span>
+                          {(entry.occurrence_count ?? 1) > 1 ? (
+                            <span
+                              className="ml-1.5 text-xs text-slate-500 dark:text-gdc-muted"
+                              title={`The same failure was recorded ${entry.occurrence_count} times`}
+                              data-testid={`replay-occurrences-${entry.id}`}
+                            >
+                              ×{entry.occurrence_count}
+                            </span>
+                          ) : null}
                         </td>
                         <td className={opTd}>{entry.policy_name}</td>
                         <td className={opTd}>{entry.stream_name}</td>
@@ -869,7 +990,9 @@ export function ReplayCenterPage() {
                         <td className={cn(opTd, 'whitespace-nowrap text-slate-500')}>
                           {formatTime(entry.completed_at)}
                         </td>
-                        <td className={opTd}>{entry.outcome ?? '—'}</td>
+                        <td className={opTd} title={entry.status_note ?? undefined}>
+                          {entry.outcome ?? '—'}
+                        </td>
                       </tr>
                     )
                   })
@@ -888,6 +1011,7 @@ export function ReplayCenterPage() {
           readOnly={readOnly}
           onClose={closeDetail}
           onExecute={() => void runExecute([drawerId])}
+          onDiscard={() => requestDiscard([drawerId])}
         />
       ) : null}
 
@@ -899,12 +1023,15 @@ export function ReplayCenterPage() {
               setPendingIds(null)
               setActionError(null)
               setConfirmTypeValue('')
+              setRedeliveryOverride(false)
             }
           }}
           title={
-            pendingIds.length > 1
-              ? `Execute ${pendingIds.length} replay jobs?`
-              : 'Execute replay job?'
+            redeliveryOverride
+              ? 'Events already delivered. Replay anyway?'
+              : pendingIds.length > 1
+                ? `Execute ${pendingIds.length} replay jobs?`
+                : 'Execute replay job?'
           }
           targetName={
             pendingIds.length === 1
@@ -923,11 +1050,48 @@ export function ReplayCenterPage() {
           ]}
           dependencies={[{ label: 'Selected replay jobs', count: pendingIds.length }]}
           reversibility="Replay cannot be undone. Destination systems may receive duplicate records."
-          primaryLabel={pendingIds.length > 1 ? 'Execute selected' : 'Execute replay'}
+          primaryLabel={
+            redeliveryOverride
+              ? 'Replay anyway (duplicates possible)'
+              : pendingIds.length > 1
+                ? 'Execute selected'
+                : 'Execute replay'
+          }
           busy={actionLoading}
           error={actionError}
           onConfirm={() => void executePending()}
           dataTestId="replay-center-execute-dialog"
+        />
+      ) : null}
+
+      {discardIds ? (
+        <DangerousActionDialog
+          open
+          onOpenChange={(open) => {
+            if (!open && !actionLoading) {
+              setDiscardIds(null)
+              setActionError(null)
+              setConfirmTypeValue('')
+            }
+          }}
+          title={discardIds.length > 1 ? `Discard ${discardIds.length} replay jobs?` : 'Discard replay job?'}
+          targetName={discardIds.length === 1 ? `replay #${discardIds[0]}` : `${discardIds.length} selected replay jobs`}
+          risk="medium"
+          confirmMode={discardIds.length > 1 ? 'type-name' : 'click'}
+          expectedTypeName={discardIds.length > 1 ? 'DISCARD' : ''}
+          typeNameValue={confirmTypeValue}
+          onTypeNameChange={setConfirmTypeValue}
+          impactBullets={[
+            'Closes the job without delivering anything to the destination.',
+            'Failed delivery records stay in Logs; only the recovery job is closed.',
+          ]}
+          dependencies={[{ label: 'Selected replay jobs', count: discardIds.length }]}
+          reversibility="A discarded job cannot be restored or replayed."
+          primaryLabel={discardIds.length > 1 ? 'Discard selected' : 'Discard job'}
+          busy={actionLoading}
+          error={actionError}
+          onConfirm={() => void discardPending()}
+          dataTestId="replay-center-discard-dialog"
         />
       ) : null}
     </div>

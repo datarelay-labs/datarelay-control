@@ -433,6 +433,9 @@ export function LogDetailDrawer({
   const [replayResult, setReplayResult] = useState<DeliveryLogReplayResponse | null>(null)
   const [replayError, setReplayError] = useState<string | null>(null)
   const [liveReplayConfirmOpen, setLiveReplayConfirmOpen] = useState(false)
+  // Set when the backend reports the same events were already delivered (Logs replay or a
+  // Replay Center job); replaying again then needs an explicit duplicate-delivery override.
+  const [redeliveryBlocked, setRedeliveryBlocked] = useState(false)
   const preview = useMemo(() => getEventPreview(row), [row])
   const payloadObject = useMemo(() => {
     const base: Record<string, unknown> = { ...row.contextJson }
@@ -500,15 +503,21 @@ export function LogDetailDrawer({
     row.level === 'ERROR' &&
     (stageRaw === 'route_send_failed' || stageRaw === 'route_retry_failed')
 
-  async function runReplay(dryRun: boolean) {
+  async function runReplay(dryRun: boolean, allowRedelivery = false) {
     if (logDbId == null) return
     setReplayBusy(true)
     setReplayError(null)
     setReplayResult(null)
     try {
-      const res = await replayDeliveryLog(logDbId, { dry_run: dryRun })
+      const res = await replayDeliveryLog(
+        logDbId,
+        allowRedelivery ? { dry_run: dryRun, allow_redelivery: true } : { dry_run: dryRun },
+      )
       setReplayResult(res)
-      if (!dryRun) setLiveReplayConfirmOpen(false)
+      if (!dryRun) {
+        setLiveReplayConfirmOpen(false)
+        setRedeliveryBlocked(false)
+      }
     } catch (err) {
       const msg =
         err instanceof Error
@@ -516,6 +525,9 @@ export function LogDetailDrawer({
           : typeof err === 'object' && err !== null && 'message' in err
             ? String((err as { message: unknown }).message)
             : 'Replay request failed'
+      if (/REPLAY_ALREADY_DELIVERED/.test(msg)) {
+        setRedeliveryBlocked(true)
+      }
       // F-169: older failed rows carry no events; say so and point to the working path.
       setReplayError(
         /REPLAY_PAYLOAD_INSUFFICIENT/.test(msg)
@@ -822,6 +834,7 @@ export function LogDetailDrawer({
                 disabled={replayBusy}
                 onClick={() => {
                   setReplayError(null)
+                  setRedeliveryBlocked(false)
                   setLiveReplayConfirmOpen(true)
                 }}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-gdc-primary bg-gdc-primary px-3 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60"
@@ -960,9 +973,10 @@ export function LogDetailDrawer({
           onOpenChange={(open) => {
             if (!open && !replayBusy) {
               setLiveReplayConfirmOpen(false)
+              setRedeliveryBlocked(false)
             }
           }}
-          title="Replay failed delivery live?"
+          title={redeliveryBlocked ? 'Events already delivered. Replay anyway?' : 'Replay failed delivery live?'}
           targetName={logDbId != null ? `delivery log #${logDbId}` : undefined}
           risk="high"
           impactBullets={[
@@ -971,10 +985,10 @@ export function LogDetailDrawer({
             'Duplicate downstream delivery is possible; platform deduplication is not assumed.',
           ]}
           reversibility="Live replay cannot be undone. Prefer dry-run first when unsure."
-          primaryLabel="Replay delivery"
+          primaryLabel={redeliveryBlocked ? 'Replay anyway (duplicates possible)' : 'Replay delivery'}
           busy={replayBusy}
           error={replayError}
-          onConfirm={() => void runReplay(false)}
+          onConfirm={() => void runReplay(false, redeliveryBlocked)}
           dataTestId="delivery-log-live-replay-dialog"
         />
       ) : null}
