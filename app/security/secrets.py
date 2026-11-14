@@ -705,7 +705,8 @@ def restore_stripped_secrets(stripped: Any, original: Any) -> Any:
         out = dict(stripped)
         for key, orig_item in original.items():
             if key not in out or out[key] in (None, ""):
-                if is_sensitive_field_name(str(key)):
+                # Content-masked free-text bodies (login_body_raw ...) are stripped on import like secrets.
+                if is_sensitive_field_name(str(key)) or str(key) in EMBEDDED_BODY_FIELD_NAMES:
                     out[key] = orig_item
                 continue
             out[key] = restore_stripped_secrets(out[key], orig_item)

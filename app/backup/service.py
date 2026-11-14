@@ -703,7 +703,18 @@ def clone_connector(db: Session, connector_id: int, name_suffix: str) -> tuple[i
     for original, clone in zip(originals, clones):
         clone.config_json = restore_stripped_secrets(dict(clone.config_json or {}), dict(original.config_json or {}))
         clone.auth_json = restore_stripped_secrets(dict(clone.auth_json or {}), dict(original.auth_json or {}))
-    if clones:
+    # Streams carry masked request bodies / secret-named options the same way; restore them from the originals.
+    original_streams = db.query(Stream).filter(Stream.connector_id == connector_id).order_by(Stream.id.asc()).all()
+    cloned_streams = (
+        db.query(Stream).filter(Stream.id.in_(list(res.created.stream_ids))).order_by(Stream.id.asc()).all()
+        if res.created.stream_ids
+        else []
+    )
+    for original_stream, cloned_stream in zip(original_streams, cloned_streams):
+        cloned_stream.config_json = restore_stripped_secrets(
+            dict(cloned_stream.config_json or {}), dict(original_stream.config_json or {})
+        )
+    if clones or cloned_streams:
         db.commit()
     cid = res.created.connector_ids[0]
     sids = list(res.created.stream_ids)

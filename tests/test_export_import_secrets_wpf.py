@@ -655,3 +655,24 @@ def test_connector_clone_endpoint_resets_auth_check_state(client: TestClient, db
     # The original keeps its own state.
     orig = (_source_of(db_session, ids["connector_id"]).config_json or {}).get("operational") or {}
     assert orig["last_auth_check_status"] == "success"
+
+
+def test_connector_clone_keeps_content_masked_bodies_server_side(client: TestClient, db_session: Session) -> None:
+    """Codex review: the clone endpoint must keep login/preflight/stream request bodies (masked in downloads)."""
+
+    ids = _seed_secret_bearing_graph(db_session)
+    res = client.post(f"/api/v1/backup/connectors/{ids['connector_id']}/clone", json={})
+    assert res.status_code == 200, res.text
+    for literal in ALL_EXPORT_LITERALS:
+        assert literal not in res.text
+    new_cid = res.json()["connector_id"]
+    cloned = _source_of(db_session, new_cid).auth_json
+    assert LOGIN_RAW_SECRET in cloned["login_body_raw"]
+    assert PREFLIGHT_SECRET in cloned["preflight_body_raw"]
+    assert BODY_SECRET in cloned["token_body"]
+    new_stream = db_session.query(Stream).filter(Stream.connector_id == new_cid).one()
+    assert STREAM_BODY_SECRET in new_stream.config_json["request_body"]
+    assert new_stream.config_json["path"] == "/events"
+    # The downloadable export of the original stays masked.
+    exported = client.get(f"/api/v1/backup/connectors/{ids['connector_id']}/export")
+    assert LOGIN_RAW_SECRET not in exported.text
