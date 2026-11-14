@@ -17,7 +17,7 @@ from app.connectors.schemas import (
     ConnectorAuthLabResponse,
     ConnectorAuthLabStep,
 )
-from app.security.secrets import mask_http_headers, mask_secrets
+from app.security.secrets import mask_http_headers, mask_secret_query_params_in_text, mask_secrets
 from app.connectors.session_login_http import (
     SessionLoginHttpDebug,
     cookie_jar_names,
@@ -163,7 +163,8 @@ def response_sample(resp: httpx.Response) -> Any:
 def effective_request(method: str, url: str, headers: dict[str, str]) -> ConnectorAuthLabEffectiveRequest:
     return ConnectorAuthLabEffectiveRequest(
         method=method.upper(),
-        url=url,
+        # Display-only: a credential carried in the query string (api_key / access_token ...) is masked.
+        url=mask_secret_query_params_in_text(url),
         headers=mask_http_headers(headers),
     )
 
