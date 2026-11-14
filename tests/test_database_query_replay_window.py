@@ -21,7 +21,12 @@ from urllib.parse import urlparse
 import pytest
 
 from app.runtime.errors import SourceFetchError
-from app.sources.database_query.execute import fetch_database_rows, resolve_replay_column
+from app.sources.database_query import execute as execute_mod
+from app.sources.database_query.execute import (
+    _describe_result_columns,
+    fetch_database_rows,
+    resolve_replay_column,
+)
 from app.sources.database_query.sql_builder import build_wrapped_select
 
 LOW = datetime(2026, 11, 1, tzinfo=timezone.utc)
@@ -141,6 +146,109 @@ def test_resolver_rejects_non_temporal_or_unknown_explicit_column() -> None:
         resolve_replay_column(explicit="id", checkpoint_column="id", column_types=cols)
     with pytest.raises(SourceFetchError, match="not in the query result"):
         resolve_replay_column(explicit="nope", checkpoint_column="id", column_types=cols)
+
+
+# --------------------------------------------------------------------------- probe timeout / skip tests
+
+_SRC = {"db_type": "POSTGRESQL", "host": "h", "port": 5432, "database": "d", "username": "u", "password": "p"}
+
+
+def _replay_cfg(**extra: Any) -> dict[str, Any]:
+    cfg: dict[str, Any] = {
+        "query": "SELECT id, created_at FROM t",
+        "checkpoint_mode": "SINGLE_COLUMN",
+        "checkpoint_column": "id",
+        "gdc_replay_start_iso": "2026-11-01T00:00:00Z",
+        "gdc_replay_end_iso": "2026-11-03T00:00:00Z",
+    }
+    cfg.update(extra)
+    return cfg
+
+
+def _spy_fetch(monkeypatch: pytest.MonkeyPatch) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    described: list[dict[str, Any]] = []
+    fetched: list[dict[str, Any]] = []
+
+    def _describe(**kw: Any) -> dict[str, int]:
+        described.append(kw)
+        return {"id": _INT8, "created_at": _TIMESTAMPTZ}
+
+    def _fetch(**kw: Any) -> list[dict[str, Any]]:
+        fetched.append(kw)
+        return []
+
+    monkeypatch.setattr(execute_mod, "_describe_result_columns", _describe)
+    monkeypatch.setattr(execute_mod, "_fetch_postgres", _fetch)
+    return described, fetched
+
+
+def test_column_probe_honours_configured_query_timeout_above_30s(monkeypatch: pytest.MonkeyPatch) -> None:
+    described, fetched = _spy_fetch(monkeypatch)
+    fetch_database_rows(source_config=_SRC, stream_config=_replay_cfg(query_timeout_seconds=120), checkpoint=None)
+    assert [d["statement_ms"] for d in described] == [120_000]
+    assert fetched[0]["statement_ms"] == 120_000
+    assert '"created_at" >= %s' in fetched[0]["sql_text"]
+
+
+def test_column_probe_default_timeout_is_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
+    described, fetched = _spy_fetch(monkeypatch)
+    fetch_database_rows(source_config=_SRC, stream_config=_replay_cfg(), checkpoint=None)
+    assert [d["statement_ms"] for d in described] == [30_000]
+    assert fetched[0]["statement_ms"] == 30_000
+
+
+def test_column_probe_is_skipped_when_replay_time_column_is_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    described, fetched = _spy_fetch(monkeypatch)
+    fetch_database_rows(
+        source_config=_SRC, stream_config=_replay_cfg(replay_time_column="created_at"), checkpoint=None
+    )
+    assert described == []
+    assert '"created_at" >= %s' in fetched[0]["sql_text"]
+
+
+def test_column_probe_is_not_run_without_a_replay_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    described, _fetched = _spy_fetch(monkeypatch)
+    cfg = _replay_cfg()
+    cfg.pop("gdc_replay_start_iso")
+    cfg.pop("gdc_replay_end_iso")
+    fetch_database_rows(source_config=_SRC, stream_config=cfg, checkpoint=None)
+    assert described == []
+
+
+def test_describe_probe_sets_statement_timeout_and_runs_limit_zero(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, Any] = {}
+
+    class _Cur:
+        description = [("id", _INT8, None, None, None, None, None)]
+
+        def __enter__(self) -> "_Cur":
+            return self
+
+        def __exit__(self, *a: Any) -> None:
+            return None
+
+        def execute(self, sql: str, bind: Any) -> None:
+            seen["sql"] = sql
+
+    class _Conn:
+        def cursor(self) -> _Cur:
+            return _Cur()
+
+        def close(self) -> None:
+            seen["closed"] = True
+
+    def _connect(**kw: Any) -> _Conn:
+        seen["options"] = kw["options"]
+        return _Conn()
+
+    monkeypatch.setattr(execute_mod.psycopg2, "connect", _connect)
+    out = _describe_result_columns(
+        source_config=_SRC, inner_sql="SELECT id FROM t", params=None, statement_ms=90_000
+    )
+    assert out == {"id": _INT8}
+    assert seen["options"] == "-c statement_timeout=90000"
+    assert seen["sql"].endswith("LIMIT 0")
+    assert seen["closed"] is True
 
 
 # --------------------------------------------------------------------------- real PostgreSQL tests
@@ -273,11 +381,28 @@ def test_pg_replay_window_without_any_time_column_fails_with_actionable_message(
     assert "operator does not exist" not in str(exc.value)
 
 
-def test_pg_replay_time_column_must_be_temporal(pg_events: tuple[dict[str, Any], str]) -> None:
+def test_pg_explicit_non_temporal_replay_time_column_is_rejected_by_postgres(
+    pg_events: tuple[dict[str, Any], str],
+) -> None:
+    # An explicit column skips discovery, so a non date/time choice surfaces as the source error.
     source, table = pg_events
     cfg = _stream_cfg(table, replay_time_column="label")
-    with pytest.raises(SourceFetchError, match="not a date/time column"):
+    with pytest.raises(SourceFetchError, match="PostgreSQL query failed"):
         fetch_database_rows(source_config=source, stream_config=cfg, checkpoint=None)
+
+
+def test_pg_column_discovery_does_not_execute_the_user_query(
+    pg_events: tuple[dict[str, Any], str],
+) -> None:
+    # pg_sleep per row would blow the 1s statement timeout if the probe produced rows.
+    source, table = pg_events
+    types = _describe_result_columns(
+        source_config=source,
+        inner_sql=f"SELECT id, created_at, pg_sleep(5) AS s FROM {table}",
+        params=None,
+        statement_ms=1000,
+    )
+    assert set(types) == {"id", "created_at", "s"}
 
 
 def test_pg_incremental_poll_without_replay_window_is_unchanged(

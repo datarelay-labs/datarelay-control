@@ -69,8 +69,13 @@ def _describe_result_columns(
     source_config: dict[str, Any],
     inner_sql: str,
     params: tuple | dict[str, Any] | None,
+    statement_ms: int,
 ) -> dict[str, int]:
-    """Return ``{column name: PostgreSQL type OID}`` of the user SELECT's result (one probe row)."""
+    """Return ``{column name: PostgreSQL type OID}`` of the user SELECT's result.
+
+    Runs the wrapped query with ``LIMIT 0`` so no rows are produced (the user query is planned, not
+    executed) and applies the stream's configured statement timeout like the real fetch does.
+    """
 
     host, port, database, user, password, conn_timeout = _pg_connection_settings(source_config)
     sql_text, bind = build_wrapped_select(
@@ -82,6 +87,7 @@ def _describe_result_columns(
         checkpoint_order_column=None,
         max_rows=1,
         checkpoint_value=None,
+        describe_only=True,
     )
     conn = None
     try:
@@ -93,7 +99,7 @@ def _describe_result_columns(
             password=password,
             connect_timeout=conn_timeout,
             sslmode=_ssl_mode_pg(str(_get(source_config, "ssl_mode") or "PREFER")),
-            options="-c statement_timeout=30000",
+            options=f"-c statement_timeout={int(statement_ms)}",
         )
         with conn.cursor() as cur:
             cur.execute(sql_text, bind)
@@ -189,15 +195,21 @@ def fetch_database_rows(
 
     replay_column: str | None = None
     if replay_low is not None and replay_high is not None:
-        replay_column = resolve_replay_column(
-            explicit=_get(stream_config, "replay_time_column"),
-            checkpoint_column=str(ck_col).strip() if ck_col is not None else None,
-            column_types=_describe_result_columns(
-                source_config=source_config,
-                inner_sql=inner,
-                params=params,
-            ),
-        )
+        explicit_replay_column = str(_get(stream_config, "replay_time_column") or "").strip()
+        if explicit_replay_column:
+            # Operator-chosen column: no column discovery needed.
+            replay_column = explicit_replay_column
+        else:
+            replay_column = resolve_replay_column(
+                explicit=None,
+                checkpoint_column=str(ck_col).strip() if ck_col is not None else None,
+                column_types=_describe_result_columns(
+                    source_config=source_config,
+                    inner_sql=inner,
+                    params=params,
+                    statement_ms=min(q_timeout * 1000, 3_600_000),
+                ),
+            )
 
     sql_text, bind = build_wrapped_select(
         inner_sql=inner,
