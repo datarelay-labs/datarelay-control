@@ -51,7 +51,14 @@ type Props = {
   set: <K extends keyof ConnectorWritePayload>(key: K, value: ConnectorWritePayload[K]) => void
   configured?: Partial<
     Record<
-      'basic_password' | 'bearer_token' | 'api_key_value' | 'oauth2_client_secret' | 'login_password' | 'refresh_token' | 'api_key',
+      | 'basic_password'
+      | 'bearer_token'
+      | 'api_key_value'
+      | 'oauth2_client_secret'
+      | 'login_password'
+      | 'refresh_token'
+      | 'api_key'
+      | 'token_body',
       boolean
     >
   >
@@ -649,12 +656,18 @@ export function GenericHttpAuthFields({ form, authType, set, configured }: Props
                 <textarea
                   aria-label="Token body"
                   disabled={(form.token_body_mode ?? 'empty') === 'empty'}
-                  placeholder="{ }"
+                  placeholder={configured?.token_body ? `${MASK_PLACEHOLDER} (saved)` : '{ }'}
                   value={form.token_body ?? ''}
                   onChange={(e) => set('token_body', e.target.value)}
                   rows={3}
                   className={cn(gdcUi.input, 'w-full py-1.5 font-mono text-[12px] disabled:opacity-50')}
                 />
+                {configured?.token_body ? (
+                  <span className="block text-[11px] text-slate-500 dark:text-gdc-muted" data-testid="token-body-saved-hint">
+                    The saved token body is hidden because it may contain credentials. Leave this blank to keep it, or type
+                    the complete new body to replace it.
+                  </span>
+                ) : null}
               </label>
               <select
                 aria-label="Access token injection"

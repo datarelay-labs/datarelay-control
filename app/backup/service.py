@@ -10,22 +10,34 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.backup.export_builder import (
+    ExportNotMaskedError,
     build_connector_export,
     build_stream_export,
     build_workspace_export,
 )
 from app.backup.secret_reentry import collect_secret_reentry
 from app.backup.import_validator import ValidationOutcome, preview_token_for, validate_import_bundle
+from app.backup.name_conflicts import (
+    existing_name_index,
+    find_name_conflicts,
+    import_connector_name,
+    import_destination_name,
+    normalize_name,
+    unique_name,
+)
 from app.backup.schemas import (
     ImportApplyEntityIds,
     ImportApplyRequest,
     ImportApplyResponse,
     ImportSecretReentry,
     ImportClassificationSummary,
+    ImportNameConflict,
     ImportPreviewConflict,
     ImportPreviewFinding,
     ImportPreviewResponse,
     ImportPreviewWarning,
+    ImportRenamedEntity,
+    ImportSkippedEntity,
     PreviewEntityCounts,
 )
 from app.checkpoints.models import Checkpoint
@@ -73,6 +85,28 @@ def require_supported_import_mode(mode: str) -> str:
             },
         )
     return normalized
+
+
+# Auth-check state belongs to the connector it was measured on: a created copy has not been tested (E-125).
+_AUTH_CHECK_STATE_KEYS = frozenset({"last_auth_check_at", "last_auth_check_status", "last_auth_error"})
+
+
+def _reset_imported_operational_state(config: dict[str, Any]) -> dict[str, Any]:
+    cfg = dict(config)
+    op = cfg.get("operational")
+    if isinstance(op, dict):
+        cfg["operational"] = {k: v for k, v in op.items() if k not in _AUTH_CHECK_STATE_KEYS}
+    return cfg
+
+
+def _acquire_import_name_gate_lock(db: Session) -> None:
+    """Serialize import applies so two concurrent applies cannot both pass the name-conflict gate."""
+
+    bind = db.get_bind()
+    dialect = getattr(getattr(bind, "dialect", None), "name", "") or ""
+    if dialect != "postgresql":
+        return
+    db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"), {"lock_key": "import_apply_name_gate"})
 
 
 def _strip_mask_placeholders(value: Any) -> Any:
@@ -205,13 +239,15 @@ def preview_import(db: Session, bundle: dict[str, Any], mode: str, *, dry_run: b
         unsupported_items=list(outcome.unsupported),
         findings=finding_models,
         classification_summary=classification,
+        name_conflicts=[ImportNameConflict(**nc) for nc in outcome.name_conflicts],
+        requires_name_conflict_choice=bool(outcome.name_conflicts),
         dry_run=dry_run,
         preview_token=token,
     )
 
 
 def _assert_apply_allowed(db: Session, body: ImportApplyRequest) -> ValidationOutcome:
-    outcome = validate_import_bundle(db, body.bundle, mode=body.mode)
+    outcome = validate_import_bundle(db, body.bundle, mode=body.mode, clone_name_suffix=body.clone_name_suffix or " (copy)")
     if not outcome.ok:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -246,6 +282,42 @@ def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) 
     bundle = deepcopy(body.bundle)
     suffix = (body.clone_name_suffix or " (copy)") if mode == "clone" else ""
 
+    # E-124: never create a same-name duplicate silently. The gate runs under an advisory lock so two
+    # concurrent applies of the same preview cannot both pass it.
+    _acquire_import_name_gate_lock(db)
+    name_conflicts = find_name_conflicts(db, bundle, mode=mode, suffix=suffix)
+    choice = body.on_name_conflict
+    if name_conflicts and choice is None:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error_code": "IMPORT_NAME_CONFLICT_UNRESOLVED",
+                "message": (
+                    "Some connectors or destinations in this import already exist by name. Nothing was imported. "
+                    "Choose skip (do not create them) or rename (create them under a new unique name) and apply again."
+                ),
+                "name_conflicts": name_conflicts,
+                "choices": ["skip", "rename"],
+            },
+        )
+    conflict_by_connector = {c["export_id"]: c for c in name_conflicts if c["entity_type"] == "connector"}
+    conflict_by_destination = {c["export_id"]: c for c in name_conflicts if c["entity_type"] == "destination"}
+    taken_connector_names: set[str] = set()
+    taken_destination_names: set[str] = set()
+    if name_conflicts and choice == "rename":
+        taken_connector_names = set(existing_name_index(db, Connector)) | {
+            normalize_name(import_connector_name(c, suffix)) for c in (bundle.get("connectors") or []) if isinstance(c, dict)
+        }
+        taken_destination_names = set(existing_name_index(db, Destination)) | {
+            normalize_name(import_destination_name(d, int(d["id"])))
+            for d in (bundle.get("destinations") or [])
+            if isinstance(d, dict) and d.get("id") is not None
+        }
+    skipped: list[ImportSkippedEntity] = []
+    renamed: list[ImportRenamedEntity] = []
+    skipped_destination_ids: set[int] = set()
+
     connectors = bundle.get("connectors") or []
     sources = bundle.get("sources") or []
     streams = bundle.get("streams") or []
@@ -260,8 +332,26 @@ def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) 
         if not isinstance(d, dict):
             continue
         old_id = int(d["id"])
+        dest_name = import_destination_name(d, old_id)
+        dest_conflict = conflict_by_destination.get(old_id)
+        original_dest_name = dest_name
+        if dest_conflict is not None:
+            if choice == "skip":
+                skipped.append(
+                    ImportSkippedEntity(
+                        entity_type="destination",
+                        name=dest_name,
+                        export_id=old_id,
+                        reason="NAME_EXISTS",
+                        existing_ids=list(dest_conflict["existing_ids"]),
+                    )
+                )
+                skipped_destination_ids.add(old_id)
+                continue
+            dest_name = unique_name(dest_name, taken_destination_names)
+            taken_destination_names.add(normalize_name(dest_name))
         row = Destination(
-            name=str(d.get("name") or f"imported-destination-{old_id}"),
+            name=dest_name,
             destination_type=str(d.get("destination_type") or "WEBHOOK_POST"),
             config_json=_strip_mask_placeholders(dict(d.get("config_json") or {})),
             rate_limit_json=dict(d.get("rate_limit_json") or {}),
@@ -270,6 +360,12 @@ def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) 
         db.add(row)
         db.flush()
         dest_old_to_new[old_id] = int(row.id)
+        if dest_name != original_dest_name:
+            renamed.append(
+                ImportRenamedEntity(
+                    entity_type="destination", name=original_dest_name, new_name=dest_name, entity_id=int(row.id)
+                )
+            )
 
     conn_old_to_new: dict[int, int] = {}
     created_connectors: list[int] = []
@@ -277,9 +373,23 @@ def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) 
         if not isinstance(c, dict):
             continue
         old_id = int(c["id"])
-        name = str(c.get("name") or "imported-connector")
-        if suffix:
-            name = name + suffix
+        name = import_connector_name(c, suffix)
+        original_name = name
+        conn_conflict = conflict_by_connector.get(old_id)
+        if conn_conflict is not None:
+            if choice == "skip":
+                skipped.append(
+                    ImportSkippedEntity(
+                        entity_type="connector",
+                        name=name,
+                        export_id=old_id,
+                        reason="NAME_EXISTS",
+                        existing_ids=list(conn_conflict["existing_ids"]),
+                    )
+                )
+                continue
+            name = unique_name(name, taken_connector_names)
+            taken_connector_names.add(normalize_name(name))
         row = Connector(
             name=name,
             product_group=c.get("product_group"),
@@ -290,6 +400,10 @@ def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) 
         db.flush()
         conn_old_to_new[old_id] = int(row.id)
         created_connectors.append(int(row.id))
+        if name != original_name:
+            renamed.append(
+                ImportRenamedEntity(entity_type="connector", name=original_name, new_name=name, entity_id=int(row.id))
+            )
 
     src_old_to_new: dict[int, int] = {}
     source_rows: dict[int, Source] = {}
@@ -312,7 +426,7 @@ def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) 
         row = Source(
             connector_id=new_cid,
             source_type=str(s.get("source_type") or "HTTP_API_POLLING"),
-            config_json=_strip_mask_placeholders(dict(s.get("config_json") or {})),
+            config_json=_reset_imported_operational_state(_strip_mask_placeholders(dict(s.get("config_json") or {}))),
             auth_json=auth_json,
             enabled=bool(s.get("enabled", True)),
         )
@@ -420,6 +534,16 @@ def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) 
         if new_stream is None:
             continue
         old_dest = int(r.get("destination_id", -1))
+        if old_dest in skipped_destination_ids:
+            skipped.append(
+                ImportSkippedEntity(
+                    entity_type="route",
+                    name=f"route {r.get('id')} -> destination {old_dest}",
+                    export_id=int(r["id"]) if r.get("id") is not None else None,
+                    reason="DESTINATION_SKIPPED",
+                )
+            )
+            continue
         if old_dest in dest_old_to_new:
             new_dest = int(dest_old_to_new[old_dest])
         elif mode == "clone" and db.get(Destination, old_dest) is not None:
@@ -476,6 +600,9 @@ def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) 
         "streams_created": len(created_streams),
         "connectors_created": len(created_connectors),
         "destinations_created": len(dest_old_to_new),
+        "name_conflict_choice": choice if name_conflicts else None,
+        "skipped": len(skipped),
+        "renamed": len(renamed),
     }
     if idempotency_key is not None:
         audit_details["idempotency_key"] = idempotency_key
@@ -524,6 +651,8 @@ def apply_import(db: Session, body: ImportApplyRequest, *, request: Any = None) 
             stream_ids=created_streams,
             destination_ids=created_dest_ids,
         ),
+        skipped=skipped,
+        renamed=renamed,
         secrets_to_reenter=secrets_to_reenter,
         redirect_path=redirect_path,
         idempotency_key=idempotency_key,
@@ -549,6 +678,7 @@ def clone_connector(db: Session, connector_id: int, name_suffix: str) -> tuple[i
         include_routes=True,
         include_checkpoints=False,
         include_destinations=False,
+        strict_masking=False,
     )
     if not bundle.get("connectors"):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"error_code": "CONNECTOR_NOT_FOUND", "message": str(connector_id)})
@@ -558,6 +688,8 @@ def clone_connector(db: Session, connector_id: int, name_suffix: str) -> tuple[i
         confirm=True,
         preview_token=preview_token_for(bundle, "clone"),
         clone_name_suffix=name_suffix,
+        # Repeated clones of the same connector are intended; give each copy a unique name (E-124).
+        on_name_conflict="rename",
     )
     res = apply_import(db, body)
     # Same-environment clone: the original rows still hold the real secrets that the (masked) bundle could not
@@ -792,13 +924,34 @@ def _remap_governance_route_ids(stream: Stream, route_id_map: dict[int, int]) ->
     stream.config_json = {**config, "governance": new_governance}
 
 
+def _export_refused(exc: ExportNotMaskedError) -> HTTPException:
+    """E-123: an export that still carries a secret after masking is never handed out."""
+
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "error_code": "EXPORT_SECRETS_NOT_MASKED",
+            "message": (
+                "Export refused: a stored secret could not be masked, so the file was not created. "
+                "No secret value is included in this response."
+            ),
+            "issues": exc.issues[:20],
+        },
+    )
+
+
 def export_workspace_bundle(
     db: Session,
     *,
     include_checkpoints: bool,
     include_destinations: bool,
 ) -> dict[str, Any]:
-    return build_workspace_export(db, include_checkpoints=include_checkpoints, include_destinations=include_destinations)
+    try:
+        return build_workspace_export(
+            db, include_checkpoints=include_checkpoints, include_destinations=include_destinations
+        )
+    except ExportNotMaskedError as exc:
+        raise _export_refused(exc) from exc
 
 
 def export_connector_bundle(
@@ -810,14 +963,17 @@ def export_connector_bundle(
     include_checkpoints: bool,
     include_destinations: bool,
 ) -> dict[str, Any]:
-    return build_connector_export(
-        db,
-        connector_id,
-        include_streams=include_streams,
-        include_routes=include_routes,
-        include_checkpoints=include_checkpoints,
-        include_destinations=include_destinations,
-    )
+    try:
+        return build_connector_export(
+            db,
+            connector_id,
+            include_streams=include_streams,
+            include_routes=include_routes,
+            include_checkpoints=include_checkpoints,
+            include_destinations=include_destinations,
+        )
+    except ExportNotMaskedError as exc:
+        raise _export_refused(exc) from exc
 
 
 def export_stream_bundle(
@@ -828,10 +984,13 @@ def export_stream_bundle(
     include_checkpoints: bool,
     include_destinations: bool,
 ) -> dict[str, Any]:
-    return build_stream_export(
-        db,
-        stream_id,
-        include_routes=include_routes,
-        include_checkpoints=include_checkpoints,
-        include_destinations=include_destinations,
-    )
+    try:
+        return build_stream_export(
+            db,
+            stream_id,
+            include_routes=include_routes,
+            include_checkpoints=include_checkpoints,
+            include_destinations=include_destinations,
+        )
+    except ExportNotMaskedError as exc:
+        raise _export_refused(exc) from exc

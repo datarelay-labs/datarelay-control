@@ -25,6 +25,17 @@ export type ImportPreviewWarning = {
   message: string
 }
 
+export type ImportNameConflictChoice = 'skip' | 'rename'
+
+/** A connector/destination of the bundle whose final name already exists (apply needs an explicit choice). */
+export type ImportNameConflict = {
+  entity_type: 'connector' | 'destination'
+  name: string
+  export_id: number | null
+  existing_ids: number[]
+  message: string
+}
+
 export type ImportPreviewResult = {
   ok: boolean
   export_kind: string | null
@@ -32,7 +43,31 @@ export type ImportPreviewResult = {
   conflicts: ImportPreviewConflict[]
   warnings: ImportPreviewWarning[]
   unsupported_items: string[]
+  name_conflicts?: ImportNameConflict[]
+  requires_name_conflict_choice?: boolean
   preview_token: string
+}
+
+export type ImportSkippedEntity = {
+  entity_type: 'connector' | 'destination' | 'route'
+  name: string
+  export_id: number | null
+  reason: 'NAME_EXISTS' | 'DESTINATION_SKIPPED'
+  existing_ids: number[]
+}
+
+export type ImportRenamedEntity = {
+  entity_type: 'connector' | 'destination'
+  name: string
+  new_name: string
+  entity_id: number
+}
+
+/** What a downloaded export reports about its own masking (``export_integrity``); null when unreadable. */
+export type BackupExportSummary = {
+  secretsMasked: boolean | null
+  maskedFieldCount: number | null
+  issues: string[]
 }
 
 export type ImportSecretReentry = {
@@ -54,6 +89,10 @@ export type ImportApplyResult = {
     stream_ids: number[]
     destination_ids: number[]
   }
+  /** Entities not created because their name already exists (on_name_conflict=skip) and routes that needed them. */
+  skipped?: ImportSkippedEntity[]
+  /** Entities created under a new unique name (on_name_conflict=rename). */
+  renamed?: ImportRenamedEntity[]
   /** Created connectors/destinations whose secrets were masked in the bundle and must be re-entered. */
   secrets_to_reenter?: ImportSecretReentry[]
   redirect_path: string | null
@@ -122,9 +161,28 @@ function exportUrlToApiPath(url: string): string {
   }
 }
 
-export async function downloadBackupUrl(url: string, filename: string): Promise<void> {
+/** Read ``export_integrity`` from the downloaded file so the UI states what the export really masked. */
+async function summarizeExportBlob(blob: Blob): Promise<BackupExportSummary> {
+  const unknown: BackupExportSummary = { secretsMasked: null, maskedFieldCount: null, issues: [] }
+  try {
+    if (typeof blob.text !== 'function') return unknown
+    const parsed = JSON.parse(await blob.text()) as { export_integrity?: Record<string, unknown> } | null
+    const integrity = parsed?.export_integrity
+    if (!integrity || typeof integrity !== 'object') return unknown
+    return {
+      secretsMasked: typeof integrity.secrets_masked === 'boolean' ? integrity.secrets_masked : null,
+      maskedFieldCount: typeof integrity.masked_field_count === 'number' ? integrity.masked_field_count : null,
+      issues: Array.isArray(integrity.issues) ? integrity.issues.map((i) => String(i)) : [],
+    }
+  } catch {
+    return unknown
+  }
+}
+
+export async function downloadBackupUrl(url: string, filename: string): Promise<BackupExportSummary> {
   const path = exportUrlToApiPath(url)
   const { blob, filename: fromHeader } = await requestBlob(path, { method: 'GET' })
+  const summary = await summarizeExportBlob(blob)
   const href = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = href
@@ -132,6 +190,7 @@ export async function downloadBackupUrl(url: string, filename: string): Promise<
   a.rel = 'noopener'
   a.click()
   URL.revokeObjectURL(href)
+  return summary
 }
 
 export async function postImportPreview(bundle: unknown, mode: ImportMode): Promise<ImportPreviewResult> {
@@ -149,6 +208,7 @@ export async function postImportApply(
     confirm?: boolean
     clone_name_suffix?: string
     idempotency_key?: string
+    on_name_conflict?: ImportNameConflictChoice
   } = {},
 ): Promise<ImportApplyResult> {
   return requestJson<ImportApplyResult>(`${GDC_API_PREFIX}/backup/import/apply`, {
@@ -160,6 +220,7 @@ export async function postImportApply(
       confirm: opts.confirm ?? true,
       clone_name_suffix: opts.clone_name_suffix ?? ' (copy)',
       ...(opts.idempotency_key ? { idempotency_key: opts.idempotency_key } : {}),
+      ...(opts.on_name_conflict ? { on_name_conflict: opts.on_name_conflict } : {}),
     }),
   })
 }
