@@ -98,7 +98,8 @@ def _preview(client: TestClient, bundle: dict[str, Any], mode: str = "additive")
 def _apply(client: TestClient, bundle: dict[str, Any], token: str, mode: str = "additive") -> dict[str, Any]:
     res = client.post(
         "/api/v1/backup/import/apply",
-        json={"bundle": bundle, "mode": mode, "confirm": True, "preview_token": token},
+        # The bundle comes from this same database, so every name collides; E-124 requires an explicit choice.
+        json={"bundle": bundle, "mode": mode, "confirm": True, "preview_token": token, "on_name_conflict": "rename"},
     )
     assert res.status_code == 200, res.text
     return res.json()

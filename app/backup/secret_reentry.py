@@ -29,6 +29,11 @@ _FIELD_LABELS = {
     "password": "Password",
     "private_key": "Private key",
     "private_key_passphrase": "Private key passphrase",
+    "token_body": "Token body",
+    "login_body_raw": "Login body",
+    "preflight_body_raw": "Preflight body",
+    "request_body": "Request body",
+    "payload_preview": "Sample payload",
 }
 
 

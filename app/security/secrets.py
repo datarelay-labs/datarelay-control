@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any, Mapping
 from urllib.parse import parse_qsl, quote, unquote_plus, urlencode, urlparse, urlunparse
@@ -38,6 +39,9 @@ SENSITIVE_FIELD_NAMES: frozenset[str] = frozenset(
         "remote_password",
         "db_password",
         "passphrase",
+        # Vendor token-exchange request template (``auth_json.token_body``): a free-text JSON/form/raw body
+        # whose literal values are credentials (E-098), so the whole value is treated as a secret.
+        "token_body",
     }
 )
 
@@ -58,6 +62,7 @@ SOURCE_SECRET_FIELDS: dict[str, dict[str, frozenset[str]]] = {
                 "login_password",
                 "refresh_token",
                 "access_token",
+                "token_body",
             }
         ),
     },
@@ -478,6 +483,73 @@ def mask_secrets(value: Any, *, declared: frozenset[str] | None = None) -> Any:
     return value
 
 
+# --- Free-text body templates that may embed credentials (export path) -----------------------------
+# ``token_body`` is a declared secret (always masked as a whole). The fields below are free-text request
+# bodies whose *template shape* is useful configuration (``{"password": "{{login_password}}"}``) but whose
+# literal values may be credentials. Exports keep a placeholder-only template and replace the whole value by
+# the mask sentinel as soon as it embeds a literal under a secret-looking key (JSON, form/query or XML).
+EMBEDDED_BODY_FIELD_NAMES: frozenset[str] = frozenset(
+    {"login_body_raw", "preflight_body_raw", "request_body", "body", "payload_preview"}
+)
+
+_XML_ELEMENT_RE = re.compile(r"<(?P<tag>[A-Za-z_][\w.:\-]*)(?:\s[^<>]*)?>(?P<value>[^<>]+)</(?P=tag)>")
+_JSONISH_PAIR_RE = re.compile(r'"(?P<name>[^"\\]+)"\s*:\s*"(?P<value>(?:[^"\\]|\\.)*)"')
+
+
+def _is_unmasked_literal(value: str) -> bool:
+    text = value.strip()
+    return bool(text) and text != _MASK and not is_template_placeholder(text)
+
+
+def embedded_text_has_secret(text: str) -> bool:
+    """True when free-text ``text`` embeds a literal under a secret-looking key (JSON / form / XML)."""
+
+    stripped = str(text or "").strip()
+    if not _is_unmasked_literal(stripped):
+        return False
+    try:
+        parsed = json.loads(stripped)
+    except ValueError:
+        parsed = None
+    else:
+        if isinstance(parsed, (dict, list)):
+            return mask_secrets(parsed) != parsed
+        return False
+    if mask_secret_query_params_in_text(stripped) != stripped:
+        return True
+    for match in _XML_ELEMENT_RE.finditer(stripped):
+        if is_sensitive_field_name(match.group("tag")) and _is_unmasked_literal(match.group("value")):
+            return True
+    for match in _JSONISH_PAIR_RE.finditer(stripped):
+        if is_sensitive_field_name(match.group("name")) and _is_unmasked_literal(match.group("value")):
+            return True
+    return False
+
+
+def mask_embedded_secret_text(text: Any) -> Any:
+    """Return ``text`` unchanged when it embeds no secret literal, otherwise the mask sentinel (whole value)."""
+
+    if not isinstance(text, str):
+        return text
+    return _MASK if embedded_text_has_secret(text) else text
+
+
+def mask_embedded_body_fields(value: Any) -> Any:
+    """Recursively apply :func:`mask_embedded_secret_text` to the free-text body fields of a config tree."""
+
+    if isinstance(value, dict):
+        out: dict[str, Any] = {}
+        for key, item in value.items():
+            if str(key) in EMBEDDED_BODY_FIELD_NAMES and isinstance(item, str):
+                out[key] = mask_embedded_secret_text(item)
+            else:
+                out[key] = mask_embedded_body_fields(item)
+        return out
+    if isinstance(value, list):
+        return [mask_embedded_body_fields(item) for item in value]
+    return value
+
+
 def mask_source_config_json(source_type: str | None, config: Mapping[str, Any] | None) -> dict[str, Any]:
     """Mask ``Source.config_json`` using the per-type declaration plus the generic heuristic."""
 
@@ -633,7 +705,8 @@ def restore_stripped_secrets(stripped: Any, original: Any) -> Any:
         out = dict(stripped)
         for key, orig_item in original.items():
             if key not in out or out[key] in (None, ""):
-                if is_sensitive_field_name(str(key)):
+                # Content-masked free-text bodies (login_body_raw ...) are stripped on import like secrets.
+                if is_sensitive_field_name(str(key)) or str(key) in EMBEDDED_BODY_FIELD_NAMES:
                     out[key] = orig_item
                 continue
             out[key] = restore_stripped_secrets(out[key], orig_item)
