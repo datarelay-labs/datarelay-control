@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from typing import Any, Mapping
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+from urllib.parse import parse_qsl, quote, unquote_plus, urlencode, urlparse, urlunparse
 
 # Exported for export/import integrity checks (backup bundles, audit views).
 SENSITIVE_FIELD_NAMES: frozenset[str] = frozenset(
@@ -308,6 +308,132 @@ def mask_url_query_secrets(url: str) -> str:
     if not changed:
         return text
     return urlunparse(parsed._replace(query=urlencode(pairs, doseq=True)))
+
+
+# --- Query-string / echoed-text masking (connector Test Authentication, API test) -----------------
+# A secret that travels in the query string ends up in every URL the product echoes back (message,
+# request/probe/final/token request URLs, response bodies that echo the URL, transport errors). The
+# masking below is keyed on the parameter *name*, never on matching the saved value, so a wrong value
+# typed into the form is masked as well. ``extra_names`` adds the connector's own configured names
+# (``api_key_name``, ``access_token_query_name``).
+QUERY_SECRET_PARAM_NAMES: frozenset[str] = frozenset(
+    {
+        "api_key",
+        "apikey",
+        "x_api_key",
+        "access_token",
+        "id_token",
+        "refresh_token",
+        "token",
+        "auth_token",
+        "key",
+        "secret",
+        "client_secret",
+        "password",
+        "passwd",
+        "pwd",
+        "sig",
+        "signature",
+        "auth",
+        "authorization",
+        "x_amz_signature",
+        "x_amz_security_token",
+        "x_amz_credential",
+    }
+)
+
+# The product's own diagnostics print ``cookies=<cookie names>`` (names only, never values).
+_QUERY_DIAGNOSTIC_NAMES: frozenset[str] = frozenset({"cookies"})
+
+# ``name=value`` where ``name`` is not the tail of a longer word; the value ends at the first URL /
+# JSON / whitespace delimiter. Matches inside URLs (``?a=b&c=d``), JSON strings and free text.
+_QUERY_PAIR_RE = re.compile(r"(?<![A-Za-z0-9_.\-%])(?P<name>[A-Za-z0-9_.\-%\[\]]+)=(?P<value>[^&#\s\"'<>\\]*)")
+
+# Never replace very short literals: it would garble ordinary text ("HTTP 200"); name-based masking is
+# the primary control and literal redaction is defence in depth.
+_MIN_LITERAL_REDACTION_LEN = 6
+
+
+def normalize_query_param_names(names: Any) -> frozenset[str]:
+    """Normalize configured query-parameter names for :func:`is_secret_query_param_name`."""
+
+    out: set[str] = set()
+    for raw in names or ():
+        text = str(raw or "").strip()
+        if text:
+            out.add(normalize_secret_field_name(unquote_plus(text)))
+    return frozenset(out)
+
+
+def is_secret_query_param_name(name: str, extra_names: frozenset[str] | None = None) -> bool:
+    """True when the query parameter ``name`` carries a credential (common names, heuristic, or configured)."""
+
+    decoded = unquote_plus(str(name or "")).strip()
+    if not decoded:
+        return False
+    normalized = normalize_secret_field_name(decoded)
+    if normalized in QUERY_SECRET_PARAM_NAMES:
+        return True
+    if extra_names and normalized in normalize_query_param_names(extra_names):
+        return True
+    if normalized in _QUERY_DIAGNOSTIC_NAMES:
+        return False
+    return is_sensitive_field_name(decoded)
+
+
+def mask_secret_query_params_in_text(text: str, *, extra_names: frozenset[str] | None = None) -> str:
+    """Replace the value of every secret-named ``name=value`` pair in ``text`` with the mask sentinel."""
+
+    raw = str(text or "")
+    if "=" not in raw:
+        return raw
+    extra = normalize_query_param_names(extra_names)
+
+    def _sub(match: re.Match[str]) -> str:
+        value = match.group("value")
+        if not value or value == _MASK or not is_secret_query_param_name(match.group("name"), extra):
+            return match.group(0)
+        return f"{match.group('name')}={_MASK}"
+
+    return _QUERY_PAIR_RE.sub(_sub, raw)
+
+
+def redact_secret_literals(text: str, literals: Any) -> str:
+    """Replace known secret literals (and their URL-encoded forms) in ``text`` with the mask sentinel."""
+
+    out = str(text or "")
+    candidates: set[str] = set()
+    for lit in literals or ():
+        value = str(lit or "")
+        if len(value) < _MIN_LITERAL_REDACTION_LEN or value == _MASK:
+            continue
+        candidates.update({value, quote(value, safe=""), quote(value), value.replace(" ", "+")})
+    for value in sorted(candidates, key=len, reverse=True):
+        if value and value in out:
+            out = out.replace(value, _MASK)
+    return out
+
+
+def sanitize_secret_echo(
+    value: Any,
+    *,
+    param_names: frozenset[str] | None = None,
+    literals: Any = (),
+) -> Any:
+    """Recursively mask query-carried secrets in every string of a response structure.
+
+    Dict keys are preserved; booleans, numbers and ``None`` are returned unchanged.
+    """
+
+    if isinstance(value, str):
+        return redact_secret_literals(mask_secret_query_params_in_text(value, extra_names=param_names), literals)
+    if isinstance(value, dict):
+        return {k: sanitize_secret_echo(v, param_names=param_names, literals=literals) for k, v in value.items()}
+    if isinstance(value, list):
+        return [sanitize_secret_echo(v, param_names=param_names, literals=literals) for v in value]
+    if isinstance(value, tuple):
+        return tuple(sanitize_secret_echo(v, param_names=param_names, literals=literals) for v in value)
+    return value
 
 
 # A value that is only a template placeholder ("{{login_password}}", "${TOKEN}") references a secret, it is not one.

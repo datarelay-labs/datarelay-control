@@ -10,6 +10,7 @@ import time
 from app.config import settings
 from app.connectors.models import Connector  # noqa: F401 — mapper resolve for Stream.connector
 from app.production_security import ensure_production_security_settings
+from app.security.log_redaction import install_http_client_log_redaction
 from app.db.orm_bootstrap import ensure_orm_models_registered
 from app.db.partition_maintenance_scheduler import (
     PartitionMaintenanceScheduler,
@@ -29,6 +30,7 @@ from app.startup_readiness import evaluate_startup_readiness, log_startup_readin
 from app.validation.periodic_scheduler import ContinuousValidationScheduler, set_validation_scheduler
 
 logger = logging.getLogger(__name__)
+install_http_client_log_redaction()
 
 
 def run_standalone_scheduler() -> None:
