@@ -47,6 +47,117 @@ def _parse_replay_bound(raw: Any) -> Any:
         raise SourceFetchError(f"invalid replay ISO timestamp: {raw!r}") from exc
 
 
+def _pg_connection_settings(source_config: dict[str, Any]) -> tuple[str, int, str, str, str, int]:
+    host = str(_get(source_config, "host") or "").strip()
+    port = int(_get(source_config, "port") or 0)
+    database = str(_get(source_config, "database") or "").strip()
+    user = str(_get(source_config, "username") or "").strip()
+    password = str(_get(source_config, "password") or "")
+    conn_timeout = int(_get(source_config, "connection_timeout_seconds", 15) or 15)
+    if conn_timeout < 1:
+        conn_timeout = 1
+
+    if not host or not database or not user:
+        raise SourceFetchError("host, database, and username are required in source_config")
+    if port <= 0:
+        raise SourceFetchError("port must be a positive integer")
+    return host, port, database, user, password, conn_timeout
+
+
+def _describe_result_columns(
+    *,
+    source_config: dict[str, Any],
+    inner_sql: str,
+    params: tuple | dict[str, Any] | None,
+    statement_ms: int,
+) -> dict[str, int]:
+    """Return ``{column name: PostgreSQL type OID}`` of the user SELECT's result.
+
+    Runs the wrapped query with ``LIMIT 0`` so no rows are produced (the user query is planned, not
+    executed) and applies the stream's configured statement timeout like the real fetch does.
+    """
+
+    host, port, database, user, password, conn_timeout = _pg_connection_settings(source_config)
+    sql_text, bind = build_wrapped_select(
+        inner_sql=inner_sql,
+        db_kind="POSTGRESQL",
+        query_params=params,
+        checkpoint_mode="NONE",
+        checkpoint_column=None,
+        checkpoint_order_column=None,
+        max_rows=1,
+        checkpoint_value=None,
+        describe_only=True,
+    )
+    conn = None
+    try:
+        conn = psycopg2.connect(
+            host=host,
+            port=port,
+            dbname=database,
+            user=user,
+            password=password,
+            connect_timeout=conn_timeout,
+            sslmode=_ssl_mode_pg(str(_get(source_config, "ssl_mode") or "PREFER")),
+            options=f"-c statement_timeout={int(statement_ms)}",
+        )
+        with conn.cursor() as cur:
+            cur.execute(sql_text, bind)
+            return {str(d[0]): int(d[1]) for d in (cur.description or [])}
+    except Exception as exc:
+        if conn is None:
+            raise SourceFetchError(f"PostgreSQL connection failed: {exc}") from exc
+        raise SourceFetchError(f"PostgreSQL query failed: {exc}") from exc
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:  # pragma: no cover
+                pass
+
+
+# psycopg2 / PostgreSQL type OIDs of the date/time types a replay window can filter.
+_PG_TEMPORAL_TYPE_OIDS = frozenset({1082, 1114, 1184})  # date, timestamp, timestamptz
+
+
+def resolve_replay_column(
+    *,
+    explicit: str | None,
+    checkpoint_column: str | None,
+    column_types: dict[str, int],
+) -> str:
+    """Pick the date/time column a backfill window filters.
+
+    Order: explicit ``replay_time_column`` > the checkpoint column when it is a date/time >
+    the single date/time column of the query result. Anything else fails with an actionable
+    message instead of a ``bigint >= timestamptz`` SQL error from comparing an integer watermark.
+    """
+
+    temporal = [name for name, oid in column_types.items() if oid in _PG_TEMPORAL_TYPE_OIDS]
+    wanted = (explicit or "").strip()
+    if wanted:
+        if wanted not in column_types:
+            raise SourceFetchError(f"replay_time_column {wanted!r} is not in the query result columns")
+        if wanted not in temporal:
+            raise SourceFetchError(f"replay_time_column {wanted!r} is not a date/time column")
+        return wanted
+    ck = (checkpoint_column or "").strip()
+    if ck and ck in temporal:
+        return ck
+    if len(temporal) == 1:
+        return temporal[0]
+    if not temporal:
+        raise SourceFetchError(
+            "backfill time window needs a date/time column: the query result has none "
+            "(the checkpoint column is not a date/time). Select an event-time column or set "
+            "stream_config.replay_time_column."
+        )
+    raise SourceFetchError(
+        "backfill time window is ambiguous: the query result has several date/time columns "
+        f"({', '.join(sorted(temporal))}). Set stream_config.replay_time_column to the event-time column."
+    )
+
+
 def fetch_database_rows(
     *,
     source_config: dict[str, Any],
@@ -82,6 +193,24 @@ def fetch_database_rows(
         replay_low = _parse_replay_bound(rlow_raw)
         replay_high = _parse_replay_bound(rhigh_raw)
 
+    replay_column: str | None = None
+    if replay_low is not None and replay_high is not None:
+        explicit_replay_column = str(_get(stream_config, "replay_time_column") or "").strip()
+        if explicit_replay_column:
+            # Operator-chosen column: no column discovery needed.
+            replay_column = explicit_replay_column
+        else:
+            replay_column = resolve_replay_column(
+                explicit=None,
+                checkpoint_column=str(ck_col).strip() if ck_col is not None else None,
+                column_types=_describe_result_columns(
+                    source_config=source_config,
+                    inner_sql=inner,
+                    params=params,
+                    statement_ms=min(q_timeout * 1000, 3_600_000),
+                ),
+            )
+
     sql_text, bind = build_wrapped_select(
         inner_sql=inner,
         db_kind=db_type,
@@ -93,21 +222,10 @@ def fetch_database_rows(
         checkpoint_value=checkpoint if isinstance(checkpoint, dict) else None,
         replay_low=replay_low,
         replay_high=replay_high,
+        replay_column=replay_column,
     )
 
-    host = str(_get(source_config, "host") or "").strip()
-    port = int(_get(source_config, "port") or 0)
-    database = str(_get(source_config, "database") or "").strip()
-    user = str(_get(source_config, "username") or "").strip()
-    password = str(_get(source_config, "password") or "")
-    conn_timeout = int(_get(source_config, "connection_timeout_seconds", 15) or 15)
-    if conn_timeout < 1:
-        conn_timeout = 1
-
-    if not host or not database or not user:
-        raise SourceFetchError("host, database, and username are required in source_config")
-    if port <= 0:
-        raise SourceFetchError("port must be a positive integer")
+    host, port, database, user, password, conn_timeout = _pg_connection_settings(source_config)
 
     stmt_ms = min(q_timeout * 1000, 3_600_000)
 

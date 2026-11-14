@@ -1,4 +1,5 @@
 import type { MappingUIConfigResponse, StreamRead } from '../api/types/gdcApi'
+import { normalizeGdcStreamSourceType } from './sourceTypePresentation'
 
 export function resolveStreamEndpointPath(
   configJson: Record<string, unknown> | null | undefined,
@@ -21,8 +22,25 @@ export function resolveStreamEndpointPath(
 }
 
 /**
+ * DATABASE_QUERY sample `stream_config`: the saved SQL (and binds), never an HTTP request shape.
+ * The backend sample fetch rejects a DATABASE_QUERY request without `query`.
+ */
+function buildStreamDatabaseConfigFromStreamRead(cfgj: Record<string, unknown>): Record<string, unknown> {
+  const streamCfg: Record<string, unknown> = {
+    query: typeof cfgj.query === 'string' ? cfgj.query.trim() : '',
+  }
+  const qp = cfgj.query_params
+  if (qp && typeof qp === 'object') streamCfg.query_params = qp
+  const qt = cfgj.query_timeout_seconds
+  const timeout = typeof qt === 'number' ? qt : typeof qt === 'string' ? Number.parseInt(qt.trim(), 10) : NaN
+  streamCfg.query_timeout_seconds = Number.isFinite(timeout) && timeout > 0 ? timeout : 30
+  return streamCfg
+}
+
+/**
  * Build `stream_config` for `POST /runtime/api-test/http` from persisted stream + mapping-ui rows.
  * Mirrors {@link StreamApiTestPage} load logic so Mapping and API Test stay aligned.
+ * DATABASE_QUERY streams get their saved SQL query instead of an HTTP request.
  */
 export function buildStreamHttpConfigFromStreamRead(
   stream: StreamRead,
@@ -30,6 +48,9 @@ export function buildStreamHttpConfigFromStreamRead(
 ): Record<string, unknown> {
   const sc = cfg.source_config ?? {}
   const cfgj = (stream.config_json ?? {}) as Record<string, unknown>
+  if (normalizeGdcStreamSourceType(cfg.source_type ?? stream.stream_type) === 'DATABASE_QUERY') {
+    return buildStreamDatabaseConfigFromStreamRead(cfgj)
+  }
   const ep = resolveStreamEndpointPath(cfgj, sc)
   const m = String(cfgj.method ?? cfgj.http_method ?? (sc as { http_method?: string }).http_method ?? 'GET').toUpperCase()
   const method = m === 'POST' ? 'POST' : 'GET'
